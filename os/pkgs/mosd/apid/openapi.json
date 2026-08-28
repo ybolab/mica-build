@@ -100,6 +100,159 @@
         }
       }
     },
+    "/api/v1/actions/poweroff": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Power the appliance off (§2.1's action family).",
+        "operationId": "api_v1_poweroff",
+        "responses": {
+          "202": {
+            "description": "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/actions/reboot": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Reboot the appliance (§2.1's action family).",
+        "operationId": "api_v1_reboot",
+        "responses": {
+          "202": {
+            "description": "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/actions/transient-root-password": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Set a transient root password (§2.1's action family).",
+        "description": "The password must be 8 to 72 bytes and must contain no NUL, no newline and\nno carriage return. 72 is bcrypt's own limit: a longer password would be\nsilently shortened to its first 72 bytes, so it is refused rather than\naccepted as something other than what was sent.\n\nA rejection states the bound it broke and never repeats the password back.\nThe password is written into no setting, is never logged, and lasts until\nthe next reboot.\n\n204 and not the 202 the two power verbs answer: this awaits the call, so a\ncaller that gets a 204 has a password channel that is actually open.\n\nProse and not intra-doc links, deliberately, for the reason the rotate-key\nroute above states: `utoipa` copies this comment into the published\ndocument, where a link would put an apid symbol name in front of every\nclient. The implementation notes those links would carry are in the body:\nthe bounds are checked by the same function the form path calls rather than\nby a second copy, and the rejection cannot echo the password because none of\nthat function's three messages interpolates it.",
+        "operationId": "api_v1_transient_root_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransientRootPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The transient root password is set; it lasts until the next reboot and is written into no setting"
+          },
+          "400": {
+            "description": "The body is not JSON, or not this shape (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The password is shorter than 8 bytes, longer than 72, or contains a NUL, newline or carriage return (`validation_failed`); the message states the bound and never the password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to set it (`mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/actions/wireguard/{iface}/rotate-key": {
       "post": {
         "tags": [
@@ -2310,6 +2463,19 @@
               "null"
             ],
             "description": "Default gateway address; absent for a link with no route of its own."
+          }
+        }
+      },
+      "TransientRootPasswordRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/actions/transient-root-password` request body.",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The password to open the channel with: 8 to 72 bytes, and no NUL,\nnewline or carriage return."
           }
         }
       },

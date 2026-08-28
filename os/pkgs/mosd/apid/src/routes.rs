@@ -319,6 +319,14 @@ const V1_WIREGUARD_PREFIX: &str = "/v1/actions/wireguard/";
 const V1_WIREGUARD_ROTATE_LEAF: &str = "/rotate-key";
 const V1_WIREGUARD_ROTATE_ROUTE: &str = "/v1/actions/wireguard/{iface}/rotate-key";
 
+/// M7's three verbs (`docs/task/RFCT-210.md` section 2.5).
+///
+/// No collection, no identifier and nothing to read back, so each is one
+/// constant rather than the prefix/route/doc triple a resource path needs.
+const V1_REBOOT_PATH: &str = "/v1/actions/reboot";
+const V1_POWEROFF_PATH: &str = "/v1/actions/poweroff";
+const V1_TRANSIENT_PASSWORD_PATH: &str = "/v1/actions/transient-root-password";
+
 /// M5's two array collections and their item routes
 /// (`docs/task/RFCT-210.md` section 2.5).
 ///
@@ -447,6 +455,18 @@ fn api_router() -> Router<AppState> {
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
         .route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))
+        // M7's three verbs, `post` and nothing else for the same reason: the
+        // HTML router declares no `GET` for either power action or for any SSH
+        // mutation so a browser prefetch, a crawler or a mis-clicked link
+        // cannot power the appliance off, and the namespace is called `actions`
+        // so no reader expects a `GET` to work in it. The 405 below is what a
+        // `GET` on these three gets.
+        .route(V1_REBOOT_PATH, post(api_v1_reboot))
+        .route(V1_POWEROFF_PATH, post(api_v1_poweroff))
+        .route(
+            V1_TRANSIENT_PASSWORD_PATH,
+            post(api_v1_transient_root_password),
+        )
         // §2.4's envelope on the methods those routes do not serve, declared
         // once for the subtree rather than route by route. It reaches exactly
         // the routes above — it rewrites the method-not-allowed fallback of
@@ -1160,7 +1180,7 @@ pub(crate) async fn api_v1_settings_write(
         );
     }
     if let Err(err) = state.api.set_settings(&path, &value).await {
-        return bus_api_error(&err, &path);
+        return bus_api_error(&err, Some(&path));
     }
     // No `access_cache` invalidation, and that is not an omission: mosd emits
     // `SettingsChanged` for the path it wrote and the subscription drops the
@@ -1268,7 +1288,7 @@ pub(crate) async fn api_v1_wireguard_rotate(
         Ok(public_key) => api_response(StatusCode::OK, WireguardRotation { public_key }),
         // §2.4's `path` is the settings dot-path at fault, and this failure has
         // one: the entry whose kind mosd refused.
-        Err(err) => bus_api_error(&err, &iface_settings_path(&iface)),
+        Err(err) => bus_api_error(&err, Some(&iface_settings_path(&iface))),
     }
 }
 
@@ -1532,7 +1552,7 @@ fn item_not_found(collection: &str, identifier: &str) -> Response {
 async fn stored_tokens(state: &AppState) -> Result<Vec<ApiToken>, Box<Response>> {
     let access = match state.api.get_settings("access").await {
         Ok(value) => value,
-        Err(err) => return Err(Box::new(bus_api_error(&err, API_TOKENS_PATH))),
+        Err(err) => return Err(Box::new(bus_api_error(&err, Some(API_TOKENS_PATH)))),
     };
     parse_tokens(&access).map_err(|err| {
         Box::new(api_response(
@@ -1581,7 +1601,7 @@ async fn write_tokens(state: &AppState, tokens: &[ApiToken]) -> Result<(), Box<R
     // Infallible: `ApiToken` is a struct of scalars with no map keys to collide.
     let value = serde_json::to_value(tokens).expect("api tokens serialize");
     if let Err(err) = state.api.set_settings(API_TOKENS_PATH, &value).await {
-        return Err(Box::new(bus_api_error(&err, API_TOKENS_PATH)));
+        return Err(Box::new(bus_api_error(&err, Some(API_TOKENS_PATH))));
     }
     // apid knows its own `access` write happened, so the gate's cache is
     // dropped here rather than waiting for the `SettingsChanged` round trip.
@@ -1749,7 +1769,7 @@ fn key_entry(entry: AuthorizedKey) -> AuthorizedKeyEntry {
 async fn api_stored_keys(state: &AppState) -> Result<Vec<AuthorizedKey>, Box<Response>> {
     let ssh = match state.api.get_settings("access.ssh").await {
         Ok(value) => value,
-        Err(err) => return Err(Box::new(bus_api_error(&err, SSH_KEYS_PATH))),
+        Err(err) => return Err(Box::new(bus_api_error(&err, Some(SSH_KEYS_PATH)))),
     };
     parse_key_list(&ssh).map_err(|err| {
         Box::new(api_response(
@@ -1777,7 +1797,7 @@ async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), 
     // could collide.
     let value = serde_json::to_value(keys).expect("authorized keys serialize");
     if let Err(err) = state.api.set_settings(SSH_KEYS_PATH, &value).await {
-        return Err(Box::new(bus_api_error(&err, SSH_KEYS_PATH)));
+        return Err(Box::new(bus_api_error(&err, Some(SSH_KEYS_PATH))));
     }
     Ok(())
 }
@@ -1998,7 +2018,7 @@ pub(crate) async fn api_v1_ssh_keys_remove(
 async fn stored_networks(state: &AppState) -> Result<Vec<WifiNetwork>, Box<Response>> {
     let value = match state.api.get_settings(WIFI_NETWORKS_PATH).await {
         Ok(value) => value,
-        Err(err) => return Err(Box::new(bus_api_error(&err, WIFI_NETWORKS_PATH))),
+        Err(err) => return Err(Box::new(bus_api_error(&err, Some(WIFI_NETWORKS_PATH)))),
     };
     // No absent-is-empty branch, unlike the two `access` lists above, and the
     // difference is in the model rather than in the route: `networks` carries
@@ -2031,7 +2051,7 @@ async fn stored_networks(state: &AppState) -> Result<Vec<WifiNetwork>, Box<Respo
 async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<(), Box<Response>> {
     let value = serde_json::to_value(networks).expect("wifi networks serialize");
     if let Err(err) = state.api.set_settings(WIFI_NETWORKS_PATH, &value).await {
-        return Err(Box::new(bus_api_error(&err, WIFI_NETWORKS_PATH)));
+        return Err(Box::new(bus_api_error(&err, Some(WIFI_NETWORKS_PATH))));
     }
     Ok(())
 }
@@ -2389,7 +2409,7 @@ pub(crate) struct NetworkInterface {
 async fn api_network_entries(state: &AppState) -> Result<NetworkEntries, Box<Response>> {
     let network = match state.api.get_settings(NETWORK_SETTINGS_PATH).await {
         Ok(value) => value,
-        Err(err) => return Err(Box::new(bus_api_error(&err, NETWORK_SETTINGS_PATH))),
+        Err(err) => return Err(Box::new(bus_api_error(&err, Some(NETWORK_SETTINGS_PATH)))),
     };
     let (entries, unreadable) = parse_network(&network);
     if !unreadable.is_empty() {
@@ -2453,7 +2473,7 @@ async fn write_network_map(
     // scalars, strings and vectors.
     let value = serde_json::to_value(entries).expect("network entries serialize");
     if let Err(err) = state.api.set_settings(NETWORK_SETTINGS_PATH, &value).await {
-        return Err(Box::new(bus_api_error(&err, NETWORK_SETTINGS_PATH)));
+        return Err(Box::new(bus_api_error(&err, Some(NETWORK_SETTINGS_PATH))));
     }
     Ok(())
 }
@@ -2608,7 +2628,7 @@ pub(crate) async fn api_v1_network_iface_write(
     // struct of scalars, strings and vectors with no map keys to collide.
     let value = serde_json::to_value(&cfg).expect("interface settings serialize");
     if let Err(err) = state.api.set_settings(&path, &value).await {
-        return bus_api_error(&err, &path);
+        return bus_api_error(&err, Some(&path));
     }
     no_content()
 }
@@ -2739,7 +2759,7 @@ async fn api_write_peers(
     // Infallible: a peer is a struct of strings and integers.
     let value = serde_json::to_value(peers).expect("wireguard peers serialize");
     if let Err(err) = state.api.set_settings(&path, &value).await {
-        return Err(Box::new(bus_api_error(&err, &path)));
+        return Err(Box::new(bus_api_error(&err, Some(&path))));
     }
     Ok(())
 }
@@ -2934,7 +2954,7 @@ pub(crate) async fn api_v1_peers_remove(
 fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
     match value {
         Ok(value) => api_response(StatusCode::OK, ResourceValue(redact::redact(value, path))),
-        Err(err) => bus_api_error(&err, path),
+        Err(err) => bus_api_error(&err, Some(path)),
     }
 }
 
@@ -2949,8 +2969,14 @@ fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
 /// The concrete `zbus::Error` is recovered by downcast: `bus_client.rs`
 /// converts with `err.into()`, and that conversion stores the error rather
 /// than flattening it, so the name is readable here.
-fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
-    tracing::warn!(error = %err, path, "mosd call failed");
+///
+/// `path` is an `Option` because §2.4 makes the member optional — *"present
+/// only when the failure names a dot-path"* — and M7's actions name none: a
+/// power verb and a transient root password write no setting at all, so there
+/// is no dot-path at fault to report. Every route that does name one passes
+/// `Some`, and the classification above is shared rather than copied.
+fn bus_api_error(err: &anyhow::Error, path: Option<&str>) -> Response {
+    tracing::warn!(error = %err, path = path.unwrap_or_default(), "mosd call failed");
     let (status, error) = match err.downcast_ref::<zbus::Error>() {
         Some(zbus::Error::MethodError(name, message, _)) => {
             // An fdo error with no message is still a classification; the name
@@ -2982,7 +3008,14 @@ fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
         }
         _ => mosd_unreachable(err),
     };
-    let mut response = api_response(status, error.at(path));
+    // Omitted rather than nulled or emptied when there is none: the member
+    // carries `skip_serializing_if`, so an action's envelope simply has no
+    // `path` key.
+    let error = match path {
+        Some(path) => error.at(path),
+        None => error,
+    };
+    let mut response = api_response(status, error);
     // §2.4 gives `Retry-After` to exactly one class, and 503 is that class:
     // apid is up and answering, and the proxy cache is dropped after a failed
     // call so the next request reconnects.
@@ -4249,7 +4282,7 @@ pub(crate) async fn api_v1_change_password(
                 ApiError::apid("hashing_failed", format!("{err:#}")),
             )
         }
-        Err(PasswordChangeError::Bus(err)) => bus_api_error(&err, "access.webAdmin"),
+        Err(PasswordChangeError::Bus(err)) => bus_api_error(&err, Some("access.webAdmin")),
     }
 }
 
@@ -5371,10 +5404,28 @@ fn power_submit(state: &AppState, action: PowerAction, confirm: &str, source: &s
         )
             .into_response();
     }
-    // Recorded before the request is dispatched, and the sink fsyncs each
-    // line: the two audited actions here are the ones immediately followed by
-    // the machine going down, so a line written after the call could be the
-    // line that never reaches the disk.
+    dispatch_power_action(state, action, source);
+    (
+        StatusCode::ACCEPTED,
+        page(action.label(), html! { p { (action.acknowledgement()) } }),
+    )
+        .into_response()
+}
+
+/// Audit the request and hand the action to mosd on a detached task.
+///
+/// Both surfaces call this and neither has its own copy, because the detached
+/// spawn is the reason both answer **202**: the response is built and returned
+/// without awaiting the D-Bus call, so whether the action completed is not
+/// knowable over the connection that asked for it. A second copy here could
+/// drift into awaiting the call on one surface and not the other, and the
+/// status code would then be a lie on one of them.
+///
+/// Recorded before the request is dispatched, and the sink fsyncs each line:
+/// the two audited actions here are the ones immediately followed by the
+/// machine going down, so a line written after the call could be the line that
+/// never reaches the disk.
+fn dispatch_power_action(state: &AppState, action: PowerAction, source: &str) {
     state
         .audit
         .record(action.confirm_token(), "requested", source);
@@ -5388,11 +5439,6 @@ fn power_submit(state: &AppState, action: PowerAction, confirm: &str, source: &s
             tracing::error!(action = action.confirm_token(), error = %err, "power action failed");
         }
     });
-    (
-        StatusCode::ACCEPTED,
-        page(action.label(), html! { p { (action.acknowledgement()) } }),
-    )
-        .into_response()
 }
 
 async fn power_reboot(
@@ -5409,6 +5455,75 @@ async fn power_poweroff(
     Form(form): Form<ConfirmForm>,
 ) -> Response {
     power_submit(&state, PowerAction::PowerOff, &form.confirm, &source)
+}
+
+/// The 202 both power verbs answer, and the reason it is 202.
+///
+/// **Not 204.** The bus call is spawned on a detached task by
+/// [`dispatch_power_action`], so the response leaves before the machine goes
+/// down. 202 is the honest code: the request was accepted, and whether it
+/// completed is not knowable over the connection that asked. A 204 would claim
+/// the action had finished, which this route cannot know and, on a real
+/// appliance, will usually be answering from a machine that is about to stop
+/// existing. It is also what the form path already answers, measured rather
+/// than assumed.
+///
+/// **No confirmation token.** The two form posts demand one, and this does
+/// not. `TRANSIENT_CONFIRM_TOKEN` and [`PowerAction::confirm_token`] are
+/// compile-time constants, not secrets and not per-session; they exist to stop
+/// a mis-click on a rendered page. There is no mis-click on a `POST` a script
+/// constructed, so the bearer token is the authorisation and the constant would
+/// be friction that protects nothing. Ratified in PLAN-023's M1 design.
+///
+/// The body is empty: the outcome is the machine going down, and there is
+/// nothing to say about it that the status does not.
+fn power_accepted(state: &AppState, action: PowerAction, source: &str) -> Response {
+    dispatch_power_action(state, action, source);
+    (
+        StatusCode::ACCEPTED,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
+}
+
+/// Reboot the appliance (§2.1's action family).
+#[utoipa::path(
+    post,
+    path = V1_REBOOT_PATH,
+    context_path = API,
+    tag = "actions",
+    responses(
+        (status = 202, description = "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_reboot(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Source(source): Source,
+) -> Response {
+    power_accepted(&state, PowerAction::Reboot, &source)
+}
+
+/// Power the appliance off (§2.1's action family).
+#[utoipa::path(
+    post,
+    path = V1_POWEROFF_PATH,
+    context_path = API,
+    tag = "actions",
+    responses(
+        (status = 202, description = "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_poweroff(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Source(source): Source,
+) -> Response {
+    power_accepted(&state, PowerAction::PowerOff, &source)
 }
 
 // Hostname submit
@@ -6229,6 +6344,95 @@ async fn ssh_password(
     // deliberately nothing about the password itself.
     app.audit.record("transient-password", "set", &source);
     Redirect::to("/ssh?saved=1").into_response()
+}
+
+/// `POST /api/v1/actions/transient-root-password` request body.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TransientRootPasswordRequest {
+    /// The password to open the channel with: 8 to 72 bytes, and no NUL,
+    /// newline or carriage return.
+    password: String,
+}
+
+/// Set a transient root password (§2.1's action family).
+///
+/// The password must be 8 to 72 bytes and must contain no NUL, no newline and
+/// no carriage return. 72 is bcrypt's own limit: a longer password would be
+/// silently shortened to its first 72 bytes, so it is refused rather than
+/// accepted as something other than what was sent.
+///
+/// A rejection states the bound it broke and never repeats the password back.
+/// The password is written into no setting, is never logged, and lasts until
+/// the next reboot.
+///
+/// 204 and not the 202 the two power verbs answer: this awaits the call, so a
+/// caller that gets a 204 has a password channel that is actually open.
+///
+/// Prose and not intra-doc links, deliberately, for the reason the rotate-key
+/// route above states: `utoipa` copies this comment into the published
+/// document, where a link would put an apid symbol name in front of every
+/// client. The implementation notes those links would carry are in the body:
+/// the bounds are checked by the same function the form path calls rather than
+/// by a second copy, and the rejection cannot echo the password because none of
+/// that function's three messages interpolates it.
+#[utoipa::path(
+    post,
+    path = V1_TRANSIENT_PASSWORD_PATH,
+    context_path = API,
+    tag = "actions",
+    request_body = TransientRootPasswordRequest,
+    responses(
+        (status = 204, description = "The transient root password is set; it lasts until the next reboot and is written into no setting"),
+        (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 422, description = "The password is shorter than 8 bytes, longer than 72, or contains a NUL, newline or carriage return (`validation_failed`); the message states the bound and never the password", body = ApiError),
+        (status = 500, description = "mosd failed to set it (`mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_transient_root_password(
+    _session: ApiSession,
+    State(app): State<AppState>,
+    Source(source): Source,
+    body: Result<Json<TransientRootPasswordRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match body {
+        Ok(body) => body,
+        // §2.4's envelope rather than axum's plain-text rejection. The
+        // rejection text describes the shape, never the value, so a malformed
+        // body carrying a password does not put it in the response either.
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()),
+            );
+        }
+    };
+    if let Err(message) = validate_transient_password(&request.password) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", message),
+        );
+    }
+    if let Err(err) = app
+        .api
+        .set_transient_root_password(&request.password)
+        .await
+    {
+        // No dot-path: this writes no setting, so §2.4's optional member is
+        // absent rather than naming something that was not at fault.
+        return bus_api_error(&err, None);
+    }
+    // The event carries who opened a password channel and from where — and
+    // deliberately nothing about the password itself.
+    app.audit.record("transient-password", "set", &source);
+    (
+        StatusCode::NO_CONTENT,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
 }
 
 #[derive(serde::Deserialize)]

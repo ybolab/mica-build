@@ -5710,6 +5710,16 @@ async fn a_wrong_method_on_a_declared_api_route_answers_the_envelope() {
         ("PUT", "/api/v1/state/uptime", "GET,HEAD"),
         ("GET", "/api/v1/actions/change-password", "POST"),
         ("GET", "/api/v1/actions/wireguard/wg0/rotate-key", "POST"),
+        // M7's three verbs. `GET` on each of them is the assertion that no
+        // `GET` handler is declared: the HTML router refuses the same thing
+        // deliberately so a browser prefetch, a crawler or a mis-clicked link
+        // cannot power the appliance off, and `actions` is named `actions` so
+        // no reader expects a `GET` to work there. Asserted here rather than in
+        // a test of their own so the `Allow` value is checked by the same
+        // per-route expectation every other declared route is checked by.
+        ("GET", "/api/v1/actions/reboot", "POST"),
+        ("GET", "/api/v1/actions/poweroff", "POST"),
+        ("GET", "/api/v1/actions/transient-root-password", "POST"),
         ("PUT", "/api/v1/tokens", "GET,HEAD,POST"),
         ("GET", "/api/v1/tokens/deadbeef", "DELETE"),
     ] {
@@ -9022,4 +9032,401 @@ async fn every_collection_answers_409_for_a_duplicate() {
     }
     // Not one of them wrote: a refused duplicate leaves the collection alone.
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+// PLAN-023 M7: the three actions. No state to `GET` and no idempotency to
+// promise, so every assertion below is about the status code, the call that
+// did or did not reach mosd, and what the response body does not contain.
+
+const REBOOT_PATH: &str = "/api/v1/actions/reboot";
+const POWEROFF_PATH: &str = "/api/v1/actions/poweroff";
+const TRANSIENT_PATH: &str = "/api/v1/actions/transient-root-password";
+
+/// **202 and not 204**, on both verbs, with the bus call reaching mosd after
+/// the response was built.
+///
+/// The status is the milestone's first acceptance criterion: the call is
+/// spawned on a detached task, so the response goes out before the machine goes
+/// down and whether the action completed is not knowable over the connection
+/// that asked. `await_power_calls` is what proves the dispatch is detached
+/// rather than awaited — a handler that awaited the call would already have the
+/// entry when the response arrived, and would have no reason to answer 202.
+///
+/// Asserted against the form path in the same test rather than trusted from the
+/// design: both surfaces answer the same code because both go through one
+/// dispatch, and a change to one of them fails here.
+#[tokio::test]
+async fn the_power_routes_answer_202_like_the_form_path() {
+    for (path, expected) in [(REBOOT_PATH, "reboot"), (POWEROFF_PATH, "power_off")] {
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let cookie = login(&router, "hunter2secret").await;
+
+        let response = post_json(&router, path, "", Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED, "{path}");
+        assert_eq!(
+            header_value(&response, CACHE_CONTROL),
+            "no-store",
+            "{path}"
+        );
+        assert_eq!(body_string(response).await, "", "{path}: 202 carries no body");
+        assert_eq!(
+            fake.await_power_calls(1).await,
+            vec![expected.to_string()],
+            "{path}"
+        );
+        assert!(fake.set_paths().is_empty(), "{path} writes no settings");
+    }
+
+    // The form path answers the same code, measured here and not assumed.
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let form = post_form(&router, "/power/reboot", "confirm=reboot", Some(&cookie)).await;
+    assert_eq!(form.status(), StatusCode::ACCEPTED);
+}
+
+/// **The confirmation token is not carried over, and the form still demands
+/// it.**
+///
+/// `PowerAction::confirm_token` and `TRANSIENT_CONFIRM_TOKEN` are compile-time
+/// constants, not secrets and not per-session; they stop a mis-click on a
+/// rendered page, and there is no mis-click on a `POST` a script constructed.
+/// So the API takes none — an empty body is enough — while the form path is
+/// unchanged. The asymmetry is deliberate, and this test is what stops a later
+/// reading from "harmonising" either half into the other.
+#[tokio::test]
+async fn the_action_routes_require_no_confirmation_token() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // No token, and no field carrying one: accepted.
+    assert_eq!(
+        post_json(&router, REBOOT_PATH, "", Some(&cookie))
+            .await
+            .status(),
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        post_json(
+            &router,
+            TRANSIENT_PATH,
+            &json!({ "password": "hunter2secret" }).to_string(),
+            Some(&cookie),
+        )
+        .await
+        .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(fake.transient_password_calls(), 1);
+
+    // The form path is untouched by that reduction: the same request without
+    // the token is still refused there.
+    let refused = post_form(
+        &router,
+        "/ssh/password",
+        "password=hunter2secret",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let refused = post_form(&router, "/power/reboot", "", Some(&cookie)).await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// The transient password reaches mosd, is written into no setting, and is
+/// nowhere in the tree afterwards — the API half of the property the form path
+/// already holds.
+#[tokio::test]
+async fn the_transient_password_route_sets_it_and_writes_no_setting() {
+    const PASSWORD: &str = "correct horse battery";
+
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        TRANSIENT_PATH,
+        &json!({ "password": PASSWORD }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
+    assert_eq!(body_string(response).await, "");
+    assert_eq!(fake.transient_password_calls(), 1);
+
+    assert!(
+        fake.set_paths().is_empty(),
+        "a transient password must write no setting, got {:?}",
+        fake.set_paths()
+    );
+    let tree = fake.get_settings("").await.unwrap().to_string();
+    assert!(
+        !tree.contains(PASSWORD),
+        "the password must not appear in the settings tree"
+    );
+}
+
+/// **The same byte bounds as the form path, because it is the same function.**
+///
+/// `validate_transient_password` is called by both surfaces, so this asserts
+/// the boundaries in both directions and then asserts the form path agrees on
+/// the very same inputs. Two copies of the rule could disagree; one cannot, and
+/// this is the test that would fail if a second copy ever appeared.
+///
+/// 72 is bcrypt's limit, which is why the upper bound exists at all: a longer
+/// password would be silently shortened to its first 72 bytes.
+#[tokio::test]
+async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (password, accepted) in [
+        ("a".repeat(7), false),
+        ("a".repeat(8), true),
+        ("a".repeat(72), true),
+        ("a".repeat(73), false),
+        ("hunter2\0secret".to_string(), false),
+        ("hunter2\nsecret".to_string(), false),
+        ("hunter2\rsecret".to_string(), false),
+    ] {
+        let before = fake.transient_password_calls();
+        let response = post_json(
+            &router,
+            TRANSIENT_PATH,
+            &json!({ "password": password }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        let context = format!("{} bytes", password.len());
+        if accepted {
+            assert_eq!(response.status(), StatusCode::NO_CONTENT, "{context}");
+            assert_eq!(fake.transient_password_calls(), before + 1, "{context}");
+        } else {
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{context}"
+            );
+            assert_api_headers(&response, &context);
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "validation_failed", "{context}");
+            // apid's own validator refused it, so the envelope says apid and
+            // names no dot-path: nothing under `settings` was at fault.
+            assert_eq!(error["source"], "apid", "{context}");
+            assert!(error.get("path").is_none(), "{context}: {error}");
+            assert_eq!(fake.transient_password_calls(), before, "{context}");
+        }
+
+        // The form path draws the boundary in the same place, on the same
+        // input: one rule, two surfaces.
+        let form = post_form(
+            &router,
+            "/ssh/password",
+            &format!(
+                "confirm=set-transient-password&password={}",
+                urlencode(&password)
+            ),
+            Some(&cookie),
+        )
+        .await;
+        let expected = if accepted {
+            StatusCode::SEE_OTHER
+        } else {
+            StatusCode::UNPROCESSABLE_ENTITY
+        };
+        assert_eq!(form.status(), expected, "form path: {context}");
+    }
+}
+
+/// **A rejected password never appears in the response.**
+///
+/// The validator's three messages state the bound, the reason for the bound, or
+/// the forbidden bytes, and none of them interpolates the password — so the
+/// message can be passed through verbatim. This asserts the property the
+/// milestone requires rather than the mechanism that provides it: the whole
+/// response, headers and body, is searched for the value that was sent.
+///
+/// The passwords below are distinctive strings rather than runs of one
+/// character, so a substring match cannot pass by accident.
+#[tokio::test]
+async fn a_rejected_transient_password_is_never_echoed() {
+    let (router, _) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for password in [
+        "shortpw",
+        "quagga-vestibule-marzipan-cornice-thimble-quixotic-basalt-lantern-ferrule",
+        "quagga\nvestibule",
+    ] {
+        let response = post_json(
+            &router,
+            TRANSIENT_PATH,
+            &json!({ "password": password }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{password}"
+        );
+        let headers = format!("{:?}", response.headers());
+        let body = body_string(response).await;
+        assert!(!body.contains(password), "the body echoed it: {body}");
+        assert!(!headers.contains(password), "a header echoed it: {headers}");
+        // Nor a distinctive fragment of it: a truncated echo is still an echo.
+        for fragment in ["quagga", "shortpw"] {
+            if password.contains(fragment) {
+                assert!(
+                    !body.contains(fragment),
+                    "the body echoed `{fragment}`: {body}"
+                );
+            }
+        }
+        // It is still a usable §2.4 envelope: the caller has to learn what the
+        // bound was without being told what it sent.
+        let error: serde_json::Value = serde_json::from_str(&body).expect("§2.4 envelope");
+        assert!(error["error"]["message"].as_str().unwrap().contains("bytes"));
+    }
+}
+
+/// A body that is not this shape is §2.4's `request_invalid` at 400, and the
+/// rejection text describes the shape rather than the value — so a malformed
+/// body carrying a password does not put it in the response either.
+#[tokio::test]
+async fn a_malformed_transient_password_body_is_refused_at_400() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for body in [
+        "not json at all",
+        r#"{"password": 7}"#,
+        r#"{"passphrase": "hunter2secret"}"#,
+        "{}",
+    ] {
+        let response = post_json(&router, TRANSIENT_PATH, body, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{body}");
+        assert_api_headers(&response, body);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "request_invalid", "{body}");
+        assert_eq!(error["source"], "apid", "{body}");
+    }
+    assert_eq!(fake.transient_password_calls(), 0);
+    assert!(fake.set_paths().is_empty());
+}
+
+/// All three take a bearer token, per Amendment 1's dual-credential reading:
+/// `ApiSession`, so a cookie works too and the bearer is what a script uses.
+#[tokio::test]
+async fn the_action_routes_take_a_bearer_token() {
+    let (tree, _) = token_tree("hunter2secret", 0);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "deploy").await;
+
+    let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, r#"{"password":"hunter2secret"}"#).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(fake.transient_password_calls(), 1);
+
+    let response = bearer(&router, "POST", REBOOT_PATH, &token).await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(fake.await_power_calls(1).await, vec!["reboot".to_string()]);
+}
+
+/// No credential, no action. The 401 is §2.4's envelope and the machine stays
+/// up: this is the one route family where a missing check is unrecoverable.
+#[tokio::test]
+async fn an_unauthenticated_action_post_is_refused_and_does_not_act() {
+    for path in [REBOOT_PATH, POWEROFF_PATH, TRANSIENT_PATH] {
+        let (router, fake) = test_app(ssh_tree(json!([])));
+        let response = post_json(&router, path, r#"{"password":"hunter2secret"}"#, None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_api_headers(&response, path);
+        assert_eq!(envelope(response).await["code"], "not_authenticated", "{path}");
+        // Two calls' worth of deadline, then assert nothing arrived.
+        assert!(
+            fake.await_power_calls(1).await.is_empty(),
+            "{path} acted without a credential"
+        );
+        assert_eq!(fake.transient_password_calls(), 0, "{path}");
+    }
+}
+
+/// A failed transient-password call is §2.4's envelope with **no `path`
+/// member**: the route writes no setting, so there is no dot-path at fault.
+///
+/// This is the clause that made `bus_api_error` take an `Option`. Asserted
+/// because the alternative — passing a plausible-looking dot-path such as
+/// `access.ssh` — would name something that was not at fault, and an empty
+/// string would put `"path": ""` on the wire.
+#[tokio::test]
+async fn a_failed_transient_password_names_no_dot_path() {
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.Failed")).await;
+
+    let response = post_json(
+        &router,
+        TRANSIENT_PATH,
+        &json!({ "password": "hunter2secret" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_api_headers(&response, TRANSIENT_PATH);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "mosd_failed");
+    assert_eq!(error["source"], "mosd");
+    assert!(error.get("path").is_none(), "{error}");
+
+    // A route that does name one still names it: the member is optional, not
+    // removed.
+    let response = post_json(
+        &router,
+        "/api/v1/settings/hostname",
+        r#""mos""#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(envelope(response).await["path"], "hostname");
+}
+
+/// The document describes all three, each `POST`-only: a documented `GET`
+/// would be a contract for a route that does not exist, and on these three
+/// paths it would be a contract to power the appliance off by following a link.
+#[test]
+fn the_openapi_document_covers_the_three_actions() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    for (path, statuses) in [
+        (REBOOT_PATH, ["202", "401", "405"].as_slice()),
+        (POWEROFF_PATH, ["202", "401", "405"].as_slice()),
+        (
+            TRANSIENT_PATH,
+            ["204", "400", "401", "422", "500", "503", "405"].as_slice(),
+        ),
+    ] {
+        let route = &document["paths"][path];
+        assert!(route["post"].is_object(), "{path} is missing its POST");
+        for status in statuses {
+            assert!(
+                route["post"]["responses"][status].is_object(),
+                "{path} is missing its {status}: {document}"
+            );
+        }
+        for method in ["get", "head", "put", "delete", "patch"] {
+            assert!(
+                route[method].is_null(),
+                "{path} must declare no {method}: {document}"
+            );
+        }
+    }
+
+    // The one request body among the three carries exactly one member.
+    let properties = &document["components"]["schemas"]["TransientRootPasswordRequest"]
+        ["properties"];
+    assert_eq!(
+        properties.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["password"],
+        "{document}"
+    );
 }
