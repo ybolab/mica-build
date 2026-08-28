@@ -114,7 +114,17 @@ fi
 # are unreachable. systemd.journald.forward_to_console=1 puts them on the
 # serial line.
 if [ -n "${MOS_QEMU_APPEND:-}" ]; then
-    esp_off=$(( BOOT_A_START_MIB * 1048576 ))
+    # ESP_START_MIB, not BOOT_A_START_MIB. The two are different partitions on
+    # this board and only one of them holds a grub.cfg: the ESP (partition 1, at
+    # 1 MiB) carries EFI/mos/grub.cfg and EFI/mos/grubenv, while BOOT-A
+    # (partition 2, at 65 MiB) carries vmlinuz, initrd.img and cmdline.cfg at its
+    # FAT root and has no EFI directory at all. Measured against
+    # x64-mos-v2-latest.img, 2026-08-28. Reading the boot slot here made mcopy
+    # fail with `File "::/EFI/mos/grub.cfg" not found`, which took the whole
+    # prepare down -- and since the apid-api harness always sets MOS_QEMU_APPEND
+    # (its readiness signal is the journald line the append produces), that
+    # failure was unconditional.
+    esp_off=$(( ESP_START_MIB * 1048576 ))
     docker run --rm -v "${RUN_DIR}:/w" -e OFF="${esp_off}" -e APPEND="${MOS_QEMU_APPEND}" \
         "${QEMU_IMAGE}" bash -c '
             set -eu
