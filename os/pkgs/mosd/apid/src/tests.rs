@@ -337,15 +337,113 @@ async fn network_post_writes_static_variant() {
     );
 }
 
-/// A dotted interface name (the RFCT-135 VLAN case) is written as a quoted
-/// segment, so the daemon sees one key and not two.
+/// The RFCT-135 reproduction, end to end: the form accepts `eth0.100`, the
+/// write reaches the single key `eth0.100`, and the pane reads it back.
+///
+/// The write path is quoted, so `split_path` yields two segments and not
+/// three; the value the daemon deserializes is an `IfaceSettings` and not an
+/// `IfaceSettings` carrying an unknown field `100`, which is what
+/// `deny_unknown_fields` used to refuse.
 #[tokio::test]
 async fn network_post_quotes_a_dotted_iface_name() {
     let (router, fake) = test_app(configured_tree("hunter2secret"));
     let cookie = login(&router, "hunter2secret").await;
     let response = post_form(&router, "/network", "iface=eth0.100&dhcp=on", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/network?saved=1");
     assert_eq!(fake.set_paths(), vec![r#"network."eth0.100""#.to_string()]);
+
+    // One key, spelled whole: not `"eth0` and `100"`, and not `eth0` with a
+    // field `100`.
+    assert_eq!(
+        fake.get_settings("network").await.unwrap(),
+        json!({ "eth0.100": { "dhcp": true } })
+    );
+    // Addressable by the path the write used.
+    assert_eq!(
+        fake.get_settings(r#"network."eth0.100".dhcp"#).await.unwrap(),
+        json!(true)
+    );
+
+    // And the pane renders the entry it just wrote rather than failing to
+    // parse the map on the way back out.
+    let page = body_string(get(&router, "/network", Some(&cookie)).await).await;
+    assert!(page.contains("eth0.100"), "{page}");
+}
+
+/// The path apid builds for a dotted name is a path the real settings model
+/// accepts — the half of RFCT-135 that lived below the fake backend.
+///
+/// `FakeSettings` answers for the bus, not for `mosd_settings`; this drives
+/// the string apid actually sends into [`mosd_settings::Settings`], whose
+/// `IfaceSettings` carries `deny_unknown_fields`, and records the unquoted
+/// spelling the task filed as the failure it still is.
+#[test]
+fn the_dotted_iface_path_apid_builds_is_accepted_by_the_settings_model() {
+    let value = json!({ "dhcp": true });
+
+    let mut settings = mosd_settings::Settings::default();
+    settings.set(r#"network."eth0.100""#, value.clone()).unwrap();
+    assert_eq!(
+        settings.network.keys().collect::<Vec<_>>(),
+        vec!["eth0.100"]
+    );
+    assert!(settings.network["eth0.100"].dhcp);
+
+    // The spelling RFCT-135 recorded: three segments, so `100` is offered as a
+    // field of `IfaceSettings` and refused.
+    let err = mosd_settings::Settings::default().set("network.eth0.100", value);
+    assert!(
+        matches!(&err, Err(mosd_settings::SettingsError::Validation { message, .. }) if message.contains("unknown field `100`")),
+        "{err:?}"
+    );
+}
+
+/// A name apid refuses is a name no path has to spell.
+///
+/// `quote_path_segment` returns a segment containing `"` quoted anyway, so a
+/// path built from one is malformed rather than addressing some other key.
+/// That is a backstop, not the guard: `valid_iface_name` admits only letters,
+/// digits, `.`, `_` and `-`, so `"` never reaches the path builder from the
+/// form, the typed route, or the wizard.
+#[tokio::test]
+async fn network_post_refuses_a_quote_in_an_iface_name() {
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+    for body in ["iface=eth%220&dhcp=on", "iface=%22eth0%22&dhcp=on"] {
+        let response = post_form(&router, "/network", body, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+    }
+    let response = bearer_json(
+        &router,
+        "PUT",
+        "/api/v1/network/eth%220",
+        &token,
+        r#"{"dhcp":true}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(fake.set_paths().is_empty(), "no write on a name with a quote");
+}
+
+/// A dot that is not a VLAN spelling is still a legal name and still gets one
+/// key: the rule is about the character, not about the convention.
+#[tokio::test]
+async fn network_post_quotes_any_dotted_name_not_only_a_vlan() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = post_form(&router, "/network", "iface=a.b.c&dhcp=on", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(fake.set_paths(), vec![r#"network."a.b.c""#.to_string()]);
+    assert_eq!(
+        fake.get_settings("network").await.unwrap(),
+        json!({ "a.b.c": { "dhcp": true } })
+    );
 }
 
 #[tokio::test]
