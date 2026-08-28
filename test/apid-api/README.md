@@ -35,6 +35,7 @@ invocation and the phases hand state to each other in a fixed order:
 | `04-readonly` | every GET route, `/healthz`, the `/api` 404 envelope |
 | `05-mutate` | hostname, network, ssh, containers |
 | `05b-wireguard` | the M6 surface: typed pane forms per kind, the live `kind`/`publicKey` readers, the rotate-key action |
+| `05d-bearer` | the bearer credential end to end: the bootstrap mint, then read, write, collection, action and the token lifecycle over `Authorization: Bearer` alone, and 401 with no credential |
 | `06-backoff` | the login guard: global, doubling, persistent |
 | `07-reboot` | `POST`-only, the confirm token, taking the machine down |
 | `07b-postreboot` | what survived the power cycle, and what correctly did not |
