@@ -344,34 +344,34 @@ check_dockerfile_frontends
 # needs no host binfmt registration -- same name and same creation as the two
 # scripts above, so there is still only one way to get a cross-capable builder.
 BUILDER_ARGS=(--builder default)
+BUILDER_DRIVER=docker
 if [ "${MOS_BUILD_PLATFORM}" != "${HOST_PLATFORM}" ]; then
-    # And then the local-tag problem comes back, so it is refused here by name
-    # rather than surfacing as a connection error to port 80. Closing it needs
-    # the parent handed over as content rather than as a tag -- exporting each
-    # image with `--output type=oci` and passing it to its children as
-    # `--build-context <name>=oci-layout://<dir>` is the shape that works with a
-    # container builder -- which is a change to how every image in the table is
-    # published, not a flag.
-
-    # Recorded rather than worked around, because the thing it would buy is
-    # already bought: the per-architecture toolchain hashes do NOT need a cross
-    # build to be recorded (resolve_sha256 above computes them on the host), and
-    # no target in this repository cross-builds the builder images. What
-    # os/pkgs/podman/build.sh cross-builds is the podman components, FROM upstream
-    # references a container builder can resolve.
-    for row in "${IMAGES[@]}"; do
-        from_key="${row##*:}"
-        case "${!from_key-}" in
-        localhost/*)
-            echo "error: MOS_BUILD_PLATFORM=${MOS_BUILD_PLATFORM} is not the host ${HOST_PLATFORM}, so this build needs a docker-container builder -- and the '${row%%:*}' row is FROM ${from_key}=${!from_key}, a tag that exists only in the local docker image store, which that driver cannot read. It would fail resolving 'localhost' as a registry hostname. Note that the per-architecture toolchain hashes do NOT need a cross build to be recorded: os/build-env/build.sh resolves them on the host, because a tarball's sha256 does not depend on the machine that computes it" >&2
-            exit 1
-            ;;
-        esac
-    done
+    # And then the local-tag problem comes back. It used to be REFUSED here by
+    # name, on the grounds that closing it "is a change to how every image in
+    # the table is published, not a flag". That change has since been made and
+    # is not in this file: os/build-env/from.sh --contexts= exports an image the
+    # local store holds as an OCI layout and prints the --build-context that
+    # overrides the matching FROM, and os/pkgs/rauc/build.sh and
+    # os/pkgs/podman/build.sh are already fed that way. The rows below are fed
+    # the same way, in the build loop, because a row's parent is produced by an
+    # EARLIER ITERATION of that loop -- exporting up here would export whatever
+    # a previous run left tagged.
     echo "note: ${MOS_BUILD_PLATFORM} is not the host ${HOST_PLATFORM}; using docker-container builder 'mos-${PLATFORM_ARCH}'"
     docker buildx inspect "mos-${PLATFORM_ARCH}" >/dev/null 2>&1 ||
         docker buildx create --name "mos-${PLATFORM_ARCH}" --driver docker-container >/dev/null
     BUILDER_ARGS=(--builder "mos-${PLATFORM_ARCH}")
+
+    # Which driver it turned out to be decides whether a localhost/ base goes
+    # over as a tag or as a layout, so it is read off the builder rather than
+    # inferred from its name -- the same register os/pkgs/rauc/build.sh:95-102
+    # uses, and for the same reason: only the `docker` driver can resolve a tag
+    # that exists solely in the local image store.
+    builder_inspect="$(docker buildx inspect "mos-${PLATFORM_ARCH}" 2>/dev/null || true)"
+    BUILDER_DRIVER="$(printf '%s\n' "${builder_inspect}" | sed -n 's/^Driver:[[:space:]]*//p')"
+    [ -n "${BUILDER_DRIVER}" ] || {
+        echo "error: \`docker buildx inspect mos-${PLATFORM_ARCH}\` names no driver, so this build cannot tell whether that builder can resolve a localhost/mos-build-* tag or has to be handed the bases as OCI layouts. Either the builder does not exist or it is not running: \`docker buildx ls\` lists what does" >&2
+        exit 1
+    }
 fi
 
 # The table, checked before anything is built.
@@ -427,6 +427,19 @@ for row in "${IMAGES[@]}"; do
 done
 [ "${bad}" = 0 ] || exit 1
 
+# Scratch for the two things this loop needs off-image: the record copied out of
+# each built image to be read back, and the OCI layouts a container builder is
+# handed in place of a localhost/ tag. A temporary directory
+# rather than a path in the tree, for the reason os/pkgs/rauc/build.sh:143-145
+# gives about its OCI layouts: these files are a copy of what the image already
+# holds, and a copy that outlived the build would be a second source of truth
+# about what a builder image asserts.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "${SCRATCH}"' EXIT
+READBACK_DIR="${SCRATCH}/readback"
+CTX_DIR="${SCRATCH}/contexts"
+mkdir -p "${READBACK_DIR}" "${CTX_DIR}"
+
 # Build.
 for row in "${IMAGES[@]}"; do
     name="${row%%:*}"
@@ -461,9 +474,37 @@ for row in "${IMAGES[@]}"; do
     echo "  platform  ${MOS_BUILD_PLATFORM}"
     echo "  pins      $(grep -c . "${LOCK}") from images.env: $(tr '\n' ' ' <"${LOCK}" | sed 's/=[^ ]*//g')"
 
+    # A localhost/ base, handed to a builder that cannot read the local image
+    # store, goes over as content. This is exported HERE and not before the
+    # loop because ${from_value} is a tag the PREVIOUS iteration just wrote:
+    # the ordering check above proves the producing row comes earlier, and this
+    # is where "earlier" has actually happened. With the docker driver the tag
+    # resolves directly and nothing is exported -- copying the family to disk on
+    # every native build would change nothing about the result.
+    CTX_ARGS=()
+    if [ "${BUILDER_DRIVER}" != docker ]; then
+        case "${from_value}" in
+        localhost/*)
+            mapfile -t CTX_ARGS < <(bash "${HERE}/from.sh" --arch="${PLATFORM_ARCH}" \
+                --contexts="${CTX_DIR}" "${from_key}")
+            # mapfile cannot fail, so its status says nothing about the process
+            # inside the substitution; an empty array is what a refusal looks
+            # like from here, and an empty array would build the child against
+            # a FROM the builder resolves as a pull from a registry called
+            # 'localhost'.
+            [ "${#CTX_ARGS[@]}" -eq 2 ] || {
+                echo "error: os/build-env/from.sh did not yield an OCI layout context for ${from_key}=${from_value} (see its message above); the '${name}' row would have built against a FROM the '${BUILDER_ARGS[1]}' builder resolves as a registry called 'localhost'" >&2
+                exit 1
+            }
+            echo "  context   ${CTX_ARGS[1]}"
+            ;;
+        esac
+    fi
+
     docker buildx build "${BUILDER_ARGS[@]}" \
         --platform "${MOS_BUILD_PLATFORM}" \
         --build-arg "MOS_BASE_IMAGE=${from_value}" \
+        ${CTX_ARGS[@]+"${CTX_ARGS[@]}"} \
         -f "${DOCKERFILE}" \
         -t "${TAG}" \
         --load \
@@ -485,9 +526,52 @@ for row in "${IMAGES[@]}"; do
     # check for that filename would be satisfied by the parent's record and
     # would prove exactly nothing about the child. Each image records its own,
     # and each is asked for its own.
-    recorded="$(docker run --rm --platform "${MOS_BUILD_PLATFORM}" --entrypoint /bin/sh "${TAG}" -c "cat /etc/mos-build/${name}.env 2>/dev/null || true")"
+    #
+    # It is read WITHOUT executing anything inside the image. The older form was
+    # `docker run --entrypoint /bin/sh "${TAG}" -c "cat ..."`, and a `cat` in a
+    # guest shell is still a guest binary: on a host with no arm64 registration
+    # in /proc/sys/fs/binfmt_misc it dies with `exec /bin/sh: exec format error`
+    # before the file is ever opened, which made this VERIFICATION, not the
+    # build, the thing that stopped `MOS_BUILD_PLATFORM=linux/arm64`. Reading a
+    # file out of a container's filesystem executes nothing, and the daemon does
+    # it for an architecture it cannot run -- measured on this host, where
+    # `docker create --platform linux/arm64` + `docker cp` returned the file out
+    # of an arm64 image while `docker run` on that same image returned the exec
+    # format error above.
+    #
+    # --platform keeps the assertion it always carried. Under the containerd
+    # image store a tag that does not hold ${MOS_BUILD_PLATFORM} fails this
+    # create as `not found`, exactly as it failed the run.
+    #
+    # /bin/sh is the created container's command and is never executed; a
+    # command is named only because `docker create` wants one when the image
+    # carries no CMD.
+    cid="$(docker create --platform "${MOS_BUILD_PLATFORM}" "${TAG}" /bin/sh)"
+    envfile="${READBACK_DIR}/${name}.env"
+    cp_err="${READBACK_DIR}/${name}.cp-err"
+    : >"${envfile}"
+    cp_rc=0
+    docker cp "${cid}:/etc/mos-build/${name}.env" "${envfile}" 2>"${cp_err}" || cp_rc=$?
+    docker rm -f "${cid}" >/dev/null
+
+    # An absent path and a broken daemon leave `docker cp` with the same exit
+    # code, so they are told apart by what it SAID. A blanket `|| true` here --
+    # the shape the older line was careful to keep out of the host side, putting
+    # its `|| true` inside the guest so that only a missing file, and never a
+    # docker malfunction, could reach the check as empty output -- would report
+    # every failure as "the image carries no record", which is the one claim
+    # this check exists to make truthfully.
+    if [ "${cp_rc}" != 0 ]; then
+        if grep -c 'Could not find the file' "${cp_err}" >/dev/null; then
+            echo "error: ${TAG} carries no /etc/mos-build/${name}.env, so what it asserted at build time cannot be read back out of it. An image that inherits its parent's record and writes none of its own is asserting nothing under its own name" >&2
+        else
+            echo "error: reading /etc/mos-build/${name}.env out of ${TAG} failed for a reason that is not an absent file, so whether that image carries its own record is unknown: $(tr '\n' ' ' <"${cp_err}")" >&2
+        fi
+        exit 1
+    fi
+    recorded="$(cat "${envfile}")"
     [ -n "${recorded}" ] || {
-        echo "error: ${TAG} carries no /etc/mos-build/${name}.env, so what it asserted at build time cannot be read back out of it. An image that inherits its parent's record and writes none of its own is asserting nothing under its own name" >&2
+        echo "error: ${TAG} carries /etc/mos-build/${name}.env but it is EMPTY, so what it asserted at build time cannot be read back out of it. An image whose record is a zero-byte file is asserting nothing under its own name" >&2
         exit 1
     }
     echo "  tagged    ${TAG}"

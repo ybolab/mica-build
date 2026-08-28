@@ -195,7 +195,7 @@ network=host` and a `--buildkitd-config` file -- and neither of the two
 `docker buildx create --name mos-arm64 --driver docker-container`
 (`os/tests/quadlet-doc-test.sh:83-85`) and
 `docker buildx create --name "mos-${PLATFORM_ARCH}" --driver docker-container`
-(`os/build-env/build.sh:373`). A registry
+(`os/build-env/build.sh:361`). A registry
 would therefore have to change every place a builder is made, and would leave a
 long-lived container holding image state that `os/build-env/images.env` exists
 to keep in the tree. An OCI layout needs no daemon, no port, no builder option
@@ -247,6 +247,47 @@ exists, and whoever owns that should expect it.
 
 ## 5. The wall: no arm64 mos-build family, and none producible here
 
+**Dated note (RFCT-234, 2026-08-28): the second half of that heading is wrong,
+and the family has since been produced on this host.** Everything below is the
+2026-08-28 record of what ran in THIS task and stays as it was written; the
+measurements in it were not wrong, the conclusion drawn from one of them was.
+
+What that conclusion rested on is the sentence further down: *"`os/build-env/build.sh` verifies every image it produces by reading the record
+back out of the built image with `docker run --platform "${MOS_BUILD_PLATFORM}"`"*.
+That is true of the line as it stood, and the `exec format error` above is what
+it did here. What does not follow is that the STEP needs host binfmt: it needs
+the FILE, and reading a file out of an image executes nothing. Measured on this
+same host, same day, on one arm64 image:
+
+```console
+$ docker run --rm --platform linux/arm64 localhost/probe-arm64:syk8eqzw uname -m
+exec /bin/uname: exec format error
+$ cid="$(docker create --platform linux/arm64 localhost/probe-arm64:syk8eqzw /bin/sh)"
+$ docker cp "$cid:/arch.txt" - | tar -xO
+aarch64
+```
+
+`/proc/sys/fs/binfmt_misc/` was empty for both. So the blocker was a mechanism
+choice in this repository, not a missing host capability. RFCT-234 changed that
+readback to a create-and-copy pair --
+`cid="$(docker create --platform "${MOS_BUILD_PLATFORM}" "${TAG}" /bin/sh)"`
+(`os/build-env/build.sh:549`) and
+`docker cp "${cid}:/etc/mos-build/${name}.env" "${envfile}" 2>"${cp_err}" || cp_rc=$?`
+(`os/build-env/build.sh:554`) -- fed the `localhost/` rows the OCI layouts this
+task's `--contexts` mode produces --
+`mapfile -t CTX_ARGS < <(bash "${HERE}/from.sh" --arch="${PLATFORM_ARCH}" \`
+(`os/build-env/build.sh:488`) -- and
+`MOS_BUILD_PLATFORM=linux/arm64 make build-env` then built all four images --
+`MOS_BUILD_ARCH=arm64` read back out of each of them on this host.
+`MOS_BOARD=cx3576 make os-rauc` followed it to `rauc v1.13 for arm64: 470008
+bytes, 7 shared libraries`.
+
+Of the three items pre-declared at the end of this section, item 1's premise
+(*"On a host with arm64 in `/proc/sys/fs/binfmt_misc/`"*) turned out not to be
+needed and its body is done; item 2 was right, and RFCT-234 measured what it
+costs `make podman`; item 3's first half is done and its hardware half is not.
+docs/task/RFCT-234.md carries all of it.
+
 `MOS_BOARD=cx3576 bash os/pkgs/rauc/build.sh` no longer stops at the builder
 refusal. It stops later, for a different and named reason:
 
@@ -279,7 +320,10 @@ that directory empty, and it is still empty.
 That is why `os/build-env/build.sh` was left untouched. Its cross-build refusal
 sits under a note that already names this mechanism --
 `and passing it to its children as`
-(`os/build-env/build.sh:351`) -- and is now over-stated as to its REASON: the
+(line 351 of `os/build-env/build.sh` as it stood at 08a5bae; RFCT-234 rewrote
+that comment when it wired the rows, so the line anchor is gone and the quote is
+kept as the record of what was read here) -- and is now over-stated as to its
+REASON: the
 localhost rows could be fed the way rauc and podman are fed. But rewiring it
 here would ship code no run on this host can exercise: the `base` row's readback fails before the first `localhost/` row is
 ever reached, so the wiring for `c`, `go` and `rust` would go in unmeasured.
@@ -342,6 +386,8 @@ zero.
   follow-on owns both, and section 5 states what has to exist first.
 - `os/rootfs/build-v2.sh`'s own builder logic. It is the file this change took
   its register from; it was read and not edited.
-- `os/build-env/build.sh`, for the reason section 5 gives.
+- `os/build-env/build.sh`, for the reason section 5 gives. **Dated note
+  (RFCT-234, 2026-08-28):** that reason did not hold, and RFCT-234 edited this
+  file; section 5's note says what it changed.
 - `os/build-env/images.env`. No pin moved, and no key was added: the
   `--contexts` mode resolves the same `LOCAL_` keys the pair form already did.
