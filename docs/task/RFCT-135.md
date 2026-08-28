@@ -111,16 +111,25 @@ about the character and not the convention:
 `network_post_quotes_any_dotted_name_not_only_a_vlan`
 (`os/pkgs/mosd/apid/src/tests.rs:441-454`).
 
-### The reproduction, now carried by tests
+### The hole in the harness this uncovered
 
-The route-level test that already existed asserted only the *spelling* of the
-write path, and could not have caught a regression in what the write lands on:
-`FakeSettings` split every path on `.` unconditionally, so a VLAN write would
-have gone to the two keys `"eth0` and `100"` and the test would still have
-passed. The fake now splits with the store's own grammar —
-`mosd_settings::path_segments`
-(`os/pkgs/mosd/apid/src/settings_api.rs:138-147`) — which is what makes an
-end-to-end assertion possible:
+**The route test that guarded this could not have caught a regression.** It
+asserted only the *spelling* of the write path — that apid sent the string
+`network."eth0.100"` — and never what the write landed on. It could not have,
+because `FakeSettings`, the in-memory backend every apid route test runs
+against, split every path on `.` unconditionally. Fed the quoted path, the fake
+created the two keys `"eth0` and `100"`, and the test passed anyway. Any
+regression that broke the quoting would have been invisible to it, and so would
+any other route whose write path carries a quoted segment.
+
+The fake now splits with the store's own grammar, `mosd_settings::path_segments`
+(`os/pkgs/mosd/apid/src/settings_api.rs:138-147`), so a route test asserting
+"the write arrived" is now asserting it against the real path syntax. That
+change is what makes the end-to-end assertion below possible; it also re-runs
+all 350 other apid route tests against the stricter fake, which none of them
+failed.
+
+### The reproduction, now carried by tests
 
 - `network_post_quotes_a_dotted_iface_name`
   (`os/pkgs/mosd/apid/src/tests.rs:340-374`) — POST `iface=eth0.100&dhcp=on`,
