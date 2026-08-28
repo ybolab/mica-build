@@ -179,6 +179,18 @@ The twelve new tests are this check's. `--verify` against a real image is not
 run here: no assembled image exists on this host, and building one is out of
 this task's scope.
 
+**The negative fixtures were DRIVEN, not read** — two sentinel weakenings, each
+reverted after:
+
+| sentinel | result |
+|---|---|
+| `stateOf` made unable to return `'newer'` (the check cannot fail) | **6 pass / 6 fail**, `rc=1` |
+| the inputs rewritten as the cx3576/arm64 literals — PLAN-013 M1.1's exact defect | **2 pass / 10 fail**, `rc=1`, and the cross-board case fails by name: *"the x64 run PASSES though cx3576/arm64 artefacts are newer than the image ... Expected: "pass" Received: "fail""* |
+
+The second is the one that matters: the milestone's test is red under the
+milestone's defect, so it guards that defect and not merely some defect.
+Restored, `12 pass / 0 fail`, `rc=0`.
+
 ### Residue
 
 - `docs/plan/PLAN-013.md`'s Amendment 1 still lists this as *"filed as
