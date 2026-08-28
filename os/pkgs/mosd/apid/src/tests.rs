@@ -7783,8 +7783,7 @@ async fn a_vlan_parent_that_is_not_declared_is_422_and_writes_nothing() {
     let response = put_json(
         &router,
         &iface_url("vlan9"),
-        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } })
-            .to_string(),
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } }).to_string(),
         Some(&cookie),
     )
     .await;
@@ -7856,10 +7855,9 @@ async fn a_bridge_port_that_carries_addressing_is_422_and_writes_nothing() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
     assert!(
-        error["message"]
-            .as_str()
-            .unwrap()
-            .contains("network.eth1 is a port of bridge br0 and must not carry addressing of its own"),
+        error["message"].as_str().unwrap().contains(
+            "network.eth1 is a port of bridge br0 and must not carry addressing of its own"
+        ),
         "{error}"
     );
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
@@ -8098,7 +8096,10 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     // JSON is 400.
     for (body, status) in [
         ("[]", StatusCode::UNPROCESSABLE_ENTITY),
-        ("{\"eth0\":{\"nosuchfield\":1}}", StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            "{\"eth0\":{\"nosuchfield\":1}}",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
         ("{", StatusCode::BAD_REQUEST),
     ] {
         let response = put_json(&router, NETWORK_MAP_PATH, body, Some(&cookie)).await;
@@ -8129,16 +8130,12 @@ async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
     let response = put_json(
         &router,
         &iface_url("wg.9"),
-        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } })
-            .to_string(),
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } }).to_string(),
         Some(&cookie),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(
-        envelope(response).await["path"],
-        json!(r#"network."wg.9""#)
-    );
+    assert_eq!(envelope(response).await["path"], json!(r#"network."wg.9""#));
 }
 
 /// M4's refusal, verified rather than duplicated: a raw settings write under
@@ -8157,7 +8154,10 @@ async fn the_settings_passthrough_under_network_is_409_and_names_the_typed_route
         let error = envelope(response).await;
         assert_eq!(error["code"], "settings_read_only", "{path}");
         assert!(
-            error["message"].as_str().unwrap().contains("/api/v1/network"),
+            error["message"]
+                .as_str()
+                .unwrap()
+                .contains("/api/v1/network"),
             "{path} did not name the typed route: {error}"
         );
     }
@@ -8252,7 +8252,9 @@ async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_
 
     // The same 404 on the other two operations of the collection.
     assert_eq!(
-        get(&router, &peers_url("wg9"), Some(&cookie)).await.status(),
+        get(&router, &peers_url("wg9"), Some(&cookie))
+            .await
+            .status(),
         StatusCode::NOT_FOUND
     );
     assert_eq!(
@@ -8282,7 +8284,11 @@ async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
         ("DELETE", peer_url("eth0", PEER_KEY)),
     ] {
         let response = request(&router, method, &path, Some(&cookie), None).await;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY, "{path}");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
         let error = envelope(response).await;
         assert_eq!(error["code"], "validation_failed", "{path}");
         assert!(
@@ -8475,8 +8481,13 @@ async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
             "is not host:port",
         ),
     ] {
-        let response = post_json(&router, &peers_url("wg0"), &body.to_string(), Some(&cookie)).await;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let response =
+            post_json(&router, &peers_url("wg0"), &body.to_string(), Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
         let error = envelope(response).await;
         assert!(
             error["message"].as_str().unwrap().contains(fragment),
@@ -8691,7 +8702,9 @@ fn the_openapi_document_covers_the_network_cluster() {
         (
             "/api/v1/network/{iface}/peers",
             "post",
-            vec!["201", "400", "401", "404", "409", "422", "500", "503", "405"],
+            vec![
+                "201", "400", "401", "404", "409", "422", "500", "503", "405",
+            ],
         ),
         (
             "/api/v1/network/{iface}/peers/{publicKey}",
@@ -8711,7 +8724,10 @@ fn the_openapi_document_covers_the_network_cluster() {
     // the reads are `GET /api/v1/settings/network`. A documented route that
     // does not exist is a contract nothing serves.
     assert!(paths["/api/v1/network"]["get"].is_null(), "{document}");
-    assert!(paths["/api/v1/network/{iface}"]["get"].is_null(), "{document}");
+    assert!(
+        paths["/api/v1/network/{iface}"]["get"].is_null(),
+        "{document}"
+    );
 
     // And the rotate route gained its 404, which is the whole of the apid-side
     // change for that correction.

@@ -895,9 +895,7 @@ impl MosdService {
             // store's errors are written that way, and this adds no value of
             // its own to them.
             .map_err(|err| {
-                SettingsFault::Fdo(fdo::Error::Failed(format!(
-                    "rotate wireguard key: {err:#}"
-                )))
+                SettingsFault::Fdo(fdo::Error::Failed(format!("rotate wireguard key: {err:#}")))
             })?;
         drop(inner);
         self.apply_all().await;
@@ -1354,7 +1352,10 @@ mod tests {
         let not_declared = service.rotate_wireguard_key("wg9").await.unwrap_err();
 
         let message = not_a_tunnel.description().unwrap_or_default();
-        assert!(message.contains("is not a WireGuard interface"), "{message}");
+        assert!(
+            message.contains("is not a WireGuard interface"),
+            "{message}"
+        );
         assert_eq!(
             not_a_tunnel.name().as_str(),
             "org.freedesktop.DBus.Error.InvalidArgs",

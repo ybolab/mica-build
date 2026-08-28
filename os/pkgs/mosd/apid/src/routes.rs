@@ -22,13 +22,14 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-// `delete` is imported on its own line rather than folded into the routing
-// import below. `docs/task/RFCT-210.md` quotes that line verbatim as the
-// measurement behind its central negative -- apid had never served a write
-// verb -- and a record of what was true is not edited by the change that makes
-// it untrue.
+// `delete` and `put` are imported on their own lines rather than folded into
+// the routing import below. `docs/task/RFCT-210.md` quotes that line verbatim
+// as the measurement behind its central negative -- apid had never served a
+// write verb -- and a record of what was true is not edited by the change that
+// makes it untrue.
 use axum::routing::delete;
-use axum::routing::{any, get, post, put};
+use axum::routing::put;
+use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
@@ -2303,7 +2304,10 @@ pub(crate) struct WireguardPeerEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     endpoint: Option<String>,
     /// Keepalive interval in seconds, for a peer behind NAT.
-    #[serde(rename = "persistentKeepalive", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "persistentKeepalive",
+        skip_serializing_if = "Option::is_none"
+    )]
     persistent_keepalive: Option<u16>,
 }
 
@@ -2880,10 +2884,7 @@ pub(crate) async fn api_v1_peers_remove(
         Ok(peers) => peers,
         Err(response) => return *response,
     };
-    let Some(index) = peers
-        .iter()
-        .position(|peer| peer.public_key == public_key)
-    else {
+    let Some(index) = peers.iter().position(|peer| peer.public_key == public_key) else {
         return item_not_found(&path, &public_key);
     };
     peers.remove(index);
