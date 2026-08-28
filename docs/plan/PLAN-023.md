@@ -1,6 +1,7 @@
 # PLAN-023 API phase 2: bearer tokens, the write surface, and the health route
 
-- **status**: approved (design-first for the write surface)
+- **status**: completed
+- **completedAt**: 2026-08-28 19:35
 - **createdAt**: 2026-08-28 07:30
 - **approvedAt**: 2026-08-28 07:30
 - **relatedTask**: RFCT-210..219 reserved; RFCT-240..246 additionally reserved (Amendment 2) for M4..M9 — the original block was consumed by M1-M3's split, the two closeout tasks and the user-filed RFCT-216, and the adjacent ranges 220..229 and 230..239 belong to PLAN-024 and PLAN-025
@@ -65,3 +66,21 @@ the design of record; sections 4-9 remain unmeasured (RFCT-207's residue).
    unconditionally as RFCT-216 (pending, deadline: before the first
    ceremony's one-year expiry); options C/D remain reachable later since the
    rotation work is prerequisite to both.
+
+## Close (2026-08-28)
+
+Merged to main at the campaign's final merge (bkd/vu5b6kk0, 145 commits).
+M1-M9 all shipped: the ratified write-surface design, bearer tokens end to
+end (access.apiTokens on schema v8, SHA-256 with constant-time compare, the
+token routes, the /builtin/tokens bootstrap), GET /api/v1/health with the
+405 envelope, scalar settings writes with the redaction-sentinel refusal,
+the SSH-key and WiFi-network collections, the typed network cluster with
+WireGuard peers and the rotate-key 404, the three action verbs, POST
+/api/v1/setup, and the cookie cutover that makes api.md section 3.2 true.
+The cutover was proved by a run: 378/378 across two boots on an image
+rebuilt from the merged tree, suite rc=0. Closeout tasks RFCT-214 (citation
+census), RFCT-246 (bearer end-to-end phase) and RFCT-215 (api.md section 1
+re-measured) landed with the branch. Six measured code defects were
+deliberately left unfixed and are pinned with their measurements in
+docs/task/RFCT-215.md section 6; routing them needs a successor plan.
+
