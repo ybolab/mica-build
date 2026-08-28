@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use reqwest::StatusCode;
-use reqwest::header::{ALLOW, LOCATION, SET_COOKIE};
+use reqwest::header::{ALLOW, CONTENT_TYPE, LOCATION, SET_COOKIE};
 
 /// Kills the wrapped child on drop, including on panic.
 struct ChildGuard(Child);
@@ -308,7 +308,8 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     // neither is available to this harness.
     let response = admin
         .put(format!("{https_base}/api/v1/settings/hostname"))
-        .json(&"e2e-host3")
+        .header(CONTENT_TYPE, "application/json")
+        .body("\"e2e-host3\"")
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
@@ -320,7 +321,8 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     // untouched.
     let response = admin
         .put(format!("{https_base}/api/v1/settings/network.eth9"))
-        .json(&serde_json::json!({ "dhcp": true }))
+        .header(CONTENT_TYPE, "application/json")
+        .body(r#"{"dhcp": true}"#)
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
