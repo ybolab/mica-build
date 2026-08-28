@@ -474,6 +474,243 @@
         }
       }
     },
+    "/api/v1/ssh/authorized-keys": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Every authorized key this device holds, with the fingerprint that removes\neach one.",
+        "operationId": "api_v1_ssh_keys_list",
+        "responses": {
+          "200": {
+            "description": "The stored keys, each with the fingerprint that is its `DELETE` path segment, and the notice every client of this collection is told",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizedKeyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Authorize one SSH public key.",
+        "description": "The line is handed to `parse_authorized_key` exactly as submitted, which is\nthe same call the pane makes and for the same reason nothing is trimmed\nfirst: a leading or trailing space is one of the things that parser exists\nto reject, and trimming here would accept a line mosd would not.\n\n**Every authorized key is a root key**, which is why the answer carries\n`notice` and not only the entry. `AuthorizedKeysFile` is `%u`-expanded over\none shared list, so a key added by a caller who expected to be granting an\nunprivileged shell grants root.",
+        "operationId": "api_v1_ssh_keys_add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAuthorizedKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The key was authorized; the body carries it canonicalised, with its fingerprint and the notice",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedAuthorizedKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON, or not this shape (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse -- a duplicate key, or more keys than the tree holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ssh/authorized-keys/{fingerprint}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Remove one authorized key, identified by its fingerprint.",
+        "description": "**The fingerprint and nothing else**, unlike [`ssh_key_remove`], which also\naccepts the exact canonical key text. That difference is the reason the two\nsurfaces answer differently, and `docs/task/RFCT-210.md` section 2.4 spends\na paragraph on it: on the form the submitted string is as likely mistyped\nas absent, which is the re-submit condition 422 means there; here the\nidentifier is a path segment with one interpretation, and a segment that\nnames no key means this URL names no resource.\n\nSo an unmatched fingerprint is **404** here and 422 on the pane, on the same\ncondition, deliberately. The paired tests\n`an_absent_key_fingerprint_is_404_where_the_pane_is_422` and\n`the_ssh_pane_answers_422_where_the_api_answers_404` name each other so the\nsplit cannot be read as drift.",
+        "operationId": "api_v1_ssh_keys_remove",
+        "parameters": [
+          {
+            "name": "fingerprint",
+            "in": "path",
+            "description": "The key's fingerprint, as `GET /api/v1/ssh/authorized-keys` returns it: `SHA256:` and 43 base64 characters. Its alphabet contains `/`, so a fingerprint carrying one is percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The key was removed; the reconciler has re-rendered the authorized-keys file without it"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No stored key has that fingerprint (`settings_not_found`). Well-formed and absent, which is a different answer from malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The path segment is not a fingerprint at all (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/state/{path}": {
       "get": {
         "tags": [
@@ -807,6 +1044,246 @@
         }
       }
     },
+    "/api/v1/wifi/client/networks": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Every WiFi network this device knows, with each pre-shared key redacted.",
+        "operationId": "api_v1_wifi_networks_list",
+        "responses": {
+          "200": {
+            "description": "The stored networks, in stored order, each `psk` replaced by `\"<redacted>\"`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WifiNetworkEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Add one known WiFi network.",
+        "description": "**This collection has no pane.** It exists in the settings model and is\nreachable today only by editing the settings file on STATE, so this route is\nits first management surface. There is therefore no form-path behaviour for\nit to be consistent with, and no paired 422/404 test to write beside its\nitem route -- unlike the SSH keys, where both exist and the split is\ndeliberate.\n\nThe redaction sentinel is checked **before** anything else, which matters\nmore here than it did on the scalar write route that landed the rule: this\nis the collection with a redacted field. A client that read this list,\nedited `hidden` and posted an entry back hands over `\"<redacted>\"` as the\n`psk`, and storing it would replace a working key with ten literal\ncharacters.",
+        "operationId": "api_v1_wifi_networks_add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WifiNetworkEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The network was stored; the body carries it back with its `psk` redacted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WifiNetworkEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A stored network already carries that SSID (`ssid_exists`); the SSID is this collection's identity, so the entry is not replaced silently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body carries the redaction sentinel, or is not a network the settings model holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wifi/client/networks/{ssid}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Forget one known WiFi network, identified by its SSID.",
+        "description": "Section 2.4's rule holds here with its 422 half **vacant**, and that is the\nrule applied rather than an exception to it. An SSID has no grammar: it is\nan operator-chosen name, and every non-empty single path segment spells a\npossible one. So there is no malformed identifier for this route to answer\n422 about, and everything that names no stored network is 404 -- which is\nexactly what the rule asks for. Inventing a length bound here to\nmanufacture a 422 would be a second opinion about a model that has none, and\nit would answer 422 for a network a hand-edited settings file really holds.",
+        "operationId": "api_v1_wifi_networks_remove",
+        "parameters": [
+          {
+            "name": "ssid",
+            "in": "path",
+            "description": "The network name, as `GET /api/v1/wifi/client/networks` returns it",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The network was forgotten; the station reconciler has re-rendered its configuration without it"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No stored network carries that SSID (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/versions": {
       "get": {
         "tags": [
@@ -842,6 +1319,37 @@
   },
   "components": {
     "schemas": {
+      "AddAuthorizedKeyRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/ssh/authorized-keys` request body.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "One authorized-key line, `<type> <blob>` with an optional trailing\ncomment: exactly what the pane's field takes, handed to exactly the\nsame parser."
+          }
+        }
+      },
+      "AddedAuthorizedKey": {
+        "type": "object",
+        "description": "`POST /api/v1/ssh/authorized-keys` response body.",
+        "required": [
+          "key",
+          "notice"
+        ],
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/AuthorizedKeyEntry",
+            "description": "The entry as it was stored, canonicalised by the parser, carrying the\nfingerprint that is now its `DELETE` path segment."
+          },
+          "notice": {
+            "type": "string",
+            "description": "The same sentence the listing carries."
+          }
+        }
+      },
       "ApiError": {
         "type": "object",
         "description": "§2.4's envelope: the one shape every failure under `/api/` takes.",
@@ -989,6 +1497,54 @@
           }
         }
       },
+      "AuthorizedKeyEntry": {
+        "type": "object",
+        "description": "One row of `GET /api/v1/ssh/authorized-keys`.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The operator's label, absent when the key was stored without one."
+          },
+          "fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "This entry's `DELETE` path segment: `SHA256:` followed by the unpadded\nbase64 of the SHA-256 digest of the decoded blob, which is the string\n`ssh-keygen -lf` prints.\n\n`null` for a stored line whose blob does not decode. Nothing this route\nwrites can be in that state -- `parse_authorized_key` refuses it -- but\nthe settings file is an editable file on STATE, so a list read back is\nnot necessarily a list this API wrote."
+          },
+          "key": {
+            "type": "string",
+            "description": "Canonical `<type> <blob>` key text, with the comment in its own field\n-- what the parser stored, and not what was submitted."
+          }
+        }
+      },
+      "AuthorizedKeyList": {
+        "type": "object",
+        "description": "`GET /api/v1/ssh/authorized-keys` response body.\n\nAn object and not a bare array, because of `notice`: the sentence is a\nproperty of the collection rather than of any entry, and\n`docs/task/RFCT-210.md` section 2.5 requires it on the listing **and** on\nthe add. A client that only ever adds keys must still be told what a key\ngrants.",
+        "required": [
+          "keys",
+          "notice"
+        ],
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizedKeyEntry"
+            },
+            "description": "Every stored key, in stored order."
+          },
+          "notice": {
+            "type": "string",
+            "description": "Why a key added here is not a key with limited access."
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "description": "`POST /api/v1/actions/change-password` request body.",
@@ -1048,6 +1604,37 @@
       },
       "SettingsWrite": {
         "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and the route is what says so, per\ndot-path, in a 422."
+      },
+      "WifiNetworkEntry": {
+        "type": "object",
+        "description": "One known WiFi network, in both directions.\n\nThe route's body is built from and validated against\n`mosd_settings::WifiNetwork` itself, and this struct is what describes that\nshape to a client reading only `openapi.json`;\n`the_wifi_schema_matches_the_settings_model` holds the two together so a\nfield added to the model cannot go undocumented here.\n\n`psk` means different things in the two directions, and that is the\nredaction rule rather than an inconsistency. On the way **in** it is the\npre-shared key. On the way **out** it is `\"<redacted>\"` whenever a key is\nstored, because it is one of the field names section 2.2's structural\nredactor covers -- and a body carrying that sentinel back is refused at 422\nrather than written, which is the whole reason the sentinel is checked\nbefore anything else.",
+        "required": [
+          "ssid",
+          "hidden",
+          "priority"
+        ],
+        "properties": {
+          "hidden": {
+            "type": "boolean",
+            "description": "Whether the network hides its SSID."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Selection preference; higher wins."
+          },
+          "psk": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The pre-shared key; absent for an open network, `\"<redacted>\"` on\nevery read of a network that has one."
+          },
+          "ssid": {
+            "type": "string",
+            "description": "The network name, which is also this entry's `DELETE` path segment."
+          }
+        }
       },
       "WireguardRotation": {
         "type": "object",

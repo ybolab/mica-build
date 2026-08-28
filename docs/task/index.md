@@ -216,3 +216,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-213 PLAN-023 M2 part 2: apid bearer auth, the token routes, the builtin mint**](RFCT-213.md) `P1`
 - [ ] [**RFCT-216 rauc-sign root-rotation tooling, before the first ceremony's one-year expiry**](RFCT-216.md) `P1`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
+- [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
