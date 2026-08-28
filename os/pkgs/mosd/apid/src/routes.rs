@@ -486,11 +486,14 @@ pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
 /// Any JSON value, because a dot-path names a subtree, an array or a scalar
 /// and §2.2's passthrough imposes no shape of its own. The string
 /// `"<redacted>"` is a value a client can receive anywhere inside it: every
-/// field named `psk`, `passwordHash`, `password_hash` or `hash`, at any depth
+/// field named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,
+/// at any depth
 /// and inside arrays, carries that sentinel instead of its value, and so does
 /// the whole body when the dot-path names one of those fields directly. It is
 /// read-only — writing it back would destroy the credential — and phase 1
-/// serves no write route to write it with.
+/// serves no write route to write it with. `privateKey` is on the same list;
+/// no shipped schema has such a field, and the entry is the fail-closed guard
+/// for the day one appears.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(transparent)]
 pub(crate) struct ResourceValue(Value);
@@ -572,9 +575,12 @@ pub(crate) struct WireguardRotation {
 ///
 /// `iface` is passed to mosd unexamined. mosd owns the rule — the name must be
 /// a declared `network` entry of kind `wireguard` — and it raises `InvalidArgs`
-/// for anything else, which [`bus_api_error`] classifies as the same 422 a
-/// rejected settings path gets. A second copy of that rule here could disagree
-/// with the first.
+/// for anything else, which is classified as the same 422 a rejected settings
+/// path gets. A second copy of that rule here could disagree with the first.
+///
+/// Prose and not an intra-doc link to the classifier, deliberately: `utoipa`
+/// copies this comment into the published document, where a link would put an
+/// apid symbol name in front of every client.
 #[utoipa::path(
     post,
     path = V1_WIREGUARD_ROTATE_ROUTE,

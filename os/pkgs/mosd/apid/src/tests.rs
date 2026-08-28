@@ -4366,7 +4366,8 @@ async fn network_post_writes_each_virtual_kind() {
     // The dotted name went through the quoted-path writer, and the bare ones
     // did not need it.
     assert!(
-        fake.set_paths().contains(&r#"network."eth0.200""#.to_string()),
+        fake.set_paths()
+            .contains(&r#"network."eth0.200""#.to_string()),
         "{:?}",
         fake.set_paths()
     );
@@ -4468,12 +4469,12 @@ async fn the_pane_echoes_the_reconcilers_cross_field_rules() {
         ),
         // Editing a declared port to take an address, which no check confined
         // to that one entry could see.
-        (
-            "iface=eth1&dhcp=on",
-            "must not carry addressing of its own",
-        ),
+        ("iface=eth1&dhcp=on", "must not carry addressing of its own"),
         // A VLAN with no parent named at all.
-        ("iface=eth9.100&kind=vlan&vlanId=100&dhcp=on", "needs a parent"),
+        (
+            "iface=eth9.100&kind=vlan&vlanId=100&dhcp=on",
+            "needs a parent",
+        ),
         // A VLAN id that is not a number.
         (
             "iface=eth9.100&kind=vlan&vlanParent=eth0&vlanId=abc&dhcp=on",
@@ -4687,7 +4688,13 @@ async fn the_rotate_route_answers_the_new_public_key() {
     assert_api_headers(&response, ROTATE_PATH);
     let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
 
-    assert_eq!(fake.rotations(), vec![("wg0".to_string(), body["publicKey"].as_str().unwrap().to_string())]);
+    assert_eq!(
+        fake.rotations(),
+        vec![(
+            "wg0".to_string(),
+            body["publicKey"].as_str().unwrap().to_string()
+        )]
+    );
     // The whole body, by identity: a member added here would be a member
     // shipped to every client, and the one member that must never appear is a
     // private key.
@@ -4781,7 +4788,11 @@ async fn the_rotate_route_is_401_without_a_session_in_both_gate_modes() {
             "{mode} answered a redirect, which a script reads as success"
         );
         assert_api_headers(&response, mode);
-        assert_eq!(envelope(response).await["code"], "not_authenticated", "{mode}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{mode}"
+        );
     }
 }
 
@@ -4880,7 +4891,11 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
     ] {
         let response = get(&router, path, Some(&cookie)).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
-        assert_eq!(body_string(response).await, format!(r#""{REDACTED}""#), "{path}");
+        assert_eq!(
+            body_string(response).await,
+            format!(r#""{REDACTED}""#),
+            "{path}"
+        );
     }
 }
 
