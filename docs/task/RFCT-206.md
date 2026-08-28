@@ -376,7 +376,9 @@ amd64/386 only), but it cannot resolve the `localhost/mos-build-*` bases these
 Dockerfiles are built FROM. The container engine is blocked the same way, by a
 refusal reading
 *"the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host"*
-(`os/pkgs/podman/build.sh:73`).
+(`os/pkgs/podman/build.sh` as it stood at a86ab46; RFCT-231 replaced that
+refusal, so the line anchor is gone and the quote is kept as the record of what
+ran here).
 
 **A booted cx3576 smoke is not executable here** under any arrangement: there is
 no cx3576 image and no cx3576 hardware on this host.
