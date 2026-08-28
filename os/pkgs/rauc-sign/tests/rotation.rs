@@ -318,6 +318,41 @@ async fn a_root_rollback_is_refused_across_restarts() {
     );
 }
 
+/// The likeliest mistake in the room: the operator carries the wrong sealed
+/// media, so `--keys-dir` holds a root key that does not hold the role. Nothing
+/// upstream of the write would notice — the document is signed, by a key, and is
+/// self-consistent — and every deployed device would then refuse it. The
+/// pre-write check against the OUTGOING root is what turns that into a refusal
+/// on the offline machine, while the ceremony is still in session.
+#[tokio::test]
+async fn rotating_with_the_wrong_outgoing_key_is_refused() {
+    let fx = Fixture::new().await;
+    let wrong = new_root_key(&fx, "wrong-outgoing-keys");
+    let incoming = new_root_key(&fx, "incoming-keys");
+
+    let err = repo::rotate_root(&fx.repo, &wrong, Some(&incoming), root_expiry())
+        .await
+        .expect_err("a rotation the real outgoing key never signed must be refused");
+    assert!(
+        format!("{err:#}").contains("not signed by a threshold of the outgoing root keys"),
+        "error should say which half of the cross-sign is missing: {err:#}"
+    );
+    assert!(
+        !repo::metadata_dir(&fx.repo).join("2.root.json").exists(),
+        "the refusal must not have published anything"
+    );
+
+    // The same mistake on the refresh path fails earlier and just as plainly,
+    // because that ceremony has no second key to sign with.
+    let err = repo::rotate_root(&fx.repo, &wrong, None, root_expiry())
+        .await
+        .expect_err("a refresh signed by a key the root does not name must be refused");
+    assert!(
+        format!("{err:#}").contains("Unable to match any of the provided keys with root.json"),
+        "error should say the key is not the one the root names: {err:#}"
+    );
+}
+
 /// Handing the role to the key that already holds it is the annual refresh
 /// wearing a rotation's name. The two ceremonies differ in what they oblige an
 /// operator to do afterwards — redistribute an anchor, or not — so this is

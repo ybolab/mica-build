@@ -380,7 +380,7 @@ pub async fn rotate_root(
         &SystemRandom::new(),
     )
     .await
-    .context("cross-sign the new root metadata")?;
+    .context("sign the new root metadata")?;
 
     // tough skips its own threshold check when the role is root, because whether
     // a root is adequately signed depends on the version being rotated FROM as
