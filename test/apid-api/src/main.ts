@@ -20,6 +20,7 @@ import setup from "./phases/02-setup.ts";
 import login from "./phases/03-login.ts";
 import readOnly from "./phases/04-readonly.ts";
 import mutate from "./phases/05-mutate.ts";
+import wireguard from "./phases/05b-wireguard.ts";
 import backoff from "./phases/06-backoff.ts";
 import reboot from "./phases/07-reboot.ts";
 import postReboot from "./phases/07b-postreboot.ts";
@@ -31,6 +32,7 @@ export const PHASES: readonly Phase[] = [
   login,
   readOnly,
   mutate,
+  wireguard,
   backoff,
   reboot,
   postReboot,
