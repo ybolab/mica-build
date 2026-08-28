@@ -1353,6 +1353,16 @@
               }
             }
           },
+          "404": {
+            "description": "The dot-path does not resolve (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "405": {
             "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
@@ -1364,7 +1374,7 @@
             }
           },
           "422": {
-            "description": "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist",
+            "description": "mosd rejected the dot-path (`settings_rejected`); a dot-path that does not resolve is the 404 above",
             "content": {
               "application/json": {
                 "schema": {

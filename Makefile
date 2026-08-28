@@ -44,7 +44,7 @@ help:
 	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
 	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}:<arch>"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -335,10 +335,10 @@ x64-%:
 # target that quietly rebuilt would turn a check into a forty-minute build and
 # would then be testing the tree rather than the artefact under test.
 #
-# THE RUN DIRECTORY IS SHARED. os/tools/qemu-run.sh boots out of the single fixed
-# path _out/x64/.qemu, which the x64 verification line uses too, so this target
-# and that line CANNOT RUN AT ONCE -- two runs overwrite each other's disk.img
-# and the loser fails somewhere unrelated. The harness refuses to start while
+# THE RUN DIRECTORY IS SHARED. The harness boots out of the single fixed path
+# _out/x64/.qemu, and _out is per-checkout and gitignored -- so a worktree points
+# it at the checkout that built the image and TWO SUCH RUNS CANNOT GO AT ONCE:
+# each overwrites the other's disk.img and the loser fails somewhere unrelated. The harness refuses to start while
 # another container holds that directory rather than discovering the collision
 # halfway through a nine-minute boot.
 #

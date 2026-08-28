@@ -6,7 +6,7 @@
 # or delete it at zero -- in the same commit; when a new unquoted citation is
 # genuinely wanted, raise the row in the same commit so the diff shows the
 # decision. Ceilings are the measured counts, exact, not slack.
-docs/design/api.md 435
+docs/design/api.md 434
 docs/design/boards.md 2
 docs/design/bus.md 5
 docs/design/dashboard.md 80

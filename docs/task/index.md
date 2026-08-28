@@ -214,7 +214,22 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-211 PLAN-023 M2 part 1: access.apiTokens in the settings model**](RFCT-211.md) `P1`
 - [x] [**RFCT-212 PLAN-023 M3: GET /api/v1/health and the §2.4 envelope on 405**](RFCT-212.md) `P1`
 - [x] [**RFCT-213 PLAN-023 M2 part 2: apid bearer auth, the token routes, the builtin mint**](RFCT-213.md) `P1`
+- [x] [**RFCT-214 PLAN-023 closeout: the api.md citation re-anchor, all three forms**](RFCT-214.md) `P1`
 - [ ] [**RFCT-216 rauc-sign root-rotation tooling, before the first ceremony's one-year expiry**](RFCT-216.md) `P1`
+- [x] [**RFCT-220 PLAN-011 bus v2 audited milestone by milestone, and its closeout recommended**](RFCT-220.md) `P1`
+- [x] [**RFCT-221 PLAN-012 container-engine audit: milestone verdicts and closeout recommendation**](RFCT-221.md) `P1`
+- [x] [**RFCT-222 PLAN-013 audited: the x64/QEMU vehicle measured against the tree it asked for**](RFCT-222.md) `P1`
+- [ ] [**RFCT-223 A scheduled upstream-tag check for the container engine's six pins**](RFCT-223.md) `P2`
+- [ ] [**RFCT-224 Decide and settle container.enabled's bus writability, for the class and not one key**](RFCT-224.md) `P2`
+- [ ] [**RFCT-225 The image-freshness guard did not survive the verifier port, and exists in no module today**](RFCT-225.md) `P2`
+- [ ] [**RFCT-226 The /var/log package-manager residue, now load-bearing for the stage-order gate**](RFCT-226.md) `P2`
+- [x] [**RFCT-227 PLAN-024 M2: the ratified closeout of PLAN-011, PLAN-012 and PLAN-013, and four residues filed**](RFCT-227.md) `P1`
+- [x] [**RFCT-230 PLAN-025 M1: the QEMU boot engine ported into the harness that is its only caller**](RFCT-230.md) `P1`
+- [x] [**RFCT-231 PLAN-025 M2a: cx3576 builder unpin and mos-build-* reachability**](RFCT-231.md) `P1`
+- [x] [**RFCT-232 PLAN-025 M3a: /state 404 and the two mosd.md dated notes**](RFCT-232.md) `P2`
+- [x] [**RFCT-233 PLAN-025 M4: the harness facts, committed as one citation-gated page**](RFCT-233.md) `P2`
+- [x] [**RFCT-234 PLAN-025 M2b: the arm64 builder family, cx3576 rauc, and the RFCT-206 section 7 pass**](RFCT-234.md) `P1`
+- [ ] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
 - [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
 - [x] [**RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404**](RFCT-242.md) `P1`

@@ -8,6 +8,14 @@
 #       -> alpine:3.21@sha256:48b0309c...
 #   bash os/build-env/from.sh --check
 #       -> validate every IMAGE_ key, print nothing, exit 0 or 1
+#   bash os/build-env/from.sh --arch=arm64 --contexts=/some/dir LOCAL_MOS_BUILD_C
+#       -> --build-context localhost/mos-build-c:arm64=oci-layout:///some/dir/mos-build-c-arm64
+#
+# A LOCAL_ key resolves to a tag that CARRIES its architecture, and --arch is
+# what says which. os/build-env/images.env holds the repository name and no tag;
+# this is the one place that puts the two together. RFCT-234 records why: the
+# tag used to be architecture-less, so an arm64 `make build-env` overwrote the
+# amd64 family's four tags on the same host, and an hour later the reverse.
 #
 # Every Dockerfile in this tree takes its base image as a build argument, and
 # this is the only thing that produces one.
@@ -40,7 +48,9 @@
 # What it does not do: build anything, or pull anything. It reads a file and
 # asks the local image store one question. A caller that gets output from this
 # has a value it can put after `FROM`; a caller that gets a non-zero exit has a
-# reason.
+# reason. --contexts is the one mode that also WRITES: it copies images the
+# local store already holds into OCI layouts, for the callers whose builder
+# cannot read that store. It still builds and pulls nothing.
 set -euo pipefail
 
 # Path arithmetic, proved rather than assumed -- os/build-env/build.sh derives
@@ -99,16 +109,19 @@ check_image_key() {
 # the check that keeps `make build-env` a real prerequisite rather than a step
 # in a README.
 
-# It also checks which architecture the image is, when the caller says what it
-# is building for. That is the one property a locally-tagged FROM loses
-# relative to an upstream reference: `debian:trixie-slim@sha256:...` is a
-# multi-architecture index and docker picks the right manifest, while
-# `localhost/mos-build-c` is exactly the one architecture `make build-env` last
-# produced. A component build that asks for the other one gets "no match for
-# platform in manifest" pointing at a FROM line that is correct. Asked here, it
-# names the image, the two architectures and the command -- and because it is a
-# measurement of the image rather than a rule about this host, it starts
-# passing on its own the day arm64 builder images exist.
+# The architecture is part of the name it resolves TO, and --arch is what
+# supplies it: `LOCAL_MOS_BUILD_C` plus `--arch=arm64` is
+# `localhost/mos-build-c:arm64`. That is the one property a locally-tagged FROM
+# loses relative to an upstream reference -- `debian:trixie-slim@sha256:...` is
+# a multi-architecture index and docker picks the right manifest, while a local
+# tag carries exactly one -- and it is recovered by putting the architecture in
+# the tag rather than by hoping the store holds the right family.
+#
+# The check below therefore asks a DIFFERENT question than it used to. It is no
+# longer "is the family the caller happens to have the one it needs": that is
+# now answered by the name. It is "does this tag hold what its name says",
+# which is what catches an image tagged by hand, or by a build that composed
+# the suffix differently from this file.
 FROM_ARCH=""
 check_local_key() {
     local k="$1" v="$2" got
@@ -120,7 +133,7 @@ check_local_key() {
         ;;
     esac
     docker image inspect "${v}" >/dev/null 2>&1 || {
-        echo "error: ${k}=${v} is not in the local docker image store. It is built by \`make build-env\` (os/build-env/build.sh), which must run before any component build that stands on it -- there is no registry to fall back to and docker would report this as a failed pull from a host called 'localhost'" >&2
+        echo "error: ${k} resolves to ${v}, which is not in the local docker image store. It is built by \`MOS_BUILD_PLATFORM=linux/${FROM_ARCH} make build-env\` (os/build-env/build.sh), which must run before any component build that stands on it -- there is no registry to fall back to and docker would report this as a failed pull from a host called 'localhost'. Note the architecture in that tag: a family for another architecture is a DIFFERENT tag and does not satisfy this, which is the point -- the two used to share one name and overwrite each other" >&2
         return 1
     }
     [ -n "${FROM_ARCH}" ] || return 0
@@ -130,7 +143,7 @@ check_local_key() {
         return 1
     }
     [ "${got}" = "${FROM_ARCH}" ] || {
-        echo "error: ${k}=${v} is a ${got} image and this build targets ${FROM_ARCH}. A local tag carries exactly one architecture -- unlike the IMAGE_ digests above it, which are multi-architecture indexes -- so \`make build-env\` has to have produced a ${FROM_ARCH} family: MOS_BUILD_PLATFORM=linux/${FROM_ARCH} make build-env. os/build-env/build.sh refuses that today when it is not the host's architecture, and RFCT-108's M2b note records what closing it needs (each image published as content with --output type=oci, consumed as --build-context oci-layout://)" >&2
+        echo "error: ${k} resolves to ${v}, whose tag says ${FROM_ARCH} and whose image is ${got}. That tag is written by os/build-env/build.sh and by nothing else, so this is not a family that needs rebuilding -- it is a tag that lies about what it holds, which means it was applied by hand or by a build that composed the suffix differently from os/build-env/from.sh. Retag or rebuild it; do not pass --arch=${got} to make this sentence go away, because the FROM under it would then be the wrong architecture for the build that asked" >&2
         return 1
     }
     return 0
@@ -155,7 +168,21 @@ resolve_key() {
     fi
     case "${key}" in
     IMAGE_*) check_image_key "${key}" "${val}" || return 1 ;;
-    LOCAL_*) check_local_key "${key}" "${val}" || return 1 ;;
+    LOCAL_*)
+        # The architecture, appended HERE and in no other file. images.env holds
+        # `localhost/mos-build-c` -- a repository with no tag -- and every
+        # caller that wants one says which architecture it is building for. A
+        # caller that does not say cannot be answered: both families are in the
+        # store at once by design, so there is no "the" local image to fall back
+        # to, and picking the host's would hand a native answer to a cross build
+        # silently.
+        [ -n "${FROM_ARCH}" ] || {
+            echo "error: ${key} is an image this repository builds, and those are tagged by architecture -- ${val}:amd64 and ${val}:arm64 are two images that coexist in one store. Pass --arch=<amd64|arm64> to say which this build stands on. Guessing the host's would be wrong for exactly the cross builds this naming exists to serve, and silently: the wrong-architecture base still resolves" >&2
+            return 1
+        }
+        val="${val}:${FROM_ARCH}"
+        check_local_key "${key}" "${val}" || return 1
+        ;;
     *)
         echo "error: ${key} is neither an IMAGE_ nor a LOCAL_ key, so os/build-env/from.sh cannot say what would make it valid. A base image is either an upstream reference pinned by digest (IMAGE_) or one this repository builds (LOCAL_)" >&2
         return 1
@@ -212,10 +239,113 @@ if [ "${1-}" = "--ref" ]; then
     exit 0
 fi
 
+# --contexts: the same LOCAL_ images, handed to a builder that cannot read the
+# local docker image store at all.
+#
+# The tag form above works for one driver only. `docker buildx build` with the
+# `docker` driver resolves `localhost/mos-build-c` out of the image store;
+# every other driver has its own content store and reads `localhost/` as a
+# registry hostname. Measured on this host with the `mos-arm64`
+# docker-container builder, against a FROM line that is correct:
+#
+#   ERROR: failed to resolve source metadata for localhost/mos-build-base:latest:
+#   failed to do request: Head "http://localhost/v2/mos-build-base/manifests/latest":
+#   dial tcp [::1]:80: connect: connection refused
+#
+# So the image is handed over as CONTENT rather than as a name. `docker image
+# save` writes an OCI layout, and buildx takes one as a named build context
+# whose name overrides a FROM -- so the Dockerfile keeps saying
+# `FROM ${MOS_BUILD_C}` and neither it nor images.env learns anything about
+# which driver is in use. Measured here on the mos-arm64 builder: the same
+# probe that produced the refusal above, given the layout, ran its RUN step.
+#
+# A local `registry:2` on a host port is the other shape that could carry this,
+# and it is not what this does. Measured, on the builder this tree creates:
+# `docker inspect buildx_buildkit_mos-arm640` reports NetworkMode=bridge with
+# its own address (172.17.0.2), so `localhost:<port>` inside it is its own
+# loopback and not the host's, and the container carries no
+# /etc/buildkit/buildkitd.toml, so an http registry would also need an
+# insecure-registry configuration baked in at creation time. Both are creation
+# options the two `docker buildx create` call sites in this tree do not pass --
+# os/tests/quadlet-doc-test.sh:83-85 and os/build-env/build.sh -- so a registry
+# would have to change every place a builder is made, and leave a long-lived
+# container holding state that images.env exists to keep in the tree. An OCI
+# layout needs no daemon, no port and no builder options.
+#
+# Only LOCAL_ keys. An IMAGE_ key is a digest-pinned upstream reference that
+# every driver resolves for itself, and exporting one here would replace a
+# multi-architecture index with the single manifest this host happens to hold.
+if [ "${1-}" != "${1#--contexts=}" ]; then
+    CTX_DIR="${1#--contexts=}"
+    shift
+    [ -n "${CTX_DIR}" ] || {
+        echo "error: --contexts= was given with no directory. It is where the OCI layouts are written; an empty one would put them at the filesystem root" >&2
+        exit 1
+    }
+    [ -d "${CTX_DIR}" ] || {
+        echo "error: --contexts=${CTX_DIR} is not a directory. This writes one layout per key into it and does not create it: a caller that mistyped the path would otherwise get a tree of exports nothing reads" >&2
+        exit 1
+    }
+    [ "$#" -gt 0 ] || {
+        echo "error: --contexts= takes at least one LOCAL_ key. A call with none would print nothing and exit 0, and a caller that substituted that into a docker command line would build with no --build-context at all -- which is the unresolvable FROM this mode exists to prevent" >&2
+        exit 1
+    }
+    CTX_ABS="$(cd "${CTX_DIR}" && pwd)"
+    bad=0
+    out=()
+    for key in "$@"; do
+        case "${key}" in
+        LOCAL_*) ;;
+        *)
+            echo "error: ${key} is not a LOCAL_ key. Only an image this repository builds is exported as a layout; an IMAGE_ key is a digest-pinned upstream reference that every driver resolves for itself" >&2
+            bad=1
+            continue
+            ;;
+        esac
+        # The same validation the pair form performs, including the --arch
+        # check: a layout exported from a wrong-architecture image is a
+        # well-formed context that fails at the FROM as "no match for platform
+        # in manifest", which is the report this file exists to replace.
+        if ! val="$(resolve_key "${key}")"; then
+            bad=1
+            continue
+        fi
+        # The layout directory is named after the tag with its colon replaced:
+        # `mos-build-c:arm64` would put a colon in a path that is then handed to
+        # buildx as `oci-layout://<path>`, and a colon in that position is not
+        # worth finding out about at a FROM line.
+        dir="${CTX_ABS}/$(printf '%s' "${val##*/}" | tr ':' '-')"
+        rm -rf "${dir}"
+        mkdir -p "${dir}"
+        if ! docker image save "${val}" | tar -x -C "${dir}"; then
+            echo "error: exporting ${val} to an OCI layout under ${dir} failed" >&2
+            bad=1
+            continue
+        fi
+        # What `docker image save` writes is the daemon's choice, not this
+        # script's. Measured on this one -- docker 29.7.2 with the containerd
+        # image store -- it writes an OCI layout: oci-layout, index.json and
+        # blobs/, which is what buildx takes as oci-layout://. The format is
+        # not a promise of the command, so it is checked rather than assumed;
+        # anything else would surface at the FROM as an unreadable context
+        # rather than as the daemon configuration it is.
+        if [ ! -f "${dir}/oci-layout" ] || [ ! -f "${dir}/index.json" ]; then
+            echo "error: \`docker image save ${val}\` did not produce an OCI layout (no oci-layout/index.json under ${dir}); this daemon writes the older docker-archive format, which buildx cannot take as a build context. A builder that cannot read the local image store needs the containerd image store enabled on the daemon that holds ${val}" >&2
+            bad=1
+            continue
+        fi
+        out+=(--build-context "${val}=oci-layout://${dir}")
+    done
+    [ "${bad}" = 0 ] || exit 1
+    printf '%s\n' "${out[@]}"
+    exit 0
+fi
+
 [ "$#" -gt 0 ] || {
     cat >&2 <<'USAGE'
 usage: from.sh [--arch=<amd64|arm64>] <ARG_NAME>=<IMAGES_ENV_KEY> [...]
        from.sh [--arch=<amd64|arm64>] --ref <IMAGES_ENV_KEY>
+       from.sh [--arch=<amd64|arm64>] --contexts=<DIR> <LOCAL_KEY> [...]
        from.sh --check
 
 A call with no pairs would print nothing and exit 0, and a caller that

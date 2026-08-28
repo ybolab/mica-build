@@ -59,9 +59,9 @@ the whole argument:
    bridge port must carry no addressing of its own, and no port may be claimed
    by two bridges. Its own comment says why it must run over the tree and not
    the entry — *"every rule here is about two entries at once"*
-   (`os/pkgs/mosd/apid/src/routes.rs:3628-3631`). The pane already runs it over
+   (`os/pkgs/mosd/apid/src/routes.rs:3656-3659`). The pane already runs it over
    *"The candidate tree, not the one entry"*
-   (`os/pkgs/mosd/apid/src/routes.rs:5129-5135`).
+   (`os/pkgs/mosd/apid/src/routes.rs:5157-5163`).
 2. **mosd's own copy is in the reconciler**, `validate_network`
    (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-499`), which is the
    boundary for a settings file anything with STATE write access can edit.
@@ -144,7 +144,7 @@ type `GetSettings` and `SetSettings` already return.
 apid's classifier already mapped both names — `com.mos.mosd1.Error.NotFound` to
 404 `settings_not_found` and `InvalidArgs` to
 `ApiError::mosd("settings_rejected", message)`
-(`os/pkgs/mosd/apid/src/routes.rs:2960-2971`) — and had only ever been handed
+(`os/pkgs/mosd/apid/src/routes.rs:2988-2999`) — and had only ever been handed
 one of them. Two tests prove each half separately, which is what makes "no apid
 change" a measurement rather than a claim:
 
@@ -185,13 +185,13 @@ Run alone at the commit that introduced it, before any other M6 code existed:
 
 Every step of the chain the design named is therefore real: `stored_peers`
 answers an empty list rather than an error for an unknown interface, by
-`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:4907-4914`);
+`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:4935-4942`);
 `write_peers` writes straight to the peer list's own dot-path,
 `.set_settings(&peers_settings_path(iface), &value)`
-(`os/pkgs/mosd/apid/src/routes.rs:5220-5223`); `validate_peers` never looks at
+(`os/pkgs/mosd/apid/src/routes.rs:5248-5251`); `validate_peers` never looks at
 the interface, only at
 `for (index, peer) in peers.iter().enumerate()`
-(`os/pkgs/mosd/apid/src/routes.rs:3595-3618`); and the setter creates them by
+(`os/pkgs/mosd/apid/src/routes.rs:3623-3646`); and the setter creates them by
 documented contract — *"Missing intermediate map entries are created"*
 (`os/pkgs/mosd/mosd-settings/src/model.rs:710-712`).
 
@@ -226,7 +226,7 @@ reconciler calls it rather than restating it —
 (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:238-247`) — and the WiFi route
 runs the same function at the place it already produces its 422,
 `ApiError::apid("validation_failed", message).at(WIFI_NETWORKS_PATH)`
-(`os/pkgs/mosd/apid/src/routes.rs:2156-2163`). The three local constants were
+(`os/pkgs/mosd/apid/src/routes.rs:2184-2191`). The three local constants were
 deleted from the reconciler; there is exactly one rule.
 
 **It is deliberately not enforced in `WifiNetwork`'s `Deserialize`**, and that is
