@@ -79,7 +79,7 @@ produces is the same envelope §2.4 gives everywhere else: mosd's own message,
 apid's classification, the path attached. The 404 it produces names
 `settings_not_found` — the code the settings route already answers this
 condition with, at `MOSD_NOT_FOUND => (`
-(`os/pkgs/mosd/apid/src/routes.rs:3046`) — so the two trees now agree, which was
+(`os/pkgs/mosd/apid/src/routes.rs:3090`) — so the two trees now agree, which was
 the point. `docs/design/api.md`'s error table already reads
 *"the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound`"*
 (`docs/design/api.md:1822`) as the 404 row and the fix agrees with it; that file
@@ -88,7 +88,7 @@ re-anchor.
 
 **The settings route is untouched.** `bus_api_error`'s table still maps
 `FDO_INVALID_ARGS => (`
-(`os/pkgs/mosd/apid/src/routes.rs:3054`) to 422 `settings_rejected`, and every
+(`os/pkgs/mosd/apid/src/routes.rs:3098`) to 422 `settings_rejected`, and every
 other route still reaches it. Only `api_v1_state` reads the name differently,
 because only `api_v1_state` has the single-producer fact to read it with.
 

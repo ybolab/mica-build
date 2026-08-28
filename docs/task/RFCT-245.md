@@ -231,7 +231,7 @@ reach an x64 host build.
 **A bearer-only client that asks for an UNDECLARED path under `/api/` is
 redirected to `/login`.** The gate's whole credential test is
 `if session::cookie_from_headers(request.headers())`
-(`os/pkgs/mosd/apid/src/routes.rs:3294`), and only *declared* routes are handed
+(`os/pkgs/mosd/apid/src/routes.rs:3338`), and only *declared* routes are handed
 off to answer for themselves, so an undeclared path under the prefix reaches
 the gate and a bearer does not satisfy it. That is §3.1's trap on the surface
 §3.1 is about: the 303 lands on `GET /login`, which answers 200 with HTML.

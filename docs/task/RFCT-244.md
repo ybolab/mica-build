@@ -30,7 +30,7 @@ is the device's one unauthenticated write"* (`docs/task/RFCT-210.md:281-282`).
 It declares no `GET`, for the reason M7's three verbs declare none. And it is
 the one handler under the prefix whose signature names no credential extractor:
 `pub(crate) async fn api_v1_setup(` takes `State(state): State<AppState>,` and
-`Source(source): Source,` (`os/pkgs/mosd/apid/src/routes.rs:4071-4073`).
+`Source(source): Source,` (`os/pkgs/mosd/apid/src/routes.rs:4132-4134`).
 
 ## 2. The acceptance criteria, and how each is discharged
 
@@ -41,9 +41,9 @@ interface the wizard's own validators reject, with **nothing written**"*
 
 ### 2.1 201 carrying the credential, minted through M2's own routine
 
-The route calls `token::mint` (`os/pkgs/mosd/apid/src/routes.rs:4193`), pushes an
+The route calls `token::mint` (`os/pkgs/mosd/apid/src/routes.rs:4254`), pushes an
 `ApiToken` and writes it through `write_tokens`
-(`os/pkgs/mosd/apid/src/routes.rs:4266`) — the same three steps
+(`os/pkgs/mosd/apid/src/routes.rs:4327`) — the same three steps
 `api_v1_tokens_mint` takes. There is no second minting routine, which was the
 instruction and is also what keeps the two credentials one shape.
 
@@ -51,7 +51,7 @@ Section 3.2 is why a token is minted here where the browser wizard mints none:
 *"a caller who drove first-run setup over the API demonstrably wants API access
 — but the browser wizard does not"* (`docs/design/api.md:2312-2314`). The token
 is labelled `const SETUP_TOKEN_NAME: &str = "first-run setup";`
-(`os/pkgs/mosd/apid/src/routes.rs:4014`) rather than
+(`os/pkgs/mosd/apid/src/routes.rs:4075`) rather than
 from a request field, because the body has no name member and inventing one
 would make the first credential's label the one thing about first-run setup a
 client has to get right.
@@ -61,7 +61,7 @@ row describes. The id is not a separate member because it is the token's own
 second segment, so a caller holding the string can address it for a later
 `DELETE` without being told it twice.
 `the_api_setup_route_configures_the_device_and_returns_a_token`
-(`os/pkgs/mosd/apid/src/tests.rs:9801`) asserts the member set exactly, and then
+(`os/pkgs/mosd/apid/src/tests.rs:9885`) asserts the member set exactly, and then
 asserts the token by *using* it against `GET /api/v1/meta` — a token that
 authenticated nothing would satisfy the letter of section 3.2 and none of it.
 
@@ -70,7 +70,7 @@ authenticated nothing would satisfy the letter of section 3.2 and none of it.
 Measured, not inferred. `setup_submit` refuses with
 `password_hash(&access).is_some()`, and `password_hash` is
 `.and_then(|admin| admin.get("password_hash"))`
-(`os/pkgs/mosd/apid/src/routes.rs:3237-3242`).
+(`os/pkgs/mosd/apid/src/routes.rs:3281-3286`).
 The API route runs that same predicate on the same subtree. It is not "a session
 exists" and not "the tree is non-empty", which is why the criterion was
 re-measured rather than copied from the rendering.
@@ -82,7 +82,7 @@ state refuses the request. 409 and not 422 for the reason
 wrong; what refuses it is the collection's — here the device's — current state.
 
 `the_api_setup_route_answers_409_on_the_form_paths_own_condition`
-(`os/pkgs/mosd/apid/src/tests.rs:10032`) drives both surfaces against **one**
+(`os/pkgs/mosd/apid/src/tests.rs:10116`) drives both surfaces against **one**
 tree, so neither can drift into answering about a different one.
 
 ### 2.3 422 on any validation failure, with nothing written
@@ -93,20 +93,20 @@ and not copied:
 
 | Rule | Where it lives | How this route reaches it |
 |---|---|---|
-| password floor | `const MIN_PASSWORD_BYTES: usize = 8;` (`os/pkgs/mosd/apid/src/routes.rs:3417`), read by `fn password_under_floor(password: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3425`) | lifted from two inline `len() < 8` copies; see section 3 |
-| hostname | `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3461`) with `const HOSTNAME_RULES: &str =` (`os/pkgs/mosd/apid/src/routes.rs:3402`) | `&& !valid_hostname(hostname)` (`os/pkgs/mosd/apid/src/routes.rs:4121`) |
-| interface name | `fn check_iface_name(iface: &str, path: &str) -> Result<(), Box<Response>> {` (`os/pkgs/mosd/apid/src/routes.rs:2488`) | `if let Err(response) = check_iface_name(iface, NETWORK_SETTINGS_PATH) {` (`os/pkgs/mosd/apid/src/routes.rs:4137`), the same helper M6's four routes use |
-| static address CIDR | `fn validate_iface(iface: &str, dhcp: bool, address: &str) -> Result<(), &'static str> {` (`os/pkgs/mosd/apid/src/routes.rs:3480`) calling `fn valid_cidr(cidr: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3449`) | `if let Err(message) = validate_iface(iface, cfg.dhcp, address) {` (`os/pkgs/mosd/apid/src/routes.rs:4155`); see section 4 |
-| the four relational rules | `fn relational_refusal(entries: &NetworkEntries, path: &str) -> Result<(), Box<Response>> {` (`os/pkgs/mosd/apid/src/routes.rs:2508`) calling `fn validate_entries(entries: &NetworkEntries) -> Result<(), String> {` (`os/pkgs/mosd/apid/src/routes.rs:3727`) | `if let Err(response) = relational_refusal(&candidate, NETWORK_SETTINGS_PATH) {` (`os/pkgs/mosd/apid/src/routes.rs:4170`) on the **candidate** tree |
+| password floor | `const MIN_PASSWORD_BYTES: usize = 8;` (`os/pkgs/mosd/apid/src/routes.rs:3461`), read by `fn password_under_floor(password: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3469`) | lifted from two inline `len() < 8` copies; see section 3 |
+| hostname | `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3505`) with `const HOSTNAME_RULES: &str =` (`os/pkgs/mosd/apid/src/routes.rs:3446`) | `&& !valid_hostname(hostname)` (`os/pkgs/mosd/apid/src/routes.rs:4182`) |
+| interface name | `fn check_iface_name(iface: &str, path: &str) -> Result<(), Box<Response>> {` (`os/pkgs/mosd/apid/src/routes.rs:2488`) | `if let Err(response) = check_iface_name(iface, NETWORK_SETTINGS_PATH) {` (`os/pkgs/mosd/apid/src/routes.rs:4198`), the same helper M6's four routes use |
+| static address CIDR | `fn validate_iface(iface: &str, dhcp: bool, address: &str) -> Result<(), &'static str> {` (`os/pkgs/mosd/apid/src/routes.rs:3524`) calling `fn valid_cidr(cidr: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3493`) | `if let Err(message) = validate_iface(iface, cfg.dhcp, address) {` (`os/pkgs/mosd/apid/src/routes.rs:4216`); see section 4 |
+| the four relational rules | `fn relational_refusal(entries: &NetworkEntries, path: &str) -> Result<(), Box<Response>> {` (`os/pkgs/mosd/apid/src/routes.rs:2508`) calling `fn validate_entries(entries: &NetworkEntries) -> Result<(), String> {` (`os/pkgs/mosd/apid/src/routes.rs:3788`) | `if let Err(response) = relational_refusal(&candidate, NETWORK_SETTINGS_PATH) {` (`os/pkgs/mosd/apid/src/routes.rs:4231`) on the **candidate** tree |
 
 The relational rules are checked against the stored map merged with the
 submission rather than against the submission alone, for the reason the pane's
 own comment gives: *"The candidate tree, not the one entry: every relational
 rule below is about two entries at once."*
-(`os/pkgs/mosd/apid/src/routes.rs:5538-5539`) A bridge port may legitimately name
+(`os/pkgs/mosd/apid/src/routes.rs:5599-5600`) A bridge port may legitimately name
 an interface the device already declares, and
 `the_setup_network_tree_is_merged_with_the_stored_one_before_it_is_judged`
-(`os/pkgs/mosd/apid/src/tests.rs:9997`) is the case that would be refused by a
+(`os/pkgs/mosd/apid/src/tests.rs:10081`) is the case that would be refused by a
 route that judged the submission on its own.
 
 Merging is also why the whole map is written in one `SetSettings` at `network`
@@ -118,7 +118,7 @@ factory-fresh device is reachable over, which is the harm this milestone exists
 to prevent rather than to introduce.
 
 `every_setup_validation_failure_is_422_and_writes_nothing`
-(`os/pkgs/mosd/apid/src/tests.rs:10063`) drives four rejections and asserts, for
+(`os/pkgs/mosd/apid/src/tests.rs:10147`) drives four rejections and asserts, for
 each, the 422, the code, the message, `assert_nothing_written`, and that the
 device is still in setup mode.
 
@@ -134,11 +134,11 @@ setup mode with no hostname.
 Re-measured here rather than relayed, and the measurement refines the claim in
 one way worth stating: **the wizard already validates its optional sections up
 front** — its own comment says *"Validate the optional sections up front so
-nothing is written on error."* (`os/pkgs/mosd/apid/src/routes.rs:3880`). So what
+nothing is written on error."* (`os/pkgs/mosd/apid/src/routes.rs:3941`). So what
 is left on the form path is not a *validation* partial failure but a **bus**
 partial failure: the wizard's
 `if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {`
-(`os/pkgs/mosd/apid/src/routes.rs:3915`) succeeds and the `hostname` write after
+(`os/pkgs/mosd/apid/src/routes.rs:3976`) succeeds and the `hostname` write after
 it does not.
 
 ### 3.2 What this route does instead
@@ -151,18 +151,18 @@ So no validation failure can write anything, which is the criterion.
 
 **The writes then run in the order that fails safe.** First
 `.set_settings("hostname", &Value::String(hostname.to_string()))`
-(`os/pkgs/mosd/apid/src/routes.rs:4235`), then
+(`os/pkgs/mosd/apid/src/routes.rs:4296`), then
 `&& let Err(response) = write_network_map(&state, candidate).await`
-(`os/pkgs/mosd/apid/src/routes.rs:4241`), then
+(`os/pkgs/mosd/apid/src/routes.rs:4302`), then
 `if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {`
-(`os/pkgs/mosd/apid/src/routes.rs:4248`), and last
+(`os/pkgs/mosd/apid/src/routes.rs:4309`), and last
 `if let Err(response) = write_tokens(&state, &tokens).await {`
-(`os/pkgs/mosd/apid/src/routes.rs:4266`). The password
+(`os/pkgs/mosd/apid/src/routes.rs:4327`). The password
 write is third because it is the write that takes the device out of setup mode.
 That ordering is not a change to a shipped behaviour — there was no route here
 to change — but it is a decision, so it is asserted as an order and not as a set
 by `the_api_setup_route_writes_the_password_after_the_settings_it_may_fail_on`
-(`os/pkgs/mosd/apid/src/tests.rs:9851`), which also asserts the wizard's opposite
+(`os/pkgs/mosd/apid/src/tests.rs:9935`), which also asserts the wizard's opposite
 order in the same test.
 
 What survives, named: a bus failure on the **last** write leaves a configured
@@ -177,7 +177,7 @@ write on the bus, which is a mosd change and outside PLAN-023's scope — the
 scope boundary RFCT-210 item (ii) already drew.
 
 `the_api_setup_route_validates_before_writing_where_the_form_path_does_not`
-(`os/pkgs/mosd/apid/src/tests.rs:9893`) drives **one** partial failure through
+(`os/pkgs/mosd/apid/src/tests.rs:9977`) drives **one** partial failure through
 both surfaces and asserts both outcomes:
 
 | | write log | after the failure |
@@ -185,7 +185,7 @@ both surfaces and asserts both outcomes:
 | `POST /api/v1/setup` | empty | still in setup mode |
 | `POST /setup` | `["access.webAdmin"]` | out of setup mode, hostname still `mos` |
 
-The fixture is `RefusesOnePath` (`os/pkgs/mosd/apid/src/tests.rs:9726`), added
+The fixture is `RefusesOnePath` (`os/pkgs/mosd/apid/src/tests.rs:9810`), added
 because no existing one can make this assertion. `FailingSettings` fails *every*
 write, and a route that writes nothing is then indistinguishable from one that
 writes the password first: both come back 5xx with an empty tree. A partial
@@ -194,8 +194,8 @@ failure needs exactly one path to fail and the others to succeed.
 One further difference the same test records, and it is about rendering rather
 than about what was written: the wizard answers **503** on any failed mosd call,
 because `fn bus_error(err: &anyhow::Error) -> Response {`
-(`os/pkgs/mosd/apid/src/routes.rs:3248`) answers
-`StatusCode::SERVICE_UNAVAILABLE,` (`os/pkgs/mosd/apid/src/routes.rs:3251`)
+(`os/pkgs/mosd/apid/src/routes.rs:3292`) answers
+`StatusCode::SERVICE_UNAVAILABLE,` (`os/pkgs/mosd/apid/src/routes.rs:3295`)
 whatever mosd said, where the API carries the classification through as 500
 `settings_io`.
 
@@ -204,7 +204,7 @@ whatever mosd said, where the API carries the classification through as 500
 Section 2.3's instruction is to check where each rule lives before calling it.
 One of them was in the pattern this workstream has hit repeatedly.
 
-`valid_cidr` (`os/pkgs/mosd/apid/src/routes.rs:3449`) has exactly **one** caller,
+`valid_cidr` (`os/pkgs/mosd/apid/src/routes.rs:3493`) has exactly **one** caller,
 `validate_iface` (`:3505`), whose own two callers are both HTML form handlers —
 the network pane's entry builder (`:3600`) and `setup_submit` (`:3914`). So at
 the pre-image, **no route under `/api/v1/` ran it**, M6's typed network cluster
@@ -212,7 +212,7 @@ included.
 
 It is reachable, so by the stated rule this route **calls** it:
 `if let Err(message) = validate_iface(iface, cfg.dhcp, address) {`
-(`os/pkgs/mosd/apid/src/routes.rs:4155`), rather than lifting it or copying it.
+(`os/pkgs/mosd/apid/src/routes.rs:4216`), rather than lifting it or copying it.
 The name branch of `validate_iface` cannot fire there, because
 `check_iface_name` tests the same predicate immediately above, so the only
 message it can produce on this route is the CIDR one.
@@ -242,7 +242,7 @@ It was spelled `len() < 8` inline at two call sites — `setup_submit` and
 `change_password`. M8 is a third enforcer, and a third copy is what this file's
 rotate-key route argues against in the general case: copies of one rule can
 disagree, and here disagreeing would mean one surface accepting a credential
-another refuses. So `MIN_PASSWORD_BYTES` (`os/pkgs/mosd/apid/src/routes.rs:3417`)
+another refuses. So `MIN_PASSWORD_BYTES` (`os/pkgs/mosd/apid/src/routes.rs:3461`)
 and `password_under_floor` (`:3446`) hold the bound once and the three call
 sites read it. No message changed and no behaviour changed: the wizard still
 answers 400 with *"Password must be at least 8 characters."* and
@@ -258,7 +258,7 @@ rendered markup would be a change to the pane this task has no reason to make.
 M6's helper hard-coded `path: &str` because all three of its callers write one
 subtree and name it. This route writes three, and a malformed body is not about
 any one of them, so the parameter is now `path: Option<&str>,`
-(`os/pkgs/mosd/apid/src/routes.rs:2549`) — which is what section 2.4 already says
+(`os/pkgs/mosd/apid/src/routes.rs:2578`) — which is what section 2.4 already says
 the member is: *"present only when the failure names a dot-path"*
 (`docs/design/api.md:1712`). The three M6 call sites pass `Some(...)` and their
 behaviour is unchanged.
@@ -292,9 +292,9 @@ error inside `network` reports no dot-path where M6's `PUT /api/v1/network`
 would report `network`.
 
 `a_malformed_setup_body_is_refused_at_400_and_names_no_dot_path`
-(`os/pkgs/mosd/apid/src/tests.rs:10150`) holds the absent member, and
+(`os/pkgs/mosd/apid/src/tests.rs:10234`) holds the absent member, and
 `a_rejected_setup_password_is_never_echoed`
-(`os/pkgs/mosd/apid/src/tests.rs:10125`) holds that no refusal repeats the
+(`os/pkgs/mosd/apid/src/tests.rs:10209`) holds that no refusal repeats the
 password, in body or headers, not even as a fragment.
 
 ## 7. Unauthenticated, and how narrowly
@@ -307,7 +307,7 @@ extension is one line in that predicate, `|| leaf == V1_SETUP_PATH`
 its signature names no `ApiSession` and no `ApiBearer`.
 
 `the_setup_route_is_the_one_api_route_that_takes_no_credential`
-(`os/pkgs/mosd/apid/src/tests.rs:10171`) asserts both halves in setup mode, which
+(`os/pkgs/mosd/apid/src/tests.rs:10255`) asserts both halves in setup mode, which
 is the only mode where the question is live: five other write routes answer 401
 with section 2.4's envelope and **no** `Location` header — a redirect is what a
 script reads as success — and the setup route answers 201 with nothing
@@ -315,10 +315,10 @@ presented at all.
 
 The audit event is the wizard's own —
 `state.audit.record("setup", "completed", &source);`
-(`os/pkgs/mosd/apid/src/routes.rs:4258`) — because it is the same event: section
+(`os/pkgs/mosd/apid/src/routes.rs:4319`) — because it is the same event: section
 6's trail says what happened to the device, not which surface asked.
 `the_api_setup_route_records_the_wizards_own_audit_event`
-(`os/pkgs/mosd/apid/src/tests.rs:10220`) checks the event and that neither the
+(`os/pkgs/mosd/apid/src/tests.rs:10304`) checks the event and that neither the
 password nor the minted token reaches any line of the log.
 
 ## 8. Gate results
@@ -518,7 +518,7 @@ citation named one construct and pointed at another. RFCT-246 corrected it to
 forward to 3204-3208, which at L2's tip `6d94d72` is the middle of the bearer
 check — `return false;` and the comment above
 `token::verify(&parse_tokens(&access).unwrap_or_default(), presented)`
-(`os/pkgs/mosd/apid/src/routes.rs:3190`). Both numbers are gate-green, because
+(`os/pkgs/mosd/apid/src/routes.rs:3234`). Both numbers are gate-green, because
 the interposed word in *"`redirect_app()` at …"* demotes the pair to
 resolution-only; only one is right. In this tree the citation reads 3232-3236
 and points at the function.

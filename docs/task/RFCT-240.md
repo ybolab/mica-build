@@ -27,7 +27,7 @@ bearer **or** cookie.
 
 | Dot-path | Body | Success |
 |---|---|---|
-| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3461`) | `204` |
+| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3505`) | `204` |
 | `access.ssh.enabled` | `true` or `false` | `204` |
 | `container.enabled` | `true` or `false` | `204` |
 | `mqtt.enabled` | `true` or `false` | `204` |
@@ -45,7 +45,7 @@ construction.
 
 **The hostname is not trimmed, and the form path trims.** `hostname_submit`
 trims -- `let hostname = form.hostname.trim();`
-(`os/pkgs/mosd/apid/src/routes.rs:5911`) -- because a browser sends whatever
+(`os/pkgs/mosd/apid/src/routes.rs:5972`) -- because a browser sends whatever
 was typed into a text input; a client that built a JSON string
 chose its bytes, and writing something other than what it sent is the worse
 answer. `" mos "` is a 422 here and a successful `mos` there. Recorded as a
@@ -57,7 +57,7 @@ for anything under `access`: *"the whole tree, `access` itself, or anything
 under it"* (`os/pkgs/mosd/apid/src/access_cache.rs:35-37`). That is what the
 `access.ssh` form path already relies on, whose whole write is
 `.set_settings("access.ssh.enabled", &Value::Bool(enabled))`
-(`os/pkgs/mosd/apid/src/routes.rs:6217`). The token routes invalidate by
+(`os/pkgs/mosd/apid/src/routes.rs:6278`). The token routes invalidate by
 hand because a revocation has to bite on the very next request; nothing this
 route writes is a credential.
 
@@ -209,7 +209,7 @@ Everything else gets one sentence naming the four paths this route writes.
 Bearer **or** cookie, matching the `ApiSession` extractor as it stood after M2.
 (That type no longer exists: M9 (RFCT-245) withdrew the cookie from `/api/v1/`
 and collapsed it into `pub(crate) struct ApiBearer;`
-(`os/pkgs/mosd/apid/src/routes.rs:3141`). The decision this section records was
+(`os/pkgs/mosd/apid/src/routes.rs:3185`). The decision this section records was
 M4's and is left as it was written.) PLAN-023 Amendment 1's
 bearer-only rule is about the token routes specifically — a permanent-credential
 factory must not sit behind a browser session — not about new routes in
