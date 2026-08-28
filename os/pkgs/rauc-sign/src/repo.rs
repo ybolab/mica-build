@@ -18,7 +18,7 @@
 //! filename prefix. The unversioned metadata aliases exist so the repository can
 //! be served (and bootstrapped from) by fixed URLs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
@@ -31,7 +31,7 @@ use tough::editor::RepositoryEditor;
 use tough::editor::signed::{PathExists, SignedRole};
 use tough::schema::decoded::{Decoded, Hex};
 use tough::schema::key::Key;
-use tough::schema::{KeyHolder, RoleKeys, RoleType, Root, Target};
+use tough::schema::{KeyHolder, RoleKeys, RoleType, Root, Signed, Target};
 use tough::sign::Sign;
 use tough::{ExpirationEnforcement, IntoVec, RepositoryLoader, TargetName};
 use url::Url;
@@ -270,6 +270,141 @@ pub async fn resign(
     Ok(())
 }
 
+/// Publishes the next root version, `<n+1>.root.json`, signed by the outgoing
+/// root key and by the incoming one.
+///
+/// `new_keys_dir`, when given, holds the freshly generated `root.pk8` that takes
+/// over the root role: that is the **rotation**, and the trust anchor changes
+/// hands. When it is absent the root key is unchanged and this is the annual
+/// **refresh**: a new version and a new expiration over the same anchor. One
+/// implementation because TUF accepts both the same way; two commands in the CLI
+/// because an operator who performs one while intending the other must be told,
+/// not accommodated.
+///
+/// The cross-sign is the whole mechanism (TUF client workflow step 1.3): a
+/// client pinned to version `n` accepts `n+1` only if it is signed by a
+/// threshold of `n`'s root keys *and* a threshold of its own. So a rotation
+/// carrying only the new key's signature is refused by exactly the clients it
+/// exists to carry forward, and one carrying only the old key's cannot install
+/// the new key.
+///
+/// No online key is read here. The ceremony runs on the offline machine, where
+/// the release host's keys have no business being, and it does not need them:
+/// `targets`, `snapshot` and `timestamp` keep their existing signatures, because
+/// no top-level role's metadata pins `root.json`. Refreshing those three stays
+/// [`resign`]'s job, on the release host, afterwards.
+///
+/// Returns the version that was published.
+pub async fn rotate_root(
+    repo: &Path,
+    keys_dir: &Path,
+    new_keys_dir: Option<&Path>,
+    root_expires: DateTime<Utc>,
+) -> Result<u64> {
+    let meta_dir = metadata_dir(repo);
+    let root_path = meta_dir.join("root.json");
+    let current: Signed<Root> = serde_json::from_slice(
+        &fs::read(&root_path).with_context(|| format!("read {}", root_path.display()))?,
+    )
+    .with_context(|| format!("parse {}", root_path.display()))?;
+    // This file is carried to the offline machine on media. A copy its own keys
+    // do not sign is not the anchor the fleet is on, and a chain rooted at it is
+    // one no deployed client can walk -- which would only be discovered by the
+    // fleet, after the ceremony, with the key sealed away again.
+    current
+        .signed
+        .verify_role(&current)
+        .with_context(|| format!("{} is not signed by its own root keys", root_path.display()))?;
+
+    let next = bump(current.signed.version)?;
+    let next_path = meta_dir.join(format!("{next}.root.json"));
+    // A published root version is a file some device may already have walked to.
+    // Rewriting one is not an update, it is a second document with one name.
+    ensure!(
+        !next_path.exists(),
+        "{} already exists; a published root version is never rewritten \
+         (is metadata/root.json a stale copy of an older version?)",
+        next_path.display()
+    );
+
+    let mut new_root = current.signed.clone();
+    new_root.version = next;
+    new_root.expires = root_expires;
+    let mut root_role = new_root
+        .roles
+        .remove(&RoleType::Root)
+        .ok_or_else(|| anyhow!("{} does not delegate the root role", root_path.display()))?;
+    let outgoing_keyids = root_role.keyids.clone();
+
+    let mut sources = keys::sources(keys_dir, &["root"])?;
+    if let Some(new_keys_dir) = new_keys_dir {
+        let (new_key_id, new_key) = load_key(new_keys_dir, "root")?;
+        ensure!(
+            !outgoing_keyids.contains(&new_key_id),
+            "the root key in {} is the one already holding the role; publishing a \
+             new version with the same key is the annual refresh, not a rotation \
+             -- run `rauc-sign refresh-root` if that is what this ceremony is",
+            new_keys_dir.display()
+        );
+        new_root.keys.insert(new_key_id.clone(), new_key);
+        root_role.keyids = vec![new_key_id];
+        sources.extend(keys::sources(new_keys_dir, &["root"])?);
+    }
+    new_root.roles.insert(RoleType::Root, root_role);
+    prune_unreferenced_keys(&mut new_root);
+
+    // tough signs a role with exactly those supplied keys whose id the key
+    // holder lists for it, so a holder listing only the new root key would drop
+    // the outgoing signature and one listing only the old would drop the
+    // incoming. This view lists both. It is a signing-time lookup table and is
+    // never written: the document published is `new_root`.
+    let mut view = new_root.clone();
+    let mut view_role = view
+        .roles
+        .remove(&RoleType::Root)
+        .ok_or_else(|| anyhow!("root role vanished from the new root metadata"))?;
+    for key_id in &outgoing_keyids {
+        if let Some(key) = current.signed.keys.get(key_id) {
+            view.keys.insert(key_id.clone(), key.clone());
+        }
+        if !view_role.keyids.contains(key_id) {
+            view_role.keyids.push(key_id.clone());
+        }
+    }
+    view.roles.insert(RoleType::Root, view_role);
+
+    let signed = SignedRole::new(
+        new_root.clone(),
+        &KeyHolder::Root(view),
+        &sources,
+        &SystemRandom::new(),
+    )
+    .await
+    .context("cross-sign the new root metadata")?;
+
+    // tough skips its own threshold check when the role is root, because whether
+    // a root is adequately signed depends on the version being rotated FROM as
+    // well as the one being written. Both halves are checked here instead, and
+    // before anything is published: these two calls are exactly what a client
+    // pinned to the old anchor and a client pinned to the new one will each do,
+    // so a rotation that would strand either is refused rather than written to a
+    // ceremony's output media.
+    current
+        .signed
+        .verify_role(signed.signed())
+        .context("the new root is not signed by a threshold of the outgoing root keys")?;
+    new_root
+        .verify_role(signed.signed())
+        .context("the new root is not signed by a threshold of its own root keys")?;
+
+    signed
+        .write(&meta_dir, true)
+        .await
+        .context("write the new root metadata")?;
+    publish_alias(&meta_dir, next.get(), "root")?;
+    Ok(next.get())
+}
+
 /// Verifies a repository offline against a trusted root, then reads every target
 /// back through the metadata so target bytes are hash-checked too.
 ///
@@ -331,13 +466,7 @@ fn build_root(keys_dir: &Path, threshold: u64, expires: DateTime<Utc>) -> Result
     let mut roles: HashMap<RoleType, RoleKeys> = HashMap::new();
 
     for role in keys::ROLES {
-        let path = keys::key_path(keys_dir, role);
-        let bytes =
-            fs::read(&path).with_context(|| format!("read {role} key at {}", path.display()))?;
-        let keypair = tough::sign::parse_keypair(&bytes)
-            .with_context(|| format!("parse {role} key at {}", path.display()))?;
-        let key = keypair.tuf_key();
-        let key_id = key.key_id().context("compute key id")?;
+        let (key_id, key) = load_key(keys_dir, role)?;
         let role_type: RoleType = role.parse().map_err(|_| anyhow!("unknown role {role}"))?;
         let keyids = vec![key_id.clone()];
         // A threshold above the key count signs metadata no set of signatures
@@ -370,6 +499,37 @@ fn build_root(keys_dir: &Path, threshold: u64, expires: DateTime<Utc>) -> Result
         roles,
         _extra: HashMap::new(),
     })
+}
+
+/// Reads one role's private key from `keys_dir` and returns its TUF key id and
+/// public key. The private half is dropped with the parsed keypair; only the
+/// public key and its id are ever returned or written.
+fn load_key(keys_dir: &Path, role: &str) -> Result<(Decoded<Hex>, Key)> {
+    let path = keys::key_path(keys_dir, role);
+    let bytes =
+        fs::read(&path).with_context(|| format!("read {role} key at {}", path.display()))?;
+    let keypair = tough::sign::parse_keypair(&bytes)
+        .with_context(|| format!("parse {role} key at {}", path.display()))?;
+    let key = keypair.tuf_key();
+    let key_id = key.key_id().context("compute key id")?;
+    Ok((key_id, key))
+}
+
+/// Drops keys that no role references any more.
+///
+/// After a rotation the outgoing root key is bound to nothing. Leaving it in the
+/// `keys` map could not make it authoritative -- verification only counts a
+/// signature whose key id the role itself lists -- but it would leave a revoked
+/// key printed in the one document a device trusts, and which listed keys still
+/// count is the last question an operator reading a trust anchor should have to
+/// answer.
+fn prune_unreferenced_keys(root: &mut Root) {
+    let referenced: HashSet<Decoded<Hex>> = root
+        .roles
+        .values()
+        .flat_map(|role| role.keyids.iter().cloned())
+        .collect();
+    root.keys.retain(|key_id, _| referenced.contains(key_id));
 }
 
 /// Loads the repository for editing and returns its current version numbers.

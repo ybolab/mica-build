@@ -29,6 +29,11 @@ enum Command {
         /// Directory to write `<role>.pk8` files into.
         #[arg(long, default_value = DEFAULT_KEYS_DIR)]
         keys_dir: PathBuf,
+        /// Generate a key only for this role; repeatable. Defaults to all four.
+        /// A rotation ceremony wants `--role root` on its own, so no unused copy
+        /// of an online key is written to the offline media.
+        #[arg(long = "role", value_name = "ROLE")]
+        roles: Vec<String>,
     },
     /// Create an empty TUF repository with all four roles at version 1.
     Init {
@@ -78,6 +83,30 @@ enum Command {
         allow_rollback: bool,
         #[command(flatten)]
         expires: ExpiryArgs,
+    },
+    /// Rotate the root key: publish the next root version, signed by the
+    /// outgoing key AND the incoming one, so clients pinned to either anchor
+    /// accept it. The offline ceremony; needs no online key.
+    RotateRoot {
+        #[command(flatten)]
+        common: Common,
+        /// Directory holding the freshly generated `root.pk8` that takes over
+        /// the root role. `--keys-dir` must still hold the outgoing one.
+        #[arg(long)]
+        new_keys_dir: PathBuf,
+        /// New `root.json` expiration, RFC 3339.
+        #[arg(long, value_parser = parse_time)]
+        root_expires: DateTime<Utc>,
+    },
+    /// Re-sign root at its annual expiry with the SAME key: a new version and a
+    /// new expiration, no change of trust anchor and nothing to redistribute.
+    /// Not a rotation -- see `rotate-root` for that.
+    RefreshRoot {
+        #[command(flatten)]
+        common: Common,
+        /// New `root.json` expiration, RFC 3339.
+        #[arg(long, value_parser = parse_time)]
+        root_expires: DateTime<Utc>,
     },
     /// Verify a repository offline against a trusted root.
     Verify {
@@ -141,8 +170,13 @@ fn parse_time(value: &str) -> Result<DateTime<Utc>, String> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::GenDevKeys { keys_dir } => {
-            for path in keys::generate(&keys_dir)? {
+        Command::GenDevKeys { keys_dir, roles } => {
+            let selected: Vec<&str> = if roles.is_empty() {
+                keys::ROLES.to_vec()
+            } else {
+                roles.iter().map(String::as_str).collect()
+            };
+            for path in keys::generate_roles(&keys_dir, &selected)? {
                 println!("wrote {}", path.display());
             }
             println!("keep these out of git; the root key is offline material");
@@ -200,6 +234,35 @@ async fn main() -> Result<()> {
             )
             .await?;
             println!("re-signed {}", common.repo.display());
+        }
+        Command::RotateRoot {
+            common,
+            new_keys_dir,
+            root_expires,
+        } => {
+            let version = repo::rotate_root(
+                &common.repo,
+                &common.keys_dir,
+                Some(&new_keys_dir),
+                root_expires,
+            )
+            .await?;
+            println!("rotated root to v{version} in {}", common.repo.display());
+            println!(
+                "distribute metadata/{version}.root.json as the new trust anchor; \
+                 clients still pinned to an older root reach it through this file"
+            );
+        }
+        Command::RefreshRoot {
+            common,
+            root_expires,
+        } => {
+            let version =
+                repo::rotate_root(&common.repo, &common.keys_dir, None, root_expires).await?;
+            println!(
+                "refreshed root to v{version} in {} (same key; the trust anchor is unchanged)",
+                common.repo.display()
+            );
         }
         Command::Verify {
             repo: repo_dir,
