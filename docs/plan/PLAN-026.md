@@ -97,3 +97,16 @@ promoted check ids, base = main's current tip at each run.
   where a changed bound must be documented, citation re-anchors.
 - **Out**: any new API surface, the HTML pane redesign, PLAN-027/028
   scopes, the six items' neighbours not named here.
+
+## Correction (2026-08-28, at dispatch)
+
+M6's premise is false, measured by the executing workstream with a throwaway
+application of the exact edit: the fold deletes the verbatim text
+`use axum::routing::{any, get, post};` that two armed quotes in frozen task
+records (RFCT-210 and RFCT-240) cite and content-check — class B, no line to
+re-anchor to — and RFCT-215 section 1 contains no restatement of the write-verb
+negative, contrary to what this plan (and RFCT-215 section 6 item 6) claimed.
+Ruled option (c): the imports are not folded; RFCT-252 closes with the dated
+measurement, recording that the fold becomes gate-legal only if those two
+records are ever marked as dated records for their own reasons.
+
