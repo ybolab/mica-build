@@ -327,6 +327,15 @@ const V1_REBOOT_PATH: &str = "/v1/actions/reboot";
 const V1_POWEROFF_PATH: &str = "/v1/actions/poweroff";
 const V1_TRANSIENT_PASSWORD_PATH: &str = "/v1/actions/transient-root-password";
 
+/// M8's one route (`docs/task/RFCT-210.md` section 2.5).
+///
+/// Not under `/v1/actions/`, and the reason is the reason section 2.3 item
+/// (ii) gives for it needing a milestone of its own: it is neither a settings
+/// write (it writes three subtrees), nor a collection, and calling it an
+/// action understates that it is the device's one unauthenticated write. It is
+/// the first-run operation, so it is named for that and nothing else.
+const V1_SETUP_PATH: &str = "/v1/setup";
+
 /// M5's two array collections and their item routes
 /// (`docs/task/RFCT-210.md` section 2.5).
 ///
@@ -467,6 +476,14 @@ fn api_router() -> Router<AppState> {
             V1_TRANSIENT_PASSWORD_PATH,
             post(api_v1_transient_root_password),
         )
+        // M8's one route, and the only handler under this prefix that takes
+        // no credential extractor. It is not an exception the gate makes: the
+        // gate lets every declared `/api/` route through and each answers for
+        // itself, so what makes this one unauthenticated is the absence of
+        // `ApiSession`/`ApiBearer` in its signature and nothing else. `post`
+        // only, for the reason the actions above are: there is no state here
+        // to `GET` and nothing that follows a link may configure a device.
+        .route(V1_SETUP_PATH, post(api_v1_setup))
         // §2.4's envelope on the methods those routes do not serve, declared
         // once for the subtree rather than route by route. It reaches exactly
         // the routes above — it rewrites the method-not-allowed fallback of
@@ -539,6 +556,7 @@ fn is_declared_api_route(path: &str) -> bool {
             || leaf == V1_REBOOT_PATH
             || leaf == V1_POWEROFF_PATH
             || leaf == V1_TRANSIENT_PASSWORD_PATH
+            || leaf == V1_SETUP_PATH
     })
 }
 
@@ -2519,20 +2537,30 @@ fn no_content() -> Response {
 }
 
 /// Read a JSON body, or the 400 that says it was not JSON at all.
+///
+/// The dot-path is an `Option` because §2.4's `path` member is: every route of
+/// M6's network cluster writes one subtree and names it, but `POST /api/v1/setup`
+/// writes three and a malformed body there is not about any one of them. A
+/// member present with a meaningless value is worse than an absent one, which
+/// is the rule [`ApiErrorDetail::path`] already states.
 fn json_body<T: serde::de::DeserializeOwned>(
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
-    path: &str,
+    path: Option<&str>,
 ) -> Result<T, Box<Response>> {
+    let at = |error: ApiError| match path {
+        Some(path) => error.at(path),
+        None => error,
+    };
     let Json(value) = body.map_err(|rejection| {
         Box::new(api_response(
             StatusCode::BAD_REQUEST,
-            ApiError::apid("request_invalid", rejection.body_text()).at(path),
+            at(ApiError::apid("request_invalid", rejection.body_text())),
         ))
     })?;
     serde_json::from_value(value).map_err(|err| {
         Box::new(api_response(
             StatusCode::UNPROCESSABLE_ENTITY,
-            ApiError::apid("validation_failed", err.to_string()).at(path),
+            at(ApiError::apid("validation_failed", err.to_string())),
         ))
     })
 }
@@ -2574,7 +2602,7 @@ pub(crate) async fn api_v1_network_write(
     State(state): State<AppState>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
-    let entries: NetworkEntries = match json_body(body, NETWORK_SETTINGS_PATH) {
+    let entries: NetworkEntries = match json_body(body, Some(NETWORK_SETTINGS_PATH)) {
         Ok(entries) => entries,
         Err(response) => return *response,
     };
@@ -2640,7 +2668,7 @@ pub(crate) async fn api_v1_network_iface_write(
     if let Err(response) = check_iface_name(&iface, &path) {
         return *response;
     }
-    let cfg: IfaceSettings = match json_body(body, &path) {
+    let cfg: IfaceSettings = match json_body(body, Some(&path)) {
         Ok(cfg) => cfg,
         Err(response) => return *response,
     };
@@ -2876,7 +2904,7 @@ pub(crate) async fn api_v1_peers_add(
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let path = peers_settings_path(&iface);
-    let peer: WireguardPeer = match json_body(body, &path) {
+    let peer: WireguardPeer = match json_body(body, Some(&path)) {
         Ok(peer) => peer,
         Err(response) => return *response,
     };
@@ -3395,6 +3423,30 @@ struct SavedQuery {
 const HOSTNAME_RULES: &str =
     "Hostname must be 1-63 letters, digits or hyphens and must not start or end with a hyphen.";
 
+/// The admin-password floor, in bytes, for every surface that enforces it.
+///
+/// It was spelled `len() < 8` inline at two call sites -- the setup wizard's
+/// form handler and [`change_password`] -- and M8 adds a third enforcer.
+/// A third copy is what the rotate-key route below argues against in the
+/// general case: copies of one rule can disagree, and here disagreeing would
+/// mean one surface accepting a credential another would refuse. So the number
+/// lives once and the three call sites read it.
+///
+/// The wording each surface shows is *not* shared, and that is deliberate:
+/// the HTML pages say "at least 8 characters" to a human and the API says it
+/// in §2.4's envelope. What must not differ is the bound.
+const MIN_PASSWORD_BYTES: usize = 8;
+
+/// Whether an admin password is under [`MIN_PASSWORD_BYTES`].
+///
+/// Bytes and not characters, which is what every call site already measured:
+/// `str::len` is the byte length, so a password of eight non-ASCII characters
+/// was already over the floor before this function existed. Named rather than
+/// inlined so the comparison, and not only the number, has one spelling.
+fn password_under_floor(password: &str) -> bool {
+    password.len() < MIN_PASSWORD_BYTES
+}
+
 /// `^[a-zA-Z0-9._-]{1,15}$`
 fn valid_iface_name(name: &str) -> bool {
     (1..=15).contains(&name.len())
@@ -3829,7 +3881,7 @@ async fn setup_submit(
         )
             .into_response();
     }
-    if form.password.len() < 8 {
+    if password_under_floor(&form.password) {
         return (
             StatusCode::BAD_REQUEST,
             page(
@@ -3926,6 +3978,298 @@ async fn setup_submit(
         Redirect::to("/"),
     )
         .into_response()
+}
+
+/// `POST /api/v1/setup` request body.
+///
+/// No `confirm` member, unlike the form the wizard posts: that field exists so
+/// a human who mistyped a password into a box they cannot read is told before
+/// it becomes the only credential on the device. A client that built a JSON
+/// body knows what it sent, and a second copy of the same string proves
+/// nothing about it.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub(crate) struct SetupRequest {
+    /// The admin password to set. At least 8 bytes, the floor the wizard and
+    /// the change-password route enforce.
+    password: String,
+    /// The hostname to apply. Absent leaves the stored one alone.
+    ///
+    /// Not trimmed, for the reason `PUT /api/v1/settings/hostname` gives: a
+    /// client that built a JSON string chose its bytes, and silently writing
+    /// something other than what it sent is the worse answer.
+    #[serde(default)]
+    hostname: Option<String>,
+    /// `network` entries to declare, merged into the stored map by name.
+    ///
+    /// Merged and not replacing it, which is what the wizard's one interface
+    /// field does: it writes `network.<iface>` and leaves every other entry
+    /// alone. A route that replaced the map could unmake the entry a
+    /// factory-fresh device is reachable over, which is the failure this
+    /// milestone exists to make impossible rather than to introduce. An entry
+    /// whose name is already declared is replaced whole; one that is not is
+    /// added.
+    #[serde(default)]
+    #[schema(value_type = Option<std::collections::BTreeMap<String, NetworkInterface>>)]
+    network: Option<NetworkEntries>,
+}
+
+/// `POST /api/v1/setup` response body: the minted credential, and nothing else.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct SetupToken {
+    /// The whole token, `mos_<id>_<secret>`.
+    ///
+    /// **It appears here and nowhere else, ever**, exactly as the mint route's
+    /// does: only the SHA-256 digest is stored. The id is not a separate
+    /// member because it is the token's own second segment, so a caller that
+    /// holds this string can address it for a later `DELETE` without being
+    /// told it twice.
+    token: String,
+}
+
+/// The label the setup-minted token is listed under.
+///
+/// A fixed string and not a request field: the body has no name member, and
+/// inventing one would make the first credential's label the one thing about
+/// first-run setup a client must get right. It says where the token came from,
+/// which is the only thing a listing can usefully say about it.
+const SETUP_TOKEN_NAME: &str = "first-run setup";
+
+/// First-run setup over the API: the admin password, optionally a hostname and
+/// network entries, and a minted API token (`docs/task/RFCT-210.md` sections
+/// 2.3 item (ii) and 2.5).
+///
+/// **Unauthenticated by necessity.** It is the operation that creates the
+/// device's first credential, so it cannot demand one. The gate lets every
+/// declared `/api/` route through and each answers for itself, so what makes
+/// this route open is that its signature names no credential extractor -- and
+/// the 409 below is what closes it again the moment a password exists.
+///
+/// **It mints a token where the browser wizard does not** (§3.2). The reason is
+/// stated there: a caller who drove first-run setup over the API demonstrably
+/// wants API access, where a human who filled in a form did not ask for a
+/// permanent credential they may never rotate. It mints through the same
+/// routine `POST /api/v1/tokens` mints through, so the two cannot produce
+/// credentials of different shapes.
+///
+/// **Everything is validated before anything is written, and that is the one
+/// behaviour this milestone changes rather than documents.** The form path
+/// writes `access.webAdmin` and records the audit event *before* the hostname
+/// and network writes are attempted, so a bus failure halfway leaves the device
+/// out of setup mode with no hostname -- unreachable by the wizard that was
+/// meant to configure it. Here every rule is checked and the password is
+/// hashed first, and then the writes run in the order that fails safe:
+/// hostname, network, `access.webAdmin`, token. Nothing before the third write
+/// takes the device out of setup mode, so a failure at any point leaves the
+/// wizard reachable.
+///
+/// **The browser wizard is not changed**, deliberately: what is left there is a
+/// *bus* failure between two writes, and closing that needs a transactional
+/// multi-path write on the bus -- a mosd change, outside this API's scope. The
+/// two surfaces therefore diverge, and both halves are asserted.
+///
+/// Prose and not intra-doc links, for the reason the rotate-key route states:
+/// `utoipa` copies this comment into the published document, where a link
+/// would put an apid symbol name in front of every client. The implementation
+/// notes those links would carry are in the body -- which paired test names
+/// the divergence, and which of M6's validators this route calls rather than
+/// copies.
+#[utoipa::path(
+    post,
+    path = V1_SETUP_PATH,
+    context_path = API,
+    tag = "actions",
+    request_body = SetupRequest,
+    responses(
+        (status = 201, description = "The device is configured; the body carries a newly minted API token, which is not recoverable afterwards", body = SetupToken),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 409, description = "The device already has an admin password, so it is not in setup mode (`already_configured`). Change the password with `POST /api/v1/actions/change-password`", body = ApiError),
+        (status = 422, description = "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them", body = ApiError),
+        (status = 500, description = "Hashing the password failed (`hash_failed`), the stored token list could not be read (`settings_invalid`), no free token id was drawn (`mint_failed`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_setup(
+    State(state): State<AppState>,
+    Source(source): Source,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    // No dot-path: this route writes three subtrees and a malformed body is
+    // not about any one of them (§2.4's optional member).
+    let request: SetupRequest = match json_body(body, None) {
+        Ok(request) => request,
+        Err(response) => return *response,
+    };
+    // One read of `access`, answering two questions: whether the device is
+    // still in setup mode, and what the token list holds. The form path's
+    // condition is `password_hash(&access).is_some()` and this is that
+    // condition and not a rendering of it.
+    let access = match state.api.get_settings("access").await {
+        Ok(value) => value,
+        Err(err) => return bus_api_error(&err, Some("access")),
+    };
+    if password_hash(&access).is_some() {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "already_configured",
+                "this device already has an admin password, so it is not in setup mode; \
+                 change the password with `POST /api/v1/actions/change-password`"
+                    .to_string(),
+            )
+            .at("access.webAdmin"),
+        );
+    }
+
+    // Everything below this line validates. Nothing below it writes until the
+    // last rule has passed and the password has been hashed. The divergence
+    // from the wizard that this creates is asserted by
+    // `the_api_setup_route_validates_before_writing_where_the_form_path_does_not`,
+    // which drives the same invalid request through both surfaces.
+    if password_under_floor(&request.password) {
+        // The bound and never the password: the message names how long it must
+        // be and interpolates nothing the caller sent.
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                format!("the admin password must be at least {MIN_PASSWORD_BYTES} bytes"),
+            )
+            .at("access.webAdmin"),
+        );
+    }
+    if let Some(hostname) = request.hostname.as_deref()
+        && !valid_hostname(hostname)
+    {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", HOSTNAME_RULES.to_string()).at("hostname"),
+        );
+    }
+    // The candidate tree and not the submitted entries, for the reason the
+    // pane's comment gives and M6's routes act on: every relational rule is
+    // about two entries at once, so a submitted bridge port may legitimately
+    // name an interface the device already declares. The validators are M6's
+    // own, called and not copied.
+    let candidate = match request.network.as_ref() {
+        None => None,
+        Some(submitted) => {
+            for iface in submitted.keys() {
+                if let Err(response) = check_iface_name(iface, NETWORK_SETTINGS_PATH) {
+                    return *response;
+                }
+            }
+            let mut candidate = match api_network_entries(&state).await {
+                Ok(entries) => entries,
+                Err(response) => return *response,
+            };
+            for (iface, cfg) in submitted {
+                candidate.insert(iface.clone(), cfg.clone());
+            }
+            if let Err(response) = relational_refusal(&candidate, NETWORK_SETTINGS_PATH) {
+                return *response;
+            }
+            Some(candidate)
+        }
+    };
+    // Read from the subtree already in hand rather than through
+    // `stored_tokens`, which would call the bus a second time for the same
+    // value. The posture is that helper's: a list that is present and
+    // unreadable is an error and never an empty list.
+    let tokens = match parse_tokens(&access) {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            return api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid(
+                    "settings_invalid",
+                    format!("the stored token list could not be read: {err}"),
+                )
+                .at(API_TOKENS_PATH),
+            );
+        }
+    };
+    let Some(minted) = token::mint(&tokens) else {
+        return api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid(
+                "mint_failed",
+                "no free token id was drawn; nothing was written".to_string(),
+            )
+            .at(API_TOKENS_PATH),
+        );
+    };
+    // Off the async workers for the same reason login verification and the
+    // wizard's own hash are: argon2id costs real CPU per call, by design. It
+    // is done here, before the first write, because it is the last step that
+    // can fail without the caller having asked for anything impossible.
+    let password = request.password.clone();
+    let hash = match tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
+    {
+        Ok(hash) => hash,
+        Err(err) => {
+            // Logged, not returned: the error carries argon2's own text and
+            // the caller can do nothing with it.
+            tracing::error!(error = %err, "password hashing failed");
+            return api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid(
+                    "hash_failed",
+                    "the admin password could not be hashed; nothing was written".to_string(),
+                )
+                .at("access.webAdmin"),
+            );
+        }
+    };
+
+    // The writes, in the order that fails safe. `access.webAdmin` is written
+    // third and not first: it is the write that takes the device out of setup
+    // mode, so a failure before it leaves the wizard reachable and a failure
+    // after it leaves a device an operator can still sign into.
+    if let Some(hostname) = request.hostname.as_deref()
+        && let Err(err) = state
+            .api
+            .set_settings("hostname", &Value::String(hostname.to_string()))
+            .await
+    {
+        return bus_api_error(&err, Some("hostname"));
+    }
+    if let Some(candidate) = candidate.as_ref()
+        && let Err(response) = write_network_map(&state, candidate).await
+    {
+        // The whole map in one call and not one call per entry, so N submitted
+        // interfaces are still one write and not N chances to half-apply.
+        return *response;
+    }
+    let value = serde_json::json!({ "password_hash": hash });
+    if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
+        return bus_api_error(&err, Some("access.webAdmin"));
+    }
+    // The device just left setup mode, and the gate must not keep believing
+    // otherwise from a cached pre-write snapshot -- the wizard's own reasoning.
+    state.access_cache.invalidate();
+    // Recorded once the admin password exists, which is the moment the device
+    // leaves setup mode. The same event name the wizard records, because it is
+    // the same event: §6's trail says what happened to the device, not which
+    // surface asked.
+    state.audit.record("setup", "completed", &source);
+    let mut tokens = tokens;
+    tokens.push(ApiToken {
+        id: minted.id,
+        name: SETUP_TOKEN_NAME.to_string(),
+        hash: minted.hash,
+        created: device_clock_seconds(),
+    });
+    if let Err(response) = write_tokens(&state, &tokens).await {
+        // Last, so this is the only write whose failure leaves a configured
+        // device: the operator signs in with the password they just set and
+        // mints a token from the pane. Every earlier failure left the device
+        // in setup mode.
+        return *response;
+    }
+    api_response(StatusCode::CREATED, SetupToken { token: minted.wire })
 }
 
 // Login / logout
@@ -4094,7 +4438,7 @@ async fn change_password(
     current: &str,
     new: &str,
 ) -> Result<(), PasswordChangeError> {
-    if new.len() < 8 {
+    if password_under_floor(new) {
         return Err(PasswordChangeError::TooShort);
     }
     let access = match state.api.get_settings("access").await {

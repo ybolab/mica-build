@@ -49,7 +49,8 @@ use utoipa::OpenApi;
         crate::routes::api_v1_peers_remove,
         crate::routes::api_v1_reboot,
         crate::routes::api_v1_poweroff,
-        crate::routes::api_v1_transient_root_password
+        crate::routes::api_v1_transient_root_password,
+        crate::routes::api_v1_setup
     )
 )]
 struct ApiDoc;
