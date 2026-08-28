@@ -679,7 +679,7 @@ is proposed here.
    an alarm is active (§4.1, §6). *Why it earns its place:* it is the only
    channel by which the device tells the operator something without being
    asked. *Plausible for mos:* mosd has `ReportHealth`
-   (`docs/design/mosd.md:374`) but no notification model and no UI surface for
+   (`docs/design/mosd.md:408`) but no notification model and no UI surface for
    one.
 
 4. **Config-versus-reality drift is raised as a user-visible warning.**
@@ -691,7 +691,7 @@ is proposed here.
    it turns "the setting says one thing and the system is another" from an
    invisible failure into a UI event. *Plausible for mos:* mosd's reconcilers
    already produce named outcomes including `conflict` and `plaintext-missing`
-   (`docs/design/mosd.md:258-260`), so the detection exists and only the surface
+   (`docs/design/mosd.md:292-294`), so the detection exists and only the surface
    is missing.
 
 5. **Per-row access levels with hide-not-disable semantics.** Four levels, and
@@ -756,7 +756,7 @@ is proposed here.
     `PageSettingsAccessAndSecurity.qml:213-250`. *Why it earns its place:* the
     most expensive support call on an appliance is the one where the operator
     locked themselves out of the box on a boat. *Plausible for mos:* mos has an
-    equivalent hazard class already recorded (`docs/design/mosd.md:225-228`
+    equivalent hazard class already recorded (`docs/design/mosd.md:259-262`
     notes the power pane cannot warn about burning a boot attempt).
 
 12. **UI extensions delivered over the data channel.** `dbus-flashmq` scans
