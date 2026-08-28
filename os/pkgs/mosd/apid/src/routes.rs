@@ -34,8 +34,7 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
     ApiToken, AuthorizedKey, BridgeConfig, IfaceKind, IfaceSettings, SettingsError, StaticConfig,
     VlanConfig, WifiNetwork, WireguardConfig, WireguardPeer, parse_authorized_key,
-    quote_path_segment,
-    validate_api_tokens, validate_authorized_keys,
+    quote_path_segment, validate_api_tokens, validate_authorized_keys,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -1634,12 +1633,14 @@ const FINGERPRINT_DIGEST_CHARS: usize = 43;
 /// [`ssh_fingerprint`] computes. A fingerprint carrying a `/` reaches this
 /// route percent-encoded; see [`collection_item`].
 fn is_ssh_fingerprint(value: &str) -> bool {
-    value.strip_prefix(FINGERPRINT_PREFIX).is_some_and(|digest| {
-        digest.len() == FINGERPRINT_DIGEST_CHARS
-            && digest
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/')
-    })
+    value
+        .strip_prefix(FINGERPRINT_PREFIX)
+        .is_some_and(|digest| {
+            digest.len() == FINGERPRINT_DIGEST_CHARS
+                && digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/')
+        })
 }
 
 /// A stored key as the API answers it.

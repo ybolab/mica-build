@@ -6961,11 +6961,11 @@ async fn the_ssh_key_collection_lists_adds_and_removes() {
     // Canonicalised by the parser: the comment is lifted out of `key` so the
     // same key pasted under two labels is one key.
     assert_eq!(added["key"]["key"], json!(canonical(REAL_ED25519_LINE)));
-    assert_eq!(added["key"]["comment"], json!(comment_of(REAL_ED25519_LINE)));
     assert_eq!(
-        added["key"]["fingerprint"],
-        json!(REAL_ED25519_FINGERPRINT)
+        added["key"]["comment"],
+        json!(comment_of(REAL_ED25519_LINE))
     );
+    assert_eq!(added["key"]["fingerprint"], json!(REAL_ED25519_FINGERPRINT));
     assert_eq!(
         stored_key_list(&fake).await,
         json!([stored_key(REAL_ED25519_LINE)])
@@ -6974,7 +6974,10 @@ async fn the_ssh_key_collection_lists_adds_and_removes() {
 
     let listed = body_json(get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await).await;
     assert_eq!(listed["keys"].as_array().unwrap().len(), 1);
-    assert_eq!(listed["keys"][0]["fingerprint"], json!(REAL_ED25519_FINGERPRINT));
+    assert_eq!(
+        listed["keys"][0]["fingerprint"],
+        json!(REAL_ED25519_FINGERPRINT)
+    );
 
     let removed = request(
         &router,
@@ -7006,7 +7009,10 @@ async fn the_root_key_notice_is_on_the_listing_and_on_the_add() {
         Some(&cookie),
     )
     .await;
-    assert_eq!(body_json(added).await["notice"], json!(ROOT_KEY_NOTICE_TEXT));
+    assert_eq!(
+        body_json(added).await["notice"],
+        json!(ROOT_KEY_NOTICE_TEXT)
+    );
 }
 
 /// The add runs the parser the pane runs, and refuses the same lines: both
@@ -7291,7 +7297,10 @@ async fn the_wifi_network_collection_lists_adds_and_removes() {
     .await;
     assert_eq!(removed.status(), StatusCode::NO_CONTENT);
     let left = body_json(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await).await;
-    assert_eq!(left, json!([{ "ssid": "cafe-guest", "hidden": false, "priority": 0 }]));
+    assert_eq!(
+        left,
+        json!([{ "ssid": "cafe-guest", "hidden": false, "priority": 0 }])
+    );
 }
 
 /// A key written through `POST` is redacted on the next `GET`, and the
@@ -7430,13 +7439,8 @@ async fn a_body_that_is_not_a_network_is_422() {
         // An array where an object belongs.
         r#"[{"ssid":"roastery"}]"#,
     ] {
-        let response = post_json(
-            &router,
-            "/api/v1/wifi/client/networks",
-            body,
-            Some(&cookie),
-        )
-        .await;
+        let response =
+            post_json(&router, "/api/v1/wifi/client/networks", body, Some(&cookie)).await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -7638,13 +7642,13 @@ fn the_openapi_document_covers_the_two_collections() {
 fn the_wifi_schema_matches_the_settings_model() {
     let document: serde_json::Value =
         serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
-    let documented: Vec<String> = document["components"]["schemas"]["WifiNetworkEntry"]
-        ["properties"]
-        .as_object()
-        .expect("WifiNetworkEntry is an object schema")
-        .keys()
-        .cloned()
-        .collect();
+    let mut documented: Vec<String> =
+        document["components"]["schemas"]["WifiNetworkEntry"]["properties"]
+            .as_object()
+            .expect("WifiNetworkEntry is an object schema")
+            .keys()
+            .cloned()
+            .collect();
 
     // Every field present: `psk` is the one the model omits when it is absent.
     let model = serde_json::to_value(mosd_settings::WifiNetwork {
@@ -7660,7 +7664,6 @@ fn the_wifi_schema_matches_the_settings_model() {
         .keys()
         .cloned()
         .collect();
-    let mut documented = documented;
     fields.sort();
     documented.sort();
     assert_eq!(
