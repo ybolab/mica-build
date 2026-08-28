@@ -405,6 +405,60 @@ pub struct WifiNetwork {
     pub priority: i32,
 }
 
+/// Characters a raw 256-bit pre-shared key occupies, spelled in hex.
+pub const RAW_PMK_LEN: usize = 64;
+
+/// IEEE 802.11i's shortest WPA2 passphrase.
+pub const MIN_PASSPHRASE_LEN: usize = 8;
+
+/// IEEE 802.11i's longest.
+pub const MAX_PASSPHRASE_LEN: usize = 63;
+
+/// Refuse a [`WifiNetwork::psk`] no WPA2 supplicant could use.
+///
+/// **Lifted out of the station reconciler's renderer** (PLAN-023 M6): the
+/// bound used to live inside `mosd`'s private `encode_psk`, so the one crate
+/// that holds the typed model could not state its own field's rule and every
+/// write surface accepted a key the renderer would later refuse. The renderer
+/// now calls this, so there is one rule and not two — the reason the
+/// alternative, a second copy in apid, was refused outright: a second copy can
+/// disagree with the first.
+///
+/// The bound is IEEE 802.11i's and it is checked for the reason the access
+/// point checks it: wpa_supplicant rejects an out-of-range passphrase by
+/// refusing the WHOLE configuration file, which takes every other configured
+/// network down with it while the reconcile still reports `applied`.
+///
+/// A [`RAW_PMK_LEN`]-digit hex string is the raw 256-bit key rather than a
+/// passphrase, and the passphrase bounds do not apply to it.
+///
+/// **The message deliberately does not name the length observed.** A length is
+/// a fact about a secret, and this string reaches an HTTP client.
+///
+/// It is not enforced in [`WifiNetwork`]'s `Deserialize`, deliberately.
+/// [`Settings::set`] validates by deserializing the whole candidate tree and
+/// [`crate::Store`] loads by deserializing it, so a bound enforced there would
+/// turn one out-of-range key already on disk into a device whose settings file
+/// does not load and whose every unrelated write fails. This is a rule about a
+/// value being written, and it is checked where a write is decided.
+///
+/// # Errors
+///
+/// Returns the sentence a refusal carries when `psk` is neither a raw PMK nor
+/// a passphrase of an admissible length.
+pub fn validate_wifi_psk(psk: &str) -> Result<(), String> {
+    if psk.len() == RAW_PMK_LEN && psk.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(());
+    }
+    if psk.len() < MIN_PASSPHRASE_LEN || psk.len() > MAX_PASSPHRASE_LEN {
+        return Err(format!(
+            "a WPA2 passphrase is {MIN_PASSPHRASE_LEN} to {MAX_PASSPHRASE_LEN} characters \
+             (or a {RAW_PMK_LEN}-digit hex PMK)"
+        ));
+    }
+    Ok(())
+}
+
 /// WiFi access-point configuration used by the provisioning flow.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]

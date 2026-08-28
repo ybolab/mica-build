@@ -106,7 +106,7 @@
           "actions"
         ],
         "summary": "Rotate a WireGuard interface's private key (§2.1's action family).",
-        "description": "An action and not a settings write, because there is no setting to write:\nthe key lives in a mode-0640 file on STATE that the settings tree does not\ndescribe. mosd draws the new key, deletes the device holding the old one and\nreconciles, so a caller that gets a 200 has a tunnel running on the key\nwhose public half it was just handed.\n\n`iface` is passed to mosd unexamined. mosd owns the rule — the name must be\na declared `network` entry of kind `wireguard` — and it raises `InvalidArgs`\nfor anything else, which is classified as the same 422 a rejected settings\npath gets. A second copy of that rule here could disagree with the first.\n\nProse and not an intra-doc link to the classifier, deliberately: `utoipa`\ncopies this comment into the published document, where a link would put an\napid symbol name in front of every client.",
+        "description": "An action and not a settings write, because there is no setting to write:\nthe key lives in a mode-0640 file on STATE that the settings tree does not\ndescribe. mosd draws the new key, deletes the device holding the old one and\nreconciles, so a caller that gets a 200 has a tunnel running on the key\nwhose public half it was just handed.\n\n`iface` is passed to mosd unexamined. mosd owns the rule — the name must be\na declared `network` entry of kind `wireguard` — and it raises the error\nname for whichever half of that rule failed. A second copy of that rule\nhere could disagree with the first.\n\n**Those two halves used to share one error name, and this route answered\n422 for both.** An interface that is not a declared entry names nothing,\nwhich is the condition the settings and state reads beside it already\nanswer 404 for; an entry of the wrong kind is a bad argument, which really\nis a 422. mosd collapsed them into one `InvalidArgs` and apid had nothing\nleft to tell them apart with (`docs/task/RFCT-210.md` section 2.4). The\ncorrection is entirely in mosd: it now raises its interface-scoped\nnot-found name for the undeclared entry, and the classifier below — which\nalready mapped that name to 404 and `InvalidArgs` to 422 — was not touched.\nThe document gained a response; no apid logic changed.\n\nProse and not an intra-doc link to the classifier, deliberately: `utoipa`\ncopies this comment into the published document, where a link would put an\napid symbol name in front of every client.",
         "operationId": "api_v1_wireguard_rotate",
         "parameters": [
           {
@@ -140,6 +140,16 @@
               }
             }
           },
+          "404": {
+            "description": "The name is not a declared `network` entry (`settings_not_found`); the URL names no interface to rotate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "405": {
             "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
@@ -151,7 +161,7 @@
             }
           },
           "422": {
-            "description": "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one",
+            "description": "The entry exists and is not a WireGuard one (`settings_rejected`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -256,6 +266,588 @@
           },
           "405": {
             "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network": {
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Replace the whole interface map, validated as one tree.",
+        "description": "This is the route that gives back what refusing the passthrough took away.\nSection 2.2 kept the settings passthrough for atomic whole-list\nreplacement; this provides that atomicity **and** the validation the\npassthrough does not, which is the trade the departure was argued on.\n\nIt is the only way to make two entries legal in one step. Adding a bridge\nand its ports one at a time through `PUT /api/v1/network/{iface}` means\nordering the ports first, because a bridge naming a port that is not yet\ndeclared is refused; a client that has the whole map can send it and not\ncare.\n\nProse and not an intra-doc link, deliberately: `utoipa` copies this comment\ninto the published document, where a link would put an apid symbol name in\nfront of every client.",
+        "operationId": "api_v1_network_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/NetworkInterface"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The map was replaced; the reconciler has re-rendered every unit from it"
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body is not a map of interfaces, a key is not an interface name, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/{iface}": {
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Declare or replace one interface, validated against the whole map.",
+        "description": "**A `PUT` replaces the entry entirely**, which includes a tunnel's peer\nlist: a body with no `wireguard` block on an interface that had one leaves\nit with none. That is what `PUT` means, and it is the cost section 2.3\nnames for the departure -- *\"a client that wants to flip one boolean on one\ninterface now sends the whole entry\"*. The pane behaves differently\n(`network_submit` carries the stored peers across a save) because a form\nposts the fields it renders and cannot say anything about the ones it does\nnot; a client that built a JSON body said exactly what it meant.\n\n`iface` is an identifier that may legitimately not exist yet -- this route\ncreates it -- so there is no 404 here. A name outside the interface charset\nis 422, which is section 2.4's malformed half.",
+        "operationId": "api_v1_network_iface_write",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "The interface to declare or replace: `eth0`, or `eth0.100` for a VLAN. Created when it does not exist",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkInterface"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The entry was written; the reconciler has re-rendered its units"
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, the body is not an interface, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Remove one interface, with the rest of the map re-validated without it.",
+        "description": "The re-validation is the point and not a formality: removing `eth1` while\n`br0` lists it as a port leaves a bridge naming an entry that no longer\nexists, which is one of the four relational rules, so it is refused at 422\nwith the rule's own sentence and nothing is written. Remove the port from\nthe bridge first.\n\nThe whole map is rewritten because the dot-path syntax has no delete: a\n`SetSettings` writes a value at a path, and the only way to say \"this key\nis gone\" is to send the map without it. **Two concurrent removals lose\none**, the same read-modify-write cost every collection in this file\nrecords.",
+        "operationId": "api_v1_network_iface_remove",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "The declared interface to remove",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The entry was removed; the reconciler has swept its units"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name (`settings_not_found`). Well-formed and absent, which is a different answer from malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, or removing the entry breaks a relational rule -- a bridge still lists it as a port, a VLAN still names it as a parent (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/{iface}/peers": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Every far end configured on one tunnel.",
+        "operationId": "api_v1_peers_list",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "A declared `network` entry of kind `wireguard`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored peers, in stored order, each with the public key that is its `DELETE` path segment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WireguardPeerEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, or the entry is not a WireGuard one (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Add one far end to a tunnel.",
+        "description": "**404 before anything is written, when `{iface}` is not a declared entry.**\nThat is this route's reason for existing in the shape it has, and\n`docs/task/RFCT-210.md` section 2.4's sweep is why: the pane's equivalent\nsucceeds on an undeclared interface and grows a broken `network` entry.\nFixed structurally rather than with a guard -- the interface has to be read\nanyway, to know whether it is a tunnel and what peers it already has.\n\nA duplicate public key is **409 `peer_exists`**, following the WiFi\ncollection's `ssid_exists` and not the SSH collection's 422. The two\nprecedents are both shipped and this is the third instance; the reason to\nfollow this one is that the public key **is** this collection's identity --\nit is the `DELETE` path segment -- so a second entry under one key would\nleave no answer to which of the two a `DELETE` names, which is exactly the\nargument the WiFi route's 409 makes about an SSID. The SSH collection's 422\nis not available here even in principle: it is the *shared validator's* own\nmessage, inherited rather than decided, and no validator on either side of\nthe bus refuses a duplicate peer -- `validate_wireguard` checks each peer\nand never compares two. `docs/task/RFCT-242.md` flags the gap this sits in:\nthe ratified error contract covers absent and malformed and says nothing\nabout duplicate.",
+        "operationId": "api_v1_peers_add",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "A declared `network` entry of kind `wireguard`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WireguardPeerEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The peer was added; the body carries it back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WireguardPeerEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name (`settings_not_found`); nothing is written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A stored peer already carries that public key (`peer_exists`); the key is this collection's identity, so the entry is not replaced silently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, the entry is not a WireGuard one, or the peer is one the reconciler would refuse -- a public key that is not 32 bytes of base64, an allowed IP that is not a CIDR, an endpoint that is not `host:port` (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/{iface}/peers/{publicKey}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Remove one far end, identified by its public key.",
+        "description": "Section 2.4's rule with both halves live. A string that is not 32 bytes of\nbase64 could never be a WireGuard public key and is **422**; a well-formed\nkey that no stored peer carries is **404**, from the one shared not-found\nhelper every item route in this file reaches for.\n\nThe pane answers 422 for the second condition -- *\"No peer of this tunnel\nhas that public key; the list may have changed since the page was loaded.\"*\n-- and that split stays, for the reason section 2.4 gives about the SSH\npane: a form's body is a re-rendered page no consumer reads a status from,\nand its message asks for a re-submit. Its paired test is\n`the_network_pane_answers_422_where_the_peer_route_answers_404`.",
+        "operationId": "api_v1_peers_remove",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "A declared `network` entry of kind `wireguard`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "publicKey",
+            "in": "path",
+            "description": "The peer's public key, as `GET /api/v1/network/{iface}/peers` returns it: 32 bytes in padded base64. Its alphabet contains `/` and `+`, so a key carrying either is percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The peer was removed; the reconciler has re-rendered the tunnel without it"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name, or no peer of it carries that key (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The interface name is not one, the entry is not a WireGuard one, or the path segment is not a WireGuard public key at all (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1176,7 +1768,7 @@
             }
           },
           "422": {
-            "description": "The body carries the redaction sentinel, or is not a network the settings model holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "description": "The body carries the redaction sentinel, is not a network the settings model holds, or carries a `psk` outside IEEE 802.11i's 8..63 characters that is not a 64-digit hex PMK either (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1545,6 +2137,22 @@
           }
         }
       },
+      "BridgeParameters": {
+        "type": "object",
+        "description": "The parameters of a software bridge.",
+        "required": [
+          "ports"
+        ],
+        "properties": {
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of the `network` entries enslaved to this bridge. **Each must be\na declared entry, must carry no addressing of its own, and must not be\na port of another bridge**; a body breaking any of those is refused at\n422 with the rule's own sentence."
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "description": "`POST /api/v1/actions/change-password` request body.",
@@ -1599,11 +2207,121 @@
           }
         }
       },
+      "NetworkInterface": {
+        "type": "object",
+        "description": "One `network` entry, as the document describes it.",
+        "required": [
+          "kind",
+          "dhcp"
+        ],
+        "properties": {
+          "bridge": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BridgeParameters",
+                "description": "Bridge parameters, for `kind = \"bridge\"`."
+              }
+            ]
+          },
+          "dhcp": {
+            "type": "boolean",
+            "description": "Whether the interface acquires its address via DHCP."
+          },
+          "kind": {
+            "type": "string",
+            "description": "`physical`, `vlan`, `bridge` or `wireguard`. Absent means `physical`.\n\nThe block below is authoritative and the interface name is not:\n`eth0.100` is a convention, not a declaration."
+          },
+          "static": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaticAddressing",
+                "description": "Static addressing, used when `dhcp` is false. Absent is an interface\nwith no addressing at all, which is what a bridge port must be."
+              }
+            ]
+          },
+          "vlan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VlanParameters",
+                "description": "VLAN parameters, for `kind = \"vlan\"`."
+              }
+            ]
+          },
+          "wireguard": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WireguardParameters",
+                "description": "WireGuard parameters, for `kind = \"wireguard\"`."
+              }
+            ]
+          }
+        }
+      },
       "ResourceValue": {
         "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and the write\nroute refuses any body that carries it, at 422, rather than storing it.\n`privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
       },
       "SettingsWrite": {
         "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and the route is what says so, per\ndot-path, in a 422."
+      },
+      "StaticAddressing": {
+        "type": "object",
+        "description": "`static` addressing, as the document describes it.\n\nThese four structs exist for `openapi.json` and are never deserialized\nfrom: the routes below parse into `mosd_settings`' own types, which are the\nvalidator mosd runs. `the_network_schema_matches_the_settings_model` holds\neach one against the model field for field, so a field added to the schema\ncannot go undocumented here.",
+        "required": [
+          "address",
+          "dns"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Interface address in CIDR notation, e.g. `192.168.1.10/24`."
+          },
+          "dns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DNS server addresses."
+          },
+          "gateway": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Default gateway address; absent for a link with no route of its own."
+          }
+        }
+      },
+      "VlanParameters": {
+        "type": "object",
+        "description": "The 802.1Q parameters of a VLAN interface.",
+        "required": [
+          "parent",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "802.1Q VLAN id.",
+            "minimum": 0
+          },
+          "parent": {
+            "type": "string",
+            "description": "Name of the `network` entry this VLAN sits on. **It must be a declared\nentry**; a body naming one that is not is refused at 422."
+          }
+        }
       },
       "WifiNetworkEntry": {
         "type": "object",
@@ -1633,6 +2351,68 @@
           "ssid": {
             "type": "string",
             "description": "The network name, which is also this entry's `DELETE` path segment."
+          }
+        }
+      },
+      "WireguardParameters": {
+        "type": "object",
+        "description": "The parameters of a WireGuard tunnel.\n\nThere is no private-key member and there never will be: this subtree is\nserved over `GET /api/v1/settings/network`, so a key in it is a key\npublished to every client. The private key lives in a mode-0640 file on the\ndevice and only its public half is surfaced, through\n`GET /api/v1/state/network` and the rotate action.",
+        "required": [
+          "peers"
+        ],
+        "properties": {
+          "listenPort": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "UDP port to listen on; absent lets the kernel pick one.",
+            "minimum": 0
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WireguardPeerEntry"
+            },
+            "description": "The far ends of the tunnel. A `PUT` of this interface replaces them;\nthe peer collection route edits them one at a time."
+          }
+        }
+      },
+      "WireguardPeerEntry": {
+        "type": "object",
+        "description": "One far end of a WireGuard tunnel, in both directions.",
+        "required": [
+          "publicKey",
+          "allowedIps"
+        ],
+        "properties": {
+          "allowedIps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CIDRs routed to this peer."
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`host:port` to send to, for a peer this end initiates to."
+          },
+          "persistentKeepalive": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Keepalive interval in seconds, for a peer behind NAT.",
+            "minimum": 0
+          },
+          "publicKey": {
+            "type": "string",
+            "description": "The peer's X25519 public key: 32 bytes in padded base64. It is also\nthis entry's `DELETE` path segment, and its alphabet contains `/`, so a\nkey carrying one is percent-encoded there."
           }
         }
       },

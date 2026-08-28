@@ -22,12 +22,13 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-// `delete` is imported on its own line rather than folded into the routing
-// import below. `docs/task/RFCT-210.md` quotes that line verbatim as the
-// measurement behind its central negative -- apid had never served a write
-// verb -- and a record of what was true is not edited by the change that makes
-// it untrue.
+// `delete` and `put` are imported on their own lines rather than folded into
+// the routing import below. `docs/task/RFCT-210.md` quotes that line verbatim
+// as the measurement behind its central negative -- apid had never served a
+// write verb -- and a record of what was true is not edited by the change that
+// makes it untrue.
 use axum::routing::delete;
+use axum::routing::put;
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
@@ -338,6 +339,25 @@ const V1_WIFI_NETWORK_ROUTE: &str = "/v1/wifi/client/networks/{ssid}";
 /// writes it: one dot-path for one list, whichever surface is writing it.
 const WIFI_NETWORKS_PATH: &str = "wifi.client.networks";
 
+/// M6's network cluster (`docs/task/RFCT-210.md` section 2.3 item (i)): the
+/// interface map, one interface, and a tunnel's peer collection.
+///
+/// The prefix is needed separately for the reason the token collection's is:
+/// [`is_declared_api_route`] has to recognise all three shapes under it with
+/// no router to ask.
+const V1_NETWORK_PATH: &str = "/v1/network";
+const V1_NETWORK_PREFIX: &str = "/v1/network/";
+const V1_NETWORK_IFACE_ROUTE: &str = "/v1/network/{iface}";
+const V1_NETWORK_PEERS_ROUTE: &str = "/v1/network/{iface}/peers";
+const V1_NETWORK_PEER_ROUTE: &str = "/v1/network/{iface}/peers/{publicKey}";
+
+/// The settings dot-path the interface map lives at, which every envelope
+/// raised about the whole map names.
+const NETWORK_SETTINGS_PATH: &str = "network";
+
+/// The segment that separates a tunnel from its peer collection.
+const PEERS_SEGMENT: &str = "peers";
+
 /// Each root's three spellings as one tuple, for the test that holds them
 /// together.
 #[cfg(test)]
@@ -407,6 +427,22 @@ fn api_router() -> Router<AppState> {
             get(api_v1_wifi_networks_list).post(api_v1_wifi_networks_add),
         )
         .route(V1_WIFI_NETWORK_ROUTE, delete(api_v1_wifi_networks_remove))
+        // M6's network cluster. Typed rather than a dot-path passthrough
+        // because the rules under `network` are relational
+        // (`docs/task/RFCT-210.md` section 2.3 item (i)): a bridge port has to
+        // name a declared entry, which no check confined to the entry being
+        // written could see. `PUT /api/v1/settings/network...` is refused at
+        // 409 by [`settings_write_refusal`] and names these routes.
+        .route(V1_NETWORK_PATH, put(api_v1_network_write))
+        .route(
+            V1_NETWORK_IFACE_ROUTE,
+            put(api_v1_network_iface_write).delete(api_v1_network_iface_remove),
+        )
+        .route(
+            V1_NETWORK_PEERS_ROUTE,
+            get(api_v1_peers_list).post(api_v1_peers_add),
+        )
+        .route(V1_NETWORK_PEER_ROUTE, delete(api_v1_peers_remove))
         // POST only, for the reason the power and SSH mutations are: no GET
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
@@ -476,9 +512,46 @@ fn is_declared_api_route(path: &str) -> bool {
             || leaf == V1_WIFI_NETWORKS_PATH
             || collection_item(leaf, V1_SSH_KEYS_PREFIX).is_some()
             || collection_item(leaf, V1_WIFI_NETWORKS_PREFIX).is_some()
+            || leaf == V1_NETWORK_PATH
+            || is_network_route(leaf)
             || resource_dot_path(leaf).is_some()
             || rotate_key_iface(leaf).is_some()
     })
+}
+
+/// Whether a leaf is one of M6's three network shapes under
+/// [`V1_NETWORK_PREFIX`].
+///
+/// One predicate for three routes, because they share a prefix and the gate
+/// has to release exactly what the router serves and nothing else. The two
+/// existing precedents are both applied here rather than a third rule being
+/// invented, and the difference between them is a position and not a
+/// preference:
+///
+/// - A **trailing** `{iface}` or `{publicKey}` must be non-empty, the rule
+///   [`collection_item`] states. `/api/v1/network/` is the collection path
+///   with a trailing slash, which this router does not serve and which must
+///   reach the reserved subtree's not-found rather than the item route.
+/// - A `{iface}` in the **middle** may be empty, the rule
+///   [`rotate_key_iface`] states: axum matches zero or more characters there,
+///   so `/api/v1/network//peers` really is a route, and refusing it here would
+///   answer an unauthenticated caller with a redirect where the route answers
+///   an envelope.
+///
+/// No segment may contain a `/` — split on `/` guarantees that — so a peer
+/// public key carrying one (its alphabet is standard base64) reaches these
+/// routes percent-encoded, exactly as an SSH fingerprint does.
+fn is_network_route(leaf: &str) -> bool {
+    let Some(rest) = leaf.strip_prefix(V1_NETWORK_PREFIX) else {
+        return false;
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    match segments.as_slice() {
+        [iface] => !iface.is_empty(),
+        [_iface, tail] => *tail == PEERS_SEGMENT,
+        [_iface, tail, public_key] => *tail == PEERS_SEGMENT && !public_key.is_empty(),
+        _ => false,
+    }
 }
 
 /// The interface a leaf names, when the leaf is the rotate-key action.
@@ -992,7 +1065,7 @@ fn settings_write_refusal(path: &str) -> Response {
         // Named rather than folded into the sentence below, because this is
         // the subtree where a passthrough is actively destructive rather than
         // merely wrong (`docs/task/RFCT-210.md` §2.4).
-        "network" => "the `network` subtree is not written through this route: it is written through the typed network routes (`PUT /api/v1/network/{iface}`), which this build does not serve yet. A raw write here would create an entry of the default kind for an interface that has none, rather than refusing it".to_string(),
+        "network" => "the `network` subtree is not written through this route: it is written through the typed network routes — `PUT /api/v1/network/{iface}` and the `DELETE` beside it, `PUT /api/v1/network` for the whole map, and the peer collection under each interface. A raw write here would create an entry of the default kind for an interface that has none, and would run none of the relational rules: a bridge naming a port that does not exist would be accepted".to_string(),
         _ => WRITES_FOUR.to_string(),
     })
 }
@@ -1152,9 +1225,20 @@ pub(crate) struct WireguardRotation {
 /// whose public half it was just handed.
 ///
 /// `iface` is passed to mosd unexamined. mosd owns the rule — the name must be
-/// a declared `network` entry of kind `wireguard` — and it raises `InvalidArgs`
-/// for anything else, which is classified as the same 422 a rejected settings
-/// path gets. A second copy of that rule here could disagree with the first.
+/// a declared `network` entry of kind `wireguard` — and it raises the error
+/// name for whichever half of that rule failed. A second copy of that rule
+/// here could disagree with the first.
+///
+/// **Those two halves used to share one error name, and this route answered
+/// 422 for both.** An interface that is not a declared entry names nothing,
+/// which is the condition the settings and state reads beside it already
+/// answer 404 for; an entry of the wrong kind is a bad argument, which really
+/// is a 422. mosd collapsed them into one `InvalidArgs` and apid had nothing
+/// left to tell them apart with (`docs/task/RFCT-210.md` section 2.4). The
+/// correction is entirely in mosd: it now raises its interface-scoped
+/// not-found name for the undeclared entry, and the classifier below — which
+/// already mapped that name to 404 and `InvalidArgs` to 422 — was not touched.
+/// The document gained a response; no apid logic changed.
 ///
 /// Prose and not an intra-doc link to the classifier, deliberately: `utoipa`
 /// copies this comment into the published document, where a link would put an
@@ -1168,7 +1252,8 @@ pub(crate) struct WireguardRotation {
     responses(
         (status = 200, description = "A new key was drawn; the body carries its public half", body = WireguardRotation),
         (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
-        (status = 422, description = "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one", body = ApiError),
+        (status = 404, description = "The name is not a declared `network` entry (`settings_not_found`); the URL names no interface to rotate", body = ApiError),
+        (status = 422, description = "The entry exists and is not a WireGuard one (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
@@ -1899,10 +1984,11 @@ async fn stored_networks(state: &AppState) -> Result<Vec<WifiNetwork>, Box<Respo
 /// statement rather than an omission. mosd's own write path is
 /// `Settings::set`, which validates by deserializing the candidate tree
 /// (`os/pkgs/mosd/mosd-settings/src/model.rs:666-680`) -- so the typed
-/// `WifiNetwork` this route deserializes into IS the validator mosd runs. The
-/// pre-shared key's own bounds live further on, inside the station
-/// reconciler's renderer, and are not reachable from apid; `docs/task/RFCT-241.md`
-/// records that and what it costs.
+/// `WifiNetwork` this route deserializes into IS the validator mosd runs — plus
+/// `mosd_settings::validate_wifi_psk`, which M6 lifted out of the station
+/// reconciler's renderer so that the crate holding the model states its own
+/// field's rule. `docs/task/RFCT-241.md` records what it cost while that rule
+/// was out of reach.
 async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<(), Box<Response>> {
     let value = serde_json::to_value(networks).expect("wifi networks serialize");
     if let Err(err) = state.api.set_settings(WIFI_NETWORKS_PATH, &value).await {
@@ -1970,7 +2056,7 @@ pub(crate) async fn api_v1_wifi_networks_list(
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
         (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 409, description = "A stored network already carries that SSID (`ssid_exists`); the SSID is this collection's identity, so the entry is not replaced silently", body = ApiError),
-        (status = 422, description = "The body carries the redaction sentinel, or is not a network the settings model holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 422, description = "The body carries the redaction sentinel, is not a network the settings model holds, or carries a `psk` outside IEEE 802.11i's 8..63 characters that is not a 64-digit hex PMK either (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
@@ -2016,6 +2102,26 @@ pub(crate) async fn api_v1_wifi_networks_add(
             );
         }
     };
+    // The pre-shared key's own bounds, run here for the first time.
+    // `docs/task/RFCT-241.md` recorded that M5 could not: they lived inside
+    // `encode_psk`, a private function of the `mosd` binary crate's station
+    // reconciler, so a key outside IEEE 802.11i's range was accepted, stored,
+    // and refused later by the renderer with the error visible only in live
+    // state. M6 lifted them into `mosd-settings` beside the typed model and
+    // the reconciler now calls the lifted copy, so this is the same rule and
+    // not a second one — which is what M5 refused to write, and rightly: a
+    // second copy could disagree with the first.
+    //
+    // After the shape check and not before it, unlike the sentinel: this is a
+    // rule about one field of a network, so there has to be a network first.
+    if let Some(psk) = &network.psk
+        && let Err(message) = mosd_settings::validate_wifi_psk(psk)
+    {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", message).at(WIFI_NETWORKS_PATH),
+        );
+    }
     let mut networks = match stored_networks(&state).await {
         Ok(networks) => networks,
         Err(response) => return *response,
@@ -2099,6 +2205,693 @@ pub(crate) async fn api_v1_wifi_networks_remove(
         [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
     )
         .into_response()
+}
+
+// M6's network cluster (`docs/task/RFCT-210.md` section 2.3 item (i)): the
+// interface map, one interface, and a tunnel's peer collection.
+//
+// **Typed, and not `PUT /api/v1/settings/network.<iface>`.** That is the one
+// place the design departs from section 2.2's "the passthrough must not be
+// removed" rule, and it is argued rather than assumed. The rules under
+// `network` are relational -- a VLAN's parent must name a declared entry, a
+// bridge port must name a declared entry, a bridge port must carry no
+// addressing of its own, and no port may be claimed by two bridges -- so they
+// are properties of the whole tree and not of the entry being written. The
+// settings setter validates only that the tree still deserializes
+// (`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`), and the reconciler that
+// does enforce them runs *after* the save with its verdict deliberately not
+// propagated to the caller (`os/pkgs/mosd/mosd/src/bus.rs:469-478`). A raw
+// passthrough therefore answers 204 to a bridge naming a port that does not
+// exist and leaves the device's networking broken, with the only evidence in a
+// later state read. These routes run [`validate_entries`] over the candidate
+// tree exactly as the pane does, before anything is written.
+//
+// There is no redaction-sentinel check on this cluster, unlike the WiFi
+// collection, and that is measured rather than skipped: no field of
+// `IfaceSettings` or of `WireguardPeer` has a name `redact`'s list covers, so
+// nothing a read of this subtree returns is ever the sentinel and no client
+// can hand one back by round-tripping an entry. `privateKey` *is* on that list
+// and is not in this schema -- deliberately, and the model says so -- and
+// `deny_unknown_fields` refuses a body that invents it.
+
+/// `static` addressing, as the document describes it.
+///
+/// These four structs exist for `openapi.json` and are never deserialized
+/// from: the routes below parse into `mosd_settings`' own types, which are the
+/// validator mosd runs. `the_network_schema_matches_the_settings_model` holds
+/// each one against the model field for field, so a field added to the schema
+/// cannot go undocumented here.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct StaticAddressing {
+    /// Interface address in CIDR notation, e.g. `192.168.1.10/24`.
+    address: String,
+    /// Default gateway address; absent for a link with no route of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gateway: Option<String>,
+    /// DNS server addresses.
+    dns: Vec<String>,
+}
+
+/// The 802.1Q parameters of a VLAN interface.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct VlanParameters {
+    /// Name of the `network` entry this VLAN sits on. **It must be a declared
+    /// entry**; a body naming one that is not is refused at 422.
+    parent: String,
+    /// 802.1Q VLAN id.
+    id: u16,
+}
+
+/// The parameters of a software bridge.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct BridgeParameters {
+    /// Names of the `network` entries enslaved to this bridge. **Each must be
+    /// a declared entry, must carry no addressing of its own, and must not be
+    /// a port of another bridge**; a body breaking any of those is refused at
+    /// 422 with the rule's own sentence.
+    ports: Vec<String>,
+}
+
+/// The parameters of a WireGuard tunnel.
+///
+/// There is no private-key member and there never will be: this subtree is
+/// served over `GET /api/v1/settings/network`, so a key in it is a key
+/// published to every client. The private key lives in a mode-0640 file on the
+/// device and only its public half is surfaced, through
+/// `GET /api/v1/state/network` and the rotate action.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct WireguardParameters {
+    /// UDP port to listen on; absent lets the kernel pick one.
+    #[serde(rename = "listenPort", skip_serializing_if = "Option::is_none")]
+    listen_port: Option<u16>,
+    /// The far ends of the tunnel. A `PUT` of this interface replaces them;
+    /// the peer collection route edits them one at a time.
+    peers: Vec<WireguardPeerEntry>,
+}
+
+/// One far end of a WireGuard tunnel, in both directions.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct WireguardPeerEntry {
+    /// The peer's X25519 public key: 32 bytes in padded base64. It is also
+    /// this entry's `DELETE` path segment, and its alphabet contains `/`, so a
+    /// key carrying one is percent-encoded there.
+    #[serde(rename = "publicKey")]
+    public_key: String,
+    /// CIDRs routed to this peer.
+    #[serde(rename = "allowedIps")]
+    allowed_ips: Vec<String>,
+    /// `host:port` to send to, for a peer this end initiates to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    endpoint: Option<String>,
+    /// Keepalive interval in seconds, for a peer behind NAT.
+    #[serde(
+        rename = "persistentKeepalive",
+        skip_serializing_if = "Option::is_none"
+    )]
+    persistent_keepalive: Option<u16>,
+}
+
+/// One `network` entry, as the document describes it.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct NetworkInterface {
+    /// `physical`, `vlan`, `bridge` or `wireguard`. Absent means `physical`.
+    ///
+    /// The block below is authoritative and the interface name is not:
+    /// `eth0.100` is a convention, not a declaration.
+    kind: String,
+    /// Whether the interface acquires its address via DHCP.
+    dhcp: bool,
+    /// Static addressing, used when `dhcp` is false. Absent is an interface
+    /// with no addressing at all, which is what a bridge port must be.
+    #[serde(rename = "static", skip_serializing_if = "Option::is_none")]
+    static_: Option<StaticAddressing>,
+    /// VLAN parameters, for `kind = "vlan"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vlan: Option<VlanParameters>,
+    /// Bridge parameters, for `kind = "bridge"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bridge: Option<BridgeParameters>,
+    /// WireGuard parameters, for `kind = "wireguard"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wireguard: Option<WireguardParameters>,
+}
+
+/// The `network` subtree as typed entries, or the envelope for whatever
+/// prevented reading it.
+///
+/// **Strict, unlike [`parse_network`]**, which the pane uses: an entry whose
+/// body does not parse is an error here and never a silently dropped entry.
+/// The pane can afford to skip one and name it in the page, because a human is
+/// reading the result; these routes cannot. Two of them rewrite the whole map,
+/// so a dropped entry is a deleted interface, and all of them validate
+/// relationally, so an invisible entry turns a legal bridge port into a 422.
+/// It is the posture [`api_stored_keys`] and [`stored_networks`] already take:
+/// an unreadable list is an error and never an empty one.
+async fn api_network_entries(state: &AppState) -> Result<NetworkEntries, Box<Response>> {
+    let network = match state.api.get_settings(NETWORK_SETTINGS_PATH).await {
+        Ok(value) => value,
+        Err(err) => return Err(Box::new(bus_api_error(&err, NETWORK_SETTINGS_PATH))),
+    };
+    let (entries, unreadable) = parse_network(&network);
+    if !unreadable.is_empty() {
+        return Err(Box::new(api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid(
+                "settings_invalid",
+                format!(
+                    "the stored network map holds {} entr{} this build cannot read: {}. Every route under `/api/v1/network` validates the whole map, so none of them can act while part of it is unreadable",
+                    unreadable.len(),
+                    if unreadable.len() == 1 { "y" } else { "ies" },
+                    unreadable.join(", ")
+                ),
+            )
+            .at(NETWORK_SETTINGS_PATH),
+        )));
+    }
+    Ok(entries)
+}
+
+/// `iface` checked as an interface name, or the 422 that says it is not one.
+///
+/// Section 2.4's malformed half, on every route of this cluster. The predicate
+/// is [`valid_iface_name`], the one the pane and the setup wizard already use,
+/// rather than a second spelling of the same charset.
+fn check_iface_name(iface: &str, path: &str) -> Result<(), Box<Response>> {
+    if valid_iface_name(iface) {
+        return Ok(());
+    }
+    Err(Box::new(api_response(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        ApiError::apid(
+            "validation_failed",
+            "an interface name is 1 to 15 characters of letters, digits, `.`, `_` or `-`"
+                .to_string(),
+        )
+        .at(path),
+    )))
+}
+
+/// `entries` refused by a relational rule, in section 2.4's envelope.
+///
+/// The message is [`validate_entries`]' own, which is the reconciler's own
+/// sentence: no phrasing this route could pre-write would say which entry and
+/// which field made the tree illegal.
+fn relational_refusal(entries: &NetworkEntries, path: &str) -> Result<(), Box<Response>> {
+    validate_entries(entries).map_err(|message| {
+        Box::new(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", message).at(path),
+        ))
+    })
+}
+
+/// A candidate map written back whole, at the `network` root.
+async fn write_network_map(
+    state: &AppState,
+    entries: &NetworkEntries,
+) -> Result<(), Box<Response>> {
+    // Infallible: the map's keys are strings and its values are structs of
+    // scalars, strings and vectors.
+    let value = serde_json::to_value(entries).expect("network entries serialize");
+    if let Err(err) = state.api.set_settings(NETWORK_SETTINGS_PATH, &value).await {
+        return Err(Box::new(bus_api_error(&err, NETWORK_SETTINGS_PATH)));
+    }
+    Ok(())
+}
+
+/// 204 with `no-store`, the answer every write in this cluster gives.
+fn no_content() -> Response {
+    (
+        StatusCode::NO_CONTENT,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
+}
+
+/// Read a JSON body, or the 400 that says it was not JSON at all.
+fn json_body<T: serde::de::DeserializeOwned>(
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+    path: &str,
+) -> Result<T, Box<Response>> {
+    let Json(value) = body.map_err(|rejection| {
+        Box::new(api_response(
+            StatusCode::BAD_REQUEST,
+            ApiError::apid("request_invalid", rejection.body_text()).at(path),
+        ))
+    })?;
+    serde_json::from_value(value).map_err(|err| {
+        Box::new(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", err.to_string()).at(path),
+        ))
+    })
+}
+
+/// Replace the whole interface map, validated as one tree.
+///
+/// This is the route that gives back what refusing the passthrough took away.
+/// Section 2.2 kept the settings passthrough for atomic whole-list
+/// replacement; this provides that atomicity **and** the validation the
+/// passthrough does not, which is the trade the departure was argued on.
+///
+/// It is the only way to make two entries legal in one step. Adding a bridge
+/// and its ports one at a time through `PUT /api/v1/network/{iface}` means
+/// ordering the ports first, because a bridge naming a port that is not yet
+/// declared is refused; a client that has the whole map can send it and not
+/// care.
+///
+/// Prose and not an intra-doc link, deliberately: `utoipa` copies this comment
+/// into the published document, where a link would put an apid symbol name in
+/// front of every client.
+#[utoipa::path(
+    put,
+    path = V1_NETWORK_PATH,
+    context_path = API,
+    tag = "resources",
+    request_body = std::collections::BTreeMap<String, NetworkInterface>,
+    responses(
+        (status = 204, description = "The map was replaced; the reconciler has re-rendered every unit from it"),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 422, description = "The body is not a map of interfaces, a key is not an interface name, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_network_write(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let entries: NetworkEntries = match json_body(body, NETWORK_SETTINGS_PATH) {
+        Ok(entries) => entries,
+        Err(response) => return *response,
+    };
+    // The keys as well as the bodies. `Settings::set` checks a newly
+    // introduced `network` key itself, but it checks it *after* the write is
+    // built, and a 422 that says which name is wrong beats one that says the
+    // tree did not deserialize.
+    for iface in entries.keys() {
+        if let Err(response) = check_iface_name(iface, NETWORK_SETTINGS_PATH) {
+            return *response;
+        }
+    }
+    if let Err(response) = relational_refusal(&entries, NETWORK_SETTINGS_PATH) {
+        return *response;
+    }
+    // No read first, deliberately: this route's whole contract is that the map
+    // it sends is the map that ends up stored, so a read-modify-write would be
+    // reading something it is about to discard.
+    if let Err(response) = write_network_map(&state, &entries).await {
+        return *response;
+    }
+    no_content()
+}
+
+/// Declare or replace one interface, validated against the whole map.
+///
+/// **A `PUT` replaces the entry entirely**, which includes a tunnel's peer
+/// list: a body with no `wireguard` block on an interface that had one leaves
+/// it with none. That is what `PUT` means, and it is the cost section 2.3
+/// names for the departure -- *"a client that wants to flip one boolean on one
+/// interface now sends the whole entry"*. The pane behaves differently
+/// (`network_submit` carries the stored peers across a save) because a form
+/// posts the fields it renders and cannot say anything about the ones it does
+/// not; a client that built a JSON body said exactly what it meant.
+///
+/// `iface` is an identifier that may legitimately not exist yet -- this route
+/// creates it -- so there is no 404 here. A name outside the interface charset
+/// is 422, which is section 2.4's malformed half.
+#[utoipa::path(
+    put,
+    path = V1_NETWORK_IFACE_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(("iface" = String, Path, description = "The interface to declare or replace: `eth0`, or `eth0.100` for a VLAN. Created when it does not exist")),
+    request_body = NetworkInterface,
+    responses(
+        (status = 204, description = "The entry was written; the reconciler has re-rendered its units"),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 422, description = "The name is not an interface name, the body is not an interface, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_network_iface_write(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(iface): Path<String>,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let path = iface_settings_path(&iface);
+    if let Err(response) = check_iface_name(&iface, &path) {
+        return *response;
+    }
+    let cfg: IfaceSettings = match json_body(body, &path) {
+        Ok(cfg) => cfg,
+        Err(response) => return *response,
+    };
+    let mut candidate = match api_network_entries(&state).await {
+        Ok(entries) => entries,
+        Err(response) => return *response,
+    };
+    // The candidate tree and not the one entry, for the reason the pane's
+    // comment gives: every relational rule is about two entries at once.
+    candidate.insert(iface.clone(), cfg.clone());
+    if let Err(response) = relational_refusal(&candidate, &path) {
+        return *response;
+    }
+    // The entry's own dot-path and not the whole map, so a concurrent edit of
+    // a different interface is not lost. Infallible: `IfaceSettings` is a
+    // struct of scalars, strings and vectors with no map keys to collide.
+    let value = serde_json::to_value(&cfg).expect("interface settings serialize");
+    if let Err(err) = state.api.set_settings(&path, &value).await {
+        return bus_api_error(&err, &path);
+    }
+    no_content()
+}
+
+/// Remove one interface, with the rest of the map re-validated without it.
+///
+/// The re-validation is the point and not a formality: removing `eth1` while
+/// `br0` lists it as a port leaves a bridge naming an entry that no longer
+/// exists, which is one of the four relational rules, so it is refused at 422
+/// with the rule's own sentence and nothing is written. Remove the port from
+/// the bridge first.
+///
+/// The whole map is rewritten because the dot-path syntax has no delete: a
+/// `SetSettings` writes a value at a path, and the only way to say "this key
+/// is gone" is to send the map without it. **Two concurrent removals lose
+/// one**, the same read-modify-write cost every collection in this file
+/// records.
+#[utoipa::path(
+    delete,
+    path = V1_NETWORK_IFACE_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(("iface" = String, Path, description = "The declared interface to remove")),
+    responses(
+        (status = 204, description = "The entry was removed; the reconciler has swept its units"),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No `network` entry has that name (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
+        (status = 422, description = "The name is not an interface name, or removing the entry breaks a relational rule -- a bridge still lists it as a port, a VLAN still names it as a parent (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_network_iface_remove(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(iface): Path<String>,
+) -> Response {
+    let path = iface_settings_path(&iface);
+    if let Err(response) = check_iface_name(&iface, &path) {
+        return *response;
+    }
+    let mut candidate = match api_network_entries(&state).await {
+        Ok(entries) => entries,
+        Err(response) => return *response,
+    };
+    if candidate.remove(&iface).is_none() {
+        return item_not_found(NETWORK_SETTINGS_PATH, &iface);
+    }
+    if let Err(response) = relational_refusal(&candidate, &path) {
+        return *response;
+    }
+    if let Err(response) = write_network_map(&state, &candidate).await {
+        return *response;
+    }
+    no_content()
+}
+
+/// A tunnel's stored peers, or the envelope for whatever refuses the interface.
+///
+/// The three answers this cluster gives about an `{iface}` that is not a
+/// usable tunnel, and none of them is interchangeable with another:
+///
+/// - **404** when no `network` entry has that name. This is what
+///   `docs/task/RFCT-210.md` section 2.4's sweep found the pane getting wrong:
+///   `POST /network/peers/add` on an undeclared interface *succeeds* there and
+///   writes an entry of the default kind carrying a WireGuard block, because
+///   the pane's `stored_peers` answers an empty list rather than an error and
+///   the settings setter creates missing intermediates by documented contract.
+///   `the_pane_peer_add_writes_a_broken_entry_for_an_undeclared_interface`
+///   runs that and confirms it. Here the read is the guard, and it happens
+///   before anything is written.
+/// - **422** when the entry exists and is not of kind `wireguard`. The same
+///   split mosd's rotate-key now makes: a well-formed identifier naming a real
+///   entry of the wrong kind is a bad argument and not an absent resource.
+/// - **422** when the name is not an interface name at all, from
+///   [`check_iface_name`].
+async fn tunnel_peers(
+    state: &AppState,
+    iface: &str,
+    path: &str,
+) -> Result<Vec<WireguardPeer>, Box<Response>> {
+    check_iface_name(iface, path)?;
+    let entries = api_network_entries(state).await?;
+    let Some(cfg) = entries.get(iface) else {
+        return Err(Box::new(item_not_found(NETWORK_SETTINGS_PATH, iface)));
+    };
+    if cfg.kind != IfaceKind::Wireguard {
+        return Err(Box::new(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                format!(
+                    "network.{iface} is not a WireGuard interface: only an entry of kind `wireguard` has peers"
+                ),
+            )
+            .at(path),
+        )));
+    }
+    Ok(cfg
+        .wireguard
+        .as_ref()
+        .map(|wireguard| wireguard.peers.clone())
+        .unwrap_or_default())
+}
+
+/// Validate and write a rewritten peer list, in section 2.4's envelope.
+///
+/// The API's own writer and not [`write_peers`], which answers a re-rendered
+/// pane at 422 and a redirect on success. The **validator** is the same one:
+/// [`validate_peers`] echoes the rules `validate_wireguard` runs in the
+/// reconciler, and it names a rejected peer by its index and never by its key,
+/// for the reason the reconciler states -- an operator who pasted a *private*
+/// key into the field would otherwise find it in the error text, and here that
+/// text goes into an HTTP body.
+async fn api_write_peers(
+    state: &AppState,
+    iface: &str,
+    peers: &[WireguardPeer],
+) -> Result<(), Box<Response>> {
+    let path = peers_settings_path(iface);
+    if let Err(message) = validate_peers(iface, peers) {
+        return Err(Box::new(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", message).at(&path),
+        )));
+    }
+    // Infallible: a peer is a struct of strings and integers.
+    let value = serde_json::to_value(peers).expect("wireguard peers serialize");
+    if let Err(err) = state.api.set_settings(&path, &value).await {
+        return Err(Box::new(bus_api_error(&err, &path)));
+    }
+    Ok(())
+}
+
+/// Every far end configured on one tunnel.
+#[utoipa::path(
+    get,
+    path = V1_NETWORK_PEERS_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(("iface" = String, Path, description = "A declared `network` entry of kind `wireguard`")),
+    responses(
+        (status = 200, description = "The stored peers, in stored order, each with the public key that is its `DELETE` path segment", body = Vec<WireguardPeerEntry>),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No `network` entry has that name (`settings_not_found`)", body = ApiError),
+        (status = 422, description = "The name is not an interface name, or the entry is not a WireGuard one (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_peers_list(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(iface): Path<String>,
+) -> Response {
+    let path = peers_settings_path(&iface);
+    match tunnel_peers(&state, &iface, &path).await {
+        Ok(peers) => {
+            // Through the shared redactor, as the WiFi listing is. No field of
+            // a peer is on `redact`'s list today, so this substitutes nothing;
+            // it is the fail-closed half of that rule, so the day a peer
+            // pre-shared key enters the schema it is already covered.
+            // Infallible: a peer is a struct of strings and integers.
+            let value = serde_json::to_value(&peers).expect("wireguard peers serialize");
+            api_response(StatusCode::OK, redact::redact(value, &path))
+        }
+        Err(response) => *response,
+    }
+}
+
+/// Add one far end to a tunnel.
+///
+/// **404 before anything is written, when `{iface}` is not a declared entry.**
+/// That is this route's reason for existing in the shape it has, and
+/// `docs/task/RFCT-210.md` section 2.4's sweep is why: the pane's equivalent
+/// succeeds on an undeclared interface and grows a broken `network` entry.
+/// Fixed structurally rather than with a guard -- the interface has to be read
+/// anyway, to know whether it is a tunnel and what peers it already has.
+///
+/// A duplicate public key is **409 `peer_exists`**, following the WiFi
+/// collection's `ssid_exists` and not the SSH collection's 422. The two
+/// precedents are both shipped and this is the third instance; the reason to
+/// follow this one is that the public key **is** this collection's identity --
+/// it is the `DELETE` path segment -- so a second entry under one key would
+/// leave no answer to which of the two a `DELETE` names, which is exactly the
+/// argument the WiFi route's 409 makes about an SSID. The SSH collection's 422
+/// is not available here even in principle: it is the *shared validator's* own
+/// message, inherited rather than decided, and no validator on either side of
+/// the bus refuses a duplicate peer -- `validate_wireguard` checks each peer
+/// and never compares two. `docs/task/RFCT-242.md` flags the gap this sits in:
+/// the ratified error contract covers absent and malformed and says nothing
+/// about duplicate.
+#[utoipa::path(
+    post,
+    path = V1_NETWORK_PEERS_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(("iface" = String, Path, description = "A declared `network` entry of kind `wireguard`")),
+    request_body = WireguardPeerEntry,
+    responses(
+        (status = 201, description = "The peer was added; the body carries it back", body = WireguardPeerEntry),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No `network` entry has that name (`settings_not_found`); nothing is written", body = ApiError),
+        (status = 409, description = "A stored peer already carries that public key (`peer_exists`); the key is this collection's identity, so the entry is not replaced silently", body = ApiError),
+        (status = 422, description = "The name is not an interface name, the entry is not a WireGuard one, or the peer is one the reconciler would refuse -- a public key that is not 32 bytes of base64, an allowed IP that is not a CIDR, an endpoint that is not `host:port` (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_peers_add(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(iface): Path<String>,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let path = peers_settings_path(&iface);
+    let peer: WireguardPeer = match json_body(body, &path) {
+        Ok(peer) => peer,
+        Err(response) => return *response,
+    };
+    let mut peers = match tunnel_peers(&state, &iface, &path).await {
+        Ok(peers) => peers,
+        Err(response) => return *response,
+    };
+    if peers
+        .iter()
+        .any(|stored| stored.public_key == peer.public_key)
+    {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "peer_exists",
+                // The key is echoed, unlike a validation refusal's message. It
+                // is a public key by definition and the caller just sent it;
+                // what the reconciler's index-only rule protects against is a
+                // *rejected* value, which may be a private key pasted into the
+                // wrong field, and a duplicate matched a value already stored.
+                format!(
+                    "a peer of network.{iface} already carries the public key `{}`; remove it before adding another under that key",
+                    peer.public_key
+                ),
+            )
+            .at(&path),
+        );
+    }
+    // Serialized before the move into the list, so the echo is the entry as it
+    // was stored and not the body as it arrived.
+    let echoed = serde_json::to_value(&peer).expect("a wireguard peer serializes");
+    peers.push(peer);
+    if let Err(response) = api_write_peers(&state, &iface, &peers).await {
+        return *response;
+    }
+    api_response(StatusCode::CREATED, redact::redact(echoed, &path))
+}
+
+/// Remove one far end, identified by its public key.
+///
+/// Section 2.4's rule with both halves live. A string that is not 32 bytes of
+/// base64 could never be a WireGuard public key and is **422**; a well-formed
+/// key that no stored peer carries is **404**, from the one shared not-found
+/// helper every item route in this file reaches for.
+///
+/// The pane answers 422 for the second condition -- *"No peer of this tunnel
+/// has that public key; the list may have changed since the page was loaded."*
+/// -- and that split stays, for the reason section 2.4 gives about the SSH
+/// pane: a form's body is a re-rendered page no consumer reads a status from,
+/// and its message asks for a re-submit. Its paired test is
+/// `the_network_pane_answers_422_where_the_peer_route_answers_404`.
+#[utoipa::path(
+    delete,
+    path = V1_NETWORK_PEER_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(
+        ("iface" = String, Path, description = "A declared `network` entry of kind `wireguard`"),
+        ("publicKey" = String, Path, description = "The peer's public key, as `GET /api/v1/network/{iface}/peers` returns it: 32 bytes in padded base64. Its alphabet contains `/` and `+`, so a key carrying either is percent-encoded"),
+    ),
+    responses(
+        (status = 204, description = "The peer was removed; the reconciler has re-rendered the tunnel without it"),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No `network` entry has that name, or no peer of it carries that key (`settings_not_found`)", body = ApiError),
+        (status = 422, description = "The interface name is not one, the entry is not a WireGuard one, or the path segment is not a WireGuard public key at all (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_peers_remove(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path((iface, public_key)): Path<(String, String)>,
+) -> Response {
+    let path = peers_settings_path(&iface);
+    // Before the read, unlike the interface's own absence: a segment that
+    // could never be a public key would send the caller looking for a peer
+    // they deleted instead of at the URL they typed.
+    if !is_wireguard_key(&public_key) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                "a WireGuard public key is 32 bytes spelled in base64".to_string(),
+            )
+            .at(&path),
+        );
+    }
+    let mut peers = match tunnel_peers(&state, &iface, &path).await {
+        Ok(peers) => peers,
+        Err(response) => return *response,
+    };
+    let Some(index) = peers.iter().position(|peer| peer.public_key == public_key) else {
+        return item_not_found(&path, &public_key);
+    };
+    peers.remove(index);
+    if let Err(response) = api_write_peers(&state, &iface, &peers).await {
+        return *response;
+    }
+    no_content()
 }
 
 /// One answer shape for both roots: the value redacted, or §2.4's envelope
