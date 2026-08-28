@@ -13,7 +13,7 @@ only). Branch `bkd/jroc69qp`, merged by L2 into `bkd/sqexk7je`.
 ## Description
 
 mos already borrowed Venus OS's settings-tree model
-(`docs/design/mosd.md:18`, `docs/design/mosd.md:39`) but had never studied the
+(`docs/design/mosd.md:18`, `docs/design/mosd.md:47`) but had never studied the
 layer above it. Venus OS is the closest shipping analogue to mos: an appliance
 Linux with a central settings bus, a local browser UI and a remote console. This
 task studies that UI layer — gui-v2 — as a reference, so that the dashboard
@@ -50,7 +50,7 @@ verified at `docs/research/venus-os-ui.md:77-83`, section 1.5).
 mos is not a Victron product. **No gui-v2 code, markup, asset name or verbatim
 string may be copied into mos.** Only ideas and interaction patterns may be
 learned from, and every borrowing must be attributed. The fence is restated at
-`docs/design/dashboard.md:853-860` and `:1601-1612` rather than left to a
+`docs/design/dashboard.md:864-871` and `:1601-1612` rather than left to a
 sibling section, because an implementer may reach the design document first.
 Both restatements say plainly that they did not re-verify the licence file; this
 document did.

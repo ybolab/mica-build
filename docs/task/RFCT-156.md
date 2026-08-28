@@ -59,10 +59,10 @@ record and the document cannot drift:
    on the host only: *"nothing ships it to a device yet"*
    (`update/README.md:12`).
 3. **What is implemented is local installation owned by mosd:**
-   `InstallUpdate(bundle_path)` (`docs/design/mosd.md:317`) hands a bundle
+   `InstallUpdate(bundle_path)` (`docs/design/mosd.md:423`) hands a bundle
    already on the device to RAUC, against *"the A/B update design this
    implements"* (`docs/design/ro-root.md:7-8`), plus the boot health gate that
-   *"probes systemd, mosd and apid first"* (`docs/design/mosd.md:333`) and the
+   *"probes systemd, mosd and apid first"* (`docs/design/mosd.md:439`) and the
    U-Boot attempt-counter fallback — *"a slot that cannot complete a boot is
    guaranteed to exhaust its credits"*
    (`docs/design/uboot-ab-handshake.md:434-435`).

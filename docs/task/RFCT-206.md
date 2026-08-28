@@ -19,7 +19,7 @@ whether the kernel hands a device back.
 
 It also produces the M6 verdict RFCT-205 could not: *"`make os-apid-api-test` |
 **not run — the artefact it takes as input does not exist on this host.**"*
-(`docs/task/RFCT-205.md:311`). An image now exists, so the suite ran.
+(`docs/task/RFCT-205.md:314`). An image now exists, so the suite ran.
 
 ## Scope
 
@@ -323,7 +323,7 @@ the argument for the run:
 RFCT-205 predicted these precisely and declined to rewrite them blind:
 *"rewriting them blind — against an image that cannot be booted here to check
 the rewrite — would replace a visible skew with an invisible guess"*
-(`docs/task/RFCT-205.md:338-340`). With a bootable image in hand they are
+(`docs/task/RFCT-205.md:341-343`). With a bootable image in hand they are
 rewritten and checked.
 
 `/api/versions` is a declared route answering 200, and the gate hands it off

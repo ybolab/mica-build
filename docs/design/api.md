@@ -395,7 +395,7 @@ allowlist (`:47-67`). At `86cd669` this section recorded that
 `docs/design/dashboard.md` cited the policy as permitting *"any local process"*
 to call it; that disagreement is now closed from the other side — dashboard.md
 reads the shipped policy correctly and says *"the D-Bus policy admits only
-root"* (`docs/design/dashboard.md:1348`), citing the same lines
+root"* (`docs/design/dashboard.md:1359`), citing the same lines
 (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-79`). The stale reading survives only in
 `docs/research/mos-ui-inventory.md`, which is a snapshot and says so (section
 1.7).
@@ -793,11 +793,11 @@ and this document must not re-decide what it decided. Three things are settled
 there and are treated as inputs here. **Live values:** section 5.8 adopts
 *"option A — full-page refresh — as the dashboard's only live-value mechanism,
 at a 15-second default interval, with a no-JavaScript off switch"*
-(`docs/design/dashboard.md:1305-1306`), on the grounds that mosd has no
+(`docs/design/dashboard.md:1316-1317`), on the grounds that mosd has no
 live-state push signal at all and that a no-JavaScript path must keep working;
 it explicitly names what that forecloses — *"Any value meaningful at
 sub-15-second resolution"* and *"Client-side UI state"*
-(`docs/design/dashboard.md:1334-1345`). **Process
+(`docs/design/dashboard.md:1345-1356`). **Process
 architecture, and the name:** *"mos runs two processes"* — mosd owning device
 state and the system bus, apid owning HTTPS, sessions and the UI, and apid not
 merged into mosd — and the HTTPS management daemon is named `apid`
@@ -856,7 +856,7 @@ follows is a reading of a snapshot and not a defect in it.
    allows root only (`os/pkgs/mosd/dist/com.mos.mosd.conf:74-78`). At `86cd669` this
    list recorded `docs/design/dashboard.md` as carrying the same stale reading;
    it no longer does, and now cites the root-only policy correctly
-   (`docs/design/dashboard.md:1348-1349`).
+   (`docs/design/dashboard.md:1359-1360`).
 
 Its navigation-bar count is likewise off — it records *"exactly four links plus
 a logout button"* (`docs/research/mos-ui-inventory.md:65`), and `shell()` now
@@ -1993,7 +1993,7 @@ derive from it.**
 - **Not a replacement.** `POST /setup` and `POST /login` remain the only
   bootstrap (see above), and the built-in UI is a server-rendered
   no-JavaScript browser client by `docs/design/dashboard.md`'s own decision
-  (`docs/design/dashboard.md:1275-1276`), which has no use for a bearer token.
+  (`docs/design/dashboard.md:1286-1287`), which has no use for a bearer token.
 - **Coexisting means two credentials at one privilege level** — and there is
   only one privilege level, because apid runs as root (`os/pkgs/mosd/dist/apid.service`
   sets no `User=`, `:1-13`; `os/pkgs/mosd/dist/com.mos.mosd.conf:12-14` records the same
@@ -2074,7 +2074,7 @@ about which origins rather than whether. A second cost: a browser UI that needs
 a token has to hold it in JavaScript, where an XSS can read it — strictly worse
 than the `HttpOnly` cookie (`os/pkgs/mosd/apid/src/session.rs:103`) for that one
 property. The built-in UI is unaffected because it is no-JavaScript by decision
-(`docs/design/dashboard.md:1305-1306`).
+(`docs/design/dashboard.md:1316-1317`).
 
 **What it does not protect against.** Five attacks, concretely.
 
@@ -3184,7 +3184,7 @@ The built-in UI therefore stays **server-rendered `maud` with no build step**,
 and **this document does not choose a frontend framework for it** —
 `docs/design/dashboard.md` §5.8 already settled the live-value mechanism as
 full-page refresh with a no-JavaScript off switch
-(`docs/design/dashboard.md:1275-1276`; cited, not edited), which is the same
+(`docs/design/dashboard.md:1286-1287`; cited, not edited), which is the same
 constraint approached from the other side.
 
 **A customer's own UI is their toolchain, not ours.** This asymmetry is
@@ -4132,8 +4132,8 @@ is the phase whose scope changes, and nothing earlier is affected.
 — an upload path, a place to put the bundle, a `rauc install` caller, and a
 progress surface. Today: no upload route, `Multipart` appears nowhere under
 `mosd/`, and no `rauc install` caller anywhere in `mosd/`"*
-(`docs/design/dashboard.md:1779`). It is gap row **4**, restated at
-`docs/design/dashboard.md:789` and originally measured at
+(`docs/design/dashboard.md:1790`). It is gap row **4**, restated at
+`docs/design/dashboard.md:800` and originally measured at
 `docs/research/mos-ui-inventory.md:584`.
 
 **Re-measured at `86cd669`, its three "today" claims all still hold:**
@@ -4158,7 +4158,7 @@ UI-upload path is not. `rauc` verifies the CMS signature against
 `/etc/rauc/keyring.pem` and mos refuses `plain`-format bundles by configuration
 (`os/pkgs/rauc/system.conf.in:50-62`), and dashboard.md's own row states the
 constraint that goes with it: *"**no "install this file anyway" affordance may
-be added**"* (`docs/design/dashboard.md:1779`). The asymmetry is correct, and it
+be added**"* (`docs/design/dashboard.md:1790`). The asymmetry is correct, and it
 is what §7's recommendation actually says: **mos requires a signature on the
 artifact whose compromise is a kernel, and does not require a key ceremony for
 the artifact whose compromise is a web page on an origin the operator already

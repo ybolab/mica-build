@@ -18,7 +18,7 @@ multiple-versions = "warn"
 a bans policy that bans nothing.
 
 The posture it is failing to enforce is real and written down elsewhere. The
-project rejects dependencies that build C: `docs/design/dashboard.md:990-994` records
+project rejects dependencies that build C: `docs/design/dashboard.md:1001-1005` records
 the workspace pinning `tough` to `=0.18.0` because *"0.19+ hard-depend on
 aws-lc-rs, which builds C (AWS-LC)"*, and calls that posture enforced *"in a
 comment rather than by accident"*.

@@ -217,9 +217,12 @@ mechanise is not engaged either.
    quotes the denylist constant verbatim, and the constant now has five names;
    the quotation and the sentence that counts it were updated in their own
    commit. This is a forced value change, not the M8 documentation pass:
-   `api.md` also still says *"The `/api/v1/actions/<verb>`
-   root does not exist"* (`docs/design/api.md:1133-1134`), which this milestone makes false and
-   which M8 owns. It is flagged here rather than fixed here.
+   `api.md` also still said, at this milestone's commit, that *"The
+   `/api/v1/actions/<verb>` root does not exist"* (`docs/design/api.md` §2.2),
+   which this milestone makes false and which M8 owns. It is flagged here
+   rather than fixed here. RFCT-207 rewrote that sentence, so the quotation
+   above is of what the document said then; the line citation it carried is
+   dropped rather than re-pointed, because no line of today's `api.md` says it.
 3. **Citation line numbers were re-anchored, numbers only, in their own
    commit.** The apid edits shifted 287 citations across `docs/design/api.md`,
    `docs/design/bus.md`, `docs/design/remote-management.md` and
