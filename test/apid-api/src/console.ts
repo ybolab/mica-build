@@ -4,8 +4,7 @@
  * Every other assertion observes apid through apid's own HTTP surface, so the
  * answer is the thing under test describing itself; these lines are written by
  * systemd and by mosd instead. It is also the only usable journal: the image
- * sets journald `Storage=volatile` and `os/tools/qemu-journal.sh` is committed
- * known-broken, so the guest boots with
+ * sets journald `Storage=volatile`, so the guest boots with
  * `systemd.journald.forward_to_console=1` and the harness appends the serial
  * console to `APID_CONSOLE` for as long as the suite runs.
  */

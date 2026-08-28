@@ -97,9 +97,9 @@ deliberately down, so a run that stops there never observes it come back.
 ## The console is the only journal
 
 mos keeps journald at `Storage=volatile` because `/var` is the EPHEMERAL
-partition, so a guest's log dies with the guest. `os/tools/qemu-journal.sh` **does not
-work** and is committed as known-broken for exactly that reason; this harness
-does not call it and does not try to fix it.
+partition, so a guest's log dies with the guest — no post-mortem journal
+reader can work (the former `os/tools/qemu-journal.sh` was removed for exactly
+that reason).
 
 Instead every boot is captured to a file under `_out/x64/apid-api/`, and
 `MOS_QEMU_APPEND=systemd.journald.forward_to_console=1` puts journald on the

@@ -1,6 +1,7 @@
 # PLAN-022 Native networking: VLAN, bridge, and WireGuard
 
-- **status**: approved (design-first)
+- **status**: completed
+- **completedAt**: 2026-08-28 07:05
 - **createdAt**: 2026-08-27 17:05
 - **approvedAt**: 2026-08-27 17:05
 - **relatedTask**: RFCT-200..209 reserved

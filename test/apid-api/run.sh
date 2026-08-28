@@ -293,8 +293,9 @@ pass "docker network discovered by observation: ${NET} (this container is ${MY_I
 mkdir -p "${ART_DIR}"
 # The console is the only journal. mos keeps journald at Storage=volatile
 # because /var is the ephemeral partition, so a guest's log dies with the guest,
-# and os/tools/qemu-journal.sh is committed as known-broken for that reason and
-# is not called here. Instead every boot is captured to a file here,
+# so no journal-reading tool can work post-mortem (the former
+# os/tools/qemu-journal.sh was removed for exactly that reason). Instead every
+# boot is captured to a file here,
 # MOS_QEMU_APPEND puts journald on the serial line, and apid's own
 # `APID_LISTENING` line becomes a readiness signal that can be waited on.
 # Dropping that append deletes the signal the wait depends on.

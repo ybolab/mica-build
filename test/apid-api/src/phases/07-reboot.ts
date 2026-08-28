@@ -50,7 +50,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /**
  * mos keeps journald at `Storage=volatile` because /var is the EPHEMERAL
- * partition, so a guest's journal dies with the guest and `os/tools/qemu-journal.sh`
+ * partition, so a guest's journal dies with the guest and no post-mortem
  * cannot work. The harness captures the serial console to a file instead and
  * passes its path as APID_CONSOLE, with
  * `systemd.journald.forward_to_console=1` on the kernel command line so the
