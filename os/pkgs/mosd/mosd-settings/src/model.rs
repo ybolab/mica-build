@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v6) and its dot-path accessors.
+//! Typed settings tree (schema v7) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
-/// Persistent mosd settings tree (schema v6).
+/// Persistent mosd settings tree (schema v7).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -401,15 +401,162 @@ pub enum ApMode {
     Always,
 }
 
+/// What kind of link a `network` entry describes.
+///
+/// Absent means [`IfaceKind::Physical`], and a physical entry never serializes
+/// the field: a v6 tree of physical interfaces and its v7 form differ by the
+/// schema version integer alone, which is what makes the v6 -> v7 bump
+/// additive and the A/B rollback survivable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IfaceKind {
+    /// A NIC the kernel already has.
+    #[default]
+    Physical,
+    /// An 802.1Q VLAN on top of another declared entry.
+    Vlan,
+    /// A software bridge over other declared entries.
+    Bridge,
+    /// A WireGuard tunnel.
+    Wireguard,
+}
+
+impl IfaceKind {
+    /// Whether this is the default kind, the one that is never written out.
+    fn is_physical(&self) -> bool {
+        matches!(self, Self::Physical)
+    }
+}
+
 /// Network configuration for a single interface.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+///
+/// `kind` selects which of the three optional blocks is meaningful; the block
+/// is authoritative, not the interface name (`eth0.100` is a convention, not a
+/// declaration). Cross-field consistency — that `kind = "vlan"` carries a
+/// `vlan` block and no other, that a bridge port declares no addressing of its
+/// own, that a `parent` or a `port` names a declared entry — is enforced in the
+/// network reconciler, where the security boundary for a file anything with
+/// STATE write access can edit already sits.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IfaceSettings {
+    /// What kind of link this is; absent means physical.
+    #[serde(default, skip_serializing_if = "IfaceKind::is_physical")]
+    pub kind: IfaceKind,
     /// Whether the interface acquires its address via DHCP.
     pub dhcp: bool,
     /// Static addressing, used when `dhcp` is false.
     #[serde(rename = "static", default, skip_serializing_if = "Option::is_none")]
     pub static_: Option<StaticConfig>,
+    /// VLAN parameters, for `kind = "vlan"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vlan: Option<VlanConfig>,
+    /// Bridge parameters, for `kind = "bridge"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge: Option<BridgeConfig>,
+    /// WireGuard parameters, for `kind = "wireguard"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wireguard: Option<WireguardConfig>,
+}
+
+/// The 802.1Q parameters of a VLAN interface.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VlanConfig {
+    /// Name of the `network` entry this VLAN sits on.
+    pub parent: String,
+    /// 802.1Q VLAN id.
+    pub id: u16,
+}
+
+/// The parameters of a software bridge.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BridgeConfig {
+    /// Names of the `network` entries enslaved to this bridge.
+    #[serde(default)]
+    pub ports: Vec<String>,
+}
+
+/// The parameters of a WireGuard tunnel.
+///
+/// There is no private-key field here and there never will be: this subtree is
+/// served over the bus and over `GET /api/v1/settings/...`, so a key in it is a
+/// key published to every client. The private key lives in a mode-0640 file on
+/// STATE and only its public half is ever surfaced. Peer pre-shared keys are
+/// out of this schema revision for the same reason — shipping no secret field
+/// beats shipping one more redaction obligation.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WireguardConfig {
+    /// UDP port to listen on. Absent lets the kernel pick one, which is what a
+    /// client that only ever initiates wants.
+    #[serde(
+        rename = "listenPort",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub listen_port: Option<u16>,
+    /// The far ends of the tunnel.
+    #[serde(default)]
+    pub peers: Vec<WireguardPeer>,
+}
+
+/// One far end of a WireGuard tunnel.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WireguardPeer {
+    /// The peer's base64 X25519 public key.
+    #[serde(rename = "publicKey")]
+    pub public_key: String,
+    /// CIDRs routed to this peer.
+    #[serde(rename = "allowedIps", default)]
+    pub allowed_ips: Vec<String>,
+    /// `host:port` to send to, for a peer this end initiates to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Keepalive interval in seconds, for a peer behind NAT.
+    #[serde(
+        rename = "persistentKeepalive",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub persistent_keepalive: Option<u16>,
+}
+
+/// Linux `IFNAMSIZ` minus the terminator: the longest name an interface can
+/// actually have.
+const MAX_IFACE_NAME_LEN: usize = 15;
+
+/// Refuse a `network` map key the kernel could not name an interface.
+///
+/// The charset is the network reconciler's own
+/// (`mosd/src/reconciler/network.rs`, the security boundary for a settings
+/// file anything with STATE write access can edit); repeating it here makes a
+/// key the renderer would refuse unwritable through the tree in the first
+/// place, and makes a key carrying `"` — the one key the path syntax cannot
+/// spell — structurally impossible rather than merely unaddressable.
+fn validate_network_key(iface: &str) -> Result<(), String> {
+    if iface.is_empty() {
+        return Err("network interface name is empty".to_string());
+    }
+    if iface.len() > MAX_IFACE_NAME_LEN {
+        return Err(format!(
+            "network interface {iface:?} is longer than {MAX_IFACE_NAME_LEN} characters"
+        ));
+    }
+    if iface == "." || iface == ".." {
+        return Err(format!("network interface {iface:?} is not a name"));
+    }
+    if !iface
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'))
+    {
+        return Err(format!(
+            "network interface {iface:?} contains a character an interface name cannot have"
+        ));
+    }
+    Ok(())
 }
 
 /// Static addressing for a single interface.
@@ -450,7 +597,8 @@ impl Settings {
     ///
     /// Returns [`SettingsError::ReadOnly`] for writes that would change
     /// `schema_version`, [`SettingsError::NotFound`] for malformed paths, and
-    /// [`SettingsError::Validation`] when the value does not fit the tree.
+    /// [`SettingsError::Validation`] when the value does not fit the tree or
+    /// the write introduces a `network` key that is not an interface name.
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), SettingsError> {
         let mut root = self.to_json()?;
         if path.is_empty() || path == "." {
@@ -469,6 +617,18 @@ impl Settings {
             })?;
         if candidate.schema_version != self.schema_version {
             return Err(SettingsError::ReadOnly("schema_version".to_string()));
+        }
+        // Key-charset validation is a property of the write, not of the tree:
+        // a document that already loads keeps loading, so an entry this write
+        // does not touch is left alone even if a hand edit spelled it badly.
+        for (iface, settings) in &candidate.network {
+            if self.network.get(iface) == Some(settings) {
+                continue;
+            }
+            validate_network_key(iface).map_err(|message| SettingsError::Validation {
+                path: path.to_string(),
+                message,
+            })?;
         }
         *self = candidate;
         Ok(())

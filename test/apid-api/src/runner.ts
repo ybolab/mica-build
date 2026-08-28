@@ -3,7 +3,7 @@
  *
  * This suite runs against ONE boot. A TCG boot with no /dev/kvm on a quiet
  * machine reaches apid's APID_LISTENING line in 60-66s and both readiness
- * signals in 65-72s, and a full lifecycle run -- two boots, nine phases,
+ * signals in 65-72s, and a full lifecycle run -- two boots, ten phases,
  * 06-backoff's deliberately doubling login windows and an argon2 hash behind
  * every login -- takes about four minutes end to end. Per-test isolation would
  * multiply the boot across dozens of checks until it dominated everything the

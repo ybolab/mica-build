@@ -254,7 +254,7 @@ if the tree moved again.
 | `os/verify/src/checks-connd.ts:11`, `checks-system.ts:24` | verbatim quotations of PLAN-014, which reads `` `mosd/` Rust sources `` at `:243` and `:256`. `docs/plan/` is history and keeps old paths; rewriting the quotation would fabricate a quotation of a document that says something else. Both PLAN-014 lines were read to confirm it. |
 | `os/verify/src/checks-system.ts:7` | "the ELF architecture of mosd/apid" is an and-slash in prose, not a path |
 | `os/rootfs/README.md:265` | the staged `mosd/` build-context directory, not a repo path |
-| `docs/architecture.md:144`, `os/pkgs/README.md:23` | `mosd/` named relative to its parent `os/pkgs/`, correct as written |
+| `docs/architecture.md:156`, `os/pkgs/README.md:23` | `mosd/` named relative to its parent `os/pkgs/`, correct as written |
 | `os/build/src/stages.ts`, `stages.test.ts`, `stages-cli.ts` | 17 occurrences of the bare word `mosd` on 17 lines — the feature identifier driving `selectStages()` and `--without mosd` |
 | `os/build/src/mkimage-v2.test.ts`, `mkimage-x64.test.ts`, `pin-seeded-times.test.ts` | 3 `Package: mosd` dpkg strings |
 | `docs/design/mosd.md`, `mosd.zh.md`, `os/rootfs/scripts/mosd-install.sh`, `os/rootfs/stages/33-feature-mosd.Dockerfile` | the four mosd-named files |

@@ -139,8 +139,14 @@ Four changes, in dependency order. **[proposal]**
    substantially an echo of the settings tree — the `hostname` key echoes
    `settings.hostname` back after the hostnamed call returned `Ok`
    (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`), and the `network` key carries the
-   rendered unit file name and the configured `dhcp` flag
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and nothing else. A dashboard
+   rendered unit file name, the configured `dhcp` flag and the configured kind —
+   `"kind": kind_name(cfg.kind),`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — plus, for a
+   WireGuard tunnel, `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`). Every one of those is
+   either an echo of the settings tree or a fact about a file the reconciler
+   itself wrote; not one is a reading off a link, and the public key least of
+   all — it is derived from the key file, not from the tunnel. A dashboard
    that renders those as if they were measurements is a dashboard that lies.
 
 Note what is *not* on that list: making the UI faster, prettier, or
@@ -257,13 +263,13 @@ provide. It is designed around that.
 - **The problem, stated exactly.** The live-state `network` subtree holds
   **configured** data — per interface, the unit file the reconciler wrote and
   the DHCP flag it wrote it from, built as
-  `json!({ "file": file_name, "dhcp": cfg.dhcp })`
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:215-219`). There is no address,
+  `json!({ "file": file_name, "dhcp": cfg.dhcp, "kind": kind_name(cfg.kind), })`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`). There is no address,
   no lease, no gateway, no route, no DNS server actually in use and no carrier
   state anywhere in mos (`mos-ui-inventory.md` section 6.3). A DHCP interface
   that got no lease is **indistinguishable in this tree from one that did**.
   `mosd` does talk to `org.freedesktop.network1`, but for exactly one thing —
-  `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no
+  `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no
   `Get`, no property read and no link enumeration. Gap-table **row 14**.
 - **How this proposal handles it: the tile is split in two, and the halves are
   labelled differently.** **[proposal]**
@@ -271,7 +277,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:416-436`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:563-583`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until
@@ -338,7 +344,7 @@ better mechanism and then hid it.**
   reboot.** Rebooting a slot RAUC has installed but that has not been marked
   good **burns a boot attempt**, and today the power pane has no update-state
   awareness and does not warn — recorded as a known follow-up at
-  `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503`, and
+  `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503`, and
   gap-table **row 10**. The next action is to wait for the health gate to run, or
   read *why* it did not pass (section 2.3, part iii). This tile and the power
   page are therefore coupled: the power page must read this tile's feed before it
@@ -487,7 +493,7 @@ names the reason, and where it belongs instead. **[proposal]**
 - **No power buttons.** They are one click from the nav bar already
   (`routes.rs:48`), they are the only irreversible actions in the product, and —
   until section 2.5's feed exists — the power pane cannot warn that rebooting a
-  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:217-220`).
+  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:225-228`).
   Promoting an action to the first screen while it cannot state its own
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
@@ -646,9 +652,14 @@ the live-state tree is an **echo** of the settings tree:
 - `hostname` echoes `settings.hostname` back after the hostnamed call returned
   `Ok` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) — a confirmation that the
   write was attempted, not a read-back (`mos-ui-inventory.md` section 7, row 13).
-- `network` carries the rendered unit file name and the configured `dhcp` flag
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and no observed value
-  (row 14).
+- `network` carries the rendered unit file name, the configured `dhcp` flag and
+  the configured kind — `"kind": kind_name(cfg.kind),`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — and, for a WireGuard
+  tunnel, the public half of the key on disk: *"Only the public half is
+  published"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:668`). No observed
+  value (row 14): a `wireguard` entry says which key the tunnel was built to
+  use, not whether a peer is reachable, and a `vlan` or `bridge` entry says a
+  `.netdev` was written, not that the device came up.
 - `wifiClient.networks` lists the **configured** networks, and `activeState` is
   systemd's view of the supplicant *unit*, not of the association
   (`mos-ui-inventory.md` section 6.3).
@@ -788,10 +799,10 @@ section 8's.
 | 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/pkgs/rauc/system.conf.in:14-34`) |
 | 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/build/src/bundle.ts:1-7`, `os/pkgs/rauc/system.conf.in:66-69`), but there is still **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `os/pkgs/mosd/apid/`, re-measured on this tree). The caller half is dated: `InstallUpdate` now hands an on-device bundle path to RAUC's D-Bus `InstallBundle`, with progress read back through `GetUpdateState` (RFCT-084). Still needs the upload path and a place to put the bundle |
 | 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:256-261`); its verdict goes to the journal (`:17-18`). Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
-| 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
+| 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
 | 8 | 2.2, 3.4.1 | Observed hostname as opposed to configured | **row 13** | A read-back from hostnamed. There is no `GetHostname` call anywhere; the live-state key echoes the configured value (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) |
-| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
+| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
 | 10 | 3.2 Diagnostics | A redaction rule before any state export | — (not a gap row; **[proposal]**) | `GetState("")` and `GetSettings("")` already return whole trees (`os/pkgs/mosd/mosd/src/bus.rs:160-164`, `:197-202`), so the mechanism exists and the *policy* does not. Venus's precedent is redaction plus an access gate (`venus-os-ui.md` section 7 item 10) |
 
 **Items needing no `mosd` work at all**, listed so they are not accidentally
@@ -938,7 +949,7 @@ today.
   a comment rather than by accident: `tough` is pinned to `=0.18.0` with the
   note *"tough 0.18 is the last release whose crypto backend is `ring`; 0.19+
   hard-depend on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md."*
-  (`os/pkgs/mosd/Cargo.toml:42-43`).
+  (`os/pkgs/mosd/Cargo.toml:51-52`).
 - Licence gate: `os/pkgs/mosd/deny.toml:3-14` allows Apache-2.0, MIT, BSD-2-Clause,
   BSD-3-Clause, ISC, Unicode-3.0, Zlib and nothing else; `[bans]
   multiple-versions = "warn"` (`deny.toml:16-17`).
@@ -989,7 +1000,7 @@ every option below:
    workspace pin is `zbus = { version = "5", default-features = false, features = ["tokio"] }`
    (`os/pkgs/mosd/Cargo.toml:28`).
 2. **All of `mosd`'s settings and live state sit behind one `tokio::sync::Mutex`.**
-   `MosdService` holds an `inner: Arc<Mutex<Inner>>` (`os/pkgs/mosd/mosd/src/bus.rs:76`),
+   `MosdService` holds an `inner: Arc<Mutex<Inner>>` (`os/pkgs/mosd/mosd/src/bus.rs:77`),
    whose own doc comment says *"Mutable trees guarded by one lock so settings
    writes and live-state updates stay consistent"* (`bus.rs:49-50`).
    `get_settings` takes it at `bus.rs:514`, `get_state` at `:539`,
@@ -1001,7 +1012,7 @@ every option below:
    Read out of that: **while a reconciler is applying, every dashboard read
    blocks.** How long that is depends on the reconciler — the network reconciler
    calls `Manager.Reload` on `org.freedesktop.network1`
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), the sshd reconciler drives a
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`), the sshd reconciler drives a
    systemd unit (`os/pkgs/mosd/mosd/src/reconciler/sshd.rs:386-404`). This is not a
    defect to fix here; it is a **hard budget on how often a dashboard may poll**,
    and it applies identically to all four options, because all four ultimately
@@ -1605,7 +1616,7 @@ admitted gap.
 8. **`docs/design/access.md`, `docs/design/provisioning.md` and
    `docs/design/mosd.md`** are owned by the parallel `sshweb` campaign and were
    not opened for this section. Where section 4 of this document cites
-   `docs/design/mosd.md:217-220`, that citation is carried through unchecked.
+   `docs/design/mosd.md:225-228`, that citation is carried through unchecked.
    Likewise the in-flight SSH work on `bkd/hiu25adw` (`mos-ui-inventory.md`
    section 8) is not in this tree; if it adds routes, the route count in 5.1.1
    and the fragment-route count in 5.4 are both understated.
@@ -1772,7 +1783,7 @@ chosen by operator demand and by which items unblock others, not by size.
 
 | | Scope | Gap rows | Unblocks | Verified by |
 |---|---|---|---|---|
-| **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
+| **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
 | **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in:11-27` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
 | **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. The dated "0 across all 12 files" rauc measurement re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`: `GetUpdateState` answers slot status with the pending-not-confirmed flag, and `mos-health` now reports its verdict through `ReportHealth` (RFCT-084) — this row is largely built, wiring remains |
 | **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on the RFCT-142 serialisation rule, no longer on an open question.** The read hazard has an answer: every access goes through `fw_printenv`/`fw_setenv`, and the shipped libubootenv takes `flock(LOCK_EX)` on `/var/lock/fw_printenv.lock` across the whole read or read-modify-write, so a poll cannot land mid-write. The rule and its two caveats — the lock is silently skipped while `/var/lock` is absent, so the polling service keeps `DefaultDependencies=yes`; the lock never spans a check-then-set, so `BOOT_A_LEFT`/`BOOT_B_LEFT` stay RAUC-owned and 4d is read-only — are recorded at `os/rootfs/overlay-v2/etc/fw_env.config.in:23-47`. **4d starts only as an exec of `fw_printenv` under that rule** — never a private libubootenv link, never a raw read of the UENV partitions. It is deliberately last among the read items because it touches the one store RAUC also writes |

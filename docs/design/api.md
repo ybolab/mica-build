@@ -317,7 +317,7 @@ apid never spawns a process and never talks to systemd itself"*
 interface `com.mos.mosd1`, the well-known service name `com.mos.mosd`, and the
 object path `/com/mos/mosd` (`os/pkgs/mosd/apid/src/bus_client.rs:22-26`). mosd's side
 declares the same three: `pub const BUS_NAME: &str = "com.mos.mosd";`
-(`os/pkgs/mosd/mosd/src/bus.rs:25`),
+(`os/pkgs/mosd/mosd/src/bus.rs:26`),
 `pub const OBJECT_PATH: &str = "/com/mos/mosd";`
 (`os/pkgs/mosd/mosd/src/bus.rs:27`) and the interface attribute, which carries
 `name = "com.mos.mosd1"` (`os/pkgs/mosd/mosd/src/bus.rs:574`).
@@ -374,7 +374,7 @@ served at the service root, which is `pub const ROOT_PATH: &str = "/";`
 (`os/pkgs/mosd/mosd/src/tree.rs:35`); apid still declares no member for it.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
-(`os/pkgs/mosd/apid/src/settings_api.rs:13-31`), not on zbus, which is what lets the
+(`os/pkgs/mosd/apid/src/settings_api.rs:13-39`), not on zbus, which is what lets the
 route tests substitute an in-memory fake (`os/pkgs/mosd/apid/src/settings_api.rs:3-4`,
 `:33-47`). The real implementation connects lazily and caches the proxy, and
 drops the cache on any call error so the next request reconnects; the
@@ -397,7 +397,7 @@ allowlist (`:47-67`). At `86cd669` this section recorded that
 `docs/design/dashboard.md` cited the policy as permitting *"any local process"*
 to call it; that disagreement is now closed from the other side — dashboard.md
 reads the shipped policy correctly and says *"the D-Bus policy admits only
-root"* (`docs/design/dashboard.md:1348`), citing the same lines
+root"* (`docs/design/dashboard.md:1359`), citing the same lines
 (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-79`). The stale reading survives only in
 `docs/research/mos-ui-inventory.md`, which is a snapshot and says so (section
 1.7).
@@ -543,8 +543,8 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **6**, declared as
-`pub const SCHEMA_VERSION: u32 = 6;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) and
+**Schema version.** `SCHEMA_VERSION` is **7**, declared as
+`pub const SCHEMA_VERSION: u32 = 7;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) and
 stamped into every default tree, `schema_version: SCHEMA_VERSION,`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:43`). It was **4** when this section was
 first written; the number moves and the API must never hard-code it, which is
@@ -552,13 +552,13 @@ why `GET /api/v1/meta` reads it from `mosd_settings::SCHEMA_VERSION` at request
 time (`os/pkgs/mosd/apid/src/routes.rs:463`) rather than copying it. It is **read-only
 through the write path**: a write whose first path segment is `schema_version`
 is rejected, `if segments[0] == "schema_version" {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:460`), and a whole-tree write that would
+(`os/pkgs/mosd/mosd-settings/src/model.rs:608`), and a whole-tree write that would
 change it is rejected too, `if candidate.schema_version != self.schema_version {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:470`). Documents are migrated forward and
+(`os/pkgs/mosd/mosd-settings/src/model.rs:618`). Documents are migrated forward and
 backward through a registered chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, public entry point at
 `pub fn migrate(doc: &mut toml::Table, from: u32, to: u32) -> Result<(), SettingsError> {`
-(`os/pkgs/mosd/mosd-settings/src/migration.rs:91`)).
+(`os/pkgs/mosd/mosd-settings/src/migration.rs:92`)).
 
 **Persistence.** TOML at
 `pub const DEFAULT_PATH: &str = "/var/lib/mos/settings.toml";`
@@ -570,17 +570,17 @@ fsync it, rename it over the target, then fsync the directory"*
 `#[serde(deny_unknown_fields)]` (for example
 `os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, `:112`, `:139`, `:147`,
 `:165`, `:176`, `:226`, `:237`, `:252`, `:268`, `:293`, `:303`, `:328`,
-`:345`, `:406`, `:417`), so an unknown key fails the load rather than being
-silently dropped.
+`:345`, `:441`, `:464`, `:474`, `:490`, `:507`, `:564`), so an unknown key
+fails the load rather than being silently dropped.
 
 **The settings subtrees, from `pub struct Settings {`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:16-38`):**
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
-| `schema_version` | `u32` | `model.rs:18` | read-only, value 6 |
+| `schema_version` | `u32` | `model.rs:18` | read-only, value 7 (`model.rs:11`) |
 | `hostname` | `String` | `model.rs:20` | system hostname, default `"mos"` (`model.rs:44`) |
-| `network.<iface>` | `IfaceSettings` | `model.rs:22`, type at `:404-413` | `dhcp: bool`, optional `static` block (`address`, `gateway`, `dns[]`) at `:415-427` |
+| `network.<iface>` | `IfaceSettings` | `model.rs:22`, type at `:431-460` | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `:404-422`), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `:562-574`, `vlan` at `:462-470`, `bridge` at `:472-479`, `wireguard` at `:481-503` |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `model.rs:149-151`, type at `:163-169` | `password_hash` only; absent until first-run setup writes it |
 | `access.ssh` | `SshSettings` | `model.rs:152-154`, type at `:171-204` | `enabled` (default `false`, `:206-209`), `port`, `permitRootLogin`, `passwordAuthentication`, `listenAddresses[]`, `authorizedKeys[]` (`:202-203`, entry type at `:219-233`) |
 | `access.console` | `ConsoleSettings` | `model.rs:155-157`, type at `:235-243` | `shellEnabled` |
@@ -600,8 +600,8 @@ each reachable at its own dot-path.
 **validated against the typed tree before it is persisted**: `SetSettings`
 builds a candidate, calls `Settings::set` — which deserializes the whole root
 into a candidate `Self`, `serde_json::from_value(root)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:466`) — and only then calls
-`self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:434`), so a malformed
+(`os/pkgs/mosd/mosd-settings/src/model.rs:614`) — and only then calls
+`self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:467`), so a malformed
 write mutates nothing. Second, **the dot-path syntax has no array indexing**:
 the model comment says a list is *"Written as a whole JSON array through the
 dot-path API"* (`os/pkgs/mosd/mosd-settings/src/model.rs:311`), which is exactly why
@@ -612,11 +612,11 @@ list back through `write_key_list` (`os/pkgs/mosd/apid/src/routes.rs:2191-2204`)
 **Which reconcilers a write re-runs.** `SetSettings` re-applies every reconciler
 whose subtree overlaps the written path —
 `if paths_overlap(path, reconciler.subtree()) {`
-(`os/pkgs/mosd/mosd/src/bus.rs:438`) — where overlap is segment-wise prefix in either
+(`os/pkgs/mosd/mosd/src/bus.rs:471`) — where overlap is segment-wise prefix in either
 direction and the root matches everything, *"True when `a` and `b` overlap by
 dot segments in either direction: one path is a segment-wise prefix of the
 other. The root path (`""` or `"."`) matches everything"*
-(`os/pkgs/mosd/mosd/src/bus.rs:29-31`), implemented at `os/pkgs/mosd/mosd/src/bus.rs:32-47`.
+(`os/pkgs/mosd/mosd/src/bus.rs:30-32`), implemented at `os/pkgs/mosd/mosd/src/bus.rs:32-47`.
 **Seven** reconcilers are registered in production —
 `os/pkgs/mosd/mosd/src/reconciler/mod.rs:28-40` — two more than the five recorded at
 `86cd669`, with these name/subtree pairs:
@@ -624,7 +624,7 @@ other. The root path (`""` or `"."`) matches everything"*
 | Reconciler `name()` | `subtree()` | Declared at |
 |---|---|---|
 | `hostname` | `hostname` | `os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132` |
-| `network` | `network` | `os/pkgs/mosd/mosd/src/reconciler/network.rs:196-202` |
+| `network` | `network` | `os/pkgs/mosd/mosd/src/reconciler/network.rs:432-438` |
 | `sshd` | `access.ssh` | `os/pkgs/mosd/mosd/src/reconciler/sshd.rs:371-377` |
 | `wifiClient` | `wifi.client` | `os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:463-469` |
 | `wifiAp` | `wifi` | `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:680-694` |
@@ -639,7 +639,7 @@ reports "which reconcilers a write will re-run" has to read `subtree()` rather
 than assume it equals the settings key.
 
 **The live-state tree.** It is a plain `serde_json::Value`, not a typed model —
-`state: Value,` (`os/pkgs/mosd/mosd/src/bus.rs:53`) — and `GetState` returns the
+`state: Value,` (`os/pkgs/mosd/mosd/src/bus.rs:54`) — and `GetState` returns the
 subtree at a dot-path or `InvalidArgs`
 (`os/pkgs/mosd/mosd/src/bus.rs:616-633`). Four kinds of thing write into it, and that
 set is the entire read surface an API can expose:
@@ -647,9 +647,9 @@ set is the entire read surface an API can expose:
 1. **One key per reconciler**, named by `name()` above, holding that
    reconciler's applied result, or `{"error": "..."}` when it failed —
    `record(&mut inner.state, reconciler.name(), result);`
-   (`os/pkgs/mosd/mosd/src/bus.rs:440`), the failure branch at
+   (`os/pkgs/mosd/mosd/src/bus.rs:473`), the failure branch at
    `serde_json::json!({ "error": err.to_string() })`
-   (`os/pkgs/mosd/mosd/src/bus.rs:469`).
+   (`os/pkgs/mosd/mosd/src/bus.rs:502`).
 2. **`power`** — `{last_action, requested_by}`, recorded *before* the action so
    the record survives the machine going down
    (`os/pkgs/mosd/mosd/src/bus.rs:190-192`, and *"Always called BEFORE the action: once
@@ -662,9 +662,9 @@ set is the entire read surface an API can expose:
    (`os/pkgs/mosd/mosd/src/bus.rs:671-676`).
 4. **`dry_run`** — present only under
    `std::env::var("MOSD_DRY_RUN").is_ok_and(|value| value == "1")`
-   (`os/pkgs/mosd/mosd/src/main.rs:138`), inserted at
+   (`os/pkgs/mosd/mosd/src/main.rs:139`), inserted at
    `state.insert("dry_run".to_string(), Value::Bool(true));`
-   (`os/pkgs/mosd/mosd/src/main.rs:221`), in which case no reconcilers are
+   (`os/pkgs/mosd/mosd/src/main.rs:222`), in which case no reconcilers are
    registered at all (`os/pkgs/mosd/mosd/src/main.rs:187-190`) and the power control is
    a stub (`os/pkgs/mosd/mosd/src/main.rs:194`).
 
@@ -707,7 +707,7 @@ in the same four positions so the change is legible rather than overwritten.
    `os/pkgs/mosd/apid/Cargo.toml:11-31` and contains no `tower-http`; `tower` itself
    appears only under `[dev-dependencies]` (`os/pkgs/mosd/apid/Cargo.toml:33-36`), and
    the workspace pins it with only the `util` feature —
-   `tower = { version = "0.5", features = ["util"] }` (`os/pkgs/mosd/Cargo.toml:69`) —
+   `tower = { version = "0.5", features = ["util"] }` (`os/pkgs/mosd/Cargo.toml:78`) —
    which carries no file-serving service. The conclusion drawn from it does
    not survive: apid serves files through code it owns,
    `mod assets;` (`os/pkgs/mosd/apid/src/main.rs:30`), whose three modules are
@@ -795,11 +795,11 @@ and this document must not re-decide what it decided. Three things are settled
 there and are treated as inputs here. **Live values:** section 5.8 adopts
 *"option A — full-page refresh — as the dashboard's only live-value mechanism,
 at a 15-second default interval, with a no-JavaScript off switch"*
-(`docs/design/dashboard.md:1305-1306`), on the grounds that mosd has no
+(`docs/design/dashboard.md:1316-1317`), on the grounds that mosd has no
 live-state push signal at all and that a no-JavaScript path must keep working;
 it explicitly names what that forecloses — *"Any value meaningful at
 sub-15-second resolution"* and *"Client-side UI state"*
-(`docs/design/dashboard.md:1334-1345`). **Process
+(`docs/design/dashboard.md:1345-1356`). **Process
 architecture, and the name:** *"mos runs two processes"* — mosd owning device
 state and the system bus, apid owning HTTPS, sessions and the UI, and apid not
 merged into mosd — and the HTTPS management daemon is named `apid`
@@ -848,7 +848,7 @@ follows is a reading of a snapshot and not a defect in it.
    `GetState("sshd")` is at `os/pkgs/mosd/apid/src/routes.rs:2170`,
    `GetState("container")` at `:2079` and `GetState("mqtt")` at `:2337`.
 5. **Schema version "3"** (`docs/research/mos-ui-inventory.md:397`) is now
-   **6** — `pub const SCHEMA_VERSION: u32 = 6;`
+   **7** — `pub const SCHEMA_VERSION: u32 = 7;`
    (`os/pkgs/mosd/mosd-settings/src/model.rs:11`). It was 4 when this section was
    written, which is the second time this one row has gone stale and is the
    reason section 2.1 must serve the number rather than document it.
@@ -858,7 +858,7 @@ follows is a reading of a snapshot and not a defect in it.
    allows root only (`os/pkgs/mosd/dist/com.mos.mosd.conf:74-78`). At `86cd669` this
    list recorded `docs/design/dashboard.md` as carrying the same stale reading;
    it no longer does, and now cites the root-only policy correctly
-   (`docs/design/dashboard.md:1348-1349`).
+   (`docs/design/dashboard.md:1359-1360`).
 
 Its navigation-bar count is likewise off — it records *"exactly four links plus
 a logout button"* (`docs/research/mos-ui-inventory.md:65`), and `shell()` now
@@ -1025,8 +1025,8 @@ this paragraph was written). **It is not the API version and the two must never
 be conflated.** The schema version is the shape of the tree on disk
 (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), moved by a registered migration chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, entry point at
-`os/pkgs/mosd/mosd-settings/src/migration.rs:91`) and read-only through the write path
-(`os/pkgs/mosd/mosd-settings/src/model.rs:460-461`, `:470-472`). The shipped handler
+`os/pkgs/mosd/mosd-settings/src/migration.rs:92`) and read-only through the write path
+(`os/pkgs/mosd/mosd-settings/src/model.rs:608-609`, `:582-584`). The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1110,13 +1110,15 @@ mosd's value and not a wrapper around it.
 
 **Redaction ships, and it ships wider than this section proposed.** The
 structural redactor is `os/pkgs/mosd/apid/src/redact.rs`, its denylist is
-`const SECRET_FIELDS: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];`
-(`os/pkgs/mosd/apid/src/redact.rs:25`) — the same four field names named below — and
+`const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];`
+(`os/pkgs/mosd/apid/src/redact.rs:33`) — the four field names named below, plus
+the `privateKey` PLAN-022 M6 added as a fail-closed guard for a field no shipped
+schema carries — and
 the sentinel is `pub const REDACTED: &str = "<redacted>";`
 (`os/pkgs/mosd/apid/src/redact.rs:19`). It walks objects and arrays at any depth
-(`os/pkgs/mosd/apid/src/redact.rs:48-65`) and also reads the requested dot-path, so
+(`os/pkgs/mosd/apid/src/redact.rs:56-73`) and also reads the requested dot-path, so
 that a request naming a secret field directly is caught even though the body
-has no field name left in it (`os/pkgs/mosd/apid/src/redact.rs:38-44`). The
+has no field name left in it (`os/pkgs/mosd/apid/src/redact.rs:46-52`). The
 fail-open property this section names as a residual risk is stated by the
 module itself — *"The list is fail-open: a secret-bearing field under a name it
 does not carry is served"* (`os/pkgs/mosd/apid/src/redact.rs:11-12`) — and the
@@ -1131,7 +1133,18 @@ here rather than quietly accepted.
 
 **What does not ship.** No `PUT`, anywhere: the two roots are `GET` only, so
 the write half of every row below is a proposal. The `/api/v1/actions/<verb>`
-root does not exist. Neither collection resource exists. The rule that a `PUT`
+root exists and holds exactly one verb, added by PLAN-022 M6:
+`"/api/v1/actions/wireguard/{iface}/rotate-key"`
+(`os/pkgs/mosd/apid/openapi.json:9`), a `POST` that draws a WireGuard interface
+a new private key and answers its public half. It is a route and not a settings
+write because *"An action and not a settings write, because there is no setting
+to write"* (`os/pkgs/mosd/apid/src/routes.rs:577`) — the key lives in a file on
+STATE the settings tree does not describe (§4.1 of `docs/task/RFCT-200.md`).
+None of the three verbs §2.3 proposes — `reboot`, `poweroff`,
+`transient-root-password` — is served: the published document lists five
+operations and the other four are the two resource roots, `/api/v1/meta` and
+`/api/versions` (`os/pkgs/mosd/apid/openapi.json:8-281`). Neither collection
+resource exists. The rule that a `PUT`
 carrying `"<redacted>"` is refused at 422 has nothing to refuse — the source
 says so directly, *"It is read-only — writing it back would destroy the
 credential — and phase 1 serves no write route to write it with"*
@@ -1179,7 +1192,7 @@ project's own rule, unsupported: *"An unmodelled setting is an unsupported
 setting"* (`docs/design/access.md:519`). Hand-shaped nouns reproduce exactly
 that failure one layer up, where nothing — no compiler, no
 `deny_unknown_fields` (`os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, and
-fifteen more) — will ever notice the omission. The passthrough cannot drift, because
+nineteen more) — will ever notice the omission. The passthrough cannot drift, because
 there is nothing to drift from.
 
 **What the passthrough costs, stated plainly.** The API becomes exactly as
@@ -1194,22 +1207,40 @@ capable as the bus, including the bus's limits:
   lose one of the two writes, with no mechanism that notices.
 - **Whole-subtree writes are all-or-nothing.** `Settings::set` deserializes the
   entire root into `Settings` after the write and rejects the result if it does
-  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:465-469`), and every struct carries
+  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:613-617`), and every struct carries
   `#[serde(deny_unknown_fields)]`, so a `PUT` of a subtree with one extra key
   fails the whole write. That is a good property — it is also a surprising one
   for a client that expected a merge.
-- **A dot in a value collides with a dot in the path.** Verified at `86cd669`:
-  apid accepts an interface name containing `.`
-  (`os/pkgs/mosd/apid/src/routes.rs:855-860` permits `.`, `_` and `-`), but `split_path`
-  splits on `.` unconditionally (`os/pkgs/mosd/mosd-settings/src/path.rs:26-32`), so
-  `network.eth0.100` — a VLAN sub-interface — lands as a field named `100`
-  inside `IfaceSettings` and is rejected by `deny_unknown_fields`
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:405-413`). Running `Settings::set` against a
-  default tree with that path returns `Validation { path: "network.eth0.100",
-  message: "unknown field `100`, expected `dhcp` or `static`" }`. This is a
-  **pre-existing** limit of the dot-path model, not one the API introduces — the
-  HTML form has it too — but an API that adopts the dot-path adopts it, and a
-  client must be told rather than left to discover it as a 502 (§2.4).
+- **A key holding a dot is addressed with a quoted segment.** apid accepts an
+  interface name containing `.` — `^[a-zA-Z0-9._-]{1,15}$`
+  (`os/pkgs/mosd/apid/src/routes.rs:907-913`) — and until PLAN-022 M2 the
+  dot-path split through it, so `network.eth0.100` addressed a field named `100`
+  inside `IfaceSettings` rather than the interface `eth0.100`. That was fixed in
+  the path lexer, not in the API. A segment is now either bare or double-quoted,
+  *"in which `.` is an ordinary character"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:4-5`), so the VLAN sub-interface is
+  `GET`/`PUT /api/v1/settings/network."eth0.100".dhcp`. *"The spelling is TOML's
+  own quoted-key syntax"* (`os/pkgs/mosd/mosd-settings/src/path.rs:5-6`) — the
+  notation the store was already writing for such a key — so `settings.toml` on
+  STATE and an API path are spelled the same way. One lexer serves both
+  directions: *"Reads and writes share [`split_path`]: a path that resolves for
+  `get` is spelled exactly the way it is spelled for `set`"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:10-11`), and a client composing a
+  path spells a segment *"bare when it can be, quoted when it contains a `.`"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:33-34`).
+
+  Two residues a client is still owed. **The unquoted spelling did not become an
+  alias**: `network.eth0.100` against a tree that declares `eth0` still fails,
+  and against schema v7 the field list it names is longer — measured
+  2026-08-28, `Settings::set` returns `Validation { path: "network.eth0.100",
+  message: "unknown field `100`, expected one of `kind`, `dhcp`, `static`,
+  `vlan`, `bridge`, `wireguard`" }`, which reaches a client as §2.4's
+  `settings_rejected` and not as a 502. **A key containing a double quote has no
+  spelling at all**, and schema v7 closes that hole from the other side rather
+  than leaving it as an addressing gap: *"Refuse a `network` map key the kernel
+  could not name an interface"* (`os/pkgs/mosd/mosd-settings/src/model.rs:531`)
+  runs on the write path, which makes such a key structurally impossible instead
+  of merely unaddressable.
 
 **The exception: two collection resources, added deliberately.** The dot-path
 model fails outright for the two arrays in the tree, because a per-item delete
@@ -1234,7 +1265,7 @@ up believing access was withdrawn while the key still grants root."*
 /api/v1/ssh/authorized-keys/{fingerprint}`. A client using the first can produce
 a list the second would have rejected. The floor is the same either way, because
 both end at `SetSettings` → `Settings::set` → `store.save`
-(`os/pkgs/mosd/mosd/src/bus.rs:430-435`), and the collection route additionally runs
+(`os/pkgs/mosd/mosd/src/bus.rs:463-468`), and the collection route additionally runs
 `validate_authorized_keys` first — the same validator mosd runs before rendering
 the file (`os/pkgs/mosd/apid/src/routes.rs:2192-2194`). So the difference is the quality
 of the error message, not whether a bad list can be written. That is an
@@ -1270,7 +1301,7 @@ destroy the credential.
 | System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`model.rs:266-278`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
 | Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`model.rs:11`) | read-only; a write to `schema_version` is rejected by mosd (`model.rs:459-462`) so the API does not expose one |
 | Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`model.rs:20`) | body is a bare JSON string; reconciled by `hostname` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132`) |
-| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`model.rs:22`, `:404-413`) | see the VLAN dot collision above |
+| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`model.rs:22`, `:431-460`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
 | WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`model.rs:301-314`) | `psk` redacted on read |
 | WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:343-373`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:391-402`) |
 | SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:171-204`) | default `enabled: false` (`:206-209`) |
@@ -1533,8 +1564,9 @@ dead mosd from answering — was resolved a different way and is recorded below.
 }
 ```
 
-Example, from a real rejection verified against `mosd-settings`
-(the VLAN case of §2.2):
+Example, from a real rejection measured against `mosd-settings` on 2026-08-28
+(§2.2's unquoted spelling, which is still an error and must not read as an
+outage):
 
 ```
 HTTP/1.1 422 Unprocessable Content
@@ -1543,7 +1575,7 @@ Content-Type: application/json
 {
   "error": {
     "code": "settings_rejected",
-    "message": "invalid settings value at `network.eth0.100`: unknown field `100`, expected `dhcp` or `static`",
+    "message": "invalid settings value at `network.eth0.100`: unknown field `100`, expected one of `kind`, `dhcp`, `static`, `vlan`, `bridge`, `wireguard`",
     "source": "mosd",
     "path": "network.eth0.100"
   }
@@ -1609,7 +1641,7 @@ message too — replacing mosd's text with apid's own phrasing per code — then
 every message mosd learns to produce is invisible until apid is taught it. The
 "unknown field `100`, expected `dhcp` or `static`" string in the example above
 comes from serde, through `SettingsError::Validation`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:465-469`),
+(`os/pkgs/mosd/mosd-settings/src/model.rs:613-617`),
 and no phrasing apid could have pre-written would have told the caller which
 field was wrong. A client debugging a rejected write would be reduced to
 guessing. That is the failure mode, and it is why `message` is passed through.
@@ -1621,7 +1653,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    caller can fix it locally, and the write definitely did not happen.
    `source: "mosd"` means mosd's typed tree rejected it; the write also did not
    happen (`Settings::set` is documented as leaving settings unchanged on error,
-   `os/pkgs/mosd/mosd-settings/src/model.rs:446-447`, and `store.save` runs only after
+   `os/pkgs/mosd/mosd-settings/src/model.rs:593-594`, and `store.save` runs only after
    the candidate validates, `os/pkgs/mosd/mosd/src/bus.rs:432-434`), but the rule that
    rejected it is not one apid knows. Both are 422. Knowing which is which is
    what tells a client whether re-reading this document will help.
@@ -2008,7 +2040,7 @@ derive from it.**
 - **Not a replacement.** `POST /setup` and `POST /login` remain the only
   bootstrap (see above), and the built-in UI is a server-rendered
   no-JavaScript browser client by `docs/design/dashboard.md`'s own decision
-  (`docs/design/dashboard.md:1275-1276`), which has no use for a bearer token.
+  (`docs/design/dashboard.md:1286-1287`), which has no use for a bearer token.
 - **Coexisting means two credentials at one privilege level** — and there is
   only one privilege level, because apid runs as root (`os/pkgs/mosd/dist/apid.service`
   sets no `User=`, `:1-13`; `os/pkgs/mosd/dist/com.mos.mosd.conf:12-14` records the same
@@ -2089,7 +2121,7 @@ about which origins rather than whether. A second cost: a browser UI that needs
 a token has to hold it in JavaScript, where an XSS can read it — strictly worse
 than the `HttpOnly` cookie (`os/pkgs/mosd/apid/src/session.rs:121`) for that one
 property. The built-in UI is unaffected because it is no-JavaScript by decision
-(`docs/design/dashboard.md:1305-1306`).
+(`docs/design/dashboard.md:1316-1317`).
 
 **What it does not protect against.** Five attacks, concretely.
 
@@ -3203,7 +3235,7 @@ The built-in UI therefore stays **server-rendered `maud` with no build step**,
 and **this document does not choose a frontend framework for it** —
 `docs/design/dashboard.md` §5.8 already settled the live-value mechanism as
 full-page refresh with a no-JavaScript off switch
-(`docs/design/dashboard.md:1275-1276`; cited, not edited), which is the same
+(`docs/design/dashboard.md:1286-1287`; cited, not edited), which is the same
 constraint approached from the other side.
 
 **A customer's own UI is their toolchain, not ours.** This asymmetry is
@@ -3352,7 +3384,7 @@ provisioning as a hard failure on purpose, and the code says why in as many
 words: *"Hard failure on purpose: an unwritable STATE means no device identity
 and no device credential, so there is no usable device to serve. A loud exit is
 better than a daemon that quietly serves an unprovisioned tree the operator
-cannot log in to."* (`os/pkgs/mosd/mosd/src/main.rs:173-176`, with the `?` at `:183`).
+cannot log in to."* (`os/pkgs/mosd/mosd/src/main.rs:174-177`, with the `?` at `:183`).
 A single-process design would make that exit take the UI with it: a provisioning
 failure would leave a device with no diagnostic surface at all, reachable only
 by serial console. Two processes are what keep the exit loud and the device
@@ -3905,8 +3937,8 @@ below are the run's actual output.
    succeeds and rewrites `schema_version` to `3` — which is what made the wrong
    answer plausible. It is reachable only from an explicit caller with
    `from > to`, and **the only such callers in the tree are tests**
-   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:241`, `:277`, `:506`, `:536`, `:996`,
-   `:1011`, `:1081`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
+   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:243`, `:279`, `:510`, `:540`, `:1000`,
+   `:1015`, `:1085`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
    production caller of `migrate` and it can only ever walk **upward**.
 
 **What follows, corrected.** An A/B rollback into a phase-1 slot after a token
@@ -4181,7 +4213,7 @@ UI-upload path is not. `rauc` verifies the CMS signature against
 `/etc/rauc/keyring.pem` and mos refuses `plain`-format bundles by configuration
 (`os/pkgs/rauc/system.conf.in:50-62`), and dashboard.md's own row states the
 constraint that goes with it: *"**no "install this file anyway" affordance may
-be added**"* (`docs/design/dashboard.md:1779`). The asymmetry is correct, and it
+be added**"* (`docs/design/dashboard.md:1790`). The asymmetry is correct, and it
 is what §7's recommendation actually says: **mos requires a signature on the
 artifact whose compromise is a kernel, and does not require a key ceremony for
 the artifact whose compromise is a web page on an origin the operator already
@@ -4272,12 +4304,17 @@ instances, not a generality.**
   `error.code` an existing failure emits"* a major-version bump. So after v1
   ships, this improvement costs a `v2` — which is why the split landed before
   the freeze (§8.2 phase 1, §2.4).
-- **The VLAN dot-path limit.** `valid_iface_name` permits `.`
-  (`os/pkgs/mosd/apid/src/routes.rs:862-867`) while `split_path` splits on it
-  unconditionally (`os/pkgs/mosd/mosd-settings/src/path.rs:26-32`), so `network.eth0.100`
-  cannot be addressed (§2.2). It is pre-existing; what is new is
-  that fixing it now reaches a published contract, so a settings-syntax change
-  becomes an API change.
+- **The VLAN dot-path limit — since closed, and closed additively.**
+  `valid_iface_name` permits `.` — `^[a-zA-Z0-9._-]{1,15}$`
+  (`os/pkgs/mosd/apid/src/routes.rs:907-913`) — while `split_path` split on it
+  unconditionally, so `network.eth0.100` could not be addressed. PLAN-022 M2
+  gave the lexer quoted segments, *"in which `.` is an ordinary character"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:4-5`); §2.2 records the spelling that
+  ships. The entry stays because its point held and was then tested: the fix did
+  reach the published contract, and it reached it as an **additive** change
+  under §2.1's rules — no route, method, status code or field was removed, and a
+  previously-failing path merely started succeeding — so it cost no `v2`. The
+  classification is worked through row by row in `docs/task/RFCT-200.md` §6.
 - **Uptime.** §2.2 chose that mosd should publish it into the live-state tree
   rather than apid keep reading `/proc/uptime`, and that choice has since
   landed (§2.2 item 3): the representation — a top-level `uptime` scalar of
