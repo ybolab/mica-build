@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use reqwest::StatusCode;
-use reqwest::header::{LOCATION, SET_COOKIE};
+use reqwest::header::{ALLOW, LOCATION, SET_COOKIE};
 
 /// Kills the wrapped child on drop, including on panic.
 struct ChildGuard(Child);
@@ -272,6 +272,44 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let response = anon.get(format!("{https_base}/healthz")).send().await?;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.text().await?, "ok");
+
+    // `docs/design/api.md` §2.4 case 3's second, differently-scoped endpoint,
+    // against a live mosd on a real bus: 200, `mosd: "ok"`, and the answer
+    // stamped with the appliance's own uptime. `/healthz` above says apid's
+    // listener is up; this says the appliance is manageable, and only a real
+    // round trip can tell the difference.
+    let response = admin
+        .get(format!("{https_base}/api/v1/health"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let health: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(health["apid"], "ok");
+    assert_eq!(health["mosd"], "ok");
+    assert!(health["checkedAt"].is_u64(), "checkedAt: {health}");
+    assert!(health.get("detail").is_none(), "{health}");
+
+    // It is authenticated, and its refusal is §2.4's envelope rather than the
+    // gate's redirect (§3.1).
+    let response = anon
+        .get(format!("{https_base}/api/v1/health"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "not_authenticated");
+
+    // §2.4's one shape, on a method a declared route does not serve, with the
+    // `Allow` header naming what it does serve.
+    let response = admin
+        .post(format!("{https_base}/api/v1/meta"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(response.headers().get(ALLOW).unwrap(), "GET,HEAD");
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "method_not_allowed");
+    assert_eq!(error["error"]["source"], "apid");
 
     // The login curve over the real listener. A wrong password is answered
     // 401 and costs a backoff window (`access.md` §3.3's `backoffBase`, one

@@ -36,7 +36,7 @@ reserved for pushed facts, so a read never manufactures a change edge for the
 item façade's diff stream, and `GetItems` is unchanged.
 
 apid's status pane reads uptime like every other system fact —
-`get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs:1901-1909`); the `/proc/uptime` reader and
+`get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs:2077-2085`); the `/proc/uptime` reader and
 its parser are deleted, closing the contradiction with the crate's own rule
 (`settings_api.rs:10-12`). `GET /api/v1/state/uptime` now serves the field
 the pane shows, from the same source.
