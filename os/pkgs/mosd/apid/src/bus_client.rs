@@ -22,6 +22,7 @@ trait Mosd {
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
     fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
+    fn rotate_wireguard_key(&self, iface: &str) -> zbus::Result<String>;
 }
 
 /// `com.mos.Item1` on one item object path. Only the write half is used here:
@@ -201,6 +202,20 @@ impl SettingsApi for BusSettings {
             // The error is returned as mosd raised it. mosd's own contract is
             // that no message it raises here carries the password, and nothing
             // is added to it on the way back.
+            Err(err) => {
+                self.reset().await;
+                Err(err.into())
+            }
+        }
+    }
+
+    /// The answer is mosd's, verbatim: the base64 public half of the key it
+    /// just drew. There is no private half in the reply and no method on this
+    /// proxy that would fetch one.
+    async fn rotate_wireguard_key(&self, iface: &str) -> anyhow::Result<String> {
+        let proxy = self.proxy().await?;
+        match proxy.rotate_wireguard_key(iface).await {
+            Ok(public_key) => Ok(public_key),
             Err(err) => {
                 self.reset().await;
                 Err(err.into())

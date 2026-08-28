@@ -22,7 +22,21 @@ pub const REDACTED: &str = "<redacted>";
 ///
 /// Names and not dot-paths, because the two `psk` fields sit inside arrays and
 /// the dot-path syntax cannot name an array element.
-const SECRET_FIELDS: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];
+///
+/// `privateKey` is on the list for a value nothing in this tree serves. A
+/// WireGuard private key is not in the settings schema and is not in live
+/// state — `docs/task/RFCT-200.md` §4 puts it in a mode-0640 file on STATE and
+/// states *"there is no read-back route for the private key, ever"* — so today
+/// this entry redacts nothing. It is the fail-closed half of that rule: the day
+/// a field of that name appears anywhere in either tree, it is already covered,
+/// rather than being served in the clear until somebody remembers this file.
+const SECRET_FIELDS: [&str; 5] = [
+    "psk",
+    "passwordHash",
+    "password_hash",
+    "hash",
+    "privateKey",
+];
 
 /// Whether a field named `name` is redacted.
 fn is_secret(name: &str) -> bool {

@@ -28,6 +28,14 @@ pub trait SettingsApi: Send + Sync {
     /// settings tree would be persisted, re-applied on the next boot and
     /// readable by anything that can call `GetSettings`.
     async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()>;
+    /// Draw a new WireGuard private key for `iface` and return its new base64
+    /// public key.
+    ///
+    /// Deliberately not a `set_settings` call, and for a stronger reason than
+    /// the transient password's: the settings tree holds no key to write. The
+    /// private half never leaves mosd and there is no accessor that returns
+    /// one, so the only thing this call can hand back is the public half.
+    async fn rotate_wireguard_key(&self, iface: &str) -> anyhow::Result<String>;
 }
 
 /// In-memory [`SettingsApi`] used by the route tests.
@@ -37,6 +45,15 @@ pub struct FakeSettings {
     state: std::sync::Mutex<Value>,
     set_log: std::sync::Mutex<Vec<String>>,
     power_log: std::sync::Mutex<Vec<String>>,
+    /// Interfaces passed to `rotate_wireguard_key`, in call order, each
+    /// paired with the public key handed back.
+    ///
+    /// The interface and the answer, never a private key: the fake has none to
+    /// store because the trait has no method that would produce one.
+    rotations: std::sync::Mutex<Vec<(String, String)>>,
+    /// The error the next `rotate_wireguard_key` raises instead of answering,
+    /// for the tests that drive the failure classification.
+    rotate_error: std::sync::Mutex<Option<String>>,
     /// How many times `set_transient_root_password` was called.
     ///
     /// A count, never the password. A fake that stored the password would let
@@ -55,7 +72,19 @@ impl FakeSettings {
             set_log: std::sync::Mutex::new(Vec::new()),
             power_log: std::sync::Mutex::new(Vec::new()),
             transient_password_calls: std::sync::Mutex::new(0),
+            rotations: std::sync::Mutex::new(Vec::new()),
+            rotate_error: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Make the next and every later `rotate_wireguard_key` fail with `err`.
+    pub fn fail_rotation(&self, err: anyhow::Error) {
+        *self.rotate_error.lock().unwrap() = Some(format!("{err:#}"));
+    }
+
+    /// Rotations requested, as `(iface, public key answered)`, in call order.
+    pub fn rotations(&self) -> Vec<(String, String)> {
+        self.rotations.lock().unwrap().clone()
     }
 
     /// Insert `value` at top-level `key` of the live-state tree.
@@ -157,5 +186,20 @@ impl SettingsApi for FakeSettings {
         // The password is dropped here on purpose; see the field's comment.
         *self.transient_password_calls.lock().unwrap() += 1;
         Ok(())
+    }
+
+    async fn rotate_wireguard_key(&self, iface: &str) -> anyhow::Result<String> {
+        if let Some(err) = self.rotate_error.lock().unwrap().clone() {
+            return Err(anyhow::anyhow!(err));
+        }
+        // A distinct answer per call, so a test can tell a fresh rotation from
+        // a cached one. Base64 of 32 bytes, the shape a real public key has.
+        let count = self.rotations.lock().unwrap().len();
+        let public_key = mosd_settings::encode_base64_nopad(&[count as u8; 32]);
+        self.rotations
+            .lock()
+            .unwrap()
+            .push((iface.to_string(), public_key.clone()));
+        Ok(public_key)
     }
 }

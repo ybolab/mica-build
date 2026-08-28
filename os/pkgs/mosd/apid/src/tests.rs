@@ -43,7 +43,13 @@ fn configured_tree(password: &str) -> serde_json::Value {
     let hash = auth::hash_password(password).unwrap();
     json!({
         "hostname": "mos",
-        "network": {},
+        // The field the denylist's fail-closed entry exists for. No shipped
+        // schema has it — `WireguardConfig` carries no private key and never
+        // will — so the fixture plants the hypothetical the entry guards
+        // against: a settings tree that somehow holds one must not serve it.
+        "network": {
+            "wg0": { "kind": "wireguard", "privateKey": "wg-plaintext-marker" },
+        },
         "access": { "webAdmin": { "password_hash": hash } },
     })
 }
@@ -3602,12 +3608,13 @@ fn secret_tree(password: &str) -> serde_json::Value {
     })
 }
 
-/// The live-state entry the state tests read, carrying all four names too:
+/// The live-state entry the state tests read, carrying all five names too:
 /// §2.2 states the redaction rule for the settings root, and this campaign
 /// extends it to the state root, so the state root is held to the same proof.
 fn secret_state_entry() -> serde_json::Value {
     json!({
         "psk": "state-ap-plaintext-marker",
+        "privateKey": "state-private-plaintext-marker",
         "peers": [
             { "ssid": "home", "psk": "state-peer-plaintext-marker" },
             { "id": "laptop", "hash": "state-hash-plaintext-marker" },
@@ -3620,7 +3627,9 @@ fn secret_state_entry() -> serde_json::Value {
 }
 
 /// Every marker string [`secret_tree`] and [`secret_state_entry`] plant.
-const PLAINTEXT_MARKERS: [&str; 9] = [
+const PLAINTEXT_MARKERS: [&str; 11] = [
+    "wg-plaintext-marker",
+    "state-private-plaintext-marker",
     "device-plaintext-marker",
     "keyhash-plaintext-marker",
     "ap-plaintext-marker",
@@ -3632,8 +3641,14 @@ const PLAINTEXT_MARKERS: [&str; 9] = [
     "state-hash-plaintext-marker",
 ];
 
-/// The four field names §2.2's redaction rule names.
-const SECRET_FIELD_NAMES: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];
+/// The field names §2.2's redaction rule names, `privateKey` included.
+const SECRET_FIELD_NAMES: [&str; 5] = [
+    "psk",
+    "passwordHash",
+    "password_hash",
+    "hash",
+    "privateKey",
+];
 
 /// The sentinel a redacted field carries.
 const REDACTED: &str = "<redacted>";
@@ -3775,12 +3790,16 @@ async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() 
     let (router, _) = test_app(secret_tree("hunter2secret"));
     let cookie = login(&router, "hunter2secret").await;
 
-    // Two subtrees rather than one, because the whole-tree dot-path is `""`
+    // Three subtrees rather than one, because the whole-tree dot-path is `""`
     // and this route family takes a non-empty one. Between them they hold all
-    // four names.
+    // five names.
     let mut found = Vec::new();
     let mut bodies = String::new();
-    for path in ["/api/v1/settings/access", "/api/v1/settings/wifi"] {
+    for path in [
+        "/api/v1/settings/access",
+        "/api/v1/settings/wifi",
+        "/api/v1/settings/network",
+    ] {
         let response = get(&router, path, Some(&cookie)).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         let body = body_string(response).await;
@@ -3851,7 +3870,9 @@ async fn a_dot_path_that_names_a_secret_field_answers_the_sentinel() {
         "/api/v1/settings/access.webAdmin.password_hash",
         "/api/v1/settings/access.device.passwordHash",
         "/api/v1/settings/wifi.ap.psk",
+        "/api/v1/settings/network.wg0.privateKey",
         "/api/v1/state/wifiAp.psk",
+        "/api/v1/state/wifiAp.privateKey",
         "/api/v1/state/wifiAp.admin.passwordHash",
     ] {
         let response = get(&router, path, Some(&cookie)).await;
