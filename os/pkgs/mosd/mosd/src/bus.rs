@@ -646,10 +646,16 @@ impl MosdService {
     /// ever being served stale; grafting rather than storing keeps the stored
     /// tree reserved for pushed facts, so a read never manufactures a change
     /// edge for the item façade ([`crate::tree`]) to project.
-    async fn get_state(&self, path: &str) -> fdo::Result<String> {
+    ///
+    /// Two failure paths, under two names: [`NOT_FOUND_ERROR`] when the
+    /// dot-path resolves to nothing, and fdo `Failed` when the `/proc/uptime`
+    /// read does not answer. apid maps the first to 404 and the second to 500
+    /// with no route-specific reading of either.
+    async fn get_state(&self, path: &str) -> Result<String, SettingsFault> {
         if path == "uptime" {
-            let secs = read_uptime_seconds()
-                .ok_or_else(|| fdo::Error::Failed("read /proc/uptime".to_string()))?;
+            let secs = read_uptime_seconds().ok_or_else(|| {
+                SettingsFault::Fdo(fdo::Error::Failed("read /proc/uptime".to_string()))
+            })?;
             return Ok(Value::from(secs).to_string());
         }
         let inner = self.inner.lock().await;
@@ -660,8 +666,16 @@ impl MosdService {
             }
             return Ok(root.to_string());
         }
+        // The dot-path names nothing in the tree. That is [`NOT_FOUND_ERROR`],
+        // the same name `rotate_wireguard_key` raises for an interface the
+        // settings do not declare, and not `InvalidArgs`: the argument is
+        // well-formed, there is simply no value under it. Under one shared
+        // name apid could only tell the two apart by knowing that on the state
+        // route the name had a single producer, and it read the name against
+        // that private fact to answer 404 (`docs/task/RFCT-215.md` section 6
+        // item 5). Naming the condition here is what lets that reading go.
         let value = json_path_get(&inner.state, path)
-            .ok_or_else(|| fdo::Error::InvalidArgs(format!("state path not found: `{path}`")))?;
+            .ok_or_else(|| SettingsFault::NotFound(format!("state path not found: `{path}`")))?;
         Ok(value.to_string())
     }
 

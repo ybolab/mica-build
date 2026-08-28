@@ -4163,10 +4163,12 @@ fn the_zbus_error_survives_the_conversion_to_anyhow() {
 /// §2.4's table, row by row: mosd classifies, apid translates the
 /// classification, and mosd's message is carried through verbatim.
 ///
-/// One row is route-dependent, and the loop below says which: fdo
-/// `InvalidArgs` is 422 `settings_rejected` everywhere except the live-state
-/// route, where it has a single producer and can only mean the dot-path did
-/// not resolve.
+/// No row is route-dependent any more. fdo `InvalidArgs` was 422
+/// `settings_rejected` everywhere except the live-state route, where apid
+/// rewrote it to 404 because `GetState` had a single producer for the name;
+/// `GetState` now raises `MOSD_NOT_FOUND` for a dot-path that resolves to
+/// nothing, so the same name means the same thing on both routes and the
+/// table is read straight.
 #[tokio::test]
 async fn each_fdo_error_name_gets_its_own_envelope() {
     for (fdo_name, code, status) in [
@@ -4197,17 +4199,6 @@ async fn each_fdo_error_name_gets_its_own_envelope() {
         ),
     ] {
         for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
-            // The route-dependent row. `GetState` raises `InvalidArgs` for a
-            // dot-path that does not resolve and for nothing else, so the
-            // state route answers it 404, the same as the settings tree
-            // answers its own missing path.
-            let (code, status) = if fdo_name == "org.freedesktop.DBus.Error.InvalidArgs"
-                && path.starts_with("/api/v1/state/")
-            {
-                ("settings_not_found", StatusCode::NOT_FOUND)
-            } else {
-                (code, status)
-            };
             let (router, token) = failing_app(Some(fdo_name)).await;
             let response = bearer(&router, "GET", path, &token).await;
             assert_eq!(response.status(), status, "{fdo_name} at {path}");
@@ -4308,25 +4299,35 @@ async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
 
 /// A live-state dot-path that does not resolve answers **404
 /// `settings_not_found`**, the same code the settings tree gives the same
-/// condition -- not the 422 §2.4's table gives fdo `InvalidArgs` everywhere
-/// else.
+/// condition -- not the 422 §2.4's table gives fdo `InvalidArgs`.
 ///
-/// mosd raises `InvalidArgs` for a state path that does not resolve
-/// (`os/pkgs/mosd/mosd/src/bus.rs:648-665`), and on THIS route that name has
-/// exactly one producer: `get_state`'s only other failure is `Failed` for the
-/// `/proc/uptime` read. One producer is what makes the reclassification a
-/// reading rather than a guess. The settings assertion beside it is the
-/// control: the same name on the settings route is still a rejection, because
-/// there it genuinely can be one.
+/// **The status, the code and the envelope are unchanged; what carries them
+/// is not.** mosd used to raise fdo `InvalidArgs` for a state path that does
+/// not resolve, and apid answered 404 by reading that name against a fact
+/// about `GetState` -- that it had exactly one producer for it -- which was
+/// true but private to this one route. mosd's `get_state` now raises
+/// `MOSD_NOT_FOUND`, the name every other read on the bus already uses for a
+/// path that names nothing, so §2.4's shared classifier answers this without a
+/// special case.
+///
+/// The second half is the control, and it is the assertion that would have
+/// failed before: fdo `InvalidArgs` on the state route is now a plain 422,
+/// because no rewrite is left to intercept it.
 #[tokio::test]
 async fn a_state_dot_path_that_does_not_resolve_is_404_not_422() {
-    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let (router, token) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
 
     let response = bearer(&router, "GET", "/api/v1/state/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_not_found");
     assert_eq!(error["path"], json!("no.such.path"));
+
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let response = bearer(&router, "GET", "/api/v1/state/no.such.path", &token).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_rejected");
 
     let response = bearer(&router, "GET", "/api/v1/settings/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
