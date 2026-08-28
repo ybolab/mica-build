@@ -246,7 +246,7 @@ memory of a report.
    (`os/pkgs/mosd/apid/src/routes.rs:4155`). **No route of M6's
    typed network cluster calls it.** Pinned by
    `the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not`
-   (`os/pkgs/mosd/apid/src/tests.rs:10312`).
+   (`os/pkgs/mosd/apid/src/tests.rs:10360`).
 2. **The gate asymmetry — a bearer-only client asking for an *undeclared* path
    under `/api/` is redirected to `/login`.** The gate hands off only declared
    routes (`os/pkgs/mosd/apid/src/routes.rs:3273`) and its whole credential test
@@ -256,13 +256,13 @@ memory of a report.
    (`os/pkgs/mosd/apid/src/tests.rs:6427`), whose bearer arm asserts the 303.
 3. **`is_quotable` stays in the renderer, so the WiFi route still accepts a psk
    containing a quote or a backslash.** `fn is_quotable`
-   (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:200-204`) is applied only
-   inside `fn encode_psk` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:234`), at
-   `if !is_quotable(psk) {` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:248`). What the API route
+   (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:203-205`) is applied only
+   inside `fn encode_psk` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:235`), at
+   `if !is_quotable(psk) {` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:249`). What the API route
    runs is `mosd_settings::validate_wifi_psk(psk)`
    (`os/pkgs/mosd/apid/src/routes.rs:2227`), and that function checks a 64-digit
    hex PMK or a length band and nothing else
-   (`os/pkgs/mosd/mosd-settings/src/model.rs:449-460`). A psk carrying `"` is
+   (`os/pkgs/mosd/mosd-settings/src/model.rs:476-499`). A psk carrying `"` is
    accepted at the route and rejected at render time.
 4. **The gate-list/router agreement gap.** `fn is_declared_api_route`
    (`os/pkgs/mosd/apid/src/routes.rs:541-562`) is a second list of eighteen
