@@ -6445,10 +6445,14 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // own not-found handler, so `token_id` must not release it to the gate: a
     // path the gate released to a route that does not exist would answer a 404
     // where an unauthenticated caller is supposed to be redirected.
-    let response = bearer(&router, "DELETE", "/api/v1/tokens/", &token).await;
+    let cookie = login(&router, "hunter2secret").await;
+    let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 
+    // And the bearer arm of the same path, which was already asserted here and
+    // is left exactly as it was: a bearer does not satisfy the gate, so a
+    // bearer-only client asking for an undeclared path under /api is redirected.
     let response = bearer(&router, "DELETE", "/api/v1/tokens/", &wires[0]).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/login");
@@ -7612,7 +7616,11 @@ async fn a_fingerprint_carrying_a_slash_is_addressable_percent_encoded() {
     // all -- which is the reserved subtree's own not-found answer and not this
     // collection's 404.
     let raw = format!("/api/v1/ssh/authorized-keys/{REAL_RSA_FINGERPRINT}");
-    let response = bearer(&router, "DELETE", &raw, &token).await;
+    // The COOKIE and not the bearer, deliberately: this path is UNDECLARED, so
+    // it reaches the gate rather than a route's own extractor, and the gate
+    // takes the session and only the session.
+    let cookie = login(&router, "hunter2secret").await;
+    let response = request(&router, "DELETE", &raw, Some(&cookie), None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 }
@@ -8770,12 +8778,15 @@ async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
         json!([])
     );
 
-    // Unencoded, the same key is two segments and is not this route.
-    let response = bearer(
+    // Unencoded, the same key is two segments and is not this route. The
+    // COOKIE and not the bearer: an undeclared path reaches the gate, and the
+    // gate takes the session and only the session.
+    let response = request(
         &router,
         "DELETE",
         &format!("{}/{SLASHED_PEER_KEY}", peers_url("wg0")),
-        &token,
+        Some(&cookie),
+        None,
     )
     .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
