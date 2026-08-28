@@ -1108,8 +1108,10 @@ mosd's value and not a wrapper around it.
 
 **Redaction ships, and it ships wider than this section proposed.** The
 structural redactor is `os/pkgs/mosd/apid/src/redact.rs`, its denylist is
-`const SECRET_FIELDS: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];`
-(`os/pkgs/mosd/apid/src/redact.rs:33`) — the same four field names named below — and
+`const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];`
+(`os/pkgs/mosd/apid/src/redact.rs:33`) — the four field names named below, plus
+the `privateKey` PLAN-022 M6 added as a fail-closed guard for a field no shipped
+schema carries — and
 the sentinel is `pub const REDACTED: &str = "<redacted>";`
 (`os/pkgs/mosd/apid/src/redact.rs:19`). It walks objects and arrays at any depth
 (`os/pkgs/mosd/apid/src/redact.rs:56-73`) and also reads the requested dot-path, so
@@ -1133,7 +1135,7 @@ root does not exist. Neither collection resource exists. The rule that a `PUT`
 carrying `"<redacted>"` is refused at 422 has nothing to refuse — the source
 says so directly, *"It is read-only — writing it back would destroy the
 credential — and phase 1 serves no write route to write it with"*
-(`os/pkgs/mosd/apid/src/routes.rs:500-501`). And `GET /api/v1/state/{path}` today
+(`os/pkgs/mosd/apid/src/routes.rs:499-501`). And `GET /api/v1/state/{path}` today
 exposes the whole live-state tree to any authenticated caller, which is wider
 than the HTML panes read (section 1.5).
 
