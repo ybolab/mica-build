@@ -1,9 +1,10 @@
 # RFCT-246 PLAN-023 M9 prerequisite: `test/apid-api` drives bearer end to end
 
-- **status**: in progress
+- **status**: completed — `05d-bearer` was RUN against a booted x64 guest and drives the whole `/api/v1/` surface on a bearer token alone, 37/37 in the phase and 376/376 across both boots; one stale `05b` assertion the merge exposed was corrected to M6's ruled 404
 - **priority**: P1
 - **owner**: bkd/x4agijkt
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (M9 prerequisite)
 
 M9 removes the session cookie from `/api/v1/`. It may not be scheduled until
@@ -144,7 +145,107 @@ check: a token that revoked itself is refused on its own next request. The one
 thing not restored is `wg-e2e`'s private key, which a rotation replaces by
 definition; 05b leaves the tunnel behind and no later phase reads its key.
 
-## 3. Findings, not fixed here
+## 3. The run, which is the deliverable
+
+Built here, because the harness builds nothing and no x64 image existed on this
+host: `MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh
+--mkimage-x64`, giving `x64-mos-v2-1787929866.img`. `os/pkgs/rauc/out-amd64` and
+`os/pkgs/podman/out-amd64` were **copied** from a sibling worktree rather than
+rebuilt, after `diff -r` showed both package sources identical to this tree's
+(only the build-generated `versions.lock` differed). `mosd` and `apid` are
+compiled from source by `build-v2.sh` itself, so the image under test carries
+this merge's bearer routes and not a sibling's.
+
+Then `bash test/apid-api/run.sh`, twice.
+
+### 3.1 Run 1 — RED, and not on this phase
+
+    FAIL: rotating an interface that is not a declared WireGuard entry is 422
+        expected: status 422
+        actual:   status 404 Not Found
+        request:  POST /api/v1/actions/wireguard/no-such-iface/rotate-key
+    FAIL: the refusal carries §2.4's envelope: settings_rejected, from mosd, naming the dot-path at fault
+        expected: JSON containing {"error":{"code":"settings_rejected","source":"mosd","path":"network.no-such-iface"}}
+        actual:   JSON {"error":{"code":"settings_not_found","message":"network.no-such-iface is not a declared network entry","source":"mosd","path":"network.no-such-iface"}}
+    RESULT: FAIL (282/284 checks)
+
+A merge seam, and the daemon is the correct side of it. `05b-wireguard.ts` came
+from `main`, which predates PLAN-023 M6; RFCT-242 section 1 rules that on this
+route *"404 added: an undeclared entry. 422 now means only 'exists and is not a
+tunnel'"*, and this merge is the first tree carrying both the corrected daemon
+and the stale assertion. Because the runner skips every later phase once one
+fails, **`05d-bearer` never ran** — it was `SKIP`ped along with 05c, 06 and 07.
+A skip is not a pass and it is not a measurement either, which is the whole
+reason this task was told to run the thing.
+
+The two assertions were corrected in place. `test/apid-api/**` is this task's to
+edit and `os/pkgs/mosd/**` is not — and no `os/` change was needed, because apid
+was already right.
+
+### 3.2 Run 2 — the measurement
+
+`RESULT: PASS (376/376 checks)` over two boots (boot 1: 343/343; boot 2:
+17/17), with `05d-bearer` green on all 37 of its own checks. The phase output,
+verbatim:
+
+    PHASE 05d-bearer: the bearer credential drives /api/v1/ end to end, and no credential is 401
+    PASS: the bearer client's cookie jar is empty before the phase starts, so no /api/v1/ request below can carry a session
+    PASS: the shared client still holds the session cookie 03-login established, which is what the bootstrap mint needs
+      -- 1. the bootstrap mint: the session cookie, used once and then never
+    PASS: POST /builtin/tokens with the session cookie mints the first token (the only way the first token can exist)
+    PASS: the mint page carries the token identifier and the plaintext, which appear in this one response and never again
+    PASS: the plaintext is spelled mos_<id>_<secret> and carries the identifier the page displayed
+      -- 2. the surface, driven by Authorization: Bearer and nothing else
+    PASS: a settings READ over the bearer: GET /api/v1/settings/hostname is 200
+    PASS: the read answers the value itself (ResourceValue is serde(transparent)), not a wrapper around it
+    PASS: the flag this phase writes reads back before it is touched: GET /api/v1/settings/mqtt.enabled is 200
+    PASS: a settings WRITE over the bearer: PUT /api/v1/settings/mqtt.enabled true is 204
+    PASS: the write took: reading mqtt.enabled back over the bearer answers true
+    PASS: mqtt.enabled is restored to false, so this phase leaves the device as it found it
+    PASS: a collection LISTING over the bearer: GET /api/v1/ssh/authorized-keys is 200
+    PASS: the listing is an object carrying `keys` and the collection's `notice`, not a bare array
+    PASS: a collection POST over the bearer: adding an authorized key is 201
+    PASS: the add answers the fingerprint `ssh-keygen -lf` prints, which is this entry's DELETE segment
+    PASS: the added key is in the listing the bearer reads back
+    PASS: a collection DELETE over the bearer: removing the key by its percent-encoded fingerprint is 204
+    PASS: the delete took: the fingerprint is absent from the listing afterwards
+    PASS: an ACTION over the bearer: POST /api/v1/actions/wireguard/wg-e2e/rotate-key is 200
+    PASS: the rotation answers the new public half in padded base64, and no private material
+    PASS: the rotation body carries no `privateKey` member -- there is no read-back route for the private half, ever
+      -- 3. the token lifecycle: list, mint a second, revoke the first
+    PASS: GET /api/v1/tokens over the bearer is 200
+    PASS: the listing is an array carrying the bootstrap token by the id and name it was minted under
+    PASS: the listing publishes neither the plaintext nor the stored digest
+    PASS: POST /api/v1/tokens with the first token as credential mints a second: 201
+    PASS: DELETE /api/v1/tokens/{id} revokes the first token, addressed by id and authorised by the second: 204
+    PASS: the revoked token is refused on the very NEXT request: 401
+    PASS: the refusal is §2.4's envelope with `not_authenticated`
+    PASS: the second token still drives the API in the same breath: 200
+      -- 4. no credential at all: the 401 the cookie cutover depends on
+    PASS: a request carrying NO credential is 401, and not the gate's 303 to /login
+    PASS: the 401 is JSON, so a client that parses the envelope on every other failure has something to parse here
+    PASS: the 401 body is §2.4's envelope: `error.code` is `not_authenticated` and `error.source` is `apid`
+    PASS: the envelope carries a human message and omits `path` -- a failed authentication names no dot-path
+    PASS: a bearer token this device does not hold is 401, indistinguishable from none at all
+      -- 5. cleanup: the token set this phase created, removed
+    PASS: the second token revokes itself, leaving the device with the token set it started with
+    PASS: a token that revoked itself is refused on its own next request: 401
+    PASS: the bearer client's jar is STILL empty at the end: every /api/v1/ request in this phase was driven by the token alone
+
+### 3.3 The sentence M9 is waiting on
+
+**`test/apid-api` drives `/api/v1/` end to end on a bearer token alone.** The
+session cookie is used for exactly one request in the phase, the bootstrap mint
+at `POST /builtin/tokens`, which is outside `/api/v1/` and which M9 does not
+touch. Every `/api/v1/` request the phase makes — a read, a write, a collection
+listing, a collection add and its removal, an action, and all four token
+operations — is carried by `Authorization: Bearer` on a client whose cookie jar
+was empty before the first of them and was still empty after the last, asserted
+both times. M9's precondition is discharged, and the negative it depends on is
+measured on a real guest: no credential is a JSON 401 in section 2.4's envelope,
+not a 303 to a page that answers 200.
+
+## 4. Findings, not fixed here
 
 - `test/apid-api/README.md`'s phase table did not list `05c-kernel-net` before
   this task and still does not. Only the row for the phase this task adds was
@@ -154,7 +255,7 @@ definition; 05b leaves the tunnel behind and no later phase reads its key.
   two short. Left as found, for the same reason, and recorded here so the count
   is not read as this task's arithmetic.
 
-## 4. Gates
+## 5. Gates
 
 `docs/verify-citations.sh` and `docs/verify-index.sh`, both on the merged tree.
 The Rust gate is not this task's: no Rust changed here beyond the merge's own
