@@ -145,6 +145,19 @@ if [ -n "${MOS_QEMU_APPEND:-}" ]; then
             # printed nothing and failed.
             before=$(grep -c "^[[:space:]]*linux " grub.cfg || true)
             [ "${before}" -ge 1 ] || { echo "error: no linux line in the ESP grub.cfg; MOS_QEMU_APPEND would have added nothing and the run would look normal" >&2; exit 1; }
+            # Already there: leave it alone. This runs on the prepare AND on
+            # every boot that reuses the disk, so an unconditional append lands
+            # the same arguments two or three times over a run. For
+            # `systemd.journald.forward_to_console=1` a repeat is the same value
+            # twice and costs nothing; for `systemd.run=` it is not, because
+            # systemd takes each occurrence as another ExecStart and RUNS THE
+            # COMMAND AGAIN. Measured 2026-08-28: a duplicated systemd.run
+            # executed the seeded script twice, back to back, on one boot.
+            existing=$(grep -c -F -- "${APPEND}" grub.cfg || true)
+            if [ "${existing}" -ge 1 ]; then
+                echo "note: the append is already on the linux line; not adding it a second time" >&2
+                exit 0
+            fi
             sed -i "s|^\([[:space:]]*linux .*\)\$|\1 ${APPEND}|" grub.cfg
             # -F: the append is a fixed string, and a value carrying a `.` or a
             # `*` must be looked for as itself rather than as a pattern that

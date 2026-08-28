@@ -48,6 +48,9 @@ fail() { say "$1 FAIL ${2-}"; }
 # created by mosd's first-boot provisioning. Measured 2026-08-28: this unit
 # reached its first check 54s into the boot with none of the three ready, and
 # every conclusion drawn then described the CLOCK rather than the image.
+# The limits are SHORT because this unit runs after sysinit.target and holds
+# the rest of the boot while it runs: every second spent here is a second mosd,
+# apid and the suite's own readiness deadline do not get.
 wait_for() {
     local limit="$1"; shift
     local i=0
@@ -73,10 +76,10 @@ first_real_link() {
 
 say "BEGIN $(uname -r)"
 
-if wait_for 120 state_is_mounted; then
+if wait_for 60 state_is_mounted; then
     pass state-mounted "${STATE_DIR} is a mount point"
 else
-    fail state-mounted "${STATE_DIR} was not mounted within 120s; the key-store checks below cannot run"
+    fail state-mounted "${STATE_DIR} was not mounted within 60s; the key-store checks below cannot run"
 fi
 
 # 1. modprobe resolution, against the running kernel's own view. `-n` is a dry
@@ -99,7 +102,7 @@ done
 # bridge takes no ports, and the tunnel is created from nothing -- enslaving the
 # parent to the bridge would drop the port forward and take the rest of the
 # suite with it.
-wait_for 120 first_real_link || true
+wait_for 30 first_real_link || true
 PARENT=$(first_real_link || true)
 
 VLAN_DEV="${PARENT}.${VLAN_ID}"
@@ -124,7 +127,7 @@ link_check() {
 }
 
 if [ -z "${PARENT}" ]; then
-    fail link-vlan "no non-loopback interface appeared within 120s, so there is no parent to declare a VLAN on"
+    fail link-vlan "no non-loopback interface appeared within 30s, so there is no parent to declare a VLAN on"
 else
     link_check link-vlan "${VLAN_DEV}" \
         ip link add link "${PARENT}" name "${VLAN_DEV}" type vlan id "${VLAN_ID}"
@@ -188,14 +191,37 @@ else
     # under it -- would be false, and the path correction this milestone
     # verifies would have been unnecessary. A check that only ever asserts
     # access cannot tell a correctly scoped grant from a wide-open state dir.
-    wait_for 120 test -d "${SECRETS_DIR}" || true
+    # NOT a wait. This unit runs immediately after sysinit.target and BLOCKS the
+    # rest of the boot -- mosd has not started yet and is the only thing that
+    # creates secrets/, so waiting for it here deadlocks the two: measured
+    # 2026-08-28, a 120s poll for this directory held multi-user.target for the
+    # whole 120s and mosd could not run until it gave up.
+    #
+    # So the directory is made when it is absent, at the mode identity.rs pins
+    # (0700, root-owned), and removed again. On the second boot of a disk mosd
+    # has already provisioned it and the real one is used untouched -- the
+    # detail below says which was read, because "the shipped directory refuses
+    # this user" and "a directory with the shipped mode refuses this user" are
+    # different claims and a reader must not have to guess.
+    secrets_fixture=0
     if [ ! -d "${SECRETS_DIR}" ]; then
-        say "secrets-unreadable SKIP ${SECRETS_DIR} does not exist on this boot"
-    elif as_netuser cat "${SECRETS_DIR}/device-password" >/dev/null 2>&1; then
-        fail secrets-unreadable "${NET_USER} CAN read ${SECRETS_DIR}/device-password (dir mode $(stat -c '%a %U:%G' "${SECRETS_DIR}" 2>/dev/null)); the plaintext device password is readable by the network account"
-    else
-        pass secrets-unreadable "${NET_USER} cannot read ${SECRETS_DIR}/device-password (dir mode $(stat -c '%a %U:%G' "${SECRETS_DIR}" 2>/dev/null)), which is why the key store is a SIBLING of secrets/ and not a directory under it"
+        mkdir -p "${SECRETS_DIR}" 2>/dev/null && chmod 0700 "${SECRETS_DIR}" 2>/dev/null \
+            && chown root:root "${SECRETS_DIR}" 2>/dev/null \
+            && printf 'not-a-password\n' >"${SECRETS_DIR}/device-password" 2>/dev/null \
+            && chmod 0600 "${SECRETS_DIR}/device-password" 2>/dev/null \
+            && secrets_fixture=1
     fi
+    secrets_origin="the directory mosd provisioned"
+    [ "${secrets_fixture}" -eq 1 ] && secrets_origin="a fixture at the mode identity.rs:44 pins, mosd not having provisioned yet on this boot"
+
+    if [ ! -d "${SECRETS_DIR}" ]; then
+        say "secrets-unreadable SKIP ${SECRETS_DIR} does not exist and could not be created on this boot"
+    elif as_netuser cat "${SECRETS_DIR}/device-password" >/dev/null 2>&1; then
+        fail secrets-unreadable "${NET_USER} CAN read ${SECRETS_DIR}/device-password (dir mode $(stat -c '%a %U:%G' "${SECRETS_DIR}" 2>/dev/null), ${secrets_origin}); the plaintext device password is readable by the network account"
+    else
+        pass secrets-unreadable "${NET_USER} cannot read ${SECRETS_DIR}/device-password (dir mode $(stat -c '%a %U:%G' "${SECRETS_DIR}" 2>/dev/null), ${secrets_origin}), which is why the key store is a SIBLING of secrets/ and not a directory under it"
+    fi
+    [ "${secrets_fixture}" -eq 1 ] && rm -rf "${SECRETS_DIR}"
 fi
 
 say "END"
