@@ -989,6 +989,42 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
 
   // Nothing at /etc/modules-load.d/wifi.conf on ANY board: mos-modules
   // superseded it, and the check that says so is board-unconditional.
+
+  // The kernel's own record of itself, for the PLAN-022 networking checks.
+  // Seeded on every board although only x64 registers those checks: the fixture
+  // describes a healthy root, and a root with no /boot/config-* is not one.
+  //
+  // The symbol names, the module names and the index format are written out
+  // HERE as independent literals rather than imported from checks-kernel.ts.
+  // Seeding from the very constants the check reads would make the passing
+  // direction true by construction: one edit would move the check and its own
+  // fixture together and the case would stay green while the image contract
+  // changed underneath it.
+  //
+  // One of the three is BUILT IN and two are modules, on purpose. modprobe
+  // resolves those two ways and a fixture that exercised only one would leave
+  // the other path driven by nothing.
+  const release = '6.12.101+deb13-amd64'
+  file(`/boot/config-${release}`,
+    '# Automatically generated file; DO NOT EDIT.\n'
+    + 'CONFIG_VLAN_8021Q=m\n'
+    + 'CONFIG_BRIDGE=m\n'
+    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
+    + 'CONFIG_WIREGUARD=y\n')
+  const mod = `/lib/modules/${release}`
+  file(`${mod}/modules.builtin`, 'kernel/net/wireguard/wireguard.ko\n')
+  file(`${mod}/modules.dep`,
+    'kernel/net/8021q/8021q.ko: kernel/net/802/mrp.ko\n'
+    + 'kernel/bridge/bridge.ko: kernel/net/802/stp.ko kernel/net/llc/llc.ko\n')
+  for (const object of [
+    'kernel/net/8021q/8021q.ko',
+    'kernel/net/802/mrp.ko',
+    'kernel/bridge/bridge.ko',
+    'kernel/net/802/stp.ko',
+    'kernel/net/llc/llc.ko',
+  ]) {
+    file(`${mod}/${object}`, '\x7fELF\n')
+  }
 }
 
 /** A `*.wants` enablement symlink, in the tree /etc owns. */
