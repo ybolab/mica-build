@@ -299,6 +299,39 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
     assert_eq!(error["error"]["code"], "not_authenticated");
 
+    // PLAN-023 M4's write route, against a live mosd on a real bus: a bare
+    // JSON string at `hostname` answers 204 and the value is in mosd's own
+    // settings tree afterwards. Read back through `GetSettings` rather than
+    // through `GetState`, for the reason the form-path assertion above reads
+    // back the same way: `state.hostname` is published by the hostname
+    // reconciler, which writes `/etc/hostname` and calls hostnamed, and
+    // neither is available to this harness.
+    let response = admin
+        .put(format!("{https_base}/api/v1/settings/hostname"))
+        .json(&"e2e-host3")
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(response.text().await?.is_empty());
+    assert_eq!(proxy.get_settings("hostname").await?, "\"e2e-host3\"");
+
+    // The refusal list is apid's and is answered before the bus: a dot-path
+    // the schema has and this route does not write is 409, with mosd's tree
+    // untouched.
+    let response = admin
+        .put(format!("{https_base}/api/v1/settings/network.eth9"))
+        .json(&serde_json::json!({ "dhcp": true }))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "settings_read_only");
+    assert_eq!(error["error"]["source"], "apid");
+    assert!(
+        proxy.get_settings("network.eth9").await.is_err(),
+        "the refused write must not have created the entry"
+    );
+
     // §2.4's one shape, on a method a declared route does not serve, with the
     // `Allow` header naming what it does serve.
     let response = admin

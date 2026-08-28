@@ -4043,8 +4043,11 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
+    /// The settings root stopped being read-only with PLAN-023 M4, and this
+    /// fixture answers the write the same way it answers a read: §2.4's
+    /// classification is exactly what the write route has to inherit.
     async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     async fn get_state(&self, _path: &str) -> anyhow::Result<serde_json::Value> {
@@ -5619,7 +5622,7 @@ async fn a_wrong_method_on_a_declared_api_route_answers_the_envelope() {
         ("POST", "/api/versions", "GET,HEAD"),
         ("POST", "/api/v1/meta", "GET,HEAD"),
         ("DELETE", "/api/v1/health", "GET,HEAD"),
-        ("POST", "/api/v1/settings/hostname", "GET,HEAD"),
+        ("POST", "/api/v1/settings/hostname", "GET,HEAD,PUT"),
         ("PUT", "/api/v1/state/uptime", "GET,HEAD"),
         ("GET", "/api/v1/actions/change-password", "POST"),
         ("GET", "/api/v1/actions/wireguard/wg0/rotate-key", "POST"),
@@ -6367,4 +6370,505 @@ fn the_openapi_document_covers_the_token_routes() {
     // The plaintext is a member of the mint's response and of nothing else.
     let minted = &document["components"]["schemas"]["MintedToken"]["properties"];
     assert!(minted["token"].is_object(), "{minted}");
+}
+
+// PLAN-023 M4 (`docs/task/RFCT-240.md`): the four scalar settings writes, the
+// redaction-sentinel refusal, and the write-refusal list.
+
+/// `PUT` a JSON body with a session cookie -- the second of the two
+/// credentials this route takes.
+async fn put_json(
+    router: &Router,
+    path: &str,
+    body: &str,
+    cookie: Option<&str>,
+) -> Response<axum::body::Body> {
+    let mut builder = Request::builder()
+        .method("PUT")
+        .uri(path)
+        .header(CONTENT_TYPE, "application/json");
+    if let Some(cookie) = cookie {
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
+    }
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// A tree with all four writable paths already present, so a write is a change
+/// of value and never a creation -- the creation case is what the refusal list
+/// exists to prevent, and it must not be smuggled into the happy path.
+fn writable_tree(password: &str) -> serde_json::Value {
+    let mut tree = configured_tree(password);
+    tree["access"]["ssh"] = json!({ "enabled": false });
+    tree["container"] = json!({ "enabled": false });
+    tree["mqtt"] = json!({ "enabled": false });
+    tree
+}
+
+/// The four dot-paths `docs/task/RFCT-210.md` §2.2 admits, each written and
+/// each read back through the route that answers for it.
+///
+/// 204 and an empty body: the value the caller sent is the value that was
+/// written, so there is nothing for a response body to add that a `GET` does
+/// not already say.
+#[tokio::test]
+async fn the_write_route_writes_the_four_scalar_settings() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, body) in [
+        ("hostname", r#""router7""#),
+        ("access.ssh.enabled", "true"),
+        ("container.enabled", "true"),
+        ("mqtt.enabled", "true"),
+    ] {
+        let url = format!("/api/v1/settings/{path}");
+        let response = put_json(&router, &url, body, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
+        assert_eq!(
+            header_value(&response, CACHE_CONTROL),
+            "no-store",
+            "{path}"
+        );
+        assert_eq!(body_string(response).await, "", "{path} answers no body");
+
+        let read = get(&router, &url, Some(&cookie)).await;
+        assert_eq!(read.status(), StatusCode::OK, "{path}");
+        assert_eq!(body_string(read).await, body, "{path} reads back as written");
+    }
+
+    assert_eq!(
+        fake.set_paths(),
+        vec![
+            "hostname",
+            "access.ssh.enabled",
+            "container.enabled",
+            "mqtt.enabled"
+        ],
+        "one bus write per request, at the dot-path the URL named"
+    );
+}
+
+/// §2.2's round trip, driven exactly as the client that motivates the rule
+/// would drive it: read a subtree, hand it back, and find the credential
+/// intact rather than replaced by the sentinel.
+///
+/// *"A redacted field is **read-only through the API**: a `PUT` whose body
+/// contains `"<redacted>"` is rejected at 422 rather than written, because
+/// writing the sentinel would silently destroy the credential."*
+/// (`docs/design/api.md:1292-1295`) Without the refusal this test's `PUT`
+/// succeeds and `access.webAdmin.password_hash` becomes the literal string
+/// `<redacted>`, which no password verifies against and no operator can undo.
+#[tokio::test]
+async fn a_write_carrying_the_redaction_sentinel_is_refused_and_writes_nothing() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The exact bytes a client would have read, sentinels and all.
+    let read = get(&router, "/api/v1/settings/access", Some(&cookie)).await;
+    assert_eq!(read.status(), StatusCode::OK);
+    let redacted = body_string(read).await;
+    assert!(
+        redacted.contains(REDACTED),
+        "the fixture must carry a redacted field: {redacted}"
+    );
+
+    let response = put_json(&router, "/api/v1/settings/access", &redacted, Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_api_headers(&response, "the sentinel refusal");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("access"));
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|text| text.contains(REDACTED)),
+        "the message has to name what it refused: {error}"
+    );
+
+    // Nothing reached the bus, and the credential the sentinel stood for still
+    // verifies -- which is the whole of what this rule protects.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert!(
+        !login(&router, "hunter2secret").await.is_empty(),
+        "the admin hash must still be the hash"
+    );
+
+    // The same rule on an allowlisted path, where the sentinel is the whole
+    // body rather than a field inside one: a client that read
+    // `access.webAdmin.password_hash` got a bare `"<redacted>"` string back.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/hostname",
+        &format!("\"{REDACTED}\""),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["code"], "validation_failed");
+    assert!(fake.set_paths().is_empty());
+}
+
+/// The refusal list: a dot-path the schema has and this route does not write
+/// is **409 `settings_read_only`**, answered before any bus call.
+///
+/// 409 and not 422 for the reason §2.4 already spends it on and the mint route
+/// already uses: the body is well formed and nothing about it is wrong, and
+/// what refuses it is the state of the surface.
+#[tokio::test]
+async fn every_dot_path_outside_the_allowlist_is_refused_with_409() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "schema_version",
+        "network",
+        "network.eth0",
+        "network.eth0.dhcp",
+        "access",
+        "access.ssh",
+        "access.ssh.authorizedKeys",
+        "access.webAdmin.password_hash",
+        "provisioning",
+        "wifi",
+        "wifi.client.networks",
+        "container",
+        "mqtt",
+        "mqtt.listen.port",
+        // `.` is the whole tree, not a malformed path: `Settings::set`
+        // documents `""` and `"."` as replacing the root, so it is a real path
+        // this route refuses rather than one it cannot parse.
+        ".",
+    ] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            "true",
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
+        assert_api_headers(&response, path);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_read_only", "{path}");
+        assert_eq!(error["source"], "apid", "{path}");
+        assert_eq!(error["path"], json!(path), "{path}");
+    }
+
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused write must reach no bus call, got {:?}",
+        fake.set_paths()
+    );
+}
+
+/// Two refusals carry a message the general one cannot, and both are asserted
+/// because both are the reason the path is refused rather than decoration.
+#[tokio::test]
+async fn the_two_named_refusals_say_why_rather_than_only_that() {
+    let (router, _) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // `schema_version` is read-only in the tree itself, not merely here: no
+    // later milestone widens this route to cover it.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/schema_version",
+        "9",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let message = envelope(response).await["message"].as_str().unwrap().to_string();
+    assert!(
+        message.contains("read-only in the settings tree itself"),
+        "{message}"
+    );
+
+    // `network` names the typed route that owns it, because a raw write here
+    // creates an entry of the default kind rather than refusing an interface
+    // the device does not have (`docs/task/RFCT-210.md` §2.4).
+    let response = put_json(
+        &router,
+        "/api/v1/settings/network.wg9",
+        r#"{"dhcp": true}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let message = envelope(response).await["message"].as_str().unwrap().to_string();
+    assert!(
+        message.contains("PUT /api/v1/network/{iface}"),
+        "the refusal must name the route that does own it: {message}"
+    );
+}
+
+/// §2.4's rule, on the write route: **well-formed but absent is 404, not
+/// well-formed is 422**, and they must not share a status.
+///
+/// "Absent" is decided on the first segment, and that is a statement about
+/// writes. A write may legitimately create the leaf it names -- `Settings::set`
+/// creates missing intermediates -- so a missing leaf is not an absent
+/// resource; a top-level key the typed schema has no field for is, because no
+/// write can ever make the tree deserialize with one.
+#[tokio::test]
+async fn an_absent_root_is_404_and_a_malformed_path_is_422() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in ["hostnam", "netwrok.eth0", "acess.ssh.enabled", "sshd"] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            "true",
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_not_found", "{path}");
+        assert!(
+            error["message"]
+                .as_str()
+                .is_some_and(|text| text.contains(path)),
+            "{path}: {error}"
+        );
+    }
+
+    for path in [
+        "access..ssh",
+        "access.\"ssh",
+        "access.\"ssh\"x",
+        "hostname.",
+    ] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            "true",
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{path}");
+    }
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The eight top-level keys the write route's not-found rule is derived from.
+///
+/// `is_settings_root` reads them out of `Settings::default()` rather than
+/// carrying a list, so this asserts the derivation rather than a copy of it: a
+/// field added to `Settings` changes this expectation and the route together,
+/// and a `#[serde(skip_serializing_if)]` on a top-level field -- which would
+/// drop a real root out of the default tree and turn its 409 into a 404 --
+/// fails here.
+#[test]
+fn the_settings_schema_has_the_eight_roots_the_write_route_knows() {
+    let tree = serde_json::to_value(mosd_settings::Settings::default()).unwrap();
+    let mut keys: Vec<&str> = tree
+        .as_object()
+        .expect("the settings tree is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "access",
+            "container",
+            "hostname",
+            "mqtt",
+            "network",
+            "provisioning",
+            "schema_version",
+            "wifi",
+        ]
+    );
+}
+
+/// Each writable path's value has one shape, and a body of the wrong shape is
+/// a 422 that names the shape rather than a write of whatever arrived.
+///
+/// The hostname sentence is `HOSTNAME_RULES`, the same string the form pane
+/// puts in its error box: one rule, one wording, two surfaces.
+#[tokio::test]
+async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, body, expected) in [
+        ("hostname", "true", "text"),
+        ("hostname", "7", "text"),
+        ("hostname", r#"["a"]"#, "text"),
+        ("hostname", r#""-nope-""#, "hyphen"),
+        ("hostname", r#""""#, "1-63"),
+        ("hostname", r#""has space""#, "1-63"),
+        ("access.ssh.enabled", r#""yes""#, "switch"),
+        ("container.enabled", "1", "switch"),
+        ("mqtt.enabled", "null", "switch"),
+    ] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            body,
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path} <- {body}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{path} <- {body}");
+        assert_eq!(error["path"], json!(path), "{path} <- {body}");
+        assert!(
+            error["message"]
+                .as_str()
+                .is_some_and(|text| text.contains(expected)),
+            "{path} <- {body}: {error}"
+        );
+    }
+
+    // Not JSON at all is 400 and not 422: the request never became a value to
+    // validate. Same classification the mint route gives the same condition.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/hostname",
+        "router7",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    // A body with no `Content-Type: application/json` is the same refusal.
+    let response = send(
+        &router,
+        Request::builder()
+            .method("PUT")
+            .uri("/api/v1/settings/hostname")
+            .header(COOKIE, format!("apid_session={cookie}"))
+            .body(Body::from(r#""router7""#))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused write must write nothing, got {:?}",
+        fake.set_paths()
+    );
+}
+
+/// The credential: bearer **or** cookie, which is PLAN-023 Amendment 1's
+/// ruling applied to a new route. The bearer-only rule is about the token
+/// routes specifically, so this route matches the shipped reads instead.
+#[tokio::test]
+async fn the_write_route_takes_a_bearer_and_a_cookie_and_refuses_neither_silently() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "ci").await;
+
+    let response = bearer_json(
+        &router,
+        "PUT",
+        "/api/v1/settings/hostname",
+        &token,
+        r#""from-bearer""#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(fake.set_paths().contains(&"hostname".to_string()));
+
+    // No credential at all: §2.4's envelope and never the gate's redirect, in
+    // both gate modes -- §3.1's trap, which a write route inherits and which
+    // inheriting is not the same as asserting.
+    let (fresh, _) = test_app(unconfigured_tree());
+    for (mode, router) in [("configured", &router), ("setup mode", &fresh)] {
+        let response = put_json(router, "/api/v1/settings/hostname", r#""x""#, None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{mode}");
+        assert_eq!(response.headers().get(LOCATION), None, "{mode}");
+        assert_api_headers(&response, mode);
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{mode}"
+        );
+    }
+}
+
+/// A write mosd refuses is classified by §2.4's table exactly as a read is:
+/// the route adds no second opinion, and mosd's own message comes through.
+#[tokio::test]
+async fn a_write_mosd_refuses_carries_mosds_classification() {
+    for (fdo_name, code, status) in [
+        (
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            "settings_rejected",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "com.mos.mosd1.Error.ReadOnly",
+            "settings_read_only",
+            StatusCode::CONFLICT,
+        ),
+        (
+            "org.freedesktop.DBus.Error.IOError",
+            "settings_io",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    ] {
+        let (router, cookie) = failing_app(Some(fdo_name)).await;
+        let response = put_json(
+            &router,
+            "/api/v1/settings/hostname",
+            r#""router7""#,
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), status, "{fdo_name}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], code, "{fdo_name}");
+        assert_eq!(error["source"], "mosd", "{fdo_name}");
+        assert_eq!(error["message"], MOSD_MESSAGE, "{fdo_name}");
+        assert_eq!(error["path"], json!("hostname"), "{fdo_name}");
+    }
+}
+
+/// The document describes the served surface: a client reading only
+/// `openapi.json` has to learn the write route, every outcome it has, and that
+/// its body is a bare JSON value.
+#[test]
+fn the_openapi_document_covers_the_settings_write() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let write = &document["paths"]["/api/v1/settings/{path}"]["put"];
+    for status in ["204", "400", "401", "404", "405", "409", "422", "500", "503"] {
+        assert!(
+            write["responses"][status].is_object(),
+            "the settings write must document {status}: {write}"
+        );
+    }
+    assert_eq!(
+        write["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SettingsWrite",
+        "{write}"
+    );
+
+    // The read is unchanged by the write sharing its path.
+    assert!(
+        document["paths"]["/api/v1/settings/{path}"]["get"]["responses"]["200"].is_object(),
+        "{document}"
+    );
 }

@@ -358,6 +358,120 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Write one scalar setting (`docs/task/RFCT-210.md` §2.2's raw dot-path\n`PUT`).",
+        "description": "Four dot-paths and no others; see [`WRITABLE_SETTINGS`] for the list and\nwhy it is a list. `204` and no body on success, because the value the\ncaller sent is the value that was written and echoing it back would only\ninvite a client to believe the echo over its own `GET`.\n\nBearer **or** cookie, like every route that names [`ApiSession`]: PLAN-023\nAmendment 1's ruling is about the token routes specifically, not about new\nroutes in general, so this one is dual-credential exactly as the shipped\nreads are.",
+        "operationId": "api_v1_settings_write",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "The settings dot-path to write: `hostname`, `access.ssh.enabled`, `container.enabled` or `mqtt.enabled`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The value was written: mosd has persisted it and re-applied the reconcilers whose subtree overlaps the path"
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The dot-path names no root the settings schema has (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A dot-path that exists and that this route does not write (`settings_read_only`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body carries the redaction sentinel, or is the wrong shape for this setting, or the dot-path is malformed (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/state/{path}": {
@@ -930,7 +1044,10 @@
         }
       },
       "ResourceValue": {
-        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and phase 1\nserves no write route to write it with. `privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
+        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and the write\nroute refuses a body that carries it rather than storing it\n([`api_v1_settings_write`]). `privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
+      },
+      "SettingsWrite": {
+        "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and [`check_scalar`] is what says so."
       },
       "WireguardRotation": {
         "type": "object",
