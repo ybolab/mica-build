@@ -352,7 +352,7 @@ needs a bundle seeded at `/srv/ui` on **DATA**, and `os/qemu-seed-state.sh`
 writes **STATE** only. It is a different task.
 
 **2. `-no-reboot`, so the reboot is two boots off one disk.**
-`os/tools/qemu-run.sh:179` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
+`os/tools/qemu-run.sh:217` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
 **exit** rather than reset. The harness works with the flag rather than around
 it: `--prepare-only`, then boot 1 (`MOS_QEMU_REUSE_DISK=1`) for phases 01→07
 where QEMU's exit *is* the evidence the guest asked for a reset, then boot 2 on
@@ -361,7 +361,7 @@ grubenv the reboot just wrote. **What it does not exercise is QEMU's own
 reset.** Which of the two shapes happened is decided by looking at whether the
 container is still running, never by assuming, so a future `os/qemu-run.sh` that
 drops the flag degrades correctly. The second boot is no longer opt-in:
-`MOS_APID_BOOT2` defaults to `1` (`test/apid-api/run.sh:111`), and
+`MOS_APID_BOOT2` defaults to `1` (`test/apid-api/run.sh:126`), and
 `07b-postreboot` and `08-poweroff` have both run and passed on a real second
 boot.
 

@@ -24,7 +24,7 @@ laid. Four stub lines consumed, verified at merge.
 
 | section | line | subject |
 | --- | --- | --- |
-| 7.1 | `docs/design/api.md:3414` | The channels that actually exist — **[implemented]** |
+| 7.1 | `docs/design/api.md:3446` | The channels that actually exist — **[implemented]** |
 | 7.2 | `:3436` | The honest baseline: anyone with SSH is already root — **[implemented]** |
 | 7.3 | `:3477` | The signing machinery this project already has, having read it — **[implemented]** |
 | 7.4 | `:3534` | Recommendation |
@@ -38,7 +38,7 @@ laid. Four stub lines consumed, verified at merge.
 
 **Do not sign UI bundles in phase 1 or phase 5.** The recommendation runs
 against the instinct, so it is argued as three separately checkable claims
-(`docs/design/api.md:3548-3571`):
+(`docs/design/api.md:3580-3603`):
 
 1. **A signature and the upload credential authorise the same blast radius.** A
    caller holding a token can already power the appliance off, flip
@@ -59,7 +59,7 @@ against the instinct, so it is argued as three separately checkable claims
 
 §7.3 reached that conclusion **having read the signing machinery rather than
 assuming it away**: RAUC's CMS verification against `/etc/rauc/keyring.pem`
-with `plain` format refused (`os/pkgs/rauc/system.conf.in:64-76`) is real and is
+with `plain` format refused (`os/pkgs/rauc/system.conf.in:72-102`) is real and is
 described, and §7.4 endorses unit sandboxing (`ProtectSystem=`,
 `ReadWritePaths=`) as *"the concrete substitute for a signing scheme"* — a
 control that bounds what a compromised bundle can do, rather than one that

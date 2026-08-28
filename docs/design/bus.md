@@ -406,7 +406,7 @@ written, was deleted whole (RFCT-122).
 ## 8. Structural redaction is a bus-level contract [implemented]
 
 **[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
-(around `docs/design/api.md:1251`) applies to the bus itself: **the value of
+(around `docs/design/api.md:1282`) applies to the bus itself: **the value of
 any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
 the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
 in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a
@@ -753,13 +753,13 @@ the contract above.
    (`os/pkgs/mosd/mosd/src/tree.rs:43`) and every projection passes through it
    (`os/pkgs/mosd/mosd/src/tree.rs:217`), so no `GetValue` reply and no `ItemsChanged`
    payload can carry a secret (§8). `GetSettings` applies no redaction at all —
-   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs:249-253`).
+   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs:282-286`).
    The façade redacts because it is the surface that leaves the device: the M3
    MQTT bridge publishes from the item tree (§8), so a secret that reached an
    item would reach a broker. `GetSettings` **cannot** redact, because apid
    authenticates against a value it reads through it — `login_submit` calls
-   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs:1178`) and lifts
-   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs:1182`,
+   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs:1555`) and lifts
+   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs:1559`,
    helper at `:637-643`) to verify the submitted password against the stored
    argon2id hash. Redacting that key from `GetSettings` would harden nothing
    reachable from the bus — the façade already covers that surface — and would

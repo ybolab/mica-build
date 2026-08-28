@@ -60,9 +60,9 @@ documents now carry dated corrections that trace back to them:
 
 | §9 row | correction now in the tree |
 | --- | --- |
-| row 5 — `webd` is not a WebSocket bridge | `docs/design/mosd.md:41-46` |
-| row 6 — the settings path | `docs/design/mosd.md:58-62` |
-| row 1 — the `SshdReconciler` subtree | `docs/design/mosd.md:183-195` |
+| row 5 — `webd` is not a WebSocket bridge | `docs/design/mosd.md:49-54` |
+| row 6 — the settings path | `docs/design/mosd.md:66-70` |
+| row 1 — the `SshdReconciler` subtree | `docs/design/mosd.md:191-203` |
 | rows 2 and 3 — the device password authenticates nothing | `docs/design/provisioning.md:141` |
 
 **It is the traceable record of why `access.md` and its siblings changed.**
@@ -93,7 +93,7 @@ one that no drift list would catch.
 - **No re-verification of §9's contradiction table.** The header is explicit
   that those citations are *"the current text of those documents, not a
   re-verification of the code beneath them"*, and points at `api.md` §1.7's
-  matching statement (`docs/design/api.md:515-516`).
+  matching statement (`docs/design/api.md:517-518`).
 - **§10's list of what the measurement never verified** is left standing as
   still true of that measurement.
 

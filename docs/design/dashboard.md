@@ -66,14 +66,14 @@ Summarised from `mos-ui-inventory.md` sections 2 and 3, with its citations
 carried through.
 
 `apid` is one Rust crate serving **ten routes on the HTTPS listener**, built in
-a single function (`os/pkgs/mosd/apid/src/routes.rs:41-62`), plus a catch-all 308
+a single function (`os/pkgs/mosd/apid/src/routes.rs:45-66`), plus a catch-all 308
 redirect router on the HTTP listener (`routes.rs:61-65`). That is the entire
 HTTP surface: no nested router, no fallback, no static-asset route
 (`mos-ui-inventory.md` section 2).
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:182-192`
+`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:191-201`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -89,7 +89,7 @@ one 7-line inline stylesheet at `routes.rs:147-154` whose own doc comment says
 *"Inline stylesheet shared by every page; no external assets."*
 
 `mosd` offers an **eleven-method, one-signal** bus surface on `com.mos.mosd1`
-(`os/pkgs/mosd/mosd/src/bus.rs:574`): `GetSettings`, `SetSettings`, `GetState`,
+(`os/pkgs/mosd/mosd/src/bus.rs:607`): `GetSettings`, `SetSettings`, `GetState`,
 `ReportHealth`, `ForgetService`, `Reboot`, `PowerOff`, `InstallUpdate`,
 `GetUpdateState`, `MarkUpdate`, `SetTransientRootPassword`, and the
 `SettingsChanged` signal. `apid`'s own proxy declares four of those methods and
@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:605`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:712`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -139,8 +139,14 @@ Four changes, in dependency order. **[proposal]**
    substantially an echo of the settings tree — the `hostname` key echoes
    `settings.hostname` back after the hostnamed call returned `Ok`
    (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`), and the `network` key carries the
-   rendered unit file name and the configured `dhcp` flag
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and nothing else. A dashboard
+   rendered unit file name, the configured `dhcp` flag and the configured kind —
+   `"kind": kind_name(cfg.kind),`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — plus, for a
+   WireGuard tunnel, `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`). Every one of those is
+   either an echo of the settings tree or a fact about a file the reconciler
+   itself wrote; not one is a reading off a link, and the public key least of
+   all — it is derived from the key file, not from the tunnel. A dashboard
    that renders those as if they were measurements is a dashboard that lies.
 
 Note what is *not* on that list: making the UI faster, prettier, or
@@ -184,7 +190,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:604`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:711`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -211,9 +217,9 @@ call returning the data — or **(b) needs new mosd work**, with the
   (ii) the `/var` health verdict; (iii) the boot health gate's own verdict.
 - **Feed:** (i) `GetState("<reconciler-name>")` per reconciler — a failing
   reconciler is recorded as `{"error": "<message>"}` under its own live-state key
-  rather than disappearing (`os/pkgs/mosd/mosd/src/bus.rs:461-471`). (ii)
+  rather than disappearing (`os/pkgs/mosd/mosd/src/bus.rs:494-504`). (ii)
   `GetState("health")`, written by `report_health`
-  (`os/pkgs/mosd/mosd/src/bus.rs:640`). (iii) does not exist.
+  (`os/pkgs/mosd/mosd/src/bus.rs:673`). (iii) does not exist.
 - **Availability: mixed, and the split is the point.**
   - (i) is **(a) available today** — gap-table **row 18**, UI-work-only. `apid`
     calls `GetState` for exactly one path and treats any object as opaque JSON
@@ -243,7 +249,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   drift as a user-visible WARNING notification, raised by the backend rather than
   computed in the UI (`venus-os-ui.md` section 7 item 4). mos already *detects*
   the equivalent — the reconcilers produce named outcomes, and
-  `os/pkgs/mosd/mosd/src/bus.rs:461-471` already records failures durably in a place the
+  `os/pkgs/mosd/mosd/src/bus.rs:494-504` already records failures durably in a place the
   bus can read. mos is missing the surface, not the detection. Venus additionally
   has a first-class notification stream with a nav-bar counter badge
   (`venus-os-ui.md` section 7 item 3); mos has no notification model at all, and
@@ -257,13 +263,13 @@ provide. It is designed around that.
 - **The problem, stated exactly.** The live-state `network` subtree holds
   **configured** data — per interface, the unit file the reconciler wrote and
   the DHCP flag it wrote it from, built as
-  `json!({ "file": file_name, "dhcp": cfg.dhcp })`
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:215-219`). There is no address,
+  `json!({ "file": file_name, "dhcp": cfg.dhcp, "kind": kind_name(cfg.kind), })`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`). There is no address,
   no lease, no gateway, no route, no DNS server actually in use and no carrier
   state anywhere in mos (`mos-ui-inventory.md` section 6.3). A DHCP interface
   that got no lease is **indistinguishable in this tree from one that did**.
   `mosd` does talk to `org.freedesktop.network1`, but for exactly one thing —
-  `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no
+  `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no
   `Get`, no property read and no link enumeration. Gap-table **row 14**.
 - **How this proposal handles it: the tile is split in two, and the halves are
   labelled differently.** **[proposal]**
@@ -271,7 +277,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:416-436`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:563-583`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until
@@ -312,7 +318,7 @@ better mechanism and then hid it.**
 - **Feed: none of it exists on the bus.** **(b) needs new mosd work**, across
   four gap-table rows:
   - **row 1** — which slot is running. The two-slot model is fully specified
-    (`os/pkgs/rauc/system.conf.in:75-95`, partition GUIDs at
+    (`os/pkgs/rauc/system.conf.in:83-121`, partition GUIDs at
     `os/boards/cx3576/board.env:214-224`), but there is no bus mechanism: a UI
     would have to subprocess `rauc status --output-format=shell`, and `apid`
     cannot, because it never spawns a process
@@ -320,7 +326,7 @@ better mechanism and then hid it.**
     which states *"mosd owns every system action: apid never spawns a process and
     never talks to systemd itself"*).
   - **row 2** — boot attempt credits. `BOOT_A_LEFT` / `BOOT_B_LEFT` in the
-    redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`),
+    redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`),
     reachable only via `fw_printenv`, and that file's own comment at `:23-25`
     warns there is **no cross-process locking** between the two existing writers.
   - **row 3** — RAUC status and last install result, kept on the META partition
@@ -338,7 +344,7 @@ better mechanism and then hid it.**
   reboot.** Rebooting a slot RAUC has installed but that has not been marked
   good **burns a boot attempt**, and today the power pane has no update-state
   awareness and does not warn — recorded as a known follow-up at
-  `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503`, and
+  `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503`, and
   gap-table **row 10**. The next action is to wait for the health gate to run, or
   read *why* it did not pass (section 2.3, part iii). This tile and the power
   page are therefore coupled: the power page must read this tile's feed before it
@@ -402,8 +408,8 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
-  (`os/pkgs/mosd/apid/src/routes.rs:1520-1540`); mosd itself reads
-  `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:552-558`). RFCT-129 landed this.
+  (`os/pkgs/mosd/apid/src/routes.rs:1897-1917`); mosd itself reads
+  `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:585-591`). RFCT-129 landed this.
 - **Availability: (a) available today** — gap-table **row 12**, no longer via a
   side channel. The old `/proc/uptime`-in-`apid` exception to the layering
   asserted at `os/pkgs/mosd/apid/src/settings_api.rs:10-12` is closed: RFCT-129
@@ -429,7 +435,7 @@ better mechanism and then hid it.**
   `permitRootLogin`, `passwordAuthentication`, `listenAddresses`, `activeState`
   and `unitFileState` (`os/pkgs/mosd/mosd/src/reconciler/sshd.rs:429-443`);
   `GetState("wifiAp")`, which already computes `ssid` and `ssidSource` for
-  exactly this purpose (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:792-807`, and the
+  exactly this purpose (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:793-808`, and the
   single-radio conflict variant at `:739-750`); and `GetState("wifiClient")`,
   which publishes each known network's SSID and a `secured` boolean and never
   the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:515-521`).
@@ -487,12 +493,12 @@ names the reason, and where it belongs instead. **[proposal]**
 - **No power buttons.** They are one click from the nav bar already
   (`routes.rs:48`), they are the only irreversible actions in the product, and —
   until section 2.5's feed exists — the power pane cannot warn that rebooting a
-  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:217-220`).
+  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:225-228`).
   Promoting an action to the first screen while it cannot state its own
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
   mis-clicked link cannot power the appliance off (`routes.rs:49-51`, pinned by a
-  test at `os/pkgs/mosd/apid/src/tests.rs:581`), plus a required confirmation token.
+  test at `os/pkgs/mosd/apid/src/tests.rs:591`), plus a required confirmation token.
 - **No raw JSON.** The current `/` renders the network subtree as
   pretty-printed JSON inside a `<pre>` (`routes.rs:587-596`). That is the
   artefact this proposal exists to remove, not a component to reuse. A full-tree
@@ -586,7 +592,7 @@ section 2.
 | **Network** | how is networking configured, and what is it actually doing | `network.<iface>` (`model.rs:280-299`), `wifi.client` (`model.rs:177-214`), `wifi.ap` (`model.rs:219-246`) | `network`, `wifiClient`, `wifiAp` | settings **(a)** for wired today (`routes.rs:686-720`); WiFi panes **(a)**, rows 6 and 7; observed data **(b)**, row 14 |
 | **Access** | who can reach this box and how | `access.webAdmin`, `access.ssh` (`model.rs:79-94`), `access.device` metadata, `access.console` | `sshd` | **(a)**, rows 15 and 9-metadata; note row 15 is in flight on `sshweb` (`mos-ui-inventory.md` section 8), and `access.console.shellEnabled` is consumed by no reconciler at all (row 17) so it must not be offered as a working control |
 | **Update** | what is installed, what is pending, what can I install | — | slot state, RAUC status, boot credits, install progress | **(b)** entirely — rows 1, 2, 3, 4, 5 |
-| **Diagnostics** | what happened, and what do I send to support | — | the whole tree via `GetState("")` / `GetSettings("")` | **(a)** mechanically — both already accept `""` for the whole tree (`os/pkgs/mosd/mosd/src/bus.rs:160-164`, `:197-202`) — but **(b)** for the redaction rule that must precede any export |
+| **Diagnostics** | what happened, and what do I send to support | — | the whole tree via `GetState("")` / `GetSettings("")` | **(a)** mechanically — both already accept `""` for the whole tree (`os/pkgs/mosd/mosd/src/bus.rs:193-197`, `:197-202`) — but **(b)** for the redaction rule that must precede any export |
 | **Hostname** | — | folded into Access or a small identity page; it does not earn a nav slot of its own | | **(a)** today (`routes.rs:745`, `:896`) |
 | **Power** | reboot / shut down safely | — | must read section 2.5's slot state before offering an unwarned reboot | action **(a)** (row 10, already answered); the *warning* is **(b)**, rows 1/5 |
 
@@ -631,7 +637,7 @@ settings with a real control on the row (section 5.3).
 
 **mos's position is structurally stronger, and this proposal's first rule is not
 to throw that away.** `mosd` exposes settings and live state through **two
-distinct bus methods** — `GetSettings` at `os/pkgs/mosd/mosd/src/bus.rs:160-164` and
+distinct bus methods** — `GetSettings` at `os/pkgs/mosd/mosd/src/bus.rs:193-197` and
 `GetState` at `:197-202` — so a mos UI cannot accidentally bind an editor to a
 live path: it would have to call the wrong method. The boundary is in the API,
 not in a string convention. **[proposal]** The UI should mirror that boundary
@@ -646,9 +652,14 @@ the live-state tree is an **echo** of the settings tree:
 - `hostname` echoes `settings.hostname` back after the hostnamed call returned
   `Ok` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) — a confirmation that the
   write was attempted, not a read-back (`mos-ui-inventory.md` section 7, row 13).
-- `network` carries the rendered unit file name and the configured `dhcp` flag
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and no observed value
-  (row 14).
+- `network` carries the rendered unit file name, the configured `dhcp` flag and
+  the configured kind — `"kind": kind_name(cfg.kind),`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — and, for a WireGuard
+  tunnel, the public half of the key on disk: *"Only the public half is
+  published"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:668`). No observed
+  value (row 14): a `wireguard` entry says which key the tunnel was built to
+  use, not whether a peer is reachable, and a `vlan` or `bridge` entry says a
+  `.netdev` was written, not that the device came up.
 - `wifiClient.networks` lists the **configured** networks, and `activeState` is
   systemd's view of the supplicant *unit*, not of the association
   (`mos-ui-inventory.md` section 6.3).
@@ -673,7 +684,7 @@ applied by its consumer, as opposed to merely stored by localsettings*.
 **mos does not have that problem by construction**: `SetSettings` validates
 against the typed tree, persists atomically, and then **runs every reconciler
 whose subtree overlaps the path before it returns**
-(`os/pkgs/mosd/mosd/src/bus.rs:169-194`, reconciler loop at `:183-188`), recording each
+(`os/pkgs/mosd/mosd/src/bus.rs:202-227`, reconciler loop at `:183-188`), recording each
 outcome into live state via `record` (`:126-137`). By the time a `SetSettings`
 call returns, "stored" and "applied" have already been resolved. **[proposal]**
 The UI should use that: a settings POST should render the *reconciler's recorded
@@ -740,7 +751,7 @@ Venus's condition is a *count of attached hardware*. mos's natural equivalent
 would be a reconciler's live state — and that is where it goes wrong, because in
 mos a **failing** reconciler does not vanish from the live-state tree: `record`
 writes `{"error": "<message>"}` under the same key
-(`os/pkgs/mosd/mosd/src/bus.rs:461-471`), and gap row 18 is precisely about surfacing
+(`os/pkgs/mosd/mosd/src/bus.rs:494-504`), and gap row 18 is precisely about surfacing
 that. If pane visibility were bound to "does `GetState("wifiAp")` return
 something useful", then a WiFi reconciler that failed would make the WiFi pane
 **disappear**, which the operator reads as "this appliance does not do WiFi"
@@ -788,11 +799,11 @@ section 8's.
 | 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/pkgs/rauc/system.conf.in:14-34`) |
 | 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/build/src/bundle.ts:1-7`, `os/pkgs/rauc/system.conf.in:66-69`), but there is still **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `os/pkgs/mosd/apid/`, re-measured on this tree). The caller half is dated: `InstallUpdate` now hands an on-device bundle path to RAUC's D-Bus `InstallBundle`, with progress read back through `GetUpdateState` (RFCT-084). Still needs the upload path and a place to put the bundle |
 | 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:256-261`); its verdict goes to the journal (`:17-18`). Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
-| 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
+| 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
 | 8 | 2.2, 3.4.1 | Observed hostname as opposed to configured | **row 13** | A read-back from hostnamed. There is no `GetHostname` call anywhere; the live-state key echoes the configured value (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) |
-| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
-| 10 | 3.2 Diagnostics | A redaction rule before any state export | — (not a gap row; **[proposal]**) | `GetState("")` and `GetSettings("")` already return whole trees (`os/pkgs/mosd/mosd/src/bus.rs:160-164`, `:197-202`), so the mechanism exists and the *policy* does not. Venus's precedent is redaction plus an access gate (`venus-os-ui.md` section 7 item 10) |
+| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
+| 10 | 3.2 Diagnostics | A redaction rule before any state export | — (not a gap row; **[proposal]**) | `GetState("")` and `GetSettings("")` already return whole trees (`os/pkgs/mosd/mosd/src/bus.rs:193-197`, `:197-202`), so the mechanism exists and the *policy* does not. Venus's precedent is redaction plus an access gate (`venus-os-ui.md` section 7 item 10) |
 
 **Items needing no `mosd` work at all**, listed so they are not accidentally
 costed: sections 2.2 (row 8), 2.3 part (i) (row 18), 2.7 (row 12), 2.8
@@ -803,7 +814,7 @@ that already return the data.
 
 One further item is out of this document's scope but should not be lost.
 `SettingsChanged` is emitted after every successful write
-(`os/pkgs/mosd/mosd/src/bus.rs:249-254`, emitted at `:190-192`) and nothing subscribes:
+(`os/pkgs/mosd/mosd/src/bus.rs:282-287`, emitted at `:190-192`) and nothing subscribes:
 `apid`'s proxy declares five methods and no signal member
 (`os/pkgs/mosd/apid/src/bus_client.rs:14-27`), and with zero JavaScript there is no
 transport to push it over either (gap row 16). Whether a dashboard should
@@ -844,7 +855,7 @@ proposal exist to protect a mos advantage rather than to close a mos gap.
    section 3.3's subject: mos's boundary is two distinct bus methods rather than
    Venus's `/Settings/` substring convention, and `SetSettings` resolves
    stored-versus-applied before it returns
-   (`os/pkgs/mosd/mosd/src/bus.rs:169-194`) where Venus needs `SettingSync` and a
+   (`os/pkgs/mosd/mosd/src/bus.rs:202-227`) where Venus needs `SettingSync` and a
    give-up timer and still cannot say whether a setting was applied
    (`venus-os-ui.md` section 5.4). The proposal's ask here is only that the UI
    *use* what `mosd` already computes instead of a generic `?saved=1` banner.
@@ -915,7 +926,7 @@ compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:160-168`,
+The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:164-177`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -929,16 +940,16 @@ today.
 #### 5.1.2 TLS and the crypto posture — and what a new crate is checked against
 
 - `rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }`
-  (`os/pkgs/mosd/Cargo.toml:61`), provider installed explicitly at
+  (`os/pkgs/mosd/Cargo.toml:70`), provider installed explicitly at
   `os/pkgs/mosd/apid/src/main.rs:47-49`; `axum-server` takes
-  `tls-rustls-no-provider` (`os/pkgs/mosd/Cargo.toml:46`), which is why that install is
+  `tls-rustls-no-provider` (`os/pkgs/mosd/Cargo.toml:55`), which is why that install is
   mandatory rather than decorative. `rcgen` is likewise pinned to the `ring`
-  backend (`os/pkgs/mosd/Cargo.toml:62`).
+  backend (`os/pkgs/mosd/Cargo.toml:71`).
 - The workspace **actively enforces a pure-Rust crypto posture**, and does so in
   a comment rather than by accident: `tough` is pinned to `=0.18.0` with the
   note *"tough 0.18 is the last release whose crypto backend is `ring`; 0.19+
   hard-depend on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md."*
-  (`os/pkgs/mosd/Cargo.toml:42-43`).
+  (`os/pkgs/mosd/Cargo.toml:51-52`).
 - Licence gate: `os/pkgs/mosd/deny.toml:3-14` allows Apache-2.0, MIT, BSD-2-Clause,
   BSD-3-Clause, ISC, Unicode-3.0, Zlib and nothing else; `[bans]
   multiple-versions = "warn"` (`deny.toml:16-17`).
@@ -989,7 +1000,7 @@ every option below:
    workspace pin is `zbus = { version = "5", default-features = false, features = ["tokio"] }`
    (`os/pkgs/mosd/Cargo.toml:28`).
 2. **All of `mosd`'s settings and live state sit behind one `tokio::sync::Mutex`.**
-   `MosdService` holds an `inner: Arc<Mutex<Inner>>` (`os/pkgs/mosd/mosd/src/bus.rs:76`),
+   `MosdService` holds an `inner: Arc<Mutex<Inner>>` (`os/pkgs/mosd/mosd/src/bus.rs:77`),
    whose own doc comment says *"Mutable trees guarded by one lock so settings
    writes and live-state updates stay consistent"* (`bus.rs:49-50`).
    `get_settings` takes it at `bus.rs:514`, `get_state` at `:539`,
@@ -1001,7 +1012,7 @@ every option below:
    Read out of that: **while a reconciler is applying, every dashboard read
    blocks.** How long that is depends on the reconciler — the network reconciler
    calls `Manager.Reload` on `org.freedesktop.network1`
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), the sshd reconciler drives a
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`), the sshd reconciler drives a
    systemd unit (`os/pkgs/mosd/mosd/src/reconciler/sshd.rs:386-404`). This is not a
    defect to fix here; it is a **hard budget on how often a dashboard may poll**,
    and it applies identically to all four options, because all four ultimately
@@ -1009,7 +1020,7 @@ every option below:
    section against high-frequency polling of any kind.
 
    One further load fact, already noted in section 3.4.1: the auth gate calls
-   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:133`),
+   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:137`),
    so every browser request costs at least one bus round trip before a tile is
    read.
 
@@ -1033,7 +1044,7 @@ sections 1-4.
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
-- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:66-70` and its doc
+- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:70-74` and its doc
   comment at `:59-60`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
@@ -1047,7 +1058,7 @@ order, so the four are comparable rather than merely described.
 | **C2** | **New crates** | Named, and checked against `os/pkgs/mosd/Cargo.toml`, `os/pkgs/mosd/Cargo.lock` and `os/pkgs/mosd/deny.toml` by the three tests in 5.1.2 |
 | **C3** | **JavaScript disabled** | What an operator with scripting off, or a text browser, or a hardened kiosk profile, still gets |
 | **C4** | **`mosd`-side work** | New bus method? New signal? Does it need `SettingsChanged` (`bus.rs:249-254`), which exists and is unsubscribed (`bus_client.rs:9-20`)? |
-| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:29-39`, `:55-72`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
+| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:29-40`, `:55-72`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
 | **C6** | **Operator-visible latency** | Worst-case delay between a value changing on the box and the operator seeing it |
 
 A seventh consideration — interaction with the existing form-POST + 303 +
@@ -1057,7 +1068,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:791-804`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:898-911`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1194,7 +1205,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 - **C4 — `mosd` work. This is where the option collapses, and it is the decisive
   finding of this section.** SSE is a *push* transport, and push requires
   something to push. `mosd` emits **exactly one signal**, `SettingsChanged`
-  (`os/pkgs/mosd/mosd/src/bus.rs:600-604`, declared at `:817-822`) — and it fires on
+  (`os/pkgs/mosd/mosd/src/bus.rs:633-637`, declared at `:817-822`) — and it fires on
   **settings** writes. For **live state** — the IP address of section 2.4, the
   storage figures of 2.6, the slot state of 2.5, install progress — there is **no
   signal of any kind**. `record` mutates the live-state tree in place
@@ -1461,7 +1472,7 @@ Two mechanical points, verified:
   `axum-0.8.9/src/response/redirect.rs:26-38`), so a refreshing dashboard reached
   after a submit re-renders normally with no resubmission prompt.
 - The power routes are POST-only with no GET handler (`routes.rs:49-53`, pinned
-  by `os/pkgs/mosd/apid/src/tests.rs:581`). A `meta refresh` issues a GET and therefore
+  by `os/pkgs/mosd/apid/src/tests.rs:591`). A `meta refresh` issues a GET and therefore
   **cannot** trigger a power action even if one were somehow placed on a
   refreshing page. Section 2.10's exclusion of power buttons from the landing
   screen stands on its own reasoning; this is an independent second layer, and it
@@ -1482,7 +1493,7 @@ option A exactly as well as under SSE. The evidence, read on this branch:
 
 1. **The outcome is not in the return value.** `set_settings` returns
    `fdo::Result<()>` and calls `record` for each overlapping reconciler
-   (`os/pkgs/mosd/mosd/src/bus.rs:183-188`); `record` writes `Ok(value)` or
+   (`os/pkgs/mosd/mosd/src/bus.rs:216-221`); `record` writes `Ok(value)` or
    `{"error": "<message>"}` into the live-state tree and **logs the failure
    rather than propagating it** (`bus.rs:461-471`). `set_settings` then returns
    `Ok(())` (`bus.rs:193`). So today, `apid`'s `Ok(())` from
@@ -1605,7 +1616,7 @@ admitted gap.
 8. **`docs/design/access.md`, `docs/design/provisioning.md` and
    `docs/design/mosd.md`** are owned by the parallel `sshweb` campaign and were
    not opened for this section. Where section 4 of this document cites
-   `docs/design/mosd.md:217-220`, that citation is carried through unchecked.
+   `docs/design/mosd.md:225-228`, that citation is carried through unchecked.
    Likewise the in-flight SSH work on `bkd/hiu25adw` (`mos-ui-inventory.md`
    section 8) is not in this tree; if it adds routes, the route count in 5.1.1
    and the fragment-route count in 5.4 are both understated.
@@ -1746,7 +1757,7 @@ server-side**, which needs no new crate (`zbus` is already in the tree; section
 **Why after phase 2 and not before:** (b) is what fixes `set_settings`
 returning `Ok(())` even when a reconciler fails — `record` writes
 `{"error": "<message>"}` into the live-state tree and the write loop discards
-the outcome (`os/pkgs/mosd/mosd/src/bus.rs:437-442`). It must land before any generic
+the outcome (`os/pkgs/mosd/mosd/src/bus.rs:470-475`). It must land before any generic
 action shape is built on top of it. Phase 3 is also what makes the 15-second
 refresh of section 5.8 cheap enough to stop being a compromise: `mosd` guards
 settings and live state under one `Mutex<Inner>` (`bus.rs:49-51`), so (a) buys
@@ -1759,7 +1770,7 @@ as unclosable from `apid`'s side (*"`record` writes no timestamp and no
 generation"*).
 
 **Verification.** `mosd` unit tests in the existing `bus.rs` test module
-(`os/pkgs/mosd/mosd/src/bus.rs:825-826`): a multi-path read returning a per-path error
+(`os/pkgs/mosd/mosd/src/bus.rs:902-903`): a multi-path read returning a per-path error
 for one absent path while succeeding on the rest; a `SetSettings` against a
 failing reconciler returning the failure in its reply rather than `Ok(())`. On
 the `apid` side, a handler test that a failed apply renders in the error
@@ -1772,7 +1783,7 @@ chosen by operator demand and by which items unblock others, not by size.
 
 | | Scope | Gap rows | Unblocks | Verified by |
 |---|---|---|---|---|
-| **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
+| **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
 | **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in:11-27` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
 | **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. The dated "0 across all 12 files" rauc measurement re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`: `GetUpdateState` answers slot status with the pending-not-confirmed flag, and `mos-health` now reports its verdict through `ReportHealth` (RFCT-084) — this row is largely built, wiring remains |
 | **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on the RFCT-142 serialisation rule, no longer on an open question.** The read hazard has an answer: every access goes through `fw_printenv`/`fw_setenv`, and the shipped libubootenv takes `flock(LOCK_EX)` on `/var/lock/fw_printenv.lock` across the whole read or read-modify-write, so a poll cannot land mid-write. The rule and its two caveats — the lock is silently skipped while `/var/lock` is absent, so the polling service keeps `DefaultDependencies=yes`; the lock never spans a check-then-set, so `BOOT_A_LEFT`/`BOOT_B_LEFT` stay RAUC-owned and 4d is read-only — are recorded at `os/rootfs/overlay-v2/etc/fw_env.config.in:23-47`. **4d starts only as an exec of `fw_printenv` under that rule** — never a private libubootenv link, never a raw read of the UENV partitions. It is deliberately last among the read items because it touches the one store RAUC also writes |

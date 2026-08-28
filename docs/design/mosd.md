@@ -25,6 +25,14 @@
 > live-state entry, and the resolution of the recorded burns-a-boot-attempt
 > follow-up (`Reboot` is now slot-aware). §5.5's measurement is restated for
 > the same date.
+>
+> **Updated for PLAN-022 (2026-08-28):** the tree is at **schema v7** and a
+> `network` entry now declares a **kind**. §5.3a records what the network
+> reconciler renders for a VLAN, a bridge and a WireGuard tunnel, how a removed
+> virtual device is torn down, and where a tunnel's private key lives; §5.4
+> gains `RotateWireguardKey`. §5.1's tree, §5.3's table and its count, and
+> §5.4's `SCHEMA_VERSION` sentence are the earlier dated records they say they
+> are and are not restated here.
 
 ## 1. What mosd is
 
@@ -258,6 +266,103 @@ The settings/live-state split the M2 contract called for is what carries all of
 this: each reconciler publishes its status onto the live-state tree, which apid
 reads over the bus.
 
+### 5.3a The network reconciler at schema v7 (PLAN-022, 2026-08-28)
+
+Everything above still holds for a physical interface: one `50-mos-<iface>.network`
+file, rendered, compared, swept. What PLAN-022 added is a `kind` on each
+`network` entry — physical, `vlan`, `bridge` or `wireguard` — and three things
+the reconciler has to do that a `.network` file alone cannot express.
+
+**A virtual link needs a `.netdev` as well.** The renderer is a second function
+beside the unit renderer: *"Render the `.netdev` unit that creates `iface`, for
+a kind that needs one"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:557`),
+answering *"`None` for a physical entry, whose device the kernel already has"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:559`). A VLAN's netdev carries
+`Kind=vlan` and its `[VLAN] Id=`, a bridge's `Kind=bridge`, and a tunnel's
+`Kind=wireguard` plus
+*"the `[WireGuard]` and `[WireGuardPeer]` sections of a tunnel's netdev"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:528-529`).
+
+**Attachment is a line on the OTHER interface's unit.** A VLAN child is named
+by its parent and a bridge port by nothing of its own, because
+*"networkd creates a VLAN only when the parent's `.network` names it"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:581-582`) — so the child's
+existence is a fact the PARENT's unit has to state, and `render_unit` takes the
+parent's VLAN children and the bridge that claimed this interface as arguments
+rather than reading them off the entry. A port carries no addressing:
+*"A port's addressing is the bridge's; validation has already refused an entry
+that tried to keep its own"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:587-588`). Both relations are
+fail-closed before a single file is written — *"an undeclared parent is a VLAN
+that would never come up"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:444-445`) — which is the same
+boundary argument the address validator makes: the settings file is writable
+without apid.
+
+**The sweep grew a teardown, because deleting a file is not deleting a device.**
+The sweep still deletes every `50-mos-` unit the pass did not write, now over
+both suffixes — *"Whether `file_name` is one this reconciler wrote:
+`50-mos-<iface>.network` or, for a virtual link, `50-mos-<iface>.netdev`"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:607-608`) — and it then asks the
+kernel to drop the device, because *"Removing a `.netdev` file and reloading
+does not delete the device networkd built from it: networkd creates virtual
+devices, it does not reap them"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:58-59`). The same delete covers a
+netdev whose properties changed: *"Devices whose netdev properties changed. They
+apply at creation only, so the device has to go and be built again"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:648-649`). The deletes run
+*"Before the reload, so networkd builds the recreated devices back on the same
+pass that deleted them"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:698-699`),
+and a failed delete in the sweep is logged rather than returned — the unit file
+is already gone and failing there would report every converged interface as
+unconverged.
+
+**A WireGuard private key never enters the settings tree.** The schema is
+explicit that it never will: *"There is no private-key field here and there
+never will be"* (`os/pkgs/mosd/mosd-settings/src/model.rs:483`). The key lives
+in a file under the STATE directory that holds `settings.toml`, in
+`networkd-secrets/` — *"A sibling of `secrets/` rather than anything under it,
+and the name says so because the path is load-bearing"*
+(`os/pkgs/mosd/mosd/src/wgkeys.rs:38-39`), a sibling and not a child because the
+identity module pins `secrets/` to 0700 on every pass and nothing below a 0700
+directory is traversable by the `systemd-network` user. The modes follow from
+who reads it: *"the key file is `root:systemd-network` 0640 under a sibling
+directory of the same ownership at 0750"*
+(`os/pkgs/mosd/mosd/src/wgkeys.rs:14-16`). Generation is lazy and idempotent —
+*"Idempotent: an interface that already has a key keeps it, so a reconcile pass
+never rotates by accident"* (`os/pkgs/mosd/mosd/src/wgkeys.rs:121-122`) — and
+each write is the store's usual shape: *"temp file beside the target, fsync,
+rename, fsync the directory"* (`os/pkgs/mosd/mosd/src/wgkeys.rs:160-161`), with
+mode and group set on the temp file before the rename. The rendered unit names
+the file rather than carrying the key: *"`PrivateKeyFile=` names the key rather
+than carrying it"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:531`), which
+matters because the netdev sits in networkd's world-readable runtime directory.
+Only the public half is ever published, into the live-state entry —
+`entry["publicKey"] = json!(self.keys.ensure(iface)?);`
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`) — beside the `file`, `dhcp`
+and `kind` keys every entry carries: `"kind": kind_name(cfg.kind),`
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`).
+
+This is the reconciler discipline's *"secrets reach the config file and nothing
+else"* rule applied to a secret the config file may not hold either: the key
+reaches its own file, and the module carries no logging statement at all.
+
+**Rotation is a bus method, not a settings write.** `RotateWireguardKey(iface)`
+answers the new public key, and it is a method for the reason the transient root
+password is: *"Deliberately not a setting, for the reason a transient root
+password is not one: a key that reached the settings tree would be persisted and
+served back out of it"* (`os/pkgs/mosd/mosd/src/bus.rs:851-853`). It refuses an
+interface that is not a declared `network` entry of kind `wireguard`, runs under
+the same lock every mutating method takes, and then re-reconciles:
+*"The reconcilers are re-run afterwards so the tunnel's unit is re-rendered and
+networkd builds the device back around the key now on disk"*
+(`os/pkgs/mosd/mosd/src/bus.rs:857-859`). The re-run is not optional, because
+*"networkd reads `PrivateKeyFile=` when it creates the device and never again"*
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:206-207`) — a rotation that only
+rewrote the file would change what the public key says without changing what the
+tunnel uses. No `SettingsChanged` is emitted: nothing in the settings tree
+changed.
+
 ### 5.4 Bus surface
 
 `com.mos.mosd1` carries, as of RFCT-084:
@@ -275,6 +380,7 @@ reads over the bus.
 | **`InstallUpdate`** | method | **RFCT-084** |
 | **`GetUpdateState`** | method | **RFCT-084** |
 | **`MarkUpdate`** | method | **RFCT-084** |
+| **`RotateWireguardKey`** | method | **PLAN-022 M5 (RFCT-204)** — see §5.3a |
 
 (The `com.mos.Item1` façade at `/` is a separate interface with its own
 contract; see `docs/design/bus.md`.)

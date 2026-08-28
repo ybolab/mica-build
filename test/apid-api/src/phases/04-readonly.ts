@@ -78,6 +78,16 @@ const PANES: readonly Pane[] = [
     marker: "Containers on this device run as root. Rootless mode is not built,",
     markerName: "the Containers pane's root notice",
   },
+  {
+    // The update notice, which `mqtt_page` renders unconditionally --
+    // `p { b { (MQTT_UPDATE_NOTICE) } }` sits outside every branch, unlike the
+    // switch and listener blocks whose text follows the current setting. A
+    // marker that moved with the setting would make this pane's presence
+    // depend on its state.
+    path: "/mqtt",
+    marker: "Updating to this image stops the MQTT bridge until this switch is turned on.",
+    markerName: "the MQTT pane's update notice",
+  },
 ];
 
 // 2. The reserved /api/ subtree
@@ -93,11 +103,17 @@ const PANES: readonly Pane[] = [
  * beginning `/api/` answered by the SPA fallback, which api.md §4.1 rule 1
  * forbids. Over the wire is the only place that split is observable: from
  * inside the router both spellings look like the same prefix.
+ *
+ * `/api/versions` is deliberately NOT here. It is a declared route
+ * (`routes.rs:285`) answering 200, so listing it among the paths that must
+ * produce the not-found envelope would assert the opposite of the contract.
+ * `/api/v1/settings` still belongs: axum's `{*path}` wildcard matches at least
+ * one character, so the bare root reaches the subtree's own fallback
+ * (`routes.rs:335-340`).
  */
 const API_TARGETS: readonly string[] = [
   "/api/",
   "/api",
-  "/api/versions",
   "/api/v1/settings",
   "/api/deeply/nested/thing",
 ];
@@ -242,6 +258,7 @@ const POST_ONLY: readonly string[] = [
   "/ssh/keys/remove",
   "/containers/enable",
   "/builtin/deactivate",
+  "/mqtt/enable",
 ];
 
 // 5. /builtin and /builtin/
@@ -327,7 +344,6 @@ const phase: Phase = {
     await assertFallbackAndTraversal(ctx);
     await assertPostOnlyGuards(ctx);
     await assertBuiltin(ctx, anonymous);
-    await assertImageSkewGuard(ctx);
 
     // The anonymous client must still be anonymous, or every 303 above was
     // asserted against a client that might have had a session all along.
@@ -496,21 +512,44 @@ async function assertApiSubtree(ctx: PhaseContext, anonymous: Client): Promise<v
     );
   }
 
-  // The gate wraps `/api/` exactly as it wraps everything but `/healthz`. An
-  // API client that read the 404 envelope above as "the prefix is reserved but
-  // open" would misread its own 303s as routing bugs. `/healthz` is the only
-  // unauthenticated route.
-  const gated = await anonymous.raw("/api/versions", { sendCookies: false });
+  // The gate and the reserved subtree, in BOTH directions -- which is the whole
+  // assertion, because either half alone is misleading.
+  //
+  // `/api/versions` is unauthenticated BY DESIGN: the gate hands off exactly the
+  // declared routes (`routes.rs:303-310`) and this is one of them, because a
+  // client has to be able to discover which API versions a device speaks before
+  // it has a session to discover them with. An earlier form of this phase
+  // asserted a 303 here, which was true of an image built before the discovery
+  // route existed and is now the opposite of the contract.
+  const discovery = await anonymous.raw("/api/versions", { sendCookies: false });
+  report.expectStatus(
+    discovery,
+    200,
+    "an UNAUTHENTICATED GET /api/versions answers 200: it is a declared discovery route and the gate hands it off (§2.1)",
+  );
+  report.expectHeader(
+    discovery,
+    "content-type",
+    "application/json",
+    "the unauthenticated /api/versions answer is typed application/json, never the gate's HTML",
+  );
+
+  // ...and an UNDECLARED path under the same prefix is still gated. Without
+  // this half, "the reserved prefix is open" and "the reserved prefix is
+  // correctly scoped" produce identical evidence: an API client that read the
+  // 404 envelope above as "reserved but open" would misread its own 303s as
+  // routing bugs.
+  const gated = await anonymous.raw("/api/v1/settings", { sendCookies: false });
   report.expectStatus(
     gated,
     303,
-    "an UNAUTHENTICATED GET /api/versions is 303 to the login page, not the 404 envelope: the gate wraps the reserved subtree too",
+    "an UNAUTHENTICATED GET /api/v1/settings is 303 to the login page, not the 404 envelope: the gate wraps every path under the prefix it did not declare",
   );
   report.expectHeader(
     gated,
     "location",
     "/login",
-    "the unauthenticated /api/versions redirect names /login",
+    "the unauthenticated /api/v1/settings redirect names /login",
   );
 }
 
@@ -803,64 +842,6 @@ async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void
     "location",
     "/login",
     "the unauthenticated /builtin/ redirect names /login",
-  );
-}
-
-// 6. the image-skew guard
-
-/**
- * Routes this tree's routes.rs declares that the running image does not have.
- *
- * Measured 2026-08-24: the image is built from a tree at or before 67b999b, and
- * main gained `.route("/mqtt", get(mqtt_form))` and `.route("/mqtt/enable",
- * post(mqtt_enable))` at ddf3a86 12:07, after the image was built at 10:48, so
- * `PANES` and `POST_ONLY` correctly omit them. A check rather than a report
- * sentence, so both go red at once when the image is rebuilt from a newer main.
- * `GET /mqtt` under a wildcard `Accept` is 404 only because §4.2 condition 3
- * refuses HTML for that range, where a real `get(mqtt_form)` answers 200 (the
- * `text/html` column is deliberately not asserted -- the SPA fallback and a real
- * pane both return 200 there); `POST /mqtt/enable` is 405 only because §4.2
- * condition 2 checks the method first. Neither can survive the route arriving.
- */
-const SKEWED_ROUTES_HINT =
-  "the image now serves /mqtt; add it to PANES and /mqtt/enable to POST_ONLY in 04-readonly, then update this guard.";
-
-async function assertImageSkewGuard(ctx: PhaseContext): Promise<void> {
-  const { client, report } = ctx;
-  report.note(
-    "  -- 6. the image-skew guard: routes this TREE has that the running IMAGE does not",
-  );
-
-  const wildcard = await client.raw("/mqtt", { headers: { Accept: "*/*" } });
-  report.check(
-    wildcard.status === 404,
-    "GET /mqtt with Accept: */* -> 404: the running image has NO /mqtt route, so this is the static-asset fallback and not a pane",
-    [
-      `expected: 404 -- §4.2 condition 3 refuses to produce HTML for a wildcard range,`,
-      `          which is the only reason an unrouted path 404s here.`,
-      `actual:   ${wildcard.status}${describeBody(wildcard)}`,
-      ``,
-      `THIS IS AN IMAGE-SKEW GUARD, NOT A DEFECT IN apid. A 200 means the device`,
-      `now HAS the route -- local main added /mqtt at ddf3a86 (12:07 2026-08-24),`,
-      `after the image under test was built (10:48). So:`,
-      `  ${SKEWED_ROUTES_HINT}`,
-    ].join("\n"),
-  );
-
-  const enable = await client.post("/mqtt/enable", { enabled: checkbox(true) });
-  report.check(
-    enable.status === 405,
-    "POST /mqtt/enable -> 405: the running image has NO /mqtt/enable route, so the fallback refuses it on the method",
-    [
-      `expected: 405 -- §4.2 condition 2 checks the method before anything else,`,
-      `          so an unrouted path refuses a POST without looking at the body.`,
-      `actual:   ${enable.status}${describeBody(enable)}`,
-      ``,
-      `THIS IS AN IMAGE-SKEW GUARD, NOT A DEFECT IN apid. Anything but 405 means`,
-      `a real post(mqtt_enable) answered, i.e. the image is newer than the one`,
-      `this phase was written against. So:`,
-      `  ${SKEWED_ROUTES_HINT}`,
-    ].join("\n"),
   );
 }
 

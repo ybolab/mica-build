@@ -114,7 +114,17 @@ fi
 # are unreachable. systemd.journald.forward_to_console=1 puts them on the
 # serial line.
 if [ -n "${MOS_QEMU_APPEND:-}" ]; then
-    esp_off=$(( BOOT_A_START_MIB * 1048576 ))
+    # ESP_START_MIB, not BOOT_A_START_MIB. The two are different partitions on
+    # this board and only one of them holds a grub.cfg: the ESP (partition 1, at
+    # 1 MiB) carries EFI/mos/grub.cfg and EFI/mos/grubenv, while BOOT-A
+    # (partition 2, at 65 MiB) carries vmlinuz, initrd.img and cmdline.cfg at its
+    # FAT root and has no EFI directory at all. Measured against
+    # x64-mos-v2-latest.img, 2026-08-28. Reading the boot slot here made mcopy
+    # fail with `File "::/EFI/mos/grub.cfg" not found`, which took the whole
+    # prepare down -- and since the apid-api harness always sets MOS_QEMU_APPEND
+    # (its readiness signal is the journald line the append produces), that
+    # failure was unconditional.
+    esp_off=$(( ESP_START_MIB * 1048576 ))
     docker run --rm -v "${RUN_DIR}:/w" -e OFF="${esp_off}" -e APPEND="${MOS_QEMU_APPEND}" \
         "${QEMU_IMAGE}" bash -c '
             set -eu
@@ -122,10 +132,38 @@ if [ -n "${MOS_QEMU_APPEND:-}" ]; then
             DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends mtools >/dev/null 2>&1
             cd /w
             mcopy -n -i "disk.img@@${OFF}" ::/EFI/mos/grub.cfg grub.cfg
-            before=$(grep -c "^    linux " grub.cfg)
+            # The indentation is matched as WHITESPACE, not as four spaces.
+            # os/boards/x64/grub.cfg:98 and :116 indent their linux lines with
+            # EIGHT, so a four-space pattern matched neither and the count came
+            # back 0 on every run.
+            #
+            # `|| true` on both counts, because `set -e` aborts a command
+            # substitution whose command exits non-zero -- and grep -c exits 1
+            # when it counts nothing. So the assignment itself killed the shell
+            # BEFORE the guard on the next line could report why, which is how a
+            # completely unmatched pattern came to look like a prepare step that
+            # printed nothing and failed.
+            before=$(grep -c "^[[:space:]]*linux " grub.cfg || true)
             [ "${before}" -ge 1 ] || { echo "error: no linux line in the ESP grub.cfg; MOS_QEMU_APPEND would have added nothing and the run would look normal" >&2; exit 1; }
-            sed -i "s|^\(    linux .*\)\$|\1 ${APPEND}|" grub.cfg
-            grep -c -- "${APPEND}" grub.cfg >/dev/null || { echo "error: the append did not land in grub.cfg" >&2; exit 1; }
+            # Already there: leave it alone. This runs on the prepare AND on
+            # every boot that reuses the disk, so an unconditional append lands
+            # the same arguments two or three times over a run. For
+            # `systemd.journald.forward_to_console=1` a repeat is the same value
+            # twice and costs nothing; for `systemd.run=` it is not, because
+            # systemd takes each occurrence as another ExecStart and RUNS THE
+            # COMMAND AGAIN. Measured 2026-08-28: a duplicated systemd.run
+            # executed the seeded script twice, back to back, on one boot.
+            existing=$(grep -c -F -- "${APPEND}" grub.cfg || true)
+            if [ "${existing}" -ge 1 ]; then
+                echo "note: the append is already on the linux line; not adding it a second time" >&2
+                exit 0
+            fi
+            sed -i "s|^\([[:space:]]*linux .*\)\$|\1 ${APPEND}|" grub.cfg
+            # -F: the append is a fixed string, and a value carrying a `.` or a
+            # `*` must be looked for as itself rather than as a pattern that
+            # happens to match something else on the line.
+            landed=$(grep -c -F -- "${APPEND}" grub.cfg || true)
+            [ "${landed}" -ge 1 ] || { echo "error: the append did not land in grub.cfg" >&2; exit 1; }
             mcopy -o -n -i "disk.img@@${OFF}" grub.cfg ::/EFI/mos/grub.cfg
         '
     echo "note: appended to the disk copy's kernel command line: ${MOS_QEMU_APPEND}"

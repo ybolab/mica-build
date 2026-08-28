@@ -62,8 +62,18 @@ export interface ConndContract {
   readonly staPrefix: string
   readonly apPrefix: string
   readonly sweep: string
-  readonly sweepSuffix: string
-  /** Every field non-empty AND the suffix exactly `.network`, as the oracle tests. */
+  /**
+   * EVERY suffix the sweep predicate accepts, in source order.
+   *
+   * A LIST and not one string, because the predicate is a disjunction: mosd
+   * renders `.netdev` files as well as `.network` ones and sweeps both under
+   * the same prefix. Reading only the first would describe a NARROWER sweep
+   * than the code performs, and the collision check below would then let a
+   * shipped `50-mos-*.netdev` through as clear while the reconciler deletes it
+   * on the first pass.
+   */
+  readonly sweepSuffixes: readonly string[]
+  /** Every field non-empty AND `.network` among the suffixes swept. */
   readonly read: boolean
 }
 
@@ -83,6 +93,25 @@ function firstCapture(lines: readonly string[], pattern: RegExp): string {
     if (m?.[1] !== undefined) return m[1]
   }
   return ''
+}
+
+/**
+ * EVERY capture of a `/g` pattern, across every line, in order.
+ *
+ * `firstCapture` cannot answer this and cannot be made to: its patterns are
+ * anchored with a leading `.*`, which is greedy, so on a line carrying two
+ * `ends_with` calls it captures the LAST one and reports it as the first. That
+ * is not a hypothetical -- it is how a disjunctive sweep predicate came to be
+ * read as sweeping only `.netdev`.
+ */
+function allCaptures(lines: readonly string[], pattern: RegExp): string[] {
+  const found: string[] = []
+  for (const line of lines) {
+    for (const m of line.matchAll(pattern)) {
+      if (m[1] !== undefined) found.push(m[1])
+    }
+  }
+  return found
 }
 
 /** `const NAME: &str = "...";` at the start of a line. */
@@ -122,10 +151,12 @@ export function readConndContract(dir: string): ConndContract {
   const apPrefix = mosdConst(dir, 'wifi_ap.rs', 'NETWORKD_PREFIX')
   const network = sourceLines(dir, 'network.rs')
   const sweep = firstCapture(network, /.*file_name\.starts_with\("([^"]*)"\).*/)
-  const sweepSuffix = firstCapture(network, /.*file_name\.ends_with\("([^"]*)"\).*/)
+  const sweepSuffixes = allCaptures(network, /file_name\.ends_with\("([^"]*)"\)/g)
   const read = [staDir, apDir, staUnit, apUnit, staConf, apConf, staPrefix, apPrefix, sweep]
-    .every(v => v !== '') && sweepSuffix === '.network'
-  return { staDir, apDir, staUnit, apUnit, staConf, apConf, staPrefix, apPrefix, sweep, sweepSuffix, read }
+    .every(v => v !== '') && sweepSuffixes.includes('.network')
+  return {
+    staDir, apDir, staUnit, apUnit, staConf, apConf, staPrefix, apPrefix, sweep, sweepSuffixes, read,
+  }
 }
 
 /**
@@ -144,10 +175,11 @@ function contractMessage(c: ConndContract): string {
   return c.read
     ? `read the connd contract out of mosd: ${c.staUnit} <- ${c.staDir}/${c.staConf}, ${c.apUnit} <- `
       + `${c.apDir}/${c.apConf}, networkd prefixes '${c.staPrefix}'/'${c.apPrefix}', sweep `
-      + `'${c.sweep}'*'${c.sweepSuffix}'`
+      + `'${c.sweep}'*'${c.sweepSuffixes.join("'|'")}'`
     : `could not read the connd contract out of ${RECONCILER_DIR}: dirs '${c.staDir}'/'${c.apDir}', `
       + `units '${c.staUnit}'/'${c.apUnit}', configs '${c.staConf}'/'${c.apConf}', prefixes `
-      + `'${c.staPrefix}'/'${c.apPrefix}', sweep '${c.sweep}'+'${c.sweepSuffix}'. Every connd assertion `
+      + `'${c.staPrefix}'/'${c.apPrefix}', sweep '${c.sweep}'+'${c.sweepSuffixes.join("'|'")}'. Every `
+      + `connd assertion `
       + `below compares against these. They no longer fall back to hardcoded defaults, so they FAIL `
       + `from here on rather than passing against the verifier's own restatement of a contract it `
       + `could not read — see the empty-marker rot recorded above the extractor`
@@ -538,7 +570,7 @@ const NAMESPACE_CHECK: CheckCase = {
     for (const n of files) {
       // ANCHORED, matching is_mos_managed(). The unanchored `*marker*` this
       // replaced is what turned an empty marker into eight false positives.
-      if (n.startsWith(contract.sweep) && n.endsWith(contract.sweepSuffix)) {
+      if (n.startsWith(contract.sweep) && contract.sweepSuffixes.some(x => n.endsWith(x))) {
         collisions.push(` ${n}(swept-by-network.rs)`)
       }
       else if (n.startsWith(contract.staPrefix)) collisions.push(` ${n}(station-namespace)`)
@@ -552,13 +584,14 @@ const NAMESPACE_CHECK: CheckCase = {
     if (collisions.length === 0) {
       return [verdict(id, true,
         `the image's networkd namespace is clear of mosd's: none of (${files.join(' ')} ) falls in a `
-        + `reconciler-owned namespace ('${contract.sweep}'*'${contract.sweepSuffix}', `
+        + `reconciler-owned namespace ('${contract.sweep}'*'${contract.sweepSuffixes.join("'|'")}', `
         + `'${contract.staPrefix}', '${contract.apPrefix}')`)]
     }
     return [verdict(id, false,
       `the image's networkd namespace collides with a reconciler-owned one:${collisions.join('')}. A `
       + `(swept-by-network.rs) file is DELETED on the reconciler's first pass — it renders `
-      + `${contract.sweep}*${contract.sweepSuffix} and removes every other file matching that shape. A `
+      + `${contract.sweep}*{${contract.sweepSuffixes.join(',')}} and removes every other file matching `
+      + `that shape. A `
       + `(station-namespace) or (ap-namespace) file instead SHADOWS the unit a WiFi reconciler renders `
       + `for that interface, since networkd applies the first match in lexical order`)]
   },

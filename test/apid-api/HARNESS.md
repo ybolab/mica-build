@@ -137,7 +137,7 @@ on timeout it prints the last 40 console lines *before* tearing anything down.
 
 | variable | default | what it is |
 | --- | --- | --- |
-| `MOS_APID_PHASES` | all | passed through as `APID_PHASES` |
+| `MOS_APID_PHASES` | `01-transport`..`07-reboot` | the FIRST boot's phase list, passed through as `APID_PHASES`. Not "all": phase 07 takes the guest down, so running `07b`/`08` here waits out their deadlines against a machine that is deliberately off |
 | `MOS_APID_BOOT2` | `1` | run the second boot and the post-reboot phases |
 | `MOS_APID_READY_TIMEOUT` | `900` | deadline for apid to answer |
 | `MOS_APID_CONTAINER_TIMEOUT` | `240` | deadline to find the QEMU container |
@@ -158,7 +158,9 @@ fails the run rather than passing quietly — so a typo cannot read as evidence.
 
 Everything lands in `_out/x64/apid-api/`: `console-boot1.log`,
 `console-boot2.log`, `suite-boot*.log`, `result-boot*.json` (written by the
-suite) and `result.json` — an envelope from this harness that embeds each boot's
+suite), `run-started` (an empty stamp the handoff freshness check compares
+against — `disk.img` cannot serve, the guest writes to it all boot) and
+`result.json` — an envelope from this harness that embeds each boot's
 result **verbatim** and carries the run's own totals. Console logs are never
 removed; the disk is, unless `MOS_APID_KEEP_DISK=1`.
 

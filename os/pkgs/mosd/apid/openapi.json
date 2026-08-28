@@ -90,6 +90,79 @@
         }
       }
     },
+    "/api/v1/actions/wireguard/{iface}/rotate-key": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Rotate a WireGuard interface's private key (§2.1's action family).",
+        "description": "An action and not a settings write, because there is no setting to write:\nthe key lives in a mode-0640 file on STATE that the settings tree does not\ndescribe. mosd draws the new key, deletes the device holding the old one and\nreconciles, so a caller that gets a 200 has a tunnel running on the key\nwhose public half it was just handed.\n\n`iface` is passed to mosd unexamined. mosd owns the rule — the name must be\na declared `network` entry of kind `wireguard` — and it raises `InvalidArgs`\nfor anything else, which is classified as the same 422 a rejected settings\npath gets. A second copy of that rule here could disagree with the first.\n\nProse and not an intra-doc link to the classifier, deliberately: `utoipa`\ncopies this comment into the published document, where a link would put an\napid symbol name in front of every client.",
+        "operationId": "api_v1_wireguard_rotate",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "The `network` entry to rotate, which must be one of kind `wireguard`: `wg0`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A new key was drawn; the body carries its public half",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WireguardRotation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session cookie, or one that does not verify",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to rotate (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/meta": {
       "get": {
         "tags": [
@@ -410,7 +483,20 @@
         }
       },
       "ResourceValue": {
-        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash` or `hash`, at any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and phase 1\nserves no write route to write it with."
+        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and phase 1\nserves no write route to write it with. `privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
+      },
+      "WireguardRotation": {
+        "type": "object",
+        "description": "The body of a successful key rotation: the public half, and nothing else.\n\nThere is no `privateKey` member here and there will not be one. The private\nhalf never leaves mosd — `docs/task/RFCT-200.md` §4 states *\"there is no\nread-back route for the private key, ever — not redacted-on-read;\nnonexistent\"* — so this struct is the whole of what a rotation can answer.",
+        "required": [
+          "publicKey"
+        ],
+        "properties": {
+          "publicKey": {
+            "type": "string",
+            "description": "The new base64 X25519 public key, which is what the far end needs."
+          }
+        }
       }
     }
   }

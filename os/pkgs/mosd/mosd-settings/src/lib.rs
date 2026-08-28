@@ -1,6 +1,6 @@
 //! Settings library for mosd.
 //!
-//! Provides the typed settings tree (schema v6), a Venus-style dot-path
+//! Provides the typed settings tree (schema v7), a Venus-style dot-path
 //! get/set API, atomic TOML persistence on STATE, and a Bottlerocket-style
 //! bidirectional migration framework.
 
@@ -19,13 +19,14 @@ pub use authorized_key::{
 pub use error::SettingsError;
 pub use migration::{
     MigrateV0ToV1, MigrateV1ToV2, MigrateV2ToV3, MigrateV3ToV4, MigrateV4ToV5, MigrateV5ToV6,
-    Migration, MigrationRegistry, migrate,
+    MigrateV6ToV7, Migration, MigrationRegistry, migrate,
 };
 pub use model::{
-    AccessSettings, ApMode, AuthorizedKey, ConsoleSettings, ContainerSettings,
-    DeviceCredentialSettings, IfaceSettings, MqttAuthSettings, MqttListenSettings, MqttSettings,
-    ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SshSettings, StaticConfig,
-    WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
+    AccessSettings, ApMode, AuthorizedKey, BridgeConfig, ConsoleSettings, ContainerSettings,
+    DeviceCredentialSettings, IfaceKind, IfaceSettings, MqttAuthSettings, MqttListenSettings,
+    MqttSettings, ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SshSettings,
+    StaticConfig, VlanConfig, WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork,
+    WifiSettings, WireguardConfig, WireguardPeer,
 };
-pub use path::json_path_get;
+pub use path::{json_path_get, quote_path_segment};
 pub use store::{DEFAULT_PATH, RollbackReport, Store};

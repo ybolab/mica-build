@@ -76,13 +76,13 @@ the rollback direction. **It does not.** Verified against the tree:
   (`docs/plan/PLAN-006.md:241`), restating PLAN-005 Part I's *"Schema changes go
   through versioned migrations that must also support the rollback direction"*
   (`docs/plan/PLAN-005.md:260`).
-- The error did not originate in the package. `docs/design/mosd.md:64` says
+- The error did not originate in the package. `docs/design/mosd.md:72` says
   *"PLAN-006 Part I requires the rollback"* — PLAN-006 renumbered the part
   PLAN-005 called I, and the design document never followed.
 
 **The requirement is real, so the finding is unaffected; only the pointer was
 wrong.** The task wrote what it found rather than what it was told, and routed
-the `docs/design/mosd.md:64` correction onward rather than editing a file it did
+the `docs/design/mosd.md:72` correction onward rather than editing a file it did
 not own — that file is outside this campaign's fence.
 
 It is recorded here because it is the third time in two campaigns that a wrong
@@ -147,7 +147,7 @@ rollback) stand as the owning decision.
 - **It did not delete §10.3 items 2 and 3.** They are kept with their
   resolutions recorded, so the register shows what was resolved and how, not
   merely what remains.
-- **It did not fix `docs/design/mosd.md:64`.** Routed; the file is outside the
+- **It did not fix `docs/design/mosd.md:72`.** Routed; the file is outside the
   fence.
 - **§10.3 item 1** — §2.1 versus §4.1 on whether today's paths are reserved —
   was **not** in scope and remains open.

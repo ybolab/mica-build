@@ -20,7 +20,13 @@ argon2 = { workspace = true }
 bcrypt = { workspace = true }
 ring = { workspace = true }
 hex = { workspace = true }
-tokio = { workspace = true, features = ["signal", "time"] }
+# The WireGuard keystore: base64 is the key format on disk and on the wire,
+# x25519-dalek derives the public half of a private key without a `wg` binary.
+base64 = { workspace = true }
+x25519-dalek = { workspace = true }
+# `process` for the `ip link del` teardown the network reconciler runs when a
+# virtual device's unit goes away; networkd does not reap devices it created.
+tokio = { workspace = true, features = ["process", "signal", "time"] }
 zbus = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -25,7 +25,11 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
-use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate_authorized_keys};
+use mosd_settings::{
+    AuthorizedKey, BridgeConfig, IfaceKind, IfaceSettings, SettingsError, StaticConfig, VlanConfig,
+    WireguardConfig, WireguardPeer, parse_authorized_key, quote_path_segment,
+    validate_authorized_keys,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -164,6 +168,11 @@ pub fn app(state: AppState) -> Router {
         .route("/logout", post(logout))
         .route("/password", get(password_form).post(password_submit))
         .route("/network", get(network_form).post(network_submit))
+        // POST only, like the SSH key routes they mirror: no GET handler
+        // exists, so nothing that merely follows a link can add or drop a
+        // tunnel's far end.
+        .route("/network/peers/add", post(network_peer_add))
+        .route("/network/peers/remove", post(network_peer_remove))
         .route("/hostname", get(hostname_form).post(hostname_submit))
         .route("/power", get(power_form))
         // POST only, deliberately: no GET handler exists for either action, so
@@ -246,6 +255,19 @@ const V1_STATE_PREFIX: &str = "/v1/state/";
 const V1_STATE_ROUTE: &str = "/v1/state/{*path}";
 const V1_STATE_DOC: &str = "/v1/state/{path}";
 
+/// §2.1's action route for a WireGuard key rotation, as
+/// `docs/task/RFCT-200.md` §6 classifies it: a new route, and therefore
+/// additive.
+///
+/// One spelling and not three, unlike the resource roots above: `{iface}` is a
+/// single-segment parameter, which axum and OpenAPI spell the same way, so
+/// there is nothing here for a test to hold together. The prefix and the leaf
+/// exist separately because [`is_declared_api_route`] has to recognise the
+/// shape without a router to ask.
+const V1_WIREGUARD_PREFIX: &str = "/v1/actions/wireguard/";
+const V1_WIREGUARD_ROTATE_LEAF: &str = "/rotate-key";
+const V1_WIREGUARD_ROTATE_ROUTE: &str = "/v1/actions/wireguard/{iface}/rotate-key";
+
 /// Each root's three spellings as one tuple, for the test that holds them
 /// together.
 #[cfg(test)]
@@ -289,6 +311,10 @@ fn api_router() -> Router<AppState> {
         .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
         .route(V1_STATE_ROUTE, get(api_v1_state))
         .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
+        // POST only, for the reason the power and SSH mutations are: no GET
+        // handler exists, so nothing that merely follows a link can replace a
+        // tunnel's identity.
+        .route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))
         .fallback(api_not_found)
 }
 
@@ -305,7 +331,29 @@ fn is_declared_api_route(path: &str) -> bool {
             || leaf == V1_META_PATH
             || leaf == V1_CHANGE_PASSWORD_PATH
             || resource_dot_path(leaf).is_some()
+            || rotate_key_iface(leaf).is_some()
     })
+}
+
+/// The interface a leaf names, when the leaf is the rotate-key action.
+///
+/// The same obligation [`resource_dot_path`] carries: hand off exactly what
+/// the router serves, and nothing else. axum's `{iface}` matches one segment,
+/// so a name carrying a `/` is a path this predicate must not release — it
+/// would reach the subtree's 404 where an unauthenticated caller is supposed
+/// to be redirected.
+///
+/// An *empty* segment is released, unlike [`resource_dot_path`]'s empty
+/// dot-path. The difference is not a preference: `{*path}` matches at least one
+/// character and `{iface}` matches zero or more, so `.../wireguard//rotate-key`
+/// is a path this router really serves — with an interface name mosd then
+/// refuses as undeclared. Refusing it here instead would answer a redirect
+/// where the route answers an envelope.
+fn rotate_key_iface(leaf: &str) -> Option<&str> {
+    let iface = leaf
+        .strip_prefix(V1_WIREGUARD_PREFIX)?
+        .strip_suffix(V1_WIREGUARD_ROTATE_LEAF)?;
+    (!iface.contains('/')).then_some(iface)
 }
 
 /// The dot-path a leaf names, when the leaf is one of §2.2's two roots.
@@ -471,11 +519,14 @@ pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
 /// Any JSON value, because a dot-path names a subtree, an array or a scalar
 /// and §2.2's passthrough imposes no shape of its own. The string
 /// `"<redacted>"` is a value a client can receive anywhere inside it: every
-/// field named `psk`, `passwordHash`, `password_hash` or `hash`, at any depth
+/// field named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,
+/// at any depth
 /// and inside arrays, carries that sentinel instead of its value, and so does
 /// the whole body when the dot-path names one of those fields directly. It is
 /// read-only — writing it back would destroy the credential — and phase 1
-/// serves no write route to write it with.
+/// serves no write route to write it with. `privateKey` is on the same list;
+/// no shipped schema has such a field, and the entry is the fail-closed guard
+/// for the day one appears.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(transparent)]
 pub(crate) struct ResourceValue(Value);
@@ -533,6 +584,62 @@ pub(crate) async fn api_v1_state(
     Path(path): Path<String>,
 ) -> Response {
     resource_response(state.api.get_state(&path).await, &path)
+}
+
+/// The body of a successful key rotation: the public half, and nothing else.
+///
+/// There is no `privateKey` member here and there will not be one. The private
+/// half never leaves mosd — `docs/task/RFCT-200.md` §4 states *"there is no
+/// read-back route for the private key, ever — not redacted-on-read;
+/// nonexistent"* — so this struct is the whole of what a rotation can answer.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WireguardRotation {
+    /// The new base64 X25519 public key, which is what the far end needs.
+    public_key: String,
+}
+
+/// Rotate a WireGuard interface's private key (§2.1's action family).
+///
+/// An action and not a settings write, because there is no setting to write:
+/// the key lives in a mode-0640 file on STATE that the settings tree does not
+/// describe. mosd draws the new key, deletes the device holding the old one and
+/// reconciles, so a caller that gets a 200 has a tunnel running on the key
+/// whose public half it was just handed.
+///
+/// `iface` is passed to mosd unexamined. mosd owns the rule — the name must be
+/// a declared `network` entry of kind `wireguard` — and it raises `InvalidArgs`
+/// for anything else, which is classified as the same 422 a rejected settings
+/// path gets. A second copy of that rule here could disagree with the first.
+///
+/// Prose and not an intra-doc link to the classifier, deliberately: `utoipa`
+/// copies this comment into the published document, where a link would put an
+/// apid symbol name in front of every client.
+#[utoipa::path(
+    post,
+    path = V1_WIREGUARD_ROTATE_ROUTE,
+    context_path = API,
+    tag = "actions",
+    params(("iface" = String, Path, description = "The `network` entry to rotate, which must be one of kind `wireguard`: `wg0`")),
+    responses(
+        (status = 200, description = "A new key was drawn; the body carries its public half", body = WireguardRotation),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 422, description = "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one", body = ApiError),
+        (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_wireguard_rotate(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(iface): Path<String>,
+) -> Response {
+    match state.api.rotate_wireguard_key(&iface).await {
+        Ok(public_key) => api_response(StatusCode::OK, WireguardRotation { public_key }),
+        // §2.4's `path` is the settings dot-path at fault, and this failure has
+        // one: the entry whose kind mosd refused.
+        Err(err) => bus_api_error(&err, &iface_settings_path(&iface)),
+    }
 }
 
 /// One answer shape for both roots: the value redacted, or §2.4's envelope
@@ -894,35 +1001,301 @@ fn valid_hostname(name: &str) -> bool {
 }
 
 /// Interface form validation shared by `/network` and the setup wizard.
+///
+/// DHCP off with an empty address is an interface with **no** addressing, not
+/// an error. It used to be one, and it stopped being one when bridges became
+/// expressible: a bridge port *must* carry neither `dhcp` nor `static`
+/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:483-487`), and it must be a
+/// declared entry before a bridge may name it, so a pane that insisted on an
+/// address made a bridge unbuildable through the form. An address that is
+/// present and not a CIDR is still refused.
 fn validate_iface(iface: &str, dhcp: bool, address: &str) -> Result<(), &'static str> {
     if !valid_iface_name(iface) {
         return Err("Interface name must be 1-15 characters of letters, digits, '.', '_' or '-'.");
     }
-    if !dhcp && !valid_cidr(address) {
+    if !dhcp && !address.is_empty() && !valid_cidr(address) {
         return Err("Static address must be IPv4 CIDR notation, e.g. 192.168.1.10/24.");
     }
     Ok(())
 }
 
-/// JSON stored at `network.<iface>`: `{"dhcp": true}` or a static block with
-/// `gateway` omitted when empty and `dns` always present (empty list ok).
-fn iface_settings_value(dhcp: bool, address: &str, gateway: &str, dns: &str) -> Value {
-    if dhcp {
-        return serde_json::json!({ "dhcp": true });
-    }
-    let dns: Vec<String> = dns
+/// The settings path of `iface`'s entry, with the name quoted when it carries
+/// a dot: a VLAN named `eth0.100` is `network."eth0.100"`, not three segments.
+fn iface_settings_path(iface: &str) -> String {
+    format!("network.{}", quote_path_segment(iface))
+}
+
+/// A comma-separated form field as the list it spells, blanks dropped.
+///
+/// The idiom the `dns` field has always used, reused for bridge ports and a
+/// peer's allowed IPs rather than teaching the pane a second list notation.
+fn comma_list(value: &str) -> Vec<String> {
+    value
         .split(',')
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
         .map(str::to_string)
-        .collect();
-    let mut static_ = serde_json::Map::new();
-    static_.insert("address".to_string(), Value::String(address.to_string()));
-    if !gateway.is_empty() {
-        static_.insert("gateway".to_string(), Value::String(gateway.to_string()));
+        .collect()
+}
+
+/// A text field as `Some(trimmed)`, or `None` when it is blank.
+fn optional_field(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+/// A numeric field as `Some(number)`, `None` when blank, and `Err` when it is
+/// neither.
+///
+/// An unparseable number is an error rather than a silent `None`: dropping a
+/// listen port the operator typed would leave a tunnel listening on a
+/// kernel-chosen port and say nothing about it.
+fn parse_optional_u16(value: &str) -> Result<Option<u16>, ()> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
     }
-    static_.insert("dns".to_string(), serde_json::json!(dns));
-    serde_json::json!({ "dhcp": false, "static": static_ })
+    value.parse::<u16>().map(Some).map_err(|_| ())
+}
+
+/// The addressing half of an entry: the static block, or none at all.
+fn addressing(dhcp: bool, address: &str, gateway: &str, dns: &str) -> Option<StaticConfig> {
+    if dhcp || address.is_empty() {
+        return None;
+    }
+    Some(StaticConfig {
+        address: address.to_string(),
+        gateway: optional_field(gateway),
+        dns: comma_list(dns),
+    })
+}
+
+/// A `physical` entry with the given addressing: what the setup wizard's one
+/// interface field makes, and the shape every v6 tree held.
+fn physical_iface_settings(dhcp: bool, address: &str, gateway: &str, dns: &str) -> IfaceSettings {
+    IfaceSettings {
+        kind: IfaceKind::Physical,
+        dhcp,
+        static_: addressing(dhcp, address, gateway, dns),
+        vlan: None,
+        bridge: None,
+        wireguard: None,
+    }
+}
+
+/// The entry a submitted network form describes, or the message to show.
+///
+/// Exactly one kind block is ever set, and it is the one the submitted `kind`
+/// names: the form renders all four groups at once (see [`kind_fields`]), so a
+/// value left in another group's box must not reach the tree. That makes the
+/// reconciler's *"is kind X but carries a Y block"* rule
+/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:341-364`) unreachable from
+/// this path rather than merely checked on it.
+///
+/// `peers` is passed in rather than read off the form: the save form carries no
+/// peer fields, so a rewritten entry keeps the peer list the tree already
+/// holds. Dropping it would disconnect every far end because somebody changed a
+/// listen port.
+fn iface_settings_from_form(
+    form: &NetworkForm,
+    peers: Vec<WireguardPeer>,
+) -> Result<IfaceSettings, String> {
+    let kind_name_submitted = form.kind.trim();
+    let Some(kind) = parse_kind(kind_name_submitted) else {
+        return Err(format!(
+            "{kind_name_submitted:?} is not an interface kind; it must be physical, vlan, bridge or wireguard."
+        ));
+    };
+    let dhcp = form.dhcp.is_some();
+    let address = form.address.trim();
+    validate_iface(form.iface.trim(), dhcp, address)?;
+    let mut cfg = physical_iface_settings(dhcp, address, form.gateway.trim(), &form.dns);
+    cfg.kind = kind;
+    match kind {
+        IfaceKind::Physical => {}
+        IfaceKind::Vlan => {
+            let parent = form.vlan_parent.trim();
+            if parent.is_empty() {
+                return Err(
+                    "A VLAN needs a parent: the name of the declared interface it sits on."
+                        .to_string(),
+                );
+            }
+            // Bounded by the type and by nothing else here. networkd's own
+            // range is narrower, and the reconciler does not check it either
+            // (`os/pkgs/mosd/mosd/src/reconciler/network.rs:565-568` renders
+            // `Id=` from a `u16`), so a bound invented in this file would
+            // refuse a tree the boundary accepts.
+            let Ok(id) = form.vlan_id.trim().parse::<u16>() else {
+                return Err("A VLAN id must be a whole number from 0 to 65535.".to_string());
+            };
+            cfg.vlan = Some(VlanConfig {
+                parent: parent.to_string(),
+                id,
+            });
+        }
+        IfaceKind::Bridge => {
+            cfg.bridge = Some(BridgeConfig {
+                ports: comma_list(&form.bridge_ports),
+            });
+        }
+        IfaceKind::Wireguard => {
+            let Ok(listen_port) = parse_optional_u16(&form.listen_port) else {
+                return Err(
+                    "A WireGuard listen port must be a whole number from 0 to 65535.".to_string(),
+                );
+            };
+            cfg.wireguard = Some(WireguardConfig { listen_port, peers });
+        }
+    }
+    Ok(cfg)
+}
+
+/// True when `value` parses as an IP address with an optional `/prefix`.
+///
+/// An echo of the reconciler's `is_ip_or_cidr`
+/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:272-288`), for the reason
+/// `validate_static` states about the address field: apid checks on its write
+/// path so the operator gets a readable error, and the reconciler checks again
+/// because the settings file is writable without apid. Deliberately not
+/// [`valid_cidr`], which is IPv4-only and belongs to the older address field.
+fn is_ip_or_cidr(value: &str) -> bool {
+    let (addr, prefix) = match value.split_once('/') {
+        Some((addr, prefix)) => (addr, Some(prefix)),
+        None => (value, None),
+    };
+    let Ok(addr) = addr.parse::<IpAddr>() else {
+        return false;
+    };
+    match prefix {
+        None => true,
+        Some(prefix) => prefix
+            .parse::<u8>()
+            .is_ok_and(|p| p <= if addr.is_ipv4() { 32 } else { 128 }),
+    }
+}
+
+/// True when `value` is the `host:port` a peer's `endpoint` has to be.
+///
+/// The same echo, of `is_host_port`
+/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:377-397`).
+fn is_host_port(value: &str) -> bool {
+    let Some((host, port)) = value.rsplit_once(':') else {
+        return false;
+    };
+    if port.parse::<u16>().is_err() {
+        return false;
+    }
+    if let Some(inner) = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    {
+        return inner.parse::<std::net::Ipv6Addr>().is_ok();
+    }
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
+/// Length of the base64 spelling of a 32-byte key, padding included.
+const WIREGUARD_KEY_LEN: usize = 44;
+
+/// Whether `value` is the base64 X25519 key a peer's `publicKey` has to be.
+///
+/// The echo of `wgkeys::is_key` (`os/pkgs/mosd/mosd/src/wgkeys.rs:288-291`),
+/// which decodes with the standard alphabet's *padded* spelling; the length
+/// test is what pins that, because [`mosd_settings::decode_base64`] also
+/// accepts the unpadded form and an echo that accepted more than the boundary
+/// would hand the operator a form error from the daemon instead of from the
+/// field.
+fn is_wireguard_key(value: &str) -> bool {
+    value.len() == WIREGUARD_KEY_LEN
+        && mosd_settings::decode_base64(value).is_some_and(|bytes| bytes.len() == 32)
+}
+
+/// The reconciler's peer rules, echoed for a readable form error.
+///
+/// A rejected peer is named by its index and never by its key, for the reason
+/// the reconciler states: an operator who pasted a *private* key into the field
+/// would otherwise find it in the error text.
+fn validate_peers(iface: &str, peers: &[WireguardPeer]) -> Result<(), String> {
+    for (index, peer) in peers.iter().enumerate() {
+        if !is_wireguard_key(&peer.public_key) {
+            return Err(format!(
+                "network.{iface} peer {index} has a public key that is not a WireGuard key: it must be 32 bytes spelled in base64."
+            ));
+        }
+        for allowed in &peer.allowed_ips {
+            if !is_ip_or_cidr(allowed) {
+                return Err(format!(
+                    "network.{iface} peer {index} allowed IP {allowed:?} is not an IP address or CIDR."
+                ));
+            }
+        }
+        if let Some(endpoint) = &peer.endpoint
+            && !is_host_port(endpoint)
+        {
+            return Err(format!(
+                "network.{iface} peer {index} endpoint {endpoint:?} is not host:port."
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The reconciler's relational rules, echoed over the whole candidate subtree.
+///
+/// Echoed and not forked. `validate_network`
+/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-505`) stays the boundary
+/// — it runs on every apply, including the ones that never went through apid —
+/// and this runs first so the operator reads which field is wrong instead of a
+/// 502 from a failed bus call.
+///
+/// It is checked over the *candidate* tree rather than over the one entry being
+/// written, because every rule here is about two entries at once: a VLAN and
+/// its parent, a bridge and its ports. Editing `eth1` to take an address is
+/// refused when `br0` claims it, which no check confined to `eth1` could see.
+fn validate_entries(entries: &NetworkEntries) -> Result<(), String> {
+    for (iface, cfg) in entries {
+        if let Some(wireguard) = &cfg.wireguard {
+            validate_peers(iface, &wireguard.peers)?;
+        }
+    }
+    // Which bridge claimed each port, so a second claim on one port is an
+    // error rather than a race between two `Bridge=` lines for one file.
+    let mut claimed_by: std::collections::BTreeMap<&str, &str> = std::collections::BTreeMap::new();
+    for (iface, cfg) in entries {
+        if let Some(vlan) = &cfg.vlan
+            && !entries.contains_key(&vlan.parent)
+        {
+            return Err(format!(
+                "network.{iface} has VLAN parent {:?}, which is not a declared network entry.",
+                vlan.parent
+            ));
+        }
+        let Some(bridge) = &cfg.bridge else {
+            continue;
+        };
+        for port in &bridge.ports {
+            let Some(port_cfg) = entries.get(port) else {
+                return Err(format!(
+                    "network.{iface} has bridge port {port:?}, which is not a declared network entry."
+                ));
+            };
+            if port_cfg.dhcp || port_cfg.static_.is_some() {
+                return Err(format!(
+                    "network.{port} is a port of bridge {iface} and must not carry addressing of its own."
+                ));
+            }
+            if let Some(other) = claimed_by.insert(port, iface) {
+                return Err(format!(
+                    "network.{port} is claimed as a port by both bridge {other} and bridge {iface}."
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 // Setup wizard
@@ -1097,10 +1470,14 @@ async fn setup_submit(
         }
     }
     if !iface.is_empty() {
-        let value = iface_settings_value(dhcp, address, form.gateway.trim(), &form.dns);
+        // The wizard's one interface is always physical: it has no kind
+        // control, and a device being set up for the first time has no other
+        // entry for a VLAN parent or a bridge port to name.
+        let settings = physical_iface_settings(dhcp, address, form.gateway.trim(), &form.dns);
+        let value = serde_json::to_value(&settings).expect("interface settings serialize");
         if let Err(err) = state
             .api
-            .set_settings(&format!("network.{iface}"), &value)
+            .set_settings(&iface_settings_path(iface), &value)
             .await
         {
             return bus_error(&err);
@@ -1732,9 +2109,61 @@ async fn builtin_not_found(OriginalUri(uri): OriginalUri) -> Response {
 
 // Network pane
 
+/// The `network` settings subtree, as a map of typed entries.
+///
+/// Parsed into `mosd_settings` types rather than read out of the JSON by key,
+/// so the pane renders exactly the schema mosd deserializes and a field this
+/// file misspells is a compile error rather than a blank input.
+type NetworkEntries = std::collections::BTreeMap<String, IfaceSettings>;
+
+/// The kinds the pane offers, in the order the `<select>` lists them.
+///
+/// `physical` first because it is the default and the only kind a v6 tree ever
+/// had; the three virtual kinds follow in the order `docs/task/RFCT-200.md` §2
+/// introduces them.
+const IFACE_KINDS: [IfaceKind; 4] = [
+    IfaceKind::Physical,
+    IfaceKind::Vlan,
+    IfaceKind::Bridge,
+    IfaceKind::Wireguard,
+];
+
+/// The spelling a kind has in the settings file and in the form.
+///
+/// The same four strings `mosd`'s reconciler uses, because they are what
+/// `IfaceKind`'s `rename_all = "lowercase"` serializes; a fifth spelling here
+/// would be a form that writes a kind mosd cannot read.
+fn kind_name(kind: IfaceKind) -> &'static str {
+    match kind {
+        IfaceKind::Physical => "physical",
+        IfaceKind::Vlan => "vlan",
+        IfaceKind::Bridge => "bridge",
+        IfaceKind::Wireguard => "wireguard",
+    }
+}
+
+/// The kind `name` spells, or `None` when it spells none of them.
+///
+/// An empty string is `physical`: the setup wizard's interface form carries no
+/// kind control at all, and an absent kind means the default everywhere else
+/// in the schema.
+fn parse_kind(name: &str) -> Option<IfaceKind> {
+    if name.is_empty() {
+        return Some(IfaceKind::Physical);
+    }
+    IFACE_KINDS
+        .into_iter()
+        .find(|kind| kind_name(*kind) == name)
+}
+
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct NetworkForm {
     iface: String,
+    /// Absent from the setup wizard's form, which only ever makes a physical
+    /// interface; empty there and read as `physical`.
+    #[serde(default)]
+    kind: String,
     dhcp: Option<String>,
     #[serde(default)]
     address: String,
@@ -1742,6 +2171,148 @@ struct NetworkForm {
     gateway: String,
     #[serde(default)]
     dns: String,
+    #[serde(default)]
+    vlan_parent: String,
+    #[serde(default)]
+    vlan_id: String,
+    #[serde(default)]
+    bridge_ports: String,
+    #[serde(default)]
+    listen_port: String,
+}
+
+/// One peer, as the add form submits it.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PeerAddForm {
+    iface: String,
+    public_key: String,
+    #[serde(default)]
+    allowed_ips: String,
+    #[serde(default)]
+    endpoint: String,
+    #[serde(default)]
+    persistent_keepalive: String,
+}
+
+/// A peer named for removal.
+///
+/// By public key, the way the SSH pane removes by fingerprint: a peer's public
+/// key is a stable handle that is public by definition, so it can sit in a
+/// hidden field without putting anything secret on the page. An index would
+/// name a different peer the moment two browser tabs disagree about the list.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PeerRemoveForm {
+    iface: String,
+    public_key: String,
+}
+
+/// Everything the network pane renders, gathered before any markup is built.
+struct NetworkView {
+    /// The entries that parsed, keyed by interface name.
+    entries: NetworkEntries,
+    /// Names present in the tree whose bodies did not parse. They are listed
+    /// so an operator can see that the pane is not showing everything, and
+    /// they get no form: a form rendered from a body this code could not read
+    /// would write back a guess.
+    unreadable: Vec<String>,
+    /// Live state published by mosd's network reconciler, absent when mosd has
+    /// published none yet.
+    state: Option<Value>,
+    /// Why the settings or the live state could not be read, if either failed.
+    problems: Vec<String>,
+}
+
+impl NetworkView {
+    /// The live-state object mosd published for `iface`.
+    fn live(&self, iface: &str) -> Option<&Value> {
+        self.state.as_ref()?.get(iface)
+    }
+
+    /// A string field of `iface`'s live-state object.
+    fn live_str(&self, iface: &str, field: &str) -> Option<&str> {
+        self.live(iface)?.get(field)?.as_str()
+    }
+}
+
+/// Split the `network` subtree into the entries that parse and the names that
+/// do not.
+///
+/// Per entry and not whole-subtree, because the two failure modes are
+/// different: one hand-edited body must not blank out every other interface's
+/// form. A body that does not parse is named and skipped.
+fn parse_network(network: &Value) -> (NetworkEntries, Vec<String>) {
+    let empty = serde_json::Map::new();
+    let mut entries = NetworkEntries::new();
+    let mut unreadable = Vec::new();
+    for (name, body) in network.as_object().unwrap_or(&empty) {
+        match serde_json::from_value::<IfaceSettings>(body.clone()) {
+            Ok(cfg) => {
+                entries.insert(name.clone(), cfg);
+            }
+            Err(_) => unreadable.push(name.clone()),
+        }
+    }
+    (entries, unreadable)
+}
+
+/// Load the settings half and the live-state half of the pane.
+///
+/// A failure to read `network` is fatal to the pane (there is nothing to
+/// show); a failure to read the live state is not, because the stored
+/// configuration is still worth showing and mosd may simply not have
+/// reconciled yet. The same split `load_ssh_view` makes.
+async fn load_network_view(app: &AppState) -> anyhow::Result<NetworkView> {
+    let network = app.api.get_settings("network").await?;
+    let (entries, unreadable) = parse_network(&network);
+    let mut problems = Vec::new();
+    let state = match app.api.get_state("network").await {
+        Ok(value) => Some(value),
+        Err(err) => {
+            problems.push(format!("Live network state unavailable: {err}"));
+            None
+        }
+    };
+    Ok(NetworkView {
+        entries,
+        unreadable,
+        state,
+        problems,
+    })
+}
+
+/// The peers of `iface`, read for a handler that is about to rewrite them.
+///
+/// Read at submit time rather than carried through the form: a peer list in a
+/// hidden field is a list two tabs can fight over, and the peer routes rewrite
+/// exactly one interface's list.
+async fn stored_peers(app: &AppState, iface: &str) -> anyhow::Result<Vec<WireguardPeer>> {
+    let network = app.api.get_settings("network").await?;
+    let (entries, _) = parse_network(&network);
+    Ok(entries
+        .get(iface)
+        .and_then(|cfg| cfg.wireguard.as_ref())
+        .map(|wireguard| wireguard.peers.clone())
+        .unwrap_or_default())
+}
+
+/// Re-render the pane with `message` in an error box, at 422.
+async fn network_error(app: &AppState, message: &str) -> Response {
+    match load_network_view(app).await {
+        Ok(view) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            network_page(&view, Some(error_box(message))),
+        )
+            .into_response(),
+        Err(err) => bus_error(&err),
+    }
+}
+
+/// The dot-path of `iface`'s peer list, with the name quoted when it carries a
+/// dot: a tunnel named `wg.0` is `network."wg.0".wireguard.peers`.
+fn peers_settings_path(iface: &str) -> String {
+    format!("{}.wireguard.peers", iface_settings_path(iface))
 }
 
 /// Display fields for one configured interface's form.
@@ -1752,49 +2323,147 @@ struct IfaceDisplay {
     dns: String,
 }
 
-fn iface_display(cfg: &Value) -> IfaceDisplay {
-    let static_ = cfg.get("static");
-    let field = |name: &str| {
-        static_
-            .and_then(|s| s.get(name))
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    };
+fn iface_display(cfg: &IfaceSettings) -> IfaceDisplay {
+    let static_ = cfg.static_.as_ref();
     IfaceDisplay {
-        dhcp: cfg.get("dhcp").and_then(Value::as_bool).unwrap_or(false),
-        address: field("address"),
-        gateway: field("gateway"),
-        dns: static_
-            .and_then(|s| s.get("dns"))
-            .and_then(Value::as_array)
-            .map(|list| {
-                list.iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-            .unwrap_or_default(),
+        dhcp: cfg.dhcp,
+        address: static_.map(|s| s.address.clone()).unwrap_or_default(),
+        gateway: static_.and_then(|s| s.gateway.clone()).unwrap_or_default(),
+        dns: static_.map(|s| s.dns.join(", ")).unwrap_or_default(),
     }
 }
 
-fn network_page(network: &Value, banner: Option<Markup>) -> Html<String> {
-    let empty = serde_json::Map::new();
-    let ifaces = network.as_object().unwrap_or(&empty);
+/// Render the typed inputs for every kind at once, with the current values
+/// filled in.
+///
+/// All four groups are always in the markup rather than hidden behind the
+/// selected kind, because this pane ships no JavaScript (§6.2 compiles the
+/// built-in UI into the binary as markup and one stylesheet) and a group that
+/// only appears after a reload cannot be filled in on the same visit. The
+/// handler reads only the group the submitted kind names, so a value left in
+/// another group's box is never written.
+fn kind_fields(kind: IfaceKind, cfg: Option<&IfaceSettings>) -> Markup {
+    let vlan = cfg.and_then(|cfg| cfg.vlan.as_ref());
+    let bridge = cfg.and_then(|cfg| cfg.bridge.as_ref());
+    let wireguard = cfg.and_then(|cfg| cfg.wireguard.as_ref());
+    html! {
+        p { label { "Kind" } " "
+            select name="kind" {
+                @for candidate in IFACE_KINDS {
+                    option value=(kind_name(candidate)) selected[candidate == kind] {
+                        (kind_name(candidate))
+                    }
+                }
+            }
+        }
+        p { label { "VLAN parent (kind vlan)" } " "
+            input type="text" name="vlanParent"
+                value=(vlan.map_or("", |vlan| vlan.parent.as_str())) placeholder="eth0"; }
+        p { label { "VLAN id (kind vlan)" } " "
+            input type="text" name="vlanId"
+                value=(vlan.map_or(String::new(), |vlan| vlan.id.to_string())) placeholder="100"; }
+        p { label { "Bridge ports (kind bridge, comma-separated)" } " "
+            input type="text" name="bridgePorts"
+                value=(bridge.map_or(String::new(), |bridge| bridge.ports.join(", "))) placeholder="eth1, eth2"; }
+        p { label { "WireGuard listen port (kind wireguard, optional)" } " "
+            input type="text" name="listenPort"
+                value=(wireguard.and_then(|wg| wg.listen_port).map_or(String::new(), |port| port.to_string()))
+                placeholder="51820"; }
+    }
+}
+
+/// The live-state facts mosd published for one interface.
+///
+/// `kind` and, for a tunnel, `publicKey`: the two fields M5 added to the
+/// per-interface state object. There is no private key here and no route that
+/// would produce one — the public half is what the far end needs and is public
+/// by definition.
+fn live_state_markup(view: &NetworkView, iface: &str) -> Markup {
+    html! {
+        @if let Some(live) = view.live(iface) {
+            p {
+                "Live: kind " b { (view.live_str(iface, "kind").unwrap_or("unknown")) }
+                @if let Some(file) = view.live_str(iface, "file") { ", unit " code { (file) } }
+                @if live.get("dhcp").and_then(Value::as_bool) == Some(true) { ", DHCP" }
+            }
+            @if let Some(public_key) = view.live_str(iface, "publicKey") {
+                p { "Public key: " code { (public_key) } }
+                p { "The private half is on this device in a file only systemd-networkd can read. It is never shown here, never in the API, and there is no route that returns one." }
+            }
+        } @else {
+            p { "Live: mosd has published no state for this interface yet." }
+        }
+    }
+}
+
+/// One tunnel's peer list, with a remove control per peer and an add form.
+fn peers_markup(iface: &str, wireguard: Option<&WireguardConfig>) -> Markup {
+    let peers = wireguard.map_or(&[][..], |wireguard| wireguard.peers.as_slice());
+    html! {
+        h3 { "Peers of " (iface) }
+        @if peers.is_empty() {
+            p { "No peers. A tunnel with no peers is a link that could never carry a packet, and the reconciler renders it but nothing reaches the far end." }
+        } @else {
+            ul {
+                @for peer in peers {
+                    li {
+                        code { (peer.public_key) }
+                        @if !peer.allowed_ips.is_empty() { " → " (peer.allowed_ips.join(", ")) }
+                        @if let Some(endpoint) = &peer.endpoint { " via " (endpoint) }
+                        @if let Some(keepalive) = peer.persistent_keepalive { " keepalive " (keepalive) "s" }
+                        form method="post" action="/network/peers/remove" {
+                            input type="hidden" name="iface" value=(iface);
+                            input type="hidden" name="publicKey" value=(peer.public_key);
+                            button type="submit" { "Remove" }
+                        }
+                    }
+                }
+            }
+        }
+        form method="post" action="/network/peers/add" {
+            fieldset {
+                legend { "Add a peer to " (iface) }
+                input type="hidden" name="iface" value=(iface);
+                p { label { "Public key (base64, 32 bytes)" } " "
+                    input type="text" name="publicKey" size="60" required; }
+                p { label { "Allowed IPs (comma-separated)" } " "
+                    input type="text" name="allowedIps" placeholder="10.8.0.0/24"; }
+                p { label { "Endpoint (optional, host:port)" } " "
+                    input type="text" name="endpoint" placeholder="vpn.example.net:51820"; }
+                p { label { "Persistent keepalive seconds (optional)" } " "
+                    input type="text" name="persistentKeepalive" placeholder="25"; }
+                p { button type="submit" { "Add peer" } }
+            }
+        }
+    }
+}
+
+fn network_page(view: &NetworkView, banner: Option<Markup>) -> Html<String> {
     pane(
         "Network",
         html! {
             @if let Some(banner) = banner { (banner) }
-            @if ifaces.is_empty() { p { "No interfaces configured." } }
-            @for (name, cfg) in ifaces {
+            @for problem in &view.problems { (error_box(problem)) }
+            @for name in &view.unreadable {
+                (error_box(&format!(
+                    "network.{name} holds a body this pane cannot read, so it is not shown and not editable here. Fix it in the settings file."
+                )))
+            }
+            @if view.entries.is_empty() { p { "No interfaces configured." } }
+            @for (name, cfg) in &view.entries {
                 form method="post" action="/network" {
                     fieldset {
                         legend { (name) }
                         input type="hidden" name="iface" value=(name);
                         @let display = iface_display(cfg);
                         (iface_fields(display.dhcp, &display.address, &display.gateway, &display.dns))
+                        (kind_fields(cfg.kind, Some(cfg)))
+                        (live_state_markup(view, name))
                         p { button type="submit" { "Save" } }
                     }
+                }
+                @if cfg.kind == IfaceKind::Wireguard {
+                    (peers_markup(name, cfg.wireguard.as_ref()))
                 }
             }
             form method="post" action="/network" {
@@ -1803,6 +2472,7 @@ fn network_page(network: &Value, banner: Option<Markup>) -> Html<String> {
                     p { label { "Interface name" } " "
                         input type="text" name="iface" placeholder="eth0"; }
                     (iface_fields(false, "", "", ""))
+                    (kind_fields(IfaceKind::Physical, None))
                     p { button type="submit" { "Add" } }
                 }
             }
@@ -1811,34 +2481,128 @@ fn network_page(network: &Value, banner: Option<Markup>) -> Html<String> {
 }
 
 async fn network_form(State(state): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
-    match state.api.get_settings("network").await {
-        Ok(network) => {
+    match load_network_view(&state).await {
+        Ok(view) => {
             let banner = query.saved.is_some().then(saved_banner);
-            network_page(&network, banner).into_response()
+            network_page(&view, banner).into_response()
         }
         Err(err) => bus_error(&err),
     }
 }
 
 async fn network_submit(State(state): State<AppState>, Form(form): Form<NetworkForm>) -> Response {
-    let iface = form.iface.trim();
-    let dhcp = form.dhcp.is_some();
-    let address = form.address.trim();
-    if let Err(message) = validate_iface(iface, dhcp, address) {
-        let network = match state.api.get_settings("network").await {
-            Ok(value) => value,
-            Err(err) => return bus_error(&err),
-        };
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            network_page(&network, Some(error_box(message))),
-        )
-            .into_response();
+    let iface = form.iface.trim().to_string();
+    let view = match load_network_view(&state).await {
+        Ok(view) => view,
+        Err(err) => return bus_error(&err),
+    };
+    // The peers this form does not carry. A save that dropped them would
+    // silently disconnect every far end because the operator changed a listen
+    // port.
+    let peers = view
+        .entries
+        .get(&iface)
+        .and_then(|cfg| cfg.wireguard.as_ref())
+        .map(|wireguard| wireguard.peers.clone())
+        .unwrap_or_default();
+    let cfg = match iface_settings_from_form(&form, peers) {
+        Ok(cfg) => cfg,
+        Err(message) => return network_error(&state, &message).await,
+    };
+    // The candidate tree, not the one entry: every relational rule below is
+    // about two entries at once.
+    let mut candidate = view.entries.clone();
+    candidate.insert(iface.clone(), cfg.clone());
+    if let Err(message) = validate_entries(&candidate) {
+        return network_error(&state, &message).await;
     }
-    let value = iface_settings_value(dhcp, address, form.gateway.trim(), &form.dns);
+    // Infallible: `IfaceSettings` is a struct of scalars, strings and vectors
+    // with no map keys that could collide.
+    let value = serde_json::to_value(&cfg).expect("interface settings serialize");
     if let Err(err) = state
         .api
-        .set_settings(&format!("network.{iface}"), &value)
+        .set_settings(&iface_settings_path(&iface), &value)
+        .await
+    {
+        return bus_error(&err);
+    }
+    Redirect::to("/network?saved=1").into_response()
+}
+
+async fn network_peer_add(
+    State(state): State<AppState>,
+    Form(form): Form<PeerAddForm>,
+) -> Response {
+    let iface = form.iface.trim().to_string();
+    let peer = WireguardPeer {
+        public_key: form.public_key.trim().to_string(),
+        allowed_ips: comma_list(&form.allowed_ips),
+        endpoint: optional_field(&form.endpoint),
+        persistent_keepalive: match parse_optional_u16(&form.persistent_keepalive) {
+            Ok(value) => value,
+            Err(()) => {
+                return network_error(
+                    &state,
+                    "Persistent keepalive must be a whole number of seconds from 0 to 65535.",
+                )
+                .await;
+            }
+        },
+    };
+    let mut peers = match stored_peers(&state, &iface).await {
+        Ok(peers) => peers,
+        Err(err) => return bus_error(&err),
+    };
+    if peers
+        .iter()
+        .any(|other| other.public_key == peer.public_key)
+    {
+        return network_error(
+            &state,
+            "That public key is already a peer of this tunnel. Remove it first to change it.",
+        )
+        .await;
+    }
+    peers.push(peer);
+    write_peers(&state, &iface, &peers).await
+}
+
+async fn network_peer_remove(
+    State(state): State<AppState>,
+    Form(form): Form<PeerRemoveForm>,
+) -> Response {
+    let iface = form.iface.trim().to_string();
+    let public_key = form.public_key.trim();
+    let mut peers = match stored_peers(&state, &iface).await {
+        Ok(peers) => peers,
+        Err(err) => return bus_error(&err),
+    };
+    let before = peers.len();
+    peers.retain(|peer| peer.public_key != public_key);
+    if peers.len() == before {
+        return network_error(
+            &state,
+            "No peer of this tunnel has that public key; the list may have changed since the page was loaded.",
+        )
+        .await;
+    }
+    write_peers(&state, &iface, &peers).await
+}
+
+/// Validate and write a rewritten peer list.
+///
+/// The same shape `write_key_list` has for the SSH pane: the reconciler's own
+/// rule is echoed here for a readable error, and the write goes to the peer
+/// list's own dot-path rather than rewriting the whole entry.
+async fn write_peers(app: &AppState, iface: &str, peers: &[WireguardPeer]) -> Response {
+    if let Err(message) = validate_peers(iface, peers) {
+        return network_error(app, &message).await;
+    }
+    // Infallible: a peer is a struct of strings and integers.
+    let value = serde_json::to_value(peers).expect("wireguard peers serialize");
+    if let Err(err) = app
+        .api
+        .set_settings(&peers_settings_path(iface), &value)
         .await
     {
         return bus_error(&err);

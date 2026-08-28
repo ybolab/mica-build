@@ -116,7 +116,7 @@ on it, and one is functional:
 
 ## Reported, not acted on
 
-- `os/pkgs/mosd/Cargo.toml:42-44` still pins `tough = "=0.18.0"` although no
+- `os/pkgs/mosd/Cargo.toml:51-53` still pins `tough = "=0.18.0"` although no
   member declares it and it has left the lock. Not removed here: `api.md:3462`
   cited those exact lines, and deleting them would have shifted every line below
   under a citation. M5 was licensed to remove it, queried that licence, and the

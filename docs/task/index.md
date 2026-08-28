@@ -200,3 +200,13 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-180 PLAN-021 M1: the quick-fix batch**](RFCT-180.md) `P2`
 - [x] [**RFCT-190 PLAN-021 M3a: the os tree ghost-reference sweep — provenance and board tokens**](RFCT-190.md) `P2`
 - [x] [**RFCT-191 PLAN-021 M3b: docs ghost sweep, recorded residuals, owner sweep and gate repairs**](RFCT-191.md) `P2`
+- [x] [**RFCT-200 PLAN-022 M1: native networking design - VLAN, bridge, WireGuard**](RFCT-200.md) `P1`
+- [x] [**RFCT-201 PLAN-022 M2: quoted-segment path syntax**](RFCT-201.md) `P1`
+- [x] [**RFCT-202 PLAN-022 M3: schema v7 - interface kinds**](RFCT-202.md) `P1`
+- [x] [**RFCT-203 PLAN-022 M4: VLAN and bridge reconcile**](RFCT-203.md) `P1`
+- [x] [**RFCT-204 PLAN-022 M5: WireGuard keystore and tunnel reconcile**](RFCT-204.md) `P1`
+- [x] [**RFCT-205 PLAN-022 M6: the apid surface - panes, rotate route, redaction, OpenAPI**](RFCT-205.md) `P1`
+- [x] [**RFCT-206 PLAN-022 M7: kernel fragment and on-image proof**](RFCT-206.md) `P1`
+- [x] [**RFCT-207 PLAN-022 M8: the design documents, made true**](RFCT-207.md) `P1`
+- [x] [**RFCT-208 PLAN-022 records brought green under PLAN-020's hardened docs gates**](RFCT-208.md) `P2`
+- [x] [**RFCT-209 Reconciling PLAN-021 with PLAN-022: fourteen conflicted files, one tree**](RFCT-209.md) `P1`

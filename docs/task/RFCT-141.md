@@ -17,7 +17,7 @@ only inside `if let Some(root) = active_root(..)`. Every device the suite runs
 against has no bundle at `/srv/ui`, so `active_root` is `None` and not one line
 of the guard set executes. The phase says so in its own header rather than
 letting the result read as coverage
-(`test/apid-api/src/phases/04-readonly.ts:168-186`).
+(`test/apid-api/src/phases/04-readonly.ts:189-209`).
 
 The 404s the phase does observe come from the static-asset fallback's
 `offers_html()` and `ends_in_a_route_segment()` conditions and from nowhere
