@@ -1,9 +1,10 @@
 # RFCT-215 PLAN-023 closeout: api.md section 1 re-measured against the final surface
 
-- **status**: in progress
+- **status**: completed — section 1 rebuilt from `app()` and `api_router()` (59 declared pairs, not 30; 27 under `/api`, not 4), the false quotation and 204 bare continuations replaced with gate-checkable full-form citations, section 1 now carrying none of the no-slash form; §2's introduction, §2.1's counts and §2.4's heading and re-audited Ships? table follow; six residue items re-measured and recorded, not fixed; 2170/2170 citations, 863/863 index, 836/836 Rust, oasdiff RC=0
 - **priority**: P1
 - **owner**: bkd/yyssrqns
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (closeout)
 
 The terminal task of PLAN-023. M1-M9 have merged: the write surface exists, the
@@ -163,13 +164,28 @@ by the seventeen-row audit above, every row citing the constructing line.
 
 The corrected rule — *the side holding content re-derivations wins, because
 they cannot be recovered mechanically; the side holding shifts loses, because
-they can* — did not have to be applied to a merge in this task: `bkd/vu5b6kk0`
-was an ancestor of this branch at cut, so the required
-`git merge bkd/vu5b6kk0` was a fast-forward and no citation conflict arose.
-The test the rule prescribes was still run, and its answer is why:
+they can* — did not have to arbitrate a conflict in this task, and the test the
+rule prescribes is why. There were two merges of `bkd/vu5b6kk0`.
+
+The first, at the start, was a **fast-forward**: this branch was cut from the
+same commit L2 then stood on, so there was nothing to reconcile.
 
     $ git merge-base HEAD bkd/vu5b6kk0
     77a32789d43bc3ce1d8abb26374aaaf672506369      # == HEAD before the merge
+
+The second, at the end, brought in L2's dated-note commit on RFCT-245. The
+rule's test was run on it before merging:
+
+    $ git diff --stat $(git merge-base HEAD bkd/vu5b6kk0) bkd/vu5b6kk0 -- os/
+    (empty)
+    $ git diff --stat $(git merge-base HEAD bkd/vu5b6kk0) bkd/vu5b6kk0
+     docs/task/RFCT-245.md | 16 ++++++++++++++++
+
+The incoming side changed no code, so under the corrected rule every citation
+change it carried would have had to be **carried, not discarded**. It carried
+none, and it touched one file this task had not, so the merge was clean and the
+rule cost nothing here. It is recorded because the test, not the outcome, is
+the part that has to be repeated next time.
 
 The rule that *was* applied is the one about this task's own edit. Rewriting
 section 1 moves every line below it in `docs/design/api.md`, and other
@@ -185,21 +201,29 @@ citation anywhere in the document* — M8's rule, under which it reported
 209/146 and could not reproduce M7's 184 under any scoping.
 
 **Bare continuations are RFCT-214's census and were not swept.** This delta
-moves them only where it rewrote the prose around them:
-`docs/design/api.md` carried **377** bare continuations at this branch's claim
-commit and carries **192** now — **185 removed**, all of them inside section 1,
-replaced by full-form citations the gate can resolve. None was re-pointed while
-staying bare except the ones inside rewritten sentences. The count in
-`docs/task/RFCT-210.md` is unchanged at 17.
+moves them only where it rewrote the prose around them. Counted as
+`` `:NNN` `` and `` `:NNN-MMM` `` tokens — a form the gate's token regex does
+not match at all, so it appears in no line of the gate's own summary:
 
-**The no-slash form.** `docs/design/api.md` carried **42** tokens of the
-`routes.rs:2545` shape and carries **34**; the eight removed are the eight that
-were inside section 1, together with the twenty `bus_client.rs:`/`model.rs:`
-tokens beside them. Section 1 now carries **fourteen** no-slash tokens, all in
-§1.5, and all of them were re-derived to full form in this pass — the fourteen
-that remain are `model.rs:` tokens in prose outside the table. The rest of the
-corpus is recorded for the gate backlog and was not touched: **513** no-slash
-tokens corpus-wide at this HEAD.
+| | pre-image `c21a2d4` | this HEAD |
+|---|---|---|
+| `docs/design/api.md`, whole file | 377 | 168 |
+| `docs/design/api.md`, section 1 only | 235 | 31 |
+| `docs/task/RFCT-210.md` | 17 | 17 |
+
+**209 removed from api.md, 204 of them inside section 1**, each replaced by a
+full-form citation the gate resolves and, wherever an adjacent literal exists,
+content-checks. None was re-pointed while staying bare except inside sentences
+this task rewrote. RFCT-210's count is untouched, as M9 also left it.
+
+**The no-slash form.** This one the gate does count, as *"skipped, bare
+filename with no directory to resolve against"*: **416** corpus-wide at the
+pre-image, **393** now. In `docs/design/api.md` the `routes.rs:NNNN` shape went
+from 42 tokens to 34, and **section 1 now carries none at all** — the eight
+`routes.rs:` and twenty `bus_client.rs:` tokens in §1.2/§1.3 went with the
+table rewrites, and §1.5's fourteen `model.rs:` tokens were re-derived to full
+form with the settings-subtree table. The 393 that remain are outside section 1
+and are recorded for the gate backlog, not fixed here.
 
 ## 6. Residue: code defects the campaign measured and deliberately left open
 
@@ -272,3 +296,33 @@ memory of a report.
   task was given in §2.1 and §2.4 and the §2 introduction they depend on.
 - RFCT-214's bare-continuation census outside section 1, and the no-slash
   citation backlog outside section 1. Both are measured in section 5 and left.
+
+## 8. Gates
+
+| gate | result |
+|---|---|
+| `bash docs/verify-citations.sh` | **2170/2170 PASS** |
+| `bash docs/verify-index.sh` | **863/863 PASS** |
+| `bash hack/check.sh`, unmodified, in `localhost/mos-build-rust:amd64` | **836 tests run: 836 passed, 0 skipped**; `ALL CHECKS PASSED` |
+| oasdiff 1.29.1 `breaking --fail-on ERR` vs `main` at `77a3278` | **RC=0** |
+
+The container was confirmed `amd64` by
+`docker image inspect --format '{{.Architecture}}'` before any result from it
+was believed, and `dbus` was installed in it so the bus round-trip test could
+run. `bash -c`, never `bash -lc`.
+
+**The Rust gate is a pure regression check.** Nothing under `os/pkgs/mosd/` was
+edited by this task, so 836 is the count it must stay at, and it did — the same
+836 M9 closed on. `git diff --stat <L2 tip> HEAD -- os/` is empty.
+
+**The citation count moved a long way and the reason is the point.** 1713 at
+the pre-image, 2170 now. The growth is not new prose: it is section 1's detail
+citations changing from forms the gate skips — 204 bare continuations and 42
+no-slash tokens — into full-form citations it resolves, plus this record's own.
+The bare-filename skip count fell 416 → 393 in the same pass, and the census
+floors were raised to the measured counts in the commit that raised them.
+
+**The unquoted ceiling moved 434 → 452** for `docs/design/api.md`, raised in
+the same commit as the change, which is the ratchet's own override procedure.
+The net is a document with 18 more unquoted citations and 246 fewer unresolved
+ones. `docs/task/RFCT-215.md` takes a ceiling of 8.

@@ -237,4 +237,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-244 PLAN-023 M8: POST /api/v1/setup**](RFCT-244.md) `P1`
 - [x] [**RFCT-245 PLAN-023 M9: the cookie cutover on /api/v1/**](RFCT-245.md) `P1`
 - [x] [**RFCT-246 PLAN-023 M9 prerequisite: test/apid-api drives bearer end to end**](RFCT-246.md) `P1`
-- [-] [**RFCT-215 PLAN-023 closeout: api.md section 1 re-measured against the final surface**](RFCT-215.md) `P1`
+- [x] [**RFCT-215 PLAN-023 closeout: api.md section 1 re-measured against the final surface**](RFCT-215.md) `P1`
