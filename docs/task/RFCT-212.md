@@ -272,6 +272,19 @@ Ten tests, all in `os/pkgs/mosd/apid/src/tests.rs` except the last:
 
 ## 8. What was deferred
 
+**One thing left alone, deliberately.** §1.2's route table cites lines with the
+bare `` `:N` `` shorthand, and those numbers were already stale before this task
+touched anything: at `8f080dc` the table cites `GET /` at `:120` where
+`.route("/", get(serve::root))` was line 137, `GET /healthz` at `:173` where
+`.route("/healthz", get(healthz))` was line 195, and `api_router` at `:261`
+where the function began at line 307. The shorthand carries no path, so
+`docs/verify-citations.sh` skips it by rule and no gate has ever held it. It is
+in §1.2, which is outside this task's write scope, and the drift is not this
+task's — re-anchoring it here would mix an unrelated repair into a milestone and
+would still leave §1.2's *"Four declared routes"* claim, falsified by PLAN-021
+and PLAN-022 before this, untouched. Recorded so the next reader of §1.2 knows
+it was seen rather than missed.
+
 `test/apid-api/**` gained no phase. The on-image suite needs a rebuilt image and
 a QEMU boot, which is outside this milestone's gate set, and the property a
 phase would assert — that the route works against a real mosd over a real bus —
