@@ -1,6 +1,7 @@
 # RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections
 
-- **status**: in progress
+- **status**: completed — both collections serve GET/POST/DELETE, the 404-vs-422 contract is inherited from the shared helper with the paired cross-surface tests, the redaction sentinel is refused before the shape check, and every gate is green: 784/784, 1539/1539 citations, 776/776 index, oasdiff RC=0 against both bases
+- **completedAt**: 2026-08-28
 - **priority**: P1
 - **owner**: bkd/jw8lxe0t
 - **createdAt**: 2026-08-28
@@ -169,3 +170,99 @@ six paths `every_other_api_path_keeps_both_of_its_answers` held to the reserved
 subtree's not-found envelope. It is now a served collection, so the entry was
 removed and the array is five. That is the one existing test this milestone
 changes, and it changed because the route it asserted the absence of now exists.
+
+## 7. Tests
+
+Sixteen, all asserted by name against the run log rather than inferred from a
+matching total.
+
+| Test | What it holds |
+|---|---|
+| `the_ssh_key_collection_lists_adds_and_removes` | the collection end to end, the fingerprint checked against `ssh-keygen`'s own output |
+| `the_root_key_notice_is_on_the_listing_and_on_the_add` | section 2.5's `notice` requirement, on both answers |
+| `the_key_add_runs_the_same_parser_the_pane_runs` | four rejected lines refused by both surfaces, nothing written |
+| `a_duplicate_key_is_refused_by_the_shared_validator` | a key relabelled and re-posted is one key |
+| `an_absent_key_fingerprint_is_404_where_the_pane_is_422` | the API half of the split |
+| `the_ssh_pane_answers_422_where_the_api_answers_404` | the HTML half, on the same condition |
+| `a_fingerprint_carrying_a_slash_is_addressable_percent_encoded` | `%2F` round-trips; unencoded reaches the reservation |
+| `the_wifi_network_collection_lists_adds_and_removes` | the collection end to end, open networks included |
+| `a_posted_psk_is_redacted_on_the_next_read` | and through the settings root too, so it is one rule |
+| `posting_a_redacted_psk_back_is_refused_and_the_stored_key_survives` | the destructive round trip |
+| `a_second_network_under_one_ssid_is_refused` | 409 `ssid_exists`, nothing written |
+| `a_body_that_is_not_a_network_is_422` | five bad shapes at 422, unreadable JSON at 400 |
+| `an_absent_ssid_is_404_and_this_collection_has_no_pane_to_disagree_with` | the 404, and the absence of a pane, read out of the router's source |
+| `the_two_collections_take_a_cookie_or_a_bearer_and_401_without_either` | Amendment 1's reading, and 401 rather than a redirect |
+| `the_openapi_document_covers_the_two_collections` | every operation and every documented status |
+| `the_wifi_schema_matches_the_settings_model` | the documented entry against `mosd_settings::WifiNetwork`'s own field set |
+
+**The arithmetic: 768 + 16 = 784.** Sixteen added, none removed —
+`git diff` over `apid/src/tests.rs` counts 14 added `#[tokio::test]` and 2 added
+`#[test]`, and zero removed. Note that a naive `#[tokio::test]` census
+under-counts this tree by the 18 tests written
+`#[tokio::test(flavor = "multi_thread")]`; both spellings were counted.
+
+Two existing tests changed, both because a path they asserted was *absent* is
+now served: `every_other_api_path_keeps_both_of_its_answers` lost
+`/api/v1/ssh/authorized-keys` from its `UNDECLARED` array, and
+`the_api_reservation_answers_every_shape_with_the_envelope` traded
+`/api/v1/wifi/client/networks` for that route's prefix and its trailing-slash
+spelling — neither of which this router serves, so both still hold the
+reservation.
+
+## 8. Citations
+
+`routes.rs`, `tests.rs`, `openapi.rs` and `openapi.json` all moved, so the
+citations into them were re-anchored mechanically, in a commit of its own that
+changes numbers and nothing else.
+
+**Both forms, with counts per form.**
+
+- **Full form** (`` `path:line` ``), the form the gate checks: **371** in scope.
+  **280** rewritten, **82** already correct because they sat above every
+  insertion, and **9** refused by the mechanical rule and resolved by hand.
+- **Bare continuation form** (`` `:NNN` ``): **1142** in the scanned documents,
+  of which **171** have `os/pkgs/mosd/apid/src/routes.rs` as their antecedent.
+  **All 171 were left alone.** They are RFCT-214's by census, the gate does not
+  check them at all, and none of them was correct before this change either —
+  re-pointing them here would be inventing an anchor rather than moving one.
+
+**No constant offset was assumed.** The map is built per hunk from
+`git diff -U0`; the insertions land in five separate places in `routes.rs`
+alone, so a single offset would be wrong for every band but the last.
+
+**The alignment trap was refused, not worked around.** Nine citations named
+ranges that straddle an insertion — `api_router()` (four), `is_declared_api_route`
+and its helpers (two), and the whole `paths` object of `openapi.json` (three).
+The mechanical rule declines those, and each was resolved by hand and then
+checked: the new range begins and ends on the byte-identical line the old one
+did, and contains every line the old range did with nothing removed.
+
+**The pre-image was verified right before anything was rewritten.**
+`bash docs/verify-citations.sh` was run at the merge commit, before any code
+edit, and reported `1537/1537 PASS`; only then was each citation classified
+against that pre-image. Every rewritten citation additionally had its pre-image
+text compared byte for byte against the text at its mapped lines, and a mismatch
+would have been refused rather than rewritten. None was.
+
+## 9. Gates
+
+All four, at `HEAD` of `bkd/jw8lxe0t`.
+
+| Gate | Result |
+|---|---|
+| `bash docs/verify-citations.sh` | `1539/1539 PASS` |
+| `bash docs/verify-index.sh` | `776/776 PASS` |
+| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | `Summary [61.863s] 784 tests run: 784 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
+| `oasdiff breaking … --fail-on ERR --severity-levels …` | `No breaking changes to report`, `RC=0`, against **both** the pre-M5 spec on this branch and `main`'s |
+
+The gate script ran unmodified. Two things sit around it and neither touches it:
+`dbus` is installed in the container first, without which the bus round-trip
+test exits 100, and the builder image was confirmed to report `amd64` before any
+result from it was believed. oasdiff is the 1.29.1 release the workflow pins,
+sha256-checked against the pinned digest, run with the same two severity
+promotions the workflow writes.
+
+Two citations in this document are quoted rather than bare, because the
+unquoted-citation ratchet gives a new document a ceiling of zero; quoting them
+was the better of the two ways out, since it puts them under the content check
+as well as the resolution one.
