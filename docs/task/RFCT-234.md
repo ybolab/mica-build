@@ -29,9 +29,15 @@ produces, and on this host, with `/proc/sys/fs/binfmt_misc/` empty throughout:
 
 The cx3576 IMAGE did not build, and section 6 records the three walls it meets,
 in the order it meets them, each with the command and the output. None of the
-three is the one RFCT-231 recorded, and two of them are one wall wearing two
-faces: `localhost/mos-build-*` is ONE tag holding ONE architecture, and the
+three is the one RFCT-231 recorded, and two of them were one wall wearing two
+faces: `localhost/mos-build-*` was ONE tag holding ONE architecture, and the
 image path needs the family at two architectures at the same time.
+
+That tag is the defect this milestone surfaced, and section 7 is its own
+finding: building an arm64 family for the first time made an arm64
+`make build-env` OVERWRITE the amd64 one, and the reverse an hour later. The
+architecture is now part of the tag, both families coexist, and the second of
+the three walls is closed by that alone.
 
 ## Scope
 
@@ -298,10 +304,14 @@ dies inside.
 Nothing in `os/pkgs/podman/build.sh` can fix that, which is why it is untouched:
 the driver hands over the tag it is given, and the tag is the problem.
 
-### Wall 2 -- the family is needed at both architectures at once
+### Wall 2 -- the family was needed at both architectures at once. CLOSED
 
-With containers declined, the chain gets much further and then meets the same
-wall from the other side:
+This wall was real when first met and is gone. It is kept here because what
+removed it is section 7, and the before-and-after is the argument for that
+change.
+
+With containers declined, the chain got much further and then met the
+one-tag-one-architecture limit from the other side:
 
 ```text
 error: LOCAL_MOS_BUILD_RUST=localhost/mos-build-rust is a arm64 image and this build targets amd64.
@@ -311,23 +321,40 @@ error: os/build-env/from.sh did not yield localhost/mos-build-rust (see its mess
 `os/pkgs/mosd/hack/build-target.sh` selects `IMAGE_ARCH=amd64` for an
 `aarch64-*` target BY DESIGN -- *"cross-built FROM an amd64 builder"* -- so the
 cx3576 image path wants an **amd64** `mos-build-rust` in the same run that wants
-an **arm64** `mos-build-c` for rauc and podman. `localhost/mos-build-*` is one
-tag and holds one architecture, so a family built for one replaces the other.
+an **arm64** `mos-build-c` for rauc. With one architecture-less tag those two
+demands could not both be satisfied, and satisfying either meant destroying the
+other family.
 
-This is RFCT-231 section 5's pre-declared item 2, and it is the same fact as
-wall 1. With the amd64 family restored, this step is green and the chain
-continues: mosd cross-compiled to `four aarch64 ELFs in
-target/aarch64-unknown-linux-gnu/release`, firmware staged 5 files, the rauc
-system.conf rendered, the overlay layered 7 board files, and the layout resolved
-to `8 repart definitions, 1 of them growing`.
+Both now coexist under `:amd64` and `:arm64`, so both are satisfied at once and
+nothing has to be restored between steps. Re-run after section 7 landed, the
+same command walks straight past it:
 
-**What closes walls 1 and 2 is one change, and it is not in this task's scope:**
-publish the builder family as multi-architecture content rather than as a
-single-architecture tag -- one OCI layout per image holding both platforms, or
-one tag per architecture -- which is an `os/build-env/images.env` naming change
-and a change at every consumer of a `LOCAL_MOS_BUILD_*` key.
-`os/build-env/from.sh`'s architecture refusal now names this limit where it used
-to name a refusal that no longer exists.
+```text
+mosd: four aarch64 ELFs in target/aarch64-unknown-linux-gnu/release
+firmware: staged 5 file(s) from .../bsp/rootfs/firmware
+rendered .../etc/rauc/system.conf (compatible=mos-cx3576, bootloader=uboot, ...)
+overlay: layered 7 board-specific file(s) from boards/cx3576/overlay
+layout: 8 repart definitions, 1 of them growing
+```
+
+and stops at wall 3 instead. This is RFCT-231 section 5's pre-declared item 2,
+met and closed.
+
+**What wall 1 needs is a further change, and section 7 is its prerequisite
+rather than its substitute.** Two coexisting tags let a HOST hold both families;
+they do not let a single `FROM` resolve to two architectures. `make podman`
+re-run after section 7 fails identically -- `#18 0.417 exec /bin/sh: exec format
+error` -- because `os/pkgs/podman/build.sh` resolves ONE base for every stage
+with `--arch=${MOS_ARCH}`, and the `src` stage wants the build platform's. What
+closes it is a second build argument: a `MOS_BUILD_BASE_NATIVE` resolved with
+the HOST's architecture, replacing the argument in
+`FROM --platform=$BUILDPLATFORM ${MOS_BUILD_BASE} AS src`
+(`os/pkgs/podman/Dockerfile:74`) and carried as a second OCI layout. That is now possible
+where before it was not -- an amd64 base to resolve it to did not exist on a
+host that had built an arm64 family. It is NOT done here: proving it means an
+arm64 podman, crun, netavark and aardvark-dns compile under emulation, and
+shipping the wiring without running it would be the one thing these records do
+not do.
 
 ### Wall 3 -- the rootfs stage chain, which is a host capability
 
@@ -518,6 +545,7 @@ against.
 | `MOS_BUILD_PLATFORM=linux/arm64 make build-env` | all four tagged, `MOS_BUILD_ARCH=arm64` read back from each |
 | `MOS_BOARD=cx3576 make os-rauc` | `rauc v1.13 for arm64: 470008 bytes, 7 shared libraries` |
 | `MOS_BOARD=cx3576 make os-image-cx3576-v2` | stops at wall 1, section 6 |
+| the same chain, containers declined, after section 7 | past wall 2 without restoring anything; stops at wall 3 |
 | `make build-env` (native amd64) | all four tagged, `MOS_BUILD_ARCH=amd64` read back from each -- the path this readback always took, unchanged |
 | `from.sh --ref LOCAL_MOS_BUILD_RUST`, no `--arch` | refused by name, section 7 |
 | `from.sh --arch=amd64` / `--arch=arm64`, same key | `localhost/mos-build-rust:amd64` / `:arm64` |
