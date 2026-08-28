@@ -211,3 +211,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-208 PLAN-022 records brought green under PLAN-020's hardened docs gates**](RFCT-208.md) `P2`
 - [x] [**RFCT-209 Reconciling PLAN-021 with PLAN-022: fourteen conflicted files, one tree**](RFCT-209.md) `P1`
 - [x] [**RFCT-220 PLAN-011 bus v2 audited milestone by milestone, and its closeout recommended**](RFCT-220.md) `P1`
+- [x] [**RFCT-221 PLAN-012 container-engine audit: milestone verdicts and closeout recommendation**](RFCT-221.md) `P1`
