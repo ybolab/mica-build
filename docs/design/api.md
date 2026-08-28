@@ -1101,7 +1101,7 @@ handled by `api_v1_settings` (`:915`), whose whole body is
 (`os/pkgs/mosd/apid/src/routes.rs:920`) — the dot-path passthrough this section asks
 for, with no second model beside it. The live-state root is the same shape,
 `const V1_STATE_ROUTE: &str = "/v1/state/{*path}";`
-(`os/pkgs/mosd/apid/src/routes.rs:293`) at `:301` and `:573`, ending in
+(`os/pkgs/mosd/apid/src/routes.rs:293`) at `:368` and `:406`, ending in
 `resource_response(value, &path)`
 (`os/pkgs/mosd/apid/src/routes.rs:1230`). Both answer `ResourceValue`
 (`os/pkgs/mosd/apid/src/routes.rs:892`), which carries a
