@@ -273,18 +273,64 @@ Ten tests, all in `os/pkgs/mosd/apid/src/tests.rs` except the last:
 
 ## 8. What was deferred
 
-**One thing left alone, deliberately.** §1.2's route table cites lines with the
-bare `` `:N` `` shorthand, and those numbers were already stale before this task
-touched anything: at `8f080dc` the table cites `GET /` at `:120` where
-`.route("/", get(serve::root))` was line 137, `GET /healthz` at `:173` where
-`.route("/healthz", get(healthz))` was line 195, and `api_router` at `:261`
-where the function began at line 307. The shorthand carries no path, so
-`docs/verify-citations.sh` skips it by rule and no gate has ever held it. It is
-in §1.2, which is outside this task's write scope, and the drift is not this
-task's — re-anchoring it here would mix an unrelated repair into a milestone and
-would still leave §1.2's *"Four declared routes"* claim, falsified by PLAN-021
-and PLAN-022 before this, untouched. Recorded so the next reader of §1.2 knows
-it was seen rather than missed.
+**The bare-continuation citation form: measured, and deliberately not
+rewritten.** A citation written `` (`path/to/file.rs:398-399`, `:358-359`) ``
+has a second element that inherits its file from the first.
+`docs/verify-citations.sh` never resolves that form — a token with no `/` is out
+of scope by its own stated rule (*"`routes.rs:95` is shorthand for a path named
+earlier in the prose and has no base to resolve against"*) — so a continuation
+can point anywhere and the gate still reads green. `os/pkgs/mosd/apid/src/routes.rs`
+is the most-cited file in `docs/design/api.md`, and this task inserts into it at
+**twelve** points producing **thirteen** distinct shift bands from `+0` to
+`+176`, so a single constant offset would be wrong everywhere but one band. The
+per-line map used for the full form in `f955f81` handles that; the question is
+whether the continuation form needed the same treatment.
+
+**Counted.** 705 continuation tokens in the scanned corpus. Resolving each one's
+inherited file as the nearest preceding full citation, **200** land on a file
+this task edited: 174 on `routes.rs`, 24 on `docs/design/api.md`, 1 on
+`openapi.json`, 1 on `apid/src/tests.rs`. Of the 174 `routes.rs` ones, 131 cite a
+line at or below the first insertion and would therefore shift, 42 sit above
+every insertion and correctly do not move, and 1 names a line this task edited.
+
+**Then tested, and none of them was pointing at what it claims before this task
+touched anything.** For each of the 174, every backticked name on its own line
+was checked against the cited line range in the `8f080dc` tree — a deliberately
+loose test, since a name anywhere on the line matching anywhere in the range
+counts. **3 of 174 hit, and all three are coincidences**: `nest` and `/api`
+matching inside comment prose, not the construct being cited. 143 fail outright
+and 28 have no name to test with. Under the strict adjacency rule the gate
+itself uses for quotes, 61 of the 200 carry an adjacent quoted fragment and
+**60 resolve nowhere** in the pre-image tree. The same extractor run as a control
+over the full-form citations into the same files — the ones the gate proves —
+resolves **69 of 73**, so the extractor is sound and the result is the corpus,
+not the instrument.
+
+Three hand checks, against `8f080dc` directly, since a scripted census deserves
+one: §1.2 puts `builtin_home` at `:1288`, where the pre-image line is a
+bridge-port error string; it puts `api_router` at `:261`, where the pre-image
+line is a bare `///` and the function actually opens at 307; §2.1 puts
+`api_versions` at `:405`, where the pre-image line is a doc comment inside
+`ApiErrorDetail`. The offset is visible in one subtraction: §1.2's own preamble
+cites `pub fn app(state: AppState) -> Router {`
+(`os/pkgs/mosd/apid/src/routes.rs:130`), and that is correct in *both* trees, while
+the table's first row puts `.route("/", get(serve::root))` — seven lines below
+`app` — at `:120`.
+
+**So this task invalidated none of them, because none was valid.** They are
+stale against an older tree, by the mechanism that produces exactly this: a
+re-anchor pass that rewrites the full form and skips the continuation form goes
+green while leaving the continuations pointing where they were. Rewriting them
+here would map a wrong pre-image line onto a fresh number, committing rot that
+now *looks* re-anchored — and would do it inside §1.2, §2.1, `dashboard.md`,
+`bus.md` and three other tasks' records, all outside this task's write scope and
+none of them mine to correct. The 42 that correctly do not move are the only
+ones whose numbers are unchanged for a reason this task can vouch for.
+
+The repair is real work and wants an owner and a base commit: 705 continuations
+corpus-wide, 174 on `routes.rs` alone, and they cannot be re-anchored — there is
+no true earlier number to map from — only re-derived from content. Raised to L2
+rather than done here.
 
 `test/apid-api/**` gained no phase. The on-image suite needs a rebuilt image and
 a QEMU boot, which is outside this milestone's gate set, and the property a
