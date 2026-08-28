@@ -3626,6 +3626,17 @@ fn secret_tree(password: &str) -> serde_json::Value {
                     { "comment": "laptop", "hash": "keyhash-plaintext-marker" },
                 ],
             },
+            // The one settings field that really is named `hash`: a bearer
+            // token digest, inside an array, under the subtree the auth gate
+            // reads on every request.
+            "apiTokens": [
+                {
+                    "id": "3f2a9c41",
+                    "name": "ci-deploy",
+                    "hash": "token-digest-plaintext-marker",
+                    "created": 1_700_000_000,
+                },
+            ],
         },
         "wifi": {
             "ap": { "ssid": "mos-ap", "psk": "ap-plaintext-marker" },
@@ -3662,7 +3673,8 @@ fn secret_state_entry() -> serde_json::Value {
 }
 
 /// Every marker string [`secret_tree`] and [`secret_state_entry`] plant.
-const PLAINTEXT_MARKERS: [&str; 11] = [
+const PLAINTEXT_MARKERS: [&str; 12] = [
+    "token-digest-plaintext-marker",
     "wg-plaintext-marker",
     "state-private-plaintext-marker",
     "device-plaintext-marker",
@@ -3854,6 +3866,70 @@ async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() 
             "`{marker}` reached the wire: {bodies}"
         );
     }
+}
+
+/// A settings read of `access` never carries a token digest.
+///
+/// The general rule is asserted above by walking every field name on the
+/// denylist. This one names the field that made the rule load-bearing rather
+/// than precautionary: `access.apiTokens[].hash` is the first field of the
+/// settings schema actually named `hash`, it holds a credential digest, and it
+/// sits in the subtree the auth gate reads on every single request -- so a
+/// regression here is a digest served to every authenticated caller and to
+/// every future bearer-token holder.
+///
+/// The subtree and the entry and the field are all asserted, because the three
+/// break differently: a denylist entry removed, a walk that stops at an array,
+/// and a dot-path that names the field directly and so has no field name left
+/// to key on.
+#[tokio::test]
+async fn a_settings_read_of_access_never_carries_a_token_digest() {
+    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The subtree the gate reads.
+    let response = get(&router, "/api/v1/settings/access", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains("token-digest-plaintext-marker"),
+        "a token digest reached the wire: {body}"
+    );
+
+    // The entry is still served -- the id, the name and the clock reading are
+    // what `GET /api/v1/tokens` lists -- so this is redaction and not removal.
+    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let entry = &value["apiTokens"][0];
+    assert_eq!(entry["id"], json!("3f2a9c41"));
+    assert_eq!(entry["name"], json!("ci-deploy"));
+    assert_eq!(entry["created"], json!(1_700_000_000));
+    assert_eq!(entry["hash"], json!(REDACTED));
+
+    // The array on its own, which is the walk's array branch with nothing
+    // above it to have caught the field first.
+    let response = get(&router, "/api/v1/settings/access.apiTokens", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains("token-digest-plaintext-marker"),
+        "the token array served the digest: {body}"
+    );
+
+    // There is no dot-path that reaches one entry: the syntax has no array
+    // indexing, which is why the denylist is by field name and not by path.
+    let response = get(
+        &router,
+        "/api/v1/settings/access.apiTokens.0.hash",
+        Some(&cookie),
+    )
+    .await;
+    let status = response.status();
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "an indexed dot-path resolved: {}",
+        body_string(response).await
+    );
 }
 
 /// The same rule on the state root. §2.2 states it for the settings root only;

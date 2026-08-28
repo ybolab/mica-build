@@ -30,6 +30,13 @@ pub const REDACTED: &str = "<redacted>";
 /// this entry redacts nothing. It is the fail-closed half of that rule: the day
 /// a field of that name appears anywhere in either tree, it is already covered,
 /// rather than being served in the clear until somebody remembers this file.
+///
+/// `hash` was on the list before any settings field carried that name, and it
+/// is the case that proves the paragraph above. `access.apiTokens[].hash` is
+/// now a real field of the settings schema -- the SHA-256 digest of a bearer
+/// token -- and it arrived already covered, because `GetSettings("access")`
+/// returns the subtree verbatim and the mint pane would otherwise have shipped
+/// a digest to every authenticated reader before anyone thought to look here.
 const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];
 
 /// Whether a field named `name` is redacted.
