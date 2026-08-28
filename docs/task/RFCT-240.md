@@ -1,6 +1,7 @@
 # RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal
 
-- **status**: in progress
+- **status**: completed — the four scalar writes land at 204, the redaction sentinel is refused at 422 before the allowlist is consulted, every other dot-path is refused 422/404/409 by apid before a bus call, and the citation re-anchor is measured against a green pre-image; every gate green and oasdiff reports no breaking change
+- **completedAt**: 2026-08-28
 - **priority**: P1
 - **owner**: bkd/zu1bdr5l
 - **createdAt**: 2026-08-28
@@ -345,3 +346,34 @@ rather than an assumption for every armed full-form citation that moved.
   a single route would describe the surface less accurately than saying nothing.
 
 ## 9. Gates
+
+Run on this branch with `bkd/vu5b6kk0` merged in.
+
+| Gate | Result |
+|---|---|
+| `bash docs/verify-citations.sh` | `1537/1537 PASS` |
+| `bash docs/verify-index.sh` | `772/772 PASS` |
+| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder image | `ALL CHECKS PASSED` — fmt, clippy `-D warnings`, `768 tests run: 768 passed, 0 skipped`, doctests, `advisories ok, bans ok, licenses ok` |
+| `oasdiff breaking ... --fail-on ERR --severity-levels ...` | `No breaking changes to report`, `RC=0`, against both the pre-M4 spec on this branch and `main`'s |
+
+**The test arithmetic reconciles: 758 + 10 = 768.** The ten are section 6's
+unit tests; the two end-to-end assertions were folded into the existing
+`web_flow_end_to_end` rather than added as a test of their own, so they move no
+count.
+
+**oasdiff was run here rather than deferred**, unlike RFCT-212, which recorded
+that this worktree had no network access to the pinned release. It does now, so
+the pinned 1.29.1 binary was fetched, its sha256 checked against the one
+`.github/workflows/check.yml` pins, and the same two severity promotions the
+workflow writes were passed in. Both bases were diffed: the spec as it stood on
+this branch before the change (M4's own diff) and `main`'s (what CI would see
+for a pull request), because only the second is the workflow's actual input and
+only the first isolates this milestone.
+
+**One deviation in how the gate was invoked, and it is the wrapper, not the
+gate.** `hack/check.sh` ran unmodified. The container image tag named in this
+milestone's brief no longer exists in this host's image store — it was retagged
+mid-run — so the amd64 builder was entered by the tag that does name it, after
+confirming the image reports `amd64` and that `uname -m` inside it is `x86_64`.
+`dbus` is installed in the container before the run, without which the bus
+round-trip test exits 100. Neither touches the script.
