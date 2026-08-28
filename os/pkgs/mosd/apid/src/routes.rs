@@ -316,11 +316,18 @@ fn is_declared_api_route(path: &str) -> bool {
 /// so a name carrying a `/` is a path this predicate must not release — it
 /// would reach the subtree's 404 where an unauthenticated caller is supposed
 /// to be redirected.
+///
+/// An *empty* segment is released, unlike [`resource_dot_path`]'s empty
+/// dot-path. The difference is not a preference: `{*path}` matches at least one
+/// character and `{iface}` matches zero or more, so `.../wireguard//rotate-key`
+/// is a path this router really serves — with an interface name mosd then
+/// refuses as undeclared. Refusing it here instead would answer a redirect
+/// where the route answers an envelope.
 fn rotate_key_iface(leaf: &str) -> Option<&str> {
     let iface = leaf
         .strip_prefix(V1_WIREGUARD_PREFIX)?
         .strip_suffix(V1_WIREGUARD_ROTATE_LEAF)?;
-    (!iface.is_empty() && !iface.contains('/')).then_some(iface)
+    (!iface.contains('/')).then_some(iface)
 }
 
 /// The dot-path a leaf names, when the leaf is one of §2.2's two roots.

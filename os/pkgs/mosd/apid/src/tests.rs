@@ -4330,18 +4330,26 @@ async fn network_post_writes_each_virtual_kind() {
         })
     );
 
-    // A bridge over a declared port that carries no addressing of its own.
+    // A port first, then the bridge over it: the reconciler requires a port to
+    // be a declared entry before a bridge may name it, and a port carries no
+    // addressing of its own. `eth1` is already `br0`'s, so this makes its own.
+    let response = post_form(&router, "/network", "iface=eth2&address=", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("network.eth2").await.unwrap(),
+        json!({ "dhcp": false })
+    );
     let response = post_form(
         &router,
         "/network",
-        "iface=br1&kind=bridge&bridgePorts=eth1&dhcp=on",
+        "iface=br1&kind=bridge&bridgePorts=eth2&dhcp=on",
         Some(&cookie),
     )
     .await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         fake.get_settings("network.br1").await.unwrap(),
-        json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } })
+        json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth2"] } })
     );
 
     // A tunnel, whose peer list this form does not carry.
@@ -4604,21 +4612,21 @@ async fn a_peer_the_reconciler_would_refuse_is_refused_by_the_form() {
         (
             format!(
                 "iface=wg0&publicKey={}&allowedIps=not-an-address",
-                PEER_KEY.replace('=', "%3D")
+                OTHER_PEER_KEY.replace('=', "%3D")
             ),
             "is not an IP address or CIDR",
         ),
         (
             format!(
                 "iface=wg0&publicKey={}&endpoint=vpn.example.net",
-                PEER_KEY.replace('=', "%3D")
+                OTHER_PEER_KEY.replace('=', "%3D")
             ),
             "is not host:port",
         ),
         (
             format!(
                 "iface=wg0&publicKey={}&persistentKeepalive=forever",
-                PEER_KEY.replace('=', "%3D")
+                OTHER_PEER_KEY.replace('=', "%3D")
             ),
             "keepalive must be a whole number",
         ),
@@ -4802,7 +4810,6 @@ async fn the_rotate_route_is_401_without_a_session_in_both_gate_modes() {
 async fn a_rotate_path_with_an_extra_segment_is_the_subtrees_404() {
     let (router, _, cookie) = kinds_app().await;
     for path in [
-        "/api/v1/actions/wireguard//rotate-key",
         "/api/v1/actions/wireguard/a/b/rotate-key",
         "/api/v1/actions/wireguard/wg0/rotate-key/extra",
         "/api/v1/actions/wireguard/wg0",
@@ -4811,6 +4818,29 @@ async fn a_rotate_path_with_an_extra_segment_is_the_subtrees_404() {
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         assert_eq!(envelope(response).await["code"], "not_found", "{path}");
     }
+}
+
+/// The gate and the router agree about the empty interface segment, which is a
+/// path this router really serves: `{iface}` matches zero characters where
+/// `{*path}` matches at least one.
+///
+/// The consequence is what is asserted: an unauthenticated call answers §2.4's
+/// envelope rather than the gate's redirect, exactly as the named interface
+/// does, and mosd is what refuses the empty name.
+#[tokio::test]
+async fn the_empty_interface_segment_is_the_route_and_not_a_redirect() {
+    const EMPTY: &str = "/api/v1/actions/wireguard//rotate-key";
+
+    let (router, _) = test_app(kinds_tree("hunter2secret"));
+    let response = post_form(&router, EMPTY, "", None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers().get(LOCATION), None);
+    assert_eq!(envelope(response).await["code"], "not_authenticated");
+
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let response = post_form(&router, EMPTY, "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["path"], json!("network."));
 }
 
 /// There is no GET on it. A rotation replaces a tunnel's identity, so nothing
@@ -4872,7 +4902,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
 
     for path in [
         "/api/v1/settings/network",
-        r#"/api/v1/settings/network."wg0""#,
+        "/api/v1/settings/network.wg0",
         "/api/v1/state/network",
         "/api/v1/state/network.wg0",
         "/network",
@@ -4887,7 +4917,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
     // key on, the answer is the sentinel rather than the value.
     for path in [
         "/api/v1/state/network.wg0.privateKey",
-        r#"/api/v1/settings/network."wg0".privateKey"#,
+        "/api/v1/settings/network.wg0.privateKey",
     ] {
         let response = get(&router, path, Some(&cookie)).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
