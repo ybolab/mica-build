@@ -89,7 +89,7 @@ and the pane's error text advertises the dot
 RFCT-201 has since moved it into `iface_settings_path`), over D-Bus:
 `fn set_settings(&self, path: &str, value_json: &str)` on `com.mos.mosd`
 (`os/pkgs/mosd/apid/src/bus_client.rs:22-29`). The read-only API mirrors the
-same dot-path at `GET /api/v1/settings/{*path}` (`docs/design/api.md:230`).
+same dot-path at `GET /api/v1/settings/{*path}` (`docs/design/api.md:255`).
 
 ### 1.4 mosd: reconcile
 
