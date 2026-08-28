@@ -345,11 +345,21 @@ Run on the tree after `bkd/vu5b6kk0` was merged in.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `1493/1493 PASS` |
-| `bash docs/verify-index.sh` | `756/756 PASS` |
-| `bash os/pkgs/mosd/hack/check.sh` (in `localhost/mos-build-rust`) | `ALL CHECKS PASSED` — fmt, clippy `-D warnings`, `714 tests run: 714 passed, 0 skipped`, doctests, `cargo deny` |
+| `bash docs/verify-citations.sh` | `1508/1508 PASS` |
+| `bash docs/verify-index.sh` | `760/760 PASS` |
+| `bash os/pkgs/mosd/hack/check.sh` (in `localhost/mos-build-rust`) | `ALL CHECKS PASSED` — fmt, clippy `-D warnings`, `(737/737)` nextest, doctests, `cargo deny` |
 
-714 where RFCT-209 measured 704: the ten route tests in §7, and the merge.
+737 where RFCT-209 measured 704: the ten route tests in §7, and the two merges
+of `bkd/vu5b6kk0` that brought RFCT-210 and RFCT-211 in. The second merge
+conflicted twice in `docs/design/api.md` and once in `docs/task/index.md`. The
+document conflicts were both one sentence carrying a `mosd-settings` citation
+and a `routes.rs` citation together, each side having re-anchored the one it
+owned; they were resolved per workstream ownership — RFCT-211's
+`mosd-settings/src/model.rs` numbers, this task's `routes.rs` numbers — which is
+the only resolution under which both are true. `apid/src/tests.rs` needed no
+resolution: this task appends at end of file, so every line number RFCT-211
+anchored into it is byte-for-byte preserved through the merge (5470 -> 5753
+lines, **0** numbers changed).
 
 **One deviation in how the gate was invoked, and it is the wrapper, not the
 gate.** `hack/check.sh` was run unmodified. The container was entered with
