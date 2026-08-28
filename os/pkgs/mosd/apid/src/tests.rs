@@ -4466,6 +4466,10 @@ async fn the_password_pane_changes_the_password_and_keeps_the_acting_session() {
     assert!(auth::verify_password(stored, "newsecret9"));
 
     // The acting session survives its own change; the other session is gone.
+    // Untouched by M9 (RFCT-245): this is the PANE, the change is authenticated
+    // by the cookie, and so there is an acting session to keep. The API half of
+    // this pair drops both, because a bearer names no session -- the two tests
+    // now assert different things for the same daemon rule.
     assert_eq!(
         get(&router, "/", Some(&acting)).await.status(),
         StatusCode::OK
@@ -4522,10 +4526,14 @@ async fn the_api_password_change_rejects_a_wrong_current_password() {
     assert!(fake.set_paths().is_empty());
 }
 
-/// The API half of the success: 204, the hash written, the other session
-/// dropped, the calling session kept.
+/// The API half of the success: 204, the hash written, and **every** browser
+/// session dropped.
+///
+/// "the calling session kept" until M9 (RFCT-245), and it cannot be kept now:
+/// the caller authenticates with a bearer, so there is no calling session to
+/// name. The name of this test moved with the assertion.
 #[tokio::test]
-async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
+async fn the_api_password_change_succeeds_and_drops_every_browser_session() {
     // The token is SEEDED and not minted, because the assertion below is that
     // the change wrote `access.webAdmin` and nothing else: a mint through
     // §3.2's pane is itself a write to `access.apiTokens`, and it would show
@@ -4558,10 +4566,17 @@ async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
         "newsecret9"
     ));
 
-    assert_eq!(
-        get(&router, "/", Some(&acting)).await.status(),
-        StatusCode::OK
-    );
+    // M9 (RFCT-245) moved this assertion, and the daemon is right rather than
+    // the test: the change is authenticated by a BEARER now, so there is no
+    // acting session to keep. `password_change` passes
+    // `acting_session.unwrap_or("")` to `remove_all_except`, whose comment
+    // already says *"No cookie on the request keeps nothing, which errs
+    // closed"* -- so BOTH browser sessions go, not just the other one. That is
+    // the safer of the two answers and it is the one that was designed; what
+    // changed is only which credential this test presents.
+    let acting_after = get(&router, "/", Some(&acting)).await;
+    assert_eq!(acting_after.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&acting_after), "/login");
     let evicted = get(&router, "/", Some(&other)).await;
     assert_eq!(evicted.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&evicted), "/login");
@@ -6688,8 +6703,8 @@ fn writable_tree(password: &str) -> serde_json::Value {
 /// not already say.
 #[tokio::test]
 async fn the_write_route_writes_the_four_scalar_settings() {
-    let (router, fake) = test_app(writable_tree("hunter2secret"));
-    let cookie = login(&router, "hunter2secret").await;
+    let (tree, token) = with_token(writable_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
 
     for (path, body) in [
         ("hostname", r#""router7""#),
@@ -6698,12 +6713,12 @@ async fn the_write_route_writes_the_four_scalar_settings() {
         ("mqtt.enabled", "true"),
     ] {
         let url = format!("/api/v1/settings/{path}");
-        let response = put_json(&router, &url, body, Some(&cookie)).await;
+        let response = bearer_json(&router, "PUT", &url, &token, body).await;
         assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
         assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
         assert_eq!(body_string(response).await, "", "{path} answers no body");
 
-        let read = get(&router, &url, Some(&cookie)).await;
+        let read = bearer(&router, "GET", &url, &token).await;
         assert_eq!(read.status(), StatusCode::OK, "{path}");
         assert_eq!(
             body_string(read).await,
@@ -7087,12 +7102,11 @@ async fn the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_s
     // request is the same one, and only the expected answer moved from 204 to
     // 401. Asserted here for the same reason the no-credential case below is:
     // the write surface inherits §3.1's trap and inheriting is not asserting.
-    let refused = bearer_json(
+    let refused = put_json(
         &router,
-        "PUT",
         "/api/v1/settings/hostname",
-        &token,
         r#""from-cookie""#,
+        Some(&cookie),
     )
     .await;
     assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
@@ -7248,7 +7262,6 @@ async fn stored_network_list(fake: &FakeSettings) -> serde_json::Value {
 async fn the_ssh_key_collection_lists_adds_and_removes() {
     let (tree, token) = with_token(ssh_tree(json!([])));
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     let empty = bearer(&router, "GET", "/api/v1/ssh/authorized-keys", &token).await;
     assert_eq!(empty.status(), StatusCode::OK);
@@ -7496,7 +7509,6 @@ async fn a_full_key_list_is_409_and_names_the_bound() {
 async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
     let (tree, token) = with_token(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     // Well formed -- it is a real fingerprint of a real key -- and no stored
     // entry carries it.
@@ -8497,14 +8509,14 @@ async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
 /// `network` is 409 and names the typed routes this milestone added.
 #[tokio::test]
 async fn the_settings_passthrough_under_network_is_409_and_names_the_typed_route() {
-    let (router, fake, cookie, _token) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     for path in [
         "/api/v1/settings/network",
         "/api/v1/settings/network.br0",
         "/api/v1/settings/network.br0.bridge.ports",
     ] {
-        let response = put_json(&router, path, "{\"dhcp\":true}", Some(&cookie)).await;
+        let response = bearer_json(&router, "PUT", path, &token, "{\"dhcp\":true}").await;
         assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
         let error = envelope(response).await;
         assert_eq!(error["code"], "settings_read_only", "{path}");
@@ -9245,8 +9257,8 @@ async fn every_collection_answers_409_for_a_duplicate() {
         { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
     ]))["wifi"]
         .clone();
+    let (tree, token) = with_token(tree);
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     for (path, body, code) in [
         (
@@ -9300,10 +9312,10 @@ const TRANSIENT_PATH: &str = "/api/v1/actions/transient-root-password";
 #[tokio::test]
 async fn the_power_routes_answer_202_like_the_form_path() {
     for (path, expected) in [(REBOOT_PATH, "reboot"), (POWEROFF_PATH, "power_off")] {
-        let (router, fake) = test_app(configured_tree("hunter2secret"));
-        let cookie = login(&router, "hunter2secret").await;
+        let (tree, token) = with_token(configured_tree("hunter2secret"));
+        let (router, fake) = test_app(tree);
 
-        let response = post_json(&router, path, "", Some(&cookie)).await;
+        let response = bearer_json(&router, "POST", path, &token, "").await;
         assert_eq!(response.status(), StatusCode::ACCEPTED, "{path}");
         assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
         assert_eq!(
@@ -9385,7 +9397,6 @@ async fn the_transient_password_route_sets_it_and_writes_no_setting() {
 
     let (tree, token) = with_token(ssh_tree(json!([])));
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     let response = bearer_json(
         &router,
@@ -9500,7 +9511,6 @@ async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
 async fn a_rejected_transient_password_is_never_echoed() {
     let (tree, token) = with_token(ssh_tree(json!([])));
     let (router, _) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     for password in [
         "shortpw",
