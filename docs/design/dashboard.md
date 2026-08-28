@@ -1044,8 +1044,8 @@ sections 1-4.
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
-- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:78-82` and its doc
-  comment at `:66-67`); that one is stated correctly throughout.
+- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:3168-3172` and its doc
+  comment at `:3166-3167`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
 

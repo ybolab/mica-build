@@ -298,7 +298,7 @@ and answers every request with a 308 Permanent Redirect to the HTTPS origin,
 deriving the host from the `Host` header with any port stripped and
 re-attaching the actual HTTPS port unless it is 443
 (`os/pkgs/mosd/apid/src/routes.rs:3146-3160`). It carries no state beyond that port
-(`:668`), no auth gate, and no access to mosd. Both routers are wired in
+(`:3171`), no auth gate, and no access to mosd. Both routers are wired in
 `main` — `routes::app(state)` on the rustls listener
 (`os/pkgs/mosd/apid/src/main.rs:203-204`) and
 `routes::redirect_app(https_addr.port())` on the plain one
@@ -1002,7 +1002,7 @@ answer different questions.
 | `GET /api/v1/meta` | required | `{"api":"v1","settingsSchemaVersion":6,"daemon":"apid"}` | "what am I talking to, in detail?" |
 
 Both rows ship. The first is declared at `os/pkgs/mosd/apid/src/routes.rs:399` and
-handled at `:444`; the second at `:281` and `:483`. The `meta` row's
+handled at `:736`; the second at `:400` and `:762`. The `meta` row's
 `settingsSchemaVersion` was written as `4` here when this section was drafted
 and is `6` today, which is the whole argument for reading it from
 `mosd_settings` at request time rather than documenting a number: the value in
@@ -1051,7 +1051,7 @@ bus call at `os/pkgs/mosd/apid/src/routes.rs:3202`. The cost is an unauthenticat
 fingerprint: anyone who can reach port 443 (`os/pkgs/mosd/apid/src/config.rs:34-37`)
 learns which API major versions this device speaks. The appliance already
 answers `/healthz` with the literal `"ok"` unauthenticated
-(`os/pkgs/mosd/apid/src/routes.rs:3202`, `:809-811`), so this is one more bit on a
+(`os/pkgs/mosd/apid/src/routes.rs:3202`, `:3278-3280`), so this is one more bit on a
 listener that already identifies itself — it is not zero, and it is exactly why
 the shipped response carries a version list and nothing else: not the hostname,
 not the device identity (`os/pkgs/mosd/mosd-settings/src/model.rs:337-339`), not a
@@ -1388,7 +1388,7 @@ commit's.
 | `POST /ssh/password` (`routes.rs:2515`) | yes | `POST /api/v1/actions/transient-root-password` | `{"password": "..."}` → `204`; `422` from `validate_transient_password` (`routes.rs:2494-2509`) |
 | `POST /ssh/keys/add` (`routes.rs:2545`) | yes | `POST /api/v1/ssh/authorized-keys` | `{"key": "<type> <blob> [comment]"}` → `201` with the parsed entry and its fingerprint; `422` on a rejected key |
 | `POST /ssh/keys/remove` (`routes.rs:2578`) | yes | `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` | → `204`; `404` when nothing matches (`routes.rs:2590-2596` is a 422 today; see below) |
-| `GET /healthz` (`routes.rs:172`, `:768`) | — | **none, and it must not change.** See below | — |
+| `GET /healthz` (`routes.rs:172`, `:3278`) | — | **none, and it must not change.** See below | — |
 | every path on the HTTP listener (`routes.rs:612-616`) | — | unchanged: 308 to the HTTPS origin (`routes.rs:618-632`), API paths included | — |
 
 **Actions, not resources.** Three operations are verbs with no state to `GET`
@@ -1449,7 +1449,7 @@ knowable over the connection that asked.
   the other does not. The HTML pane is `GET`/`POST /password`, declared at
   `os/pkgs/mosd/apid/src/routes.rs:187`; the API route is
   `POST /api/v1/actions/change-password`, declared at
-  `os/pkgs/mosd/apid/src/routes.rs:407` (handler at `:1903-1958`), `POST` only
+  `os/pkgs/mosd/apid/src/routes.rs:407` (handler at `:4227-4282`), `POST` only
   under the `actions` namespace like the other verbs, answering §2.4's
   envelope with a JSON body `{"currentPassword": "...", "newPassword": "..."}`
   → **204**. The decided semantics are one helper both handlers call
@@ -1496,7 +1496,7 @@ not exist. The API uses 404. The HTML path is not changed by this document.
 
 **What ships.** The envelope exists, in both the code and the published schema.
 `ApiError` is a one-field struct wrapping `ApiErrorDetail`
-(`os/pkgs/mosd/apid/src/routes.rs:639-641`, payload at `:334-352`), the schema records
+(`os/pkgs/mosd/apid/src/routes.rs:639-641`, payload at `:646-661`), the schema records
 it as `"required": [ "error" ]` (`os/pkgs/mosd/apid/openapi.json:1968-1970`), and every
 failure under the prefix is built through it. `Retry-After` ships on exactly
 one class: `const RETRY_AFTER_SECONDS: &str = "5";`
@@ -1806,7 +1806,7 @@ whose whole test is
 401 rather than the gate's HTML redirect
 (`os/pkgs/mosd/apid/src/routes.rs:3052-3054`). The gate hands the declared `/api` routes
 off to it with `is_declared_api_route(path)`
-(`os/pkgs/mosd/apid/src/routes.rs:3230`, predicate at `:325-330`). There is no bearer
+(`os/pkgs/mosd/apid/src/routes.rs:3230`, predicate at `:503-520`). There is no bearer
 token, no `Authorization` header path and no second credential anywhere in the
 crate (section 1.4).
 
@@ -2543,9 +2543,9 @@ condition, and it is the test that keeps 4.2 from silently regressing.
 ### 4.3 MIME and caching — **[implemented]**
 
 **Implemented at `os/pkgs/mosd/apid/src/assets/mime.rs`** — the fixed extension
-allowlist (`.wasm` and `.webmanifest` in it from the start, `:65-66`), the
+allowlist (`.wasm` and `.webmanifest` in it from the start, `:58-59`), the
 `octet-stream` fallback, `nosniff`, and the three cache classes with their
-header values (`:90-139`). The headers are attached to every response the asset
+header values (`:96-102`). The headers are attached to every response the asset
 router builds by `asset_response` in `os/pkgs/mosd/apid/src/assets/serve.rs`, and the
 `/api/` subtree's own 404 carries `no-store` from the same enum
 (`os/pkgs/mosd/apid/src/routes.rs:217`). The immutable class is read per request from
@@ -3263,7 +3263,7 @@ in which it is false.
 
 **Where it lives in the image: it is not a directory of files.** The built-in
 UI is **compiled into the `apid` binary**. The pages are `maud` `html!` macro
-expansions in `os/pkgs/mosd/apid/src/routes.rs` (the macro is imported at `:29` and
+expansions in `os/pkgs/mosd/apid/src/routes.rs` (the macro is imported at `:34` and
 used by every page handler), and the only
 stylesheet is a `&str` constant emitted into the page head
 (`os/pkgs/mosd/apid/src/routes.rs:3276-3282`), described in the source as
@@ -3380,7 +3380,7 @@ because of how dispatch works rather than because of a check.
   a path that is down. The prefix is instead named on the three built-in
   surfaces an operator with a broken custom UI actually reaches: the sign-in
   page (`os/pkgs/mosd/apid/src/routes.rs:3158`), the navigation on every built-in pane
-  (`:341`), and the reserved subtree's own 404 (`:1317`). The cost that must not be glossed: **(A) is a way *in*, not a way
+  (`:341`), and the reserved subtree's own 404 (`:4739`). The cost that must not be glossed: **(A) is a way *in*, not a way
   *out*.** It deactivates nothing, so the next navigation to `/` is broken
   again.
 
@@ -3791,7 +3791,7 @@ one of the four triggers above becomes true.**
 **First, the fact this subsection is a decision about.** Measured at `86cd669`:
 apid's pages are `maud` `html!` expansions compiled into the `apid` binary, with
 one inline stylesheet constant and no external asset of any kind
-(`os/pkgs/mosd/apid/src/routes.rs:40`, `:821-828`, `:839`; §1.1 constraint 1 and §1.6
+(`os/pkgs/mosd/apid/src/routes.rs:34`, `:3283-3290`, `:3301`; §1.1 constraint 1 and §1.6
 evidence it four ways). There is no build chain to retire and no asset directory
 to move.
 
@@ -3924,7 +3924,7 @@ interface-scoped error names `com.mos.mosd1.Error.NotFound` and
 **What an operator can do that they could not before.** Submit an invalid CIDR
 on `/network` and be told **why**. Today `network_submit` returns `bus_error` when
 the settings write fails (`os/pkgs/mosd/apid/src/routes.rs:5227-5233`), and `write_key_list`
-does the same (`:1544-1546`), so a rejected value is reported to the operator as
+does the same (`:5609-5611`), so a rejected value is reported to the operator as
 *"The management daemon is unavailable."* — an outage message for a typo. §2.4
 calls this out with the VLAN example. **This phase is a visible bug fix that
 needs no API at all.**
@@ -3946,7 +3946,7 @@ recovering the fdo error name, and §2.4 is not implementable until it is —
 which apid now does, by downcasting to the concrete `zbus::Error`
 (`os/pkgs/mosd/apid/src/routes.rs:2982-2983`) and mapping `FDO_INVALID_ARGS`,
 `FDO_IO_ERROR` and `FDO_FAILED` onto three distinct API error codes
-(`:594-605`). Second: §2.1's breaking-change list makes *"changing
+(`:2996-3007`). Second: §2.1's breaking-change list makes *"changing
 which `error.code` an existing failure emits"* a **major-version bump**. Landing
 the classification before `v1` freezes is the difference between a refactor and
 a `v2`. If `to_fdo`'s three collapsed cases are split *after* v1 ships,

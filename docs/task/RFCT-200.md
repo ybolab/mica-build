@@ -137,8 +137,8 @@ design may depend on the radio userland.
 ### 1.6 Data-flow narrative
 
 Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:4721-4778`) →
-apid validation (`:1224-1232`) → D-Bus `SetSettings("network.<iface>", json)`
-(`:1527`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
+apid validation (`:5153-5163`) → D-Bus `SetSettings("network.<iface>", json)`
+(`:5169`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
 validates against the typed tree and saves TOML atomically
 (`os/pkgs/mosd/mosd/src/bus.rs:430-435`) → overlapping reconcilers re-apply
 (`:437-441`) → `NetworkReconciler::apply` re-validates, renders
