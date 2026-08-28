@@ -129,12 +129,28 @@ An imprecise marker beside an amendment that supplies the nuance is a smaller
 error than a marker that actively denies the work happened.
 
 **The PLAN-005 precedent turned out to argue the other way.** This record cited
-it first as support for `[~]`. Reading it properly: PLAN-005's head is
-`rejected (superseded by PLAN-006)` — the U-Boot/Uptane design was *rejected in
-favour of a different approach* and was never built. PLAN-013's content was
-built. "Superseded by a rejected alternative" and "superseded by delivery" are
+it first as support for `[~]`, on the surface reading that PLAN-005 is a plan
+whose work was done under another number. The tree says otherwise in its own
+words: PLAN-006's front matter records that
+"approving this plan rejects PLAN-005" (`docs/plan/PLAN-006.md:9`), calling
+PLAN-005 an alternative *design* that approving PLAN-006 rejects. PLAN-005's
+mechanism — a U-Boot dual-slot FIT with Uptane-secured updates — was not built
+under another number; it was not built. What shipped is RAUC, and even the
+signing tool records the Uptane structure as deliberately not adopted:
+"the Uptane director/image repository split — this is a single image"
+(`os/pkgs/rauc-sign/README.md:43`).
+
+So PLAN-005 is `[~]` in the legend's literal sense: rejected. PLAN-013 is not.
+"Superseded by a rejected alternative" and "superseded by delivery" are
 different states, and `[~]` fits only the first. The precedent distinguishes the
 two cases rather than joining them.
+
+**Two further things weigh against `[~]`, both inside the audit this closeout
+executes.** RFCT-222's verdict on M2 is "M2 — implemented."
+(`docs/task/RFCT-222.md:427`) — a plan with a milestone its own audit calls
+implemented cannot honestly carry a marker legended Rejected / Abandoned. And
+RFCT-222's recommendation for the row is explicit: it moves from
+"an unchecked marker to a checked one" (`docs/task/RFCT-222.md:395`).
 
 So the row is `[x]`, and the file agrees: PLAN-013's head reads **completed by
 supersession**, with `completedAt: 2026-08-28 (by supersession, not by execution
