@@ -207,7 +207,7 @@ four groups. None was given a plausible-looking nearby line.
 `resource_response(state.api.get_state(&path).await, &path)` at `:506`. PLAN-025's
 404 fix rewrote that expression to `resource_response(value, &path)`, now at
 `None => resource_response(value, &path),`
-(`os/pkgs/mosd/apid/src/routes.rs:1271`). Main corrected the same quote in two
+(`os/pkgs/mosd/apid/src/routes.rs:1272`). Main corrected the same quote in two
 other places in this document and missed this one. Correcting a quotation is a
 content edit, not a citation edit, so it is recorded rather than made.
 
@@ -264,7 +264,7 @@ cited line — **39 of 42 do not resolve**, 1 does, and 2 carry no name to test
 with. Section 2.3's conversion table is where most of them live, and its rows
 read `` `POST /ssh/keys/add` (`routes.rs:2545`) `` where `ssh_key_add` is now
 *"async fn ssh_key_add(State(app): State<AppState>, Form(form): Form<SshKeyAddForm>) -> Response {"*
-(`os/pkgs/mosd/apid/src/routes.rs:6837`).
+(`os/pkgs/mosd/apid/src/routes.rs:6816`).
 
 None was rewritten here, because the task's stated scope is the three forms and
 widening it silently is the wrong way to grow a remit. It is the same rot, in

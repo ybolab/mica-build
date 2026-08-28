@@ -273,7 +273,7 @@ still describe the shipped system. Two carry stated remainders.
    licence over a plan file.
 6. **Twelve source doc-comments still spell the pre-`ec202f1` paths**, e.g.
    *"`mosd/mosd/src/reconciler/mqtt.rs`; the reconciler's"*
-   (`os/pkgs/mosd/apid/src/routes.rs:3344`). Not a PLAN-011 defect and not this
+   (`os/pkgs/mosd/apid/src/routes.rs:3323`). Not a PLAN-011 defect and not this
    record's to fix; routed in §6.
 
 ## 5. The outstanding verification carried twice — partly discharged
