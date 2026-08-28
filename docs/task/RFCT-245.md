@@ -117,7 +117,76 @@ twice, its rejection message, and its cookie branch.
   written; only its dangling citation is re-pointed, with a parenthesis saying
   the type was later collapsed.
 
-## 4. The merge RFCT-246 could not make
+## 4. Gates
+
+| gate | result |
+|---|---|
+| `bash docs/verify-citations.sh` | **1711/1711 PASS** |
+| `bash docs/verify-index.sh` | **859/859 PASS** |
+| `bash hack/check.sh`, unmodified, in `localhost/mos-build-rust:amd64` | **ALL CHECKS PASSED** |
+| oasdiff 1.29.1 `breaking --fail-on ERR` vs `main` at `77a3278` | **RC=0** |
+
+The container was confirmed `amd64` by
+`docker image inspect --format '{{.Architecture}}'` before any result from it
+was believed, and `dbus` was installed in it so the bus round-trip test could
+run. `bash -c`, never `bash -lc`.
+
+**oasdiff.** A cutover is the one change in this campaign that could
+legitimately have been breaking, and it is not: *"No breaking changes to
+report, but the specs are different."* Removing a credential is not a schema
+change. The specs differ in exactly 22 lines, all of them the 401 `description`
+string, and a description is not a contract §2.1 makes a promise about.
+
+**Test arithmetic.** 836 before, 836 after — **no net change**.
+
+    836  L2 baseline
+    +0   tests added
+    -0   tests removed
+    ---
+    836  this tree, all passing
+
+Counted across all three attribute spellings, which sum to the run's own total:
+
+    400  #[test]
+    418  #[tokio::test]
+     18  #[tokio::test(
+    ---
+    836
+
+Five tests were RENAMED and their assertions amended; none was added or
+deleted, which is why the total does not move. Each is asserted by name against
+the run log:
+
+| name in the run log | result |
+|---|---|
+| `every_api_v1_route_takes_a_bearer_and_refuses_the_cookie` | PASS |
+| `the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_silently` | PASS |
+| `the_two_collections_take_a_bearer_and_401_without_one` | PASS |
+| `the_network_cluster_takes_a_bearer_and_401_without_one` | PASS |
+| `the_api_password_change_succeeds_and_drops_every_browser_session` | PASS |
+
+## 5. One finding, reported and not fixed
+
+**A bearer-only client that asks for an UNDECLARED path under `/api/` is
+redirected to `/login`.** The gate's whole credential test is
+`if session::cookie_from_headers(request.headers())`
+(`os/pkgs/mosd/apid/src/routes.rs:3294`), and only *declared* routes are handed
+off to answer for themselves, so an undeclared path under the prefix reaches
+the gate and a bearer does not satisfy it. That is §3.1's trap on the surface
+§3.1 is about: the 303 lands on `GET /login`, which answers 200 with HTML.
+
+It is **not** introduced by M9 — the gate has taken only the cookie since long
+before M2 — and the tree already asserted it before this task, in
+`an_absent_token_id_is_404_and_a_malformed_one_is_422`, whose bearer arm
+asserts the 303 and is left exactly as it was. Three tests that assert the
+reserved subtree's `not_found` therefore keep the cookie, each with a comment
+saying why it is the cookie there.
+
+Harmonising the gate is out of scope for M9 (which is the write surface's
+credential, not the gate's) and is left for whoever takes the surrounding
+cleanup, beside the CIDR gap M8 measured and deliberately left open.
+
+## 6. The merge RFCT-246 could not make
 
 RFCT-246's task became unstartable in BKD, so M9 carried its branch in. Five
 files conflicted, all citation/index, none in code.
