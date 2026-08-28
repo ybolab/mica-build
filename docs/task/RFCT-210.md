@@ -228,7 +228,7 @@ runs `validate_entries(&candidate)`
 readable error. The comment says why it must be the tree and not the entry:
 *"The candidate tree, not the one entry: every relational rule below is about
 two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5157-5158`) The rules
-`validate_entries` enforces (`os/pkgs/mosd/apid/src/routes.rs:3660-3698`) are a
+`validate_entries` enforces (`os/pkgs/mosd/apid/src/routes.rs:3632-3670`) are a
 VLAN's parent naming a declared entry, a bridge port naming a declared entry, a
 bridge port carrying no addressing of its own, and no port claimed by two
 bridges.

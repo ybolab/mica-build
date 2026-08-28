@@ -214,6 +214,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-211 PLAN-023 M2 part 1: access.apiTokens in the settings model**](RFCT-211.md) `P1`
 - [x] [**RFCT-212 PLAN-023 M3: GET /api/v1/health and the §2.4 envelope on 405**](RFCT-212.md) `P1`
 - [x] [**RFCT-213 PLAN-023 M2 part 2: apid bearer auth, the token routes, the builtin mint**](RFCT-213.md) `P1`
+- [x] [**RFCT-214 PLAN-023 closeout: the api.md citation re-anchor, all three forms**](RFCT-214.md) `P1`
 - [ ] [**RFCT-216 rauc-sign root-rotation tooling, before the first ceremony's one-year expiry**](RFCT-216.md) `P1`
 - [x] [**RFCT-220 PLAN-011 bus v2 audited milestone by milestone, and its closeout recommended**](RFCT-220.md) `P1`
 - [x] [**RFCT-221 PLAN-012 container-engine audit: milestone verdicts and closeout recommendation**](RFCT-221.md) `P1`

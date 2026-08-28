@@ -56,22 +56,32 @@ per citation:
    the citation gate does not scan and this task does not edit.
 
 Four citations were then fixed by hand, because a mechanical map cannot invent a
-line that no longer exists:
+line that no longer exists. Two of them are still this branch's; the fourth was
+later superseded by RFCT-214, as the note below records:
 
 | citation | why the map could not answer it |
 |---|---|
 | *"resource_response(value, &path)"* (`docs/design/api.md:674`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
 | *"resource_response(value, &path)"* (`docs/design/api.md:1105`) | the same call, quoted a second time in section 2.2 |
 | *"pub const SCHEMA_VERSION: u32 = 8;"* (`docs/design/mosd.md:433`) | RFCT-232's dated note quoted the constant at 7, and the campaign branch's M2-part-1 bump made it 8 |
-| *"pub const SCHEMA_VERSION: u32 = 8;"* (`docs/task/RFCT-232.md:211`) | the same quote, in the record that made the note |
+| the same quote in `docs/task/RFCT-232.md` | the same problem, in the record that made the note |
 
-The two `SCHEMA_VERSION` edits change a **number inside a dated note**, not the
-note's claim: both sentences say in the same breath that the version is the
-stale part and the point survives it, and both were written against a tree where
-the constant was 7. The merge made them false as quotations while leaving them
-true as arguments, and a quotation that no longer quotes anything is what the
-citation gate exists to catch. Flagged to L2 rather than treated as routine:
-RFCT-232 is another task's record.
+The `mosd.md` edit changes a **number inside a dated note**, not the note's
+claim: the sentence says in the same breath that the version is the stale part
+and that the point survives it, and it was written against a tree where the
+constant was 7. The merge made it false as a quotation while leaving it true as
+an argument, and a quotation that no longer quotes anything is what the citation
+gate exists to catch.
+
+**The `RFCT-232.md` half was superseded, and by the better answer.** This branch
+first made the same numeric edit there, and then the second merge below brought
+down RFCT-214's census, which had reached the same conflict and resolved it the
+other way round: keep the record's measured `= 7`, drop the line anchor, and say
+in the text that PLAN-023's v8 bump has since moved the value. That preserves
+what the task measured instead of quietly restating it, which is the right
+treatment for another task's record and is RFCT-214's call to make, not this
+one's. RFCT-214's version is what is in the tree; this branch's numeric edit to
+that file is gone.
 
 ## 2. What was built
 
@@ -232,7 +242,18 @@ verbatim:
     PASS: a token that revoked itself is refused on its own next request: 401
     PASS: the bearer client's jar is STILL empty at the end: every /api/v1/ request in this phase was driven by the token alone
 
-### 3.3 The sentence M9 is waiting on
+### 3.3 The run is still the measurement of this HEAD
+
+The suite ran at `1207096`, and this branch then merged `bkd/vu5b6kk0` a second
+time to pick up RFCT-214's citation census. The whole of what that merge changed
+under `os/pkgs/mosd/` is four lines of **key order** in `openapi.json`
+(`"404"` and `"405"` swapped on the state route), a generated document the
+running daemon never reads. No `.rs` file under `os/pkgs/mosd/` differs between
+the commit the image was built from and this HEAD, and nothing under `test/`
+differs either. The image under test is therefore behaviourally the daemon this
+tree describes, and the run above is not restated from an older tree.
+
+### 3.4 The sentence M9 is waiting on
 
 **`test/apid-api` drives `/api/v1/` end to end on a bearer token alone.** The
 session cookie is used for exactly one request in the phase, the bootstrap mint

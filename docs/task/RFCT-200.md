@@ -82,8 +82,8 @@ The `/network` pane is `.route("/network", get(network_form).post(network_submit
 (`os/pkgs/mosd/apid/src/routes.rs:188`). `valid_iface_name` accepts 1–15 bytes
 of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:3360-3365`),
 and the pane's error text advertises the dot
-(`os/pkgs/mosd/apid/src/routes.rs:3404`). `network_submit` builds the value
-(`os/pkgs/mosd/apid/src/routes.rs:3422-3438`) and writes it as a dot-path,
+(`os/pkgs/mosd/apid/src/routes.rs:3376`). `network_submit` builds the value
+(`os/pkgs/mosd/apid/src/routes.rs:3394-3410`) and writes it as a dot-path,
 `set_settings(&format!("network.{iface}"), &value)` (measured at `4580dfb` in
 `os/pkgs/mosd/apid/src/routes.rs`, where the composition was unconditional;
 RFCT-201 has since moved it into `iface_settings_path`), over D-Bus:
@@ -136,9 +136,9 @@ design may depend on the radio userland.
 
 ### 1.6 Data-flow narrative
 
-Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:4749-4806`) →
-apid validation (`:1224-1232`) → D-Bus `SetSettings("network.<iface>", json)`
-(`:1527`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
+Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:4721-4778`) →
+apid validation (`:5153-5163`) → D-Bus `SetSettings("network.<iface>", json)`
+(`:5169`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
 validates against the typed tree and saves TOML atomically
 (`os/pkgs/mosd/mosd/src/bus.rs:430-435`) → overlapping reconcilers re-apply
 (`:437-441`) → `NetworkReconciler::apply` re-validates, renders
@@ -188,7 +188,7 @@ Why this spelling and not another:
 **Grammar edge, stated.** A key containing `"` becomes inexpressible, and a
 bare segment beginning with `"` changes meaning. Measured mitigation: no
 validated writer can produce such a key — apid rejects it
-(`os/pkgs/mosd/apid/src/routes.rs:3360-3365`), the reconciler rejects it
+(`os/pkgs/mosd/apid/src/routes.rs:3332-3337`), the reconciler rejects it
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:166-173`) — so only a whole-tree
 root write or a hand edit could. Schema v7 (§7) adds model-level validation:
 a `network` map key must be a valid interface name (non-empty, ≤15 bytes,

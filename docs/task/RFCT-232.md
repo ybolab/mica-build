@@ -98,7 +98,7 @@ loses none: `200`, `401`, `422`, `500` and `503` all remain, with the same
 regenerated document is `1 file changed, 11 insertions(+), 1 deletion(-)` — ten
 of those insertions are the new 404 object,
 `"description": "The dot-path does not resolve (`settings_not_found`)",`
-(`os/pkgs/mosd/apid/openapi.json:1367`), and the eleventh-and-deletion pair is
+(`os/pkgs/mosd/apid/openapi.json:1357`), and the eleventh-and-deletion pair is
 one line: the 422's description used to end *"which is also the answer for a
 dot-path that does not exist"*, which the fix makes false. No schema changed, no
 status was removed, no body was retyped. A client generated from the old
@@ -208,8 +208,11 @@ daemon-reload that makes a generator run, and the broker config path with the
 two units MQTT drives.
 
 **§5.4's schema version.** *"`SCHEMA_VERSION` stays at 3"*. The constant is
-`pub const SCHEMA_VERSION: u32 = 8;`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:11`) today, which the same document
+`pub const SCHEMA_VERSION: u32 = 7;`
+(`os/pkgs/mosd/mosd-settings/src/model.rs` line 11 as it stood at 4959179;
+PLAN-023's schema v8 bump has since taken the value to 8, so the line anchor is
+dropped and the quote is kept as the record of what this task measured) today,
+which the same document
 already half-knows: §5.1 reads the tree at v4 and §5.3a records PLAN-022's bump
 to v7. The number is the only stale part. The sentence's point — that a power
 action writes no settings, so `mosd-settings` is untouched by `Reboot` and

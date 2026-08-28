@@ -432,7 +432,7 @@ was making is not.** *"`SCHEMA_VERSION` stays at 3"* is the 2026-08-19 record
 and stays as written; the constant is 8 today —
 `pub const SCHEMA_VERSION: u32 = 8;`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) — which §5.1 already reads as v4
-and §5.3a as the v7 bump PLAN-022 made. What the sentence is FOR survives the
+and §5.3a as the v7 bump PLAN-022 made, PLAN-023 having since taken it to v8. What the sentence is FOR survives the
 number and never depended on it: `Reboot` and `PowerOff` write no settings at
 all, so they leave `SCHEMA_VERSION` wherever they found it, whatever it is.
 Read the clause as *"a power action does not touch the settings document"*,
