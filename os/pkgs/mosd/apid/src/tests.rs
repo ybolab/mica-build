@@ -5654,8 +5654,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
 /// and `publicKey` on the tunnel, passed through untouched.
 #[tokio::test]
 async fn the_state_route_serves_the_kind_and_the_public_key() {
-    let (router, _, cookie, token) = kinds_app().await;
-    let token = mint_via_pane(&router, &cookie, "m9").await;
+    let (router, _, _cookie, token) = kinds_app().await;
 
     let response = bearer(&router, "GET", "/api/v1/state/network", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -6427,7 +6426,7 @@ async fn a_name_the_store_refuses_is_a_422() {
 #[tokio::test]
 async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     let (tree, wires) = token_tree("hunter2secret", 1);
-    let (tree, token) = with_token(tree);
+    let (tree, _token) = with_token(tree);
     let (router, fake) = test_app(tree);
 
     // Well formed, and no entry carries it.
@@ -7005,7 +7004,6 @@ fn the_settings_schema_has_the_eight_roots_the_write_route_knows() {
 async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
     let (tree, token) = with_token(writable_tree("hunter2secret"));
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     for (path, body, expected) in [
         ("hostname", "true", "text"),
@@ -8353,7 +8351,7 @@ async fn removing_a_port_a_bridge_still_lists_is_refused() {
 /// the entry it names, so an absent one is not an absent resource.
 #[tokio::test]
 async fn an_absent_interface_is_404_and_a_malformed_name_is_422() {
-    let (router, fake, cookie, token) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     let response = bearer(&router, "DELETE", &iface_url("eth9"), &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -8476,7 +8474,7 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
 /// daemon sees one key and not two (M6 acceptance).
 #[tokio::test]
 async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
-    let (router, fake, cookie, token) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     let response = bearer_json(
         &router,
@@ -8492,7 +8490,7 @@ async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
 
     // And the envelope quotes it too, because that is the dot-path an operator
     // would type at the settings route.
-    let (router, _, cookie, token) = kinds_app().await;
+    let (router, _, _cookie, token) = kinds_app().await;
     let response = bearer_json(
         &router,
         "PUT",
@@ -8633,7 +8631,7 @@ async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_
 /// what is wrong is the argument.
 #[tokio::test]
 async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
-    let (router, fake, cookie, token) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     for (method, path) in [
         ("GET", peers_url("eth0")),
@@ -8875,7 +8873,6 @@ async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
     tree["network"]["mangled"] = json!("not an interface");
     let (tree, token) = with_token(tree);
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     for (method, path) in [
         ("PUT", iface_url("eth0")),
@@ -9563,7 +9560,6 @@ async fn a_rejected_transient_password_is_never_echoed() {
 async fn a_malformed_transient_password_body_is_refused_at_400() {
     let (tree, token) = with_token(ssh_tree(json!([])));
     let (router, fake) = test_app(tree);
-    let cookie = login(&router, "hunter2secret").await;
 
     for body in [
         "not json at all",
