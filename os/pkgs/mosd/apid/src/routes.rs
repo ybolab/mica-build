@@ -22,18 +22,18 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::routing::{any, get, post};
+use axum::routing::{any, delete, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
-    AuthorizedKey, BridgeConfig, IfaceKind, IfaceSettings, SettingsError, StaticConfig, VlanConfig,
-    WireguardConfig, WireguardPeer, parse_authorized_key, quote_path_segment,
-    validate_authorized_keys,
+    ApiToken, AuthorizedKey, BridgeConfig, IfaceKind, IfaceSettings, SettingsError, StaticConfig,
+    VlanConfig, WireguardConfig, WireguardPeer, parse_authorized_key, quote_path_segment,
+    validate_api_tokens, validate_authorized_keys,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::access_cache::AccessCache;
+use crate::access_cache::{ACCESS_PATH, AccessCache};
 use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
@@ -42,6 +42,7 @@ use crate::bundle::Store;
 use crate::redact;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
+use crate::token;
 
 /// Shared handler state.
 #[derive(Clone)]
@@ -160,6 +161,16 @@ pub fn app(state: AppState) -> Router {
                 // handler exists, so no prefetch, crawler or mis-clicked link
                 // can deactivate a working custom UI.
                 .route(BUILTIN_DEACTIVATE_LEAF, post(builtin_deactivate))
+                // POST only, and this pair is the case where that is not a
+                // convention but a requirement: `SameSite=Lax` withholds the
+                // session cookie from a cross-site form POST and PERMITS it on
+                // a top-level cross-site GET navigation, so a GET mint would be
+                // a permanent-credential factory reachable from any link an
+                // operator clicks. No GET handler exists for either, and none
+                // may ever be added -- not as a convenience, not as a redirect
+                // target, not as a debugging affordance.
+                .route(BUILTIN_TOKENS_LEAF, post(builtin_tokens_mint))
+                .route(BUILTIN_TOKENS_REVOKE_LEAF, post(builtin_tokens_revoke))
                 .fallback(builtin_not_found),
         )
         .route(BUILTIN_PATH, get(builtin_home))
@@ -284,6 +295,19 @@ const V1_STATE_DOC: &str = "/v1/state/{path}";
 /// there is nothing here for a test to hold together. The prefix and the leaf
 /// exist separately because [`is_declared_api_route`] has to recognise the
 /// shape without a router to ask.
+/// §3.2's token collection and its item route.
+///
+/// The item route needs its prefix separately for the same reason the rotate
+/// action does: [`is_declared_api_route`] has to recognise the shape with no
+/// router to ask.
+const V1_TOKENS_PATH: &str = "/v1/tokens";
+const V1_TOKENS_PREFIX: &str = "/v1/tokens/";
+const V1_TOKEN_ROUTE: &str = "/v1/tokens/{id}";
+
+/// The dot-path the token collection lives at, which every envelope raised
+/// about it names.
+const API_TOKENS_PATH: &str = "access.apiTokens";
+
 const V1_WIREGUARD_PREFIX: &str = "/v1/actions/wireguard/";
 const V1_WIREGUARD_ROTATE_LEAF: &str = "/rotate-key";
 const V1_WIREGUARD_ROTATE_ROUTE: &str = "/v1/actions/wireguard/{iface}/rotate-key";
@@ -332,6 +356,13 @@ fn api_router() -> Router<AppState> {
         .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
         .route(V1_STATE_ROUTE, get(api_v1_state))
         .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
+        // §3.2's token lifecycle. All three take a bearer token and nothing
+        // else; the browser's way in is `POST /builtin/tokens`.
+        .route(
+            V1_TOKENS_PATH,
+            get(api_v1_tokens_list).post(api_v1_tokens_mint),
+        )
+        .route(V1_TOKEN_ROUTE, delete(api_v1_tokens_revoke))
         // POST only, for the reason the power and SSH mutations are: no GET
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
@@ -395,6 +426,8 @@ fn is_declared_api_route(path: &str) -> bool {
             || leaf == V1_META_PATH
             || leaf == V1_HEALTH_PATH
             || leaf == V1_CHANGE_PASSWORD_PATH
+            || leaf == V1_TOKENS_PATH
+            || token_id(leaf).is_some()
             || resource_dot_path(leaf).is_some()
             || rotate_key_iface(leaf).is_some()
     })
@@ -419,6 +452,20 @@ fn rotate_key_iface(leaf: &str) -> Option<&str> {
         .strip_prefix(V1_WIREGUARD_PREFIX)?
         .strip_suffix(V1_WIREGUARD_ROTATE_LEAF)?;
     (!iface.contains('/')).then_some(iface)
+}
+
+/// The token id a leaf names, when the leaf is the collection's item route.
+///
+/// The same obligation [`rotate_key_iface`] carries, and the same shape: axum's
+/// `{id}` matches one segment, so an id carrying a `/` is a path this predicate
+/// must not release -- it would reach the subtree's 404 where an
+/// unauthenticated caller is supposed to get §2.4's envelope. An empty segment
+/// is released, because `{id}` matches zero characters and so
+/// `/api/v1/tokens/` really is a path this router serves; the handler answers
+/// it with the 422 an unusable identifier gets.
+fn token_id(leaf: &str) -> Option<&str> {
+    let id = leaf.strip_prefix(V1_TOKENS_PREFIX)?;
+    (!id.contains('/')).then_some(id)
 }
 
 /// The dot-path a leaf names, when the leaf is one of §2.2's two roots.
@@ -817,6 +864,336 @@ pub(crate) async fn api_v1_wireguard_rotate(
     }
 }
 
+// §3.2's token collection: the listing, the mint and the revocation.
+
+/// One row of `GET /api/v1/tokens` (§3.2).
+///
+/// Three members and not four: the digest is not on this wire and neither is
+/// the plaintext, which exists in exactly one response and never again.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiTokenSummary {
+    /// The token's stable identity, which is also its `DELETE` path segment.
+    /// Not secret: it is a lookup key, and §3.2 puts it on the wire for that.
+    id: String,
+    /// The operator's label, the only thing that tells one token from another.
+    name: String,
+    /// Seconds since the UNIX epoch as the device clock read them at the mint.
+    ///
+    /// **A label, never a deadline.** No unit on this image syncs a clock, so
+    /// the reading may be wrong by any amount and 0 means the clock was unset.
+    /// Tokens do not expire; revocation is the whole lifecycle (§3.2).
+    created: u64,
+}
+
+/// `POST /api/v1/tokens` request body.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub(crate) struct MintTokenRequest {
+    /// The label the new token is listed under.
+    name: String,
+}
+
+/// `POST /api/v1/tokens` response body: the one place a plaintext token
+/// appears.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct MintedToken {
+    /// The new token's identity, for a later `DELETE`.
+    id: String,
+    /// The label as it was submitted.
+    name: String,
+    /// The whole token, `mos_<id>_<secret>`.
+    ///
+    /// **It appears here and nowhere else, ever.** Only the SHA-256 digest is
+    /// stored, so a token that is lost is replaced and never recovered -- the
+    /// posture `access.device` already takes.
+    token: String,
+}
+
+/// Every token this device holds, without the halves that are secrets (§3.2).
+#[utoipa::path(
+    get,
+    path = V1_TOKENS_PATH,
+    context_path = API,
+    tag = "tokens",
+    responses(
+        (status = 200, description = "The stored tokens: `id`, `name` and `created`, never the digest and never the plaintext", body = Vec<ApiTokenSummary>),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_tokens_list(
+    _bearer: ApiBearer,
+    State(state): State<AppState>,
+) -> Response {
+    match stored_tokens(&state).await {
+        Ok(tokens) => api_response(
+            StatusCode::OK,
+            tokens
+                .into_iter()
+                .map(|entry| ApiTokenSummary {
+                    id: entry.id,
+                    name: entry.name,
+                    created: entry.created,
+                })
+                .collect::<Vec<_>>(),
+        ),
+        Err(response) => response,
+    }
+}
+
+/// Mint a token (§3.2).
+///
+/// **A bearer token is the only credential this route takes**, and the
+/// bootstrap is a path rather than an exception: the first token is minted
+/// through `POST /builtin/tokens`, a form post outside the `v1` contract.
+/// Leaving the mint here and letting it take a cookie was considered and
+/// rejected by name in §3.2, because it would put a permanent-credential
+/// factory inside the one surface §3.3 makes its strongest statement about.
+#[utoipa::path(
+    post,
+    path = V1_TOKENS_PATH,
+    context_path = API,
+    tag = "tokens",
+    request_body = MintTokenRequest,
+    responses(
+        (status = 201, description = "The token was created; the body carries the plaintext, which is not recoverable afterwards", body = MintedToken),
+        (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 409, description = "The device already holds the maximum number of tokens (`token_limit_reached`); revoke one first", body = ApiError),
+        (status = 422, description = "The name is empty, over 256 bytes, or holds a control character (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), no free id was drawn (`mint_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_tokens_mint(
+    _bearer: ApiBearer,
+    State(state): State<AppState>,
+    body: Result<Json<MintTokenRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match body {
+        Ok(body) => body,
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()),
+            );
+        }
+    };
+    let mut tokens = match stored_tokens(&state).await {
+        Ok(tokens) => tokens,
+        Err(response) => return response,
+    };
+    // The cap is answered here and not only by the store. The validator makes
+    // a full list a hard refusal, and without this check the caller meets that
+    // refusal as a failed write -- a 500 about mosd -- rather than as an answer
+    // about the request they made. 409 and not 422: the body is well formed and
+    // nothing about it is wrong, and what refuses it is the collection's
+    // current state, which is the condition §2.4 already spends 409 on.
+    if tokens.len() >= mosd_settings::MAX_TOKENS {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "token_limit_reached",
+                format!(
+                    "this device already holds the maximum of {} API tokens; revoke one before minting another",
+                    mosd_settings::MAX_TOKENS
+                ),
+            )
+            .at(API_TOKENS_PATH),
+        );
+    }
+    let Some(minted) = token::mint(&tokens) else {
+        return api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid(
+                "mint_failed",
+                "no free token id was drawn; nothing was written".to_string(),
+            )
+            .at(API_TOKENS_PATH),
+        );
+    };
+    tokens.push(ApiToken {
+        id: minted.id.clone(),
+        name: request.name.clone(),
+        hash: minted.hash,
+        created: device_clock_seconds(),
+    });
+    if let Err(response) = write_tokens(&state, &tokens).await {
+        return response;
+    }
+    api_response(
+        StatusCode::CREATED,
+        MintedToken {
+            id: minted.id,
+            name: request.name,
+            token: minted.wire,
+        },
+    )
+}
+
+/// Revoke one token, identified by its id (§3.2).
+///
+/// Identity is the id and never a list position, for the reason the SSH key
+/// pane records about fingerprints: an index is meaningful only against the
+/// list the caller last read, and a concurrent mint slides it onto a different
+/// entry. Revocation takes effect on the next request, because the token set is
+/// read per request from the `access` subtree.
+#[utoipa::path(
+    delete,
+    path = V1_TOKEN_ROUTE,
+    context_path = API,
+    tag = "tokens",
+    params(("id" = String, Path, description = "The token id, as `POST /api/v1/tokens` returned it: 1 to 64 lowercase hex characters")),
+    responses(
+        (status = 204, description = "The token was revoked; it stops being accepted on the next request"),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 404, description = "No stored token carries that id (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
+        (status = 422, description = "The id is not a token id at all (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_tokens_revoke(
+    _bearer: ApiBearer,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    // Malformed and absent are different answers and must not share a status
+    // (`docs/task/RFCT-210.md` §2.4). An id that is not an id could never name
+    // an entry, so a 404 here would send the caller looking for a token they
+    // deleted instead of at the URL they typed.
+    if !mosd_settings::is_api_token_id(&id) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                "a token id is 1 to 64 lowercase hex characters".to_string(),
+            )
+            .at(API_TOKENS_PATH),
+        );
+    }
+    let mut tokens = match stored_tokens(&state).await {
+        Ok(tokens) => tokens,
+        Err(response) => return response,
+    };
+    let Some(index) = tokens.iter().position(|entry| entry.id == id) else {
+        return item_not_found(API_TOKENS_PATH, &id);
+    };
+    tokens.remove(index);
+    if let Err(response) = write_tokens(&state, &tokens).await {
+        return response;
+    }
+    (
+        StatusCode::NO_CONTENT,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
+}
+
+/// §2.4's envelope for the condition every API collection item route shares: a
+/// well-formed identifier that names no item.
+///
+/// One shared function and not one per handler, which is what
+/// `docs/task/RFCT-210.md` §2.4 requires of this rule: a collection route added
+/// later inherits the 404 by reaching for this, rather than by remembering a
+/// decision, and the 422 beside it stays reserved for an identifier that is not
+/// well formed at all.
+///
+/// The HTML panes answer **422** for the same condition, deliberately and on
+/// the record. Its paired test is
+/// `the_builtin_revoke_pane_answers_422_where_the_api_answers_404`.
+fn item_not_found(collection: &str, identifier: &str) -> Response {
+    api_response(
+        StatusCode::NOT_FOUND,
+        ApiError::apid(
+            "settings_not_found",
+            format!("no item of `{collection}` is identified by `{identifier}`"),
+        )
+        .at(collection),
+    )
+}
+
+/// The stored token list, or the envelope for whatever prevented reading it.
+///
+/// The read is direct rather than from the gate's `access` cache: this is the
+/// read half of a read-modify-write, and the freshest list is the one least
+/// likely to drop somebody else's entry.
+async fn stored_tokens(state: &AppState) -> Result<Vec<ApiToken>, Response> {
+    let access = match state.api.get_settings(ACCESS_PATH).await {
+        Ok(value) => value,
+        Err(err) => return Err(bus_api_error(&err, API_TOKENS_PATH)),
+    };
+    parse_tokens(&access).map_err(|err| {
+        api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid(
+                "settings_invalid",
+                format!("the stored token list could not be read: {err}"),
+            )
+            .at(API_TOKENS_PATH),
+        )
+    })
+}
+
+/// The token list inside an `access` subtree.
+///
+/// An absent list is an empty list -- the model omits the field entirely when
+/// nothing is stored -- but a list that is present and unreadable is an error
+/// and never an empty list, for the reason the SSH key list gives: treating it
+/// as empty would let a mint or a revoke overwrite tokens the operator cannot
+/// see.
+fn parse_tokens(access: &Value) -> Result<Vec<ApiToken>, serde_json::Error> {
+    match access.get("apiTokens") {
+        Some(value) => serde_json::from_value(value.clone()),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Validate and write a rewritten token list.
+///
+/// Read-modify-write of the whole array, because the dot-path syntax has no
+/// array indexing -- the same pattern the SSH key pane uses. **Two concurrent
+/// mints lose one token, silently**: both read the list, both append to their
+/// own copy, and the second write wins. It is recorded and not fixed; §3.2
+/// names it as a cost inherited from the tree, and the alternative is a locking
+/// scheme this codebase does not have.
+async fn write_tokens(state: &AppState, tokens: &[ApiToken]) -> Result<(), Response> {
+    // The same validator mosd runs, so a list this route accepts is one the
+    // store will accept too. Its message names an entry index and never echoes
+    // a digest or an id.
+    if let Err(err) = validate_api_tokens(tokens) {
+        return Err(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", key_error_message(&err)).at(API_TOKENS_PATH),
+        ));
+    }
+    // Infallible: `ApiToken` is a struct of scalars with no map keys to collide.
+    let value = serde_json::to_value(tokens).expect("api tokens serialize");
+    if let Err(err) = state.api.set_settings(API_TOKENS_PATH, &value).await {
+        return Err(bus_api_error(&err, API_TOKENS_PATH));
+    }
+    // apid knows its own `access` write happened, so the gate's cache is
+    // dropped here rather than waiting for the `SettingsChanged` round trip.
+    // The bearer check reads the same subtree, and this is what makes a
+    // revocation take effect on the next request.
+    state.access_cache.invalidate();
+    Ok(())
+}
+
+/// The device clock in seconds since the UNIX epoch, saturating at 0.
+///
+/// A label and never a deadline; see [`ApiTokenSummary::created`]. A clock
+/// before the epoch reads 0 rather than failing a mint, because an untrusted
+/// clock must not decide whether the operator may hold a credential.
+fn device_clock_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
 /// One answer shape for both roots: the value redacted, or §2.4's envelope
 /// classified from what mosd said.
 fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
@@ -892,7 +1269,23 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
     )
 }
 
-/// Proof that the request carried a session cookie the store verifies.
+/// Proof that the request carried a credential these routes accept.
+///
+/// **Two of them, by PLAN-023 Amendment 1's ruling (option 1,
+/// dual-credential):** a bearer API token, or the browser session cookie every
+/// route naming this extractor already shipped accepting. The bearer is what
+/// §3.1 asks for; the cookie stays because removing it here would break a
+/// client that exists, and this milestone is additive. A later named milestone
+/// removes the cookie, and §3.2's "only accepted credential" sentence is true
+/// from that milestone rather than from this one.
+///
+/// The type keeps its name through that change of meaning, deliberately: the
+/// name is quoted by `docs/design/api.md` §1.2, §2.4 and §3.1, which the
+/// cutover milestone rewrites as one piece. Renaming it here would leave the
+/// document quoting a symbol that is gone while still describing cookie-only
+/// authentication.
+///
+/// [`ApiBearer`] is the stricter sibling, and the token routes take that one.
 ///
 /// An extractor and not middleware, and not the gate: it runs for exactly the
 /// handlers that name it, so the reserved subtree's not-found handler and
@@ -911,19 +1304,100 @@ impl FromRequestParts<AppState> for ApiSession {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        // The cookie first, because it costs no bus call: the bearer check
+        // needs the `access` subtree and this one needs nothing.
         if session::cookie_from_headers(&parts.headers)
             .is_some_and(|value| state.sessions.verify(&value))
         {
             return Ok(Self);
         }
-        Err(api_response(
-            StatusCode::UNAUTHORIZED,
-            ApiError::apid(
-                "not_authenticated",
-                "no session cookie, or one that does not verify".to_string(),
-            ),
+        if bearer_is_stored(state, &parts.headers).await {
+            return Ok(Self);
+        }
+        Err(not_authenticated(
+            "no session cookie, or one that does not verify, and no bearer API token this device holds",
         ))
     }
+}
+
+/// Proof that the request carried a bearer API token, and not merely a session.
+///
+/// The boundary drawn inside Amendment 1, and the reason it is not a
+/// contradiction of it: the amendment preserves the credentials of routes that
+/// **already shipped**, and the three token routes had not. §3.2 rejects a
+/// cookie-accepting mint by name, because it would put a permanent-credential
+/// factory inside the one surface §3.3 makes its strongest statement about, and
+/// there is no back-compatibility argument for a route that does not exist yet.
+///
+/// The bootstrap is a path rather than an exception: an operator holding only a
+/// browser mints their first token at `POST /builtin/tokens` and revokes at
+/// `POST /builtin/tokens/revoke`, neither of which is an `/api/v1/` route.
+pub(crate) struct ApiBearer;
+
+impl FromRequestParts<AppState> for ApiBearer {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        if bearer_is_stored(state, &parts.headers).await {
+            return Ok(Self);
+        }
+        Err(not_authenticated(
+            "this route accepts a bearer API token only; a session cookie is not a credential here, and a browser mints its first token at POST /builtin/tokens",
+        ))
+    }
+}
+
+/// §2.4's 401, in whichever wording the rejecting extractor owes.
+fn not_authenticated(message: &str) -> Response {
+    api_response(
+        StatusCode::UNAUTHORIZED,
+        ApiError::apid("not_authenticated", message.to_string()),
+    )
+}
+
+/// Whether the request carries a bearer token this device stores (§3.2).
+///
+/// **Not rate limited, and it must not become so.** The secret is 256 bits of
+/// `OsRng` and is not guessable online, while a shared counter here would let
+/// anyone holding a bad token lock out every script on the appliance. The login
+/// backoff ([`auth::GuardStore`]) stays scoped to the password path, which is
+/// where a human-chosen secret is.
+async fn bearer_is_stored(state: &AppState, headers: &HeaderMap) -> bool {
+    let Some(presented) = token::bearer_from_headers(headers) else {
+        return false;
+    };
+    // The subtree the gate already reads, which is why §3.2 put the list under
+    // `access` rather than beside it: no second round trip per request.
+    let access = match access_settings(state).await {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::warn!(error = %err, "reading `access` for a bearer check failed");
+            return false;
+        }
+    };
+    // A stored list that does not parse authenticates nobody, which errs
+    // closed -- the opposite of the read the token routes do, where the same
+    // condition is an error rather than an empty list because a write follows.
+    token::verify(&parse_tokens(&access).unwrap_or_default(), presented)
+}
+
+/// The `access` subtree: from the gate's cache when it is provably fresh, and
+/// from mosd otherwise.
+///
+/// The generation is snapshotted BEFORE the direct read so a change signalled
+/// while the read was in flight discards the fill rather than caching a
+/// possibly-pre-change snapshot.
+async fn access_settings(state: &AppState) -> anyhow::Result<Value> {
+    if let Some(value) = state.access_cache.get() {
+        return Ok(value);
+    }
+    let generation = state.access_cache.generation();
+    let value = state.api.get_settings(ACCESS_PATH).await?;
+    state.access_cache.fill(generation, value.clone());
+    Ok(value)
 }
 
 /// Redirect-only router served on the HTTP listener: 308 every request to
@@ -1019,21 +1493,10 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
 
     // The unauthenticated path's read, served from the cache when — and only
     // when — the SettingsChanged subscription is live (`access_cache`'s
-    // lockout rule). The generation is snapshotted BEFORE the direct read so
-    // a change signalled while the read was in flight discards the fill
-    // rather than caching a possibly-pre-change snapshot.
-    let access = match state.access_cache.get() {
-        Some(value) => value,
-        None => {
-            let generation = state.access_cache.generation();
-            match state.api.get_settings("access").await {
-                Ok(value) => {
-                    state.access_cache.fill(generation, value.clone());
-                    value
-                }
-                Err(err) => return bus_error(&err),
-            }
-        }
+    // lockout rule).
+    let access = match access_settings(&state).await {
+        Ok(value) => value,
+        Err(err) => return bus_error(&err),
     };
     if password_hash(&access).is_none() {
         if path == "/setup" {
@@ -1886,12 +2349,26 @@ async fn change_password(
     Ok(())
 }
 
+/// The sentence `docs/task/RFCT-210.md` §3 fixed for this pane, verbatim.
+///
+/// Token revocation on a password change stays **out**, ratified there: it
+/// would destroy N credentials the operator cannot see at the moment they act,
+/// with no confirmation, no count and no undo, because a token is shown once at
+/// the mint and never again. The cost of keeping it is that *"I changed my
+/// password" is not a containment action*, and this is the whole obligation
+/// §3.2 states and never assigns to a milestone. Asserted byte for byte by
+/// `the_password_pane_carries_the_ratified_token_sentence`, because a
+/// paraphrase would quietly drop the containment advice that is the point of
+/// it.
+const PASSWORD_TOKEN_NOTICE: &str = "API tokens are not affected. Changing this password signs other browsers out, but every API token keeps working. If you are changing this password because you think someone else has access, revoke your API tokens as well, and check the SSH authorized keys — every one of them is a root key.";
+
 fn password_page(banner: Option<Markup>) -> Html<String> {
     pane(
         "Password",
         html! {
             @if let Some(banner) = banner { (banner) }
             p { "Changing the admin password signs every other session out. The session making the change stays signed in." }
+            p { (PASSWORD_TOKEN_NOTICE) }
             form method="post" action="/password" {
                 fieldset {
                     legend { "Change the admin password" }
@@ -2143,6 +2620,17 @@ const BUILTIN_DEACTIVATE_LEAF: &str = "/deactivate";
 /// The deactivate route as a client sees it.
 const BUILTIN_DEACTIVATE: &str = "/builtin/deactivate";
 
+/// §3.2's bootstrap: the mint and its sibling revoke, as declared *inside* the
+/// nest and as a client sees them.
+///
+/// Under the reserved prefix and not beside it, because §3.2 puts them there:
+/// they are the built-in UI's own controls, they carry no JSON, and they are
+/// not part of the `v1` contract §2.1 versions.
+const BUILTIN_TOKENS_LEAF: &str = "/tokens";
+const BUILTIN_TOKENS: &str = "/builtin/tokens";
+const BUILTIN_TOKENS_REVOKE_LEAF: &str = "/tokens/revoke";
+const BUILTIN_TOKENS_REVOKE: &str = "/builtin/tokens/revoke";
+
 /// `GET /builtin` and `GET /builtin/` — the one unconditional path to the
 /// built-in UI.
 ///
@@ -2153,14 +2641,232 @@ const BUILTIN_DEACTIVATE: &str = "/builtin/deactivate";
 /// deactivates the bundle, so the operator never has to diagnose anything,
 /// which is the test §6.3 opens with.
 async fn builtin_home(State(state): State<AppState>) -> Html<String> {
-    let status = status_body(&state).await;
+    builtin_page(&state, None).await
+}
+
+/// The built-in pane, with `banner` above the token section when a mint or a
+/// revoke has something to say about itself.
+async fn builtin_page(state: &AppState, banner: Option<Markup>) -> Html<String> {
+    let status = status_body(state).await;
+    let tokens = pane_tokens(state).await;
     pane(
         "Status",
         html! {
             (status)
+            (tokens_section(&tokens, banner))
             (escape_section())
         },
     )
+}
+
+/// The stored token list for the pane, or the reason it could not be read.
+///
+/// A failed read degrades to a message and never to a failed page: §6.1's rule
+/// is that a failure in one part must not take the surface that reports it with
+/// it, and this pane is §6.3's escape.
+async fn pane_tokens(state: &AppState) -> Result<Vec<ApiToken>, String> {
+    let access = state
+        .api
+        .get_settings(ACCESS_PATH)
+        .await
+        .map_err(|err| format!("{err:#}"))?;
+    parse_tokens(&access).map_err(|err| err.to_string())
+}
+
+/// §8.1's capability (iii): the mint pane, and the revoke beside it.
+///
+/// The revoke is here rather than left to the API because §3.2 asks for the
+/// capability *in full*: an operator holding only a browser has to be able to
+/// revoke a leaked token without first holding another one.
+fn tokens_section(tokens: &Result<Vec<ApiToken>, String>, banner: Option<Markup>) -> Markup {
+    html! {
+        h2 { "API tokens" }
+        @if let Some(banner) = banner { (banner) }
+        p {
+            "A token authenticates a script against " code { "/api/v1/" } " with an "
+            code { "Authorization: Bearer" } " header. It is shown once, when it is \
+             created, and only its digest is kept — a token that is lost is \
+             replaced, never recovered. Tokens do not expire; revoking one is \
+             the whole of its lifecycle, and it stops working on the next \
+             request."
+        }
+        @match tokens {
+            Err(message) => { (error_box(&format!("The stored token list could not be read: {message}"))) }
+            Ok(tokens) if tokens.is_empty() => { p { "No API tokens are stored." } }
+            Ok(tokens) => {
+                ul {
+                    @for entry in tokens {
+                        li {
+                            b { (entry.name) } " — " code { (entry.id) }
+                            form method="post" action=(BUILTIN_TOKENS_REVOKE) {
+                                input type="hidden" name="id" value=(entry.id);
+                                button type="submit" { "Revoke" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        @match tokens {
+            Ok(tokens) if tokens.len() >= mosd_settings::MAX_TOKENS => {
+                (error_box(&format!(
+                    "This device holds the maximum of {} API tokens. Revoke one before creating another.",
+                    mosd_settings::MAX_TOKENS
+                )))
+            }
+            _ => {
+                form method="post" action=(BUILTIN_TOKENS) {
+                    fieldset {
+                        legend { "Create an API token" }
+                        p { label { "Name" } " " input type="text" name="name" required; }
+                        p { button type="submit" { "Create token" } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TokenMintForm {
+    #[serde(default)]
+    name: String,
+}
+
+/// `POST /builtin/tokens` — §3.2's bootstrap, and the only mint a browser can
+/// reach.
+///
+/// The first token cannot be minted with a token, and the resolution is a path
+/// rather than an exception to `/api/v1/tokens`' bearer-only rule: this route
+/// is a form post under §6.3's reserved prefix, authenticated by the session
+/// cookie, answering with an HTML page that displays the plaintext once. It
+/// carries no JSON and it is not part of the `v1` contract, so a change to it
+/// is a change to the HTML surface, which §8.1 already establishes carries no
+/// version promise.
+///
+/// What this costs, named in §3.2 and true here: **no token can be created on a
+/// device whose built-in UI is broken.** That is the situation §6 exists for,
+/// and it makes the token lifecycle a dependent of §6's escape.
+async fn builtin_tokens_mint(
+    State(state): State<AppState>,
+    Form(form): Form<TokenMintForm>,
+) -> Response {
+    let tokens = match pane_tokens(&state).await {
+        Ok(tokens) => tokens,
+        Err(message) => return builtin_error(&state, &message).await,
+    };
+    if tokens.len() >= mosd_settings::MAX_TOKENS {
+        return builtin_error(
+            &state,
+            &format!(
+                "This device already holds the maximum of {} API tokens. Revoke one before creating another.",
+                mosd_settings::MAX_TOKENS
+            ),
+        )
+        .await;
+    }
+    let Some(minted) = token::mint(&tokens) else {
+        return builtin_error(&state, "No free token id was drawn; nothing was written.").await;
+    };
+    let mut tokens = tokens;
+    tokens.push(ApiToken {
+        id: minted.id.clone(),
+        name: form.name.clone(),
+        hash: minted.hash,
+        created: device_clock_seconds(),
+    });
+    // The API envelope this returns is discarded and the pane speaks for
+    // itself: a browser handed §2.4's JSON would render it as text.
+    if let Err(response) = write_tokens(&state, &tokens).await {
+        let status = response.status();
+        return builtin_error(&state, &token_write_message(status)).await;
+    }
+    minted_page(&form.name, &minted.id, &minted.wire).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct TokenRevokeForm {
+    #[serde(default)]
+    id: String,
+}
+
+/// `POST /builtin/tokens/revoke` — §8.1's capability (iii) in full.
+///
+/// An id matching nothing is **422** here and **404** on
+/// `DELETE /api/v1/tokens/{id}`, and the split is on the record
+/// (`docs/task/RFCT-210.md` §2.4): this response body is a re-rendered pane, no
+/// consumer on this surface reads the status, and the condition really is the
+/// re-submit-the-form one — the list may have changed since the page was
+/// loaded. Its paired test is
+/// `the_builtin_revoke_pane_answers_422_where_the_api_answers_404`.
+async fn builtin_tokens_revoke(
+    State(state): State<AppState>,
+    Form(form): Form<TokenRevokeForm>,
+) -> Response {
+    let mut tokens = match pane_tokens(&state).await {
+        Ok(tokens) => tokens,
+        Err(message) => return builtin_error(&state, &message).await,
+    };
+    let Some(index) = tokens.iter().position(|entry| entry.id == form.id) else {
+        return builtin_error(
+            &state,
+            "No stored token carries that identifier. The list may have changed since this page was loaded; reload it and try again.",
+        )
+        .await;
+    };
+    let name = tokens.remove(index).name;
+    if let Err(response) = write_tokens(&state, &tokens).await {
+        let status = response.status();
+        return builtin_error(&state, &token_write_message(status)).await;
+    }
+    builtin_page(
+        &state,
+        Some(html! { div.saved { "The token " b { (name) } " has been revoked. It stops working on the next request." } }),
+    )
+    .await
+    .into_response()
+}
+
+/// What a failed token write is told to the operator, from the status the API
+/// path would have answered.
+///
+/// The pane cannot show §2.4's envelope, and it must not guess: the status is
+/// the one thing the shared write path already decided.
+fn token_write_message(status: StatusCode) -> String {
+    format!("The token list could not be written ({status}). Nothing was changed.")
+}
+
+/// The one page a plaintext token ever appears on.
+fn minted_page(name: &str, id: &str, wire: &str) -> Html<String> {
+    pane(
+        "API token",
+        html! {
+            div.saved { "The token " b { (name) } " has been created." }
+            p {
+                "This is the only time it is shown. Only its digest is stored, so if \
+                 this is lost the token has to be replaced rather than recovered."
+            }
+            p { "Identifier: " code { (id) } }
+            pre { (wire) }
+            p {
+                "Send it as " code { "Authorization: Bearer <token>" } " on "
+                code { "/api/v1/" } " requests."
+            }
+            p { a href=(BUILTIN_PATH) { "Back to the built-in interface" } }
+        },
+    )
+}
+
+/// Re-render the built-in pane with `message` in an error box, at 422.
+///
+/// The same shape `ssh_error` uses, and the same status, which is the HTML half
+/// of the split recorded on [`builtin_tokens_revoke`].
+async fn builtin_error(state: &AppState, message: &str) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        builtin_page(state, Some(error_box(message))).await,
+    )
+        .into_response()
 }
 
 /// Candidate (B), rendered unconditionally.

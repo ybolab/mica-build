@@ -29,7 +29,7 @@ const TOKENS_PATH: &str = "access.apiTokens";
 /// `authorized_keys`' own cap for the same reason it was chosen there -- far
 /// past any real appliance, far short of a list an operator could use to fill
 /// STATE.
-const MAX_TOKENS: usize = 32;
+pub const MAX_TOKENS: usize = 32;
 
 /// Largest token name accepted, in bytes. The `authorized_keys` comment bound,
 /// for the same field: an operator label with no other job.
@@ -84,6 +84,19 @@ pub fn validate_api_tokens(tokens: &[ApiToken]) -> Result<(), SettingsError> {
         }
     }
     Ok(())
+}
+
+/// Whether `id` is well formed, without saying whether any entry carries it.
+///
+/// The grammar and the lookup are different questions, and a route that
+/// answers them with one check answers the wrong one: an item route owes a
+/// **404** for an identifier that is well formed and names nothing and a
+/// **422** for one that is not well formed at all (`docs/task/RFCT-210.md`
+/// section 2.4). It cannot tell those apart without asking this separately,
+/// and a second copy of the grammar at the route could disagree with the copy
+/// the store enforces.
+pub fn is_api_token_id(id: &str) -> bool {
+    check_id(id).is_ok()
 }
 
 /// Reject an id that cannot be a stable, addressable identity.
