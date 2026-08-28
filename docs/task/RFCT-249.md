@@ -205,8 +205,20 @@ PMK and not a passphrase — and that belief is consistent with everything
 measurable here, but it is a belief in this tree and not a measurement of the
 parser.
 
-Both conditions are required and only one is arguably met, so the hatch does not
-open. The direction taken is also the reversible one: if a supplicant-side
+So the state of the hatch, stated as the shape of the reasoning and not just as
+its outcome:
+
+| PLAN-026's condition | State | On what evidence |
+|---|---|---|
+| Legitimate WPA passphrases require `"` or `\` | **Established**, in the weaker sense of *permit* rather than *require*: a client could legitimately have chosen one | IEEE 802.11i Annex H.4.1's inclusive 32-to-126 range with an empty exclusion list, corroborated by the repo calling such values `legal` at `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:272-273` |
+| wpa_supplicant has an escaping form the renderer could use instead | **Unmeasurable from this tree** | The parser is not here to read. A `wpa_supplicant.conf` under the board rootfs is a config file and not the parser, so it settles nothing |
+
+Both conditions are required and only one is met, so the hatch does not open.
+The second is recorded as a **limit** and not as a finding: this task did not
+establish that no escaping form exists, and it must not be read as having done
+so. Rounding it up to a finding would assert something unmeasured; rounding it
+down to silence would hide the one question that could reopen the decision.
+Neither is the honest state, which is that one of two conditions is settled. The direction taken is also the reversible one: if a supplicant-side
 escaping form is later measured to exist, widening one predicate in
 `mosd-settings` re-admits the two characters at both surfaces at once — which is
 the property the lift bought. That is the residue this milestone leaves, and it
@@ -263,25 +275,20 @@ against the moved lines; its prose is left as the dated measurement it is.
 
 ## 7. Findings, not fixed here
 
-The access point's renderer carries a **third** statement of the same bytes.
-`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs` has its own private
-`RAW_PMK_LEN`, `MIN_PASSPHRASE_LEN` and `MAX_PASSPHRASE_LEN`
-(`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:84-88`), its own length check
-inside `fn psk_directive` (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:353`),
-and its own predicate `fn is_plain`
-(`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:274`), whose byte test is
-character-for-character the one lifted here plus two clauses hostapd needs and
-wpa_supplicant does not: a leading or trailing space is refused as well.
+The access point's renderer carries a **third** statement of the same bytes,
+plus its own copies of the length bounds, and its refusal sentence names the
+length of the secret where the station path's deliberately does not. That was
+measured here, out of this milestone's scope, and it is filed as its own task:
+**`docs/task/RFCT-260.md`**, re-measured by the routing L2 at `ffa65ca` and
+carrying the full detail. It is not restated here, so there is one home for it.
 
-Two things about it are worth the next phase's attention and neither is this
-milestone's to change. It is not the same predicate, so folding it into
-`is_wpa_quotable` is a design decision and not a rename. And its refusal
-sentence **does** name the length observed —
-`"the pre-shared key is {} characters; WPA2 requires ..."` — where both the
-station renderer's and the lifted rule's deliberately do not; that sentence
-reaches no HTTP client today, because the AP key has no `/api/v1/` write route
-of its own, so nothing accepted at the API can reach it. Recorded as measured,
-not fixed: `wifi_ap.rs` is outside this task's file list.
+Two boundaries are worth stating explicitly, because they are what kept it out:
+`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs` is outside this task's file list,
+and the AP key has no `/api/v1/` write route of its own, so nothing accepted at
+the API surface this milestone tightened can reach it. RFCT-260's own sizing
+question — whether that refusal text can reach an API caller, which decides
+inconsistency-at-P2 against disclosure-at-P1 — is deliberately left open there
+rather than guessed at here.
 
 ## 8. Gates
 
@@ -295,10 +302,10 @@ taken there would be void, and none of these is.
 |---|---|
 | `bash docs/verify-citations.sh` | GATE_CITATIONS |
 | `bash docs/verify-index.sh` | GATE_INDEX |
-| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [ 252.204s] 838 tests run: 838 passed (2 slow), 0 skipped`, then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. `dbus` installed in-container first, or the bus round-trip goes rc=100 |
-| `oasdiff breaking` against main's tip | `No changes detected`, **RC=0**. Base `git show main:os/pkgs/mosd/apid/openapi.json` at main's *current* tip `ffa65ca` — main moved from `c5f7e96` during this task — with both severity promotions applied. `openapi.json` is byte-identical to main's, which is expected: this milestone registers no route and changes no schema |
+| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [ 252.204s] 838 tests run: 838 passed (2 slow), 0 skipped` — 836 was the campaign baseline at RFCT-245, this task adds 2, and 836 + 2 = 838 — then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. `dbus` installed in-container first, or the bus round-trip goes rc=100. Run at `1d5e8fb`; the later merge of `bkd/5q6am5rw` and this file's own revisions changed no `.rs`, `.toml`, `.json` or lockfile — `git diff --stat 1d5e8fb HEAD -- '*.rs' '*.json' '*.toml'` is empty — so the compiled tree the gate measured is byte-identical to the one reported |
+| `oasdiff breaking` against main's tip | `No changes detected`, **RC=0**. Re-run last against main's tip as it then stood, `a06e9dd`; main moved three times during this task (`c5f7e96` -> `ffa65ca` -> `a06e9dd`) and the base was re-taken each time rather than cached. Both severity promotions applied. `openapi.json` is byte-identical to main's, which is expected: this milestone registers no route and changes no schema |
 
-The two `warning` lines the Rust gate prints — an unmatched `Zlib` license
-allowance and a yanked `chacha20 0.10.1` reached through `uuid` — are
-pre-existing, are warnings and not failures, and are unrelated to anything this
-task changed.
+The two `warning` lines the Rust gate prints are **pre-existing and present on
+main**, are warnings and not failures, and are unrelated to anything this task
+changed: an unmatched `"Zlib"` license allowance at `deny.toml:13`, and a yanked
+`chacha20 0.10.1` reached through `uuid` into `rumqttd` and `zbus`.
