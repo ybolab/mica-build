@@ -202,4 +202,5 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-202 PLAN-022 M3: schema v7 - interface kinds**](RFCT-202.md) `P1`
 - [x] [**RFCT-203 PLAN-022 M4: VLAN and bridge reconcile**](RFCT-203.md) `P1`
 - [x] [**RFCT-204 PLAN-022 M5: WireGuard keystore and tunnel reconcile**](RFCT-204.md) `P1`
+- [x] [**RFCT-205 PLAN-022 M6: the apid surface - panes, rotate route, redaction, OpenAPI**](RFCT-205.md) `P1`
 - [x] [**RFCT-208 PLAN-022 records brought green under PLAN-020's hardened docs gates**](RFCT-208.md) `P2`

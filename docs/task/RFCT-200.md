@@ -79,11 +79,11 @@ it"* (`docs/task/RFCT-135.md:28-29`).
 ### 1.3 apid: forms and write path
 
 The `/network` pane is `.route("/network", get(network_form).post(network_submit))`
-(`os/pkgs/mosd/apid/src/routes.rs:155`). `valid_iface_name` accepts 1–15 bytes
-of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:799-804`),
+(`os/pkgs/mosd/apid/src/routes.rs:156`). `valid_iface_name` accepts 1–15 bytes
+of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:905-910`),
 and the pane's error text advertises the dot
-(`os/pkgs/mosd/apid/src/routes.rs:843`). `network_submit` builds the value
-(`os/pkgs/mosd/apid/src/routes.rs:853-870`) and writes it as a dot-path,
+(`os/pkgs/mosd/apid/src/routes.rs:949`). `network_submit` builds the value
+(`os/pkgs/mosd/apid/src/routes.rs:967-983`) and writes it as a dot-path,
 `set_settings(&format!("network.{iface}"), &value)` (measured at `4580dfb` in
 `os/pkgs/mosd/apid/src/routes.rs`, where the composition was unconditional;
 RFCT-201 has since moved it into `iface_settings_path`), over D-Bus:
@@ -136,7 +136,7 @@ design may depend on the radio userland.
 
 ### 1.6 Data-flow narrative
 
-Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:1422-1431`) →
+Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:1792-1849`) →
 apid validation (`:841-849`) → D-Bus `SetSettings("network.<iface>", json)`
 (`:1527`, `os/pkgs/mosd/apid/src/bus_client.rs:22`) → `write_setting`
 validates against the typed tree and saves TOML atomically
@@ -145,7 +145,7 @@ validates against the typed tree and saves TOML atomically
 `50-mos-<iface>.network`, sweeps, reloads networkd
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
-`GET /api/v1/state/network` (`docs/design/api.md:1337`).
+`GET /api/v1/state/network` (`docs/design/api.md:1339`).
 
 ---
 
@@ -159,7 +159,7 @@ which `.` is literal: `network."eth0.100".dhcp`. Reads and writes share one
 segment lexer in `mosd-settings` (`split_path`, `json_path_get`); apid's
 writers quote any segment that contains a dot when composing paths such as
 `format!("network.{}", quote_path_segment(iface))`
-(`os/pkgs/mosd/apid/src/routes.rs:857`); paths the daemon
+(`os/pkgs/mosd/apid/src/routes.rs:971`); paths the daemon
 emits (validation errors, the `SettingsChanged` signal) use the canonical
 spelling — quoted only when required.
 
@@ -188,7 +188,7 @@ Why this spelling and not another:
 **Grammar edge, stated.** A key containing `"` becomes inexpressible, and a
 bare segment beginning with `"` changes meaning. Measured mitigation: no
 validated writer can produce such a key — apid rejects it
-(`os/pkgs/mosd/apid/src/routes.rs:799-804`), the reconciler rejects it
+(`os/pkgs/mosd/apid/src/routes.rs:905-910`), the reconciler rejects it
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:166-173`) — so only a whole-tree
 root write or a hand edit could. Schema v7 (§7) adds model-level validation:
 a `network` map key must be a valid interface name (non-empty, ≤15 bytes,
@@ -255,7 +255,7 @@ no username and no password here, and that absence is the point"*
 (`os/pkgs/mosd/mosd-settings/src/model.rs:131-137`). Peer pre-shared keys are
 deliberately **out of scope** for this schema revision: adding one later means
 adding a secret-bearing field name to apid's redaction denylist
-(`os/pkgs/mosd/apid/src/redact.rs:25`) in the same change, and the design
+(`os/pkgs/mosd/apid/src/redact.rs:33`) in the same change, and the design
 prefers to ship no secret field over shipping one more redaction obligation.
 
 **Why a `kind` field plus optional blocks, not a serde-tagged enum.** An
@@ -404,7 +404,7 @@ The standard to meet is the AP PSK's, measured:
 4. **API exposure.** The settings tree carries no key field, so `GET
    /api/v1/settings/...` has nothing to leak and nothing new to redact; the
    name `privateKey` is added to `SECRET_FIELDS`
-   (`os/pkgs/mosd/apid/src/redact.rs:25`) anyway as a fail-closed guard
+   (`os/pkgs/mosd/apid/src/redact.rs:33`) anyway as a fail-closed guard
    against a future field. There is **no read-back route for the private key,
    ever** — not redacted-on-read; nonexistent.
 5. **Rotation.** A new mosd bus method surfaced as

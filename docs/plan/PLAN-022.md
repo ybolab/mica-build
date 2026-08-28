@@ -46,10 +46,17 @@ written, with the three gate questions answered:
 
 1. Peer pre-shared keys stay OUT of schema v7 — every secret field is a
    standing redaction obligation; PSK support is an additive later change.
-2. The private-key file pattern is ratified: `secrets/networkd/` 0750
-   `root:systemd-network`, key files 0640, atomic writes. systemd import
-   credentials are the fallback ONLY if the M2 on-image check shows the
-   systemd-network user cannot read the file.
+2. The private-key file pattern is ratified: 0750 `root:systemd-network`
+   directory, key files 0640, atomic writes. systemd import credentials are
+   the fallback ONLY if the M2 on-image check shows the systemd-network user
+   cannot read the file. *(Path-spelling correction, measured at M5: the
+   amendment's original `secrets/networkd/` spelling is unreachable —
+   identity.rs pins `secrets/` itself to 0700 unconditionally, and path
+   traversal needs execute on every component, so the group could never
+   reach the file. The directory is the true sibling
+   `<state>/networkd-secrets/`; the ratified pattern's substance — modes,
+   ownership, atomicity — is unchanged, and a planted-parent traversal test
+   holds the correction in place.)*
 3. Minimal surface confirmed: no STP, no VLAN egress/ingress maps, no
    per-peer routing metrics in v7 — all reachable later as additive optional
    fields under api.md section 2.1's rules.

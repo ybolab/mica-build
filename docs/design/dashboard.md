@@ -66,14 +66,14 @@ Summarised from `mos-ui-inventory.md` sections 2 and 3, with its citations
 carried through.
 
 `apid` is one Rust crate serving **ten routes on the HTTPS listener**, built in
-a single function (`os/pkgs/mosd/apid/src/routes.rs:43-60`), plus a catch-all 308
+a single function (`os/pkgs/mosd/apid/src/routes.rs:44-61`), plus a catch-all 308
 redirect router on the HTTP listener (`routes.rs:61-65`). That is the entire
 HTTP surface: no nested router, no fallback, no static-asset route
 (`mos-ui-inventory.md` section 2).
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:171-181`
+`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:177-187`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:571`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:677`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -184,7 +184,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:570`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:676`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -402,7 +402,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** `/proc/uptime`, read by `apid` itself at
-  `os/pkgs/mosd/apid/src/routes.rs:572-574`, parsed at `:539-546`, formatted at
+  `os/pkgs/mosd/apid/src/routes.rs:678-680`, parsed at `:539-546`, formatted at
   `:549-560`, rendered on `/` at `:580-583`.
 - **Availability: (a) available today** — gap-table **row 12**, answered via a
   side channel. Recorded honestly: this is **the one place `apid` touches the
@@ -492,7 +492,7 @@ names the reason, and where it belongs instead. **[proposal]**
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
   mis-clicked link cannot power the appliance off (`routes.rs:49-51`, pinned by a
-  test at `os/pkgs/mosd/apid/src/tests.rs:574`), plus a required confirmation token.
+  test at `os/pkgs/mosd/apid/src/tests.rs:573`), plus a required confirmation token.
 - **No raw JSON.** The current `/` renders the network subtree as
   pretty-printed JSON inside a `<pre>` (`routes.rs:587-596`). That is the
   artefact this proposal exists to remove, not a component to reuse. A full-tree
@@ -915,7 +915,7 @@ compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:150-157`,
+The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:151-163`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -1009,7 +1009,7 @@ every option below:
    section against high-frequency polling of any kind.
 
    One further load fact, already noted in section 3.4.1: the auth gate calls
-   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:123`),
+   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:124`),
    so every browser request costs at least one bus round trip before a tile is
    read.
 
@@ -1033,7 +1033,7 @@ sections 1-4.
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
-- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:64-68` and its doc
+- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:65-69` and its doc
   comment at `:59-60`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
@@ -1047,7 +1047,7 @@ order, so the four are comparable rather than merely described.
 | **C2** | **New crates** | Named, and checked against `os/pkgs/mosd/Cargo.toml`, `os/pkgs/mosd/Cargo.lock` and `os/pkgs/mosd/deny.toml` by the three tests in 5.1.2 |
 | **C3** | **JavaScript disabled** | What an operator with scripting off, or a text browser, or a hardened kiosk profile, still gets |
 | **C4** | **`mosd`-side work** | New bus method? New signal? Does it need `SettingsChanged` (`bus.rs:249-254`), which exists and is unsubscribed (`bus_client.rs:9-20`)? |
-| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:22-25`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
+| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:22-26`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
 | **C6** | **Operator-visible latency** | Worst-case delay between a value changing on the box and the operator seeing it |
 
 A seventh consideration — interaction with the existing form-POST + 303 +
@@ -1057,7 +1057,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:739-751`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:845-857`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1461,7 +1461,7 @@ Two mechanical points, verified:
   `axum-0.8.9/src/response/redirect.rs:26-38`), so a refreshing dashboard reached
   after a submit re-renders normally with no resubmission prompt.
 - The power routes are POST-only with no GET handler (`routes.rs:49-53`, pinned
-  by `os/pkgs/mosd/apid/src/tests.rs:574`). A `meta refresh` issues a GET and therefore
+  by `os/pkgs/mosd/apid/src/tests.rs:573`). A `meta refresh` issues a GET and therefore
   **cannot** trigger a power action even if one were somehow placed on a
   refreshing page. Section 2.10's exclusion of power buttons from the landing
   screen stands on its own reasoning; this is an independent second layer, and it

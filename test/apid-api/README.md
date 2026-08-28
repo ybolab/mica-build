@@ -19,7 +19,7 @@ image: a contended host is materially slower, which is why the harness's
 readiness deadline stays at 900 s and is not trimmed to fit these numbers.
 
 **A boot per test is still not viable on that figure**, and the reason was never
-the boot alone. A full lifecycle run is **two** boots, nine phases,
+the boot alone. A full lifecycle run is **two** boots, ten phases,
 `06-backoff`'s deliberately doubling login windows and an argon2 hash behind
 every login — about **four minutes** end to end, measured the same way. Against
 that, per-test isolation would multiply the boot across dozens of checks until
@@ -34,6 +34,7 @@ invocation and the phases hand state to each other in a fixed order:
 | `03-login` | the session cookie's attributes, the gate after setup, `/logout` |
 | `04-readonly` | every GET route, `/healthz`, the `/api` 404 envelope |
 | `05-mutate` | hostname, network, ssh, containers |
+| `05b-wireguard` | the M6 surface: typed pane forms per kind, the live `kind`/`publicKey` readers, the rotate-key action |
 | `06-backoff` | the login guard: global, doubling, persistent |
 | `07-reboot` | `POST`-only, the confirm token, taking the machine down |
 | `07b-postreboot` | what survived the power cycle, and what correctly did not |
