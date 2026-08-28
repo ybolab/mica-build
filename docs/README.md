@@ -19,6 +19,7 @@
   - `bsp-cx3576-sync.md` — cx3576 upstream BSP: source repo, synced commit, deviation register
   - `bus.md` — device bus v2: `com.mos.Item1` contract, class registry, actions as items, Sparkplug B evaluation
   - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
+  - `build-harness.md` — how this repository's checks are run: the pinned bun container, the Rust gate's container and PATH, scratch that is not `/tmp`, arm64 build-vs-execute, and the docs gates
 - `research/` — decision-basis studies
   - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
   - `init-strategy.md` — init core strategy: Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1, with triggers
@@ -46,4 +47,8 @@ the same unresolved reason: it is the API-first follow-on to
 and is written by sibling tasks in one campaign against a moving crate — a
 translation kept in step with that would be a second moving target, and one
 kept out of step would be worse than none. There is deliberately no
-`design/api.zh.md`.
+`design/api.zh.md`. `design/build-harness.md` joins the exception on the same
+unresolved ground: it is a register of measured host facts that go stale as the
+harness moves, and a translation of dated measurements kept out of step would
+misreport what this machine does. There is deliberately no
+`design/build-harness.zh.md` (`task/RFCT-233.md`).
