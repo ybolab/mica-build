@@ -212,3 +212,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-209 Reconciling PLAN-021 with PLAN-022: fourteen conflicted files, one tree**](RFCT-209.md) `P1`
 - [x] [**RFCT-220 PLAN-011 bus v2 audited milestone by milestone, and its closeout recommended**](RFCT-220.md) `P1`
 - [x] [**RFCT-221 PLAN-012 container-engine audit: milestone verdicts and closeout recommendation**](RFCT-221.md) `P1`
+- [x] [**RFCT-222 PLAN-013 audited: the x64/QEMU vehicle measured against the tree it asked for**](RFCT-222.md) `P1`
