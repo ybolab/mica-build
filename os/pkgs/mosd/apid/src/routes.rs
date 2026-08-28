@@ -1065,7 +1065,7 @@ fn settings_write_refusal(path: &str) -> Response {
         // Named rather than folded into the sentence below, because this is
         // the subtree where a passthrough is actively destructive rather than
         // merely wrong (`docs/task/RFCT-210.md` §2.4).
-        "network" => "the `network` subtree is not written through this route: it is written through the typed network routes (`PUT /api/v1/network`, `PUT` and `DELETE /api/v1/network/{iface}`, and the peer collection under each). A raw write here would create an entry of the default kind for an interface that has none, and would run none of the relational rules — a bridge naming a port that does not exist would be accepted".to_string(),
+        "network" => "the `network` subtree is not written through this route: it is written through the typed network routes — `PUT /api/v1/network/{iface}` and the `DELETE` beside it, `PUT /api/v1/network` for the whole map, and the peer collection under each interface. A raw write here would create an entry of the default kind for an interface that has none, and would run none of the relational rules: a bridge naming a port that does not exist would be accepted".to_string(),
         _ => WRITES_FOUR.to_string(),
     })
 }
