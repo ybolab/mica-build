@@ -6,9 +6,9 @@
  * to appear on the serial line before accepting that a quiet port means the
  * guest went down.
  *
- * os/tools/qemu-run.sh:167 passes `-no-reboot`, so a guest-initiated reboot
- * makes QEMU exit instead of resetting. That file belongs to the image line and
- * is not edited here; the harness boots a second time from the same disk
+ * `src/qemu.ts` passes `-no-reboot` to QEMU, so a guest-initiated reboot
+ * makes it exit instead of resetting. The harness works with the flag rather
+ * than around it, and boots a second time from the same disk
  * (MOS_QEMU_REUSE_DISK=1), so the machine comes back through firmware, GRUB and
  * the grubenv this reboot just wrote, and 07b-postreboot runs in a different
  * suite process. This phase therefore ends when the port stops answering, and
@@ -779,7 +779,7 @@ const phase: Phase = {
     );
 
     report.note(
-      "    07 ends here by design. os/tools/qemu-run.sh:167 passes -no-reboot, so QEMU EXITS " +
+      "    07 ends here by design. src/qemu.ts passes -no-reboot, so QEMU EXITS " +
         "rather than resets; the harness boots the same disk a second time and runs " +
         "07b-postreboot in a new suite process. Waiting for the machine here would be " +
         "waiting on a process that has not been started yet.",

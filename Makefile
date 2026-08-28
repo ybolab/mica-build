@@ -335,10 +335,10 @@ x64-%:
 # target that quietly rebuilt would turn a check into a forty-minute build and
 # would then be testing the tree rather than the artefact under test.
 #
-# THE RUN DIRECTORY IS SHARED. os/tools/qemu-run.sh boots out of the single fixed
-# path _out/x64/.qemu, which the x64 verification line uses too, so this target
-# and that line CANNOT RUN AT ONCE -- two runs overwrite each other's disk.img
-# and the loser fails somewhere unrelated. The harness refuses to start while
+# THE RUN DIRECTORY IS SHARED. The harness boots out of the single fixed path
+# _out/x64/.qemu, and _out is per-checkout and gitignored -- so a worktree points
+# it at the checkout that built the image and TWO SUCH RUNS CANNOT GO AT ONCE:
+# each overwrites the other's disk.img and the loser fails somewhere unrelated. The harness refuses to start while
 # another container holds that directory rather than discovering the collision
 # halfway through a nine-minute boot.
 #

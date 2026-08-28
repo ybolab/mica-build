@@ -14,12 +14,16 @@
 # corrupt the host if it got a path wrong.
 #
 # The image itself is never touched: this edits _out/x64/.qemu/disk.img, the
-# copy os/tools/qemu-run.sh boots. Run it AFTER qemu-run.sh has made that copy --
-# which it does at the start of every run, so the order is:
+# copy the boot engine boots. Run it AFTER that copy has been made -- which the
+# prepare step does at the start of every run, so the order is:
 #
-#   bash os/tools/qemu-run.sh --prepare-only     (makes the copy, boots nothing)
+#   bun run src/qemu.ts --prepare-only           (makes the copy, boots nothing)
 #   bash os/tools/qemu-seed-state.sh ...         (writes into it)
-#   MOS_QEMU_REUSE_DISK=1 bash os/tools/qemu-run.sh --capture ...
+#   MOS_QEMU_REUSE_DISK=1 bun run src/qemu.ts --capture ...
+#
+# The engine is test/apid-api/src/qemu.ts and it runs in a container carrying
+# bun and a docker client; test/apid-api/run.sh is what invokes it, and calls
+# this script in between the two lines above.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +33,7 @@ OUT_DIR="${REPO_ROOT}/_out/x64"
 DISK="${OUT_DIR}/.qemu/disk.img"
 
 if [ ! -f "${DISK}" ]; then
-    echo "error: ${DISK} not found. Run 'bash os/tools/qemu-run.sh --prepare-only' first: this writes into the disk copy that run makes, not into the image itself." >&2
+    echo "error: ${DISK} not found. Prepare the disk first -- test/apid-api/run.sh does that with test/apid-api/src/qemu.ts --prepare-only: this writes into the disk copy that step makes, not into the image itself." >&2
     exit 1
 fi
 if [ "$#" -eq 0 ] || [ $(( $# % 2 )) -ne 0 ]; then
@@ -60,9 +64,10 @@ done
 # form passes nothing and the container fails on an unbound variable while
 # forty-nine others are equally absent. Same trap as the x64 assembler's
 # (os/build/src/mkimage-x64.ts).
-# The base, from os/build-env/images.env; see os/tools/qemu-run.sh. This one
-# writes INTO the STATE partition of a disk image with mke2fs and debugfs, so
-# which e2fsprogs it gets decides what the guest then mounts.
+# The base, from os/build-env/images.env, resolved the way every container in
+# this tree resolves one. This one writes INTO the STATE partition of a disk
+# image with mke2fs and debugfs, so which e2fsprogs it gets decides what the
+# guest then mounts.
 SEED_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
 
 docker run --rm -v "${WORK}:/w" -v "${OUT_DIR}/.qemu:/d" \

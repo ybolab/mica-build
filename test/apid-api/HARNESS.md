@@ -15,7 +15,7 @@ There are three doors between this script and apid, and all three fail as
 "connection refused" with nothing to say which one was shut:
 
 1. QEMU's user-mode `hostfwd` binds **inside the container running QEMU**.
-2. That container must also **publish** the port, which `os/tools/qemu-run.sh` does.
+2. That container must also **publish** the port, which `src/qemu.ts` does.
 3. `-p 127.0.0.1:<port>:<port>` publishes on the **docker host's** loopback.
    Anything running in a container has its own loopback and no route to that
    one. Measured 2026-08-24: this session is on a docker network at
@@ -32,25 +32,49 @@ id about as often as it is anything useful.
 The QEMU container is started `--rm` with **no `--name`**, so it is found by its
 bind mount on the run directory — and required to have an address on the
 discovered network, which is what distinguishes it from the short-lived `mtools`
-container that writes the kernel append into the ESP and holds the same mount.
+containers that read and write the kernel append in the ESP and hold the same
+mount.
 
 ## One run directory, shared
 
-`os/tools/qemu-run.sh`'s `RUN_DIR` is the single fixed path `_out/x64/.qemu`. The x64
-verification line uses it too. **The two cannot run at once**: each would
-overwrite the other's `disk.img` and the loser would fail somewhere unrelated.
+`src/qemu.ts`'s `RUN_DIR` is the single fixed path `_out/x64/.qemu`, and
+`os/tools/qemu-seed-state.sh` writes into that same `disk.img` by name.
+**Two runs cannot go at once**: each would overwrite the other's `disk.img` and
+the loser would fail somewhere unrelated. That is not hypothetical — `_out` is
+per-checkout and gitignored, so a worktree points it at the checkout that built
+the image and the two then share the *real* directory.
 
 The harness therefore refuses to start while any running container binds that
 directory, and it compares **resolved** paths — `docker inspect` reports the
 path it was *given*, not the path it *resolved*, so a run directory reached
 through a symlink would otherwise slip past the guard.
 
-`os/tools/qemu-run.sh` is owned by the image line and is **not edited** by this
-harness; the path cannot be moved, so it is guarded instead.
+The boot engine is **this harness's own** since RFCT-230: `src/qemu.ts` is the
+port of a shell tool under `os/tools/` that this harness was the only caller of
+and was told not to edit. The path is still a single fixed one and is still
+guarded rather than moved, because `os/tools/qemu-seed-state.sh` names it too.
+
+### Where the boot engine runs
+
+`src/qemu.ts` needs bun **and** a docker client in one place. The bun pinned as
+`IMAGE_BUN_1` carries no client, which is the gap `os/verify/Dockerfile` was
+written for — two digest `FROM`s, one `COPY` of the static client, and a
+build-time `docker --version && bun --version`. `run.sh` reuses that Dockerfile
+rather than adding a second one saying the same thing; the tag carries both
+input digests, so bumping either pin builds a new image and there is no stale
+parent to find. Under the default pins it is byte for byte the image `os/verify`
+builds.
+
+The repository is mounted at **its own path**, not at `/w`: every `docker run`
+the engine makes hands the daemon a path, that daemon is the host's, and the
+containers it opens are siblings rather than children — so a path has to mean
+the same thing on both sides. The run directory is deliberately **not** mounted
+into that container, or the guard above and `find_guest` would both mistake it
+for the one running QEMU.
 
 ## Two boots off one disk, because of `-no-reboot`
 
-`os/tools/qemu-run.sh:167` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
+`src/qemu.ts` passes `-no-reboot` to QEMU, so a guest-initiated reboot makes it
 **exit** instead of resetting. The harness works with the flag rather than
 around it:
 
@@ -84,10 +108,10 @@ against the first boot. Measured on this campaign's first full run.
 The readiness wait is **anchored to a console offset** for the same reason. A
 guest that resets in place appends to the *same* capture file, under the first
 boot's `APID_LISTENING` line, so a whole-file grep answers "apid is listening"
-with a line the previous boot wrote. If a future `os/tools/qemu-run.sh` drops
-`-no-reboot`, the guest resets in place, the container is still there, and the
-harness waits for apid to come back on that same container instead of starting a
-second one against a disk something is already booting.
+with a line the previous boot wrote. If `-no-reboot` is ever dropped, the guest
+resets in place, the container is still there, and the harness waits for apid to
+come back on that same container instead of starting a second one against a disk
+something is already booting.
 
 The second boot is **on by default**. It was off while `07b-postreboot` and
 `08-poweroff` did not exist; both now do. `MOS_APID_BOOT2=0` turns it off for a

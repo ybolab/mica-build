@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # The board layout is the board definition; the image's name is read from it
-# rather than repeated here, the same way os/tools/qemu-run.sh reads it. `:?` on the
+# rather than repeated here, the same way src/qemu.ts reads it. `:?` on the
 # one key used turns a layout that stopped defining it into a sentence instead
 # of an empty path that fails four lines later as "image missing".
 # shellcheck source=/dev/null  # a data file of assignments, resolved at runtime
@@ -26,11 +26,13 @@ IMG="${OUT_DIR}/${IMAGE_LATEST_NAME:?os/boards/x64/board.env did not define IMAG
 RUN_DIR="${OUT_DIR}/.qemu"
 ART_DIR="${OUT_DIR}/apid-api"
 
-# `RUN_DIR` is os/tools/qemu-run.sh's single fixed path and the x64 verification
-# line uses it too, so two runs at once clobber each other's disk.img and this
-# script refuses to start while another container holds it. It cannot be moved
-# from here: os/tools/qemu-run.sh belongs to the image line and is not ours to
-# edit.
+# `RUN_DIR` is the boot engine's single fixed path -- src/qemu.ts prepares the
+# disk there and os/tools/qemu-seed-state.sh writes into that same disk by name
+# -- so two runs at once clobber each other's disk.img and this script refuses
+# to start while another container holds it. Two runs at once is not a
+# hypothetical: `_out` is per-checkout and gitignored, so a worktree points it
+# at the checkout that built the image and the two then share the REAL
+# directory.
 #
 # `RUN_DIR_REAL` is resolved once and used for every comparison against a docker
 # mount source. `docker inspect` reports the path it was given, not the path it
@@ -48,7 +50,7 @@ if ! RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"; then
 fi
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
-# Ports: the same names os/tools/qemu-run.sh reads, so a caller sets them once and
+# Ports: the same names src/qemu.ts reads, so a caller sets them once and
 # the two halves cannot disagree about which port was opened.
 HTTPS_PORT="${MOS_QEMU_HTTPS_PORT:-18443}"
 HTTP_PORT="${MOS_QEMU_HTTP_PORT:-18080}"
@@ -68,10 +70,10 @@ CONTAINER_TIMEOUT="${MOS_APID_CONTAINER_TIMEOUT:-240}"
 POLL_INTERVAL="${MOS_APID_POLL_INTERVAL:-5}"
 PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 
-# The QEMU-side backstops. RUN_SECONDS is when os/tools/qemu-run.sh presses the
+# The QEMU-side backstops. RUN_SECONDS is when src/qemu.ts presses the
 # virtual power button; TIMEOUT is when it gives up on the container entirely,
-# and it must exceed RUN_SECONDS by more than the 90s grace that script allows
-# a guest which ignores ACPI. Both are generous because the normal end of a run
+# and it must exceed RUN_SECONDS by more than the 90s grace the boot engine
+# allows a guest which ignores ACPI. Both are generous because the normal end of a run
 # is this script tearing the container down after the suite, not a backstop
 # firing -- and a backstop firing mid-suite looks exactly like apid dying.
 RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-2400}"
@@ -98,6 +100,17 @@ PHASES="${BOOT1_PHASES}"
 # digest os/build-env/images.env records. MOS_APID_BUN_IMAGE overrides it.
 BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)}"
 KEEP_DISK="${MOS_APID_KEEP_DISK:-0}"
+
+# The daemon socket is MOUNTED into the container the boot engine runs in, so it
+# has to be a socket on this host. A DOCKER_HOST naming a TCP daemon is a
+# different arrangement -- the container would need the variable, not a mount --
+# and guessing which one a caller meant is how a run comes to talk to a daemon
+# nobody chose. Same rule, and the same two cases, as os/verify/run.sh's.
+case "${DOCKER_HOST:-}" in
+"") DOCKER_SOCK=/var/run/docker.sock ;;
+unix://*) DOCKER_SOCK="${DOCKER_HOST#unix://}" ;;
+*) DOCKER_SOCK="" ;;
+esac
 
 DRY_RUN=0
 case "${1:-}" in
@@ -171,7 +184,7 @@ network_holding() {
 # A container's address on the discovered network, looked up by name because
 # the map key in `docker network inspect` is the container id and reading a map
 # key needs a template variable. The name is stable for the life of the
-# container. os/tools/qemu-run.sh sets none, so it is docker's random name -- which is
+# container. src/qemu.ts sets none, so it is docker's random name -- which is
 # also why the QEMU container cannot simply be looked up by name to begin with.
 address_on_network() {
     local cid name members
@@ -181,6 +194,86 @@ address_on_network() {
     members="$(docker network inspect "${NET}" \
         --format '{{range .Containers}}{{.Name}} {{.IPv4Address}}{{"\n"}}{{end}}' 2>/dev/null)" || return 1
     awk -v n="${name}" '$1 == n { split($2, a, "/"); print a[1]; exit }' <<<"${members}"
+}
+
+# --- the boot engine --------------------------------------------------------
+# `src/qemu.ts` copies the image, grows the disk, writes MOS_QEMU_APPEND into
+# the copy's ESP grub.cfg and runs QEMU in a container. It was a shell tool
+# under os/tools/ that this harness was the only caller of and was told not to
+# edit; it is TypeScript now, beside the suite that drives it, and the four
+# defects RFCT-206 section 5 found in it are negative fixtures in
+# src/selftest.ts rather than a comment saying they were fixed (RFCT-230).
+#
+# It needs bun AND a docker client in ONE place, and the pinned bun image
+# carries no client -- os/verify/Dockerfile is two digest FROMs and one COPY of
+# the static one, written for exactly that gap, so it is reused rather than
+# copied into a second file that would have to be kept in step. The tag carries
+# both input digests: bump either pin and the tag names something that was never
+# built, so there is no stale parent to find. Under the default pins it is byte
+# for byte the image os/verify builds, and whichever of the two runs first pays
+# for it.
+#
+# The repository is mounted at ITS OWN PATH and not at /w. Every `docker run`
+# src/qemu.ts makes hands the daemon a path -- the disk directory, the console
+# file -- and that daemon is the host's, so the containers it opens are SIBLINGS
+# rather than children and a path has to mean the same thing on both sides.
+# Mounted at its own path there is no prefix to rewrite and no arithmetic to go
+# stale. `_out` is mounted a second time for the case this script already
+# handles everywhere else: a worktree whose `_out` is a symlink into the
+# checkout that built the image, whose target does not exist inside a container
+# that mounted only the repository.
+#
+# What is deliberately NOT mounted is `RUN_DIR`. The competing-run guard and
+# `find_guest` both identify the QEMU container by a bind whose source RESOLVES
+# to ${RUN_DIR_REAL}; ${REPO_ROOT} and ${OUT_REAL} resolve to neither, so this
+# container -- which is up for the whole of a boot -- can never be mistaken for
+# the one running QEMU.
+PORT_IMAGE=""
+resolve_port_image() {
+    local cli
+    cli="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)" || return 1
+    PORT_IMAGE="localhost/mos-verify-bun:$(printf '%s\n%s\n' "${BUN_IMAGE}" "${cli}" | sha256sum | cut -c1-16)"
+    PORT_CLI_IMAGE="${cli}"
+    return 0
+}
+
+# Built on demand and once, like os/verify's: nothing in `make build-env` builds
+# it, so an image produced there would be missing at exactly the moment it is
+# needed. One layer over two images that are already local, so it costs seconds.
+build_port_image() {
+    docker image inspect "${PORT_IMAGE}" >/dev/null 2>&1 && return 0
+    note "building ${PORT_IMAGE} (the pinned bun plus the pinned docker client)"
+    docker build -q \
+        --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
+        --build-arg "MOS_DOCKER_CLI_IMAGE=${PORT_CLI_IMAGE}" \
+        -t "${PORT_IMAGE}" -f "${REPO_ROOT}/os/verify/Dockerfile" "${REPO_ROOT}/os/verify" >/dev/null
+}
+
+# How the boot engine is invoked, and the only place that decides. Both call
+# sites go through here, so the mounts, the socket and the environment cannot
+# differ between the prepare and the boots -- which is the one way a disk gets
+# prepared with one set of kernel arguments and booted with another.
+qemu_port() {
+    local -a envargs devargs
+    local kv
+    envargs=()
+    for kv in "${QEMU_ENV[@]}"; do envargs+=(-e "${kv}"); done
+    if [ "${1:-}" = "--reuse" ]; then
+        envargs+=(-e MOS_QEMU_REUSE_DISK=1)
+        shift
+    fi
+    # /dev/kvm as THIS process sees it, passed through so that src/qemu.ts's own
+    # test of it answers what this shell would have answered. Without the
+    # passthrough the engine would decide on the runner image's view of /dev,
+    # which is nobody's machine.
+    devargs=()
+    if [ -e /dev/kvm ]; then devargs+=(--device /dev/kvm); fi
+    docker run --rm \
+        -v "${REPO_ROOT}:${REPO_ROOT}" -v "${OUT_REAL}:${OUT_REAL}" \
+        -v "${DOCKER_SOCK}:/var/run/docker.sock" \
+        -w "${SCRIPT_DIR}" \
+        ${devargs[@]+"${devargs[@]}"} "${envargs[@]}" \
+        "${PORT_IMAGE}" bun run src/qemu.ts "$@"
 }
 
 # --- teardown ---------------------------------------------------------------
@@ -247,12 +340,28 @@ if ! docker info >/dev/null 2>&1; then
 fi
 pass "docker is usable"
 
+if [ -z "${DOCKER_SOCK}" ]; then
+    fail "DOCKER_HOST=${DOCKER_HOST} is not a unix:// socket, and the boot engine reaches the daemon by MOUNTING one into the container it runs in. Run this where the daemon has a unix socket."
+    finish
+fi
+if [ ! -S "${DOCKER_SOCK}" ]; then
+    fail "${DOCKER_SOCK} is not a socket, so the boot engine would start with no daemon to reach and fail later making the QEMU container"
+    finish
+fi
+pass "the daemon socket to mount into the boot engine: ${DOCKER_SOCK}"
+
+if ! resolve_port_image; then
+    fail "os/build-env/from.sh could not resolve IMAGE_DOCKER_CLI_28; the boot engine needs bun and a docker client in one image and that key is the client half"
+    finish
+fi
+pass "boot engine image: ${PORT_IMAGE} ($(docker image inspect "${PORT_IMAGE}" >/dev/null 2>&1 && echo "present" || echo "built at first use from os/verify/Dockerfile"))"
+
 HOLDERS="$(run_dir_holders)"
 if [ -n "${HOLDERS}" ]; then
     fail "another container already binds ${RUN_DIR_REAL}: ${HOLDERS//$'\n'/, }"
-    note "  that is os/tools/qemu-run.sh's single fixed run directory and it is SHARED with the x64"
-    note "  verification line. Continuing would overwrite its disk.img underneath a running"
-    note "  boot, so this run refuses rather than clobbering it. Wait for that run to finish."
+    note "  that is the boot engine's single fixed run directory, and a checkout whose _out"
+    note "  resolves here shares it. Continuing would overwrite its disk.img underneath a"
+    note "  running boot, so this run refuses rather than clobbering it. Wait for it to finish."
     finish
 fi
 pass "no competing run: nothing binds ${RUN_DIR_REAL}"
@@ -270,7 +379,7 @@ fi
 # Three doors sit between here and apid and each fails as "connection refused"
 # with nothing to say which was shut: QEMU's user-mode `hostfwd` binds inside
 # the container running QEMU; that container must publish the port, which
-# os/tools/qemu-run.sh does; and `-p 127.0.0.1:...` publishes on the docker
+# src/qemu.ts does; and `-p 127.0.0.1:...` publishes on the docker
 # host's loopback, which is not this container's and has no route to it -- a
 # containerised session sits on its own docker network while a plain
 # `docker run` lands on the default bridge. So the guest's address is the QEMU
@@ -322,10 +431,10 @@ RUN_STAMP="${ART_DIR}/run-started"
 
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
-    note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/tools/qemu-run.sh --prepare-only)"
+    note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (src/qemu.ts --prepare-only, in ${PORT_IMAGE})"
     note "would seed     test/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1"
     note "               (apid's start-up activates it; 04-readonly's traversal rows need it)"
-    note "would boot     os/tools/qemu-run.sh --capture ${CONSOLE1}"
+    note "would boot     src/qemu.ts --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
     note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1 systemd.run=..."
     note "would seed     test/apid-api/guest/m7-net-smoke.sh -> STATE:${SMOKE_IN_GUEST} (phase 05c)"
@@ -359,11 +468,11 @@ trap 'teardown' EXIT
 # off one disk state possible at all -- and what lets the reboot in phase 07 be
 # observed as a change to the disk rather than as a fresh machine.
 #
-# The append is passed on every invocation, not only on the prepare.
-# os/tools/qemu-run.sh adds it to the linux line unconditionally, so over a run it
-# lands two or three times; a repeated systemd.journald.forward_to_console=1 is
-# the same value twice and costs nothing, whereas one boot that silently lacks
-# it deletes the readiness signal this entire script waits on.
+# The append is passed on every invocation, not only on the prepare. src/qemu.ts
+# adds it to the linux line once and skips it when it is already there, so over
+# a run it lands exactly once; passing it every time is what makes a boot that
+# reuses a disk somebody else prepared still carry it, and one boot that
+# silently lacks it deletes the readiness signal this entire script waits on.
 #
 # The second append starts phase 05c's guest script. `systemd.run=` is read by
 # systemd's own kernel-command-line generator, which builds the unit in /run
@@ -408,10 +517,15 @@ QEMU_ENV=(
 )
 
 : >"${RUN_STAMP}"
+if ! build_port_image; then
+    fail "could not build ${PORT_IMAGE} from os/verify/Dockerfile; it is two pinned FROMs and one COPY, and nothing is fetched beyond those two images"
+    finish
+fi
+
 note "preparing the disk from ${IMG##*/} (a ~2 GiB copy; nothing boots yet)"
-if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
+if ! qemu_port --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
     PREPARED=1  # a partial copy still has to be cleaned up
-    fail "os/tools/qemu-run.sh --prepare-only failed; see ${ART_DIR}/prepare.log"
+    fail "src/qemu.ts --prepare-only failed; see ${ART_DIR}/prepare.log"
     tail -n 20 "${ART_DIR}/prepare.log" >&2 || true
     finish
 fi
@@ -522,8 +636,7 @@ launch_boot() {
     local label="$1" console="$2"
     : >"${console}"
     QEMU_CID=""
-    env "${QEMU_ENV[@]}" MOS_QEMU_REUSE_DISK=1 \
-        bash "${REPO_ROOT}/os/tools/qemu-run.sh" --capture "${console}" \
+    qemu_port --reuse --capture "${console}" \
         >"${ART_DIR}/launch-${label}.log" 2>&1 &
     QEMU_PID=$!
     note "[${label}] QEMU launched in the background (pid ${QEMU_PID}); console -> ${console##*/}"
@@ -531,10 +644,10 @@ launch_boot() {
 
 # --- 4. find the guest ------------------------------------------------------
 # Two conditions, held apart because they fail for different reasons and the
-# message has to say which. os/tools/qemu-run.sh starts its container with `--rm` and
+# message has to say which. src/qemu.ts starts its container with `--rm` and
 # no `--name`, so the only handle on it is the bind mount -- and the same mount
-# is held for a moment by the short-lived mtools container that writes the
-# kernel append into the ESP, which is not on the discovered network. Requiring
+# is held for a moment by the short-lived mtools containers that read and write
+# the kernel append in the ESP, which are not on the discovered network. Requiring
 # an address on that network is what tells the two apart; matching on the mount
 # alone latches onto the wrong container and then reports "no address on that
 # network" about a container that was never going to have one.
@@ -760,16 +873,16 @@ note "boot1 was ready $((SECONDS - BOOT1_START))s after launch"
 run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 
 # --- 7. the second boot -----------------------------------------------------
-# os/tools/qemu-run.sh:167 passes `-no-reboot`, so a guest-initiated reboot makes
-# QEMU exit rather than reset. That file belongs to the image line and is not
-# ours to change, so the harness works with the flag: phase 07 posts
+# src/qemu.ts passes `-no-reboot` to QEMU, so a guest-initiated reboot makes
+# QEMU exit rather than reset. Keeping the flag is a decision, not an
+# inheritance: the harness works with it rather than around it, and phase 07 posts
 # /power/reboot, QEMU exits, and that exit is the evidence the guest asked for a
 # reset. The second boot reuses the same disk.img and comes up through firmware,
 # GRUB and the grubenv the reboot just wrote.
 #
-# If a future os/tools/qemu-run.sh drops `-no-reboot` the guest resets in place
-# and the container is still there, so the wait must go to that same container
-# rather than start a second one against a disk something is already booting.
+# If `-no-reboot` is ever dropped the guest resets in place and the container is
+# still there, so the wait must go to that same container rather than start a
+# second one against a disk something is already booting.
 # Which shape happened is therefore decided by looking, never by assuming.
 QEMU_EXIT_GRACE="${MOS_APID_QEMU_EXIT_GRACE:-90}"
 
