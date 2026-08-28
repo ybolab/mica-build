@@ -5,7 +5,7 @@
   `make os-repart-test` and both image builds with both profiles and both
   verifiers all green; no on-device claim is made
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:10
 - **claimedAt**: 2026-08-19 15:10
 - **completedAt**: 2026-08-19 18:05

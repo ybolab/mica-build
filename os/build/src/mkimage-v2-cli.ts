@@ -1,4 +1,4 @@
-// The host half of os/mkimage-v2.sh: where the inputs are, what the output is
+// The host half of os/mkimage-v2.sh (deleted: PLAN-014): where the inputs are, what the output is
 // called, and the -latest symlink.
 //
 // THE SEAM: epoch naming and the -latest symlink happen on the host side, in

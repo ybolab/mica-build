@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, `make docs-verify` green, six negative tests demonstrated
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 10:17
 - **claimedAt**: 2026-08-19 14:00
 - **completedAt**: 2026-08-19 15:20

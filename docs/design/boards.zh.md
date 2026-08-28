@@ -8,7 +8,7 @@
 > boards.md 为准。
 >
 > 一块板卡如何接入 mos：它必须产出什么、OS 构建消费什么、两者之间的硬性
-> 断言。参考实现：`board/cx3576`。
+> 断言。参考实现：`os/boards/cx3576/bsp`。
 
 ## 1. 分离规则
 
@@ -33,15 +33,15 @@ board/<name>/
 └── rootfs/             # 可选的演示/冒烟 rootfs（不是产品）
 ```
 
-引导链有上游支持的板卡（如 `board/x64`，UEFI）只需 `board.yaml` + README——
+引导链有上游支持的板卡（如 `os/boards/x64`，UEFI）只需 `board.yaml` + README——
 内核与 bootloader 来自 talos 构建。
 
 ## 3. 进入 OS 镜像的产物接口
 
 | 产物 | 生产方 | 消费方 |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `board/<n>/kernel` | talos Dockerfile：替换 `modules-arm64` stage（`ARG BSP_KERNEL_IMAGE`）；modules 落 `/usr/lib/modules/<ver>`，固件落 `/usr/lib/firmware` |
-| bootloader 二进制 | `board/<n>/uboot` | imager overlay 的 `Install` 步骤（按 `board.yaml` 偏移裸写） |
+| `Image` + `modules.tar` + `*.dtb` | `os/boards/<n>/bsp/kernel` | talos Dockerfile：替换 `modules-arm64` stage（`ARG BSP_KERNEL_IMAGE`）；modules 落 `/usr/lib/modules/<ver>`，固件落 `/usr/lib/firmware` |
+| bootloader 二进制 | `os/boards/<n>/bsp/uboot` | imager overlay 的 `Install` 步骤（按 `board.yaml` 偏移裸写） |
 | `board.yaml` | 板卡目录 | imager profile / overlay 的 `GetOptions`：kernel args、console、分区偏移 |
 | 固件 blob | 板卡目录 | rootfs 固件注入，按板裁剪 |
 
@@ -59,7 +59,7 @@ release 一致，镜像组装期断言。
 - 运行时：cgroup v2 全套、containerd/netfilter 前置（cx3576 Dockerfile 已
   断言的 docker 集合）、seccomp。
 - Talos 基线片段：全板共享、只维护一份，位于
-  `board/common/mos-required.fragment`（buildx 命名 context `mos-common`），
+  `os/boards/common/mos-required.fragment`（buildx 命名 context `mos-common`），
   在 olddefconfig 之前合入——上述清单及 machined 必需伪文件系统（hugetlbfs、
   tracing、SELinux + LSM 启动列表）的唯一权威来源。板级特有需求留在各板
   自己的配置基线里。
@@ -85,7 +85,7 @@ verity = 5.1；< 6.7 已内置 overlay 旧语法回退）。板卡准入分档�
 
 ## 7. 新板接入 checklist
 
-1. 建 `board/<name>/`，写 board.yaml（非 UEFI 另加 kernel/uboot 目录）。
+1. 建 `os/boards/<name>/`，写 board.yaml（非 UEFI 另加 kernel/uboot 目录）。
 2. 内核：厂商树 + mos-required 片段合入；断言全绿。
 3. U-Boot：§5 配置；verified boot 密钥烧录。
 4. 先走冒烟路径（Alpine 或原厂镜像）验证硬件——这正是 cx3576 的 Alpine

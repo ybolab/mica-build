@@ -2,7 +2,7 @@
 
 - **status**: completed — research complete, reference document, no code
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 10:17
 - **claimedAt**: 2026-08-19 10:20
 - **completedAt**: 2026-08-19 11:40

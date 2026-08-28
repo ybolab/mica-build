@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, `bash mosd/hack/check.sh`, `bash os/ui-location-test.sh`, `bash mosd/hack/dbus-policy-test.sh` and the full image chain green; on-device behaviour is the user's acceptance
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-23 02:40
 - **claimedAt**: 2026-08-23 02:40
 

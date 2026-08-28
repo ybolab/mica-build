@@ -1,4 +1,4 @@
-// The host half of os/update/bundle.sh: where the inputs are, which signing
+// The host half of os/update/bundle.sh (deleted: PLAN-014): where the inputs are, which signing
 // material is used, what the output is called, and the -latest symlink.
 //
 // The seam is structural: epoch naming and the -latest symlink happen here,

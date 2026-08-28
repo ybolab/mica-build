@@ -2,7 +2,7 @@
 
 - **status**: completed — §§4, 5 and 6 marked per subsection with the code named by path, the §0 marker divergence registered at §10.3 item 15 with the preamble bound to its period, the hardware position said once, and 44 pre-rename citations re-pointed and re-measured
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 22:15
 - **claimedAt**: 2026-08-20 22:15
 - **completedAt**: 2026-08-20 23:40

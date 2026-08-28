@@ -155,8 +155,8 @@ What this means operationally, today: a compromised online key ends the
 repository's lineage. The recovery is a fresh ceremony (§1.1–1.5), a new
 trust anchor distributed out of band, and devices re-anchored by whatever
 mechanism ships trust anchors to devices — which is the RFCT-088 workstream's
-territory (`docs/task/RFCT-088.md`, in flight in parallel with this
-document). Until rotation tooling exists, the root key's protection (§1.5)
+territory (`docs/task/RFCT-088.md`, **completed 2026-08-23**). Until
+rotation tooling exists, the root key's protection (§1.5)
 and the online keys' host hygiene are carrying the weight that rotation
 would; this is the single strongest argument for scheduling that tooling.
 
@@ -261,11 +261,40 @@ post-RFCT-083:
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
 enrolment) rather than baking it into the signed root — is the trust-anchor
-provisioning story RFCT-088 is designing **in parallel with this document**
-(`docs/task/RFCT-088.md`), together with the TUF root anchor from §1.5,
+provisioning story RFCT-088 designed — **completed 2026-08-23**
+(`docs/task/RFCT-088.md`) — together with the TUF root anchor from §1.5,
 which has the same shape and should ship through the same channel. Until
-that lands, this runbook produces a CA whose keyring has no road to a
+provisioning ships, this runbook produces a CA whose keyring has no road to a
 production device, and says so rather than gesturing at one.
+
+What is pinned down today, so the eventual decision has a fixed place to
+land (RFCT-139):
+
+- **The read path is settled and testable without a booted device.** What
+  RAUC verifies bundles against is `path=` in the rendered
+  `/etc/rauc/system.conf`, and two verifier checks hold the contract from
+  both directions: `rauc-keyring-path`
+  (`os/verify/src/checks-rauc.ts:201`) asserts the rendered config names
+  exactly `/etc/rauc/keyring.pem` (`os/pkgs/rauc/system.conf.in:102`), and
+  `packed-no-dev-keyring` (`os/verify/src/checks-root.ts:601`) asserts the
+  shipped root carries nothing at that path. So a keyring provisioned at
+  the documented path is, by the shipped configuration, what RAUC reads.
+  Whether a provisioned keyring is honoured end to end — `rauc install`
+  accepting a production-signed bundle on hardware — is observable only on
+  a booted device with a provisioned keyring; that last step stays
+  documented, not tested, until one exists.
+- **How it survives updates.** `/etc` is the read-only dm-verity squashfs,
+  replaced whole by every A/B update, so the keyring cannot simply be
+  written in place and must not be baked in (§4). A provisioned keyring
+  must live on STATE or META and reach `/etc/rauc/keyring.pem` the way
+  `/etc/ssh` reaches its path — a seed plus bind mount
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-state`). No such bind exists
+  yet, deliberately: creating one is part of choosing the channel.
+- **The open decision, stated as the user's.** Which channel delivers the
+  file (STATE/META provisioning file, factory step, first-boot enrolment —
+  the same candidates as the TUF root anchor above), and who holds,
+  rotates and revokes the signing CA, are product decisions about key
+  custody that this repository records and does not make.
 
 ## 3. Signing a release bundle — **[runbook]**
 

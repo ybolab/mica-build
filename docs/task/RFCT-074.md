@@ -2,7 +2,7 @@
 
 - **status**: completed — the asset router is mounted as the HTTPS router's fallback, `/api/` is reserved with §2.4's envelope, §4.2's five conditions each have a test, and `assets/mod.rs` no longer carries `#![allow(dead_code)]`
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 15:20
 - **claimedAt**: 2026-08-20 15:20
 - **completedAt**: 2026-08-20 17:05

@@ -3,7 +3,7 @@
 - **status**: completed — implementation complete, `make docs-verify` green (136/136),
   `bash mosd/hack/check.sh` green
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 17:45
 - **claimedAt**: 2026-08-19 17:45
 - **completedAt**: 2026-08-19 18:30

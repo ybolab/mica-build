@@ -23,7 +23,7 @@ describe('the register refuses a shape that cannot be diffed', () => {
     // The shipped register, as a smoke check. The refusals below are what
     // make the rules it satisfies mean something.
     expect(() => assertRegisterWellFormed()).not.toThrow()
-    expect(CHECKS.length).toBeGreaterThanOrEqual(0)
+    expect(CHECKS.length).toBeGreaterThan(0)
   })
 
   test('an empty id is refused', () => {

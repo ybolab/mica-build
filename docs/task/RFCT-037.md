@@ -3,7 +3,7 @@
 - **status**: completed — implementation complete, `bash docs/verify-index.sh` (0 FAILED)
   and `bash mosd/hack/check.sh` both green; no on-device behaviour is claimed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 13:30
 - **claimedAt**: 2026-08-19 13:30
 - **completedAt**: 2026-08-19 14:45

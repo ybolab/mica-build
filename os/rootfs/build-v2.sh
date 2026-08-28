@@ -302,7 +302,7 @@ fi
 # 32 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
 # silicon revisions -- and only the confirmed runtime set may enter a signed
 # root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
-# was: os/verify-image-v2.sh has asserted the image against it since x64
+# was: os/verify-image-v2.sh (deleted: PLAN-014) has asserted the image against it since x64
 # arrived. Read here rather than copied, so the build and the verifier cannot
 # disagree about which firmware the board carries.
 #
@@ -619,7 +619,7 @@ done
 
 # Stage selection, which is what replaced the WITH_* build arguments.
 # WITH_CONTAINERS and WITH_MOSD are the caller's spelling -- the environment
-# variable, and board/<name>/containers.env. A 0 names a stage the driver does
+# variable, and os/boards/<name>/bsp/containers.env. A 0 names a stage the driver does
 # NOT build, rather than travelling into the build as a `--build-arg` that five
 # separate RUNs and scripts each have to test. One decision instead of five
 # copies of one.

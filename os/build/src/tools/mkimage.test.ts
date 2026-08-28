@@ -16,7 +16,7 @@ import { Toolbox, ToolError } from '../toolbox.ts'
 import { CX3576_ASSEMBLY } from '../toolsets.ts'
 import { bootScriptArgs, makeBootScript, readImageHeader } from './mkimage.ts'
 
-/** cx3576's own boot source -- the file os/mkimage-v2.sh compiles. */
+/** cx3576's own boot source -- the file os/mkimage-v2.sh (deleted: PLAN-014) compiles. */
 const BOOT_CMD = join(OS_DIR, 'boards', 'cx3576', 'boot.cmd')
 
 let tb: Toolbox

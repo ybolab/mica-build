@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto'
 import { resolveImage } from './images.ts'
 
 // The container is the normal route, not a degraded one. Both shell assemblers
-// have a route already: os/mkimage-v2.sh probes the host with
+// have a route already: os/mkimage-v2.sh (deleted: PLAN-014) probes the host with
 // host_can_assemble() and falls back to an alpine container; os/mkimage-x64.sh
 // does not even probe -- "no sgdisk, no mtools and no grub-mkstandalone, and
 // requiring them would make [the build] a host-configuration problem". This
@@ -46,7 +46,7 @@ export type RouteKind = 'host' | 'container'
 /** How a toolset's packages are installed, which differs by base image family. */
 export type PackageManager = 'apk' | 'apt'
 
-/** A host binary carried into the container, the way os/update/bundle.sh installs its rauc. */
+/** A host binary carried into the container, the way os/update/bundle.sh (deleted: PLAN-014) installs its rauc. */
 export interface CarriedFile {
   readonly from: string
   readonly to: string

@@ -1,12 +1,13 @@
 //! Route-level tests driving the router directly with the fake settings
 //! backend; no network or bus daemon involved.
 //!
-//! The one exception is [`power_bus`], which drives the router through the
-//! real D-Bus client against a fake mosd on a private bus, because what it
-//! asserts lives below the fake backend's trait.
+//! The exceptions are [`power_bus`] and [`settings_signal`], which drive the
+//! real D-Bus client against a fake mosd on a private bus, because what they
+//! assert lives below the fake backend's trait.
 
 mod broken_classes;
 mod power_bus;
+mod settings_signal;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -244,13 +245,30 @@ async fn status_page_renders_hostname_and_network_state() {
         "network",
         json!({ "eth0": { "file": "50-mos-eth0.network", "dhcp": true } }),
     );
+    fake.set_state_entry("uptime", json!(90_061));
     let cookie = login(&router, "hunter2secret").await;
     let response = get(&router, "/", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_string(response).await;
     assert!(body.contains("statusbox"), "hostname missing: {body}");
     assert!(body.contains("eth0"), "network state missing: {body}");
-    assert!(body.contains("Uptime"), "uptime missing: {body}");
+    // 90 061 s = 1d 1h 1m 1s: the pane renders mosd's number, humanized.
+    assert!(body.contains("Uptime: 1d 1h 1m"), "uptime missing: {body}");
+}
+
+/// Uptime reaches the pane from mosd's live-state tree and from nowhere else:
+/// a backend with no `uptime` state renders the unavailable notice, where a
+/// handler that still read `/proc/uptime` for itself would render a real
+/// number on any Linux host.
+#[tokio::test]
+async fn uptime_is_read_from_mosd_state_and_not_from_proc() {
+    let (router, _fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = get(&router, "/", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(body.contains("Uptime unavailable."), "{body}");
+    assert!(!body.contains("<p>Uptime: "), "{body}");
 }
 
 #[tokio::test]
@@ -720,8 +738,12 @@ async fn stored_key_list(fake: &FakeSettings) -> serde_json::Value {
 /// that is missing here. Without that, adding a route and forgetting this list
 /// leaves exactly one unauthenticated write path and every existing test still
 /// green -- the list would describe the routes someone remembered.
-const ALL_MUTATIONS: [(&str, &str); 10] = [
+const ALL_MUTATIONS: [(&str, &str); 11] = [
     ("/ssh/enable", "enabled=on"),
+    (
+        "/password",
+        "current=hunter2secret&password=newsecret9&confirm=newsecret9",
+    ),
     (
         "/ssh/password",
         "confirm=set-transient-password&password=hunter2secret",
@@ -1358,6 +1380,9 @@ fn installed_files(root: &Path) -> Vec<String> {
 /// The router as shipped, with the bundle store rooted at `bundle_root`.
 fn test_app_serving(tree: serde_json::Value, bundle_root: &Path) -> Router {
     let fake = Arc::new(FakeSettings::new(tree));
+    // A fixed uptime, so the status pane renders its uptime line (which
+    // `without_the_uptime_line` requires) from the fake like everything else.
+    fake.set_state_entry("uptime", json!(90_061));
     app(AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle_root))
 }
 
@@ -1627,7 +1652,7 @@ async fn api_versions_answers_when_the_settings_call_fails() {
     let failed = get(&router, "/", None).await;
     assert_eq!(
         failed.status(),
-        StatusCode::BAD_GATEWAY,
+        StatusCode::SERVICE_UNAVAILABLE,
         "the control: the gate's own bus call must be failing"
     );
 
@@ -2609,7 +2634,7 @@ async fn the_built_in_panes_reachable_beside_an_active_bundle_are_named() {
     }
 
     // The full settings tree and the published `sshd` state, so that every
-    // pane in the expected set really renders: a pane that 502s for want of a
+    // pane in the expected set really renders: a pane that 503s for want of a
     // fixture would drop out of the observed set and read as a routing result.
     let fake = Arc::new(FakeSettings::new(ssh_tree(json!([]))));
     fake.set_state_entry("sshd", sshd_state(false, false, false));
@@ -2645,8 +2670,8 @@ async fn the_built_in_panes_reachable_beside_an_active_bundle_are_named() {
 /// §6.3's stated cost — *"(A) only helps an operator who knows the URL"* —
 /// closed on the built-in surfaces that lead to it, named by identity.
 ///
-/// The 502 page §6.3 cites is not among them: it is reached only when a mosd
-/// call fails, which a broken bundle does not cause.
+/// The mosd-unavailable page §6.3 cites is not among them: it is reached only
+/// when a mosd call fails, which a broken bundle does not cause.
 #[tokio::test]
 async fn the_escape_path_is_named_on_the_surfaces_that_lead_to_it() {
     let bundle = bundle_shadowing_the_prefix();
@@ -2707,10 +2732,19 @@ fn audit_events(lines: &[serde_json::Value]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// §6's login trail: success, logout, wrong password and the throttle all
-/// leave lines — and none of those lines carries password material, which is
-/// asserted against the raw bytes rather than the parsed fields so a secret
-/// hiding in an unexpected field would still fail the test.
+/// §6's login trail: success, logout and failed logins all leave lines — and
+/// none of those lines carries password material, which is asserted against
+/// the raw bytes rather than the parsed fields so a secret hiding in an
+/// unexpected field would still fail the test.
+///
+/// A failed login answers 401 or 429 depending on the login guard's clock,
+/// not only on this test's ordering: `LoginGuard::begin_attempt` charges the
+/// attempt at admission and `confirm_failure` re-arms a real-time window
+/// (`BACKOFF_BASE`, one second) from the outcome, so a run descheduled across
+/// that window sees the second wrong attempt admitted (401) where an
+/// unloaded run sees it refused (429). The curve itself has its own tests in
+/// `auth.rs`; this test is about the audit trail, so it accepts either
+/// status and asserts the audit line matches the status actually answered.
 #[tokio::test]
 async fn the_audit_trail_records_the_login_lifecycle_and_never_the_password() {
     let dir = TempDir::new().unwrap();
@@ -2723,22 +2757,22 @@ async fn the_audit_trail_records_the_login_lifecycle_and_never_the_password() {
             .status(),
         StatusCode::SEE_OTHER
     );
-    let wrong = post_form(&router, "/login", "password=not-the-password", None).await;
-    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
-    // The failure armed a one-second window; this attempt lands inside it.
-    let throttled = post_form(&router, "/login", "password=not-the-password", None).await;
-    assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+    let mut expected = vec![
+        ("login".to_string(), "success".to_string()),
+        ("logout".to_string(), "ok".to_string()),
+    ];
+    for _ in 0..2 {
+        let wrong = post_form(&router, "/login", "password=not-the-password", None).await;
+        let outcome = match wrong.status() {
+            StatusCode::UNAUTHORIZED => "wrong-password",
+            StatusCode::TOO_MANY_REQUESTS => "throttled",
+            other => panic!("a wrong login must answer 401 or 429, not {other}"),
+        };
+        expected.push(("login".to_string(), outcome.to_string()));
+    }
 
     let lines = audit_lines(dir.path());
-    assert_eq!(
-        audit_events(&lines),
-        [
-            ("login".to_string(), "success".to_string()),
-            ("logout".to_string(), "ok".to_string()),
-            ("login".to_string(), "wrong-password".to_string()),
-            ("login".to_string(), "throttled".to_string()),
-        ]
-    );
+    assert_eq!(audit_events(&lines), expected);
     // `oneshot` drives the router with no connection, so the ConnectInfo
     // extension is absent — and that must degrade to a marker, never to a
     // rejected login (audit wiring must not be what makes a login fail).
@@ -3146,7 +3180,7 @@ async fn the_mqtt_pane_says_listen_and_auth_are_not_validated_by_the_switch() {
 #[tokio::test]
 async fn the_mqtt_pane_renders_before_mosd_has_published_any_state() {
     // No `set_state_entry`, so `get_state("mqtt")` fails -- which is the state
-    // of a device that has just booted. The pane has to render anyway: a 502
+    // of a device that has just booted. The pane has to render anyway: a 503
     // here would mean the switch cannot be turned on until something else has
     // already turned it on.
     for enabled in [false, true] {
@@ -3965,6 +3999,16 @@ fn the_zbus_error_survives_the_conversion_to_anyhow() {
 async fn each_fdo_error_name_gets_its_own_envelope() {
     for (fdo_name, code, status) in [
         (
+            "com.mos.mosd1.Error.NotFound",
+            "settings_not_found",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "com.mos.mosd1.Error.ReadOnly",
+            "settings_read_only",
+            StatusCode::CONFLICT,
+        ),
+        (
             "org.freedesktop.DBus.Error.InvalidArgs",
             "settings_rejected",
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -4036,16 +4080,38 @@ async fn an_unreachable_mosd_is_503_with_retry_after() {
     }
 }
 
-/// A dot-path that does not exist answers **422 `settings_rejected`, not 404**,
-/// and the reading is deliberate. It reaches mosd, which rejects it with
-/// `InvalidArgs`, and §2.4's table is exhaustive on the fdo error name. The
-/// table's `not_found` row covers unknown ROUTES and collection items, and
-/// collections are out of phase 1 — a route that does exist, given a path mosd
-/// refused, is a rejection and reports as one.
+/// The HTML half of the same condition: a pane whose mosd call fails answers
+/// **503 with `Retry-After`**, exactly like the API path above, so one outage
+/// no longer reports as 502 on one surface and 503 on the other.
 #[tokio::test]
-async fn a_dot_path_that_does_not_exist_is_422_and_not_404() {
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
+    let (router, cookie) = failing_app(None).await;
 
+    let response = get(&router, "/hostname", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        header_value(&response, axum::http::header::RETRY_AFTER),
+        "5"
+    );
+    let body = body_string(response).await;
+    assert!(body.contains("The management daemon is unavailable."));
+}
+
+/// A dot-path that does not exist answers **404 `settings_not_found`**, no
+/// longer 422: mosd names `SettingsError::NotFound` with its own error name
+/// (`com.mos.mosd1.Error.NotFound`), so a missing path and a bad value stop
+/// sharing a code. The 422 assertion beside it is the control: a rejection
+/// that IS a rejection still reports as one.
+#[tokio::test]
+async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
+    let (router, cookie) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
+    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["path"], json!("no.such.path"));
+
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
     let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
@@ -4102,4 +4168,379 @@ fn the_resource_path_spellings_agree() {
         assert_eq!(route, format!("{prefix}{{*path}}"));
         assert_eq!(doc, format!("{prefix}{{path}}"));
     }
+}
+
+// RFCT-134: the admin password can be changed after setup, on both surfaces.
+
+/// POST a JSON body, the shape the API's one write route takes.
+async fn post_json(
+    router: &Router,
+    path: &str,
+    body: &str,
+    cookie: Option<&str>,
+) -> Response<axum::body::Body> {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header(CONTENT_TYPE, "application/json");
+    if let Some(cookie) = cookie {
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
+    }
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// A wrong current password writes nothing and the old credential stands.
+///
+/// The current password is demanded even though the caller holds a session: a
+/// session is a browser artifact that outlives the moment of typing, and an
+/// unattended browser must not be enough to rotate the one credential on the
+/// management surface.
+#[tokio::test]
+async fn the_password_pane_rejects_a_wrong_current_password() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/password",
+        "current=not-the-password&password=newsecret9&confirm=newsecret9",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused change must write nothing, got {:?}",
+        fake.set_paths()
+    );
+    // The acting session is untouched by a refusal.
+    assert_eq!(
+        get(&router, "/", Some(&cookie)).await.status(),
+        StatusCode::OK
+    );
+    // And the old password still logs in.
+    let _ = login(&router, "hunter2secret").await;
+}
+
+/// The decided semantics, end to end: the new hash lands in the settings
+/// tree, every other session is invalidated, and the acting session survives.
+#[tokio::test]
+async fn the_password_pane_changes_the_password_and_keeps_the_acting_session() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let other = login(&router, "hunter2secret").await;
+    let acting = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/password",
+        "current=hunter2secret&password=newsecret9&confirm=newsecret9",
+        Some(&acting),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/password?saved=1");
+    assert_eq!(fake.set_paths(), vec!["access.webAdmin"]);
+
+    // The stored hash is a new one and verifies the new password.
+    let stored = fake
+        .get_settings("access.webAdmin.password_hash")
+        .await
+        .unwrap();
+    let stored = stored.as_str().unwrap();
+    assert!(stored.starts_with("$argon2id$"));
+    assert!(auth::verify_password(stored, "newsecret9"));
+
+    // The acting session survives its own change; the other session is gone.
+    assert_eq!(
+        get(&router, "/", Some(&acting)).await.status(),
+        StatusCode::OK
+    );
+    let evicted = get(&router, "/", Some(&other)).await;
+    assert_eq!(evicted.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&evicted), "/login");
+
+    // The new password logs in (first, so the success resets the login
+    // guard), and the old one no longer does.
+    let _ = login(&router, "newsecret9").await;
+    let old = post_form(&router, "/login", "password=hunter2secret", None).await;
+    assert_eq!(old.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A mismatched confirmation is refused before the current password is even
+/// looked at, in the same shape as the setup wizard's refusal.
+#[tokio::test]
+async fn the_password_pane_rejects_a_mismatched_confirmation() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/password",
+        "current=hunter2secret&password=newsecret9&confirm=different1",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(fake.set_paths().is_empty());
+}
+
+/// The API half of the same refusal: §2.4's envelope, `wrong_password`, and
+/// nothing written.
+#[tokio::test]
+async fn the_api_password_change_rejects_a_wrong_current_password() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"not-the-password","newPassword":"newsecret9"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_api_headers(&response, "/api/v1/actions/change-password");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "wrong_password");
+    assert_eq!(error["source"], "apid");
+    assert!(fake.set_paths().is_empty());
+}
+
+/// The API half of the success: 204, the hash written, the other session
+/// dropped, the calling session kept.
+#[tokio::test]
+async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let other = login(&router, "hunter2secret").await;
+    let acting = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
+        Some(&acting),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(fake.set_paths(), vec!["access.webAdmin"]);
+
+    let stored = fake
+        .get_settings("access.webAdmin.password_hash")
+        .await
+        .unwrap();
+    assert!(auth::verify_password(
+        stored.as_str().unwrap(),
+        "newsecret9"
+    ));
+
+    assert_eq!(
+        get(&router, "/", Some(&acting)).await.status(),
+        StatusCode::OK
+    );
+    let evicted = get(&router, "/", Some(&other)).await;
+    assert_eq!(evicted.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&evicted), "/login");
+}
+
+/// A new password under eight characters is refused with `validation_failed`,
+/// the same floor the setup wizard enforces.
+#[tokio::test]
+async fn the_api_password_change_rejects_a_short_new_password() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"short"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert!(fake.set_paths().is_empty());
+}
+
+/// §3.1's trap, held for the one write route: unauthenticated is §2.4's 401
+/// envelope in both gate modes, never a redirect a script reads as success.
+#[tokio::test]
+async fn the_api_password_change_is_401_without_a_session_in_both_gate_modes() {
+    let (configured, _) = test_app(configured_tree("hunter2secret"));
+    let (fresh, _) = test_app(unconfigured_tree());
+
+    for (mode, router) in [("configured", &configured), ("setup mode", &fresh)] {
+        let response = post_json(
+            router,
+            "/api/v1/actions/change-password",
+            r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{mode}");
+        assert_eq!(response.headers().get(LOCATION), None, "{mode}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "not_authenticated", "{mode}");
+    }
+}
+
+/// A body that is not the declared shape answers §2.4's envelope rather than
+/// axum's plain-text rejection.
+#[tokio::test]
+async fn the_api_password_change_rejects_a_malformed_body_with_the_envelope() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_api_headers(&response, "/api/v1/actions/change-password");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "request_invalid");
+    assert_eq!(error["source"], "apid");
+    assert!(fake.set_paths().is_empty());
+}
+
+// RFCT-132 / RFCT-133: the gate's cache of the `access` subtree.
+//
+// The subscription itself — the proxy's `#[zbus(signal)]` member feeding the
+// cache over a real bus — is exercised in `tests/settings_signal.rs`. Here
+// the cache's route-level contract is driven through the real router, with
+// the subscription state set by hand where a watcher would set it.
+
+/// The lockout rule at the route level: with no live subscription every
+/// unauthenticated request reads the bus — the pre-cache behaviour, and the
+/// fallback the rule demands; with one, the first request fills the cache and
+/// the rest are served from it; an invalidation forces exactly one re-read;
+/// a lapse falls all the way back to direct reads.
+#[tokio::test]
+async fn the_gate_serves_access_from_the_cache_only_while_subscribed() {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        2,
+        "no subscription: every request must read the bus"
+    );
+
+    cache.subscribed();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        3,
+        "subscribed: one fill, then cache hits"
+    );
+
+    // What the watcher does on a SettingsChanged that touches `access`.
+    cache.invalidate();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        4,
+        "a change costs exactly one re-read"
+    );
+
+    cache.lapsed();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        6,
+        "a lapsed subscription must fall back to direct reads"
+    );
+}
+
+/// The password change against the cache — the sequence RFCT-132 names as
+/// the hard case, made real by the change-password route: the flow itself
+/// verifies against the bus even while the cache is primed, its write drops
+/// the cached snapshot without waiting for the `SettingsChanged` round trip,
+/// and the next unauthenticated request re-reads and observes the
+/// post-change tree.
+#[tokio::test]
+async fn a_password_change_neither_reads_nor_leaves_a_stale_access_snapshot() {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+    let cookie = login(&router, "hunter2secret").await;
+
+    cache.subscribed();
+    get(&router, "/login", None).await;
+    let primed = cache.get().expect("the gate's read must fill the cache");
+    let reads_before = fake.settings_reads("access");
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"brand-new-secret"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        fake.settings_reads("access") > reads_before,
+        "the change flow must verify against the bus, never the gate's cache"
+    );
+    assert_eq!(
+        cache.get(),
+        None,
+        "the write must drop the cached snapshot before any signal arrives"
+    );
+
+    get(&router, "/login", None).await;
+    let refilled = cache.get().expect("the next gate read must refill");
+    assert_ne!(
+        refilled, primed,
+        "the refill must observe the post-change credential"
+    );
+    login(&router, "brand-new-secret").await;
+}
+
+/// Completing setup IS the setup-mode decision changing under the gate — the
+/// exact decision the cache must never serve stale. The wizard's
+/// `access.webAdmin` write drops the cache, so the next unauthenticated
+/// request re-reads and redirects to `/login`, not back into `/setup`.
+#[tokio::test]
+async fn completing_setup_drops_the_cached_setup_mode_decision() {
+    let fake = Arc::new(FakeSettings::new(unconfigured_tree()));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+
+    cache.subscribed();
+    let response = get(&router, "/", None).await;
+    assert_eq!(location(&response), "/setup");
+    assert!(
+        cache.get().is_some(),
+        "the setup-mode read must have filled the cache"
+    );
+
+    let response = post_form(
+        &router,
+        "/setup",
+        "password=hunter2secret&confirm=hunter2secret",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let response = get(&router, "/", None).await;
+    assert_eq!(
+        location(&response),
+        "/login",
+        "the gate must not answer setup mode from the pre-write snapshot"
+    );
 }

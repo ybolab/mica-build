@@ -2,7 +2,7 @@
 
 - **status**: completed — the signing recommendation, the six phases and eleven foreclosures are written; two contradictions it found were routed rather than fixed, and closed later by RFCT-069
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:27
 - **claimedAt**: 2026-08-19 15:28
 - **completedAt**: 2026-08-19 16:40
@@ -24,10 +24,10 @@ laid. Four stub lines consumed, verified at merge.
 
 | section | line | subject |
 | --- | --- | --- |
-| 7.1 | `docs/design/api.md:2472` | The channels that actually exist — **[implemented]** |
-| 7.2 | `:2494` | The honest baseline: anyone with SSH is already root — **[implemented]** |
-| 7.3 | `:2535` | The signing machinery this project already has, having read it — **[implemented]** |
-| 7.4 | `:2587` | Recommendation |
+| 7.1 | `docs/design/api.md:3414` | The channels that actually exist — **[implemented]** |
+| 7.2 | `:3436` | The honest baseline: anyone with SSH is already root — **[implemented]** |
+| 7.3 | `:3477` | The signing machinery this project already has, having read it — **[implemented]** |
+| 7.4 | `:3534` | Recommendation |
 | 8.1 | `:2731` | What happens to today's server-rendered pages |
 | 8.2 | `:2806` | Six phases |
 | 8.3 | `:3194` | What is deliberately not phased |
@@ -38,7 +38,7 @@ laid. Four stub lines consumed, verified at merge.
 
 **Do not sign UI bundles in phase 1 or phase 5.** The recommendation runs
 against the instinct, so it is argued as three separately checkable claims
-(`docs/design/api.md:2601-2624`):
+(`docs/design/api.md:3548-3571`):
 
 1. **A signature and the upload credential authorise the same blast radius.** A
    caller holding a token can already power the appliance off, flip

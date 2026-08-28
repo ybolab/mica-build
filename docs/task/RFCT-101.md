@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, image verify 375/375, `os/ui-location-test.sh` 51/51 cases; the engine is installed, every unit masked, and the Quadlet directory is STATE-backed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-23 12:20
 - **claimedAt**: 2026-08-23 12:20
 

@@ -38,7 +38,14 @@ ART_DIR="${OUT_DIR}/apid-api"
 # pointing _out at the checkout that built the image is the ordinary case --
 # slips past a string comparison, and the guard below would wave through the
 # collision it exists to stop.
-RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"
+# `readlink -f` demands every component but the last, so a checkout with no
+# ${OUT_DIR} at all -- nothing was ever built here -- used to die right on this
+# assignment under `set -e`, as a bare exit 1 with no output. Refuse with a
+# sentence instead; the image check further down never gets a chance to.
+if ! RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"; then
+    echo "FAIL: ${OUT_DIR} does not exist, so there is no image to boot; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64" >&2
+    exit 1
+fi
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
 # Ports: the same names os/tools/qemu-run.sh reads, so a caller sets them once and
@@ -221,7 +228,7 @@ finish() {
 note "repository ${REPO_ROOT}"
 
 if [ ! -e "${IMG}" ]; then
-    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/mkimage-x64.sh"
+    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
     finish
 fi
 pass "image present: ${IMG##*/} -> $(basename "$(readlink -f "${IMG}")")"
@@ -297,6 +304,8 @@ ART_IN_CONTAINER="/w/_out/x64/apid-api"
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/tools/qemu-run.sh --prepare-only)"
+    note "would seed     test/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1"
+    note "               (apid's start-up activates it; 04-readonly's traversal rows need it)"
     note "would boot     os/tools/qemu-run.sh --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
     note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1"
@@ -354,6 +363,85 @@ if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-onl
 fi
 PREPARED=1
 pass "disk prepared at ${RUN_DIR}/disk.img"
+
+# --- 3b. seed the traversal fixture into DATA -------------------------------
+# RFCT-141. asset_path::resolve -- the function holding every §4.4 traversal
+# guard -- runs only when a bundle is active at /srv/ui, and no device under
+# test ships one, so without this step not one line of the guard set executes
+# over the wire and 04-readonly's traversal rows measure §4.2's conditions
+# instead. os/tools/qemu-seed-state.sh writes STATE only, so this is its DATA
+# counterpart, same mechanism (extract the partition by its GPT sector range,
+# write with debugfs, put it back), different partition and owned here because
+# the fixture is this suite's.
+#
+# What is seeded is a STAGED tree, .staging-1, never an activated store:
+# apid's own start-up (pick_up_staged) validates and activates it, so the
+# store state 04-readonly runs against -- digest record, current pointer,
+# modes -- is produced by the code under test rather than imitated by this
+# script. The fixture's contents are what 04-readonly's assertions compare
+# response bodies against, byte for byte; both sides read
+# test/apid-api/fixture/ui-bundle.
+FIXTURE_DIR="${SCRIPT_DIR}/fixture/ui-bundle"
+seed_data_fixture() {
+    local seed_image log
+    log="${ART_DIR}/seed-data.log"
+    if [ ! -f "${FIXTURE_DIR}/index.html" ]; then
+        fail "the UI-bundle fixture ${FIXTURE_DIR} has no index.html; nothing can activate, and the traversal rows in 04-readonly would fail against the built-in UI"
+        return 1
+    fi
+    # The VALUES, not `-e NAME`: layout keys are set, not exported (see
+    # os/tools/qemu-seed-state.sh, which this mirrors).
+    seed_image="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+    if ! docker run --rm \
+        -v "${FIXTURE_DIR}:/fixture:ro" -v "${RUN_DIR}:/d" \
+        -e DATA_PARTNUM="${DATA_PARTNUM}" -e DATA_SIZE_MIB="${DATA_SIZE_MIB}" \
+        "${seed_image}" bash -c '
+        set -eu
+        apt-get update -qq >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            gdisk e2fsprogs >/dev/null 2>&1
+        start=$(sgdisk -i "${DATA_PARTNUM}" /d/disk.img | sed -n "s/^First sector: \([0-9]*\).*/\1/p")
+        [ -n "${start}" ] || { echo "error: no DATA partition in the GPT" >&2; exit 1; }
+        count=$(( DATA_SIZE_MIB * 2048 ))
+        dd if=/d/disk.img of=/tmp/data.img bs=512 skip="${start}" count="${count}" status=none
+
+        files="$(cd /fixture && find . -type f | sort)"
+        [ -n "${files}" ] || { echo "error: the fixture is empty" >&2; exit 1; }
+        for f in ${files}; do
+            rel="${f#./}"
+            dst="/ui/.staging-1/${rel}"
+            dir="$(dirname "${dst}")"
+            # debugfs mkdir does not create parents; walk the path.
+            acc=""
+            IFS=/ read -ra parts <<<"${dir#/}"
+            for p in "${parts[@]}"; do
+                [ -n "${p}" ] || continue
+                acc="${acc}/${p}"
+                debugfs -w -R "mkdir ${acc}" /tmp/data.img >/dev/null 2>&1 || true
+            done
+            debugfs -w -R "rm ${dst}" /tmp/data.img >/dev/null 2>&1 || true
+            debugfs -w -R "write /fixture/${rel} ${dst}" /tmp/data.img >/dev/null 2>&1
+            # Written, or the boot would activate a tree missing a file and
+            # every traversal conclusion would be about the wrong bundle.
+            debugfs -R "stat ${dst}" /tmp/data.img 2>/dev/null | grep -c "Inode:" >/dev/null || {
+                echo "error: ${dst} was not written into DATA" >&2; exit 1; }
+            echo "  seeded ${dst}"
+        done
+
+        e2fsck -fp /tmp/data.img >/dev/null 2>&1 || true
+        dd if=/tmp/data.img of=/d/disk.img bs=512 seek="${start}" conv=notrunc status=none
+    ' >"${log}" 2>&1; then
+        fail "seeding the UI-bundle fixture into DATA failed; see ${log}"
+        tail -n 20 "${log}" >&2 || true
+        return 1
+    fi
+    return 0
+}
+
+if ! seed_data_fixture; then
+    finish
+fi
+pass "UI-bundle fixture seeded into DATA at /srv/ui/.staging-1 ($(find "${FIXTURE_DIR}" -type f | wc -l) files); apid activates it at start-up"
 
 launch_boot() {
     local label="$1" console="$2"

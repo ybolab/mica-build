@@ -29,6 +29,7 @@ use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::access_cache::AccessCache;
 use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
@@ -46,6 +47,10 @@ pub struct AppState {
     guard: Arc<GuardStore>,
     audit: Arc<Audit>,
     bundles: Arc<Store>,
+    /// The gate's cache of the `access` subtree, kept honest by the
+    /// `SettingsChanged` watcher (`bus_client::watch_settings_changed`) and
+    /// by the two handlers that write under `access` themselves.
+    access_cache: Arc<AccessCache>,
 }
 
 impl AppState {
@@ -66,7 +71,15 @@ impl AppState {
             guard: Arc::new(GuardStore::ephemeral()),
             audit: Arc::new(Audit::journal_only()),
             bundles: Arc::new(Store::at_default()),
+            access_cache: Arc::new(AccessCache::new()),
         }
+    }
+
+    /// The gate's access cache, for `main.rs` to hand to the
+    /// `SettingsChanged` watcher, and for the tests that drive its
+    /// subscription state by hand.
+    pub(crate) fn access_cache(&self) -> &Arc<AccessCache> {
+        &self.access_cache
     }
 
     /// Root the backoff counter and the audit ring in `state_dir`
@@ -149,6 +162,7 @@ pub fn app(state: AppState) -> Router {
         .route("/setup", get(setup_form).post(setup_submit))
         .route("/login", get(login_form).post(login_submit))
         .route("/logout", post(logout))
+        .route("/password", get(password_form).post(password_submit))
         .route("/network", get(network_form).post(network_submit))
         .route("/hostname", get(hostname_form).post(hostname_submit))
         .route("/power", get(power_form))
@@ -213,6 +227,11 @@ const API: &str = "/api";
 const VERSIONS_PATH: &str = "/versions";
 const V1_META_PATH: &str = "/v1/meta";
 
+/// §2.3's actions namespace, with its one shipped verb. A password change is
+/// an operation and not a resource — the namespace is named `actions`
+/// precisely so no reader expects a `GET` to work there.
+const V1_CHANGE_PASSWORD_PATH: &str = "/v1/actions/change-password";
+
 /// §2.2's two read-only roots, in the three spellings they need.
 ///
 /// The prefix is the shared one and the only one the gate predicate tests. The
@@ -236,8 +255,13 @@ pub(crate) const SETTINGS_SPELLINGS: (&str, &str, &str) =
 pub(crate) const STATE_SPELLINGS: (&str, &str, &str) =
     (V1_STATE_PREFIX, V1_STATE_ROUTE, V1_STATE_DOC);
 
-/// The fdo error names mosd maps its `SettingsError` onto, and the three rows
-/// of §2.4's table that name one.
+/// The error names mosd maps its `SettingsError` onto, and the five rows of
+/// §2.4's table that name one. The first two are interface-scoped: the fdo
+/// vocabulary has no name that separates a missing dot-path or a read-only
+/// one from a bad value, so mosd coins its own for those and keeps the
+/// standard names for everything else.
+const MOSD_NOT_FOUND: &str = "com.mos.mosd1.Error.NotFound";
+const MOSD_READ_ONLY: &str = "com.mos.mosd1.Error.ReadOnly";
 const FDO_INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
 const FDO_IO_ERROR: &str = "org.freedesktop.DBus.Error.IOError";
 const FDO_FAILED: &str = "org.freedesktop.DBus.Error.Failed";
@@ -264,6 +288,7 @@ fn api_router() -> Router<AppState> {
         .route(V1_META_PATH, get(api_v1_meta))
         .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
         .route(V1_STATE_ROUTE, get(api_v1_state))
+        .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
         .fallback(api_not_found)
 }
 
@@ -276,7 +301,10 @@ fn api_router() -> Router<AppState> {
 /// logic unchanged.
 fn is_declared_api_route(path: &str) -> bool {
     path.strip_prefix(API).is_some_and(|leaf| {
-        leaf == VERSIONS_PATH || leaf == V1_META_PATH || resource_dot_path(leaf).is_some()
+        leaf == VERSIONS_PATH
+            || leaf == V1_META_PATH
+            || leaf == V1_CHANGE_PASSWORD_PATH
+            || resource_dot_path(leaf).is_some()
     })
 }
 
@@ -466,7 +494,8 @@ pub(crate) struct ResourceValue(Value);
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
         (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
-        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
+        (status = 404, description = "The dot-path does not exist (`settings_not_found`)", body = ApiError),
+        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
     ),
@@ -518,10 +547,10 @@ fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
 /// §2.4's table, applied to a failed mosd call.
 ///
 /// The classification is translated and the message is not. mosd maps its
-/// `SettingsError` onto three fdo error names and zbus carries the name back,
-/// so the distinction exists all the way to here and only apid can lose it;
-/// the message is mosd's own words because no phrasing apid could pre-write
-/// would say which field was wrong.
+/// `SettingsError` onto five error names — two interface-scoped, three fdo —
+/// and zbus carries the name back, so the distinction exists all the way to
+/// here and only apid can lose it; the message is mosd's own words because no
+/// phrasing apid could pre-write would say which field was wrong.
 ///
 /// The concrete `zbus::Error` is recovered by downcast: `bus_client.rs`
 /// converts with `err.into()`, and that conversion stores the error rather
@@ -534,6 +563,14 @@ fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
             // is the most specific thing left to say.
             let message = message.clone().unwrap_or_else(|| name.to_string());
             match name.as_str() {
+                MOSD_NOT_FOUND => (
+                    StatusCode::NOT_FOUND,
+                    ApiError::mosd("settings_not_found", message),
+                ),
+                MOSD_READ_ONLY => (
+                    StatusCode::CONFLICT,
+                    ApiError::mosd("settings_read_only", message),
+                ),
                 FDO_INVALID_ARGS => (
                     StatusCode::UNPROCESSABLE_ENTITY,
                     ApiError::mosd("settings_rejected", message),
@@ -642,11 +679,15 @@ fn password_hash(access: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-/// 502 page for failed mosd calls.
+/// 503 page for failed mosd calls, with `Retry-After` — the same status and
+/// header the API path answers for the same condition (`mosd_unreachable`):
+/// the failure is this server declining to serve, not a malformed answer from
+/// an upstream, so one outage reports one way on both surfaces.
 fn bus_error(err: &anyhow::Error) -> Response {
     tracing::warn!(error = %err, "mosd call failed");
     (
-        StatusCode::BAD_GATEWAY,
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS))],
         page(
             "Error",
             html! { p { "The management daemon is unavailable." } },
@@ -694,9 +735,23 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
         return next.run(request).await;
     }
 
-    let access = match state.api.get_settings("access").await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
+    // The unauthenticated path's read, served from the cache when — and only
+    // when — the SettingsChanged subscription is live (`access_cache`'s
+    // lockout rule). The generation is snapshotted BEFORE the direct read so
+    // a change signalled while the read was in flight discards the fill
+    // rather than caching a possibly-pre-change snapshot.
+    let access = match state.access_cache.get() {
+        Some(value) => value,
+        None => {
+            let generation = state.access_cache.generation();
+            match state.api.get_settings("access").await {
+                Ok(value) => {
+                    state.access_cache.fill(generation, value.clone());
+                    value
+                }
+                Err(err) => return bus_error(&err),
+            }
+        }
     };
     if password_hash(&access).is_none() {
         if path == "/setup" {
@@ -743,6 +798,7 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/" { "Status" }
                         a href="/network" { "Network" }
                         a href="/hostname" { "Hostname" }
+                        a href="/password" { "Password" }
                         a href="/power" { "Power" }
                         a href="/ssh" { "SSH" }
                         a href="/containers" { "Containers" }
@@ -1018,6 +1074,10 @@ async fn setup_submit(
     if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
         return bus_error(&err);
     }
+    // The device just left setup mode, and the gate must not keep believing
+    // otherwise from a cached pre-write snapshot: drop the cache now rather
+    // than waiting for the SettingsChanged round trip.
+    state.access_cache.invalidate();
     // Recorded once the admin password exists, which is the moment the device
     // leaves setup mode; the optional hostname/network writes below are
     // ordinary settings edits, not access-control events.
@@ -1066,9 +1126,9 @@ struct LoginForm {
 /// It names §6.3's prefix, because it is the first built-in page an operator
 /// with a broken custom UI reaches: the gate bounces every unauthenticated
 /// request here, whatever the bundle is doing. The nav on every authenticated
-/// pane covers the other half. The 502 page §6.3 cites is the wrong surface
-/// for this: it is reached only when a mosd call fails, which a broken bundle
-/// does not cause.
+/// pane covers the other half. The mosd-unavailable page §6.3 cites is the
+/// wrong surface for this: it is reached only when a mosd call fails, which a
+/// broken bundle does not cause.
 async fn login_form() -> Html<String> {
     page(
         "Sign in",
@@ -1172,17 +1232,263 @@ async fn logout(
         .into_response()
 }
 
-// Status pane
+// Password change
 
-/// Seconds from the first field of `/proc/uptime` contents.
-fn parse_uptime(contents: &str) -> Option<u64> {
-    let secs: f64 = contents.split_whitespace().next()?.parse().ok()?;
-    if secs.is_finite() && secs >= 0.0 {
-        Some(secs as u64)
-    } else {
-        None
+/// The change-password form fields.
+#[derive(serde::Deserialize)]
+struct PasswordForm {
+    current: String,
+    password: String,
+    confirm: String,
+}
+
+/// Why one password-change attempt failed, before either surface words it.
+///
+/// One outcome set for both surfaces: the HTML pane and the API route differ
+/// in how they answer, not in what can happen.
+enum PasswordChangeError {
+    /// The current password did not verify; nothing was written.
+    WrongCurrent,
+    /// The new password is under the same floor the setup wizard enforces;
+    /// nothing was written.
+    TooShort,
+    /// Hashing the new password failed.
+    Hashing(anyhow::Error),
+    /// A mosd call failed.
+    Bus(anyhow::Error),
+}
+
+/// Verify the current admin password, write the new hash through the settings
+/// tree, and drop every session except the acting one.
+///
+/// The current password is demanded even though the caller holds a session: a
+/// session is a browser artifact that outlives the moment the password was
+/// typed, and an unattended browser must not be enough to rotate the sole
+/// credential on the management surface.
+///
+/// The invalidation and the write belong in one step. The gate's
+/// short-circuit comment says an unset-password operation "has to clear the
+/// session table in the same step", and replacing the hash is the same
+/// reasoning: a session minted under the old credential proves possession of
+/// nothing any more. The acting session is the one exception — it just proved
+/// possession of the current password — or the operator would be signed out
+/// by their own success.
+async fn change_password(
+    state: &AppState,
+    source: &str,
+    acting_session: Option<&str>,
+    current: &str,
+    new: &str,
+) -> Result<(), PasswordChangeError> {
+    if new.len() < 8 {
+        return Err(PasswordChangeError::TooShort);
+    }
+    let access = match state.api.get_settings("access").await {
+        Ok(value) => value,
+        Err(err) => return Err(PasswordChangeError::Bus(err)),
+    };
+    let Some(hash) = password_hash(&access) else {
+        // Unreachable through either surface: both sit behind a verified
+        // session, and no session can coexist with an unset password (see
+        // `gate`). Refusing is still better than writing a first hash from a
+        // route whose contract is rotation.
+        return Err(PasswordChangeError::Bus(anyhow::anyhow!(
+            "no admin password is configured"
+        )));
+    };
+    // Off the async workers for the same reason login verification is:
+    // argon2id costs real CPU per call, by design. A panic in the closure
+    // surfaces as a failed verification: closed, never open.
+    let hash = hash.to_string();
+    let password = current.to_string();
+    let verified = tokio::task::spawn_blocking(move || auth::verify_password(&hash, &password))
+        .await
+        .unwrap_or_else(|err| {
+            tracing::error!(error = %err, "password verification task failed");
+            false
+        });
+    if !verified {
+        state.audit.record("password", "wrong-password", source);
+        return Err(PasswordChangeError::WrongCurrent);
+    }
+    let password = new.to_string();
+    let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
+        .map_err(PasswordChangeError::Hashing)?;
+    let value = serde_json::json!({ "password_hash": hash });
+    if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
+        return Err(PasswordChangeError::Bus(err));
+    }
+    // apid knows its own access write happened, so the gate's cache is
+    // dropped here rather than waiting for the SettingsChanged round trip:
+    // the next unauthenticated request re-reads and cannot be answered from
+    // a pre-change snapshot.
+    state.access_cache.invalidate();
+    // The write happened; every other session goes with the old credential.
+    // No cookie on the request keeps nothing, which errs closed.
+    state
+        .sessions
+        .remove_all_except(acting_session.unwrap_or(""));
+    state.audit.record("password", "changed", source);
+    Ok(())
+}
+
+fn password_page(banner: Option<Markup>) -> Html<String> {
+    pane(
+        "Password",
+        html! {
+            @if let Some(banner) = banner { (banner) }
+            p { "Changing the admin password signs every other session out. The session making the change stays signed in." }
+            form method="post" action="/password" {
+                fieldset {
+                    legend { "Change the admin password" }
+                    p { label { "Current password" } " "
+                        input type="password" name="current" required; }
+                    p { label { "New password (at least 8 characters)" } " "
+                        input type="password" name="password" required minlength="8"; }
+                    p { label { "Confirm new password" } " "
+                        input type="password" name="confirm" required minlength="8"; }
+                }
+                p { button type="submit" { "Change password" } }
+            }
+        },
+    )
+}
+
+async fn password_form(Query(query): Query<SavedQuery>) -> Html<String> {
+    password_page(query.saved.is_some().then(saved_banner))
+}
+
+async fn password_submit(
+    State(state): State<AppState>,
+    Source(source): Source,
+    headers: HeaderMap,
+    Form(form): Form<PasswordForm>,
+) -> Response {
+    if form.password != form.confirm {
+        return (
+            StatusCode::BAD_REQUEST,
+            password_page(Some(error_box("Passwords do not match."))),
+        )
+            .into_response();
+    }
+    let acting = session::cookie_from_headers(&headers);
+    match change_password(
+        &state,
+        &source,
+        acting.as_deref(),
+        &form.current,
+        &form.password,
+    )
+    .await
+    {
+        Ok(()) => Redirect::to("/password?saved=1").into_response(),
+        Err(PasswordChangeError::WrongCurrent) => (
+            StatusCode::UNAUTHORIZED,
+            password_page(Some(error_box("Wrong current password."))),
+        )
+            .into_response(),
+        Err(PasswordChangeError::TooShort) => (
+            StatusCode::BAD_REQUEST,
+            password_page(Some(error_box("Password must be at least 8 characters."))),
+        )
+            .into_response(),
+        Err(PasswordChangeError::Hashing(err)) => {
+            tracing::error!(error = %err, "password hashing failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+        Err(PasswordChangeError::Bus(err)) => bus_error(&err),
     }
 }
+
+/// `POST /api/v1/actions/change-password` request body.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChangePasswordRequest {
+    /// The password being replaced, verified before anything is written.
+    current_password: String,
+    /// The replacement; at least 8 characters.
+    new_password: String,
+}
+
+/// The same operation as `POST /password`, answering §2.4's envelope instead
+/// of HTML. 204 on success: the outcome is the state change, and there is
+/// nothing to say about it that the status does not.
+#[utoipa::path(
+    post,
+    path = V1_CHANGE_PASSWORD_PATH,
+    context_path = API,
+    tag = "actions",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 204, description = "The password was changed; every session except the calling one was dropped"),
+        (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 403, description = "The current password does not verify (`wrong_password`)", body = ApiError),
+        (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
+        (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_change_password(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Source(source): Source,
+    headers: HeaderMap,
+    body: Result<Json<ChangePasswordRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match body {
+        Ok(body) => body,
+        // §2.4's envelope rather than axum's plain-text rejection.
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()),
+            );
+        }
+    };
+    let acting = session::cookie_from_headers(&headers);
+    match change_password(
+        &state,
+        &source,
+        acting.as_deref(),
+        &request.current_password,
+        &request.new_password,
+    )
+    .await
+    {
+        Ok(()) => (
+            StatusCode::NO_CONTENT,
+            [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+        )
+            .into_response(),
+        Err(PasswordChangeError::WrongCurrent) => api_response(
+            StatusCode::FORBIDDEN,
+            ApiError::apid(
+                "wrong_password",
+                "the current password does not verify".to_string(),
+            ),
+        ),
+        Err(PasswordChangeError::TooShort) => api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                "the new password must be at least 8 characters".to_string(),
+            ),
+        ),
+        Err(PasswordChangeError::Hashing(err)) => {
+            tracing::error!(error = %err, "password hashing failed");
+            api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid("hashing_failed", format!("{err:#}")),
+            )
+        }
+        Err(PasswordChangeError::Bus(err)) => bus_api_error(&err, "access.webAdmin"),
+    }
+}
+
+// Status pane
 
 /// `"3d 4h 12m"`-style rendering, dropping leading zero units.
 fn humanize_uptime(secs: u64) -> String {
@@ -1204,18 +1510,26 @@ fn pretty(value: &Value) -> String {
 
 /// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
 ///
-/// It reads mosd and `/proc/uptime` and nothing under `/srv/ui`. That is
+/// It reads mosd and nothing under `/srv/ui`. That is
 /// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
 /// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
 /// wrong version — can affect them"* — and it is why §6.1's five classes do not
 /// need enumerating here: a handler that never consults the bundle store cannot
 /// branch on which class occurred.
+///
+/// Uptime comes through `get_state` like every other system fact — mosd
+/// serves it fresh at read time — and not from a `/proc` reader here, which
+/// would contradict the crate's own rule that mosd owns every system fact
+/// (`settings_api.rs`).
 async fn status_body(state: &AppState) -> Markup {
     let hostname = state.api.get_settings("hostname").await;
     let network = state.api.get_state("network").await;
-    let uptime = std::fs::read_to_string("/proc/uptime")
+    let uptime = state
+        .api
+        .get_state("uptime")
+        .await
         .ok()
-        .and_then(|contents| parse_uptime(&contents));
+        .and_then(|value| value.as_u64());
     html! {
         h2 { "System" }
         @match &hostname {
