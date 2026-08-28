@@ -265,8 +265,9 @@ The root ceremonies have their own suite, not split along the signer/device
 line, because the property being tested is that a device pinned to the
 *outgoing* anchor reaches the incoming one — which the signer half alone proves
 nothing about. Both directions of the overlap window, releases published after
-a rotation verifying from either anchor, and six refusals: a rotation the
+a rotation verifying from either anchor, and seven refusals: a rotation the
 outgoing key did not sign (accepted by the new anchor, refused by the old), a
 broken outgoing signature, a withdrawn rotation as a root rollback across a
-restart, rotating to the incumbent key, rewriting a published root version, and
-rotating from an anchor its own keys do not sign.
+restart, rotating to the incumbent key, rewriting a published root version,
+rotating from an anchor its own keys do not sign, and either ceremony run with
+the wrong outgoing key.
