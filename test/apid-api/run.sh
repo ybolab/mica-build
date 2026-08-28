@@ -294,12 +294,18 @@ CONSOLE2="${ART_DIR}/console-boot2.log"
 # and costs nothing.
 ART_IN_CONTAINER="/w/_out/x64/apid-api"
 
+# Where phase 05c's guest script lands inside the STATE partition. Named here,
+# beside the other paths, because both the dry-run summary and the seed step
+# below quote it and a second spelling is how the two come to disagree.
+SMOKE_IN_GUEST=/m7-net-smoke.sh
+
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/tools/qemu-run.sh --prepare-only)"
     note "would boot     os/tools/qemu-run.sh --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
-    note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1"
+    note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1 systemd.run=..."
+    note "would seed     test/apid-api/guest/m7-net-smoke.sh -> STATE:${SMOKE_IN_GUEST} (phase 05c)"
     note "               MOS_QEMU_RUN_SECONDS=${RUN_SECONDS} MOS_QEMU_TIMEOUT=${QEMU_TIMEOUT}"
     note "would find     the container binding ${RUN_DIR_REAL} and read its address on ${NET}"
     note "would wait     up to ${READY_TIMEOUT}s for APID_LISTENING on the console AND for"
@@ -335,10 +341,19 @@ trap 'teardown' EXIT
 # lands two or three times; a repeated systemd.journald.forward_to_console=1 is
 # the same value twice and costs nothing, whereas one boot that silently lacks
 # it deletes the readiness signal this entire script waits on.
+#
+# The second append starts phase 05c's guest script. `systemd.run=` is read by
+# systemd's own kernel-command-line generator, which builds the unit in /run
+# from the command line itself -- the reason it is used instead of dropping a
+# .service onto STATE. /mnt/state/systemd-units binds onto the unit search path
+# only at local-fs.target, which is LATER than the boot transaction that would
+# have to load such a unit, so a unit seeded there is simply not found. The
+# script is what lives on STATE; the value names an interpreter and a path, so
+# it needs no execute bit that debugfs would have to set.
 QEMU_ENV=(
     MOS_QEMU_FORWARD=1
     MOS_QEMU_NETWORK="${NET}"
-    MOS_QEMU_APPEND=systemd.journald.forward_to_console=1
+    MOS_QEMU_APPEND="systemd.journald.forward_to_console=1 systemd.run=\"/bin/bash /mnt/state${SMOKE_IN_GUEST}\""
     MOS_QEMU_HTTPS_PORT="${HTTPS_PORT}"
     MOS_QEMU_HTTP_PORT="${HTTP_PORT}"
     MOS_QEMU_RUN_SECONDS="${RUN_SECONDS}"
@@ -354,6 +369,27 @@ if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-onl
 fi
 PREPARED=1
 pass "disk prepared at ${RUN_DIR}/disk.img"
+
+# The guest half of phase 05c, written into the disk copy's STATE partition.
+# AFTER --prepare-only, which is what makes the copy: seeding before it would
+# write into a disk the prepare then overwrites. The image itself is never
+# touched -- os/tools/qemu-seed-state.sh edits _out/x64/.qemu/disk.img.
+#
+# A failure here is fatal rather than a warning. Booting on without the script
+# would leave phase 05c reporting that the smoke never ran, which is true and
+# uninformative; the reason is known HERE.
+SMOKE_SRC="${REPO_ROOT}/test/apid-api/guest/m7-net-smoke.sh"
+if [ ! -f "${SMOKE_SRC}" ]; then
+    fail "${SMOKE_SRC} not found; phase 05c has no guest script to seed"
+    finish
+fi
+if ! bash "${REPO_ROOT}/os/tools/qemu-seed-state.sh" \
+    "${SMOKE_SRC}" "${SMOKE_IN_GUEST}" >"${ART_DIR}/seed.log" 2>&1; then
+    fail "os/tools/qemu-seed-state.sh failed; see ${ART_DIR}/seed.log"
+    tail -n 20 "${ART_DIR}/seed.log" >&2 || true
+    finish
+fi
+pass "seeded ${SMOKE_IN_GUEST} into the disk copy's STATE partition for phase 05c"
 
 launch_boot() {
     local label="$1" console="$2"
