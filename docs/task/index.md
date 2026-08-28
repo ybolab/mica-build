@@ -235,3 +235,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404**](RFCT-242.md) `P1`
 - [x] [**RFCT-243 PLAN-023 M7: the reboot, poweroff and transient-root-password actions**](RFCT-243.md) `P1`
 - [x] [**RFCT-244 PLAN-023 M8: POST /api/v1/setup**](RFCT-244.md) `P1`
+- [x] [**RFCT-246 PLAN-023 M9 prerequisite: test/apid-api drives bearer end to end**](RFCT-246.md) `P1`

@@ -291,7 +291,7 @@ os/pkgs/mosd/apid/src/` returns nothing either. The mitigations that exist are t
 on power (`os/pkgs/mosd/apid/src/routes.rs:5764`) and on the transient password
 (`os/pkgs/mosd/apid/src/routes.rs:6699`).
 
-**The second router.** `redirect_app()` at `os/pkgs/mosd/apid/src/routes.rs:3204-3208` is
+**The second router.** `redirect_app()` at `os/pkgs/mosd/apid/src/routes.rs:3232-3236` is
 the router served on the **HTTP** listener. It declares no routes at all — only
 a fallback, `.fallback(redirect_to_https)` (`os/pkgs/mosd/apid/src/routes.rs:3234`) —
 and answers every request with a 308 Permanent Redirect to the HTTPS origin,
@@ -477,7 +477,7 @@ tests `session::cookie_from_headers(&parts.headers)`
 2. A request carrying a **valid session cookie** passes without any bus call at
    all (`os/pkgs/mosd/apid/src/routes.rs:3287-3291`).
 3. **Setup mode** — no admin password hash present — only `/setup` passes and
-   everything else redirects there (`os/pkgs/mosd/apid/src/routes.rs:3300-3305`).
+   everything else redirects there (`os/pkgs/mosd/apid/src/routes.rs:3328-3333`).
 4. **Normal mode** — `/login` and `/setup` pass and everything else redirects
    to `/login` (`os/pkgs/mosd/apid/src/routes.rs:3334-3339`).
 
@@ -487,7 +487,7 @@ one D-Bus round trip — is **no longer true**, and the change was deliberate.
 The session check was moved above the bus call
 (`os/pkgs/mosd/apid/src/routes.rs:3287-3291`), so an authenticated request reaches its
 handler without touching mosd, and the source states the reason and its
-soundness argument at `os/pkgs/mosd/apid/src/routes.rs:3270-3286`: *"an authenticated
+soundness argument at `os/pkgs/mosd/apid/src/routes.rs:3298-3314`: *"an authenticated
 page load costs one system-bus round trip per request -- fine for one
 server-rendered pane, not fine once a custom UI bundle (§4) serves dozens of
 static assets per page, none of which need mosd"*. The bus call
@@ -1047,7 +1047,7 @@ doc comment gives the same reasoning back: *"a factory-fresh
 device has no `access.webAdmin` and redirects everything else to `/setup`, and
 a UI that survived the update it is incompatible with has to be able to say
 so"* (`os/pkgs/mosd/apid/src/routes.rs:761-764`); the gate hands the route off above its own
-bus call at `os/pkgs/mosd/apid/src/routes.rs:3266`. The cost is an unauthenticated
+bus call at `os/pkgs/mosd/apid/src/routes.rs:3294`. The cost is an unauthenticated
 fingerprint: anyone who can reach port 443 (`os/pkgs/mosd/apid/src/config.rs:34-37`)
 learns which API major versions this device speaks. The appliance already
 answers `/healthz` with the literal `"ok"` unauthenticated
@@ -1501,7 +1501,7 @@ it as `"required": [ "error" ]` (`os/pkgs/mosd/apid/openapi.json:2213-2215`), an
 failure under the prefix is built through it. `Retry-After` ships on exactly
 one class: `const RETRY_AFTER_SECONDS: &str = "5";`
 (`os/pkgs/mosd/apid/src/routes.rs:399`), attached only when the status is 503
-(`os/pkgs/mosd/apid/src/routes.rs:3046-3051`). The recommendation this section makes —
+(`os/pkgs/mosd/apid/src/routes.rs:3081-3086`). The recommendation this section makes —
 translate the classification, pass mosd's message through verbatim, always say
 which side it came from — ships as `bus_api_error`
 (`os/pkgs/mosd/apid/src/routes.rs:3003-3051`), which matches on the concrete
@@ -1544,10 +1544,10 @@ section's envelope.
 | `not_found` | **yes** | `os/pkgs/mosd/apid/src/routes.rs:240`, from the reserved subtree's fallback |
 | `request_invalid` | **no** | no route accepts a body, so no body can be malformed |
 | `validation_failed` | **no** | no route runs apid's own validators; the four named below are reachable only from the HTML form handlers |
-| `settings_rejected` | **yes**, 422 | `os/pkgs/mosd/apid/src/routes.rs:3021-3024`, on fdo `InvalidArgs` (`os/pkgs/mosd/apid/src/routes.rs:394`) |
-| `settings_io` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:3025-3028`, on fdo `IOError` (`os/pkgs/mosd/apid/src/routes.rs:395`) |
-| `mosd_failed` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:3029-3038`, on fdo `Failed` (`os/pkgs/mosd/apid/src/routes.rs:396`) |
-| `mosd_unreachable` | **yes**, 503 with `Retry-After` | `os/pkgs/mosd/apid/src/routes.rs:3057-3063`, and it is exhaustive over everything the three above do not name (`os/pkgs/mosd/apid/src/routes.rs:3053-3055`) |
+| `settings_rejected` | **yes**, 422 | `os/pkgs/mosd/apid/src/routes.rs:3055-3058`, on fdo `InvalidArgs` (`os/pkgs/mosd/apid/src/routes.rs:394`) |
+| `settings_io` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:3059-3062`, on fdo `IOError` (`os/pkgs/mosd/apid/src/routes.rs:395`) |
+| `mosd_failed` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:3063-3066`, on fdo `Failed` (`os/pkgs/mosd/apid/src/routes.rs:396`) |
+| `mosd_unreachable` | **yes**, 503 with `Retry-After` | `os/pkgs/mosd/apid/src/routes.rs:3092-3098`, and it is exhaustive over everything the three above do not name (`os/pkgs/mosd/apid/src/routes.rs:3088-3090`) |
 | `method_not_allowed` | **yes**, 405 with `Allow` | `api_method_not_allowed`, reached through the one `method_not_allowed_fallback` declaration that covers every route in `api_router` |
 
 **What now ships that did not.** `GET /api/v1/health` exists, additively: a
@@ -1802,9 +1802,9 @@ enumerates seven objections to. The guard is an extractor rather than
 middleware, `pub(crate) struct ApiSession;` (`os/pkgs/mosd/apid/src/routes.rs:3125`),
 whose whole test is
 `session::cookie_from_headers(&parts.headers)` verified against the store
-(`os/pkgs/mosd/apid/src/routes.rs:3108-3109`); its rejection is §2.4's envelope with a
+(`os/pkgs/mosd/apid/src/routes.rs:3136-3137`); its rejection is §2.4's envelope with a
 401 rather than the gate's HTML redirect
-(`os/pkgs/mosd/apid/src/routes.rs:3116-3118`). The gate hands the declared `/api` routes
+(`os/pkgs/mosd/apid/src/routes.rs:3144-3146`). The gate hands the declared `/api` routes
 off to it with `is_declared_api_route(path)`
 (`os/pkgs/mosd/apid/src/routes.rs:3294`, predicate at `:503-520`). There is no bearer
 token, no `Authorization` header path and no second credential anywhere in the
@@ -2090,7 +2090,7 @@ Two costs, both inherited from the tree rather than introduced here:
 
 - Mint and revoke are read-modify-write of the whole array, because the dot-path
   syntax has no array indexing (`os/pkgs/mosd/mosd-settings/src/model.rs:234-235`) —
-  the same pattern the SSH key pane uses (`os/pkgs/mosd/apid/src/routes.rs:6732-6737`).
+  the same pattern the SSH key pane uses (`os/pkgs/mosd/apid/src/routes.rs:6845-6850`).
   Two concurrent mints lose one token, silently.
 - Identity is the `id`, never a list position, for the reason recorded at
   `os/pkgs/mosd/apid/src/routes.rs:6846-6850`: an index is meaningful only against the
