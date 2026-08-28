@@ -3,7 +3,7 @@
 - **status**: approved (design-first for the write surface)
 - **createdAt**: 2026-08-28 07:30
 - **approvedAt**: 2026-08-28 07:30
-- **relatedTask**: RFCT-210..219 reserved
+- **relatedTask**: RFCT-210..219 reserved; RFCT-240..246 additionally reserved (Amendment 2) for M4..M9 — the original block was consumed by M1-M3's split, the two closeout tasks and the user-filed RFCT-216, and the adjacent ranges 220..229 and 230..239 belong to PLAN-024 and PLAN-025
 - **milestones**: M1 write-surface design, USER-GATED; M2 bearer tokens per api.md section 3.2; M3 GET /api/v1/health and the 405 envelope; M4+ set by the ratified design
 
 ## Context
