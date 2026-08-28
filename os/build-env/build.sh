@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the pinned mos builder images out of os/build-env/images.env.
 #
-#   make build-env  -> localhost/mos-build-{base,c,go,rust}
+#   make build-env  -> localhost/mos-build-{base,c,go,rust}:<arch>
 #   bash os/build-env/build.sh  does the same thing
 #   MOS_BUILD_PLATFORM=linux/arm64 ...  builds for another architecture
 #
@@ -450,8 +450,41 @@ for row in "${IMAGES[@]}"; do
     DF_DIR="${HERE}/${name}"
     DOCKERFILE="${DF_DIR}/Dockerfile"
     LOCK="${DF_DIR}/images.lock"
-    TAG="localhost/mos-build-${name}"
-    from_value="${!from_key}"
+
+    # The architecture is IN THE TAG, and this is why.
+    #
+    # This line read `TAG="localhost/mos-build-${name}"` until RFCT-234. One tag
+    # per image, no architecture in it -- so the day an arm64 family could
+    # finally be built on an amd64 host, `MOS_BUILD_PLATFORM=linux/arm64 make
+    # build-env` wrote the same four tags the amd64 family occupied and left the
+    # amd64 images dangling and prune-eligible. Measured, on this host, in both
+    # directions within one hour: the amd64 gate
+    # os/pkgs/mosd/hack/check.sh runs in became `exec format error`, and the
+    # arm64 family was then orphaned by the native run that restored amd64. It
+    # is not a race and not a risk: with an architecture-less tag the second
+    # build to run always destroys the first one's family.
+    #
+    # os/build-env/from.sh composes the SAME suffix when it resolves a LOCAL_
+    # key, and the two must agree. They are checked against each other every
+    # run rather than by inspection: the `c`, `go` and `rust` rows resolve their
+    # parent through from.sh below, so a disagreement stops the build at the
+    # first child with "not in the local docker image store" naming the tag it
+    # looked for.
+    TAG="localhost/mos-build-${name}:${PLATFORM_ARCH}"
+
+    # The parent, resolved through the one resolver rather than read out of the
+    # sourced pin file, because for a LOCAL_ key the answer is no longer the
+    # value in images.env: it is that value plus the architecture. An IMAGE_ key
+    # -- the `base` row's -- passes through untouched.
+    mapfile -t FROM_ARGS < <(bash "${HERE}/from.sh" --arch="${PLATFORM_ARCH}" "MOS_BASE_IMAGE=${from_key}")
+    # mapfile cannot fail, so its status says nothing about the process inside
+    # the substitution; an empty array is what a refusal looks like from here,
+    # and an empty array would build with no --build-arg and an empty FROM.
+    [ "${#FROM_ARGS[@]}" -eq 2 ] || {
+        echo "error: os/build-env/from.sh did not resolve ${from_key} for linux/${PLATFORM_ARCH} (see its message above); the '${name}' row would have built with an empty FROM" >&2
+        exit 1
+    }
+    from_value="${FROM_ARGS[1]#MOS_BASE_IMAGE=}"
 
     # The filtered lock: this image's own keys and nothing else, so that a pin
     # added for another image does not invalidate this one's layers. The
@@ -503,7 +536,7 @@ for row in "${IMAGES[@]}"; do
 
     docker buildx build "${BUILDER_ARGS[@]}" \
         --platform "${MOS_BUILD_PLATFORM}" \
-        --build-arg "MOS_BASE_IMAGE=${from_value}" \
+        "${FROM_ARGS[@]}" \
         ${CTX_ARGS[@]+"${CTX_ARGS[@]}"} \
         -f "${DOCKERFILE}" \
         -t "${TAG}" \

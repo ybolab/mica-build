@@ -271,12 +271,12 @@ aarch64
 choice in this repository, not a missing host capability. RFCT-234 changed that
 readback to a create-and-copy pair --
 `cid="$(docker create --platform "${MOS_BUILD_PLATFORM}" "${TAG}" /bin/sh)"`
-(`os/build-env/build.sh:549`) and
+(`os/build-env/build.sh:582`) and
 `docker cp "${cid}:/etc/mos-build/${name}.env" "${envfile}" 2>"${cp_err}" || cp_rc=$?`
-(`os/build-env/build.sh:554`) -- fed the `localhost/` rows the OCI layouts this
+(`os/build-env/build.sh:587`) -- fed the `localhost/` rows the OCI layouts this
 task's `--contexts` mode produces --
 `mapfile -t CTX_ARGS < <(bash "${HERE}/from.sh" --arch="${PLATFORM_ARCH}" \`
-(`os/build-env/build.sh:488`) -- and
+(`os/build-env/build.sh:521`) -- and
 `MOS_BUILD_PLATFORM=linux/arm64 make build-env` then built all four images --
 `MOS_BUILD_ARCH=arm64` read back out of each of them on this host.
 `MOS_BOARD=cx3576 make os-rauc` followed it to `rauc v1.13 for arm64: 470008

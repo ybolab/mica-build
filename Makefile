@@ -44,7 +44,7 @@ help:
 	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
 	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}:<arch>"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
