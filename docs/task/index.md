@@ -164,7 +164,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-132 Every unauthenticated request costs a D-Bus round trip against the one lock mosd holds over both trees**](RFCT-132.md) `P2`
 - [x] [**RFCT-133 mosd emits SettingsChanged and apid's proxy cannot receive it**](RFCT-133.md) `P2`
 - [x] [**RFCT-134 The admin password can be set exactly once and no operation anywhere changes it**](RFCT-134.md) `P1`
-- [ ] [**RFCT-135 The network form accepts a VLAN interface name that the settings path syntax then rejects**](RFCT-135.md) `P1`
+- [x] [**RFCT-135 The network form accepts a VLAN interface name that the settings path syntax then rejects**](RFCT-135.md) `P1`
 - [x] [**RFCT-136 The custom-UI bundle store is complete and no HTTP route reaches it**](RFCT-136.md) `P2`
 - [x] [**RFCT-137 apid's unit sandboxes almost everything except the filesystem it serves files out of**](RFCT-137.md) `P2`
 - [x] [**RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing**](RFCT-138.md) `P2`

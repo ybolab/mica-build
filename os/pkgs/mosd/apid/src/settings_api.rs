@@ -135,12 +135,24 @@ impl FakeSettings {
     }
 }
 
+/// Split `path` the way the real store splits it.
+///
+/// [`mosd_settings::path_segments`] and not `str::split('.')`: a quoted
+/// segment carries a dot as an ordinary character, so a fake that split
+/// unconditionally would put a VLAN write at the two keys `"eth0` and `100"`
+/// and let a route test assert the write "arrived" (RFCT-135).
+#[cfg(test)]
+fn fake_segments(path: &str) -> anyhow::Result<Vec<String>> {
+    mosd_settings::path_segments(path).ok_or_else(|| anyhow::anyhow!("malformed path: `{path}`"))
+}
+
 #[cfg(test)]
 fn fake_get(root: &Value, path: &str) -> anyhow::Result<Value> {
     if path.is_empty() {
         return Ok(root.clone());
     }
-    path.split('.')
+    fake_segments(path)?
+        .iter()
         .try_fold(root, |node, segment| node.get(segment))
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("path not found: `{path}`"))
@@ -156,20 +168,20 @@ impl SettingsApi for FakeSettings {
 
     async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()> {
         self.set_log.lock().unwrap().push(path.to_string());
-        let mut segments: Vec<&str> = path.split('.').collect();
-        let last = segments.pop().expect("split yields at least one segment");
+        let mut segments = fake_segments(path)?;
+        let last = segments.pop().expect("a path has at least one segment");
         let mut tree = self.tree.lock().unwrap();
         let mut node = &mut *tree;
         for segment in segments {
             node = node
                 .as_object_mut()
                 .ok_or_else(|| anyhow::anyhow!("not an object at `{segment}`"))?
-                .entry(segment.to_string())
+                .entry(segment)
                 .or_insert_with(|| Value::Object(serde_json::Map::new()));
         }
         node.as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("not an object at `{last}`"))?
-            .insert(last.to_string(), value.clone());
+            .insert(last, value.clone());
         Ok(())
     }
 
