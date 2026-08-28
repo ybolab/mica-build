@@ -43,13 +43,7 @@ fn configured_tree(password: &str) -> serde_json::Value {
     let hash = auth::hash_password(password).unwrap();
     json!({
         "hostname": "mos",
-        // The field the denylist's fail-closed entry exists for. No shipped
-        // schema has it — `WireguardConfig` carries no private key and never
-        // will — so the fixture plants the hypothetical the entry guards
-        // against: a settings tree that somehow holds one must not serve it.
-        "network": {
-            "wg0": { "kind": "wireguard", "privateKey": "wg-plaintext-marker" },
-        },
+        "network": {},
         "access": { "webAdmin": { "password_hash": hash } },
     })
 }
@@ -346,7 +340,6 @@ async fn network_post_rejects_bad_iface_name_and_cidr() {
         "iface=eth0&address=999.1.1.1%2F24",
         "iface=eth0&address=192.168.1.10",
         "iface=eth0&address=1.2.3.4%2F33",
-        "iface=eth0&address=",
     ] {
         let response = post_form(&router, "/network", body, Some(&cookie)).await;
         assert_eq!(
@@ -737,7 +730,7 @@ async fn stored_key_list(fake: &FakeSettings) -> serde_json::Value {
 /// that is missing here. Without that, adding a route and forgetting this list
 /// leaves exactly one unauthenticated write path and every existing test still
 /// green -- the list would describe the routes someone remembered.
-const ALL_MUTATIONS: [(&str, &str); 10] = [
+const ALL_MUTATIONS: [(&str, &str); 12] = [
     ("/ssh/enable", "enabled=on"),
     (
         "/ssh/password",
@@ -754,6 +747,8 @@ const ALL_MUTATIONS: [(&str, &str); 10] = [
     // interface's addressing -- was covered by nothing. Found by the coverage
     // test at the bottom of this file, on the day it was written.
     ("/network", "iface=eth0&dhcp=on"),
+    ("/network/peers/add", "iface=wg0&publicKey=AAAA"),
+    ("/network/peers/remove", "iface=wg0&publicKey=AAAA"),
     ("/power/reboot", "confirm=reboot"),
     ("/power/poweroff", "confirm=poweroff"),
 ];
@@ -3581,7 +3576,13 @@ fn every_mutating_route_is_covered_by_the_authentication_tests() {
 fn secret_tree(password: &str) -> serde_json::Value {
     json!({
         "hostname": "mos",
-        "network": {},
+        // The field the denylist's fail-closed entry exists for. No shipped
+        // schema has it — `WireguardConfig` carries no private key and never
+        // will — so the fixture plants the hypothetical the entry guards
+        // against: a settings tree that somehow holds one must not serve it.
+        "network": {
+            "wg0": { "kind": "wireguard", "privateKey": "wg-plaintext-marker" },
+        },
         "access": {
             "webAdmin": { "password_hash": auth::hash_password(password).unwrap() },
             "device": { "passwordHash": "device-plaintext-marker" },
@@ -3642,13 +3643,8 @@ const PLAINTEXT_MARKERS: [&str; 11] = [
 ];
 
 /// The field names §2.2's redaction rule names, `privateKey` included.
-const SECRET_FIELD_NAMES: [&str; 5] = [
-    "psk",
-    "passwordHash",
-    "password_hash",
-    "hash",
-    "privateKey",
-];
+const SECRET_FIELD_NAMES: [&str; 5] =
+    ["psk", "passwordHash", "password_hash", "hash", "privateKey"];
 
 /// The sentinel a redacted field carries.
 const REDACTED: &str = "<redacted>";
@@ -3956,6 +3952,12 @@ impl SettingsApi for FailingSettings {
     async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
         unreachable!("the resource routes are read-only")
     }
+
+    /// The one write this fixture *does* answer, because §2.4's classification
+    /// is exactly what the rotate route has to inherit from the read routes.
+    async fn rotate_wireguard_key(&self, _iface: &str) -> anyhow::Result<String> {
+        Err(self.error())
+    }
 }
 
 /// A router whose resource reads fail the way `fdo_name` says, plus a session
@@ -4133,5 +4135,774 @@ fn the_resource_path_spellings_agree() {
     ] {
         assert_eq!(route, format!("{prefix}{{*path}}"));
         assert_eq!(doc, format!("{prefix}{{path}}"));
+    }
+}
+
+// PLAN-022 M6: the typed network pane, the rotate-key route, and the two
+// live-state fields M5 added.
+
+/// A settings tree with `network` entries of every kind, in the shape schema
+/// v7 stores them.
+///
+/// `eth1` carries no addressing at all, which is what a bridge port is; `wg0`
+/// carries a peer whose key is a real 32-byte base64 value, so a rejection in
+/// these tests is a verdict on the code under test and not on a malformed
+/// fixture.
+fn kinds_tree(password: &str) -> serde_json::Value {
+    json!({
+        "hostname": "mos",
+        "network": {
+            "eth0": { "dhcp": true },
+            "eth1": { "dhcp": false },
+            "eth0.100": {
+                "kind": "vlan",
+                "dhcp": false,
+                "static": { "address": "192.168.100.2/24", "dns": [] },
+                "vlan": { "parent": "eth0", "id": 100 },
+            },
+            "br0": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } },
+            "wg0": {
+                "kind": "wireguard",
+                "dhcp": false,
+                "static": { "address": "10.8.0.2/24", "dns": [] },
+                "wireguard": {
+                    "listenPort": 51820,
+                    "peers": [{
+                        "publicKey": PEER_KEY,
+                        "allowedIps": ["10.8.0.0/24"],
+                        "endpoint": "vpn.example.net:51820",
+                    }],
+                },
+            },
+        },
+        "access": { "webAdmin": { "password_hash": auth::hash_password(password).unwrap() } },
+    })
+}
+
+/// A syntactically valid X25519 public key: 32 bytes in padded base64.
+///
+/// Its private half was never generated — this is 32 constant bytes — so it
+/// authorises nothing anywhere. It exists so that a rejection in these tests is
+/// a verdict on the rule under test rather than on the shape of the value.
+const PEER_KEY: &str = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
+
+/// A second one, distinct from [`PEER_KEY`], for the add/remove tests.
+const OTHER_PEER_KEY: &str = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=";
+
+/// The live-state object mosd's network reconciler publishes for `kinds_tree`,
+/// including the two fields M5 added: `kind` on every entry and `publicKey` on
+/// the tunnel.
+///
+/// There is no private key in it because mosd never puts one there — the state
+/// tree is served over D-Bus and over `GET /api/v1/state/network`.
+fn network_state() -> serde_json::Value {
+    json!({
+        "eth0": { "file": "50-mos-eth0.network", "dhcp": true, "kind": "physical" },
+        "eth1": { "file": "50-mos-eth1.network", "dhcp": false, "kind": "physical" },
+        "eth0.100": { "file": "50-mos-eth0.100.network", "dhcp": false, "kind": "vlan" },
+        "br0": { "file": "50-mos-br0.network", "dhcp": true, "kind": "bridge" },
+        "wg0": {
+            "file": "50-mos-wg0.network",
+            "dhcp": false,
+            "kind": "wireguard",
+            "publicKey": PEER_KEY,
+        },
+    })
+}
+
+/// A router over [`kinds_tree`] with [`network_state`] published, plus a
+/// session cookie for it.
+async fn kinds_app() -> (Router, Arc<FakeSettings>, String) {
+    let (router, fake) = test_app(kinds_tree("hunter2secret"));
+    fake.set_state_entry("network", network_state());
+    let cookie = login(&router, "hunter2secret").await;
+    (router, fake, cookie)
+}
+
+/// The pane renders one typed form per kind, filled in from the stored entry.
+#[tokio::test]
+async fn the_network_pane_renders_the_typed_fields_of_every_kind() {
+    let (router, _, cookie) = kinds_app().await;
+    let body = body_string(get(&router, "/network", Some(&cookie)).await).await;
+
+    // The kind control itself, with each of the four values selectable.
+    for kind in ["physical", "vlan", "bridge", "wireguard"] {
+        assert!(
+            body.contains(&format!(r#"value="{kind}""#)),
+            "no option for kind {kind}: {body}"
+        );
+    }
+    // Each kind's own parameters, pre-filled from the tree rather than blank.
+    for filled in [
+        r#"name="vlanParent" value="eth0""#,
+        r#"name="vlanId" value="100""#,
+        r#"name="bridgePorts" value="eth1""#,
+        r#"name="listenPort" value="51820""#,
+    ] {
+        assert!(body.contains(filled), "missing {filled}: {body}");
+    }
+    // And the peer list of the one tunnel, with its remove control.
+    assert!(body.contains(PEER_KEY), "the peer is not listed: {body}");
+    assert!(
+        body.contains("/network/peers/add") && body.contains("/network/peers/remove"),
+        "the peer controls are missing: {body}"
+    );
+}
+
+/// The live-state reader: `kind` for every entry and `publicKey` for the
+/// tunnel, which are the two fields M5 added to the per-interface object.
+#[tokio::test]
+async fn the_network_pane_renders_the_live_kind_and_public_key() {
+    let (router, _, cookie) = kinds_app().await;
+    let body = body_string(get(&router, "/network", Some(&cookie)).await).await;
+
+    for unit in [
+        "50-mos-eth0.network",
+        "50-mos-eth0.100.network",
+        "50-mos-br0.network",
+        "50-mos-wg0.network",
+    ] {
+        assert!(body.contains(unit), "no live unit name {unit}: {body}");
+    }
+    assert!(
+        body.contains("Public key:"),
+        "the tunnel's public half is not rendered: {body}"
+    );
+}
+
+/// mosd having published no state yet is a fact the pane states, not a 502:
+/// the stored configuration is still worth showing.
+#[tokio::test]
+async fn the_network_pane_renders_without_live_state() {
+    let (router, _) = test_app(kinds_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/network", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        body.contains("has published no state"),
+        "the pane hides the absence instead of stating it: {body}"
+    );
+}
+
+/// One entry whose body this pane cannot read must not blank out the others.
+#[tokio::test]
+async fn an_unreadable_entry_is_named_and_the_rest_still_render() {
+    let mut tree = kinds_tree("hunter2secret");
+    tree["network"]["broken"] = json!({ "dhcp": true, "notAField": 1 });
+    let (router, _) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/network", Some(&cookie)).await).await;
+    assert!(
+        body.contains("network.broken holds a body this pane cannot read"),
+        "the unreadable entry is not named: {body}"
+    );
+    assert!(
+        body.contains(r#"name="iface" value="eth0""#),
+        "a readable entry stopped rendering: {body}"
+    );
+}
+
+/// The three virtual kinds, written through the quoted-path writer as the
+/// typed bodies mosd deserializes.
+#[tokio::test]
+async fn network_post_writes_each_virtual_kind() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    // A VLAN whose parent is a declared entry.
+    let response = post_form(
+        &router,
+        "/network",
+        "iface=eth0.200&kind=vlan&vlanParent=eth0&vlanId=200&address=192.168.200.2%2F24",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings(r#"network."eth0.200""#).await.unwrap(),
+        json!({
+            "kind": "vlan",
+            "dhcp": false,
+            "static": { "address": "192.168.200.2/24", "dns": [] },
+            "vlan": { "parent": "eth0", "id": 200 },
+        })
+    );
+
+    // A bridge over a declared port that carries no addressing of its own.
+    let response = post_form(
+        &router,
+        "/network",
+        "iface=br1&kind=bridge&bridgePorts=eth1&dhcp=on",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("network.br1").await.unwrap(),
+        json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } })
+    );
+
+    // A tunnel, whose peer list this form does not carry.
+    let response = post_form(
+        &router,
+        "/network",
+        "iface=wg1&kind=wireguard&listenPort=51821&address=10.9.0.2%2F24",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("network.wg1").await.unwrap(),
+        json!({
+            "kind": "wireguard",
+            "dhcp": false,
+            "static": { "address": "10.9.0.2/24", "dns": [] },
+            "wireguard": { "listenPort": 51821, "peers": [] },
+        })
+    );
+
+    // The dotted name went through the quoted-path writer, and the bare ones
+    // did not need it.
+    assert!(
+        fake.set_paths().contains(&r#"network."eth0.200""#.to_string()),
+        "{:?}",
+        fake.set_paths()
+    );
+}
+
+/// Saving a tunnel from the form keeps the peers the form does not carry.
+///
+/// The failure this pins is silent: changing a listen port would otherwise
+/// disconnect every far end, and the pane would report "Settings saved."
+#[tokio::test]
+async fn saving_a_tunnel_keeps_the_peers_the_form_does_not_carry() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(
+        &router,
+        "/network",
+        "iface=wg0&kind=wireguard&listenPort=51999&address=10.8.0.2%2F24",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let stored = fake.get_settings("network.wg0").await.unwrap();
+    assert_eq!(stored["wireguard"]["listenPort"], json!(51999));
+    assert_eq!(
+        stored["wireguard"]["peers"][0]["publicKey"],
+        json!(PEER_KEY),
+        "the peer list was dropped by a save that never mentioned it: {stored}"
+    );
+}
+
+/// A value left in another kind's box is never written: the form renders all
+/// four groups at once, and only the group the submitted kind names is read.
+#[tokio::test]
+async fn only_the_submitted_kinds_block_reaches_the_tree() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(
+        &router,
+        "/network",
+        "iface=eth2&kind=physical&dhcp=on&vlanParent=eth0&vlanId=7&bridgePorts=eth1&listenPort=99",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("network.eth2").await.unwrap(),
+        json!({ "dhcp": true }),
+        "a block belonging to another kind reached the tree"
+    );
+}
+
+/// An interface with DHCP off and no address is an interface with no
+/// addressing, which is exactly what a bridge port is.
+///
+/// It used to be a 422. It cannot stay one: a bridge port must carry neither
+/// `dhcp` nor `static`, and it must already be a declared entry before a bridge
+/// may name it, so refusing this body made a bridge unbuildable through the
+/// pane.
+#[tokio::test]
+async fn an_entry_with_no_addressing_is_written_rather_than_refused() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(&router, "/network", "iface=eth1&address=", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("network.eth1").await.unwrap(),
+        json!({ "dhcp": false })
+    );
+}
+
+/// The reconciler's cross-field rules, echoed by the pane for a readable error.
+///
+/// Each row is a rule `validate_network` enforces in mosd. The pane is not the
+/// boundary — the settings file is writable without apid — so this asserts the
+/// echo, and that nothing was written when it fired.
+#[tokio::test]
+async fn the_pane_echoes_the_reconcilers_cross_field_rules() {
+    for (body, fragment) in [
+        // A VLAN parent that is not a declared entry.
+        (
+            "iface=eth9.100&kind=vlan&vlanParent=nosuch&vlanId=100&dhcp=on",
+            "is not a declared network entry",
+        ),
+        // A bridge port that is not a declared entry.
+        (
+            "iface=br9&kind=bridge&bridgePorts=nosuch&dhcp=on",
+            "is not a declared network entry",
+        ),
+        // A bridge port that carries addressing of its own.
+        (
+            "iface=br9&kind=bridge&bridgePorts=eth0&dhcp=on",
+            "must not carry addressing of its own",
+        ),
+        // A port already claimed by another bridge.
+        (
+            "iface=br9&kind=bridge&bridgePorts=eth1&dhcp=on",
+            "claimed as a port by both bridge",
+        ),
+        // Editing a declared port to take an address, which no check confined
+        // to that one entry could see.
+        (
+            "iface=eth1&dhcp=on",
+            "must not carry addressing of its own",
+        ),
+        // A VLAN with no parent named at all.
+        ("iface=eth9.100&kind=vlan&vlanId=100&dhcp=on", "needs a parent"),
+        // A VLAN id that is not a number.
+        (
+            "iface=eth9.100&kind=vlan&vlanParent=eth0&vlanId=abc&dhcp=on",
+            "VLAN id must be a whole number",
+        ),
+        // A listen port that is not a number.
+        (
+            "iface=wg9&kind=wireguard&listenPort=nope&dhcp=on",
+            "listen port must be a whole number",
+        ),
+        // A kind the schema does not have.
+        ("iface=eth9&kind=tunnel&dhcp=on", "is not an interface kind"),
+    ] {
+        let (router, fake, cookie) = kinds_app().await;
+        let response = post_form(&router, "/network", body, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        let rendered = body_string(response).await;
+        assert!(
+            rendered.contains(fragment),
+            "{body} did not explain itself: {rendered}"
+        );
+        assert!(
+            fake.set_paths().is_empty(),
+            "{body} wrote {:?}",
+            fake.set_paths()
+        );
+    }
+}
+
+/// Peers are added and removed at the peer list's own dot-path, quoted when
+/// the interface name carries a dot.
+#[tokio::test]
+async fn peer_add_and_remove_rewrite_only_the_peer_list() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(
+        &router,
+        "/network/peers/add",
+        &format!(
+            "iface=wg0&publicKey={}&allowedIps=10.8.1.0%2F24%2C+fd00%3A%3A%2F64&endpoint=%5B2001%3Adb8%3A%3A1%5D%3A51820&persistentKeepalive=25",
+            OTHER_PEER_KEY.replace('=', "%3D")
+        ),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/network?saved=1");
+    assert_eq!(
+        fake.set_paths(),
+        vec!["network.wg0.wireguard.peers".to_string()]
+    );
+    let peers = fake
+        .get_settings("network.wg0.wireguard.peers")
+        .await
+        .unwrap();
+    assert_eq!(peers.as_array().unwrap().len(), 2, "{peers}");
+    assert_eq!(peers[1]["publicKey"], json!(OTHER_PEER_KEY));
+    assert_eq!(
+        peers[1]["allowedIps"],
+        json!(["10.8.1.0/24", "fd00::/64"]),
+        "{peers}"
+    );
+    assert_eq!(peers[1]["endpoint"], json!("[2001:db8::1]:51820"));
+    assert_eq!(peers[1]["persistentKeepalive"], json!(25));
+
+    // And back out again, by the public key that identifies it.
+    let response = post_form(
+        &router,
+        "/network/peers/remove",
+        &format!("iface=wg0&publicKey={}", OTHER_PEER_KEY.replace('=', "%3D")),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let peers = fake
+        .get_settings("network.wg0.wireguard.peers")
+        .await
+        .unwrap();
+    assert_eq!(peers.as_array().unwrap().len(), 1, "{peers}");
+    assert_eq!(peers[0]["publicKey"], json!(PEER_KEY));
+}
+
+/// A dotted tunnel name reaches the peer list as one quoted segment.
+#[tokio::test]
+async fn a_dotted_tunnel_name_is_quoted_on_the_peer_path() {
+    let mut tree = kinds_tree("hunter2secret");
+    tree["network"]["wg.0"] = json!({
+        "kind": "wireguard",
+        "dhcp": false,
+        "wireguard": { "peers": [] },
+    });
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/network/peers/add",
+        &format!("iface=wg.0&publicKey={}", PEER_KEY.replace('=', "%3D")),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.set_paths(),
+        vec![r#"network."wg.0".wireguard.peers"#.to_string()]
+    );
+}
+
+/// A peer the reconciler would refuse is refused here first, and the refusal
+/// never echoes the key.
+///
+/// The reconciler names a bad peer by its index for a reason it states: an
+/// operator who pasted a *private* key into the field would otherwise find it
+/// in the error text. The echo keeps that property.
+#[tokio::test]
+async fn a_peer_the_reconciler_would_refuse_is_refused_by_the_form() {
+    const PASTED_SECRET: &str = "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO";
+    for (body, fragment) in [
+        (
+            format!("iface=wg0&publicKey={PASTED_SECRET}"),
+            "is not a WireGuard key",
+        ),
+        (
+            format!(
+                "iface=wg0&publicKey={}&allowedIps=not-an-address",
+                PEER_KEY.replace('=', "%3D")
+            ),
+            "is not an IP address or CIDR",
+        ),
+        (
+            format!(
+                "iface=wg0&publicKey={}&endpoint=vpn.example.net",
+                PEER_KEY.replace('=', "%3D")
+            ),
+            "is not host:port",
+        ),
+        (
+            format!(
+                "iface=wg0&publicKey={}&persistentKeepalive=forever",
+                PEER_KEY.replace('=', "%3D")
+            ),
+            "keepalive must be a whole number",
+        ),
+    ] {
+        let (router, fake, cookie) = kinds_app().await;
+        let response = post_form(&router, "/network/peers/add", &body, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        let rendered = body_string(response).await;
+        assert!(rendered.contains(fragment), "{body}: {rendered}");
+        assert!(
+            !rendered.contains(PASTED_SECRET),
+            "the refusal echoed the value back: {rendered}"
+        );
+        assert!(fake.set_paths().is_empty(), "{body} wrote something");
+    }
+}
+
+/// Removing a peer nobody has is an error rather than a silent no-op rewrite.
+#[tokio::test]
+async fn removing_a_peer_that_is_not_there_writes_nothing() {
+    let (router, fake, cookie) = kinds_app().await;
+    let response = post_form(
+        &router,
+        "/network/peers/remove",
+        &format!("iface=wg0&publicKey={}", OTHER_PEER_KEY.replace('=', "%3D")),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(fake.set_paths().is_empty());
+}
+
+/// Adding a peer twice is refused: two `[WireGuardPeer]` sections with one
+/// public key is a tunnel whose far end is described twice.
+#[tokio::test]
+async fn a_duplicate_peer_is_refused() {
+    let (router, fake, cookie) = kinds_app().await;
+    let response = post_form(
+        &router,
+        "/network/peers/add",
+        &format!("iface=wg0&publicKey={}", PEER_KEY.replace('=', "%3D")),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(fake.set_paths().is_empty());
+}
+
+// The rotate-key route.
+
+/// The route in the three spellings that have to agree: the constant the
+/// router registers, what a caller sends, and what the document describes.
+const ROTATE_PATH: &str = "/api/v1/actions/wireguard/wg0/rotate-key";
+
+/// §2.1's action route: mosd draws the key, and the body carries its public
+/// half and nothing else.
+#[tokio::test]
+async fn the_rotate_route_answers_the_new_public_key() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(&router, ROTATE_PATH, "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, ROTATE_PATH);
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+
+    assert_eq!(fake.rotations(), vec![("wg0".to_string(), body["publicKey"].as_str().unwrap().to_string())]);
+    // The whole body, by identity: a member added here would be a member
+    // shipped to every client, and the one member that must never appear is a
+    // private key.
+    assert_eq!(
+        body.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["publicKey"],
+        "{body}"
+    );
+}
+
+/// It rotates and it does not write: the settings tree holds no key, so there
+/// is nothing there for a rotation to change.
+#[tokio::test]
+async fn a_rotation_writes_nothing_to_the_settings_tree() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = fake.get_settings("network.wg0").await.unwrap();
+
+    let response = post_form(&router, ROTATE_PATH, "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(fake.get_settings("network.wg0").await.unwrap(), before);
+}
+
+/// §2.4's classification, inherited whole by the action route: mosd's fdo error
+/// name decides the status and the code, and the envelope names the settings
+/// dot-path at fault.
+#[tokio::test]
+async fn the_rotate_routes_failures_take_the_shared_envelope() {
+    for (fdo_name, code, status) in [
+        (
+            Some("org.freedesktop.DBus.Error.InvalidArgs"),
+            "settings_rejected",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            Some("org.freedesktop.DBus.Error.IOError"),
+            "settings_io",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+        (
+            Some("org.freedesktop.DBus.Error.Failed"),
+            "mosd_failed",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+        (None, "mosd_unreachable", StatusCode::SERVICE_UNAVAILABLE),
+    ] {
+        let (router, cookie) = failing_app(fdo_name).await;
+        let response = post_form(&router, ROTATE_PATH, "", Some(&cookie)).await;
+        assert_eq!(response.status(), status, "{fdo_name:?}");
+        assert_api_headers(&response, ROTATE_PATH);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], code, "{fdo_name:?}");
+        // The dot-path at fault is the entry whose kind mosd refused, not the
+        // HTTP path: §2.4's member is a settings dot-path.
+        assert_eq!(error["path"], json!("network.wg0"), "{fdo_name:?}");
+    }
+}
+
+/// A dotted tunnel name reaches the envelope as a quoted segment, because that
+/// is the dot-path an operator would type at the settings route.
+#[tokio::test]
+async fn the_rotate_envelope_quotes_a_dotted_interface_name() {
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let response = post_form(
+        &router,
+        "/api/v1/actions/wireguard/wg.0/rotate-key",
+        "",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["path"], json!(r#"network."wg.0""#));
+}
+
+/// §3.1's trap, for the one route this milestone adds: an unauthenticated call
+/// answers §2.4's envelope with a 401 and **never** a redirect, in both gate
+/// modes. It is a POST, so a client that followed the gate's 303 would land on
+/// `GET /login`, read 200, and believe it had rotated a key.
+#[tokio::test]
+async fn the_rotate_route_is_401_without_a_session_in_both_gate_modes() {
+    let (configured, _) = test_app(kinds_tree("hunter2secret"));
+    let (fresh, _) = test_app(unconfigured_tree());
+
+    for (mode, router) in [("configured", &configured), ("setup mode", &fresh)] {
+        let response = post_form(router, ROTATE_PATH, "", None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{mode}");
+        assert_eq!(
+            response.headers().get(LOCATION),
+            None,
+            "{mode} answered a redirect, which a script reads as success"
+        );
+        assert_api_headers(&response, mode);
+        assert_eq!(envelope(response).await["code"], "not_authenticated", "{mode}");
+    }
+}
+
+/// The gate hands off exactly what the router serves, and nothing else: an
+/// interface name carrying a path separator is not this route.
+#[tokio::test]
+async fn a_rotate_path_with_an_extra_segment_is_the_subtrees_404() {
+    let (router, _, cookie) = kinds_app().await;
+    for path in [
+        "/api/v1/actions/wireguard//rotate-key",
+        "/api/v1/actions/wireguard/a/b/rotate-key",
+        "/api/v1/actions/wireguard/wg0/rotate-key/extra",
+        "/api/v1/actions/wireguard/wg0",
+    ] {
+        let response = post_form(&router, path, "", Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(envelope(response).await["code"], "not_found", "{path}");
+    }
+}
+
+/// There is no GET on it. A rotation replaces a tunnel's identity, so nothing
+/// that merely follows a link may perform one.
+#[tokio::test]
+async fn the_rotate_route_has_no_get() {
+    let (router, fake, cookie) = kinds_app().await;
+    let response = get(&router, ROTATE_PATH, Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert!(fake.rotations().is_empty());
+}
+
+/// The document describes the route this milestone adds, with every outcome it
+/// has: a client reading only `openapi.json` has to learn them.
+#[test]
+fn the_openapi_document_covers_the_rotate_route() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let responses =
+        &document["paths"]["/api/v1/actions/wireguard/{iface}/rotate-key"]["post"]["responses"];
+    for status in ["200", "401", "422", "500", "503"] {
+        assert!(
+            responses[status].is_object(),
+            "the rotate route is missing its {status}: {document}"
+        );
+    }
+    // And it is a POST only: a documented GET would be a contract for a route
+    // that does not exist.
+    assert!(
+        document["paths"]["/api/v1/actions/wireguard/{iface}/rotate-key"]["get"].is_null(),
+        "{document}"
+    );
+    // The success body carries the public half and no other member.
+    let properties = &document["components"]["schemas"]["WireguardRotation"]["properties"];
+    assert_eq!(
+        properties.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["publicKey"],
+        "{document}"
+    );
+}
+
+/// The fail-closed guard, driven from the failing side: a `privateKey` planted
+/// in either tree comes back as the sentinel, and its value reaches no surface
+/// this daemon serves.
+///
+/// Nothing in the shipped schema produces such a field. That is the point: the
+/// denylist entry exists so that the day one appears, it is already covered.
+#[tokio::test]
+async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
+    const CANARY: &str = "PLANTED-PRIVATE-KEY-CANARY";
+    let mut tree = kinds_tree("hunter2secret");
+    tree["network"]["wg0"]["privateKey"] = json!(CANARY);
+    let (router, fake) = test_app(tree);
+    let mut state = network_state();
+    state["wg0"]["privateKey"] = json!(CANARY);
+    fake.set_state_entry("network", state);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api/v1/settings/network",
+        r#"/api/v1/settings/network."wg0""#,
+        "/api/v1/state/network",
+        "/api/v1/state/network.wg0",
+        "/network",
+    ] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = body_string(response).await;
+        assert!(!body.contains(CANARY), "{path} served the canary: {body}");
+    }
+
+    // And read directly, where the structural walk has no field name left to
+    // key on, the answer is the sentinel rather than the value.
+    for path in [
+        "/api/v1/state/network.wg0.privateKey",
+        r#"/api/v1/settings/network."wg0".privateKey"#,
+    ] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(body_string(response).await, format!(r#""{REDACTED}""#), "{path}");
+    }
+}
+
+/// The live-state fields M5 added reach the API surface: `kind` on every entry
+/// and `publicKey` on the tunnel, passed through untouched.
+#[tokio::test]
+async fn the_state_route_serves_the_kind_and_the_public_key() {
+    let (router, _, cookie) = kinds_app().await;
+
+    let response = get(&router, "/api/v1/state/network", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(body["eth0"]["kind"], json!("physical"));
+    assert_eq!(body["eth0.100"]["kind"], json!("vlan"));
+    assert_eq!(body["br0"]["kind"], json!("bridge"));
+    assert_eq!(body["wg0"]["kind"], json!("wireguard"));
+    assert_eq!(body["wg0"]["publicKey"], json!(PEER_KEY));
+    // No entry carries a private key, because mosd publishes none.
+    for (name, entry) in body.as_object().unwrap() {
+        assert!(
+            entry.get("privateKey").is_none(),
+            "{name} carries a private key: {entry}"
+        );
     }
 }

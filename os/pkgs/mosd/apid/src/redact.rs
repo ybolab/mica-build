@@ -30,13 +30,7 @@ pub const REDACTED: &str = "<redacted>";
 /// this entry redacts nothing. It is the fail-closed half of that rule: the day
 /// a field of that name appears anywhere in either tree, it is already covered,
 /// rather than being served in the clear until somebody remembers this file.
-const SECRET_FIELDS: [&str; 5] = [
-    "psk",
-    "passwordHash",
-    "password_hash",
-    "hash",
-    "privateKey",
-];
+const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];
 
 /// Whether a field named `name` is redacted.
 fn is_secret(name: &str) -> bool {

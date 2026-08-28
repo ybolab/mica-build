@@ -1826,7 +1826,9 @@ fn parse_kind(name: &str) -> Option<IfaceKind> {
     if name.is_empty() {
         return Some(IfaceKind::Physical);
     }
-    IFACE_KINDS.into_iter().find(|kind| kind_name(*kind) == name)
+    IFACE_KINDS
+        .into_iter()
+        .find(|kind| kind_name(*kind) == name)
 }
 
 #[derive(serde::Deserialize)]
@@ -2202,7 +2204,10 @@ async fn network_submit(State(state): State<AppState>, Form(form): Form<NetworkF
     Redirect::to("/network?saved=1").into_response()
 }
 
-async fn network_peer_add(State(state): State<AppState>, Form(form): Form<PeerAddForm>) -> Response {
+async fn network_peer_add(
+    State(state): State<AppState>,
+    Form(form): Form<PeerAddForm>,
+) -> Response {
     let iface = form.iface.trim().to_string();
     let peer = WireguardPeer {
         public_key: form.public_key.trim().to_string(),
@@ -2223,7 +2228,10 @@ async fn network_peer_add(State(state): State<AppState>, Form(form): Form<PeerAd
         Ok(peers) => peers,
         Err(err) => return bus_error(&err),
     };
-    if peers.iter().any(|other| other.public_key == peer.public_key) {
+    if peers
+        .iter()
+        .any(|other| other.public_key == peer.public_key)
+    {
         return network_error(
             &state,
             "That public key is already a peer of this tunnel. Remove it first to change it.",
@@ -2267,7 +2275,11 @@ async fn write_peers(app: &AppState, iface: &str, peers: &[WireguardPeer]) -> Re
     }
     // Infallible: a peer is a struct of strings and integers.
     let value = serde_json::to_value(peers).expect("wireguard peers serialize");
-    if let Err(err) = app.api.set_settings(&peers_settings_path(iface), &value).await {
+    if let Err(err) = app
+        .api
+        .set_settings(&peers_settings_path(iface), &value)
+        .await
+    {
         return bus_error(&err);
     }
     Redirect::to("/network?saved=1").into_response()
