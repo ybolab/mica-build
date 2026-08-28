@@ -4847,17 +4847,23 @@ fn network_state() -> serde_json::Value {
 
 /// A router over [`kinds_tree`] with [`network_state`] published, plus a
 /// session cookie for it.
-async fn kinds_app() -> (Router, Arc<FakeSettings>, String) {
-    let (router, fake) = test_app(kinds_tree("hunter2secret"));
+async fn kinds_app() -> (Router, Arc<FakeSettings>, String, String) {
+    // Both credentials, since M9 (RFCT-245) split them: the panes in this
+    // cluster take the cookie and the `/api/v1/network` routes beside them take
+    // the bearer, and several tests assert the two surfaces agree. The token is
+    // seeded into the tree rather than minted through the pane because most of
+    // those tests assert `set_paths()` exactly, and a mint is a write.
+    let (tree, token) = with_token(kinds_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     fake.set_state_entry("network", network_state());
     let cookie = login(&router, "hunter2secret").await;
-    (router, fake, cookie)
+    (router, fake, cookie, token)
 }
 
 /// The pane renders one typed form per kind, filled in from the stored entry.
 #[tokio::test]
 async fn the_network_pane_renders_the_typed_fields_of_every_kind() {
-    let (router, _, cookie) = kinds_app().await;
+    let (router, _, cookie, _token) = kinds_app().await;
     let body = body_string(get(&router, "/network", Some(&cookie)).await).await;
 
     // The kind control itself, with each of the four values selectable.
@@ -4888,7 +4894,7 @@ async fn the_network_pane_renders_the_typed_fields_of_every_kind() {
 /// tunnel, which are the two fields M5 added to the per-interface object.
 #[tokio::test]
 async fn the_network_pane_renders_the_live_kind_and_public_key() {
-    let (router, _, cookie) = kinds_app().await;
+    let (router, _, cookie, _token) = kinds_app().await;
     let body = body_string(get(&router, "/network", Some(&cookie)).await).await;
 
     for unit in [
@@ -4944,7 +4950,7 @@ async fn an_unreadable_entry_is_named_and_the_rest_still_render() {
 /// typed bodies mosd deserializes.
 #[tokio::test]
 async fn network_post_writes_each_virtual_kind() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     // A VLAN whose parent is a declared entry.
     let response = post_form(
@@ -5022,7 +5028,7 @@ async fn network_post_writes_each_virtual_kind() {
 /// disconnect every far end, and the pane would report "Settings saved."
 #[tokio::test]
 async fn saving_a_tunnel_keeps_the_peers_the_form_does_not_carry() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     let response = post_form(
         &router,
@@ -5045,7 +5051,7 @@ async fn saving_a_tunnel_keeps_the_peers_the_form_does_not_carry() {
 /// four groups at once, and only the group the submitted kind names is read.
 #[tokio::test]
 async fn only_the_submitted_kinds_block_reaches_the_tree() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     let response = post_form(
         &router,
@@ -5131,7 +5137,7 @@ async fn the_pane_echoes_the_reconcilers_cross_field_rules() {
         // A kind the schema does not have.
         ("iface=eth9&kind=tunnel&dhcp=on", "is not an interface kind"),
     ] {
-        let (router, fake, cookie) = kinds_app().await;
+        let (router, fake, cookie, _token) = kinds_app().await;
         let response = post_form(&router, "/network", body, Some(&cookie)).await;
         assert_eq!(
             response.status(),
@@ -5155,7 +5161,7 @@ async fn the_pane_echoes_the_reconcilers_cross_field_rules() {
 /// the interface name carries a dot.
 #[tokio::test]
 async fn peer_add_and_remove_rewrite_only_the_peer_list() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     let response = post_form(
         &router,
@@ -5248,7 +5254,7 @@ async fn a_dotted_tunnel_name_is_quoted_on_the_peer_path() {
 /// `the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one`.
 #[tokio::test]
 async fn the_pane_peer_add_writes_a_broken_entry_for_an_undeclared_interface() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     let response = post_form(
         &router,
@@ -5308,7 +5314,7 @@ async fn a_peer_the_reconciler_would_refuse_is_refused_by_the_form() {
             "keepalive must be a whole number",
         ),
     ] {
-        let (router, fake, cookie) = kinds_app().await;
+        let (router, fake, cookie, _token) = kinds_app().await;
         let response = post_form(&router, "/network/peers/add", &body, Some(&cookie)).await;
         assert_eq!(
             response.status(),
@@ -5328,7 +5334,7 @@ async fn a_peer_the_reconciler_would_refuse_is_refused_by_the_form() {
 /// Removing a peer nobody has is an error rather than a silent no-op rewrite.
 #[tokio::test]
 async fn removing_a_peer_that_is_not_there_writes_nothing() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
     let response = post_form(
         &router,
         "/network/peers/remove",
@@ -5344,7 +5350,7 @@ async fn removing_a_peer_that_is_not_there_writes_nothing() {
 /// public key is a tunnel whose far end is described twice.
 #[tokio::test]
 async fn a_duplicate_peer_is_refused() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
     let response = post_form(
         &router,
         "/network/peers/add",
@@ -5366,9 +5372,9 @@ const ROTATE_PATH: &str = "/api/v1/actions/wireguard/wg0/rotate-key";
 /// half and nothing else.
 #[tokio::test]
 async fn the_rotate_route_answers_the_new_public_key() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
-    let response = post_form(&router, ROTATE_PATH, "", Some(&cookie)).await;
+    let response = bearer_form(&router, ROTATE_PATH, &token, "").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_api_headers(&response, ROTATE_PATH);
     let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
@@ -5394,10 +5400,10 @@ async fn the_rotate_route_answers_the_new_public_key() {
 /// is nothing there for a rotation to change.
 #[tokio::test]
 async fn a_rotation_writes_nothing_to_the_settings_tree() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = fake.get_settings("network.wg0").await.unwrap();
 
-    let response = post_form(&router, ROTATE_PATH, "", Some(&cookie)).await;
+    let response = bearer_form(&router, ROTATE_PATH, &token, "").await;
     assert_eq!(response.status(), StatusCode::OK);
 
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
@@ -5495,7 +5501,7 @@ async fn the_rotate_route_is_401_without_a_session_in_both_gate_modes() {
 /// interface name carrying a path separator is not this route.
 #[tokio::test]
 async fn a_rotate_path_with_an_extra_segment_is_the_subtrees_404() {
-    let (router, _, cookie) = kinds_app().await;
+    let (router, _, cookie, _token) = kinds_app().await;
     for path in [
         "/api/v1/actions/wireguard/a/b/rotate-key",
         "/api/v1/actions/wireguard/wg0/rotate-key/extra",
@@ -5534,8 +5540,8 @@ async fn the_empty_interface_segment_is_the_route_and_not_a_redirect() {
 /// that merely follows a link may perform one.
 #[tokio::test]
 async fn the_rotate_route_has_no_get() {
-    let (router, fake, cookie) = kinds_app().await;
-    let response = get(&router, ROTATE_PATH, Some(&cookie)).await;
+    let (router, fake, _cookie, token) = kinds_app().await;
+    let response = bearer(&router, "GET", ROTATE_PATH, &token).await;
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert!(fake.rotations().is_empty());
 }
@@ -5623,7 +5629,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
 /// and `publicKey` on the tunnel, passed through untouched.
 #[tokio::test]
 async fn the_state_route_serves_the_kind_and_the_public_key() {
-    let (router, _, cookie) = kinds_app().await;
+    let (router, _, cookie, token) = kinds_app().await;
     let token = mint_via_pane(&router, &cookie, "m9").await;
 
     let response = bearer(&router, "GET", "/api/v1/state/network", &token).await;
@@ -7058,12 +7064,7 @@ async fn the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_s
     // request is the same one, and only the expected answer moved from 204 to
     // 401. Asserted here for the same reason the no-credential case below is:
     // the write surface inherits §3.1's trap and inheriting is not asserting.
-    let refused = put_json(
-        &router,
-        "/api/v1/settings/hostname",
-        r#""from-cookie""#,
-        Some(&cookie),
-    )
+    let refused = bearer_json(&router, "PUT", "/api/v1/settings/hostname", &token, r#""from-cookie""#)
     .await;
     assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(refused.headers().get(LOCATION), None);
@@ -7257,13 +7258,7 @@ async fn the_ssh_key_collection_lists_adds_and_removes() {
         json!(REAL_ED25519_FINGERPRINT)
     );
 
-    let removed = request(
-        &router,
-        "DELETE",
-        &ssh_key_url(REAL_ED25519_FINGERPRINT),
-        Some(&cookie),
-        None,
-    )
+    let removed = bearer(&router, "DELETE", &ssh_key_url(REAL_ED25519_FINGERPRINT), &token)
     .await;
     assert_eq!(removed.status(), StatusCode::NO_CONTENT);
     assert_eq!(stored_key_list(&fake).await, json!([]));
@@ -7465,18 +7460,13 @@ async fn a_full_key_list_is_409_and_names_the_bound() {
 /// those two conditions.
 #[tokio::test]
 async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
-    let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let (tree, token) = with_token(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     // Well formed -- it is a real fingerprint of a real key -- and no stored
     // entry carries it.
-    let response = request(
-        &router,
-        "DELETE",
-        &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT),
-        Some(&cookie),
-        None,
-    )
+    let response = bearer(&router, "DELETE", &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT), &token)
     .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
@@ -7493,13 +7483,7 @@ async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
         "SHA1:HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOa",
         &canonical(REAL_ED25519_LINE).replace(' ', "%20"),
     ] {
-        let response = request(
-            &router,
-            "DELETE",
-            &ssh_key_url(identifier),
-            Some(&cookie),
-            None,
-        )
+        let response = bearer(&router, "DELETE", &ssh_key_url(identifier), &token)
         .await;
         assert_eq!(
             response.status(),
@@ -7532,7 +7516,8 @@ async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
 /// Paired with `an_absent_key_fingerprint_is_404_where_the_pane_is_422`.
 #[tokio::test]
 async fn the_ssh_pane_answers_422_where_the_api_answers_404() {
-    let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let (tree, token) = with_token(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     let html = post_form(
@@ -7542,13 +7527,7 @@ async fn the_ssh_pane_answers_422_where_the_api_answers_404() {
         Some(&cookie),
     )
     .await;
-    let api = request(
-        &router,
-        "DELETE",
-        &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT),
-        Some(&cookie),
-        None,
-    )
+    let api = bearer(&router, "DELETE", &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT), &token)
     .await;
 
     assert_eq!(html.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -7570,19 +7549,13 @@ async fn a_fingerprint_carrying_a_slash_is_addressable_percent_encoded() {
         REAL_RSA_FINGERPRINT.contains('/'),
         "this test is about the `/`, and the fixture no longer has one"
     );
-    let (router, fake) = test_app(ssh_tree(json!([
+    let (tree, token) = with_token(ssh_tree(json!([
         stored_key(REAL_RSA_LINE),
         stored_key(REAL_ED25519_LINE),
     ])));
-    let cookie = login(&router, "hunter2secret").await;
+    let (router, fake) = test_app(tree);
 
-    let response = request(
-        &router,
-        "DELETE",
-        &ssh_key_url(REAL_RSA_FINGERPRINT),
-        Some(&cookie),
-        None,
-    )
+    let response = bearer(&router, "DELETE", &ssh_key_url(REAL_RSA_FINGERPRINT), &token)
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
@@ -8096,15 +8069,10 @@ const SLASHED_PEER_KEY: &str = "Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8=";
 /// networking broken with the only evidence in a later state read.
 #[tokio::test]
 async fn a_vlan_parent_that_is_not_declared_is_422_and_writes_nothing() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = put_json(
-        &router,
-        &iface_url("vlan9"),
-        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("vlan9"), &token, &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8130,15 +8098,10 @@ async fn a_vlan_parent_that_is_not_declared_is_422_and_writes_nothing() {
 /// `/api/v1/settings/network.br9` would have answered 204 to.
 #[tokio::test]
 async fn a_bridge_port_that_is_not_declared_is_422_and_writes_nothing() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = put_json(
-        &router,
-        &iface_url("br9"),
-        &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth9"] } }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("br9"), &token, &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth9"] } }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8160,15 +8123,10 @@ async fn a_bridge_port_that_is_not_declared_is_422_and_writes_nothing() {
 /// it is `br0`, a different entry that claims `eth1` as a port.
 #[tokio::test]
 async fn a_bridge_port_that_carries_addressing_is_422_and_writes_nothing() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = put_json(
-        &router,
-        &iface_url("eth1"),
-        &json!({ "dhcp": true }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("eth1"), &token, &json!({ "dhcp": true }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8187,15 +8145,10 @@ async fn a_bridge_port_that_carries_addressing_is_422_and_writes_nothing() {
 /// race between two `Bridge=` lines for one file, and it is refused.
 #[tokio::test]
 async fn a_port_claimed_by_two_bridges_is_422_and_writes_nothing() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = put_json(
-        &router,
-        &iface_url("br1"),
-        &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("br1"), &token, &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8215,16 +8168,11 @@ async fn a_port_claimed_by_two_bridges_is_422_and_writes_nothing() {
 /// did, and remove one.
 #[tokio::test]
 async fn the_interface_route_declares_replaces_and_removes() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     // Declared: `eth2` is not in the stored map, and a `PUT` creates it.
-    let response = put_json(
-        &router,
-        &iface_url("eth2"),
-        &json!({ "dhcp": false, "static": { "address": "10.0.0.9/24", "dns": ["1.1.1.1"] } })
-            .to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("eth2"), &token, &json!({ "dhcp": false, "static": { "address": "10.0.0.9/24", "dns": ["1.1.1.1"] } })
+            .to_string())
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
@@ -8237,12 +8185,7 @@ async fn the_interface_route_declares_replaces_and_removes() {
 
     // Replaced whole: the second body has no `static`, and the stored entry
     // has none afterwards. A `PUT` is the entry, not a patch of it.
-    let response = put_json(
-        &router,
-        &iface_url("eth2"),
-        &json!({ "dhcp": true }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("eth2"), &token, &json!({ "dhcp": true }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
@@ -8252,7 +8195,7 @@ async fn the_interface_route_declares_replaces_and_removes() {
 
     // Removed: the whole map is rewritten without it, because the dot-path
     // syntax has no delete.
-    let response = request(&router, "DELETE", &iface_url("eth2"), Some(&cookie), None).await;
+    let response = bearer(&router, "DELETE", &iface_url("eth2"), &token).await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
         fake.set_paths().last().map(String::as_str),
@@ -8270,10 +8213,10 @@ async fn the_interface_route_declares_replaces_and_removes() {
 /// half a delete-by-dot-path could not do at all.
 #[tokio::test]
 async fn removing_a_port_a_bridge_still_lists_is_refused() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = request(&router, "DELETE", &iface_url("eth1"), Some(&cookie), None).await;
+    let response = bearer(&router, "DELETE", &iface_url("eth1"), &token).await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
@@ -8290,13 +8233,13 @@ async fn removing_a_port_a_bridge_still_lists_is_refused() {
     // Removing the bridge first makes the port removable, which is the order
     // the message asks for.
     assert_eq!(
-        request(&router, "DELETE", &iface_url("br0"), Some(&cookie), None)
+        bearer(&router, "DELETE", &iface_url("br0"), &token)
             .await
             .status(),
         StatusCode::NO_CONTENT
     );
     assert_eq!(
-        request(&router, "DELETE", &iface_url("eth1"), Some(&cookie), None)
+        bearer(&router, "DELETE", &iface_url("eth1"), &token)
             .await
             .status(),
         StatusCode::NO_CONTENT
@@ -8310,9 +8253,9 @@ async fn removing_a_port_a_bridge_still_lists_is_refused() {
 /// the entry it names, so an absent one is not an absent resource.
 #[tokio::test]
 async fn an_absent_interface_is_404_and_a_malformed_name_is_422() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, token) = kinds_app().await;
 
-    let response = request(&router, "DELETE", &iface_url("eth9"), Some(&cookie), None).await;
+    let response = bearer(&router, "DELETE", &iface_url("eth9"), &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_api_headers(&response, "absent interface");
     let error = envelope(response).await;
@@ -8356,21 +8299,16 @@ async fn an_absent_interface_is_404_and_a_malformed_name_is_422() {
 /// would be refused.
 #[tokio::test]
 async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
     // Refused as one tree: `br9` names a port that this very body does not
     // declare either.
-    let response = put_json(
-        &router,
-        NETWORK_MAP_PATH,
-        &json!({
+    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({
             "eth0": { "dhcp": true },
             "br9": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth7"] } },
         })
-        .to_string(),
-        Some(&cookie),
-    )
+        .to_string())
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["code"], "validation_failed");
@@ -8379,16 +8317,11 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
 
     // Accepted as one tree: the same bridge, with its port declared in the
     // same body. Neither entry is legal without the other.
-    let response = put_json(
-        &router,
-        NETWORK_MAP_PATH,
-        &json!({
+    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({
             "eth7": { "dhcp": false },
             "br9": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth7"] } },
         })
-        .to_string(),
-        Some(&cookie),
-    )
+        .to_string())
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(fake.set_paths(), vec![NETWORK_DOT_PATH.to_string()]);
@@ -8401,12 +8334,7 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     );
 
     // A key that is not an interface name is 422, and it names the key.
-    let response = put_json(
-        &router,
-        NETWORK_MAP_PATH,
-        &json!({ "waytoolongiface016": { "dhcp": true } }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({ "waytoolongiface016": { "dhcp": true } }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["code"], "validation_failed");
@@ -8421,7 +8349,7 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
         ),
         ("{", StatusCode::BAD_REQUEST),
     ] {
-        let response = put_json(&router, NETWORK_MAP_PATH, body, Some(&cookie)).await;
+        let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, body).await;
         assert_eq!(response.status(), status, "{body}");
     }
 }
@@ -8430,28 +8358,18 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
 /// daemon sees one key and not two (M6 acceptance).
 #[tokio::test]
 async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, token) = kinds_app().await;
 
-    let response = put_json(
-        &router,
-        &iface_url("eth0.100"),
-        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth0", "id": 100 } })
-            .to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", &iface_url("eth0.100"), &token, &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth0", "id": 100 } })
+            .to_string())
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(fake.set_paths(), vec![r#"network."eth0.100""#.to_string()]);
 
     // And the envelope quotes it too, because that is the dot-path an operator
     // would type at the settings route.
-    let (router, _, cookie) = kinds_app().await;
-    let response = put_json(
-        &router,
-        &iface_url("wg.9"),
-        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } }).to_string(),
-        Some(&cookie),
-    )
+    let (router, _, cookie, token) = kinds_app().await;
+    let response = bearer_json(&router, "PUT", &iface_url("wg.9"), &token, &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["path"], json!(r#"network."wg.9""#));
@@ -8461,7 +8379,7 @@ async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
 /// `network` is 409 and names the typed routes this milestone added.
 #[tokio::test]
 async fn the_settings_passthrough_under_network_is_409_and_names_the_typed_route() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     for path in [
         "/api/v1/settings/network",
@@ -8486,9 +8404,9 @@ async fn the_settings_passthrough_under_network_is_409_and_names_the_typed_route
 /// The peer collection end to end: list, add, remove.
 #[tokio::test]
 async fn the_peer_collection_lists_adds_and_removes() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
-    let response = get(&router, &peers_url("wg0"), Some(&cookie)).await;
+    let response = bearer(&router, "GET", &peers_url("wg0"), &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_api_headers(&response, "peer listing");
     let listed: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
@@ -8496,18 +8414,13 @@ async fn the_peer_collection_lists_adds_and_removes() {
     assert_eq!(listed[0]["publicKey"], json!(PEER_KEY));
     assert_eq!(listed[0]["allowedIps"], json!(["10.8.0.0/24"]));
 
-    let response = post_json(
-        &router,
-        &peers_url("wg0"),
-        &json!({
+    let response = bearer_json(&router, "POST", &peers_url("wg0"), &token, &json!({
             "publicKey": OTHER_PEER_KEY,
             "allowedIps": ["10.8.1.0/24"],
             "endpoint": "vpn2.example.net:51820",
             "persistentKeepalive": 25,
         })
-        .to_string(),
-        Some(&cookie),
-    )
+        .to_string())
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
     let echoed: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
@@ -8519,13 +8432,7 @@ async fn the_peer_collection_lists_adds_and_removes() {
         vec!["network.wg0.wireguard.peers".to_string()]
     );
 
-    let response = request(
-        &router,
-        "DELETE",
-        &peer_url("wg0", OTHER_PEER_KEY),
-        Some(&cookie),
-        None,
-    )
+    let response = bearer(&router, "DELETE", &peer_url("wg0", OTHER_PEER_KEY), &token)
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     let peers = fake
@@ -8546,14 +8453,9 @@ async fn the_peer_collection_lists_adds_and_removes() {
 /// instead of adding a guard to the old one.
 #[tokio::test]
 async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
-    let response = post_json(
-        &router,
-        &peers_url("wg9"),
-        &json!({ "publicKey": PEER_KEY }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", &peers_url("wg9"), &token, &json!({ "publicKey": PEER_KEY }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -8571,19 +8473,13 @@ async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_
 
     // The same 404 on the other two operations of the collection.
     assert_eq!(
-        get(&router, &peers_url("wg9"), Some(&cookie))
+        bearer(&router, "GET", &peers_url("wg9"), &token)
             .await
             .status(),
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        request(
-            &router,
-            "DELETE",
-            &peer_url("wg9", PEER_KEY),
-            Some(&cookie),
-            None
-        )
+        bearer(&router, "DELETE", &peer_url("wg9", PEER_KEY), &token)
         .await
         .status(),
         StatusCode::NOT_FOUND
@@ -8596,7 +8492,7 @@ async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_
 /// what is wrong is the argument.
 #[tokio::test]
 async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, token) = kinds_app().await;
 
     for (method, path) in [
         ("GET", peers_url("eth0")),
@@ -8619,12 +8515,7 @@ async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
         );
     }
 
-    let response = post_json(
-        &router,
-        &peers_url("eth0"),
-        &json!({ "publicKey": PEER_KEY }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", &peers_url("eth0"), &token, &json!({ "publicKey": PEER_KEY }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
@@ -8643,15 +8534,10 @@ async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
 /// about duplicate.
 #[tokio::test]
 async fn a_duplicate_peer_is_409_and_writes_nothing() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = post_json(
-        &router,
-        &peers_url("wg0"),
-        &json!({ "publicKey": PEER_KEY, "allowedIps": ["10.9.0.0/24"] }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", &peers_url("wg0"), &token, &json!({ "publicKey": PEER_KEY, "allowedIps": ["10.9.0.0/24"] }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::CONFLICT);
@@ -8665,16 +8551,10 @@ async fn a_duplicate_peer_is_409_and_writes_nothing() {
 /// Section 2.4's rule on the peer item route, with both halves live.
 #[tokio::test]
 async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     // Well formed -- it is 32 bytes of base64 -- and no stored peer has it.
-    let response = request(
-        &router,
-        "DELETE",
-        &peer_url("wg0", OTHER_PEER_KEY),
-        Some(&cookie),
-        None,
-    )
+    let response = bearer(&router, "DELETE", &peer_url("wg0", OTHER_PEER_KEY), &token)
     .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
@@ -8683,13 +8563,7 @@ async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
 
     // Not a public key at all, and could never be one.
     for identifier in ["nope", "AAAA", &"A".repeat(44), &"!".repeat(44)] {
-        let response = request(
-            &router,
-            "DELETE",
-            &peer_url("wg0", identifier),
-            Some(&cookie),
-            None,
-        )
+        let response = bearer(&router, "DELETE", &peer_url("wg0", identifier), &token)
         .await;
         assert_eq!(
             response.status(),
@@ -8713,7 +8587,7 @@ async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
 /// from, and its message asks for a re-submit.
 #[tokio::test]
 async fn the_network_pane_answers_422_where_the_peer_route_answers_404() {
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, cookie, _token) = kinds_app().await;
 
     let response = post_form(
         &router,
@@ -8745,17 +8619,12 @@ async fn the_network_pane_answers_422_where_the_peer_route_answers_404() {
 async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
     let mut tree = kinds_tree("hunter2secret");
     tree["network"]["wg0"]["wireguard"]["peers"] = json!([{ "publicKey": SLASHED_PEER_KEY }]);
+    let (tree, token) = with_token(tree);
     let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     assert!(SLASHED_PEER_KEY.contains('/'), "the fixture must carry one");
-    let response = request(
-        &router,
-        "DELETE",
-        &peer_url("wg0", SLASHED_PEER_KEY),
-        Some(&cookie),
-        None,
-    )
+    let response = bearer(&router, "DELETE", &peer_url("wg0", SLASHED_PEER_KEY), &token)
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
@@ -8766,13 +8635,7 @@ async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
     );
 
     // Unencoded, the same key is two segments and is not this route.
-    let response = request(
-        &router,
-        "DELETE",
-        &format!("{}/{SLASHED_PEER_KEY}", peers_url("wg0")),
-        Some(&cookie),
-        None,
-    )
+    let response = bearer(&router, "DELETE", &format!("{}/{SLASHED_PEER_KEY}", peers_url("wg0")), &token)
     .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
@@ -8784,7 +8647,7 @@ async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
 #[tokio::test]
 async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
     const PASTED_SECRET: &str = "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO";
-    let (router, fake, cookie) = kinds_app().await;
+    let (router, fake, _cookie, token) = kinds_app().await;
 
     for (body, fragment) in [
         (
@@ -8801,7 +8664,7 @@ async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
         ),
     ] {
         let response =
-            post_json(&router, &peers_url("wg0"), &body.to_string(), Some(&cookie)).await;
+            bearer_json(&router, "POST", &peers_url("wg0"), &token, &body.to_string()).await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -8823,7 +8686,7 @@ async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
         ("{\"nosuchfield\":1}", StatusCode::UNPROCESSABLE_ENTITY),
         ("{", StatusCode::BAD_REQUEST),
     ] {
-        let response = post_json(&router, &peers_url("wg0"), body, Some(&cookie)).await;
+        let response = bearer_json(&router, "POST", &peers_url("wg0"), &token, body).await;
         assert_eq!(response.status(), status, "{body}");
     }
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
@@ -8840,6 +8703,7 @@ async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
 async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
     let mut tree = kinds_tree("hunter2secret");
     tree["network"]["mangled"] = json!("not an interface");
+    let (tree, token) = with_token(tree);
     let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
@@ -8870,12 +8734,7 @@ async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
     // The whole-map `PUT` is the exception, and deliberately: it does not read
     // the stored map at all, because the map it sends is the map that ends up
     // stored. It is also the only way out of this state through the API.
-    let response = put_json(
-        &router,
-        NETWORK_MAP_PATH,
-        &json!({ "eth0": { "dhcp": true } }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({ "eth0": { "dhcp": true } }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 }
@@ -8966,7 +8825,7 @@ async fn the_network_cluster_takes_a_bearer_and_401_without_one() {
 /// be empty because axum really matches zero characters there.
 #[tokio::test]
 async fn the_network_paths_the_router_does_not_serve_reach_the_reservation() {
-    let (router, _, cookie) = kinds_app().await;
+    let (router, _, cookie, _token) = kinds_app().await;
 
     for (method, path) in [
         ("GET", "/api/v1/network/"),
@@ -9314,23 +9173,19 @@ async fn the_power_routes_answer_202_like_the_form_path() {
 /// reading from "harmonising" either half into the other.
 #[tokio::test]
 async fn the_action_routes_require_no_confirmation_token() {
-    let (router, fake) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     // No token, and no field carrying one: accepted.
     assert_eq!(
-        post_json(&router, REBOOT_PATH, "", Some(&cookie))
+        bearer_json(&router, "POST", REBOOT_PATH, &token, "")
             .await
             .status(),
         StatusCode::ACCEPTED
     );
     assert_eq!(
-        post_json(
-            &router,
-            TRANSIENT_PATH,
-            &json!({ "password": "hunter2secret" }).to_string(),
-            Some(&cookie),
-        )
+        bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": "hunter2secret" }).to_string())
         .await
         .status(),
         StatusCode::NO_CONTENT
@@ -9358,15 +9213,11 @@ async fn the_action_routes_require_no_confirmation_token() {
 async fn the_transient_password_route_sets_it_and_writes_no_setting() {
     const PASSWORD: &str = "correct horse battery";
 
-    let (router, fake) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = post_json(
-        &router,
-        TRANSIENT_PATH,
-        &json!({ "password": PASSWORD }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": PASSWORD }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
@@ -9396,7 +9247,8 @@ async fn the_transient_password_route_sets_it_and_writes_no_setting() {
 /// password would be silently shortened to its first 72 bytes.
 #[tokio::test]
 async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
-    let (router, fake) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for (password, accepted) in [
@@ -9409,12 +9261,7 @@ async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
         ("hunter2\rsecret".to_string(), false),
     ] {
         let before = fake.transient_password_calls();
-        let response = post_json(
-            &router,
-            TRANSIENT_PATH,
-            &json!({ "password": password }).to_string(),
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": password }).to_string())
         .await;
         let context = format!("{} bytes", password.len());
         if accepted {
@@ -9469,7 +9316,8 @@ async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
 /// character, so a substring match cannot pass by accident.
 #[tokio::test]
 async fn a_rejected_transient_password_is_never_echoed() {
-    let (router, _) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, _) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for password in [
@@ -9477,12 +9325,7 @@ async fn a_rejected_transient_password_is_never_echoed() {
         "quagga-vestibule-marzipan-cornice-thimble-quixotic-basalt-lantern-ferrule",
         "quagga\nvestibule",
     ] {
-        let response = post_json(
-            &router,
-            TRANSIENT_PATH,
-            &json!({ "password": password }).to_string(),
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": password }).to_string())
         .await;
         assert_eq!(
             response.status(),
@@ -9520,7 +9363,8 @@ async fn a_rejected_transient_password_is_never_echoed() {
 /// body carrying a password does not put it in the response either.
 #[tokio::test]
 async fn a_malformed_transient_password_body_is_refused_at_400() {
-    let (router, fake) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for body in [
@@ -9529,7 +9373,7 @@ async fn a_malformed_transient_password_body_is_refused_at_400() {
         r#"{"passphrase": "hunter2secret"}"#,
         "{}",
     ] {
-        let response = post_json(&router, TRANSIENT_PATH, body, Some(&cookie)).await;
+        let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, body).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{body}");
         assert_api_headers(&response, body);
         let error = envelope(response).await;
