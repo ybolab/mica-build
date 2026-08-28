@@ -217,3 +217,4 @@ its record's head fails naming both sides (RFCT-171).
 - [ ] [**RFCT-216 rauc-sign root-rotation tooling, before the first ceremony's one-year expiry**](RFCT-216.md) `P1`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
 - [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
+- [-] [**RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404**](RFCT-242.md) `P1`
