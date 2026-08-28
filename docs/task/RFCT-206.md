@@ -45,8 +45,9 @@ CONFIG_VLAN_8021Q=y
 CONFIG_BRIDGE=y
 ```
 
-`CONFIG_VLAN_8021Q=y` (`os/boards/common/mos-required.fragment:45`) and
-`CONFIG_BRIDGE=y` (`os/boards/common/mos-required.fragment:46`).
+The fragment now ends *"CONFIG_VLAN_8021Q=y"*
+(`os/boards/common/mos-required.fragment:45`), then *"CONFIG_BRIDGE=y"*
+(`os/boards/common/mos-required.fragment:46`).
 
 **The assertion mechanism, quoted.** The board kernel copies its vendor config
 to `.config`, merges this fragment, runs `olddefconfig`, and then requires every
@@ -65,10 +66,10 @@ The loop's own refusal is *"missing mos-required option: ${line}"*
 (`os/boards/cx3576/bsp/kernel/Dockerfile:102`). It reads the fragment
 at build time, so adding a line to the fragment adds an assertion; nothing else
 had to change. That is what discharges the cx3576 functional need statically —
-RFCT-200 measured both symbols already `=y` in the vendor file
-(*"1244:CONFIG_BRIDGE=y"*, *"1250:CONFIG_VLAN_8021Q=y"*,
-`docs/task/RFCT-200.md:429-433`), and the fragment is what stops a regenerated
-vendor config dropping them silently.
+RFCT-200 measured both symbols already `=y` in the vendor file — it records
+*"1244:CONFIG_BRIDGE=y"* (`docs/task/RFCT-200.md:435`) and
+*"1250:CONFIG_VLAN_8021Q=y"* (`docs/task/RFCT-200.md:437`) — and the fragment is
+what stops a regenerated vendor config dropping them silently.
 
 **Measured, on a real cx3576 kernel build.** The merge reports only REDEFINED
 values, and neither new symbol is redefined — both were already `=y`, exactly as
@@ -181,7 +182,7 @@ was touched.
 requires the suffix to be `.network`. M4 correctly widened that predicate to
 cover the `.netdev` files it now renders — pre-merge
 `file_name.starts_with("50-mos-") && file_name.ends_with(".network")`, post-merge
-*"&& (file_name.ends_with(".network") || file_name.ends_with(".netdev"))"*
+the predicate now also accepts `file_name.ends_with(".netdev")`
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:617`).
 The extractor's pattern carried a leading greedy `.*`, so on a line holding two
 `ends_with` calls it captured the LAST and reported it as the first: the
@@ -337,10 +338,10 @@ failure, and it ran.
 
 | gate | result |
 | --- | --- |
-| `bash os/pkgs/mosd/hack/check.sh` | (see below) |
-| `bash os/pkgs/rauc-sign/hack/check.sh` | (see below) |
+| `bash os/pkgs/mosd/hack/check.sh` | `Summary [ 52.823s] 681 tests run: 681 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
+| `bash os/pkgs/rauc-sign/hack/check.sh` | `Summary [ 0.254s] 15 tests run: 15 passed, 0 skipped`, `ALL CHECKS PASSED` |
 | `bash docs/verify-citations.sh` | (see below) |
-| `bash docs/verify-index.sh` | (see below) |
+| `bash docs/verify-index.sh` | `728/728 PASS` |
 | `bash os/verify/run.sh` (the suite) | `RESULT: PASS (1080/1080 tests)` |
 | `bash os/verify/run.sh --verify --board x64` | `RESULT: PASS (292/292 checks, 22 skipped)`, both new checks green |
 | `make os-shell-pipefail-lint` | `RESULT: PASS (32/32 files clean, 32 scanned)` |
