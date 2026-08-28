@@ -96,7 +96,7 @@ whose kernel lacks these symbols, because the build fails first, so a second and
 weaker runtime opinion about that board would only add a way to disagree. x64
 has no such build — the kernel is Debian's, installed whole as a package, and
 *"The Debian config is not present in this repository, and nothing in-tree
-proves what it sets."* (`docs/task/RFCT-200.md:482-483`). So it is read off the
+proves what it sets."* (`docs/task/RFCT-200.md:493-494`). So it is read off the
 artefact.
 
 The two are separate checks because they fail for unrelated reasons. The first
@@ -117,7 +117,7 @@ RESULT: PASS (292/292 checks, 22 skipped (x64/grub; each named above))
 
 All three are `=m`, which is what RFCT-200 expected — and it said why the
 expectation was not enough: *"the expectation is `=m` for all three, but
-expectation is not measurement"* (`docs/task/RFCT-200.md:494`). It is a
+expectation is not measurement"* (`docs/task/RFCT-200.md:505`). It is a
 measurement now. `=m` is acceptable on this board and not on the other, because
 x64 ships `kmod` and a full Debian module set while cx3576 boots dm-verity with
 no initramfs and *"cannot load modules, so these must be built-in =y, never

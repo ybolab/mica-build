@@ -132,8 +132,8 @@ asserted the opposite and was wrong.
 
 There is deliberately **no rotate control on the pane**. The design places the
 rotation on the API and classifies it *"additive | new route"*
-(`docs/task/RFCT-200.md:517`) and section 8's M6 cut asks
-for *"rotate-key route"* (`docs/task/RFCT-200.md:596`) and not a pane button;
+(`docs/task/RFCT-200.md:528`) and section 8's M6 cut asks
+for *"rotate-key route"* (`docs/task/RFCT-200.md:607`) and not a pane button;
 adding one would be a second surface for one action with no ratified shape. The
 pane says what the API is for instead.
 
