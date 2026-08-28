@@ -321,3 +321,5 @@ Changed files:
   the same axis as the `talos/` line. It was **not** changed: L1's ruling covered
   the `talos/` layout line, and rewriting the product's one-line self-description
   is a different decision. Recorded for whoever owns it.
+
+<!-- dated-record: the stale-citation tables measure a 12-line pre-image through git show 637295e^; the line ranges are what that file held then, and the file has since been replaced; exempt from docs/verify-citations.sh (RFCT-257) -->

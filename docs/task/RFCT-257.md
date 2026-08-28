@@ -294,3 +294,40 @@ honest treatment is a document correction, not a cleverer rule: rewrite those
 four to the double-backtick form the corpus already uses for quoted forms, so
 the intent becomes machine-visible. That correction is left for the
 implementing pass, so that it lands beside the rule that reads it.
+
+## 5. The dated-record decisions
+
+The marker is not free and the trade is stated on both sides for every
+document. A `dated-record` marker exempts the **whole** document from both
+checks and drops it out of the unquoted ratchet — it protects the frozen bare
+tokens and simultaneously stops checking every full citation the document
+carries. Each decision below is made on its own merits, and where the trade is
+wrong the document is left alone and its bare tokens become residue.
+
+### 5.1 Marked
+
+Five documents, all `completed` tasks whose bare tokens are the record of a
+measurement rather than a claim about today's tree. Total coverage cost: **10
+in-scope citations stop being checked**.
+
+| document | costs | protects | why |
+|---|---|---|---|
+| `docs/task/RFCT-058.md` | 2 | 4 B, 1 A, 1 D | Its table measures a 12-line pre-image through `git show 637295e^`. The stanza ranges are what the file held then; the file has since been replaced. |
+| `docs/task/RFCT-064.md` | 3 | 7 E | A completed deliverable index into api.md sections at completion. Already stale: its naming row `docs/design/api.md:655` now points at TLS prose, so one of the three it costs is a false green today. |
+| `docs/task/RFCT-066.md` | 3 | 8 E, 3 A | The same deliverable-index shape. Already stale: it places section 7.2 three hundred lines before section 7.1. |
+| `docs/task/RFCT-071.md` | **0** | 4 B, 1 A | Holds no in-scope citation at all, so the marker costs nothing. Its bare tokens sit in prose that is explicitly *about* a line number going stale. |
+| `docs/task/RFCT-212.md` | 2 | 3 B | Its bare tokens record where a pre-image put three symbols, against what the line actually held. Both citations it costs sit in that same frozen comparison. |
+
+### 5.2 Left unmarked, and why — the residue
+
+| document | would cost | would protect | decision |
+|---|---|---|---|
+| `docs/design/api.md` | **1148** | 6 B, 3 E | **No**, and not close. A design document under active revision; the marker would end citation coverage for the largest document in the corpus to protect nine tokens. |
+| `docs/task/RFCT-210.md` | **114** | 16 E | **No in this pass, and a decision for a human.** RFCT-214 already ruled its inventory a dated audit at `f7cb5ba`, which argues *for* the marker; 114 citations is the largest single coverage drop available anywhere in the corpus, which argues hard against. Both halves are real and the milestone should not settle it unilaterally. |
+| `docs/task/RFCT-215.md` | 31 (23 content-checked) | 20 B, 21 E | **No.** The most recent closeout; its full citations were re-measured against the current tree days ago and are the freshest coverage in `docs/task/`. Its 41 frozen tokens stay a residue. |
+| `docs/task/RFCT-169.md` | 19 | 16 B | **No.** Roughly a one-for-one trade with no tie-breaker either way; under-claiming is the safe side. |
+| `docs/task/RFCT-214.md` | 4 | 12 B, 5 C | **No**, though it is cheap. Its five metalinguistic sites are handled by §4.6's rule rather than by exempting the document, and it also carries 15 live class A continuations that a marker would put permanently out of reach. |
+| `docs/task/RFCT-150.md` | 72 | 3 B | **No.** |
+| `docs/task/RFCT-159.md` | 17 | 2 B | **No.** |
+| `docs/task/RFCT-043.md` | 5 | 3 E, 2 A | **No.** Costs more than it protects, and the case is not clean enough to spend that. |
+| `docs/task/RFCT-115.md` | **0** | 1 E | **No.** Free, but a single token is too thin a basis for exempting a whole document; a marker asserts something about the document, not about one line. |
