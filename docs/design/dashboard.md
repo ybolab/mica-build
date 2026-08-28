@@ -192,7 +192,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Feed:** `GetSettings("hostname")` — already called at
   `os/pkgs/mosd/apid/src/routes.rs:711`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:334-342`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
   today and `os/pkgs/mosd/apid/src/` contains zero references to it — gap-table
   **row 8**, classified UI-work-only. Identity is a *setting*, not live state,
@@ -277,7 +277,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:563-583`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:628-648`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until

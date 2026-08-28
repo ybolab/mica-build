@@ -211,3 +211,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-208 PLAN-022 records brought green under PLAN-020's hardened docs gates**](RFCT-208.md) `P2`
 - [x] [**RFCT-209 Reconciling PLAN-021 with PLAN-022: fourteen conflicted files, one tree**](RFCT-209.md) `P1`
 - [x] [**RFCT-210 PLAN-023 M1: the write-surface design (USER-GATED)**](RFCT-210.md) `P1`
+- [x] [**RFCT-211 PLAN-023 M2 part 1: access.apiTokens in the settings model**](RFCT-211.md) `P1`

@@ -194,10 +194,10 @@ key lives in a mode-0640 file on STATE that the settings tree does not
 describe."* (`os/pkgs/mosd/apid/src/routes.rs:604-607`)
 
 **Collection resources, 3.** SSH authorized keys (rows 25, 26), backed by
-`authorized_keys` (`os/pkgs/mosd/mosd-settings/src/model.rs:203`); WiFi client
-networks, backed by `networks` (`os/pkgs/mosd/mosd-settings/src/model.rs:313`);
+`authorized_keys` (`os/pkgs/mosd/mosd-settings/src/model.rs:224`); WiFi client
+networks, backed by `networks` (`os/pkgs/mosd/mosd-settings/src/model.rs:378`);
 and — new, section 2.3 predates it — **WireGuard peers** (rows 15, 16), backed
-by `peers` (`os/pkgs/mosd/mosd-settings/src/model.rs:502`). All three are
+by `peers` (`os/pkgs/mosd/mosd-settings/src/model.rs:567`). All three are
 `Vec<T>` in a tree whose dot-path syntax cannot index an array, and all three
 have a natural identity that is not a position: fingerprint, `ssid`, and the
 peer's `public_key` respectively. The peer routes are the strongest case of the
@@ -235,11 +235,11 @@ bridges.
 
 **A raw `PUT /api/v1/settings/network.<iface>` runs none of them.** The write
 path is `SetSettings` → `Settings::set` → `Store::save`, and the setter at
-`os/pkgs/mosd/mosd-settings/src/model.rs:602-635` validates exactly three
+`os/pkgs/mosd/mosd-settings/src/model.rs:667-700` validates exactly three
 things: that the tree still deserializes, that `schema_version` is unchanged,
 and that a newly-introduced `network` key is a legal interface name. The model
 says so in its own doc comment — cross-field consistency *"is enforced in the
-network reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:437-438`) — and
+network reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:502-503`) — and
 the reconciler's `validate_network`
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-495`) is where those four
 rules actually live on the mosd side. But the reconciler runs *after* the save,
@@ -446,9 +446,9 @@ writes straight to the peer list's own dot-path
 missing intermediates by documented and tested behaviour — its own contract says
 *"Missing intermediate map entries are created (e.g. setting
 `network.eth1.dhcp` creates `eth1`)"*
-(`os/pkgs/mosd/mosd-settings/src/model.rs:591-592`), and the committed test
+(`os/pkgs/mosd/mosd-settings/src/model.rs:656-657`), and the committed test
 `set_scalar_and_create_intermediate_entries`
-(`os/pkgs/mosd/mosd-settings/tests/settings.rs:127-140`) proves that step on a
+(`os/pkgs/mosd/mosd-settings/tests/settings.rs:128-141`) proves that step on a
 `network` key specifically. `validate_peers`
 (`os/pkgs/mosd/apid/src/routes.rs:1222-1245`) checks each peer's public key,
 allowed IPs and endpoint syntax, and never looks at the interface. So adding a
