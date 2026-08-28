@@ -132,10 +132,25 @@ if [ -n "${MOS_QEMU_APPEND:-}" ]; then
             DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends mtools >/dev/null 2>&1
             cd /w
             mcopy -n -i "disk.img@@${OFF}" ::/EFI/mos/grub.cfg grub.cfg
-            before=$(grep -c "^    linux " grub.cfg)
+            # The indentation is matched as WHITESPACE, not as four spaces.
+            # os/boards/x64/grub.cfg:98 and :116 indent their linux lines with
+            # EIGHT, so a four-space pattern matched neither and the count came
+            # back 0 on every run.
+            #
+            # `|| true` on both counts, because `set -e` aborts a command
+            # substitution whose command exits non-zero -- and grep -c exits 1
+            # when it counts nothing. So the assignment itself killed the shell
+            # BEFORE the guard on the next line could report why, which is how a
+            # completely unmatched pattern came to look like a prepare step that
+            # printed nothing and failed.
+            before=$(grep -c "^[[:space:]]*linux " grub.cfg || true)
             [ "${before}" -ge 1 ] || { echo "error: no linux line in the ESP grub.cfg; MOS_QEMU_APPEND would have added nothing and the run would look normal" >&2; exit 1; }
-            sed -i "s|^\(    linux .*\)\$|\1 ${APPEND}|" grub.cfg
-            grep -c -- "${APPEND}" grub.cfg >/dev/null || { echo "error: the append did not land in grub.cfg" >&2; exit 1; }
+            sed -i "s|^\([[:space:]]*linux .*\)\$|\1 ${APPEND}|" grub.cfg
+            # -F: the append is a fixed string, and a value carrying a `.` or a
+            # `*` must be looked for as itself rather than as a pattern that
+            # happens to match something else on the line.
+            landed=$(grep -c -F -- "${APPEND}" grub.cfg || true)
+            [ "${landed}" -ge 1 ] || { echo "error: the append did not land in grub.cfg" >&2; exit 1; }
             mcopy -o -n -i "disk.img@@${OFF}" grub.cfg ::/EFI/mos/grub.cfg
         '
     echo "note: appended to the disk copy's kernel command line: ${MOS_QEMU_APPEND}"
