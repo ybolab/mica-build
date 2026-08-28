@@ -114,7 +114,8 @@ the shared validator's words is the smaller and more honest answer.
 **WiFi runs the model's own deserializer, because that is the whole of what mosd
 validates on a write to this subtree.** Measured, not assumed: mosd's one
 settings-write path is `MosdService::write_setting`, which calls
-`Settings::set`, which validates by deserializing the candidate tree
+`Settings::set`, which validates by deserializing the whole candidate tree --
+`serde_json::from_value(root)`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:678-682`). There is no
 `validate_wifi_networks` anywhere in `mosd-settings`. So the typed `WifiNetwork`
 this route deserializes into — `deny_unknown_fields`, `ssid` required, the rest
@@ -123,7 +124,8 @@ defaulted — is the validator mosd runs.
 ### What that leaves undone, named
 
 The pre-shared key's own bounds are **not** checked by either surface at write
-time. They live in `encode_psk` inside the station reconciler
+time. They live inside the station reconciler's renderer, in
+`fn encode_psk`
 (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:226-263`), which is a private
 function of the `mosd` binary crate; apid depends on `mosd-settings` and not on
 `mosd`, so it cannot reach them. A `psk` outside IEEE 802.11i's 8..63 characters
