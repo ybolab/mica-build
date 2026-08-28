@@ -4153,6 +4153,34 @@ async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
     assert_eq!(error["path"], json!("no.such.path"));
 }
 
+/// A live-state dot-path that does not resolve answers **404
+/// `settings_not_found`**, the same code the settings tree gives the same
+/// condition -- not the 422 §2.4's table gives fdo `InvalidArgs` everywhere
+/// else.
+///
+/// mosd raises `InvalidArgs` for a state path that does not resolve
+/// (`os/pkgs/mosd/mosd/src/bus.rs:648-665`), and on THIS route that name has
+/// exactly one producer: `get_state`'s only other failure is `Failed` for the
+/// `/proc/uptime` read. One producer is what makes the reclassification a
+/// reading rather than a guess. The settings assertion beside it is the
+/// control: the same name on the settings route is still a rejection, because
+/// there it genuinely can be one.
+#[tokio::test]
+async fn a_state_dot_path_that_does_not_resolve_is_404_not_422() {
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+
+    let response = get(&router, "/api/v1/state/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["path"], json!("no.such.path"));
+
+    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_rejected");
+}
+
 /// §3.1's trap again, for the routes this campaign adds: an unauthenticated
 /// resource read answers §2.4's envelope with a 401 and **never** a redirect,
 /// in both gate modes. They inherit it from `ApiSession`; inheriting is not
