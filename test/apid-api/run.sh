@@ -91,7 +91,7 @@ BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
 # on ECONNREFUSED. Measured 2026-08-28. The runner refuses an unknown phase
 # name, so a phase renamed without updating this list fails loudly here rather
 # than being silently dropped from the run.
-BOOT1_PHASES="${MOS_APID_PHASES:-01-transport,02-setup,03-login,04-readonly,05-mutate,05b-wireguard,05c-kernel-net,06-backoff,07-reboot}"
+BOOT1_PHASES="${MOS_APID_PHASES:-01-transport,02-setup,03-login,04-readonly,05-mutate,05b-wireguard,05c-kernel-net,05d-bearer,06-backoff,07-reboot}"
 
 PHASES="${BOOT1_PHASES}"
 # The bun image is pinned by digest, not by tag. `oven/bun:1` is a

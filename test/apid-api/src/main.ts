@@ -22,6 +22,7 @@ import readOnly from "./phases/04-readonly.ts";
 import mutate from "./phases/05-mutate.ts";
 import wireguard from "./phases/05b-wireguard.ts";
 import kernelNet from "./phases/05c-kernel-net.ts";
+import bearer from "./phases/05d-bearer.ts";
 import backoff from "./phases/06-backoff.ts";
 import reboot from "./phases/07-reboot.ts";
 import postReboot from "./phases/07b-postreboot.ts";
@@ -35,6 +36,7 @@ export const PHASES: readonly Phase[] = [
   mutate,
   wireguard,
   kernelNet,
+  bearer,
   backoff,
   reboot,
   postReboot,
