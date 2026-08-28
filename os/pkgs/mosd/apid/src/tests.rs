@@ -4083,16 +4083,22 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
+    /// PLAN-023 M7 gave these three a route each, so they answer the failure
+    /// rather than panicking. `reboot` and `power_off` are called from a
+    /// detached task whose result only reaches a log, so what they return
+    /// changes no response; an `unreachable!` in them would abort that task
+    /// instead, which is a panic in a fixture rather than a failed assertion in
+    /// a test.
     async fn reboot(&self) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     async fn power_off(&self) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     /// The one write this fixture *does* answer, because §2.4's classification
@@ -9284,9 +9290,15 @@ async fn a_rejected_transient_password_is_never_echoed() {
             }
         }
         // It is still a usable §2.4 envelope: the caller has to learn what the
-        // bound was without being told what it sent.
+        // rule was without being told what it sent. Every one of the
+        // validator's messages names the subject and the rule and nothing else,
+        // which is exactly why the message can be passed through verbatim.
         let error: serde_json::Value = serde_json::from_str(&body).expect("§2.4 envelope");
-        assert!(error["error"]["message"].as_str().unwrap().contains("bytes"));
+        let message = error["error"]["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("Password must"),
+            "{password}: {message}"
+        );
     }
 }
 
@@ -9378,8 +9390,9 @@ async fn a_failed_transient_password_names_no_dot_path() {
     assert!(error.get("path").is_none(), "{error}");
 
     // A route that does name one still names it: the member is optional, not
-    // removed.
-    let response = post_json(
+    // removed. Same fixture, same failure, same classifier — the only
+    // difference is that this one has a dot-path at fault.
+    let response = put_json(
         &router,
         "/api/v1/settings/hostname",
         r#""mos""#,

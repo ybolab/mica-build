@@ -536,6 +536,9 @@ fn is_declared_api_route(path: &str) -> bool {
             || is_network_route(leaf)
             || resource_dot_path(leaf).is_some()
             || rotate_key_iface(leaf).is_some()
+            || leaf == V1_REBOOT_PATH
+            || leaf == V1_POWEROFF_PATH
+            || leaf == V1_TRANSIENT_PASSWORD_PATH
     })
 }
 
