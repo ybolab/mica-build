@@ -98,7 +98,7 @@ one bad key on STATE reject every write in the tree, which is exactly the
 Both `network.<iface>` writers — the `/network` pane and the setup wizard —
 compose through `iface_settings_path`, a two-line helper over the exported
 `quote_path_segment`. `valid_iface_name` still admits `.`
-(`os/pkgs/mosd/apid/src/routes.rs:962-967`), and now the path it produces
+(`os/pkgs/mosd/apid/src/routes.rs:990-995`), and now the path it produces
 means what the form said: one key, not two segments. Nothing else in the pane
 changes; the typed per-kind forms are M6.
 

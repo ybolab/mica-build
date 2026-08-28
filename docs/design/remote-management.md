@@ -35,10 +35,10 @@ defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
 **One gate in front of everything.** `app` is *"The HTTPS application router"*
 (`os/pkgs/mosd/apid/src/routes.rs:122`) and its outermost layer is the auth gate
 (`os/pkgs/mosd/apid/src/routes.rs:210`), which *"routes every request into setup mode,
-login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:806`) on a session cookie minted
+login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:834`) on a session cookie minted
 at first-run setup or at login. `/healthz` and the declared API routes are the
 only exemptions; they *"answer for themselves"*
-(`os/pkgs/mosd/apid/src/routes.rs:809-810`).
+(`os/pkgs/mosd/apid/src/routes.rs:837-838`).
 
 **The JSON API under `/api` is read-only.** The router reserves the prefix and
 *"every other path under it 404s"* (`os/pkgs/mosd/apid/src/routes.rs:198-199`); every
@@ -93,10 +93,10 @@ decisions any future design settles first, each constraining the others:
 ## 3. Update control flow
 
 **What holds today — [implemented].** Installation is local and mosd owns it:
-`InstallUpdate(bundle_path)` (`docs/design/mosd.md:423`) hands a bundle already
+`InstallUpdate(bundle_path)` (`docs/design/mosd.md:468`) hands a bundle already
 on the device to RAUC, against *"the A/B update design this implements"*
 (`docs/design/ro-root.md:7-8`). The boot health gate confirms the new slot and
-*"probes systemd, mosd and apid first"* (`docs/design/mosd.md:439`); an
+*"probes systemd, mosd and apid first"* (`docs/design/mosd.md:484`); an
 unconfirmed slot spends boot credits until *"a slot that cannot complete a boot
 is guaranteed to exhaust its credits"*
 (`docs/design/uboot-ab-handshake.md:434-435`) and the bootloader falls back.

@@ -88,7 +88,7 @@ Every target verified by opening it before re-pointing:
 | `docs/task/RFCT-042.md:42` | `dashboard.md:45` | `:61` | section 1 "Problem and current state" still exists |
 | `docs/task/RFCT-058.md:285` | `verify-index.sh:26` | `:42` | `README=docs/README.md` moved when RFCT-171 grew the file |
 | `docs/task/RFCT-066.md:62` | `os/rauc/system.conf.in` `:50-62` | `os/pkgs/rauc/system.conf.in:64-76` | the plain-refusal and CMS keyring text lives there today |
-| `docs/task/RFCT-105.md:355` | `os/qemu-run.sh` `:167` | `os/tools/qemu-run.sh:179` | `-no-reboot` still passed, file moved |
+| `docs/task/RFCT-105.md:355` | `os/qemu-run.sh` `:167` | `test/apid-api/src/qemu.ts:251` | `-no-reboot` still passed, file moved twice |
 | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | `os/pkgs/rauc/system.conf.in:71-78` | moved by PLAN-019, same lines, quote intact |
 | `docs/task/RFCT-139.md:16` | `checks-root.ts:629-633` | `:601-620` | `packed-no-dev-keyring` check body |
 | `docs/task/RFCT-142.md:22` | `os/update/rauc/system.conf.in` `:35` | `os/pkgs/rauc/system.conf.in:35` | the fw_setenv comment, same line |

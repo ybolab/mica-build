@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:712`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:740`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -190,7 +190,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:711`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:739`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -344,7 +344,7 @@ better mechanism and then hid it.**
   reboot.** Rebooting a slot RAUC has installed but that has not been marked
   good **burns a boot attempt**, and today the power pane has no update-state
   awareness and does not warn — recorded as a known follow-up at
-  `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503`, and
+  `docs/design/mosd.md:259-262` and `docs/plan/PLAN-010.md:502-503`, and
   gap-table **row 10**. The next action is to wait for the health gate to run, or
   read *why* it did not pass (section 2.3, part iii). This tile and the power
   page are therefore coupled: the power page must read this tile's feed before it
@@ -408,7 +408,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
-  (`os/pkgs/mosd/apid/src/routes.rs:1897-1917`); mosd itself reads
+  (`os/pkgs/mosd/apid/src/routes.rs:1925-1945`); mosd itself reads
   `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:585-591`). RFCT-129 landed this.
 - **Availability: (a) available today** — gap-table **row 12**, no longer via a
   side channel. The old `/proc/uptime`-in-`apid` exception to the layering
@@ -493,7 +493,7 @@ names the reason, and where it belongs instead. **[proposal]**
 - **No power buttons.** They are one click from the nav bar already
   (`routes.rs:48`), they are the only irreversible actions in the product, and —
   until section 2.5's feed exists — the power pane cannot warn that rebooting a
-  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:225-228`).
+  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:259-262`).
   Promoting an action to the first screen while it cannot state its own
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
@@ -802,7 +802,7 @@ section 8's.
 | 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
 | 8 | 2.2, 3.4.1 | Observed hostname as opposed to configured | **row 13** | A read-back from hostnamed. There is no `GetHostname` call anywhere; the live-state key echoes the configured value (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) |
-| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
+| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:259-262` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
 | 10 | 3.2 Diagnostics | A redaction rule before any state export | — (not a gap row; **[proposal]**) | `GetState("")` and `GetSettings("")` already return whole trees (`os/pkgs/mosd/mosd/src/bus.rs:193-197`, `:197-202`), so the mechanism exists and the *policy* does not. Venus's precedent is redaction plus an access gate (`venus-os-ui.md` section 7 item 10) |
 
 **Items needing no `mosd` work at all**, listed so they are not accidentally
@@ -1068,7 +1068,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:898-911`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:926-939`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1616,7 +1616,7 @@ admitted gap.
 8. **`docs/design/access.md`, `docs/design/provisioning.md` and
    `docs/design/mosd.md`** are owned by the parallel `sshweb` campaign and were
    not opened for this section. Where section 4 of this document cites
-   `docs/design/mosd.md:225-228`, that citation is carried through unchecked.
+   `docs/design/mosd.md:259-262`, that citation is carried through unchecked.
    Likewise the in-flight SSH work on `bkd/hiu25adw` (`mos-ui-inventory.md`
    section 8) is not in this tree; if it adds routes, the route count in 5.1.1
    and the fragment-route count in 5.4 are both understated.

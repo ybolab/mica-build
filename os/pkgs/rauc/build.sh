@@ -43,34 +43,75 @@ if [ ! -s "${HERE}/versions.lock" ]; then
     exit 1
 fi
 
-# The builder is `default`, explicitly, because this file cannot inherit one:
-# every stage below is FROM a localhost/mos-build-* tag, which exists only in
-# the local docker image store, and only the `docker` driver can resolve one. A
-# docker-container builder has its own content store and treats `localhost/` as
-# a registry hostname, producing `dial tcp [::1]:80: connect: connection
-# refused` against a FROM line that is correct -- the same reason
-# os/build-env/build.sh pins itself to `default`. Inheriting is worse still: a
-# leftover `mos-rauc-arm64` from an unrelated build is a plausible ambient
-# selection on any host that has ever run `make os-rauc`.
+# The builder is NAMED rather than inherited, and named rather than pinned --
+# the same register os/rootfs/build-v2.sh:571 uses. BUILDX_BUILDER wins,
+# because a caller who names a builder has made a decision; with nothing named,
+# `default` is the docker driver on every docker installation. What must not
+# happen is inheriting the ambient selection: a leftover `mos-rauc-arm64` from
+# an unrelated build is a plausible current builder on any host that has ever
+# run `make os-rauc`.
 
-# So the emulation fallback becomes a refusal, deliberately phrased around what
-# is missing rather than around this host's architecture: the default builder
-# reaches linux/${MOS_ARCH} exactly when the host has binfmt registered for it,
-# and on such a host this build works cross-architecture with no change to this
-# file. What it needs beyond that is an mos-build-* family built for that
-# architecture, which os/build-env/from.sh checks next and
-# os/build-env/build.sh produces.
-BUILDER_ARGS=(--builder default)
-# The whole output is captured BEFORE anything reads it, rather than piped into
-# a grep. An early-exiting `grep -q` on the right of a pipe closes it the moment
-# it matches; under `set -o pipefail` the producer then dies of SIGPIPE and the
-# PIPELINE reports failure exactly when the pattern IS found -- so the refusal
-# below would fire on the hosts that can build, intermittently, depending on
-# whether the output fit the pipe buffer first. os/tests/shell-pipefail-lint.sh
-# exists for this one mistake and caught this line.
-default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
-if ! printf '%s\n' "${default_platforms}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
-    echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/pkgs/rauc/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
+# `default` reaches linux/${MOS_ARCH} exactly when the host has binfmt
+# registered for it. When it does not, this no longer refuses: it selects the
+# `mos-${MOS_ARCH}` docker-container builder, whose buildkit image bundles the
+# emulators and needs no host registration -- same name and same creation as
+# os/tests/quadlet-doc-test.sh:83-85, so there is one way to get a
+# cross-capable builder in this tree. That it genuinely executes the target
+# architecture is measured rather than inspected: `docker buildx ls` reports
+# mos-arm64 as linux/amd64 (+3), linux/386 on this host, and a throwaway
+# `FROM localhost/mos-build-base` + `RUN uname -m` built with
+# `--builder mos-arm64 --platform linux/arm64` printed aarch64.
+
+# What that driver cannot do is resolve a `localhost/mos-build-*` FROM: it has
+# its own content store and reads `localhost/` as a registry hostname, measured
+# here as `Head "http://localhost/v2/mos-build-base/manifests/latest": dial tcp
+# [::1]:80: connect: connection refused` against a FROM line that is correct.
+# That is closed below rather than refused: os/build-env/from.sh --contexts=
+# hands the bases over as CONTENT, as OCI layouts named after the tags they
+# came from, and the Dockerfile keeps saying FROM ${MOS_BUILD_C}.
+if [ -n "${BUILDX_BUILDER:-}" ]; then
+    echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER})"
+    BUILDER="${BUILDX_BUILDER}"
+else
+    # The whole output is captured BEFORE anything reads it, rather than piped
+    # into a grep. An early-exiting `grep -q` on the right of a pipe closes it
+    # the moment it matches; under `set -o pipefail` the producer then dies of
+    # SIGPIPE and the PIPELINE reports failure exactly when the pattern IS
+    # found -- so this would pick the container builder on the hosts that can
+    # build natively, intermittently, depending on whether the output fit the
+    # pipe buffer first. os/tests/shell-pipefail-lint.sh exists for this one
+    # mistake and caught this line.
+    default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
+    if printf '%s\n' "${default_platforms}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
+        BUILDER=default
+    else
+        BUILDER="mos-${MOS_ARCH}"
+        docker buildx inspect "${BUILDER}" >/dev/null 2>&1 ||
+            docker buildx create --name "${BUILDER}" --driver docker-container >/dev/null
+    fi
+fi
+BUILDER_ARGS=(--builder "${BUILDER}")
+
+# Which driver it turned out to be decides whether the bases go over as tags or
+# as layouts, so it is read off the builder rather than inferred from its name:
+# BUILDX_BUILDER may name anything.
+builder_inspect="$(docker buildx inspect "${BUILDER}" 2>/dev/null || true)"
+BUILDER_DRIVER="$(printf '%s\n' "${builder_inspect}" | sed -n 's/^Driver:[[:space:]]*//p')"
+[ -n "${BUILDER_DRIVER}" ] || {
+    echo "error: \`docker buildx inspect ${BUILDER}\` names no driver, so this build cannot tell whether that builder can resolve a localhost/mos-build-* tag or has to be handed the bases as OCI layouts. Either the builder does not exist or it is not running: \`docker buildx ls\` lists what does" >&2
+    exit 1
+}
+
+# The refusal that is left, and it is about the one builder this script may not
+# replace. A caller who named BUILDX_BUILDER named it deliberately, so a
+# docker-driver builder on a host with no binfmt for ${MOS_ARCH} is a dead end
+# here rather than something to silently route around -- and it is refused now
+# instead of surfacing as `exec /bin/sh: exec format error` inside a compile
+# stage. Note what it does NOT say any more: host binfmt is no longer what this
+# build needs, only what THAT builder needs.
+if [ "${BUILDER_DRIVER}" = docker ] &&
+    ! printf '%s\n' "${builder_inspect}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
+    echo "error: the buildx builder '${BUILDER}' uses the docker driver and does not offer linux/${MOS_ARCH} on this host, so every RUN in os/pkgs/rauc/Dockerfile would fail with 'exec format error'. Either register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- or unset BUILDX_BUILDER and let this script select the docker-container builder 'mos-${MOS_ARCH}', whose buildkit image bundles the emulators and needs no host registration" >&2
     exit 1
 fi
 
@@ -94,9 +135,31 @@ mapfile -t FROM_ARGS < <("${FROM_SH}" --arch="${MOS_ARCH}" \
     exit 1
 }
 
+# The same two images a second time, as content, for a builder that cannot read
+# the local image store. Only for that builder: with the docker driver the tags
+# above resolve directly, and exporting them anyway would copy the whole
+# mos-build family to disk on every native build to change nothing.
+#
+# A temporary directory rather than a path in the tree, because the layouts are
+# a copy of what the image store already holds -- they have no life beyond this
+# build and nothing may ever read them as an input to the next one.
+CTX_ARGS=()
+if [ "${BUILDER_DRIVER}" != docker ]; then
+    OCI_DIR="$(mktemp -d)"
+    trap 'rm -rf "${OCI_DIR}"' EXIT
+    mapfile -t CTX_ARGS < <("${FROM_SH}" --arch="${MOS_ARCH}" --contexts="${OCI_DIR}" \
+        LOCAL_MOS_BUILD_BASE \
+        LOCAL_MOS_BUILD_C)
+    [ "${#CTX_ARGS[@]}" -eq 4 ] || {
+        echo "error: os/build-env/from.sh did not yield the two OCI layout contexts (see its message above); the '${BUILDER}' builder would have resolved the FROM lines as pulls from a registry called 'localhost'" >&2
+        exit 1
+    }
+fi
+
 docker buildx build "${BUILDER_ARGS[@]}" \
     --platform "linux/${MOS_ARCH}" \
     "${FROM_ARGS[@]}" \
+    ${CTX_ARGS[@]+"${CTX_ARGS[@]}"} \
     -f "${HERE}/Dockerfile" \
     -o "${OUT}" \
     "${HERE}"
