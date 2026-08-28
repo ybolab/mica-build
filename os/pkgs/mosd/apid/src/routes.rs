@@ -22,7 +22,13 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::routing::{any, delete, get, post};
+// `delete` is imported on its own line rather than folded into the routing
+// import below. `docs/task/RFCT-210.md` quotes that line verbatim as the
+// measurement behind its central negative -- apid had never served a write
+// verb -- and a record of what was true is not edited by the change that makes
+// it untrue.
+use axum::routing::delete;
+use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
@@ -33,7 +39,7 @@ use mosd_settings::{
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::access_cache::{ACCESS_PATH, AccessCache};
+use crate::access_cache::AccessCache;
 use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
@@ -1122,7 +1128,7 @@ fn item_not_found(collection: &str, identifier: &str) -> Response {
 /// read half of a read-modify-write, and the freshest list is the one least
 /// likely to drop somebody else's entry.
 async fn stored_tokens(state: &AppState) -> Result<Vec<ApiToken>, Box<Response>> {
-    let access = match state.api.get_settings(ACCESS_PATH).await {
+    let access = match state.api.get_settings("access").await {
         Ok(value) => value,
         Err(err) => return Err(Box::new(bus_api_error(&err, API_TOKENS_PATH))),
     };
@@ -1395,7 +1401,7 @@ async fn access_settings(state: &AppState) -> anyhow::Result<Value> {
         return Ok(value);
     }
     let generation = state.access_cache.generation();
-    let value = state.api.get_settings(ACCESS_PATH).await?;
+    let value = state.api.get_settings("access").await?;
     state.access_cache.fill(generation, value.clone());
     Ok(value)
 }
@@ -2667,7 +2673,7 @@ async fn builtin_page(state: &AppState, banner: Option<Markup>) -> Html<String> 
 async fn pane_tokens(state: &AppState) -> Result<Vec<ApiToken>, String> {
     let access = state
         .api
-        .get_settings(ACCESS_PATH)
+        .get_settings("access")
         .await
         .map_err(|err| format!("{err:#}"))?;
     parse_tokens(&access).map_err(|err| err.to_string())
