@@ -55,4 +55,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-022 Native networking - VLAN, bridge, WireGuard (design-first)**](PLAN-022.md) `2026-08-27`
 - [-] [**PLAN-023 API phase 2 - bearer tokens, the write surface, the health route**](PLAN-023.md) `2026-08-28`
 - [x] [**PLAN-024 Legacy plan closeout - PLAN-011/012/013 measured and closed**](PLAN-024.md) `2026-08-28`
-- [-] [**PLAN-025 Engineering debts - qemu-run port, cx3576 build enablement, small fixes**](PLAN-025.md) `2026-08-28`
+- [x] [**PLAN-025 Engineering debts - qemu-run port, cx3576 build enablement, small fixes**](PLAN-025.md) `2026-08-28`

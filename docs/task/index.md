@@ -224,3 +224,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-232 PLAN-025 M3a: /state 404 and the two mosd.md dated notes**](RFCT-232.md) `P2`
 - [x] [**RFCT-233 PLAN-025 M4: the harness facts, committed as one citation-gated page**](RFCT-233.md) `P2`
 - [x] [**RFCT-234 PLAN-025 M2b: the arm64 builder family, cx3576 rauc, and the RFCT-206 section 7 pass**](RFCT-234.md) `P1`
+- [ ] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
