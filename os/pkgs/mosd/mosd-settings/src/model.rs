@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v7) and its dot-path accessors.
+//! Typed settings tree (schema v8) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
-/// Persistent mosd settings tree (schema v7).
+/// Persistent mosd settings tree (schema v8).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -158,6 +158,27 @@ pub struct AccessSettings {
     /// Device credential metadata; never holds a plaintext secret.
     #[serde(default)]
     pub device: DeviceCredentialSettings,
+    /// Bearer API tokens, hashes only.
+    ///
+    /// Empty by default, and empty is not written out: a device that never
+    /// minted a token has a v8 document identical to its v7 form but for the
+    /// version integer, which is what makes the v7 -> v8 bump additive and the
+    /// A/B rollback survivable (see [`crate::MigrateV7ToV8`]).
+    ///
+    /// Under `access` rather than beside it because apid's gate already reads
+    /// the `access` subtree on every request, so the token set the check needs
+    /// is in hand at the moment the check runs; a sibling root would have cost
+    /// a second bus round trip per request.
+    ///
+    /// Written as a whole JSON array through the dot-path API -- the path
+    /// syntax has no array indexing -- so mint and revoke are read-modify-write
+    /// of the list. Every entry must satisfy [`crate::validate_api_tokens`]
+    /// before it is stored.
+    ///
+    /// Declared last so the TOML serializer emits this array of tables after
+    /// every other key of `access`.
+    #[serde(rename = "apiTokens", default, skip_serializing_if = "Vec::is_empty")]
+    pub api_tokens: Vec<ApiToken>,
 }
 
 /// Web admin credentials, written by apid.
@@ -261,6 +282,50 @@ pub struct DeviceCredentialSettings {
     pub password_hash: Option<String>,
     /// Revision of the stored credential, bumped on every regeneration.
     pub generation: u32,
+}
+
+/// One bearer API token, as the settings tree holds it.
+///
+/// The plaintext secret is not here and is nowhere else on the device: only
+/// `hash` is stored, so a lost token is replaced rather than recovered. That
+/// is the posture [`DeviceCredentialSettings`] already takes, and it is why
+/// `hash` sits on apid's redaction denylist -- mosd answers a settings read
+/// with the subtree verbatim, so a digest served in the clear would be an
+/// offline guessing target handed to every authenticated reader.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApiToken {
+    /// Stable identity of this token, lowercase hex.
+    ///
+    /// Identity is this field and never a list position: an index is
+    /// meaningful only against the list the caller last read, and a concurrent
+    /// mint slides it onto a different entry.
+    pub id: String,
+    /// Operator-supplied label, the only thing that tells one token from
+    /// another in a listing.
+    pub name: String,
+    /// SHA-256 hex digest of the token secret, lowercase, 64 characters.
+    ///
+    /// SHA-256 and not argon2id deliberately: the secret is machine-generated
+    /// and has nothing to guess, so a work factor would buy no security and
+    /// would be paid on every API request rather than once per login.
+    pub hash: String,
+    /// Seconds since the UNIX epoch as the device clock read them when the
+    /// token was minted, saturating at 0.
+    ///
+    /// **A label, never a deadline.** The image this daemon runs on enables no
+    /// RTC sync unit and no time daemon, so this reading is whatever the
+    /// device's clock happened to say and may be wrong by any amount; 0 means
+    /// the clock was unset or before the epoch. It is displayed and ordered by,
+    /// and it is compared against nothing. There is deliberately no `expiresAt`
+    /// beside it: an expiry enforced against an untrusted clock is worse than
+    /// no expiry at all, and revocation is the whole lifecycle.
+    ///
+    /// [`crate::validate_api_tokens`] therefore places no bound on this value.
+    /// Rejecting an implausible reading would turn a wrong clock into a mint
+    /// failure, which is the untrusted clock deciding whether the operator may
+    /// have a credential.
+    pub created: u64,
 }
 
 /// First-boot self-provisioning status.
@@ -656,6 +721,7 @@ mod tests {
         assert_eq!(parsed.access.ssh, SshSettings::default());
         assert_eq!(parsed.access.console, ConsoleSettings::default());
         assert_eq!(parsed.access.device, DeviceCredentialSettings::default());
+        assert!(parsed.access.api_tokens.is_empty());
         assert_eq!(parsed.provisioning, ProvisioningSettings::default());
         assert_eq!(parsed.wifi, WifiSettings::default());
         assert_eq!(parsed.container, ContainerSettings::default());
@@ -688,6 +754,7 @@ mod tests {
         assert_eq!(settings.access.device.password_hash, None);
         assert_eq!(settings.access.device.generation, 0);
         assert_eq!(settings.access.web_admin, None);
+        assert!(settings.access.api_tokens.is_empty());
         assert_eq!(settings.wifi.ap.psk, None);
         assert_eq!(settings.wifi.ap.ssid, None);
         assert!(settings.wifi.client.networks.is_empty());
@@ -702,5 +769,83 @@ mod tests {
             !text.contains("passwordHash"),
             "serialized tree must hold no credential: {text}"
         );
+        assert!(
+            !text.contains("apiTokens"),
+            "serialized tree must hold no credential: {text}"
+        );
+    }
+
+    /// The empty list is not written out, and that is what makes the v7 -> v8
+    /// bump additive: a device that never minted a token has a v8 document
+    /// whose only difference from its v7 form is the version integer.
+    #[test]
+    fn an_empty_token_list_is_not_serialized() {
+        let text = toml::to_string(&Settings::default()).unwrap();
+        assert!(!text.contains("apiTokens"), "{text}");
+
+        let mut with_token = Settings::default();
+        with_token.access.api_tokens.push(sample_token());
+        let text = toml::to_string(&with_token).unwrap();
+        assert!(text.contains("[[access.apiTokens]]"), "{text}");
+    }
+
+    /// The wire names are the tree's camelCase convention, and the entry
+    /// carries the four fields section 3.2 names and no fifth.
+    #[test]
+    fn a_token_round_trips_through_toml_under_its_camel_case_name() {
+        let mut settings = Settings::default();
+        settings.access.api_tokens.push(sample_token());
+
+        let text = toml::to_string(&settings).unwrap();
+        let parsed: Settings = toml::from_str(&text).unwrap();
+        assert_eq!(parsed, settings);
+
+        // Through the dot-path API the JSON shape is the same one apid reads
+        // out of `GetSettings("access")`.
+        let value = settings.get("access.apiTokens").unwrap();
+        let entry = &value.as_array().unwrap()[0];
+        let fields: Vec<&str> = entry
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(fields, ["created", "hash", "id", "name"]);
+        assert_eq!(entry["id"], Value::String("3f2a9c41".to_string()));
+        assert_eq!(entry["created"], Value::from(1_700_000_000_u64));
+    }
+
+    /// The path syntax has no array indexing, so mint and revoke are
+    /// read-modify-write of the whole list. This pins that the whole-array
+    /// write works and that the indexed one does not silently appear to.
+    #[test]
+    fn the_token_list_is_written_whole_and_not_by_index() {
+        let mut settings = Settings::default();
+        let one = serde_json::to_value([sample_token()]).unwrap();
+        settings.set("access.apiTokens", one).unwrap();
+        assert_eq!(settings.access.api_tokens.len(), 1);
+
+        // An index is not a path segment; a write through one must not land.
+        assert!(
+            settings
+                .set("access.apiTokens.0.name", Value::from("x"))
+                .is_err()
+        );
+        assert_eq!(settings.access.api_tokens[0].name, "ci-deploy");
+
+        settings
+            .set("access.apiTokens", Value::Array(Vec::new()))
+            .unwrap();
+        assert!(settings.access.api_tokens.is_empty());
+    }
+
+    /// One well-formed entry, spelled the way section 3.2 spells it.
+    fn sample_token() -> ApiToken {
+        ApiToken {
+            id: "3f2a9c41".to_string(),
+            name: "ci-deploy".to_string(),
+            hash: "9".repeat(64),
+            created: 1_700_000_000,
+        }
     }
 }

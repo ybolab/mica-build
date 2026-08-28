@@ -141,7 +141,7 @@ pane says what the API is for instead.
 
 `privateKey` joins the denylist —
 `const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];`
-(`os/pkgs/mosd/apid/src/redact.rs:33`). It
+(`os/pkgs/mosd/apid/src/redact.rs:40`). It
 redacts nothing: no shipped schema has such a field. That is the point, and the
 constant says so — *"It is the fail-closed half of that rule: the day a field of
 that name appears anywhere in either tree, it is already covered"*
