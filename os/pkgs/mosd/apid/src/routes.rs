@@ -19,10 +19,10 @@ use std::sync::Arc;
 use axum::extract::{Form, FromRequestParts, OriginalUri, Path, Query, Request, State};
 use axum::http::header::{CACHE_CONTROL, HOST, LOCATION, RETRY_AFTER, SET_COOKIE};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::routing::{any, get, post};
+use axum::routing::{MethodRouter, any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
@@ -236,6 +236,26 @@ const API: &str = "/api";
 const VERSIONS_PATH: &str = "/versions";
 const V1_META_PATH: &str = "/v1/meta";
 
+/// §2.4 case 3's second, differently-scoped health endpoint.
+///
+/// Not `/healthz` and never a replacement for it: `/healthz` answers *"is
+/// apid's listener up"* and this answers *"is this appliance manageable"*.
+/// Both sentences are true and neither implies the other, which is why there
+/// are two paths and not one.
+const V1_HEALTH_PATH: &str = "/v1/health";
+
+/// The live-state key the health route probes, and the value it reports as
+/// `checkedAt`.
+///
+/// One bus call answers both questions §2.4 case 3 asks. It proves the round
+/// trip — mosd serves this key by reading `/proc/uptime` at request time
+/// (`docs/design/api.md` §2.2 item 3), so a value coming back means a real
+/// exchange happened and not that a cached flag was read — and the value it
+/// returns is the only clock on this appliance a health answer may be stamped
+/// with, there being no trusted wall clock anywhere in the crate (§3.2's
+/// expiry paragraph).
+const HEALTH_PROBE_PATH: &str = "uptime";
+
 /// §2.3's actions namespace, with its one shipped verb. A password change is
 /// an operation and not a resource — the namespace is named `actions`
 /// precisely so no reader expects a `GET` to work there.
@@ -306,16 +326,65 @@ const CURRENT_VERSION: &str = "v1";
 /// are one string and cannot disagree.
 fn api_router() -> Router<AppState> {
     Router::new()
-        .route(VERSIONS_PATH, get(api_versions))
-        .route(V1_META_PATH, get(api_v1_meta))
-        .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
-        .route(V1_STATE_ROUTE, get(api_v1_state))
-        .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
+        .route(VERSIONS_PATH, declared(get(api_versions)))
+        .route(V1_META_PATH, declared(get(api_v1_meta)))
+        .route(V1_HEALTH_PATH, declared(get(api_v1_health)))
+        .route(V1_SETTINGS_ROUTE, declared(get(api_v1_settings)))
+        .route(V1_STATE_ROUTE, declared(get(api_v1_state)))
+        .route(
+            V1_CHANGE_PASSWORD_PATH,
+            declared(post(api_v1_change_password)),
+        )
         // POST only, for the reason the power and SSH mutations are: no GET
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
-        .route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))
+        .route(
+            V1_WIREGUARD_ROTATE_ROUTE,
+            declared(post(api_v1_wireguard_rotate)),
+        )
         .fallback(api_not_found)
+}
+
+/// One declared route, with §2.4's envelope on the method it does not serve.
+///
+/// §2.4 states **one** shape for every failure on every `/api/v1/` route, and
+/// a wrong method is a failure like any other. Without this wrapper the answer
+/// comes from axum's own method-not-allowed path, which is a bare 405 with no
+/// body at all — measured, `docs/task/RFCT-212.md` §2 — so a client that parses
+/// the envelope on every other failure gets nothing to parse on this one.
+///
+/// The `Allow` header is left to axum deliberately, and is the reason this is a
+/// wrapper rather than a per-route handler that names its own methods. axum
+/// accumulates the header from the very `get`/`post` calls that declare the
+/// route (`MethodRouter::on_endpoint`) and attaches it to whatever the
+/// method-not-allowed fallback returns unless that response already carries
+/// one, so the header cannot name a method the route does not serve or omit one
+/// it does. A hand-written `Allow` here would be a second opinion about the
+/// route table, and second opinions drift.
+fn declared(methods: MethodRouter<AppState>) -> MethodRouter<AppState> {
+    methods.fallback(api_method_not_allowed)
+}
+
+/// §2.4's envelope for a method a declared route does not serve.
+///
+/// `source` is `"apid"`: the router made this decision and no bus call was
+/// made, so there is nothing mosd could be asked about it. There is no `path`
+/// member for the same reason the not-found envelope has none — a wrong method
+/// names no settings dot-path.
+///
+/// It is reached without an authentication check, which is what the shipped
+/// tree already did: [`is_declared_api_route`] tests the path and not the
+/// method, so the gate hands a wrong-method request on a declared path off just
+/// as it hands off the right one. The status is 405 either way; this changes
+/// what is in the body, not who may see it.
+async fn api_method_not_allowed(method: Method, OriginalUri(uri): OriginalUri) -> Response {
+    api_response(
+        StatusCode::METHOD_NOT_ALLOWED,
+        ApiError::apid(
+            "method_not_allowed",
+            format!("{method} is not a method {} serves", uri.path()),
+        ),
+    )
 }
 
 /// Whether `path` is one of the API routes that answers for itself.
@@ -329,6 +398,7 @@ fn is_declared_api_route(path: &str) -> bool {
     path.strip_prefix(API).is_some_and(|leaf| {
         leaf == VERSIONS_PATH
             || leaf == V1_META_PATH
+            || leaf == V1_HEALTH_PATH
             || leaf == V1_CHANGE_PASSWORD_PATH
             || resource_dot_path(leaf).is_some()
             || rotate_key_iface(leaf).is_some()
@@ -476,7 +546,10 @@ pub(crate) struct ApiMeta {
     path = VERSIONS_PATH,
     context_path = API,
     tag = "discovery",
-    responses((status = 200, description = "The major API versions this device serves", body = ApiVersions)),
+    responses(
+        (status = 200, description = "The major API versions this device serves", body = ApiVersions),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
 )]
 pub(crate) async fn api_versions() -> Response {
     api_response(
@@ -501,6 +574,7 @@ pub(crate) async fn api_versions() -> Response {
     responses(
         (status = 200, description = "What this daemon is and which schema it speaks", body = ApiMeta),
         (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
@@ -510,6 +584,109 @@ pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
             api: CURRENT_VERSION,
             settings_schema_version: mosd_settings::SCHEMA_VERSION,
             daemon: "apid",
+        },
+    )
+}
+
+/// `GET /api/v1/health` (§2.4 case 3).
+///
+/// Two members always, and the other two by outcome: `checkedAt` on the
+/// reachable answer and `detail` on the unreachable one, each omitted rather
+/// than sent null — the rule [`ApiErrorDetail::path`] already follows, and for
+/// the same reason: a member present with a meaningless value is worse than an
+/// absent one.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiHealth {
+    /// Always `"ok"`. A request that got a body at all was served by an apid
+    /// that is up, so there is no second value this member could take; it is
+    /// on the wire so that a client reads one document rather than inferring
+    /// half of it from the fact that a response arrived.
+    apid: &'static str,
+    /// `"ok"` when the probe below completed, `"unreachable"` when it did not.
+    /// Two values and no third: §2.4 case 3 defines exactly these two shapes,
+    /// and a health answer that needs a taxonomy is not one a monitor can act
+    /// on.
+    mosd: &'static str,
+    /// Whole seconds since boot, at the moment the probe answered.
+    ///
+    /// A number and not a timestamp string. There is no trusted wall clock in
+    /// this crate — §3.2's expiry paragraph is the argument, and `SessionStore`
+    /// is the evidence, monotonic `Instant` throughout — so the only honest
+    /// stamp is the appliance's own uptime, which is exactly what
+    /// `GET /api/v1/state/uptime` already serves and is spelled the same way
+    /// there: a bare JSON number of whole seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checked_at: Option<u64>,
+    /// Why the probe did not complete, in the words of whatever refused it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+/// Whether this appliance is manageable (§2.4 case 3).
+///
+/// **200 in both states, and that is the whole point of the route.** A dead
+/// mosd is reported in the body and never as a status code: a 503 here would be
+/// indistinguishable from this endpoint itself being down, which is the
+/// confusion the route exists to remove. The client rule §2.4 states is
+/// therefore exact — `/healthz` answers "is apid's listener up", this answers
+/// "is this appliance manageable", and neither implies the other.
+///
+/// mosd is decided by **one real bus call**, never by a cached flag. That rules
+/// out `access_cache` specifically: the cache exists so the auth gate can skip
+/// a per-request `GetSettings("access")`, it is filled from a `SettingsChanged`
+/// subscription, and it answers from apid's own memory. A health route served
+/// from it would report `mosd: "ok"` for as long as the last fill survived,
+/// which is precisely the failure — a monitor seeing a healthy device — that
+/// §2.4 case 3 was written to prevent.
+///
+/// The call is `GetState("uptime")` rather than §2.4's suggested
+/// `GetSettings("")`, and the swap is a deviation recorded in
+/// `docs/task/RFCT-212.md` §3. It is still one call, which is what the section
+/// asks for; it is cheaper than the call the section named, which is the reason
+/// that section gave for naming it — mosd answers with a bare integer instead
+/// of serialising the entire settings tree, password hash included, onto the
+/// bus for a liveness ping; and it is the one call that also yields
+/// `checkedAt`, so the alternative was two round trips to answer one question.
+///
+/// Authenticated, like every other `/api/v1/` route. The unauthenticated
+/// listener-liveness question already has an answer at `/healthz`.
+#[utoipa::path(
+    get,
+    path = V1_HEALTH_PATH,
+    context_path = API,
+    tag = "diagnostics",
+    responses(
+        (status = 200, description = "Whether this appliance is manageable. **200 in both states**: a dead mosd is reported as `mosd: \"unreachable\"` in the body, never as a status code", body = ApiHealth),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_health(_session: ApiSession, State(state): State<AppState>) -> Response {
+    let (mosd, checked_at, detail) = match state.api.get_state(HEALTH_PROBE_PATH).await {
+        // Any answer that is not the number of seconds mosd documents is
+        // classified with the failures rather than reported as health. `ok`
+        // has to mean "the round trip completed and produced a usable answer";
+        // a state key that came back the wrong shape did not.
+        Ok(value) => match value.as_u64() {
+            Some(seconds) => ("ok", Some(seconds), None),
+            None => (
+                "unreachable",
+                None,
+                Some(format!(
+                    "mosd answered GetState(\"{HEALTH_PROBE_PATH}\") with {value}, which is not a count of seconds"
+                )),
+            ),
+        },
+        Err(err) => ("unreachable", None, Some(format!("{err:#}"))),
+    };
+    api_response(
+        StatusCode::OK,
+        ApiHealth {
+            apid: "ok",
+            mosd,
+            checked_at,
+            detail,
         },
     )
 }
@@ -549,6 +726,7 @@ pub(crate) struct ResourceValue(Value);
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_settings(
@@ -576,6 +754,7 @@ pub(crate) async fn api_v1_settings(
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_state(
@@ -627,6 +806,7 @@ pub(crate) struct WireguardRotation {
         (status = 422, description = "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one", body = ApiError),
         (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_wireguard_rotate(
@@ -1806,6 +1986,7 @@ pub(crate) struct ChangePasswordRequest {
         (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
         (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_change_password(

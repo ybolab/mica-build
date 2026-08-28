@@ -15,7 +15,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::http::header::{
-    ACCEPT, ALLOW, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
+    ACCEPT, ALLOW, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, RETRY_AFTER, SET_COOKIE,
 };
 use axum::http::{HeaderName, Request, Response, StatusCode};
 use serde_json::json;
@@ -5390,5 +5390,285 @@ async fn the_state_route_serves_the_kind_and_the_public_key() {
             entry.get("privateKey").is_none(),
             "{name} carries a private key: {entry}"
         );
+    }
+}
+
+// RFCT-212: `GET /api/v1/health` (§2.4 case 3) and §2.4's envelope on a method
+// a declared `/api/` route does not serve.
+
+/// A tree with an admin password, and a live-state tree carrying the `uptime`
+/// key mosd serves at read time.
+fn health_app(uptime: u64) -> (Router, Arc<FakeSettings>) {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    fake.set_state_entry("uptime", json!(uptime));
+    (router, fake)
+}
+
+/// §2.4 case 3's first shape, exactly: `apid` ok, `mosd` ok, and `checkedAt`
+/// carrying the appliance's uptime.
+///
+/// `checkedAt` is asserted as a JSON **number**, which is the decision
+/// `docs/task/RFCT-212.md` §3 records: there is no trusted wall clock in this
+/// crate, and the one clock there is — `GET /api/v1/state/uptime` — is a bare
+/// count of whole seconds. A health answer stamped any other way would be
+/// stamped with a clock this appliance does not have.
+#[tokio::test]
+async fn health_reports_a_reachable_mosd_and_stamps_the_answer_with_uptime() {
+    let (router, _) = health_app(90_061);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/health", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/health");
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(body["apid"], json!("ok"));
+    assert_eq!(body["mosd"], json!("ok"));
+    assert_eq!(body["checkedAt"], json!(90_061));
+    // Omitted rather than nulled on the reachable answer, the rule the
+    // envelope's own optional member already follows.
+    assert!(body.get("detail").is_none(), "{body}");
+}
+
+/// The case the route exists for: mosd is dead and the answer is still **200**.
+///
+/// A 503 here would be indistinguishable from the endpoint itself being down,
+/// which is the confusion §2.4 case 3 says the route removes. The fixture is
+/// the discriminating one: `FailingSettings` answers `GetSettings("access")` —
+/// so the gate is satisfied, a session mints, and the access cache is warm —
+/// and fails every state read. A health route reading a cached flag instead of
+/// the bus would report `ok` here.
+#[tokio::test]
+async fn health_reports_an_unreachable_mosd_and_still_answers_200() {
+    let (router, cookie) = failing_app(None).await;
+
+    let response = get(&router, "/api/v1/health", Some(&cookie)).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a dead mosd is reported in the body, never as a status code"
+    );
+    assert_api_headers(&response, "/api/v1/health");
+    assert_eq!(response.headers().get(RETRY_AFTER), None);
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(body["apid"], json!("ok"));
+    assert_eq!(body["mosd"], json!("unreachable"));
+    assert!(
+        body["detail"].as_str().is_some_and(|d| !d.is_empty()),
+        "the unreachable answer must say why: {body}"
+    );
+    assert!(body.get("checkedAt").is_none(), "{body}");
+}
+
+/// The probe is a live bus call and not a flag: move the appliance's uptime and
+/// the next answer moves with it, in the same router and the same session.
+#[tokio::test]
+async fn health_reads_the_bus_on_every_request() {
+    let (router, fake) = health_app(10);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let first = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let first: serde_json::Value = serde_json::from_str(&body_string(first).await).unwrap();
+    assert_eq!(first["checkedAt"], json!(10));
+
+    fake.set_state_entry("uptime", json!(4_711));
+    let second = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let second: serde_json::Value = serde_json::from_str(&body_string(second).await).unwrap();
+    assert_eq!(
+        second["checkedAt"],
+        json!(4_711),
+        "a second request must have made its own call"
+    );
+
+    // And it is the state tree it reads, not the settings tree the gate's
+    // cache holds.
+    assert_eq!(fake.settings_reads("uptime"), 0);
+}
+
+/// Authenticated like every other `/api/v1/` route, and its refusal is §2.4's
+/// envelope rather than the gate's HTML redirect (§3.1).
+#[tokio::test]
+async fn health_without_a_session_is_the_envelope_and_not_a_redirect() {
+    let (router, _) = health_app(90_061);
+
+    let response = get(&router, "/api/v1/health", None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers().get(LOCATION), None);
+    assert_api_headers(&response, "/api/v1/health anonymous");
+    assert_eq!(envelope(response).await["code"], "not_authenticated");
+}
+
+/// `/healthz` is unchanged by any of this, and this test is the pin.
+///
+/// The boot health gate probes exactly this path, unauthenticated, and treats
+/// any non-2xx as a failed boot (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`),
+/// so its path, its exemption, its status, its literal body and the fact that
+/// it is not JSON are all load-bearing. §2.4 case 3 is explicit that `/healthz`
+/// cannot be fixed and that the API adds a second endpoint instead — the two
+/// answer different questions.
+#[tokio::test]
+async fn healthz_is_untouched_by_the_health_route() {
+    let (router, _) = health_app(90_061);
+
+    let response = get(&router, "/healthz", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(header_value(&response, CONTENT_TYPE), "text/plain; charset=utf-8");
+    assert_eq!(body_string(response).await, "ok");
+
+    // Still `ok` with mosd dead, which is the property §2.4 case 3 calls the
+    // trap and answers with a second route rather than by changing this one.
+    let (failing, _) = failing_app(None).await;
+    let response = get(&failing, "/healthz", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "ok");
+}
+
+/// Every declared `/api/` route, on a method it does not serve: §2.4's
+/// envelope, 405, and an `Allow` header naming what the route does serve.
+///
+/// The expectation names the `Allow` value per route rather than deriving it,
+/// so a route that quietly gained or lost a method fails here.
+#[tokio::test]
+async fn a_wrong_method_on_a_declared_api_route_answers_the_envelope() {
+    let (router, fake) = health_app(90_061);
+    fake.set_state_entry(
+        "network",
+        json!({ "wg0": { "kind": "wireguard", "publicKey": "k" } }),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path, allow) in [
+        ("POST", "/api/versions", "GET,HEAD"),
+        ("POST", "/api/v1/meta", "GET,HEAD"),
+        ("DELETE", "/api/v1/health", "GET,HEAD"),
+        ("POST", "/api/v1/settings/hostname", "GET,HEAD"),
+        ("PUT", "/api/v1/state/uptime", "GET,HEAD"),
+        ("GET", "/api/v1/actions/change-password", "POST"),
+        ("GET", "/api/v1/actions/wireguard/wg0/rotate-key", "POST"),
+    ] {
+        let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method} {path}"
+        );
+        assert_eq!(header_value(&response, ALLOW), allow, "{method} {path}");
+        assert_api_headers(&response, &format!("{method} {path}"));
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "method_not_allowed", "{method} {path}");
+        // apid, not mosd: the router refused this before any bus call.
+        assert_eq!(error["source"], "apid", "{method} {path}");
+        assert!(
+            error["message"].is_string(),
+            "{method} {path}: §2.4 requires a message"
+        );
+        // A wrong method names no settings dot-path, so the optional member is
+        // absent rather than empty.
+        assert!(error.get("path").is_none(), "{method} {path}: {error}");
+    }
+}
+
+/// The 405 is the router's answer and not an authenticated one, which is what
+/// the shipped tree already did: `is_declared_api_route` tests the path and not
+/// the method, so the gate hands a wrong-method request off exactly as it hands
+/// off a right one. Recorded because it is a property, not an accident.
+#[tokio::test]
+async fn the_405_envelope_does_not_depend_on_a_session() {
+    let (router, _) = health_app(90_061);
+
+    let response = request(&router, "POST", "/api/v1/meta", None, None).await;
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(response.headers().get(LOCATION), None);
+    assert_eq!(header_value(&response, ALLOW), "GET,HEAD");
+    assert_eq!(envelope(response).await["code"], "method_not_allowed");
+}
+
+/// The asset router's 405 is outside `/api/` and is not unified with the one
+/// above: `docs/design/api.md` §4.2 condition 2 gives it a bare body, its own
+/// `Allow: GET, HEAD` and no `Content-Type` at all, and §2.4's envelope is a
+/// promise about `/api/v1/` routes only.
+///
+/// Asserted here as a contrast — the same method against both routers in one
+/// test — so that a later attempt to give the whole server one 405 fails with
+/// the distinction printed rather than silently widening a promise.
+#[tokio::test]
+async fn the_asset_router_405_is_not_the_api_envelope() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let asset = request(&router, "POST", "/settings/network", Some(&cookie), None).await;
+    assert_eq!(asset.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(header_value(&asset, ALLOW), "GET, HEAD");
+    assert!(asset.headers().get(CONTENT_TYPE).is_none());
+    assert_eq!(body_string(asset).await, "");
+
+    let api = request(&router, "POST", "/api/v1/meta", Some(&cookie), None).await;
+    assert_eq!(api.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(header_value(&api, CONTENT_TYPE), "application/json");
+    assert_eq!(envelope(api).await["code"], "method_not_allowed");
+}
+
+/// The reserved subtree's own 404 is untouched by the 405: a path the API does
+/// not declare is still `not_found`, on every method, health-adjacent spellings
+/// included.
+#[tokio::test]
+async fn the_api_fallback_404_survives_the_405() {
+    let (router, _) = health_app(90_061);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path) in [
+        ("GET", "/api/v1/health/extra"),
+        ("POST", "/api/v1/health/extra"),
+        ("GET", "/api/v1/healthz"),
+        ("DELETE", "/api/v1/nope"),
+        ("POST", "/api/nope"),
+    ] {
+        let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        assert_eq!(response.headers().get(ALLOW), None, "{method} {path}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_found",
+            "{method} {path}"
+        );
+    }
+}
+
+/// The document describes the route and the outcome this milestone adds: a
+/// client reading only `openapi.json` has to be able to learn both.
+#[test]
+fn the_openapi_document_covers_health_and_the_405() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let health = &document["paths"]["/api/v1/health"]["get"]["responses"];
+    assert!(health["200"].is_object(), "{health}");
+    assert!(health["401"].is_object(), "{health}");
+    assert!(health["405"].is_object(), "{health}");
+
+    let schema = &document["components"]["schemas"]["ApiHealth"];
+    let required = schema["required"].as_array().expect("required members");
+    for member in ["apid", "mosd"] {
+        assert!(
+            required.iter().any(|name| name == member),
+            "{member} is always on the wire: {schema}"
+        );
+    }
+    for member in ["checkedAt", "detail"] {
+        assert!(
+            !required.iter().any(|name| name == member),
+            "{member} is outcome-dependent and must be optional: {schema}"
+        );
+    }
+
+    // Every declared path now documents the 405 it can answer.
+    let paths = document["paths"].as_object().expect("paths");
+    for (path, item) in paths {
+        for (method, operation) in item.as_object().expect("an operation map") {
+            assert!(
+                operation["responses"]["405"].is_object(),
+                "{method} {path} answers a 405 it does not document"
+            );
+        }
     }
 }
