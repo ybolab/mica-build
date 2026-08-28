@@ -177,7 +177,7 @@ resolve_key() {
         # to, and picking the host's would hand a native answer to a cross build
         # silently.
         [ -n "${FROM_ARCH}" ] || {
-            echo "error: ${key} is an image this repository builds, and those are tagged by architecture -- localhost/mos-build-c:amd64 and localhost/mos-build-c:arm64 are two images that coexist. Pass --arch=<amd64|arm64> to say which this build stands on. Guessing the host's would be wrong for exactly the cross builds this naming exists to serve" >&2
+            echo "error: ${key} is an image this repository builds, and those are tagged by architecture -- ${val}:amd64 and ${val}:arm64 are two images that coexist in one store. Pass --arch=<amd64|arm64> to say which this build stands on. Guessing the host's would be wrong for exactly the cross builds this naming exists to serve, and silently: the wrong-architecture base still resolves" >&2
             return 1
         }
         val="${val}:${FROM_ARCH}"
