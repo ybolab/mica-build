@@ -40,24 +40,40 @@ fail() { say "$1 FAIL ${2-}"; }
 # first red would report nothing about the checks after it and the console would
 # look identical to a run that never started.
 
-# STATE is mounted by local-fs.target and this unit is generated from the kernel
-# command line, so the ordering between the two is systemd's to decide rather
-# than ours to declare. Waiting for the mount is cheap; concluding "the key
-# directory is unreadable" because it had not been mounted yet would be a
-# fabricated defect in M5's work.
-wait_for_state() {
+# `wait_for <seconds> <command...>`: poll until the command succeeds.
+#
+# Three things this script needs are produced by other units racing it, and on
+# a TCG guest it wins that race routinely: STATE is mounted by local-fs.target,
+# a network interface is named by systemd-networkd, and <state>/secrets/ is
+# created by mosd's first-boot provisioning. Measured 2026-08-28: this unit
+# reached its first check 54s into the boot with none of the three ready, and
+# every conclusion drawn then described the CLOCK rather than the image.
+wait_for() {
+    local limit="$1"; shift
     local i=0
-    while [ "$i" -lt 120 ]; do
-        if mountpoint -q "${STATE_DIR}" 2>/dev/null; then return 0; fi
+    while [ "$i" -lt "$limit" ]; do
+        if "$@" >/dev/null 2>&1; then return 0; fi
         i=$((i + 1))
         sleep 1
     done
     return 1
 }
 
+state_is_mounted() { mountpoint -q "${STATE_DIR}"; }
+
+# Any interface that is not the loopback, up or down. A VLAN's parent has to
+# EXIST; it does not have to be up, and it does not have to carry a route --
+# `ip link add link <parent> ... type vlan` is accepted on a down parent. An
+# earlier form of this looked for the default route, which is a fact about
+# DHCP having completed and not about the kernel supporting VLANs.
+first_real_link() {
+    ip -o link show 2>/dev/null |
+        awk -F': ' '$2 != "lo" && $2 != "" {print $2; found=1; exit} END {exit !found}'
+}
+
 say "BEGIN $(uname -r)"
 
-if wait_for_state; then
+if wait_for 120 state_is_mounted; then
     pass state-mounted "${STATE_DIR} is a mount point"
 else
     fail state-mounted "${STATE_DIR} was not mounted within 120s; the key-store checks below cannot run"
@@ -74,9 +90,8 @@ for m in 8021q bridge wireguard; do
     fi
 done
 
-# 2. The links. A VLAN needs a declared parent, so the parent is DISCOVERED --
-# the interface carrying the default route, which is the one this suite's own
-# traffic arrives on. Writing a name down here would make the check fail on a
+# 2. The links. A VLAN needs a declared parent, so the parent is DISCOVERED
+# rather than written down: a name in this file would make the check fail on a
 # guest whose NIC is enumerated differently, which is a fact about the host's
 # QEMU and not about the kernel under test.
 #
@@ -84,10 +99,8 @@ done
 # bridge takes no ports, and the tunnel is created from nothing -- enslaving the
 # parent to the bridge would drop the port forward and take the rest of the
 # suite with it.
-PARENT=$(ip -o -4 route show default 2>/dev/null | awk '{for (i=1;i<NF;i++) if ($i=="dev") print $(i+1); exit}')
-if [ -z "${PARENT}" ]; then
-    PARENT=$(ip -o link show up 2>/dev/null | awk -F': ' '$2 != "lo" {print $2; exit}')
-fi
+wait_for 120 first_real_link || true
+PARENT=$(first_real_link || true)
 
 VLAN_DEV="${PARENT}.${VLAN_ID}"
 
@@ -111,7 +124,7 @@ link_check() {
 }
 
 if [ -z "${PARENT}" ]; then
-    fail link-vlan "no interface carries the default route and no non-loopback link is up, so there is no declared parent to hang a VLAN off"
+    fail link-vlan "no non-loopback interface appeared within 120s, so there is no parent to declare a VLAN on"
 else
     link_check link-vlan "${VLAN_DEV}" \
         ip link add link "${PARENT}" name "${VLAN_DEV}" type vlan id "${VLAN_ID}"
@@ -175,6 +188,7 @@ else
     # under it -- would be false, and the path correction this milestone
     # verifies would have been unnecessary. A check that only ever asserts
     # access cannot tell a correctly scoped grant from a wide-open state dir.
+    wait_for 120 test -d "${SECRETS_DIR}" || true
     if [ ! -d "${SECRETS_DIR}" ]; then
         say "secrets-unreadable SKIP ${SECRETS_DIR} does not exist on this boot"
     elif as_netuser cat "${SECRETS_DIR}/device-password" >/dev/null 2>&1; then

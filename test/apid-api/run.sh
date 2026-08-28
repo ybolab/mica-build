@@ -350,10 +350,17 @@ trap 'teardown' EXIT
 # have to load such a unit, so a unit seeded there is simply not found. The
 # script is what lives on STATE; the value names an interpreter and a path, so
 # it needs no execute bit that debugfs would have to set.
+#
+# BOTH ACTIONS ARE PINNED TO `none`, and that is not belt-and-braces. The
+# generator defaults them to `exit-force`, which in PID 1's context means POWER
+# THE MACHINE OFF the moment the command returns. Measured 2026-08-28: the
+# smoke finished at 56.7s and the guest printed `reboot: Power down` at 62.1s,
+# so apid never listened and the whole suite waited out its readiness deadline
+# against a guest that had already shut down.
 QEMU_ENV=(
     MOS_QEMU_FORWARD=1
     MOS_QEMU_NETWORK="${NET}"
-    MOS_QEMU_APPEND="systemd.journald.forward_to_console=1 systemd.run=\"/bin/bash /mnt/state${SMOKE_IN_GUEST}\""
+    MOS_QEMU_APPEND="systemd.journald.forward_to_console=1 systemd.run=\"/bin/bash /mnt/state${SMOKE_IN_GUEST}\" systemd.run_success_action=none systemd.run_failure_action=none"
     MOS_QEMU_HTTPS_PORT="${HTTPS_PORT}"
     MOS_QEMU_HTTP_PORT="${HTTP_PORT}"
     MOS_QEMU_RUN_SECONDS="${RUN_SECONDS}"
