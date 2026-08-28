@@ -317,9 +317,18 @@ to green on that change alone.
 | the requirement-2 probe, before | `dial tcp [::1]:80: connect: connection refused` -- red, section 3 |
 | the requirement-2 probe, after | `#5 0.560 aarch64` -- green, section 3 |
 | `MOS_BOARD=cx3576 bash os/pkgs/rauc/build.sh` | past the builder refusal; stops at `os/build-env/from.sh`'s architecture check, section 5 |
+| `MOS_BOARD=x64 bash os/pkgs/rauc/build.sh` | `rauc v1.13 for amd64: 453872 bytes, 7 shared libraries` -- the native path built end to end, unchanged |
+| `BUILDX_BUILDER=default MOS_BOARD=cx3576 bash os/pkgs/rauc/build.sh` | the section 2 refusal, by name |
 | `make os-shell-pipefail-lint` | `RESULT: PASS (31/31 files clean, 31 scanned)` |
 | `bash docs/verify-citations.sh` | `1385/1385 PASS` |
 | `bash docs/verify-index.sh` | `752/752 PASS` |
+
+The native build is in that table deliberately. Every other row is about a path
+that could not run before this change; that one is about the path that could,
+and a builder selection rewritten under it is exactly the kind of change that
+breaks what already worked. It did not: the amd64 rauc still compiles and
+exports, with `CTX_ARGS` empty and the `default` builder resolving the
+`localhost/mos-build-*` tags out of the image store as it always did.
 
 The citation total moves from the 1379 this branch started at to 1385: section 6
 removed one `path:line` token and this record adds seven, each one armed with a
