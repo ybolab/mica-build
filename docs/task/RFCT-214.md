@@ -248,7 +248,31 @@ Out of scope by the task's own terms, and none of them a citation defect:
   `api_router()` now declares.
 - The three groups in section 8 above.
 
-## 10. Gates
+## 10. A fourth form, measured and left in scope for someone
+
+The brief names three forms and this task repaired those three. There is a
+fourth, and leaving it unmeasured would repeat the silence this task exists to
+end: the no-slash shorthand `` `routes.rs:2545` ``. That form DOES match the
+gate's token regex and is then skipped by the documented scope rule — *"is
+shorthand for a path named earlier in the prose and has no base to resolve
+against"* — so like the bare forms it is never resolved.
+
+Counted at this commit: 173 no-slash tokens corpus-wide, 42 of them in
+`docs/design/api.md` naming `routes.rs`. Tested the same loose way RFCT-212
+tested the continuations — the nearest backticked name on the line against the
+cited line — **39 of 42 do not resolve**, 1 does, and 2 carry no name to test
+with. Section 2.3's conversion table is where most of them live, and its rows
+read `` `POST /ssh/keys/add` (`routes.rs:2545`) `` where `ssh_key_add` is now
+*"async fn ssh_key_add(State(app): State<AppState>, Form(form): Form<SshKeyAddForm>) -> Response {"*
+(`os/pkgs/mosd/apid/src/routes.rs:6268`).
+
+None was rewritten here, because the task's stated scope is the three forms and
+widening it silently is the wrong way to grow a remit. It is the same rot, in
+the same document, by the same mechanism, and it wants the same treatment: no
+pre-image map, content re-derivation, and a listed residue for what cannot be
+derived.
+
+## 11. Gates
 
 `bash docs/verify-index.sh` — **843/843 PASS**.
 
