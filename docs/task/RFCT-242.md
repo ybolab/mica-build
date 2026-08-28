@@ -1,6 +1,7 @@
 # RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404
 
-- **status**: in progress
+- **status**: completed — the six network routes ship with a route-level test per relational rule, the RFCT-210 peer-add finding is confirmed by a run and fixed with a 404 before any write, mosd's rotate-key error is split so an undeclared entry is 404 with no apid change, and the WiFi psk bound is lifted into `mosd-settings`; 810/810, 1557/1557 citations, 780/780 index, oasdiff RC=0 against both bases
+- **completedAt**: 2026-08-28
 - **priority**: P1
 - **owner**: bkd/36tblhgs
 - **createdAt**: 2026-08-28
