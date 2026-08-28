@@ -139,8 +139,14 @@ Four changes, in dependency order. **[proposal]**
    substantially an echo of the settings tree — the `hostname` key echoes
    `settings.hostname` back after the hostnamed call returned `Ok`
    (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`), and the `network` key carries the
-   rendered unit file name and the configured `dhcp` flag
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and nothing else. A dashboard
+   rendered unit file name, the configured `dhcp` flag and the configured kind —
+   `"kind": kind_name(cfg.kind),`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — plus, for a
+   WireGuard tunnel, `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`). Every one of those is
+   either an echo of the settings tree or a fact about a file the reconciler
+   itself wrote; not one is a reading off a link, and the public key least of
+   all — it is derived from the key file, not from the tunnel. A dashboard
    that renders those as if they were measurements is a dashboard that lies.
 
 Note what is *not* on that list: making the UI faster, prettier, or
@@ -646,9 +652,14 @@ the live-state tree is an **echo** of the settings tree:
 - `hostname` echoes `settings.hostname` back after the hostnamed call returned
   `Ok` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) — a confirmation that the
   write was attempted, not a read-back (`mos-ui-inventory.md` section 7, row 13).
-- `network` carries the rendered unit file name and the configured `dhcp` flag
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and no observed value
-  (row 14).
+- `network` carries the rendered unit file name, the configured `dhcp` flag and
+  the configured kind — `"kind": kind_name(cfg.kind),`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — and, for a WireGuard
+  tunnel, the public half of the key on disk: *"Only the public half is
+  published"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:668`). No observed
+  value (row 14): a `wireguard` entry says which key the tunnel was built to
+  use, not whether a peer is reachable, and a `vlan` or `bridge` entry says a
+  `.netdev` was written, not that the device came up.
 - `wifiClient.networks` lists the **configured** networks, and `activeState` is
   systemd's view of the supplicant *unit*, not of the association
   (`mos-ui-inventory.md` section 6.3).

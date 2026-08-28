@@ -568,17 +568,17 @@ fsync it, rename it over the target, then fsync the directory"*
 `#[serde(deny_unknown_fields)]` (for example
 `os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, `:112`, `:139`, `:147`,
 `:165`, `:176`, `:226`, `:237`, `:252`, `:268`, `:293`, `:303`, `:328`,
-`:345`, `:441`, `:529`), so an unknown key fails the load rather than being
-silently dropped.
+`:345`, `:441`, `:464`, `:474`, `:490`, `:507`, `:564`), so an unknown key
+fails the load rather than being silently dropped.
 
 **The settings subtrees, from `pub struct Settings {`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:16-38`):**
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
-| `schema_version` | `u32` | `model.rs:18` | read-only, value 6 |
+| `schema_version` | `u32` | `model.rs:18` | read-only, value 7 (`model.rs:11`) |
 | `hostname` | `String` | `model.rs:20` | system hostname, default `"mos"` (`model.rs:44`) |
-| `network.<iface>` | `IfaceSettings` | `model.rs:22`, type at `:404-413` | `dhcp: bool`, optional `static` block (`address`, `gateway`, `dns[]`) at `:415-427` |
+| `network.<iface>` | `IfaceSettings` | `model.rs:22`, type at `:431-460` | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `:404-422`), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `:562-574`, `vlan` at `:462-470`, `bridge` at `:472-479`, `wireguard` at `:481-503` |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `model.rs:149-151`, type at `:163-169` | `password_hash` only; absent until first-run setup writes it |
 | `access.ssh` | `SshSettings` | `model.rs:152-154`, type at `:171-204` | `enabled` (default `false`, `:206-209`), `port`, `permitRootLogin`, `passwordAuthentication`, `listenAddresses[]`, `authorizedKeys[]` (`:202-203`, entry type at `:219-233`) |
 | `access.console` | `ConsoleSettings` | `model.rs:155-157`, type at `:235-243` | `shellEnabled` |
@@ -1131,7 +1131,18 @@ here rather than quietly accepted.
 
 **What does not ship.** No `PUT`, anywhere: the two roots are `GET` only, so
 the write half of every row below is a proposal. The `/api/v1/actions/<verb>`
-root does not exist. Neither collection resource exists. The rule that a `PUT`
+root exists and holds exactly one verb, added by PLAN-022 M6:
+`"/api/v1/actions/wireguard/{iface}/rotate-key"`
+(`os/pkgs/mosd/apid/openapi.json:9`), a `POST` that draws a WireGuard interface
+a new private key and answers its public half. It is a route and not a settings
+write because *"An action and not a settings write, because there is no setting
+to write"* (`os/pkgs/mosd/apid/src/routes.rs:577`) — the key lives in a file on
+STATE the settings tree does not describe (§4.1 of `docs/task/RFCT-200.md`).
+None of the three verbs §2.3 proposes — `reboot`, `poweroff`,
+`transient-root-password` — is served: the published document lists five
+operations and the other four are the two resource roots, `/api/v1/meta` and
+`/api/versions` (`os/pkgs/mosd/apid/openapi.json:8-281`). Neither collection
+resource exists. The rule that a `PUT`
 carrying `"<redacted>"` is refused at 422 has nothing to refuse — the source
 says so directly, *"It is read-only — writing it back would destroy the
 credential — and phase 1 serves no write route to write it with"*
@@ -1179,7 +1190,7 @@ project's own rule, unsupported: *"An unmodelled setting is an unsupported
 setting"* (`docs/design/access.md:519`). Hand-shaped nouns reproduce exactly
 that failure one layer up, where nothing — no compiler, no
 `deny_unknown_fields` (`os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, and
-fifteen more) — will ever notice the omission. The passthrough cannot drift, because
+nineteen more) — will ever notice the omission. The passthrough cannot drift, because
 there is nothing to drift from.
 
 **What the passthrough costs, stated plainly.** The API becomes exactly as
@@ -1198,18 +1209,36 @@ capable as the bus, including the bus's limits:
   `#[serde(deny_unknown_fields)]`, so a `PUT` of a subtree with one extra key
   fails the whole write. That is a good property — it is also a surprising one
   for a client that expected a merge.
-- **A dot in a value collides with a dot in the path.** Verified at `86cd669`:
-  apid accepts an interface name containing `.`
-  (`os/pkgs/mosd/apid/src/routes.rs:908-913` permits `.`, `_` and `-`), but `split_path`
-  splits on `.` unconditionally (`os/pkgs/mosd/mosd-settings/src/path.rs:59-88`), so
-  `network.eth0.100` — a VLAN sub-interface — lands as a field named `100`
-  inside `IfaceSettings` and is rejected by `deny_unknown_fields`
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:440-460`). Running `Settings::set` against a
-  default tree with that path returns `Validation { path: "network.eth0.100",
-  message: "unknown field `100`, expected `dhcp` or `static`" }`. This is a
-  **pre-existing** limit of the dot-path model, not one the API introduces — the
-  HTML form has it too — but an API that adopts the dot-path adopts it, and a
-  client must be told rather than left to discover it as a 502 (§2.4).
+- **A key holding a dot is addressed with a quoted segment.** apid accepts an
+  interface name containing `.` — `^[a-zA-Z0-9._-]{1,15}$`
+  (`os/pkgs/mosd/apid/src/routes.rs:907-913`) — and until PLAN-022 M2 the
+  dot-path split through it, so `network.eth0.100` addressed a field named `100`
+  inside `IfaceSettings` rather than the interface `eth0.100`. That was fixed in
+  the path lexer, not in the API. A segment is now either bare or double-quoted,
+  *"in which `.` is an ordinary character"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:4-5`), so the VLAN sub-interface is
+  `GET`/`PUT /api/v1/settings/network."eth0.100".dhcp`. *"The spelling is TOML's
+  own quoted-key syntax"* (`os/pkgs/mosd/mosd-settings/src/path.rs:5-6`) — the
+  notation the store was already writing for such a key — so `settings.toml` on
+  STATE and an API path are spelled the same way. One lexer serves both
+  directions: *"Reads and writes share [`split_path`]: a path that resolves for
+  `get` is spelled exactly the way it is spelled for `set`"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:10-11`), and a client composing a
+  path spells a segment *"bare when it can be, quoted when it contains a `.`"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:33-34`).
+
+  Two residues a client is still owed. **The unquoted spelling did not become an
+  alias**: `network.eth0.100` against a tree that declares `eth0` still fails,
+  and against schema v7 the field list it names is longer — measured
+  2026-08-28, `Settings::set` returns `Validation { path: "network.eth0.100",
+  message: "unknown field `100`, expected one of `kind`, `dhcp`, `static`,
+  `vlan`, `bridge`, `wireguard`" }`, which reaches a client as §2.4's
+  `settings_rejected` and not as a 502. **A key containing a double quote has no
+  spelling at all**, and schema v7 closes that hole from the other side rather
+  than leaving it as an addressing gap: *"Refuse a `network` map key the kernel
+  could not name an interface"* (`os/pkgs/mosd/mosd-settings/src/model.rs:531`)
+  runs on the write path, which makes such a key structurally impossible instead
+  of merely unaddressable.
 
 **The exception: two collection resources, added deliberately.** The dot-path
 model fails outright for the two arrays in the tree, because a per-item delete
@@ -1270,7 +1299,7 @@ destroy the credential.
 | System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`model.rs:266-278`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
 | Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`model.rs:11`) | read-only; a write to `schema_version` is rejected by mosd (`model.rs:459-462`) so the API does not expose one |
 | Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`model.rs:20`) | body is a bare JSON string; reconciled by `hostname` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132`) |
-| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`model.rs:22`, `:404-413`) | see the VLAN dot collision above |
+| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`model.rs:22`, `:431-460`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
 | WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`model.rs:301-314`) | `psk` redacted on read |
 | WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:343-373`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:391-402`) |
 | SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:171-204`) | default `enabled: false` (`:206-209`) |
@@ -1491,8 +1520,9 @@ dead mosd from answering — was resolved a different way and is recorded below.
 }
 ```
 
-Example, from a real rejection verified against `mosd-settings`
-(the VLAN case of §2.2):
+Example, from a real rejection measured against `mosd-settings` on 2026-08-28
+(§2.2's unquoted spelling, which is still an error and must not read as an
+outage):
 
 ```
 HTTP/1.1 422 Unprocessable Content
@@ -1501,7 +1531,7 @@ Content-Type: application/json
 {
   "error": {
     "code": "settings_rejected",
-    "message": "invalid settings value at `network.eth0.100`: unknown field `100`, expected `dhcp` or `static`",
+    "message": "invalid settings value at `network.eth0.100`: unknown field `100`, expected one of `kind`, `dhcp`, `static`, `vlan`, `bridge`, `wireguard`",
     "source": "mosd",
     "path": "network.eth0.100"
   }
@@ -4216,12 +4246,17 @@ instances, not a generality.**
   `settings_rejected` for all three as a result, and §2.1 makes *"changing which
   `error.code` an existing failure emits"* a major-version bump. So after v1
   ships, this improvement costs a `v2`.
-- **The VLAN dot-path limit.** `valid_iface_name` permits `.`
-  (`os/pkgs/mosd/apid/src/routes.rs:915-920`) while `split_path` splits on it
-  unconditionally (`os/pkgs/mosd/mosd-settings/src/path.rs:59-88`), so `network.eth0.100`
-  cannot be addressed (§2.2). It is pre-existing; what is new is
-  that fixing it now reaches a published contract, so a settings-syntax change
-  becomes an API change.
+- **The VLAN dot-path limit — since closed, and closed additively.**
+  `valid_iface_name` permits `.` — `^[a-zA-Z0-9._-]{1,15}$`
+  (`os/pkgs/mosd/apid/src/routes.rs:907-913`) — while `split_path` split on it
+  unconditionally, so `network.eth0.100` could not be addressed. PLAN-022 M2
+  gave the lexer quoted segments, *"in which `.` is an ordinary character"*
+  (`os/pkgs/mosd/mosd-settings/src/path.rs:4-5`); §2.2 records the spelling that
+  ships. The entry stays because its point held and was then tested: the fix did
+  reach the published contract, and it reached it as an **additive** change
+  under §2.1's rules — no route, method, status code or field was removed, and a
+  previously-failing path merely started succeeding — so it cost no `v2`. The
+  classification is worked through row by row in `docs/task/RFCT-200.md` §6.
 - **Uptime.** §2.2 chose that mosd should publish it into the live-state tree
   rather than apid keep reading `/proc/uptime`
   (`os/pkgs/mosd/apid/src/routes.rs:1595`). Adding it later is additive and cheap;
