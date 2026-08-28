@@ -3871,8 +3871,8 @@ fn the_openapi_document_covers_the_resource_routes() {
 /// fixture is covered without editing an assertion here.
 #[tokio::test]
 async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() {
-    let (router, _) = test_app(secret_tree("hunter2secret"));
-    let cookie = login(&router, "hunter2secret").await;
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, _) = test_app(tree);
 
     // Three subtrees rather than one, because the whole-tree dot-path is `""`
     // and this route family takes a non-empty one. Between them they hold all
@@ -3884,7 +3884,7 @@ async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() 
         "/api/v1/settings/wifi",
         "/api/v1/settings/network",
     ] {
-        let response = get(&router, path, Some(&cookie)).await;
+        let response = bearer(&router, "GET", path, &token).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         let body = body_string(response).await;
         secret_fields(&serde_json::from_str(&body).unwrap(), &mut found);
@@ -4011,9 +4011,9 @@ async fn the_state_root_is_redacted_by_the_same_rule() {
 /// the bare hash. So the requested path is redacted as well as the tree.
 #[tokio::test]
 async fn a_dot_path_that_names_a_secret_field_answers_the_sentinel() {
-    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     fake.set_state_entry("wifiAp", secret_state_entry());
-    let cookie = login(&router, "hunter2secret").await;
 
     for path in [
         "/api/v1/settings/access.webAdmin.password_hash",
@@ -4024,7 +4024,7 @@ async fn a_dot_path_that_names_a_secret_field_answers_the_sentinel() {
         "/api/v1/state/wifiAp.privateKey",
         "/api/v1/state/wifiAp.admin.passwordHash",
     ] {
-        let response = get(&router, path, Some(&cookie)).await;
+        let response = bearer(&router, "GET", path, &token).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         assert_eq!(
             body_string(response).await,
@@ -5590,6 +5590,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
     const CANARY: &str = "PLANTED-PRIVATE-KEY-CANARY";
     let mut tree = kinds_tree("hunter2secret");
     tree["network"]["wg0"]["privateKey"] = json!(CANARY);
+    let (tree, token) = with_token(tree);
     let (router, fake) = test_app(tree);
     let mut state = network_state();
     state["wg0"]["privateKey"] = json!(CANARY);
@@ -5603,7 +5604,16 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
         "/api/v1/state/network.wg0",
         "/network",
     ] {
-        let response = get(&router, path, Some(&cookie)).await;
+        // Both surfaces in one list, and since M9 (RFCT-245) they take
+        // different credentials: the four API paths take the bearer and the
+        // pane takes the cookie. The list stays one list on purpose -- the
+        // claim is that the canary reaches NEITHER surface, and splitting it
+        // into two loops would let one of them quietly stop being checked.
+        let response = if path.starts_with("/api/") {
+            bearer(&router, "GET", path, &token).await
+        } else {
+            get(&router, path, Some(&cookie)).await
+        };
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         let body = body_string(response).await;
         assert!(!body.contains(CANARY), "{path} served the canary: {body}");
@@ -5615,7 +5625,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
         "/api/v1/state/network.wg0.privateKey",
         "/api/v1/settings/network.wg0.privateKey",
     ] {
-        let response = get(&router, path, Some(&cookie)).await;
+        let response = bearer(&router, "GET", path, &token).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         assert_eq!(
             body_string(response).await,
@@ -5987,7 +5997,16 @@ fn seeded_token(index: usize) -> (serde_json::Value, String) {
 /// starting tree, so the only writes in a run are the ones under test.
 fn with_token(mut tree: serde_json::Value) -> (serde_json::Value, String) {
     let (entry, wire) = seeded_token(0);
-    tree["access"]["apiTokens"] = json!([entry]);
+    // APPENDED and not assigned: some fixtures ship their own `apiTokens` and
+    // assert on entry 0 by id -- `secret_tree`'s `ci-deploy` entry, whose
+    // digest is the redaction canary. Overwriting the array would take that
+    // fixture away and the test would fail describing the wrong thing. The
+    // seeded credential goes on the end, so entry 0 is whatever the caller put
+    // there.
+    match tree["access"]["apiTokens"].as_array_mut() {
+        Some(existing) => existing.push(entry),
+        None => tree["access"]["apiTokens"] = json!([entry]),
+    }
     (tree, wire)
 }
 
@@ -7023,7 +7042,7 @@ async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
         Request::builder()
             .method("PUT")
             .uri("/api/v1/settings/hostname")
-            .header(COOKIE, format!("apid_session={cookie}"))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
             .body(Body::from(r#""router7""#))
             .unwrap(),
     )
@@ -7064,7 +7083,13 @@ async fn the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_s
     // request is the same one, and only the expected answer moved from 204 to
     // 401. Asserted here for the same reason the no-credential case below is:
     // the write surface inherits §3.1's trap and inheriting is not asserting.
-    let refused = bearer_json(&router, "PUT", "/api/v1/settings/hostname", &token, r#""from-cookie""#)
+    let refused = bearer_json(
+        &router,
+        "PUT",
+        "/api/v1/settings/hostname",
+        &token,
+        r#""from-cookie""#,
+    )
     .await;
     assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(refused.headers().get(LOCATION), None);
@@ -7258,7 +7283,12 @@ async fn the_ssh_key_collection_lists_adds_and_removes() {
         json!(REAL_ED25519_FINGERPRINT)
     );
 
-    let removed = bearer(&router, "DELETE", &ssh_key_url(REAL_ED25519_FINGERPRINT), &token)
+    let removed = bearer(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_ED25519_FINGERPRINT),
+        &token,
+    )
     .await;
     assert_eq!(removed.status(), StatusCode::NO_CONTENT);
     assert_eq!(stored_key_list(&fake).await, json!([]));
@@ -7466,7 +7496,12 @@ async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
 
     // Well formed -- it is a real fingerprint of a real key -- and no stored
     // entry carries it.
-    let response = bearer(&router, "DELETE", &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT), &token)
+    let response = bearer(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT),
+        &token,
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
@@ -7483,8 +7518,7 @@ async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
         "SHA1:HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOa",
         &canonical(REAL_ED25519_LINE).replace(' ', "%20"),
     ] {
-        let response = bearer(&router, "DELETE", &ssh_key_url(identifier), &token)
-        .await;
+        let response = bearer(&router, "DELETE", &ssh_key_url(identifier), &token).await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -7527,7 +7561,12 @@ async fn the_ssh_pane_answers_422_where_the_api_answers_404() {
         Some(&cookie),
     )
     .await;
-    let api = bearer(&router, "DELETE", &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT), &token)
+    let api = bearer(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT),
+        &token,
+    )
     .await;
 
     assert_eq!(html.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -7555,7 +7594,12 @@ async fn a_fingerprint_carrying_a_slash_is_addressable_percent_encoded() {
     ])));
     let (router, fake) = test_app(tree);
 
-    let response = bearer(&router, "DELETE", &ssh_key_url(REAL_RSA_FINGERPRINT), &token)
+    let response = bearer(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_RSA_FINGERPRINT),
+        &token,
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
@@ -7568,7 +7612,7 @@ async fn a_fingerprint_carrying_a_slash_is_addressable_percent_encoded() {
     // all -- which is the reserved subtree's own not-found answer and not this
     // collection's 404.
     let raw = format!("/api/v1/ssh/authorized-keys/{REAL_RSA_FINGERPRINT}");
-    let response = request(&router, "DELETE", &raw, Some(&cookie), None).await;
+    let response = bearer(&router, "DELETE", &raw, &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 }
@@ -8072,7 +8116,13 @@ async fn a_vlan_parent_that_is_not_declared_is_422_and_writes_nothing() {
     let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = bearer_json(&router, "PUT", &iface_url("vlan9"), &token, &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("vlan9"),
+        &token,
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } }).to_string(),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8101,7 +8151,13 @@ async fn a_bridge_port_that_is_not_declared_is_422_and_writes_nothing() {
     let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = bearer_json(&router, "PUT", &iface_url("br9"), &token, &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth9"] } }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("br9"),
+        &token,
+        &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth9"] } }).to_string(),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8126,7 +8182,13 @@ async fn a_bridge_port_that_carries_addressing_is_422_and_writes_nothing() {
     let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = bearer_json(&router, "PUT", &iface_url("eth1"), &token, &json!({ "dhcp": true }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth1"),
+        &token,
+        &json!({ "dhcp": true }).to_string(),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8148,7 +8210,13 @@ async fn a_port_claimed_by_two_bridges_is_422_and_writes_nothing() {
     let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = bearer_json(&router, "PUT", &iface_url("br1"), &token, &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("br1"),
+        &token,
+        &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } }).to_string(),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -8171,8 +8239,14 @@ async fn the_interface_route_declares_replaces_and_removes() {
     let (router, fake, _cookie, token) = kinds_app().await;
 
     // Declared: `eth2` is not in the stored map, and a `PUT` creates it.
-    let response = bearer_json(&router, "PUT", &iface_url("eth2"), &token, &json!({ "dhcp": false, "static": { "address": "10.0.0.9/24", "dns": ["1.1.1.1"] } })
-            .to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth2"),
+        &token,
+        &json!({ "dhcp": false, "static": { "address": "10.0.0.9/24", "dns": ["1.1.1.1"] } })
+            .to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
@@ -8185,7 +8259,13 @@ async fn the_interface_route_declares_replaces_and_removes() {
 
     // Replaced whole: the second body has no `static`, and the stored entry
     // has none afterwards. A `PUT` is the entry, not a patch of it.
-    let response = bearer_json(&router, "PUT", &iface_url("eth2"), &token, &json!({ "dhcp": true }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth2"),
+        &token,
+        &json!({ "dhcp": true }).to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
@@ -8270,9 +8350,9 @@ async fn an_absent_interface_is_404_and_a_malformed_name_is_422() {
         for method in ["PUT", "DELETE"] {
             let path = format!("{NETWORK_MAP_PATH}/{bad}");
             let response = if method == "PUT" {
-                put_json(&router, &path, "{\"dhcp\":true}", Some(&cookie)).await
+                bearer_json(&router, "PUT", &path, &token, "{\"dhcp\":true}").await
             } else {
-                request(&router, method, &path, Some(&cookie), None).await
+                bearer(&router, method, &path, &token).await
             };
             assert_eq!(
                 response.status(),
@@ -8304,11 +8384,17 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
 
     // Refused as one tree: `br9` names a port that this very body does not
     // declare either.
-    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({
             "eth0": { "dhcp": true },
             "br9": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth7"] } },
         })
-        .to_string())
+        .to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["code"], "validation_failed");
@@ -8317,11 +8403,17 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
 
     // Accepted as one tree: the same bridge, with its port declared in the
     // same body. Neither entry is legal without the other.
-    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({
             "eth7": { "dhcp": false },
             "br9": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth7"] } },
         })
-        .to_string())
+        .to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(fake.set_paths(), vec![NETWORK_DOT_PATH.to_string()]);
@@ -8334,7 +8426,13 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     );
 
     // A key that is not an interface name is 422, and it names the key.
-    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({ "waytoolongiface016": { "dhcp": true } }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({ "waytoolongiface016": { "dhcp": true } }).to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["code"], "validation_failed");
@@ -8360,8 +8458,14 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
 async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
     let (router, fake, cookie, token) = kinds_app().await;
 
-    let response = bearer_json(&router, "PUT", &iface_url("eth0.100"), &token, &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth0", "id": 100 } })
-            .to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth0.100"),
+        &token,
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth0", "id": 100 } })
+            .to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(fake.set_paths(), vec![r#"network."eth0.100""#.to_string()]);
@@ -8369,7 +8473,13 @@ async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
     // And the envelope quotes it too, because that is the dot-path an operator
     // would type at the settings route.
     let (router, _, cookie, token) = kinds_app().await;
-    let response = bearer_json(&router, "PUT", &iface_url("wg.9"), &token, &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("wg.9"),
+        &token,
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } }).to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["path"], json!(r#"network."wg.9""#));
@@ -8414,13 +8524,19 @@ async fn the_peer_collection_lists_adds_and_removes() {
     assert_eq!(listed[0]["publicKey"], json!(PEER_KEY));
     assert_eq!(listed[0]["allowedIps"], json!(["10.8.0.0/24"]));
 
-    let response = bearer_json(&router, "POST", &peers_url("wg0"), &token, &json!({
+    let response = bearer_json(
+        &router,
+        "POST",
+        &peers_url("wg0"),
+        &token,
+        &json!({
             "publicKey": OTHER_PEER_KEY,
             "allowedIps": ["10.8.1.0/24"],
             "endpoint": "vpn2.example.net:51820",
             "persistentKeepalive": 25,
         })
-        .to_string())
+        .to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
     let echoed: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
@@ -8432,8 +8548,7 @@ async fn the_peer_collection_lists_adds_and_removes() {
         vec!["network.wg0.wireguard.peers".to_string()]
     );
 
-    let response = bearer(&router, "DELETE", &peer_url("wg0", OTHER_PEER_KEY), &token)
-    .await;
+    let response = bearer(&router, "DELETE", &peer_url("wg0", OTHER_PEER_KEY), &token).await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     let peers = fake
         .get_settings("network.wg0.wireguard.peers")
@@ -8455,7 +8570,13 @@ async fn the_peer_collection_lists_adds_and_removes() {
 async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one() {
     let (router, fake, _cookie, token) = kinds_app().await;
 
-    let response = bearer_json(&router, "POST", &peers_url("wg9"), &token, &json!({ "publicKey": PEER_KEY }).to_string())
+    let response = bearer_json(
+        &router,
+        "POST",
+        &peers_url("wg9"),
+        &token,
+        &json!({ "publicKey": PEER_KEY }).to_string(),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -8480,8 +8601,8 @@ async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_
     );
     assert_eq!(
         bearer(&router, "DELETE", &peer_url("wg9", PEER_KEY), &token)
-        .await
-        .status(),
+            .await
+            .status(),
         StatusCode::NOT_FOUND
     );
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
@@ -8498,7 +8619,7 @@ async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
         ("GET", peers_url("eth0")),
         ("DELETE", peer_url("eth0", PEER_KEY)),
     ] {
-        let response = request(&router, method, &path, Some(&cookie), None).await;
+        let response = bearer(&router, method, &path, &token).await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -8515,7 +8636,13 @@ async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
         );
     }
 
-    let response = bearer_json(&router, "POST", &peers_url("eth0"), &token, &json!({ "publicKey": PEER_KEY }).to_string())
+    let response = bearer_json(
+        &router,
+        "POST",
+        &peers_url("eth0"),
+        &token,
+        &json!({ "publicKey": PEER_KEY }).to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
@@ -8537,7 +8664,13 @@ async fn a_duplicate_peer_is_409_and_writes_nothing() {
     let (router, fake, _cookie, token) = kinds_app().await;
     let before = stored_network_map(&fake).await;
 
-    let response = bearer_json(&router, "POST", &peers_url("wg0"), &token, &json!({ "publicKey": PEER_KEY, "allowedIps": ["10.9.0.0/24"] }).to_string())
+    let response = bearer_json(
+        &router,
+        "POST",
+        &peers_url("wg0"),
+        &token,
+        &json!({ "publicKey": PEER_KEY, "allowedIps": ["10.9.0.0/24"] }).to_string(),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::CONFLICT);
@@ -8554,8 +8687,7 @@ async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
     let (router, fake, _cookie, token) = kinds_app().await;
 
     // Well formed -- it is 32 bytes of base64 -- and no stored peer has it.
-    let response = bearer(&router, "DELETE", &peer_url("wg0", OTHER_PEER_KEY), &token)
-    .await;
+    let response = bearer(&router, "DELETE", &peer_url("wg0", OTHER_PEER_KEY), &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_not_found");
@@ -8563,8 +8695,7 @@ async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
 
     // Not a public key at all, and could never be one.
     for identifier in ["nope", "AAAA", &"A".repeat(44), &"!".repeat(44)] {
-        let response = bearer(&router, "DELETE", &peer_url("wg0", identifier), &token)
-        .await;
+        let response = bearer(&router, "DELETE", &peer_url("wg0", identifier), &token).await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -8624,7 +8755,12 @@ async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
     let cookie = login(&router, "hunter2secret").await;
 
     assert!(SLASHED_PEER_KEY.contains('/'), "the fixture must carry one");
-    let response = bearer(&router, "DELETE", &peer_url("wg0", SLASHED_PEER_KEY), &token)
+    let response = bearer(
+        &router,
+        "DELETE",
+        &peer_url("wg0", SLASHED_PEER_KEY),
+        &token,
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
@@ -8635,7 +8771,12 @@ async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
     );
 
     // Unencoded, the same key is two segments and is not this route.
-    let response = bearer(&router, "DELETE", &format!("{}/{SLASHED_PEER_KEY}", peers_url("wg0")), &token)
+    let response = bearer(
+        &router,
+        "DELETE",
+        &format!("{}/{SLASHED_PEER_KEY}", peers_url("wg0")),
+        &token,
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
@@ -8663,8 +8804,14 @@ async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
             "is not host:port",
         ),
     ] {
-        let response =
-            bearer_json(&router, "POST", &peers_url("wg0"), &token, &body.to_string()).await;
+        let response = bearer_json(
+            &router,
+            "POST",
+            &peers_url("wg0"),
+            &token,
+            &body.to_string(),
+        )
+        .await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -8713,9 +8860,9 @@ async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
         ("GET", peers_url("wg0")),
     ] {
         let response = if method == "PUT" {
-            put_json(&router, &path, "{\"dhcp\":true}", Some(&cookie)).await
+            bearer_json(&router, "PUT", &path, &token, "{\"dhcp\":true}").await
         } else {
-            request(&router, method, &path, Some(&cookie), None).await
+            bearer(&router, method, &path, &token).await
         };
         assert_eq!(
             response.status(),
@@ -8734,7 +8881,13 @@ async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
     // The whole-map `PUT` is the exception, and deliberately: it does not read
     // the stored map at all, because the map it sends is the map that ends up
     // stored. It is also the only way out of this state through the API.
-    let response = bearer_json(&router, "PUT", NETWORK_MAP_PATH, &token, &json!({ "eth0": { "dhcp": true } }).to_string())
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({ "eth0": { "dhcp": true } }).to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 }
@@ -9101,7 +9254,7 @@ async fn every_collection_answers_409_for_a_duplicate() {
             "peer_exists",
         ),
     ] {
-        let response = post_json(&router, path, &body.to_string(), Some(&cookie)).await;
+        let response = bearer_json(&router, "POST", path, &token, &body.to_string()).await;
         assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
         assert_api_headers(&response, path);
         let error = envelope(response).await;
@@ -9185,7 +9338,13 @@ async fn the_action_routes_require_no_confirmation_token() {
         StatusCode::ACCEPTED
     );
     assert_eq!(
-        bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": "hunter2secret" }).to_string())
+        bearer_json(
+            &router,
+            "POST",
+            TRANSIENT_PATH,
+            &token,
+            &json!({ "password": "hunter2secret" }).to_string()
+        )
         .await
         .status(),
         StatusCode::NO_CONTENT
@@ -9217,7 +9376,13 @@ async fn the_transient_password_route_sets_it_and_writes_no_setting() {
     let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": PASSWORD }).to_string())
+    let response = bearer_json(
+        &router,
+        "POST",
+        TRANSIENT_PATH,
+        &token,
+        &json!({ "password": PASSWORD }).to_string(),
+    )
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
@@ -9261,7 +9426,13 @@ async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
         ("hunter2\rsecret".to_string(), false),
     ] {
         let before = fake.transient_password_calls();
-        let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": password }).to_string())
+        let response = bearer_json(
+            &router,
+            "POST",
+            TRANSIENT_PATH,
+            &token,
+            &json!({ "password": password }).to_string(),
+        )
         .await;
         let context = format!("{} bytes", password.len());
         if accepted {
@@ -9325,7 +9496,13 @@ async fn a_rejected_transient_password_is_never_echoed() {
         "quagga-vestibule-marzipan-cornice-thimble-quixotic-basalt-lantern-ferrule",
         "quagga\nvestibule",
     ] {
-        let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, &json!({ "password": password }).to_string())
+        let response = bearer_json(
+            &router,
+            "POST",
+            TRANSIENT_PATH,
+            &token,
+            &json!({ "password": password }).to_string(),
+        )
         .await;
         assert_eq!(
             response.status(),
