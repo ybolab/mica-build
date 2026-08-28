@@ -217,30 +217,48 @@ expect_fail "a README entry whose document a rename deleted" 1 \
 # below is verified to have landed, for the same reason duplicate_line checks
 # its own work: a mutation that silently changed nothing makes the case pass
 # for free.
+#
+# The exemplar record is DISCOVERED from the fixture, not named. These three
+# cases were written against RFCT-094 by name, and RFCT-094 was completed at
+# e33ef7b -- from that commit on the guard below fired, `exit 1` ran before any
+# case reported, and the whole self-test was red for a reason that had nothing
+# to do with verify-index.sh. Naming a record here couples a test of the
+# ASSERTION to the lifecycle of one task, and every open task eventually
+# closes; the property the cases need is "some row is still `[ ]`", which
+# `pending_id` reads off the fixture the same way case 4 reads its research
+# entry. If a tree ever has no pending row at all, that is reported loudly
+# rather than skipped -- see the header.
 FIX="${WORK}/checkbox-over-pending"
 new_fixture "${FIX}"
-grep -q '^- \[ \] \[\*\*RFCT-094 ' "${FIX}/docs/task/index.md" || {
-    echo "error: no pending RFCT-094 row in the fixture index to tick" >&2; exit 1; }
-sed -i 's/^- \[ \] \[\*\*RFCT-094 /- [x] [**RFCT-094 /' "${FIX}/docs/task/index.md"
+pending_id="$(sed -n 's/^- \[ \] \[\*\*\(RFCT-[0-9]*\) .*/\1/p' "${FIX}/docs/task/index.md" | head -1)"
+[ -n "${pending_id}" ] || {
+    echo "error: no pending '- [ ] [**RFCT-...' row in the fixture index to tick" >&2; exit 1; }
+sed -i "s/^- \[ \] \[\*\*${pending_id} /- [x] [**${pending_id} /" "${FIX}/docs/task/index.md"
+grep -q "^- \[x\] \[\*\*${pending_id} " "${FIX}/docs/task/index.md" || {
+    echo "error: ticking the ${pending_id} row in the fixture index changed nothing" >&2; exit 1; }
 expect_fail "a row ticked [x] over a record whose status head is pending" 1 \
-    "marks 'RFCT-094.md' '[x]'" \
+    "marks '${pending_id}.md' '[x]'" \
     "status head 'pending', which maps to '[ ]'"
 
 FIX="${WORK}/non-canonical-head"
 new_fixture "${FIX}"
-grep -q '^- \*\*status\*\*: pending$' "${FIX}/docs/task/RFCT-094.md" || {
-    echo "error: RFCT-094.md does not carry the bare pending head to mutate" >&2; exit 1; }
-sed -i 's/^- \*\*status\*\*: pending$/- **status**: Pending review/' "${FIX}/docs/task/RFCT-094.md"
+pending_rec="$(grep -lxF -- '- **status**: pending' "${FIX}"/docs/task/RFCT-*.md | head -1)"
+[ -n "${pending_rec}" ] || {
+    echo "error: no record in the fixture carries the bare pending head to mutate" >&2; exit 1; }
+pending_rec="$(basename "${pending_rec}")"
+sed -i 's/^- \*\*status\*\*: pending$/- **status**: Pending review/' "${FIX}/docs/task/${pending_rec}"
+grep -q '^- \*\*status\*\*: Pending review$' "${FIX}/docs/task/${pending_rec}" || {
+    echo "error: rewriting the status head in ${pending_rec} changed nothing" >&2; exit 1; }
 expect_fail "a status line with a non-canonical head" 1 \
-    "docs/task/RFCT-094.md status head 'Pending review' is not one of pending|in progress|completed|closed"
+    "docs/task/${pending_rec} status head 'Pending review' is not one of pending|in progress|completed|closed"
 
 FIX="${WORK}/no-status-line"
 new_fixture "${FIX}"
-grep -q '^- \*\*status\*\*: ' "${FIX}/docs/task/RFCT-094.md" || {
-    echo "error: RFCT-094.md has no status line to delete" >&2; exit 1; }
-sed -i '/^- \*\*status\*\*: /d' "${FIX}/docs/task/RFCT-094.md"
+grep -q '^- \*\*status\*\*: ' "${FIX}/docs/task/${pending_rec}" || {
+    echo "error: ${pending_rec} has no status line to delete" >&2; exit 1; }
+sed -i '/^- \*\*status\*\*: /d' "${FIX}/docs/task/${pending_rec}"
 expect_fail "a record whose status line was deleted outright" 1 \
-    "docs/task/RFCT-094.md has no parseable status line"
+    "docs/task/${pending_rec} has no parseable status line"
 
 echo
 total=$((PASS_N + FAIL_N))
