@@ -119,7 +119,10 @@ describe('the contract, read out of the shipped reconcilers', () => {
     expect(c.staPrefix).toBe('90-wifi-client-')
     expect(c.apPrefix).toBe('90-wifi-ap-')
     expect(c.sweep).toBe('50-mos-')
-    expect(c.sweepSuffix).toBe('.network')
+    // BOTH suffixes: the reconciler renders `.netdev` units for VLAN, bridge
+    // and WireGuard interfaces and sweeps them under the same `50-mos-` prefix,
+    // so a contract naming only `.network` would describe half the namespace.
+    expect(c.sweepSuffixes).toEqual(['.network', '.netdev'])
   })
 
   test('the READ of a directory with no reconcilers in it fails, it does not substitute', async () => {
@@ -157,13 +160,13 @@ describe('the contract, read out of the shipped reconcilers', () => {
 
   test('a starts_with that LOST its ends_with is refused, not narrowed to a guess', async () => {
     // A marker read out of a starts_with whose ends_with had changed describes a
-    // WIDER sweep than the code performs -- so the suffix is compared to
-    // `.network` rather than merely required to be present.
+    // WIDER sweep than the code performs -- so `.network` is required to be
+    // AMONG the suffixes rather than merely for some suffix to have been read.
     const dir = reconcilerCopy((f, t) =>
       f === 'network.rs' ? t.replace('.ends_with(".network")', '.ends_with(".conf")') : t)
     try {
       const c = readConndContract(dir)
-      expect(c.sweepSuffix).toBe('.conf')
+      expect(c.sweepSuffixes).toEqual(['.conf', '.netdev'])
       expect(c.read).toBe(false)
     }
     finally {

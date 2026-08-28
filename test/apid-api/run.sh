@@ -75,8 +75,16 @@ QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
 # come back. MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
 BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
+# ...and the first boot runs everything BEFORE them. Spelled out rather than
+# left empty-means-all, because empty-means-all put 07b in the FIRST boot: phase
+# 07 takes the guest down by design, and 07b then waited its full 180s deadline
+# for apid to answer on a machine that was deliberately off, failed, and threw
+# on ECONNREFUSED. Measured 2026-08-28. The runner refuses an unknown phase
+# name, so a phase renamed without updating this list fails loudly here rather
+# than being silently dropped from the run.
+BOOT1_PHASES="${MOS_APID_PHASES:-01-transport,02-setup,03-login,04-readonly,05-mutate,05b-wireguard,05c-kernel-net,06-backoff,07-reboot}"
 
-PHASES="${MOS_APID_PHASES:-}"
+PHASES="${BOOT1_PHASES}"
 # The bun image is pinned by digest, not by tag. `oven/bun:1` is a
 # major-version tag upstream repoints onto every 1.x release, and this harness
 # is what decides whether apid's API is judged conformant, so the default is the
@@ -294,12 +302,23 @@ CONSOLE2="${ART_DIR}/console-boot2.log"
 # and costs nothing.
 ART_IN_CONTAINER="/w/_out/x64/apid-api"
 
+# Where phase 05c's guest script lands inside the STATE partition. Named here,
+# beside the other paths, because both the dry-run summary and the seed step
+# below quote it and a second spelling is how the two come to disagree.
+SMOKE_IN_GUEST=/m7-net-smoke.sh
+
+# A fixed point in time for this run, written once and never touched again.
+# The handoff freshness check compares against THIS rather than against a file
+# the guest is still writing to; see reboot_was_posted below.
+RUN_STAMP="${ART_DIR}/run-started"
+
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/tools/qemu-run.sh --prepare-only)"
     note "would boot     os/tools/qemu-run.sh --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
-    note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1"
+    note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1 systemd.run=..."
+    note "would seed     test/apid-api/guest/m7-net-smoke.sh -> STATE:${SMOKE_IN_GUEST} (phase 05c)"
     note "               MOS_QEMU_RUN_SECONDS=${RUN_SECONDS} MOS_QEMU_TIMEOUT=${QEMU_TIMEOUT}"
     note "would find     the container binding ${RUN_DIR_REAL} and read its address on ${NET}"
     note "would wait     up to ${READY_TIMEOUT}s for APID_LISTENING on the console AND for"
@@ -335,16 +354,50 @@ trap 'teardown' EXIT
 # lands two or three times; a repeated systemd.journald.forward_to_console=1 is
 # the same value twice and costs nothing, whereas one boot that silently lacks
 # it deletes the readiness signal this entire script waits on.
+#
+# The second append starts phase 05c's guest script. `systemd.run=` is read by
+# systemd's own kernel-command-line generator, which builds the unit in /run
+# from the command line itself -- the reason it is used instead of dropping a
+# .service onto STATE. /mnt/state/systemd-units binds onto the unit search path
+# only at local-fs.target, which is LATER than the boot transaction that would
+# have to load such a unit, so a unit seeded there is simply not found. The
+# script is what lives on STATE; the value names an interpreter and a path, so
+# it needs no execute bit that debugfs would have to set.
+#
+# FOUR ARGUMENTS, AND EACH ONE IS LOAD-BEARING. `systemd.run=` alone does not
+# mean "also run this"; it means "boot into this", and all three corrections
+# below were measured on this image rather than reasoned about:
+#
+#   run_success_action / run_failure_action -- the generator defaults BOTH to
+#     `exit-force`, which in PID 1's context is POWER THE MACHINE OFF the moment
+#     the command returns. The smoke finished at 56.7s and the guest printed
+#     `reboot: Power down` at 62.1s.
+#   systemd.unit=multi-user.target -- the generator also points `default.target`
+#     at its own `kernel-command-line.target`, so the guest reached that,
+#     printed `Startup finished`, and stopped. mosd, apid and networkd never
+#     started and the suite waited out its readiness deadline on a booted guest
+#     that was simply never going to serve anything.
+#   systemd.wants=kernel-command-line.target -- which then has to pull the
+#     generated target back in, because it is no longer the default. It is
+#     reachable by name here where a unit seeded onto STATE is not: generators
+#     run BEFORE the boot transaction is built, whereas
+#     /mnt/state/systemd-units joins the unit search path at local-fs.target,
+#     which is after it. Measured: a `systemd.wants=` naming a STATE-seeded
+#     unit produced no output at all and no error -- systemd drops a Wants= it
+#     cannot resolve.
+#
+# With all four, the guest reaches multi-user.target AND prints the smoke.
 QEMU_ENV=(
     MOS_QEMU_FORWARD=1
     MOS_QEMU_NETWORK="${NET}"
-    MOS_QEMU_APPEND=systemd.journald.forward_to_console=1
+    MOS_QEMU_APPEND="systemd.journald.forward_to_console=1 systemd.run=\"/bin/bash /mnt/state${SMOKE_IN_GUEST}\" systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.target"
     MOS_QEMU_HTTPS_PORT="${HTTPS_PORT}"
     MOS_QEMU_HTTP_PORT="${HTTP_PORT}"
     MOS_QEMU_RUN_SECONDS="${RUN_SECONDS}"
     MOS_QEMU_TIMEOUT="${QEMU_TIMEOUT}"
 )
 
+: >"${RUN_STAMP}"
 note "preparing the disk from ${IMG##*/} (a ~2 GiB copy; nothing boots yet)"
 if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
     PREPARED=1  # a partial copy still has to be cleaned up
@@ -354,6 +407,27 @@ if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-onl
 fi
 PREPARED=1
 pass "disk prepared at ${RUN_DIR}/disk.img"
+
+# The guest half of phase 05c, written into the disk copy's STATE partition.
+# AFTER --prepare-only, which is what makes the copy: seeding before it would
+# write into a disk the prepare then overwrites. The image itself is never
+# touched -- os/tools/qemu-seed-state.sh edits _out/x64/.qemu/disk.img.
+#
+# A failure here is fatal rather than a warning. Booting on without the script
+# would leave phase 05c reporting that the smoke never ran, which is true and
+# uninformative; the reason is known HERE.
+SMOKE_SRC="${REPO_ROOT}/test/apid-api/guest/m7-net-smoke.sh"
+if [ ! -f "${SMOKE_SRC}" ]; then
+    fail "${SMOKE_SRC} not found; phase 05c has no guest script to seed"
+    finish
+fi
+if ! bash "${REPO_ROOT}/os/tools/qemu-seed-state.sh" \
+    "${SMOKE_SRC}" "${SMOKE_IN_GUEST}" >"${ART_DIR}/seed.log" 2>&1; then
+    fail "os/tools/qemu-seed-state.sh failed; see ${ART_DIR}/seed.log"
+    tail -n 20 "${ART_DIR}/seed.log" >&2 || true
+    finish
+fi
+pass "seeded ${SMOKE_IN_GUEST} into the disk copy's STATE partition for phase 05c"
 
 launch_boot() {
     local label="$1" console="$2"
@@ -644,9 +718,16 @@ HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
 
 reboot_was_posted() {
     [ -f "${HANDOFF_FILE}" ] || return 1
-    # Newer than the disk we prepared for this run, so a handoff left behind by
-    # an earlier run cannot vouch for this one.
-    [ "${HANDOFF_FILE}" -nt "${RUN_DIR}/disk.img" ] || return 1
+    # Newer than a stamp this run took before booting anything, so a handoff
+    # left behind by an earlier run cannot vouch for this one.
+    #
+    # NOT newer than disk.img, which is what this compared against until
+    # 2026-08-28. The guest WRITES to disk.img for the whole of the first boot,
+    # so its mtime keeps advancing past the handoff -- which 07 writes mid-boot,
+    # right after the POST. The comparison was therefore false on every
+    # successful run: the second boot was skipped with "07 did not run" on runs
+    # where 07 had demonstrably run and the console showed the guest going down.
+    [ "${HANDOFF_FILE}" -nt "${RUN_STAMP}" ] || return 1
     return 0
 }
 
@@ -691,8 +772,9 @@ MERGED="${ART_DIR}/result.json"
 # say which artefact it covered is a result file that cannot be trusted a week
 # later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
 # every time somebody builds; the resolved name and the mtime are what pin a run
-# to a surface. This is also what makes the /mqtt skew guard in 04-readonly
-# legible: when that check goes red, this block says whether the image moved.
+# to a surface. It is also what makes a route assertion's red legible: 04-readonly
+# asserts the surface this TREE declares, so when a route check fails, this block
+# says whether the image moved under it or the contract did.
 IMG_RESOLVED="$(readlink -f "${IMG}" 2>/dev/null || echo "${IMG}")"
 IMG_MTIME_EPOCH="$(stat -c %Y "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
 IMG_MTIME_ISO="$(date -u -d "@${IMG_MTIME_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
