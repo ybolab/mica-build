@@ -1,10 +1,10 @@
 # PLAN-012 Container engine — a self-built static Podman, off by default, switched from apid
 
-- **status**: proposal
+- **status**: completed — M1-M4 delivered by RFCT-101, RFCT-102 and RFCT-103 (2026-08-23/24) without this plan's own approval step, and ratified at close 2026-08-28; M5's residue carried by RFCT-223; see Amendment 1
 - **createdAt**: 2026-08-23 10:40
 - **approvedAt**: -
-- **completedAt**: -
-- **relatedTask**: -
+- **completedAt**: 2026-08-28
+- **relatedTask**: RFCT-101, RFCT-102, RFCT-103 (M1-M4); RFCT-221 (the closeout audit); RFCT-223 and RFCT-224 (the two residues, both pending)
 - **milestones**: M1 the `podman/` build directory and its artifact set; M2 image wiring and the D-Bus/identity surface; M3 the settings key, the reconciler and the apid pane; M4 Quadlet as the container-application interface; M5 supply-chain tracking
 
 ## Context
@@ -331,3 +331,70 @@ operator's own configuration, over their own network.
 
 **No claim about hardware.** Every number in this plan is from an artifact on
 a build host. Whether the engine runs on the cx3576 is the first flash.
+
+## Amendment 1 — closeout, 2026-08-28 (PLAN-024, audit RFCT-221, executed by RFCT-227)
+
+This plan was implemented while its own status head read `proposal` and its
+`approvedAt` was empty. RFCT-101, RFCT-102 and RFCT-103 shipped M1, M2, M3 and
+M4 between 2026-08-23 and 2026-08-24; RFCT-221 audited the result against the
+tree at `a86ab46` and this amendment records what was actually built, so that
+the plan and the tree stop disagreeing.
+
+**No retroactive approval stamp.** `approvedAt` stays empty, because no
+approval happened on any date and writing one in now would invent a record.
+The honest statement is the one this amendment makes: the plan was **delivered
+without its own approval step, and ratified at close on 2026-08-28**. The four
+shipped milestones are marked done. M5 is not done and is carried forward as a
+named task.
+
+**What was built differently from what was decided.**
+
+1. The build directory is `os/pkgs/podman`, not the top-level `podman/` D2
+   names and not the `os/podman/` the M1 row names. PLAN-019 moved every
+   buildable component under `os/pkgs`, and the comparison anchor D2 uses moved
+   with it, to `os/boards/cx3576/bsp/kernel`. Output is `out-<arch>/` rather
+   than `out/`, so two architectures can coexist.
+
+2. The M1 row's third build assertion — every `NEEDED` soname checked against
+   a library list generated from the packed rootfs — was built, found to be a
+   build-order cycle, and removed. `os/pkgs/podman/build.sh` records the
+   removal and its reasoning. The check now runs inside the image build, where
+   the real loader answers against the real binaries in the assembled root.
+   That is a stronger claim than the one this plan specified, and it is the
+   claim the tree makes.
+
+3. D3 asks for a podman unit installed and not enabled, on the `hostapd@`
+   model. Upstream's units are never built, so the image contains none, and
+   what ships installed-and-not-enabled is `etc-containers-systemd.mount`
+   instead. The switch gates a bind mount rather than a service, which is what
+   a daemonless engine allows.
+
+4. D3's claim that the switch is a writable bus item and an MQTT-addressable
+   path "for free" is not true of the tree. `container` is absent from mosd's
+   fixed writable-subtree list, so `/container/enabled` projects read-only and
+   is written only through the daemon's settings method, which is the path apid
+   uses. `docs/design/containers.md` states the untrue version to integrators.
+   This is a decision — widen the writable list, or correct the document — not
+   a defect to be patched either way by default, and it leaves this plan as
+   **RFCT-224**, filed pending and routed to PLAN-025-class work, with `mqtt`
+   named there as the same class of question.
+
+5. M2's row names `Dockerfile.v2` and `os/ui-location-test.sh`. Both are gone:
+   the rootfs is a chain of per-stage Dockerfiles, and the shell verifier was
+   deleted at full parity with the `os/verify` TypeScript suite, which is where
+   the engine's ten conclusions and their negative controls now live.
+
+6. D6 is moot rather than discharged. It asked that a container-delivered
+   application update reuse the existing update-state shape; D4 decided mos
+   ships no orchestration and no auto-update, so no such update path was
+   built and no second shape was invented.
+
+**What is not closed.** M5's scheduled upstream-tag check does not exist.
+`versions.env` pins six upstreams in three languages and nothing watches them.
+This plan's own Risks section calls that mitigation not optional. It leaves
+this plan as **RFCT-223**, filed pending and routed to PLAN-025-class work,
+rather than staying an unticked box here.
+
+**Nothing else leaves this plan unnamed.** M1-M4 are delivered; M5 is RFCT-223;
+the D3 writability divergence is RFCT-224. There is no residue without a
+destination.
