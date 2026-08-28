@@ -359,7 +359,10 @@ fn api_router() -> Router<AppState> {
         .route(VERSIONS_PATH, get(api_versions))
         .route(V1_META_PATH, get(api_v1_meta))
         .route(V1_HEALTH_PATH, get(api_v1_health))
-        .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
+        .route(
+            V1_SETTINGS_ROUTE,
+            get(api_v1_settings).put(api_v1_settings_write),
+        )
         .route(V1_STATE_ROUTE, get(api_v1_state))
         .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
         // §3.2's token lifecycle. All three take a bearer token and nothing
@@ -748,8 +751,9 @@ pub(crate) async fn api_v1_health(_session: ApiSession, State(state): State<AppS
 /// at any depth
 /// and inside arrays, carries that sentinel instead of its value, and so does
 /// the whole body when the dot-path names one of those fields directly. It is
-/// read-only — writing it back would destroy the credential — and phase 1
-/// serves no write route to write it with. `privateKey` is on the same list;
+/// read-only — writing it back would destroy the credential — and the write
+/// route refuses any body that carries it, at 422, rather than storing it.
+/// `privateKey` is on the same list;
 /// no shipped schema has such a field, and the entry is the fail-closed guard
 /// for the day one appears.
 #[derive(serde::Serialize, utoipa::ToSchema)]
@@ -783,6 +787,261 @@ pub(crate) async fn api_v1_settings(
     Path(path): Path<String>,
 ) -> Response {
     resource_response(state.api.get_settings(&path).await, &path)
+}
+
+/// What the value at a writable dot-path has to be.
+///
+/// Two shapes and not one validator per path, because `docs/task/RFCT-210.md`
+/// §2.2 admits exactly four paths on one ground: each value is *"a scalar
+/// whose validity depends on nothing else in the tree"*. A hostname, which
+/// `valid_hostname` decides on its own, and three switches, which *"cannot be
+/// invalid at all"*. Anything relational is a later milestone by construction,
+/// because a third shape here would be the first thing to need the rest of the
+/// tree to decide.
+#[derive(Clone, Copy)]
+enum ScalarShape {
+    /// A JSON string [`valid_hostname`] accepts.
+    Hostname,
+    /// A JSON boolean, and nothing else.
+    Flag,
+}
+
+/// The dot-paths `PUT /api/v1/settings/{path}` writes, and the shape each
+/// value has to have (`docs/task/RFCT-210.md` §2.2).
+///
+/// An allowlist rather than a passthrough, and the reason is measured rather
+/// than stylistic. `Settings::set`'s documented contract is *"Missing
+/// intermediate map entries are created (e.g. setting `network.eth1.dhcp`
+/// creates `eth1`)"* (`os/pkgs/mosd/mosd-settings/src/model.rs:656-657`), so a
+/// `PUT` to a mistyped path handed straight through to mosd does not fail —
+/// it grows a new subtree, of whatever kind the schema defaults to, and the
+/// reconciler is the first thing to notice. `docs/task/RFCT-210.md` §2.4 walks
+/// that exact failure on `POST /network/peers/add`, where adding a peer to an
+/// undeclared `wg9` writes a physical-kind `network.wg9` carrying a WireGuard
+/// block. Every path this list does not carry is refused by
+/// [`settings_write_refusal`] before any bus call is made.
+const WRITABLE_SETTINGS: [(&str, ScalarShape); 4] = [
+    ("hostname", ScalarShape::Hostname),
+    ("access.ssh.enabled", ScalarShape::Flag),
+    ("container.enabled", ScalarShape::Flag),
+    ("mqtt.enabled", ScalarShape::Flag),
+];
+
+/// The resource the write route's not-found envelope names, being the settings
+/// root itself: what is absent is a place in the tree, not an item in a list.
+const SETTINGS_COLLECTION: &str = "settings";
+
+/// The sentence a refusal carries when nothing more specific is true of the
+/// path: it is a real part of the tree, and this route is not how it is
+/// written.
+const WRITES_FOUR: &str = "this route writes `hostname`, `access.ssh.enabled`, `container.enabled` and `mqtt.enabled` and no other dot-path; every other subtree is written through its own resource route";
+
+/// The shape `path` is written with, when this route writes it at all.
+fn writable_shape(path: &str) -> Option<ScalarShape> {
+    WRITABLE_SETTINGS
+        .iter()
+        .find(|(writable, _)| *writable == path)
+        .map(|(_, shape)| *shape)
+}
+
+/// `value` checked against `shape`, or the sentence the 422 carries.
+fn check_scalar(shape: ScalarShape, value: &Value) -> Result<(), String> {
+    match shape {
+        ScalarShape::Flag => value.is_boolean().then_some(()).ok_or_else(|| {
+            "this setting is a switch: the body is the JSON literal `true` or `false`".to_string()
+        }),
+        ScalarShape::Hostname => {
+            let name = value
+                .as_str()
+                .ok_or_else(|| "this setting is text: the body is a JSON string".to_string())?;
+            // Not trimmed, unlike `hostname_submit`. That handler trims because
+            // a browser sends whatever was typed into a text input; a client
+            // that built a JSON string chose its bytes, and silently writing
+            // something other than what it sent is the worse answer.
+            valid_hostname(name)
+                .then_some(())
+                .ok_or_else(|| HOSTNAME_RULES.to_string())
+        }
+    }
+}
+
+/// Whether `root` is a top-level key of the settings schema.
+///
+/// Derived from `Settings::default()` rather than listed here: every field of
+/// that struct serialises unconditionally, so the default tree's key set *is*
+/// the schema's top level, and a key added to the struct is covered with no
+/// edit in apid. A hand-written list would be a second opinion about a schema
+/// that already exists, and second opinions drift.
+fn is_settings_root(root: &str) -> bool {
+    serde_json::to_value(mosd_settings::Settings::default())
+        .is_ok_and(|tree| tree.get(root).is_some())
+}
+
+/// Why this route will not write `path`, in §2.4's envelope.
+///
+/// Three answers, and `docs/task/RFCT-210.md` §2.4 is why they are not
+/// interchangeable. **422** is a path that is not a path — an empty segment,
+/// an unterminated quote — which is the *malformed* half of that section's
+/// rule. **404** is a path that names nothing, which is the *well-formed but
+/// absent* half, and it comes from [`item_not_found`] so the rule is inherited
+/// rather than remembered. **409** is a path that names something real which
+/// this route does not write, which is the condition §2.4 already spends 409
+/// on: the body is well formed and nothing about it is wrong, and what refuses
+/// it is the state of the surface.
+///
+/// "Names nothing" is decided on the **first segment** and not on the whole
+/// path, and that is a statement about writes rather than a shortcut. A write's
+/// job may be to create the leaf it names — `Settings::set` creates missing
+/// intermediates — so a missing leaf is not an absent resource. The one thing
+/// a write cannot create is a top-level key the typed schema has no field for:
+/// such a tree does not deserialize, so `network.eth9.dhcp` is a write that
+/// may legitimately create `eth9`, while `netwrok.eth0.dhcp` can never be
+/// anything but a typo.
+fn settings_write_refusal(path: &str) -> Response {
+    let refused = |message: String| {
+        api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid("settings_read_only", message).at(path),
+        )
+    };
+    // `.` is the whole tree, not a malformed path: `Settings::set` documents
+    // `""` and `"."` as replacing the root. It is a real path this route
+    // refuses, so it takes the refusal rather than the 422 below.
+    if path == "." {
+        return refused(WRITES_FOUR.to_string());
+    }
+    let Some(segments) = mosd_settings::path_segments(path) else {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                "not a settings dot-path: segments are separated by `.`, a segment is either bare or double-quoted, and no segment is empty".to_string(),
+            )
+            .at(path),
+        );
+    };
+    // `path_segments` yields at least one segment for every path it accepts.
+    let root = segments[0].as_str();
+    if !is_settings_root(root) {
+        return item_not_found(SETTINGS_COLLECTION, path);
+    }
+    refused(match root {
+        // Read-only in the tree itself and not merely here, which is a
+        // different sentence from the one below: `Settings::set` answers
+        // `SettingsError::ReadOnly` for it, and no later milestone widens this
+        // route to cover it.
+        "schema_version" => "`schema_version` is read-only in the settings tree itself: the store refuses every write that would change it, and the version moves only when a migration moves it".to_string(),
+        // Named rather than folded into the sentence below, because this is
+        // the subtree where a passthrough is actively destructive rather than
+        // merely wrong (`docs/task/RFCT-210.md` §2.4).
+        "network" => "the `network` subtree is not written through this route: it is written through the typed network routes (`PUT /api/v1/network/{iface}`), which this build does not serve yet. A raw write here would create an entry of the default kind for an interface that has none, rather than refusing it".to_string(),
+        _ => WRITES_FOUR.to_string(),
+    })
+}
+
+/// The body of a settings `PUT`: the value to write, and nothing around it.
+///
+/// A bare JSON value, the same shape `GET` answers, so a client reads and
+/// writes one document and not two. The schema is wide because the dot-path
+/// decides what is acceptable and OpenAPI has no way to say that; what is
+/// actually accepted is narrow — a JSON string for `hostname`, `true` or
+/// `false` for the three switches — and the route is what says so, per
+/// dot-path, in a 422.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(transparent)]
+pub(crate) struct SettingsWrite(Value);
+
+/// Write one scalar setting (`docs/task/RFCT-210.md` §2.2's raw dot-path
+/// `PUT`).
+///
+/// Four dot-paths and no others: `hostname`, `access.ssh.enabled`,
+/// `container.enabled` and `mqtt.enabled`. `204` and no body on success,
+/// because the value the caller sent is the value that was written and echoing
+/// it back would only invite a client to believe the echo over its own `GET`.
+///
+/// Bearer **or** cookie, like every route on the two resource roots: PLAN-023
+/// Amendment 1's ruling is about the token routes specifically, not about new
+/// routes in general, so this one is dual-credential exactly as the shipped
+/// reads are.
+///
+/// Prose and not intra-doc links, for the reason the rotate route already
+/// records: `utoipa` copies this comment into the published document, where a
+/// link would put an apid symbol name in front of every client.
+#[utoipa::path(
+    put,
+    path = V1_SETTINGS_DOC,
+    context_path = API,
+    tag = "resources",
+    params(("path" = String, Path, description = "The settings dot-path to write: `hostname`, `access.ssh.enabled`, `container.enabled` or `mqtt.enabled`")),
+    request_body = SettingsWrite,
+    responses(
+        (status = 204, description = "The value was written: mosd has persisted it and re-applied the reconcilers whose subtree overlaps the path"),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "The dot-path names no root the settings schema has (`settings_not_found`)", body = ApiError),
+        (status = 409, description = "A dot-path that exists and that this route does not write (`settings_read_only`)", body = ApiError),
+        (status = 422, description = "The body carries the redaction sentinel, or is the wrong shape for this setting, or the dot-path is malformed (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_settings_write(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    body: Result<Json<SettingsWrite>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(SettingsWrite(value)) = match body {
+        Ok(body) => body,
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()).at(&path),
+            );
+        }
+    };
+    // Before the allowlist and not after it, deliberately. This is a rule about
+    // the body rather than about the path, so a later milestone that widens the
+    // allowlist inherits it instead of stepping around it, and the client this
+    // protects — one that read a subtree, edited a field and wrote the whole
+    // thing back — is answered about the thing it actually got wrong.
+    if redact::carries_sentinel(&value) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                format!(
+                    "the body carries `{}`, which is what a read substitutes for a secret and never a value to write: writing it back would destroy the credential it stands for. Send only the fields you meant to change",
+                    redact::REDACTED
+                ),
+            )
+            .at(&path),
+        );
+    }
+    let Some(shape) = writable_shape(&path) else {
+        return settings_write_refusal(&path);
+    };
+    if let Err(message) = check_scalar(shape, &value) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", message).at(&path),
+        );
+    }
+    if let Err(err) = state.api.set_settings(&path, &value).await {
+        return bus_api_error(&err, &path);
+    }
+    // No `access_cache` invalidation, and that is not an omission: mosd emits
+    // `SettingsChanged` for the path it wrote and the subscription drops the
+    // cache for anything under `access`, which is exactly what the `access.ssh`
+    // form path already relies on. The token routes invalidate by hand because
+    // a revocation must bite on the very next request; nothing here is a
+    // credential.
+    (
+        StatusCode::NO_CONTENT,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
 }
 
 /// The live-state tree at a dot-path (§2.2).

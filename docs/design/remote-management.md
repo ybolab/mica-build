@@ -35,15 +35,15 @@ defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
 **One gate in front of everything.** `app` is *"The HTTPS application router"*
 (`os/pkgs/mosd/apid/src/routes.rs:129`) and its outermost layer is the auth gate
 (`os/pkgs/mosd/apid/src/routes.rs:227`), which *"routes every request into setup mode,
-login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:1461`) on a session cookie minted
+login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:1720`) on a session cookie minted
 at first-run setup or at login. `/healthz` and the declared API routes are the
 only exemptions; they *"answer for themselves"*
-(`os/pkgs/mosd/apid/src/routes.rs:1464-1465`).
+(`os/pkgs/mosd/apid/src/routes.rs:1723-1724`).
 
 **The JSON API under `/api` is read-only.** The router reserves the prefix and
 *"every other path under it 404s"* (`os/pkgs/mosd/apid/src/routes.rs:215-216`); every
-route inside is a GET — `get(api_v1_settings)` (`os/pkgs/mosd/apid/src/routes.rs:362`)
-and `get(api_v1_state)` (`os/pkgs/mosd/apid/src/routes.rs:363`), beside version
+route inside is a GET — `get(api_v1_settings)` (`os/pkgs/mosd/apid/src/routes.rs:364`)
+and `get(api_v1_state)` (`os/pkgs/mosd/apid/src/routes.rs:366`), beside version
 discovery and metadata. `docs/design/api.md` section 1 records the whole of
 *"The surface as it exists today"* (`docs/design/api.md:96`).
 

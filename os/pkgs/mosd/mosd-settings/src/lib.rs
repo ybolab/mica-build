@@ -30,5 +30,5 @@ pub use model::{
     Settings, SshSettings, StaticConfig, VlanConfig, WebAdminSettings, WifiApSettings,
     WifiClientSettings, WifiNetwork, WifiSettings, WireguardConfig, WireguardPeer,
 };
-pub use path::{json_path_get, quote_path_segment};
+pub use path::{json_path_get, path_segments, quote_path_segment};
 pub use store::{DEFAULT_PATH, RollbackReport, Store};
