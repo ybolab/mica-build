@@ -159,7 +159,7 @@ which `.` is literal: `network."eth0.100".dhcp`. Reads and writes share one
 segment lexer in `mosd-settings` (`split_path`, `json_path_get`); apid's
 writers quote any segment that contains a dot when composing paths such as
 `format!("network.{}", quote_path_segment(iface))`
-(`os/pkgs/mosd/apid/src/routes.rs:3398`); paths the daemon
+(`os/pkgs/mosd/apid/src/routes.rs:3426`); paths the daemon
 emits (validation errors, the `SettingsChanged` signal) use the canonical
 spelling — quoted only when required.
 

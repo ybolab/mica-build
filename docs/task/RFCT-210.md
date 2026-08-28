@@ -124,7 +124,7 @@ The published document agrees with rows 32-37 and with nothing else: reading
 `"/api/v1/meta"` (`os/pkgs/mosd/apid/openapi.json:238`),
 `"/api/v1/settings/{path}"` (`os/pkgs/mosd/apid/openapi.json:862`),
 `"/api/v1/state/{path}"` (`os/pkgs/mosd/apid/openapi.json:1316`) and
-`"/api/versions"` (`os/pkgs/mosd/apid/openapi.json:1889`).
+`"/api/versions"` (`os/pkgs/mosd/apid/openapi.json:1899`).
 
 ### 1.3 Every row section 2.3 does not currently have, named
 
@@ -191,7 +191,7 @@ because it renames a directory on DATA, not a settings node.
 shape, and the second states the test explicitly:
 *"An action and not a settings write, because there is no setting to write: the
 key lives in a mode-0640 file on STATE that the settings tree does not
-describe."* (`os/pkgs/mosd/apid/src/routes.rs:1221-1224`)
+describe."* (`os/pkgs/mosd/apid/src/routes.rs:1249-1252`)
 
 **Collection resources, 3.** SSH authorized keys (rows 25, 26), backed by
 `authorized_keys` (`os/pkgs/mosd/mosd-settings/src/model.rs:224`); WiFi client
@@ -205,7 +205,7 @@ three, because the code already refuses index identity on the same reasoning
 apid applied to keys: `network_peer_remove` matches on `public_key`
 (`os/pkgs/mosd/apid/src/routes.rs:5187-5214`) and answers
 *"No peer of this tunnel has that public key; the list may have changed since the page was loaded."*
-(`os/pkgs/mosd/apid/src/routes.rs:5202`) rather than succeeding silently.
+(`os/pkgs/mosd/apid/src/routes.rs:5230`) rather than succeeding silently.
 
 **Raw dot-path `PUT`, 4 rows and no more.** Rows 18 (`hostname`), 23
 (`access.ssh.enabled`), 28 (`container.enabled`) and 30 (`mqtt.enabled`). These
@@ -224,10 +224,10 @@ Three, and they are what the milestone plan has to be built around.
 measurable.** The pane's handler validates the whole candidate tree before it
 writes: it builds `candidate` from the loaded view plus the one edited entry and
 runs `validate_entries(&candidate)`
-(`os/pkgs/mosd/apid/src/routes.rs:5131-5135`), rejecting the submission with a
+(`os/pkgs/mosd/apid/src/routes.rs:5159-5163`), rejecting the submission with a
 readable error. The comment says why it must be the tree and not the entry:
 *"The candidate tree, not the one entry: every relational rule below is about
-two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5129-5130`) The rules
+two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5157-5158`) The rules
 `validate_entries` enforces (`os/pkgs/mosd/apid/src/routes.rs:3632-3670`) are a
 VLAN's parent naming a declared entry, a bridge port naming a declared entry, a
 bridge port carrying no addressing of its own, and no port claimed by two
@@ -329,8 +329,8 @@ Two things fall out of that table that the routed item does not anticipate.
 **First: the 422 on the HTML rows is not a decision about not-found at all.** It
 is the pane's single error shape for every cause. `network_error`'s whole
 contract is *"Re-render the pane with `message` in an error box, at 422."*
-(`os/pkgs/mosd/apid/src/routes.rs:4917`), and `ssh_error`
-(`os/pkgs/mosd/apid/src/routes.rs:5588-5597`) is the same function for the SSH
+(`os/pkgs/mosd/apid/src/routes.rs:4945`), and `ssh_error`
+(`os/pkgs/mosd/apid/src/routes.rs:5616-5625`) is the same function for the SSH
 pane. A malformed key, a duplicate peer and a missing identifier all reach it
 and all come back 422. No code on either pane distinguishes them, so "the HTML
 path answers 422 for not-found" is true only in the sense that it answers 422
@@ -346,7 +346,7 @@ a WireGuard interface"* (`os/pkgs/mosd/mosd/src/bus.rs:871-873`), where the entr
 exists and has the wrong kind, which really is a 422; and *"network.{iface} is
 not a declared network entry"* (`os/pkgs/mosd/mosd/src/bus.rs:885-887`), which is
 a 404. Both are `InvalidArgs`, and apid maps `InvalidArgs` onto
-`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:2968-2971`)
+`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:2996-2999`)
 with no way to tell them apart. The published document does not declare 404 for
 that route at all — its response set is 200, 401, 422, 500 and 503
 (`os/pkgs/mosd/apid/openapi.json:103-195`). So the 422-where-404-is-meant pattern
@@ -394,7 +394,7 @@ does not give:
    (`os/pkgs/mosd/apid/src/routes.rs:6281-6284`), so a submitted string that
    matches nothing is as likely to be mistyped as absent — and the message says
    exactly that: *"The list may have changed since this page was loaded; reload
-   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6288`) That is a
+   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6316`) That is a
    re-submit-the-form condition, which is what 422 means on a form post. On the
    API the identifier is a path segment with one interpretation: this URL names
    no resource.
@@ -450,7 +450,7 @@ missing intermediates by documented and tested behaviour — its own contract sa
 `set_scalar_and_create_intermediate_entries`
 (`os/pkgs/mosd/mosd-settings/tests/settings.rs:128-141`) proves that step on a
 `network` key specifically. `validate_peers`
-(`os/pkgs/mosd/apid/src/routes.rs:3595-3618`) checks each peer's public key,
+(`os/pkgs/mosd/apid/src/routes.rs:3623-3646`) checks each peer's public key,
 allowed IPs and endpoint syntax, and never looks at the interface. So adding a
 peer to `wg9` on a device that has no `wg9` writes a `network.wg9` entry of the
 **default** kind — physical — carrying a WireGuard block, which the reconciler
@@ -492,7 +492,7 @@ malformed identifier still returns 422, the not-found answer comes from the one
 shared helper section 2.4 requires, and the paired HTML/API tests that name each
 other both exist; every `POST` runs the same validator mosd runs; the
 `notice` field carrying *"Every authorized key is a root key."*
-(`os/pkgs/mosd/apid/src/routes.rs:5450`) is present on both the `GET` and the
+(`os/pkgs/mosd/apid/src/routes.rs:5478`) is present on both the `GET` and the
 `POST` response; a psk written through `POST /api/v1/wifi/client/networks` is
 redacted on the next `GET`.
 
@@ -558,13 +558,13 @@ treats it as settled and reasons from it
 **(3) The shipped code already revokes the adjacent thing.** The
 `change_password` helper ends with
 `.remove_all_except(acting_session.unwrap_or(""));`
-(`os/pkgs/mosd/apid/src/routes.rs:4082`), and `SessionStore` documents the
+(`os/pkgs/mosd/apid/src/routes.rs:4110`), and `SessionStore` documents the
 rule: *"Drop every session except the one named by `value`."*
 (`os/pkgs/mosd/apid/src/session.rs:90`) with the reason
 *"every other session was minted under the old credential"*
 (`os/pkgs/mosd/apid/src/session.rs:92-93`). The pane already states it:
 *"Changing the admin password signs every other session out."*
-(`os/pkgs/mosd/apid/src/routes.rs:4105`)
+(`os/pkgs/mosd/apid/src/routes.rs:4133`)
 
 ### 3.2 The conflict, stated precisely
 

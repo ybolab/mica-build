@@ -408,7 +408,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
-  (`os/pkgs/mosd/apid/src/routes.rs:4285-4305`); mosd itself reads
+  (`os/pkgs/mosd/apid/src/routes.rs:4313-4333`); mosd itself reads
   `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:585-591`). RFCT-129 landed this.
 - **Availability: (a) available today** — gap-table **row 12**, no longer via a
   side channel. The old `/proc/uptime`-in-`apid` exception to the layering
