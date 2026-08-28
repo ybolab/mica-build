@@ -18,7 +18,7 @@ PLAN-023 Amendment 1 settled option 1, **dual-credential**: `/api/v1/` accepts a
 bearer token OR the existing session cookie. That ruling is additive and it
 breaks no shipped client, which is the whole of its argument. `docs/design/api.md`
 section 3.2's *"It is the **only** accepted credential on `/api/v1/` routes"*
-(`docs/design/api.md:1892-1893`) is therefore false for a bounded, in-plan
+(`docs/design/api.md:1929-1930`) is therefore false for a bounded, in-plan
 window, by decision. It is not corrected here, and the dated note that records
 the cutover is not written here: a later named milestone removes the cookie and
 writes it, and a note claiming the cutover before the cutover would be worse
@@ -38,7 +38,7 @@ nothing about a route that does not exist yet, because no client can be relying
 on it. Section 3.2 rejects the cookie-accepting mint explicitly and by name:
 *"It is rejected because it puts a permanent-credential factory inside the one
 surface §3.3 can make its strongest statement about, and that statement is worth
-more than the saved route."* (`docs/design/api.md:2035-2038`) Both can hold at
+more than the saved route."* (`docs/design/api.md:2072-2075`) Both can hold at
 once, and they do: the amendment is served in full on every route it was written
 about, and section 3.2's rejection is honoured on the three it was written
 about. `GET /api/v1/tokens` follows the mint rather than the reads, because a
@@ -58,8 +58,8 @@ The stricter sibling is a new type, `ApiBearer`, which no document names yet.
 ## 2. The id width, decided
 
 Section 3.2 disagrees with itself: its prose says *"an 8-byte hex `id`"*
-(`docs/design/api.md:1910`) while the worked example beside it —
-`Authorization: Bearer mos_3f2a9c41_9d4e...c7` (`docs/design/api.md:1902`) —
+(`docs/design/api.md:1947`) while the worked example beside it —
+`Authorization: Bearer mos_3f2a9c41_9d4e...c7` (`docs/design/api.md:1939`) —
 shows eight hex CHARACTERS, which is four bytes. RFCT-211 left it open on
 purpose: the model bounds an id to lowercase hex of 1..64 characters rather than
 fixing a width, so both readings validate.

@@ -167,7 +167,7 @@ already made that choice once.
 | `hash` not 64 lowercase hex | a digest that can never match anything, indistinguishable to an operator from one that can; uppercase is rejected rather than folded, so a comparison cannot depend on which path wrote the entry |
 | `id` empty, over-long or not lowercase hex | the id is a `DELETE` path segment and a field of an `_`-separated wire format; both break on a separator or an escape |
 | `name` empty, over 256 bytes, or holding a control character | the name is the only thing that tells one token from another in a listing |
-| more than 32 entries | `const MAX_TOKENS: usize = 32;` (`os/pkgs/mosd/mosd-settings/src/api_token.rs:32`), matching `const MAX_KEYS: usize = 32;` (`os/pkgs/mosd/mosd-settings/src/authorized_key.rs:38`) -- and tighter here than a STATE-growth argument alone needs, because the list is read on the hot path of every API request |
+| more than 32 entries | `const MAX_TOKENS: usize = 32;` (`os/pkgs/mosd/mosd-settings/src/api_token.rs:32`), matching `const MAX_KEYS: usize = 32;` (`os/pkgs/mosd/mosd-settings/src/authorized_key.rs:46`) -- and tighter here than a STATE-growth argument alone needs, because the list is read on the hot path of every API request |
 
 Not rejected: any value of `created`, for section 3's reason. Rejection
 messages name the entry index and never echo a digest or an id, and there is a
