@@ -213,3 +213,5 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-210 PLAN-023 M1: the write-surface design (USER-GATED)**](RFCT-210.md) `P1`
 - [x] [**RFCT-211 PLAN-023 M2 part 1: access.apiTokens in the settings model**](RFCT-211.md) `P1`
 - [x] [**RFCT-212 PLAN-023 M3: GET /api/v1/health and the §2.4 envelope on 405**](RFCT-212.md) `P1`
+- [x] [**RFCT-213 PLAN-023 M2 part 2: apid bearer auth, the token routes, the builtin mint**](RFCT-213.md) `P1`
+- [ ] [**RFCT-216 rauc-sign root-rotation tooling, before the first ceremony's one-year expiry**](RFCT-216.md) `P1`
