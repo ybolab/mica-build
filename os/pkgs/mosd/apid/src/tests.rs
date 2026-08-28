@@ -9630,7 +9630,10 @@ async fn the_api_setup_route_configures_the_device_and_returns_a_token() {
         .get_settings("access.webAdmin.password_hash")
         .await
         .unwrap();
-    assert!(auth::verify_password(stored.as_str().unwrap(), "first-boot-pw"));
+    assert!(auth::verify_password(
+        stored.as_str().unwrap(),
+        "first-boot-pw"
+    ));
     assert_eq!(
         fake.get_settings("hostname").await.unwrap(),
         json!("appliance")
@@ -9661,12 +9664,7 @@ async fn the_api_setup_route_writes_the_password_after_the_settings_it_may_fail_
     assert_eq!(response.status(), StatusCode::CREATED);
     assert_eq!(
         fake.set_paths(),
-        vec![
-            "hostname",
-            "network",
-            "access.webAdmin",
-            "access.apiTokens"
-        ],
+        vec!["hostname", "network", "access.webAdmin", "access.apiTokens"],
         "the password write must come after every write that can strand the device"
     );
 
@@ -9716,7 +9714,11 @@ async fn the_api_setup_route_validates_before_writing_where_the_form_path_does_n
     );
     assert!(
         fake.get_settings("access.webAdmin").await.is_err()
-            || fake.get_settings("access.webAdmin").await.unwrap().is_null(),
+            || fake
+                .get_settings("access.webAdmin")
+                .await
+                .unwrap()
+                .is_null(),
         "no admin password may exist after a failed setup"
     );
     assert!(
@@ -9734,7 +9736,11 @@ async fn the_api_setup_route_validates_before_writing_where_the_form_path_does_n
         None,
     )
     .await;
-    assert_eq!(submitted.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    // 503 and not the API's 500: the wizard renders every failed mosd call as
+    // one "the management daemon is unavailable" page, where §2.4's envelope
+    // carries mosd's own classification through. That difference is about
+    // rendering; the one this test is about is what got written.
+    assert_eq!(submitted.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         form_fake.set_paths(),
         vec!["access.webAdmin"],
@@ -9765,7 +9771,7 @@ async fn an_invalid_network_entry_leaves_the_device_in_setup_mode() {
     let body = json!({
         "password": "first-boot-pw",
         "hostname": "appliance",
-        "network": { "br0": { "kind": "bridge", "bridge": { "ports": ["eth9"] } } },
+        "network": { "br0": { "kind": "bridge", "dhcp": false, "bridge": { "ports": ["eth9"] } } },
     })
     .to_string();
     let response = post_json(&router, SETUP_PATH, &body, None).await;
@@ -9806,7 +9812,7 @@ async fn the_setup_network_tree_is_merged_with_the_stored_one_before_it_is_judge
 
     let body = json!({
         "password": "first-boot-pw",
-        "network": { "br0": { "kind": "bridge", "bridge": { "ports": ["eth1"] } } },
+        "network": { "br0": { "kind": "bridge", "dhcp": false, "bridge": { "ports": ["eth1"] } } },
     })
     .to_string();
     let response = post_json(&router, SETUP_PATH, &body, None).await;
@@ -9815,7 +9821,12 @@ async fn the_setup_network_tree_is_merged_with_the_stored_one_before_it_is_judge
     // Both entries are there: the submitted one was added and the stored one
     // was not dropped by the whole-map write.
     let network = fake.get_settings("network").await.unwrap();
-    let mut names: Vec<&str> = network.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut names: Vec<&str> = network
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     names.sort_unstable();
     assert_eq!(names, vec!["br0", "eth1"], "{network}");
 }
@@ -9874,7 +9885,7 @@ async fn every_setup_validation_failure_is_422_and_writes_nothing() {
             "an interface name that is not one",
             json!({
                 "password": "first-boot-pw",
-                "network": { "this-name-is-too-long": { "kind": "physical" } },
+                "network": { "this-name-is-too-long": { "kind": "physical", "dhcp": false } },
             }),
             "1 to 15 characters",
         ),
@@ -9886,7 +9897,11 @@ async fn every_setup_validation_failure_is_422_and_writes_nothing() {
     ] {
         let (router, fake) = test_app(unconfigured_tree());
         let response = post_json(&router, SETUP_PATH, &body.to_string(), None).await;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY, "{case}");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{case}"
+        );
         assert_api_headers(&response, case);
         let error = envelope(response).await;
         assert_eq!(error["code"], "validation_failed", "{case}");
@@ -10018,11 +10033,11 @@ async fn the_api_setup_route_records_the_wizards_own_audit_event() {
 
     let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
     assert_eq!(response.status(), StatusCode::CREATED);
-    let token = serde_json::from_str::<serde_json::Value>(&body_string(response).await).unwrap()
-        ["token"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let token =
+        serde_json::from_str::<serde_json::Value>(&body_string(response).await).unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
     assert_eq!(
         audit_events(&audit_lines(dir.path())),
