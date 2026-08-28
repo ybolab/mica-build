@@ -30,16 +30,16 @@ configuration is a map keyed by interface name: *"Per-interface network
 configuration, keyed by interface name."* (`os/pkgs/mosd/mosd-settings/src/model.rs:21-22`),
 typed `BTreeMap<String, IfaceSettings>`. `IfaceSettings` carries
 `#[serde(deny_unknown_fields)]` and exactly two fields, `dhcp: bool` and an
-optional `static` block (`os/pkgs/mosd/mosd-settings/src/model.rs:470-478`);
+optional `static` block (`os/pkgs/mosd/mosd-settings/src/model.rs:524-532`);
 `StaticConfig` is `address` (CIDR), optional `gateway`, and `dns`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:627-639`). There is no interface
+(`os/pkgs/mosd/mosd-settings/src/model.rs:681-693`). There is no interface
 type, no parent/child relation, and no tunnel anywhere in the model.
 
 Writes go through `Settings::set` — `pub fn set(&mut self, path: &str, value: Value)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:667`):
+(`os/pkgs/mosd/mosd-settings/src/model.rs:721`):
 the path is split, the JSON tree is patched, and the whole candidate is
 re-deserialized into `Settings` — `deny_unknown_fields` everywhere makes that
-the validation step (`os/pkgs/mosd/mosd-settings/src/model.rs:530-534`).
+the validation step (`os/pkgs/mosd/mosd-settings/src/model.rs:584-588`).
 `split_path` splits on `.` unconditionally
 (`os/pkgs/mosd/mosd-settings/src/path.rs:26-32`), and the read side
 `json_path_get` does the same (`os/pkgs/mosd/mosd-settings/src/path.rs:11-23`).
@@ -79,11 +79,11 @@ it"* (`docs/task/RFCT-135.md:28-29`).
 ### 1.3 apid: forms and write path
 
 The `/network` pane is `.route("/network", get(network_form).post(network_submit))`
-(`os/pkgs/mosd/apid/src/routes.rs:187`). `valid_iface_name` accepts 1–15 bytes
-of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:2504-2509`),
+(`os/pkgs/mosd/apid/src/routes.rs:188`). `valid_iface_name` accepts 1–15 bytes
+of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:3297-3302`),
 and the pane's error text advertises the dot
-(`os/pkgs/mosd/apid/src/routes.rs:2548`). `network_submit` builds the value
-(`os/pkgs/mosd/apid/src/routes.rs:2566-2582`) and writes it as a dot-path,
+(`os/pkgs/mosd/apid/src/routes.rs:3341`). `network_submit` builds the value
+(`os/pkgs/mosd/apid/src/routes.rs:3359-3375`) and writes it as a dot-path,
 `set_settings(&format!("network.{iface}"), &value)` (measured at `4580dfb` in
 `os/pkgs/mosd/apid/src/routes.rs`, where the composition was unconditional;
 RFCT-201 has since moved it into `iface_settings_path`), over D-Bus:
@@ -136,7 +136,7 @@ design may depend on the radio userland.
 
 ### 1.6 Data-flow narrative
 
-Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:3893-3950`) →
+Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:4686-4743`) →
 apid validation (`:1224-1232`) → D-Bus `SetSettings("network.<iface>", json)`
 (`:1527`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
 validates against the typed tree and saves TOML atomically
@@ -159,7 +159,7 @@ which `.` is literal: `network."eth0.100".dhcp`. Reads and writes share one
 segment lexer in `mosd-settings` (`split_path`, `json_path_get`); apid's
 writers quote any segment that contains a dot when composing paths such as
 `format!("network.{}", quote_path_segment(iface))`
-(`os/pkgs/mosd/apid/src/routes.rs:2570`); paths the daemon
+(`os/pkgs/mosd/apid/src/routes.rs:3363`); paths the daemon
 emits (validation errors, the `SettingsChanged` signal) use the canonical
 spelling — quoted only when required.
 
@@ -188,7 +188,7 @@ Why this spelling and not another:
 **Grammar edge, stated.** A key containing `"` becomes inexpressible, and a
 bare segment beginning with `"` changes meaning. Measured mitigation: no
 validated writer can produce such a key — apid rejects it
-(`os/pkgs/mosd/apid/src/routes.rs:2504-2509`), the reconciler rejects it
+(`os/pkgs/mosd/apid/src/routes.rs:3297-3302`), the reconciler rejects it
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:166-173`) — so only a whole-tree
 root write or a hand edit could. Schema v7 (§7) adds model-level validation:
 a `network` map key must be a valid interface name (non-empty, ≤15 bytes,
@@ -199,10 +199,10 @@ impossible in a key rather than merely unaddressable.
 `BTreeMap<String, _>` accepts any key — so quoting changes *addressability*,
 not validation. The value at the quoted key is still deserialized into
 `IfaceSettings` under `deny_unknown_fields`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:505-507`), so `network."eth0.100"`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:559-561`), so `network."eth0.100"`
 must hold a valid interface body, and the whole-candidate re-deserialization
 in `Settings::set` — `serde_json::from_value(root)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:679`) — is untouched. The failure mode RFCT-135 describes — a *key* misread as a *field*
+(`os/pkgs/mosd/mosd-settings/src/model.rs:733`) — is untouched. The failure mode RFCT-135 describes — a *key* misread as a *field*
 — becomes unrepresentable, because the quoted segment never reaches the struct
 namespace.
 
