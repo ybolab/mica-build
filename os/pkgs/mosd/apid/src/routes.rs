@@ -2217,7 +2217,7 @@ pub(crate) async fn api_v1_wifi_networks_remove(
 // addressing of its own, and no port may be claimed by two bridges -- so they
 // are properties of the whole tree and not of the entry being written. The
 // settings setter validates only that the tree still deserializes
-// (`os/pkgs/mosd/mosd-settings/src/model.rs:715-729`), and the reconciler that
+// (`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`), and the reconciler that
 // does enforce them runs *after* the save with its verdict deliberately not
 // propagated to the caller (`os/pkgs/mosd/mosd/src/bus.rs:469-478`). A raw
 // passthrough therefore answers 204 to a bridge naming a port that does not
