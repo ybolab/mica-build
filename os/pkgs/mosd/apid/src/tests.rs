@@ -5784,6 +5784,12 @@ async fn a_wrong_method_on_a_declared_api_route_answers_the_envelope() {
         ("GET", "/api/v1/actions/transient-root-password", "POST"),
         ("PUT", "/api/v1/tokens", "GET,HEAD,POST"),
         ("GET", "/api/v1/tokens/deadbeef", "DELETE"),
+        // M8's one route. `GET` on it for the reason the three actions above
+        // get one: it is the assertion that no `GET` handler is declared, made
+        // by the same per-route expectation as every other declared route. On
+        // a configured device this is a 405 and not the 409 a `POST` gets --
+        // the router refuses the method before the handler sees the tree.
+        ("GET", "/api/v1/setup", "POST"),
     ] {
         let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
         assert_eq!(
@@ -9508,5 +9514,654 @@ fn the_openapi_document_covers_the_three_actions() {
         properties.as_object().unwrap().keys().collect::<Vec<_>>(),
         vec!["password"],
         "{document}"
+    );
+}
+
+// PLAN-023 M8 (`docs/task/RFCT-244.md`): `POST /api/v1/setup`, the one
+// unauthenticated write, and the one behaviour `docs/task/RFCT-210.md` allows
+// this campaign to fix rather than document.
+
+const SETUP_PATH: &str = "/api/v1/setup";
+
+/// A settings backend that answers every call the fake does, except a write to
+/// one dot-path.
+///
+/// It exists for one assertion that no other fixture can make.
+/// `FailingSettings` fails *every* write, which cannot tell an ordering apart:
+/// a route that writes nothing and a route that writes the password first both
+/// come back 5xx with an empty tree. What section 2.3 item (ii) measured is a
+/// partial failure — one write succeeding and a later one not — so the fixture
+/// has to fail exactly one path and let the others through.
+struct RefusesOnePath {
+    inner: Arc<FakeSettings>,
+    refused: &'static str,
+}
+
+#[async_trait::async_trait]
+impl SettingsApi for RefusesOnePath {
+    async fn get_settings(&self, path: &str) -> anyhow::Result<serde_json::Value> {
+        self.inner.get_settings(path).await
+    }
+
+    async fn set_settings(&self, path: &str, value: &serde_json::Value) -> anyhow::Result<()> {
+        if path == self.refused {
+            return Err(method_error("org.freedesktop.DBus.Error.IOError", MOSD_MESSAGE).into());
+        }
+        self.inner.set_settings(path, value).await
+    }
+
+    async fn get_state(&self, path: &str) -> anyhow::Result<serde_json::Value> {
+        self.inner.get_state(path).await
+    }
+
+    async fn reboot(&self) -> anyhow::Result<()> {
+        self.inner.reboot().await
+    }
+
+    async fn power_off(&self) -> anyhow::Result<()> {
+        self.inner.power_off().await
+    }
+
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
+        self.inner.set_transient_root_password(password).await
+    }
+
+    async fn rotate_wireguard_key(&self, iface: &str) -> anyhow::Result<String> {
+        self.inner.rotate_wireguard_key(iface).await
+    }
+}
+
+/// A router over an unconfigured tree whose write to `refused` fails, plus the
+/// fake underneath it so a test can read what actually got written.
+fn refusing_app(refused: &'static str) -> (Router, Arc<FakeSettings>) {
+    let fake = Arc::new(FakeSettings::new(unconfigured_tree()));
+    let api = Arc::new(RefusesOnePath {
+        inner: fake.clone(),
+        refused,
+    });
+    (app(AppState::new(api, SIGNING_KEY)), fake)
+}
+
+/// A body that configures everything the route accepts.
+fn full_setup_body() -> String {
+    json!({
+        "password": "first-boot-pw",
+        "hostname": "appliance",
+        "network": { "eth0": { "kind": "physical", "dhcp": true } },
+    })
+    .to_string()
+}
+
+/// Whether the device is still in setup mode, asked the way the gate asks it:
+/// an unauthenticated page request is redirected to `/setup` and not `/login`.
+async fn in_setup_mode(router: &Router) -> bool {
+    let response = get(router, "/", None).await;
+    response.status() == StatusCode::SEE_OTHER && location(&response) == "/setup"
+}
+
+/// The happy path: one unauthenticated call configures the device and hands
+/// back a credential that works.
+///
+/// The token is asserted by *using* it and not by its shape alone. §3.2's
+/// reason for minting here at all is that a caller who drove setup over the API
+/// wants API access, and a token that authenticates nothing would satisfy the
+/// letter of that and none of it.
+#[tokio::test]
+async fn the_api_setup_route_configures_the_device_and_returns_a_token() {
+    let (router, fake) = test_app(unconfigured_tree());
+
+    let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_api_headers(&response, SETUP_PATH);
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+
+    // Exactly one member. `docs/design/api.md` section 2.3's row spells the
+    // response `{"token": "..."}`, and an extra field here would be a contract
+    // the document does not describe.
+    assert_eq!(
+        body.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["token"],
+        "{body}"
+    );
+    let token = body["token"].as_str().expect("a token string");
+    assert!(token.starts_with("mos_"), "{token}");
+
+    let stored = fake
+        .get_settings("access.webAdmin.password_hash")
+        .await
+        .unwrap();
+    assert!(auth::verify_password(
+        stored.as_str().unwrap(),
+        "first-boot-pw"
+    ));
+    assert_eq!(
+        fake.get_settings("hostname").await.unwrap(),
+        json!("appliance")
+    );
+    assert_eq!(
+        fake.get_settings("network.eth0.dhcp").await.unwrap(),
+        json!(true)
+    );
+
+    // The device is out of setup mode, and the minted token is a credential
+    // the rest of the API accepts.
+    assert!(!in_setup_mode(&router).await);
+    let meta = bearer(&router, "GET", "/api/v1/meta", token).await;
+    assert_eq!(meta.status(), StatusCode::OK);
+}
+
+/// The write order, asserted as an order and not as a set.
+///
+/// `access.webAdmin` is third. It is the write that takes the device out of
+/// setup mode, so everything that can fail before it fails with the wizard
+/// still reachable — which is what section 2.3 item (ii) says the form path
+/// does not do.
+#[tokio::test]
+async fn the_api_setup_route_writes_the_password_after_the_settings_it_may_fail_on() {
+    let (router, fake) = test_app(unconfigured_tree());
+
+    let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(
+        fake.set_paths(),
+        vec!["hostname", "network", "access.webAdmin", "access.apiTokens"],
+        "the password write must come after every write that can strand the device"
+    );
+
+    // The wizard's own order, for contrast: the password first, then the rest.
+    let (form_router, form_fake) = test_app(unconfigured_tree());
+    let submitted = post_form(
+        &form_router,
+        "/setup",
+        "password=first-boot-pw&confirm=first-boot-pw&hostname=appliance&iface=eth0&dhcp=on",
+        None,
+    )
+    .await;
+    assert_eq!(submitted.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        form_fake.set_paths(),
+        vec!["access.webAdmin", "hostname", "network.eth0"],
+        "the wizard's order is what this route deliberately does not copy"
+    );
+}
+
+/// **The milestone's own assertion.** One partial failure, driven through both
+/// surfaces, with opposite outcomes.
+///
+/// The hostname write fails on the bus. On the wizard the password is already
+/// written when it does, so the device leaves setup mode with no hostname —
+/// section 2.3 item (ii)'s measured failure, reproduced here rather than
+/// relayed. On the API route nothing has been written yet, so the device is
+/// still in setup mode and the wizard that was meant to configure it still
+/// answers.
+///
+/// The wizard is not fixed, deliberately: what is left there is a bus failure
+/// between two writes, and closing it needs a transactional multi-path write
+/// on the bus, which is a mosd change outside PLAN-023.
+#[tokio::test]
+async fn the_api_setup_route_validates_before_writing_where_the_form_path_does_not() {
+    // The API: the failing write is the first one, so nothing else happens.
+    let (router, fake) = refusing_app("hostname");
+    let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_io");
+    assert_eq!(error["path"], "hostname");
+    assert_eq!(
+        fake.set_paths(),
+        Vec::<String>::new(),
+        "a failed hostname write must leave access.webAdmin unwritten"
+    );
+    assert!(
+        fake.get_settings("access.webAdmin").await.is_err()
+            || fake
+                .get_settings("access.webAdmin")
+                .await
+                .unwrap()
+                .is_null(),
+        "no admin password may exist after a failed setup"
+    );
+    assert!(
+        in_setup_mode(&router).await,
+        "the device must still be reachable through the wizard"
+    );
+
+    // The wizard, same failure: the password is written before the hostname is
+    // attempted, so the device is configured and has no hostname.
+    let (form_router, form_fake) = refusing_app("hostname");
+    let submitted = post_form(
+        &form_router,
+        "/setup",
+        "password=first-boot-pw&confirm=first-boot-pw&hostname=appliance",
+        None,
+    )
+    .await;
+    // 503 and not the API's 500: the wizard renders every failed mosd call as
+    // one "the management daemon is unavailable" page, where §2.4's envelope
+    // carries mosd's own classification through. That difference is about
+    // rendering; the one this test is about is what got written.
+    assert_eq!(submitted.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        form_fake.set_paths(),
+        vec!["access.webAdmin"],
+        "the wizard writes the password before the write that fails"
+    );
+    assert_eq!(
+        form_fake.get_settings("hostname").await.unwrap(),
+        json!("mos"),
+        "and the hostname the operator asked for was never written"
+    );
+    assert!(
+        !in_setup_mode(&form_router).await,
+        "which is the divergence: the wizard has left setup mode on a failed run"
+    );
+}
+
+/// The acceptance criterion RFCT-210 section 2.5 states for M8, on the rule the
+/// route cannot reach any other way.
+///
+/// A bridge naming a port that is not a declared entry is one of the four
+/// relational rules, and it is checkable only against the whole candidate tree.
+/// The answer is 422 with the rule's own sentence, `access.webAdmin` is
+/// unwritten, and the device is still in setup mode.
+#[tokio::test]
+async fn an_invalid_network_entry_leaves_the_device_in_setup_mode() {
+    let (router, fake) = test_app(unconfigured_tree());
+
+    let body = json!({
+        "password": "first-boot-pw",
+        "hostname": "appliance",
+        "network": { "br0": { "kind": "bridge", "dhcp": false, "bridge": { "ports": ["eth9"] } } },
+    })
+    .to_string();
+    let response = post_json(&router, SETUP_PATH, &body, None).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], "network");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("is not a declared network entry"),
+        "the message is the rule's own: {error}"
+    );
+
+    assert_nothing_written(&fake, "a setup request with an invalid network entry");
+    assert!(
+        in_setup_mode(&router).await,
+        "the device must still be in setup mode"
+    );
+}
+
+/// A relational rule that is legal only because of an entry the device already
+/// has: the candidate tree is the stored map plus the submission, not the
+/// submission alone.
+///
+/// `br0` names `eth1` as a port. `eth1` is not in the body; it is already in
+/// the tree. Validating the submitted entries on their own would refuse this,
+/// and refusing it would make a bridge unbuildable through setup.
+#[tokio::test]
+async fn the_setup_network_tree_is_merged_with_the_stored_one_before_it_is_judged() {
+    let (router, fake) = test_app(json!({
+        "hostname": "mos",
+        "network": { "eth1": { "kind": "physical", "dhcp": false } },
+        "access": {},
+    }));
+
+    let body = json!({
+        "password": "first-boot-pw",
+        "network": { "br0": { "kind": "bridge", "dhcp": false, "bridge": { "ports": ["eth1"] } } },
+    })
+    .to_string();
+    let response = post_json(&router, SETUP_PATH, &body, None).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // Both entries are there: the submitted one was added and the stored one
+    // was not dropped by the whole-map write.
+    let network = fake.get_settings("network").await.unwrap();
+    let mut names: Vec<&str> = network
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, vec!["br0", "eth1"], "{network}");
+}
+
+/// 409 on the form path's own condition, and both surfaces are asserted on one
+/// tree so neither can drift into answering about a different one.
+///
+/// The condition is `access.webAdmin` carrying a hash, which is what
+/// `password_hash` tests; it is not "a session exists" and not "the tree is
+/// non-empty".
+#[tokio::test]
+async fn the_api_setup_route_answers_409_on_the_form_paths_own_condition() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+
+    let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_api_headers(&response, SETUP_PATH);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "already_configured");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], "access.webAdmin");
+    assert_nothing_written(&fake, "a setup request against a configured device");
+
+    // The wizard answers the same status on the same tree.
+    let form = post_form(
+        &router,
+        "/setup",
+        "password=first-boot-pw&confirm=first-boot-pw",
+        None,
+    )
+    .await;
+    assert_eq!(form.status(), StatusCode::CONFLICT);
+}
+
+/// Every validation failure, each with nothing written.
+///
+/// The password floor answers **422** where the wizard answers 400, and that is
+/// the contract `docs/design/api.md` section 2.3's row states for this route:
+/// *"422 on any validation failure"*. The wizard's 400 is left alone; the two
+/// surfaces are asserted side by side so the difference is recorded rather than
+/// discovered.
+#[tokio::test]
+async fn every_setup_validation_failure_is_422_and_writes_nothing() {
+    for (case, body, needle) in [
+        (
+            "a password under the floor",
+            json!({ "password": "short12" }),
+            "at least 8 bytes",
+        ),
+        (
+            "a hostname that is not one",
+            json!({ "password": "first-boot-pw", "hostname": "-nope-" }),
+            "must not start or end with a hyphen",
+        ),
+        (
+            "an interface name that is not one",
+            json!({
+                "password": "first-boot-pw",
+                "network": { "this-name-is-too-long": { "kind": "physical", "dhcp": false } },
+            }),
+            "1 to 15 characters",
+        ),
+        (
+            "a body that is JSON but not this shape",
+            json!({ "password": 8 }),
+            "invalid type",
+        ),
+    ] {
+        let (router, fake) = test_app(unconfigured_tree());
+        let response = post_json(&router, SETUP_PATH, &body.to_string(), None).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{case}"
+        );
+        assert_api_headers(&response, case);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{case}");
+        assert_eq!(error["source"], "apid", "{case}");
+        assert!(
+            error["message"].as_str().unwrap().contains(needle),
+            "{case}: {error}"
+        );
+        assert_nothing_written(&fake, case);
+        assert!(in_setup_mode(&router).await, "{case}");
+    }
+
+    // The one place the two surfaces answer different statuses, asserted so it
+    // is a decision on the record and not a discrepancy.
+    let (router, _) = test_app(unconfigured_tree());
+    let form = post_form(&router, "/setup", "password=short12&confirm=short12", None).await;
+    assert_eq!(
+        form.status(),
+        StatusCode::BAD_REQUEST,
+        "the wizard's 400 on the same floor is unchanged"
+    );
+}
+
+/// A rejected password is never echoed, in the body or the headers.
+///
+/// The same property M7's transient-password route has, and for the same
+/// reason: a refusal that repeats the secret puts it in every proxy log
+/// between the caller and the device.
+#[tokio::test]
+async fn a_rejected_setup_password_is_never_echoed() {
+    let (router, _) = test_app(unconfigured_tree());
+    let response = post_json(
+        &router,
+        SETUP_PATH,
+        &json!({ "password": "sh0rt!" }).to_string(),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let headers = format!("{:?}", response.headers());
+    let body = body_string(response).await;
+    for haystack in [&headers, &body] {
+        assert!(!haystack.contains("sh0rt!"), "{haystack}");
+        // Not a fragment of it either.
+        assert!(!haystack.contains("sh0rt"), "{haystack}");
+    }
+}
+
+/// A body that is not JSON at all is 400, and it names no dot-path.
+///
+/// §2.4's `path` is the settings dot-path at fault. This route writes three
+/// subtrees, and a body that never parsed is not about any of them, so the
+/// member is absent rather than naming one arbitrarily.
+#[tokio::test]
+async fn a_malformed_setup_body_is_refused_at_400_and_names_no_dot_path() {
+    let (router, fake) = test_app(unconfigured_tree());
+    let response = post_json(&router, SETUP_PATH, "{not json", None).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_api_headers(&response, SETUP_PATH);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "request_invalid");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error.get("path"), None, "{error}");
+    assert_nothing_written(&fake, "a malformed setup body");
+    assert!(in_setup_mode(&router).await);
+}
+
+/// The route takes no credential, and it is the only one under the prefix that
+/// does not.
+///
+/// Both halves matter. A route that demanded one could never be used on a
+/// factory-fresh device, and a second route that did not would be an
+/// unauthenticated write nobody decided to add. Asserted in setup mode, which
+/// is the only mode where the question is live.
+#[tokio::test]
+async fn the_setup_route_is_the_one_api_route_that_takes_no_credential() {
+    let (router, _) = test_app(unconfigured_tree());
+
+    // Every other write route under the prefix, unauthenticated, in setup
+    // mode: §2.4's 401 envelope and never a redirect.
+    for (method, path, body) in [
+        ("PUT", "/api/v1/settings/hostname", "\"appliance\""),
+        ("POST", "/api/v1/actions/reboot", ""),
+        ("POST", "/api/v1/tokens", "{\"name\":\"x\"}"),
+        ("PUT", "/api/v1/network", "{}"),
+        ("POST", "/api/v1/ssh/authorized-keys", "{}"),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let response = send(&router, request).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {path}"
+        );
+        assert_eq!(
+            response.headers().get(LOCATION),
+            None,
+            "{method} {path} answered a redirect, which a script reads as success"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{method} {path}"
+        );
+    }
+
+    // And the setup route, with nothing at all: no cookie, no bearer.
+    let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
+/// The API records the same §6 event the wizard does, and the password reaches
+/// no line of the trail.
+///
+/// The same event name on both surfaces because it is the same event: §6's
+/// trail says what happened to the device, not which surface asked. The token
+/// is checked out of the log for the reason the password is — it is a
+/// credential, and the response body is the only place it may appear.
+#[tokio::test]
+async fn the_api_setup_route_records_the_wizards_own_audit_event() {
+    let dir = TempDir::new().unwrap();
+    let fake = Arc::new(FakeSettings::new(unconfigured_tree()));
+    let router = app(AppState::new(fake, SIGNING_KEY).with_persistence(dir.path()));
+
+    let response = post_json(&router, SETUP_PATH, &full_setup_body(), None).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let token =
+        serde_json::from_str::<serde_json::Value>(&body_string(response).await).unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+    assert_eq!(
+        audit_events(&audit_lines(dir.path())),
+        [("setup".to_string(), "completed".to_string())]
+    );
+    let raw = std::fs::read_to_string(dir.path().join("audit.log")).unwrap();
+    for secret in ["first-boot-pw", token.as_str()] {
+        assert!(!raw.contains(secret), "the trail must not carry {secret}");
+    }
+}
+
+/// The published document describes the route the router serves: `POST` only,
+/// every status the handler can answer, and the two bodies member for member.
+///
+/// `GET` is absent for the reason M7's three actions have no `GET`: nothing
+/// that merely follows a link may configure a device, and a route the document
+/// declares a `GET` on is a contract for a handler that does not exist.
+#[test]
+fn the_openapi_document_covers_the_setup_route() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+    let route = &document["paths"]["/api/v1/setup"];
+
+    assert!(route["post"].is_object(), "the setup route is missing POST");
+    for status in ["201", "400", "409", "422", "500", "503", "405"] {
+        assert!(
+            route["post"]["responses"][status].is_object(),
+            "the setup route is missing its {status}: {document}"
+        );
+    }
+    // No 401: the route takes no credential, so it has no such failure to
+    // describe. A documented 401 here would tell a client to expect an answer
+    // this handler cannot produce.
+    assert!(
+        route["post"]["responses"]["401"].is_null(),
+        "the setup route must document no 401: {document}"
+    );
+    for method in ["get", "head", "put", "delete", "patch"] {
+        assert!(
+            route[method].is_null(),
+            "the setup route must declare no {method}: {document}"
+        );
+    }
+
+    let request = &document["components"]["schemas"]["SetupRequest"];
+    assert_eq!(
+        request["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["hostname", "network", "password"],
+        "{document}"
+    );
+    assert_eq!(request["required"], json!(["password"]), "{document}");
+    assert_eq!(
+        document["components"]["schemas"]["SetupToken"]["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["token"],
+        "{document}"
+    );
+}
+
+/// The wizard's CIDR bound runs on this route, and on no other route under the
+/// prefix — the second divergence this milestone records rather than hides.
+///
+/// `valid_cidr` has one caller, `validate_iface`, whose own two callers are
+/// both HTML form handlers. So the rule is live on the wizard and reachable
+/// from nowhere under `/api/v1/`: `PUT /api/v1/network/{iface}` takes an
+/// address the kernel cannot parse and answers 204. That is M6's shipped
+/// behaviour and this test records it rather than changing it; closing it is a
+/// change to that cluster's routes, not to this one.
+///
+/// This route calls the rule because the harm is different here. A device being
+/// configured for the first time over the API has no other way in, so an
+/// unparseable address is the unreachable box section 2.3 item (ii) is about.
+#[tokio::test]
+async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not() {
+    let entry =
+        json!({ "kind": "physical", "dhcp": false, "static": { "address": "192.168.1.10" } });
+
+    let (router, fake) = test_app(unconfigured_tree());
+    let body = json!({ "password": "first-boot-pw", "network": { "eth0": entry } }).to_string();
+    let response = post_json(&router, SETUP_PATH, &body, None).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], "network");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "the message is the wizard's own: {error}"
+    );
+    assert_nothing_written(&fake, "a setup request with an address that is not a CIDR");
+    assert!(in_setup_mode(&router).await);
+
+    // The wizard refuses the same address at the form.
+    let form = post_form(
+        &router,
+        "/setup",
+        "password=first-boot-pw&confirm=first-boot-pw&iface=eth0&address=192.168.1.10",
+        None,
+    )
+    .await;
+    assert_eq!(form.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // And M6's typed route does not, which is the divergence: same bytes, 204.
+    let (configured, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&configured, "hunter2secret").await;
+    let put = put_json(
+        &configured,
+        "/api/v1/network/eth0",
+        &entry.to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(
+        put.status(),
+        StatusCode::NO_CONTENT,
+        "recorded, not fixed: PLAN-023 M6's route runs no CIDR check"
     );
 }

@@ -1219,6 +1219,98 @@
         }
       }
     },
+    "/api/v1/setup": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "First-run setup over the API: the admin password, optionally a hostname and\nnetwork entries, and a minted API token (`docs/task/RFCT-210.md` sections\n2.3 item (ii) and 2.5).",
+        "description": "**Unauthenticated by necessity.** It is the operation that creates the\ndevice's first credential, so it cannot demand one. The gate lets every\ndeclared `/api/` route through and each answers for itself, so what makes\nthis route open is that its signature names no credential extractor -- and\nthe 409 below is what closes it again the moment a password exists.\n\n**It mints a token where the browser wizard does not** (§3.2). The reason is\nstated there: a caller who drove first-run setup over the API demonstrably\nwants API access, where a human who filled in a form did not ask for a\npermanent credential they may never rotate. It mints through the same\nroutine `POST /api/v1/tokens` mints through, so the two cannot produce\ncredentials of different shapes.\n\n**Everything is validated before anything is written, and that is the one\nbehaviour this milestone changes rather than documents.** The form path\nwrites `access.webAdmin` and records the audit event *before* the hostname\nand network writes are attempted, so a bus failure halfway leaves the device\nout of setup mode with no hostname -- unreachable by the wizard that was\nmeant to configure it. Here every rule is checked and the password is\nhashed first, and then the writes run in the order that fails safe:\nhostname, network, `access.webAdmin`, token. Nothing before the third write\ntakes the device out of setup mode, so a failure at any point leaves the\nwizard reachable.\n\n**The browser wizard is not changed**, deliberately: what is left there is a\n*bus* failure between two writes, and closing that needs a transactional\nmulti-path write on the bus -- a mosd change, outside this API's scope. The\ntwo surfaces therefore diverge, and both halves are asserted.\n\nProse and not intra-doc links, for the reason the rotate-key route states:\n`utoipa` copies this comment into the published document, where a link\nwould put an apid symbol name in front of every client. The implementation\nnotes those links would carry are in the body -- which paired test names\nthe divergence, and which of M6's validators this route calls rather than\ncopies.",
+        "operationId": "api_v1_setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The device is configured; the body carries a newly minted API token, which is not recoverable afterwards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device already has an admin password, so it is not in setup mode (`already_configured`). Change the password with `POST /api/v1/actions/change-password`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, a static address is not IPv4 CIDR notation, or a relational rule refuses the resulting map -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Hashing the password failed (`hash_failed`), the stored token list could not be read (`settings_invalid`), no free token id was drawn (`mint_failed`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ssh/authorized-keys": {
       "get": {
         "tags": [
@@ -2447,6 +2539,52 @@
       },
       "SettingsWrite": {
         "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and the route is what says so, per\ndot-path, in a 422."
+      },
+      "SetupRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/setup` request body.\n\nNo `confirm` member, unlike the form the wizard posts: that field exists so\na human who mistyped a password into a box they cannot read is told before\nit becomes the only credential on the device. A client that built a JSON\nbody knows what it sent, and a second copy of the same string proves\nnothing about it.",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The hostname to apply. Absent leaves the stored one alone.\n\nNot trimmed, for the reason `PUT /api/v1/settings/hostname` gives: a\nclient that built a JSON string chose its bytes, and silently writing\nsomething other than what it sent is the worse answer."
+          },
+          "network": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "`network` entries to declare, merged into the stored map by name.\n\nMerged and not replacing it, which is what the wizard's one interface\nfield does: it writes `network.<iface>` and leaves every other entry\nalone. A route that replaced the map could unmake the entry a\nfactory-fresh device is reachable over, which is the failure this\nmilestone exists to make impossible rather than to introduce. An entry\nwhose name is already declared is replaced whole; one that is not is\nadded.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NetworkInterface"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "password": {
+            "type": "string",
+            "description": "The admin password to set. At least 8 bytes, the floor the wizard and\nthe change-password route enforce."
+          }
+        }
+      },
+      "SetupToken": {
+        "type": "object",
+        "description": "`POST /api/v1/setup` response body: the minted credential, and nothing else.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The whole token, `mos_<id>_<secret>`.\n\n**It appears here and nowhere else, ever**, exactly as the mint route's\ndoes: only the SHA-256 digest is stored. The id is not a separate\nmember because it is the token's own second segment, so a caller that\nholds this string can address it for a later `DELETE` without being\ntold it twice."
+          }
+        }
       },
       "StaticAddressing": {
         "type": "object",

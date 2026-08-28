@@ -13,7 +13,7 @@ The citation census this task closes covers three syntactic forms, and only
 the first of them has ever been held by a gate:
 
 1. **Full** — a path and a line together, quoting what is there:
-   *"fn api_router() -> Router<AppState> {"* (`os/pkgs/mosd/apid/src/routes.rs:405`).
+   *"fn api_router() -> Router<AppState> {"* (`os/pkgs/mosd/apid/src/routes.rs:414`).
    `docs/verify-citations.sh` resolves this form, and only this form.
 2. **Shorthand** — a bare `` `:120` `` whose file is named by the table header
    or the surrounding prose rather than by the token itself.
@@ -61,7 +61,7 @@ So of the four forms in the corpus, exactly one is held by a gate:
 
 | form | example | extracted? | resolved? | content-checked? |
 |---|---|---|---|---|
-| full | *"fn api_router() -> Router<AppState> {"* (`os/pkgs/mosd/apid/src/routes.rs:405`) | yes | yes | when armed with a quote |
+| full | *"fn api_router() -> Router<AppState> {"* (`os/pkgs/mosd/apid/src/routes.rs:414`) | yes | yes | when armed with a quote |
 | no-slash | `` `routes.rs:172` `` | yes | no — skipped by scope | no |
 | shorthand | `` `:120` ``, file from the prose | **no** | no | no |
 | continuation | `` `:358-359` ``, file from earlier on the line | **no** | no | no |
@@ -207,7 +207,7 @@ four groups. None was given a plausible-looking nearby line.
 `resource_response(state.api.get_state(&path).await, &path)` at `:506`. PLAN-025's
 404 fix rewrote that expression to `resource_response(value, &path)`, now at
 `None => resource_response(value, &path),`
-(`os/pkgs/mosd/apid/src/routes.rs:1253`). Main corrected the same quote in two
+(`os/pkgs/mosd/apid/src/routes.rs:1271`). Main corrected the same quote in two
 other places in this document and missed this one. Correcting a quotation is a
 content edit, not a citation edit, so it is recorded rather than made.
 
@@ -264,7 +264,7 @@ cited line — **39 of 42 do not resolve**, 1 does, and 2 carry no name to test
 with. Section 2.3's conversion table is where most of them live, and its rows
 read `` `POST /ssh/keys/add` (`routes.rs:2545`) `` where `ssh_key_add` is now
 *"async fn ssh_key_add(State(app): State<AppState>, Form(form): Form<SshKeyAddForm>) -> Response {"*
-(`os/pkgs/mosd/apid/src/routes.rs:6471`).
+(`os/pkgs/mosd/apid/src/routes.rs:6837`).
 
 None was rewritten here, because the task's stated scope is the three forms and
 widening it silently is the wrong way to grow a remit. It is the same rot, in
