@@ -1563,7 +1563,13 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
         ("GET", "/api/v1/actions/reboot"),
-        ("GET", "/api/v1/wifi/client/networks"),
+        // `/api/v1/wifi/client/networks` was here until PLAN-023 M5 declared
+        // it. Its prefix and its trailing-slash spelling took its place, and
+        // they are the more useful cases: neither is a route this router
+        // serves, so both must still reach the reservation rather than the
+        // collection beside them.
+        ("GET", "/api/v1/wifi/client"),
+        ("GET", "/api/v1/wifi/client/networks/"),
         ("POST", "/api/v1/settings"),
     ] {
         let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
