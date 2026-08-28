@@ -33,7 +33,8 @@ use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
     ApiToken, AuthorizedKey, BridgeConfig, IfaceKind, IfaceSettings, SettingsError, StaticConfig,
-    VlanConfig, WireguardConfig, WireguardPeer, parse_authorized_key, quote_path_segment,
+    VlanConfig, WifiNetwork, WireguardConfig, WireguardPeer, parse_authorized_key,
+    quote_path_segment,
     validate_api_tokens, validate_authorized_keys,
 };
 use serde_json::Value;
@@ -318,6 +319,26 @@ const V1_WIREGUARD_PREFIX: &str = "/v1/actions/wireguard/";
 const V1_WIREGUARD_ROTATE_LEAF: &str = "/rotate-key";
 const V1_WIREGUARD_ROTATE_ROUTE: &str = "/v1/actions/wireguard/{iface}/rotate-key";
 
+/// M5's two array collections and their item routes
+/// (`docs/task/RFCT-210.md` section 2.5).
+///
+/// Each collection needs its prefix separately for the reason the token
+/// collection does: [`is_declared_api_route`] has to recognise the item shape
+/// with no router to ask.
+const V1_SSH_KEYS_PATH: &str = "/v1/ssh/authorized-keys";
+const V1_SSH_KEYS_PREFIX: &str = "/v1/ssh/authorized-keys/";
+const V1_SSH_KEY_ROUTE: &str = "/v1/ssh/authorized-keys/{fingerprint}";
+const V1_WIFI_NETWORKS_PATH: &str = "/v1/wifi/client/networks";
+const V1_WIFI_NETWORKS_PREFIX: &str = "/v1/wifi/client/networks/";
+const V1_WIFI_NETWORK_ROUTE: &str = "/v1/wifi/client/networks/{ssid}";
+
+/// The dot-path the WiFi station's known-network list lives at, which every
+/// envelope raised about it names.
+///
+/// The SSH list's is [`SSH_KEYS_PATH`], declared beside the pane that already
+/// writes it: one dot-path for one list, whichever surface is writing it.
+const WIFI_NETWORKS_PATH: &str = "wifi.client.networks";
+
 /// Each root's three spellings as one tuple, for the test that holds them
 /// together.
 #[cfg(test)]
@@ -372,6 +393,21 @@ fn api_router() -> Router<AppState> {
             get(api_v1_tokens_list).post(api_v1_tokens_mint),
         )
         .route(V1_TOKEN_ROUTE, delete(api_v1_tokens_revoke))
+        // M5's two array collections. `ApiSession` and not `ApiBearer`, unlike
+        // the three token routes above: PLAN-023 Amendment 1's bearer-only
+        // ruling is about the credential factory specifically, so a resource
+        // route added later takes both credentials exactly as the shipped
+        // reads do.
+        .route(
+            V1_SSH_KEYS_PATH,
+            get(api_v1_ssh_keys_list).post(api_v1_ssh_keys_add),
+        )
+        .route(V1_SSH_KEY_ROUTE, delete(api_v1_ssh_keys_remove))
+        .route(
+            V1_WIFI_NETWORKS_PATH,
+            get(api_v1_wifi_networks_list).post(api_v1_wifi_networks_add),
+        )
+        .route(V1_WIFI_NETWORK_ROUTE, delete(api_v1_wifi_networks_remove))
         // POST only, for the reason the power and SSH mutations are: no GET
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
@@ -437,6 +473,10 @@ fn is_declared_api_route(path: &str) -> bool {
             || leaf == V1_CHANGE_PASSWORD_PATH
             || leaf == V1_TOKENS_PATH
             || token_id(leaf).is_some()
+            || leaf == V1_SSH_KEYS_PATH
+            || leaf == V1_WIFI_NETWORKS_PATH
+            || collection_item(leaf, V1_SSH_KEYS_PREFIX).is_some()
+            || collection_item(leaf, V1_WIFI_NETWORKS_PREFIX).is_some()
             || resource_dot_path(leaf).is_some()
             || rotate_key_iface(leaf).is_some()
     })
@@ -474,6 +514,25 @@ fn rotate_key_iface(leaf: &str) -> Option<&str> {
 /// answer a 404 where an unauthenticated caller is supposed to be redirected.
 fn token_id(leaf: &str) -> Option<&str> {
     let id = leaf.strip_prefix(V1_TOKENS_PREFIX)?;
+    (!id.is_empty() && !id.contains('/')).then_some(id)
+}
+
+/// The item identifier a leaf names, when the leaf is `prefix`'s item route.
+///
+/// The obligation [`token_id`] carries, for the two collections that share its
+/// shape: hand off exactly what the router serves and nothing else. An
+/// identifier carrying a `/` is two segments where these routes match one, and
+/// an empty one is the collection path with a trailing slash, which reaches the
+/// subtree's not-found handler rather than the item route.
+///
+/// A `/` inside a real identifier is not what that excludes. An SSH
+/// fingerprint's base64 alphabet really does contain `/`, and such a
+/// fingerprint reaches this route percent-encoded: `%2F` is three characters
+/// and not a separator until axum decodes the segment, which happens after the
+/// match. `a_fingerprint_carrying_a_slash_is_addressable_percent_encoded`
+/// measures that round trip rather than assuming it.
+fn collection_item<'a>(leaf: &'a str, prefix: &str) -> Option<&'a str> {
+    let id = leaf.strip_prefix(prefix)?;
     (!id.is_empty() && !id.contains('/')).then_some(id)
 }
 
@@ -1457,6 +1516,588 @@ fn device_clock_seconds() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs())
+}
+
+// M5's two array collections (`docs/task/RFCT-210.md` section 2.5): the SSH
+// authorized keys, whose identity is a fingerprint, and the WiFi station's
+// known networks, whose identity is an SSID.
+//
+// Both are a read-modify-write of a whole array, because the dot-path syntax
+// has no array indexing -- the pattern [`write_tokens`] already records, and
+// the reason `redact`'s field list is names rather than dot-paths. **Two
+// concurrent writes lose one entry, silently**: both read the list, both edit
+// their own copy, and the second write wins. It is recorded and not fixed, for
+// the reason section 3.2 gives about the token list: the alternative is a
+// locking scheme this codebase does not have.
+
+/// One row of `GET /api/v1/ssh/authorized-keys`.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct AuthorizedKeyEntry {
+    /// Canonical `<type> <blob>` key text, with the comment in its own field
+    /// -- what the parser stored, and not what was submitted.
+    key: String,
+    /// The operator's label, absent when the key was stored without one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+    /// This entry's `DELETE` path segment: `SHA256:` followed by the unpadded
+    /// base64 of the SHA-256 digest of the decoded blob, which is the string
+    /// `ssh-keygen -lf` prints.
+    ///
+    /// `null` for a stored line whose blob does not decode. Nothing this route
+    /// writes can be in that state -- `parse_authorized_key` refuses it -- but
+    /// the settings file is an editable file on STATE, so a list read back is
+    /// not necessarily a list this API wrote.
+    fingerprint: Option<String>,
+}
+
+/// `GET /api/v1/ssh/authorized-keys` response body.
+///
+/// An object and not a bare array, because of `notice`: the sentence is a
+/// property of the collection rather than of any entry, and
+/// `docs/task/RFCT-210.md` section 2.5 requires it on the listing **and** on
+/// the add. A client that only ever adds keys must still be told what a key
+/// grants.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct AuthorizedKeyList {
+    /// Every stored key, in stored order.
+    keys: Vec<AuthorizedKeyEntry>,
+    /// Why a key added here is not a key with limited access.
+    notice: String,
+}
+
+/// `POST /api/v1/ssh/authorized-keys` request body.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub(crate) struct AddAuthorizedKeyRequest {
+    /// One authorized-key line, `<type> <blob>` with an optional trailing
+    /// comment: exactly what the pane's field takes, handed to exactly the
+    /// same parser.
+    key: String,
+}
+
+/// `POST /api/v1/ssh/authorized-keys` response body.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct AddedAuthorizedKey {
+    /// The entry as it was stored, canonicalised by the parser, carrying the
+    /// fingerprint that is now its `DELETE` path segment.
+    key: AuthorizedKeyEntry,
+    /// The same sentence the listing carries.
+    notice: String,
+}
+
+/// One known WiFi network, in both directions.
+///
+/// The route's body is built from and validated against
+/// `mosd_settings::WifiNetwork` itself, and this struct is what describes that
+/// shape to a client reading only `openapi.json`;
+/// `the_wifi_schema_matches_the_settings_model` holds the two together so a
+/// field added to the model cannot go undocumented here.
+///
+/// `psk` means different things in the two directions, and that is the
+/// redaction rule rather than an inconsistency. On the way **in** it is the
+/// pre-shared key. On the way **out** it is `"<redacted>"` whenever a key is
+/// stored, because it is one of the field names section 2.2's structural
+/// redactor covers -- and a body carrying that sentinel back is refused at 422
+/// rather than written, which is the whole reason the sentinel is checked
+/// before anything else.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct WifiNetworkEntry {
+    /// The network name, which is also this entry's `DELETE` path segment.
+    ssid: String,
+    /// The pre-shared key; absent for an open network, `"<redacted>"` on
+    /// every read of a network that has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    psk: Option<String>,
+    /// Whether the network hides its SSID.
+    hidden: bool,
+    /// Selection preference; higher wins.
+    priority: i32,
+}
+
+/// `SHA256:`, the prefix every fingerprint this device computes carries.
+const FINGERPRINT_PREFIX: &str = "SHA256:";
+
+/// Characters of unpadded base64 a 32-byte digest occupies.
+///
+/// A SHA-256 digest is 32 bytes, and unpadded base64 spends four characters on
+/// every three bytes: 43 for 32 bytes, with no padding written.
+const FINGERPRINT_DIGEST_CHARS: usize = 43;
+
+/// Whether `value` is spelled like a fingerprint at all.
+///
+/// This is what gives section 2.4's rule both of its halves on the SSH item
+/// route. A string that could never be a fingerprint is **422**, because it
+/// names nothing and could name nothing; a well-formed fingerprint that
+/// matches no stored key is **404**, from [`item_not_found`].
+///
+/// The alphabet includes `/` and `+`: it is standard base64 and not the
+/// URL-safe variant, because that is what `ssh-keygen -lf` prints and what
+/// [`ssh_fingerprint`] computes. A fingerprint carrying a `/` reaches this
+/// route percent-encoded; see [`collection_item`].
+fn is_ssh_fingerprint(value: &str) -> bool {
+    value.strip_prefix(FINGERPRINT_PREFIX).is_some_and(|digest| {
+        digest.len() == FINGERPRINT_DIGEST_CHARS
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/')
+    })
+}
+
+/// A stored key as the API answers it.
+fn key_entry(entry: AuthorizedKey) -> AuthorizedKeyEntry {
+    AuthorizedKeyEntry {
+        fingerprint: ssh_fingerprint(&entry.key),
+        key: entry.key,
+        comment: entry.comment,
+    }
+}
+
+/// The stored authorized-key list, or the envelope for whatever prevented
+/// reading it.
+///
+/// The API's own read and not [`stored_keys`], for the reason the token
+/// collection has two as well: the pane's helper flattens a failed bus call and
+/// an unreadable stored list into one `anyhow::Error`, and section 2.4 answers
+/// those with different statuses. An unreadable list is an error and never an
+/// empty list -- treating it as empty would let an add overwrite keys the
+/// operator cannot see.
+async fn api_stored_keys(state: &AppState) -> Result<Vec<AuthorizedKey>, Box<Response>> {
+    let ssh = match state.api.get_settings("access.ssh").await {
+        Ok(value) => value,
+        Err(err) => return Err(Box::new(bus_api_error(&err, SSH_KEYS_PATH))),
+    };
+    parse_key_list(&ssh).map_err(|err| {
+        Box::new(api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid("settings_invalid", err.to_string()).at(SSH_KEYS_PATH),
+        ))
+    })
+}
+
+/// Validate and write a rewritten key list, in section 2.4's envelope.
+///
+/// The API's own writer and not [`write_key_list`], which answers a re-rendered
+/// pane at 422 and a redirect on success. The **validator** is the same one:
+/// `validate_authorized_keys` is what mosd's sshd reconciler runs before it
+/// renders the file, so a list either surface accepts is a list the reconciler
+/// accepts too.
+async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), Box<Response>> {
+    if let Err(err) = validate_authorized_keys(keys) {
+        return Err(Box::new(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", key_error_message(&err)).at(SSH_KEYS_PATH),
+        )));
+    }
+    // Infallible: `AuthorizedKey` is a struct of strings with no map keys that
+    // could collide.
+    let value = serde_json::to_value(keys).expect("authorized keys serialize");
+    if let Err(err) = state.api.set_settings(SSH_KEYS_PATH, &value).await {
+        return Err(Box::new(bus_api_error(&err, SSH_KEYS_PATH)));
+    }
+    Ok(())
+}
+
+/// Every authorized key this device holds, with the fingerprint that removes
+/// each one.
+#[utoipa::path(
+    get,
+    path = V1_SSH_KEYS_PATH,
+    context_path = API,
+    tag = "resources",
+    responses(
+        (status = 200, description = "The stored keys, each with the fingerprint that is its `DELETE` path segment, and the notice every client of this collection is told", body = AuthorizedKeyList),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_ssh_keys_list(
+    _session: ApiSession,
+    State(state): State<AppState>,
+) -> Response {
+    match api_stored_keys(&state).await {
+        Ok(keys) => api_response(
+            StatusCode::OK,
+            AuthorizedKeyList {
+                keys: keys.into_iter().map(key_entry).collect(),
+                notice: ROOT_KEY_NOTICE.to_string(),
+            },
+        ),
+        Err(response) => *response,
+    }
+}
+
+/// Authorize one SSH public key.
+///
+/// The line is handed to `parse_authorized_key` exactly as submitted, which is
+/// the same call the pane makes and for the same reason nothing is trimmed
+/// first: a leading or trailing space is one of the things that parser exists
+/// to reject, and trimming here would accept a line mosd would not.
+///
+/// **Every authorized key is a root key**, which is why the answer carries
+/// `notice` and not only the entry. `AuthorizedKeysFile` is `%u`-expanded over
+/// one shared list, so a key added by a caller who expected to be granting an
+/// unprivileged shell grants root.
+#[utoipa::path(
+    post,
+    path = V1_SSH_KEYS_PATH,
+    context_path = API,
+    tag = "resources",
+    request_body = AddAuthorizedKeyRequest,
+    responses(
+        (status = 201, description = "The key was authorized; the body carries it canonicalised, with its fingerprint and the notice", body = AddedAuthorizedKey),
+        (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 422, description = "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse -- a duplicate key, or more keys than the tree holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_ssh_keys_add(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    body: Result<Json<AddAuthorizedKeyRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match body {
+        Ok(body) => body,
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()).at(SSH_KEYS_PATH),
+            );
+        }
+    };
+    let parsed = match parse_authorized_key(&request.key) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            return api_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ApiError::apid("validation_failed", key_error_message(&err)).at(SSH_KEYS_PATH),
+            );
+        }
+    };
+    let mut keys = match api_stored_keys(&state).await {
+        Ok(keys) => keys,
+        Err(response) => return *response,
+    };
+    keys.push(parsed.clone());
+    if let Err(response) = api_write_keys(&state, &keys).await {
+        return *response;
+    }
+    api_response(
+        StatusCode::CREATED,
+        AddedAuthorizedKey {
+            key: key_entry(parsed),
+            notice: ROOT_KEY_NOTICE.to_string(),
+        },
+    )
+}
+
+/// Remove one authorized key, identified by its fingerprint.
+///
+/// **The fingerprint and nothing else**, unlike [`ssh_key_remove`], which also
+/// accepts the exact canonical key text. That difference is the reason the two
+/// surfaces answer differently, and `docs/task/RFCT-210.md` section 2.4 spends
+/// a paragraph on it: on the form the submitted string is as likely mistyped
+/// as absent, which is the re-submit condition 422 means there; here the
+/// identifier is a path segment with one interpretation, and a segment that
+/// names no key means this URL names no resource.
+///
+/// So an unmatched fingerprint is **404** here and 422 on the pane, on the same
+/// condition, deliberately. The paired tests
+/// `an_absent_key_fingerprint_is_404_where_the_pane_is_422` and
+/// `the_ssh_pane_answers_422_where_the_api_answers_404` name each other so the
+/// split cannot be read as drift.
+#[utoipa::path(
+    delete,
+    path = V1_SSH_KEY_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(("fingerprint" = String, Path, description = "The key's fingerprint, as `GET /api/v1/ssh/authorized-keys` returns it: `SHA256:` and 43 base64 characters. Its alphabet contains `/`, so a fingerprint carrying one is percent-encoded")),
+    responses(
+        (status = 204, description = "The key was removed; the reconciler has re-rendered the authorized-keys file without it"),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No stored key has that fingerprint (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
+        (status = 422, description = "The path segment is not a fingerprint at all (`validation_failed`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_ssh_keys_remove(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(fingerprint): Path<String>,
+) -> Response {
+    if !is_ssh_fingerprint(&fingerprint) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                format!(
+                    "an authorized-key fingerprint is `{FINGERPRINT_PREFIX}` followed by {FINGERPRINT_DIGEST_CHARS} base64 characters, as `ssh-keygen -lf` prints it"
+                ),
+            )
+            .at(SSH_KEYS_PATH),
+        );
+    }
+    let mut keys = match api_stored_keys(&state).await {
+        Ok(keys) => keys,
+        Err(response) => return *response,
+    };
+    let found = keys
+        .iter()
+        .position(|entry| ssh_fingerprint(&entry.key).as_deref() == Some(fingerprint.as_str()));
+    let Some(index) = found else {
+        return item_not_found(SSH_KEYS_PATH, &fingerprint);
+    };
+    keys.remove(index);
+    if let Err(response) = api_write_keys(&state, &keys).await {
+        return *response;
+    }
+    (
+        StatusCode::NO_CONTENT,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
+}
+
+/// The stored WiFi networks, or the envelope for whatever prevented reading
+/// them.
+///
+/// The same shape as [`api_stored_keys`] and [`stored_tokens`], and an
+/// unreadable list is an error for the same reason: reading it as empty would
+/// let one `POST` drop every network the operator cannot see, including the one
+/// the device is associated through.
+async fn stored_networks(state: &AppState) -> Result<Vec<WifiNetwork>, Box<Response>> {
+    let value = match state.api.get_settings(WIFI_NETWORKS_PATH).await {
+        Ok(value) => value,
+        Err(err) => return Err(Box::new(bus_api_error(&err, WIFI_NETWORKS_PATH))),
+    };
+    // No absent-is-empty branch, unlike the two `access` lists above, and the
+    // difference is in the model rather than in the route: `networks` carries
+    // no `skip_serializing_if`, so mosd's serialization of the typed tree
+    // always has it, and a dot-path that does not resolve is mosd's own
+    // `NotFound` -- a 404 through `bus_api_error`, not an empty list.
+    serde_json::from_value(value).map_err(|err| {
+        Box::new(api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid(
+                "settings_invalid",
+                format!("the stored network list could not be read: {err}"),
+            )
+            .at(WIFI_NETWORKS_PATH),
+        ))
+    })
+}
+
+/// Write a rewritten network list.
+///
+/// There is no apid-side validator to run first, and that is a measured
+/// statement rather than an omission. mosd's own write path is
+/// `Settings::set`, which validates by deserializing the candidate tree
+/// (`os/pkgs/mosd/mosd-settings/src/model.rs:666-680`) -- so the typed
+/// `WifiNetwork` this route deserializes into IS the validator mosd runs. The
+/// pre-shared key's own bounds live further on, inside the station
+/// reconciler's renderer, and are not reachable from apid; `docs/task/RFCT-241.md`
+/// records that and what it costs.
+async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<(), Box<Response>> {
+    let value = serde_json::to_value(networks).expect("wifi networks serialize");
+    if let Err(err) = state.api.set_settings(WIFI_NETWORKS_PATH, &value).await {
+        return Err(Box::new(bus_api_error(&err, WIFI_NETWORKS_PATH)));
+    }
+    Ok(())
+}
+
+/// Every WiFi network this device knows, with each pre-shared key redacted.
+#[utoipa::path(
+    get,
+    path = V1_WIFI_NETWORKS_PATH,
+    context_path = API,
+    tag = "resources",
+    responses(
+        (status = 200, description = "The stored networks, in stored order, each `psk` replaced by `\"<redacted>\"`", body = Vec<WifiNetworkEntry>),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_wifi_networks_list(
+    _session: ApiSession,
+    State(state): State<AppState>,
+) -> Response {
+    match stored_networks(&state).await {
+        Ok(networks) => {
+            // Through `redact::redact` and not by rebuilding each entry field
+            // by field. A second copy of the rule about which field names are
+            // secret is a second opinion, and section 2.2's whole argument for
+            // a structural redactor is that the one list must be the only
+            // list. Infallible: `WifiNetwork` is a struct of scalars with no
+            // map keys that could collide.
+            let value = serde_json::to_value(&networks).expect("wifi networks serialize");
+            api_response(StatusCode::OK, redact::redact(value, WIFI_NETWORKS_PATH))
+        }
+        Err(response) => *response,
+    }
+}
+
+/// Add one known WiFi network.
+///
+/// **This collection has no pane.** It exists in the settings model and is
+/// reachable today only by editing the settings file on STATE, so this route is
+/// its first management surface. There is therefore no form-path behaviour for
+/// it to be consistent with, and no paired 422/404 test to write beside its
+/// item route -- unlike the SSH keys, where both exist and the split is
+/// deliberate.
+///
+/// The redaction sentinel is checked **before** anything else, which matters
+/// more here than it did on the scalar write route that landed the rule: this
+/// is the collection with a redacted field. A client that read this list,
+/// edited `hidden` and posted an entry back hands over `"<redacted>"` as the
+/// `psk`, and storing it would replace a working key with ten literal
+/// characters.
+#[utoipa::path(
+    post,
+    path = V1_WIFI_NETWORKS_PATH,
+    context_path = API,
+    tag = "resources",
+    request_body = WifiNetworkEntry,
+    responses(
+        (status = 201, description = "The network was stored; the body carries it back with its `psk` redacted", body = WifiNetworkEntry),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 409, description = "A stored network already carries that SSID (`ssid_exists`); the SSID is this collection's identity, so the entry is not replaced silently", body = ApiError),
+        (status = 422, description = "The body carries the redaction sentinel, or is not a network the settings model holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_wifi_networks_add(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(value) = match body {
+        Ok(body) => body,
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()).at(WIFI_NETWORKS_PATH),
+            );
+        }
+    };
+    // Before the shape check and not after it, for the reason the scalar write
+    // route gives: this is a rule about the body, and the client it protects --
+    // one that read an entry, changed a field and posted the whole thing back
+    // -- is answered about the thing it actually got wrong.
+    if redact::carries_sentinel(&value) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "validation_failed",
+                format!(
+                    "the body carries `{}`, which is what a read substitutes for a secret and never a value to write: writing it back would destroy the pre-shared key it stands for. Send the key itself, or omit `psk` for an open network",
+                    redact::REDACTED
+                ),
+            )
+            .at(WIFI_NETWORKS_PATH),
+        );
+    }
+    let network: WifiNetwork = match serde_json::from_value(value) {
+        Ok(network) => network,
+        Err(err) => {
+            return api_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ApiError::apid("validation_failed", err.to_string()).at(WIFI_NETWORKS_PATH),
+            );
+        }
+    };
+    let mut networks = match stored_networks(&state).await {
+        Ok(networks) => networks,
+        Err(response) => return *response,
+    };
+    // 409 and not 422: the body is well formed and nothing about it is wrong,
+    // and what refuses it is the collection's current state -- the condition
+    // section 2.4 already spends 409 on, and the one the token mint's
+    // `token_limit_reached` answers. Appending a second entry under one SSID
+    // would also destroy the identity the item route below depends on: there
+    // would be no answer to which of the two a `DELETE` names.
+    if networks.iter().any(|stored| stored.ssid == network.ssid) {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "ssid_exists",
+                format!(
+                    "a stored network is already named `{}`; remove it before adding another under that SSID",
+                    network.ssid
+                ),
+            )
+            .at(WIFI_NETWORKS_PATH),
+        );
+    }
+    // Redacted before the move into the list, and through the same shared
+    // redactor the listing uses: what a `POST` echoes back must not be a
+    // secret the `GET` beside it would have substituted.
+    let echoed = redact::redact(
+        serde_json::to_value(&network).expect("a wifi network serializes"),
+        WIFI_NETWORKS_PATH,
+    );
+    networks.push(network);
+    if let Err(response) = write_networks(&state, &networks).await {
+        return *response;
+    }
+    api_response(StatusCode::CREATED, echoed)
+}
+
+/// Forget one known WiFi network, identified by its SSID.
+///
+/// Section 2.4's rule holds here with its 422 half **vacant**, and that is the
+/// rule applied rather than an exception to it. An SSID has no grammar: it is
+/// an operator-chosen name, and every non-empty single path segment spells a
+/// possible one. So there is no malformed identifier for this route to answer
+/// 422 about, and everything that names no stored network is 404 -- which is
+/// exactly what the rule asks for. Inventing a length bound here to
+/// manufacture a 422 would be a second opinion about a model that has none, and
+/// it would answer 422 for a network a hand-edited settings file really holds.
+#[utoipa::path(
+    delete,
+    path = V1_WIFI_NETWORK_ROUTE,
+    context_path = API,
+    tag = "resources",
+    params(("ssid" = String, Path, description = "The network name, as `GET /api/v1/wifi/client/networks` returns it")),
+    responses(
+        (status = 204, description = "The network was forgotten; the station reconciler has re-rendered its configuration without it"),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No stored network carries that SSID (`settings_not_found`)", body = ApiError),
+        (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_wifi_networks_remove(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(ssid): Path<String>,
+) -> Response {
+    let mut networks = match stored_networks(&state).await {
+        Ok(networks) => networks,
+        Err(response) => return *response,
+    };
+    let Some(index) = networks.iter().position(|stored| stored.ssid == ssid) else {
+        return item_not_found(WIFI_NETWORKS_PATH, &ssid);
+    };
+    networks.remove(index);
+    if let Err(response) = write_networks(&state, &networks).await {
+        return *response;
+    }
+    (
+        StatusCode::NO_CONTENT,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+    )
+        .into_response()
 }
 
 /// One answer shape for both roots: the value redacted, or §2.4's envelope
