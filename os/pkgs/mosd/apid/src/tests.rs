@@ -5123,6 +5123,48 @@ async fn a_dotted_tunnel_name_is_quoted_on_the_peer_path() {
     );
 }
 
+/// `docs/task/RFCT-210.md` section 2.4's sweep, settled by running it: the
+/// pane's peer-add for an interface that is **not a declared network entry**
+/// neither refuses nor 404s -- it succeeds, and writes a `network.wg9` entry
+/// of the default kind carrying a WireGuard block.
+///
+/// That finding was recorded there explicitly as a reading of the write path
+/// and *not* as an observed run, and this is the run. The chain it names:
+/// `stored_peers` answers an empty list rather than an error for an unknown
+/// interface, `write_peers` writes straight to the peer list's own dot-path,
+/// `validate_peers` never looks at the interface, and the settings setter
+/// creates missing intermediates by documented contract.
+///
+/// The pane is left as it is -- M6 fixes this structurally on the API side,
+/// where `POST /api/v1/network/{iface}/peers` answers 404 before anything is
+/// written. Its paired test is
+/// `the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one`.
+#[tokio::test]
+async fn the_pane_peer_add_writes_a_broken_entry_for_an_undeclared_interface() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(
+        &router,
+        "/network/peers/add",
+        &format!("iface=wg9&publicKey={}", PEER_KEY.replace('=', "%3D")),
+        Some(&cookie),
+    )
+    .await;
+
+    // Not 422, not 404: the redirect a successful save gives.
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/network?saved=1");
+    assert_eq!(
+        fake.set_paths(),
+        vec!["network.wg9.wireguard.peers".to_string()]
+    );
+    // And what is now in the tree is the broken entry the finding describes:
+    // no `kind`, so physical by default, carrying a WireGuard block.
+    let entry = fake.get_settings("network.wg9").await.unwrap();
+    assert_eq!(entry.get("kind"), None, "{entry}");
+    assert_eq!(entry["wireguard"]["peers"][0]["publicKey"], json!(PEER_KEY));
+}
+
 /// A peer the reconciler would refuse is refused here first, and the refusal
 /// never echoes the key.
 ///
