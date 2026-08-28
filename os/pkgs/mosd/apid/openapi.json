@@ -364,7 +364,7 @@
           "resources"
         ],
         "summary": "Write one scalar setting (`docs/task/RFCT-210.md` §2.2's raw dot-path\n`PUT`).",
-        "description": "Four dot-paths and no others; see [`WRITABLE_SETTINGS`] for the list and\nwhy it is a list. `204` and no body on success, because the value the\ncaller sent is the value that was written and echoing it back would only\ninvite a client to believe the echo over its own `GET`.\n\nBearer **or** cookie, like every route that names [`ApiSession`]: PLAN-023\nAmendment 1's ruling is about the token routes specifically, not about new\nroutes in general, so this one is dual-credential exactly as the shipped\nreads are.",
+        "description": "Four dot-paths and no others: `hostname`, `access.ssh.enabled`,\n`container.enabled` and `mqtt.enabled`. `204` and no body on success,\nbecause the value the caller sent is the value that was written and echoing\nit back would only invite a client to believe the echo over its own `GET`.\n\nBearer **or** cookie, like every route on the two resource roots: PLAN-023\nAmendment 1's ruling is about the token routes specifically, not about new\nroutes in general, so this one is dual-credential exactly as the shipped\nreads are.\n\nProse and not intra-doc links, for the reason the rotate route already\nrecords: `utoipa` copies this comment into the published document, where a\nlink would put an apid symbol name in front of every client.",
         "operationId": "api_v1_settings_write",
         "parameters": [
           {
@@ -1044,10 +1044,10 @@
         }
       },
       "ResourceValue": {
-        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and the write\nroute refuses a body that carries it rather than storing it\n([`api_v1_settings_write`]). `privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
+        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and the write\nroute refuses any body that carries it, at 422, rather than storing it.\n`privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
       },
       "SettingsWrite": {
-        "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and [`check_scalar`] is what says so."
+        "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and the route is what says so, per\ndot-path, in a 422."
       },
       "WireguardRotation": {
         "type": "object",

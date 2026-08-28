@@ -232,7 +232,14 @@ was restated; see section 7.
    the citation stands and the paragraph's reading of it does not.
 2. `docs/design/api.md` section 3.2's *"the four served paths are `GET` only"*.
    Three of the four still are; the settings root now takes a `PUT`.
-3. `docs/task/RFCT-210.md`'s central negative — *"There is no `put(`, no
+3. `docs/design/api.md` section 2.2's heading and its *"Two of the three roots
+   below exist, read-only"*, and section 2.3's *"None of the three verbs §2.3
+   proposes ... is served: the published document lists five operations"*. Both
+   are status prose about the whole write surface, which M4 through M9 change
+   one milestone at a time; rewriting either here would state a completeness
+   this milestone does not have. The one sentence in that paragraph whose armed
+   quote this change *deleted* had to be restated and was; see section 7.
+4. `docs/task/RFCT-210.md`'s central negative — *"There is no `put(`, no
    `delete(` and no `patch(` anywhere in the router"* — was already superseded
    for `delete` by M2 and is now superseded for `put`. The record is not
    edited, and the line it quotes,
@@ -240,9 +247,12 @@ was restated; see section 7.
    (`os/pkgs/mosd/apid/src/routes.rs:31`), survives verbatim and unmoved: the
    route is declared with the `MethodRouter` method `.put(...)`, which needs no
    import at all.
-4. `docs/design/api.md` section 2.3's *"There is no `POST` and no `PUT` anywhere
-   under `/api`"*. Section 2.3 is the M1 design's input and RFCT-215's to
-   revise; the sentence is a dated measurement this milestone supersedes.
+5. `docs/design/api.md` section 2.3's *"There is no
+   `POST` and no `PUT` anywhere under `/api`"*
+   (`docs/design/api.md:1357-1358`). The `PUT` half is now false. Section 2.3
+   is the M1 design's own input and its whole table is a dated measurement this
+   campaign supersedes milestone by milestone; correcting one clause of it here
+   would leave the twenty rows around it saying the opposite.
 
 ## 6. Coverage
 
