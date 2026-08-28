@@ -313,9 +313,9 @@ line is a bare `///` and the function actually opens at 307; §2.1 puts
 `api_versions` at `:405`, where the pre-image line is a doc comment inside
 `ApiErrorDetail`. The offset is visible in one subtraction: §1.2's own preamble
 cites `pub fn app(state: AppState) -> Router {`
-(`os/pkgs/mosd/apid/src/routes.rs:130`), and that is correct in *both* trees, while
+(`os/pkgs/mosd/apid/src/routes.rs:137`), and that is correct in *both* trees, while
 the table's first row puts `.route("/", get(serve::root))` — seven lines below
-`app` — at `:120`.
+`app` — at `:127`.
 
 **So this task invalidated none of them, because none was valid.** They are
 stale against an older tree, by the mechanism that produces exactly this: a
