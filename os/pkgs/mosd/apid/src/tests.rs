@@ -1709,10 +1709,11 @@ async fn api_versions_answers_when_the_settings_call_fails() {
 /// §2.1's second discovery endpoint, answered for a valid session.
 #[tokio::test]
 async fn api_v1_meta_answers_for_a_session() {
-    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let (router, _) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = get(&router, "/api/v1/meta", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/meta", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_api_headers(&response, "/api/v1/meta");
     assert_eq!(body_string(response).await, meta_body());
@@ -3766,26 +3767,23 @@ fn secret_fields(value: &serde_json::Value, found: &mut Vec<(String, serde_json:
 /// `GetSettings("<dot-path>")` returns.
 #[tokio::test]
 async fn the_settings_root_answers_the_dot_paths_value_for_a_session() {
-    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, _) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = get(&router, "/api/v1/settings/hostname", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/hostname", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_api_headers(&response, "/api/v1/settings/hostname");
     assert_eq!(body_string(response).await, r#""mos""#);
 
     // A subtree, and a scalar reached through one: the passthrough has no
     // shape of its own to impose.
-    let response = get(&router, "/api/v1/settings/access.ssh", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/access.ssh", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
     assert_eq!(value["enabled"], json!(true));
 
-    let response = get(
-        &router,
-        "/api/v1/settings/access.ssh.enabled",
-        Some(&cookie),
-    )
+    let response = bearer(&router, "GET", "/api/v1/settings/access.ssh.enabled", &token)
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body_string(response).await, "true");
@@ -3795,16 +3793,17 @@ async fn the_settings_root_answers_the_dot_paths_value_for_a_session() {
 /// here (§2.2): untyped, in memory, and written only from inside mosd.
 #[tokio::test]
 async fn the_state_root_answers_the_dot_paths_value_for_a_session() {
-    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     fake.set_state_entry("hostname", json!({ "applied": "mos" }));
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = get(&router, "/api/v1/state/hostname", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/state/hostname", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_api_headers(&response, "/api/v1/state/hostname");
     assert_eq!(body_string(response).await, r#"{"applied":"mos"}"#);
 
-    let response = get(&router, "/api/v1/state/hostname.applied", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/state/hostname.applied", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body_string(response).await, r#""mos""#);
 }
@@ -3813,13 +3812,14 @@ async fn the_state_root_answers_the_dot_paths_value_for_a_session() {
 /// and the routes do not fall back to each other.
 #[tokio::test]
 async fn the_two_roots_do_not_answer_for_each_other() {
-    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     fake.set_state_entry("hostname", json!({ "applied": "mos" }));
     let cookie = login(&router, "hunter2secret").await;
 
     // `hostname` exists in both, with different values.
-    let settings = get(&router, "/api/v1/settings/hostname", Some(&cookie)).await;
-    let state = get(&router, "/api/v1/state/hostname", Some(&cookie)).await;
+    let settings = bearer(&router, "GET", "/api/v1/settings/hostname", &token).await;
+    let state = bearer(&router, "GET", "/api/v1/state/hostname", &token).await;
     assert_ne!(
         body_string(settings).await,
         body_string(state).await,
@@ -3828,7 +3828,7 @@ async fn the_two_roots_do_not_answer_for_each_other() {
 
     // `network` exists only in the settings tree, so the state root must fail
     // rather than serve the settings value.
-    let response = get(&router, "/api/v1/state/network", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/state/network", &token).await;
     assert_ne!(response.status(), StatusCode::OK);
 }
 
@@ -3925,11 +3925,12 @@ async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() 
 /// to key on.
 #[tokio::test]
 async fn a_settings_read_of_access_never_carries_a_token_digest() {
-    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, _) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     // The subtree the gate reads.
-    let response = get(&router, "/api/v1/settings/access", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/access", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_string(response).await;
     assert!(
@@ -3948,7 +3949,7 @@ async fn a_settings_read_of_access_never_carries_a_token_digest() {
 
     // The array on its own, which is the walk's array branch with nothing
     // above it to have caught the field first.
-    let response = get(&router, "/api/v1/settings/access.apiTokens", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/access.apiTokens", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_string(response).await;
     assert!(
@@ -3958,11 +3959,7 @@ async fn a_settings_read_of_access_never_carries_a_token_digest() {
 
     // There is no dot-path that reaches one entry: the syntax has no array
     // indexing, which is why the denylist is by field name and not by path.
-    let response = get(
-        &router,
-        "/api/v1/settings/access.apiTokens.0.hash",
-        Some(&cookie),
-    )
+    let response = bearer(&router, "GET", "/api/v1/settings/access.apiTokens.0.hash", &token)
     .await;
     let status = response.status();
     assert_ne!(
@@ -3979,11 +3976,12 @@ async fn a_settings_read_of_access_never_carries_a_token_digest() {
 /// lid.
 #[tokio::test]
 async fn the_state_root_is_redacted_by_the_same_rule() {
-    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     fake.set_state_entry("wifiAp", secret_state_entry());
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = get(&router, "/api/v1/state/wifiAp", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/state/wifiAp", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_string(response).await;
 
@@ -4123,13 +4121,18 @@ impl SettingsApi for FailingSettings {
 /// A router whose resource reads fail the way `fdo_name` says, plus a session
 /// cookie for it.
 async fn failing_app(fdo_name: Option<&'static str>) -> (Router, String) {
-    let api = Arc::new(FailingSettings {
-        tree: configured_tree("hunter2secret"),
-        fdo_name,
-    });
+    // A seeded token rather than a minted one, and a bearer rather than the
+    // cookie these returned before M9 (RFCT-245): `/api/v1/` takes a bearer
+    // and nothing else now, and this fixture's whole point is that a settings
+    // write FAILS -- so `POST /builtin/tokens`, which is a settings write,
+    // could not mint here. Seeding puts the credential in the tree the fake
+    // already serves, which is the only mint that survives the fault injected.
+    let (entry, wire) = seeded_token(0);
+    let mut tree = configured_tree("hunter2secret");
+    tree["access"]["apiTokens"] = json!([entry]);
+    let api = Arc::new(FailingSettings { tree, fdo_name });
     let router = app(AppState::new(api, SIGNING_KEY));
-    let cookie = login(&router, "hunter2secret").await;
-    (router, cookie)
+    (router, wire)
 }
 
 /// The premise the classification rests on: `err.into()` in `bus_client.rs`
@@ -4201,7 +4204,7 @@ async fn each_fdo_error_name_gets_its_own_envelope() {
             } else {
                 (code, status)
             };
-            let (router, cookie) = failing_app(Some(fdo_name)).await;
+            let (router, token) = failing_app(Some(fdo_name)).await;
             let response = get(&router, path, Some(&cookie)).await;
             assert_eq!(response.status(), status, "{fdo_name} at {path}");
             assert_api_headers(&response, path);
@@ -4235,7 +4238,7 @@ async fn an_unreachable_mosd_is_503_with_retry_after() {
     // does not list: both are the fallback.
     for fdo_name in [None, Some("org.freedesktop.DBus.Error.UnknownObject")] {
         for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
-            let (router, cookie) = failing_app(fdo_name).await;
+            let (router, token) = failing_app(fdo_name).await;
             let response = get(&router, path, Some(&cookie)).await;
             assert_eq!(
                 response.status(),
@@ -4261,7 +4264,7 @@ async fn an_unreachable_mosd_is_503_with_retry_after() {
 /// no longer reports as 502 on one surface and 503 on the other.
 #[tokio::test]
 async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
-    let (router, cookie) = failing_app(None).await;
+    let (router, token) = failing_app(None).await;
 
     let response = get(&router, "/hostname", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -4280,15 +4283,15 @@ async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
 /// that IS a rejection still reports as one.
 #[tokio::test]
 async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
-    let (router, cookie) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
-    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    let (router, token) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_not_found");
     assert_eq!(error["path"], json!("no.such.path"));
 
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
-    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_rejected");
@@ -4309,15 +4312,15 @@ async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
 /// there it genuinely can be one.
 #[tokio::test]
 async fn a_state_dot_path_that_does_not_resolve_is_404_not_422() {
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
 
-    let response = get(&router, "/api/v1/state/no.such.path", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/state/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_not_found");
     assert_eq!(error["path"], json!("no.such.path"));
 
-    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/settings/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_rejected");
@@ -4492,15 +4495,11 @@ async fn the_password_pane_rejects_a_mismatched_confirmation() {
 /// nothing written.
 #[tokio::test]
 async fn the_api_password_change_rejects_a_wrong_current_password() {
-    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = post_json(
-        &router,
-        "/api/v1/actions/change-password",
-        r#"{"currentPassword":"not-the-password","newPassword":"newsecret9"}"#,
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/actions/change-password", &token, r#"{"currentPassword":"not-the-password","newPassword":"newsecret9"}"#)
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_api_headers(&response, "/api/v1/actions/change-password");
@@ -4514,16 +4513,19 @@ async fn the_api_password_change_rejects_a_wrong_current_password() {
 /// dropped, the calling session kept.
 #[tokio::test]
 async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
-    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    // The token is SEEDED and not minted, because the assertion below is that
+    // the change wrote `access.webAdmin` and nothing else: a mint through
+    // §3.2's pane is itself a write to `access.apiTokens`, and it would show
+    // up in `set_paths()` as a second path this test would then have to
+    // excuse. Seeding puts the credential in the starting tree instead, so the
+    // only write in the run is still the one under test.
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let token = wires[0].clone();
     let other = login(&router, "hunter2secret").await;
     let acting = login(&router, "hunter2secret").await;
 
-    let response = post_json(
-        &router,
-        "/api/v1/actions/change-password",
-        r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
-        Some(&acting),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/actions/change-password", &token, r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#)
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(fake.set_paths(), vec!["access.webAdmin"]);
@@ -4550,15 +4552,11 @@ async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
 /// the same floor the setup wizard enforces.
 #[tokio::test]
 async fn the_api_password_change_rejects_a_short_new_password() {
-    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = post_json(
-        &router,
-        "/api/v1/actions/change-password",
-        r#"{"currentPassword":"hunter2secret","newPassword":"short"}"#,
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/actions/change-password", &token, r#"{"currentPassword":"hunter2secret","newPassword":"short"}"#)
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
@@ -4592,15 +4590,11 @@ async fn the_api_password_change_is_401_without_a_session_in_both_gate_modes() {
 /// axum's plain-text rejection.
 #[tokio::test]
 async fn the_api_password_change_rejects_a_malformed_body_with_the_envelope() {
-    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = post_json(
-        &router,
-        "/api/v1/actions/change-password",
-        r#"{"currentPassword":"hunter2secret"}"#,
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/actions/change-password", &token, r#"{"currentPassword":"hunter2secret"}"#)
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_api_headers(&response, "/api/v1/actions/change-password");
@@ -4675,23 +4669,18 @@ async fn the_gate_serves_access_from_the_cache_only_while_subscribed() {
 /// post-change tree.
 #[tokio::test]
 async fn a_password_change_neither_reads_nor_leaves_a_stale_access_snapshot() {
-    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let fake = Arc::new(FakeSettings::new(tree));
     let state = AppState::new(fake.clone(), SIGNING_KEY);
     let cache = state.access_cache().clone();
     let router = app(state);
-    let cookie = login(&router, "hunter2secret").await;
 
     cache.subscribed();
     get(&router, "/login", None).await;
     let primed = cache.get().expect("the gate's read must fill the cache");
     let reads_before = fake.settings_reads("access");
 
-    let response = post_json(
-        &router,
-        "/api/v1/actions/change-password",
-        r#"{"currentPassword":"hunter2secret","newPassword":"brand-new-secret"}"#,
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/actions/change-password", &token, r#"{"currentPassword":"hunter2secret","newPassword":"brand-new-secret"}"#)
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert!(
@@ -5413,7 +5402,7 @@ async fn the_rotate_routes_failures_take_the_shared_envelope() {
         ),
         (None, "mosd_unreachable", StatusCode::SERVICE_UNAVAILABLE),
     ] {
-        let (router, cookie) = failing_app(fdo_name).await;
+        let (router, token) = failing_app(fdo_name).await;
         let response = post_form(&router, ROTATE_PATH, "", Some(&cookie)).await;
         assert_eq!(response.status(), status, "{fdo_name:?}");
         assert_api_headers(&response, ROTATE_PATH);
@@ -5429,13 +5418,8 @@ async fn the_rotate_routes_failures_take_the_shared_envelope() {
 /// is the dot-path an operator would type at the settings route.
 #[tokio::test]
 async fn the_rotate_envelope_quotes_a_dotted_interface_name() {
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
-    let response = post_form(
-        &router,
-        "/api/v1/actions/wireguard/wg.0/rotate-key",
-        "",
-        Some(&cookie),
-    )
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let response = bearer_form(&router, "/api/v1/actions/wireguard/wg.0/rotate-key", &token, "")
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["path"], json!(r#"network."wg.0""#));
@@ -5500,7 +5484,7 @@ async fn the_empty_interface_segment_is_the_route_and_not_a_redirect() {
     assert_eq!(response.headers().get(LOCATION), None);
     assert_eq!(envelope(response).await["code"], "not_authenticated");
 
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
     let response = post_form(&router, EMPTY, "", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["path"], json!("network."));
@@ -5600,8 +5584,9 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
 #[tokio::test]
 async fn the_state_route_serves_the_kind_and_the_public_key() {
     let (router, _, cookie) = kinds_app().await;
+    let token = mint_via_pane(&router, &cookie, "m9").await;
 
-    let response = get(&router, "/api/v1/state/network", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/state/network", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
     assert_eq!(body["eth0"]["kind"], json!("physical"));
@@ -5641,8 +5626,9 @@ fn health_app(uptime: u64) -> (Router, Arc<FakeSettings>) {
 async fn health_reports_a_reachable_mosd_and_stamps_the_answer_with_uptime() {
     let (router, _) = health_app(90_061);
     let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "m9").await;
 
-    let response = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/health", &token).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_api_headers(&response, "/api/v1/health");
     let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
@@ -5664,9 +5650,9 @@ async fn health_reports_a_reachable_mosd_and_stamps_the_answer_with_uptime() {
 /// the bus would report `ok` here.
 #[tokio::test]
 async fn health_reports_an_unreachable_mosd_and_still_answers_200() {
-    let (router, cookie) = failing_app(None).await;
+    let (router, token) = failing_app(None).await;
 
-    let response = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let response = bearer(&router, "GET", "/api/v1/health", &token).await;
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -5690,13 +5676,14 @@ async fn health_reports_an_unreachable_mosd_and_still_answers_200() {
 async fn health_reads_the_bus_on_every_request() {
     let (router, fake) = health_app(10);
     let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "m9").await;
 
-    let first = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let first = bearer(&router, "GET", "/api/v1/health", &token).await;
     let first: serde_json::Value = serde_json::from_str(&body_string(first).await).unwrap();
     assert_eq!(first["checkedAt"], json!(10));
 
     fake.set_state_entry("uptime", json!(4_711));
-    let second = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let second = bearer(&router, "GET", "/api/v1/health", &token).await;
     let second: serde_json::Value = serde_json::from_str(&body_string(second).await).unwrap();
     assert_eq!(
         second["checkedAt"],
@@ -5841,6 +5828,7 @@ async fn the_asset_router_405_is_not_the_api_envelope() {
     let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
     let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
     let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "m9").await;
 
     let asset = request(&router, "POST", "/settings/network", Some(&cookie), None).await;
     assert_eq!(asset.status(), StatusCode::METHOD_NOT_ALLOWED);
@@ -5848,7 +5836,7 @@ async fn the_asset_router_405_is_not_the_api_envelope() {
     assert!(asset.headers().get(CONTENT_TYPE).is_none());
     assert_eq!(body_string(asset).await, "");
 
-    let api = request(&router, "POST", "/api/v1/meta", Some(&cookie), None).await;
+    let api = bearer(&router, "POST", "/api/v1/meta", &token).await;
     assert_eq!(api.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(header_value(&api, CONTENT_TYPE), "application/json");
     assert_eq!(envelope(api).await["code"], "method_not_allowed");
@@ -5941,6 +5929,22 @@ fn seeded_token(index: usize) -> (serde_json::Value, String) {
     )
 }
 
+/// `tree` with one usable bearer token seeded into it, and that token's
+/// plaintext.
+///
+/// The M9 (RFCT-245) shape of every fixture whose subject is an `/api/v1/`
+/// route. Seeded and **not** minted through §3.2's pane, for a reason the
+/// tests would otherwise have to excuse one at a time: a mint is itself a
+/// write to `access.apiTokens`, and twenty of the tests below assert
+/// `set_paths()` exactly -- several of them assert it is EMPTY, which is the
+/// whole content of a refusal test. Seeding puts the credential in the
+/// starting tree, so the only writes in a run are the ones under test.
+fn with_token(mut tree: serde_json::Value) -> (serde_json::Value, String) {
+    let (entry, wire) = seeded_token(0);
+    tree["access"]["apiTokens"] = json!([entry]);
+    (tree, wire)
+}
+
 /// A configured tree holding `count` usable tokens, with their plaintexts.
 fn token_tree(password: &str, count: usize) -> (serde_json::Value, Vec<String>) {
     let (entries, wires): (Vec<_>, Vec<_>) = (0..count).map(seeded_token).unzip();
@@ -5962,6 +5966,24 @@ async fn bearer(
         .uri(path)
         .header(AUTHORIZATION, format!("Bearer {token}"));
     send(router, builder.body(Body::empty()).unwrap()).await
+}
+
+/// A form body carrying a bearer token and no cookie.
+///
+/// The action routes take a form encoding rather than JSON, so the bearer
+/// equivalent of `post_form` is its own helper rather than a flag on one.
+async fn bearer_form(
+    router: &Router,
+    path: &str,
+    token: &str,
+    body: &str,
+) -> Response<axum::body::Body> {
+    let builder = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(AUTHORIZATION, format!("Bearer {token}"));
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
 }
 
 /// A JSON body carrying a bearer token and no cookie.
@@ -6061,11 +6083,23 @@ async fn the_bootstrap_pane_mints_a_token_that_authenticates_the_api() {
     assert_eq!(body_string(response).await, meta_body());
 }
 
-/// Amendment 1's dual-credential ruling, on the routes it names: every route
-/// that shipped before the token takes either credential, and neither of them
-/// stopped working.
+/// **The cutover, asserted (M9, RFCT-245).** Amendment 1 opened a
+/// dual-credential window and scheduled its close for a named milestone; this
+/// is the assertion that it closed. Every `/api/v1/` route takes the bearer,
+/// and the session cookie that used to work on the shipped four is now a 401.
+///
+/// This test is the amended form of `every_shipped_api_route_takes_a_bearer_or_the_cookie`,
+/// and the amendment is a TIGHTENING and not a weakening: the bearer arm is
+/// unchanged and still asserts 200 on all four, while the cookie arm flipped
+/// from asserting 200 to asserting 401 -- the behaviour §3.2 always specified.
+///
+/// The cookie arm asserts the envelope and not merely the status, because
+/// §3.1's trap is a redirect and not a refusal: a 303 to `/login` would answer
+/// 200 with HTML on the next hop and a script would read the exchange as
+/// success. So the assertion is 401 **and** `not_authenticated` in §2.4's
+/// shape, which is a thing a script can parse.
 #[tokio::test]
-async fn every_shipped_api_route_takes_a_bearer_or_the_cookie() {
+async fn every_api_v1_route_takes_a_bearer_and_refuses_the_cookie() {
     let (tree, wires) = token_tree("hunter2secret", 1);
     let (router, fake) = test_app(tree);
     fake.set_state_entry("uptime", json!(42));
@@ -6082,12 +6116,23 @@ async fn every_shipped_api_route_takes_a_bearer_or_the_cookie() {
             StatusCode::OK,
             "{path} must accept a bearer token"
         );
+        let refused = get(&router, path, Some(&cookie)).await;
         assert_eq!(
-            get(&router, path, Some(&cookie)).await.status(),
-            StatusCode::OK,
-            "{path} must keep accepting the session cookie"
+            refused.status(),
+            StatusCode::UNAUTHORIZED,
+            "{path} must refuse the session cookie since M9"
         );
+        let error = envelope(refused).await;
+        assert_eq!(error["code"], json!("not_authenticated"), "{path}");
+        assert_eq!(error["source"], json!("apid"), "{path}");
     }
+
+    // The same request with no credential at all is the same answer, which is
+    // what makes the line above about the cookie being REFUSED rather than
+    // about it being absent.
+    let bare = get(&router, "/api/v1/meta", None).await;
+    assert_eq!(bare.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(envelope(bare).await["code"], json!("not_authenticated"));
 
     // The one shipped write, which the amendment names beside the four reads.
     let response = bearer_json(
@@ -6302,6 +6347,7 @@ async fn a_name_the_store_refuses_is_a_422() {
 #[tokio::test]
 async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     let (tree, wires) = token_tree("hunter2secret", 1);
+    let (tree, token) = with_token(tree);
     let (router, fake) = test_app(tree);
 
     // Well formed, and no entry carries it.
@@ -6335,7 +6381,7 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // path the gate released to a route that does not exist would answer a 404
     // where an unauthenticated caller is supposed to be redirected.
     let cookie = login(&router, "hunter2secret").await;
-    let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
+    let response = bearer(&router, "DELETE", "/api/v1/tokens/", &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 
@@ -6622,11 +6668,12 @@ async fn the_write_route_writes_the_four_scalar_settings() {
 /// `<redacted>`, which no password verifies against and no operator can undo.
 #[tokio::test]
 async fn a_write_carrying_the_redaction_sentinel_is_refused_and_writes_nothing() {
-    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let (tree, token) = with_token(secret_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     // The exact bytes a client would have read, sentinels and all.
-    let read = get(&router, "/api/v1/settings/access", Some(&cookie)).await;
+    let read = bearer(&router, "GET", "/api/v1/settings/access", &token).await;
     assert_eq!(read.status(), StatusCode::OK);
     let redacted = body_string(read).await;
     assert!(
@@ -6634,7 +6681,7 @@ async fn a_write_carrying_the_redaction_sentinel_is_refused_and_writes_nothing()
         "the fixture must carry a redacted field: {redacted}"
     );
 
-    let response = put_json(&router, "/api/v1/settings/access", &redacted, Some(&cookie)).await;
+    let response = bearer_json(&router, "PUT", "/api/v1/settings/access", &token, &redacted).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_api_headers(&response, "the sentinel refusal");
     let error = envelope(response).await;
@@ -6659,12 +6706,7 @@ async fn a_write_carrying_the_redaction_sentinel_is_refused_and_writes_nothing()
     // The same rule on an allowlisted path, where the sentinel is the whole
     // body rather than a field inside one: a client that read
     // `access.webAdmin.password_hash` got a bare `"<redacted>"` string back.
-    let response = put_json(
-        &router,
-        "/api/v1/settings/hostname",
-        &format!("\"{REDACTED}\""),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", "/api/v1/settings/hostname", &token, &format!("\"{REDACTED}\""))
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["code"], "validation_failed");
@@ -6679,7 +6721,8 @@ async fn a_write_carrying_the_redaction_sentinel_is_refused_and_writes_nothing()
 /// what refuses it is the state of the surface.
 #[tokio::test]
 async fn every_dot_path_outside_the_allowlist_is_refused_with_409() {
-    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let (tree, token) = with_token(writable_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for path in [
@@ -6702,12 +6745,7 @@ async fn every_dot_path_outside_the_allowlist_is_refused_with_409() {
         // this route refuses rather than one it cannot parse.
         ".",
     ] {
-        let response = put_json(
-            &router,
-            &format!("/api/v1/settings/{path}"),
-            "true",
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "PUT", &format!("/api/v1/settings/{path}"), &token, "true")
         .await;
         assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
         assert_api_headers(&response, path);
@@ -6728,17 +6766,13 @@ async fn every_dot_path_outside_the_allowlist_is_refused_with_409() {
 /// because both are the reason the path is refused rather than decoration.
 #[tokio::test]
 async fn the_two_named_refusals_say_why_rather_than_only_that() {
-    let (router, _) = test_app(writable_tree("hunter2secret"));
+    let (tree, token) = with_token(writable_tree("hunter2secret"));
+    let (router, _) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     // `schema_version` is read-only in the tree itself, not merely here: no
     // later milestone widens this route to cover it.
-    let response = put_json(
-        &router,
-        "/api/v1/settings/schema_version",
-        "9",
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", "/api/v1/settings/schema_version", &token, "9")
     .await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     let message = envelope(response).await["message"]
@@ -6753,12 +6787,7 @@ async fn the_two_named_refusals_say_why_rather_than_only_that() {
     // `network` names the typed route that owns it, because a raw write here
     // creates an entry of the default kind rather than refusing an interface
     // the device does not have (`docs/task/RFCT-210.md` §2.4).
-    let response = put_json(
-        &router,
-        "/api/v1/settings/network.wg9",
-        r#"{"dhcp": true}"#,
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", "/api/v1/settings/network.wg9", &token, r#"{"dhcp": true}"#)
     .await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     let message = envelope(response).await["message"]
@@ -6781,16 +6810,12 @@ async fn the_two_named_refusals_say_why_rather_than_only_that() {
 /// write can ever make the tree deserialize with one.
 #[tokio::test]
 async fn an_absent_root_is_404_and_a_malformed_path_is_422() {
-    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let (tree, token) = with_token(writable_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for path in ["hostnam", "netwrok.eth0", "acess.ssh.enabled", "sshd"] {
-        let response = put_json(
-            &router,
-            &format!("/api/v1/settings/{path}"),
-            "true",
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "PUT", &format!("/api/v1/settings/{path}"), &token, "true")
         .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         let error = envelope(response).await;
@@ -6809,12 +6834,7 @@ async fn an_absent_root_is_404_and_a_malformed_path_is_422() {
         "access.\"ssh\"x",
         "hostname.",
     ] {
-        let response = put_json(
-            &router,
-            &format!("/api/v1/settings/{path}"),
-            "true",
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "PUT", &format!("/api/v1/settings/{path}"), &token, "true")
         .await;
         assert_eq!(
             response.status(),
@@ -6868,7 +6888,8 @@ fn the_settings_schema_has_the_eight_roots_the_write_route_knows() {
 /// puts in its error box: one rule, one wording, two surfaces.
 #[tokio::test]
 async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
-    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let (tree, token) = with_token(writable_tree("hunter2secret"));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for (path, body, expected) in [
@@ -6882,12 +6903,7 @@ async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
         ("container.enabled", "1", "switch"),
         ("mqtt.enabled", "null", "switch"),
     ] {
-        let response = put_json(
-            &router,
-            &format!("/api/v1/settings/{path}"),
-            body,
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "PUT", &format!("/api/v1/settings/{path}"), &token, body)
         .await;
         assert_eq!(
             response.status(),
@@ -6907,12 +6923,7 @@ async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
 
     // Not JSON at all is 400 and not 422: the request never became a value to
     // validate. Same classification the mint route gives the same condition.
-    let response = put_json(
-        &router,
-        "/api/v1/settings/hostname",
-        "router7",
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", "/api/v1/settings/hostname", &token, "router7")
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(envelope(response).await["code"], "request_invalid");
@@ -6942,7 +6953,7 @@ async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
 /// ruling applied to a new route. The bearer-only rule is about the token
 /// routes specifically, so this route matches the shipped reads instead.
 #[tokio::test]
-async fn the_write_route_takes_a_bearer_and_a_cookie_and_refuses_neither_silently() {
+async fn the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_silently() {
     let (router, fake) = test_app(writable_tree("hunter2secret"));
     let cookie = login(&router, "hunter2secret").await;
     let token = mint_via_pane(&router, &cookie, "ci").await;
@@ -6957,6 +6968,26 @@ async fn the_write_route_takes_a_bearer_and_a_cookie_and_refuses_neither_silentl
     .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert!(fake.set_paths().contains(&"hostname".to_string()));
+
+    // M9 (RFCT-245): the cookie that minted the token above is not itself a
+    // credential on this route. The name of this test carried "and a cookie"
+    // until the cutover, and the arm is amended rather than dropped -- the
+    // request is the same one, and only the expected answer moved from 204 to
+    // 401. Asserted here for the same reason the no-credential case below is:
+    // the write surface inherits §3.1's trap and inheriting is not asserting.
+    let refused = put_json(
+        &router,
+        "/api/v1/settings/hostname",
+        r#""from-cookie""#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(refused.headers().get(LOCATION), None);
+    assert_eq!(envelope(refused).await["code"], "not_authenticated");
+    // ...and it wrote nothing: a refusal that still wrote would be the worst
+    // of both answers.
+    assert!(!fake.set_paths().contains(&"from-cookie".to_string()));
 
     // No credential at all: §2.4's envelope and never the gate's redirect, in
     // both gate modes -- §3.1's trap, which a write route inherits and which
@@ -6996,13 +7027,8 @@ async fn a_write_mosd_refuses_carries_mosds_classification() {
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     ] {
-        let (router, cookie) = failing_app(Some(fdo_name)).await;
-        let response = put_json(
-            &router,
-            "/api/v1/settings/hostname",
-            r#""router7""#,
-            Some(&cookie),
-        )
+        let (router, token) = failing_app(Some(fdo_name)).await;
+        let response = bearer_json(&router, "PUT", "/api/v1/settings/hostname", &token, r#""router7""#)
         .await;
         assert_eq!(response.status(), status, "{fdo_name}");
         let error = envelope(response).await;
@@ -7101,20 +7127,16 @@ async fn stored_network_list(fake: &FakeSettings) -> serde_json::Value {
 /// `ssh-keygen` rather than against apid's own arithmetic.
 #[tokio::test]
 async fn the_ssh_key_collection_lists_adds_and_removes() {
-    let (router, fake) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let empty = get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await;
+    let empty = bearer(&router, "GET", "/api/v1/ssh/authorized-keys", &token).await;
     assert_eq!(empty.status(), StatusCode::OK);
     let empty = body_json(empty).await;
     assert_eq!(empty["keys"], json!([]));
 
-    let added = post_json(
-        &router,
-        "/api/v1/ssh/authorized-keys",
-        &json!({ "key": REAL_ED25519_LINE }).to_string(),
-        Some(&cookie),
-    )
+    let added = bearer_json(&router, "POST", "/api/v1/ssh/authorized-keys", &token, &json!({ "key": REAL_ED25519_LINE }).to_string())
     .await;
     assert_eq!(added.status(), StatusCode::CREATED);
     let added = body_json(added).await;
@@ -7132,7 +7154,7 @@ async fn the_ssh_key_collection_lists_adds_and_removes() {
     );
     assert_eq!(fake.set_paths(), vec![SSH_KEYS_DOT_PATH]);
 
-    let listed = body_json(get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await).await;
+    let listed = body_json(bearer(&router, "GET", "/api/v1/ssh/authorized-keys", &token).await).await;
     assert_eq!(listed["keys"].as_array().unwrap().len(), 1);
     assert_eq!(
         listed["keys"][0]["fingerprint"],
@@ -7156,18 +7178,14 @@ async fn the_ssh_key_collection_lists_adds_and_removes() {
 /// as root.
 #[tokio::test]
 async fn the_root_key_notice_is_on_the_listing_and_on_the_add() {
-    let (router, _) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, _) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let listed = body_json(get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await).await;
+    let listed = body_json(bearer(&router, "GET", "/api/v1/ssh/authorized-keys", &token).await).await;
     assert_eq!(listed["notice"], json!(ROOT_KEY_NOTICE_TEXT));
 
-    let added = post_json(
-        &router,
-        "/api/v1/ssh/authorized-keys",
-        &json!({ "key": REAL_ED25519_LINE }).to_string(),
-        Some(&cookie),
-    )
+    let added = bearer_json(&router, "POST", "/api/v1/ssh/authorized-keys", &token, &json!({ "key": REAL_ED25519_LINE }).to_string())
     .await;
     assert_eq!(
         body_json(added).await["notice"],
@@ -7183,7 +7201,8 @@ async fn the_root_key_notice_is_on_the_listing_and_on_the_add() {
 /// carries the parser's own message, the pane re-renders itself around it.
 #[tokio::test]
 async fn the_key_add_runs_the_same_parser_the_pane_runs() {
-    let (router, fake) = test_app(ssh_tree(json!([])));
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for line in [
@@ -7196,12 +7215,7 @@ async fn the_key_add_runs_the_same_parser_the_pane_runs() {
         "ssh-ed25519 not-base64!!",
         "",
     ] {
-        let response = post_json(
-            &router,
-            "/api/v1/ssh/authorized-keys",
-            &json!({ "key": line }).to_string(),
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "POST", "/api/v1/ssh/authorized-keys", &token, &json!({ "key": line }).to_string())
         .await;
         assert_eq!(
             response.status(),
@@ -7251,16 +7265,12 @@ async fn the_key_add_runs_the_same_parser_the_pane_runs() {
 /// the identity `validate_authorized_keys` itself uses.
 #[tokio::test]
 async fn a_duplicate_key_is_409_and_the_stored_list_is_unchanged() {
-    let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let (tree, token) = with_token(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     let relabelled = format!("{} someone-else", canonical(REAL_ED25519_LINE));
-    let response = post_json(
-        &router,
-        "/api/v1/ssh/authorized-keys",
-        &json!({ "key": relabelled }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/ssh/authorized-keys", &token, &json!({ "key": relabelled }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     let error = envelope(response).await;
@@ -7281,12 +7291,7 @@ async fn a_duplicate_key_is_409_and_the_stored_list_is_unchanged() {
 
     // And a malformed key is still 422, which is the distinction the third
     // clause buys: one status no longer covers two conditions.
-    let response = post_json(
-        &router,
-        "/api/v1/ssh/authorized-keys",
-        &json!({ "key": "ssh-ed25519 not-base64" }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/ssh/authorized-keys", &token, &json!({ "key": "ssh-ed25519 not-base64" }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(envelope(response).await["code"], "validation_failed");
@@ -7305,17 +7310,13 @@ async fn a_full_key_list_is_409_and_names_the_bound() {
     let full: Vec<serde_json::Value> = (0..mosd_settings::MAX_KEYS)
         .map(|index| json!({ "key": generated_key_line(index as u8) }))
         .collect();
-    let (router, fake) = test_app(ssh_tree(json!(full)));
+    let (tree, token) = with_token(ssh_tree(json!(full)));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     // A key no stored entry carries, so the duplicate rule above cannot be what
     // answers: the two 409s must be told apart by their code.
-    let response = post_json(
-        &router,
-        "/api/v1/ssh/authorized-keys",
-        &json!({ "key": generated_key_line(mosd_settings::MAX_KEYS as u8) }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/ssh/authorized-keys", &token, &json!({ "key": generated_key_line(mosd_settings::MAX_KEYS as u8) }).to_string())
     .await;
 
     assert_eq!(response.status(), StatusCode::CONFLICT);
@@ -7480,20 +7481,16 @@ async fn a_fingerprint_carrying_a_slash_is_addressable_percent_encoded() {
 /// and was reachable only by editing the settings file on STATE.
 #[tokio::test]
 async fn the_wifi_network_collection_lists_adds_and_removes() {
-    let (router, fake) = test_app(wifi_tree(json!([])));
+    let (tree, token) = with_token(wifi_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let empty = get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await;
+    let empty = bearer(&router, "GET", "/api/v1/wifi/client/networks", &token).await;
     assert_eq!(empty.status(), StatusCode::OK);
     assert_eq!(body_json(empty).await, json!([]));
 
-    let added = post_json(
-        &router,
-        "/api/v1/wifi/client/networks",
-        &json!({ "ssid": "roastery", "psk": "hunter2hunter2", "hidden": true, "priority": 7 })
-            .to_string(),
-        Some(&cookie),
-    )
+    let added = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &json!({ "ssid": "roastery", "psk": "hunter2hunter2", "hidden": true, "priority": 7 })
+            .to_string())
     .await;
     assert_eq!(added.status(), StatusCode::CREATED);
     assert_eq!(
@@ -7510,12 +7507,7 @@ async fn the_wifi_network_collection_lists_adds_and_removes() {
 
     // An open network: `psk` is absent rather than null, which is the model's
     // own shape.
-    let open = post_json(
-        &router,
-        "/api/v1/wifi/client/networks",
-        &json!({ "ssid": "cafe-guest" }).to_string(),
-        Some(&cookie),
-    )
+    let open = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &json!({ "ssid": "cafe-guest" }).to_string())
     .await;
     assert_eq!(open.status(), StatusCode::CREATED);
     assert_eq!(
@@ -7523,16 +7515,10 @@ async fn the_wifi_network_collection_lists_adds_and_removes() {
         json!({ "ssid": "cafe-guest", "hidden": false, "priority": 0 })
     );
 
-    let removed = request(
-        &router,
-        "DELETE",
-        "/api/v1/wifi/client/networks/roastery",
-        Some(&cookie),
-        None,
-    )
+    let removed = bearer(&router, "DELETE", "/api/v1/wifi/client/networks/roastery", &token)
     .await;
     assert_eq!(removed.status(), StatusCode::NO_CONTENT);
-    let left = body_json(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await).await;
+    let left = body_json(bearer(&router, "GET", "/api/v1/wifi/client/networks", &token).await).await;
     assert_eq!(
         left,
         json!([{ "ssid": "cafe-guest", "hidden": false, "priority": 0 }])
@@ -7544,19 +7530,15 @@ async fn the_wifi_network_collection_lists_adds_and_removes() {
 /// keeps for itself.
 #[tokio::test]
 async fn a_posted_psk_is_redacted_on_the_next_read() {
-    let (router, fake) = test_app(wifi_tree(json!([])));
+    let (tree, token) = with_token(wifi_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
-    let response = post_json(
-        &router,
-        "/api/v1/wifi/client/networks",
-        &json!({ "ssid": "roastery", "psk": "hunter2hunter2" }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &json!({ "ssid": "roastery", "psk": "hunter2hunter2" }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    let listed = get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await;
+    let listed = bearer(&router, "GET", "/api/v1/wifi/client/networks", &token).await;
     let body = body_string(listed).await;
     assert!(
         !body.contains("hunter2hunter2"),
@@ -7567,11 +7549,7 @@ async fn a_posted_psk_is_redacted_on_the_next_read() {
 
     // The same list read through the settings root is redacted too, which is
     // what makes this one list with one rule and not two surfaces with two.
-    let through_settings = get(
-        &router,
-        "/api/v1/settings/wifi.client.networks",
-        Some(&cookie),
-    )
+    let through_settings = bearer(&router, "GET", "/api/v1/settings/wifi.client.networks", &token)
     .await;
     assert_eq!(body_json(through_settings).await[0]["psk"], json!(REDACTED));
     assert_eq!(
@@ -7589,24 +7567,19 @@ async fn a_posted_psk_is_redacted_on_the_next_read() {
 /// caller is answered about the thing it actually got wrong.
 #[tokio::test]
 async fn posting_a_redacted_psk_back_is_refused_and_the_stored_key_survives() {
-    let (router, fake) = test_app(wifi_tree(json!([
+    let (tree, token) = with_token(wifi_tree(json!([
         { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
     ])));
-    let cookie = login(&router, "hunter2secret").await;
+    let (router, fake) = test_app(tree);
 
     // Exactly what a client that read the collection holds.
-    let listed = body_json(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await).await;
+    let listed = body_json(bearer(&router, "GET", "/api/v1/wifi/client/networks", &token).await).await;
     let mut edited = listed[0].clone();
     edited["ssid"] = json!("roastery-5g");
     edited["hidden"] = json!(true);
     assert_eq!(edited["psk"], json!(REDACTED));
 
-    let response = post_json(
-        &router,
-        "/api/v1/wifi/client/networks",
-        &edited.to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &edited.to_string())
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
@@ -7631,24 +7604,19 @@ async fn posting_a_redacted_psk_back_is_refused_and_the_stored_key_survives() {
 /// it is the collection's current state.
 #[tokio::test]
 async fn a_second_network_under_one_ssid_is_refused() {
-    let (router, fake) = test_app(wifi_tree(json!([
+    let (tree, token) = with_token(wifi_tree(json!([
         { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
     ])));
-    let cookie = login(&router, "hunter2secret").await;
+    let (router, fake) = test_app(tree);
 
-    let response = post_json(
-        &router,
-        "/api/v1/wifi/client/networks",
-        &json!({ "ssid": "roastery", "psk": "adifferentkey" }).to_string(),
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &json!({ "ssid": "roastery", "psk": "adifferentkey" }).to_string())
     .await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     let error = envelope(response).await;
     assert_eq!(error["code"], "ssid_exists");
     assert_eq!(error["path"], json!(WIFI_NETWORKS_DOT_PATH));
     assert!(
-        !body_string(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await)
+        !body_string(bearer(&router, "GET", "/api/v1/wifi/client/networks", &token).await)
             .await
             .contains("adifferentkey")
     );
@@ -7660,7 +7628,8 @@ async fn a_second_network_under_one_ssid_is_refused() {
 /// with, so a body this route accepts is one the store accepts.
 #[tokio::test]
 async fn a_body_that_is_not_a_network_is_422() {
-    let (router, fake) = test_app(wifi_tree(json!([])));
+    let (tree, token) = with_token(wifi_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for body in [
@@ -7676,7 +7645,7 @@ async fn a_body_that_is_not_a_network_is_422() {
         r#"[{"ssid":"roastery"}]"#,
     ] {
         let response =
-            post_json(&router, "/api/v1/wifi/client/networks", body, Some(&cookie)).await;
+            bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, body).await;
         assert_eq!(
             response.status(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -7691,12 +7660,7 @@ async fn a_body_that_is_not_a_network_is_422() {
 
     // Not JSON at all is 400 and not 422: the request could not be read, which
     // is a different failure from one that was read and refused.
-    let response = post_json(
-        &router,
-        "/api/v1/wifi/client/networks",
-        "{not json",
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, "{not json")
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(envelope(response).await["code"], "request_invalid");
@@ -7717,19 +7681,13 @@ async fn a_body_that_is_not_a_network_is_422() {
 /// it to agree or disagree with.
 #[tokio::test]
 async fn an_absent_ssid_is_404_and_this_collection_has_no_pane_to_disagree_with() {
-    let (router, fake) = test_app(wifi_tree(json!([
+    let (tree, token) = with_token(wifi_tree(json!([
         { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
     ])));
-    let cookie = login(&router, "hunter2secret").await;
+    let (router, fake) = test_app(tree);
 
     for ssid in ["cafe-guest", "roastery-5g", "%20", "SHA256:not-an-ssid"] {
-        let response = request(
-            &router,
-            "DELETE",
-            &format!("/api/v1/wifi/client/networks/{ssid}"),
-            Some(&cookie),
-            None,
-        )
+        let response = bearer(&router, "DELETE", &format!("/api/v1/wifi/client/networks/{ssid}"), &token)
         .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{ssid}");
         let error = envelope(response).await;
@@ -7763,7 +7721,7 @@ async fn an_absent_ssid_is_404_and_this_collection_has_no_pane_to_disagree_with(
 /// specifically -- the credential factory -- and not about new routes in
 /// general, so these are dual-credential exactly as the shipped reads are.
 #[tokio::test]
-async fn the_two_collections_take_a_cookie_or_a_bearer_and_401_without_either() {
+async fn the_two_collections_take_a_bearer_and_401_without_one() {
     let mut tree = ssh_tree(json!([]));
     tree["wifi"] = wifi_tree(json!([]))["wifi"].clone();
     let (entries, wires): (Vec<_>, Vec<_>) = (0..1).map(seeded_token).unzip();
@@ -7777,18 +7735,24 @@ async fn the_two_collections_take_a_cookie_or_a_bearer_and_401_without_either() 
         "/api/v1/wifi/client/networks",
     ] {
         assert_eq!(
-            get(&router, path, Some(&cookie)).await.status(),
-            StatusCode::OK,
-            "cookie: {path}"
-        );
-        assert_eq!(
             bearer(&router, "GET", path, &wires[0]).await.status(),
             StatusCode::OK,
             "bearer: {path}"
         );
-        // Neither credential: section 2.4's envelope at 401 and **not** the
+        // M9 (RFCT-245): the cookie arm asserted 200 until the cutover and
+        // asserts 401 after it. Amended, not dropped -- the same request, a
+        // moved answer -- because a collection that quietly kept taking the
+        // cookie is exactly what this test exists to catch.
+        let refused = get(&router, path, Some(&cookie)).await;
+        assert_eq!(refused.status(), StatusCode::UNAUTHORIZED, "cookie: {path}");
+        assert_eq!(
+            envelope(refused).await["code"],
+            "not_authenticated",
+            "cookie: {path}"
+        );
+        // No credential at all: section 2.4's envelope at 401 and **not** the
         // gate's redirect. These are declared API routes, so the gate hands
-        // them off and `ApiSession` answers -- a client that followed a
+        // them off and `ApiBearer` answers -- a client that followed a
         // redirect would land on `GET /login`, which is a 200 with an HTML
         // page, and read the whole exchange as success.
         let anonymous = get(&router, path, None).await;
@@ -8739,7 +8703,7 @@ async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
 /// Amendment 1's reading, on M6's four routes: a bearer **or** a cookie, and
 /// section 2.4's envelope at 401 with neither -- never the gate's redirect.
 #[tokio::test]
-async fn the_network_cluster_takes_a_cookie_or_a_bearer_and_401_without_either() {
+async fn the_network_cluster_takes_a_bearer_and_401_without_one() {
     let mut tree = kinds_tree("hunter2secret");
     let (entries, wires): (Vec<_>, Vec<_>) = (0..1).map(seeded_token).unzip();
     tree["access"]["apiTokens"] = json!(entries);
@@ -8749,14 +8713,19 @@ async fn the_network_cluster_takes_a_cookie_or_a_bearer_and_401_without_either()
     let peers = peers_url("wg0");
     for path in [peers.as_str()] {
         assert_eq!(
-            get(&router, path, Some(&cookie)).await.status(),
-            StatusCode::OK,
-            "cookie: {path}"
-        );
-        assert_eq!(
             bearer(&router, "GET", path, &wires[0]).await.status(),
             StatusCode::OK,
             "bearer: {path}"
+        );
+        // M9 (RFCT-245): amended from 200 to 401. The cluster is the last of
+        // the four dual-credential assertions to flip, and it flips for the
+        // same reason the other three do.
+        let refused = get(&router, path, Some(&cookie)).await;
+        assert_eq!(refused.status(), StatusCode::UNAUTHORIZED, "cookie: {path}");
+        assert_eq!(
+            envelope(refused).await["code"],
+            "not_authenticated",
+            "cookie: {path}"
         );
     }
 
@@ -9003,16 +8972,12 @@ fn the_network_schema_matches_the_settings_model() {
 /// the same rule and not a second one.
 #[tokio::test]
 async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
-    let (router, fake) = test_app(wifi_tree(json!([])));
+    let (tree, token) = with_token(wifi_tree(json!([])));
+    let (router, fake) = test_app(tree);
     let cookie = login(&router, "hunter2secret").await;
 
     for psk in ["short07", &"x".repeat(64)] {
-        let response = post_json(
-            &router,
-            "/api/v1/wifi/client/networks",
-            &json!({ "ssid": "roastery", "psk": psk }).to_string(),
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &json!({ "ssid": "roastery", "psk": psk }).to_string())
         .await;
         assert_eq!(
             response.status(),
@@ -9038,12 +9003,7 @@ async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
     // And the two admissible shapes still store: a passphrase in range, and a
     // 64-digit hex PMK, which the bound does not apply to.
     for (ssid, psk) in [("roastery", "hunter2hunter2"), ("lab", &"a".repeat(64))] {
-        let response = post_json(
-            &router,
-            "/api/v1/wifi/client/networks",
-            &json!({ "ssid": ssid, "psk": psk }).to_string(),
-            Some(&cookie),
-        )
+        let response = bearer_json(&router, "POST", "/api/v1/wifi/client/networks", &token, &json!({ "ssid": ssid, "psk": psk }).to_string())
         .await;
         assert_eq!(response.status(), StatusCode::CREATED, "{ssid}");
     }
@@ -9446,7 +9406,7 @@ async fn an_unauthenticated_action_post_is_refused_and_does_not_act() {
 /// string would put `"path": ""` on the wire.
 #[tokio::test]
 async fn a_failed_transient_password_names_no_dot_path() {
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.Failed")).await;
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.Failed")).await;
 
     let response = post_json(
         &router,
@@ -9465,12 +9425,7 @@ async fn a_failed_transient_password_names_no_dot_path() {
     // A route that does name one still names it: the member is optional, not
     // removed. Same fixture, same failure, same classifier — the only
     // difference is that this one has a dot-path at fault.
-    let response = put_json(
-        &router,
-        "/api/v1/settings/hostname",
-        r#""mos""#,
-        Some(&cookie),
-    )
+    let response = bearer_json(&router, "PUT", "/api/v1/settings/hostname", &token, r#""mos""#)
     .await;
     assert_eq!(envelope(response).await["path"], "hostname");
 }
@@ -10150,14 +10105,10 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     assert_eq!(form.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     // And M6's typed route does not, which is the divergence: same bytes, 204.
-    let (configured, _) = test_app(configured_tree("hunter2secret"));
+    let (tree, token) = with_token(configured_tree("hunter2secret"));
+    let (configured, _) = test_app(tree);
     let cookie = login(&configured, "hunter2secret").await;
-    let put = put_json(
-        &configured,
-        "/api/v1/network/eth0",
-        &entry.to_string(),
-        Some(&cookie),
-    )
+    let put = bearer_json(&configured, "PUT", "/api/v1/network/eth0", &token, &entry.to_string())
     .await;
     assert_eq!(
         put.status(),
