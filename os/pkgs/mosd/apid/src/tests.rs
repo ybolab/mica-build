@@ -4155,6 +4155,11 @@ fn the_zbus_error_survives_the_conversion_to_anyhow() {
 
 /// §2.4's table, row by row: mosd classifies, apid translates the
 /// classification, and mosd's message is carried through verbatim.
+///
+/// One row is route-dependent, and the loop below says which: fdo
+/// `InvalidArgs` is 422 `settings_rejected` everywhere except the live-state
+/// route, where it has a single producer and can only mean the dot-path did
+/// not resolve.
 #[tokio::test]
 async fn each_fdo_error_name_gets_its_own_envelope() {
     for (fdo_name, code, status) in [

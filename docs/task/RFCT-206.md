@@ -283,7 +283,7 @@ phases, so `07b-postreboot` ran in the FIRST boot — after phase 07 had
 deliberately taken the guest down. It waited its full 180s deadline for apid on
 a machine that was off, failed, and threw on `ECONNREFUSED`. HARNESS.md had
 always described the intended split — *"phases 01-transport .. 07-reboot"*
-(`test/apid-api/HARNESS.md:59`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
+(`test/apid-api/HARNESS.md:83`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
 refusal of an unknown phase name makes a later rename fail loudly rather than
 silently shrink the run.
 
@@ -376,7 +376,9 @@ amd64/386 only), but it cannot resolve the `localhost/mos-build-*` bases these
 Dockerfiles are built FROM. The container engine is blocked the same way, by a
 refusal reading
 *"the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host"*
-(`os/pkgs/podman/build.sh:73`).
+(`os/pkgs/podman/build.sh` as it stood at a86ab46; RFCT-231 replaced that
+refusal, so the line anchor is gone and the quote is kept as the record of what
+ran here).
 
 **A booted cx3576 smoke is not executable here** under any arrangement: there is
 no cx3576 image and no cx3576 hardware on this host.

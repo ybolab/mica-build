@@ -93,10 +93,10 @@ decisions any future design settles first, each constraining the others:
 ## 3. Update control flow
 
 **What holds today — [implemented].** Installation is local and mosd owns it:
-`InstallUpdate(bundle_path)` (`docs/design/mosd.md:423`) hands a bundle already
+`InstallUpdate(bundle_path)` (`docs/design/mosd.md:468`) hands a bundle already
 on the device to RAUC, against *"the A/B update design this implements"*
 (`docs/design/ro-root.md:7-8`). The boot health gate confirms the new slot and
-*"probes systemd, mosd and apid first"* (`docs/design/mosd.md:439`); an
+*"probes systemd, mosd and apid first"* (`docs/design/mosd.md:484`); an
 unconfirmed slot spends boot credits until *"a slot that cannot complete a boot
 is guaranteed to exhaust its credits"*
 (`docs/design/uboot-ab-handshake.md:434-435`) and the bootloader falls back.

@@ -1,6 +1,7 @@
 # PLAN-025 Engineering debts: the qemu-run port, the cx3576 build enablement, and the small semantic fixes
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-28
 - **createdAt**: 2026-08-28 07:30
 - **approvedAt**: 2026-08-28 07:30
 - **relatedTask**: RFCT-230..239 reserved
@@ -59,3 +60,14 @@
 - **In**: os/tools, test/apid-api, os/pkgs/rauc/build.sh + build-env
   interaction, os/pkgs/mosd/apid (M3 only), the named docs.
 - **Out**: .zh.md (parked), api.md sections 4-9, anything PLAN-023/024 owns.
+
+## Close (2026-08-28)
+
+M1 complete and accepted (two-boot e2e 339/339 on the ported engine); M3 and
+M4 complete; M2 partial and precisely bounded — delivered the builder unpin,
+OCI-layout reachability, the four-way-proven non-executing readback, the
+arm64 builder family on an empty-binfmt host, the cx3576 rauc build, the
+architecture-qualified tag scheme (no :latest by design), and wall 2; not
+delivered the cx3576 image (wall 1 filed as RFCT-235; wall 3 needs real host
+binfmt) nor the booted cx3576 smoke (hardware; RFCT-206 section 7's stated
+obligation). RFCT-236 cancelled as already satisfied.

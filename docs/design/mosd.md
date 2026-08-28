@@ -216,6 +216,40 @@ story.
 | `WifiClientReconciler` | `wifi.client` | wpa_supplicant config + networkd + `wpa_supplicant@<if>.service` |
 | `WifiApReconciler` | `wifi.ap` (reads `wifi.client` for the conflict check) | hostapd config + networkd + `hostapd@<if>.service` |
 
+**Dated note (RFCT-232, 2026-08-28): the count is now SEVEN, and two rows are
+missing.** The sentence and the five rows above are the 2026-08-19 record and
+stay as they were written. Two reconcilers have been registered in the same
+list since, and they take the last two positions in it:
+`pub fn all() -> Vec<Box<dyn Reconciler>> {`
+(`os/pkgs/mosd/mosd/src/reconciler/mod.rs:31`) now ends with
+`Box::new(container::ContainerReconciler::production()),`
+(`os/pkgs/mosd/mosd/src/reconciler/mod.rs:40`) and
+`Box::new(mqtt::MqttReconciler::production()),`
+(`os/pkgs/mosd/mosd/src/reconciler/mod.rs:41`). Their rows, in the same three
+columns and measured from the same sources:
+
+| Reconciler | Subtree | Executor |
+|---|---|---|
+| `ContainerReconciler` | `container` | the Quadlet directory's STATE bind unit + `daemon-reload` + the units Quadlet generates from it |
+| `MqttReconciler` | `mqtt` | broker config file + `mos-mqtt-broker.service` + `mos-mqttd.service` |
+
+Each cell, measured. Both subtrees are the reconciler's own name:
+`"container"` (`os/pkgs/mosd/mosd/src/reconciler/container.rs:237`) and
+`"mqtt"` (`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs:313`). The container
+executor is not a daemon — the engine is daemonless and the image carries no
+podman unit — so what the reconciler operates is the mount that makes Quadlet's
+directory readable, `pub const QUADLET_MOUNT_UNIT: &str = "etc-containers-systemd.mount";`
+(`os/pkgs/mosd/mosd/src/reconciler/container.rs:37`), followed by
+`self.control.daemon_reload().await?;`
+(`os/pkgs/mosd/mosd/src/reconciler/container.rs:160`), without which the mount
+is correct, the files are visible and no unit exists. The MQTT executor writes
+`const DEFAULT_CONFIG_PATH: &str = "/run/mos/mqtt-broker.toml";`
+(`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs:38`) and drives two units,
+`const BROKER_UNIT: &str = "mos-mqtt-broker.service";`
+(`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs:28`) and
+`const BRIDGE_UNIT: &str = "mos-mqttd.service";`
+(`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs:31`).
+
 **The `SshdReconciler` row is corrected, and both cells were wrong.** It used to
 read subtree `access.ssh`, `access.device` and effects "sshd drop-in +
 `/etc/shadow` + `ssh.service`". `subtree()` returns `"access.ssh"` and has
@@ -392,6 +426,17 @@ and nothing to re-apply on boot. `mosd-settings` is untouched by them and
 `SCHEMA_VERSION` stays at 3; a request is recorded in the **live-state** tree
 under `power` as `{ last_action, requested_by }` — state, not settings, and not
 persisted.
+
+**Dated note (RFCT-232, 2026-08-28): the version number is stale, the point it
+was making is not.** *"`SCHEMA_VERSION` stays at 3"* is the 2026-08-19 record
+and stays as written; the constant is 8 today —
+`pub const SCHEMA_VERSION: u32 = 8;`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:11`) — which §5.1 already reads as v4
+and §5.3a as the v7 bump PLAN-022 made, PLAN-023 having since taken it to v8. What the sentence is FOR survives the
+number and never depended on it: `Reboot` and `PowerOff` write no settings at
+all, so they leave `SCHEMA_VERSION` wherever they found it, whatever it is.
+Read the clause as *"a power action does not touch the settings document"*,
+which is what it was asserting.
 
 Each method resolves the caller's unique bus name and **logs the action and its
 source and records it in live state BEFORE invoking the power control**, because
