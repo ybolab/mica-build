@@ -1377,6 +1377,36 @@ mod tests {
         assert!(!dir.path().join("secrets").exists());
     }
 
+    /// `GetState`'s two failure paths, and the error name each one travels
+    /// under.
+    ///
+    /// **The names are the assertion.** Both used to be readable only by
+    /// guessing from the message: an unresolvable dot-path raised fdo
+    /// `InvalidArgs`, the same name a rejected *value* travels under, so apid
+    /// could not tell "this path names nothing" from "this argument is bad"
+    /// without knowing that on this one route the name had a single producer.
+    /// It answered 404 by reading the name against that private fact
+    /// (`docs/task/RFCT-215.md` section 6 item 5). The condition is the same
+    /// one [`a_rotation_refuses_an_interface_that_is_not_a_tunnel`] split for
+    /// the rotate-key path in PLAN-023 M6 — a path that names nothing is
+    /// [`NOT_FOUND_ERROR`] — and this brings the state read into line with it.
+    #[tokio::test]
+    async fn a_state_path_that_does_not_resolve_is_not_found() {
+        use zbus::DBusError as _;
+        let (service, _calls, _dir) = service_with_mock();
+
+        let unresolvable = service.get_state("no.such.path").await.unwrap_err();
+
+        let message = unresolvable.description().unwrap_or_default();
+        assert!(message.contains("state path not found"), "{message}");
+        assert_eq!(
+            unresolvable.name().as_str(),
+            super::NOT_FOUND_ERROR,
+            "a dot-path that resolves to nothing names nothing, which is a 404 \
+             and not a 422: {message}"
+        );
+    }
+
     #[tokio::test]
     async fn a_daemon_with_no_key_store_rotates_nothing() {
         let (service, _calls, dir) = service_with_mock();
