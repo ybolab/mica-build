@@ -410,7 +410,7 @@ through `password_hash`, which walks
 `.get("webAdmin")` then `.and_then(|admin| admin.get("password_hash"))`
 (`os/pkgs/mosd/apid/src/routes.rs:782-787`), typed as
 `pub struct WebAdminSettings {` … `pub password_hash: String,`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:166-169`). Hashing is argon2id with default
+(`os/pkgs/mosd/mosd-settings/src/model.rs:187-190`). Hashing is argon2id with default
 parameters — *"Hash `password` with argon2id default parameters into a PHC
 string"* (`os/pkgs/mosd/apid/src/auth.rs:18`), implemented at
 `os/pkgs/mosd/apid/src/auth.rs:19-25` — and verification parses the PHC string,
@@ -543,8 +543,8 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **7**, declared as
-`pub const SCHEMA_VERSION: u32 = 7;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) and
+**Schema version.** `SCHEMA_VERSION` is **8**, declared as
+`pub const SCHEMA_VERSION: u32 = 8;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) and
 stamped into every default tree, `schema_version: SCHEMA_VERSION,`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:43`). It was **4** when this section was
 first written; the number moves and the API must never hard-code it, which is
@@ -552,13 +552,13 @@ why `GET /api/v1/meta` reads it from `mosd_settings::SCHEMA_VERSION` at request
 time (`os/pkgs/mosd/apid/src/routes.rs:511`) rather than copying it. It is **read-only
 through the write path**: a write whose first path segment is `schema_version`
 is rejected, `if segments[0] == "schema_version" {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:608`), and a whole-tree write that would
+(`os/pkgs/mosd/mosd-settings/src/model.rs:673`), and a whole-tree write that would
 change it is rejected too, `if candidate.schema_version != self.schema_version {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:618`). Documents are migrated forward and
+(`os/pkgs/mosd/mosd-settings/src/model.rs:683`). Documents are migrated forward and
 backward through a registered chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, public entry point at
 `pub fn migrate(doc: &mut toml::Table, from: u32, to: u32) -> Result<(), SettingsError> {`
-(`os/pkgs/mosd/mosd-settings/src/migration.rs:92`)).
+(`os/pkgs/mosd/mosd-settings/src/migration.rs:93`)).
 
 **Persistence.** TOML at
 `pub const DEFAULT_PATH: &str = "/var/lib/mos/settings.toml";`
@@ -600,11 +600,11 @@ each reachable at its own dot-path.
 **validated against the typed tree before it is persisted**: `SetSettings`
 builds a candidate, calls `Settings::set` — which deserializes the whole root
 into a candidate `Self`, `serde_json::from_value(root)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:614`) — and only then calls
+(`os/pkgs/mosd/mosd-settings/src/model.rs:679`) — and only then calls
 `self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:467`), so a malformed
 write mutates nothing. Second, **the dot-path syntax has no array indexing**:
 the model comment says a list is *"Written as a whole JSON array through the
-dot-path API"* (`os/pkgs/mosd/mosd-settings/src/model.rs:311`), which is exactly why
+dot-path API"* (`os/pkgs/mosd/mosd-settings/src/model.rs:376`), which is exactly why
 the SSH pane reads the whole key list (`os/pkgs/mosd/apid/src/routes.rs:2950-2952`),
 edits it in memory (`os/pkgs/mosd/apid/src/routes.rs:3631-3635`), and writes the whole
 list back through `write_key_list` (`os/pkgs/mosd/apid/src/routes.rs:2955-2968`).
@@ -848,7 +848,7 @@ follows is a reading of a snapshot and not a defect in it.
    `GetState("sshd")` is at `os/pkgs/mosd/apid/src/routes.rs:2934`,
    `GetState("container")` at `:2079` and `GetState("mqtt")` at `:2337`.
 5. **Schema version "3"** (`docs/research/mos-ui-inventory.md:397`) is now
-   **7** — `pub const SCHEMA_VERSION: u32 = 7;`
+   **8** — `pub const SCHEMA_VERSION: u32 = 8;`
    (`os/pkgs/mosd/mosd-settings/src/model.rs:11`). It was 4 when this section was
    written, which is the second time this one row has gone stale and is the
    reason section 2.1 must serve the number rather than document it.
@@ -1025,8 +1025,8 @@ this paragraph was written). **It is not the API version and the two must never
 be conflated.** The schema version is the shape of the tree on disk
 (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), moved by a registered migration chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, entry point at
-`os/pkgs/mosd/mosd-settings/src/migration.rs:92`) and read-only through the write path
-(`os/pkgs/mosd/mosd-settings/src/model.rs:608-609`, `:582-584`). The shipped handler
+`os/pkgs/mosd/mosd-settings/src/migration.rs:93`) and read-only through the write path
+(`os/pkgs/mosd/mosd-settings/src/model.rs:673-674`, `:582-584`). The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1054,7 +1054,7 @@ answers `/healthz` with the literal `"ok"` unauthenticated
 (`os/pkgs/mosd/apid/src/routes.rs:818`, `:756-758`), so this is one more bit on a
 listener that already identifies itself — it is not zero, and it is exactly why
 the shipped response carries a version list and nothing else: not the hostname,
-not the device identity (`os/pkgs/mosd/mosd-settings/src/model.rs:272-274`), not a
+not the device identity (`os/pkgs/mosd/mosd-settings/src/model.rs:337-339`), not a
 build string.
 
 **What apid promises across a patch release versus an A/B image update.** The
@@ -1111,14 +1111,14 @@ mosd's value and not a wrapper around it.
 **Redaction ships, and it ships wider than this section proposed.** The
 structural redactor is `os/pkgs/mosd/apid/src/redact.rs`, its denylist is
 `const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];`
-(`os/pkgs/mosd/apid/src/redact.rs:33`) — the four field names named below, plus
+(`os/pkgs/mosd/apid/src/redact.rs:40`) — the four field names named below, plus
 the `privateKey` PLAN-022 M6 added as a fail-closed guard for a field no shipped
 schema carries — and
 the sentinel is `pub const REDACTED: &str = "<redacted>";`
 (`os/pkgs/mosd/apid/src/redact.rs:19`). It walks objects and arrays at any depth
-(`os/pkgs/mosd/apid/src/redact.rs:56-73`) and also reads the requested dot-path, so
+(`os/pkgs/mosd/apid/src/redact.rs:63-80`) and also reads the requested dot-path, so
 that a request naming a secret field directly is caught even though the body
-has no field name left in it (`os/pkgs/mosd/apid/src/redact.rs:46-52`). The
+has no field name left in it (`os/pkgs/mosd/apid/src/redact.rs:53-59`). The
 fail-open property this section names as a residual risk is stated by the
 module itself — *"The list is fail-open: a secret-bearing field under a name it
 does not carry is served"* (`os/pkgs/mosd/apid/src/redact.rs:11-12`) — and the
@@ -1200,14 +1200,14 @@ capable as the bus, including the bus's limits:
 
 - **No array indexing.** The dot-path syntax has none; the model says a list is
   *"Written as a whole JSON array through the dot-path API"*
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:311`). Every client that wants to add
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:376`). Every client that wants to add
   one SSH key must read `access.ssh.authorizedKeys`, append, and write the whole
   list back — which is precisely what the HTML pane does today
   (`os/pkgs/mosd/apid/src/routes.rs:3631-3636`). Two clients doing that concurrently
   lose one of the two writes, with no mechanism that notices.
 - **Whole-subtree writes are all-or-nothing.** `Settings::set` deserializes the
   entire root into `Settings` after the write and rejects the result if it does
-  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:613-617`), and every struct carries
+  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:678-682`), and every struct carries
   `#[serde(deny_unknown_fields)]`, so a `PUT` of a subtree with one extra key
   fails the whole write. That is a good property — it is also a surprising one
   for a client that expected a merge.
@@ -1238,7 +1238,7 @@ capable as the bus, including the bus's limits:
   `settings_rejected` and not as a 502. **A key containing a double quote has no
   spelling at all**, and schema v7 closes that hole from the other side rather
   than leaving it as an addressing gap: *"Refuse a `network` map key the kernel
-  could not name an interface"* (`os/pkgs/mosd/mosd-settings/src/model.rs:531`)
+  could not name an interface"* (`os/pkgs/mosd/mosd-settings/src/model.rs:596`)
   runs on the write path, which makes such a key structurally impossible instead
   of merely unaddressable.
 
@@ -1248,8 +1248,8 @@ cannot be expressed as a settings write at all. Both get a named collection:
 
 | Collection | Underlying dot-path | Item identity | Routes |
 |---|---|---|---|
-| SSH authorized keys | `access.ssh.authorizedKeys` — `authorizedKeys` (`os/pkgs/mosd/mosd-settings/src/model.rs:202-203`) | SSH fingerprint | `GET`/`POST /api/v1/ssh/authorized-keys`, `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` |
-| WiFi client networks | `wifi.client.networks` — `networks` (`os/pkgs/mosd/mosd-settings/src/model.rs:313`) | `ssid` | `GET`/`POST /api/v1/wifi/client/networks`, `DELETE /api/v1/wifi/client/networks/{ssid}` |
+| SSH authorized keys | `access.ssh.authorizedKeys` — `authorizedKeys` (`os/pkgs/mosd/mosd-settings/src/model.rs:223-224`) | SSH fingerprint | `GET`/`POST /api/v1/ssh/authorized-keys`, `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` |
+| WiFi client networks | `wifi.client.networks` — `networks` (`os/pkgs/mosd/mosd-settings/src/model.rs:378`) | `ssid` | `GET`/`POST /api/v1/wifi/client/networks`, `DELETE /api/v1/wifi/client/networks/{ssid}` |
 
 **Identity is never a list index.** The reason is already recorded in the crate,
 and it is the reason here too: *"an index is only meaningful against the list the
@@ -1277,7 +1277,7 @@ have to issue N deletes and M posts with no atomicity at all.
 **Redaction is a rule of this root, not of a handler.** As of `86cd669`,
 `GetSettings("access")` returns the subtree verbatim
 (`os/pkgs/mosd/mosd/src/bus.rs:610-614`), and the admin hash lives under it as
-`password_hash` (`os/pkgs/mosd/mosd-settings/src/model.rs:167-168`). A settings
+`password_hash` (`os/pkgs/mosd/mosd-settings/src/model.rs:188-189`). A settings
 passthrough with no redaction therefore hands the admin password hash — and
 `access.device.passwordHash` (`:256-261`), `wifi.ap.psk` (`:358-359`) and every
 `wifi.client.networks[].psk` (`:333-334`) — to any authenticated API caller. The
@@ -1286,7 +1286,7 @@ structural redactor before serialising it**, replacing the value of any field
 named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in the tree,
 at any depth — with the sentinel `"<redacted>"`. It must be structural rather
 than a list of dot-paths, because the two `psk` fields sit inside arrays and the
-dot-path syntax cannot name them (`os/pkgs/mosd/mosd-settings/src/model.rs:333-334`, `:358-359`).
+dot-path syntax cannot name them (`os/pkgs/mosd/mosd-settings/src/model.rs:398-399`, `:358-359`).
 The residual risk is stated: this is a denylist, so a future secret-bearing field
 under a name not on it is exposed by default. That is a fail-open design and the
 mitigation is a test, not a hope. A redacted field is
@@ -1641,7 +1641,7 @@ message too — replacing mosd's text with apid's own phrasing per code — then
 every message mosd learns to produce is invisible until apid is taught it. The
 "unknown field `100`, expected `dhcp` or `static`" string in the example above
 comes from serde, through `SettingsError::Validation`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:613-617`),
+(`os/pkgs/mosd/mosd-settings/src/model.rs:678-682`),
 and no phrasing apid could have pre-written would have told the caller which
 field was wrong. A client debugging a rejected write would be reduced to
 guessing. That is the failure mode, and it is why `message` is passed through.
@@ -1653,7 +1653,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    caller can fix it locally, and the write definitely did not happen.
    `source: "mosd"` means mosd's typed tree rejected it; the write also did not
    happen (`Settings::set` is documented as leaving settings unchanged on error,
-   `os/pkgs/mosd/mosd-settings/src/model.rs:593-594`, and `store.save` runs only after
+   `os/pkgs/mosd/mosd-settings/src/model.rs:658-659`, and `store.save` runs only after
    the candidate validates, `os/pkgs/mosd/mosd/src/bus.rs:465-467`), but the rule that
    rejected it is not one apid knows. Both are 422. Knowing which is which is
    what tells a client whether re-reading this document will help.
@@ -2013,7 +2013,7 @@ call the gate already makes.
 Two costs, both inherited from the tree rather than introduced here:
 
 - Mint and revoke are read-modify-write of the whole array, because the dot-path
-  syntax has no array indexing (`os/pkgs/mosd/mosd-settings/src/model.rs:213-214`) —
+  syntax has no array indexing (`os/pkgs/mosd/mosd-settings/src/model.rs:234-235`) —
   the same pattern the SSH key pane uses (`os/pkgs/mosd/apid/src/routes.rs:3631-3636`).
   Two concurrent mints lose one token, silently.
 - Identity is the `id`, never a list position, for the reason recorded at
@@ -3937,7 +3937,7 @@ below are the run's actual output.
    succeeds and rewrites `schema_version` to `3` — which is what made the wrong
    answer plausible. It is reachable only from an explicit caller with
    `from > to`, and **the only such callers in the tree are tests**
-   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:243`, `:279`, `:510`, `:540`, `:1000`,
+   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:244`, `:279`, `:510`, `:540`, `:1000`,
    `:1015`, `:1085`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
    production caller of `migrate` and it can only ever walk **upward**.
 
