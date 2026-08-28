@@ -1353,8 +1353,8 @@
               }
             }
           },
-          "405": {
-            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+          "404": {
+            "description": "The dot-path does not resolve (`settings_not_found`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1363,8 +1363,8 @@
               }
             }
           },
-          "404": {
-            "description": "The dot-path does not resolve (`settings_not_found`)",
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {

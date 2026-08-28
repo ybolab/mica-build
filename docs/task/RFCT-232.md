@@ -98,7 +98,7 @@ loses none: `200`, `401`, `422`, `500` and `503` all remain, with the same
 regenerated document is `1 file changed, 11 insertions(+), 1 deletion(-)` — ten
 of those insertions are the new 404 object,
 `"description": "The dot-path does not resolve (`settings_not_found`)",`
-(`os/pkgs/mosd/apid/openapi.json:1367`), and the eleventh-and-deletion pair is
+(`os/pkgs/mosd/apid/openapi.json:1357`), and the eleventh-and-deletion pair is
 one line: the 422's description used to end *"which is also the answer for a
 dot-path that does not exist"*, which the fix makes false. No schema changed, no
 status was removed, no body was retyped. A client generated from the old
