@@ -3872,7 +3872,7 @@ host, never on a device, and its output is static content"*
 README names the missing half without being asked: the **on-device Uptane
 client** is named as *"Explicitly out of scope for the whole crate"*
 (`os/pkgs/rauc-sign/README.md:41`). Its own README also records that RAUC's CMS signature
-*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51`), so the two bodies of
+*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:52`), so the two bodies of
 machinery do not compose with each
 other either.
 
