@@ -5,8 +5,10 @@
 
 # It is the first feature stage. `radios-packages` is the first `apt-get
 # install` after stages/10-base's allowlist, and the order of the apt
-# transactions decides the order entries land in dpkg's database and in the log
-# files the pack stage carries into /usr/share/factory/var/log.
+# transactions decides the order entries land in dpkg's database and in the
+# package-manager logs. Those logs no longer ship: stages/90-pack captures them
+# out of the tree and the driver writes them to _out/<board>/pkg-logs/, which is
+# where the comparison in ../README.md reads them.
 
 # The switch is BOARD_RADIOS, and it stays an argument, unlike the containers
 # and mosd stages which switch on the presence of a file. BOARD_RADIOS is a
