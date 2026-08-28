@@ -26,3 +26,8 @@ os/rootfs/overlay-v2/etc/rauc/keyring.pem
 # Built by os/pkgs/rauc/build.sh, like os/pkgs/podman/out-*: compiled artefacts, not source.
 os/pkgs/rauc/out-*/
 os/pkgs/rauc/versions.lock
+
+# Session/build scratch shared with containers (bind-mount root; never /tmp -- the
+# docker daemon does not share this session's /tmp). All throwaway compile, verify
+# and container-exchange paths belong here.
+runtime/
