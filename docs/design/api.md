@@ -569,8 +569,8 @@ fsync it, rename it over the target, then fsync the directory"*
 `os/pkgs/mosd/mosd-settings/src/store.rs:238-253`. Every struct in the model carries
 `#[serde(deny_unknown_fields)]` (for example
 `os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, `:112`, `:139`, `:147`,
-`:165`, `:176`, `:226`, `:237`, `:252`, `:268`, `:293`, `:303`, `:328`,
-`:345`, `:441`, `:464`, `:474`, `:490`, `:507`, `:564`), so an unknown key
+`:186`, `:197`, `:247`, `:258`, `:273`, `:333`, `:358`, `:368`, `:393`,
+`:410`, `:506`, `:529`, `:539`, `:555`, `:572`, `:629`), so an unknown key
 fails the load rather than being silently dropped.
 
 **The settings subtrees, from `pub struct Settings {`
@@ -580,14 +580,14 @@ fails the load rather than being silently dropped.
 |---|---|---|---|
 | `schema_version` | `u32` | `model.rs:18` | read-only, value 7 (`model.rs:11`) |
 | `hostname` | `String` | `model.rs:20` | system hostname, default `"mos"` (`model.rs:44`) |
-| `network.<iface>` | `IfaceSettings` | `model.rs:22`, type at `:431-460` | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `:404-422`), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `:562-574`, `vlan` at `:462-470`, `bridge` at `:472-479`, `wireguard` at `:481-503` |
-| `access.webAdmin` | `Option<WebAdminSettings>` | `model.rs:149-151`, type at `:163-169` | `password_hash` only; absent until first-run setup writes it |
-| `access.ssh` | `SshSettings` | `model.rs:152-154`, type at `:171-204` | `enabled` (default `false`, `:206-209`), `port`, `permitRootLogin`, `passwordAuthentication`, `listenAddresses[]`, `authorizedKeys[]` (`:202-203`, entry type at `:219-233`) |
-| `access.console` | `ConsoleSettings` | `model.rs:155-157`, type at `:235-243` | `shellEnabled` |
-| `access.device` | `DeviceCredentialSettings` | `model.rs:158-160`, type at `:245-264` | `passwordHash` (optional) and `generation`; never a plaintext secret (`:246-250`) |
-| `provisioning` | `ProvisioningSettings` | `model.rs:26-28`, type at `:266-278` | `state` (`pending` \| `complete`, `:280-289`), `deviceId`, `seededGeneration` |
-| `wifi.client` | `WifiClientSettings` | `model.rs:295-296`, type at `:301-314` | `enabled`, `interface`, `networks[]` (entry at `:326-341`) |
-| `wifi.ap` | `WifiApSettings` | `model.rs:297-298`, type at `:343-373` | `mode` (`off` \| `provisioning` \| `always`, `:391-402`), `interface`, `ssid`, `psk`, `channel`, `countryCode`, `address`, `holdDownSeconds`, `graceSeconds` |
+| `network.<iface>` | `IfaceSettings` | `model.rs:22`, type at `:496-525` | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `:469-487`), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `:627-639`, `vlan` at `:527-535`, `bridge` at `:537-544`, `wireguard` at `:546-568` |
+| `access.webAdmin` | `Option<WebAdminSettings>` | `model.rs:149-151`, type at `:184-190` | `password_hash` only; absent until first-run setup writes it |
+| `access.ssh` | `SshSettings` | `model.rs:152-154`, type at `:192-225` | `enabled` (default `false`, `:227-230`), `port`, `permitRootLogin`, `passwordAuthentication`, `listenAddresses[]`, `authorizedKeys[]` (`:223-224`, entry type at `:240-254`) |
+| `access.console` | `ConsoleSettings` | `model.rs:155-157`, type at `:256-264` | `shellEnabled` |
+| `access.device` | `DeviceCredentialSettings` | `model.rs:158-160`, type at `:266-285` | `passwordHash` (optional) and `generation`; never a plaintext secret (`:267-271`) |
+| `provisioning` | `ProvisioningSettings` | `model.rs:26-28`, type at `:331-343` | `state` (`pending` \| `complete`, `:345-354`), `deviceId`, `seededGeneration` |
+| `wifi.client` | `WifiClientSettings` | `model.rs:295-296`, type at `:366-379` | `enabled`, `interface`, `networks[]` (entry at `:391-406`) |
+| `wifi.ap` | `WifiApSettings` | `model.rs:297-298`, type at `:408-438` | `mode` (`off` \| `provisioning` \| `always`, `:456-467`), `interface`, `ssid`, `psk`, `channel`, `countryCode`, `address`, `holdDownSeconds`, `graceSeconds` |
 | `container` | `ContainerSettings` | `model.rs:32-34`, type at `:55-74` | `enabled` only; false means the Quadlet directory is not bound from STATE and no container unit exists |
 | `mqtt` | `MqttSettings` | `model.rs:35-37`, type at `:76-103` | `enabled` (a master switch over both units), `listen` (`address`, `port`, `:105-118`), `auth` (`:139-145`) |
 
@@ -1026,7 +1026,7 @@ be conflated.** The schema version is the shape of the tree on disk
 (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), moved by a registered migration chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, entry point at
 `os/pkgs/mosd/mosd-settings/src/migration.rs:93`) and read-only through the write path
-(`os/pkgs/mosd/mosd-settings/src/model.rs:673-674`, `:582-584`). The shipped handler
+(`os/pkgs/mosd/mosd-settings/src/model.rs:673-674`, `:647-649`). The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1279,14 +1279,14 @@ have to issue N deletes and M posts with no atomicity at all.
 (`os/pkgs/mosd/mosd/src/bus.rs:610-614`), and the admin hash lives under it as
 `password_hash` (`os/pkgs/mosd/mosd-settings/src/model.rs:188-189`). A settings
 passthrough with no redaction therefore hands the admin password hash — and
-`access.device.passwordHash` (`:256-261`), `wifi.ap.psk` (`:358-359`) and every
-`wifi.client.networks[].psk` (`:333-334`) — to any authenticated API caller. The
+`access.device.passwordHash` (`:277-282`), `wifi.ap.psk` (`:423-424`) and every
+`wifi.client.networks[].psk` (`:398-399`) — to any authenticated API caller. The
 rule: **every `GET` under `/api/v1/settings/` passes the value through a
 structural redactor before serialising it**, replacing the value of any field
 named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in the tree,
 at any depth — with the sentinel `"<redacted>"`. It must be structural rather
 than a list of dot-paths, because the two `psk` fields sit inside arrays and the
-dot-path syntax cannot name them (`os/pkgs/mosd/mosd-settings/src/model.rs:398-399`, `:358-359`).
+dot-path syntax cannot name them (`os/pkgs/mosd/mosd-settings/src/model.rs:398-399`, `:423-424`).
 The residual risk is stated: this is a denylist, so a future secret-bearing field
 under a name not on it is exposed by default. That is a fail-open design and the
 mitigation is a test, not a hope. A redacted field is
@@ -1883,7 +1883,7 @@ The store is `access.apiTokens`, an array whose items are
 `{id, name, hash, created}` — the naming follows the tree's existing
 convention of camelCase renames for multi-word keys (`webAdmin`,
 `authorizedKeys`, `passwordHash`;
-`os/pkgs/mosd/mosd-settings/src/model.rs:150`, `:202`, `:257`). Five reasons, and the
+`os/pkgs/mosd/mosd-settings/src/model.rs:150`, `:223`, `:278`). Five reasons, and the
 tier is chosen rather than inherited:
 
 1. **It is the tier that matches the credential's required lifetime.** The
@@ -3937,8 +3937,8 @@ below are the run's actual output.
    succeeds and rewrites `schema_version` to `3` — which is what made the wrong
    answer plausible. It is reachable only from an explicit caller with
    `from > to`, and **the only such callers in the tree are tests**
-   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:244`, `:279`, `:510`, `:540`, `:1000`,
-   `:1015`, `:1085`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
+   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:244`, `:280`, `:512`, `:542`, `:1002`,
+   `:1017`, `:1087`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
    production caller of `migrate` and it can only ever walk **upward**.
 
 **What follows, corrected.** An A/B rollback into a phase-1 slot after a token
