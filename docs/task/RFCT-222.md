@@ -459,3 +459,5 @@ under this plan.
 
 Both documentation gates were run against this record and the single index row
 it adds, and their verdict lines are quoted in this task's report.
+
+<!-- dated-record: the PLAN-024 M1 audit, frozen at `a86ab46`; its citations name the plan heads and the sibling plans as they stood before the PLAN-024 M2 closeout (RFCT-227) amended them, and re-pointing them would falsify what was measured when; exempt from docs/verify-citations.sh (RFCT-172) -->

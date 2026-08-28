@@ -23,10 +23,14 @@
   arguable (state is read-only; RFCT-183's residual); mosd.md section 5.3
   "returns five" (now seven) and section 5.4's schema sentence, both
   self-dated records needing dated notes only.
-- Harness facts live only in task files and session memory: host bun cannot
-  parse the committed lockfile, the pinned image lacks nextest/dbus-daemon
-  (nextest now provisioned at /srv/mos-rust-tools/bin), the full container
-  PATH must be spelled out, runtime/ is the scratch root. They belong in a
+- Harness facts live only in task files and session memory: the pinned image
+  lacks nextest/dbus-daemon (nextest now provisioned at
+  /srv/mos-rust-tools/bin), the full container PATH must be spelled out,
+  runtime/ is the scratch root. *(Dated correction, 2026-08-28: the original
+  "host bun cannot parse the committed lockfile" claim is FALSE on this host
+  today — bun 1.4.0 at /srv/bkd/runtime/bun parses it and runs the selftest
+  47/47. The container route is a deliberate PIN for reproducibility, not a
+  workaround, and the harness page records it as such.)* They belong in a
   committed HARNESS or docs page so the next tool pays nothing.
 
 ## Proposal
@@ -40,8 +44,13 @@
   deferred RFCT-206 section 7 pass: build the cx3576 image and run the
   board-independent guest smoke. If a wall is genuinely capability (no
   hardware), record precisely per the control-pair precedent.
-- **M3 (RFCT-232)** /state 404 decision implemented if additive-clean, the
-  two mosd.md dated notes, and the api.md section 2.3 note PLAN-021 left.
+- **M3 (RFCT-232)** /state 404 decision implemented if additive-clean and the
+  two mosd.md dated notes. *(Corrected at bootstrap, 2026-08-28: the plan's
+  original third item — "the api.md section 2.3 note PLAN-021 left" — was
+  already satisfied when written: PLAN-021's a4c092f landed the parked-token
+  note at api.md:1468-1470. The one genuinely open 2.3 item, ssh_key_remove
+  422 -> 404, is a write-surface behaviour change and is routed to PLAN-023
+  M1's inventory.)*
 - **M4 (RFCT-233)** the harness facts page (docs/ or test/apid-api/HARNESS
   extension), citation-gated.
 

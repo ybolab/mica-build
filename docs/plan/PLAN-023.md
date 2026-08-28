@@ -42,3 +42,26 @@ the design of record; sections 4-9 remain unmeasured (RFCT-207's residue).
   openapi.json, .github check steps, test/apid-api phases, docs/design/api.md
   status annotations.
 - **Out**: api.md sections 4-9 rewrite, UI redesign, .zh.md.
+
+## Amendment 1 — M1 ratified and the three decisions (user, 2026-08-28)
+
+1. **Auth model: dual-credential with an in-plan cutover.** `/api/v1/` accepts
+   bearer OR the existing session cookie from RFCT-213 onward. The cookie's
+   acceptance on `/api/v1/` is removed by a NAMED milestone of this plan
+   (scheduled after the mint pane ships and test/apid-api drives bearer
+   end-to-end), so api.md section 3.2's bearer-only statement is false only
+   for a bounded, in-plan window. Section 3.2 gains a dated note at that
+   milestone, not before.
+2. **The revised M1 design is ratified as written**: the M4-M8 write-surface
+   split; the collection error contract (absent identifier 404, malformed
+   422, one shared helper, paired cross-surface tests); the network cluster
+   typed with the raw passthrough answering 409; token revocation on
+   password change stays OUT with the password pane carrying the ratified
+   sentence verbatim; the rotate-key 422->404 correction rides M6 as a mosd
+   change; the peer-add finding is confirmed-or-refuted by M6's acceptance
+   test.
+3. **Key custody: option A** — vendor-held, offline, single root, per the
+   ceremony and horizons already written. Root-rotation tooling is scheduled
+   unconditionally as RFCT-216 (pending, deadline: before the first
+   ceremony's one-year expiry); options C/D remain reachable later since the
+   rotation work is prerequisite to both.
