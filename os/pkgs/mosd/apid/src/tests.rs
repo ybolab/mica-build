@@ -361,7 +361,9 @@ async fn network_post_quotes_a_dotted_iface_name() {
     );
     // Addressable by the path the write used.
     assert_eq!(
-        fake.get_settings(r#"network."eth0.100".dhcp"#).await.unwrap(),
+        fake.get_settings(r#"network."eth0.100".dhcp"#)
+            .await
+            .unwrap(),
         json!(true)
     );
 
@@ -383,7 +385,9 @@ fn the_dotted_iface_path_apid_builds_is_accepted_by_the_settings_model() {
     let value = json!({ "dhcp": true });
 
     let mut settings = mosd_settings::Settings::default();
-    settings.set(r#"network."eth0.100""#, value.clone()).unwrap();
+    settings
+        .set(r#"network."eth0.100""#, value.clone())
+        .unwrap();
     assert_eq!(
         settings.network.keys().collect::<Vec<_>>(),
         vec!["eth0.100"]
@@ -428,7 +432,10 @@ async fn network_post_refuses_a_quote_in_an_iface_name() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(fake.set_paths().is_empty(), "no write on a name with a quote");
+    assert!(
+        fake.set_paths().is_empty(),
+        "no write on a name with a quote"
+    );
 }
 
 /// A dot that is not a VLAN spelling is still a legal name and still gets one
