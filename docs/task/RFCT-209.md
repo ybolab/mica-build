@@ -1,9 +1,10 @@
 # RFCT-209 Reconciling PLAN-021 with PLAN-022: fourteen conflicted files, one tree
 
-- **status**: in progress
+- **status**: completed — 14 conflicts resolved with both workstreams' behaviour intact, 455 citations re-anchored, every gate green on the merged tree
 - **priority**: P1
 - **owner**: bkd/yb03x8mz
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-022 (finding, slot reserved by RFCT-200 section 8)
 
 RFCT-200 section 8 reserves 208 and 209 for findings raised while M2-M8 run.
@@ -156,10 +157,28 @@ Nothing else. No feature was added, no unrelated defect fixed.
 
 | Gate | Result |
 | --- | --- |
-| `bash os/pkgs/mosd/hack/check.sh` | PENDING |
-| `bash os/pkgs/rauc-sign/hack/check.sh` | PENDING |
-| `bash docs/verify-citations.sh` | PENDING |
-| `bash docs/verify-index.sh` | PENDING |
-| `bash os/verify/run.sh` | PENDING |
-| `bash os/verify/run.sh --verify --board x64` | PENDING |
-| `make os-apid-api-test` | PENDING |
+| `bash os/pkgs/mosd/hack/check.sh` | `ALL CHECKS PASSED` — fmt, clippy `-D warnings`, 704 nextest tests, doctests, `cargo deny` |
+| `bash os/pkgs/rauc-sign/hack/check.sh` | `ALL CHECKS PASSED` |
+| `bash docs/verify-citations.sh` | `1379/1379 PASS` |
+| `bash docs/verify-index.sh` | `748/748 PASS` |
+| `bash os/verify/run.sh` | `RESULT: PASS (1080/1080 tests)` |
+| `bash os/verify/run.sh --verify --board x64` | `RESULT: PASS (292/292 checks, 22 skipped (x64/grub; each named above))` |
+| `make os-apid-api-test` | `RESULT: PASS (337/337 checks)` — boot 1 `PASS (306/306)`, boot 2 `PASS (17/17)`, 9 skipped |
+| `make os-build-test` | `689 pass`, `0 fail` |
+
+The image the e2e suite ran against was REBUILT on this tree
+(`MOS_BOARD=x64 bash os/rootfs/build-v2.sh` then
+`bash os/build/run.sh --mkimage-x64`), not reused from either workstream's
+worktree: PLAN-021 edits `os/rootfs/overlay-v2`, `os/boards/x64/board.env`,
+the mosd sources and the RAUC templates, so every sibling `_out/` predates
+changes that reach the artefact. The two pinned third-party builds under
+`os/pkgs/{rauc,podman}/out-amd64` WERE copied from a sibling worktree, which
+is sound for a narrower reason: they are gitignored outputs of upstream
+sources pinned in `versions.env`, and both `versions.env` files are byte
+identical between the two trees, so a rebuild could not produce different
+bytes. Nothing else was reused.
+
+The e2e result is 337 checks where RFCT-206 measured 329 on PLAN-022 alone:
+the extra checks are PLAN-021's additions to `04-readonly` and the
+change-password surface, which is the merge showing up as coverage. The
+`pin-seeded-times` flake PLAN-021 claims to have fixed did not fire.
