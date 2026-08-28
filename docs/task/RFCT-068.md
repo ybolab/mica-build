@@ -60,9 +60,9 @@ documents now carry dated corrections that trace back to them:
 
 | §9 row | correction now in the tree |
 | --- | --- |
-| row 5 — `webd` is not a WebSocket bridge | `docs/design/mosd.md:41-46` |
-| row 6 — the settings path | `docs/design/mosd.md:58-62` |
-| row 1 — the `SshdReconciler` subtree | `docs/design/mosd.md:183-195` |
+| row 5 — `webd` is not a WebSocket bridge | `docs/design/mosd.md:49-54` |
+| row 6 — the settings path | `docs/design/mosd.md:66-70` |
+| row 1 — the `SshdReconciler` subtree | `docs/design/mosd.md:191-203` |
 | rows 2 and 3 — the device password authenticates nothing | `docs/design/provisioning.md:141` |
 
 **It is the traceable record of why `access.md` and its siblings changed.**

@@ -60,7 +60,7 @@ GET network.eth0.100 -> Err(NotFound("network.eth0.100"))
 Four facts in one run:
 
 1. The dot-path write of a VLAN name fails exactly as RFCT-135 and
-   `docs/design/api.md:1199-1210` describe.
+   `docs/design/api.md:1212-1241` describe.
 2. **The persistence layer already spells the key correctly**: serializing a
    tree that structurally contains the key `eth0.100` writes
    `[network."eth0.100"]` — TOML quoted-key syntax, produced by the `toml`
@@ -145,7 +145,7 @@ validates against the typed tree and saves TOML atomically
 `50-mos-<iface>.network`, sweeps, reloads networkd
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
-`GET /api/v1/state/network` (`docs/design/api.md:1339`).
+`GET /api/v1/state/network` (`docs/design/api.md:1368`).
 
 ---
 
@@ -479,6 +479,17 @@ the image (`os/rootfs/stages/10-base.Dockerfile:120`), so `=m` is loadable at
 runtime — unlike cx3576, whose fragment requires `=y` for the verity boot path
 (`os/boards/common/mos-required.fragment:3-5`).
 
+**Correction (2026-08-28, PLAN-022 M8).** The point release in the sentence
+above is a snapshot and not a pin: RFCT-206 measured **6.12.105+deb13-amd64** on
+the built x64 image. Nothing in the tree pins one — the stage takes *"Debian's
+own linux-image-amd64, which brings its kernel, its initramfs and its modules in
+one package"* (`os/rootfs/stages/40-board.Dockerfile:79-81`), so the number
+follows Debian's archive — and neither check M7 wired up pins one either: both
+derive the release from the image, which is why the drift changed no result. The
+sentence above is left standing as what this record measured on 2026-08-27, and
+RFCT-206 quotes it verbatim as such; for what an image ships today, this note is
+the authority and the number above is not.
+
 **The Debian config is not present in this repository, and nothing in-tree
 proves what it sets.** No availability of `8021q`, `bridge` or `wireguard`
 modules is assumed here. The verification step M2 must run on a real built
@@ -519,7 +530,7 @@ open"*.
 | `privateKey` joining the redaction denylist | additive | no shipped response carries such a field to remove |
 
 Nothing on the breaking list is touched; **no `/api/v2` is required.** This
-also discharges the debt api.md records at `docs/design/api.md:4217-4222`
+also discharges the debt api.md records at `docs/design/api.md:4249-4259`
 — the dot-path fix reaches the published contract as an additive change, not
 a versioned one.
 

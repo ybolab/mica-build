@@ -49,10 +49,22 @@ device's settings and drives systemd to match them.
   counters and audit ring live under `/var/lib/mos/apid`
   (`os/pkgs/mosd/dist/apid.service`). The dashboard is one of its clients, and
   `os/pkgs/mosd/apid/openapi.json` is generated from the handlers.
-- **Networking** is mosd's `wifi.client` and `wifi.ap` subtrees, reconciled
-  into wpa_supplicant, hostapd and systemd-networkd units. The design is
-  recorded under the name `connd`; the concern is a pair of reconcilers, not a
-  process (`docs/design/connd.md`).
+- **Networking** is mosd's `network`, `wifi.client` and `wifi.ap` subtrees,
+  reconciled into systemd-networkd, wpa_supplicant and hostapd units. The
+  wireless half is recorded under the name `connd`; the concern is a pair of
+  reconcilers, not a process (`docs/design/connd.md`).
+- **Interface kinds.** A `network` entry declares a **kind** — physical, `vlan`,
+  `bridge` or `wireguard` — and the one optional block that belongs to it. The
+  block is authoritative and the interface name is not:
+  *"`eth0.100` is a convention, not a declaration"*
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:434-435`). A physical entry renders
+  one `.network` file, as it always did; each of the other three additionally
+  renders a `.netdev` that creates the device, and the attachment is a line on
+  the *other* interface's unit — `VLAN=` on the parent, `Bridge=` on the port.
+  A removed virtual entry is torn down, not just unlinked, and a WireGuard
+  tunnel's private key is drawn on the device into a `networkd-secrets/`
+  directory beside the settings file, never into the settings tree
+  (`docs/design/mosd.md` §5.3a).
 - **`mos-mqttd`** publishes the item tree to a broker and applies writes back
   through mosd; `mos-mqtt-broker` is the local broker, built from `rumqttd` as
   a library rather than shipped as a third daemon (`os/pkgs/mosd/Cargo.toml`).

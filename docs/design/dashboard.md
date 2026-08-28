@@ -139,8 +139,14 @@ Four changes, in dependency order. **[proposal]**
    substantially an echo of the settings tree — the `hostname` key echoes
    `settings.hostname` back after the hostnamed call returned `Ok`
    (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`), and the `network` key carries the
-   rendered unit file name and the configured `dhcp` flag
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and nothing else. A dashboard
+   rendered unit file name, the configured `dhcp` flag and the configured kind —
+   `"kind": kind_name(cfg.kind),`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — plus, for a
+   WireGuard tunnel, `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`). Every one of those is
+   either an echo of the settings tree or a fact about a file the reconciler
+   itself wrote; not one is a reading off a link, and the public key least of
+   all — it is derived from the key file, not from the tunnel. A dashboard
    that renders those as if they were measurements is a dashboard that lies.
 
 Note what is *not* on that list: making the UI faster, prettier, or
@@ -338,7 +344,7 @@ better mechanism and then hid it.**
   reboot.** Rebooting a slot RAUC has installed but that has not been marked
   good **burns a boot attempt**, and today the power pane has no update-state
   awareness and does not warn — recorded as a known follow-up at
-  `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503`, and
+  `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503`, and
   gap-table **row 10**. The next action is to wait for the health gate to run, or
   read *why* it did not pass (section 2.3, part iii). This tile and the power
   page are therefore coupled: the power page must read this tile's feed before it
@@ -487,7 +493,7 @@ names the reason, and where it belongs instead. **[proposal]**
 - **No power buttons.** They are one click from the nav bar already
   (`routes.rs:48`), they are the only irreversible actions in the product, and —
   until section 2.5's feed exists — the power pane cannot warn that rebooting a
-  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:217-220`).
+  pending-confirm slot burns a boot attempt (`docs/design/mosd.md:225-228`).
   Promoting an action to the first screen while it cannot state its own
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
@@ -646,9 +652,14 @@ the live-state tree is an **echo** of the settings tree:
 - `hostname` echoes `settings.hostname` back after the hostnamed call returned
   `Ok` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) — a confirmation that the
   write was attempted, not a read-back (`mos-ui-inventory.md` section 7, row 13).
-- `network` carries the rendered unit file name and the configured `dhcp` flag
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:115-118`) and no observed value
-  (row 14).
+- `network` carries the rendered unit file name, the configured `dhcp` flag and
+  the configured kind — `"kind": kind_name(cfg.kind),`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`) — and, for a WireGuard
+  tunnel, the public half of the key on disk: *"Only the public half is
+  published"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:668`). No observed
+  value (row 14): a `wireguard` entry says which key the tunnel was built to
+  use, not whether a peer is reachable, and a `vlan` or `bridge` entry says a
+  `.netdev` was written, not that the device came up.
 - `wifiClient.networks` lists the **configured** networks, and `activeState` is
   systemd's view of the supplicant *unit*, not of the association
   (`mos-ui-inventory.md` section 6.3).
@@ -791,7 +802,7 @@ section 8's.
 | 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
 | 8 | 2.2, 3.4.1 | Observed hostname as opposed to configured | **row 13** | A read-back from hostnamed. There is no `GetHostname` call anywhere; the live-state key echoes the configured value (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) |
-| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
+| 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:225-228` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
 | 10 | 3.2 Diagnostics | A redaction rule before any state export | — (not a gap row; **[proposal]**) | `GetState("")` and `GetSettings("")` already return whole trees (`os/pkgs/mosd/mosd/src/bus.rs:160-164`, `:197-202`), so the mechanism exists and the *policy* does not. Venus's precedent is redaction plus an access gate (`venus-os-ui.md` section 7 item 10) |
 
 **Items needing no `mosd` work at all**, listed so they are not accidentally
@@ -1605,7 +1616,7 @@ admitted gap.
 8. **`docs/design/access.md`, `docs/design/provisioning.md` and
    `docs/design/mosd.md`** are owned by the parallel `sshweb` campaign and were
    not opened for this section. Where section 4 of this document cites
-   `docs/design/mosd.md:217-220`, that citation is carried through unchecked.
+   `docs/design/mosd.md:225-228`, that citation is carried through unchecked.
    Likewise the in-flight SSH work on `bkd/hiu25adw` (`mos-ui-inventory.md`
    section 8) is not in this tree; if it adds routes, the route count in 5.1.1
    and the fragment-route count in 5.4 are both understated.

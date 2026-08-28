@@ -70,4 +70,4 @@ whose resolution can change what section 2 is able to build. Section 5 records
 that explicitly: whether `webd` is renamed, whether it is merged into `mosd`,
 and in what order any of this is delivered are all RFCT-046's, and where a
 recommendation would be changed by that decision it is flagged in one line and
-left open (`docs/design/dashboard.md:862-866`).
+left open (`docs/design/dashboard.md:873-877`).

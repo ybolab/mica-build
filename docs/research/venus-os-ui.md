@@ -4,7 +4,7 @@
 > 2026-08-19. Venus OS is the closest shipping analogue to mos: an appliance OS
 > with a central settings bus, a local browser UI and a remote console, and mos
 > already borrowed its settings-tree model (`docs/design/mosd.md:18`,
-> `docs/design/mosd.md:39`). This document describes Venus. It does not propose
+> `docs/design/mosd.md:47`). This document describes Venus. It does not propose
 > an mos design; a sibling task owns that and cites this file.
 
 **Companion document:** `docs/research/venus-os-access.md` covers the other half
@@ -669,7 +669,7 @@ is proposed here.
    *Why it earns its place:* a value-oriented remote bridge (MQTT `W/` topics)
    carries commands unchanged, so remote and local use exactly one code path.
    *Plausible for mos:* mosd exposes `Reboot` and `PowerOff` as D-Bus **methods**
-   (`docs/design/mosd.md:194-195`), which a value-forwarding remote bridge
+   (`docs/design/mosd.md:202-203`), which a value-forwarding remote bridge
    cannot carry, so this is a fork in the road rather than a feature to add.
 
 3. **A first-class notification stream, surfaced in the chrome and raised by
@@ -679,7 +679,7 @@ is proposed here.
    an alarm is active (§4.1, §6). *Why it earns its place:* it is the only
    channel by which the device tells the operator something without being
    asked. *Plausible for mos:* mosd has `ReportHealth`
-   (`docs/design/mosd.md:269`) but no notification model and no UI surface for
+   (`docs/design/mosd.md:374`) but no notification model and no UI surface for
    one.
 
 4. **Config-versus-reality drift is raised as a user-visible warning.**
@@ -691,7 +691,7 @@ is proposed here.
    it turns "the setting says one thing and the system is another" from an
    invisible failure into a UI event. *Plausible for mos:* mosd's reconcilers
    already produce named outcomes including `conflict` and `plaintext-missing`
-   (`docs/design/mosd.md:250-252`), so the detection exists and only the surface
+   (`docs/design/mosd.md:258-260`), so the detection exists and only the surface
    is missing.
 
 5. **Per-row access levels with hide-not-disable semantics.** Four levels, and
@@ -701,7 +701,7 @@ is proposed here.
    its place:* it lets one UI serve an owner, an installer and a support
    engineer without three UIs or three builds. *Plausible for mos:* mos has a
    single `access.webAdmin` credential and one session gate
-   (`docs/design/mosd.md:109-112`), so this would be a new axis rather than a
+   (`docs/design/mosd.md:117-120`), so this would be a new axis rather than a
    refinement.
 
 6. **Optimistic write feedback with a transport-dependent timeout.**
@@ -744,7 +744,7 @@ is proposed here.
     `gui-v2/pages/SettingsPage.qml:105`. *Why it earns its place:* it turns
     "send us your logs" into a one-tap, privacy-reviewed action. *Plausible for
     mos:* mosd's `GetState`/`GetSettings` already return the whole tree
-    (`docs/design/mosd.md:190-191`), and the missing pieces are the redaction
+    (`docs/design/mosd.md:198-199`), and the missing pieces are the redaction
     rule and the gate.
 
 11. **Self-lockout warnings before the change that removes your own access.**
@@ -756,7 +756,7 @@ is proposed here.
     `PageSettingsAccessAndSecurity.qml:213-250`. *Why it earns its place:* the
     most expensive support call on an appliance is the one where the operator
     locked themselves out of the box on a boat. *Plausible for mos:* mos has an
-    equivalent hazard class already recorded (`docs/design/mosd.md:217-220`
+    equivalent hazard class already recorded (`docs/design/mosd.md:225-228`
     notes the power pane cannot warn about burning a boot attempt).
 
 12. **UI extensions delivered over the data channel.** `dbus-flashmq` scans

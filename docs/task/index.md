@@ -204,4 +204,5 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-204 PLAN-022 M5: WireGuard keystore and tunnel reconcile**](RFCT-204.md) `P1`
 - [x] [**RFCT-205 PLAN-022 M6: the apid surface - panes, rotate route, redaction, OpenAPI**](RFCT-205.md) `P1`
 - [x] [**RFCT-206 PLAN-022 M7: kernel fragment and on-image proof**](RFCT-206.md) `P1`
+- [x] [**RFCT-207 PLAN-022 M8: the design documents, made true**](RFCT-207.md) `P1`
 - [x] [**RFCT-208 PLAN-022 records brought green under PLAN-020's hardened docs gates**](RFCT-208.md) `P2`

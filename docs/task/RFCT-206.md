@@ -19,7 +19,7 @@ whether the kernel hands a device back.
 
 It also produces the M6 verdict RFCT-205 could not: *"`make os-apid-api-test` |
 **not run — the artefact it takes as input does not exist on this host.**"*
-(`docs/task/RFCT-205.md:311`). An image now exists, so the suite ran.
+(`docs/task/RFCT-205.md:314`). An image now exists, so the suite ran.
 
 ## Scope
 
@@ -96,7 +96,7 @@ whose kernel lacks these symbols, because the build fails first, so a second and
 weaker runtime opinion about that board would only add a way to disagree. x64
 has no such build — the kernel is Debian's, installed whole as a package, and
 *"The Debian config is not present in this repository, and nothing in-tree
-proves what it sets."* (`docs/task/RFCT-200.md:482-483`). So it is read off the
+proves what it sets."* (`docs/task/RFCT-200.md:493-494`). So it is read off the
 artefact.
 
 The two are separate checks because they fail for unrelated reasons. The first
@@ -117,7 +117,7 @@ RESULT: PASS (292/292 checks, 22 skipped (x64/grub; each named above))
 
 All three are `=m`, which is what RFCT-200 expected — and it said why the
 expectation was not enough: *"the expectation is `=m` for all three, but
-expectation is not measurement"* (`docs/task/RFCT-200.md:494`). It is a
+expectation is not measurement"* (`docs/task/RFCT-200.md:505`). It is a
 measurement now. `=m` is acceptable on this board and not on the other, because
 x64 ships `kmod` and a full Debian module set while cx3576 boots dm-verity with
 no initramfs and *"cannot load modules, so these must be built-in =y, never
@@ -323,7 +323,7 @@ the argument for the run:
 RFCT-205 predicted these precisely and declined to rewrite them blind:
 *"rewriting them blind — against an image that cannot be booted here to check
 the rewrite — would replace a visible skew with an invisible guess"*
-(`docs/task/RFCT-205.md:338-340`). With a bootable image in hand they are
+(`docs/task/RFCT-205.md:341-343`). With a bootable image in hand they are
 rewritten and checked.
 
 `/api/versions` is a declared route answering 200, and the gate hands it off
