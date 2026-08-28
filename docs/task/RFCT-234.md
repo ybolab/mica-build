@@ -535,16 +535,25 @@ tag it stood on -- `LOCAL_MOS_BUILD_BASE=localhost/mos-build-base:arm64` in the
 first, `:amd64` in the second -- so the two runs are visibly standing on
 different parents rather than racing for one name.
 
-### What happened to the rescue tags
+### What the store holds afterwards
 
-L2 rescued both orphaned families under `localhost/mos-build-*:rescued-amd64`
-and `:rescued-arm64` while this fix was being written, explicitly as scaffolding
-and not as a proposed scheme. Both are gone: the amd64 and arm64 families are
-now what `make build-env` itself wrote under `:amd64` and `:arm64`, and the
-`:latest` tag was removed with them. `:latest` is deleted rather than left
-pointing at one of the two, because an unqualified name that resolves is exactly
-the defect this section is about -- a caller that asks for it should get "no such
-image", not a coin flip. No rescue name appears in committed content.
+While this fix was being written, both orphaned families were kept alive on this
+host under temporary holding tags, so that a `docker image prune` or a builder
+GC could not collect them. Those tags were scaffolding rather than a scheme and
+they are gone; they are deliberately not named here, because a name written into
+a record is a name someone later types.
+
+What is left is what `make build-env` itself wrote during the acceptance runs
+above: four images at two architectures, eight tags, and no third name. The
+`:latest` tag was removed with the holding tags rather than left pointing at one
+of the two families, because an unqualified name that RESOLVES is exactly the
+defect this section is about -- a caller that asks for one should get "no such
+image", not a coin flip:
+
+```console
+$ docker image inspect localhost/mos-build-rust
+Error response from daemon: No such image: localhost/mos-build-rust:latest
+```
 
 ## 8. The correction to RFCT-231
 
