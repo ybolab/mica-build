@@ -1,6 +1,6 @@
 # RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404
 
-- **status**: completed — the six network routes ship with a route-level test per relational rule, the RFCT-210 peer-add finding is confirmed by a run and fixed with a 404 before any write, mosd's rotate-key error is split so an undeclared entry is 404 with no apid change, and the WiFi psk bound is lifted into `mosd-settings`; 810/810, 1557/1557 citations, 780/780 index, oasdiff RC=0 against both bases
+- **status**: completed — the six network routes ship with a route-level test per relational rule, the RFCT-210 peer-add finding is confirmed by a run and fixed with a 404 before any write, mosd's rotate-key error is split so an undeclared entry is 404 with no apid change, the WiFi psk bound is lifted into `mosd-settings`, and the ruled duplicate-409 clause is applied to all three collections; 812/812, 1559/1559 citations, 780/780 index, oasdiff RC=0 against both bases
 - **completedAt**: 2026-08-28
 - **priority**: P1
 - **owner**: bkd/36tblhgs
@@ -15,7 +15,10 @@ inherited through the shared helper rather than restated.
 Three items were routed into this milestone and none was optional: the
 rotate-key 404 correction, which is a **mosd** change; the peer-add finding,
 which is settled here by running it; and the WiFi pre-shared-key bounds, lifted
-out of a private rendering function. All three are below.
+out of a private rendering function. A fourth arrived mid-review: the
+duplicate-status question this task was told to flag was **ruled**, and the
+ruling is applied here across every collection rather than deferred. All four
+are below.
 
 Nothing else moves. The actions are M7, `POST /api/v1/setup` is M8, the cookie
 cutover is M9.
@@ -259,35 +262,92 @@ accepted by the route and refused at render time. Lifting it too would have been
 a second, unasked-for change to the same crate; it is recorded here rather than
 done quietly.
 
-## 6. The open contract question: what a duplicate answers
+## 6. The duplicate clause, ruled and applied everywhere
 
-**Not settled here, and deliberately not harmonised.** The ratified collection
-error contract covers **absent (404)** and **malformed (422)** and says nothing
-about **duplicate**. M5 shipped two different answers — a duplicate SSH key is
-422 (the shared validator's own message), a duplicate SSID is 409 `ssid_exists`
-— and the WireGuard peer collection is the third instance.
+The question this milestone was told to flag rather than settle **was ruled
+while the work was in review**, and the ruling is applied here rather than
+deferred to a follow-up. The ratified collection error contract now has three
+clauses, not two:
 
-**This milestone followed the WiFi 409 precedent**, as `peer_exists`, and the
-reason is that the other one is not available here even in principle:
+> An identifier that names **no item** is **404**; a **malformed** identifier is
+> **422**; and an identifier that **duplicates** one the collection already
+> holds is **409**, with a per-collection code.
 
-- The SSH 422 is the **shared validator's own message**, inherited rather than
-  decided. `validate_authorized_keys` refuses a duplicate and apid passes its
-  words through. No validator on either side of the bus refuses a duplicate
-  peer: `validate_peers` and mosd's `validate_wireguard`
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:411-434`) both check each peer
-  and never compare two. Answering 422 here would mean *inventing* a message and
-  calling it a validator's, which is the thing that precedent exists to avoid.
-- The WiFi 409's argument transfers exactly. The public key **is** this
-  collection's identity — it is the `DELETE` path segment — so a second entry
-  under one key would leave no answer to which of the two a `DELETE` names.
+The reasoning, so the clause can be applied rather than pattern-matched: a
+duplicate is a conflict with the collection's **current state**, and that is
+what 409 means. The body is well formed and nothing about it is wrong. It is the
+same condition `settings_read_only` already spends 409 on.
 
-`a_duplicate_peer_is_409_and_writes_nothing` asserts the status, the code, the
-dot-path in the envelope, and that the stored tree is unchanged.
+The clause is recorded in `docs/design/api.md` section 2.4's code table,
+alongside the two clauses that were already there and the codes M3 added. It is
+**not** written into `docs/task/RFCT-210.md`: that is a completed record and
+`docs/task` is history.
 
-**This is flagged, not closed.** Three collections now answer two different ways
-for one condition, and the rule that would decide it does not exist. L2 has
-escalated it; no ruling had arrived when this was written, and none of M5's
-shipped routes was touched.
+### What the ruling changed in this milestone
+
+**The peer collection was already right.** It shipped 409 `peer_exists` before
+the ruling arrived, argued from the WiFi precedent; the argument is now the rule,
+and the route's comment says so instead of weighing two precedents.
+
+**M5's SSH route was harmonised: duplicate 422 → 409 `key_exists`.** This was
+routed here rather than reopening M5, for the reason the serial chain exists: a
+concurrent fix would have put two tasks in `routes.rs` at once, and this task
+would have inherited the merge anyway.
+
+M5 answered 422 because the duplicate check lives inside
+`validate_authorized_keys` and the two ways out were exporting a private
+constant or matching the validator's words. The ruling picks the export.
+`MAX_KEYS` is now `pub`
+(`os/pkgs/mosd/mosd-settings/src/authorized_key.rs:46`), joining `MAX_TOKENS`,
+and **the route decides both of its 409s itself, before the shared validator
+runs**:
+
+- a duplicate is compared structurally against the stored list, on the canonical
+  `key` text and not the submitted line — the identity `validate_authorized_keys`
+  itself uses, and the identity the model's own doc comment defends: *"the
+  canonical key text is what duplicate detection runs on"*
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:242-245`);
+- the 32-key cap is read from the exported bound, exactly as the token mint
+  reads `MAX_TOKENS`, and answers 409 `key_limit_reached`.
+
+**No message is string-matched to infer a duplicate**, which the ruling forbids
+and which would in any case be a parser for prose:
+`validate_authorized_keys` raises a duplicate, an over-long list and a malformed
+entry as one `Validation` error, the condition its own doc comment lists in one
+breath — *"the list is too long, an entry does not re-parse"*
+(`os/pkgs/mosd/mosd-settings/src/authorized_key.rs:126-166`). It still runs on
+the rewritten list and still refuses all three — it has to, because the settings
+file is writable without apid and the reconciler is the boundary. What changed
+is which of the two answers *first*, not whether the rule exists in one place.
+
+### The amended assertion, named so nobody reads it as a weakening
+
+`a_duplicate_key_is_refused_by_the_shared_validator` asserted 422. It is now
+`a_duplicate_key_is_409_and_the_stored_list_is_unchanged` and asserts 409
+`key_exists`. **That is a correction, and the assertion is stronger than the one
+it replaces, not looser.** Under M5 one status covered two conditions — a
+malformed key and a duplicate were both 422, and no client could tell them
+apart. The amended test asserts both halves in one body: 409 `key_exists` for
+the duplicate **and** 422 `validation_failed` for a malformed key, which is the
+distinction the third clause buys. It also asserts the message is not the
+validator's, so the answer cannot silently regress to being recovered from
+prose.
+
+Two tests were added beside it: `a_full_key_list_is_409_and_names_the_bound` for
+the exported cap, and `every_collection_answers_409_for_a_duplicate`, which
+drives all three collections in one router and asserts 409 with a distinct
+per-collection code on each. That last one is the mechanism that keeps the
+clause: three separate tests would each keep passing while the collections
+drifted apart, which is exactly how the two answers diverged in the first place.
+
+### No wire cost, confirmed rather than assumed
+
+Nothing has merged to main, so main's base spec has none of these routes — and
+that was measured here rather than taken on trust: main's `openapi.json` carries
+six paths, and `/api/v1/ssh/authorized-keys` is not among them. oasdiff stays
+**RC=0 against both bases**. Against this branch's pre-M6 spec, which does carry
+the route, the delta is `New response: 409` plus a narrowed 422 description —
+additive, with the 422 still present because malformed keys still use it.
 
 ## 7. Two other decisions worth stating
 
@@ -356,13 +416,24 @@ matching total.
 | `the_network_schema_matches_the_settings_model` | six documented schemas against the settings model, field for field |
 | `a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route` | the lifted bound, at the route, in both directions |
 | `the_lifted_psk_bound_is_the_one_the_renderer_enforces` | renderer and lifted rule agree on every input, with one message |
+| `a_duplicate_key_is_409_and_the_stored_list_is_unchanged` | M5's amended assertion: 409 `key_exists` for the duplicate **and** 422 for a malformed key, in one body |
+| `a_full_key_list_is_409_and_names_the_bound` | the exported `MAX_KEYS`, answered before the write |
+| `every_collection_answers_409_for_a_duplicate` | the third clause across all three collections in one router, each with its own code |
 
-**The arithmetic: 784 + 26 = 810.** Twenty-six added, **none removed**.
-`git diff` over `os/pkgs/mosd/**/*.rs` from the L2 merge counts 23 added
+**The arithmetic: 784 + 28 = 812.** Twenty-eight added, **none removed**.
+`git diff` over `os/pkgs/mosd/**/*.rs` from the L2 merge counts 25 added
 `#[tokio::test]` and 3 added `#[test]`, and zero removed of either. Both
 spellings were counted: a naive `#[tokio::test]` census under-counts this tree
 by the tests written `#[tokio::test(flavor = "multi_thread")]`, and none was
 added or removed here.
+
+Twenty-six of the twenty-eight are the network cluster, the peer collection and
+the psk lift; the other two are the duplicate clause's — the exported cap and
+the cross-collection test. **One test was renamed, not removed**:
+`a_duplicate_key_is_refused_by_the_shared_validator` is now
+`a_duplicate_key_is_409_and_the_stored_list_is_unchanged`, which is why the
+attribute census shows an addition with no matching deletion while the total
+moved by two and not three.
 
 Two existing tests changed, both because the behaviour they assert changed:
 `the_rotate_routes_failures_take_the_shared_envelope` gained the not-found row,
@@ -423,6 +494,20 @@ the mechanical map and for the ten hand resolutions. A sequential pass would let
 a citation rewritten to `:884-888` be caught again by the rule whose old value
 is `:884-888`, and both of the rotate-key arms are exactly that shape.
 
+**The duplicate clause needed a second pass, run the same way.** The ruling
+arrived after the first re-anchoring had landed, and its edits moved
+`routes.rs`, `tests.rs`, `openapi.json`, `authorized_key.rs`, `lib.rs` and —
+because the clause is recorded there — `docs/design/api.md` itself. The second
+pass was built against the first pass's gate-green result (`1557/1557 PASS`) as
+its pre-image, and its map covers `.md` as well as `.rs` and `.json`, because a
+document that gains a section moves the citations other documents make **into**
+it: 265 rewritten mechanically, 180 already correct, 4 refused and resolved by
+hand. Three of the four are the `paths` object of `openapi.json`, whose range
+grew again; the fourth is `MAX_KEYS`, whose line this milestone changed from
+`const` to `pub const` — its quoting record still holds, because the quoted
+fragment is a literal excerpt of the new line, so the number moved and
+`docs/task/RFCT-211.md`'s prose did not.
+
 **One code line was written to keep a record true.** `docs/task/RFCT-210.md`
 quotes `use axum::routing::{any, get, post};` verbatim as the measurement behind
 its central negative — apid had never served a write verb — and `docs/task/RFCT-240.md`
@@ -437,9 +522,9 @@ All four, at `HEAD` of `bkd/36tblhgs`.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `1557/1557 PASS` |
+| `bash docs/verify-citations.sh` | `1559/1559 PASS` |
 | `bash docs/verify-index.sh` | `780/780 PASS` |
-| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | `Summary [  63.680s] 810 tests run: 810 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
+| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | `Summary [  70.843s] 812 tests run: 812 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
 | `oasdiff breaking … --fail-on ERR --severity-levels …` | `No breaking changes to report`, `RC=0`, against **both** the pre-M6 spec on this branch and `main`'s |
 
 The gate script ran unmodified. Two things sit around it and neither touches it:
