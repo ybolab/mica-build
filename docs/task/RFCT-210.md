@@ -833,4 +833,4 @@ is design, and two sibling tasks are editing `os/pkgs/mosd/**` concurrently.
 No Rust gate applies — no Rust changed. The two docs gates were run at HEAD and
 their output is recorded in this task's completion report.
 
-<!-- dated-record: a decision memo frozen at `6950f69`, as its own second paragraph says; four of its citations quote design and README prose that RFCT-216 deleted on purpose, so re-pointing them would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->
+<!-- dated-record: a decision memo frozen at `6950f69`, as its own second paragraph says; four of its citations quote design and README prose that RFCT-216 deleted on purpose, so re-pointing them would falsify the record; exempt from docs/verify-citations.sh (RFCT-172). PROPOSED, not settled: this exempts 114 in-scope citations to absorb 4 broken ones -- see docs/task/RFCT-216.md section 6 for the measurement, and revert this line if the trade is refused. -->
