@@ -192,36 +192,39 @@ trust and for re-anchoring a device whose chain is broken.
   reproducibility or stop implying it is the prior question.
 ## 6. `docs/task/RFCT-210.md`, and why it is now marked a dated record
 
-`docs/verify-citations.sh` was green at 2170/2170 before this change and went
-red at six citations after it. Two are ordinary drift in live design documents
-and were re-anchored mechanically from the pre-image, in their own commit:
+`docs/verify-citations.sh` was green at 2170/2170 before this change and
+reported six failures after it. One is ordinary drift in a live design
+document; a seventh citation was silently stale rather than failing. Both were
+re-anchored mechanically from the pre-image, in their own commit. The crate
+README's out-of-scope list gained a bullet, so the CMS-hierarchy line moved down
+one: `docs/design/api.md:3875` cited line 51 and now cites
+`os/pkgs/rauc-sign/README.md:52` — that was the failure — and
+`docs/design/remote-management.md:135` cited lines 51-52 and now cites
+`os/pkgs/rauc-sign/README.md:52-53`. The second was still passing, because its
+quoted fragment happened to land inside the stale two-line range. It was
+corrected anyway: a citation that resolves by luck reads exactly like a correct
+one, which is the case the checker's own header says it cannot distinguish.
 
-| citation | was | is |
-| --- | --- | --- |
-| `docs/design/api.md:3875` → `os/pkgs/rauc-sign/README.md` | `:51` | `:52` |
-| `docs/design/remote-management.md:135` → same file | `:51-52` | `:52-53` |
+The remaining five failures are all in `docs/task/RFCT-210.md`. Four of them
+cannot be re-anchored, because the text they quote no longer exists anywhere:
 
-The second was still passing — its quote happened to land inside the stale
-range — and was corrected anyway; a citation that resolves by luck is the case
-the gate's own header warns cannot be told from a correct one.
-
-The other four are all in `docs/task/RFCT-210.md`, and four of them cannot be
-re-anchored, because the text they quote no longer exists anywhere:
-
-- `RFCT-210:694` quotes *"`rauc-sign` has no command that produces such a
+- `docs/task/RFCT-210.md:694` quotes *"`rauc-sign` has no command that produces such a
   file"* — the sentence this task exists to falsify;
-- `RFCT-210:696` quotes *"a compromised online key ends the repository's
+- `docs/task/RFCT-210.md:696` quotes *"a compromised online key ends the repository's
   lineage"* — §1.6 still says this, but as "still ends", so the fragment no
   longer matches verbatim;
-- `RFCT-210:698` quotes *"the 1-year horizon in §1.4 is the deadline for
+- `docs/task/RFCT-210.md:698` quotes *"the 1-year horizon in §1.4 is the deadline for
   building it"* — deleted; the deadline was met;
-- `RFCT-210:768` quotes *"the signer cannot yet produce a rotation, so the
-  chain is depth one in practice"* — deleted from the crate README;
-- `RFCT-210:700` quotes *"No such bind exists yet, deliberately"*, which is
-  intact but has moved down the file as §1.6 grew.
+- `docs/task/RFCT-210.md:768` quotes *"the signer cannot yet produce a rotation, so the
+  chain is depth one in practice"* — deleted from the crate README.
 
-Rewriting the first four is impossible and rewriting the fifth alone would
-leave a record half-repointed at a tree it never measured. RFCT-210 is a
+The fifth, `docs/task/RFCT-210.md:700`, quotes *"No such bind exists yet,
+deliberately"* — text that is intact but has moved down
+`docs/design/release-signing.md` as §1.6 grew. That one alone could be
+re-anchored.
+
+Rewriting the four is impossible, and re-anchoring the fifth by itself would
+leave a completed record half pinned to a tree it never measured. RFCT-210 is a
 completed decision memo (`status: completed`, `completedAt: 2026-08-28`) that
 declares its own freezing in its second paragraph — *"Every line number below
 was read at `6950f69`, this branch's HEAD"* — and 34 sibling task records
