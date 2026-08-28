@@ -83,7 +83,7 @@ deleted"* (`docs/plan/PLAN-015.md:167`) — as 751 lines of defect register,
 *"`docs/design/api.md` §10 (751 lines) is a defect register"*
 (`docs/plan/PLAN-015.md:81`). The decision itself was restated in place, in §2's
 own register: *"reaches the same two actions through the item tree instead: the
-shipped path is"* (`docs/design/api.md:357`). So the substance survives at a new
+shipped path is"* (`docs/design/api.md:446`). So the substance survives at a new
 anchor and only PLAN-011's pointer is dead.
 
 ### 2.3 M3 — implemented
@@ -273,7 +273,7 @@ still describe the shipped system. Two carry stated remainders.
    licence over a plan file.
 6. **Twelve source doc-comments still spell the pre-`ec202f1` paths**, e.g.
    *"`mosd/mosd/src/reconciler/mqtt.rs`; the reconciler's"*
-   (`os/pkgs/mosd/apid/src/routes.rs:3280`). Not a PLAN-011 defect and not this
+   (`os/pkgs/mosd/apid/src/routes.rs:3323`). Not a PLAN-011 defect and not this
    record's to fix; routed in §6.
 
 ## 5. The outstanding verification carried twice — partly discharged

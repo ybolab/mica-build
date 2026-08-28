@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use reqwest::StatusCode;
-use reqwest::header::{LOCATION, SET_COOKIE};
+use reqwest::header::{ALLOW, CONTENT_TYPE, LOCATION, SET_COOKIE};
 
 /// Kills the wrapped child on drop, including on panic.
 struct ChildGuard(Child);
@@ -272,6 +272,117 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let response = anon.get(format!("{https_base}/healthz")).send().await?;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.text().await?, "ok");
+
+    // §3.2's bootstrap, end to end and against a live server: the operator
+    // holds a browser session and nothing else, and mints the first bearer at
+    // `POST /builtin/tokens` -- not an `/api/v1/` route, which is the whole
+    // reason it can still take the cookie after M9 (RFCT-245) withdrew the
+    // cookie from `/api/v1/`. The plaintext is displayed once, in a <pre>.
+    let response = admin
+        .post(format!("{https_base}/builtin/tokens"))
+        .form(&[("name", "e2e")])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let minted = response.text().await?;
+    let token = minted
+        .split_once("<pre>")
+        .and_then(|(_, rest)| rest.split_once("</pre>"))
+        .map(|(wire, _)| wire.to_string())
+        .unwrap_or_else(|| panic!("the plaintext is displayed once, in a <pre>:\n{minted}"));
+
+    // `docs/design/api.md` §2.4 case 3's second, differently-scoped endpoint,
+    // against a live mosd on a real bus: 200, `mosd: "ok"`, and the answer
+    // stamped with the appliance's own uptime. `/healthz` above says apid's
+    // listener is up; this says the appliance is manageable, and only a real
+    // round trip can tell the difference.
+    //
+    // Presented with the bearer and not the session: since M9 this is the only
+    // credential the route takes, and the token above is where a real operator
+    // gets one.
+    let response = admin
+        .get(format!("{https_base}/api/v1/health"))
+        .bearer_auth(&token)
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let health: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(health["apid"], "ok");
+    assert_eq!(health["mosd"], "ok");
+    assert!(health["checkedAt"].is_u64(), "checkedAt: {health}");
+    assert!(health.get("detail").is_none(), "{health}");
+
+    // It is authenticated, and its refusal is §2.4's envelope rather than the
+    // gate's redirect (§3.1).
+    let response = anon
+        .get(format!("{https_base}/api/v1/health"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "not_authenticated");
+
+    // M9 (RFCT-245): and the session cookie is refused here exactly as the
+    // absent credential is. `admin` carries a cookie jar, so this request is
+    // the authenticated browser -- 401 with the envelope, never a 303 to
+    // /login, against a live server rather than a router in a unit test.
+    let response = admin
+        .get(format!("{https_base}/api/v1/health"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(response.headers().get(LOCATION).is_none());
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "not_authenticated");
+
+    // PLAN-023 M4's write route, against a live mosd on a real bus: a bare
+    // JSON string at `hostname` answers 204 and the value is in mosd's own
+    // settings tree afterwards. Read back through `GetSettings` rather than
+    // through `GetState`, for the reason the form-path assertion above reads
+    // back the same way: `state.hostname` is published by the hostname
+    // reconciler, which writes `/etc/hostname` and calls hostnamed, and
+    // neither is available to this harness.
+    let response = admin
+        .put(format!("{https_base}/api/v1/settings/hostname"))
+        .bearer_auth(&token)
+        .header(CONTENT_TYPE, "application/json")
+        .body("\"e2e-host3\"")
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(response.text().await?.is_empty());
+    assert_eq!(proxy.get_settings("hostname").await?, "\"e2e-host3\"");
+
+    // The refusal list is apid's and is answered before the bus: a dot-path
+    // the schema has and this route does not write is 409, with mosd's tree
+    // untouched.
+    let response = admin
+        .put(format!("{https_base}/api/v1/settings/network.eth9"))
+        .bearer_auth(&token)
+        .header(CONTENT_TYPE, "application/json")
+        .body(r#"{"dhcp": true}"#)
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "settings_read_only");
+    assert_eq!(error["error"]["source"], "apid");
+    assert!(
+        proxy.get_settings("network.eth9").await.is_err(),
+        "the refused write must not have created the entry"
+    );
+
+    // §2.4's one shape, on a method a declared route does not serve, with the
+    // `Allow` header naming what it does serve.
+    let response = admin
+        .post(format!("{https_base}/api/v1/meta"))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(response.headers().get(ALLOW).unwrap(), "GET,HEAD");
+    let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    assert_eq!(error["error"]["code"], "method_not_allowed");
+    assert_eq!(error["error"]["source"], "apid");
 
     // The login curve over the real listener. A wrong password is answered
     // 401 and costs a backoff window (`access.md` §3.3's `backoffBase`, one

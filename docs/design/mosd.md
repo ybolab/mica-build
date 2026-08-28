@@ -353,7 +353,7 @@ unconverged.
 
 **A WireGuard private key never enters the settings tree.** The schema is
 explicit that it never will: *"There is no private-key field here and there
-never will be"* (`os/pkgs/mosd/mosd-settings/src/model.rs:483`). The key lives
+never will be"* (`os/pkgs/mosd/mosd-settings/src/model.rs:602`). The key lives
 in a file under the STATE directory that holds `settings.toml`, in
 `networkd-secrets/` — *"A sibling of `secrets/` rather than anything under it,
 and the name says so because the path is load-bearing"*
@@ -429,10 +429,10 @@ persisted.
 
 **Dated note (RFCT-232, 2026-08-28): the version number is stale, the point it
 was making is not.** *"`SCHEMA_VERSION` stays at 3"* is the 2026-08-19 record
-and stays as written; the constant is 7 today —
-`pub const SCHEMA_VERSION: u32 = 7;`
+and stays as written; the constant is 8 today —
+`pub const SCHEMA_VERSION: u32 = 8;`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) — which §5.1 already reads as v4
-and §5.3a as the v7 bump PLAN-022 made. What the sentence is FOR survives the
+and §5.3a as the v7 bump PLAN-022 made, PLAN-023 having since taken it to v8. What the sentence is FOR survives the
 number and never depended on it: `Reboot` and `PowerOff` write no settings at
 all, so they leave `SCHEMA_VERSION` wherever they found it, whatever it is.
 Read the clause as *"a power action does not touch the settings document"*,

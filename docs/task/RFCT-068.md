@@ -93,14 +93,14 @@ one that no drift list would catch.
 - **No re-verification of §9's contradiction table.** The header is explicit
   that those citations are *"the current text of those documents, not a
   re-verification of the code beneath them"*, and points at `api.md` §1.7's
-  matching statement (`docs/design/api.md:517-518`).
+  matching statement (`docs/design/api.md:644-645`).
 - **§10's list of what the measurement never verified** is left standing as
   still true of that measurement.
 
 ## The coupling this created, and the check it needs
 
 The header's six drifts are **carried across from `api.md` §1.7**
-(`docs/design/api.md:488-510`), so the two lists must agree or the campaign has
+(`docs/design/api.md:492-514`), so the two lists must agree or the campaign has
 reproduced the exact failure it was guarding against. RFCT-067's consistency
 pass compares them item for item; at campaign head `8f1a957` they agree, and
 §1.7 has been byte-identical since `074a7d8`, which is what makes the citation

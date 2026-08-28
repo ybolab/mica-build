@@ -38,6 +38,47 @@ import type { Phase, PhaseContext } from "../runner.ts";
  */
 const TUNNEL = "wg-e2e";
 
+/** The name this phase mints its bearer under, distinct from 05d's two. */
+const TOKEN_NAME = "mos-e2e-wireguard";
+
+/** `Authorization: Bearer <token>`, the credential every /api/v1 call here sends. */
+function bearerHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * Mint this phase's bearer through §3.2's bootstrap.
+ *
+ * PLAN-023 M9 (RFCT-245) withdrew the session cookie from `/api/v1/`, so the
+ * jar 05-mutate left behind no longer authenticates the four API reads and the
+ * rotate action below. It still authenticates `POST /builtin/tokens`, which is
+ * not an `/api/v1/` route and is exactly the bootstrap an operator holding only
+ * a browser uses. So this phase mints its own, once, and sends it thereafter.
+ *
+ * Minted rather than carried from 05d because 05d runs AFTER this phase, and a
+ * phase that depended on a later one would invert the runner's order.
+ */
+async function mintBearer(ctx: PhaseContext): Promise<string | undefined> {
+  const { client, report } = ctx;
+  const minted = await client.post("/builtin/tokens", { name: TOKEN_NAME });
+  if (
+    !report.expectStatus(
+      minted,
+      200,
+      "POST /builtin/tokens with the session cookie mints this phase's bearer (M9: /api/v1/ takes no cookie)",
+    )
+  ) {
+    return undefined;
+  }
+  const token = /<pre>([^<]+)<\/pre>/.exec(minted.body)?.[1]?.trim();
+  report.check(
+    token !== undefined,
+    "the mint page carries the plaintext, which appears in this one response and never again",
+    token !== undefined ? undefined : `body: ${JSON.stringify(minted.body.slice(0, 400))}`,
+  );
+  return token;
+}
+
 /** Addressing for the tunnel; a range nothing in this guest routes. */
 const TUNNEL_ADDRESS = "10.199.0.2/24";
 
@@ -77,12 +118,14 @@ const phase: Phase = {
 
   async run(ctx: PhaseContext): Promise<void> {
     const log = openConsole(ctx.config.consoleLog);
+    const token = await mintBearer(ctx);
+    if (token === undefined) return;
     await assertPaneControls(ctx);
     await assertCrossFieldEchoes(ctx);
-    const publicKey = await assertTunnelCreation(ctx, log);
+    const publicKey = await assertTunnelCreation(ctx, log, token);
     await assertPeerRoundTrip(ctx);
-    await assertRotation(ctx, publicKey);
-    await assertNoPrivateKeyAnywhere(ctx);
+    await assertRotation(ctx, publicKey, token);
+    await assertNoPrivateKeyAnywhere(ctx, token);
   },
 };
 
@@ -211,6 +254,7 @@ async function assertCrossFieldEchoes(ctx: PhaseContext): Promise<void> {
 async function assertTunnelCreation(
   ctx: PhaseContext,
   log: ConsoleLog,
+  token: string,
 ): Promise<string | undefined> {
   const { client, report } = ctx;
   report.note("");
@@ -259,7 +303,9 @@ async function assertTunnelCreation(
   await report.expectEventually(
     `GET /api/v1/state/network publishes kind "wireguard" and a publicKey for ${TUNNEL} within ${RECONCILE_TIMEOUT_MS}ms`,
     async () => {
-      const state = await client.get("/api/v1/state/network");
+      const state = await client.get("/api/v1/state/network", {
+        headers: bearerHeaders(token),
+      });
       if (state.status !== 200) throw new Error(`the state route answered ${state.status}`);
       const entry = entryOf(state, TUNNEL);
       if (entry === undefined) throw new Error(`no ${TUNNEL} entry: ${snippet(state.body)}`);
@@ -284,7 +330,9 @@ async function assertTunnelCreation(
   // `kind` is published for EVERY entry, not only the tunnel: M5 added it
   // beside the public key, and a reader that only looked at tunnels would miss
   // a physical entry that lost its kind.
-  const state = await client.get("/api/v1/state/network");
+  const state = await client.get("/api/v1/state/network", {
+    headers: bearerHeaders(token),
+  });
   const entries = objectOf(state);
   const kindless = Object.entries(entries ?? {})
     .filter(([, value]) => asObject(value)?.["kind"] === undefined)
@@ -381,7 +429,11 @@ async function assertPeerRoundTrip(ctx: PhaseContext): Promise<void> {
 
 // 5b.5 the rotate-key action
 
-async function assertRotation(ctx: PhaseContext, before: string | undefined): Promise<void> {
+async function assertRotation(
+  ctx: PhaseContext,
+  before: string | undefined,
+  token: string,
+): Promise<void> {
   const { client, report } = ctx;
   report.note("");
   report.note("  5b.5 POST /api/v1/actions/wireguard/{iface}/rotate-key");
@@ -412,33 +464,39 @@ async function assertRotation(ctx: PhaseContext, before: string | undefined): Pr
 
   // A GET does not exist: a rotation replaces a tunnel's identity, so nothing
   // that merely follows a link may perform one.
-  const viaGet = await client.get(ROTATE_PATH);
+  const viaGet = await client.get(ROTATE_PATH, { headers: bearerHeaders(token) });
   report.check(
     viaGet.status === 405,
     "GET on the rotate route is 405: the route is POST-only",
     [`expected: 405`, `actual:   ${viaGet.status}${describe(viaGet)}`].join("\n"),
   );
 
-  // An interface that is not a tunnel: mosd owns the rule and raises
-  // InvalidArgs, which apid classifies as 422 `settings_rejected`.
-  const notATunnel = await client.post(
+  // An interface that is not DECLARED AT ALL is 404, since PLAN-023 M6 split
+  // mosd's rotate-key error: `docs/task/RFCT-242.md` section 1 rules that on
+  // this route *"404 added: an undeclared entry. 422 now means only 'exists and
+  // is not a tunnel'"*. This phase was written against a tree that predated
+  // that split and asserted 422 here, so the two conditions had one status
+  // between them and an absent entry was indistinguishable from a wrong-kinded
+  // one -- which is the distinction the correction exists to make.
+  const undeclared = await client.post(
     "/api/v1/actions/wireguard/no-such-iface/rotate-key",
     {},
+    { headers: bearerHeaders(token) },
   );
   report.expectStatus(
-    notATunnel,
-    422,
-    "rotating an interface that is not a declared WireGuard entry is 422",
+    undeclared,
+    404,
+    "rotating an interface that is not a declared network entry at all is 404",
   );
   report.expectJson(
-    notATunnel,
-    { error: { code: "settings_rejected", source: "mosd", path: "network.no-such-iface" } },
-    "the refusal carries §2.4's envelope: settings_rejected, from mosd, naming the dot-path at fault",
+    undeclared,
+    { error: { code: "settings_not_found", source: "mosd", path: "network.no-such-iface" } },
+    "the refusal carries §2.4's envelope: settings_not_found, from mosd, naming the dot-path at fault",
     { subset: true },
   );
 
   // And the rotation itself.
-  const rotated = await client.post(ROTATE_PATH, {});
+  const rotated = await client.post(ROTATE_PATH, {}, { headers: bearerHeaders(token) });
   if (!report.expectStatus(rotated, 200, `POST ${ROTATE_PATH} answers 200`)) return;
   report.expectHeader(
     rotated,
@@ -476,7 +534,9 @@ async function assertRotation(ctx: PhaseContext, before: string | undefined): Pr
     await report.expectEventually(
       `the published live state catches up with the rotated key within ${RECONCILE_TIMEOUT_MS}ms`,
       async () => {
-        const state = await client.get("/api/v1/state/network");
+        const state = await client.get("/api/v1/state/network", {
+        headers: bearerHeaders(token),
+      });
         if (state.status !== 200) throw new Error(`the state route answered ${state.status}`);
         const entry = entryOf(state, TUNNEL);
         if (entry?.["publicKey"] !== after) {
@@ -499,7 +559,7 @@ async function assertRotation(ctx: PhaseContext, before: string | undefined): Pr
  * absence structurally instead: no `privateKey` member anywhere in either tree,
  * and no route that answers one.
  */
-async function assertNoPrivateKeyAnywhere(ctx: PhaseContext): Promise<void> {
+async function assertNoPrivateKeyAnywhere(ctx: PhaseContext, token: string): Promise<void> {
   const { client, report } = ctx;
   report.note("");
   report.note("  5b.6 no surface serves a private key");
@@ -509,7 +569,13 @@ async function assertNoPrivateKeyAnywhere(ctx: PhaseContext): Promise<void> {
     `/api/v1/settings/network.${TUNNEL}`,
     "/network",
   ]) {
-    const response = await client.get(path);
+    // Both surfaces in one list, taking different credentials since M9
+    // (RFCT-245): the two API paths take the bearer, the pane takes the cookie.
+    // It stays one list because the claim is that NO surface serves the key,
+    // and two loops would let one of them quietly stop being checked.
+    const response = path.startsWith("/api/")
+      ? await client.get(path, { headers: bearerHeaders(token) })
+      : await client.get(path);
     report.check(
       response.status === 200 && !response.body.includes("privateKey"),
       `GET ${path} names no privateKey anywhere in its body`,
@@ -522,7 +588,9 @@ async function assertNoPrivateKeyAnywhere(ctx: PhaseContext): Promise<void> {
 
   // Asked for directly, by dot-path. There is no such member, so mosd refuses
   // the path -- and the one thing this must never be is a 200 carrying a key.
-  const direct = await client.get(`/api/v1/state/network.${TUNNEL}.privateKey`);
+  const direct = await client.get(`/api/v1/state/network.${TUNNEL}.privateKey`, {
+    headers: bearerHeaders(token),
+  });
   report.check(
     direct.status !== 200,
     "asking for the private key BY DOT-PATH does not answer one: there is no such member and no route that produces it",

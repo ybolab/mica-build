@@ -57,12 +57,6 @@ const NETWORKD_PREFIX: &str = "90-wifi-client-";
 const MAX_INTERFACE_LEN: usize = 15;
 /// Header of the rendered configuration.
 const CONFIG_HEADER: &str = "# Managed by mosd from wifi.client. Do not edit.\n";
-/// Length of a pre-shared key given as a raw 256-bit PMK in hex.
-const RAW_PMK_LEN: usize = 64;
-/// Shortest WPA2 passphrase IEEE 802.11i allows.
-const MIN_PASSPHRASE_LEN: usize = 8;
-/// Longest WPA2 passphrase IEEE 802.11i allows.
-const MAX_PASSPHRASE_LEN: usize = 63;
 
 /// What the reconciler did to the station role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,21 +232,19 @@ fn encode_ssid(ssid: &str) -> String {
 /// nothing to fall back to. **The error deliberately does not name the value**;
 /// see the module's secret-hygiene note.
 fn encode_psk(psk: &str) -> Result<String> {
-    if psk.len() == RAW_PMK_LEN && psk.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if psk.len() == mosd_settings::RAW_PMK_LEN && psk.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(psk.to_string());
     }
-    // IEEE 802.11i's passphrase bounds, checked here for the same reason the
-    // access point checks them: wpa_supplicant rejects an out-of-range
-    // passphrase by refusing the WHOLE configuration file, which silently
-    // takes every other configured network down with it while the reconcile
-    // still reports `applied`. The error deliberately does not name the
-    // length observed — a length is a fact about the secret.
-    if psk.len() < MIN_PASSPHRASE_LEN || psk.len() > MAX_PASSPHRASE_LEN {
-        return Err(anyhow!(
-            "a WPA2 passphrase is {MIN_PASSPHRASE_LEN} to {MAX_PASSPHRASE_LEN} characters \
-             (or a {RAW_PMK_LEN}-digit hex PMK)"
-        ));
-    }
+    // IEEE 802.11i's passphrase bounds, called and no longer restated: they
+    // were lifted into `mosd-settings` beside the typed model (PLAN-023 M6) so
+    // that the crate holding `WifiNetwork` states its own field's rule and
+    // every write surface can run the same one. The reason they are checked at
+    // all is unchanged — wpa_supplicant rejects an out-of-range passphrase by
+    // refusing the WHOLE configuration file, which silently takes every other
+    // configured network down with it while the reconcile still reports
+    // `applied` — and so is the message, which never names the length
+    // observed.
+    mosd_settings::validate_wifi_psk(psk).map_err(|message| anyhow!(message))?;
     if !is_quotable(psk) {
         return Err(anyhow!(
             "the pre-shared key contains a character wpa_supplicant configuration \
@@ -777,6 +769,41 @@ mod tests {
         // apply to it.
         assert!(encode_psk(&"a".repeat(64)).is_ok());
         assert!(encode_psk("exactly8").is_ok());
+    }
+
+    /// The bound the renderer enforces is the one `mosd-settings` states, and
+    /// there is no second copy of it left here (PLAN-023 M6's lift).
+    ///
+    /// Asserted as an agreement over a table rather than by reading the
+    /// constants: what matters is that no input exists for which the renderer
+    /// and the lifted rule disagree, which is the property a second copy would
+    /// have lost. The golden-file tests beside this one hold the other half —
+    /// the bytes the renderer writes for an admissible key are unchanged.
+    #[test]
+    fn the_lifted_psk_bound_is_the_one_the_renderer_enforces() {
+        for psk in [
+            "",
+            "short07",
+            "exactly8",
+            &"x".repeat(63),
+            &"x".repeat(64),
+            &"a".repeat(64),
+            &"A".repeat(64),
+            &"x".repeat(200),
+        ] {
+            assert_eq!(
+                mosd_settings::validate_wifi_psk(psk).is_ok(),
+                encode_psk(psk).is_ok(),
+                "the renderer and the lifted rule disagree about a {}-character key",
+                psk.len()
+            );
+        }
+        // And the sentence is the lifted one, verbatim: a caller that reads it
+        // from either side reads the same words.
+        let lifted = mosd_settings::validate_wifi_psk("short07").unwrap_err();
+        assert_eq!(encode_psk("short07").unwrap_err().to_string(), lifted);
+        // Which still never names the length observed.
+        assert!(!lifted.contains('7'), "{lifted}");
     }
 
     #[test]
