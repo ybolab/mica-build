@@ -71,9 +71,12 @@ whether it is worth anything.
 
 It is not, and the reason is in the image rather than the code. A grep for
 `chrony`, `ntpd`, `ntpsec`, `timesyncd`, `hwclock` and `time-sync` over `os/`
-returns nothing at all: no RTC sync unit and no time daemon is built, installed
-or enabled. `docs/design/ro-root.md` records the consequence for `/etc/adjtime`
-in one line:
+returns three hits, all three in the same file: the cx3576 BSP's Alpine
+*"writable board-debug system"*, which installs `chrony` and registers
+`chronyd` under OpenRC. That is not the image this daemon runs on -- it carries
+neither mosd nor apid -- and the shipped v2 Debian rootfs under `os/rootfs/`
+has no such hit at all. `docs/design/ro-root.md` records the consequence for
+`/etc/adjtime` in one line:
 *"Not written: no RTC sync unit is enabled."*
 (`docs/design/ro-root.md:793`). A device's clock is therefore whatever the
 kernel came up with, and it may be wrong by any amount.

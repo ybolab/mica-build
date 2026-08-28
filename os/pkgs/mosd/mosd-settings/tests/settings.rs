@@ -1297,12 +1297,15 @@ fn tolerated_document_saves_back_at_this_schema_version() {
     assert!(report.is_some());
     store.save(&settings).unwrap();
 
-    // The persisted file is now a clean v4 document: reloading is the normal
-    // path (no report), and the v5-only key is gone from disk — mosd.md
-    // §5.2's "rolling forward again restores the defaults, not the values".
+    // The persisted file is now a clean document at this schema: reloading is
+    // the normal path (no report), and the newer schema's key is gone from
+    // disk — mosd.md §5.2's "rolling forward again restores the defaults, not
+    // the values". The token list itself stays: this schema knows it, so only
+    // the `expiresAt` a newer schema added to its entries was stripped.
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains(&format!("schema_version = {SCHEMA_VERSION}")));
-    assert!(!text.contains("apiTokens"));
+    assert!(!text.contains("expiresAt"));
+    assert!(text.contains("[[access.apiTokens]]"));
     let (reloaded, report) = store.load_with_report().unwrap();
     assert_eq!(reloaded, settings);
     assert!(report.is_none());
@@ -1313,10 +1316,12 @@ fn stripping_is_recursive_and_drops_same_named_keys_everywhere() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.toml");
     // The same unknown key at two depths. The strip is by name, everywhere:
-    // both go, and the report records the name once per strip pass.
+    // both go, and the report records the name once per strip pass. The stamp
+    // has to stay one ahead of us or the tolerant path never runs.
+    assert_eq!(SCHEMA_VERSION + 1, 9, "the fixture stamp must stay ahead");
     fs::write(
         &path,
-        r#"schema_version = 8
+        r#"schema_version = 9
 hostname = "h"
 extra = "top"
 

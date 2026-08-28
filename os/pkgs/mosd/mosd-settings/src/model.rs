@@ -313,13 +313,13 @@ pub struct ApiToken {
     /// Seconds since the UNIX epoch as the device clock read them when the
     /// token was minted, saturating at 0.
     ///
-    /// **A label, never a deadline.** No image in this tree enables an RTC
-    /// sync unit or a time daemon, so this reading is whatever the device's
-    /// clock happened to say and may be wrong by any amount; 0 means the clock
-    /// was unset or before the epoch. It is displayed and ordered by, and it is
-    /// compared against nothing. There is deliberately no `expiresAt` beside
-    /// it: an expiry enforced against an untrusted clock is worse than no
-    /// expiry at all, and revocation is the whole lifecycle.
+    /// **A label, never a deadline.** The image this daemon runs on enables no
+    /// RTC sync unit and no time daemon, so this reading is whatever the
+    /// device's clock happened to say and may be wrong by any amount; 0 means
+    /// the clock was unset or before the epoch. It is displayed and ordered by,
+    /// and it is compared against nothing. There is deliberately no `expiresAt`
+    /// beside it: an expiry enforced against an untrusted clock is worse than
+    /// no expiry at all, and revocation is the whole lifecycle.
     ///
     /// [`crate::validate_api_tokens`] therefore places no bound on this value.
     /// Rejecting an implausible reading would turn a wrong clock into a mint
