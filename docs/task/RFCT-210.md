@@ -1,6 +1,6 @@
 # RFCT-210 PLAN-023 M1: the write-surface design (USER-GATED)
 
-- **status**: completed — 41-row inventory re-measured at 6950f69 (13 rows section 2.3 lacks), writes classified into 3 shapes with 3 exceptions and an M4-M8 split, token-revocation conflict resolved as keep-3.2-plus-a-pane-sentence, key-custody memo written as 4 options for the user
+- **status**: completed — 41-row inventory re-measured at 6950f69 (13 rows section 2.3 lacks), writes classified into 3 shapes with 3 exceptions, the collection shape's 404-vs-422 error contract settled and swept, and an M4-M8 split, token-revocation conflict resolved as keep-3.2-plus-a-pane-sentence, key-custody memo written as 4 options for the user
 - **completedAt**: 2026-08-28
 - **priority**: P1
 - **owner**: bkd/o79zdry0
@@ -300,7 +300,171 @@ worse asymmetry than not shipping it. Proposal: **defer, explicitly**, and
 record the deferral where a reader of the inventory will see it — which is the
 row this design adds, not the section 6 prose where it lives today.
 
-### 2.4 The milestone split for M4+
+### 2.4 "Identifier matches nothing": the collection shape's error contract
+
+Folded in from a sibling workstream's measurement. The paragraph it comes from
+is `docs/design/api.md`'s section 2.3 closing note, re-anchored at this HEAD to
+`docs/design/api.md:1489-1493`: it records that `ssh_key_remove` answers 422
+when the identifier matches nothing and argues that for a `DELETE` on a
+collection resource *"that is a **404** — the identified item does not exist."*
+(`docs/design/api.md:1492-1493`) That paragraph's own two citations are accurate
+at this HEAD and were not re-anchored. This belongs here rather than in part
+(a), because it is the collection shape's error contract and SSH keys are the
+precedent every other collection route in section 2.4 below is modelled on.
+
+**Measured at `6950f69`.** Every identifier-keyed operation in part 1's
+inventory, and what it answers when the identifier names nothing:
+
+| Operation | Identifier | Answer today | Produced at |
+|---|---|---|---|
+| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:3668-3673` |
+| `POST /network/peers/remove` | peer public key | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:2582-2588` |
+| `POST /api/v1/actions/wireguard/{iface}/rotate-key` | `iface`, a path segment | **422 `settings_rejected`**, API envelope | `os/pkgs/mosd/mosd/src/bus.rs:873-877` → `os/pkgs/mosd/apid/src/routes.rs:681-684` |
+| `POST /network/peers/add` | `iface` | **neither — it succeeds**; see below | `os/pkgs/mosd/apid/src/routes.rs:2293-2297` |
+| `GET /api/v1/settings/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:673-676` |
+| `GET /api/v1/state/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:673-676` |
+
+Two things fall out of that table that the routed item does not anticipate.
+
+**First: the 422 on the HTML rows is not a decision about not-found at all.** It
+is the pane's single error shape for every cause. `network_error`'s whole
+contract is *"Re-render the pane with `message` in an error box, at 422."*
+(`os/pkgs/mosd/apid/src/routes.rs:2300`), and `ssh_error`
+(`os/pkgs/mosd/apid/src/routes.rs:2971-2980`) is the same function for the SSH
+pane. A malformed key, a duplicate peer and a missing identifier all reach it
+and all come back 422. No code on either pane distinguishes them, so "the HTML
+path answers 422 for not-found" is true only in the sense that it answers 422
+for everything.
+
+**Second, and this is the finding: the shipped API already answers both ways for
+the same class of condition.** A settings read whose dot-path does not resolve
+is a 404; a rotate-key whose interface is not a declared entry is a 422. Both
+are "the thing you named does not exist", both are on `/api/v1/`, and they
+disagree today. The cause is in mosd, not apid: `rotate_wireguard_key` collapses
+two genuinely different conditions into one fdo error — *"network.{iface} is not
+a WireGuard interface"* (`os/pkgs/mosd/mosd/src/bus.rs:869-871`), where the entry
+exists and has the wrong kind, which really is a 422; and *"network.{iface} is
+not a declared network entry"* (`os/pkgs/mosd/mosd/src/bus.rs:874-876`), which is
+a 404. Both are `InvalidArgs`, and apid maps `InvalidArgs` onto
+`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:681-684`)
+with no way to tell them apart. The published document does not declare 404 for
+that route at all — its response set is 200, 401, 422, 500 and 503
+(`os/pkgs/mosd/apid/openapi.json:93-165`). So the 422-where-404-is-meant pattern
+is already **on the shipped API surface**, not only on the HTML forms.
+
+### The rule, stated once
+
+> **On any API collection or item route, an identifier that matches no item is
+> 404**, in section 2.4's envelope with a `settings_not_found`-class code.
+> **422 is reserved for an identifier that is malformed** — a fingerprint that
+> is not a fingerprint, a public key that is not 32 bytes of base64. "Well-formed
+> but absent" and "not well-formed" are different answers and must not share a
+> status.
+
+Every route it binds:
+
+- `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` — M5.
+- `DELETE /api/v1/wifi/client/networks/{ssid}` — M5.
+- `DELETE /api/v1/network/{iface}` — M6.
+- `DELETE /api/v1/network/{iface}/peers/{publicKey}` — M6, and its `POST`
+  sibling, whose `{iface}` is an identifier too.
+- `POST /api/v1/actions/wireguard/{iface}/rotate-key` — **a correction to a
+  shipped route, not a new one.** Discharging the rule here means splitting
+  mosd's single `InvalidArgs` into a `NotFound` for the undeclared entry and an
+  `InvalidArgs` for the wrong kind, which apid already maps to 404 and 422
+  respectively (`os/pkgs/mosd/apid/src/routes.rs:673-684`) with no apid change
+  at all. It is a mosd change plus an OpenAPI response addition, and it is
+  additive to the document. Sequence it with M6, which is the milestone that
+  already touches the network cluster.
+
+### Does the HTML form path change? No — and here is the cost of that
+
+**Recommendation: the HTML form path stays at 422; only the API answers 404.**
+The design document already says *"The HTML path is not changed by this
+document."* (`docs/design/api.md:1493`) This ratifies that, for three reasons it
+does not give:
+
+1. **The HTML path has no way to express 404 usefully.** Its response body is
+   the re-rendered pane with an error box; a browser handed a 404 carrying a
+   full HTML page renders it identically to a 422 carrying the same page. No
+   consumer on that path reads the status — there is no client but a browser.
+   Changing it buys a more correct number that nothing observes.
+2. **The HTML condition really is different.** `ssh_key_remove` accepts a
+   fingerprint **or** the exact canonical key text as its identifier
+   (`os/pkgs/mosd/apid/src/routes.rs:3664-3667`), so a submitted string that
+   matches nothing is as likely to be mistyped as absent — and the message says
+   exactly that: *"The list may have changed since this page was loaded; reload
+   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:3671`) That is a
+   re-submit-the-form condition, which is what 422 means on a form post. On the
+   API the identifier is a path segment with one interpretation: this URL names
+   no resource.
+3. **It is a shipped response on the surface that has the actual users.**
+
+**The cost, named, because it is the real one and it is not small.** Two
+behaviours for one underlying condition, in one file — and it is
+`os/pkgs/mosd/apid/src/routes.rs`, where both surfaces' handlers live a few
+hundred lines apart. The concrete failure mode is not that the split is wrong;
+it is that the next collection route added copies whichever neighbour its author
+happened to read first, and nothing catches it. Two mitigations, both cheap,
+both in M5's scope, and both are the price of this recommendation rather than
+optional polish:
+
+1. **One helper, not per-handler.** The API's not-found answer is produced by a
+   single shared function taking the resource path and the identifier, used by
+   every item route. A new route then gets the rule by reaching for the shared
+   function, not by remembering a decision.
+2. **Two tests that name each other.** The HTML test asserts 422 and the API
+   test asserts 404 **on the same condition**, and each carries a comment naming
+   the other test and this section. The split is then documented at the two
+   places somebody editing either surface would already be looking.
+
+Weighed against the alternative — changing the shipped HTML status — this is the
+cheaper side. The alternative costs a behaviour change on the surface with real
+users to correct a number no consumer on that surface reads.
+
+### The sweep over part 1's inventory
+
+Asked for explicitly: does the same 422-where-404-is-meant pattern appear on any
+other identifier-keyed operation? The table above is the complete sweep of the
+41 rows — there are six identifier-keyed operations and no others. Three carry
+the pattern (`POST /ssh/keys/remove`, `POST /network/peers/remove`,
+`POST /api/v1/actions/wireguard/{iface}/rotate-key`), and two answer correctly
+already (the settings and state reads). `POST /ssh/keys/add` and
+`POST /network` take no identifier that can be absent — the first appends, the
+second upserts.
+
+The sixth is not the routed pattern and is worse, so it is reported here rather
+than folded in silently.
+
+**`POST /network/peers/add` naming an interface that does not exist answers
+neither 422 nor 404. It succeeds, and it creates a broken entry.** The chain,
+step by step: `stored_peers` returns an empty list rather than an error for an
+unknown interface (`unwrap_or_default()`,
+`os/pkgs/mosd/apid/src/routes.rs:2293-2297`); `write_peers` then validates and
+writes straight to the peer list's own dot-path
+(`os/pkgs/mosd/apid/src/routes.rs:2603-2606`); and the settings setter creates
+missing intermediates by documented and tested behaviour — its own contract says
+*"Missing intermediate map entries are created (e.g. setting
+`network.eth1.dhcp` creates `eth1`)"*
+(`os/pkgs/mosd/mosd-settings/src/model.rs:591-592`), and the committed test
+`set_scalar_and_create_intermediate_entries`
+(`os/pkgs/mosd/mosd-settings/tests/settings.rs:127-140`) proves that step on a
+`network` key specifically. `validate_peers`
+(`os/pkgs/mosd/apid/src/routes.rs:1222-1245`) checks each peer's public key,
+allowed IPs and endpoint syntax, and never looks at the interface. So adding a
+peer to `wg9` on a device that has no `wg9` writes a `network.wg9` entry of the
+**default** kind — physical — carrying a WireGuard block, which the reconciler
+rejects on the next apply with the failure recorded and not propagated, by
+section 2.3's mechanism.
+
+Stated honestly: that is a reading of the write path anchored on a committed
+test of its one non-obvious step, not an observed run — no test exercises this
+route with an undeclared interface today, which is itself the point. M6's
+acceptance must add one. The typed route fixes it structurally rather than by a
+guard: `POST /api/v1/network/{iface}/peers` on an undeclared interface is a 404
+by the rule above, decided before anything is written.
+
+### 2.5 The milestone split for M4+
 
 One milestone per resource cluster, ordered so each is additive and independently
 revertible. M2 (bearer tokens) and M3 (health, 405) are already fixed by
@@ -321,11 +485,12 @@ reports the change as additive.
 `GET`/`POST /api/v1/ssh/authorized-keys`,
 `DELETE /api/v1/ssh/authorized-keys/{fingerprint}`;
 `GET`/`POST /api/v1/wifi/client/networks`,
-`DELETE /api/v1/wifi/client/networks/{ssid}`. Acceptance: a `DELETE` on a
-fingerprint that matches nothing returns **404**, not the 422 the HTML path
-gives (`os/pkgs/mosd/apid/src/routes.rs:3672-3677`), and the section 2.3
-behaviour-change note is discharged by a test that asserts the two surfaces
-differ deliberately; every `POST` runs the same validator mosd runs; the
+`DELETE /api/v1/wifi/client/networks/{ssid}`. Acceptance: section 2.4's rule holds on
+both — a `DELETE` on an identifier that matches nothing returns **404**, not the
+422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:3668-3673`), a
+malformed identifier still returns 422, the not-found answer comes from the one
+shared helper section 2.4 requires, and the paired HTML/API tests that name each
+other both exist; every `POST` runs the same validator mosd runs; the
 `notice` field carrying *"Every authorized key is a root key."*
 (`os/pkgs/mosd/apid/src/routes.rs:2833`) is present on both the `GET` and the
 `POST` response; a psk written through `POST /api/v1/wifi/client/networks` is
@@ -337,8 +502,12 @@ redacted on the next `GET`.
 `DELETE /api/v1/network/{iface}/peers/{publicKey}`. Acceptance: the four
 relational rules in `validate_entries` each have a route-level test that gets a
 422 with mosd's message and leaves the stored tree unchanged; a `PUT` under
-`/api/v1/settings/network` returns 409; a peer `DELETE` on an unknown public key
-returns 404; an interface name containing a `.` round-trips through the quoted
+`/api/v1/settings/network` returns 409; a peer `DELETE` on an unknown public
+key returns 404 and a `POST`/`DELETE` naming an undeclared interface returns 404
+before anything is written (section 2.4's sweep); mosd's rotate-key
+`InvalidArgs` is split so an undeclared entry becomes a `NotFound` and the
+route's 404 is added to the published document; an interface name containing a
+`.` round-trips through the quoted
 path segment (`os/pkgs/mosd/apid/src/routes.rs:1024-1026`).
 
 **M7 — the actions.** `POST /api/v1/actions/reboot`, `.../poweroff`,
@@ -356,6 +525,11 @@ Acceptance: 201 carrying the credential; 409 when `access.webAdmin` already has
 a hash; 422 on a hostname or interface the wizard's own validators reject, with
 **nothing written** — which is a real change from the form path, and is the one
 behaviour this milestone is allowed to fix rather than document.
+
+**Scheduled but not owned by the API milestones alone:** the rotate-key 404
+correction in section 2.4 needs a one-error-name change in mosd. It is named in
+M6 rather than left implicit, because an apid-only milestone cannot discharge
+it.
 
 **Not planned, deliberately:** `POST /builtin/deactivate` (2.3 item iii),
 `mqtt.listen` and `mqtt.auth` (in the model at
@@ -643,6 +817,10 @@ A's fleet-wide failure mode into a certainty on a one-year timer rather than a
 risk.
 
 ## 5. Scope and gates
+
+Section 2.4 was folded in after the first pass, routed from a sibling
+workstream; its citations were measured at the same HEAD as everything else and
+the `docs/design/api.md:1489-1493` anchor was re-derived rather than trusted.
 
 This task wrote `docs/task/RFCT-210.md`, one row in `docs/task/index.md`, and
 one ceiling row in `docs/verify-citations-unquoted-baseline.txt` (the update
