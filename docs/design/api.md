@@ -183,22 +183,22 @@ therefore covers the fallback too.
 
 | Method + path | Route line | Handler | Kind | What it does | mosd calls |
 |---|---|---|---|---|---|
-| `GET /` | `:127` | `serve::root`, at `os/pkgs/mosd/apid/src/assets/serve.rs:57` | GET page, conditional | The active bundle's `index.html` when a bundle is active and its index is readable, and the built-in status pane otherwise (`os/pkgs/mosd/apid/src/assets/serve.rs:57-65`); the built-in branch is `home` (`os/pkgs/mosd/apid/src/routes.rs:4361`) over `status_body` (`:1258`) | on the built-in branch only: `GetSettings("hostname")` (`:1259`), `GetState("network")` (`:1260`) |
-| `GET /builtin` | `:148` (inside the nest at `:145`) | `builtin_home` (`:1288`) | GET page | §6.3's escape: the status pane plus the deactivate control (`escape_section`, `:1775`), reachable whatever state a bundle is in | `GetSettings("hostname")` (`:1214`), `GetState("network")` (`:1215`) |
-| `POST /builtin/deactivate` | `:152` | `builtin_deactivate` (`:1337`) | HTML form POST, no body | Removes `/srv/ui/current` through `Store::deactivate` (`:1338`); "a pointer was there" and "there was none" are both success (`:1821-1825`), 500 only when the removal itself failed (`:1841-1857`) | none |
-| any other `/builtin/…` | `:153` (nested fallback) | `builtin_not_found` (`:1401`) | GET page | 404 (`:1872`) naming the escape, so the reserved prefix answers for its whole subtree rather than falling through to a bundle | none |
-| `GET /builtin/` | `:155` | `builtin_home` (`:1288`) | GET page | The trailing-slash spelling, declared outside the nest because `nest` claims `/builtin` and not `/builtin/` | as `GET /builtin` |
-| `GET /setup` | `:156` | `setup_form` (`:905`) | GET page | First-run wizard: admin password, optional hostname, optional single interface | `GetSettings("access")` (`:906`), `GetSettings("hostname")` (`:913`) |
-| `POST /setup` | `:156` | `setup_submit` (`:947`) | HTML form POST | 409 when already configured (`:1436-1445`), 400 on a bad password (`:1446-1462`), 422 on a bad hostname or interface (`:1465-1471`, `:1475-1483`), 500 if hashing fails (`:1492-1495`); on success writes and issues a session cookie, then redirects to `/` (`:1518-1523`) | `GetSettings("access")` (`:952`), `SetSettings("access.webAdmin", …)` (`:1018`), `GetSettings("hostname")` (`:1026`), `SetSettings("hostname", …)` (`:1033`), `SetSettings("network.<iface>", …)` (`:1043`) |
-| `GET /login` | `:157` | `login_form` (`:1072`) | GET page | One password field, and a link to §6.3's prefix | none |
-| `POST /login` | `:157` | `login_submit` (`:1091`) | HTML form POST | 429 while the login guard is locked (`:1576-1586`), 401 on a wrong password (`:1620-1624`); on success sets the session cookie (`:1609-1614`) | `GetSettings("access")` (`:1118`) |
-| `POST /logout` | `:158` | `logout` (`:1159`) | HTML form POST, no body | Drops the server-side session and clears the cookie (`:1633-1640`) | none |
-| `GET /network` | `:159` | `network_form` (`:1499`) | GET page | One form per configured interface plus an add-interface form; `?saved=1` renders a banner (`:1971`) | `GetSettings("network")` (`:1500`) |
-| `POST /network` | `:159` | `network_submit` (`:1509`) | HTML form POST | 422 with the pane re-rendered on an invalid interface name or CIDR (`:1982-1992`); on success redirects to `/network?saved=1` (`:1532`) | `GetSettings("network")` on the error path (`:1983`), `SetSettings("network.<iface>", …)` (`:1527`) |
-| `GET /hostname` | `:160` | `hostname_form` (`:1556`) | GET page | One text input pre-filled with the current hostname | `GetSettings("hostname")` (`:1557`) |
-| `POST /hostname` | `:160` | `hostname_submit` (`:1721`) | HTML form POST | 422 on an invalid name (`:2195-2201`); on success redirects to `/hostname?saved=1` (`:1740`) | `SetSettings("hostname", …)` (`:1735`) |
-| `GET /power` | `:161` | `power_form` (`:1650`) | GET page | Two confirmation forms, each with a required checkbox carrying an action-specific token (`:2097-2100`) | none |
-| `POST /power/reboot` | `:165` | `power_reboot` (`:1703`) → `power_submit` (`:1666`) | HTML form POST | 422 when the confirm token does not match (`:2136-2147`); otherwise **202 Accepted** (`:2165-2169`) with the D-Bus call spawned on a detached task so the response goes out first (`:2156-2164`) | a write to the `/Actions/reboot` item over the `com.mos.Item1` proxy (`os/pkgs/mosd/apid/src/bus_client.rs:48`, path at `:54`, call at `:260-262`) |
+| `GET /` | `:145` | `serve::root`, at `os/pkgs/mosd/apid/src/assets/serve.rs:57` | GET page, conditional | The active bundle's `index.html` when a bundle is active and its index is readable, and the built-in status pane otherwise (`os/pkgs/mosd/apid/src/assets/serve.rs:57-65`); the built-in branch is `home` (`os/pkgs/mosd/apid/src/routes.rs:4361`) over `status_body` (`:4317`) | on the built-in branch only: `GetSettings("hostname")` (`:4318`), `GetState("network")` (`:4319`) |
+| `GET /builtin` | `:166` (inside the nest at `:163`) | `builtin_home` (`:4406`) | GET page | §6.3's escape: the status pane plus the deactivate control (`escape_section`, `:4642`), reachable whatever state a bundle is in | `GetSettings("hostname")` (`:1214`), `GetState("network")` (`:1215`) |
+| `POST /builtin/deactivate` | `:170` | `builtin_deactivate` (`:4673`) | HTML form POST, no body | Removes `/srv/ui/current` through `Store::deactivate` (`:1338`); "a pointer was there" and "there was none" are both success (`:1821-1825`), 500 only when the removal itself failed (`:1841-1857`) | none |
+| any other `/builtin/…` | `:181` (nested fallback) | `builtin_not_found` (`:4737`) | GET page | 404 (`:4737`) naming the escape, so the reserved prefix answers for its whole subtree rather than falling through to a bundle | none |
+| `GET /builtin/` | `:183` | `builtin_home` (`:4406`) | GET page | The trailing-slash spelling, declared outside the nest because `nest` claims `/builtin` and not `/builtin/` | as `GET /builtin` |
+| `GET /setup` | `:184` | `setup_form` (`:3735`) | GET page | First-run wizard: admin password, optional hostname, optional single interface | `GetSettings("access")` (`:3736`), `GetSettings("hostname")` (`:3743`) |
+| `POST /setup` | `:184` | `setup_submit` (`:3777`) | HTML form POST | 409 when already configured (`:1436-1445`), 400 on a bad password (`:1446-1462`), 422 on a bad hostname or interface (`:1465-1471`, `:1475-1483`), 500 if hashing fails (`:1492-1495`); on success writes and issues a session cookie, then redirects to `/` (`:1518-1523`) | `GetSettings("access")` (`:3782`), `SetSettings("access.webAdmin", …)` (`:3848`), `GetSettings("hostname")` (`:3860`), `SetSettings("hostname", …)` (`:3867`), `SetSettings("network.<iface>", …)` (`:1043`) |
+| `GET /login` | `:185` | `login_form` (`:3910`) | GET page | One password field, and a link to §6.3's prefix | none |
+| `POST /login` | `:185` | `login_submit` (`:3929`) | HTML form POST | 429 while the login guard is locked (`:1576-1586`), 401 on a wrong password (`:1620-1624`); on success sets the session cookie (`:1609-1614`) | `GetSettings("access")` (`:3956`) |
+| `POST /logout` | `:186` | `logout` (`:3997`) | HTML form POST, no body | Drops the server-side session and clears the cookie (`:1633-1640`) | none |
+| `GET /network` | `:188` | `network_form` (`:5128`) | GET page | One form per configured interface plus an add-interface form; `?saved=1` renders a banner (`:1971`) | `GetSettings("network")` (`:1500`) |
+| `POST /network` | `:188` | `network_submit` (`:5138`) | HTML form POST | 422 with the pane re-rendered on an invalid interface name or CIDR (`:1982-1992`); on success redirects to `/network?saved=1` (`:5174`) | `GetSettings("network")` on the error path (`:1983`), `SetSettings("network.<iface>", …)` (`:1527`) |
+| `GET /hostname` | `:194` | `hostname_form` (`:5279`) | GET page | One text input pre-filled with the current hostname | `GetSettings("hostname")` (`:5280`) |
+| `POST /hostname` | `:194` | `hostname_submit` (`:5444`) | HTML form POST | 422 on an invalid name (`:2195-2201`); on success redirects to `/hostname?saved=1` (`:5463`) | `SetSettings("hostname", …)` (`:5458`) |
+| `GET /power` | `:195` | `power_form` (`:5373`) | GET page | Two confirmation forms, each with a required checkbox carrying an action-specific token (`:2097-2100`) | none |
+| `POST /power/reboot` | `:199` | `power_reboot` (`:5426`) → `power_submit` (`:5389`) | HTML form POST | 422 when the confirm token does not match (`:2136-2147`); otherwise **202 Accepted** (`:2165-2169`) with the D-Bus call spawned on a detached task so the response goes out first (`:2156-2164`) | a write to the `/Actions/reboot` item over the `com.mos.Item1` proxy (`os/pkgs/mosd/apid/src/bus_client.rs:48`, path at `:54`, call at `:260-262`) |
 | `POST /power/poweroff` | `:159` | `power_poweroff` (`:1711`) → `power_submit` (`:1666`) | HTML form POST | Same shape | a write to the `/Actions/poweroff` item over the `com.mos.Item1` proxy (`os/pkgs/mosd/apid/src/bus_client.rs:48`, path at `:55`, call at `:264-266`) |
 | `GET /ssh` | `:160` | `ssh_form` (`:2011`) → `load_ssh_view` (`:1845`) | GET page | SSH pane: stored `access.ssh` settings, the authorized-key list, and the sshd reconciler's live state | `GetSettings("access.ssh")` (`:1846`), `GetState("sshd")` (`:1856`) |
 | `POST /ssh/enable` | `:164` | `ssh_enable` (`:2027`) | HTML form POST | Writes the checkbox state and redirects to `/ssh?saved=1` (`:2036`) | `SetSettings("access.ssh.enabled", …)` (`:2031`) |
@@ -210,9 +210,9 @@ therefore covers the fallback too.
 | `GET /mqtt` | `:170` | `mqtt_form` (`:2451`) → `load_mqtt_view` (`:2330`) | GET page | MQTT pane: the `mqtt.enabled` switch and the broker/bridge unit state published by the mqtt reconciler | `GetSettings("mqtt")` (`:2331`), `GetState("mqtt")` (`:2337`) |
 | `POST /mqtt/enable` | `:171` | `mqtt_enable` (`:2467`) | HTML form POST | Writes one dot-path and nothing else, so saving the switch cannot rewrite the listen or auth settings (`:2469-2471`); redirects to `/mqtt?saved=1` (`:2479`) | `SetSettings("mqtt.enabled", …)` (`:2474`) |
 | `GET /healthz` | `:173` | `healthz` (`:729`) | neither — plain text | Returns the literal `"ok"` (`os/pkgs/mosd/apid/src/routes.rs:3279`) — a liveness probe only: it proves the apid process is listening and checks nothing else, not mosd, not the settings tree, not the appliance | none |
-| the `/api` subtree | `:200` (`.nest(API, api_router())`) | `api_router` (`:261`) | JSON | Four declared routes and a not-found; the table below | see below |
-| every method on `/api/` | `:201` (`.route("/api/", any(api_not_found))`) | `api_not_found` (`:196`) | JSON | 404 in §2.4's envelope. Not redundant with the nest: *"`nest` claims `/api`, `/api/x` and `/api/x/y`, and not `/api/`; the difference is a request that begins `/api/` reaching the asset router"* (`os/pkgs/mosd/apid/src/routes.rs:219-222`) | none |
-| everything else | `:203` (`.fallback(serve::fallback)`) | `serve::fallback`, at `os/pkgs/mosd/apid/src/assets/serve.rs:68` | asset or HTML | The asset router: a file out of the active bundle, or §4.2's SPA fallback, or the built-in UI. 405 on a method other than GET or HEAD (`os/pkgs/mosd/apid/src/assets/serve.rs:71-73`) | none |
+| the `/api` subtree | `:224` (`.nest(API, api_router())`) | `api_router` (`:397`) | JSON | Four declared routes and a not-found; the table below | see below |
+| every method on `/api/` | `:225` (`.route("/api/", any(api_not_found))`) | `api_not_found` (`:237`) | JSON | 404 in §2.4's envelope. Not redundant with the nest: *"`nest` claims `/api`, `/api/x` and `/api/x/y`, and not `/api/`; the difference is a request that begins `/api/` reaching the asset router"* (`os/pkgs/mosd/apid/src/routes.rs:219-222`) | none |
+| everything else | `:227` (`.fallback(serve::fallback)`) | `serve::fallback`, at `os/pkgs/mosd/apid/src/assets/serve.rs:68` | asset or HTML | The asset router: a file out of the active bundle, or §4.2's SPA fallback, or the built-in UI. 405 on a method other than GET or HEAD (`os/pkgs/mosd/apid/src/assets/serve.rs:71-73`) | none |
 
 **The `/api` subtree.** `api_router()` (`os/pkgs/mosd/apid/src/routes.rs:397-459`) is
 nested under the prefix `const API: &str = "/api";`
@@ -225,11 +225,11 @@ one string and cannot disagree"* (`os/pkgs/mosd/apid/src/routes.rs:394-396`).
 
 | Method + path | Route line | Handler | Authenticated | What it returns |
 |---|---|---|---|---|
-| `GET /api/versions` | `:280` | `api_versions` (`:405`) | **no**, by design | `ApiVersions { versions, current }` (`:406-412`), the served major-version set. The gate hands it off above its own `GetSettings` call so a factory-fresh device can still answer it |
-| `GET /api/v1/meta` | `:281` | `api_v1_meta` (`:430`) | yes, via the `ApiSession` extractor | `ApiMeta { api, settingsSchemaVersion, daemon }` (`:431-437`), with `settingsSchemaVersion` read from `mosd_settings::SCHEMA_VERSION` (`:435`) and never copied |
-| `GET /api/v1/settings/{*path}` | `:282` | `api_v1_settings` (`:474`) | yes | `resource_response(state.api.get_settings(&path).await, &path)` (`:479`) — the value at the dot-path, redacted |
-| `GET /api/v1/state/{*path}` | `:283` | `api_v1_state` (`:501`) | yes | `resource_response(state.api.get_state(&path).await, &path)` (`:506`) — the same, from the live-state tree |
-| any other path under `/api` | `:284` (`.fallback(api_not_found)`) | `api_not_found` (`:196`) | n/a | 404 with `ApiError::apid("not_found", format!("no API route at {}", uri.path()))` (`:199`) |
+| `GET /api/versions` | `:399` | `api_versions` (`:736`) | **no**, by design | `ApiVersions { versions, current }` (`:406-412`), the served major-version set. The gate hands it off above its own `GetSettings` call so a factory-fresh device can still answer it |
+| `GET /api/v1/meta` | `:400` | `api_v1_meta` (`:762`) | yes, via the `ApiSession` extractor | `ApiMeta { api, settingsSchemaVersion, daemon }` (`:431-437`), with `settingsSchemaVersion` read from `mosd_settings::SCHEMA_VERSION` (`:767`) and never copied |
+| `GET /api/v1/settings/{*path}` | `:402` | `api_v1_settings` (`:915`) | yes | `resource_response(state.api.get_settings(&path).await, &path)` (`:920`) — the value at the dot-path, redacted |
+| `GET /api/v1/state/{*path}` | `:406` | `api_v1_state` (`:1199`) | yes | `resource_response(state.api.get_state(&path).await, &path)` (`:506`) — the same, from the live-state tree |
+| any other path under `/api` | `:458` (`.fallback(api_not_found)`) | `api_not_found` (`:237`) | n/a | 404 with `ApiError::apid("not_found", format!("no API route at {}", uri.path()))` (`:240`) |
 
 The wildcard spelling and the documented spelling differ on purpose and are
 held together by a test rather than by discipline: axum's route constant is
@@ -251,7 +251,7 @@ by one helper that sets `no-store` on success as well as on failure
 (`:153`, `:203`, `:284`). Those resolve to **thirty** declared method+path
 pairs: twenty-six in the outer router — twelve GET and fourteen POST — and
 four GET under `/api`. One further path, `/api/`, is declared on **every**
-method through `any(api_not_found)` (`:184`) and so is not one pair.
+method through `any(api_not_found)` (`:225`) and so is not one pair.
 
 Of the twenty-six outer pairs, eleven are HTML GET pages, one (`/healthz`) is
 neither and returns a bare string (`os/pkgs/mosd/apid/src/routes.rs:3250-3252`), and
@@ -269,8 +269,8 @@ axum's URL-encoded form extractor imported at
 `use axum::extract::{Form, FromRequestParts, OriginalUri, Path, Query, Request, State};`
 (`os/pkgs/mosd/apid/src/routes.rs:19`) and named in twelve handler signatures — for
 example `Form(form): Form<SetupForm>,` (`os/pkgs/mosd/apid/src/routes.rs:3780`),
-`Form(form): Form<NetworkForm>` (`:1509`) and
-`Form(form): Form<SshKeyAddForm>` (`:2545`). The two POSTs that are not in
+`Form(form): Form<NetworkForm>` (`:5138`) and
+`Form(form): Form<SshKeyAddForm>` (`:6268`). The two POSTs that are not in
 that twelve, `/logout` (`:1159`) and `/builtin/deactivate` (`:1337`), take no
 request body at all. So the asymmetry sections 2 and 3 exist to close is now
 narrower than it was and has not closed: a programmatic client can **read**
@@ -846,7 +846,7 @@ follows is a reading of a snapshot and not a defect in it.
 4. **"the sole call site is `GetState("network")`"**
    (`docs/research/mos-ui-inventory.md:373`) is now four call sites;
    `GetState("sshd")` is at `os/pkgs/mosd/apid/src/routes.rs:5551`,
-   `GetState("container")` at `:2562` and `GetState("mqtt")` at `:3049`.
+   `GetState("container")` at `:5802` and `GetState("mqtt")` at `:6060`.
 5. **Schema version "3"** (`docs/research/mos-ui-inventory.md:397`) is now
    **8** — `pub const SCHEMA_VERSION: u32 = 8;`
    (`os/pkgs/mosd/mosd-settings/src/model.rs:11`). It was 4 when this section was
@@ -1096,7 +1096,7 @@ promises, and they are not the same promise:
 **What ships.** Two of the three roots below exist, read-only. The settings
 root is `const V1_SETTINGS_ROUTE: &str = "/v1/settings/{*path}";`
 (`os/pkgs/mosd/apid/src/routes.rs:290`) declared at `os/pkgs/mosd/apid/src/routes.rs:402-405` and
-handled by `api_v1_settings` (`:474`), whose whole body is
+handled by `api_v1_settings` (`:915`), whose whole body is
 `resource_response(state.api.get_settings(&path).await, &path)`
 (`os/pkgs/mosd/apid/src/routes.rs:920`) — the dot-path passthrough this section asks
 for, with no second model beside it. The live-state root is the same shape,
