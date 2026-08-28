@@ -1834,7 +1834,8 @@ pub(crate) async fn api_v1_ssh_keys_list(
         (status = 201, description = "The key was authorized; the body carries it canonicalised, with its fingerprint and the notice", body = AddedAuthorizedKey),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
         (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
-        (status = 422, description = "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse -- a duplicate key, or more keys than the tree holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 409, description = "A stored key already carries that public key (`key_exists`), or the device already holds the maximum number of keys (`key_limit_reached`); the collection's current state is what refuses the request, not the body", body = ApiError),
+        (status = 422, description = "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
@@ -1867,6 +1868,44 @@ pub(crate) async fn api_v1_ssh_keys_add(
         Ok(keys) => keys,
         Err(response) => return *response,
     };
+    // Both refusals below are 409 and both are decided **here**, before the
+    // shared validator runs, and neither reads a validator message to find out
+    // what happened. `validate_authorized_keys` refuses a duplicate and a full
+    // list too -- it has to, because the settings file is writable without apid
+    // -- but it refuses them as one `Validation` error alongside a malformed
+    // key, and inferring which by matching its words would be a parser for
+    // prose. The comparison and the bound are both available here, so the
+    // answer is decided from the collection rather than recovered from a
+    // sentence.
+    //
+    // The key text and not the whole line: `parse_authorized_key` splits the
+    // comment off, so relabelling a stored key and posting it back is the same
+    // key under a new name. That is the identity the validator itself uses.
+    if keys.iter().any(|stored| stored.key == parsed.key) {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "key_exists",
+                "a stored key already carries that public key; remove it before adding it again, and change its label with a remove and an add".to_string(),
+            )
+            .at(SSH_KEYS_PATH),
+        );
+    }
+    // The cap, answered from `mosd_settings::MAX_KEYS` exactly as the token
+    // mint answers its own from `MAX_TOKENS`.
+    if keys.len() >= mosd_settings::MAX_KEYS {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "key_limit_reached",
+                format!(
+                    "this device already holds the maximum of {} authorized keys; remove one first",
+                    mosd_settings::MAX_KEYS
+                ),
+            )
+            .at(SSH_KEYS_PATH),
+        );
+    }
     keys.push(parsed.clone());
     if let Err(response) = api_write_keys(&state, &keys).await {
         return *response;
@@ -2751,19 +2790,15 @@ pub(crate) async fn api_v1_peers_list(
 /// Fixed structurally rather than with a guard -- the interface has to be read
 /// anyway, to know whether it is a tunnel and what peers it already has.
 ///
-/// A duplicate public key is **409 `peer_exists`**, following the WiFi
-/// collection's `ssid_exists` and not the SSH collection's 422. The two
-/// precedents are both shipped and this is the third instance; the reason to
-/// follow this one is that the public key **is** this collection's identity --
-/// it is the `DELETE` path segment -- so a second entry under one key would
-/// leave no answer to which of the two a `DELETE` names, which is exactly the
-/// argument the WiFi route's 409 makes about an SSID. The SSH collection's 422
-/// is not available here even in principle: it is the *shared validator's* own
-/// message, inherited rather than decided, and no validator on either side of
-/// the bus refuses a duplicate peer -- `validate_wireguard` checks each peer
-/// and never compares two. `docs/task/RFCT-242.md` flags the gap this sits in:
-/// the ratified error contract covers absent and malformed and says nothing
-/// about duplicate.
+/// A duplicate public key is **409 `peer_exists`**, which is the ratified error
+/// contract's third clause and no longer a choice between precedents: an
+/// absent identifier is 404, a malformed one is 422, and a duplicate is 409
+/// with a per-collection code. A duplicate is a conflict with the collection's
+/// current state, and that is what 409 means. It also happens to be the only
+/// answer that keeps this route coherent with the item route beside it: the
+/// public key **is** this collection's identity -- it is the `DELETE` path
+/// segment -- so a second entry under one key would leave no answer to which
+/// of the two a `DELETE` names.
 #[utoipa::path(
     post,
     path = V1_NETWORK_PEERS_ROUTE,

@@ -714,6 +714,27 @@ fn stored_key(line: &str) -> serde_json::Value {
     json!({ "key": canonical(line), "comment": comment_of(line) })
 }
 
+/// One of an unbounded family of distinct, structurally real ed25519 key lines.
+///
+/// Derived from the committed fixture by overwriting the last byte of its
+/// 32-byte public key, so every line parses, declares `ssh-ed25519` inside its
+/// blob the way `parse_authorized_key` requires, and differs from every other.
+/// A cap test needs distinct keys specifically: repeating one fixture would
+/// meet the duplicate rule long before the bound.
+///
+/// The private halves were never generated, so none of these authorises
+/// anything anywhere.
+fn generated_key_line(index: u8) -> String {
+    let blob = REAL_ED25519_LINE
+        .split(' ')
+        .nth(1)
+        .expect("the fixture is `<type> <blob> <comment>`");
+    let mut bytes = mosd_settings::decode_base64(blob).expect("the fixture blob decodes");
+    let last = bytes.len() - 1;
+    bytes[last] = index;
+    format!("ssh-ed25519 {}", mosd_settings::encode_base64_nopad(&bytes))
+}
+
 /// Published sshd state carrying the three flags the pane reads.
 fn sshd_state(effective: bool, requested: bool, transient_active: bool) -> serde_json::Value {
     json!({
@@ -7127,15 +7148,31 @@ async fn the_key_add_runs_the_same_parser_the_pane_runs() {
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
 
-/// A key already stored is refused, and by the shared validator rather than by
-/// a rule this route invented: `validate_authorized_keys` is what mosd's sshd
-/// reconciler runs, and it is what refuses a duplicate.
+/// A key already stored is refused at **409 `key_exists`**.
+///
+/// **This assertion was 422 when M5 shipped it, and the change is a correction
+/// rather than a weakening.** M5 answered 422 because the duplicate check lives
+/// inside `validate_authorized_keys` and the only ways out were exporting a
+/// private constant or matching the validator's words; it declined both and
+/// took the validator's own message. PLAN-023 M6's error-contract ruling gives
+/// the contract a third clause -- absent is 404, malformed is 422, **duplicate
+/// is 409 with a per-collection code** -- and picks the export. This route now
+/// decides the duplicate itself, before the validator runs, so the status is
+/// stronger than it was and not looser: 422 was one answer for a malformed key
+/// and a duplicate alike, and these are now two.
+///
+/// `validate_authorized_keys` still runs on the rewritten list and still
+/// refuses a duplicate. It has to: the settings file is writable without apid,
+/// and the reconciler is the boundary. What changed is which of the two answers
+/// first, not whether the rule exists in one place.
 ///
 /// The duplicate is submitted under a different comment, which is the case the
 /// canonical `key` field exists for: two operators pasting one key under two
-/// labels must not end up with two entries granting the same access.
+/// labels must not end up with two entries granting the same access. That is
+/// also why the route compares the parsed `key` and not the submitted line --
+/// the identity `validate_authorized_keys` itself uses.
 #[tokio::test]
-async fn a_duplicate_key_is_refused_by_the_shared_validator() {
+async fn a_duplicate_key_is_409_and_the_stored_list_is_unchanged() {
     let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
     let cookie = login(&router, "hunter2secret").await;
 
@@ -7147,13 +7184,73 @@ async fn a_duplicate_key_is_refused_by_the_shared_validator() {
         Some(&cookie),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(envelope(response).await["code"], "validation_failed");
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "key_exists");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!(SSH_KEYS_DOT_PATH));
+    // The message must not be the validator's -- this route decided the answer
+    // and did not recover it from a sentence.
+    assert!(
+        !error["message"].as_str().unwrap().contains("entry 0"),
+        "the refusal echoed the validator's wording: {error}"
+    );
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
     assert_eq!(
         stored_key_list(&fake).await,
         json!([stored_key(REAL_ED25519_LINE)])
     );
+
+    // And a malformed key is still 422, which is the distinction the third
+    // clause buys: one status no longer covers two conditions.
+    let response = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": "ssh-ed25519 not-base64" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["code"], "validation_failed");
+}
+
+/// The 32-key cap is **409 `key_limit_reached`**, answered from the exported
+/// bound exactly as the token mint answers its own from `MAX_TOKENS`.
+///
+/// The export is the one the ruling picked, and this is the other thing it
+/// buys: without a readable bound, a full list reaches the caller either as the
+/// shared validator's 422 -- indistinguishable from a malformed key -- or as a
+/// failed write, a 500 about mosd, for a request that was never going to be
+/// accepted.
+#[tokio::test]
+async fn a_full_key_list_is_409_and_names_the_bound() {
+    let full: Vec<serde_json::Value> = (0..mosd_settings::MAX_KEYS)
+        .map(|index| json!({ "key": generated_key_line(index as u8) }))
+        .collect();
+    let (router, fake) = test_app(ssh_tree(json!(full)));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // A key no stored entry carries, so the duplicate rule above cannot be what
+    // answers: the two 409s must be told apart by their code.
+    let response = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": generated_key_line(mosd_settings::MAX_KEYS as u8) }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "key_limit_reached");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains(&mosd_settings::MAX_KEYS.to_string()),
+        "the refusal must name the bound: {error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
 
 /// Section 2.4's rule on the SSH item route: a well-formed fingerprint that
@@ -7647,7 +7744,7 @@ fn the_openapi_document_covers_the_two_collections() {
         (
             "/api/v1/ssh/authorized-keys",
             "post",
-            vec!["201", "400", "401", "405", "422", "500", "503"],
+            vec!["201", "400", "401", "405", "409", "422", "500", "503"],
         ),
         (
             "/api/v1/ssh/authorized-keys/{fingerprint}",
@@ -8872,4 +8969,57 @@ async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
         .await;
         assert_eq!(response.status(), StatusCode::CREATED, "{ssid}");
     }
+}
+
+/// The collection identifier contract's third clause, held across **every**
+/// collection at once: a duplicate is **409**, with a per-collection code.
+///
+/// One test over all three rather than three that happen to agree. The clause
+/// exists because the two shipped answers had diverged — M5's SSH route
+/// answered 422 and its WiFi route answered 409 for the same class of condition
+/// — and what stops a fourth collection from picking a fourth answer is a test
+/// that fails when one of them drifts, not three tests that would each keep
+/// passing on their own. `docs/design/api.md` section 2.4 carries the clause.
+///
+/// The codes are asserted individually and are deliberately **not** one shared
+/// constant: the clause says *a per-collection code*, so a client can tell
+/// which collection refused it without parsing a path.
+#[tokio::test]
+async fn every_collection_answers_409_for_a_duplicate() {
+    let mut tree = kinds_tree("hunter2secret");
+    tree["access"]["ssh"] =
+        ssh_tree(json!([stored_key(REAL_ED25519_LINE)]))["access"]["ssh"].clone();
+    tree["wifi"] = wifi_tree(json!([
+        { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
+    ]))["wifi"]
+        .clone();
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, body, code) in [
+        (
+            "/api/v1/ssh/authorized-keys",
+            json!({ "key": format!("{} relabelled", canonical(REAL_ED25519_LINE)) }),
+            "key_exists",
+        ),
+        (
+            "/api/v1/wifi/client/networks",
+            json!({ "ssid": "roastery", "psk": "adifferentkey" }),
+            "ssid_exists",
+        ),
+        (
+            "/api/v1/network/wg0/peers",
+            json!({ "publicKey": PEER_KEY }),
+            "peer_exists",
+        ),
+    ] {
+        let response = post_json(&router, path, &body.to_string(), Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
+        assert_api_headers(&response, path);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], code, "{path}");
+        assert_eq!(error["source"], "apid", "{path}");
+    }
+    // Not one of them wrote: a refused duplicate leaves the collection alone.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }

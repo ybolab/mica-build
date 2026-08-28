@@ -1609,6 +1609,43 @@ Content-Type: application/json
 | `settings_io` | 500 | mosd | mosd answered `IOError` (`os/pkgs/mosd/mosd/src/bus.rs:578`) |
 | `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs:579-581`, `:571`) |
 | `mosd_unreachable` | **503** | apid | the call could not be made at all |
+| `ssid_exists` | 409 | apid | a stored WiFi network already carries the posted SSID |
+| `key_exists` | 409 | apid | a stored authorized key already carries the posted public key, compared on the canonical key text so a relabel is not a new key |
+| `peer_exists` | 409 | apid | a stored WireGuard peer of that tunnel already carries the posted public key |
+| `token_limit_reached`, `key_limit_reached` | 409 | apid | the collection already holds its maximum; the bound is read before the write from `mosd_settings::MAX_TOKENS` and `mosd_settings::MAX_KEYS` |
+
+**The collection identifier contract, in three clauses.** The last four rows are
+the third of them, and the three are stated together because a collection route
+has to answer all three and the next one added must not have to reconstruct the
+rule from precedent:
+
+> On any API collection or item route: an identifier that names **no item** is
+> **404**; an identifier that is **malformed** — a fingerprint that is not a
+> fingerprint, a public key that is not 32 bytes of base64 — is **422**; and an
+> identifier that **duplicates** one the collection already holds is **409**,
+> with a per-collection code.
+
+The reasoning for each, so the clause can be applied rather than pattern-matched.
+"Well-formed but absent" and "not well formed" are different conditions and must
+not share a status, which is what separates the first two. A **duplicate** is
+neither: the body is well formed and nothing about it is wrong, and what refuses
+it is the collection's current state — which is what 409 means, and what
+`settings_read_only` two rows above already spends it on.
+
+**The duplicate clause is decided by the route, before the shared validator
+runs, and never by reading the validator's message.** Every one of these
+collections has a validator that also refuses a duplicate, and must: the
+settings file is writable without apid, so the reconciler stays the boundary.
+But those validators refuse a duplicate, an over-long list and a malformed entry
+as one error, so recovering *which* from its wording would be a parser for prose
+that breaks when the prose is reworded. Where the check needs a bound rather
+than a comparison, the bound is **exported** rather than inferred — that is what
+`MAX_TOKENS` and `MAX_KEYS` are public for.
+
+**The HTML panes are not changed by this clause**, exactly as they are not
+changed by the 404 one: a form's body is a re-rendered page carrying the message
+in an error box, no consumer on that path reads the status, and the message
+already asks for the re-submit that 422 means on a form.
 
 **The question that matters: does the API surface mosd's errors or translate
 them? Recommendation: translate the classification, pass the message through
