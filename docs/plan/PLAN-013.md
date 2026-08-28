@@ -1,10 +1,10 @@
 # PLAN-013 The x64/QEMU verification vehicle: a whole-system check, an apid API suite, and the cx3576 back-port
 
-- **status**: proposal
+- **status**: closed 2026-08-28 — superseded, all three milestones; M3's remaining half transferred to PLAN-025 M2; see Amendment 1
 - **createdAt**: 2026-08-24 09:10
 - **approvedAt**: -
 - **completedAt**: -
-- **relatedTask**: -
+- **relatedTask**: RFCT-105 (M2); RFCT-222 (the closeout audit); RFCT-225 and RFCT-226 (the two residues, both pending)
 - **milestones**: M1 the x64 image verified statically and at runtime; M2 the apid API test suite, driven over the wire against the booted device; M3 the back-port — cx3576 rebuilt and re-verified against the generalised scripts
 
 ## Context
@@ -393,3 +393,69 @@ image and no `grub-editenv` (95e1ad2), the health gate waiting on a state that
 required its own completion (9949bf8), and conmon compiled without journald so
 every container start failed (c6b104a). Each was behind the one before it, and
 none is visible without a running device.
+
+## Amendment 1 — closed as superseded, 2026-08-28 (PLAN-024, audit RFCT-222, executed by RFCT-227)
+
+This plan was never approved and never executed under its own number. Between
+its writing on 2026-08-24 and this amendment, four campaigns built the work it
+proposed. The audit that measured them, milestone by milestone against the tree
+at a86ab46, is RFCT-222. All three milestones close here.
+
+**M1 — superseded.** Every property M1.1 asked of the shell verifier was
+delivered by porting that script away: it was deleted at 6eadc65 and rebuilt as
+the bun/TypeScript package os/verify/ under PLAN-014 M4's per-check parity gate
+(RFCT-110). The partition count is derived from LAYOUT_PARTITIONS, the
+partition set is walked by role, the U-Boot sections sit behind a derived
+isUBoot predicate whose skips print as named SKIP lines and are counted in the
+RESULT summary, BOOT_SLOT_REQUIRED_FILES drives the boot-slot check, the kernel
+version is read from the packed root, and the default image path follows the
+board. Annotation 1's board-definition schema and its linter ship as
+os/verify/src/lint.ts behind make os-layout-lint, with conformance cases of
+their own. Annotation 2's ruling is implemented as BOARD_HAS_STATUS_LED, with
+mos-status-led.service shipping only from the cx3576 overlay. M1.2's harness
+exists in a stronger form than proposed, as the marker-based console assertions
+in test/apid-api/. M1.3 was decided in this plan's own recommended direction
+and executed at 8b0d1a7.
+
+**M2 — implemented.** The suite is test/apid-api/: ten phases over one boot
+plus a reboot, recorded as RFCT-105 and hardened by PLAN-022 M7 (RFCT-206). The
+two doors are MOS_QEMU_FORWARD in os/tools/qemu-run.sh, default-off. It is
+TypeScript rather than the shell script this plan's Alternatives recommended;
+that choice followed the toolchain PLAN-014 established and is not revisited.
+
+**M3 — transferred, and the transfer is the point.** The board-overlay layering
+claim is confirmed: the two uenv repart placeholders live under
+os/boards/cx3576/overlay/. The rebuild-and-diff and the gate re-run cannot run
+on this host for a reason that is not this plan's — the arm64 buildx builder
+cannot reach the local base-image family — and both are already inside
+**PLAN-025 M2's** approved scope, which unpins the builder choice, makes the
+mos-build-* family reachable and then runs the deferred pass. The work is
+therefore traceable out of this plan rather than dropped: it is PLAN-025 M2's
+to finish, under RFCT-231, not a milestone left open here. The gate list this
+plan enumerated is itself stale: os-ui-location-test no longer exists, and
+os-verify-test, os-layout-lint and os-build-test are now part of the set.
+
+**Not done, and routed rather than left here.** Each residue leaves this plan
+with a named destination:
+
+- The /var/log package-manager residue (M1.4), now entangled with the
+  stage-order gate that diffs dpkg.log — filed as **RFCT-226**, pending,
+  routed to PLAN-025-class work.
+- The image-freshness guard M1.1 asked to generalise, which did not survive
+  the port and exists in no module today — filed as **RFCT-225**, pending,
+  routed to PLAN-025-class work.
+- The four runtime assertions M1.2 listed that no harness makes, and
+  os/rootfs/build-v2.sh still choosing the architecture in a local case
+  although both boards declare MOS_ARCH — to PLAN-025, whose M1 already
+  reworks that boot path.
+- The certificate-persistence assertion and the design note M2.3 asked for —
+  to PLAN-023.
+
+**The reserved numbers.** RFCT-104 and RFCT-106 were allocated to other work —
+PLAN-011 M7's MQTT master switch, and the x64 A/B fix — so M1 and M3 never had
+task records under the numbers this plan named. Only RFCT-105 holds. The
+numbers are not reclaimed; what actually carries each milestone is recorded in
+RFCT-222 section 3a.
+
+Status moves to closed, superseded. No milestone of this plan remains open
+under this plan.

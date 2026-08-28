@@ -418,3 +418,5 @@ Files: `os/pkgs/mosd/mosd/src/tree.rs`, `os/pkgs/mosd/mosd/tests/tree.rs`,
 `docs/design/containers.md`, `docs/design/bus.md` if it carries the same claim,
 and `docs/plan/PLAN-012.md` only if the closeout amendment has not already
 recorded it.
+
+<!-- dated-record: the PLAN-024 M1 audit, frozen at `a86ab46`; its citations name the plan heads and the sibling plans as they stood before the PLAN-024 M2 closeout (RFCT-227) amended them, and re-pointing them would falsify what was measured when; exempt from docs/verify-citations.sh (RFCT-172) -->

@@ -1,10 +1,10 @@
 # PLAN-011 Device bus v2 - com.mos.* item tree, actions as items, and extension service lifecycle
 
-- **status**: implementing
+- **status**: completed — M1, M2, M3 (with its deferred image wiring), M5 and M7 landed; M4 withdrawn 2026-08-22 and M6 withdrawn 2026-08-28, neither number reused; see Amendment 1
 - **createdAt**: 2026-08-21 14:25
 - **approvedAt**: 2026-08-21 14:58 (user directive: dispatch via BKD L1)
-- **completedAt**: -
-- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2, complete 2026-08-21), RFCT-091 (M3, complete 2026-08-21) — campaign 1; RFCT-093 (M5, done 2026-08-22) — campaign 2; RFCT-097 (M3's deferred image wiring, complete 2026-08-23); RFCT-098 (the connd contract read, complete 2026-08-23); RFCT-104 (M7, complete 2026-08-24) — campaign 3, the MQTT master switch and the in-image broker (D7, added 2026-08-24 on user direction); M6 outstanding
+- **completedAt**: 2026-08-28
+- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2, complete 2026-08-21), RFCT-091 (M3, complete 2026-08-21) — campaign 1; RFCT-093 (M5, done 2026-08-22) — campaign 2; RFCT-097 (M3's deferred image wiring, complete 2026-08-23); RFCT-098 (the connd contract read, complete 2026-08-23); RFCT-104 (M7, complete 2026-08-24) — campaign 3, the MQTT master switch and the in-image broker (D7, added 2026-08-24 on user direction); RFCT-220 (the closeout audit, 2026-08-28); M6 withdrawn 2026-08-28 (Amendment 1)
 - **milestones**: M1 **complete 2026-08-21** — `docs/design/bus.md` records the D1/D2/D3 contract and the D6 Sparkplug B evaluation (native grammar only), and the read-only `com.mos.Item1` façade (`GetItems`, coalesced `ItemsChanged`, redaction) ships in `mosd/mosd/src/tree.rs`; M2 **complete 2026-08-21** — the write half ships: `GetValue`/`SetValue` on per-item object paths with the five platform-config subtrees writable and `/Actions/reboot` + `/Actions/poweroff` as action items (`mosd/mosd/src/tree.rs`, `mosd/mosd/src/actions.rs`), apid's power pane driving them with HTTP byte-for-byte unchanged (`mosd/apid/src/bus_client.rs`), and D3's actions-as-items fork resolved in `docs/design/api.md` §10.3; M3 **complete 2026-08-21** — the bridge ships: `mos-mqttd` (`mosd/mqttd/`, a new workspace crate plus `dist/mos-mqttd.service`) publishes the item tree in the mos-native grammar D6 chose, with the protocol as a pure state machine (`mosd/mqttd/src/bridge.rs`) tested against an in-memory transport double rather than a broker in CI, and `docs/design/bus.md` §10.1 flipped to `[implemented]` with paths; image wiring, multi-service publication (D5's registry) and TLS were recorded as deferred in RFCT-091; M4 **WITHDRAWN 2026-08-22** (D4 dropped; the number is not reused); M5 **complete 2026-08-22** (RFCT-093) — extension enablement: the `com.mos.ext` policy measured against a live bus, the STATE bind at `/usr/local/lib/systemd/system`, the one class rule, and mosd's `NameOwnerChanged` scan with its conformance field; M3's deferred image wiring **complete 2026-08-23** (RFCT-097) — `mos-mqttd` is installed, enabled, runs as the static `mos-mqttd` account under a per-member D-Bus grant, and takes its broker from a STATE-backed `EnvironmentFile` rather than one baked into the verity root; M7 **complete 2026-08-24** (RFCT-104) — D7's master switch and the broker D6's bridge connects to: `mqtt.enabled` at schema v6 seeding `false` on migration (`mosd/mosd-settings/`), `mos-mqtt-broker` (rumqttd 0.20 as a library, `mosd/broker/`) installed **inert** with no `multi-user.target.wants` symlink, `MqttReconciler` driving both units and rendering `/run/mos/mqtt-broker.toml` (`mosd/mosd/src/reconciler/mqtt.rs`), apid's `/mqtt` pane, and `bus.md` §10.1b — verified against mocks, fixtures and the offline image verifier, with **no assembled image built or booted**, which RFCT-104 carries as the outstanding verification; M6 outstanding
 
 ## Context
@@ -623,3 +623,57 @@ already-running bridge for free.
   settings subtree or reconciler yet — that is PLAN-008's outstanding scope,
   and it plugs into this tree and the M3 MQTT bridge with no bus-side work
   once it lands. PLAN-011 does not duplicate PLAN-008.
+
+## Amendment 1 — closeout, 2026-08-28 (PLAN-024, audit RFCT-220, executed by RFCT-227)
+
+PLAN-011 closes. Five of its seven numbered milestones are in the tree,
+together with M3's deferred image wiring, and each was verified artifact by
+artifact by RFCT-220; the remaining two are withdrawn from this plan rather
+than left open under it.
+
+**Landed.** M1 (the D1/D2 contract in docs/design/bus.md and the read-only
+com.mos.Item1 façade), M2 (writable items and the /Actions/* verbs), M3 (the
+mos-mqttd bridge) with its deferred image wiring, M5 (extension enablement:
+the com.mos.ext policy, the STATE unit bind, the one class rule and the
+NameOwnerChanged registry) and M7 (the mqtt master switch and the in-image
+broker). M4 was withdrawn on 2026-08-22 and its number is not reused; RFCT-220
+confirmed no com.mos.Settings1, no RegisterSettings and no extensions.* subtree
+exists anywhere in the tree.
+
+**M6 is withdrawn, 2026-08-28, and its number is not reused.** Device attach —
+a udev rule driving a systemd template instance, the serial-starter analog —
+has no artifact in the tree, and it has no consumer: no com.mos.ext.* service
+ships or is known to be in development. D5's posture is that mos does not own
+extension lifecycle, and a template instance mos ships is a step back toward
+owning it, so the milestone is withdrawn on the M4 pattern rather than carried
+as a task. It is revivable: when a real extension arrives with a device to
+attach, the generalisation of the cx3576 gadget-console rule that RFCT-220
+section 8b sketched is the starting point, and it comes back under a new
+number in whichever plan then owns it.
+
+**Paths in this file are pre-ec202f1 and are not rewritten.** The daemon
+workspace moved from mosd/ to os/pkgs/mosd/ and the image verifier was replaced
+by the os/verify package (PLAN-014 M4); os/rootfs/Dockerfile.v2 became the
+staged builds under os/rootfs/stages/; docs/design/api.md section 10 was deleted
+by PLAN-015 M5 and the D3 fork resolution now lives in that document's section 2
+register. Twenty-two distinct paths cited above therefore resolve to nothing. They are
+left as written, because this is a dated decision record and re-pointing it at a
+later tree would falsify what was measured when. docs/design/bus.md is the
+current, gate-checked description of the shipped contract and is where a reader
+should go for live paths.
+
+**Two deliberate gaps recorded by D6, both still open and both still decisions
+rather than debts.** The bridge publishes one bus name; mosd's D5 registry is
+what turns that into a set, and the single point of change is named in
+os/pkgs/mosd/mqttd/src/config.rs. TLS to the broker is unimplemented, awaiting a
+deployment that needs it.
+
+**One outstanding verification, narrowed, and routed.** RFCT-097 and RFCT-104
+both handed on "no assembled image was built or booted". PLAN-022 M7 (RFCT-206)
+discharged most of it: an x64 image was built, booted twice, and the MQTT image
+checks and the apid /mqtt pane were verified on it. What remains is that
+nothing has ever set mqtt.enabled to true on a booted device, so
+mos-mqtt-broker has never started and MqttReconciler has never driven real
+systemd; and no arm64 image has been built at all. Both are os/** and harness
+work; the arm64 image build is PLAN-025 M2's, and the live mqtt.enabled run is
+routed to PLAN-025 with it. Nothing else leaves this plan unnamed.

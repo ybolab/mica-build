@@ -469,3 +469,5 @@ these; the gate does.
 
 No source, design or plan file was edited by this task. The two files written
 are `docs/task/RFCT-220.md` and one appended row in `docs/task/index.md`.
+
+<!-- dated-record: the PLAN-024 M1 audit, frozen at `a86ab46`; its citations name the plan heads and the sibling plans as they stood before the PLAN-024 M2 closeout (RFCT-227) amended them, and re-pointing them would falsify what was measured when; exempt from docs/verify-citations.sh (RFCT-172) -->

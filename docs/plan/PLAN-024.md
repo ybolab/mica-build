@@ -1,9 +1,10 @@
 # PLAN-024 Legacy plan closeout: PLAN-011, PLAN-012, PLAN-013 measured and closed
 
-- **status**: approved (investigation-first)
+- **status**: completed — M1 audited the three plans (RFCT-220, RFCT-221, RFCT-222) and was user-gated; M2 executed the ratified closeout (RFCT-227), amending PLAN-011, PLAN-012 and PLAN-013 and filing RFCT-223, RFCT-224, RFCT-225 and RFCT-226 as pending
 - **createdAt**: 2026-08-28 07:30
 - **approvedAt**: 2026-08-28 07:30
-- **relatedTask**: RFCT-220..229 reserved
+- **completedAt**: 2026-08-28
+- **relatedTask**: RFCT-220..229 reserved; used: RFCT-220, RFCT-221, RFCT-222 (M1 audits), RFCT-227 (M2 closeout), RFCT-223..226 (residues filed pending)
 - **milestones**: M1 the three-plan audit, USER-GATED; M2+ per the ratified audit
 
 ## Context
