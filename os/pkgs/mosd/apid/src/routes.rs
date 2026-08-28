@@ -456,16 +456,16 @@ fn rotate_key_iface(leaf: &str) -> Option<&str> {
 
 /// The token id a leaf names, when the leaf is the collection's item route.
 ///
-/// The same obligation [`rotate_key_iface`] carries, and the same shape: axum's
-/// `{id}` matches one segment, so an id carrying a `/` is a path this predicate
-/// must not release -- it would reach the subtree's 404 where an
-/// unauthenticated caller is supposed to get §2.4's envelope. An empty segment
-/// is released, because `{id}` matches zero characters and so
-/// `/api/v1/tokens/` really is a path this router serves; the handler answers
-/// it with the 422 an unusable identifier gets.
+/// The same obligation [`resource_dot_path`] and [`rotate_key_iface`] carry:
+/// hand off exactly what the router serves, and nothing else. An id carrying a
+/// `/` is two segments and this route matches one, and an id that is empty is
+/// not this route either -- measured, not assumed: `/api/v1/tokens/` reaches
+/// the subtree's not-found handler, unlike `.../wireguard//rotate-key`, whose
+/// empty segment is interior rather than trailing. Releasing either would
+/// answer a 404 where an unauthenticated caller is supposed to be redirected.
 fn token_id(leaf: &str) -> Option<&str> {
     let id = leaf.strip_prefix(V1_TOKENS_PREFIX)?;
-    (!id.contains('/')).then_some(id)
+    (!id.is_empty() && !id.contains('/')).then_some(id)
 }
 
 /// The dot-path a leaf names, when the leaf is one of §2.2's two roots.

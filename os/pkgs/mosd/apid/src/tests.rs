@@ -6147,13 +6147,9 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     assert_eq!(error["source"], "apid");
     assert_eq!(error["path"], json!("access.apiTokens"));
 
-    // Not an identifier at all. `{id}` matches one segment and matches zero
-    // characters, so the empty spelling really is this route.
-    for path in [
-        "/api/v1/tokens/NOTHEX",
-        "/api/v1/tokens/ci-deploy",
-        "/api/v1/tokens/",
-    ] {
+    // Not an identifier at all: well formed and absent is a different answer
+    // from not well formed, and they must not share a status.
+    for path in ["/api/v1/tokens/NOTHEX", "/api/v1/tokens/ci-deploy"] {
         let response = bearer(&router, "DELETE", path, &wires[0]).await;
         assert_eq!(
             response.status(),
@@ -6166,6 +6162,21 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
             "{path}"
         );
     }
+
+    // The empty spelling is not this route -- measured, and not assumed from
+    // the rotate action, whose empty `{iface}` segment is interior rather than
+    // trailing and IS served. `/api/v1/tokens/` reaches the reserved subtree's
+    // own not-found handler, so `token_id` must not release it to the gate: a
+    // path the gate released to a route that does not exist would answer a 404
+    // where an unauthenticated caller is supposed to be redirected.
+    let cookie = login(&router, "hunter2secret").await;
+    let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    let response = bearer(&router, "DELETE", "/api/v1/tokens/", &wires[0]).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/login");
 
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
@@ -6284,7 +6295,14 @@ async fn a_run_of_bad_bearer_tokens_locks_nobody_out() {
     let (router, _) = test_app(tree);
 
     for index in 0..50 {
-        let forged = format!("mos_00000000_{index:064x}");
+        // Both misses, alternating: the stored id with the wrong secret, and
+        // an id nothing carries. The first is the one a lookup alone would
+        // pass, so it has to be in the run.
+        let forged = if index % 2 == 0 {
+            format!("mos_00000000_{index:063x}f")
+        } else {
+            format!("mos_ffffffff_{index:064x}")
+        };
         assert_eq!(
             bearer(&router, "GET", "/api/v1/meta", &forged)
                 .await
