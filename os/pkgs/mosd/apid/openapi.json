@@ -57,6 +57,16 @@
               }
             }
           },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The new password is shorter than 8 characters (`validation_failed`)",
             "content": {
@@ -130,6 +140,16 @@
               }
             }
           },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "422": {
             "description": "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one",
             "content": {
@@ -163,6 +183,48 @@
         }
       }
     },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Whether this appliance is manageable (§2.4 case 3).",
+        "description": "**200 in both states, and that is the whole point of the route.** A dead\nmosd is reported in the body and never as a status code: a 503 here would be\nindistinguishable from this endpoint itself being down, which is the\nconfusion the route exists to remove. The client rule §2.4 states is\ntherefore exact — `/healthz` answers \"is apid's listener up\", this answers\n\"is this appliance manageable\", and neither implies the other.\n\nmosd is decided by **one real bus call**, never by a cached flag. That rules\nout `access_cache` specifically: the cache exists so the auth gate can skip\na per-request `GetSettings(\"access\")`, it is filled from a `SettingsChanged`\nsubscription, and it answers from apid's own memory. A health route served\nfrom it would report `mosd: \"ok\"` for as long as the last fill survived,\nwhich is precisely the failure — a monitor seeing a healthy device — that\n§2.4 case 3 was written to prevent.\n\nThe call is `GetState(\"uptime\")` rather than §2.4's suggested\n`GetSettings(\"\")`, and the swap is a deviation recorded in\n`docs/task/RFCT-212.md` §3. It is still one call, which is what the section\nasks for; it is cheaper than the call the section named, which is the reason\nthat section gave for naming it — mosd answers with a bare integer instead\nof serialising the entire settings tree, password hash included, onto the\nbus for a liveness ping; and it is the one call that also yields\n`checkedAt`, so the alternative was two round trips to answer one question.\n\nAuthenticated, like every other `/api/v1/` route. The unauthenticated\nlistener-liveness question already has an answer at `/healthz`.",
+        "operationId": "api_v1_health",
+        "responses": {
+          "200": {
+            "description": "Whether this appliance is manageable. **200 in both states**: a dead mosd is reported as `mosd: \"unreachable\"` in the body, never as a status code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiHealth"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session cookie, or one that does not verify",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/meta": {
       "get": {
         "tags": [
@@ -184,6 +246,16 @@
           },
           "401": {
             "description": "No session cookie, or one that does not verify",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {
@@ -237,6 +309,16 @@
           },
           "404": {
             "description": "The dot-path does not exist (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {
@@ -318,6 +400,16 @@
               }
             }
           },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "422": {
             "description": "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist",
             "content": {
@@ -369,6 +461,16 @@
                 }
               }
             }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -415,6 +517,40 @@
           "source": {
             "type": "string",
             "description": "The side the failure came from."
+          }
+        }
+      },
+      "ApiHealth": {
+        "type": "object",
+        "description": "`GET /api/v1/health` (§2.4 case 3).\n\nTwo members always, and the other two by outcome: `checkedAt` on the\nreachable answer and `detail` on the unreachable one, each omitted rather\nthan sent null. That is the rule the error envelope's own optional member\nalready follows, and for the same reason: a member present with a\nmeaningless value is worse than an absent one.",
+        "required": [
+          "apid",
+          "mosd"
+        ],
+        "properties": {
+          "apid": {
+            "type": "string",
+            "description": "Always `\"ok\"`. A request that got a body at all was served by an apid\nthat is up, so there is no second value this member could take; it is\non the wire so that a client reads one document rather than inferring\nhalf of it from the fact that a response arrived."
+          },
+          "checkedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Whole seconds since boot, at the moment the probe answered.\n\nA number and not a timestamp string. There is no trusted wall clock in\nthis crate — §3.2's expiry paragraph is the argument, and `SessionStore`\nis the evidence, monotonic `Instant` throughout — so the only honest\nstamp is the appliance's own uptime, which is exactly what\n`GET /api/v1/state/uptime` already serves and is spelled the same way\nthere: a bare JSON number of whole seconds.",
+            "minimum": 0
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the probe did not complete, in the words of whatever refused it."
+          },
+          "mosd": {
+            "type": "string",
+            "description": "`\"ok\"` when the probe below completed, `\"unreachable\"` when it did not.\nTwo values and no third: §2.4 case 3 defines exactly these two shapes,\nand a health answer that needs a taxonomy is not one a monitor can act\non."
           }
         }
       },

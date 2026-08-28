@@ -58,7 +58,7 @@ task text pointed at). Both outcomes are audited (`password` /
   never the gate's redirect.
 
 Both handlers call one helper (`change_password`
-`os/pkgs/mosd/apid/src/routes.rs:1608-1662`), so the two surfaces cannot
+`os/pkgs/mosd/apid/src/routes.rs:1783-1837`), so the two surfaces cannot
 diverge in semantics.
 
 **RED-GREEN.** Tests were written first and observed red (404 on both

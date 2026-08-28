@@ -23,7 +23,7 @@ is not in the settings tree, not in live state, not in an error and not in a
 response body, and this milestone adds no route that could produce one. The
 rotation's answer carries the public half alone — *"There is no `privateKey`
 member here and there will not be one"*
-(`os/pkgs/mosd/apid/src/routes.rs:591`).
+(`os/pkgs/mosd/apid/src/routes.rs:765`).
 
 ## Scope
 
@@ -43,26 +43,26 @@ member here and there will not be one"*
 The `/network` pane was a `dhcp`/`address`/`gateway`/`dns` form per interface
 over untyped JSON. It now parses the subtree into `mosd_settings` types, one entry at a time —
 `fn parse_network(network: &Value) -> (NetworkEntries, Vec<String>)`
-(`os/pkgs/mosd/apid/src/routes.rs:2245`) and renders a kind control plus the
+(`os/pkgs/mosd/apid/src/routes.rs:2421`) and renders a kind control plus the
 parameters of all four kinds, filled in from the stored entry —
 `fn kind_fields(kind: IfaceKind, cfg: Option<&IfaceSettings>) -> Markup`
-(`os/pkgs/mosd/apid/src/routes.rs:2345`). Four groups are rendered at once
+(`os/pkgs/mosd/apid/src/routes.rs:2521`). Four groups are rendered at once
 rather than one per selected kind, because this pane ships no JavaScript and a
 group that only appeared after a reload could not be filled in on the same
 visit; the handler reads only the group the submitted kind names, which makes
 the reconciler's *"is kind X but carries a Y block"* rule unreachable from this
 path rather than merely checked on it, in
 `fn iface_settings_from_form(`
-(`os/pkgs/mosd/apid/src/routes.rs:1099`).
+(`os/pkgs/mosd/apid/src/routes.rs:1274`).
 
 Peers are a list of records, so they get the shape the SSH pane already uses for
 one: an add form and a per-entry remove control, posting to
 `/network/peers/add` and `/network/peers/remove`, keyed by the peer's public key
 the way a stored SSH key is keyed by its fingerprint, in
 `fn peers_markup(iface: &str, wireguard: Option<&WireguardConfig>) -> Markup`
-(`os/pkgs/mosd/apid/src/routes.rs:2400`). Those two routes write the peer list
+(`os/pkgs/mosd/apid/src/routes.rs:2576`). Those two routes write the peer list
 at its own dot-path, `fn peers_settings_path(iface: &str) -> String`
-(`os/pkgs/mosd/apid/src/routes.rs:2314`); the interface
+(`os/pkgs/mosd/apid/src/routes.rs:2490`); the interface
 form writes the whole entry and carries the stored peers forward, because a
 save that dropped them would disconnect every far end and report *"Settings
 saved."*
@@ -71,7 +71,7 @@ saved."*
 
 apid re-states the reconciler's cross-field rules before writing, and it is
 explicit that this is an echo and not a second boundary: *"Echoed and not
-forked"* (`os/pkgs/mosd/apid/src/routes.rs:1249`) — `validate_network` still
+forked"* (`os/pkgs/mosd/apid/src/routes.rs:1424`) — `validate_network` still
 runs on every apply, including the applies that never went through apid, and
 this runs first only so the operator reads which field is wrong instead of a
 502 from a failed bus call. The check runs over the **candidate** tree rather
@@ -79,18 +79,18 @@ than the one entry being written, because every relational rule is about two
 entries at once: editing `eth1` to take an address is refused when `br0` claims
 it as a port, which no check confined to `eth1` could see —
 `fn validate_entries(entries: &NetworkEntries) -> Result<(), String>`
-(`os/pkgs/mosd/apid/src/routes.rs:1259`).
+(`os/pkgs/mosd/apid/src/routes.rs:1434`).
 
 The peer rules are echoed the same way, and they keep the reconciler's own
 discretion about what an error may say: *"A rejected peer is named by its index
-and never by its key"* (`os/pkgs/mosd/apid/src/routes.rs:1219`), because an
+and never by its key"* (`os/pkgs/mosd/apid/src/routes.rs:1394`), because an
 operator who pasted a private key into that field must not find it on the page
 that refused it. A test asserts exactly that.
 
 Three predicates are copied rather than called — `is_ip_or_cidr`, `is_host_port`
 and the 32-byte base64 key test,
 `fn is_wireguard_key(value: &str) -> bool`
-(`os/pkgs/mosd/apid/src/routes.rs:1212`). mosd
+(`os/pkgs/mosd/apid/src/routes.rs:1387`). mosd
 is a binary crate, so apid cannot call into it, and moving the predicates into
 `mosd-settings` would have edited the reconciler, which M5 closed. Each copy
 names its source line and the reason the tree already accepts the duplication:
@@ -102,14 +102,14 @@ writable without apid, so the boundary must hold here"*
 
 `POST /api/v1/actions/wireguard/{iface}/rotate-key`, composed from the leaf
 `"/v1/actions/wireguard/{iface}/rotate-key"`
-(`os/pkgs/mosd/apid/src/routes.rs:269`), declared POST-only —
+(`os/pkgs/mosd/apid/src/routes.rs:289`), declared POST-only —
 `.route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))`
-(`os/pkgs/mosd/apid/src/routes.rs:317`) for the reason the power and SSH
+(`os/pkgs/mosd/apid/src/routes.rs:338`) for the reason the power and SSH
 mutations are: nothing that merely follows a link may replace a tunnel's
 identity. It calls `rotate_wireguard_key`
 (`os/pkgs/mosd/mosd/src/bus.rs:860`) and answers the new public key from
 `pub(crate) async fn api_v1_wireguard_rotate(`
-(`os/pkgs/mosd/apid/src/routes.rs:632`).
+(`os/pkgs/mosd/apid/src/routes.rs:807`).
 
 The interface name is passed to mosd unexamined. mosd owns the rule — a
 declared entry of kind `wireguard`, `InvalidArgs` for anything else — and apid
@@ -122,7 +122,7 @@ The gate needed one addition, and its shape is the interesting part.
 and it must hand off **exactly** what the router serves. The rotate predicate
 therefore releases an empty interface segment — *"An *empty* segment is
 released, unlike [`resource_dot_path`]'s empty"*
-(`os/pkgs/mosd/apid/src/routes.rs:346`) — because axum's `{iface}` matches zero
+(`os/pkgs/mosd/apid/src/routes.rs:411`) — because axum's `{iface}` matches zero
 or more characters where `{*path}` matches at least one, so
 `.../wireguard//rotate-key` is a path this router really serves. Refusing it in
 the predicate would answer the gate's redirect where the route answers §2.4's
@@ -141,7 +141,7 @@ pane says what the API is for instead.
 
 `privateKey` joins the denylist —
 `const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];`
-(`os/pkgs/mosd/apid/src/redact.rs:33`). It
+(`os/pkgs/mosd/apid/src/redact.rs:40`). It
 redacts nothing: no shipped schema has such a field. That is the point, and the
 constant says so — *"It is the fail-closed half of that rule: the day a field of
 that name appears anywhere in either tree, it is already covered"*
@@ -158,10 +158,10 @@ reconciler could produce, and the test set grew a third subtree to read it from.
 The two fields M5 publishes are read in both places M6 owns. The pane renders
 the kind, the unit file name and, for a tunnel, the public key —
 `fn live_state_markup(view: &NetworkView, iface: &str) -> Markup`
-(`os/pkgs/mosd/apid/src/routes.rs:2381`), and says what is *not* there: *"The
+(`os/pkgs/mosd/apid/src/routes.rs:2557`), and says what is *not* there: *"The
 private half is on this device in a file only systemd-networkd can read. It is
 never shown here, never in the API, and there is no route that returns one."*
-(`os/pkgs/mosd/apid/src/routes.rs:2391`). The JSON surface needed no code —
+(`os/pkgs/mosd/apid/src/routes.rs:2567`). The JSON surface needed no code —
 `GET /api/v1/state/network` is a passthrough of what mosd published,
 `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`) — so what M6 adds there is
@@ -181,7 +181,7 @@ One trap is worth recording because it is invisible in review: `utoipa` copies
 a handler's doc comment into the published document, so an intra-doc link in it
 becomes an apid symbol name in front of every client. The link is prose:
 *"Prose and not an intra-doc link to the classifier"*
-(`os/pkgs/mosd/apid/src/routes.rs:615`). This is the HTTP twin of the zbus trap
+(`os/pkgs/mosd/apid/src/routes.rs:789`). This is the HTTP twin of the zbus trap
 RFCT-204 records for method doc comments.
 
 ## API classification
@@ -206,7 +206,7 @@ mechanise is not engaged either.
 1. **DHCP off with an empty address stopped being a 422.** It is now an
    interface with no addressing at all, and the comment states why it had to
    change: *"It used to be one, and it stopped being one when bridges became
-   expressible"* (`os/pkgs/mosd/apid/src/routes.rs:1006-1007`). A bridge port must
+   expressible"* (`os/pkgs/mosd/apid/src/routes.rs:1181-1182`). A bridge port must
    carry neither `dhcp` nor `static`, and it must already be a declared entry
    before a bridge may name it, so the old rule made a bridge unbuildable
    through the pane in either order: creating the port first was refused by
