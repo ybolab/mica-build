@@ -6424,16 +6424,16 @@ async fn the_write_route_writes_the_four_scalar_settings() {
         let url = format!("/api/v1/settings/{path}");
         let response = put_json(&router, &url, body, Some(&cookie)).await;
         assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
-        assert_eq!(
-            header_value(&response, CACHE_CONTROL),
-            "no-store",
-            "{path}"
-        );
+        assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
         assert_eq!(body_string(response).await, "", "{path} answers no body");
 
         let read = get(&router, &url, Some(&cookie)).await;
         assert_eq!(read.status(), StatusCode::OK, "{path}");
-        assert_eq!(body_string(read).await, body, "{path} reads back as written");
+        assert_eq!(
+            body_string(read).await,
+            body,
+            "{path} reads back as written"
+        );
     }
 
     assert_eq!(
@@ -6579,7 +6579,10 @@ async fn the_two_named_refusals_say_why_rather_than_only_that() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
-    let message = envelope(response).await["message"].as_str().unwrap().to_string();
+    let message = envelope(response).await["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(
         message.contains("read-only in the settings tree itself"),
         "{message}"
@@ -6596,7 +6599,10 @@ async fn the_two_named_refusals_say_why_rather_than_only_that() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
-    let message = envelope(response).await["message"].as_str().unwrap().to_string();
+    let message = envelope(response).await["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(
         message.contains("PUT /api/v1/network/{iface}"),
         "the refusal must name the route that does own it: {message}"
@@ -6854,7 +6860,9 @@ fn the_openapi_document_covers_the_settings_write() {
         serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
 
     let write = &document["paths"]["/api/v1/settings/{path}"]["put"];
-    for status in ["204", "400", "401", "404", "405", "409", "422", "500", "503"] {
+    for status in [
+        "204", "400", "401", "404", "405", "409", "422", "500", "503",
+    ] {
         assert!(
             write["responses"][status].is_object(),
             "the settings write must document {status}: {write}"
