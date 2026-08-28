@@ -1548,7 +1548,7 @@ section's envelope.
 | `settings_io` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:687-690`, on fdo `IOError` (`os/pkgs/mosd/apid/src/routes.rs:288`) |
 | `mosd_failed` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:691-694`, on fdo `Failed` (`os/pkgs/mosd/apid/src/routes.rs:289`) |
 | `mosd_unreachable` | **yes**, 503 with `Retry-After` | `os/pkgs/mosd/apid/src/routes.rs:713-719`, and it is exhaustive over everything the three above do not name (`os/pkgs/mosd/apid/src/routes.rs:709-711`) |
-| `method_not_allowed` | **yes**, 405 with `Allow` | `api_method_not_allowed`, reached through the `declared` wrapper every route in `api_router` is declared through |
+| `method_not_allowed` | **yes**, 405 with `Allow` | `api_method_not_allowed`, reached through the one `method_not_allowed_fallback` declaration that covers every route in `api_router` |
 
 **What now ships that did not.** `GET /api/v1/health` exists, additively: a
 new path in `os/pkgs/mosd/apid/openapi.json` and a new route in `api_router`,

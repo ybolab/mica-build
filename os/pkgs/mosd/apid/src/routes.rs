@@ -22,7 +22,7 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::routing::{MethodRouter, any, get, post};
+use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
@@ -326,46 +326,41 @@ const CURRENT_VERSION: &str = "v1";
 /// are one string and cannot disagree.
 fn api_router() -> Router<AppState> {
     Router::new()
-        .route(VERSIONS_PATH, declared(get(api_versions)))
-        .route(V1_META_PATH, declared(get(api_v1_meta)))
-        .route(V1_HEALTH_PATH, declared(get(api_v1_health)))
-        .route(V1_SETTINGS_ROUTE, declared(get(api_v1_settings)))
-        .route(V1_STATE_ROUTE, declared(get(api_v1_state)))
-        .route(
-            V1_CHANGE_PASSWORD_PATH,
-            declared(post(api_v1_change_password)),
-        )
+        .route(VERSIONS_PATH, get(api_versions))
+        .route(V1_META_PATH, get(api_v1_meta))
+        .route(V1_HEALTH_PATH, get(api_v1_health))
+        .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
+        .route(V1_STATE_ROUTE, get(api_v1_state))
+        .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
         // POST only, for the reason the power and SSH mutations are: no GET
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
-        .route(
-            V1_WIREGUARD_ROTATE_ROUTE,
-            declared(post(api_v1_wireguard_rotate)),
-        )
+        .route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))
+        // §2.4's envelope on the methods those routes do not serve, declared
+        // once for the subtree rather than route by route. It reaches exactly
+        // the routes above — it rewrites the method-not-allowed fallback of
+        // every `MethodRouter` already registered on *this* router — so the
+        // twenty-six HTML paths and the asset router, both declared outside it,
+        // keep answering as they do. It must stay below the last `.route`: a
+        // route declared after it would not be reached.
+        .method_not_allowed_fallback(api_method_not_allowed)
         .fallback(api_not_found)
 }
 
-/// One declared route, with §2.4's envelope on the method it does not serve.
-///
-/// §2.4 states **one** shape for every failure on every `/api/v1/` route, and
-/// a wrong method is a failure like any other. Without this wrapper the answer
-/// comes from axum's own method-not-allowed path, which is a bare 405 with no
-/// body at all — measured, `docs/task/RFCT-212.md` §2 — so a client that parses
-/// the envelope on every other failure gets nothing to parse on this one.
-///
-/// The `Allow` header is left to axum deliberately, and is the reason this is a
-/// wrapper rather than a per-route handler that names its own methods. axum
-/// accumulates the header from the very `get`/`post` calls that declare the
-/// route (`MethodRouter::on_endpoint`) and attaches it to whatever the
-/// method-not-allowed fallback returns unless that response already carries
-/// one, so the header cannot name a method the route does not serve or omit one
-/// it does. A hand-written `Allow` here would be a second opinion about the
-/// route table, and second opinions drift.
-fn declared(methods: MethodRouter<AppState>) -> MethodRouter<AppState> {
-    methods.fallback(api_method_not_allowed)
-}
-
 /// §2.4's envelope for a method a declared route does not serve.
+///
+/// §2.4 states **one** shape for every failure on every `/api/v1/` route, and a
+/// wrong method is a failure like any other. Without this the answer is axum's
+/// own: a bare 405 with no body and no `Content-Type` at all — measured,
+/// `docs/task/RFCT-212.md` §2 — so a client that parses the envelope on every
+/// other failure had nothing to parse on this one.
+///
+/// The `Allow` header is left to axum deliberately. axum accumulates it from
+/// the very `get`/`post` calls that declare each route above and attaches it to
+/// whatever this handler returns unless the response already carries one, so
+/// the header cannot name a method a route does not serve or omit one it does.
+/// A hand-written `Allow` here would be a second opinion about the route table,
+/// and second opinions drift.
 ///
 /// `source` is `"apid"`: the router made this decision and no bus call was
 /// made, so there is nothing mosd could be asked about it. There is no `path`
