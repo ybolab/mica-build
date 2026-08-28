@@ -195,7 +195,7 @@ network=host` and a `--buildkitd-config` file -- and neither of the two
 `docker buildx create --name mos-arm64 --driver docker-container`
 (`os/tests/quadlet-doc-test.sh:83-85`) and
 `docker buildx create --name "mos-${PLATFORM_ARCH}" --driver docker-container`
-(`os/build-env/build.sh:373`). A registry
+(`os/build-env/build.sh:361`). A registry
 would therefore have to change every place a builder is made, and would leave a
 long-lived container holding image state that `os/build-env/images.env` exists
 to keep in the tree. An OCI layout needs no daemon, no port, no builder option
