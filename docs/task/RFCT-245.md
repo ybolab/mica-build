@@ -1,9 +1,10 @@
 # RFCT-245 PLAN-023 M9: the cookie cutover on /api/v1/
 
-- **status**: in progress
+- **status**: completed — the session cookie no longer authenticates `/api/v1/`; §3.2's dated note records the window Amendment 1 opened and this milestone closed
 - **priority**: P1
 - **owner**: bkd/2oeudab8
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (M9)
 
 The last implementation milestone of PLAN-023, and the one that makes
