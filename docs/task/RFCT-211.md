@@ -1,9 +1,10 @@
 # RFCT-211 PLAN-023 M2 part 1: `access.apiTokens` in the settings model
 
-- **status**: in progress
+- **status**: completed — `access.apiTokens` lands with schema v8, its migration, its validator and a redaction test; every gate green on the merged tree
 - **priority**: P1
 - **owner**: bkd/6u47m244
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (M2 part 1)
 
 The storage tier for the bearer API token of `docs/design/api.md` section 3.2,
@@ -210,8 +211,29 @@ and no citation was added or removed.
 
 ## 8. Gates
 
+Run on the merged tree, after `bkd/vu5b6kk0` was merged in.
+
 | Gate | Result |
 | --- | --- |
-| `bash docs/verify-citations.sh` | pending final run |
-| `bash docs/verify-index.sh` | pending final run |
-| `bash os/pkgs/mosd/hack/check.sh` | pending final run |
+| `bash docs/verify-citations.sh` | `1507/1507 PASS` |
+| `bash docs/verify-index.sh` | `756/756 PASS` |
+| `bash os/pkgs/mosd/hack/check.sh` | `ALL CHECKS PASSED` -- fmt, clippy `-D warnings`, `727 tests run: 727 passed, 0 skipped` under nextest, doctests, `advisories ok, bans ok, licenses ok` |
+
+The Rust gate ran unmodified inside `localhost/mos-build-rust` with
+`/srv/mos-rust-tools` bound at `/tools`, `dbus` installed first so the bus
+round-trip test can start a daemon, and `PATH` re-exported inside the login
+shell -- `bash -lc` sources `/etc/profile`, which discards the `PATH` the
+container was started with, so `cargo` is otherwise not on it. `check.sh`
+itself was not touched.
+
+The test count moves 704 to 727 on this branch: 23 new tests, of which 11 are
+the validator's unit tests, 4 the migration's, 3 the model's, 5 the crate's
+integration tests and 1 apid's redaction test.
+
+## 9. The merge
+
+`bkd/vu5b6kk0` was merged into this branch before the final gate run. One
+conflict, `docs/task/index.md`, resolved by keeping both rows in ascending
+task-id order. RFCT-210 arrived carrying `model.rs` citations written against
+the pre-v8 file, so seven of them were re-anchored through the same line map,
+numbers only, in their own commit.
