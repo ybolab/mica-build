@@ -391,3 +391,5 @@ zero.
   file; section 5's note says what it changed.
 - `os/build-env/images.env`. No pin moved, and no key was added: the
   `--contexts` mode resolves the same `LOCAL_` keys the pair form already did.
+
+<!-- dated-record: the PLAN-025 M2a measurement, frozen at its completion on 2026-08-28; section 6 quotes `os/pkgs/podman/Dockerfile:74` as the src stage stood BEFORE RFCT-235 replaced its argument with `MOS_BUILD_BASE_NATIVE`, and re-pointing that citation at today's line would make this record read as though the defect it measured were still there; exempt from docs/verify-citations.sh (RFCT-172) -->
