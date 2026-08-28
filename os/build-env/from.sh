@@ -8,6 +8,8 @@
 #       -> alpine:3.21@sha256:48b0309c...
 #   bash os/build-env/from.sh --check
 #       -> validate every IMAGE_ key, print nothing, exit 0 or 1
+#   bash os/build-env/from.sh --contexts=/some/dir LOCAL_MOS_BUILD_C
+#       -> --build-context localhost/mos-build-c=oci-layout:///some/dir/mos-build-c
 #
 # Every Dockerfile in this tree takes its base image as a build argument, and
 # this is the only thing that produces one.
@@ -40,7 +42,9 @@
 # What it does not do: build anything, or pull anything. It reads a file and
 # asks the local image store one question. A caller that gets output from this
 # has a value it can put after `FROM`; a caller that gets a non-zero exit has a
-# reason.
+# reason. --contexts is the one mode that also WRITES: it copies images the
+# local store already holds into OCI layouts, for the callers whose builder
+# cannot read that store. It still builds and pulls nothing.
 set -euo pipefail
 
 # Path arithmetic, proved rather than assumed -- os/build-env/build.sh derives
@@ -212,10 +216,109 @@ if [ "${1-}" = "--ref" ]; then
     exit 0
 fi
 
+# --contexts: the same LOCAL_ images, handed to a builder that cannot read the
+# local docker image store at all.
+#
+# The tag form above works for one driver only. `docker buildx build` with the
+# `docker` driver resolves `localhost/mos-build-c` out of the image store;
+# every other driver has its own content store and reads `localhost/` as a
+# registry hostname. Measured on this host with the `mos-arm64`
+# docker-container builder, against a FROM line that is correct:
+#
+#   ERROR: failed to resolve source metadata for localhost/mos-build-base:latest:
+#   failed to do request: Head "http://localhost/v2/mos-build-base/manifests/latest":
+#   dial tcp [::1]:80: connect: connection refused
+#
+# So the image is handed over as CONTENT rather than as a name. `docker image
+# save` writes an OCI layout, and buildx takes one as a named build context
+# whose name overrides a FROM -- so the Dockerfile keeps saying
+# `FROM ${MOS_BUILD_C}` and neither it nor images.env learns anything about
+# which driver is in use. Measured here on the mos-arm64 builder: the same
+# probe that produced the refusal above, given the layout, ran its RUN step.
+#
+# A local `registry:2` on a host port is the other shape that could carry this,
+# and it is not what this does. Measured, on the builder this tree creates:
+# `docker inspect buildx_buildkit_mos-arm640` reports NetworkMode=bridge with
+# its own address (172.17.0.2), so `localhost:<port>` inside it is its own
+# loopback and not the host's, and the container carries no
+# /etc/buildkit/buildkitd.toml, so an http registry would also need an
+# insecure-registry configuration baked in at creation time. Both are creation
+# options the two `docker buildx create` call sites in this tree do not pass --
+# os/tests/quadlet-doc-test.sh:83-85 and os/build-env/build.sh -- so a registry
+# would have to change every place a builder is made, and leave a long-lived
+# container holding state that images.env exists to keep in the tree. An OCI
+# layout needs no daemon, no port and no builder options.
+#
+# Only LOCAL_ keys. An IMAGE_ key is a digest-pinned upstream reference that
+# every driver resolves for itself, and exporting one here would replace a
+# multi-architecture index with the single manifest this host happens to hold.
+if [ "${1-}" != "${1#--contexts=}" ]; then
+    CTX_DIR="${1#--contexts=}"
+    shift
+    [ -n "${CTX_DIR}" ] || {
+        echo "error: --contexts= was given with no directory. It is where the OCI layouts are written; an empty one would put them at the filesystem root" >&2
+        exit 1
+    }
+    [ -d "${CTX_DIR}" ] || {
+        echo "error: --contexts=${CTX_DIR} is not a directory. This writes one layout per key into it and does not create it: a caller that mistyped the path would otherwise get a tree of exports nothing reads" >&2
+        exit 1
+    }
+    [ "$#" -gt 0 ] || {
+        echo "error: --contexts= takes at least one LOCAL_ key. A call with none would print nothing and exit 0, and a caller that substituted that into a docker command line would build with no --build-context at all -- which is the unresolvable FROM this mode exists to prevent" >&2
+        exit 1
+    }
+    CTX_ABS="$(cd "${CTX_DIR}" && pwd)"
+    bad=0
+    out=()
+    for key in "$@"; do
+        case "${key}" in
+        LOCAL_*) ;;
+        *)
+            echo "error: ${key} is not a LOCAL_ key. Only an image this repository builds is exported as a layout; an IMAGE_ key is a digest-pinned upstream reference that every driver resolves for itself" >&2
+            bad=1
+            continue
+            ;;
+        esac
+        # The same validation the pair form performs, including the --arch
+        # check: a layout exported from a wrong-architecture image is a
+        # well-formed context that fails at the FROM as "no match for platform
+        # in manifest", which is the report this file exists to replace.
+        if ! val="$(resolve_key "${key}")"; then
+            bad=1
+            continue
+        fi
+        dir="${CTX_ABS}/${val##*/}"
+        rm -rf "${dir}"
+        mkdir -p "${dir}"
+        if ! docker image save "${val}" | tar -x -C "${dir}"; then
+            echo "error: exporting ${val} to an OCI layout under ${dir} failed" >&2
+            bad=1
+            continue
+        fi
+        # What `docker image save` writes is the daemon's choice, not this
+        # script's. Measured on this one -- docker 29.7.2 with the containerd
+        # image store -- it writes an OCI layout: oci-layout, index.json and
+        # blobs/, which is what buildx takes as oci-layout://. The format is
+        # not a promise of the command, so it is checked rather than assumed;
+        # anything else would surface at the FROM as an unreadable context
+        # rather than as the daemon configuration it is.
+        if [ ! -f "${dir}/oci-layout" ] || [ ! -f "${dir}/index.json" ]; then
+            echo "error: \`docker image save ${val}\` did not produce an OCI layout (no oci-layout/index.json under ${dir}); this daemon writes the older docker-archive format, which buildx cannot take as a build context. A builder that cannot read the local image store needs the containerd image store enabled on the daemon that holds ${val}" >&2
+            bad=1
+            continue
+        fi
+        out+=(--build-context "${val}=oci-layout://${dir}")
+    done
+    [ "${bad}" = 0 ] || exit 1
+    printf '%s\n' "${out[@]}"
+    exit 0
+fi
+
 [ "$#" -gt 0 ] || {
     cat >&2 <<'USAGE'
 usage: from.sh [--arch=<amd64|arm64>] <ARG_NAME>=<IMAGES_ENV_KEY> [...]
        from.sh [--arch=<amd64|arm64>] --ref <IMAGES_ENV_KEY>
+       from.sh [--arch=<amd64|arm64>] --contexts=<DIR> <LOCAL_KEY> [...]
        from.sh --check
 
 A call with no pairs would print nothing and exit 0, and a caller that
