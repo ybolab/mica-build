@@ -6,13 +6,13 @@ use serde_json::json;
 
 use mosd_settings::{
     AccessSettings, ApMode, ApiToken, AuthorizedKey, BridgeConfig, ConsoleSettings,
-    ContainerSettings,
-    DEFAULT_PATH, DeviceCredentialSettings, IfaceKind, IfaceSettings, MigrateV0ToV1, MigrateV3ToV4,
-    Migration, MigrationRegistry, MqttAuthSettings, MqttListenSettings, MqttSettings,
-    ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SettingsError, SshSettings,
-    StaticConfig, Store, VlanConfig, WebAdminSettings, WifiApSettings, WifiClientSettings,
-    WifiNetwork, WifiSettings, WireguardConfig, WireguardPeer, encode_base64_nopad, json_path_get,
-    migrate, parse_authorized_key, validate_api_tokens, validate_authorized_keys,
+    ContainerSettings, DEFAULT_PATH, DeviceCredentialSettings, IfaceKind, IfaceSettings,
+    MigrateV0ToV1, MigrateV3ToV4, Migration, MigrationRegistry, MqttAuthSettings,
+    MqttListenSettings, MqttSettings, ProvisioningSettings, ProvisioningState, SCHEMA_VERSION,
+    Settings, SettingsError, SshSettings, StaticConfig, Store, VlanConfig, WebAdminSettings,
+    WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings, WireguardConfig, WireguardPeer,
+    encode_base64_nopad, json_path_get, migrate, parse_authorized_key, validate_api_tokens,
+    validate_authorized_keys,
 };
 
 fn populated() -> Settings {
@@ -415,6 +415,7 @@ fn v3_populated() -> Settings {
                 password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$ZGV2$ZGV2aGFzaA".to_string()),
                 generation: 4,
             },
+            api_tokens: Vec::new(),
         },
         provisioning: ProvisioningSettings {
             state: ProvisioningState::Complete,
@@ -1771,7 +1772,6 @@ fn a_key_that_predates_the_rule_does_not_block_other_writes() {
     ));
 }
 
-
 // --- Bearer API tokens (schema v8) -----------------------------------------
 
 /// One well-formed token, spelled the way §3.2 spells it.
@@ -1910,9 +1910,7 @@ fn a_stored_token_is_a_digest_and_nothing_else() {
     settings.access.api_tokens = vec![api_token("3f2a9c41", "ci-deploy", 'a')];
 
     let text = toml::to_string(&settings).unwrap();
-    let entry: toml::Table = text
-        .parse::<toml::Table>()
-        .unwrap()["access"]["apiTokens"]
+    let entry: toml::Table = text.parse::<toml::Table>().unwrap()["access"]["apiTokens"]
         .as_array()
         .unwrap()[0]
         .as_table()
@@ -1931,10 +1929,16 @@ fn the_token_validator_is_public_and_refuses_a_broken_list() {
     validate_api_tokens(&[]).unwrap();
     validate_api_tokens(&[api_token("3f2a9c41", "ci", 'a')]).unwrap();
 
-    let duplicate_id = [api_token("3f2a9c41", "ci", 'a'), api_token("3f2a9c41", "cd", 'b')];
+    let duplicate_id = [
+        api_token("3f2a9c41", "ci", 'a'),
+        api_token("3f2a9c41", "cd", 'b'),
+    ];
     assert!(validate_api_tokens(&duplicate_id).is_err());
 
-    let duplicate_hash = [api_token("3f2a9c41", "ci", 'a'), api_token("9d4ec7b0", "cd", 'a')];
+    let duplicate_hash = [
+        api_token("3f2a9c41", "ci", 'a'),
+        api_token("9d4ec7b0", "cd", 'a'),
+    ];
     assert!(validate_api_tokens(&duplicate_hash).is_err());
 
     let mut malformed = api_token("3f2a9c41", "ci", 'a');

@@ -804,7 +804,12 @@ mod tests {
         // out of `GetSettings("access")`.
         let value = settings.get("access.apiTokens").unwrap();
         let entry = &value.as_array().unwrap()[0];
-        let fields: Vec<&str> = entry.as_object().unwrap().keys().map(String::as_str).collect();
+        let fields: Vec<&str> = entry
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         assert_eq!(fields, ["created", "hash", "id", "name"]);
         assert_eq!(entry["id"], Value::String("3f2a9c41".to_string()));
         assert_eq!(entry["created"], Value::from(1_700_000_000_u64));
@@ -821,10 +826,16 @@ mod tests {
         assert_eq!(settings.access.api_tokens.len(), 1);
 
         // An index is not a path segment; a write through one must not land.
-        assert!(settings.set("access.apiTokens.0.name", Value::from("x")).is_err());
+        assert!(
+            settings
+                .set("access.apiTokens.0.name", Value::from("x"))
+                .is_err()
+        );
         assert_eq!(settings.access.api_tokens[0].name, "ci-deploy");
 
-        settings.set("access.apiTokens", Value::Array(Vec::new())).unwrap();
+        settings
+            .set("access.apiTokens", Value::Array(Vec::new()))
+            .unwrap();
         assert!(settings.access.api_tokens.is_empty());
     }
 
