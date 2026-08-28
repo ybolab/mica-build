@@ -23,10 +23,14 @@
   arguable (state is read-only; RFCT-183's residual); mosd.md section 5.3
   "returns five" (now seven) and section 5.4's schema sentence, both
   self-dated records needing dated notes only.
-- Harness facts live only in task files and session memory: host bun cannot
-  parse the committed lockfile, the pinned image lacks nextest/dbus-daemon
-  (nextest now provisioned at /srv/mos-rust-tools/bin), the full container
-  PATH must be spelled out, runtime/ is the scratch root. They belong in a
+- Harness facts live only in task files and session memory: the pinned image
+  lacks nextest/dbus-daemon (nextest now provisioned at
+  /srv/mos-rust-tools/bin), the full container PATH must be spelled out,
+  runtime/ is the scratch root. *(Dated correction, 2026-08-28: the original
+  "host bun cannot parse the committed lockfile" claim is FALSE on this host
+  today — bun 1.4.0 at /srv/bkd/runtime/bun parses it and runs the selftest
+  47/47. The container route is a deliberate PIN for reproducibility, not a
+  workaround, and the harness page records it as such.)* They belong in a
   committed HARNESS or docs page so the next tool pays nothing.
 
 ## Proposal
