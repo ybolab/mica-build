@@ -283,7 +283,7 @@ phases, so `07b-postreboot` ran in the FIRST boot — after phase 07 had
 deliberately taken the guest down. It waited its full 180s deadline for apid on
 a machine that was off, failed, and threw on `ECONNREFUSED`. HARNESS.md had
 always described the intended split — *"phases 01-transport .. 07-reboot"*
-(`test/apid-api/HARNESS.md:59`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
+(`test/apid-api/HARNESS.md:83`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
 refusal of an unknown phase name makes a later rename fail loudly rather than
 silently shrink the run.
 
