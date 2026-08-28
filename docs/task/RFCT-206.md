@@ -231,6 +231,28 @@ sets `MOS_QEMU_APPEND`: its readiness signal is the journald console line that
 append produces. They are fixed here because the M6 verdict cannot be produced
 without them.
 
+### 5.4b The second boot was unreachable, for two more reasons
+
+Both surfaced only once a run got past the defects above, and both are
+pre-existing.
+
+`MOS_APID_PHASES` defaulted to the empty string, which the runner reads as ALL
+phases, so `07b-postreboot` ran in the FIRST boot — after phase 07 had
+deliberately taken the guest down. It waited its full 180s deadline for apid on
+a machine that was off, failed, and threw on `ECONNREFUSED`. HARNESS.md had
+always described the intended split — *"phases 01-transport .. 07-reboot"*
+(`test/apid-api/HARNESS.md:59`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
+refusal of an unknown phase name makes a later rename fail loudly rather than
+silently shrink the run.
+
+Then the guard that decides whether to make a second boot compared the handoff
+against `disk.img`. **The guest writes to `disk.img` for the whole boot**, so
+its mtime always advances past a handoff written mid-boot at the POST — the
+comparison was false on every successful run, and the harness skipped the second
+boot reporting that 07 had not run on a run where 07 had run and the console
+showed the guest going down. It compares against an empty stamp taken before
+anything boots now.
+
 ### 5.5 Defects in this milestone's own first cut, found by running it
 
 Recorded because they were found by the booted run and not by review, which is
