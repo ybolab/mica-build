@@ -1368,7 +1368,7 @@ mod tests {
         );
         assert_eq!(
             not_declared.name().as_str(),
-            NOT_FOUND_ERROR,
+            super::NOT_FOUND_ERROR,
             "an undeclared entry names nothing, which is a 404 and not a 422: {message}"
         );
         // Refused before the key store is reached, so no key was drawn for an

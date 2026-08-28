@@ -2451,9 +2451,14 @@ fn json_body<T: serde::de::DeserializeOwned>(
 /// passthrough does not, which is the trade the departure was argued on.
 ///
 /// It is the only way to make two entries legal in one step. Adding a bridge
-/// and its ports through [`api_v1_network_iface_write`] means ordering the
-/// ports first, because a bridge naming a port that is not yet declared is
-/// refused; a client that has the whole map can send it and not care.
+/// and its ports one at a time through `PUT /api/v1/network/{iface}` means
+/// ordering the ports first, because a bridge naming a port that is not yet
+/// declared is refused; a client that has the whole map can send it and not
+/// care.
+///
+/// Prose and not an intra-doc link, deliberately: `utoipa` copies this comment
+/// into the published document, where a link would put an apid symbol name in
+/// front of every client.
 #[utoipa::path(
     put,
     path = V1_NETWORK_PATH,
@@ -2824,7 +2829,8 @@ pub(crate) async fn api_v1_peers_add(
 ///
 /// Section 2.4's rule with both halves live. A string that is not 32 bytes of
 /// base64 could never be a WireGuard public key and is **422**; a well-formed
-/// key that no stored peer carries is **404**, from [`item_not_found`].
+/// key that no stored peer carries is **404**, from the one shared not-found
+/// helper every item route in this file reaches for.
 ///
 /// The pane answers 422 for the second condition -- *"No peer of this tunnel
 /// has that public key; the list may have changed since the page was loaded."*
