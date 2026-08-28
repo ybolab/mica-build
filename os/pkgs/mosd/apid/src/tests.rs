@@ -8470,6 +8470,87 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     }
 }
 
+/// PLAN-026 M1 (`docs/task/RFCT-247.md`): both typed write paths run the
+/// wizard's CIDR rule, on the entries the *request* carries.
+///
+/// RED-first for the gap `docs/task/RFCT-215.md` section 6 item 1 pinned: both
+/// refused bodies below were answered `204` and written before this milestone.
+///
+/// The condition is the wizard's and is not widened here, so the two accepted
+/// arms at the end are as much of the rule as the two refusals: an address is
+/// examined only when `dhcp` is off and the field is non-empty.
+#[tokio::test]
+async fn the_typed_network_writes_refuse_an_address_that_is_not_a_cidr() {
+    let (router, fake, _cookie, token) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    // The item route: an address the kernel cannot parse, on one entry.
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth0"),
+        &token,
+        &json!({ "dhcp": false, "static": { "address": "192.168.1.10" } }).to_string(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_api_headers(&response, "an item write carrying an address that is not a CIDR");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("network.eth0"));
+    assert_eq!(
+        error["message"],
+        json!("Static address must be IPv4 CIDR notation, e.g. 192.168.1.10/24."),
+        "the message is the wizard's own, so the two surfaces do not disagree"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // The map route: one bad entry refuses the whole body, and the envelope
+    // names that entry rather than the map, because that is what failed.
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({
+            "eth0": { "dhcp": true },
+            "eth1": { "dhcp": false, "static": { "address": "10.0.0.5/33" } },
+        })
+        .to_string(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], json!("network.eth1"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // The two arms the condition does not reach: DHCP on with a junk address
+    // left in the block, and DHCP off with no `static` at all -- which is a
+    // bridge port, an interface with no addressing rather than an error.
+    for (iface, body) in [
+        (
+            "eth0",
+            json!({ "dhcp": true, "static": { "address": "nonsense" } }),
+        ),
+        ("eth1", json!({ "dhcp": false })),
+    ] {
+        let response =
+            bearer_json(&router, "PUT", &iface_url(iface), &token, &body.to_string()).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{iface} {body}");
+    }
+}
+
 /// A dotted interface name round-trips through the quoted path segment, so the
 /// daemon sees one key and not two (M6 acceptance).
 #[tokio::test]
