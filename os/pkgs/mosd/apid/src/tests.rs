@@ -4185,6 +4185,17 @@ async fn each_fdo_error_name_gets_its_own_envelope() {
         ),
     ] {
         for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
+            // The route-dependent row. `GetState` raises `InvalidArgs` for a
+            // dot-path that does not resolve and for nothing else, so the
+            // state route answers it 404, the same as the settings tree
+            // answers its own missing path.
+            let (code, status) = if fdo_name == "org.freedesktop.DBus.Error.InvalidArgs"
+                && path.starts_with("/api/v1/state/")
+            {
+                ("settings_not_found", StatusCode::NOT_FOUND)
+            } else {
+                (code, status)
+            };
             let (router, cookie) = failing_app(Some(fdo_name)).await;
             let response = get(&router, path, Some(&cookie)).await;
             assert_eq!(response.status(), status, "{fdo_name} at {path}");

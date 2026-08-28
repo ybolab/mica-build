@@ -176,38 +176,45 @@ Re-anchored in their own commits, numbers only. The pre-image was verified
 gate-green **first** — 1559/1559 and 780/780 at the merge base — so every old
 line was right before any of them was classified.
 
-**No constant offset.** The code edits produced **nine distinct shift bands** in
-`routes.rs` (+8, +20, +23, +29, +36, +49, +101, +118, +207) and two in
-`openapi.json` (+0, +153). A single offset would have been wrong for every
-citation outside one band.
+**No constant offset.** Measured net from the pre-image to the final tree, the
+code edits produced **twelve distinct shift bands** in `routes.rs` (+8, +20,
++23, +24, +50, +51, +57, +64, +77, +129, +146, +231), three in `openapi.json`
+(+0, +153, +163) and one in `tests.rs` (+12). A single offset would have been
+wrong for every citation outside one band.
 
 | Form | Count | Treatment |
 |---|---|---|
-| Full `path:line` and `path:line-line` into the four changed files | 379 | 75 already stable, **304 rewritten** |
+| Full `path:line` and `path:line-line` into the four changed files | 379 | 73 unchanged, **306 rewritten** |
 | Bare `` `:NNN` `` continuations with a `routes.rs` antecedent | 155 | left in place — RFCT-214's by census |
 
-Of the 304 rewritten, 301 were resolved mechanically and each was verified
-**byte-identical at both endpoints** against the pre-image; a mapping was
-accepted only where the cited endpoints sat in unchanged blocks. Three were
-resolved by hand and are listed below, because a mechanical mapping was not
-available for them:
+Every mechanical mapping was verified **byte-identical at both endpoints**
+against the pre-image, and accepted only where the cited endpoints sat in
+unchanged blocks. Five citations could not be mapped mechanically and were
+resolved by hand:
 
 | Citation | Why it could not be mapped | Resolved to |
 |---|---|---|
-| `docs/design/api.md` `routes.rs:5382-5395` | The range straddled a split: the spawn block moved into `dispatch_power_action` while the response construction stayed behind | `routes.rs:5483-5489`, `power_accepted` — the API route's own dispatch-then-202, which is what the sentence describes |
-| `docs/design/api.md` `routes.rs:2952-2994` | The cited start line is `bus_api_error`'s signature, whose text this task changed | `routes.rs:2981-3030` |
-| `docs/task/RFCT-130.md` `routes.rs:2952-2975` | Same start line | `routes.rs:2981-3004` |
+| `docs/design/api.md` `routes.rs:5382-5395` | The range straddled a split: the spawn block moved into `dispatch_power_action` while the response construction stayed behind | `power_accepted` — the API route's own dispatch-then-202, which is what the sentence describes |
+| `docs/design/api.md` `routes.rs:2952-2994` | The cited start line is `bus_api_error`'s signature, whose text this task changed | the function's new bounds |
+| `docs/task/RFCT-130.md` `routes.rs:2952-2975` | Same start line | the same arms, re-bounded |
+| `docs/design/api.md` `routes.rs:1226` (twice) | Both **quoted** the old one-line state handler, `resource_response(state.api.get_state(&path).await, &path)`. Section 7's reconciliation replaced that line, and the quoted text now exists nowhere | the `get_state` read at `:1227` and the terminal `None` arm at `:1253`, each quoted as it now reads |
+
+The last two are the only places this task changed a **quotation** rather than a
+number, and it changed them because the quoted source line ceased to exist. A
+citation whose quote is false is worse than one whose number is stale: the
+number can be checked mechanically and the quote reads as evidence.
 
 Rewrites were applied in **one simultaneous pass per document**, by character
 offset rather than by string replacement, so a citation rewritten to a value
 could not be rescanned by the rule whose old value is that same number. The map
 was widened to `.md` files as well as `.rs` and `.json`; no document gained or
-lost a section in this task, so no `.md`-into-`.md` citation moved.
+lost a section, so no `.md`-into-`.md` citation moved.
 
-A second pass was needed after `cargo fmt`: the gate runs `rustfmt --check`, and
-formatting shifted `routes.rs` by -4 lines below the transient-password handler,
-moving 11 further citations. They were re-anchored by the same mechanical pass
-and are included in the counts above.
+Four passes were needed, each after a real line shift: the M7 routes, then
+`cargo fmt` (the gate runs `rustfmt --check`, so the formatting is the gate's
+and not a preference), then the two path-census test edits, then section 7's
+state-route reconciliation. The counts above are the **net** result, measured
+pre-image to final tree, not the sum of the passes.
 
 **The bare continuations were left alone, per PLAN-023's ruling that RFCT-214
 owns that census.** Of the 155 with a full `os/pkgs/mosd/apid/src/routes.rs`
