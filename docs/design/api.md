@@ -606,7 +606,7 @@ write mutates nothing. Second, **the dot-path syntax has no array indexing**:
 the model comment says a list is *"Written as a whole JSON array through the
 dot-path API"* (`os/pkgs/mosd/mosd-settings/src/model.rs:376`), which is exactly why
 the SSH pane reads the whole key list (`os/pkgs/mosd/apid/src/routes.rs:5685-5687`),
-edits it in memory (`os/pkgs/mosd/apid/src/routes.rs:6455-6459`), and writes the whole
+edits it in memory (`os/pkgs/mosd/apid/src/routes.rs:6451-6455`), and writes the whole
 list back through `write_key_list` (`os/pkgs/mosd/apid/src/routes.rs:5690-5703`).
 
 **Which reconcilers a write re-runs.** `SetSettings` re-applies every reconciler
@@ -1203,7 +1203,7 @@ capable as the bus, including the bus's limits:
   (`os/pkgs/mosd/mosd-settings/src/model.rs:376`). Every client that wants to add
   one SSH key must read `access.ssh.authorizedKeys`, append, and write the whole
   list back — which is precisely what the HTML pane does today
-  (`os/pkgs/mosd/apid/src/routes.rs:6455-6460`). Two clients doing that concurrently
+  (`os/pkgs/mosd/apid/src/routes.rs:6451-6456`). Two clients doing that concurrently
   lose one of the two writes, with no mechanism that notices.
 - **Whole-subtree writes are all-or-nothing.** `Settings::set` deserializes the
   entire root into `Settings` after the write and rejects the result if it does
@@ -1255,7 +1255,7 @@ cannot be expressed as a settings write at all. Both get a named collection:
 and it is the reason here too: *"an index is only meaningful against the list the
 operator was looking at, so a key added or removed by another session between the
 render and the submit would slide it onto a different key and delete something
-nobody asked to delete"* (`os/pkgs/mosd/apid/src/routes.rs:6471-6475`). A `DELETE` whose
+nobody asked to delete"* (`os/pkgs/mosd/apid/src/routes.rs:6467-6471`). A `DELETE` whose
 identifier matches nothing is an error, not a silent success, for the reason the
 same comment gives: *"'removed' when nothing was removed is how an operator ends
 up believing access was withdrawn while the key still grants root."*
@@ -1488,7 +1488,7 @@ knowable over the connection that asked.
 
 **One behaviour change the API should make, named because it is a change.**
 `ssh_key_remove` answers **422** when the identifier matches nothing
-(`os/pkgs/mosd/apid/src/routes.rs:6492-6498`, via `ssh_error` at `os/pkgs/mosd/apid/src/routes.rs:5706-5715`). For a
+(`os/pkgs/mosd/apid/src/routes.rs:6488-6494`, via `ssh_error` at `os/pkgs/mosd/apid/src/routes.rs:5706-5715`). For a
 `DELETE` on a collection resource that is a **404** — the identified item does
 not exist. The API uses 404. The HTML path is not changed by this document.
 
@@ -2090,10 +2090,10 @@ Two costs, both inherited from the tree rather than introduced here:
 
 - Mint and revoke are read-modify-write of the whole array, because the dot-path
   syntax has no array indexing (`os/pkgs/mosd/mosd-settings/src/model.rs:234-235`) —
-  the same pattern the SSH key pane uses (`os/pkgs/mosd/apid/src/routes.rs:6455-6460`).
+  the same pattern the SSH key pane uses (`os/pkgs/mosd/apid/src/routes.rs:6451-6456`).
   Two concurrent mints lose one token, silently.
 - Identity is the `id`, never a list position, for the reason recorded at
-  `os/pkgs/mosd/apid/src/routes.rs:6484-6488`: an index is meaningful only against the
+  `os/pkgs/mosd/apid/src/routes.rs:6480-6484`: an index is meaningful only against the
   list the caller last read, and a concurrent change slides it onto a different
   entry. A `DELETE` whose id matches nothing is a 404, not a silent success.
 
@@ -4084,7 +4084,7 @@ and it is useful with zero write routes.
 `/api/v1/wifi/client/networks`), `/api/v1/actions/{reboot,poweroff,
 transient-root-password}`, `POST /api/v1/setup`, and §2.3's one named behaviour
 change — a `DELETE` whose identifier matches nothing is **404**, where the HTML
-path answers 422 (`os/pkgs/mosd/apid/src/routes.rs:6492-6498`). The HTML path is not
+path answers 422 (`os/pkgs/mosd/apid/src/routes.rs:6488-6494`). The HTML path is not
 changed.
 
 **What an operator can do that they could not before.** Provision a

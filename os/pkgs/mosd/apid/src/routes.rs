@@ -6419,11 +6419,7 @@ pub(crate) async fn api_v1_transient_root_password(
             ApiError::apid("validation_failed", message),
         );
     }
-    if let Err(err) = app
-        .api
-        .set_transient_root_password(&request.password)
-        .await
-    {
+    if let Err(err) = app.api.set_transient_root_password(&request.password).await {
         // No dot-path: this writes no setting, so §2.4's optional member is
         // absent rather than naming something that was not at fault.
         return bus_api_error(&err, None);

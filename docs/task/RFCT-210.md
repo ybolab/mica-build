@@ -317,7 +317,7 @@ inventory, and what it answers when the identifier names nothing:
 
 | Operation | Identifier | Answer today | Produced at |
 |---|---|---|---|
-| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:6492-6497` |
+| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:6488-6493` |
 | `POST /network/peers/remove` | peer public key | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:5235-5241` |
 | `POST /api/v1/actions/wireguard/{iface}/rotate-key` | `iface`, a path segment | **422 `settings_rejected`**, API envelope | `os/pkgs/mosd/mosd/src/bus.rs:884-888` → `os/pkgs/mosd/apid/src/routes.rs:2997-3000` |
 | `POST /network/peers/add` | `iface` | **neither — it succeeds**; see below | `os/pkgs/mosd/apid/src/routes.rs:4946-4950` |
@@ -391,10 +391,10 @@ does not give:
    Changing it buys a more correct number that nothing observes.
 2. **The HTML condition really is different.** `ssh_key_remove` accepts a
    fingerprint **or** the exact canonical key text as its identifier
-   (`os/pkgs/mosd/apid/src/routes.rs:6488-6491`), so a submitted string that
+   (`os/pkgs/mosd/apid/src/routes.rs:6484-6487`), so a submitted string that
    matches nothing is as likely to be mistyped as absent — and the message says
    exactly that: *"The list may have changed since this page was loaded; reload
-   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6495`) That is a
+   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6491`) That is a
    re-submit-the-form condition, which is what 422 means on a form post. On the
    API the identifier is a path segment with one interpretation: this URL names
    no resource.
@@ -487,7 +487,7 @@ reports the change as additive.
 `GET`/`POST /api/v1/wifi/client/networks`,
 `DELETE /api/v1/wifi/client/networks/{ssid}`. Acceptance: section 2.4's rule holds on
 both — a `DELETE` on an identifier that matches nothing returns **404**, not the
-422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:6492-6497`), a
+422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:6488-6493`), a
 malformed identifier still returns 422, the not-found answer comes from the one
 shared helper section 2.4 requires, and the paired HTML/API tests that name each
 other both exist; every `POST` runs the same validator mosd runs; the

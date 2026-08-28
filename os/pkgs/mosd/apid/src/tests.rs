@@ -9069,12 +9069,12 @@ async fn the_power_routes_answer_202_like_the_form_path() {
 
         let response = post_json(&router, path, "", Some(&cookie)).await;
         assert_eq!(response.status(), StatusCode::ACCEPTED, "{path}");
+        assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
         assert_eq!(
-            header_value(&response, CACHE_CONTROL),
-            "no-store",
-            "{path}"
+            body_string(response).await,
+            "",
+            "{path}: 202 carries no body"
         );
-        assert_eq!(body_string(response).await, "", "{path}: 202 carries no body");
         assert_eq!(
             fake.await_power_calls(1).await,
             vec![expected.to_string()],
@@ -9336,7 +9336,14 @@ async fn the_action_routes_take_a_bearer_token() {
     let cookie = login(&router, "hunter2secret").await;
     let token = mint_via_pane(&router, &cookie, "deploy").await;
 
-    let response = bearer_json(&router, "POST", TRANSIENT_PATH, &token, r#"{"password":"hunter2secret"}"#).await;
+    let response = bearer_json(
+        &router,
+        "POST",
+        TRANSIENT_PATH,
+        &token,
+        r#"{"password":"hunter2secret"}"#,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(fake.transient_password_calls(), 1);
 
@@ -9354,7 +9361,11 @@ async fn an_unauthenticated_action_post_is_refused_and_does_not_act() {
         let response = post_json(&router, path, r#"{"password":"hunter2secret"}"#, None).await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
         assert_api_headers(&response, path);
-        assert_eq!(envelope(response).await["code"], "not_authenticated", "{path}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{path}"
+        );
         // Two calls' worth of deadline, then assert nothing arrived.
         assert!(
             fake.await_power_calls(1).await.is_empty(),
@@ -9435,8 +9446,8 @@ fn the_openapi_document_covers_the_three_actions() {
     }
 
     // The one request body among the three carries exactly one member.
-    let properties = &document["components"]["schemas"]["TransientRootPasswordRequest"]
-        ["properties"];
+    let properties =
+        &document["components"]["schemas"]["TransientRootPasswordRequest"]["properties"];
     assert_eq!(
         properties.as_object().unwrap().keys().collect::<Vec<_>>(),
         vec!["password"],
