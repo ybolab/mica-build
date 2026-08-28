@@ -35,7 +35,15 @@ const ACCEPTED_TYPES: [&str; 7] = [
 /// A bound has to exist because the list is rendered into a file read on every
 /// login attempt; 32 is far past any real appliance and far short of a list an
 /// operator could use to fill STATE.
-const MAX_KEYS: usize = 32;
+///
+/// **Public so a caller can answer the cap before this validator refuses it**,
+/// which is what [`MAX_TOKENS`](crate::MAX_TOKENS) is public for. A route that
+/// can read the bound answers a full collection as 409 — a conflict with the
+/// collection's current state — instead of meeting it as a validation failure
+/// with no way to tell it from a malformed key. `docs/task/RFCT-241.md` named
+/// this export as the alternative it declined; PLAN-023 M6's error-contract
+/// ruling picks it.
+pub const MAX_KEYS: usize = 32;
 
 /// Largest comment accepted, in bytes.
 const MAX_COMMENT_BYTES: usize = 256;

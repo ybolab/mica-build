@@ -283,7 +283,7 @@ phases, so `07b-postreboot` ran in the FIRST boot — after phase 07 had
 deliberately taken the guest down. It waited its full 180s deadline for apid on
 a machine that was off, failed, and threw on `ECONNREFUSED`. HARNESS.md had
 always described the intended split — *"phases 01-transport .. 07-reboot"*
-(`test/apid-api/HARNESS.md:83`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
+(`test/apid-api/HARNESS.md:59`) — and the code did not implement it. The first boot's list is spelled out now, and the runner's
 refusal of an unknown phase name makes a later rename fail loudly rather than
 silently shrink the run.
 
@@ -329,9 +329,9 @@ rewritten and checked.
 `/api/versions` is a declared route answering 200, and the gate hands it off
 unauthenticated by design: the router declares
 *".route(VERSIONS_PATH, get(api_versions))"*
-(`os/pkgs/mosd/apid/src/routes.rs:309`) and the gate releases it because
+(`os/pkgs/mosd/apid/src/routes.rs:399`) and the gate releases it because
 *"`/api/versions` is unauthenticated by design"*
-(`os/pkgs/mosd/apid/src/routes.rs:323-324`).
+(`os/pkgs/mosd/apid/src/routes.rs:498-499`).
 It is therefore no longer listed among the paths that must produce the
 not-found envelope, and the anonymous probe asserts 200 with a JSON content
 type. The gate-wraps-the-reserved-subtree property it used to carry moves to
@@ -340,13 +340,13 @@ directions, because "the prefix is open" and "the prefix is correctly scoped"
 otherwise produce identical evidence. `/api/v1/settings` remains a valid
 not-found target: `{*path}` matches at least one character, so the bare root
 reaches the subtree's own fallback: *"A root prefix with nothing after it names
-none."* (`os/pkgs/mosd/apid/src/routes.rs:361`).
+none."* (`os/pkgs/mosd/apid/src/routes.rs:613`).
 
 The `/mqtt` image-skew guard is deleted and its own stated remedy applied —
 *"the image now serves /mqtt; add it to PANES and /mqtt/enable to POST_ONLY in
 04-readonly, then update this guard."* The pane's marker is the notice `mqtt_page` renders unconditionally,
 *"p { b { (MQTT_UPDATE_NOTICE) } }"*
-(`os/pkgs/mosd/apid/src/routes.rs:3509`), rather than the switch text that moves
+(`os/pkgs/mosd/apid/src/routes.rs:6098`), rather than the switch text that moves
 with the setting.
 
 ## 7. cx3576 — what ran, and what a hardware pass must still do

@@ -43,6 +43,7 @@ mod startup;
 #[cfg(test)]
 mod tests;
 mod tls;
+mod token;
 
 use std::sync::Arc;
 
