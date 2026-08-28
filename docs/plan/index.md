@@ -52,4 +52,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-019 os/pkgs consolidation and a directory-structure pass**](PLAN-019.md) `2026-08-27`
 - [x] [**PLAN-020 Gate hardening - close the eight measured silent spaces**](PLAN-020.md) `2026-08-27`
 - [-] [**PLAN-021 The defect and debt batch - filed tasks, quick fixes, ghost sweeps**](PLAN-021.md) `2026-08-27`
-- [-] [**PLAN-022 Native networking - VLAN, bridge, WireGuard (design-first)**](PLAN-022.md) `2026-08-27`
+- [x] [**PLAN-022 Native networking - VLAN, bridge, WireGuard (design-first)**](PLAN-022.md) `2026-08-27`
