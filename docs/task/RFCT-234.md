@@ -555,6 +555,9 @@ against.
 | `docker run --rm localhost/mos-build-rust:amd64 bash -c 'uname -m; cargo --version'` | `x86_64`, `cargo 1.98.0 (797e8a9bc 2026-08-05)` |
 | the same command on `:arm64`, as the control | `exec /usr/bin/bash: exec format error` |
 | `bash os/pkgs/mosd/hack/check.sh` in `localhost/mos-build-rust:amd64` | `705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
+| `MOS_BOARD=x64 make os-rauc`, after section 7 | `rauc v1.13 for amd64: 453872 bytes, 7 shared libraries`, an `x86-64` ELF |
+| `MOS_BOARD=cx3576 make os-rauc`, after section 7 | `rauc v1.13 for arm64: 470008 bytes, 7 shared libraries`, an `ARM aarch64` ELF |
+| both of those, from ONE store, with nothing restored between them | the point of section 7 |
 | `MOS_BOARD=x64 make os-rauc` | `rauc v1.13 for amd64: 453872 bytes, 7 shared libraries` |
 | `make os-shell-pipefail-lint` | `RESULT: PASS (31/31 files clean, 31 scanned)` |
 | `bash docs/verify-citations.sh` | `1416/1416 PASS` |
