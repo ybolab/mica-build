@@ -222,9 +222,15 @@ preserves the point and retires only the number.
 | --- | --- |
 | the new test, before the fix | `Summary [   1.304s] 1 test run: 0 passed, 1 failed, 244 skipped` |
 | the new test, after the fix | `Summary [   2.188s] 7 tests run: 7 passed, 238 skipped` |
-| `bash os/pkgs/mosd/hack/check.sh` | see the run below |
-| `bash docs/verify-citations.sh` | `1390/1390 PASS` (baseline `1379/1379`; the notes add 11 quoted citations) |
-| `bash docs/verify-index.sh` | `749/749 PASS` (baseline `748/748`; this record's row) |
+| `bash os/pkgs/mosd/hack/check.sh` | `Summary [  90.825s] 705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
+| `bash docs/verify-citations.sh` | `1404/1404 PASS` (baseline `1379/1379`), RFCT-232 at 0 unquoted citations |
+| `bash docs/verify-index.sh` | `752/752 PASS` (baseline `748/748`) |
+| `git diff --stat a86ab46 -- os/pkgs/mosd/apid/src/routes.rs` | `1 file changed, 30 insertions(+), 2 deletions(-)`, both hunks inside the state handler region |
+
+The gate runs in the build container with the tools mount, because this host has
+no cargo toolchain matching the workspace; `hack/check.sh` itself ran unmodified.
+`dbus-daemon` is installed into the container first, without which mosd's
+`bus_roundtrip` exits `rc=100` for a reason unrelated to anything here.
 
 ## 7. Out of scope, and untouched
 
