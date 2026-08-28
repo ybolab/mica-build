@@ -1,9 +1,10 @@
 # RFCT-212 PLAN-023 M3: GET /api/v1/health and the §2.4 envelope on 405
 
-- **status**: in progress
+- **status**: completed — `GET /api/v1/health` and §2.4's envelope on a wrong method both ship, additively; openapi.json grew 136 lines and lost none; every gate green on the tree merged with `bkd/vu5b6kk0`
 - **priority**: P1
 - **owner**: bkd/mkk6scy2
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (M3)
 
 Both halves are additive under `docs/design/api.md` §2.1: no shipped route
@@ -291,3 +292,25 @@ phase would assert — that the route works against a real mosd over a real bus 
 is already asserted by `apid`'s own `tests/e2e.rs`, which runs a real
 `dbus-daemon`, a real `mosd` and a real `apid` and is inside the Rust gate. An
 on-image phase written but never run would be a claim, not a measurement.
+
+## 9. Gates
+
+Run on the tree after `bkd/vu5b6kk0` was merged in.
+
+| Gate | Result |
+|---|---|
+| `bash docs/verify-citations.sh` | `1493/1493 PASS` |
+| `bash docs/verify-index.sh` | `756/756 PASS` |
+| `bash os/pkgs/mosd/hack/check.sh` (in `localhost/mos-build-rust`) | `ALL CHECKS PASSED` — fmt, clippy `-D warnings`, `714 tests run: 714 passed, 0 skipped`, doctests, `cargo deny` |
+
+714 where RFCT-209 measured 704: the ten route tests in §7, and the merge.
+
+**One deviation in how the gate was invoked, and it is the wrapper, not the
+gate.** `hack/check.sh` was run unmodified. The container was entered with
+`bash -c` rather than `bash -lc`, because a login shell in this image sources
+`/etc/profile`, which unconditionally assigns
+`PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"` and
+discards the `-e PATH` the invocation passes. `cargo` lives at
+`/opt/rust/bin/cargo` in that image and `$HOME/.cargo/bin` does not exist, so
+`bash -lc` reaches `hack/check.sh` with no `cargo` on `PATH` and the run dies at
+its first line. Measured, both ways, before the substitution was made.
