@@ -1,9 +1,10 @@
 # RFCT-213 PLAN-023 M2 part 2: apid bearer auth, the token routes, the builtin mint
 
-- **status**: in progress
+- **status**: completed — bearer verification with a constant-time compare, the three `/api/v1/tokens` routes bearer-only behind the shared 404 helper, the `/builtin` mint and revoke, the password pane's ratified sentence asserted verbatim, `openapi.json` regenerated; every gate green and oasdiff reports no breaking change
 - **priority**: P1
 - **owner**: bkd/5omj5rrm
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (M2 part 2)
 
 Everything above the storage tier RFCT-211 landed: bearer verification against
