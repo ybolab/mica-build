@@ -522,7 +522,7 @@
       },
       "ApiHealth": {
         "type": "object",
-        "description": "`GET /api/v1/health` (§2.4 case 3).\n\nTwo members always, and the other two by outcome: `checkedAt` on the\nreachable answer and `detail` on the unreachable one, each omitted rather\nthan sent null — the rule [`ApiErrorDetail::path`] already follows, and for\nthe same reason: a member present with a meaningless value is worse than an\nabsent one.",
+        "description": "`GET /api/v1/health` (§2.4 case 3).\n\nTwo members always, and the other two by outcome: `checkedAt` on the\nreachable answer and `detail` on the unreachable one, each omitted rather\nthan sent null. That is the rule the error envelope's own optional member\nalready follows, and for the same reason: a member present with a\nmeaningless value is worse than an absent one.",
         "required": [
           "apid",
           "mosd"

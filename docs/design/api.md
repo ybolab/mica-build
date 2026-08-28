@@ -1492,7 +1492,7 @@ knowable over the connection that asked.
 `DELETE` on a collection resource that is a **404** — the identified item does
 not exist. The API uses 404. The HTML path is not changed by this document.
 
-### 2.4 Error shape — **[implemented]** for the envelope and nine of its codes, **[proposed]** for the rest
+### 2.4 Error shape — **[implemented]** for the envelope, ten of its codes and case 3's health route, **[proposed]** for the rest
 
 **What ships.** The envelope exists, in both the code and the published schema.
 `ApiError` is a one-field struct wrapping `ApiErrorDetail`
@@ -1528,10 +1528,13 @@ finding rather than a thing to quietly align:
 
 **The code table against what ships.** Six of the eight codes below exist; two
 do not, and the reason is the same in both cases — nothing under `/api` takes a
-request body. Two further codes ship that this section did not propose,
-because they came from splitting `settings_rejected`: `settings_not_found` and
+request body. Three further codes ship that this section did not propose. Two
+came from splitting `settings_rejected`: `settings_not_found` and
 `settings_read_only`, added additively when mosd stopped collapsing
-`NotFound`, `ReadOnly` and `Validation` into one `InvalidArgs`.
+`NotFound`, `ReadOnly` and `Validation` into one `InvalidArgs`. The third is
+`method_not_allowed`, added when a wrong method on a declared route stopped
+being answered by the framework's bare 405 and started answering this
+section's envelope.
 
 | `code` | Ships? | Where |
 |---|---|---|
@@ -1545,11 +1548,21 @@ because they came from splitting `settings_rejected`: `settings_not_found` and
 | `settings_io` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:687-690`, on fdo `IOError` (`os/pkgs/mosd/apid/src/routes.rs:288`) |
 | `mosd_failed` | **yes**, 500 | `os/pkgs/mosd/apid/src/routes.rs:691-694`, on fdo `Failed` (`os/pkgs/mosd/apid/src/routes.rs:289`) |
 | `mosd_unreachable` | **yes**, 503 with `Retry-After` | `os/pkgs/mosd/apid/src/routes.rs:713-719`, and it is exhaustive over everything the three above do not name (`os/pkgs/mosd/apid/src/routes.rs:709-711`) |
+| `method_not_allowed` | **yes**, 405 with `Allow` | `api_method_not_allowed`, reached through the `declared` wrapper every route in `api_router` is declared through |
 
-**What does not ship.** `GET /api/v1/health` does not exist: it is not among
-the four paths in `os/pkgs/mosd/apid/openapi.json:8-375`. The concern its last
-paragraph raises — that a dead mosd would stop the one endpoint that reports a
-dead mosd from answering — was resolved a different way and is recorded below.
+**What now ships that did not.** `GET /api/v1/health` exists, additively: a
+new path in `os/pkgs/mosd/apid/openapi.json` and a new route in `api_router`,
+with no shipped route changing its path, its method, its success status code or
+its response fields. Case 3 below is annotated with what was built. The concern
+its last paragraph raises — that a dead mosd would stop the one endpoint that
+reports a dead mosd from answering — was resolved a different way and is
+recorded below.
+
+A wrong method on a declared route now answers this envelope too. It did not
+before: measured at `8f080dc`, every declared `/api/` route answered a wrong
+method with a bare `405` carrying axum's own `Allow` header, no body and no
+`Content-Type` at all, so the one shape below held for every failure except
+that one.
 
 **One shape, for every failure on every `/api/v1/` route.**
 
@@ -1586,6 +1599,7 @@ Content-Type: application/json
 |---|---|---|---|
 | `not_authenticated` | 401 | apid | no bearer token, or one that does not verify (§3.2) |
 | `not_found` | 404 | apid | unknown route, or a collection item that does not exist |
+| `method_not_allowed` | 405 | apid | a declared route was called with a method it does not serve; the response carries `Allow` naming the methods it does |
 | `request_invalid` | 400 | apid | the body is not JSON, or not the shape the route takes |
 | `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`routes.rs:830-839`), `validate_iface` (`routes.rs:841-851`), `validate_transient_password` (`routes.rs:2494-2509`), `parse_authorized_key` (`routes.rs:2549`), and the change-password floor |
 | `wrong_password` | 403 | apid | the current password in a change-password request does not verify; the session is valid, the credential is not |
@@ -1686,15 +1700,30 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    ```
    GET /api/v1/health          (authenticated)
 
-   200 {"apid": "ok", "mosd": "ok",          "checkedAt": "<uptime seconds>"}
+   200 {"apid": "ok", "mosd": "ok",          "checkedAt": <uptime seconds>}
    200 {"apid": "ok", "mosd": "unreachable", "detail": "<message>"}
    ```
 
+   **This shipped**, with `checkedAt` a bare JSON **number** rather than the
+   string this sketch drew. The type is settled by what apid can read: there is
+   no trusted wall clock anywhere in the crate — §3.2's expiry paragraph is the
+   argument — and the one clock there is, §2.2 item 3's `uptime`, is already
+   *"whole seconds since boot, a bare JSON number"* everywhere else it appears.
+   Stamping the health answer any other way would have given one appliance two
+   spellings of one number. Both optional members are omitted rather than sent
+   null, the rule `path` already follows in the envelope above.
    It returns **200 in both cases**, because the request succeeded and the answer
    is the body — a 503 here would be indistinguishable from the endpoint itself
    being unavailable, which is the confusion it exists to remove. `mosd` is
    determined by making one real call (`GetSettings("")` is the cheapest that
-   proves the bus round trip), not by inspecting a cached flag. A client's rule
+   proves the bus round trip), not by inspecting a cached flag. **One call is
+   what shipped, and it is `GetState("uptime")` rather than the call named
+   here**: it proves the same round trip, it is cheaper still — mosd answers
+   with one integer rather than serialising the whole settings tree for a
+   liveness ping — and it is the only call that also yields `checkedAt`, so the
+   alternative was two round trips for one question. The cached flag stayed
+   ruled out, `access_cache` included, which is the substance of the sentence
+   this one annotates. A client's rule
    is therefore explicit: **`/healthz` answers "is apid's listener up"; only
    `/api/v1/health` answers "is this appliance manageable".** Both sentences are
    true and neither implies the other.
@@ -1712,6 +1741,16 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    rather than needing one written for it, and the four routes that exist today
    already answer a dead mosd with `mosd_unreachable` from their own handlers
    rather than with the gate's 502.
+
+   **Re-verified when the route was built, and it held.** No exemption was
+   written for the health route and none was needed: the gate's test is a
+   membership test over the routes the API declares, so the route joined the
+   same list `/api/versions` and `/api/v1/meta` are in and inherited the
+   handoff. What that list is *for* is worth restating, because "declared" is
+   doing the work — it hands off exactly what the router serves and nothing
+   else, so a path the gate releases must be a path a route answers, and the
+   arm added for the health route is the same arm every other declared route
+   has rather than a special case written around one.
 
 ## 3. Authentication for a programmatic client — **[proposed]**
 

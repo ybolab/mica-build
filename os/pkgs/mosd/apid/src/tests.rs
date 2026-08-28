@@ -5511,7 +5511,10 @@ async fn healthz_is_untouched_by_the_health_route() {
 
     let response = get(&router, "/healthz", None).await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(header_value(&response, CONTENT_TYPE), "text/plain; charset=utf-8");
+    assert_eq!(
+        header_value(&response, CONTENT_TYPE),
+        "text/plain; charset=utf-8"
+    );
     assert_eq!(body_string(response).await, "ok");
 
     // Still `ok` with mosd dead, which is the property §2.4 case 3 calls the
