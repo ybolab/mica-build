@@ -75,8 +75,16 @@ QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
 # come back. MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
 BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
+# ...and the first boot runs everything BEFORE them. Spelled out rather than
+# left empty-means-all, because empty-means-all put 07b in the FIRST boot: phase
+# 07 takes the guest down by design, and 07b then waited its full 180s deadline
+# for apid to answer on a machine that was deliberately off, failed, and threw
+# on ECONNREFUSED. Measured 2026-08-28. The runner refuses an unknown phase
+# name, so a phase renamed without updating this list fails loudly here rather
+# than being silently dropped from the run.
+BOOT1_PHASES="${MOS_APID_PHASES:-01-transport,02-setup,03-login,04-readonly,05-mutate,05b-wireguard,05c-kernel-net,06-backoff,07-reboot}"
 
-PHASES="${MOS_APID_PHASES:-}"
+PHASES="${BOOT1_PHASES}"
 # The bun image is pinned by digest, not by tag. `oven/bun:1` is a
 # major-version tag upstream repoints onto every 1.x release, and this harness
 # is what decides whether apid's API is judged conformant, so the default is the
@@ -299,6 +307,11 @@ ART_IN_CONTAINER="/w/_out/x64/apid-api"
 # below quote it and a second spelling is how the two come to disagree.
 SMOKE_IN_GUEST=/m7-net-smoke.sh
 
+# A fixed point in time for this run, written once and never touched again.
+# The handoff freshness check compares against THIS rather than against a file
+# the guest is still writing to; see reboot_was_posted below.
+RUN_STAMP="${ART_DIR}/run-started"
+
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/tools/qemu-run.sh --prepare-only)"
@@ -384,6 +397,7 @@ QEMU_ENV=(
     MOS_QEMU_TIMEOUT="${QEMU_TIMEOUT}"
 )
 
+: >"${RUN_STAMP}"
 note "preparing the disk from ${IMG##*/} (a ~2 GiB copy; nothing boots yet)"
 if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
     PREPARED=1  # a partial copy still has to be cleaned up
@@ -704,9 +718,16 @@ HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
 
 reboot_was_posted() {
     [ -f "${HANDOFF_FILE}" ] || return 1
-    # Newer than the disk we prepared for this run, so a handoff left behind by
-    # an earlier run cannot vouch for this one.
-    [ "${HANDOFF_FILE}" -nt "${RUN_DIR}/disk.img" ] || return 1
+    # Newer than a stamp this run took before booting anything, so a handoff
+    # left behind by an earlier run cannot vouch for this one.
+    #
+    # NOT newer than disk.img, which is what this compared against until
+    # 2026-08-28. The guest WRITES to disk.img for the whole of the first boot,
+    # so its mtime keeps advancing past the handoff -- which 07 writes mid-boot,
+    # right after the POST. The comparison was therefore false on every
+    # successful run: the second boot was skipped with "07 did not run" on runs
+    # where 07 had demonstrably run and the console showed the guest going down.
+    [ "${HANDOFF_FILE}" -nt "${RUN_STAMP}" ] || return 1
     return 0
 }
 
