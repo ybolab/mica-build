@@ -80,6 +80,7 @@ impl Default for MigrationRegistry {
             Box::new(MigrateV4ToV5),
             Box::new(MigrateV5ToV6),
             Box::new(MigrateV6ToV7),
+            Box::new(MigrateV7ToV8),
         ])
     }
 }
@@ -446,6 +447,57 @@ impl Migration for MigrateV6ToV7 {
     }
 }
 
+/// v7 -> v8: adds `access.apiTokens`, the bearer API token list.
+///
+/// `up` stamps `schema_version = 8` and does nothing else, and that is the
+/// whole migration -- [`MigrateV6ToV7`]'s shape, for the same reason. The one
+/// field v8 adds is `#[serde(default, skip_serializing_if = "Vec::is_empty")]`,
+/// so a v7 document and its v8 form differ by the version integer alone until
+/// the first token is minted. Seeding an empty `apiTokens = []` into every
+/// device's file was rejected on [`MigrateV5ToV6`]'s grounds: a written-out
+/// default is indistinguishable from an operator's choice.
+///
+/// The bump itself is not optional, and the reason is the rollback rather than
+/// the field. `AccessSettings` carries `deny_unknown_fields`, so a document
+/// holding `access.apiTokens` is one a binary without this field cannot
+/// deserialize at all. Only [`crate::Store`]'s tolerant load rescues it, and
+/// that path runs on the strength of the on-disk `schema_version` being
+/// *greater* than the reading binary's. Adding the field without the bump
+/// would therefore make an A/B rollback out of a token-holding device a failed
+/// settings load -- hostname, network and admin credential included -- rather
+/// than a dropped key.
+///
+/// `down` stamps `schema_version = 7` and removes `access.apiTokens`,
+/// discarding every token. That is [`MigrateV3ToV4::down`]'s trade: a v7 binary
+/// has no bearer verification, so a preserved list would be a settings tree
+/// advertising credentials nothing on the device will ever accept, and v7's
+/// `deny_unknown_fields` would refuse the whole document rather than only the
+/// key. Rolling forward again starts from an empty list, so an operator whose
+/// device rolled back re-mints rather than discovering that a token they
+/// believed revoked came back.
+///
+/// A document with no `access` table is left untouched.
+pub struct MigrateV7ToV8;
+
+impl Migration for MigrateV7ToV8 {
+    fn target_version(&self) -> u32 {
+        8
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(8));
+        Ok(())
+    }
+
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(7));
+        if let Some(toml::Value::Table(access)) = doc.get_mut("access") {
+            access.remove("apiTokens");
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -729,5 +781,102 @@ allowedIps = ["10.8.0.0/24"]
 
         migrate(&mut doc, 7, 6).unwrap();
         assert_eq!(doc, original);
+    }
+
+    /// A v7 document holding a minted token, which is the only interesting
+    /// input to this step: a device with no tokens has nothing for `down` to
+    /// discard and nothing for the bump to protect.
+    fn v7_document_with_a_token() -> toml::Table {
+        toml::from_str(
+            r#"
+schema_version = 7
+hostname = "cx3576"
+
+[network]
+
+[access.webAdmin]
+password_hash = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"
+
+[[access.apiTokens]]
+id = "3f2a9c41"
+name = "ci-deploy"
+hash = "0000000000000000000000000000000000000000000000000000000000000001"
+created = 1700000000
+"#,
+        )
+        .unwrap()
+    }
+
+    /// `up` stamps the version and touches nothing else. The field v8 adds is
+    /// defaulted and skipped when empty, so there is nothing to seed -- and
+    /// seeding an empty array would put a dead default into every device's
+    /// file, which is what `MigrateV5ToV6` refuses to do for `listen` and
+    /// `auth`.
+    #[test]
+    fn v7_to_v8_up_stamps_the_version_and_seeds_nothing() {
+        let mut doc = v7_document_with_a_token();
+        doc.remove("access");
+        let before = doc.clone();
+
+        MigrateV7ToV8.up(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(8));
+        assert!(!doc.contains_key("access"), "seeded a table: {doc:?}");
+        let mut expected = before;
+        expected.insert("schema_version".to_string(), toml::Value::Integer(8));
+        assert_eq!(doc, expected);
+
+        // And `up` over its own output changes nothing.
+        let once = doc.clone();
+        MigrateV7ToV8.up(&mut doc).unwrap();
+        assert_eq!(doc, once);
+    }
+
+    /// `down` discards the token list, credential and all: a v7 binary has no
+    /// bearer verification to honour it, and v7's `deny_unknown_fields` would
+    /// refuse the whole document if the key were left behind.
+    #[test]
+    fn v8_document_migrates_down_discarding_every_token() {
+        let mut doc = v7_document_with_a_token();
+        MigrateV7ToV8.up(&mut doc).unwrap();
+
+        MigrateV7ToV8.down(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(7));
+        let access = doc["access"].as_table().unwrap();
+        assert!(
+            !access.contains_key("apiTokens"),
+            "the token list survived the rollback: {access:?}"
+        );
+        // Everything else in `access` survives, the admin credential included.
+        assert!(access.contains_key("webAdmin"));
+        assert_eq!(doc["hostname"], toml::Value::String("cx3576".to_string()));
+    }
+
+    /// The round trip is not lossless, and this pins which half is lost: the
+    /// version returns, the tokens do not.
+    #[test]
+    fn v7_to_v8_and_back_returns_the_version_but_not_the_tokens() {
+        let mut doc = v7_document_with_a_token();
+        MigrateV7ToV8.up(&mut doc).unwrap();
+        MigrateV7ToV8.down(&mut doc).unwrap();
+        MigrateV7ToV8.up(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(8));
+        assert!(!doc["access"].as_table().unwrap().contains_key("apiTokens"));
+    }
+
+    /// A document with no `access` table at all -- a v1 tree walked forward --
+    /// is left alone by `down` rather than gaining an empty one.
+    #[test]
+    fn v7_to_v8_down_leaves_a_document_without_access_untouched() {
+        let mut doc = v7_document_with_a_token();
+        doc.remove("access");
+        let before = doc.clone();
+
+        MigrateV7ToV8.down(&mut doc).unwrap();
+
+        assert!(!doc.contains_key("access"), "{doc:?}");
+        assert_eq!(doc["hostname"], before["hostname"]);
     }
 }

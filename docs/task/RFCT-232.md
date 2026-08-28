@@ -79,16 +79,16 @@ produces is the same envelope §2.4 gives everywhere else: mosd's own message,
 apid's classification, the path attached. The 404 it produces names
 `settings_not_found` — the code the settings route already answers this
 condition with, at `MOSD_NOT_FOUND => (`
-(`os/pkgs/mosd/apid/src/routes.rs:701`) — so the two trees now agree, which was
+(`os/pkgs/mosd/apid/src/routes.rs:2988`) — so the two trees now agree, which was
 the point. `docs/design/api.md`'s error table already reads
 *"the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound`"*
-(`docs/design/api.md:1592`) as the 404 row and the fix agrees with it; that file
+(`docs/design/api.md:1606`) as the 404 row and the fix agrees with it; that file
 belongs to M3b and PLAN-023 and was not edited here beyond section 4's
 re-anchor.
 
 **The settings route is untouched.** `bus_api_error`'s table still maps
 `FDO_INVALID_ARGS => (`
-(`os/pkgs/mosd/apid/src/routes.rs:709`) to 422 `settings_rejected`, and every
+(`os/pkgs/mosd/apid/src/routes.rs:2996`) to 422 `settings_rejected`, and every
 other route still reaches it. Only `api_v1_state` reads the name differently,
 because only `api_v1_state` has the single-producer fact to read it with.
 
@@ -98,7 +98,7 @@ loses none: `200`, `401`, `422`, `500` and `503` all remain, with the same
 regenerated document is `1 file changed, 11 insertions(+), 1 deletion(-)` — ten
 of those insertions are the new 404 object,
 `"description": "The dot-path does not resolve (`settings_not_found`)",`
-(`os/pkgs/mosd/apid/openapi.json:322`), and the eleventh-and-deletion pair is
+(`os/pkgs/mosd/apid/openapi.json:1367`), and the eleventh-and-deletion pair is
 one line: the 422's description used to end *"which is also the answer for a
 dot-path that does not exist"*, which the fix makes false. No schema changed, no
 status was removed, no body was retyped. A client generated from the old
@@ -137,14 +137,14 @@ After:
 ```
 
 The last line of that run is the control: `a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422`
-(`os/pkgs/mosd/apid/src/tests.rs:4156`) is the settings route's existing
+(`os/pkgs/mosd/apid/src/tests.rs:4264`) is the settings route's existing
 assertion that a rejection is still 422, and it passed unchanged.
 
 **One existing test had to change, and it is the interesting one.**
 `each_fdo_error_name_gets_its_own_envelope` walks §2.4's five rows against
 **both** resource routes with one expected status per row, which is exactly the
 assumption this fix breaks: `assert_eq!(response.status(), status, "{fdo_name} at {path}");`
-(`os/pkgs/mosd/apid/src/tests.rs:4080`) failed with *"left: 404"* against
+(`os/pkgs/mosd/apid/src/tests.rs:4188`) failed with *"left: 404"* against
 *"right: 422"* at `/api/v1/state/wifiAp`. The row is now route-dependent in the
 loop, with the reason stated where the override is, and the other four rows and
 the whole settings column are untouched. That failure is the evidence the change
@@ -170,7 +170,7 @@ way.
 body as `resource_response(state.api.get_state(&path).await, &path)`, in two
 places, and the fix splits that body. Both now quote the expression the handler
 ends in, `None => resource_response(value, &path),`
-(`os/pkgs/mosd/apid/src/routes.rs:613`), which is the smallest true restatement
+(`os/pkgs/mosd/apid/src/routes.rs:1230`), which is the smallest true restatement
 of the same point. That is the only prose this task changed in `api.md`, a file
 PLAN-025 M3b and PLAN-023 both hold; it is flagged rather than buried because
 M3b may want to say more there about why the two routes now differ.
@@ -208,7 +208,7 @@ daemon-reload that makes a generator run, and the broker config path with the
 two units MQTT drives.
 
 **§5.4's schema version.** *"`SCHEMA_VERSION` stays at 3"*. The constant is
-`pub const SCHEMA_VERSION: u32 = 7;`
+`pub const SCHEMA_VERSION: u32 = 8;`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) today, which the same document
 already half-knows: §5.1 reads the tree at v4 and §5.3a records PLAN-022's bump
 to v7. The number is the only stale part. The sentence's point — that a power

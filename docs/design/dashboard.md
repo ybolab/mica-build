@@ -66,14 +66,14 @@ Summarised from `mos-ui-inventory.md` sections 2 and 3, with its citations
 carried through.
 
 `apid` is one Rust crate serving **ten routes on the HTTPS listener**, built in
-a single function (`os/pkgs/mosd/apid/src/routes.rs:45-66`), plus a catch-all 308
+a single function (`os/pkgs/mosd/apid/src/routes.rs:53-74`), plus a catch-all 308
 redirect router on the HTTP listener (`routes.rs:61-65`). That is the entire
 HTTP surface: no nested router, no fallback, no static-asset route
 (`mos-ui-inventory.md` section 2).
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:191-201`
+`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:209-219`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:740`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:3027`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -190,9 +190,9 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:739`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:3026`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:334-342`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
   today and `os/pkgs/mosd/apid/src/` contains zero references to it — gap-table
   **row 8**, classified UI-work-only. Identity is a *setting*, not live state,
@@ -277,7 +277,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:563-583`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:682-702`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until
@@ -408,7 +408,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
-  (`os/pkgs/mosd/apid/src/routes.rs:1925-1945`); mosd itself reads
+  (`os/pkgs/mosd/apid/src/routes.rs:4313-4333`); mosd itself reads
   `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:585-591`). RFCT-129 landed this.
 - **Availability: (a) available today** — gap-table **row 12**, no longer via a
   side channel. The old `/proc/uptime`-in-`apid` exception to the layering
@@ -438,7 +438,7 @@ better mechanism and then hid it.**
   exactly this purpose (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:793-808`, and the
   single-radio conflict variant at `:739-750`); and `GetState("wifiClient")`,
   which publishes each known network's SSID and a `secured` boolean and never
-  the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:515-521`).
+  the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:507-513`).
 - **Availability: (a) available today** — gap-table **rows 15, 7 and 6**
   respectively, all three classified by `mos-ui-inventory.md` section 7.1 as
   needing only UI work. `os/pkgs/mosd/apid/src/` contains **zero** references to any of
@@ -498,7 +498,7 @@ names the reason, and where it belongs instead. **[proposal]**
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
   mis-clicked link cannot power the appliance off (`routes.rs:49-51`, pinned by a
-  test at `os/pkgs/mosd/apid/src/tests.rs:591`), plus a required confirmation token.
+  test at `os/pkgs/mosd/apid/src/tests.rs:592`), plus a required confirmation token.
 - **No raw JSON.** The current `/` renders the network subtree as
   pretty-printed JSON inside a `<pre>` (`routes.rs:587-596`). That is the
   artefact this proposal exists to remove, not a component to reuse. A full-tree
@@ -511,7 +511,7 @@ names the reason, and where it belongs instead. **[proposal]**
   hash and generation are readable via `GetSettings("access.device")`
   (`mos-ui-inventory.md` section 7, row 9). This is a property to preserve
   deliberately, not a gap to close. Note that `wifiClient` state already never
-  publishes the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:508-518`); the
+  publishes the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:500-510`); the
   landing screen inherits that discipline.
 - **No CPU, memory, load, temperature, kernel version or build id.** None of
   these exist anywhere in mos's management plane
@@ -926,7 +926,7 @@ compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:164-177`,
+The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:182-195`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -941,7 +941,7 @@ today.
 
 - `rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }`
   (`os/pkgs/mosd/Cargo.toml:70`), provider installed explicitly at
-  `os/pkgs/mosd/apid/src/main.rs:47-49`; `axum-server` takes
+  `os/pkgs/mosd/apid/src/main.rs:48-50`; `axum-server` takes
   `tls-rustls-no-provider` (`os/pkgs/mosd/Cargo.toml:55`), which is why that install is
   mandatory rather than decorative. `rcgen` is likewise pinned to the `ring`
   backend (`os/pkgs/mosd/Cargo.toml:71`).
@@ -1020,7 +1020,7 @@ every option below:
    section against high-frequency polling of any kind.
 
    One further load fact, already noted in section 3.4.1: the auth gate calls
-   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:137`),
+   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:145`),
    so every browser request costs at least one bus round trip before a tile is
    read.
 
@@ -1044,8 +1044,8 @@ sections 1-4.
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
-- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:70-74` and its doc
-  comment at `:59-60`); that one is stated correctly throughout.
+- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:78-82` and its doc
+  comment at `:66-67`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
 
@@ -1068,7 +1068,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:926-939`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:3299-3312`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1472,7 +1472,7 @@ Two mechanical points, verified:
   `axum-0.8.9/src/response/redirect.rs:26-38`), so a refreshing dashboard reached
   after a submit re-renders normally with no resubmission prompt.
 - The power routes are POST-only with no GET handler (`routes.rs:49-53`, pinned
-  by `os/pkgs/mosd/apid/src/tests.rs:591`). A `meta refresh` issues a GET and therefore
+  by `os/pkgs/mosd/apid/src/tests.rs:592`). A `meta refresh` issues a GET and therefore
   **cannot** trigger a power action even if one were somehow placed on a
   refreshing page. Section 2.10's exclusion of power buttons from the landing
   screen stands on its own reasoning; this is an independent second layer, and it
@@ -1483,7 +1483,7 @@ Two mechanical points, verified:
 `mos-ui-inventory.md` section 3.2 and section 3.3 of this document both observe
 that `SetSettings` runs the overlapping reconcilers **before** returning, so
 "stored versus applied" is resolved server-side and the `?saved=1` marker
-(`routes.rs:205-209`, banner at `:201-203`) discards information `mosd` already
+(`routes.rs:205-209`, banner at `:202-204`) discards information `mosd` already
 computed. The question put to this section is whether the recommendation lets
 that information reach the operator.
 
@@ -1770,7 +1770,7 @@ as unclosable from `apid`'s side (*"`record` writes no timestamp and no
 generation"*).
 
 **Verification.** `mosd` unit tests in the existing `bus.rs` test module
-(`os/pkgs/mosd/mosd/src/bus.rs:902-903`): a multi-path read returning a per-path error
+(`os/pkgs/mosd/mosd/src/bus.rs:915-916`): a multi-path read returning a per-path error
 for one absent path while succeeding on the rest; a `SetSettings` against a
 failing reconciler returning the failure in its reply rather than `Ok(())`. On
 the `apid` side, a handler test that a failed apply renders in the error

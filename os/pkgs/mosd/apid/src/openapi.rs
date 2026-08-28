@@ -26,10 +26,27 @@ use utoipa::OpenApi;
     paths(
         crate::routes::api_versions,
         crate::routes::api_v1_meta,
+        crate::routes::api_v1_health,
         crate::routes::api_v1_settings,
+        crate::routes::api_v1_settings_write,
         crate::routes::api_v1_state,
         crate::routes::api_v1_change_password,
-        crate::routes::api_v1_wireguard_rotate
+        crate::routes::api_v1_wireguard_rotate,
+        crate::routes::api_v1_tokens_list,
+        crate::routes::api_v1_tokens_mint,
+        crate::routes::api_v1_tokens_revoke,
+        crate::routes::api_v1_ssh_keys_list,
+        crate::routes::api_v1_ssh_keys_add,
+        crate::routes::api_v1_ssh_keys_remove,
+        crate::routes::api_v1_wifi_networks_list,
+        crate::routes::api_v1_wifi_networks_add,
+        crate::routes::api_v1_wifi_networks_remove,
+        crate::routes::api_v1_network_write,
+        crate::routes::api_v1_network_iface_write,
+        crate::routes::api_v1_network_iface_remove,
+        crate::routes::api_v1_peers_list,
+        crate::routes::api_v1_peers_add,
+        crate::routes::api_v1_peers_remove
     )
 )]
 struct ApiDoc;
