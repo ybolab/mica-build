@@ -1,9 +1,10 @@
 # RFCT-243 PLAN-023 M7: the reboot, poweroff and transient-root-password actions
 
-- **status**: in progress
+- **status**: completed — the three action verbs ship (202 on the power pair, 204 on the transient password), no `GET` is declared for any of them, the transient-password bounds are the form path's own function and its rejection never echoes the password; the auth gate's declared-route list is fixed and `GET /api/v1/state/{path}` is reconciled to carry both main's 404 and the campaign's 405; 823/823, 1559/1559 citations, 784/784 index, oasdiff RC=0 against main's tip and both other bases
 - **priority**: P1
 - **owner**: bkd/08bzo6cs
 - **createdAt**: 2026-08-28
+- **completedAt**: 2026-08-28
 - **plan**: PLAN-023 (M7)
 
 Three verbs with no state to `GET` and no idempotency to promise.
@@ -161,7 +162,7 @@ the same fixture and the same classifier still names `hostname`.
 |---|---|
 | `bash docs/verify-citations.sh` | `1559/1559 PASS`, RC=0 |
 | `bash docs/verify-index.sh` | `784/784 PASS`, RC=0 |
-| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | see section 6 |
+| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | `Summary [  96.021s] 823 tests run: 823 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
 | `oasdiff breaking … --fail-on ERR --severity-levels …` vs the pre-M7 spec | `No breaking changes to report`, RC=0 |
 | the same, vs `main` tip `77a3278` and vs `fd7fbb0` | `No breaking changes to report`, RC=0 — see section 7 |
 
