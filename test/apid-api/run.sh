@@ -727,8 +727,9 @@ MERGED="${ART_DIR}/result.json"
 # say which artefact it covered is a result file that cannot be trusted a week
 # later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
 # every time somebody builds; the resolved name and the mtime are what pin a run
-# to a surface. This is also what makes the /mqtt skew guard in 04-readonly
-# legible: when that check goes red, this block says whether the image moved.
+# to a surface. It is also what makes a route assertion's red legible: 04-readonly
+# asserts the surface this TREE declares, so when a route check fails, this block
+# says whether the image moved under it or the contract did.
 IMG_RESOLVED="$(readlink -f "${IMG}" 2>/dev/null || echo "${IMG}")"
 IMG_MTIME_EPOCH="$(stat -c %Y "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
 IMG_MTIME_ISO="$(date -u -d "@${IMG_MTIME_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
