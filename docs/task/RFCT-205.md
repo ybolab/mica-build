@@ -328,7 +328,7 @@ A second reason is worth recording, because it would survive the image being
 built. Phase `04-readonly` encodes the contract of the image it was written
 against, and that image predates the `/api/` routes: it lists `/api/versions`
 among the targets that *"Targets that must all produce `api_not_found`'s envelope."*
-(`test/apid-api/src/phases/04-readonly.ts:90`) and asserts an unauthenticated
+(`test/apid-api/src/phases/04-readonly.ts:100`) and asserts an unauthenticated
 `/api/versions` is a 303 to the login page. Today's tree serves it 200
 unauthenticated by design, which `apid`'s own
 `api_versions_answers_the_served_set_without_a_session` asserts in process. The
