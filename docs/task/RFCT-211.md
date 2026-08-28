@@ -1,6 +1,6 @@
 # RFCT-211 PLAN-023 M2 part 1: `access.apiTokens` in the settings model
 
-- **status**: completed — `access.apiTokens` lands with schema v8, its migration, its validator and a redaction test; every gate green on the merged tree
+- **status**: completed — `access.apiTokens` lands with schema v8, its migration, its validator and a redaction test; the citation re-anchor was reworked after review found the bare-continuation form skipped; every gate green on the merged tree
 - **priority**: P1
 - **owner**: bkd/6u47m244
 - **createdAt**: 2026-08-28
@@ -203,11 +203,24 @@ Bearer verification, the constant-time compare, the `mos_<id>_<secret>` format,
 auth gate. All of it is RFCT-213's. `os/pkgs/mosd/apid/src/routes.rs`,
 `session.rs`, `auth.rs` and `openapi.json` are untouched by this branch.
 
-One thing outside this task's write scope was touched and is called out rather
-than buried: `docs/design/api.md` carries two quoted copies of the
-`SCHEMA_VERSION` literal, and a quote naming a value cannot be repaired by a
-line map. Both were updated 7 to 8 in the re-anchor commit. No prose, no claim
-and no citation was added or removed.
+One file outside this task's write scope was touched, and its footprint is
+stated in full because a sibling L3 is editing the same file and needs the size
+to predict conflicts. `git diff --shortstat a86ab46 HEAD -- docs/design/api.md` measures
+**40 insertions, 40 deletions** — 40 changed lines, and the same figure against
+the merge parent. What is in them:
+
+- **2 value quotes.** Sections 1.5 and 1.7 each quote
+  `pub const SCHEMA_VERSION: u32 = 7;` verbatim. A quote naming a VALUE cannot
+  be repaired by a line map, so both were updated 7 to 8 along with the
+  surrounding "is **7**". This is the only prose in the file this task changed.
+- **The rest: citation line numbers only.** 23 full-form citations and 49 bare
+  continuations were re-anchored, several to a line — the settings-tree
+  inventory table packs a dozen into one row — which is why 72 moved citations
+  fit in 38 lines. No prose, no claim, no citation added or removed.
+
+An earlier version of this record described that footprint as "two characters".
+That was wrong, and wrong in the direction that matters: it understated the
+file's exposure to a concurrent editor. Section 8.1 records why.
 
 ## 8. Gates
 
@@ -229,6 +242,52 @@ itself was not touched.
 The test count moves 704 to 727 on this branch: 23 new tests, of which 11 are
 the validator's unit tests, 4 the migration's, 3 the model's, 5 the crate's
 integration tests and 1 apid's redaction test.
+
+### 8.1 The citation re-anchor, and the two defects in its first pass
+
+The first re-anchor pass was wrong twice, and neither defect was catchable by
+`docs/verify-citations.sh`. Both are recorded here because the second one is a
+property of the mechanical idiom this repository uses for re-anchoring, not of
+this task.
+
+**Defect 1: the bare-continuation form was skipped.** A citation is either FULL
+(`path:line`) or a bare CONTINUATION (`:line`) inheriting its path from the
+nearest preceding full citation. The first pass matched the full form only, so
+every continuation into a moved file kept a pre-v8 number. The gate cannot see
+this: an unquoted citation is COUNTED against the ratchet and never resolved,
+so all of them stayed green while naming the wrong lines. `docs/design/api.md`
+alone holds 377 continuations.
+
+**Defect 2: ambiguous endpoints, and why a line map alone cannot decide them.**
+`difflib` aligns an old line to whichever equal block the matcher chose, and a
+line whose content repeats — a bare `}`, a bare `///`, a blank — can be aligned
+across an insertion boundary. Measured: the `}` closing
+`DeviceCredentialSettings` at pre-image line 264 was aligned to the `}` closing
+the newly inserted `ApiToken` at 329, rather than to its own at 285. The repair
+is to anchor on surrounding content and to anchor **asymmetrically**, because a
+range's start is defined by what follows it and its end by what precedes it: a
+range `a-b` maps `a` forward-anchored and `b` backward-anchored, and a single
+line symmetrically. A line whose own content changed — the `SCHEMA_VERSION`
+literal — is placed from its neighbours instead.
+
+A constant offset would have produced the same class of error for a different
+reason: this change has at least two distinct shift regions, +21 early (the
+field on `AccessSettings`) and +65 later (the `ApiToken` struct).
+
+The corrected pass was re-derived from the pre-image over documents restored to
+their pre-image content, rather than patched on top of the first pass.
+Measured:
+
+| | scanned | into moved files | moved | correctly stayed | unresolved |
+| --- | --- | --- | --- | --- | --- |
+| full `path:line` | 2394 | 86 | 46 | 40 | 0 |
+| bare `:line` | 1135 | 65 | 49 | 16 | 0 |
+
+The 65 at-risk continuations are `docs/design/api.md` 63, `dashboard.md` 1 and
+`RFCT-200.md` 1. All 49 that moved are in `api.md`: 43 into `model.rs`, 6 into
+`mosd-settings/tests/settings.rs`. The corrected pass reproduced all 46 full
+citations exactly as the first pass had them, which is the cross-check that the
+full-form half was right — two independently written mappers agreeing.
 
 ## 9. The merge
 
