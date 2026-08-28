@@ -351,16 +351,33 @@ trap 'teardown' EXIT
 # script is what lives on STATE; the value names an interpreter and a path, so
 # it needs no execute bit that debugfs would have to set.
 #
-# BOTH ACTIONS ARE PINNED TO `none`, and that is not belt-and-braces. The
-# generator defaults them to `exit-force`, which in PID 1's context means POWER
-# THE MACHINE OFF the moment the command returns. Measured 2026-08-28: the
-# smoke finished at 56.7s and the guest printed `reboot: Power down` at 62.1s,
-# so apid never listened and the whole suite waited out its readiness deadline
-# against a guest that had already shut down.
+# FOUR ARGUMENTS, AND EACH ONE IS LOAD-BEARING. `systemd.run=` alone does not
+# mean "also run this"; it means "boot into this", and all three corrections
+# below were measured on this image rather than reasoned about:
+#
+#   run_success_action / run_failure_action -- the generator defaults BOTH to
+#     `exit-force`, which in PID 1's context is POWER THE MACHINE OFF the moment
+#     the command returns. The smoke finished at 56.7s and the guest printed
+#     `reboot: Power down` at 62.1s.
+#   systemd.unit=multi-user.target -- the generator also points `default.target`
+#     at its own `kernel-command-line.target`, so the guest reached that,
+#     printed `Startup finished`, and stopped. mosd, apid and networkd never
+#     started and the suite waited out its readiness deadline on a booted guest
+#     that was simply never going to serve anything.
+#   systemd.wants=kernel-command-line.target -- which then has to pull the
+#     generated target back in, because it is no longer the default. It is
+#     reachable by name here where a unit seeded onto STATE is not: generators
+#     run BEFORE the boot transaction is built, whereas
+#     /mnt/state/systemd-units joins the unit search path at local-fs.target,
+#     which is after it. Measured: a `systemd.wants=` naming a STATE-seeded
+#     unit produced no output at all and no error -- systemd drops a Wants= it
+#     cannot resolve.
+#
+# With all four, the guest reaches multi-user.target AND prints the smoke.
 QEMU_ENV=(
     MOS_QEMU_FORWARD=1
     MOS_QEMU_NETWORK="${NET}"
-    MOS_QEMU_APPEND="systemd.journald.forward_to_console=1 systemd.run=\"/bin/bash /mnt/state${SMOKE_IN_GUEST}\" systemd.run_success_action=none systemd.run_failure_action=none"
+    MOS_QEMU_APPEND="systemd.journald.forward_to_console=1 systemd.run=\"/bin/bash /mnt/state${SMOKE_IN_GUEST}\" systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.target"
     MOS_QEMU_HTTPS_PORT="${HTTPS_PORT}"
     MOS_QEMU_HTTP_PORT="${HTTP_PORT}"
     MOS_QEMU_RUN_SECONDS="${RUN_SECONDS}"
