@@ -1,9 +1,9 @@
 # PLAN-013 The x64/QEMU verification vehicle: a whole-system check, an apid API suite, and the cx3576 back-port
 
-- **status**: closed 2026-08-28 — superseded, all three milestones; M3's remaining half transferred to PLAN-025 M2; see Amendment 1
+- **status**: completed by supersession 2026-08-28 — never approved and never executed under its own number; all three milestones' goals delivered by later campaigns, M3's remaining half transferred to PLAN-025 M2; see Amendment 1
 - **createdAt**: 2026-08-24 09:10
 - **approvedAt**: -
-- **completedAt**: -
+- **completedAt**: 2026-08-28 (by supersession, not by execution under this number; see Amendment 1)
 - **relatedTask**: RFCT-105 (M2); RFCT-222 (the closeout audit); RFCT-225 and RFCT-226 (the two residues, both pending)
 - **milestones**: M1 the x64 image verified statically and at runtime; M2 the apid API test suite, driven over the wire against the booted device; M3 the back-port — cx3576 rebuilt and re-verified against the generalised scripts
 
@@ -396,6 +396,11 @@ none is visible without a running device.
 
 ## Amendment 1 — closed as superseded, 2026-08-28 (PLAN-024, audit RFCT-222, executed by RFCT-227)
 
+*(Index marker: this plan carries `[x]`, not `[~]`. Its goals are in the tree;
+what did not happen is execution under this number, which the paragraphs below
+state. `[~]` reads "Rejected / Abandoned" and would tell a reader the x64/QEMU
+vehicle was not built. RFCT-227 section 4 records the choice in full.)*
+
 This plan was never approved and never executed under its own number. Between
 its writing on 2026-08-24 and this amendment, four campaigns built the work it
 proposed. The audit that measured them, milestone by milestone against the tree
@@ -457,5 +462,6 @@ task records under the numbers this plan named. Only RFCT-105 holds. The
 numbers are not reclaimed; what actually carries each milestone is recorded in
 RFCT-222 section 3a.
 
-Status moves to closed, superseded. No milestone of this plan remains open
-under this plan.
+Status moves to completed by supersession: every milestone's goal is in the
+tree, none of it delivered under this number. No milestone of this plan remains
+open under this plan.

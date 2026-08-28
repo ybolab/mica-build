@@ -1,6 +1,6 @@
 # RFCT-227 PLAN-024 M2: the ratified closeout of PLAN-011, PLAN-012 and PLAN-013, and four residues filed
 
-- **status**: completed — three plans amended and closed, four plan status lines and index markers reconciled, four residues filed pending
+- **status**: completed — four plans amended and closed, four plan status lines and index markers reconciled, four residues filed pending, the RFCT-101..104 range corrected at its origin
 - **priority**: P1
 - **owner**: bkd/fx15tzre
 - **createdAt**: 2026-08-28
@@ -28,15 +28,17 @@ prose above it:
 - **PLAN-012 Amendment 1** — closes the plan on M1-M4, records the six ways the
   build diverged from what was decided, and names both residues: M5's upstream
   pin watch as RFCT-223, and the D3 writability divergence as RFCT-224.
-- **PLAN-013 Amendment 1** — closes all three milestones as superseded, records
+- **PLAN-013 Amendment 1** — closes all three milestones as superseded, states
+  the index-marker choice in its opening parenthetical, records
   M3's rebuild-and-diff as **transferred into PLAN-025 M2's already-approved
   scope** (under RFCT-231) rather than dropped, and names the two residues it
   leaves as RFCT-225 and RFCT-226.
 
 Four plan status lines and four `docs/plan/index.md` markers were moved so file
 and row agree: PLAN-011 to `completed` / `[x]`, PLAN-012 to `completed` / `[x]`,
-PLAN-013 to `closed` / `[~]`, PLAN-024 to `completed` / `[x]` with
-`completedAt: 2026-08-28`.
+PLAN-013 to `completed by supersession` / `[x]`, PLAN-024 to `completed` /
+`[x]` with `completedAt: 2026-08-28`. PLAN-024 also gains an Amendment 1 of its
+own, carrying the closeout summary and the correction in section 3.
 
 Four residues were filed as pending records with no owner claimed — RFCT-223,
 RFCT-224, RFCT-225, RFCT-226 — plus this record, and six rows were appended to
@@ -60,6 +62,7 @@ version instead — delivered without its own approval step, ratified at close o
 
 **D3 — PLAN-013 closes in full as superseded**, with M3's remaining half stated
 as a transfer into PLAN-025 M2 so the work is traceable out rather than lost.
+The index marker the spec delegated is `[x]`; section 4 records the choice.
 
 **D4 and D5 — four numbers from PLAN-024's own pool**, all `pending`, all
 unclaimed, all routed toward PLAN-025-class work. RFCT-225 is filed as a *silent
@@ -72,50 +75,77 @@ ratified.
 historical quotations of the user's own words, each already glossed in English
 beside it. No line of them was read as a defect or repaired.
 
-## 3. The RFCT-101..104 correction
+## 3. The RFCT-101..104 correction, and where it started
 
 The ratified text named PLAN-012's delivering records as RFCT-101..104. That
 range is off by one, and writing it into the plan file would have put a false
 attribution into the tree: RFCT-104 is PLAN-011 M7 work, titled
 "A master switch for MQTT, and a broker for the bridge that has only ever
 retried" (`docs/task/RFCT-104.md:1`), and it contains no container-engine work
-at all. The records that delivered PLAN-012 are RFCT-101, RFCT-102 and
-RFCT-103 — the last of them titled
+at all. The records that delivered PLAN-012 are RFCT-101 —
+"PLAN-012 M2: the container engine in the image, installed and inert"
+(`docs/task/RFCT-101.md:1`) — RFCT-102, and RFCT-103, titled
 "PLAN-012 M1–M4: build the engine from source, replace the distribution's
 configuration, and give the switch something to switch"
 (`docs/task/RFCT-103.md:1`). That is what RFCT-221 measured and what the
 records' own titles say.
 
-**The plan file therefore says RFCT-101..RFCT-103**, in PLAN-012's status line,
-its `relatedTask` line and its Amendment 1. The same correction is reported
-upward by the workstream; it is recorded here so the divergence between the
-ratified wording and the committed file is not read later as a transcription
-slip.
+**The slip did not start at the ratification.** PLAN-024's own Context
+paragraph carries it — "RFCT-101..104 shipped much of it"
+(`docs/plan/PLAN-024.md:14`) — and the M1 ratification repeated the range
+because it read it there. Naming the origin matters more than fixing the
+symptom: a reader who meets RFCT-101..104 in the Context paragraph and finds no
+correction beside it will propagate it a fourth time.
 
-PLAN-024's own Context paragraph carries the same "RFCT-101..104" phrasing.
-It was left as written: it is dated historical prose in a plan body, and the
-closeout convention here is additive amendment, not retroactive repair of the
-sentence that motivated the plan.
+So the correction is recorded in **PLAN-024's own Amendment 1**, not by editing
+the Context sentence. That prose is dated history and the convention here is
+additive amendment; striking it would hide that the error was ever made, which
+is the opposite of what naming an origin is for. The amendment states the
+corrected range, quotes the three titles that establish it, and says plainly
+that the Context paragraph is where the range came from. Both facts the
+correction needs — what the range should be, and that it was corrected — are
+visible in `docs/plan/PLAN-024.md`.
 
-## 4. The PLAN-013 marker: `[~]`, and why
+**The plan files therefore say RFCT-101..RFCT-103**: PLAN-012's status line, its
+`relatedTask` line and its Amendment 1. The same correction is reported upward
+by the workstream.
+
+## 4. The PLAN-013 marker: `[x]`, and why the first answer was wrong
 
 The plan index offers four markers and none of them is "closed". `[x]` means
-Completed and `[~]` means Rejected / Abandoned. PLAN-013 was **never approved
-and never executed under its own number** — RFCT-222's central measurement.
-Its purpose was served, but it was served by four other campaigns under other
-numbers; nothing was ever delivered as PLAN-013 work.
+Completed and `[~]` means Rejected / Abandoned. PLAN-013 was never approved and
+never executed under its own number — RFCT-222's central measurement — so
+neither marker is a clean fit, and the closeout spec delegated the choice.
 
-`[x]` would read as "this plan completed", which is the one claim the audit
-disproves. `[~]` reads as "this plan did not run", which is true, and the
-status line beside it carries the rest — `closed 2026-08-28 — superseded` —
-so the row and the file say the same thing and neither overstates it. The
-tree already holds this precedent: PLAN-005 sits at `[~]` with
-`status: rejected (superseded by PLAN-006)`, a plan whose work was likewise
-done under a different number.
+**This record first chose `[~]` and then changed it, on the ratifying
+authority's input.** The reasoning that moved it:
+
+The question is not which marker is imprecise — both are — but which one is
+false to a reader who sees only the row. `[x]` says the plan's goals are in the
+tree. That is true: os/verify, test/apid-api and the two-boot e2e all exist and
+are gated. `[~]` says Rejected / Abandoned, which a reader takes as "won't do".
+That is false, and it is false about the most visible thing this plan produced.
+An imprecise marker beside an amendment that supplies the nuance is a smaller
+error than a marker that actively denies the work happened.
+
+**The PLAN-005 precedent turned out to argue the other way.** This record cited
+it first as support for `[~]`. Reading it properly: PLAN-005's head is
+`rejected (superseded by PLAN-006)` — the U-Boot/Uptane design was *rejected in
+favour of a different approach* and was never built. PLAN-013's content was
+built. "Superseded by a rejected alternative" and "superseded by delivery" are
+different states, and `[~]` fits only the first. The precedent distinguishes the
+two cases rather than joining them.
+
+So the row is `[x]`, and the file agrees: PLAN-013's head reads **completed by
+supersession**, with `completedAt: 2026-08-28 (by supersession, not by execution
+under this number)`, and Amendment 1 opens with a parenthetical stating the
+marker choice and why `[~]` would mislead. Everything the marker cannot carry —
+never approved, never run under this number, M3's remaining half transferred to
+PLAN-025 M2 — is in the status line and the amendment, one click away from the
+row.
 
 RFCT-222 section 5 had suggested the row move "to a checked one". That
-suggestion is not followed, on the authority the closeout spec gave for this
-choice; the reasoning is recorded here rather than left to the diff.
+suggestion is now followed.
 
 ## 5. Two things this record decided that the spec did not settle
 
@@ -167,5 +197,6 @@ so no reader has to guess which six.
 Both documentation gates were run after every edit; their verdict lines are
 quoted in this task's report. No source file, design document or script was
 touched: the diff is three plan amendments, four plan status blocks, the plan
-index, five new task records, the task index, and one dated-record marker line
+index including PLAN-024's own Amendment 1, five new task records, the task
+index, and one dated-record marker line
 appended to each of RFCT-220, RFCT-221 and RFCT-222 as recorded in section 5.
