@@ -38,7 +38,9 @@ image path needs the family at two architectures at the same time.
 | file | change |
 | --- | --- |
 | `os/build-env/build.sh` | the readback no longer executes the image (section 2); the cross-build refusal over the `localhost/` rows is replaced by the OCI-layout handoff (section 3) |
-| `os/build-env/from.sh` | one error message, which told the reader `build.sh` refuses a cross build. It no longer does (section 3) |
+| `os/build-env/from.sh` | one error message, which told the reader `build.sh` refuses a cross build (section 3); then LOCAL_ key resolution, which now appends the architecture and requires `--arch` (section 7) |
+| `os/build-env/images.env` | no value changed; the paragraph that says why these four carry NO tag (section 7) |
+| `Makefile` | the `build-env` help line, which named a tag that no longer exists |
 | `docs/task/RFCT-231.md` | one citation re-anchored mechanically, then the dated correction to section 5 and section 8 (section 7) |
 | `docs/task/RFCT-234.md`, `docs/task/index.md` | this record and one index row |
 
@@ -99,9 +101,9 @@ recorded="$(docker run --rm --platform "${MOS_BUILD_PLATFORM}" --entrypoint /bin
 `cat` in a guest shell is a guest binary. What replaces it creates a container
 and never starts it:
 `cid="$(docker create --platform "${MOS_BUILD_PLATFORM}" "${TAG}" /bin/sh)"`
-(`os/build-env/build.sh:549`), then
+(`os/build-env/build.sh:582`), then
 `docker cp "${cid}:/etc/mos-build/${name}.env" "${envfile}" 2>"${cp_err}" || cp_rc=$?`
-(`os/build-env/build.sh:554`). `/bin/sh` is the created container's command and
+(`os/build-env/build.sh:587`). `/bin/sh` is the created container's command and
 is never executed; a command is named only because `docker create` wants one
 when the image carries no CMD.
 
@@ -130,7 +132,7 @@ path and a broken daemon through the same exit code, so the replacement tells
 them apart by what `docker cp` SAID, and a blanket `|| true` on the host side is
 exactly what it must not be:
 `if grep -c 'Could not find the file' "${cp_err}" >/dev/null; then`
-(`os/build-env/build.sh:565`). `grep -c ... >/dev/null` and not `grep -q`,
+(`os/build-env/build.sh:598`). `grep -c ... >/dev/null` and not `grep -q`,
 because this file sets `pipefail`.
 
 ### Both directions, measured
@@ -175,7 +177,7 @@ fed"*.
 
 They are, and the export happens INSIDE the build loop rather than before it:
 `mapfile -t CTX_ARGS < <(bash "${HERE}/from.sh" --arch="${PLATFORM_ARCH}" \`
-(`os/build-env/build.sh:488`). A row's parent is produced by an EARLIER
+(`os/build-env/build.sh:521`). A row's parent is produced by an EARLIER
 ITERATION of that loop -- the table's ordering check proves the producing row
 comes first -- so exporting up front would export whatever a previous run left
 tagged, which is the failure mode that ordering check exists to prevent.
@@ -360,7 +362,126 @@ machine for the arm64 component builds.
 cx3576 hardware on this host, and RFCT-206 section 7's three-item list is
 unchanged by anything here except its first item's prerequisites.
 
-## 7. The correction to RFCT-231
+## 7. The defect this milestone surfaced: an architecture-less tag
+
+Building an arm64 family for the first time turned a latent naming defect into
+an active one, twice, on this host, inside one hour. It is recorded here as a
+finding rather than as an incident because the mechanism is one line and the
+consequence is total.
+
+### The mechanism
+
+`os/build-env/build.sh` tagged every image it built as
+`TAG="localhost/mos-build-${name}"` -- no architecture anywhere in the name --
+and `os/build-env/images.env` held the same four architecture-less values for
+every consumer to resolve. So `MOS_BUILD_PLATFORM=linux/arm64 make build-env`
+does not ADD a family. It writes the same four tags the amd64 family occupied,
+and the amd64 images are left untagged and prune-eligible.
+
+This is not a race and not a risk. With an architecture-less tag the second
+build to run on a host always destroys the first one's family, and the loser is
+whichever ran first.
+
+### Both directions, measured
+
+**arm64 over amd64.** After section 4's run, all four tags reported
+`Architecture=arm64`, and the gate that runs in `localhost/mos-build-rust` --
+`os/pkgs/mosd/hack/check.sh`, which a sibling workstream depends on -- became:
+
+```console
+$ docker run --rm localhost/mos-build-rust bash -c 'uname -m; cargo --version'
+WARNING: The requested image's platform (linux/arm64) does not match the detected host platform (linux/amd64/v3)
+exec /usr/bin/bash: exec format error
+```
+
+**amd64 over arm64.** Restoring the amd64 family for section 9's regression row
+then orphaned the arm64 images this milestone had just spent an hour building --
+the same four tags, back to `Architecture=amd64`, and the arm64 family dangling.
+
+Neither family was deleted; both were overwritten, and in both cases the images
+survived only as dangling ones that a `docker image prune` or a builder GC would
+have collected.
+
+### The fix: the architecture is part of the name
+
+`localhost/mos-build-${name}:${PLATFORM_ARCH}`
+(`os/build-env/build.sh:473`). `os/build-env/images.env` still holds the
+repository with NO tag, because the architecture must live in exactly one place;
+`os/build-env/from.sh` appends the same suffix when it resolves a LOCAL_ key,
+and `--arch` becomes REQUIRED for one:
+
+```console
+$ bash os/build-env/from.sh --ref LOCAL_MOS_BUILD_RUST
+error: LOCAL_MOS_BUILD_RUST is an image this repository builds, and those are tagged by architecture -- localhost/mos-build-c:amd64 and localhost/mos-build-c:arm64 are two images that coexist. Pass --arch=<amd64|arm64> to say which this build stands on. [...]
+$ bash os/build-env/from.sh --arch=amd64 MOS_BUILD_RUST=LOCAL_MOS_BUILD_RUST
+--build-arg
+MOS_BUILD_RUST=localhost/mos-build-rust:amd64
+$ bash os/build-env/from.sh --arch=arm64 MOS_BUILD_RUST=LOCAL_MOS_BUILD_RUST
+--build-arg
+MOS_BUILD_RUST=localhost/mos-build-rust:arm64
+```
+
+Requiring `--arch` rather than defaulting to the host is the deliberate part.
+Both families are in the store at once BY DESIGN now, so there is no "the" local
+image to fall back on, and defaulting to the host's would hand a native answer
+to exactly the cross build this naming exists to serve -- silently. All four
+callers that resolve a LOCAL_ key already passed `--arch`
+(`os/pkgs/rauc/build.sh`, `os/pkgs/podman/build.sh`,
+`os/pkgs/mosd/hack/build-target.sh` and `os/build-env/build.sh`'s own loop), so
+no caller is special-cased and none needed a change. The two callers that
+resolve only IMAGE_ keys are untouched by construction.
+
+`os/build-env/build.sh` no longer reads the parent out of the sourced pin file
+either. It asks from.sh, so the suffix is composed in ONE file rather than two
+that could drift:
+`mapfile -t FROM_ARGS < <(bash "${HERE}/from.sh" --arch="${PLATFORM_ARCH}" "MOS_BASE_IMAGE=${from_key}")`
+(`os/build-env/build.sh:479`).
+
+### The check that changed meaning
+
+from.sh's architecture check is still there and now asks a different question.
+It used to ask *"is the family this host happens to hold the one this build
+needs"* -- which the name now answers. It asks *"does this tag hold what its
+name says"*, which catches a tag applied by hand or composed differently.
+Proved by pointing the arm64 tag at an amd64 image:
+
+```console
+$ docker tag localhost/mos-build-go:amd64 localhost/mos-build-go:arm64
+$ bash os/build-env/from.sh --arch=arm64 MOS_BUILD_GO=LOCAL_MOS_BUILD_GO
+error: LOCAL_MOS_BUILD_GO resolves to localhost/mos-build-go:arm64, whose tag says arm64 and whose image is amd64. That tag is written by os/build-env/build.sh and by nothing else, so this is not a family that needs rebuilding -- it is a tag that lies about what it holds [...]
+```
+
+### The acceptance, which is not "two tags exist today"
+
+Two full builds, in both orders, with the image ids recorded on each side:
+
+```console
+$ MOS_BUILD_PLATFORM=linux/arm64 make build-env      # tagged ...:arm64 x4
+$ diff amd64-before.txt amd64-after.txt
+$                                                     # identical, all four
+$ make build-env                                      # native; tagged ...:amd64 x4
+$ diff arm64-before.txt arm64-after.txt
+$                                                     # identical, all four
+```
+
+A cross build no longer touches the native family, and the native build no
+longer touches the cross one. The `c` row's `from` line in each run names the
+tag it stood on -- `LOCAL_MOS_BUILD_BASE=localhost/mos-build-base:arm64` in the
+first, `:amd64` in the second -- so the two runs are visibly standing on
+different parents rather than racing for one name.
+
+### What happened to the rescue tags
+
+L2 rescued both orphaned families under `localhost/mos-build-*:rescued-amd64`
+and `:rescued-arm64` while this fix was being written, explicitly as scaffolding
+and not as a proposed scheme. Both are gone: the amd64 and arm64 families are
+now what `make build-env` itself wrote under `:amd64` and `:arm64`, and the
+`:latest` tag was removed with them. `:latest` is deleted rather than left
+pointing at one of the two, because an unqualified name that resolves is exactly
+the defect this section is about -- a caller that asks for it should get "no such
+image", not a coin flip. No rescue name appears in committed content.
+
+## 8. The correction to RFCT-231
 
 RFCT-231 section 5 is titled *"no arm64 mos-build family, and none producible
 here"* and says the remedy *"has its own wall"*. The measurements under that
@@ -383,7 +504,7 @@ RFCT-231 section 6 met and it is handled the same way -- the quote stays as the
 record of what was read, the line anchor is replaced by the commit it was read
 against.
 
-## 8. Verification
+## 9. Verification
 
 | command | result |
 | --- | --- |
@@ -398,22 +519,51 @@ against.
 | `MOS_BOARD=cx3576 make os-rauc` | `rauc v1.13 for arm64: 470008 bytes, 7 shared libraries` |
 | `MOS_BOARD=cx3576 make os-image-cx3576-v2` | stops at wall 1, section 6 |
 | `make build-env` (native amd64) | all four tagged, `MOS_BUILD_ARCH=amd64` read back from each -- the path this readback always took, unchanged |
+| `from.sh --ref LOCAL_MOS_BUILD_RUST`, no `--arch` | refused by name, section 7 |
+| `from.sh --arch=amd64` / `--arch=arm64`, same key | `localhost/mos-build-rust:amd64` / `:arm64` |
+| the arm64 tag pointed at an amd64 image | *"whose tag says arm64 and whose image is amd64"*, rc=1 |
+| arm64 `make build-env`, then the amd64 ids | `diff` empty -- the cross build did not touch the native family |
+| native `make build-env`, then the arm64 ids | `diff` empty -- the native build did not touch the cross family |
+| `docker run --rm localhost/mos-build-rust:amd64 bash -c 'uname -m; cargo --version'` | `x86_64`, `cargo 1.98.0 (797e8a9bc 2026-08-05)` |
+| the same command on `:arm64`, as the control | `exec /usr/bin/bash: exec format error` |
+| `bash os/pkgs/mosd/hack/check.sh` in `localhost/mos-build-rust:amd64` | `705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
 | `MOS_BOARD=x64 make os-rauc` | `rauc v1.13 for amd64: 453872 bytes, 7 shared libraries` |
 | `make os-shell-pipefail-lint` | `RESULT: PASS (31/31 files clean, 31 scanned)` |
 | `bash docs/verify-citations.sh` | `1416/1416 PASS` |
 | `bash docs/verify-index.sh` | `760/760 PASS` |
+
+The amd64 `docker run` row has an arm64 CONTROL beside it deliberately. An
+amd64 result on its own does not distinguish "this image executes" from "the
+daemon was healthy just then"; the two rows differ, on the same command a second
+apart, so what they measure is the architecture and not the load average.
+
+The mosd gate is run with `bash -c` and never `bash -lc`. `-l` sources
+/etc/profile, which OVERWRITES a PATH passed into the container, so the
+/tools mount carrying rustfmt, clippy, nextest and cargo-deny vanishes and the
+failure then reads as a broken mount rather than as a shell flag. The tools come
+from that mount because the image ships `cargo` and `rustc` only, and they are
+run against the image's OWN `$(rustc --print sysroot)/lib` -- the
+`librustc_driver-28a98848f7a7c026.so` there is the one they were linked against,
+and `clippy 0.1.98` matches the image's `rustc 1.98.0`. `dbus-daemon` is
+apt-installed into the container first; without it the nextest run goes red.
 
 The two native rows are in that table deliberately. Every other row is about a
 path that could not run before this change; those two are about the path that
 could, and a verification step rewritten under them is exactly the kind of
 change that breaks what already worked.
 
-## 9. Out of scope, and untouched
+## 10. Out of scope, and untouched
 
 - `os/rootfs/build-v2.sh`, whose refusal is wall 3. It was read and not edited.
 - `os/pkgs/podman/build.sh` and `os/pkgs/rauc/build.sh`. Both were exercised;
   neither needed a change. Wall 1 is in `os/pkgs/podman/Dockerfile`'s stage
   graph and in the one-tag-one-architecture limit, not in either driver.
-- `os/build-env/images.env`. Closing walls 1 and 2 is a change to how that file
-  names the family, and no run here could have exercised one.
+- `os/build-env/images.env`'s VALUES. Section 7 added a paragraph to it and
+  changed no assignment: the four LOCAL_ values stay untagged, which is what
+  puts the architecture in exactly one place.
+- Closing walls 1 and 2 is a further change to how the family is PUBLISHED --
+  multi-architecture content rather than two single-architecture tags -- and no
+  run here could have exercised one. Section 7 is a prerequisite for it, not a
+  substitute: two coexisting tags let a host hold both families, but a single
+  build that needs both at one `FROM` still cannot be satisfied by two names.
 - Booting cx3576. There is no hardware on this host.
