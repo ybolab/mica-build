@@ -8494,7 +8494,10 @@ async fn the_typed_network_writes_refuse_an_address_that_is_not_a_cidr() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_api_headers(&response, "an item write carrying an address that is not a CIDR");
+    assert_api_headers(
+        &response,
+        "an item write carrying an address that is not a CIDR",
+    );
     let error = envelope(response).await;
     assert_eq!(error["code"], "validation_failed");
     assert_eq!(error["source"], "apid");
@@ -10376,21 +10379,23 @@ fn the_openapi_document_covers_the_setup_route() {
     );
 }
 
-/// The wizard's CIDR bound runs on this route, and on no other route under the
-/// prefix — the second divergence this milestone records rather than hides.
+/// The wizard's CIDR bound runs on this route and on the typed network routes
+/// beside it, in the same three spellings, with the same sentence.
 ///
-/// `valid_cidr` has one caller, `validate_iface`, whose own two callers are
-/// both HTML form handlers. So the rule is live on the wizard and reachable
-/// from nowhere under `/api/v1/`: `PUT /api/v1/network/{iface}` takes an
-/// address the kernel cannot parse and answers 204. That is M6's shipped
-/// behaviour and this test records it rather than changing it; closing it is a
-/// change to that cluster's routes, not to this one.
+/// This test recorded a divergence until PLAN-026 M1 (`docs/task/RFCT-247.md`):
+/// `valid_cidr` had one caller, `validate_iface`, whose callers were the two
+/// HTML form handlers and this route, so `PUT /api/v1/network/{iface}` took an
+/// address the kernel cannot parse and answered 204. The rule now lives in
+/// `validate_static_address`, which `validate_iface` and the typed cluster's
+/// `address_refusal` both call, so there is one copy of it in the file and the
+/// three surfaces cannot drift apart.
 ///
-/// This route calls the rule because the harm is different here. A device being
-/// configured for the first time over the API has no other way in, so an
-/// unparseable address is the unreachable box section 2.3 item (ii) is about.
+/// This route runs it for a reason of its own that survives the convergence. A
+/// device being configured for the first time over the API has no other way
+/// in, so an unparseable address is the unreachable box section 2.3 item (ii)
+/// is about.
 #[tokio::test]
-async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not() {
+async fn the_setup_route_and_the_network_routes_run_one_shared_cidr_bound() {
     let entry =
         json!({ "kind": "physical", "dhcp": false, "static": { "address": "192.168.1.10" } });
 
@@ -10421,9 +10426,9 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     .await;
     assert_eq!(form.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
-    // And M6's typed route does not, which is the divergence: same bytes, 204.
+    // And M6's typed route refuses the same bytes, with the same sentence.
     let (tree, token) = with_token(configured_tree("hunter2secret"));
-    let (configured, _) = test_app(tree);
+    let (configured, fake) = test_app(tree);
     let put = bearer_json(
         &configured,
         "PUT",
@@ -10434,7 +10439,18 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     .await;
     assert_eq!(
         put.status(),
-        StatusCode::NO_CONTENT,
-        "recorded, not fixed: PLAN-023 M6's route runs no CIDR check"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "the gap PLAN-023 M6 left open is closed: the typed route runs the rule"
     );
+    let error = envelope(put).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], json!("network.eth0"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "the same sentence on both surfaces: {error}"
+    );
+    assert_nothing_written(&fake, "a typed network write carrying a bad address");
 }
