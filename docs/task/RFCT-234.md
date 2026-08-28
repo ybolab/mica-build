@@ -458,6 +458,44 @@ callers that resolve a LOCAL_ key already passed `--arch`
 no caller is special-cased and none needed a change. The two callers that
 resolve only IMAGE_ keys are untouched by construction.
 
+### Every consumer, and what each needed
+
+The change is to the RESOLVER, so the question is what it did to the six places
+that resolve a `LOCAL_MOS_BUILD_*` key. Enumerated rather than sampled, and none
+was special-cased:
+
+| consumer | LOCAL_ keys | passes `--arch` | needed an edit |
+| --- | --- | --- | --- |
+| `os/pkgs/rauc/build.sh` (pair form) | 2 | yes, `${MOS_ARCH}` | no |
+| `os/pkgs/rauc/build.sh` (`--contexts`) | 2 | yes, `${MOS_ARCH}` | no |
+| `os/pkgs/podman/build.sh` (pair form) | 4 | yes, `${MOS_ARCH}` | no |
+| `os/pkgs/podman/build.sh` (`--contexts`) | 4 | yes, `${MOS_ARCH}` | no |
+| `os/pkgs/mosd/hack/build-target.sh` | 1 | yes, `${IMAGE_ARCH}` | no |
+| `os/build-env/build.sh`'s own loop | 3 | yes, `${PLATFORM_ARCH}` | this task wrote it |
+| `os/build/src/images.test.ts` | 1 | **no** | no -- see below |
+
+Five of the six shell call sites already passed `--arch`, because RFCT-231 and
+the tasks before it added that flag for the architecture CHECK. Making the flag
+carry the NAME as well is why no consumer outside `os/build-env/` had to change:
+they were already saying the thing the resolver now needs.
+
+The seventh row is the interesting one. `os/build/src/images.test.ts` resolves
+`LOCAL_MOS_BUILD_BASE` through `--ref` with no `--arch`, and it is written to
+accept either answer -- *"the assertion is that the answer is either a reference
+or a sentence, never an empty string"*. It used to take the reference branch on
+a host that had run `make build-env`; it now takes the sentence branch, and its
+`expect(message).toContain('LOCAL_MOS_BUILD_BASE')` holds because the refusal
+names the key it was asked about:
+
+```console
+$ bash os/build-env/from.sh --ref LOCAL_MOS_BUILD_BASE
+error: LOCAL_MOS_BUILD_BASE is an image this repository builds, and those are tagged by architecture -- localhost/mos-build-base:amd64 and localhost/mos-build-base:arm64 are two images that coexist in one store. [...]
+```
+
+That is asserted by running it, not by reading it: `make os-build-test` ->
+`RESULT: PASS (689/689 tests)`. The test is outside this task's boundary and was
+not edited.
+
 `os/build-env/build.sh` no longer reads the parent out of the sourced pin file
 either. It asks from.sh, so the suffix is composed in ONE file rather than two
 that could drift:
@@ -557,6 +595,7 @@ against.
 | `bash os/pkgs/mosd/hack/check.sh` in `localhost/mos-build-rust:amd64` | `705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
 | `MOS_BOARD=x64 make os-rauc`, after section 7 | `rauc v1.13 for amd64: 453872 bytes, 7 shared libraries`, an `x86-64` ELF |
 | `MOS_BOARD=cx3576 make os-rauc`, after section 7 | `rauc v1.13 for arm64: 470008 bytes, 7 shared libraries`, an `ARM aarch64` ELF |
+| `make os-build-test` | `RESULT: PASS (689/689 tests)` -- the one consumer that resolves a LOCAL_ key without `--arch`, unedited |
 | both of those, from ONE store, with nothing restored between them | the point of section 7 |
 | `MOS_BOARD=x64 make os-rauc` | `rauc v1.13 for amd64: 453872 bytes, 7 shared libraries` |
 | `make os-shell-pipefail-lint` | `RESULT: PASS (31/31 files clean, 31 scanned)` |
@@ -589,6 +628,12 @@ change that breaks what already worked.
 - `os/pkgs/podman/build.sh` and `os/pkgs/rauc/build.sh`. Both were exercised;
   neither needed a change. Wall 1 is in `os/pkgs/podman/Dockerfile`'s stage
   graph and in the one-tag-one-architecture limit, not in either driver.
+- `os/pkgs/podman/build.sh`, `os/pkgs/podman/Dockerfile`,
+  `os/pkgs/mosd/hack/build-target.sh` and `os/build/src/**`. PLAN-025's Scope
+  does not admit them and none of them needed an edit: the table in section 7
+  is the enumeration, and it was checked by running `make os-build-test` and
+  both `make os-rauc` boards rather than by reading. Wall 1's remedy DOES need
+  two of them, which is why it is described there and not done.
 - `os/build-env/images.env`'s VALUES. Section 7 added a paragraph to it and
   changed no assignment: the four LOCAL_ values stay untagged, which is what
   puts the architecture in exactly one place.
