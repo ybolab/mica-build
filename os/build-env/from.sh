@@ -134,7 +134,7 @@ check_local_key() {
         return 1
     }
     [ "${got}" = "${FROM_ARCH}" ] || {
-        echo "error: ${k}=${v} is a ${got} image and this build targets ${FROM_ARCH}. A local tag carries exactly one architecture -- unlike the IMAGE_ digests above it, which are multi-architecture indexes -- so \`make build-env\` has to have produced a ${FROM_ARCH} family: MOS_BUILD_PLATFORM=linux/${FROM_ARCH} make build-env. os/build-env/build.sh refuses that today when it is not the host's architecture, and RFCT-108's M2b note records what closing it needs (each image published as content with --output type=oci, consumed as --build-context oci-layout://)" >&2
+        echo "error: ${k}=${v} is a ${got} image and this build targets ${FROM_ARCH}. A local tag carries exactly one architecture -- unlike the IMAGE_ digests above it, which are multi-architecture indexes -- so \`make build-env\` has to have produced a ${FROM_ARCH} family: MOS_BUILD_PLATFORM=linux/${FROM_ARCH} make build-env, which builds a family for any architecture the mos-\${arch} builder can execute and needs no host binfmt. What it CANNOT do is hold two families at once: this tag is the only name either has, so a family built for one architecture replaces the other, and a build that needs both -- os/pkgs/podman/Dockerfile's \`FROM --platform=\$BUILDPLATFORM\` source stage, and os/pkgs/mosd/hack/build-target.sh cross-compiling aarch64 FROM an amd64 image -- has no arrangement of this tag that satisfies it" >&2
         return 1
     }
     return 0
