@@ -252,6 +252,22 @@ cleanup, beside the CIDR gap M8 measured and deliberately left open.
 RFCT-246's task became unstartable in BKD, so M9 carried its branch in. Five
 files conflicted, all citation/index, none in code.
 
+> **Dated note (2026-08-28, after this task reported).** The premise of this
+> section's heading and of the sentence above it is false, and neither is
+> rewritten: they record what was believed while M9 ran and what was done on
+> that belief. RFCT-246's task was **not** unstartable. The mechanism was
+> measured afterwards: on this server BKD execution is driven by the follow-up
+> queue, and a status transition spawns no process at all. Every remedy tried
+> on that issue was status-side, which is exactly why none of them worked, and
+> the issue revived on a plain follow-up.
+>
+> Nothing done here depended on the belief. `bkd/x4agijkt` was merged as plain
+> commits, which is the same operation whether or not its task could have been
+> woken, and Duty 2's run had to happen on the cutover tree in any case — so
+> routing it back would have meant a merge in each direction for no gain. What
+> changes is only the reason the carry was necessary: it was a scheduling fact
+> about this campaign, not a property of the task.
+
 The four citation-bearing documents were resolved against **RFCT-246's** side
 rather than the L2 side, which is the opposite of the instruction, and the
 measurement is why. `redirect_app()` is at `routes.rs:3232` in the merged tree.
