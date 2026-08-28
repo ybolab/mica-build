@@ -160,10 +160,10 @@ the same fixture and the same classifier still names `hostname`.
 | Gate | Result |
 |---|---|
 | `bash docs/verify-citations.sh` | `1559/1559 PASS`, RC=0 |
-| `bash docs/verify-index.sh` | `780/780 PASS`, RC=0 |
+| `bash docs/verify-index.sh` | `784/784 PASS`, RC=0 |
 | `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | see section 6 |
 | `oasdiff breaking … --fail-on ERR --severity-levels …` vs the pre-M7 spec | `No breaking changes to report`, RC=0 |
-| `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` | RC=1, **inherited** — see section 7 |
+| the same, vs `main` tip `77a3278` and vs `fd7fbb0` | `No breaking changes to report`, RC=0 — see section 7 |
 
 The gate script ran unmodified. Two things sit around it and neither touches it:
 `dbus` is installed in the container first, without which the bus round-trip
@@ -217,29 +217,75 @@ silently left, because the count is what RFCT-214 needs to size its work. The
 docs gate does not check the continuation form, so it stays green either way,
 which is precisely why the number is stated rather than assumed to be zero.
 
-## 7. The oasdiff result against `main`, which is inherited
+## 7. The state route: base drift, and the resolution this tree carries
 
-`oasdiff` reports RC=0 against the pre-M7 spec: this task's diff adds three
-paths and one schema and breaks nothing.
+`main` advanced under the campaign. It gained
+`20d4d3d fix(apid): a live-state dot-path that does not resolve is 404, not 422`,
+a PLAN-025 fix the campaign branch predates. The two sides then disagreed about
+one route:
 
-Against `main` it reports RC=1, one error:
+- **main**: `GET /api/v1/state/{path}` answers **404 `settings_not_found`** for a
+  dot-path that does not resolve, and its 422 description was rewritten to say
+  so.
+- **the campaign**: that route carries M3's **405** method-not-allowed envelope,
+  and its `utoipa::path` block still documented the old reading — *"mosd
+  rejected the dot-path (`settings_rejected`), which is also the answer for a
+  dot-path that does not exist"*.
 
-```
-error [response-non-success-status-removed] in API GET /api/v1/state/{path}
-    removed the non-success response with the status `404`
-```
+**Both are needed. They answer different questions and neither displaces the
+other**, so the resolution is not "take one side": 404 is what an unresolvable
+dot-path gets, 405 is what a wrong method gets.
 
-**This is not in this task's diff.** Measured directly: running the same
-comparison from `main` to this branch's merge base — before any M7 commit —
-reproduces the identical single error. `GET /api/v1/state/{path}` documented
-`404` on `main` and documents `405` instead at the merge base; the route's own
-`422` description now states that a dot-path that does not exist is answered
-`422`, so the removal reads as a deliberate correction made by an earlier
-milestone rather than an accident.
+### What this tree carries, and where it came from
 
-It is left untouched. This task's scope excludes revisiting M4-M6's shipped
-routes, and reversing another milestone's considered decision about its own
-route is not a change M7 should make unilaterally. It is raised here for L2.
+RFCT-214 (`bkd/5n3a7yq1`) is the campaign's merge-down carrier and had already
+resolved this conflict, keeping both. **That resolution is authoritative and
+this tree adopts it rather than authoring a second one**: the handler body here
+is byte-identical to both `main`'s and the carrier's, and the response set is
+the carrier's — 200, 401, **404**, 422 with the corrected wording, 500, 503 and
+**405**. `main`'s test for the behaviour,
+`a_state_dot_path_that_does_not_resolve_is_404_not_422`, is carried across with
+it, so the 404 is asserted here and not merely documented.
+
+Taking the resolution rather than writing one is deliberate. Two branches
+resolving one conflict is a seam; three would be worse, and the difference
+between a mechanical adoption and an independent re-derivation is exactly the
+kind of divergence a later merge cannot tell apart from an intended change.
+
+The stale 422 prose is deleted from the route's documentation, and
+`openapi.json` was **regenerated**, never hand-edited. Two citations in
+`docs/design/api.md` quoted the old one-line handler body verbatim
+(`resource_response(state.api.get_state(&path).await, &path)`); that line no
+longer exists in any form, so both were re-anchored onto lines that do — the
+`get_state` read at `:1227` and the terminal `None` arm at `:1253`.
+
+`docs/task/RFCT-118.md` and `docs/task/RFCT-130.md` still record the old
+behaviour. They are left alone: they are history, they were true when written,
+and `main`'s own fix did not rewrite them either.
+
+### The measurement that proves it
+
+`oasdiff`, pinned 1.29.1, with the workflow's two severity promotions:
+
+| Base | Result |
+|---|---|
+| `main` tip `77a3278` | `No breaking changes to report`, **RC=0** |
+| `fd7fbb0` | `No breaking changes to report`, **RC=0** |
+| the pre-M7 campaign spec | `No breaking changes to report`, **RC=0** |
+
+Before the resolution the first of those reported
+`[response-non-success-status-removed] in API GET /api/v1/state/{path}` at RC=1.
+It does not now, which is the proof the merged route still carries `main`'s 404.
+
+### Recorded for closeout, deliberately not done here
+
+`20d4d3d`'s own message says the cleaner fix is a `NotFound` error name raised
+mosd-side, and that PLAN-025's scope excluded `os/pkgs/mosd/mosd` so the reading
+was done in apid instead. **M6 shipped exactly that cleaner mechanism for the
+rotate-key route.** So on this tree the state route's apid-side name-reading
+could be replaced by the same mosd-side split. It is not done here: a route
+reconciliation is not the place to also redesign the mechanism, and doing it
+inside a conflict resolution would make the resolution unreviewable.
 
 ## 8. Out of scope, untouched
 
