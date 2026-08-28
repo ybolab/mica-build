@@ -192,15 +192,16 @@ fn validate_interface(interface: &str) -> Result<()> {
 /// True when `value` can be carried inside a wpa_supplicant double-quoted
 /// string with no way of ending the string early.
 ///
-/// Printable ASCII only, minus the quote that would close the string and the
-/// backslash that some wpa_supplicant string forms treat as an escape. A
-/// newline is excluded by the printable range, which is the character that
-/// would otherwise let a value close its `network={…}` block and append
-/// directives of its own.
+/// **Lifted into `mosd-settings`** (PLAN-026 M3), for the reason the length
+/// bound was lifted before it: a write surface has to be able to refuse what
+/// this renderer cannot carry, and a second copy of the bytes could disagree
+/// with the first. `mosd_settings::is_wpa_quotable` states the predicate --
+/// printable ASCII, minus the quote that would close the string and the
+/// backslash some wpa_supplicant string forms treat as an escape -- and this
+/// is the station renderer's name for it; both encoders below still read it
+/// here.
 fn is_quotable(value: &str) -> bool {
-    value
-        .bytes()
-        .all(|byte| (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\')
+    mosd_settings::is_wpa_quotable(value)
 }
 
 /// Encode `ssid` as a wpa_supplicant `ssid=` value.
@@ -772,7 +773,8 @@ mod tests {
     }
 
     /// The bound the renderer enforces is the one `mosd-settings` states, and
-    /// there is no second copy of it left here (PLAN-023 M6's lift).
+    /// there is no second copy of it left here (PLAN-023 M6's lift for the
+    /// length band, PLAN-026 M3's for the quotable predicate).
     ///
     /// Asserted as an agreement over a table rather than by reading the
     /// constants: what matters is that no input exists for which the renderer
@@ -790,6 +792,15 @@ mod tests {
             &"a".repeat(64),
             &"A".repeat(64),
             &"x".repeat(200),
+            // PLAN-026 M3: the quotable half of the agreement. Each of these
+            // is inside the length band and was accepted by the lifted rule
+            // while the renderer refused it -- accepted at a write surface,
+            // dead at render time.
+            "has\"quote1",
+            "has\\backslash",
+            "two\nlines1",
+            "tab\there1",
+            "caf\u{e9}-latte",
         ] {
             assert_eq!(
                 mosd_settings::validate_wifi_psk(psk).is_ok(),

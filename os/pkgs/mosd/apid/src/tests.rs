@@ -9232,6 +9232,54 @@ async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
     }
 }
 
+/// The quotable half of the lifted bound, run by the WiFi route.
+///
+/// `docs/task/RFCT-215.md` section 6 item 3 measured the gap this closes: a key
+/// carrying a quote or a backslash passed `validate_wifi_psk`, was stored, and
+/// was then refused at render time by the station renderer's own `is_quotable`
+/// — accepted at the route and dead on the reconciler, with the error visible
+/// only in live state. The predicate now lives beside the model and the
+/// renderer calls it, so this is the same rule and not a second one.
+#[tokio::test]
+async fn a_psk_the_renderer_cannot_quote_is_refused_by_the_wifi_route() {
+    let (tree, token) = with_token(wifi_tree(json!([])));
+    let (router, fake) = test_app(tree);
+
+    for psk in [
+        "has\"quote1",
+        "has\\backslash",
+        "two\nlines1",
+        "tab\there1",
+        "caf\u{e9}-latte",
+    ] {
+        let response = bearer_json(
+            &router,
+            "POST",
+            "/api/v1/wifi/client/networks",
+            &token,
+            &json!({ "ssid": "roastery", "psk": psk }).to_string(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{psk:?}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{psk:?}");
+        assert_eq!(error["source"], "apid", "{psk:?}");
+        assert_eq!(error["path"], json!(WIFI_NETWORKS_DOT_PATH), "{psk:?}");
+        // The refusal never echoes the key.
+        assert!(
+            !error["message"].as_str().unwrap().contains(psk),
+            "the refusal echoed the key: {error}"
+        );
+    }
+    // Nothing reached mosd: a key refused here is never stored, which is the
+    // whole point of moving the refusal to the write surface.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
 /// The collection identifier contract's third clause, held across **every**
 /// collection at once: a duplicate is **409**, with a per-collection code.
 ///
