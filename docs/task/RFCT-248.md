@@ -213,33 +213,73 @@ and its files are being edited by sibling milestones of the same campaign.
 
 ## 8. Citation re-anchor
 
-Its own commit, `fb33b31`, after the code commits, no prose changed. The method
-is `docs/task/RFCT-215.md` section 5's: mechanical remap from the pre-image,
-both endpoints of a range mapped independently, and a citation moved only when
-the pre-image line and the destination line are byte-identical.
+Done twice, and the second time is the one that ships.
+
+**The first pass, `fb33b31`, was reverted rather than merged.** Mid-task,
+`bkd/5q6am5rw` moved and the sync merge conflicted in **sixteen documents**,
+every conflict of this shape and nothing else:
+
+    <<<<<<< HEAD
+    (`os/pkgs/mosd/apid/src/routes.rs:3330`), and only *declared* routes are handed
+    =======
+    (`os/pkgs/mosd/apid/src/routes.rs:3338`), and only *declared* routes are handed
+    >>>>>>> bkd/5q6am5rw
+
+Both sides had re-anchored the same citation, by different offsets, and neither
+number is right for the merged tree. `docs/task/RFCT-215.md` section 5 decides
+this case: *the side holding content re-derivations wins, because they cannot be
+recovered mechanically; the side holding shifts loses, because they can*. Both
+sides held shifts here, and only one of them is this branch's to withdraw, so
+the merge was aborted, `fb33b31` was reverted, the merge was retaken — it then
+conflicted in one file, `docs/design/api.md`, where this branch holds new prose
+and the incoming side held only shifts — and the pass was re-derived against
+the merged tree.
+
+**The second pass**, in its own commit after the merge, no prose changed:
 
 | | count |
 |---|---|
-| full-form citations rewritten | 424 |
-| bare `:NNN` continuations rewritten | 48 |
-| already correct, left alone | 494 |
-| authored by this branch, excluded | 7 |
+| full-form citations rewritten | 430 |
+| bare `:NNN` continuations rewritten | 38 |
+| already correct, left alone | 518 |
+| authored by this branch, excluded from the mechanical pass | 23 |
 | **refused as unresolvable** | **0** |
 
-Documents carrying a `<!-- dated-record: -->` marker were left alone. The seven
-exclusions are the citations this branch wrote into `docs/design/api.md`
-section 2.3 with the post-change line numbers already in them; without the
-exclusion the pass would have shifted them a second time, which is the one way
-a content-verified remap can still be wrong.
+The method is section 5's: mechanical remap from the pre-image — here the
+merge's incoming tip, since the incoming documents are correct for it — both
+endpoints of a range mapped independently, and a citation moved only when the
+pre-image line and the destination line are byte-identical. Nothing was
+refused, so no citation had to be re-derived from content or listed as
+unresolvable.
+
+The 23 exclusions are the citations this branch wrote itself, seven in
+`docs/design/api.md` section 2.3 and sixteen in this file, all carrying
+post-change line numbers already. Without the exclusion the pass would have
+shifted them a second time, which is the one way a content-verified remap can
+still be wrong — and it was caught by measurement rather than foresight: a
+trial run of the first pass did exactly that, turning a correct `:3277` into a
+`:3313` that content-verified clean because the two lines are the same line.
+The excluded 23 were re-derived separately against the merged `routes.rs`, each
+also content-verified.
+
+**A second correction the redo forced.** `docs/verify-citations.sh` anchors the
+dated-record marker at line start — `if grep -q '^<!-- dated-record:' "$doc"; then`
+(`docs/verify-citations.sh:356`) — and the first pass matched the marker
+anywhere in a file. That is not a conservative difference: it exempted
+documents the gate does scan, this task file among them, because this section
+quotes the marker in prose. The redone pass uses the anchored form, which is
+where five of the six extra rewrites came from.
 
 **No constant offset was used, and none would have worked.** Three files moved,
-by nine different offsets across eleven regions:
+across ten regions, and the excluded 23 moved by an eleventh offset of their
+own:
 
 | file | regions | offsets |
 |---|---|---|
 | `os/pkgs/mosd/apid/src/routes.rs` | 2 | +4, +36 |
 | `os/pkgs/mosd/apid/src/tests.rs` | 6 | +7, +10, +14, +89, +92, +113 |
 | `docs/design/api.md` | 2 | +22, +32 |
+| the 23 authored citations, against the merged `routes.rs` | 1 | +44 |
 
 ## 9. Gates
 
