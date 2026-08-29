@@ -221,7 +221,7 @@ passes. None was measured in the shared checkout.
 |---|---|
 | `bash docs/verify-citations.sh` | `2207/2207 PASS`, RC=0 |
 | `bash docs/verify-index.sh` | `875/875 PASS`, RC=0 |
-| `bash hack/check.sh` in the amd64 builder, `dbus` installed first | `Summary [ 109.204s] 837 tests run: 837 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
+| `bash hack/check.sh` in the amd64 builder, `dbus` installed first | `Summary [ 108.263s] 837 tests run: 837 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
 | `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `1135448` | `No breaking changes to report, but the specs are different.`, **RC=0** |
 
 `main`'s own tree at `a06e9dd` reads `2175/2175` and `867/867`, measured here
