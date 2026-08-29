@@ -1,6 +1,6 @@
 # PLAN-010 Plan B migration - systemd base + mosd management plane
 
-- **status**: in progress
+- **status**: completed — M2 through M5 were already implementation-complete; M1's prototype was superseded by the v2 rootfs chain that ships, which closes the last open milestone.
 - **createdAt**: 2026-08-17 20:30
 - **approvedAt**: 2026-08-17 20:30 (user decision; see research/init-strategy.md)
 - **completedAt**: -
@@ -41,9 +41,9 @@ apid + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 
 ### M1 - systemd rootfs prototype boots on cx3576
 
-- **Status**: in progress — RFCT-008. Done criteria: image build + verify script green
-  locally; hardware boot to sshd over DHCP is the user's manual acceptance (pending
-  user validation).
+- **Status**: superseded — the prototype was replaced by the v2 rootfs chain
+  (`os/rootfs/build-v2.sh` over the stage Dockerfiles) that M2-M5 build on and
+  that ships. The hardware boot-to-sshd acceptance was never recorded.
 - buildkit-assembled Debian-based (bookworm/trixie slim) arm64 rootfs with
   systemd, systemd-networkd (DHCP default), sshd (dev profile), dropping onto
   the EXISTING boot chain (U-Boot -> extlinux -> BSP kernel + initramfs or

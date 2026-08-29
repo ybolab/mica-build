@@ -1,6 +1,6 @@
 # PLAN-007 Derivation strategy switch - rebase onto upstream v1.14.0-rc.1 with k8s-less gating instead of deletions
 
-- **status**: implementing
+- **status**: rejected — the derivation-strategy switch it proposed was a rebase onto upstream Talos v1.14.0-rc.1. The project moved off Talos entirely to the systemd base of PLAN-010, so there is no derivation to switch.
 - **createdAt**: 2026-08-17 01:30
 - **approvedAt**: 2026-08-17 01:30
 - **completedAt**: -

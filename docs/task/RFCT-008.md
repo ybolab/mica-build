@@ -1,6 +1,6 @@
 # RFCT-008 PLAN-010 M1 - systemd rootfs prototype image for cx3576
 
-- **status**: in progress
+- **status**: closed — superseded. The prototype it asked for (a Debian systemd arm64 rootfs for cx3576 over the existing boot chain) was replaced by the production v2 chain: `os/rootfs/build-v2.sh` over nine stage Dockerfiles, a squashfs+dm-verity root and the A/B layout, which is what ships. PLAN-010's M2 through M5 are all implementation-complete on top of it. Its remaining done criterion — hardware boot to sshd, the user's manual acceptance — was never recorded, and closing this record does not claim it.
 - **priority**: P1
 - **owner**: (bkd campaign)
 - **createdAt**: 2026-08-17 19:21

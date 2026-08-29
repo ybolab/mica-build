@@ -1,6 +1,6 @@
 # RFCT-005 Port appliance feature set onto upstream v1.14.0-rc.1 base (rebase derivation)
 
-- **status**: in progress
+- **status**: closed — the Talos rebase this executes was abandoned. The project took the other fork: PLAN-010's systemd base. Talos survives in three places in the tree, none of them code — a `.gitignore` line, the Makefile's own "os: retired (Talos base -> systemd + mosd)" message, and a comparison paragraph in README.md. There is no fork left to rebase.
 - **priority**: P1
 - **owner**: (bkd campaign)
 - **createdAt**: 2026-08-17 01:30

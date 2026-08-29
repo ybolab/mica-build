@@ -4,6 +4,41 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Backlog cleanup (2026-08-29)
+
+The open set was four plans and five tasks; most of it was bookkeeping rather
+than work. Verified against the tree, then closed:
+
+- **RFCT-005 and PLAN-007 — the Talos rebase, abandoned.** Both proposed
+  rebasing the fork onto upstream Talos v1.14.0-rc.1. The project took the
+  other fork, PLAN-010's systemd base. Talos survives in three places, none of
+  them code: a `.gitignore` line, the Makefile's own "retired" message, and a
+  comparison paragraph in `README.md`. There is no fork left to rebase.
+- **RFCT-008 and PLAN-010 M1 — superseded.** The systemd rootfs prototype was
+  replaced by the v2 chain (`os/rootfs/build-v2.sh` over nine stage
+  Dockerfiles, squashfs+dm-verity, A/B layout) that M2-M5 build on and that
+  ships. M1 was the only milestone still open under a plan whose other four
+  were implementation-complete. Its remaining done criterion — hardware boot
+  to sshd — was never recorded, and closing it does not claim it.
+- **PLAN-006 — completed by supersession**, executed on the systemd base as
+  PLAN-010 M4. **PLAN-008 — completed by supersession**: the connectivity
+  concern ships as two mosd reconcilers, and no `connd` process exists,
+  deliberately.
+- **RFCT-007 — completed.** Item 1 had shipped. Item 3, the flashing matrix,
+  is delivered in `os/boards/cx3576/bsp/README.md`: five paths, which board
+  state each applies to, and why `ums` is reachable only from U-Boot and never
+  from Maskrom. **Item 2, the `update.img` pipeline, is closed as superseded
+  and will not be built** — three flash paths already write a whole-disk image
+  through `rkdeveloptool wl 0`, and the RK packaging format would require
+  vendoring `afptool` and `rkImageMaker`, closed-source SDK binaries, for no
+  capability the tree lacks.
+
+Left open, and genuinely open: **RFCT-253** (whether `access.ssh` may stay
+bus-writable, a decision on evidence already gathered) and **RFCT-260** (the AP
+reconciler's third copy of the WPA byte rule, and a refusal that names the
+secret's length). Standing and untracked: the arm64/cx3576 verifications owed
+to a host with binfmt.
+
 ## PLAN-029 — Documentation system rebuild (2026-08-29)
 
 The documentation tree went from 276 files and 77,319 lines to 42 files and

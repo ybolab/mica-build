@@ -1,6 +1,6 @@
 # PLAN-006 Stage 2.0 (alt) - Embedded ARM A/B upgrade via RAUC dual-partition rootfs (disk-backed, zero RAM residency)
 
-- **status**: partially implemented — executed on the systemd base as PLAN-010 M4
+- **status**: completed by supersession — the A/B upgrade design was executed on the systemd base as PLAN-010 M4. RAUC, the dual-partition rootfs and the U-Boot BOOT_ORDER handshake all ship; the design of record is `docs/design/uboot-ab-handshake.md` and `docs/design/ro-root.md`.
 - **createdAt**: 2026-08-17 00:00
 - **approvedAt**: 2026-08-18 (executed via PLAN-010 M4)
 - **completedAt**: -

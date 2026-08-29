@@ -1,6 +1,6 @@
 # PLAN-008 Unified connectivity service (connd) - WiFi STA/AP, Bluetooth, CAN
 
-- **status**: draft
+- **status**: completed by supersession — the connectivity concern ships, but as two mosd reconcilers (`wifi.client`, `wifi.ap`) rather than a `connd` process. No binary called connd exists, deliberately. The design of record is `docs/design/connd.md`.
 - **createdAt**: 2026-08-17 00:00
 - **approvedAt**: -
 - **completedAt**: -

@@ -1,6 +1,6 @@
 # RFCT-007 cx3576 flashing: rockusb loader-mode descriptor + RK update.img packaging
 
-- **status**: in progress
+- **status**: completed — scope item 1 (the rockusb loader-mode descriptor and the maskrom reboot bridge) shipped and was build-verified. Item 3 (the flashing matrix) is delivered in `os/boards/cx3576/bsp/README.md`. **Item 2, the `update.img` pipeline, is closed as superseded and will not be built**: three flash paths already exist over a whole-disk image (`flash`, `flash-maskrom`, `flash-rootfs-offline`, all `rkdeveloptool wl` on `out/disk.img`), and the RK packaging format would require vendoring `afptool` and `rkImageMaker`, closed-source SDK binaries, for no capability the tree lacks.
 - **priority**: P2
 - **owner**: (bkd campaign)
 - **createdAt**: 2026-08-17
