@@ -145,7 +145,7 @@ validates against the typed tree and saves TOML atomically
 `50-mos-<iface>.network`, sweeps, reloads networkd
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
-`GET /api/v1/state/network` (`docs/design/api.md:1556`).
+`GET /api/v1/state/network` (`docs/design/api.md:1565`).
 
 ---
 

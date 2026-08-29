@@ -9,9 +9,9 @@
 docs/design/api.md 452
 docs/design/boards.md 2
 docs/design/bus.md 5
-docs/design/dashboard.md 80
+docs/design/dashboard.md 99
 docs/design/remote-management.md 5
-docs/design/uboot-ab-handshake.md 12
+docs/design/uboot-ab-handshake.md 14
 docs/task/RFCT-040.md 4
 docs/task/RFCT-042.md 1
 docs/task/RFCT-043.md 5
@@ -22,7 +22,7 @@ docs/task/RFCT-066.md 3
 docs/task/RFCT-068.md 7
 docs/task/RFCT-069.md 3
 docs/task/RFCT-093.md 1
-docs/task/RFCT-105.md 3
+docs/task/RFCT-105.md 4
 docs/task/RFCT-111.md 8
 docs/task/RFCT-138.md 1
 docs/task/RFCT-139.md 1
@@ -37,7 +37,7 @@ docs/task/RFCT-162.md 8
 docs/task/RFCT-166.md 1
 docs/task/RFCT-167.md 2
 docs/task/RFCT-168.md 3
-docs/task/RFCT-169.md 19
+docs/task/RFCT-169.md 22
 docs/task/RFCT-170.md 4
 docs/task/RFCT-172.md 21
 docs/task/RFCT-190.md 10

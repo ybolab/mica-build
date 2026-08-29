@@ -90,7 +90,7 @@ Every target verified by opening it before re-pointing:
 | `docs/task/RFCT-066.md:62` | `os/rauc/system.conf.in` `:50-62` | `os/pkgs/rauc/system.conf.in:64-76` | the plain-refusal and CMS keyring text lives there today |
 | `docs/task/RFCT-105.md:355` | `os/qemu-run.sh` `:167` | `test/apid-api/src/qemu.ts:251` | `-no-reboot` still passed, file moved twice |
 | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | `os/pkgs/rauc/system.conf.in:71-78` | moved by PLAN-019, same lines, quote intact |
-| `docs/task/RFCT-139.md:16` | `checks-root.ts:629-633` | `:601-620` | `packed-no-dev-keyring` check body |
+| `docs/task/RFCT-139.md:16` | `checks-root.ts` `:629-633` | `:601-620` | `packed-no-dev-keyring` check body |
 | `docs/task/RFCT-142.md:22` | `os/update/rauc/system.conf.in` `:35` | `os/pkgs/rauc/system.conf.in:35` | the fw_setenv comment, same line |
 | `docs/task/RFCT-162.md:132` | `os/update/rauc/build.sh` `:63` | `os/pkgs/rauc/build.sh:63` | `BUILDER_ARGS=(--builder default)`, same line |
 | `docs/task/RFCT-166.md:75` | `os/update/rauc/build.sh` `:63` | `os/pkgs/rauc/build.sh:63` | same, in the record of the move itself |

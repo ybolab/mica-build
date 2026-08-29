@@ -25,7 +25,7 @@ differs from section 2.3's, both are given.
 Section 2.3's table (`docs/design/api.md:1531`) states its own provenance:
 *"Input is section 1.2's route table, re-measured at `f7cb5ba`. One row per
 method+path that exists today; the line numbers in the first column are this
-commit's."* (`docs/design/api.md:1550-1552`) Two things have happened to it since.
+commit's."* (`docs/design/api.md:1555-1557`) Two things have happened to it since.
 
 **It went stale.** Its first column cites lines in the bare form
 `routes.rs:947`, with no directory segment. That form is outside
@@ -169,10 +169,10 @@ so the M4+ author does not re-derive them.
 Section 2.3 proposes settings writes (`PUT /api/v1/settings/<dot-path>`),
 collection resources, and actions (`POST /api/v1/actions/<verb>`). Section 2.2
 already gives the rule that separates the first two: *"Identity is never a list
-index."* (`docs/design/api.md:1437`) — a collection is needed exactly when an
+index."* (`docs/design/api.md:1442`) — a collection is needed exactly when an
 item's identity is not a path position. And it gives the rule that separates
 actions from both: an action is a verb *"with no state to `GET` and no
-idempotency to promise"* (`docs/design/api.md:1577-1578`).
+idempotency to promise"* (`docs/design/api.md:1586-1587`).
 
 That is enough to classify most rows, and it is **not** enough for the network
 tree. The measurement that decides that case is in section 2.3 below.
@@ -307,7 +307,7 @@ is `docs/design/api.md`'s section 2.3 closing note, re-anchored at this HEAD to
 `docs/design/api.md:1672-1676`: it records that `ssh_key_remove` answers 422
 when the identifier matches nothing and argues that for a `DELETE` on a
 collection resource *"that is a **404** — the identified item does not exist."*
-(`docs/design/api.md:1675-1676`) That paragraph's own two citations are accurate
+(`docs/design/api.md:1684-1685`) That paragraph's own two citations are accurate
 at this HEAD and were not re-anchored. This belongs here rather than in part
 (a), because it is the collection shape's error contract and SSH keys are the
 precedent every other collection route in section 2.4 below is modelled on.
@@ -381,7 +381,7 @@ Every route it binds:
 
 **Recommendation: the HTML form path stays at 422; only the API answers 404.**
 The design document already says *"The HTML path is not changed by this
-document."* (`docs/design/api.md:1676`) This ratifies that, for three reasons it
+document."* (`docs/design/api.md:1685`) This ratifies that, for three reasons it
 does not give:
 
 1. **The HTML path has no way to express 404 usefully.** Its response body is
@@ -544,14 +544,14 @@ first-boot provisioning and not by an operator.
 
 **(1) Section 2.3 parks the question.** Its password bullet ends:
 *"The token question this bullet parked is still §3.2's: no tokens ship yet, so
-there is nothing to revoke."* (`docs/design/api.md:1649-1650`)
+there is nothing to revoke."* (`docs/design/api.md:1658-1659`)
 
 **(2) Section 3.2 decides it, the other way, as a property with an
 obligation.** *"**Changing the admin password does not revoke any token.** That
-is deliberate"* (`docs/design/api.md:2375-2376`), with the reason
+is deliberate"* (`docs/design/api.md:2383-2384`), with the reason
 *"a human rotating their own password must not break every script"*
-(`docs/design/api.md:2376-2377`) and the obligation
-*"The UI's password pane has to say so."* (`docs/design/api.md:2377-2378`) Section 9
+(`docs/design/api.md:2384-2385`) and the obligation
+*"The UI's password pane has to say so."* (`docs/design/api.md:2386-2387`) Section 9
 treats it as settled and reasons from it
 (`docs/design/api.md:4732`).
 

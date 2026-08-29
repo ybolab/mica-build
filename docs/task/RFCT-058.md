@@ -129,8 +129,8 @@ prose containing the sentence *"The previous policy was a development skeleton
 that let any local uid send to all of it."* **A reader who followed the citation
 landed on text that appeared to confirm the claim that had become false.**
 
-The sharpest case: §6.3 said the policy *"calls itself a dev skeleton
-(`com.mos.mosd.conf:4`)"*, while line 4 today reads *"com.mos.mosd is a
+The sharpest case: §6.3 said the policy *"calls itself a dev skeleton"*,
+citing `com.mos.mosd.conf:4`, while line 4 today reads *"com.mos.mosd is a
 ROOT-ONLY bus name (RFCT-048)"* — **the citation had come to assert the exact
 negation of the claim it was offered as evidence for.**
 

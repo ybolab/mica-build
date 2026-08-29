@@ -99,7 +99,7 @@ on the device to RAUC, against *"the A/B update design this implements"*
 *"probes systemd, mosd and apid first"* (`docs/design/mosd.md:484`); an
 unconfirmed slot spends boot credits until *"a slot that cannot complete a boot
 is guaranteed to exhaust its credits"*
-(`docs/design/uboot-ab-handshake.md:434-435`) and the bootloader falls back.
+(`docs/design/uboot-ab-handshake.md:438-439`) and the bootloader falls back.
 
 **What does not exist — [not implemented].** No on-device pull: the device-side
 verifier is built and tested on the host, and *"nothing ships it to a device
