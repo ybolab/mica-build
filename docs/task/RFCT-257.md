@@ -932,19 +932,49 @@ would have wrongly stripped four good citations from the second paragraph.
 
 ### 14.2 Which repair to choose
 
-Two legitimate repairs exist, and they are not interchangeable:
+**Ruled by L1: plain prose plus a why-sentence is the campaign standard for
+every new instance.** The rewrite-to-the-historical-path form is tolerated where
+it has already landed green — M1's `docs/design/api.md` §2.2/§2.3 stay as they
+are, a recorded dated exception — but is not to be used again.
 
-- **Rewrite to the historical path** — stays legible as a citation, the gate
-  skips it as outside-tree, provenance visible in the text. Fits when the *path*
-  is what changed, so a historical path exists to name.
-- **Plain prose plus a why-sentence** — no citation syntax, nothing to skip.
-  Fits when only the *lines* moved and the path is still live.
+The deciding argument is **state-dependence**, and it is what an earlier draft
+of this section got wrong. That draft concluded that where the *path* moved, the
+historical-path form was better. It is not, and the counter-evidence is this
+milestone's own: the historical-path form is safe only while the old path stays
+outside the tree, and that is a property of **the tree, not of the text**. Any
+future restructure that re-creates a first segment of that name silently re-arms
+those citations against whatever now lives there — no commit touches the
+document, and nothing announces it.
 
-This site took the second, and had to: `os/pkgs/mosd/apid/src/routes.rs` is
-still exactly where it was, so there is no historical path to rewrite to, and
-any citation naming that live file would resolve. Where the path did move, the
-first is better — it keeps the reader oriented and leaves the provenance in the
-text rather than in a clause about the text.
+That is not hypothetical here. `mosd/` **was** a repo-root directory before the
+`os/pkgs` move, and §4.2 records a live antecedent still naming it at
+`docs/task/RFCT-169.md:254`, gone since PLAN-019. Re-create a top-level `mosd/`
+tomorrow and every pinned-historical citation with that first segment stops
+being skipped and starts resolving against the wrong files. It also parks the
+text in the one bucket the gate's own header declares indistinguishable: *"a
+skipped-as-outside path that once existed in this tree reads the same as one
+that never did."* And it belongs to the same scheduled-hazard family as the
+file-scoped marker's merge-order dependency in §11.4 — safe today, dies when
+someone else's lifecycle moves, silent when it does.
+
+Prose has no such dependency. It cannot fire under any future tree. **Prose is
+the default because its safety is unconditional, not because it reads better.**
+
+The what-moved distinction still decides something, and survives the ruling
+reframed — only the verdict on the second case flips:
+
+- **Only the lines moved, path still live** — prose is the *only* option, not
+  the preferred one. There is no historical path to name, and any citation
+  naming the live file resolves and lies. This site is that case:
+  `os/pkgs/mosd/apid/src/routes.rs` is exactly where it always was.
+- **The path moved** — prose is *still* the standard, on unconditional-safety
+  grounds, even though a historical path exists to name.
+
+One honest cost of the standard, recorded rather than buried: prose leaves the
+provenance in a clause *about* the text rather than in the text itself, where a
+citation would have kept the reader oriented. That cost is real and was the
+basis of the superseded draft; it is judged to be worth paying for a safety
+property that does not depend on the shape of a future tree.
 
 ## 15. The auto-merge hazard, and the window rule
 
