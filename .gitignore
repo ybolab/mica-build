@@ -26,7 +26,12 @@ os/rootfs/overlay-v2/etc/rauc/keyring.pem
 os/pkgs/rauc/out-*/
 os/pkgs/rauc/versions.lock
 
-# Session/build scratch shared with containers (bind-mount root; never /tmp -- the
-# docker daemon does not share this session's /tmp). All throwaway compile, verify
-# and container-exchange paths belong here.
-runtime/
+# Repository-local scratch, shared with containers as a bind-mount root. All
+# throwaway compile, verify and container-exchange paths belong here.
+#
+# NOT the system /tmp: the docker daemon does not share this session's /tmp, so
+# a bind mount of it succeeds and delivers an empty directory. Named tmp/ and
+# not runtime/ because a real runtime directory would then be silently ignored,
+# and because the harness measurements quote paths like /srv/bkd/runtime/bun
+# that have nothing to do with this one.
+tmp/

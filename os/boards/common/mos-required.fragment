@@ -38,7 +38,7 @@ CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,bpf"
 CONFIG_WIREGUARD=y
 
 # Product requirements, not vendor defaults. Both are already =y in
-# the cx3576 vendor config (kernel-cx3576z.config:1244, :1250) and BRIDGE is
+# the cx3576 vendor config (kernel-cx3576z.config) and BRIDGE is
 # additionally asserted in the board Dockerfile; stating them HERE makes the
 # shared, per-board-asserted floor the thing that guarantees them, so a vendor
 # config regenerated from upstream cannot drop either one silently.

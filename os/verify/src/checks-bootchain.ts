@@ -342,7 +342,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
  * to derive it from: `os/boards/cx3576/board.env` declares
  * `BOARD_HAS_STATUS_LED=1` and nothing about polarity. The same three facts per
  * LED are asserted in three places in this tree -- here, at
- * `os/boards/cx3576/bsp/kernel/Dockerfile:134-139`, and in the .dts the kernel build
+ * `os/boards/cx3576/bsp/kernel/Dockerfile`, and in the .dts the kernel build
  * compiles -- and the last two are `board/` BSP files that the Scope
  * section puts outside this campaign ("No change to ... `board/` BSP builds
  * (digest pins only)"), so reading them would be a dependency on a tree this

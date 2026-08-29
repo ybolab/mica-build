@@ -304,7 +304,7 @@ COPY --from=src /src/podman /src/podman
 ARG BUILDTAGS="seccomp systemd libsubid containers_image_openpgp exclude_graphdriver_btrfs exclude_graphdriver_devicemapper"
 
 # PREFIX=/usr, not the Makefile's default of /usr/local, and this is the kind
-# of default that fails on the device and nowhere else. Makefile:133 links
+# of default that fails on the device and nowhere else. Makefile links
 # `-X .../quadlet._binDir=$(BINDIR)` into the quadlet binary, and BINDIR
 # defaults to ${PREFIX}/bin = /usr/local/bin, while mos installs podman at
 # /usr/bin. With the default, quadlet parses a .container file correctly,

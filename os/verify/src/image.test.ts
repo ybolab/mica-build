@@ -50,7 +50,7 @@ import { REPO_ROOT } from './paths.ts'
 // A scratch directory under _out/, never /tmp: a bind mount of /tmp on this
 // host succeeds and delivers an empty directory, and these files are read back.
 //
-// _out/ is created, not assumed: it is gitignored build output (.gitignore:4)
+// _out/ is created, not assumed: it is gitignored build output (.gitignore)
 // and `mkdtempSync` does not create its parent, so on a fresh worktree, a clean
 // clone and CI this threw ENOENT at module scope, aborting the file before a
 // single test in it was declared. Measured 2026-08-26 by moving _out/ aside,

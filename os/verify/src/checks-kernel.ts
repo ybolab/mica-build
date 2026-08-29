@@ -4,11 +4,11 @@
 // x64 ONLY, and the scope is the point. cx3576 builds its kernel in-tree, so
 // `os/boards/common/mos-required.fragment` is merged before `olddefconfig` and
 // every `=y` line in it is then asserted against the final `.config`, failing
-// the build otherwise (`os/boards/cx3576/bsp/kernel/Dockerfile:100-105`) --
+// the build otherwise (`os/boards/cx3576/bsp/kernel/Dockerfile`) --
 // a symbol that fragment names cannot be missing from a cx3576 image, because
 // there is no cx3576 image. x64 has no such build: the kernel is Debian's
 // `linux-image-6.12.101+deb13-amd64`, installed whole as a package
-// (`os/rootfs/stages/40-board.Dockerfile:79-81`), and **the Debian config is
+// (`os/rootfs/stages/40-board.Dockerfile`), and **the Debian config is
 // not in this repository**. Nothing in-tree proves what it sets. So the x64
 // half of the same guarantee has to be read off the built artefact, which is
 // what these two checks are.
@@ -16,7 +16,7 @@
 // `=y` OR `=m` here, unlike the fragment's `=y`-only floor. The reason is a
 // board fact rather than a relaxation: cx3576 boots dm-verity with no initramfs
 // and cannot load a module at all, while x64 ships `kmod`
-// (`os/rootfs/stages/10-base.Dockerfile:120`) and a full Debian module set, so
+// (`os/rootfs/stages/10-base.Dockerfile`) and a full Debian module set, so
 // `=m` there is a symbol that is genuinely available. Which is also why the
 // second check exists: `=m` in a config file is a claim about a build, not
 // about this image, and a module whose `.ko` was never packed resolves to

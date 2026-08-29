@@ -4,6 +4,30 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Scratch root renamed to `tmp/` (2026-08-29)
+
+`runtime/` collided with a real runtime path twice over. A genuine `runtime/`
+directory in this repository would have been silently gitignored, and
+`build-harness.md` quotes `/srv/bkd/runtime/bun` two sections above the one
+that defined the scratch root, so a reader had to work out which `runtime` was
+meant. It is `tmp/` now — unambiguous, and the convention PMA already states
+for throwaway files. Nothing in the tree read the old name: it was a rule in
+`.gitignore` and a section of `build-harness.md`, not a path any script builds.
+
+Renaming it exposed a gap in the citation sweep. That sweep matched
+`name.ext`, so it could not see a filename with no extension (`Dockerfile:41`)
+or one whose dot comes first (`.gitignore:33`) — and the doc it was about to
+rewrite cited `.gitignore:33`, a line number the rename itself was about to
+invalidate. Twenty-three such citations survived and are now gone, across
+`build-harness.md`, `uboot-ab-handshake.md`, `boards.md`,
+`mos-required.fragment`, `podman/Dockerfile` and three `os/verify` sources.
+
+Still there, and measured rather than fixed: about a hundred bare continuation
+references in `os/verify/src/` and `os/build/src/` — `:1750`, `:2096` and the
+like — pointing into `os/verify-image-v2.sh`, the shell verifier that was
+deleted. They are archaeology in comments, not links anything resolves, and
+clearing them is a separate pass over roughly a hundred sites.
+
 ## The docs gate narrowed to what ships (2026-08-29)
 
 `docs/plan/` and `docs/task/` are PMA process tracking. They are not part of

@@ -111,7 +111,7 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
    "the board-definition schema lint" (`os/verify/run.sh`).
 2. Kernel: vendor tree + `os/boards/common/mos-required.fragment` merged before
    olddefconfig, every `=y` line then asserted against the built `.config` — a
-   "missing mos-required option" (`os/boards/cx3576/bsp/kernel/Dockerfile:100-103`)
+   "missing mos-required option" (`os/boards/cx3576/bsp/kernel/Dockerfile`)
    fails the build.
 3. U-Boot: §5 config; verified boot keys enrolled. A UEFI board has none of it
    and ships a `grub.cfg` for the ESP instead.

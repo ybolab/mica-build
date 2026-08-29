@@ -53,11 +53,11 @@ Layout-v2 constants this document depends on:
 The campaign brief describes the current U-Boot as a "vendor Rockchip" tree.
 It is not. It clones U-Boot from
 `ARG UBOOT_REPO=https://github.com/u-boot/u-boot.git`
-(`os/boards/cx3576/bsp/uboot/Dockerfile:41`), pins it at
+(`os/boards/cx3576/bsp/uboot/Dockerfile`), pins it at
 `ARG UBOOT_COMMIT=ece349ade2973e220f524ce59e59711cc919263f`
-(`os/boards/cx3576/bsp/uboot/Dockerfile:42`) -- v2026.07, per the file's own
+(`os/boards/cx3576/bsp/uboot/Dockerfile`) -- v2026.07, per the file's own
 header -- and builds `make "${BOARD}_defconfig"`
-(`os/boards/cx3576/bsp/uboot/Dockerfile:67`)
+(`os/boards/cx3576/bsp/uboot/Dockerfile`)
 [V]. The only vendor content is:
 
 - Rockchip **binary blobs** from `rockchip-linux/rkbin` — DDR init
@@ -69,7 +69,7 @@ header -- and builds `make "${BOARD}_defconfig"`
   subcodes 3/6 [V];
 - a device-tree append done inside the Dockerfile (adc-keys recovery button on
   saradc ch1 with a 17 mV threshold, plus `vdd-microvolts = <1800000>` so the
-  mainline `rockchip-saradc` driver probes at all) (`os/boards/cx3576/bsp/uboot/Dockerfile:68-92`) [V].
+  mainline `rockchip-saradc` driver probes at all) (`os/boards/cx3576/bsp/uboot/Dockerfile`) [V].
 
 **Consequence for this task**: the "pivot to mainline" is mostly already done.
 What the user is really deciding is whether to keep carrying these three
@@ -118,7 +118,7 @@ files [V]. Putting the old names in a defconfig is silently ignored.
 
 `CONFIG_BOOTCOMMAND` is set by the Dockerfile to
 `"setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"`
-(`os/boards/cx3576/bsp/uboot/Dockerfile:107`) [V], and the resulting config has [V]:
+(`os/boards/cx3576/bsp/uboot/Dockerfile`) [V], and the resulting config has [V]:
 
 ```
 CONFIG_BOOTSTD=y
@@ -228,12 +228,12 @@ Known gaps / vendor-only pieces, i.e. what mainline does **not** give you:
    (`u-boot/doc/board/rockchip/rockchip.rst`) [V]. Mainline has no
    open TPL for RK3576. The current Dockerfile already pins DDR `v1.12` /
    BL31 `v1.24` with a comment that armbian reports `v1.09+` failing to boot on
-   some RK3576 boards (`os/boards/cx3576/bsp/uboot/Dockerfile:8-11`) [V] — **keep these
+   some RK3576 boards (`os/boards/cx3576/bsp/uboot/Dockerfile`) [V] — **keep these
    exact blob versions**; this is the highest-risk item in the whole pivot.
 2. **The recovery button does not work out of the box.** Mainline's
    `rockchip-saradc` fails to probe without a `vdd` supply, and the generic
    board DT has no PMIC — hence the Dockerfile's `vdd-microvolts = <1800000>`
-   append (`os/boards/cx3576/bsp/uboot/Dockerfile:88-92`) [V]. Without it there is no ADC, so no
+   append (`os/boards/cx3576/bsp/uboot/Dockerfile`) [V]. Without it there is no ADC, so no
    `button recovery`, so no `PREBOOT` rockusb entry.
 3. **Rockusb reports as maskrom, not loader**, without patch 0001 [V]. Rockchip
    host tools then speak the 0x471/0x472 maskrom protocol the gadget does not
@@ -517,8 +517,8 @@ this bootmeth reads the counter with `env_get_ulong(..., 10, ...)`
 exhausted. It does **not** need U-Boot-resident logic: the "reset all counters
 and `reset`" behaviour of §4.2 keeps the device alive, and the actual rescue
 entry is the existing `PREBOOT` recovery-button path into rockusb
-(`os/boards/cx3576/bsp/uboot/Dockerfile:106`) plus the `bootcmd` tail that enters rockusb
-when boot fails (`os/boards/cx3576/bsp/uboot/Dockerfile:107`) [V]. Both are already in the current tree and
+(`os/boards/cx3576/bsp/uboot/Dockerfile`) plus the `bootcmd` tail that enters rockusb
+when boot fails (`os/boards/cx3576/bsp/uboot/Dockerfile`) [V]. Both are already in the current tree and
 must be preserved in the custom build — that is the rescue path, and it is
 U-Boot-resident for the right reason (it must work when no slot is readable).
 
@@ -1091,7 +1091,7 @@ Ordered by how badly each could sink the approach.
 
 1. **DDR/BL31 blob provenance (highest).** Mainline has no open TPL for RK3576;
    the boot chain depends on `rkbin` binaries whose versions are pinned by a
-   comment describing empirical breakage (`os/boards/cx3576/bsp/uboot/Dockerfile:8-11`)
+   comment describing empirical breakage (`os/boards/cx3576/bsp/uboot/Dockerfile`)
    [V]. A custom tree must pin `UBOOT_REF`, `DDR_BLOB` and `BL31_BLOB` together
    and treat any bump as a hardware-test-gated change. If a mainline SPL change
    ever breaks compatibility with DDR `v1.12`, the board stops booting entirely

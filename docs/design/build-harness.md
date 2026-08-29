@@ -61,7 +61,7 @@ container as the pin doing its job, not as a fallback.
 inside it dies with a message about docker rather than about what you were
 doing:
 "docker client, so inside it every route ends at `docker: command not found`."
-(`os/verify/Dockerfile:16-17`), and the pin's own block says the same —
+(`os/verify/Dockerfile`), and the pin's own block says the same —
 "this every route inside it ends at `docker: command not found`. Mounting the"
 (`os/build-env/images.env`) daemon socket does not help, because what is
 missing is the client, not the socket.
@@ -69,8 +69,8 @@ missing is the client, not the socket.
 `os/verify/Dockerfile` exists solely to close that gap, and it is the file to
 reuse rather than a second one to write. It is two digest `FROM`s and one copy —
 `COPY --from=cli /usr/local/bin/docker /usr/local/bin/docker`
-(`os/verify/Dockerfile:42`) — with the result asserted at build time by
-`RUN docker --version && bun --version` (`os/verify/Dockerfile:49`), so a COPY
+(`os/verify/Dockerfile`) — with the result asserted at build time by
+`RUN docker --version && bun --version` (`os/verify/Dockerfile`), so a COPY
 whose source moved upstream fails at build rather than three steps later inside a
 verify run. The client half is pinned as `IMAGE_DOCKER_CLI_28`, chosen because
 the "`-cli` variant carries the client and NOT dockerd. The client is a static"
@@ -168,22 +168,25 @@ cancels the remaining 648 at the first failure. Read `rc=100` together with a
 `apt-get install -y dbus` in the container before the gate is what makes it
 green; section 8 records both runs.
 
-## 4. Scratch: `runtime/`, and why never `/tmp`
+## 4. Scratch: `tmp/`, and why never `/tmp`
 
-`runtime/` is the scratch root and it is gitignored — `runtime/`
-(`.gitignore:33`), directly under a comment that states the rule and its reason:
-"docker daemon does not share this session's /tmp). All throwaway compile, verify"
-(`.gitignore:30-31`). Container scratch belongs under
-`/srv/ai/mos/runtime/<issue-id>/` — never `/tmp`, and never the `/srv` top level.
+`tmp/` at the repository root is the scratch root, and it is gitignored.
+Container scratch belongs under `<repo>/tmp/<issue-id>/` — never the system
+`/tmp`, and never the `/srv` top level.
 
-The reason is measurable rather than stylistic, and the failure is silent.
-*Measured 2026-08-28:*
+**It is `tmp/` and not `runtime/`.** The earlier name collided twice: a genuine
+`runtime/` directory in this repository would have been silently ignored, and
+the measurements in this very page quote unrelated paths like
+`/srv/bkd/runtime/bun`. A reader had to know which `runtime` was meant.
+
+The reason for avoiding the system `/tmp` is measurable rather than stylistic,
+and the failure is silent. *Measured 2026-08-28:*
 
     $ T=$(mktemp -d); echo sentinel > "$T/marker.txt"; ls "$T"
     marker.txt
     $ docker run --rm -v "$T:/probe" alpine:3.21 sh -c 'ls -A /probe | wc -l'
     0
-    $ docker run --rm -v /srv/ai/mos/runtime/<id>:/probe alpine:3.21 cat /probe/marker.txt
+    $ docker run --rm -v "$PWD/tmp/<id>:/probe" alpine:3.21 cat /probe/marker.txt
     sentinel
 
 The mount **succeeds**. The container starts, the directory is there, and it is
