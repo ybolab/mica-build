@@ -78,9 +78,9 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 352 filtered out
 ## 3. What changed
 
 **One rule, stated once.** `is_wpa_quotable` is now a public function of
-`mosd-settings` beside the typed model
-(`os/pkgs/mosd/mosd-settings/src/model.rs:432`), exported from the crate root,
-and it holds the bytes:
+`mosd-settings` beside the typed model —
+`pub fn is_wpa_quotable` (`os/pkgs/mosd/mosd-settings/src/model.rs:432`) — exported
+from the crate root, and it holds the bytes:
 
 ```
 pub fn is_wpa_quotable(value: &str) -> bool {
@@ -149,11 +149,11 @@ defines a pass-phrase as a sequence of 8 to 63 ASCII-encoded characters, each
 The repository's own record says the same thing in three places, and not one of
 them attributes the two exclusions to the standard:
 
-| What the code says | Where | What it attributes it to |
-|---|---|---|
-| `IEEE 802.11i's shortest WPA2 passphrase` / `IEEE 802.11i's longest` | `os/pkgs/mosd/mosd-settings/src/model.rs:411` and `os/pkgs/mosd/mosd-settings/src/model.rs:414` | Only the **length** band is the standard's |
-| `the quote that would close the string and the backslash that some wpa_supplicant string forms treat as an escape` | `os/pkgs/mosd/mosd-settings/src/model.rs:420-421`, lifted from the renderer by this task | The **file format**, not the standard |
-| `a handful of legal SSIDs take the hex form and stay just as correct` | `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:272-273` | The repo already calls a value carrying these two characters **legal** |
+| What the code says, and where | What it attributes it to |
+|---|---|
+| `IEEE 802.11i's shortest WPA2 passphrase` (`os/pkgs/mosd/mosd-settings/src/model.rs:411`) and `IEEE 802.11i's longest` (`os/pkgs/mosd/mosd-settings/src/model.rs:414`) | Only the **length** band is the standard's |
+| `the quote that would close the string and the backslash that some wpa_supplicant string forms treat as an escape` (`os/pkgs/mosd/mosd-settings/src/model.rs:420-421`), lifted from the renderer by this task | The **file format**, not the standard |
+| `a handful of legal SSIDs take the hex form and stay just as correct` (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:272-273`) | The repo already calls a value carrying these two characters **legal** |
 
 So the tightening does refuse two characters a client could legitimately have
 chosen. What makes that cost nothing is a different fact from the one the ruling
@@ -196,9 +196,9 @@ chosen one. The hatch nonetheless stays shut, on the **second** condition, which
 could not be established here and is recorded as a limit rather than as a
 finding: wpa_supplicant is not vendored in this tree.
 `grep -rn "wpa_supplicant" --include="*.c" --include="*.h"` matches nothing; it
-arrives as an Alpine package
-(`os/boards/cx3576/bsp/rootfs/alpine/Dockerfile:31`), so its `psk=` parser is
-not available to measure against. The station renderer's own doc comment records
+arrives as an Alpine package, `wpa_supplicant iw`
+(`os/boards/cx3576/bsp/rootfs/alpine/Dockerfile:31`), so its `psk=` parser is not available to
+measure against. The station renderer's own doc comment records
 what it believes — that an SSID has wpa_supplicant's unquoted hex form to fall
 back on and a passphrase has none, because bare hex on a `psk=` line means a raw
 PMK and not a passphrase — and that belief is consistent with everything
@@ -210,7 +210,7 @@ its outcome:
 
 | PLAN-026's condition | State | On what evidence |
 |---|---|---|
-| Legitimate WPA passphrases require `"` or `\` | **Established**, in the weaker sense of *permit* rather than *require*: a client could legitimately have chosen one | IEEE 802.11i Annex H.4.1's inclusive 32-to-126 range with an empty exclusion list, corroborated by the repo calling such values `legal` at `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:272-273` |
+| Legitimate WPA passphrases require `"` or `\` | **Established**, in the weaker sense of *permit* rather than *require*: a client could legitimately have chosen one | IEEE 802.11i Annex H.4.1's inclusive 32-to-126 range with an empty exclusion list, corroborated by the repo calling such values `a handful of legal SSIDs` (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:272-273`) |
 | wpa_supplicant has an escaping form the renderer could use instead | **Unmeasurable from this tree** | The parser is not here to read. A `wpa_supplicant.conf` under the board rootfs is a config file and not the parser, so it settles nothing |
 
 Both conditions are required and only one is met, so the hatch does not open.
