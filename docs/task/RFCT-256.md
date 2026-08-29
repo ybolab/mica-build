@@ -171,7 +171,7 @@ against `f7cb5ba` (an ancestor of this branch), where the tree still lived at
   `mosd/mosd-settings/src/model.rs:266-278` is `ProvisioningSettings`,
   `:301-314` is `WifiClientSettings`, `:163-169` is `WebAdminSettings`;
 - and every checkable one is stale at HEAD: `ProvisioningSettings` is now at
-  `os/pkgs/mosd/mosd-settings/src/model.rs:334`, `WifiClientSettings` at
+  `pub struct ProvisioningSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:334`), `WifiClientSettings` at
   `:369`, `WebAdminSettings` at `:187`, `ConsoleSettings` at `:259`.
 
 Two of §2.2's rows pass at HEAD by coincidence rather than by correctness —
@@ -209,7 +209,7 @@ Re-derived from content at `d855804`, never by a constant offset:
 
 | claim | was | is |
 |---|---|---|
-| `record` writes `{"error": ...}` into live state and logs | `bus.rs` `:461-471` | `os/pkgs/mosd/mosd/src/bus.rs:497-508` |
+| `record` writes `{"error": ...}` into live state and logs | `bus.rs` `:461-471` | `fn record(state: &mut Value` (`os/pkgs/mosd/mosd/src/bus.rs:497-508`) |
 | the settings write takes the lock | `bus.rs` `:431` | `:464` |
 | it holds it across the reconciler loop | `bus.rs` `:183-188` | `:470-475` |
 | `set_settings` returns `Ok(())` regardless | `bus.rs` `:183-193` | `:470-478` |
@@ -220,20 +220,20 @@ Re-derived from content at `d855804`, never by a constant offset:
 | `InvalidArgs` on an absent state path | `bus.rs` `:198-202` | `:663-664` |
 | the `SettingsChanged` signal | `bus.rs` `:249-254` | `:905-912` |
 | whole-tree reads | `bus.rs` `:160-164`, `:197-202` | `:610-614`, `:656-661` |
-| the 502 page | `routes.rs` `:95-105` | `os/pkgs/mosd/apid/src/routes.rs:3248-3258` |
+| the 502 page | `routes.rs` `:95-105` | `fn bus_error(err: &anyhow::Error)` (`os/pkgs/mosd/apid/src/routes.rs:3248-3258`) |
 | the `STYLE` constant | `routes.rs` `:147-154`, `:165` | `:3326-3333`, `:3344` |
 | the `.error`/`.saved` rules | `routes.rs` `:153-154` | `:3332-3333` |
 | `network_submit`'s 303 | `routes.rs` `:696-720` | `:5519-5555` |
 | the `/` pane's JSON dump | `routes.rs` `:587-596` | `:4725` |
-| `[bans] multiple-versions = "warn"` | `deny.toml` `:16-17` | `os/pkgs/mosd/deny.toml:33-34` |
-| apid's dev-dependencies | `Cargo.toml` `:30-33` | `os/pkgs/mosd/apid/Cargo.toml:33-36` |
-| the TLS listener | `main.rs` `:72-79` | `os/pkgs/mosd/apid/src/main.rs:195-204` |
+| `[bans] multiple-versions = "warn"` | `deny.toml` `:16-17` | `multiple-versions = "warn"` (`os/pkgs/mosd/deny.toml:33-34`) |
+| apid's dev-dependencies | `Cargo.toml` `:30-33` | `[dev-dependencies]` (`os/pkgs/mosd/apid/Cargo.toml:33-36`) |
+| the TLS listener | `main.rs` `:72-79` | `RustlsConfig::from_pem` (`os/pkgs/mosd/apid/src/main.rs:195-204`) |
 
 The four settings-subtree rows of §3.2's page table cited the model by dot-path
 — `network.<iface>` against `model.rs` `:280-299` — and a dot-path is a name, not
 an excerpt of any line, so those pairings could never have matched. They now
 name the struct, which is an excerpt: `IfaceSettings` at
-`os/pkgs/mosd/mosd-settings/src/model.rs:561`, `WifiClientSettings` at `:369`,
+`pub struct IfaceSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:561`), `WifiClientSettings` at `:369`,
 `WifiApSettings` at `:465`, `SshSettings` at `:198`.
 
 ### (c) Four fragments that named rather than quoted
@@ -400,12 +400,25 @@ Probed here against the real extractor, at `9ef57ee`, by running
 | where the quoted fragment sits | result |
 |---|---|
 | the table cell BEFORE the citation's cell | `qkind=none`, near-miss 1 |
-| the citation's OWN cell | `qkind=code`, armed |
+| the citation's OWN cell, quote first | `qkind=code`, armed |
+| the citation's OWN cell, citation first | `qkind=code`, armed |
 | prose, directly against the citation | `qkind=code`, armed |
 
 The mechanism is one character: `|` is not in the backward scan's skippable
 set, so the scan stops on the pipe and never reaches the fragment in the
-neighbouring cell. Writing a re-measurement as a two-column table therefore
+neighbouring cell. Both directions work INSIDE a cell, which is the part worth
+knowing: the forward rule is not defeated by the table, only the crossing of a
+pipe is. So tables are not banned and prose is not mandated — the quote simply
+has to be in the citation's own cell.
+
+And the demotion is not silent. The adjacent-cell case scores near-miss 1, so
+the gate has been reporting this class in its summary all along: it was visible
+and unread rather than invisible. This record put its own table through that:
+the before-and-after tables of section 4(b) opened with twelve near-misses, and
+arming the "is" column by moving a quoted literal into the citation's own cell
+took that to four — the four that cannot be armed, being two non-citations in
+the zero-candidate evidence list and two paths pinned at `f7cb5ba` that the
+gate skips as outside this tree. Writing a re-measurement as a two-column table therefore
 demotes every citation in it to resolution-only, silently. The fixture pins
 both halves — the same WRONG quote across a pipe stays green and is surfaced
 only as a near-miss, while the same wrong quote inside the citation's own cell
@@ -452,13 +465,19 @@ document is armed against a literal it verified — the four fragments in sectio
 4(c) exist precisely because arming a fragment that names rather than quotes
 produces a defect rather than a check.
 
-This record itself carries thirteen unquoted citations under the gate as
-committed today, and its row in the ceiling file is that measured number rather
-than an absent row, because a document with NO row has a ceiling of zero and
-its first unquoted citation would fail the ratchet. The unarmed ones are the
-citations in the two quoted gate outputs and in the before-and-after tables of
-section 4: arming a token this record is talking ABOUT rather than making would
-assert the very citation it exists to report as superseded.
+This record's own row in the ceiling file is its measured count rather than an
+absent row, because a document with NO row has a ceiling of zero and its first
+unquoted citation would fail the ratchet. What remains unarmed in it is the
+class named above: a token this record is talking ABOUT rather than making
+would, if armed, assert the very citation it exists to report as superseded.
+Everything else was armed, including the "is" column of section 4(b)'s tables.
+
+One layout rule falls out of the same adjacency: two quoted gate records
+written back to back can arm a SPURIOUS pairing, the second record's quoted
+span landing within three words of the first record's citation. A blank line
+between quoted records is the remedy — not arming, and not a raised ceiling.
+The two gate outputs quoted here sit in different sections with prose between
+them, and the near-miss probe above confirms neither manufactured a pairing.
 
 ## 8. Residues, recorded and not fixed
 
@@ -480,7 +499,8 @@ assert the very citation it exists to report as superseded.
    no longer exists in that form, because RFCT-215 rebuilt section 1.2 at HEAD.
 3. **uboot-ab-handshake.md §1.1 is stale beyond its citations.** Two claims in
    the same sentence M1 corrected are still unverified: the full-form
-   `os/boards/cx3576/bsp/uboot/Dockerfile:34` now points at `ARG RKBIN_COMMIT`
+   `ARG RKBIN_COMMIT` (`os/boards/cx3576/bsp/uboot/Dockerfile:34`) is what that
+   citation points at now
    rather than the U-Boot clone, and `generic-rk3576_defconfig` appears nowhere
    in that file — the build takes the board from an `ARG`. Both are unquoted,
    so the gate cannot see either.
