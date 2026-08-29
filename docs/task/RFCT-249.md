@@ -300,8 +300,8 @@ taken there would be void, and none of these is.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | GATE_CITATIONS |
-| `bash docs/verify-index.sh` | GATE_INDEX |
+| `bash docs/verify-citations.sh` | **`2210/2210 PASS`**, `ratchet failures: 0`, and `no quote, by document: docs/task/RFCT-249.md 0` — this document arms every citation it makes, so it starts at the ratchet's zero ceiling for a new file rather than taking an override row in `docs/verify-citations-unquoted-baseline.txt`. Near-miss 354, equal to the merge parent's, so the re-anchor of section 6 drifted nothing |
+| `bash docs/verify-index.sh` | **`875/875 PASS`**. The merge parent measures `871/871 PASS`; the whole of the +4 is this task's one new document and its one index row, which is the only change the branch makes to the indexed set |
 | `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [ 252.204s] 838 tests run: 838 passed (2 slow), 0 skipped` — 836 was the campaign baseline at RFCT-245, this task adds 2, and 836 + 2 = 838 — then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. `dbus` installed in-container first, or the bus round-trip goes rc=100. Run at `1d5e8fb`; the later merge of `bkd/5q6am5rw` and this file's own revisions changed no `.rs`, `.toml`, `.json` or lockfile — `git diff --stat 1d5e8fb HEAD -- '*.rs' '*.json' '*.toml'` is empty — so the compiled tree the gate measured is byte-identical to the one reported |
 | `oasdiff breaking` against main's tip | `No changes detected`, **RC=0**. Re-run last against main's tip as it then stood, `a06e9dd`; main moved three times during this task (`c5f7e96` -> `ffa65ca` -> `a06e9dd`) and the base was re-taken each time rather than cached. Both severity promotions applied. `openapi.json` is byte-identical to main's, which is expected: this milestone registers no route and changes no schema |
 
