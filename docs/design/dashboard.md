@@ -94,7 +94,7 @@ one 7-line inline stylesheet at `routes.rs:147-154` whose own doc comment says
 `GetUpdateState`, `MarkUpdate`, `SetTransientRootPassword`, and the
 `SettingsChanged` signal. `apid`'s own proxy declares four of those methods and
 no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:28-31`); reboot and power-off
-reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
+reach `mosd` through the `com.mos.Item1` façade instead (`os/pkgs/mosd/apid/src/bus_client.rs:33-35`).
 
 ### 1.2 The shape of the problem, in one paragraph
 
@@ -233,7 +233,7 @@ call returning the data — or **(b) needs new mosd work**, with the
     ever refreshes it** (`mos-ui-inventory.md` section 6.2). The tile must
     therefore timestamp it as a boot-time reading, not present it as current.
   - (iii) is **(b) needs new mosd work** — gap-table **row 5**. A 262-line gate
-    probes systemd, mosd and apid (`:111-236`) and then runs
+    probes systemd, mosd and apid (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:111-236`) and then runs
     `rauc status mark-good`
     (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:256-261`), and its verdict —
     did it pass, was the slot confirmed, which probe failed — goes to the journal
@@ -327,7 +327,7 @@ better mechanism and then hid it.**
     never talks to systemd itself"*).
   - **row 2** — boot attempt credits. `BOOT_A_LEFT` / `BOOT_B_LEFT` in the
     redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`),
-    reachable only via `fw_printenv`, and that file's own comment at `:23-25`
+    reachable only via `fw_printenv`, and that file's own comment at `os/rootfs/overlay-v2/etc/fw_env.config.in:23-25`
     warns there is **no cross-process locking** between the two existing writers.
   - **row 3** — RAUC status and last install result, kept on the META partition
     (`os/pkgs/rauc/system.conf.in:14-34`).
@@ -436,7 +436,7 @@ better mechanism and then hid it.**
   and `unitFileState` (`os/pkgs/mosd/mosd/src/reconciler/sshd.rs:429-443`);
   `GetState("wifiAp")`, which already computes `ssid` and `ssidSource` for
   exactly this purpose (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:793-808`, and the
-  single-radio conflict variant at `:739-750`); and `GetState("wifiClient")`,
+  single-radio conflict variant at `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:739-750`); and `GetState("wifiClient")`,
   which publishes each known network's SSID and a `secured` boolean and never
   the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:507-513`).
 - **Availability: (a) available today** — gap-table **rows 15, 7 and 6**
@@ -638,7 +638,7 @@ settings with a real control on the row (section 5.3).
 **mos's position is structurally stronger, and this proposal's first rule is not
 to throw that away.** `mosd` exposes settings and live state through **two
 distinct bus methods** — `GetSettings` at `os/pkgs/mosd/mosd/src/bus.rs:193-197` and
-`GetState` at `:197-202` — so a mos UI cannot accidentally bind an editor to a
+`GetState` at `os/pkgs/mosd/mosd/src/bus.rs:197-202` — so a mos UI cannot accidentally bind an editor to a
 live path: it would have to call the wrong method. The boundary is in the API,
 not in a string convention. **[proposal]** The UI should mirror that boundary
 visibly rather than relying on it silently: anything reached by `GetSettings`
@@ -685,7 +685,7 @@ applied by its consumer, as opposed to merely stored by localsettings*.
 against the typed tree, persists atomically, and then **runs every reconciler
 whose subtree overlaps the path before it returns**
 (`os/pkgs/mosd/mosd/src/bus.rs:202-227`, reconciler loop at `:183-188`), recording each
-outcome into live state via `record` (`:126-137`). By the time a `SetSettings`
+outcome into live state via `record` (`os/pkgs/mosd/mosd/src/bus.rs:497-508`). By the time a `SetSettings`
 call returns, "stored" and "applied" have already been resolved. **[proposal]**
 The UI should use that: a settings POST should render the *reconciler's recorded
 outcome*, not a generic success banner. The current `?saved=1` marker
@@ -996,7 +996,7 @@ every option below:
    five methods and no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:14-27`).
    Adding a `#[zbus(signal)]` member needs **no new crate**: `zbus` 5.19.0 is
    already in the tree and already pulls `futures-core` (`os/pkgs/mosd/Cargo.lock`, zbus
-   entry at `:2906-2931`), and signal streams are part of the proxy macro. The
+   entry at `os/pkgs/mosd/Cargo.lock:2906-2931`), and signal streams are part of the proxy macro. The
    workspace pin is `zbus = { version = "5", default-features = false, features = ["tokio"] }`
    (`os/pkgs/mosd/Cargo.toml:28`).
 2. **All of `mosd`'s settings and live state sit behind one `tokio::sync::Mutex`.**
@@ -1040,12 +1040,12 @@ sections 1-4.
 - The post-submit redirect is **303 See Other**, not 302. `Redirect::to` uses
   `StatusCode::SEE_OTHER` (`axum-0.8.9/src/response/redirect.rs:26-38`), and
   `os/pkgs/mosd/apid/src/tests.rs` asserts `StatusCode::SEE_OTHER` at 20 call sites
-  (for example `:41`, `:174`, `:394`, `:587`). `mos-ui-inventory.md` section 3.2
+  (for example `os/pkgs/mosd/apid/src/tests.rs:41`, `:174`, `:394`, `:587`). `mos-ui-inventory.md` section 3.2
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
 - The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:3211-3215` and its doc
-  comment at `:3166-3167`); that one is stated correctly throughout.
+  comment at `os/pkgs/mosd/apid/src/routes.rs:3166-3167`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
 
@@ -1219,7 +1219,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   rows 1-5 and 14, and which nothing in this campaign has proposed or costed.
 - **C5 — `mosd` down.** Worse than A in a way that matters. `bus_client`'s
   degradation is **per-request** by construction (`bus_client.rs:22-25`,
-  `:41-58`): an error drops the cached proxy so the *next request* reconnects.
+  `os/pkgs/mosd/apid/src/bus_client.rs:41-58`): an error drops the cached proxy so the *next request* reconnects.
   An open SSE stream is not a next request. The stream handler has to detect the
   failure, emit an error event, and either keep the stream open emitting failures
   or close it and rely on `EventSource`'s automatic retry. Either is fine; both
@@ -1731,7 +1731,7 @@ changes.
   `<allow send_destination="com.mos.mosd"/>` in the `default` context.
 - **The honest end-to-end test is the boot health gate itself.** Probe c
   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:216-232`) fetches `https://127.0.0.1/healthz` on port
-  443; probe b (`:202-213`) calls `com.mos.mosd1 GetState` over `busctl` as
+  443; probe b (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:202-213`) calls `com.mos.mosd1 GetState` over `busctl` as
   root. If the capability change broke the port bind, probe c fails. If the
   allowlist was written wrong, probe b fails. Both fail the gate loudly. That is
   a better test than any assertion about file contents, and it already exists.

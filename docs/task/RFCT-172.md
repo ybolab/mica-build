@@ -89,7 +89,7 @@ Every target verified by opening it before re-pointing:
 | `docs/task/RFCT-058.md:285` | `verify-index.sh:26` | `:42` | `README=docs/README.md` moved when RFCT-171 grew the file |
 | `docs/task/RFCT-066.md:62` | `os/rauc/system.conf.in` `:50-62` | `os/pkgs/rauc/system.conf.in:64-76` | the plain-refusal and CMS keyring text lives there today |
 | `docs/task/RFCT-105.md:355` | `os/qemu-run.sh` `:167` | `test/apid-api/src/qemu.ts:251` | `-no-reboot` still passed, file moved twice |
-| `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | `os/pkgs/rauc/system.conf.in:71-78` | moved by PLAN-019, same lines, quote intact |
+| `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | `os/pkgs/rauc/system.conf.in:82-83` | moved by PLAN-019; the range then drifted +11 when this task's and RFCT-142's comment insertions grew the file, and the quote is intact at the new range |
 | `docs/task/RFCT-139.md:16` | `checks-root.ts` `:629-633` | `:601-620` | `packed-no-dev-keyring` check body |
 | `docs/task/RFCT-142.md:22` | `os/update/rauc/system.conf.in` `:35` | `os/pkgs/rauc/system.conf.in:35` | the fw_setenv comment, same line |
 | `docs/task/RFCT-162.md:132` | `os/update/rauc/build.sh` `:63` | `os/pkgs/rauc/build.sh:63` | `BUILDER_ARGS=(--builder default)`, same line |

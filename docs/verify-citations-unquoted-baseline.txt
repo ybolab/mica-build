@@ -6,10 +6,10 @@
 # or delete it at zero -- in the same commit; when a new unquoted citation is
 # genuinely wanted, raise the row in the same commit so the diff shows the
 # decision. Ceilings are the measured counts, exact, not slack.
-docs/design/api.md 452
+docs/design/api.md 479
 docs/design/boards.md 2
 docs/design/bus.md 5
-docs/design/dashboard.md 99
+docs/design/dashboard.md 109
 docs/design/remote-management.md 5
 docs/design/uboot-ab-handshake.md 14
 docs/task/RFCT-040.md 4
@@ -37,14 +37,14 @@ docs/task/RFCT-162.md 8
 docs/task/RFCT-166.md 1
 docs/task/RFCT-167.md 2
 docs/task/RFCT-168.md 3
-docs/task/RFCT-169.md 22
+docs/task/RFCT-169.md 21
 docs/task/RFCT-170.md 4
 docs/task/RFCT-172.md 21
 docs/task/RFCT-190.md 10
 docs/task/RFCT-200.md 65
 docs/task/RFCT-201.md 2
 docs/task/RFCT-210.md 56
+docs/task/RFCT-256.md 5
+docs/task/RFCT-257.md 47
 docs/research/venus-os-access.md 6
 docs/research/venus-os-ui.md 9
-docs/task/RFCT-215.md 8
-docs/task/RFCT-256.md 5

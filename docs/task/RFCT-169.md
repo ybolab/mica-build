@@ -292,8 +292,8 @@ here: 17 bare-`mosd` occurrences across the three stages files, and 3
   `docs/research/mos-ui-inventory.md`, falsified by mosd's own development. A
   present-tense re-measure is a content edit for the design workstream.
 - **`api.md:3464`** says the rauc-sign README "names the **on-device Uptane
-  client**" as *"Explicitly out of scope for the whole crate"*. The quote
-  resolves at `os/pkgs/rauc-sign/README.md:41`, but the item named out of scope at `:43` is the
+  client**" as *"Explicitly out of scope for the whole crate"*
+  (`os/pkgs/rauc-sign/README.md:41`) — it resolves, but the item named out of scope at `:43` is the
   Uptane director/image-repository split, not the on-device client. Pre-existing;
   a sibling of the `:3559` defect but not on M5's enumerated list.
 - **`release-signing.md:313`** names a planned `update/lockbox/` path. `update/`

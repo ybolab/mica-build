@@ -303,7 +303,7 @@ jobs:
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git
 
-      - name: Both document indexes agree with the tree, in both directions
+      - name: All three document indexes agree with the tree, in both directions
         run: make docs-verify docs-verify-test
 
       - name: Docs citations resolve and their quotes still match
