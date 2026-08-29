@@ -54,23 +54,23 @@ Re-measured at this HEAD rather than relayed. Four facts, and together they are
 the whole argument:
 
 1. **The rules are relational.** `validate_entries`
-   (`os/pkgs/mosd/apid/src/routes.rs:3727-3767`) enforces four: a VLAN's parent
+   (`os/pkgs/mosd/apid/src/routes.rs:3798-3838`) enforces four: a VLAN's parent
    must name a declared entry, a bridge port must name a declared entry, a
    bridge port must carry no addressing of its own, and no port may be claimed
    by two bridges. Its own comment says why it must run over the tree and not
    the entry — *"every rule here is about two entries at once"*
-   (`os/pkgs/mosd/apid/src/routes.rs:3723-3726`). The pane already runs it over
+   (`os/pkgs/mosd/apid/src/routes.rs:3794-3797`). The pane already runs it over
    *"The candidate tree, not the one entry"*
-   (`os/pkgs/mosd/apid/src/routes.rs:5538-5544`).
+   (`os/pkgs/mosd/apid/src/routes.rs:5609-5615`).
 2. **mosd's own copy is in the reconciler**, `validate_network`
    (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-499`), which is the
    boundary for a settings file anything with STATE write access can edit.
 3. **The settings setter runs none of them.** `Settings::set` validates by
    deserializing the candidate tree and nothing more —
    `serde_json::from_value(root)`
-   (`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`), and the model says so in
+   (`os/pkgs/mosd/mosd-settings/src/model.rs:771-775`), and the model says so in
    its own words: cross-field consistency *"is enforced in the network
-   reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:556-557`).
+   reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:595-596`).
 4. **The reconciler's verdict does not reach the caller.** `write_setting`
    returns `Ok(())` whatever the reconcilers said, having only recorded them:
    `record(&mut inner.state, reconciler.name(), result);`
@@ -135,16 +135,16 @@ that exists with the wrong kind, which really is a 422, and a name that is not a
 declared `network` entry, which is a 404 everywhere else on this API. It now
 raises `SettingsFault::NotFound` for
 *"network.{iface} is not a declared network entry"*
-(`os/pkgs/mosd/mosd/src/bus.rs:884-888`) and keeps `InvalidArgs` for
+(`os/pkgs/mosd/mosd/src/bus.rs:898-902`) and keeps `InvalidArgs` for
 *"network.{iface} is not a WireGuard interface"*
-(`os/pkgs/mosd/mosd/src/bus.rs:871-873`), which meant changing its return type
+(`os/pkgs/mosd/mosd/src/bus.rs:885-887`), which meant changing its return type
 from `fdo::Result<String>` to `Result<String, SettingsFault>` — the same error
 type `GetSettings` and `SetSettings` already return.
 
 apid's classifier already mapped both names — `com.mos.mosd1.Error.NotFound` to
 404 `settings_not_found` and `InvalidArgs` to
 `ApiError::mosd("settings_rejected", message)`
-(`os/pkgs/mosd/apid/src/routes.rs:3046-3057`) — and had only ever been handed
+(`os/pkgs/mosd/apid/src/routes.rs:3064-3075`) — and had only ever been handed
 one of them. Two tests prove each half separately, which is what makes "no apid
 change" a measurement rather than a claim:
 
@@ -185,15 +185,15 @@ Run alone at the commit that introduced it, before any other M6 code existed:
 
 Every step of the chain the design named is therefore real: `stored_peers`
 answers an empty list rather than an error for an unknown interface, by
-`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5316-5323`);
+`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5387-5394`);
 `write_peers` writes straight to the peer list's own dot-path,
 `.set_settings(&peers_settings_path(iface), &value)`
-(`os/pkgs/mosd/apid/src/routes.rs:5629-5632`); `validate_peers` never looks at
+(`os/pkgs/mosd/apid/src/routes.rs:5700-5703`); `validate_peers` never looks at
 the interface, only at
 `for (index, peer) in peers.iter().enumerate()`
-(`os/pkgs/mosd/apid/src/routes.rs:3690-3713`); and the setter creates them by
+(`os/pkgs/mosd/apid/src/routes.rs:3761-3784`); and the setter creates them by
 documented contract — *"Missing intermediate map entries are created"*
-(`os/pkgs/mosd/mosd-settings/src/model.rs:710-712`).
+(`os/pkgs/mosd/mosd-settings/src/model.rs:749-751`).
 
 **The pane is left as it is, and the typed route fixes it structurally.**
 `the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one` is
@@ -220,13 +220,13 @@ by the renderer with the error visible only in live state.
 
 **The fix is the lift, not a second copy.** The rule now lives beside the typed
 model as `pub fn validate_wifi_psk(psk: &str) -> Result<(), String> {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:449-460`), the
+(`os/pkgs/mosd/mosd-settings/src/model.rs:476-499`), the
 reconciler calls it rather than restating it —
 `mosd_settings::validate_wifi_psk(psk).map_err(|message| anyhow!(message))?;`
-(`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:238-247`) — and the WiFi route
+(`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:239-248`) — and the WiFi route
 runs the same function at the place it already produces its 422,
 `ApiError::apid("validation_failed", message).at(WIFI_NETWORKS_PATH)`
-(`os/pkgs/mosd/apid/src/routes.rs:2226-2233`). The three local constants were
+(`os/pkgs/mosd/apid/src/routes.rs:2200-2207`). The three local constants were
 deleted from the reconciler; there is exactly one rule.
 
 **It is deliberately not enforced in `WifiNetwork`'s `Deserialize`**, and that is

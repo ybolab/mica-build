@@ -38,7 +38,7 @@ project's history rather than state what the code does or must not do.
 - **C6 Dramatic typography.** 77 `═══` box headers, ~1,360 multi-word ALL-CAPS
   runs, 54 dash-banner separators.
 - **C7 Essays.** 68 header blocks of 25+ contiguous comment lines; worst:
-  `os/rootfs/stages/40-board.Dockerfile:1-111`, `os/build-env/images.env:1-102`,
+  `os/rootfs/stages/40-board.Dockerfile:1-113`, `os/build-env/images.env:1-102`,
   `mosd/mqttd/src/lib.rs:1-76` (85-line file), `mosd/busname/src/lib.rs:94-154`.
   Includes design-doc blockquotes transplanted into source
   (`mosd/apid/src/startup.rs:8-14`) and decision-litigation for settled
@@ -92,9 +92,9 @@ describes the abandoned Talos architecture behind a migration notice;
 1. Test-harness safety invariants: the `MOSD_DRY_RUN=1` / `MOSD_SHADOW_PATH`
    blocks in `mosd/mosd/tests/{bus,tree,scan}.rs`, `mosd/apid/tests/e2e.rs`;
    "never point at the host's /etc/shadow".
-2. Reproducibility invariants: `os/rootfs/stages/90-pack.Dockerfile:334-360`
+2. Reproducibility invariants: `os/rootfs/stages/90-pack.Dockerfile:358-385`
    (single-processor mksquashfs, why no -all-root), FILE_MTIME/@epoch quirks
-   (`os/rootfs/build-v2.sh:166-175`, `os/build/src/geometry.ts:360-362`),
+   (`os/rootfs/build-v2.sh:171-180`, `os/build/src/geometry.ts:360-362`),
    verity UUID/salt pinning, `os/build/src/pin-seeded-times.ts:1-53`,
    `os/boards/cx3576/board.env` geometry/determinism blocks (:95-175, :320-338).
 3. Tool quirks: debugfs fails on stderr not exit status

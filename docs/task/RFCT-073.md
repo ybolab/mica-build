@@ -157,7 +157,7 @@ test — a reimplementation would be testing the test's idea of the assertion.
 
 The baseline fixture is not hand-written either. It is the shipped
 `os/rootfs/overlay-v2/etc/fstab.in` rendered with the shipped
-`os/layout/cx3576-v2.env`, exactly as `os/rootfs/build-v2.sh:165-190` renders
+`os/layout/cx3576-v2.env`, exactly as `os/rootfs/build-v2.sh:170-195` renders
 it, with one directory per mountpoint the rendered file names. Every case then
 mutates that baseline. Mutating an fstab the test had authored would prove only
 that the test can spell.

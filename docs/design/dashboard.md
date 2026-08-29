@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`os/pkgs/mosd/apid/src
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:3057`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:3075`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -190,7 +190,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:3056`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:3074`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:334-342`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -219,7 +219,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   reconciler is recorded as `{"error": "<message>"}` under its own live-state key
   rather than disappearing (`os/pkgs/mosd/mosd/src/bus.rs:494-504`). (ii)
   `GetState("health")`, written by `report_health`
-  (`os/pkgs/mosd/mosd/src/bus.rs:673`). (iii) does not exist.
+  (`os/pkgs/mosd/mosd/src/bus.rs:687`). (iii) does not exist.
 - **Availability: mixed, and the split is the point.**
   - (i) is **(a) available today** — gap-table **row 18**, UI-work-only. `apid`
     calls `GetState` for exactly one path and treats any object as opaque JSON
@@ -277,7 +277,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:682-702`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:721-741`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until
@@ -408,7 +408,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
-  (`os/pkgs/mosd/apid/src/routes.rs:4694-4714`); mosd itself reads
+  (`os/pkgs/mosd/apid/src/routes.rs:4765-4785`); mosd itself reads
   `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:585-591`). RFCT-129 landed this.
 - **Availability: (a) available today** — gap-table **row 12**, no longer via a
   side channel. The old `/proc/uptime`-in-`apid` exception to the layering
@@ -438,7 +438,7 @@ better mechanism and then hid it.**
   exactly this purpose (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:793-808`, and the
   single-radio conflict variant at `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:739-750`); and `GetState("wifiClient")`,
   which publishes each known network's SSID and a `secured` boolean and never
-  the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:507-513`).
+  the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:508-514`).
 - **Availability: (a) available today** — gap-table **rows 15, 7 and 6**
   respectively, all three classified by `mos-ui-inventory.md` section 7.1 as
   needing only UI work. `os/pkgs/mosd/apid/src/` contains **zero** references to any of
@@ -500,7 +500,7 @@ names the reason, and where it belongs instead. **[proposal]**
   mis-clicked link cannot power the appliance off (`routes.rs:49-51`, pinned by a
   test at `os/pkgs/mosd/apid/src/tests.rs:697`), plus a required confirmation token.
 - **No raw JSON.** The current `/` renders the network subtree as
-  pretty-printed JSON inside a `pre` element, `pre { (pretty(details)) }` (`os/pkgs/mosd/apid/src/routes.rs:4725`). That is the
+  pretty-printed JSON inside a `pre` element, `pre { (pretty(details)) }` (`os/pkgs/mosd/apid/src/routes.rs:4796`). That is the
   artefact this proposal exists to remove, not a component to reuse. A full-tree
   browser is a legitimate *debug* page — Venus gates exactly that behind
   Superuser and redacts serials and custom names before sharing
@@ -511,7 +511,7 @@ names the reason, and where it belongs instead. **[proposal]**
   hash and generation are readable via `GetSettings("access.device")`
   (`mos-ui-inventory.md` section 7, row 9). This is a property to preserve
   deliberately, not a gap to close. Note that `wifiClient` state already never
-  publishes the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:500-510`); the
+  publishes the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:501-511`); the
   landing screen inherits that discipline.
 - **No CPU, memory, load, temperature, kernel version or build id.** None of
   these exist anywhere in mos's management plane
@@ -589,11 +589,11 @@ section 2.
 | Page | Answers | Settings bindings | Live-state bindings | Availability |
 |---|---|---|---|---|
 | **Dashboard** (`/`) | the six questions of section 2 | `hostname`, `provisioning` | `network`, `health`, `sshd`, `wifiAp`, `wifiClient`, per-reconciler error keys | mixed — see 2.9 |
-| **Network** | how is networking configured, and what is it actually doing | `network.<iface>`, an `IfaceSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:561`), `wifi.client`, a `WifiClientSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:369`), `wifi.ap`, a `WifiApSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:465`) | `network`, `wifiClient`, `wifiAp` | settings **(a)** for wired today (`routes.rs:686-720`); WiFi panes **(a)**, rows 6 and 7; observed data **(b)**, row 14 |
+| **Network** | how is networking configured, and what is it actually doing | `network.<iface>`, an `IfaceSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:600`), `wifi.client`, a `WifiClientSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:369`), `wifi.ap`, a `WifiApSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:504`) | `network`, `wifiClient`, `wifiAp` | settings **(a)** for wired today (`routes.rs:686-720`); WiFi panes **(a)**, rows 6 and 7; observed data **(b)**, row 14 |
 | **Access** | who can reach this box and how | `access.webAdmin`, `access.ssh`, an `SshSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:198`), `access.device` metadata, `access.console` | `sshd` | **(a)**, rows 15 and 9-metadata; note row 15 is in flight on `sshweb` (`mos-ui-inventory.md` section 8), and `access.console.shellEnabled` is consumed by no reconciler at all (row 17) so it must not be offered as a working control |
 | **Update** | what is installed, what is pending, what can I install | — | slot state, RAUC status, boot credits, install progress | **(b)** entirely — rows 1, 2, 3, 4, 5 |
 | **Diagnostics** | what happened, and what do I send to support | — | the whole tree via `GetState("")` / `GetSettings("")` | **(a)** mechanically — both already accept `""` for the whole tree (`os/pkgs/mosd/mosd/src/bus.rs:193-197`, `:197-202`) — but **(b)** for the redaction rule that must precede any export |
-| **Hostname** | — | folded into Access or a small identity page; it does not earn a nav slot of its own | | **(a)** today (`routes.rs:745`, `:896`) |
+| **Hostname** | — | folded into Access or a small identity page; it does not earn a nav slot of its own | | **(a)** today (`routes.rs:745`, `:910`) |
 | **Power** | reboot / shut down safely | — | must read section 2.5's slot state before offering an unwarned reboot | action **(a)** (row 10, already answered); the *warning* is **(b)**, rows 1/5 |
 
 Two things this table makes visible. First, **Update is the only page that is
@@ -1068,7 +1068,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:3314-3327`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:3368-3381`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1086,7 +1086,7 @@ answer for all four; it is 5.10.
   already designed for.
 - **C5 — `mosd` down.** Unchanged and already correct: the refresh re-issues a
   GET, the gate's `GetSettings("access")` fails, and `bus_error` renders the
-  502 page *"The management daemon is unavailable."* (`os/pkgs/mosd/apid/src/routes.rs:3248-3258`). The
+  502 page *"The management daemon is unavailable."* (`os/pkgs/mosd/apid/src/routes.rs:3273-3283`). The
   next refresh retries. **A dashboard that recovers by itself when `mosd` comes
   back, with no code written for that at all**, is a genuine property of this
   option and not of the other three, where a dead stream has to be reconnected
@@ -1205,7 +1205,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 - **C4 — `mosd` work. This is where the option collapses, and it is the decisive
   finding of this section.** SSE is a *push* transport, and push requires
   something to push. `mosd` emits **exactly one signal**, `SettingsChanged`
-  (`os/pkgs/mosd/mosd/src/bus.rs:633-637`, declared at `:817-822`) — and it fires on
+  (`os/pkgs/mosd/mosd/src/bus.rs:633-637`, declared at `:831-836`) — and it fires on
   **settings** writes. For **live state** — the IP address of section 2.4, the
   storage figures of 2.6, the slot state of 2.5, install progress — there is **no
   signal of any kind**. `record` mutates the live-state tree in place
@@ -1432,7 +1432,7 @@ is honest. **If, once row 4 exists, the 2-second reload measures as
 unacceptable in practice, option B is the pre-approved escalation for this one
 route** — a ~300-byte fetch loop against a single progress fragment, with the
 byte count stated in the commit and the script shipped as a `PreEscaped` string
-constant like `STYLE` (`os/pkgs/mosd/apid/src/routes.rs:3326-3333`, `:3344`), never as a build artefact.
+constant like `STYLE` (`os/pkgs/mosd/apid/src/routes.rs:3380-3387`, `:3344`), never as a build artefact.
 It must not spread to the dashboard, and the trigger for it is a measurement, not
 a preference.
 
@@ -1503,8 +1503,8 @@ option A exactly as well as under SSE. The evidence, read on this branch:
    live-state tree, not into the reply.
 2. **Therefore the fix is one extra `GetState` on the redirect target**, and
    nothing else. `network_submit` writes `network.<iface>` and 303s to
-   `/network?saved=1` (`os/pkgs/mosd/apid/src/routes.rs:5519-5555`); `network_form` then calls
-   `get_settings("network")` (`os/pkgs/mosd/apid/src/routes.rs:5293`). **[proposal]** It should also call
+   `/network?saved=1` (`os/pkgs/mosd/apid/src/routes.rs:5626-5662`); `network_form` then calls
+   `get_settings("network")` (`os/pkgs/mosd/apid/src/routes.rs:5364`). **[proposal]** It should also call
    `GetState("network")` and render *the reconciler's recorded outcome* in place
    of the generic banner: the applied result on success, and on failure the
    recorded `error` string, in the error register rather than the green `.saved`
@@ -1770,7 +1770,7 @@ as unclosable from `apid`'s side (*"`record` writes no timestamp and no
 generation"*).
 
 **Verification.** `mosd` unit tests in the existing `bus.rs` test module
-(`os/pkgs/mosd/mosd/src/bus.rs:915-916`): a multi-path read returning a per-path error
+(`os/pkgs/mosd/mosd/src/bus.rs:929-930`): a multi-path read returning a per-path error
 for one absent path while succeeding on the rest; a `SetSettings` against a
 failing reconciler returning the failure in its reply rather than `Ok(())`. On
 the `apid` side, a handler test that a failed apply renders in the error

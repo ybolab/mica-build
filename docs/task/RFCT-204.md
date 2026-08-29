@@ -150,7 +150,7 @@ never carry a packet.
 ## Rotation
 
 `RotateWireguardKey` on `com.mos.mosd1`, implemented as
-`async fn rotate_wireguard_key` (`os/pkgs/mosd/mosd/src/bus.rs:860`), checks
+`async fn rotate_wireguard_key` (`os/pkgs/mosd/mosd/src/bus.rs:874`), checks
 that the named interface is a declared tunnel, draws a new key over the old
 one, deletes the device holding the old one, re-runs the reconcilers and
 returns the new public key. It is not

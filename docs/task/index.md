@@ -240,6 +240,11 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-245 PLAN-023 M9: the cookie cutover on /api/v1/**](RFCT-245.md) `P1`
 - [x] [**RFCT-246 PLAN-023 M9 prerequisite: test/apid-api drives bearer end to end**](RFCT-246.md) `P1`
 - [x] [**RFCT-215 PLAN-023 closeout: api.md section 1 re-measured against the final surface**](RFCT-215.md) `P1`
+- [x] [**RFCT-247 PLAN-026 M1: the CIDR gap on the typed network writes**](RFCT-247.md) `P1`
+- [x] [**RFCT-249 PLAN-026 M3: the psk quotable gap**](RFCT-249.md) `P1`
+- [x] [**RFCT-252 PLAN-026 M6: the import unsplits, measured and refused**](RFCT-252.md) `P2`
+- [x] [**RFCT-248 PLAN-026 M2: the gate asymmetry on undeclared /api/ paths**](RFCT-248.md) `P1`
+- [x] [**RFCT-251 PLAN-026 M5: GetState names NotFound, and apid stops reading the name**](RFCT-251.md) `P1`
 - [-] [**RFCT-257 PLAN-028 M2: the bare-continuation resolver**](RFCT-257.md) `P1`
 - [x] [**RFCT-258 PLAN-028 M3: the plan-index status assertion**](RFCT-258.md) `P1`
 - [x] [**RFCT-259 PLAN-028 M4: the status-outruns-pinned-phase class, bounded**](RFCT-259.md) `P2`

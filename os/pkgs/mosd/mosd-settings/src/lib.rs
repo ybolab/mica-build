@@ -29,7 +29,7 @@ pub use model::{
     MIN_PASSPHRASE_LEN, MqttAuthSettings, MqttListenSettings, MqttSettings, ProvisioningSettings,
     ProvisioningState, RAW_PMK_LEN, SCHEMA_VERSION, Settings, SshSettings, StaticConfig,
     VlanConfig, WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
-    WireguardConfig, WireguardPeer, validate_wifi_psk,
+    WireguardConfig, WireguardPeer, is_wpa_quotable, validate_wifi_psk,
 };
 pub use path::{json_path_get, path_segments, quote_path_segment};
 pub use store::{DEFAULT_PATH, RollbackReport, Store};

@@ -48,11 +48,11 @@ stale and so is every line number. Re-measured:
 
 | As filed | Now |
 |---|---|
-| `mosd/apid/src/routes.rs:806-811` | `valid_iface_name` (`os/pkgs/mosd/apid/src/routes.rs:3430-3435`) |
-| `:850`, the pane's message | `Interface name must be 1-15` (`os/pkgs/mosd/apid/src/routes.rs:3482`) |
-| `mosd/apid/src/routes.rs:1534`, the write | `iface_settings_path` (`os/pkgs/mosd/apid/src/routes.rs:5548-5552`) |
+| `mosd/apid/src/routes.rs:806-811` | `valid_iface_name` (`os/pkgs/mosd/apid/src/routes.rs:3484-3489`) |
+| `:850`, the pane's message | `Interface name must be 1-15` (`os/pkgs/mosd/apid/src/routes.rs:3536`) |
+| `mosd/apid/src/routes.rs:1534`, the write | `iface_settings_path` (`os/pkgs/mosd/apid/src/routes.rs:5619-5623`) |
 | `mosd/mosd-settings/src/path.rs:26-32` | `split_path` (`os/pkgs/mosd/mosd-settings/src/path.rs:76-105`) |
-| `mosd/mosd-settings/src/model.rs:414-416` | `deny_unknown_fields` (`os/pkgs/mosd/mosd-settings/src/model.rs:560-561`) |
+| `mosd/mosd-settings/src/model.rs:414-416` | `deny_unknown_fields` (`os/pkgs/mosd/mosd-settings/src/model.rs:599-600`) |
 
 ### What the tree does today
 
@@ -66,16 +66,16 @@ stale and so is every line number. Re-measured:
 
 2. **apid builds the quoted form.** The write path is
    `format!("network.{}", quote_path_segment(iface))`
-   (`os/pkgs/mosd/apid/src/routes.rs:3492-3494`), and `network_submit` sends it
+   (`os/pkgs/mosd/apid/src/routes.rs:3563-3565`), and `network_submit` sends it
    as `.set_settings(&iface_settings_path(&iface), &value)`
-   (`os/pkgs/mosd/apid/src/routes.rs:5548-5552`). The quoting rule is
+   (`os/pkgs/mosd/apid/src/routes.rs:5619-5623`). The quoting rule is
    `if segment.contains('.') || segment.contains('"')`
    (`os/pkgs/mosd/mosd-settings/src/path.rs:44-50`). So `eth0.100` leaves apid
    as `network."eth0.100"`: two segments, not three.
 
 3. **`deny_unknown_fields` is untouched, and no longer bites.**
    `pub struct IfaceSettings`
-   (`os/pkgs/mosd/mosd-settings/src/model.rs:560-561`) still carries it. It
+   (`os/pkgs/mosd/mosd-settings/src/model.rs:599-600`) still carries it. It
    refused `100` only because the unquoted path offered `100` as a field of the
    interface; the quoted path never does. The old spelling still fails, and a
    test says so.
@@ -83,12 +83,12 @@ stale and so is every line number. Re-measured:
 4. **The validator is unchanged, and the message still matches it.** The whole
    rule is
    `b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')`
-   (`os/pkgs/mosd/apid/src/routes.rs:3430-3435`), and both sentences an
+   (`os/pkgs/mosd/apid/src/routes.rs:3484-3489`), and both sentences an
    operator can be shown state exactly that charset and that bound: the pane's
    *"Interface name must be 1-15 characters of letters, digits, '.', '_' or '-'."*
-   (`os/pkgs/mosd/apid/src/routes.rs:3482`) and the typed route's
+   (`os/pkgs/mosd/apid/src/routes.rs:3536`) and the typed route's
    *"an interface name is 1 to 15 characters of letters, digits"*
-   (`os/pkgs/mosd/apid/src/routes.rs:2496`). The finding's first alternative —
+   (`os/pkgs/mosd/apid/src/routes.rs:2470`). The finding's first alternative —
    reject `.` and say why — was not taken, and the message did not have to
    change, because the name is now writable.
 
@@ -156,7 +156,7 @@ None in this task's scope. One thing measured and deliberately not acted on:
 whether an interface named `eth0.100` is *configured* as a VLAN is the
 reconciler's question, not the path syntax's, because
 `is authoritative, not the interface name`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:552-554`) — `kind` decides, the name
+(`os/pkgs/mosd/mosd-settings/src/model.rs:591-593`) — `kind` decides, the name
 is a convention. This task closes the addressing failure the finding named.
 `docs/design/mosd.md` states nothing the tree contradicts on either half, so it
 was not edited.

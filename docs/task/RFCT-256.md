@@ -220,7 +220,7 @@ Re-derived from content at `d855804`, never by a constant offset:
 | `InvalidArgs` on an absent state path | `bus.rs` `:198-202` | `:663-664` |
 | the `SettingsChanged` signal | `bus.rs` `:249-254` | `:905-912` |
 | whole-tree reads | `bus.rs` `:160-164`, `:197-202` | `:610-614`, `:656-661` |
-| the 502 page | `routes.rs` `:95-105` | `fn bus_error(err: &anyhow::Error)` (`os/pkgs/mosd/apid/src/routes.rs:3248-3258`) |
+| the 502 page | `routes.rs` `:95-105` | `fn bus_error(err: &anyhow::Error)` (`os/pkgs/mosd/apid/src/routes.rs:3266-3276`) |
 | the `STYLE` constant | `routes.rs` `:147-154`, `:165` | `:3326-3333`, `:3344` |
 | the `.error`/`.saved` rules | `routes.rs` `:153-154` | `:3332-3333` |
 | `network_submit`'s 303 | `routes.rs` `:696-720` | `:5519-5555` |
@@ -233,7 +233,7 @@ The four settings-subtree rows of §3.2's page table cited the model by dot-path
 — `network.<iface>` against `model.rs` `:280-299` — and a dot-path is a name, not
 an excerpt of any line, so those pairings could never have matched. They now
 name the struct, which is an excerpt: `IfaceSettings` at
-`pub struct IfaceSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:561`), `WifiClientSettings` at `:369`,
+`pub struct IfaceSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs:600`), `WifiClientSettings` at `:369`,
 `WifiApSettings` at `:465`, `SshSettings` at `:198`.
 
 ### (c) Four fragments that named rather than quoted

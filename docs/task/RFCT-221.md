@@ -43,13 +43,13 @@ present:
   it follows — "Same arrangement as" (`os/pkgs/podman/README.md:4`) the board's
   kernel build.
 - Seven binaries, hashed on export: `sha256sum podman quadlet crun conmon
-  catatonit netavark aardvark-dns` (`os/pkgs/podman/Dockerfile:333`).
+  catatonit netavark aardvark-dns` (`os/pkgs/podman/Dockerfile:361`).
 
 Two of the three build assertions the milestone row demands are in the verify
 stage: the target-architecture ELF check, and `file -b catatonit | grep -q
-'statically linked'` (`os/pkgs/podman/Dockerfile:325`). The pinned-hash
+'statically linked'` (`os/pkgs/podman/Dockerfile:353`). The pinned-hash
 requirement is enforced with no soft mode: `if [ "${want}" = "PENDING" ]; then`
-(`os/pkgs/podman/Dockerfile:112`).
+(`os/pkgs/podman/Dockerfile:140`).
 
 **Where it diverged.** Three divergences, all deliberate and all recorded in
 the tree rather than in the plan:
@@ -68,7 +68,7 @@ the tree rather than in the plan:
    that every binary's `NEEDED` soname be checked against a list generated from
    the packed rootfs. That check does not exist and was deliberately removed:
    "NO image-libs.txt, and no rootfs prerequisite."
-   (`os/pkgs/podman/build.sh:77`). The reason given is a build-order cycle — the
+   (`os/pkgs/podman/build.sh:97`). The reason given is a build-order cycle — the
    rootfs stages the engine, so the engine's check could not depend on the
    rootfs — and the check moved into the image build, where the real loader
    answers against the real binaries (`os/rootfs/scripts/podman-assert.sh`).
@@ -80,7 +80,7 @@ the tree rather than in the plan:
 **implemented.**
 
 - Staged by the rootfs build: `declined containers || FEATURE_ARGS+=(--arg
-  PODMAN_DIR="_out/$MOS_BOARD/podman")` (`os/rootfs/build-v2.sh:637`).
+  PODMAN_DIR="_out/$MOS_BOARD/podman")` (`os/rootfs/build-v2.sh:642`).
 - Installed by the feature stage: `COPY ${PODMAN_DIR}/ /tmp/podman/`
   (`os/rootfs/stages/31-feature-containers.Dockerfile:103`).
 - Storage root on DATA: `graphroot = "/srv/containers/storage"`
@@ -101,7 +101,7 @@ and `container-engine-quadlet-bind` (`os/verify/src/checks-engine.ts:427`).
 
 The negative controls exist and are richer than the row's description — for
 example "a STATICALLY ENABLED mount fails"
-(`os/verify/src/checks-engine.test.ts:492`), plus a dangling-symlink case, a
+(`os/verify/src/checks-engine.test.ts:495`), plus a dangling-symlink case, a
 retargeted mount, and a tmpfs-backed mount.
 
 **Where it diverged.** The row names two files that no longer exist:
@@ -128,7 +128,7 @@ better fit for a daemonless engine, and it is what the code documents.
 - The apid pane: `.route("/containers", get(containers_form))`
   (`os/pkgs/mosd/apid/src/routes.rs:191`), with route tests that assert the
   written path — `vec!["container.enabled"]`
-  (`os/pkgs/mosd/apid/src/tests.rs:2976`).
+  (`os/pkgs/mosd/apid/src/tests.rs:3081`).
 
 **Where it diverged, and this one has teeth.** D3 says the switch is
 "an MQTT-addressable path for free" (`docs/plan/PLAN-012.md:169`) because
@@ -191,7 +191,7 @@ The upstream-tag check does not exist. Nothing in the tree queries an upstream
 release feed, compares it to a pin, or fails when a pin falls behind; the only
 places the phrase occurs are the plan and the README's own statement of the
 obligation — "scheduled upstream-tag check in the privileged CI lane"
-(`os/pkgs/podman/README.md:122`). Six upstreams in three languages are pinned
+(`os/pkgs/podman/README.md:161`). Six upstreams in three languages are pinned
 with nothing watching them, which is precisely the risk the plan named and
 called not optional.
 
@@ -200,7 +200,7 @@ called not optional.
 - **D1** (Podman, from source, root mode, the seven-binary artifact set) —
   **implemented**; the set is built and hashed on export —
   `sha256sum podman quadlet crun conmon catatonit netavark aardvark-dns`
-  (`os/pkgs/podman/Dockerfile:333`). The revisit trigger it records is a
+  (`os/pkgs/podman/Dockerfile:361`). The revisit trigger it records is a
   future condition, not a deliverable.
 - **D2** (self-contained build directory) — **implemented at a different
   path**, see M1. The `podman/` the decision names —
@@ -216,10 +216,10 @@ called not optional.
 - **D5** (root mode; rootless not built) — **implemented**. The consequence is
   stated in the pane in the operator's own terms:
   "Containers on this device run as root."
-  (`os/pkgs/mosd/apid/src/routes.rs:3222`). The four rootless-only binaries are
+  (`os/pkgs/mosd/apid/src/routes.rs:3196`). The four rootless-only binaries are
   absent from the built set, whose whole contents are
   `sha256sum podman quadlet crun conmon catatonit netavark aardvark-dns`
-  (`os/pkgs/podman/Dockerfile:333`).
+  (`os/pkgs/podman/Dockerfile:361`).
 - **D6** (share the update-state shape rather than duplicate it) —
   **superseded**, and it carried a review rather than an artifact. D4 removed
   the thing it was about: mos ships no container-delivered application update,
@@ -262,10 +262,10 @@ called not optional.
    (`docs/plan/PLAN-012.md:273`). See M1.
 6. **`os/pkgs/podman/README.md` still describes the retired assertion.**
    The README tells the reader the verify stage checks each soname against
-   `image-libs.txt` (`os/pkgs/podman/README.md:111`), a list the build script
+   `image-libs.txt` (`os/pkgs/podman/README.md:150`), a list the build script
    beside it explicitly removed:
    "NO image-libs.txt, and no rootfs prerequisite."
-   (`os/pkgs/podman/build.sh:77`). The README contradicts the build.
+   (`os/pkgs/podman/build.sh:97`). The README contradicts the build.
 7. **`docs/design/containers.md` promises bus and MQTT writability the daemon
    does not implement.** The document offers the switch over the bus as
    `com.mos.Item1` (`docs/design/containers.md:38`). See M3.
@@ -283,7 +283,7 @@ Three items are routed to **PLAN-025**, which owns `os/**` and CI:
   the design document that describes it. Genuinely open; proposed as a task
   below.
 - **R3 — two stale paragraphs.** The engine README still names
-  `image-libs.txt` (`os/pkgs/podman/README.md:111`), and
+  `image-libs.txt` (`os/pkgs/podman/README.md:150`), and
   `docs/design/containers.md` lacks D4's
   firewall-posture clause. Both are documentation repairs inside delivered
   artifacts, too small to be their own task; fold them into whichever PLAN-025

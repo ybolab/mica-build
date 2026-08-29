@@ -1856,17 +1856,27 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
 }
 
 /// The declared paths are the only ones that changed. Every other path under
-/// `/api` keeps **both** of its answers: the subtree's own 404 with a session,
-/// and the gate's redirect without one, in either gate mode.
+/// `/api` has **one** answer — the subtree's own 404, byte for byte — with a
+/// session, without one, and in setup mode alike.
 ///
 /// The bare family prefixes are members of this class rather than exceptions
 /// to it. axum's `{*path}` wildcard matches at least one character, so
 /// `/api/v1/settings` and `/api/v1/settings/` name no dot-path and reach the
-/// not-found handler — and the gate's predicate has to agree with the router
-/// about that, or an unauthenticated request for one of them would be handed
-/// to a route that does not exist instead of being redirected.
+/// not-found handler.
+///
+/// Until PLAN-026 M2 (`docs/task/RFCT-248.md`) this test was
+/// `every_other_api_path_keeps_both_of_its_answers` and asserted **two**
+/// answers: this 404 with a session, and the gate's redirect to `/login` or
+/// `/setup` without one. The session arm is unchanged — the same handler
+/// answers it and the assertion below is the one it always carried — and the
+/// other two arms are what M2 closed. The reason the old comment gave for the
+/// redirect, that the gate's predicate has to agree with the router or an
+/// unauthenticated request would be handed to a route that does not exist,
+/// stopped applying with it: being handed to a route that does not exist is
+/// the intended outcome now, because the not-found handler is a route and it
+/// answers in §2.4's envelope.
 #[tokio::test]
-async fn every_other_api_path_keeps_both_of_its_answers() {
+async fn every_other_api_path_has_one_answer_in_every_mode() {
     // `/api/v1/ssh/authorized-keys` left this list when PLAN-023 M5 declared
     // it: it is now a served collection, and the test that holds its answers
     // is `the_ssh_key_collection_lists_adds_and_removes`.
@@ -1889,32 +1899,29 @@ async fn every_other_api_path_keeps_both_of_its_answers() {
     let (fresh, _) = test_app(unconfigured_tree());
 
     for path in UNDECLARED {
-        // With a session: the reserved subtree's own envelope, byte for byte.
-        let response = get(&router, path, Some(&cookie)).await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
-        assert_api_headers(&response, path);
-        assert_eq!(
-            body_string(response).await,
-            json!({
-                "error": {
-                    "code": "not_found",
-                    "message": format!("no API route at {path}"),
-                    "source": "apid",
-                }
-            })
-            .to_string(),
-            "{path}"
-        );
+        let expected = json!({
+            "error": {
+                "code": "not_found",
+                "message": format!("no API route at {path}"),
+                "source": "apid",
+            }
+        })
+        .to_string();
 
-        // Without one: the gate's redirect to `/login`.
-        let redirected = get(&router, path, None).await;
-        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
-        assert_eq!(location(&redirected), "/login", "{path}");
-
-        // And in setup mode, the gate's redirect to `/setup`.
-        let redirected = get(&fresh, path, None).await;
-        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
-        assert_eq!(location(&redirected), "/setup", "{path}");
+        // With a session, without one, and on a device that has no admin
+        // password at all: the reserved subtree's own envelope, byte for byte,
+        // three times. The router is the same one in the first two cases and a
+        // freshly built one in setup mode, which is the case a path-prefix
+        // gate used to break.
+        for (mode, response) in [
+            ("with a session", get(&router, path, Some(&cookie)).await),
+            ("without one", get(&router, path, None).await),
+            ("in setup mode", get(&fresh, path, None).await),
+        ] {
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path} {mode}");
+            assert_api_headers(&response, path);
+            assert_eq!(body_string(response).await, expected, "{path} {mode}");
+        }
     }
 }
 
@@ -4268,10 +4275,12 @@ fn the_zbus_error_survives_the_conversion_to_anyhow() {
 /// §2.4's table, row by row: mosd classifies, apid translates the
 /// classification, and mosd's message is carried through verbatim.
 ///
-/// One row is route-dependent, and the loop below says which: fdo
-/// `InvalidArgs` is 422 `settings_rejected` everywhere except the live-state
-/// route, where it has a single producer and can only mean the dot-path did
-/// not resolve.
+/// No row is route-dependent any more. fdo `InvalidArgs` was 422
+/// `settings_rejected` everywhere except the live-state route, where apid
+/// rewrote it to 404 because `GetState` had a single producer for the name;
+/// `GetState` now raises `MOSD_NOT_FOUND` for a dot-path that resolves to
+/// nothing, so the same name means the same thing on both routes and the
+/// table is read straight.
 #[tokio::test]
 async fn each_fdo_error_name_gets_its_own_envelope() {
     for (fdo_name, code, status) in [
@@ -4302,17 +4311,6 @@ async fn each_fdo_error_name_gets_its_own_envelope() {
         ),
     ] {
         for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
-            // The route-dependent row. `GetState` raises `InvalidArgs` for a
-            // dot-path that does not resolve and for nothing else, so the
-            // state route answers it 404, the same as the settings tree
-            // answers its own missing path.
-            let (code, status) = if fdo_name == "org.freedesktop.DBus.Error.InvalidArgs"
-                && path.starts_with("/api/v1/state/")
-            {
-                ("settings_not_found", StatusCode::NOT_FOUND)
-            } else {
-                (code, status)
-            };
             let (router, token) = failing_app(Some(fdo_name)).await;
             let response = bearer(&router, "GET", path, &token).await;
             assert_eq!(response.status(), status, "{fdo_name} at {path}");
@@ -4413,25 +4411,35 @@ async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
 
 /// A live-state dot-path that does not resolve answers **404
 /// `settings_not_found`**, the same code the settings tree gives the same
-/// condition -- not the 422 §2.4's table gives fdo `InvalidArgs` everywhere
-/// else.
+/// condition -- not the 422 §2.4's table gives fdo `InvalidArgs`.
 ///
-/// mosd raises `InvalidArgs` for a state path that does not resolve
-/// (`os/pkgs/mosd/mosd/src/bus.rs:648-665`), and on THIS route that name has
-/// exactly one producer: `get_state`'s only other failure is `Failed` for the
-/// `/proc/uptime` read. One producer is what makes the reclassification a
-/// reading rather than a guess. The settings assertion beside it is the
-/// control: the same name on the settings route is still a rejection, because
-/// there it genuinely can be one.
+/// **The status, the code and the envelope are unchanged; what carries them
+/// is not.** mosd used to raise fdo `InvalidArgs` for a state path that does
+/// not resolve, and apid answered 404 by reading that name against a fact
+/// about `GetState` -- that it had exactly one producer for it -- which was
+/// true but private to this one route. mosd's `get_state` now raises
+/// `MOSD_NOT_FOUND`, the name every other read on the bus already uses for a
+/// path that names nothing, so §2.4's shared classifier answers this without a
+/// special case.
+///
+/// The second half is the control, and it is the assertion that would have
+/// failed before: fdo `InvalidArgs` on the state route is now a plain 422,
+/// because no rewrite is left to intercept it.
 #[tokio::test]
 async fn a_state_dot_path_that_does_not_resolve_is_404_not_422() {
-    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let (router, token) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
 
     let response = bearer(&router, "GET", "/api/v1/state/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_not_found");
     assert_eq!(error["path"], json!("no.such.path"));
+
+    let (router, token) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+    let response = bearer(&router, "GET", "/api/v1/state/no.such.path", &token).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_rejected");
 
     let response = bearer(&router, "GET", "/api/v1/settings/no.such.path", &token).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -6561,22 +6569,128 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // The empty spelling is not this route -- measured, and not assumed from
     // the rotate action, whose empty `{iface}` segment is interior rather than
     // trailing and IS served. `/api/v1/tokens/` reaches the reserved subtree's
-    // own not-found handler, so `token_id` must not release it to the gate: a
-    // path the gate released to a route that does not exist would answer a 404
-    // where an unauthenticated caller is supposed to be redirected.
+    // own not-found handler. That measurement carried a consequence until
+    // PLAN-026 M2 -- `token_id` had to refuse this spelling, or the gate would
+    // release an unauthenticated caller to a 404 where a redirect was owed --
+    // and the consequence is gone now that the gate releases the whole subtree
+    // either way. What is left is the measurement of which handler answers,
+    // and this arm's answer is unchanged by M2 in status, code and body.
     let cookie = login(&router, "hunter2secret").await;
     let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 
-    // And the bearer arm of the same path, which was already asserted here and
-    // is left exactly as it was: a bearer does not satisfy the gate, so a
-    // bearer-only client asking for an undeclared path under /api is redirected.
+    // And the bearer arm of the same path answers the same thing, because the
+    // gate releases the whole reserved subtree and stops there: the credential
+    // is never read, so it cannot decide the medium. This arm asserted the 303
+    // to `/login` until PLAN-026 M2 (`docs/task/RFCT-248.md`) closed that
+    // asymmetry; `an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential`
+    // is the general statement, and this is the one path that carried the old
+    // answer.
     let response = bearer(&router, "DELETE", "/api/v1/tokens/", &wires[0]).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// §4.1 rule 1's medium rule, stated the way the gate has to implement it: a
+/// path inside the reserved `/api` subtree that no route declares answers
+/// §2.4's 404 envelope, and **which credential the request carried is not
+/// what decides that**. A client that addressed the JSON surface is answered
+/// in JSON whether it sent nothing at all, a token that is not stored, a
+/// token that is, or a session cookie.
+///
+/// The four answers are compared to each other and not only to a literal, so
+/// what is asserted is the symmetry itself. The cookie arm is the fixed point:
+/// it is the answer this repository already documented — `an_absent_token_id_
+/// is_404_and_a_malformed_one_is_422` asserts `not_found` on `/api/v1/tokens/`
+/// through a cookie — and the other three are required to be the same bytes,
+/// so a future change that moves the cookie arm fails here rather than
+/// silently taking the other three with it.
+///
+/// `/apibogus` is in the list for the reason
+/// `each_guard_is_exercised_by_exactly_one_hostile_feature` states: the
+/// assertion has to distinguish the rule from its absence. The subtree is
+/// `/api` and what nests under it, not the four characters, so a path that
+/// merely begins with them is an HTML path and still redirects.
+#[tokio::test]
+async fn an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api",
+        "/api/",
+        "/api/v1/tokens/",
+        "/api/v1/nope",
+        "/api/v2/meta",
+    ] {
+        let mut answers: Vec<(&str, serde_json::Value)> = Vec::new();
+        for (credential, response) in [
+            (
+                "no credential",
+                request(&router, "DELETE", path, None, None).await,
+            ),
+            (
+                "a stored bearer",
+                bearer(&router, "DELETE", path, &wires[0]).await,
+            ),
+            (
+                "an unstored bearer",
+                bearer(&router, "DELETE", path, "0000000000000000").await,
+            ),
+            (
+                "a session cookie",
+                request(&router, "DELETE", path, Some(&cookie), None).await,
+            ),
+        ] {
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "{path} with {credential}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "not_found", "{path} with {credential}");
+            assert_eq!(error["source"], "apid", "{path} with {credential}");
+            answers.push((credential, error));
+        }
+        let (_, expected) = &answers[0];
+        for (credential, error) in &answers[1..] {
+            assert_eq!(error, expected, "{path} answers {credential} differently");
+        }
+    }
+
+    let response = request(&router, "GET", "/apibogus", None, None).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/login");
 
+    let response = request(&router, "GET", "/healthz", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The same rule in **setup mode**, which is where the gate's *other* redirect
+/// lives and so is a second exit that has to be closed rather than the same
+/// one twice.
+///
+/// A device with no admin password yet still has a reserved `/api` subtree,
+/// and a client asking it for a path that does not exist is asking a question
+/// the setup form is not an answer to.
+#[tokio::test]
+async fn an_undeclared_api_path_is_a_404_in_setup_mode_too() {
+    let (router, _fake) = test_app(unconfigured_tree());
+
+    let response = request(&router, "GET", "/api/v1/nope", None, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    // The HTML surface is untouched: setup mode still bounces it to /setup.
+    let response = request(&router, "GET", "/hostname", None, None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/setup");
 }
 
 /// The HTML half of the split recorded in `docs/task/RFCT-210.md` §2.4: the
@@ -8575,6 +8689,90 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     }
 }
 
+/// PLAN-026 M1 (`docs/task/RFCT-247.md`): both typed write paths run the
+/// wizard's CIDR rule, on the entries the *request* carries.
+///
+/// RED-first for the gap `docs/task/RFCT-215.md` section 6 item 1 pinned: both
+/// refused bodies below were answered `204` and written before this milestone.
+///
+/// The condition is the wizard's and is not widened here, so the two accepted
+/// arms at the end are as much of the rule as the two refusals: an address is
+/// examined only when `dhcp` is off and the field is non-empty.
+#[tokio::test]
+async fn the_typed_network_writes_refuse_an_address_that_is_not_a_cidr() {
+    let (router, fake, _cookie, token) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    // The item route: an address the kernel cannot parse, on one entry.
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth0"),
+        &token,
+        &json!({ "dhcp": false, "static": { "address": "192.168.1.10" } }).to_string(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_api_headers(
+        &response,
+        "an item write carrying an address that is not a CIDR",
+    );
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("network.eth0"));
+    assert_eq!(
+        error["message"],
+        json!("Static address must be IPv4 CIDR notation, e.g. 192.168.1.10/24."),
+        "the message is the wizard's own, so the two surfaces do not disagree"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // The map route: one bad entry refuses the whole body, and the envelope
+    // names that entry rather than the map, because that is what failed.
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({
+            "eth0": { "dhcp": true },
+            "eth1": { "dhcp": false, "static": { "address": "10.0.0.5/33" } },
+        })
+        .to_string(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], json!("network.eth1"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // The two arms the condition does not reach: DHCP on with a junk address
+    // left in the block, and DHCP off with no `static` at all -- which is a
+    // bridge port, an interface with no addressing rather than an error.
+    for (iface, body) in [
+        (
+            "eth0",
+            json!({ "dhcp": true, "static": { "address": "nonsense" } }),
+        ),
+        ("eth1", json!({ "dhcp": false })),
+    ] {
+        let response =
+            bearer_json(&router, "PUT", &iface_url(iface), &token, &body.to_string()).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{iface} {body}");
+    }
+}
+
 /// A dotted interface name round-trips through the quoted path segment, so the
 /// daemon sees one key and not two (M6 acceptance).
 #[tokio::test]
@@ -9335,6 +9533,54 @@ async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
         .await;
         assert_eq!(response.status(), StatusCode::CREATED, "{ssid}");
     }
+}
+
+/// The quotable half of the lifted bound, run by the WiFi route.
+///
+/// `docs/task/RFCT-215.md` section 6 item 3 measured the gap this closes: a key
+/// carrying a quote or a backslash passed `validate_wifi_psk`, was stored, and
+/// was then refused at render time by the station renderer's own `is_quotable`
+/// — accepted at the route and dead on the reconciler, with the error visible
+/// only in live state. The predicate now lives beside the model and the
+/// renderer calls it, so this is the same rule and not a second one.
+#[tokio::test]
+async fn a_psk_the_renderer_cannot_quote_is_refused_by_the_wifi_route() {
+    let (tree, token) = with_token(wifi_tree(json!([])));
+    let (router, fake) = test_app(tree);
+
+    for psk in [
+        "has\"quote1",
+        "has\\backslash",
+        "two\nlines1",
+        "tab\there1",
+        "caf\u{e9}-latte",
+    ] {
+        let response = bearer_json(
+            &router,
+            "POST",
+            "/api/v1/wifi/client/networks",
+            &token,
+            &json!({ "ssid": "roastery", "psk": psk }).to_string(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{psk:?}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{psk:?}");
+        assert_eq!(error["source"], "apid", "{psk:?}");
+        assert_eq!(error["path"], json!(WIFI_NETWORKS_DOT_PATH), "{psk:?}");
+        // The refusal never echoes the key.
+        assert!(
+            !error["message"].as_str().unwrap().contains(psk),
+            "the refusal echoed the key: {error}"
+        );
+    }
+    // Nothing reached mosd: a key refused here is never stored, which is the
+    // whole point of moving the refusal to the write surface.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
 
 /// The collection identifier contract's third clause, held across **every**
@@ -10400,21 +10646,23 @@ fn the_openapi_document_covers_the_setup_route() {
     );
 }
 
-/// The wizard's CIDR bound runs on this route, and on no other route under the
-/// prefix — the second divergence this milestone records rather than hides.
+/// The wizard's CIDR bound runs on this route and on the typed network routes
+/// beside it, in the same three spellings, with the same sentence.
 ///
-/// `valid_cidr` has one caller, `validate_iface`, whose own two callers are
-/// both HTML form handlers. So the rule is live on the wizard and reachable
-/// from nowhere under `/api/v1/`: `PUT /api/v1/network/{iface}` takes an
-/// address the kernel cannot parse and answers 204. That is M6's shipped
-/// behaviour and this test records it rather than changing it; closing it is a
-/// change to that cluster's routes, not to this one.
+/// This test recorded a divergence until PLAN-026 M1 (`docs/task/RFCT-247.md`):
+/// `valid_cidr` had one caller, `validate_iface`, whose callers were the two
+/// HTML form handlers and this route, so `PUT /api/v1/network/{iface}` took an
+/// address the kernel cannot parse and answered 204. The rule now lives in
+/// `validate_static_address`, which `validate_iface` and the typed cluster's
+/// `address_refusal` both call, so there is one copy of it in the file and the
+/// three surfaces cannot drift apart.
 ///
-/// This route calls the rule because the harm is different here. A device being
-/// configured for the first time over the API has no other way in, so an
-/// unparseable address is the unreachable box section 2.3 item (ii) is about.
+/// This route runs it for a reason of its own that survives the convergence. A
+/// device being configured for the first time over the API has no other way
+/// in, so an unparseable address is the unreachable box section 2.3 item (ii)
+/// is about.
 #[tokio::test]
-async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not() {
+async fn the_setup_route_and_the_network_routes_run_one_shared_cidr_bound() {
     let entry =
         json!({ "kind": "physical", "dhcp": false, "static": { "address": "192.168.1.10" } });
 
@@ -10445,9 +10693,9 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     .await;
     assert_eq!(form.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
-    // And M6's typed route does not, which is the divergence: same bytes, 204.
+    // And M6's typed route refuses the same bytes, with the same sentence.
     let (tree, token) = with_token(configured_tree("hunter2secret"));
-    let (configured, _) = test_app(tree);
+    let (configured, fake) = test_app(tree);
     let put = bearer_json(
         &configured,
         "PUT",
@@ -10458,7 +10706,18 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     .await;
     assert_eq!(
         put.status(),
-        StatusCode::NO_CONTENT,
-        "recorded, not fixed: PLAN-023 M6's route runs no CIDR check"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "the gap PLAN-023 M6 left open is closed: the typed route runs the rule"
     );
+    let error = envelope(put).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], json!("network.eth0"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "the same sentence on both surfaces: {error}"
+    );
+    assert_nothing_written(&fake, "a typed network write carrying a bad address");
 }

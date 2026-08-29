@@ -174,7 +174,7 @@ Every link read from the file, not inferred.
 | state-dir default | `mosd/apid/src/config.rs:38-39` | `APID_STATE_DIR`, default `/var/lib/mos/apid` | yes — matches `StateDirectory=mos/apid` |
 | cross-build | `mosd/hack/build-aarch64.sh:9,11` | `-p mosd -p apid`; loop `for name in mosd apid` | yes |
 | v1 staging | `os/rootfs/build.sh:41-42` | stages `release/apid` -> `$MOSD_STAGE/apid`, `dist/apid.service` -> `apid.service` | yes |
-| v2 staging | `os/rootfs/build-v2.sh:75-76` | same two copies | yes |
+| v2 staging | `os/rootfs/build-v2.sh:80-81` | same two copies | yes |
 | v1 install | `os/rootfs/Dockerfile:208-214` | `/usr/bin/apid`, `/usr/lib/systemd/system/apid.service`, symlink `/etc/systemd/system/multi-user.target.wants/apid.service` + `test -L` | yes |
 | v2 install | `os/rootfs/Dockerfile.v2:293-299` | identical shape | yes |
 | enablement target | both Dockerfiles | `ln -sf /usr/lib/systemd/system/apid.service` -> `.../multi-user.target.wants/apid.service` | yes — link and target agree |
