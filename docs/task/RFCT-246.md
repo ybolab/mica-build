@@ -103,7 +103,7 @@ That is not a shortcut, it is the only door. The three `/api/v1/tokens` routes
 take `ApiBearer`, which refuses a session outright — *"this route accepts a
 bearer API token only; a session cookie is not a credential here, and a browser
 mints its first token at POST /builtin/tokens"*
-(`os/pkgs/mosd/apid/src/routes.rs:3154`) — so the first token cannot be minted
+(`os/pkgs/mosd/apid/src/routes.rs:3198`) — so the first token cannot be minted
 with a token.
 
 Every request after that mint is issued from a **second `Client`**, constructed

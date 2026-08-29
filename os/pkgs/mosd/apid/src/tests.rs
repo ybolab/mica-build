@@ -8470,6 +8470,90 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     }
 }
 
+/// PLAN-026 M1 (`docs/task/RFCT-247.md`): both typed write paths run the
+/// wizard's CIDR rule, on the entries the *request* carries.
+///
+/// RED-first for the gap `docs/task/RFCT-215.md` section 6 item 1 pinned: both
+/// refused bodies below were answered `204` and written before this milestone.
+///
+/// The condition is the wizard's and is not widened here, so the two accepted
+/// arms at the end are as much of the rule as the two refusals: an address is
+/// examined only when `dhcp` is off and the field is non-empty.
+#[tokio::test]
+async fn the_typed_network_writes_refuse_an_address_that_is_not_a_cidr() {
+    let (router, fake, _cookie, token) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    // The item route: an address the kernel cannot parse, on one entry.
+    let response = bearer_json(
+        &router,
+        "PUT",
+        &iface_url("eth0"),
+        &token,
+        &json!({ "dhcp": false, "static": { "address": "192.168.1.10" } }).to_string(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_api_headers(
+        &response,
+        "an item write carrying an address that is not a CIDR",
+    );
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("network.eth0"));
+    assert_eq!(
+        error["message"],
+        json!("Static address must be IPv4 CIDR notation, e.g. 192.168.1.10/24."),
+        "the message is the wizard's own, so the two surfaces do not disagree"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // The map route: one bad entry refuses the whole body, and the envelope
+    // names that entry rather than the map, because that is what failed.
+    let response = bearer_json(
+        &router,
+        "PUT",
+        NETWORK_MAP_PATH,
+        &token,
+        &json!({
+            "eth0": { "dhcp": true },
+            "eth1": { "dhcp": false, "static": { "address": "10.0.0.5/33" } },
+        })
+        .to_string(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], json!("network.eth1"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // The two arms the condition does not reach: DHCP on with a junk address
+    // left in the block, and DHCP off with no `static` at all -- which is a
+    // bridge port, an interface with no addressing rather than an error.
+    for (iface, body) in [
+        (
+            "eth0",
+            json!({ "dhcp": true, "static": { "address": "nonsense" } }),
+        ),
+        ("eth1", json!({ "dhcp": false })),
+    ] {
+        let response =
+            bearer_json(&router, "PUT", &iface_url(iface), &token, &body.to_string()).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{iface} {body}");
+    }
+}
+
 /// A dotted interface name round-trips through the quoted path segment, so the
 /// daemon sees one key and not two (M6 acceptance).
 #[tokio::test]
@@ -10343,21 +10427,23 @@ fn the_openapi_document_covers_the_setup_route() {
     );
 }
 
-/// The wizard's CIDR bound runs on this route, and on no other route under the
-/// prefix — the second divergence this milestone records rather than hides.
+/// The wizard's CIDR bound runs on this route and on the typed network routes
+/// beside it, in the same three spellings, with the same sentence.
 ///
-/// `valid_cidr` has one caller, `validate_iface`, whose own two callers are
-/// both HTML form handlers. So the rule is live on the wizard and reachable
-/// from nowhere under `/api/v1/`: `PUT /api/v1/network/{iface}` takes an
-/// address the kernel cannot parse and answers 204. That is M6's shipped
-/// behaviour and this test records it rather than changing it; closing it is a
-/// change to that cluster's routes, not to this one.
+/// This test recorded a divergence until PLAN-026 M1 (`docs/task/RFCT-247.md`):
+/// `valid_cidr` had one caller, `validate_iface`, whose callers were the two
+/// HTML form handlers and this route, so `PUT /api/v1/network/{iface}` took an
+/// address the kernel cannot parse and answered 204. The rule now lives in
+/// `validate_static_address`, which `validate_iface` and the typed cluster's
+/// `address_refusal` both call, so there is one copy of it in the file and the
+/// three surfaces cannot drift apart.
 ///
-/// This route calls the rule because the harm is different here. A device being
-/// configured for the first time over the API has no other way in, so an
-/// unparseable address is the unreachable box section 2.3 item (ii) is about.
+/// This route runs it for a reason of its own that survives the convergence. A
+/// device being configured for the first time over the API has no other way
+/// in, so an unparseable address is the unreachable box section 2.3 item (ii)
+/// is about.
 #[tokio::test]
-async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not() {
+async fn the_setup_route_and_the_network_routes_run_one_shared_cidr_bound() {
     let entry =
         json!({ "kind": "physical", "dhcp": false, "static": { "address": "192.168.1.10" } });
 
@@ -10388,9 +10474,9 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     .await;
     assert_eq!(form.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
-    // And M6's typed route does not, which is the divergence: same bytes, 204.
+    // And M6's typed route refuses the same bytes, with the same sentence.
     let (tree, token) = with_token(configured_tree("hunter2secret"));
-    let (configured, _) = test_app(tree);
+    let (configured, fake) = test_app(tree);
     let put = bearer_json(
         &configured,
         "PUT",
@@ -10401,7 +10487,18 @@ async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do
     .await;
     assert_eq!(
         put.status(),
-        StatusCode::NO_CONTENT,
-        "recorded, not fixed: PLAN-023 M6's route runs no CIDR check"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "the gap PLAN-023 M6 left open is closed: the typed route runs the rule"
     );
+    let error = envelope(put).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], json!("network.eth0"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "the same sentence on both surfaces: {error}"
+    );
+    assert_nothing_written(&fake, "a typed network write carrying a bad address");
 }
