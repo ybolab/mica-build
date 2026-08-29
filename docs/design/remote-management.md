@@ -132,4 +132,4 @@ an independent credential domain; compromise of one grants nothing in another.
 An apid session is not an enrollment credential, an enrollment credential is
 not a root shell, and an endpoint holding a fleet's channel credentials must
 not thereby hold the keys that authorise an image — the update trust anchor is
-already *"a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51-52`) and stays one.
+already *"a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:52-53`) and stays one.

@@ -84,8 +84,8 @@ rauc-sign init \
 
 `init` is the only command that loads `root.pk8`; `add` and `sign` load only
 the three online keys. All expirations are explicit — nothing in `rauc-sign`
-reads the wall clock, so the ceremony's output is reproducible and can be
-re-derived to check the media.
+reads the wall clock, so what a ceremony *signs* is reproducible from its
+inputs. The file's bytes are not; see §1.6, step 3.
 
 `--threshold` applies to every role, and today it must be `1`:
 `rauc-sign` holds exactly one key per role, and since RFCT-083 a threshold
@@ -102,7 +102,7 @@ Chosen here so every later `sign` invocation copies rather than decides:
 
 | role | expiry horizon | who re-signs, with what |
 | --- | --- | --- |
-| `root` | 1 year | the offline ceremony, repeated (§1.6) |
+| `root` | 1 year | the offline ceremony: `refresh-root`, or `rotate-root` (§1.6) |
 | `targets` | 6 months | release host, online key, at each release or `sign` |
 | `snapshot` | 3 months | release host, online key |
 | `timestamp` | 2 weeks | release host, online key, on a calendar reminder |
@@ -142,30 +142,159 @@ incident to be recorded, not a convenience.
 - The ceremony machine's storage is destroyed or wiped after the media are
   written.
 
-### 1.6 Rotation and revocation — **[not implemented]**, stated honestly
+### 1.6 Republishing root: the annual refresh, and rotation — **[runbook]**
 
-TUF rotates the root by publishing `<n+1>.root.json` signed by **both** the
-old and the new root keys, so existing clients can walk to the new anchor.
-`rauc-sign` has no command that produces such a file — root key rotation is
-explicitly out of phase 1 (`os/pkgs/rauc-sign/README.md`) — and revoking a compromised
-*online* key is the same missing operation, because the replacement key must
-be introduced by a new root.json.
+`root.json` expires (§1.4: one year), and republishing it is **two different
+ceremonies**. Performing the wrong one is the failure this section is arranged
+to prevent, so decide which this is before reading further:
 
-What this means operationally, today: a compromised online key ends the
-repository's lineage. The recovery is a fresh ceremony (§1.1–1.5), a new
-trust anchor distributed out of band, and devices re-anchored by whatever
-mechanism ships trust anchors to devices — which is the RFCT-088 workstream's
-territory (`docs/task/RFCT-088.md`, **completed 2026-08-23**). Until
-rotation tooling exists, the root key's protection (§1.5)
-and the online keys' host hygiene are carrying the weight that rotation
-would; this is the single strongest argument for scheduling that tooling.
+- **Refresh** — the same key signs a new version with a later expiration. The
+  trust anchor does not change hands, so nothing is distributed and no device
+  is asked to do anything. This is the ordinary annual event.
+- **Rotation** — a *new* root key takes over the role, and the outgoing key is
+  revoked. The new version is signed by the outgoing key **as well as** the
+  incoming one — TUF's cross-sign — which is what lets a device still pinned to
+  the old anchor reach the new one by itself. Do this when the root key is
+  compromised or suspected compromised, when custody of it changes, or on a
+  deliberate rotation schedule.
 
-Re-signing root at its annual expiry with the *same* key needs the offline
-key but no new trust anchor: repeat the ceremony access procedure and run
-`init`'s successor... which also does not exist — `init` refuses an existing
-repository. Practically, the annual root refresh is blocked on the same
-missing rotation command, and the 1-year horizon in §1.4 is the deadline for
-building it. **[not implemented]**, and dated.
+The commands are separate for the same reason. `rotate-root` refuses a
+`--new-keys-dir` holding the key that already holds the role, and names
+`refresh-root` in the refusal; `refresh-root` cannot introduce a key at all.
+Neither one can be reached by forgetting an argument to the other.
+
+Both run on the offline machine of §1.1, both need the sealed `root.pk8`, and
+**neither reads an online key** — `targets.pk8`, `snapshot.pk8` and
+`timestamp.pk8` do not enter the room. Nothing is lost by their absence: no
+top-level role's metadata pins `root.json`, so `targets`, `snapshot` and
+`timestamp` keep their existing signatures across either ceremony and are
+refreshed afterwards on the release host (step 4 below).
+
+**What is carried in.** The `rauc-sign` binary and this checkout (§1.1); the
+repository's `metadata/` directory, complete, on media; the sealed `root.pk8`
+from §1.5. For a rotation, blank media for the incoming key. Both commands
+verify that the `metadata/root.json` they are handed is signed by its own root
+keys before building on it and refuse otherwise, so a partial or substituted
+copy is caught in the room rather than by the fleet.
+
+**Step 1, for a rotation only: generate the incoming key.**
+
+```sh
+rauc-sign gen-dev-keys --keys-dir /ceremony/new-keys --role root
+```
+
+`--role root` writes `root.pk8` and nothing else. Generating all four here
+would put spare copies of the release host's online keys on offline media that
+this ceremony never uses, each then needing its own destruction record.
+
+**Step 2: publish the new root version.** One of these, never both:
+
+```sh
+# Rotation: the incoming key takes over; both keys sign.
+rauc-sign rotate-root \
+  --repo /ceremony/tuf \
+  --keys-dir /ceremony/keys \
+  --new-keys-dir /ceremony/new-keys \
+  --root-expires <RFC 3339, one year out>
+
+# Annual refresh: same key, later expiry, anchor unchanged.
+rauc-sign refresh-root \
+  --repo /ceremony/tuf \
+  --keys-dir /ceremony/keys \
+  --root-expires <RFC 3339, one year out>
+```
+
+The expiration is explicit, as everywhere else in this tool: nothing reads the
+wall clock, so what the ceremony signs is fixed by its inputs (its bytes are
+not — step 3). Each command prints the version it published — call it `n` —
+and writes `metadata/<n>.root.json` plus the `metadata/root.json` alias.
+
+Neither command will overwrite an already-published `<n>.root.json`: a
+published root version is a file some device may already have walked to, and
+two different documents under one name is not an update. If that refusal
+appears, the `metadata/root.json` in hand is a stale copy of an older version —
+take a complete copy of `metadata/` and start again.
+
+Before writing anything, both commands check the result the way the fleet will:
+that a threshold of the **outgoing** root's keys signed it, and a threshold of
+the **new** root's own. A rotation that would strand devices on either anchor is
+refused rather than written to the output media, so there is no in-room
+verification step to remember here. (`rauc-sign verify` is not that step and
+will usually fail at a root ceremony for an unrelated reason: the `timestamp`
+horizon is two weeks, so it is almost certainly expired by the time root is a
+year old. Verification is step 5, after the online roles are refreshed.)
+
+**Step 3: the media, and the minutes.** Carry `metadata/` back out. Then, per
+§1.5 and in the same custody record:
+
+- Which ceremony this was — refresh or rotation — the date, and who was
+  present.
+- The root version `n` published, and the sha256 of `metadata/<n>.root.json`.
+- For a rotation: the incoming `root.pk8` written to **two or more** offline
+  media in separate physical locations, sealed, exactly as §1.5 requires of the
+  original — it is now the key that matters.
+- For a rotation: the disposition of the **outgoing** `root.pk8`. If this
+  rotation is a response to compromise, destroy it now; retaining a compromised
+  key buys nothing. Otherwise keep it sealed under §1.5 custody until the fleet
+  is known to be on the new anchor, because it is the only thing that could
+  re-issue a chain from the old one if the new media are lost, and then destroy
+  it and record that.
+- The ceremony machine's storage destroyed or wiped.
+
+That sha256 identifies the file as distributed. It is **not** re-derivable by
+re-running the command: `root.json`'s `keys` object is serialized in an
+unordered map's iteration order, so two runs over identical inputs produce
+different bytes carrying the same signature (the signature is computed over
+canonical JSON; the file is not written in it). Compare the file you hold
+against the recorded digest — never against a fresh run.
+
+**Step 4: refresh the online roles, on the release host.** The root ceremony did
+not touch `targets`, `snapshot` or `timestamp`, and at a root's annual expiry
+`timestamp` is long past its own two-week horizon:
+
+```sh
+rauc-sign sign --repo <repo> --keys-dir <online-keys> \
+  --targets-expires ... --snapshot-expires ... --timestamp-expires ...
+```
+
+**Step 5: prove it, from the anchor devices actually hold.**
+
+```sh
+# The one that matters after a rotation: the OLD anchor must still reach the
+# repository, walking itself forward to root v<n>. This is the overlap window.
+rauc-sign verify --repo <repo> --root <out-of-band copy of the OLD anchor>
+
+# And the new one, for devices provisioned from here on.
+rauc-sign verify --repo <repo> --root <out-of-band copy of <n>.root.json>
+```
+
+Both must print `OK root v<n> ...`. `--root` is a copy held outside the
+repository, never a path back into it (§1.5).
+
+**Step 6, for a rotation only: distribute the new anchor.** Record the sha256
+of `metadata/<n>.root.json` in the minutes and distribute the file out of band,
+as §1.5 says of the original. This is for **newly provisioned** devices: a
+device already carrying an older anchor does not need it, because it reaches
+`<n>.root.json` through the repository. How any anchor first reaches a device
+is a separate, still-unbuilt question — see the trust anchor provisioning
+section of `os/pkgs/rauc-sign/README.md`.
+
+**Never delete an intermediate root file.** `metadata/1.root.json`,
+`metadata/2.root.json`, … all stay served, forever. A device that has been
+offline across several rotations walks the chain one version at a time from
+whatever anchor it holds; a gap in that sequence is where its walk stops, and
+it stops permanently.
+
+**Still not implemented: replacing a compromised *online* key.**
+`rotate-root` carries the `targets`, `snapshot` and `timestamp` key bindings
+forward unchanged, and no command binds a *different* online key into a new
+root version. So the consequence §1.5's host hygiene is holding off is
+unchanged: a compromised online key still ends the repository's lineage, and
+the recovery is still a fresh ceremony (§1.1–1.5) with a new trust anchor
+distributed out of band and devices re-anchored by whatever mechanism ships
+anchors to devices — which does not exist either. Rotating the *root* key no
+longer requires that, which is the point of the cross-sign; revoking an online
+key still does. **[not implemented]**, and narrower than it was.
 
 ## 2. The RAUC production CA — **[runbook]** for the ceremony, with a named gap
 

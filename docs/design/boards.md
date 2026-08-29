@@ -52,7 +52,7 @@ the rootfs stage chain.
 | `Image` + `modules.tar` + `*.dtb` | `os/boards/<name>/bsp/kernel` | `os/rootfs/build-v2.sh` stages `MODULES_TAR`; `os/rootfs/stages/40-board.Dockerfile` extracts it into `/usr/lib/modules`; `os/build/src/mkimage-v2.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`os/build/src/mkimage-v2.ts:254`) |
 | bootloader binary | `os/boards/<name>/bsp/uboot` | `os/build/src/mkimage-v2.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A v2 image must carry the uboot-mos variant" (`os/build/src/mkimage-v2.ts:265`) |
 | `board.env` | `os/boards/<name>/` | every consumer: both assemblers, the rootfs driver, RAUC's config renderer, os/verify. Read as data, never sourced — "Nothing here ever hands the file to a shell" (`os/verify/src/board-env.ts:6-7`) |
-| firmware blobs | `os/boards/<name>/bsp/rootfs/firmware` | `os/rootfs/build-v2.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`os/rootfs/build-v2.sh:303-304`) |
+| firmware blobs | `os/boards/<name>/bsp/rootfs/firmware` | `os/rootfs/build-v2.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`os/rootfs/build-v2.sh:308-309`) |
 
 Modules/kernel version coupling is absolute: the modules tree inside the rootfs
 MUST match the BSP kernel release, asserted at image assembly.

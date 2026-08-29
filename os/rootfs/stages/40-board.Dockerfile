@@ -33,9 +33,11 @@
 # any feature stage.
 
 # The order of the apt transactions is part of the contract -- radios,
-# containers, grub-editenv, kernel -- because it decides the order of entries
-# in the logs the pack stage carries into /usr/share/factory/var/log. The gate
-# is the content diff in os/rootfs/README.md.
+# containers, grub-editenv, kernel -- because it decides the order of entries in
+# the package-manager logs, which stages/90-pack captures out of the tree to
+# _out/<board>/pkg-logs/ rather than shipping. The gate is the content diff in
+# os/rootfs/README.md, and it is run by hand: nothing in this repository
+# compares two builds automatically.
 
 # The link back up the chain. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a

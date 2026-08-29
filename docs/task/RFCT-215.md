@@ -246,14 +246,14 @@ memory of a report.
    (`os/pkgs/mosd/apid/src/routes.rs:4155`). **No route of M6's
    typed network cluster calls it.** Pinned by
    `the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not`
-   (`os/pkgs/mosd/apid/src/tests.rs:10312`).
+   (`os/pkgs/mosd/apid/src/tests.rs:10417`).
 2. **The gate asymmetry — a bearer-only client asking for an *undeclared* path
    under `/api/` is redirected to `/login`.** The gate hands off only declared
    routes (`os/pkgs/mosd/apid/src/routes.rs:3273`) and its whole credential test
    is the cookie (`os/pkgs/mosd/apid/src/routes.rs:3294-3298`); a bearer does not
    satisfy it. Predates M2. Asserted by
    `an_absent_token_id_is_404_and_a_malformed_one_is_422`
-   (`os/pkgs/mosd/apid/src/tests.rs:6427`), whose bearer arm asserts the 303.
+   (`os/pkgs/mosd/apid/src/tests.rs:6532`), whose bearer arm asserts the 303.
 3. **`is_quotable` stays in the renderer, so the WiFi route still accepts a psk
    containing a quote or a backslash.** `fn is_quotable`
    (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:200-204`) is applied only
@@ -267,7 +267,7 @@ memory of a report.
 4. **The gate-list/router agreement gap.** `fn is_declared_api_route`
    (`os/pkgs/mosd/apid/src/routes.rs:541-562`) is a second list of eighteen
    clauses, and nothing checks it against the router's registrations — the one
-   test that names it (`os/pkgs/mosd/apid/src/tests.rs:5874`) is about path
+   test that names it (`os/pkgs/mosd/apid/src/tests.rs:5979`) is about path
    matching, not membership. axum exposes no route table to compare against.
 5. **The mosd-side convergence.** `api_v1_state` reads an fdo error name and
    rewrites it — `if name.as_str() == FDO_INVALID_ARGS`

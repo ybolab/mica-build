@@ -37,6 +37,26 @@ amd64) ELF_ARCH=x86-64 ;;
 esac
 OUT="${HERE}/out-${MOS_ARCH}"
 
+# The src stage runs at the BUILD platform, not the target's, so this build
+# needs mos-build-base at the host's architecture as well -- a second image
+# with a second name, since a LOCAL_ tag carries its architecture. The mapping
+# is os/build-env/build.sh's, copied rather than inferred from MOS_ARCH: the
+# host is what it is regardless of what is being built for, and reading it off
+# MOS_ARCH would make every cross build resolve the src base to the target.
+#
+# `uname -m` and not `docker buildx inspect`: on this host inspect reports the
+# mos-arm64 builder as `linux/amd64, linux/386` while a throwaway build on it
+# prints `aarch64` (docs/design/build-harness.md section 5), so it is not
+# something to decide an architecture with. What is wanted here is narrower
+# anyway -- which architecture $BUILDPLATFORM will be -- and that is the
+# machine buildkit runs on, which for every builder this script selects is
+# this one.
+case "$(uname -m)" in
+x86_64) NATIVE_ARCH=amd64 ;;
+aarch64 | arm64) NATIVE_ARCH=arm64 ;;
+*) echo "error: $(uname -m) is not an architecture os/pkgs/podman/build.sh maps to a mos-build-* tag, so it cannot resolve the src stage's base for the build platform. os/build-env/build.sh maps the same two and no more" >&2; exit 1 ;;
+esac
+
 for tool in docker; do
     command -v "${tool}" >/dev/null 2>&1 || {
         echo "error: ${tool} is required and not on PATH" >&2
@@ -166,6 +186,25 @@ mapfile -t FROM_ARGS < <("${FROM_SH}" --arch="${MOS_ARCH}" \
     exit 1
 }
 
+# The fifth argument, and the only one resolved at a different architecture.
+# A separate call because --arch is per-invocation and this one is per-image:
+# LOCAL_MOS_BUILD_BASE at ${NATIVE_ARCH} is a different tag from the same key
+# at ${MOS_ARCH}, and it is the src stage's base. Folding it into the call
+# above would have to drop --arch, and dropping --arch is what from.sh refuses
+# by name -- both families are in the store at once, so there is no "the"
+# local image to fall back to.
+#
+# On a native build the two resolve to the SAME tag, and that is left to
+# happen rather than special-cased: two --build-arg names may carry one value,
+# and a build where they differ and a build where they do not then take the
+# same path through this script.
+mapfile -t NATIVE_ARGS < <("${FROM_SH}" --arch="${NATIVE_ARCH}" \
+    MOS_BUILD_BASE_NATIVE=LOCAL_MOS_BUILD_BASE)
+[ "${#NATIVE_ARGS[@]}" -eq 2 ] || {
+    echo "error: os/build-env/from.sh did not yield localhost/mos-build-base:${NATIVE_ARCH} (see its message above); the src stage's FROM would have been blank. That family is built by \`MOS_BUILD_PLATFORM=linux/${NATIVE_ARCH} make build-env\` -- a cross build needs BOTH families on this host, the target's for the compiles and the host's for the source fetch" >&2
+    exit 1
+}
+
 # The same four images a second time, as content, for a builder that cannot
 # read the local image store. Only for that builder: with the docker driver the
 # tags above resolve directly, and exporting them anyway would copy the whole
@@ -188,6 +227,21 @@ if [ "${BUILDER_DRIVER}" != docker ]; then
         echo "error: os/build-env/from.sh did not yield the four OCI layout contexts (see its message above); the '${BUILDER}' builder would have resolved the FROM lines as pulls from a registry called 'localhost'" >&2
         exit 1
     }
+    # A fifth layout for the src stage's base, and ONLY when it is a fifth
+    # image. On a native build MOS_BUILD_BASE_NATIVE resolves to the tag the
+    # loop above already exported, and a second --build-context under the same
+    # name would be one name bound twice -- an export of 300 MB to say what has
+    # already been said, and a precedence question nothing here should have to
+    # answer.
+    if [ "${NATIVE_ARCH}" != "${MOS_ARCH}" ]; then
+        mapfile -t NATIVE_CTX < <("${FROM_SH}" --arch="${NATIVE_ARCH}" --contexts="${OCI_DIR}" \
+            LOCAL_MOS_BUILD_BASE)
+        [ "${#NATIVE_CTX[@]}" -eq 2 ] || {
+            echo "error: os/build-env/from.sh did not yield the OCI layout for localhost/mos-build-base:${NATIVE_ARCH} (see its message above); the '${BUILDER}' builder would have resolved the src stage's FROM as a pull from a registry called 'localhost'" >&2
+            exit 1
+        }
+        CTX_ARGS+=("${NATIVE_CTX[@]}")
+    fi
 fi
 
 rm -rf "${OUT}"
@@ -196,6 +250,7 @@ mkdir -p "${OUT}"
 docker buildx build "${BUILDER_ARGS[@]}" \
     --platform "linux/${MOS_ARCH}" \
     "${FROM_ARGS[@]}" \
+    "${NATIVE_ARGS[@]}" \
     ${CTX_ARGS[@]+"${CTX_ARGS[@]}"} \
     --build-arg "ELF_ARCH=${ELF_ARCH}" \
     -f "${HERE}/Dockerfile" \
