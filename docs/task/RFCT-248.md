@@ -1,6 +1,6 @@
 # RFCT-248 PLAN-026 M2: the gate asymmetry on undeclared /api/ paths
 
-- **status**: completed — an undeclared path under `/api` answers section 2.4's 404 envelope for **every** credential and for none, where it previously answered a 303 to `/login` (or to `/setup`) for every client that was not a browser; two pinning tests asserted the old answer and both are flipped, one of them found by the gate rather than by the brief; the cookie arm's answer is measured byte-identical before and after; 838/838 (836 baseline + 2 added), 2213/2213 citations with near-miss 354, 875/875 index, oasdiff RC=0
+- **status**: completed — an undeclared path under `/api` answers section 2.4's 404 envelope for **every** credential and for none, where it previously answered a 303 to `/login` (or to `/setup`) for every client that was not a browser; two pinning tests asserted the old answer and both are flipped, one of them found by the gate rather than by the brief; the cookie arm's answer is measured byte-identical before and after; 841/841 (839 baseline + 2 added), 2239/2239 citations with near-miss 354, 883/883 index, oasdiff RC=0
 - **priority**: P1
 - **owner**: bkd/qzb6dsh2
 - **createdAt**: 2026-08-29
@@ -220,10 +220,14 @@ Done twice, and the second time is the one that ships.
 every conflict of this shape and nothing else:
 
     <<<<<<< HEAD
-    (`os/pkgs/mosd/apid/src/routes.rs:3330`), and only *declared* routes are handed
+    (`routes.rs:3330`), and only *declared* routes are handed
     =======
-    (`os/pkgs/mosd/apid/src/routes.rs:3338`), and only *declared* routes are handed
+    (`routes.rs:3338`), and only *declared* routes are handed
     >>>>>>> bkd/5q6am5rw
+
+The conflicted line is from `docs/task/RFCT-245.md` and its citation names
+`os/pkgs/mosd/apid/src/routes.rs` in full; the path is abbreviated here so this
+illustration of two dead line numbers is not itself read as two citations.
 
 Both sides had re-anchored the same citation, by different offsets, and neither
 number is right for the merged tree. `docs/task/RFCT-215.md` section 5 decides
@@ -283,40 +287,63 @@ own:
 
 ## 9. Gates
 
+All four were run at `1d54784`, this branch's tip, on the merged tree.
+
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `docs/verify-citations.sh: 2213/2213 PASS`, `near-miss: no quote armed, but a quoted span sits 1-3 words away: 354` |
-| `bash docs/verify-index.sh` | `docs/verify-index.sh: 875/875 PASS` |
-| `bash hack/check.sh` (container, `localhost/mos-build-rust:amd64`) | `ALL CHECKS PASSED`; `838 tests run: 838 passed (2 slow), 0 skipped` — run at `42752f3`, the last commit that touches code |
-| `oasdiff breaking` 1.29.1 vs `main` at `7566210` | `No changes detected`, `RC=0` |
+| `bash docs/verify-citations.sh` | `docs/verify-citations.sh: 2239/2239 PASS`, `near-miss: no quote armed, but a quoted span sits 1-3 words away: 354` |
+| `bash docs/verify-index.sh` | `docs/verify-index.sh: 883/883 PASS` |
+| `bash hack/check.sh` (container, `localhost/mos-build-rust:amd64`) | `ALL CHECKS PASSED`; `841 tests run: 841 passed, 0 skipped` |
+| `oasdiff breaking` 1.29.1 vs `main` at `7566210` | `No breaking changes to report, but the specs are different.`, `RC=0` |
 
-The reference figures this branch was given were 2196/2196 with near-miss 354,
-and 871/871. Both totals are higher and both deltas are arithmetic, not drift.
-**Citations, 2196 + 17 = 2213.** One comes from `docs/design/api.md` section
-2.3, whose gate list gained a decision and with it one more full-form citation,
-from seven code citations in the old block to eight in the new; the other
-sixteen are this file's own. **Index, 871 + 4 = 875**, which is what one added
-task file and its row cost `docs/task/RFCT-246.md` too, recorded in
-`docs/task/RFCT-244.md` section 11 as 851 going to 855.
+**Citations, and why the total is not the reference figure.** The reference this
+branch was given was 2196/2196 with near-miss 354, taken at `bkd/5q6am5rw`'s
+tip before it moved. The corpus has since taken two milestones' worth of new
+task records through the merge, so the comparable statement is a delta and not
+a total: this branch adds **18** citations of its own — one in
+`docs/design/api.md` section 2.3, whose gate list gained a decision and with it
+one more full-form citation, from seven code citations in the old block to
+eight in the new, and seventeen in this file — and moves 468 more without
+adding or removing any.
 
-The near-miss count is **unchanged at 354**. That is the figure to read: a
+**The near-miss count is 354, unchanged, and that is the figure to read.** A
 citation whose quote drifted one to three interposed words registers there and
-nowhere else, and a re-anchor pass is exactly what causes that. 354 before and
+nowhere else, and a re-anchor pass is exactly what causes it. 354 before and
 354 after means the pass moved line numbers and disturbed no quote's adjacency.
-The one adjacency this branch did have to repair was in this file, not in the
-re-anchored corpus: a first draft put three words between a quote and its
-citation, the ratchet on unquoted citations in a new document caught it, and it
-was fixed rather than ceilinged.
+The one adjacency this branch did have to repair was in this file and not in
+the re-anchored corpus: a first draft put three words between a quote and its
+citation, `docs/verify-citations.sh`'s ratchet on unquoted citations in a new
+document caught it, and it was fixed rather than ceilinged.
 
-**Test-count arithmetic.** 836 baseline + 2 added = 838. The rename in section 6
-is net zero. Measured per crate as well: `-p apid` reported 353 tests before
-this branch and 355 after.
+**Index, 883/883.** The reference was 871/871. One added task file and its index
+row costs four, which is what `docs/task/RFCT-246.md` cost too — recorded in
+`docs/task/RFCT-244.md` section 11 as 851 going to 855 — and the merge brought
+two more task files in.
+
+**Test-count arithmetic: 839 baseline + 2 added = 841.** The rename in section 6
+is net zero, and the two added are section 5's. Corroborated mechanically rather
+than asserted: counting `#[test]` and `#[tokio::test]` attributes across
+`os/pkgs/mosd` gives 821 at the merge's incoming tip and 823 here, a difference
+of exactly two. Measured per crate before the merge as well: `-p apid` reported
+353 tests at this branch's base and 355 after the two were added.
 
 **oasdiff.** The binary is 1.29.1 at
 `541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`, the base is
 `main`'s tip re-read at the moment of the run (`7566210`), and the severity file
 raises `response-optional-property-removed` and
-`response-non-success-status-removed` to `err`. `No changes detected` is the
-expected result and now a measured one: undeclared paths appear in no OpenAPI
-document, so a change to what the gate does with them cannot move the schema.
-`os/pkgs/mosd/apid/openapi.json` is byte-identical to `main`'s.
+`response-non-success-status-removed` to `err`.
+
+The design constraint predicted *no change at all* to the document, and before
+the merge that is exactly what was measured: `No changes detected`. After it,
+the two specs differ — and the difference is **not this branch's**. It is two
+`description` strings on the network routes, from the milestones the merge
+brought in:
+
+    -"...a key is not an interface name, or a relational rule refuses it..."
+    +"...a key is not an interface name, an entry declares a static address that is not IPv4 CIDR notation..."
+
+`git diff` between the merge's incoming tip and this tip touches
+`os/pkgs/mosd/apid/openapi.json` not at all, which is the measurement that
+attributes the delta. The underlying prediction holds and is now measured
+rather than asserted: undeclared paths appear in no OpenAPI document, so a
+change to what the gate does with them cannot move the schema.
