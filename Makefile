@@ -349,3 +349,22 @@ x64-%:
 .PHONY: os-apid-api-test
 os-apid-api-test:
 	bash test/apid-api/run.sh
+
+# The BUILD-TIME half of that suite, and the only part of it that runs on a
+# checkout: every literal a phase pins which openapi.json ALSO states, asserted
+# to agree with the document. No image, no QEMU, no network -- it reads the
+# phase files' own bytes and os/pkgs/mosd/apid/openapi.json and compares them.
+#
+# It exists because os-apid-api-test above is the only thing that runs the
+# phases, and it needs a built image and a nine-minute boot. A milestone that
+# moved a shipped status therefore left every phase pinning the old one green
+# until somebody booted the image (PLAN-028 M4, docs/task/RFCT-259.md). This
+# closes the part of that gap that needs no boot; RFCT-259 section 4 states the
+# part that does, which is most of it.
+#
+# Needs bun OR docker: it runs on a host bun when there is one and in the bun
+# pinned as IMAGE_BUN_1 otherwise, and says which. MOS_APID_CONTAINER=1 forces
+# the pinned container.
+.PHONY: os-apid-api-spec-pins
+os-apid-api-spec-pins:
+	bash test/apid-api/spec-pins.sh

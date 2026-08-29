@@ -420,6 +420,18 @@ jobs:
       - name: Both shipped board layouts against the schema
         run: make os-layout-lint
 
+      # The apid API suite's build-time half. HERE and not in offline-suites,
+      # for that job's own stated reason: it needs docker. There is no bun on
+      # this runner, so spec-pins.sh takes the same pinned-container route
+      # os/verify does, and its announce line says so.
+      #
+      # The suite ITSELF (make os-apid-api-test) does not run anywhere in CI:
+      # it needs a built image and boots QEMU. That is the whole reason this
+      # step exists -- a milestone that moves a shipped status leaves every
+      # phase pinning the old one green until somebody boots the image.
+      - name: The apid phase pins agree with the committed OpenAPI document
+        run: make os-apid-api-spec-pins
+
       - name: What this job does not cover
         if: always()
         run: |
@@ -435,3 +447,10 @@ jobs:
           echo "None of those hold here. The port's own suite (image.ts, tools.ts and" >&2
           echo "their cases) DOES run above; what is untested on this runner is the" >&2
           echo "register against a real image." >&2
+          echo >&2
+          echo "It does not run make os-apid-api-test either: that suite BOOTS the x64" >&2
+          echo "image in QEMU and drives apid over a real socket, and there is no image" >&2
+          echo "here. What ran above is its build-time half only -- the phase literals" >&2
+          echo "openapi.json also states. Every phase assertion whose only source of" >&2
+          echo "truth is the running device (docs/task/RFCT-259.md section 4) is" >&2
+          echo "unchecked on this runner and is checked by a booted run or not at all." >&2
