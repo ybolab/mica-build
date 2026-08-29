@@ -486,10 +486,10 @@ the status because they were written to.
 **Who else may call.** The shipped D-Bus policy restricts `com.mos.mosd` to
 root in both directions — the default context denies both `send_destination` and
 `receive_sender` (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-72`) and only `user="root"`
-is allowed to own, send and receive (`:74-78`). The file also carries an
+is allowed to own, send and receive (`os/pkgs/mosd/dist/com.mos.mosd.conf:74-78`). The file also carries an
 explicit extension point describing the block a future non-root apid would need
 (`os/pkgs/mosd/dist/com.mos.mosd.conf:32-46`) and a deliberately deferred per-method
-allowlist (`:47-67`). At `86cd669` this section recorded that
+allowlist (`os/pkgs/mosd/dist/com.mos.mosd.conf:47-67`). At `86cd669` this section recorded that
 `docs/design/dashboard.md` cited the policy as permitting *"any local process"*
 to call it; that disagreement is now closed from the other side — dashboard.md
 reads the shipped policy correctly and says *"the D-Bus policy admits only
@@ -652,7 +652,7 @@ management"* (`os/pkgs/mosd/apid/src/auth.rs:62-64`). The counter is persisted t
 into the state directory: CN `mos`, SANs `DNS:mos`, `DNS:localhost`,
 `IP:127.0.0.1` — the certificate is built at `os/pkgs/mosd/apid/src/tls.rs:59-67`, with
 the private key written mode `0o600` (`os/pkgs/mosd/apid/src/tls.rs:37`, called from
-`:78`) inside a state directory created mode `0o700`
+`os/pkgs/mosd/apid/src/tls.rs:78`) inside a state directory created mode `0o700`
 (`os/pkgs/mosd/apid/src/tls.rs:24`). That directory defaults to
 `/var/lib/mos/apid` and is overridable by `APID_STATE_DIR`
 (`os/pkgs/mosd/apid/src/config.rs:38-40`), and is provided by systemd as
@@ -696,8 +696,8 @@ fsync it, rename it over the target, then fsync the directory"*
 `os/pkgs/mosd/mosd-settings/src/store.rs:238-253`. Every struct in the model carries
 `#[serde(deny_unknown_fields)]` (for example
 `os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, `:112`, `:139`, `:147`,
-`:186`, `:197`, `:247`, `:258`, `:273`, `:333`, `:358`, `:368`, `:393`,
-`:410`, `:506`, `:529`, `:539`, `:555`, `:572`, `:629`), so an unknown key
+`os/pkgs/mosd/mosd-settings/src/model.rs:186`, `:197`, `:247`, `:258`, `:273`, `:333`, `:358`, `:368`, `:393`,
+`os/pkgs/mosd/mosd-settings/src/model.rs:410`, `:506`, `:529`, `:539`, `:555`, `:572`, `:629`), so an unknown key
 fails the load rather than being silently dropped.
 
 **The settings subtrees, from `pub struct Settings {`
@@ -891,9 +891,9 @@ in the same four positions so the change is legible rather than overwritten.
 (`os/pkgs/mosd/apid/src/assets/serve.rs:68`), body through
 `os/pkgs/mosd/apid/src/assets/serve.rs:79` — answers 405 with `Allow: GET, HEAD` for
 any other method (`os/pkgs/mosd/apid/src/assets/serve.rs:71-73`,
-`:241-248`), then hands the path to `respond`
+`os/pkgs/mosd/apid/src/assets/serve.rs:241-248`), then hands the path to `respond`
 (`os/pkgs/mosd/apid/src/assets/serve.rs:81-108`): a file out of the active bundle when
-one resolves (`:87`), a 404 when a path guard fired (`:95`), and otherwise
+one resolves (`os/pkgs/mosd/apid/src/assets/serve.rs:87`), a 404 when a path guard fired (`:95`), and otherwise
 §4.2's SPA fallback — but only when the client offered HTML explicitly
 (`os/pkgs/mosd/apid/src/assets/serve.rs:207-214`) and the final path segment contains
 no `.` (`os/pkgs/mosd/apid/src/assets/serve.rs:228-231`). When that fallback finds no
@@ -1870,7 +1870,7 @@ verbatim, and always say which side it came from.**
 The reason is what the HTML path does today, which is neither. It **flattens**:
 `BusSettings` converts every `zbus::Error` to `anyhow::Error` with `err.into()`
 (`os/pkgs/mosd/apid/src/bus_client.rs:225-234`, and the same shape at `:235-244`, `:246-258`,
-`:197-206`), and every form handler renders one page for the result — `bus_error`,
+`os/pkgs/mosd/apid/src/bus_client.rs:197-206`), and every form handler renders one page for the result — `bus_error`,
 HTTP **503** with `Retry-After`, body *"The management daemon is unavailable."*
 (`os/pkgs/mosd/apid/src/routes.rs:3244-3259`, message at `os/pkgs/mosd/apid/src/routes.rs:3227`). So a settings value mosd
 rejected as invalid is reported to the operator as the daemon being down:
@@ -1946,7 +1946,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    `/healthz` cannot be fixed, because the boot health gate depends on exactly
    that behaviour (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:219-232`) — its
    comment says so in as many words: *"/healthz is apid's existing endpoint and
-   bypasses its auth gate"* (`:218`).
+   bypasses its auth gate"* (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:218`).
 
    So the API adds a second, differently-scoped endpoint:
 
@@ -2241,7 +2241,7 @@ tier is chosen rather than inherited:
 5. **It is symmetric with the two credentials already there.** `webAdmin` holds
    an argon2id PHC hash (`os/pkgs/mosd/mosd-settings/src/model.rs:68-71`) and
    `access.device` holds a hash and a generation and *"never holds a plaintext
-   secret"* (`:147-152`). `apiTokens` holds hashes.
+   secret"* (`os/pkgs/mosd/mosd-settings/src/model.rs:158-160`). `apiTokens` holds hashes.
 
 The cost of reason 1 is stated in §2.2 and is not hypothetical: anything that
 can read the settings tree can read the token hashes. `GetSettings` returns the
@@ -2343,7 +2343,7 @@ Two costs, both inherited from the tree rather than introduced here:
 **Expiry: none in phase 1, and that is a decision, not an omission.** An
 absolute expiry needs a wall clock, and nothing in the crate reads one —
 `SessionStore` uses `Instant` throughout (`os/pkgs/mosd/apid/src/session.rs:10`, `:53`,
-`:72`), which is monotonic and cannot express a deadline that survives a reboot.
+`os/pkgs/mosd/apid/src/session.rs:72`), which is monotonic and cannot express a deadline that survives a reboot.
 Adding an `expiresAt` before there is a trusted wall clock would produce a field
 that is either unenforced or enforced against a clock that resets. So: tokens do
 not expire, and **revocation is the entire lifecycle**. The cost is blunt — a
@@ -2620,10 +2620,10 @@ claim is made anywhere in this section"* stays true.
 ### 4.1 Routing between API and assets — **[implemented]**
 
 **Implemented at `os/pkgs/mosd/apid/src/routes.rs`** — `app` (`:88-161`), whose
-*declaration order* is this subsection's precedence rule: `/` (`:95`), the
-reserved `/builtin` subtree (`:115-125`), the fifteen legacy declarations
-(`:126-145`), the reserved `/api` subtree (`:155-156`), and rule 4's
-`.fallback(serve::fallback)` (`:158`). The asset side is
+*declaration order* is this subsection's precedence rule: `/` (`os/pkgs/mosd/apid/src/routes.rs:95`), the
+reserved `/builtin` subtree (`os/pkgs/mosd/apid/src/routes.rs:115-125`), the fifteen legacy declarations
+(`os/pkgs/mosd/apid/src/routes.rs:126-145`), the reserved `/api` subtree (`:155-156`), and rule 4's
+`.fallback(serve::fallback)` (`os/pkgs/mosd/apid/src/routes.rs:227`). The asset side is
 `os/pkgs/mosd/apid/src/assets/serve.rs` (`root` and `fallback`). Nothing re-checks a
 prefix: no handler under `assets/` reads one, which is the property this
 subsection asked for rather than a coincidence of the implementation.
@@ -2664,9 +2664,9 @@ fallback at all** — the only `.fallback` in the file belonged to the HTTP
 redirect router, which is why an unmatched path was then answered by the gate's
 redirect to `/login` or by axum's default not-found (section 1.6). As of
 `0d4f3c6` the fifteen declarations are at `os/pkgs/mosd/apid/src/routes.rs:151-170`,
-the redirect router's fallback is at `:211`, the gate's `/login` redirect is at
-`:286`, and the HTTPS router's fallback is declared: `.fallback(serve::fallback)`
-at `:165`. Adding the asset service as the *fallback* therefore means declared
+the redirect router's fallback is at `os/pkgs/mosd/apid/src/routes.rs:211`, the gate's `/login` redirect is at
+`os/pkgs/mosd/apid/src/routes.rs:286`, and the HTTPS router's fallback is declared: `.fallback(serve::fallback)`
+at `os/pkgs/mosd/apid/src/routes.rs:165`. Adding the asset service as the *fallback* therefore means declared
 routes win **structurally**: a bundle that ships a file
 at `api/v1/settings` cannot capture API traffic, because the router never
 consults the fallback for a path it matched. A rule enforced by the dispatch
@@ -2786,9 +2786,9 @@ condition, and it is the test that keeps 4.2 from silently regressing.
 ### 4.3 MIME and caching — **[implemented]**
 
 **Implemented at `os/pkgs/mosd/apid/src/assets/mime.rs`** — the fixed extension
-allowlist (`.wasm` and `.webmanifest` in it from the start, `:58-59`), the
+allowlist (`.wasm` and `.webmanifest` in it from the start, `os/pkgs/mosd/apid/src/assets/mime.rs:58-59`), the
 `octet-stream` fallback, `nosniff`, and the three cache classes with their
-header values (`:96-102`). The headers are attached to every response the asset
+header values (`os/pkgs/mosd/apid/src/assets/mime.rs:96-102`). The headers are attached to every response the asset
 router builds by `asset_response` in `os/pkgs/mosd/apid/src/assets/serve.rs`, and the
 `/api/` subtree's own 404 carries `no-store` from the same enum
 (`os/pkgs/mosd/apid/src/routes.rs:217`). The immutable class is read per request from
@@ -3096,7 +3096,7 @@ binds `/srv/root` onto `/root`
 redirect: it is the DATA partition's **own mountpoint**, mounted directly from
 the image's `fstab` — `/srv` is the DATA tier there
 (`os/rootfs/overlay-v2/etc/fstab.in:12`) and the only one carrying
-`x-systemd.growfs` (`:16`) — and the verifier
+`x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`) — and the verifier
 asserts that entry by mountpoint and options, requiring
 `noatime` and `x-systemd.growfs` under the label
 *"DATA is the growth target"* (`os/verify/src/checks-fstab.ts:124-128`).
@@ -3158,7 +3158,7 @@ directories beneath it, `0644` for files.**
 ### 5.3 Install and removal — **[implemented]**
 
 **Implemented at `os/pkgs/mosd/apid/src/bundle.rs`** — `Store::activate` performs the
-five steps in this subsection's order (`:475`), `validate_tree` enforces the
+five steps in this subsection's order (`os/pkgs/mosd/apid/src/bundle.rs:475`), `validate_tree` enforces the
 three requirements a bundle has, `deactivate` (`:531`) and `delete` (`:552`)
 are the two operations this subsection refuses to conflate, `prune` (`:582`)
 keeps the current generation and the previous one, and `Store::status` (`:605`)
@@ -3359,7 +3359,7 @@ set declared.
 
 **The constraint is implemented as a constraint, not as care.**
 `startup::discover` is called from `os/pkgs/mosd/apid/src/main.rs:85`, after both
-listeners bind (`:63`, `:67`) and after `APID_LISTENING` is printed (`:73`). It
+listeners bind (`os/pkgs/mosd/apid/src/main.rs:63`, `:67`) and after `APID_LISTENING` is printed (`:73`). It
 has **no error variant**: every outcome — an unreadable disk, a garbage
 manifest, an absent `/srv/ui` — is a `BundleState`, and the work runs on the
 blocking pool so that a panic raised below it arrives as a `JoinError` and
@@ -3470,10 +3470,10 @@ log line is what makes the two distinguishable after the fact.
 *One constraint on where that evaluation may happen, and it is not negotiable.*
 apid's `main` propagates every startup step with `?` —
 `config::Config::from_env()?` (`os/pkgs/mosd/apid/src/main.rs:152`),
-`tls::ensure_state_dir(...)` (`:151`),
-`tls::load_or_generate_certificate(...)?` (`:153`),
-`tls::load_or_generate_session_key(...)?` (`:154`) — all **before** the
-listeners bind at `:163` and `:167`, and the unit is `Restart=on-failure`
+`tls::ensure_state_dir(...)` (`:153`),
+`tls::load_or_generate_certificate(...)?` (`:155`),
+`tls::load_or_generate_session_key(...)?` (`:156`) — all **before** the
+listeners bind at `os/pkgs/mosd/apid/src/main.rs:163` and `:167`, and the unit is `Restart=on-failure`
 (`os/pkgs/mosd/dist/apid.service:15`). A startup error therefore becomes a **crash loop
 with no listener bound**, which is precisely the failure this section exists to
 prevent. **Bundle discovery and evaluation must happen after the listeners bind
@@ -3517,8 +3517,8 @@ and no non-Rust file in the crate other than its manifest.
 
 **How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
 `apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
-installs the binary as `/usr/bin/apid` mode `0755`, `:295` installs the unit,
-and `:297-299` enables it by symlink and **asserts the symlink exists**. The
+installs the binary as `/usr/bin/apid` mode `0755`, `os/rootfs/scripts/mosd-install.sh:35` installs the unit,
+and `:36-38` enables it by symlink and **asserts the symlink exists**. The
 binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
 squashfs and covers with the dm-verity hash tree
 (`docs/design/ro-root.md:13-27`).
@@ -3571,14 +3571,14 @@ mechanism behind it.
 ### 6.3 The deterministic way to reach it — **[implemented]**
 
 **Implemented at `os/pkgs/mosd/apid/src/routes.rs`** — candidate (A) is
-`.nest(BUILTIN, …)` at `:115-125`, which claims the **whole** `/builtin`
+`.nest(BUILTIN, …)` at `os/pkgs/mosd/apid/src/routes.rs:115-125`, which claims the **whole** `/builtin`
 subtree, its own not-found handler included, and is unshadowable for exactly
 the structural reason `/api/` is; candidate (B) is the deactivate control the
 pane carries, `builtin_deactivate` behind `POST /builtin/deactivate`
 (`:122`, `:851`), which performs §5.3's deactivate. The two together are the
 chosen mechanism, and both spellings answer: `nest` claims the bare `/builtin`
 and **not** `/builtin/`, so the trailing-slash spelling — the one this document
-writes — is declared outside the nest at `:125`. An operator recovering a
+writes — is declared outside the nest at `os/pkgs/mosd/apid/src/routes.rs:125`. An operator recovering a
 device should not have to get the slash right. The escape is driven from every
 one of §6.1's five classes, identically and without diagnosis, by
 `os/pkgs/mosd/apid/src/tests/broken_classes.rs`, and the shadowing guard is fired in
@@ -3623,7 +3623,7 @@ because of how dispatch works rather than because of a check.
   a path that is down. The prefix is instead named on the three built-in
   surfaces an operator with a broken custom UI actually reaches: the sign-in
   page (`os/pkgs/mosd/apid/src/routes.rs:3201`), the navigation on every built-in pane
-  (`:341`), and the reserved subtree's own 404 (`:4739`). The cost that must not be glossed: **(A) is a way *in*, not a way
+  (`os/pkgs/mosd/apid/src/routes.rs:341`), and the reserved subtree's own 404 (`:4739`). The cost that must not be glossed: **(A) is a way *in*, not a way
   *out*.** It deactivates nothing, so the next navigation to `/` is broken
   again.
 
@@ -3792,7 +3792,7 @@ default shell, **not a lesser privilege level**"*
 (`docs/design/access.md:216-217`). apid runs as root — the unit sets no `User=` line
 (`os/pkgs/mosd/dist/apid.service:1-54`), and the D-Bus policy records the same fact from
 the other side (`os/pkgs/mosd/dist/com.mos.mosd.conf:12-14`), with root allowed to own,
-send and receive (`:68-72`).
+send and receive (`os/pkgs/mosd/dist/com.mos.mosd.conf:68-72`).
 
 So an operator with SSH:
 
@@ -4070,7 +4070,7 @@ do is the decision that makes B affordable:
 > them is not a defect.
 
 Items (iv) and (v) are already shipped — `os/pkgs/mosd/apid/src/routes.rs:5639`, `:2245`,
-`:1975`, `:1985`, `:2501`, `:3270`. Items (i), (ii) and (iii) are new panes, and
+`os/pkgs/mosd/apid/src/routes.rs:1975`, `:1985`, `:2501`, `:3270`. Items (i), (ii) and (iii) are new panes, and
 they are the only built-in-UI work any phase below schedules.
 
 **One contradiction between sibling sections, named here and reconciled here
@@ -4167,7 +4167,7 @@ interface-scoped error names `com.mos.mosd1.Error.NotFound` and
 **What an operator can do that they could not before.** Submit an invalid CIDR
 on `/network` and be told **why**. Today `network_submit` returns `bus_error` when
 the settings write fails (`os/pkgs/mosd/apid/src/routes.rs:5608-5614`), and `write_key_list`
-does the same (`:5609-5611`), so a rejected value is reported to the operator as
+does the same (`os/pkgs/mosd/apid/src/routes.rs:5609-5611`), so a rejected value is reported to the operator as
 *"The management daemon is unavailable."* — an outage message for a typo. §2.4
 calls this out with the VLAN example. **This phase is a visible bug fix that
 needs no API at all.**
@@ -4230,7 +4230,7 @@ below are the run's actual output.
    ```
 
    That is the guard at `os/pkgs/mosd/mosd-settings/src/store.rs:63-67`, and it returns
-   **before `migrate` is ever called** (`:68`). No migration of any direction
+   **before `migrate` is ever called** (`os/pkgs/mosd/mosd-settings/src/store.rs:68`). No migration of any direction
    participates in the decision.
 2. **Adding the field without bumping the version** fails differently and just
    as hard:
@@ -4257,7 +4257,7 @@ below are the run's actual output.
    answer plausible. It is reachable only from an explicit caller with
    `from > to`, and **the only such callers in the tree are tests**
    (`os/pkgs/mosd/mosd-settings/tests/settings.rs:244`, `:280`, `:512`, `:542`, `:1002`,
-   `:1017`, `:1087`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
+   `os/pkgs/mosd/mosd-settings/tests/settings.rs:1017`, `:1087`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
    production caller of `migrate` and it can only ever walk **upward**.
 
 **What follows, corrected.** An A/B rollback into a phase-1 slot after a token
@@ -4395,7 +4395,7 @@ startup would produce a crash loop with no listener bound. **The marker is
 `APID_LISTENING`, not `WEBD_LISTENING` as this phase and §6.1 were written**;
 the rename moved the string as well as the paths. As landed, the two binds are
 `os/pkgs/mosd/apid/src/main.rs:64` and `:68`, the marker is printed at `:74`, and
-`startup::discover` is called at `:84` with no error variant to propagate.
+`startup::discover` is called at `os/pkgs/mosd/apid/src/main.rs:84` with no error variant to propagate.
 
 **What an operator can do that they could not before.** Ship their own UI. For
 the population that has SSH — which per §7.2 is root — this is the whole
@@ -4590,7 +4590,7 @@ path in an HTTP contract**, and renaming or restructuring anything in
 on-disk tree has a mechanism for exactly this — `SCHEMA_VERSION` and a
 registered migration chain that walks both directions
 (`os/pkgs/mosd/mosd-settings/src/model.rs:11`, `os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`,
-`:74-81`) — and **there is no equivalent for the API's view of it**. A v4→v5
+`os/pkgs/mosd/mosd-settings/src/migration.rs:74-81`) — and **there is no equivalent for the API's view of it**. A v4→v5
 migration moves a path a `v1` client hard-coded, and the client learns about it
 by breaking.
 

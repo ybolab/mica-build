@@ -496,6 +496,12 @@ the preceding line" would not fail on the defect it was built for.
 
 **7.3 A marker scoped to the anchors it froze.** See §5.5 Cost 2.
 
+**7.6 The elided paraphrase.** A quoted fragment that writes `(...)` for an
+argument list is a paraphrase, not an excerpt, and can never match the source.
+Three sites at `docs/design/api.md:3473-3475`. The resolver will arm this check
+on the bare token, so the implementing pass meets it whether or not the sites
+are full-formed. Repair needs the prose re-worded, not the citation moved.
+
 **7.4 Four never-valid citations into a deleted script.** `docs/design/api.md`
 asserts image-side checks against `os/verify-image-v2.sh` at six bare tokens
 across four sites; no such file exists anywhere in this tree. The bash script
@@ -548,3 +554,76 @@ between it and the neighbouring cell, so the backward scan finds no quoted span
 and the site gets resolution only. It is RFCT-128's class 1 — resolves, names
 the wrong line — and the bare-form resolver is not what catches it. Line 93 of
 the same table is M1's and is untouched here.
+
+## 9. Class A corrections, and why full-forming is not semantically neutral
+
+`docs/design/api.md` holds 86 of the 245 class A sites, the largest
+concentration in the corpus. Correcting them surfaced a property of the repair
+itself that the milestone must plan around.
+
+### 9.1 Full-forming changes what the gate checks, not just what it reads
+
+A bare token is invisible. Full-formed, it becomes an in-scope citation — and
+the content check then arms on whatever quoted span sits directly against it.
+That is a *different check*, not merely a widened one, and it fires on
+fragments the citation never claimed to quote.
+
+Measured: full-forming api.md's 86 sites produced **14 content failures**. Five
+were genuine wrong line numbers. **Twelve were false arms** — the adjacent
+fragment does not quote the source, which the gate's own header already
+anticipates: *"a fragment that names a thing rather than quoting it
+belongs anywhere but directly against the citation."* The nine are
+`api_v1_settings`, `access.device.passwordHash`, `wifi.client.networks[].psk`,
+`0o600`, `/srv/ui`, `0644`, `deactivate`, `prune` and `Store::status` — settings
+dot-paths, file modes, a path, and bare identifiers. Four of them appear
+**nowhere** in the cited file at all, because they are JSON paths and Rust
+symbol paths written in prose, not excerpts of source.
+
+The other three are a second, distinct kind, and worth naming separately: an
+**elided paraphrase**. `docs/design/api.md:3473-3475` write
+`tls::ensure_state_dir(...)`, `tls::load_or_generate_certificate(...)?` and
+`tls::load_or_generate_session_key(...)?`, where `(...)` stands in for the
+argument list. The source says `(&config.state_dir)`. Normalisation collapses
+whitespace and strips `*` and comment markers, but nothing turns an elision
+into the text it elides, so such a fragment can NEVER match and the citation
+can never go green while it sits adjacent. This one is not specific to
+full-forming: the resolver will arm the same failed check on the bare token,
+so it is a residue the implementing pass must expect (§7.6).
+
+So class A cannot be repaired by a blind mechanical full-form. Each site needs
+the adjacent-fragment question asked, and where the fragment is a name the
+citation is **left bare** rather than full-formed into a false red. Those nine
+stay in the class A residue: repairing them needs the prose re-worded so the
+naming fragment is not adjacent, which is a documentation change beyond a
+citation repair and is not made here.
+
+This is also an argument for §6.2's reading. If an unresolvable bare token is
+an ERROR, the only way to clear these nine is to full-form them — into a check
+that fails on a correct document.
+
+### 9.2 What landed
+
+- **34 sites full-formed** in `docs/design/api.md`, each verified to resolve
+  and, where a quote armed, to hold it.
+- **Twelve left bare** per §9.1, with the reason recorded.
+- **Five re-derived**, each anchored independently on its own unique symbol
+  occurrence, never on an offset — the measured shifts are +11, +69, +2, +2 and
+  +2, which is exactly why a constant offset would have been wrong. The first
+  two are full-formed; the three `main.rs` ones keep their corrected line
+  numbers but stay bare, because of the elision above:
+  `os/pkgs/mosd/mosd-settings/src/model.rs:147-152` -> `:158-160` (forward-anchored on
+  *"never holds a plaintext secret"*, unique);
+  `os/pkgs/mosd/apid/src/routes.rs:158` -> `:227` (on `.fallback(serve::fallback)`, unique);
+  and three in `os/pkgs/mosd/apid/src/main.rs`, `:151` -> `:153`, `:153` -> `:155`,
+  `:154` -> `:156`, each on its own `tls::` call, all three unique.
+- **Two re-derived from a restructured file**: api.md cited
+  `os/rootfs/scripts/mosd-install.sh` at `:295` and `:297-299`; that file is 56
+  lines long. Line 35 installs the unit and lines 36-38 symlink it and
+  `test -L` the result, matching the prose exactly, so the citations become
+  `:35` and `:36-38`.
+- **Six left unresolvable** — the `os/verify-image-v2.sh` sites of §7.4.
+
+Line **count** is deliberately unchanged by every one of these edits. Re-wrapping
+the widened lines would shift every subsequent line number in api.md and break
+the many citations other documents make into it, so the wrap is left broken
+rather than the corpus.
