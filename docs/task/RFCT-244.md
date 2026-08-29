@@ -220,9 +220,13 @@ message it can produce on this route is the CIDR one.
 Calling it makes this route stricter than `PUT /api/v1/network/{iface}`, and
 that gap is **recorded, not closed**: harmonising M4-M7's shipped routes is
 outside this task. It is measured rather than read —
-`the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not`
-(`os/pkgs/mosd/apid/src/tests.rs:10312`) sends the same entry three ways and
-asserts 422 from this route, 422 from the wizard, and **204** from M6's route.
+`the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
+(`os/pkgs/mosd/apid/src/tests.rs:10398`) sends the same entry three ways and,
+when this task ran, asserted 422 from this route, 422 from the wizard, and
+**204** from M6's route. It ran then under the name
+the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not;
+PLAN-026 M1 closed the gap, flipped the third assertion to 422 and renamed the
+test, so the pointer above is re-derived from the renamed content.
 
 The reason this route does not wait for the cluster-wide fix is that the harm is
 different at first run: a factory-fresh device configured with an address the

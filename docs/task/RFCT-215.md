@@ -245,8 +245,13 @@ memory of a report.
    `if let Err(message) = validate_iface(iface, cfg.dhcp, address) {`
    (`os/pkgs/mosd/apid/src/routes.rs:4216`). **No route of M6's
    typed network cluster calls it.** Pinned by
-   `the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not`
-   (`os/pkgs/mosd/apid/src/tests.rs:10312`).
+   `the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
+   (`os/pkgs/mosd/apid/src/tests.rs:10398`). That test carried the gap under
+   its earlier name,
+   the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not,
+   and asserted 204 from M6's route; PLAN-026 M1 closed the gap and flipped it,
+   so the pointer is re-derived here from the renamed content while the
+   measurement above is left as this task made it.
 2. **The gate asymmetry — a bearer-only client asking for an *undeclared* path
    under `/api/` is redirected to `/login`.** The gate hands off only declared
    routes (`os/pkgs/mosd/apid/src/routes.rs:3317`) and its whole credential test
