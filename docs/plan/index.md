@@ -56,6 +56,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-023 API phase 2 - bearer tokens, the write surface, the health route**](PLAN-023.md) `2026-08-28`
 - [x] [**PLAN-024 Legacy plan closeout - PLAN-011/012/013 measured and closed**](PLAN-024.md) `2026-08-28`
 - [x] [**PLAN-025 Engineering debts - qemu-run port, cx3576 build enablement, small fixes**](PLAN-025.md) `2026-08-28`
-- [-] [**PLAN-026 API residue fixes - the six defects PLAN-023 measured and left open**](PLAN-026.md) `2026-08-28`
+- [x] [**PLAN-026 API residue fixes - the six defects PLAN-023 measured and left open**](PLAN-026.md) `2026-08-28`
 - [x] [**PLAN-027 The filed-task batch - seven standing tasks claimed and settled**](PLAN-027.md) `2026-08-28`
-- [-] [**PLAN-028 Gate backlog - unseen citation forms and two measured misses**](PLAN-028.md) `2026-08-28`
+- [x] [**PLAN-028 Gate backlog - unseen citation forms and two measured misses**](PLAN-028.md) `2026-08-28`

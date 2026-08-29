@@ -1,6 +1,7 @@
 # PLAN-026 API residue fixes: the six defects PLAN-023 measured and left open
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-29 15:40
 - **createdAt**: 2026-08-28 19:45
 - **approvedAt**: 2026-08-28 19:45
 - **relatedTask**: RFCT-247..252 reserved (M1..M6); task files created by the executing workstream as each milestone starts
@@ -110,3 +111,35 @@ Ruled option (c): the imports are not folded; RFCT-252 closes with the dated
 measurement, recording that the fold becomes gate-legal only if those two
 records are ever marked as dated records for their own reasons.
 
+## Close (2026-08-29)
+
+Five of six milestones landed and merged (bkd/5q6am5rw). M1 RFCT-247 closed the
+CIDR gap on the typed network writes. M2 RFCT-248 removed the gate asymmetry on
+undeclared `/api/` paths by releasing the reserved subtree to the existing
+not-found handler, so the cookie arm reaches it by an earlier branch and answers
+byte-identically rather than equivalently. M3 RFCT-249 closed the psk quotable
+gap. M5 RFCT-251 stopped apid reading the NotFound name. M6 RFCT-252 recorded
+the import fold as measured and refused, with the dated correction already
+appended to this plan.
+
+M4 (RFCT-250, the gate-list/router agreement) was NOT done and is not merely
+unfinished: M2's fix left the gate no longer consulting `is_declared_api_route`
+at all, so the harm M4 exists to prevent may be unreachable. The honest next
+step is a dated measurement of whether anything still acts on that list, not a
+refactor. `is_declared_api_route` is deliberately kept though redundant in the
+gate: removing its only caller would delete the mechanism and trip `dead_code`
+under `-D warnings`. A second residue rides with it - `is_network_route`'s doc
+comment still argues against a redirect hazard that no refusal in that predicate
+can now produce.
+
+Also owed and not run: the image rebuild and the two-boot `test/apid-api` suite
+against the 378/378 rc=0 baseline, which was to be the single arbiter for M1, M2
+and M5 together. The merged workspace type-checks clean (`cargo check
+--workspace --all-targets`, rc=0); that is a weaker statement than the suite and
+is recorded as such.
+
+Three of this plan's six premises did not survive contact with measurement -
+M6's was false outright, M3's too narrow, M4's overtaken by a sibling milestone
+landing first. All three came from RFCT-215 section 6, a filed record, written
+into milestones without re-measurement. The rule taken forward: re-measure a
+plan's premises at dispatch, before the first brief is written.

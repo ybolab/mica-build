@@ -155,7 +155,7 @@ specified cannot be committed green.
 
 PLAN-026's M6 justified the fold with *"RFCT-215 §1.2 re-stated the quoted
 negative as its own measurement, so nothing depends on those lines surviving"*
-(`docs/plan/PLAN-026.md:73-75`), and RFCT-215's own residue item repeats it:
+(`docs/plan/PLAN-026.md:74-76`), and RFCT-215's own residue item repeats it:
 *"Section 1.2 now re-states that negative as a measurement of its own, so the
 record no longer depends on that line surviving verbatim"*
 (`docs/task/RFCT-215.md:296-298`). Measured here, on both readings of what
@@ -243,7 +243,7 @@ Stated as a condition, and deliberately not as a plan.
 Nothing schedules that. A sweep of `docs/plan/*.md` at this HEAD finds no
 milestone anywhere that proposes marking either document, and PLAN-028 — the
 plan that owns the citation-gate backlog — puts *"retroactive edits to dated
-records"* (`docs/plan/PLAN-028.md:83`) out of scope. This condition creates no
+records"* (`docs/plan/PLAN-028.md:84`) out of scope. This condition creates no
 dependency on PLAN-028 or on anything else, and must not be read as queued work.
 If it never becomes true, M6 stays closed as it is.
 
@@ -265,10 +265,10 @@ asked for what was measured rather than for agreement.
    Measured: M2 is *"The bare-continuation resolver."*
    (`docs/plan/PLAN-028.md:37-38`), and its only mention of the exemption is
    that it stays as it is — *"Dated-record exemptions keep their existing
-   carve-out"* (`docs/plan/PLAN-028.md:42-43`). There is no candidate list of
+   carve-out"* (`docs/plan/PLAN-028.md:43-44`). There is no candidate list of
    documents to mark; the phrase "candidate list" in that plan belongs to M1's
    ambiguity error, *"and FAILS with the candidate list"*
-   (`docs/plan/PLAN-028.md:33`). So the condition in
+   (`docs/plan/PLAN-028.md:34`). So the condition in
    section 9 is a condition on a decision nobody has scheduled, which is how it
    is written there.
 3. **The count of shift-class content failures.** The brief's split was 549

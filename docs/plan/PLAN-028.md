@@ -1,6 +1,7 @@
 # PLAN-028 Gate backlog: the citation forms the gate cannot see, and two misses the campaign measured
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-29 15:40
 - **createdAt**: 2026-08-28 19:45
 - **approvedAt**: 2026-08-28 19:45
 - **relatedTask**: RFCT-256..259 reserved (M1..M4)
@@ -98,3 +99,27 @@ RFCT-169 forced by M1's ambiguity rule; RFCT-210 forced independently in
 PLAN-027 by a content deletion, marker arriving from that branch) instead of
 six. RFCT-257 records both readings, their measured costs, and this ruling.
 
+## Close (2026-08-29)
+
+Three of four milestones landed and merged (bkd/tcdocsrm). M1 RFCT-256 resolved
+the no-slash citation form against the tracked file set and armed ambiguity as
+an error, moving 226 bare filenames from skipped into scope. M3 RFCT-258 taught
+`docs/verify-index.sh` to assert `docs/plan/index.md` checkboxes against plan
+status. M4 RFCT-259 bounded the status-outruns-pinned-phase class.
+
+M2 (RFCT-257, the bare-continuation resolver) is designed, argued and recorded
+but NOT implemented; its row stays `[-]`. The record carries the antecedent
+rules, the counted-skip ruling under a no-grow ratchet, and the worked cases.
+
+What the plan measured along the way, kept because it outlives the milestones:
+the arming argument now has a denominator - of 56 moved citations in one
+single-sided edit the gate caught 33, every one armed, and 0 of the other 23,
+every one unarmed, with the run green throughout. The near-miss counter was
+found to BE the intended-arming-that-failed set rather than an approximation of
+it, complete and printed on every run: 333 in-scope citations on main before
+this plan, 495 on the merged tree once M1's rule brought bare filenames into
+scope. Both numbers are worklists, not defects introduced here.
+
+Filed onward: RFCT-261, `docs/plan/` is half-read - M3 made its index assertable
+while its citations remain outside `docs/verify-citations.sh`'s scope entirely,
+with the entry cost measured at 27 in-scope citations of which zero are armed.
