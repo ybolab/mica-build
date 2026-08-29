@@ -646,3 +646,35 @@ Line **count** is deliberately unchanged by every one of these edits. Re-wrappin
 the widened lines would shift every subsequent line number in api.md and break
 the many citations other documents make into it, so the wrap is left broken
 rather than the corpus.
+
+## 10. Corpus state after this pass, and one honest consequence
+
+Measured at this HEAD, in this worktree:
+
+| | at c5f7e96 | now |
+|---|---|---|
+| bare tokens, total in scanned documents | 1020 | 1020 |
+| in documents carrying a marker | 407 (23 docs) | 462 (24 docs) |
+| in play | **613 (56 docs)** | **558 (56 docs)** |
+
+The total is unchanged by coincidence, and the arithmetic is worth stating so
+nobody reads it as "nothing happened": `docs/design/api.md` 168 -> 133 (-35),
+`docs/design/dashboard.md` 35 -> 24 (-11), `docs/task/RFCT-215.md`'s 55 moved
+into the marked bucket, and **this record itself adds 46**. Net zero.
+
+**The consequence, stated rather than buried.** Those 46 are the form under
+discussion — this document quotes other documents' bare citations in order to
+classify them. Ten are written double-backticked and are covered by M1's
+metalinguistic skip. **Thirty-six are written plain**, and under the ERROR
+reading of §6 they would be thirty-six new red sites in the very record that
+argues against that reading. That is the §7.5 trap, and this pass has just
+added thirty-six instances of it.
+
+They are deliberately **not** swept in this pass. The sweep is a document
+correction whose correctness can only be checked against M1's rule, and that
+rule does not exist on this base — converting them now would be changing text
+to satisfy a mechanism nobody can run yet, which is how the corpus acquired
+false greens before. The implementing pass rewrites them to the double-backtick
+form on M1's merged base and verifies each against the rule as landed. Under
+the §6.2 recommendation they are counted skips in the meantime, visible in
+every run and ceilinged, not silent.
