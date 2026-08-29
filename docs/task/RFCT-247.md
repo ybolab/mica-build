@@ -219,17 +219,18 @@ passes. None was measured in the shared checkout.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `2186/2186 PASS`, RC=0 |
-| `bash docs/verify-index.sh` | `871/871 PASS`, RC=0 |
+| `bash docs/verify-citations.sh` | `2207/2207 PASS`, RC=0 |
+| `bash docs/verify-index.sh` | `875/875 PASS`, RC=0 |
 | `bash hack/check.sh` in the amd64 builder, `dbus` installed first | `Summary [ 109.204s] 837 tests run: 837 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
-| `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `a06e9dd` | `No breaking changes to report, but the specs are different.`, **RC=0** |
+| `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `1135448` | `No breaking changes to report, but the specs are different.`, **RC=0** |
 
 `main`'s own tree at `a06e9dd` reads `2175/2175` and `867/867`, measured here
-rather than relayed, in a clean `git archive` extract. The deltas are this
-record's own: eleven citations and four index assertions. Nothing this task did
-to the corpus removed a citation or left one unresolved — the class A pass
-rewrote 471 tokens and every one of them still resolves and still content-checks
-against the line it was moved to.
+rather than relayed, in a clean `git archive` extract. The rest of the delta is
+this record and the two merges: eleven citations and four index assertions of
+its own, plus `RFCT-260.md` and `RFCT-252.md` arriving from `bkd/5q6am5rw`.
+Nothing this task did to the corpus removed a citation or left one unresolved —
+the class A pass rewrote 471 tokens and every one of them still resolves and
+still content-checks against the line it was moved to.
 
 The Rust gate ran the script unmodified, in `localhost/mos-build-rust:amd64`
 with the worktree bind-mounted at `/work`, `bash -c` and not `bash -lc`, and
@@ -239,6 +240,17 @@ this record's RED test wrote as a single line; the formatter's output was taken
 and folded into the fix commit, and the citation pass was redone from the
 pre-image afterwards so no citation was ever anchored against an unformatted
 tree.
+
+`bkd/5q6am5rw` was merged twice, at the start and again at the end, and both
+merges brought docs and no code — the test `docs/task/RFCT-215.md` section 5
+prescribes, run before each. The second merge conflicted on
+`docs/task/index.md` alone and was resolved the campaign's way, both row blocks
+kept and ascending. It also exposed two citations in the arriving
+`docs/task/RFCT-252.md` that point into `docs/task/RFCT-215.md` section 6 item
+6 — lines this task's own class B edit to item 1 had pushed down by five. They
+were re-anchored by the same mechanical method, from the incoming side as the
+pre-image, both range ends mapped independently and both destination lines
+byte-checked.
 
 oasdiff is the 1.29.1 release the workflow pins, checked against the pinned
 `sha256:541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`
