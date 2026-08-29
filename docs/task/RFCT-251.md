@@ -135,13 +135,40 @@ there was no bound in it to move.
 1. §1.2's route row said the handler separates an unresolved dot-path out
    itself. It now says the classifier answers it.
 2. §2.2's live-state paragraph said *"`GetState` returns the subtree at a
-   dot-path or `InvalidArgs`"*. That sentence was false the moment the fix
-   landed, and the citation gate would **not** have caught it: the range it
-   cites still contains the string `InvalidArgs`, in a comment saying the name
-   is *not* used. A gate-green falsehood, avoided by reading the passage rather
-   than trusting the check.
+   dot-path or `InvalidArgs`"*. It now names `NotFound`. See the finding below:
+   this one is not merely a bound that moved.
 3. §2.4's `settings_not_found` inventory row listed the deleted branch as a
    second apid-side producer.
+
+### Finding: the citation gate cannot tell a quote from its negation
+
+§2.2's sentence became **false** the moment the fix landed, and
+`docs/verify-citations.sh` would have certified it. The citation carries the
+armed quote `InvalidArgs`, the gate opens the cited range, finds the string
+`InvalidArgs` there, and passes — because the fix introduced a comment reading
+*"settings do not declare, and not `InvalidArgs`: the argument is"*
+(`os/pkgs/mosd/mosd/src/bus.rs:671`). The gate read the right bytes, in the
+right file, at the right lines, and certified a sentence whose meaning the
+cited code **denies**.
+
+This is worth separating from the other two blind spots this workstream has
+measured, because it is not the same failure:
+
+| blind spot | what the gate does | why it passes |
+|---|---|---|
+| the bare `:NNN` form | never resolves it at all | the citation is invisible; it is not checked, not counted, not failed |
+| the no-slash short form, e.g. a bare file name and line | skips it as shorthand for a path named earlier | same: invisible |
+| **quote versus negation** | resolves it, opens the file, matches the quote | the substring is present, so the check is satisfied; **the gate is working exactly as designed and the sentence is still false** |
+
+The first two are gaps in coverage and can be closed by writing citations
+differently. This one cannot: a substring match has no way to distinguish
+*"raises `InvalidArgs`"* from *"not `InvalidArgs`"*, and any check that could
+would have to read the code rather than grep it. The practical consequence for
+this campaign is narrow and worth stating plainly: **a green citation gate is
+evidence that a quotation still exists at its cited line; it is not evidence
+that the sentence around the quotation is true.** When an edit inverts a
+meaning rather than moving a line, the passage has to be read. Here it was, and
+the sentence was rewritten; nothing but reading it would have caught it.
 
 §2.4's own contract rows were **not** touched, because the contract did not
 move: *"the dot-path does not resolve: mosd answered
@@ -188,6 +215,24 @@ rewrote; there is no line to shift them to, and none was guessed at.
   because the names it measured are exactly what changed and the record must
   not read as a present-tense claim about a tree that no longer says that.
 
+**On the merge route taken.** The recommended route for a merge like this is
+to revert one's own re-anchor commits first, merge, then derive once against
+the merged tree, on the reasoning that resolving a conflict picks between two
+numbers of which neither survives. That reasoning is right, and it is worth
+recording that this task reached the same tree by the other route — the merge
+and the recomputation were already committed when the advice arrived — and why
+redoing it would have changed nothing. Reverting first does **not** collapse
+the derivation to a single pre-image: after the merge, citations the incoming
+side re-anchored are anchored against its tree and the rest against the merge
+base, so provenance still has to be read per citation. That step is the same
+either way, and it is the step that carries the risk. What reverting first
+genuinely saves is the conflict resolution, which here was 177 hunks of which
+173 differ in digits alone — and every one of those digits was overwritten by
+the recomputation regardless, so the resolution work was indeed waste. The
+guarantee that matters is not which route was taken but that **every** citation
+into a file both sides touched was recomputed rather than resolved, and that is
+evidenced below by count and by an independent second derivation.
+
 **The M1 merge, and the failure mode that has no conflict.** The third merge
 was the dangerous one, and not because of what conflicted. 177 hunks conflicted
 across 24 documents and 173 of them differed **in digits alone**; the four that
@@ -211,7 +256,23 @@ files was recomputed from scratch against the merged tree:
   the merged file, widening while ambiguous and refusing rather than guessing.
   This is the rule that stops a lone `}` matching by accident, which this
   campaign has already measured going 44 lines wrong with the gates green.
-- **972 citations recomputed, 488 of them moved, 0 refused.**
+- **972 citations recomputed, 488 of them moved, 0 refused, 0 without
+  provenance.** 488 of 972 were wrong after a merge git reported as clean on
+  both files.
+
+**The recomputation was then checked by a second, independent algorithm.**
+Numbers this important should not rest on one implementation. Every recomputed
+citation was re-derived a second time using difflib's opcode alignment — a
+different method with a different failure mode than the unique-window search
+that wrote them — and the two compared: **1196 endpoints agree, 0 disagree, 0
+that the second method could not map.** Twelve more could not be cross-checked
+mechanically, because the citing line's shape is not unique within its own
+document once digits are removed, so the check would have compared against the
+wrong source line; those twelve were opened and read by hand, and every one
+lands on the expected content (six `body: Result<Json<...>, JsonRejection>,`
+parameters, five function or doc-comment lines named in the prose beside them,
+and the `MAX_COMPONENTS` cap block). Nothing in the recomputed set is
+unverified.
 
 A second pass was needed for a target class the first missed: eleven
 **documents** are themselves cited by line and were also edited on both sides,
@@ -253,7 +314,8 @@ from.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | **`2218/2218 PASS`**, `ratchet failures: 0`, and `no quote, by document: docs/task/RFCT-251.md 0` — this record arms every citation it makes, so it sits at the ratchet's zero ceiling for a new document rather than taking an override row in `docs/verify-citations-unquoted-baseline.txt`. It also carries **no bare `:NNN` form**: `grep -oE '`:[0-9]+(-[0-9]+)?`' docs/task/RFCT-251.md \| wc -l` is `0`, which matters because the gate skips that form outright and a document can be green and unchecked at once. Near-miss **352** against the merge parent's 354. The -2 was attributed by measurement, not by inference: the merge parent `dcae967` was unpacked into this task's scratch directory and run there (`2210/2210 PASS`, near-miss 354, matching L2's reference), and its per-document unarmed counts diffed against this tip. Exactly two documents fall by one each — `docs/design/api.md` 452 to 451, where the prose commit deleted the unarmed citation naming the removed branch, and `docs/task/RFCT-215.md` 8 to 7, where item 5's close removed the unarmed citation to the deleted comment. No document rises, and the new record enters at 0, so nothing drifted INTO the near-miss set |
-| `bash docs/verify-index.sh` | **`879/879 PASS`**. The merge parent measures `875/875 PASS`; the whole of the +4 is this task's one new document and its one index row |
-| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [ 172.027s] 839 tests run: 839 passed (1 slow), 0 skipped`, then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. 838 was the campaign baseline at RFCT-249; this task adds exactly one, the new bus test, and 838 + 1 = 839. `dbus` was installed in-container first, or the bus round-trip goes rc=100 — and this milestone changes the bus layer, so that test is the one that had to run |
-| `oasdiff breaking` | **`No changes detected`, RC=0**. oasdiff 1.29.1, sha256 verified `541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`. Base is `main` at `7566210`, re-read at the moment of the run. The spec did not move at all, which is the machine-checkable half of requirement 4: `git diff main --stat -- os/pkgs/mosd/apid/openapi.json` is empty, so no regeneration was needed and none was done |
+| `bash docs/verify-citations.sh` | **`2230/2230 PASS`**, `ratchet failures: 0`, and `no quote, by document: docs/task/RFCT-251.md 0` — this record arms every citation it makes, so it sits at the ratchet's zero ceiling for a new document rather than taking an override row in `docs/verify-citations-unquoted-baseline.txt`. It carries **no bare `:NNN` form** and no no-slash short form either: both are skipped by the gate outright, so a document can be green and unchecked at once. Near-miss **352** against the merge parent's 354 |
+| near-miss, attributed | The -2 was measured, not inferred. `2b62662` was unpacked into this task's scratch directory and the gate run there: `2210/2210` at the previous parent and **`2221/2221 PASS`, near-miss 354** at this one, reproducing the reference exactly. Its per-document unarmed counts were then diffed against this tip. Exactly two documents fall by one each — `docs/design/api.md` 452 to 451, where the prose commit deleted the unarmed citation naming the removed branch, and `docs/task/RFCT-215.md` 8 to 7, where item 5's close removed the unarmed citation to the deleted comment. No document rises, and this record enters at 0, so nothing drifted **into** the near-miss set. The same two documents, for the same two reasons, as before the M1 merge |
+| `bash docs/verify-index.sh` | **`879/879 PASS`** at the merge parent, **`883/883 PASS`** here; the whole of the +4 is this task's one new document and its one index row |
+| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [  85.075s] 840 tests run: 840 passed, 0 skipped`, then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. The arithmetic rather than the total: 836 was the campaign baseline at RFCT-245, RFCT-249 (M3) added 2, RFCT-247 (M1) added 1, and this task adds 1 — 836 + 2 + 1 + 1 = 840. Re-run **after** the M1 merge, because the merged `tests.rs` holds M1's test as well as this task's. `dbus` installed in-container first, or the bus round-trip goes rc=100 — and this milestone changes the bus layer, so that test is the one that had to run |
+| `oasdiff breaking` | **RC=0**: `No breaking changes to report, but the specs are different.` oasdiff 1.29.1, sha256 verified `541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`. Base is `main` at `498f0e4`, re-read at the moment of the run. **The spec difference is M1's, not this task's**, and that is measured rather than assumed: `git diff dcae967 bbeec95 -- os/pkgs/mosd/apid/openapi.json` — this task's own commits against the merge base — is empty, and `git diff 2b62662 HEAD` on the same file is also empty, so the merged spec is byte-identical to the incoming side's. The delta against `main` is M1's CIDR wording on two network-write 422 descriptions, which `main` does not yet carry. Requirement 4 holds: this task moved the spec by nothing, so no regeneration was needed and none was done |
