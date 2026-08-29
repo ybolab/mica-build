@@ -54,14 +54,14 @@ Re-measured at this HEAD rather than relayed. Four facts, and together they are
 the whole argument:
 
 1. **The rules are relational.** `validate_entries`
-   (`os/pkgs/mosd/apid/src/routes.rs:3701-3741`) enforces four: a VLAN's parent
+   (`os/pkgs/mosd/apid/src/routes.rs:3762-3802`) enforces four: a VLAN's parent
    must name a declared entry, a bridge port must name a declared entry, a
    bridge port must carry no addressing of its own, and no port may be claimed
    by two bridges. Its own comment says why it must run over the tree and not
    the entry — *"every rule here is about two entries at once"*
-   (`os/pkgs/mosd/apid/src/routes.rs:3697-3700`). The pane already runs it over
+   (`os/pkgs/mosd/apid/src/routes.rs:3758-3761`). The pane already runs it over
    *"The candidate tree, not the one entry"*
-   (`os/pkgs/mosd/apid/src/routes.rs:5512-5518`).
+   (`os/pkgs/mosd/apid/src/routes.rs:5573-5579`).
 2. **mosd's own copy is in the reconciler**, `validate_network`
    (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-499`), which is the
    boundary for a settings file anything with STATE write access can edit.
@@ -144,7 +144,7 @@ type `GetSettings` and `SetSettings` already return.
 apid's classifier already mapped both names — `com.mos.mosd1.Error.NotFound` to
 404 `settings_not_found` and `InvalidArgs` to
 `ApiError::mosd("settings_rejected", message)`
-(`os/pkgs/mosd/apid/src/routes.rs:3020-3031`) — and had only ever been handed
+(`os/pkgs/mosd/apid/src/routes.rs:3064-3075`) — and had only ever been handed
 one of them. Two tests prove each half separately, which is what makes "no apid
 change" a measurement rather than a claim:
 
@@ -185,13 +185,13 @@ Run alone at the commit that introduced it, before any other M6 code existed:
 
 Every step of the chain the design named is therefore real: `stored_peers`
 answers an empty list rather than an error for an unknown interface, by
-`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5290-5297`);
+`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5351-5358`);
 `write_peers` writes straight to the peer list's own dot-path,
 `.set_settings(&peers_settings_path(iface), &value)`
-(`os/pkgs/mosd/apid/src/routes.rs:5603-5606`); `validate_peers` never looks at
+(`os/pkgs/mosd/apid/src/routes.rs:5664-5667`); `validate_peers` never looks at
 the interface, only at
 `for (index, peer) in peers.iter().enumerate()`
-(`os/pkgs/mosd/apid/src/routes.rs:3664-3687`); and the setter creates them by
+(`os/pkgs/mosd/apid/src/routes.rs:3725-3748`); and the setter creates them by
 documented contract — *"Missing intermediate map entries are created"*
 (`os/pkgs/mosd/mosd-settings/src/model.rs:749-751`).
 

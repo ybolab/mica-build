@@ -19,12 +19,22 @@ The brief's three claims were re-measured at `ffa65ca`, the branch point, and
 all three held.
 
 1. The rewrite was where it was said to be:
-   `Some(zbus::Error::MethodError(name, message, _)) if name.as_str() == FDO_INVALID_ARGS =>`
-   at `routes.rs:1262` of the pre-image, inside `api_v1_state`.
+   `Some(zbus::Error::MethodError(name, message, _)) if name.as_str() == FDO_INVALID_ARGS =>`,
+   inside `api_v1_state`. It sat at line 1262 of
+   `os/pkgs/mosd/apid/src/routes.rs` as that file stood at `ffa65ca`.
 2. Its own comment named the cleaner fix — *"The cleaner fix is a `NotFound`
    error name mosd-side; PLAN-025's scope excludes mosd itself, so the reading
-   is done here, where it is still unambiguous"* — at `routes.rs:1247-1256` of
-   the pre-image.
+   is done here, where it is still unambiguous"* — at lines 1247 to 1256 of the
+   same pre-image.
+
+Both positions above are written as **prose, not as citations**, and
+deliberately. They name lines as they stood at `ffa65ca`; this task deleted
+them, so a full-form citation would resolve against today's tree, land on
+unrelated code, and pass the gate while saying something false. A no-slash
+short form such as a bare file name and line would be worse still — the gate
+skips it entirely, so it could point anywhere forever and stay green. A
+pre-image position is not a citation, and forcing it into citation shape is how
+a record becomes green and wrong at the same time.
 3. The rotate-key path had already shipped that split, and still has:
    `return Err(SettingsFault::NotFound(format!(`
    (`os/pkgs/mosd/mosd/src/bus.rs:899`), with the reason in the comment above it
@@ -38,8 +48,8 @@ the classification.
 One thing the brief did not say, and it matters for scoping: `bus_api_error`
 already mapped `MOSD_NOT_FOUND` to 404 `settings_not_found` with mosd's message
 and the dot-path attached — `ApiError::mosd("settings_not_found", message)`
-(`os/pkgs/mosd/apid/src/routes.rs:3022`), `Some(path) => error.at(path),`
-(`os/pkgs/mosd/apid/src/routes.rs:3049`). The rewrite branch and the shared
+(`os/pkgs/mosd/apid/src/routes.rs:3066`), `Some(path) => error.at(path),`
+(`os/pkgs/mosd/apid/src/routes.rs:3093`). The rewrite branch and the shared
 classifier therefore produced the *same* response, member for member. That is
 why requirement 4 is satisfiable at all, and it was checked before the branch
 was deleted rather than asserted afterwards.
@@ -141,12 +151,13 @@ the exception to it.
 
 ## 6. The citation re-anchor
 
-Done last, in two commits, against the tree that resulted from merging
-`bkd/5q6am5rw` at `dcae967` — **not** against the base the work started from.
-That distinction was not theoretical: the ref moved twice under this task, and
-a map computed against `1652b61` was discarded and re-derived rather than
-replayed, because `RFCT-249` had landed 48 lines into
-`os/pkgs/mosd/apid/src/tests.rs` in between.
+Done last, and done three times, because `bkd/5q6am5rw` moved three times
+under this task — `1652b61`, then `dcae967` (M6, M3), then `2b62662` (M1). A
+map computed against a base that has since moved is exactly how a citation
+lands far from its target with every gate green, so each map was **re-derived
+against the merged tree and never replayed**. The first was discarded outright:
+`RFCT-249` had landed 48 lines into `os/pkgs/mosd/apid/src/tests.rs` between
+computing it and applying it.
 
 **Class A, 609 citations** (`4f108b5`). Mapped from the pre-image
 (`git diff -U0 bkd/5q6am5rw -- <path>`) hunk by hunk, never by a constant
@@ -176,6 +187,39 @@ rewrote; there is no line to shift them to, and none was guessed at.
   of the point they were making; `RFCT-232` additionally gets a dated note,
   because the names it measured are exactly what changed and the record must
   not read as a present-tense claim about a tree that no longer says that.
+
+**The M1 merge, and the failure mode that has no conflict.** The third merge
+was the dangerous one, and not because of what conflicted. 177 hunks conflicted
+across 24 documents and 173 of them differed **in digits alone**; the four that
+did not were read and resolved by hand — two `api.md` rows carrying this task's
+own prose kept ours, and `RFCT-215` and `RFCT-244` took the incoming side, which
+records M1 renaming a test both documents point at.
+
+But resolving those was not the job. Both branches inserted into
+`os/pkgs/mosd/apid/src/routes.rs` and `os/pkgs/mosd/apid/src/tests.rs`, and
+where two sides edit **different** tokens in the same document git merges them
+silently — the true line in the merged file is displaced by the *sum* of both
+sides' insertions and matches neither side's number. Nothing conflicts, nothing
+is flagged, and every such citation is wrong. So every citation into those
+files was recomputed from scratch against the merged tree:
+
+- **Provenance per citation.** The citing line was looked up verbatim in each
+  side's own version of the citing document; the side that has it is the tree
+  that number was anchored against. 0 citations were left without provenance.
+- **Destination by content, not by offset.** A window of at least seven lines
+  centred on the cited line in that pre-image had to occur **exactly once** in
+  the merged file, widening while ambiguous and refusing rather than guessing.
+  This is the rule that stops a lone `}` matching by accident, which this
+  campaign has already measured going 44 lines wrong with the gates green.
+- **972 citations recomputed, 488 of them moved, 0 refused.**
+
+A second pass was needed for a target class the first missed: eleven
+**documents** are themselves cited by line and were also edited on both sides,
+so they carry the identical hazard. Windows were compared with citation digits
+normalised away, since what is being located is content. 116 more citations,
+2 moved. The gate found this rather than foresight did — two failures into
+`docs/task/RFCT-215.md` survived the first pass — which is the argument for
+running it and reading it rather than trusting a clean conflict list.
 
 **A defect in the re-anchor tooling, found and fixed mid-pass.** The script
 tested the dated-record exemption as a substring, where the gate anchors it to

@@ -38,7 +38,7 @@ need changing.
 
 **apid side.** `bus_api_error` gains the two arms: 404 `settings_not_found`
 and 409 `settings_read_only`; 422 now means a rejected value only —
-`ApiError::mosd("settings_rejected", message)` (`os/pkgs/mosd/apid/src/routes.rs:3012-3035`). `GetState`'s own
+`ApiError::mosd("settings_rejected", message)` (`os/pkgs/mosd/apid/src/routes.rs:3056-3079`). `GetState`'s own
 not-found stays `InvalidArgs`/422 — it is not raised through the settings
 error mapping and was out of this task's scope.
 
