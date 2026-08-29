@@ -17,14 +17,22 @@ PLAN-023's closeout measured and deliberately left open.
 The brief carried PLAN-026's line numbers from `c5f7e96`. Every one was
 re-opened at that commit before anything was written, and every one held.
 
-- `fn valid_cidr` sat at `routes.rs:3449`, with exactly one caller.
-- That caller, `fn validate_iface`, sat at `routes.rs:3480` and ran the rule at
-  `if !dhcp && !address.is_empty() && !valid_cidr(address) {` (`:3484`).
+**Every position below is a line of `os/pkgs/mosd/apid/src/routes.rs` as it
+stood at `c5f7e96`, and none of them is written in the citation form.** That is
+deliberate. A full-form citation resolves against HEAD, where this task has
+moved all four of these by between 29 and 61 lines, so writing one here would
+make the gate green over a false statement; and the bare `` `:NNN` `` form the
+narrow shape tempts is worse still, because `docs/verify-citations.sh` skips it
+entirely and it can point at nothing forever. Pre-image positions are prose.
+
+- `fn valid_cidr` sat at line 3449, with exactly one caller.
+- That caller, `fn validate_iface`, sat at line 3480 and ran the rule at line
+  3484, `if !dhcp && !address.is_empty() && !valid_cidr(address) {`.
 - `validate_iface` had three callers, and all three were reached from a form or
-  from the setup route: `iface_settings_from_form` (`:3579`), `setup_submit`
-  (`:3893`), `api_v1_setup` (`:4155`).
-- The typed cluster's three write/remove routes were declared at
-  `routes.rs:454-463` and none of them called it.
+  from the setup route: `iface_settings_from_form` at 3579, `setup_submit` at
+  3893, `api_v1_setup` at 4155.
+- The typed cluster's three write/remove routes were declared at lines 454-463
+  and none of them called it.
 
 So the gap was real and it was exactly where `docs/task/RFCT-215.md` section 6
 item 1 pinned it. The RED test below is the measurement that matters, because a
