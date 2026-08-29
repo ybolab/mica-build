@@ -11,7 +11,7 @@
 ## What was measured (2026-08-29, at 0f27eb0)
 
 `docs/verify-citations.sh` scans four document sets and `docs/plan/` is not one
-of them: `docs/verify-citations.sh:434` *"for doc in docs/design/*.md"* builds the
+of them: `docs/verify-citations.sh:563` *"for doc in docs/design/*.md"* builds the
 design set, `:347` *"for doc in docs/task/*.md docs/research/*.md"* adds the
 rest, and the run announces its own scope at `:467`
 *"docs/design/*.md, docs/task/*.md and docs/research/*.md excluding *.zh.md"*.

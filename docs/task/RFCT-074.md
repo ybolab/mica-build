@@ -236,11 +236,16 @@ at this task's base and have now shifted:
 
 | citation | at `16dd382` | now |
 | --- | --- | --- |
-| §1.6 `routes.rs:44-68` — the router body | resolves exactly (`:44` `Router::new()`, `:68` `}`) | `:80-121` |
-| §4.1 `routes.rs:45-65` — the fifteen `.route()` declarations | resolves exactly, fifteen of them | `:87-106`, still fifteen |
-| §4.1 `routes.rs:74` — the redirect router's fallback | resolves exactly | `:155` |
-| §4.1/§1.6 `routes.rs:149` — the gate's `/login` redirect | resolves exactly | `:230` |
+| §1.6 cited `routes.rs` lines 44-68 — the router body | resolved exactly (line 44 `Router::new()`, line 68 `}`) | lines 80-121 |
+| §4.1 cited `routes.rs` lines 45-65 — the fifteen `.route()` declarations | resolved exactly, fifteen of them | lines 87-106, still fifteen |
+| §4.1 cited `routes.rs` line 74 — the redirect router's fallback | resolved exactly | line 155 |
+| §4.1/§1.6 cited `routes.rs` line 149 — the gate's `/login` redirect | resolved exactly | line 230 |
 
+
+The line numbers above are prose, not citations. Every column records where
+things stood at a past commit -- all four rows are stale against today's
+tree -- so written as citations they would resolve and assert a falsehood
+(RFCT-257 SS14, L1's expansion exception).
 `docs/design/api.md` was not edited; documentation reconciliation is a later
 task's.
 

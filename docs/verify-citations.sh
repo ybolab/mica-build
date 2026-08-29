@@ -74,6 +74,48 @@
 # inside such a span is resolved and green today, and taking it out of scope
 # would loosen an assertion this milestone had no mandate to loosen.
 #
+# The bare continuation form (RFCT-257). `:NNN` and `:NNN-MMM` carry no path at
+# all -- `model.rs:15`, `:69`, `:95` -- and matched the token regex nowhere, so
+# they were not checked, not skipped with a reason, and not counted. The form
+# was invisible. It is now read the way a reader reads it: the token inherits
+# the nearest preceding CITATION OR PATH on its OWN LINE, and is then resolved
+# and content-checked exactly as if it had been written in full, no-slash rule
+# included -- so a continuation behind an ambiguous basename is ambiguous and
+# gets no looser second chance.
+#
+# Two details are load-bearing and each is forced by a measured site. First,
+# the antecedent is the nearest preceding token of EITHER kind. The naive rule
+# -- nearest preceding full CITATION -- mis-binds across a table column, where
+# the bare range belongs to the old path printed beside it and not to the
+# citing document in column 1; measured over docs/task/RFCT-172.md it produced
+# one out-of-range failure and five bindings that RESOLVED against the wrong
+# file, which is worse. Second, a span that is neither a citation nor a path is
+# STEPPED OVER rather than binding: a route such as `/api` sits between a
+# citation and its continuation at docs/design/api.md, and binding to it would
+# lose the site. A path qualifies only when it does not end in `/` and its
+# first segment is a repository-root entry, which is what keeps `mosd/` (not a
+# root entry since PLAN-019) and `os/pkgs/mosd/` (a directory) from capturing.
+#
+# The scan stops at the line start and never reaches past it. RFCT-214
+# measured continuation (same line) and shorthand (further back) as different
+# classes and reconciled only the first; admitting the path kind above is NOT a
+# widening of that boundary, it changes what counts as an antecedent WITHIN the
+# line.
+#
+# A continuation whose line offers nothing to inherit from is a counted SKIP
+# with its own reason, NOT an error. PLAN-028 proposed the error arm and was
+# amended by dated correction: measured over this corpus, only a minority of
+# those sites are document defects and the rest are correct as written -- the
+# form quoted rather than used, a port with the host elided, a shorthand whose
+# file is named in a table header, a frozen audit whose numbers ARE the
+# measurement. An arm firing on those is not failing closed, it is failing
+# indiscriminately. The strictness lives in a ratchet instead:
+# docs/verify-citations-bare-baseline.txt commits a per-document ceiling on
+# those skips and a document over its row FAILS, so a newly written
+# unresolvable continuation fails on the commit that adds it while the
+# historical ones stay counted and visible. `BARE_UNRESOLVABLE` below selects
+# the arm and is the one line to change if that judgement is ever revisited.
+#
 # Everything else is skipped by reason and counted, never dropped:
 # `0.0.0.0:443` is a host and a port; `u-boot/env/mmc.c:118` and
 # `axum-0.8.9/src/lib.rs:10` cite trees this repository does not contain and
@@ -175,6 +217,7 @@ esac
 
 BASELINE=docs/verify-citations-baseline.txt
 UNQUOTED_BASELINE=docs/verify-citations-unquoted-baseline.txt
+BARE_BASELINE=docs/verify-citations-bare-baseline.txt
 
 # The tracked files, indexed both by full path and by basename, for resolving
 # the no-slash citation form. `git ls-files` and not a `find`: see the header.
@@ -205,6 +248,28 @@ done < <(git ls-files)
     exit 1
 }
 
+# The repository-root entries, for the bare continuation form. A bare path is
+# only an antecedent when its first segment names one of these, which is what
+# keeps `/login` and `mosd/` from capturing a continuation that belongs to the
+# citation behind them. Directories and root files both count: `Makefile:16` is
+# a citation, so `Makefile` is an antecedent.
+ROOT_ENTRIES=""
+for root_entry in * .[!.]*; do
+    [ -e "$root_entry" ] || continue
+    ROOT_ENTRIES="${ROOT_ENTRIES}${root_entry} "
+done
+ROOT_ENTRIES=${ROOT_ENTRIES% }
+
+# What an unresolvable bare continuation is. `skip` counts it with its own
+# reason and holds it under the per-document ratchet below; `error` fails the
+# run listing the site. PLAN-028 was amended by dated correction to the first:
+# of the sites measured, only a minority are document defects, and the rest are
+# correct as written -- a form quoted rather than used, a port, a shorthand
+# whose file is named in a table header. An arm firing on those is not failing
+# closed, it is failing indiscriminately. The ratchet supplies the strictness
+# the error arm was wanted for, at no coverage cost.
+BARE_UNRESOLVABLE=skip
+
 FAIL_RESOLVE=0
 FAIL_CONTENT=0
 FAIL_AMBIGUOUS=0
@@ -219,6 +284,10 @@ N_NEARMISS=0
 N_SKIP_HOSTPORT=0
 N_SKIP_BARE_OUTSIDE=0
 N_SKIP_BARE_META=0
+N_BARE_INHERITED=0
+N_SKIP_BARE_NOANT=0
+N_SKIP_BARE_NOANT_META=0
+declare -A BARE_BY_DOC=()
 N_BARE_RESOLVED=0
 N_SKIP_OUTSIDE=0
 N_DATED=0
@@ -248,14 +317,14 @@ fail_ratchet() { echo "  FAIL $*" >&2; FAIL_RATCHET=$((FAIL_RATCHET + 1)); }
 # Quotes span lines and so does the gap between a quote and its citation, which
 # is why the document is held as one string rather than read line by line.
 extract_citations() {
-    awk '
+    awk -v ROOTENT=" ${ROOT_ENTRIES} " '
         # A candidate span is a quote when, whitespace-collapsed, it is at
         # least three characters and (for a backticked span) is not itself a
         # chained `path:line` citation.
         function span_ok(cand, ch) {
             gsub(/[ \t\n]+/, " ", cand); sub(/^ /, "", cand); sub(/ $/, "", cand)
             if (length(cand) < 3) return 0
-            if (ch == "`" && cand ~ /^[^ ]+:-?[0-9]+(--?[0-9]+)?$/) return 0
+            if (ch == "`" && cand ~ /^[^ ]*:-?[0-9]+(--?[0-9]+)?$/) return 0
             return 1
         }
         # A quoted span 1-3 whitespace-delimited words before position j,
@@ -299,6 +368,54 @@ extract_citations() {
             }
             return 0
         }
+        # Is a backtick span an antecedent the bare continuation form may
+        # inherit from? Two kinds qualify and nothing else does: a full
+        # `path:line` citation, and a bare path naming a file. A span that is
+        # neither is STEPPED OVER rather than binding -- measured necessity, not
+        # tidiness: `/login` sits between a citation and its continuation at
+        # docs/task/RFCT-074.md, and binding to it would lose the site.
+        # The path form must not end in `/` (`os/pkgs/mosd/` names a directory)
+        # and its first segment must be a repository-root entry (`mosd/` has
+        # not been one since PLAN-019, and `tests.rs` never was).
+        function ant_ok(cand,    ci, k, pth, tail, seg) {
+            if (cand == "" || cand ~ /[ \t]/) return ""
+            ci = 0
+            for (k = length(cand); k >= 1; k--) if (substr(cand, k, 1) == ":") { ci = k; break }
+            if (ci > 1) {
+                pth = substr(cand, 1, ci - 1); tail = substr(cand, ci + 1)
+                if (tail ~ /^-?[0-9]+(--?[0-9]+)?$/) return pth
+            }
+            if (substr(cand, length(cand), 1) == "/") return ""
+            seg = cand
+            if (index(seg, "/") > 0) seg = substr(seg, 1, index(seg, "/") - 1)
+            if (seg == "") return ""
+            if (index(ROOTENT, " " seg " ") > 0) return cand
+            return ""
+        }
+        # The nearest qualifying antecedent before position p, on its OWN LINE.
+        # The scan stops at the line start and never reaches past it: RFCT-214
+        # measured continuation (same line) and shorthand (further back) as
+        # different classes, and this resolves only the first. Admitting the
+        # bare-path kind above is NOT a widening of that boundary -- it changes
+        # what counts as an antecedent WITHIN the line.
+        function antecedent(p,    ls, k, e, cand, got, best) {
+            ls = p
+            while (ls > 1 && substr(txt, ls - 1, 1) != "\n") ls--
+            best = ""
+            k = ls
+            while (k < p) {
+                if (substr(txt, k, 1) != "`") { k++; continue }
+                e = index(substr(txt, k + 1), "`")
+                if (e == 0) break
+                e = k + e
+                if (e >= p) break
+                cand = substr(txt, k + 1, e - k - 1)
+                got = ant_ok(cand)
+                if (got != "") best = got
+                k = e + 1
+            }
+            return best
+        }
         # Is position p inside one of the double-backtick spans found below?
         function in_metaspan(p, q,    t) {
             for (t = 1; t <= nspan; t++)
@@ -321,7 +438,7 @@ extract_citations() {
             }
 
             rest = txt; absbase = 1; line = 1; para = 1
-            while (match(rest, /`[^` ]+:-?[0-9]+(--?[0-9]+)?`/)) {
+            while (match(rest, /`[^` ]*:-?[0-9]+(--?[0-9]+)?`/)) {
                 abs = absbase + RSTART - 1
                 tok = substr(rest, RSTART + 1, RLENGTH - 2)
                 chunk = substr(rest, 1, RSTART - 1)
@@ -352,9 +469,9 @@ extract_citations() {
                         while (k >= para && substr(txt, k, 1) != "`") k--
                         if (k >= para) {
                             cand = substr(txt, k + 1, j - k - 1)
-                            # a chained citation, `a/b.rs:1` -> `a/b.rs:9`, is
+                            # a chained citation, `a/b.rs:1` -> `:9`, is
                             # not a quotation of anything
-                            if (cand !~ /^[^ ]+:-?[0-9]+(--?[0-9]+)?$/) { q = cand; qkind = "code" }
+                            if (cand !~ /^[^ ]*:-?[0-9]+(--?[0-9]+)?$/) { q = cand; qkind = "code" }
                         }
                     } else if (ch == "\"") {
                         k = j - 1
@@ -378,7 +495,7 @@ extract_citations() {
                             while (k < paraend && substr(txt, k, 1) != "`") k++
                             if (k < paraend) {
                                 cand = substr(txt, j + 1, k - j - 1)
-                                if (cand !~ /^[^ ]+:-?[0-9]+(--?[0-9]+)?$/) { q = cand; qkind = "code" }
+                                if (cand !~ /^[^ ]*:-?[0-9]+(--?[0-9]+)?$/) { q = cand; qkind = "code" }
                             }
                         } else if (ch == "\"") {
                             k = j + 1
@@ -409,7 +526,19 @@ extract_citations() {
                     first = substr(tail, 1, di - 1) + 0; last = substr(tail, di + 1) + 0
                 }
                 meta = in_metaspan(abs, tokend - 1)
-                printf "%d\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%s\n", line, path, first, last, tok, qkind, near, meta, q
+                # The bare continuation form carries no path of its own, so it
+                # inherits one. `-` rather than the empty string, because the
+                # quote is the only field allowed to be empty.
+                ant = "-"
+                if (path == "") {
+                    ant = antecedent(abs); if (ant == "") ant = "-"
+                    # tab is an IFS whitespace character, so an empty interior
+                    # field would collapse into its neighbour on the read side.
+                    # The bare form therefore travels as `-`, for the same
+                    # reason the quote kind travels as `none`.
+                    path = "-"
+                }
+                printf "%d\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%s\t%s\n", line, path, first, last, tok, qkind, near, meta, ant, q
 
                 absbase = abs + RLENGTH
                 rest = substr(rest, RSTART + RLENGTH)
@@ -454,8 +583,33 @@ for doc in "${DOCS[@]}"; do
         continue
     fi
     NOQUOTE_BY_DOC[$doc]=0
-    while IFS=$'\t' read -r dline path first last tok qkind near meta quote; do
+    while IFS=$'\t' read -r dline path first last tok qkind near meta ant quote; do
         N_FOUND=$((N_FOUND + 1))
+
+        # --- the bare continuation form -------------------------------------
+        # `:NNN` carries no path. It inherits the nearest preceding antecedent
+        # on its own line, and is then checked exactly as if it had been
+        # written in full -- including the no-slash rule, so a continuation
+        # behind an ambiguous basename is ambiguous and never gets a second,
+        # looser chance.
+        inherited=""
+        if [ "$path" = "-" ]; then
+            if [ "$meta" = 1 ]; then
+                N_SKIP_BARE_NOANT_META=$((N_SKIP_BARE_NOANT_META + 1)); continue
+            fi
+            if [ "$ant" = "-" ]; then
+                if [ "$BARE_UNRESOLVABLE" = error ]; then
+                    fail_resolve "$doc:$dline cites \`$tok\`, and no citation or path precedes it on that line to inherit from"
+                    continue
+                fi
+                N_SKIP_BARE_NOANT=$((N_SKIP_BARE_NOANT + 1))
+                BARE_BY_DOC[$doc]=$((${BARE_BY_DOC[$doc]:-0} + 1))
+                continue
+            fi
+            path=$ant
+            inherited=" (inherited from \`$ant\` earlier on the line)"
+            N_BARE_INHERITED=$((N_BARE_INHERITED + 1))
+        fi
 
         resolved=$path
         case "$path" in
@@ -479,7 +633,7 @@ for doc in "${DOCS[@]}"; do
                     fi
                     case "$cands" in
                         *' '*)
-                            fail_ambiguous "$doc:$dline cites \`$tok\`, and $path is the basename of several tracked files: $cands; write the citation in full so it names one"
+                            fail_ambiguous "$doc:$dline cites \`$tok\`${inherited}, and $path is the basename of several tracked files: $cands; write the citation in full so it names one"
                             continue ;;
                     esac
                     resolved=$cands
@@ -491,8 +645,8 @@ for doc in "${DOCS[@]}"; do
                 N_SKIP_HOSTPORT=$((N_SKIP_HOSTPORT + 1)); continue ;;
         esac
         # The resolved path, so a bare filename is reported where it landed
-        via=""
-        [ "$resolved" = "$path" ] || via=" (resolved to $resolved)"
+        via="$inherited"
+        [ "$resolved" = "$path" ] || via="${via} (resolved to $resolved)"
         N_INSCOPE=$((N_INSCOPE + 1))
         seg=${resolved%%/*}
         SEG_COUNT[$seg]=$((${SEG_COUNT[$seg]:-0} + 1))
@@ -583,6 +737,38 @@ for doc in "${DOCS[@]}"; do
     fi
 done
 
+# --- the per-document no-antecedent bare counts against their ceilings -------
+# The bare continuation form is not an error when it cannot be resolved, but it
+# must not GROW. This is the unquoted ratchet's shape applied to a second
+# class: the committed count is the corpus as measured when the resolver
+# landed, a document over its row FAILS, and the only permitted direction is
+# down. So a newly written unresolvable continuation fails on the commit that
+# adds it, while the historical ones stay counted, named per document, and
+# visible in every run rather than silently green.
+if [ ! -f "$BARE_BASELINE" ]; then
+    echo "error: $BARE_BASELINE not found; the bare-continuation ratchet has no ceilings to check against" >&2
+    exit 1
+fi
+declare -A BARE_CEIL=()
+while read -r bdoc ceil _rest; do
+    case "$bdoc" in ''|'#'*) continue ;; esac
+    case "$ceil" in
+        ''|*[!0-9]*)
+            echo "error: $BARE_BASELINE names $bdoc with ceiling '$ceil', which is not a number" >&2
+            exit 1 ;;
+    esac
+    BARE_CEIL[$bdoc]=$ceil
+done < "$BARE_BASELINE"
+for doc in "${DOCS[@]}"; do
+    # a dated record never entered the count, so the ratchet never reads it
+    [ -n "${NOQUOTE_BY_DOC[$doc]+x}" ] || continue
+    ceil=${BARE_CEIL[$doc]:-0}
+    count=${BARE_BY_DOC[$doc]:-0}
+    if [ "$count" -gt "$ceil" ]; then
+        fail_ratchet "$doc has $count bare continuations with no same-line antecedent, above its ceiling $ceil in $BARE_BASELINE; give the citation a path, or raise the ceiling in the same commit so the diff shows the decision"
+    fi
+done
+
 # --- summary ---------------------------------------------------------------
 echo "docs/verify-citations.sh: docs/design/*.md, docs/task/*.md and docs/research/*.md excluding *.zh.md, plus docs/architecture.md"
 echo "  documents scanned:      $N_DOCS"
@@ -599,6 +785,9 @@ echo "  in scope, bare filename resolved against the tracked files: $N_BARE_RESO
 echo "  skipped, path is outside this repository's tree: $N_SKIP_OUTSIDE"
 echo "  skipped, bare filename matching no tracked file, so outside this tree: $N_SKIP_BARE_OUTSIDE"
 echo "  skipped, bare filename quoted as an example of the citation form: $N_SKIP_BARE_META"
+echo "  in scope, bare continuation inheriting a path from earlier on its line: $N_BARE_INHERITED"
+echo "  skipped, bare continuation quoted as an example of the citation form: $N_SKIP_BARE_NOANT_META"
+echo "  skipped, bare continuation with nothing on its line to inherit from: $N_SKIP_BARE_NOANT"
 echo "  skipped, a host and a port rather than a citation: $N_SKIP_HOSTPORT"
 echo "  resolution failures:    $FAIL_RESOLVE"
 echo "  content failures:       $FAIL_CONTENT"
@@ -611,6 +800,10 @@ for doc in "${DOCS[@]}"; do
     # a dated record never entered the count, so it has no line here
     [ -n "${NOQUOTE_BY_DOC[$doc]+x}" ] || continue
     echo "  no quote, by document: $doc ${NOQUOTE_BY_DOC[$doc]}"
+done
+for doc in "${DOCS[@]}"; do
+    [ -n "${NOQUOTE_BY_DOC[$doc]+x}" ] || continue
+    echo "  bare continuation, no antecedent, by document: $doc ${BARE_BY_DOC[$doc]:-0}"
 done
 echo "  near-miss: no quote armed, but a quoted span sits 1-3 words away: $N_NEARMISS"
 echo "  not checked here, and not checkable: a provenance claim such as \"measured at <commit>\" is validated against no file at all, so a green run here does not mean the citations are handled"

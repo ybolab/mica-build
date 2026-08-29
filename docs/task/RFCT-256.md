@@ -524,7 +524,7 @@ document and nothing to announce it. It is the same scheduled-hazard shape as
 the live-id self-test M3 closed, and it parks the text in precisely the bucket
 this gate's own summary declares indistinguishable: *"a skipped-as-outside path
 that once existed in this tree reads the same as one that never did"*
-(`docs/verify-citations.sh:617`). B has no such dependency and cannot fire
+(`docs/verify-citations.sh:810`). B has no such dependency and cannot fire
 under any future tree.
 
 **api.md §2.2 and §2.3 are therefore a recorded, dated exception**: form A,
