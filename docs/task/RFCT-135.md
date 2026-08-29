@@ -48,9 +48,9 @@ stale and so is every line number. Re-measured:
 
 | As filed | Now |
 |---|---|
-| `mosd/apid/src/routes.rs:806-811` | `valid_iface_name` (`os/pkgs/mosd/apid/src/routes.rs:3474-3479`) |
-| `:850`, the pane's message | `Interface name must be 1-15` (`os/pkgs/mosd/apid/src/routes.rs:3526`) |
-| `mosd/apid/src/routes.rs:1534`, the write | `iface_settings_path` (`os/pkgs/mosd/apid/src/routes.rs:5609-5613`) |
+| `mosd/apid/src/routes.rs:806-811` | `valid_iface_name` (`os/pkgs/mosd/apid/src/routes.rs:3448-3453`) |
+| `:850`, the pane's message | `Interface name must be 1-15` (`os/pkgs/mosd/apid/src/routes.rs:3500`) |
+| `mosd/apid/src/routes.rs:1534`, the write | `iface_settings_path` (`os/pkgs/mosd/apid/src/routes.rs:5583-5587`) |
 | `mosd/mosd-settings/src/path.rs:26-32` | `split_path` (`os/pkgs/mosd/mosd-settings/src/path.rs:76-105`) |
 | `mosd/mosd-settings/src/model.rs:414-416` | `deny_unknown_fields` (`os/pkgs/mosd/mosd-settings/src/model.rs:599-600`) |
 
@@ -66,9 +66,9 @@ stale and so is every line number. Re-measured:
 
 2. **apid builds the quoted form.** The write path is
    `format!("network.{}", quote_path_segment(iface))`
-   (`os/pkgs/mosd/apid/src/routes.rs:3553-3555`), and `network_submit` sends it
+   (`os/pkgs/mosd/apid/src/routes.rs:3527-3529`), and `network_submit` sends it
    as `.set_settings(&iface_settings_path(&iface), &value)`
-   (`os/pkgs/mosd/apid/src/routes.rs:5609-5613`). The quoting rule is
+   (`os/pkgs/mosd/apid/src/routes.rs:5583-5587`). The quoting rule is
    `if segment.contains('.') || segment.contains('"')`
    (`os/pkgs/mosd/mosd-settings/src/path.rs:44-50`). So `eth0.100` leaves apid
    as `network."eth0.100"`: two segments, not three.
@@ -83,12 +83,12 @@ stale and so is every line number. Re-measured:
 4. **The validator is unchanged, and the message still matches it.** The whole
    rule is
    `b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')`
-   (`os/pkgs/mosd/apid/src/routes.rs:3474-3479`), and both sentences an
+   (`os/pkgs/mosd/apid/src/routes.rs:3448-3453`), and both sentences an
    operator can be shown state exactly that charset and that bound: the pane's
    *"Interface name must be 1-15 characters of letters, digits, '.', '_' or '-'."*
-   (`os/pkgs/mosd/apid/src/routes.rs:3526`) and the typed route's
+   (`os/pkgs/mosd/apid/src/routes.rs:3500`) and the typed route's
    *"an interface name is 1 to 15 characters of letters, digits"*
-   (`os/pkgs/mosd/apid/src/routes.rs:2496`). The finding's first alternative —
+   (`os/pkgs/mosd/apid/src/routes.rs:2470`). The finding's first alternative —
    reject `.` and say why — was not taken, and the message did not have to
    change, because the name is now writable.
 

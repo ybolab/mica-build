@@ -646,10 +646,16 @@ impl MosdService {
     /// ever being served stale; grafting rather than storing keeps the stored
     /// tree reserved for pushed facts, so a read never manufactures a change
     /// edge for the item façade ([`crate::tree`]) to project.
-    async fn get_state(&self, path: &str) -> fdo::Result<String> {
+    ///
+    /// Two failure paths, under two names: [`NOT_FOUND_ERROR`] when the
+    /// dot-path resolves to nothing, and fdo `Failed` when the `/proc/uptime`
+    /// read does not answer. apid maps the first to 404 and the second to 500
+    /// with no route-specific reading of either.
+    async fn get_state(&self, path: &str) -> Result<String, SettingsFault> {
         if path == "uptime" {
-            let secs = read_uptime_seconds()
-                .ok_or_else(|| fdo::Error::Failed("read /proc/uptime".to_string()))?;
+            let secs = read_uptime_seconds().ok_or_else(|| {
+                SettingsFault::Fdo(fdo::Error::Failed("read /proc/uptime".to_string()))
+            })?;
             return Ok(Value::from(secs).to_string());
         }
         let inner = self.inner.lock().await;
@@ -660,8 +666,16 @@ impl MosdService {
             }
             return Ok(root.to_string());
         }
+        // The dot-path names nothing in the tree. That is [`NOT_FOUND_ERROR`],
+        // the same name `rotate_wireguard_key` raises for an interface the
+        // settings do not declare, and not `InvalidArgs`: the argument is
+        // well-formed, there is simply no value under it. Under one shared
+        // name apid could only tell the two apart by knowing that on the state
+        // route the name had a single producer, and it read the name against
+        // that private fact to answer 404 (`docs/task/RFCT-215.md` section 6
+        // item 5). Naming the condition here is what lets that reading go.
         let value = json_path_get(&inner.state, path)
-            .ok_or_else(|| fdo::Error::InvalidArgs(format!("state path not found: `{path}`")))?;
+            .ok_or_else(|| SettingsFault::NotFound(format!("state path not found: `{path}`")))?;
         Ok(value.to_string())
     }
 
@@ -1375,6 +1389,36 @@ mod tests {
         // Refused before the key store is reached, so no key was drawn for an
         // interface that has no business having one.
         assert!(!dir.path().join("secrets").exists());
+    }
+
+    /// `GetState`'s two failure paths, and the error name each one travels
+    /// under.
+    ///
+    /// **The names are the assertion.** Both used to be readable only by
+    /// guessing from the message: an unresolvable dot-path raised fdo
+    /// `InvalidArgs`, the same name a rejected *value* travels under, so apid
+    /// could not tell "this path names nothing" from "this argument is bad"
+    /// without knowing that on this one route the name had a single producer.
+    /// It answered 404 by reading the name against that private fact
+    /// (`docs/task/RFCT-215.md` section 6 item 5). The condition is the same
+    /// one [`a_rotation_refuses_an_interface_that_is_not_a_tunnel`] split for
+    /// the rotate-key path in PLAN-023 M6 — a path that names nothing is
+    /// [`NOT_FOUND_ERROR`] — and this brings the state read into line with it.
+    #[tokio::test]
+    async fn a_state_path_that_does_not_resolve_is_not_found() {
+        use zbus::DBusError as _;
+        let (service, _calls, _dir) = service_with_mock();
+
+        let unresolvable = service.get_state("no.such.path").await.unwrap_err();
+
+        let message = unresolvable.description().unwrap_or_default();
+        assert!(message.contains("state path not found"), "{message}");
+        assert_eq!(
+            unresolvable.name().as_str(),
+            super::NOT_FOUND_ERROR,
+            "a dot-path that resolves to nothing names nothing, which is a 404 \
+             and not a 422: {message}"
+        );
     }
 
     #[tokio::test]

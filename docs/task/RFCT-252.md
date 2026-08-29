@@ -158,7 +158,7 @@ negative as its own measurement, so nothing depends on those lines surviving"*
 (`docs/plan/PLAN-026.md:73-75`), and RFCT-215's own residue item repeats it:
 *"Section 1.2 now re-states that negative as a measurement of its own, so the
 record no longer depends on that line surviving verbatim"*
-(`docs/task/RFCT-215.md:289-291`). Measured here, on both readings of what
+(`docs/task/RFCT-215.md:296-298`). Measured here, on both readings of what
 "Section 1.2" names:
 
 - **RFCT-215 has no section 1.2.** Its section 1, *"What section 1 said, and
@@ -167,7 +167,7 @@ record no longer depends on that line surviving verbatim"*
   It contains no row about the routing import: the only occurrence of the string
   `routing` anywhere in the file is inside the residue item quoted above, the
   one headed *"The import unsplits are now unblocked."*
-  (`docs/task/RFCT-215.md:285-286`). A search for the negative it is said to
+  (`docs/task/RFCT-215.md:292-293`). A search for the negative it is said to
   restate — `write verb`, `write-verb`, `never served` — matches nothing in the
   file at all. The ledger's business is recording which old claims are now
   false, which is the opposite of preserving one as a standing measurement.

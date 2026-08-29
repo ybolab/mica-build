@@ -42,7 +42,7 @@ the wire.
 ## 2. RED first
 
 `the_typed_network_writes_refuse_an_address_that_is_not_a_cidr`
-(`os/pkgs/mosd/apid/src/tests.rs:8588`) was written and run before the fix
+(`os/pkgs/mosd/apid/src/tests.rs:8589`) was written and run before the fix
 existed, committed at `6e1bf6e`. The first assertion it reaches is the item
 route's status:
 
@@ -74,25 +74,25 @@ arms the test would pass against a fix that refused more than the wizard does.
 ## 3. What changed
 
 **One rule, three surfaces.** The address clause moved out of `validate_iface`
-into `fn validate_static_address` (`os/pkgs/mosd/apid/src/routes.rs:3544`),
+into `fn validate_static_address` (`os/pkgs/mosd/apid/src/routes.rs:3518`),
 which is the only place in the file that spells the condition
 `if !dhcp && !address.is_empty() && !valid_cidr(address) {`
-(`os/pkgs/mosd/apid/src/routes.rs:3545`). `validate_iface` now ends in
+(`os/pkgs/mosd/apid/src/routes.rs:3519`). `validate_iface` now ends in
 `validate_static_address(dhcp, address)`
-(`os/pkgs/mosd/apid/src/routes.rs:3528`), so the two form handlers and
+(`os/pkgs/mosd/apid/src/routes.rs:3502`), so the two form handlers and
 `POST /api/v1/setup` reach the rule exactly as before, through a tail call.
 
 Factored rather than called directly, and the reason is the name check. The
 typed routes already refuse a bad interface name through `fn check_iface_name`
-(`os/pkgs/mosd/apid/src/routes.rs:2488`), whose message is the API's
+(`os/pkgs/mosd/apid/src/routes.rs:2462`), whose message is the API's
 (*"an interface name is 1 to 15 characters of letters, digits, `.`, `_` or
 `-`"*). Calling `validate_iface` from those routes would have carried a second,
 unreachable spelling of that same refusal into the cluster. Splitting the clause
 costs one function and leaves one copy of the CIDR rule in the file.
 
 **The API-side refusal** is `fn address_refusal`
-(`os/pkgs/mosd/apid/src/routes.rs:2532`), built beside `fn relational_refusal`
-(`os/pkgs/mosd/apid/src/routes.rs:2508`) and in its shape: it turns the
+(`os/pkgs/mosd/apid/src/routes.rs:2506`), built beside `fn relational_refusal`
+(`os/pkgs/mosd/apid/src/routes.rs:2482`) and in its shape: it turns the
 validator's own message into §2.4's envelope with `validation_failed` and
 nothing else.
 
@@ -100,10 +100,10 @@ nothing else.
 
 | Route | Call | What is checked |
 |---|---|---|
-| `PUT /api/v1/network` | `if let Err(response) = address_refusal(iface, cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2656`) | every entry of the body, which on this route is the whole map it will store |
-| `PUT /api/v1/network/{iface}` | `if let Err(response) = address_refusal(&iface, &cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2727`) | `cfg`, the one entry the request carries |
+| `PUT /api/v1/network` | `if let Err(response) = address_refusal(iface, cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2630`) | every entry of the body, which on this route is the whole map it will store |
+| `PUT /api/v1/network/{iface}` | `if let Err(response) = address_refusal(&iface, &cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2701`) | `cfg`, the one entry the request carries |
 
-`api_v1_network_iface_remove` (`os/pkgs/mosd/apid/src/routes.rs:2769`) is
+`api_v1_network_iface_remove` (`os/pkgs/mosd/apid/src/routes.rs:2743`) is
 untouched. It re-validates the map it read, without the removed entry, and
 putting the CIDR rule into that shared re-validation would make removing an
 unrelated interface start failing on bad data already on disk — data the
@@ -140,7 +140,7 @@ fixed"*. Both its name and its doc comment said the gap was open, so flipping
 the assertion alone would have left the file stating something false about
 itself. It is now
 `the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
-(`os/pkgs/mosd/apid/src/tests.rs:10551`): the same entry still goes three ways,
+(`os/pkgs/mosd/apid/src/tests.rs:10552`): the same entry still goes three ways,
 and the third arm asserts 422, the `validation_failed` code, `network.eth0` in
 `path`, the wizard's sentence in `message`, and that nothing was written. Its
 doc comment now records the convergence and keeps the reason the setup route

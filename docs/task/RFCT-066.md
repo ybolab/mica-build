@@ -24,7 +24,7 @@ laid. Four stub lines consumed, verified at merge.
 
 | section | line | subject |
 | --- | --- | --- |
-| 7.1 | `docs/design/api.md:3765` | The channels that actually exist — **[implemented]** |
+| 7.1 | `docs/design/api.md:3766` | The channels that actually exist — **[implemented]** |
 | 7.2 | `:3436` | The honest baseline: anyone with SSH is already root — **[implemented]** |
 | 7.3 | `:3477` | The signing machinery this project already has, having read it — **[implemented]** |
 | 7.4 | `:3534` | Recommendation |
@@ -38,7 +38,7 @@ laid. Four stub lines consumed, verified at merge.
 
 **Do not sign UI bundles in phase 1 or phase 5.** The recommendation runs
 against the instinct, so it is argued as three separately checkable claims
-(`docs/design/api.md:3899-3922`):
+(`docs/design/api.md:3900-3923`):
 
 1. **A signature and the upload credential authorise the same blast radius.** A
    caller holding a token can already power the appliance off, flip

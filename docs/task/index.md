@@ -243,3 +243,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-247 PLAN-026 M1: the CIDR gap on the typed network writes**](RFCT-247.md) `P1`
 - [x] [**RFCT-249 PLAN-026 M3: the psk quotable gap**](RFCT-249.md) `P1`
 - [x] [**RFCT-252 PLAN-026 M6: the import unsplits, measured and refused**](RFCT-252.md) `P2`
+- [x] [**RFCT-251 PLAN-026 M5: GetState names NotFound, and apid stops reading the name**](RFCT-251.md) `P1`

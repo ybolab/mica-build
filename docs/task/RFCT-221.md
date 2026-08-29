@@ -216,7 +216,7 @@ called not optional.
 - **D5** (root mode; rootless not built) — **implemented**. The consequence is
   stated in the pane in the operator's own terms:
   "Containers on this device run as root."
-  (`os/pkgs/mosd/apid/src/routes.rs:3222`). The four rootless-only binaries are
+  (`os/pkgs/mosd/apid/src/routes.rs:3196`). The four rootless-only binaries are
   absent from the built set, whose whole contents are
   `sha256sum podman quadlet crun conmon catatonit netavark aardvark-dns`
   (`os/pkgs/podman/Dockerfile:361`).
