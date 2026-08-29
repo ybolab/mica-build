@@ -8,7 +8,7 @@
 # decision. Ceilings are the measured counts, exact, not slack.
 #
 # Re-measured wholesale by RFCT-256 on the merged tree that took bkd/tcdocsrm
-# at 7ef3edc: resolving the no-slash citation form moved 225 citations into
+# at b374405: resolving the no-slash citation form moved 228 citations into
 # scope. Every row is a measured count, never summed and never taken from one
 # side of a merge; at a merge every row is re-measured, not only the rows git
 # raised a conflict on.
