@@ -9,7 +9,7 @@
 docs/design/api.md 483
 docs/design/boards.md 2
 docs/design/bus.md 5
-docs/design/dashboard.md 80
+docs/design/dashboard.md 90
 docs/design/remote-management.md 5
 docs/design/uboot-ab-handshake.md 12
 docs/task/RFCT-040.md 4
@@ -47,4 +47,4 @@ docs/task/RFCT-210.md 56
 docs/research/venus-os-access.md 6
 docs/research/venus-os-ui.md 9
 docs/task/RFCT-215.md 8
-docs/task/RFCT-257.md 38
+docs/task/RFCT-257.md 40

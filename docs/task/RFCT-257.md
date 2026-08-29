@@ -623,6 +623,25 @@ that fails on a correct document.
   `:35` and `:36-38`.
 - **Six left unresolvable** — the `os/verify-image-v2.sh` sites of §7.4.
 
+### 9.3 `docs/design/dashboard.md`
+
+Seventeen class A sites. Eleven full-formed, three left bare because they
+inherit on their own line already, and **three skipped as M1's class**: they
+inherit the basename `bus.rs`, which has two candidates in this tree
+(`os/pkgs/mosd/mosd/src/bus.rs` and `os/pkgs/mosd/mosd/tests/bus.rs`). Fixing
+the antecedent to full form fixes them, but the antecedent is a no-slash token
+and belongs to M1 — the sites are `docs/design/dashboard.md:1007`, `:1009` and
+`:1010`, and they are left for that milestone rather than repaired twice.
+
+One genuine never-valid citation was caught here, and it is the clearest
+worked example in the pass of why a constant offset must never be used. Full-forming
+armed the fragment `record` against `os/pkgs/mosd/mosd/src/bus.rs:126-137`,
+where the word does not appear: lines 126-137 are a struct constructor. `fn
+record` is unique in the file at `:497`, and the function runs to `:508` — a
+span of exactly twelve lines, the same width as the range originally cited. The
+citation was right when written and the function moved beneath it by 371 lines.
+Re-derived to `:497-508`, where the content check now arms and passes.
+
 Line **count** is deliberately unchanged by every one of these edits. Re-wrapping
 the widened lines would shift every subsequent line number in api.md and break
 the many citations other documents make into it, so the wrap is left broken
