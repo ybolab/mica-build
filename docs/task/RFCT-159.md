@@ -218,7 +218,7 @@ source comments. All 17 were re-verified on the merged tree:
   `os/rootfs/stages/31-feature-containers.Dockerfile:16`;
   `os/rootfs/stages/40-board.Dockerfile:21`, `:100`, `:126`, `:146`;
   `os/rootfs/stages/README.md:249`, `:331`
-- `os/verify/HARNESS.md:200`, `:512`;
+- `os/verify/HARNESS.md:200`, `:513`;
   `os/verify/src/checks-bootchain.ts:5`, `:19`, `:20`, `:346`, `:347`
 - `os/build/src/bundle-cli.ts:42`
 
