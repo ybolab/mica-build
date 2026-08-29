@@ -6474,6 +6474,105 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
 
+/// §4.1 rule 1's medium rule, stated the way the gate has to implement it: a
+/// path inside the reserved `/api` subtree that no route declares answers
+/// §2.4's 404 envelope, and **which credential the request carried is not
+/// what decides that**. A client that addressed the JSON surface is answered
+/// in JSON whether it sent nothing at all, a token that is not stored, a
+/// token that is, or a session cookie.
+///
+/// The four answers are compared to each other and not only to a literal, so
+/// what is asserted is the symmetry itself. The cookie arm is the fixed point:
+/// it is the answer this repository already documented — `an_absent_token_id_
+/// is_404_and_a_malformed_one_is_422` asserts `not_found` on `/api/v1/tokens/`
+/// through a cookie — and the other three are required to be the same bytes,
+/// so a future change that moves the cookie arm fails here rather than
+/// silently taking the other three with it.
+///
+/// `/apibogus` is in the list for the reason
+/// `each_guard_is_exercised_by_exactly_one_hostile_feature` states: the
+/// assertion has to distinguish the rule from its absence. The subtree is
+/// `/api` and what nests under it, not the four characters, so a path that
+/// merely begins with them is an HTML path and still redirects.
+#[tokio::test]
+async fn an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api",
+        "/api/",
+        "/api/v1/tokens/",
+        "/api/v1/nope",
+        "/api/v2/meta",
+    ] {
+        let mut answers: Vec<(&str, serde_json::Value)> = Vec::new();
+        for (credential, response) in [
+            (
+                "no credential",
+                request(&router, "DELETE", path, None, None).await,
+            ),
+            (
+                "a stored bearer",
+                bearer(&router, "DELETE", path, &wires[0]).await,
+            ),
+            (
+                "an unstored bearer",
+                bearer(&router, "DELETE", path, "0000000000000000").await,
+            ),
+            (
+                "a session cookie",
+                request(&router, "DELETE", path, Some(&cookie), None).await,
+            ),
+        ] {
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "{path} with {credential}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "not_found", "{path} with {credential}");
+            assert_eq!(error["source"], "apid", "{path} with {credential}");
+            answers.push((credential, error));
+        }
+        let (_, expected) = &answers[0];
+        for (credential, error) in &answers[1..] {
+            assert_eq!(error, expected, "{path} answers {credential} differently");
+        }
+    }
+
+    let response = request(&router, "GET", "/apibogus", None, None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/login");
+
+    let response = request(&router, "GET", "/healthz", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The same rule in **setup mode**, which is where the gate's *other* redirect
+/// lives and so is a second exit that has to be closed rather than the same
+/// one twice.
+///
+/// A device with no admin password yet still has a reserved `/api` subtree,
+/// and a client asking it for a path that does not exist is asking a question
+/// the setup form is not an answer to.
+#[tokio::test]
+async fn an_undeclared_api_path_is_a_404_in_setup_mode_too() {
+    let (router, _fake) = test_app(unconfigured_tree());
+
+    let response = request(&router, "GET", "/api/v1/nope", None, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    // The HTML surface is untouched: setup mode still bounces it to /setup.
+    let response = request(&router, "GET", "/hostname", None, None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/setup");
+}
+
 /// The HTML half of the split recorded in `docs/task/RFCT-210.md` §2.4: the
 /// pane answers **422** where `DELETE /api/v1/tokens/{id}` answers **404**, on
 /// the same condition.
