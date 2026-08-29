@@ -222,7 +222,7 @@ passes. None was measured in the shared checkout.
 | `bash docs/verify-citations.sh` | `2207/2207 PASS`, RC=0 |
 | `bash docs/verify-index.sh` | `875/875 PASS`, RC=0 |
 | `bash hack/check.sh` in the amd64 builder, `dbus` installed first | `Summary [ 108.263s] 837 tests run: 837 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
-| `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `1135448` | `No breaking changes to report, but the specs are different.`, **RC=0** |
+| `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `7566210` | `No breaking changes to report, but the specs are different.`, **RC=0** |
 
 `main`'s own tree at `a06e9dd` reads `2175/2175` and `867/867`, measured here
 rather than relayed, in a clean `git archive` extract. The rest of the delta is
@@ -258,8 +258,10 @@ before use, run with the two severity promotions the workflow writes
 (`response-optional-property-removed err`,
 `response-non-success-status-removed err`). **RC=0 against `main`'s current tip
 is what proves the 422 additive**, and it is the current tip and not the
-dispatch-time one: `main` moved from `c5f7e96` to `a06e9dd` while this task ran,
-so `bkd/5q6am5rw` was merged again before the gates were taken.
+dispatch-time one: `main` moved four times while this task ran, from `c5f7e96`
+to `7566210`, and the base was re-read from its tip at each run rather than
+cached. `main` has not touched `os/pkgs/mosd/apid/openapi.json` in any of those
+commits, so every one of those runs compared against the same base bytes.
 
 ## 9. Out of scope, untouched
 
