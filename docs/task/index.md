@@ -219,7 +219,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-220 PLAN-011 bus v2 audited milestone by milestone, and its closeout recommended**](RFCT-220.md) `P1`
 - [x] [**RFCT-221 PLAN-012 container-engine audit: milestone verdicts and closeout recommendation**](RFCT-221.md) `P1`
 - [x] [**RFCT-222 PLAN-013 audited: the x64/QEMU vehicle measured against the tree it asked for**](RFCT-222.md) `P1`
-- [ ] [**RFCT-223 A scheduled upstream-tag check for the container engine's six pins**](RFCT-223.md) `P2`
+- [x] [**RFCT-223 A scheduled upstream-tag check for the container engine's six pins**](RFCT-223.md) `P2`
 - [ ] [**RFCT-224 Decide and settle container.enabled's bus writability, for the class and not one key**](RFCT-224.md) `P2`
 - [x] [**RFCT-225 The image-freshness guard did not survive the verifier port, and exists in no module today**](RFCT-225.md) `P2`
 - [x] [**RFCT-226 The /var/log package-manager residue, now load-bearing for the stage-order gate**](RFCT-226.md) `P2`
