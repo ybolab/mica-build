@@ -188,8 +188,12 @@ predicate would not be so lucky.
 
 ## 7. Out of scope, untouched
 
-- `os/pkgs/mosd/apid/src/routes.rs` at `:2516` and below — a sibling milestone
-  owns that region. Nothing in this branch touches it.
+- `os/pkgs/mosd/apid/src/routes.rs` from line 2516 down — a sibling milestone
+  owns that region, so no line number is cited for it here: a bare `:NNN` form
+  is skipped by the citation gate entirely, and a full-form citation into a
+  region this task never read would be a claim with no measurement behind it.
+  Measured instead: this branch's only hunk in that file is at line 1244
+  (`git diff -U0 bkd/5q6am5rw -- os/pkgs/mosd/apid/src/routes.rs`).
 - `main`. No merge into it, no other issue filed, nothing dispatched.
 - `docs/plan/**`, which L2 closes out.
 - Every other apid route: `InvalidArgs` still means *"this argument was
@@ -205,7 +209,7 @@ from.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | GATE_CITATIONS |
-| `bash docs/verify-index.sh` | GATE_INDEX |
-| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | GATE_RUST |
-| `oasdiff breaking` | GATE_OASDIFF |
+| `bash docs/verify-citations.sh` | **`2218/2218 PASS`**, `ratchet failures: 0`, and `no quote, by document: docs/task/RFCT-251.md 0` — this record arms every citation it makes, so it sits at the ratchet's zero ceiling for a new document rather than taking an override row in `docs/verify-citations-unquoted-baseline.txt`. It also carries **no bare `:NNN` form**: `grep -oE '`:[0-9]+(-[0-9]+)?`' docs/task/RFCT-251.md \| wc -l` is `0`, which matters because the gate skips that form outright and a document can be green and unchecked at once. Near-miss **352** against the merge parent's 354. The -2 was attributed by measurement, not by inference: the merge parent `dcae967` was unpacked into this task's scratch directory and run there (`2210/2210 PASS`, near-miss 354, matching L2's reference), and its per-document unarmed counts diffed against this tip. Exactly two documents fall by one each — `docs/design/api.md` 452 to 451, where the prose commit deleted the unarmed citation naming the removed branch, and `docs/task/RFCT-215.md` 8 to 7, where item 5's close removed the unarmed citation to the deleted comment. No document rises, and the new record enters at 0, so nothing drifted INTO the near-miss set |
+| `bash docs/verify-index.sh` | **`879/879 PASS`**. The merge parent measures `875/875 PASS`; the whole of the +4 is this task's one new document and its one index row |
+| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [ 172.027s] 839 tests run: 839 passed (1 slow), 0 skipped`, then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. 838 was the campaign baseline at RFCT-249; this task adds exactly one, the new bus test, and 838 + 1 = 839. `dbus` was installed in-container first, or the bus round-trip goes rc=100 — and this milestone changes the bus layer, so that test is the one that had to run |
+| `oasdiff breaking` | **`No changes detected`, RC=0**. oasdiff 1.29.1, sha256 verified `541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`. Base is `main` at `7566210`, re-read at the moment of the run. The spec did not move at all, which is the machine-checkable half of requirement 4: `git diff main --stat -- os/pkgs/mosd/apid/openapi.json` is empty, so no regeneration was needed and none was done |
