@@ -244,7 +244,7 @@ which error the run reaches.
 The negative control is what makes the two positive runs non-vacuous. On its
 own, "the run got as far as the rauc error" is equally consistent with a
 `BOARD_DIR` that never resolved to the new path; the control fails EARLIER, at
-`os/rootfs/build-v2.sh:180`, and names the new default in its message, so the
+`os/rootfs/build-v2.sh:185`, and names the new default in its message, so the
 two positives can only have reached `:178` by resolving there. Criterion 7 is
 proven by control pair.
 

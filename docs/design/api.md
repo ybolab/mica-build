@@ -3547,7 +3547,7 @@ stylesheet is a `&str` constant emitted into the page head
 `include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
 and no non-Rust file in the crate other than its manifest.
 
-**How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
+**How it gets there.** `os/rootfs/build-v2.sh:80-81` copies the cross-built
 `apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
 installs the binary as `/usr/bin/apid` mode `0755`, `:295` installs the unit,
 and `:297-299` enables it by symlink and **asserts the symlink exists**. The
@@ -3864,7 +3864,7 @@ reusable here**, and the reasons are different, which is why the answer has to
 come from reading them rather than from their names.
 
 **RAUC's CMS bundle signature.** Bundles are signed at build time by
-`rauc bundle` with the material `make os-devkeys` generates (`Makefile:53-54` →
+`rauc bundle` with the material `make os-devkeys` generates (`Makefile:56-57` →
 `os/pkgs/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
 (`os/pkgs/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
@@ -3904,7 +3904,7 @@ host, never on a device, and its output is static content"*
 README names the missing half without being asked: the **on-device Uptane
 client** is named as *"Explicitly out of scope for the whole crate"*
 (`os/pkgs/rauc-sign/README.md:41`). Its own README also records that RAUC's CMS signature
-*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51`), so the two bodies of
+*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:52`), so the two bodies of
 machinery do not compose with each
 other either.
 
@@ -4074,7 +4074,7 @@ to move.
 built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — the built-in UI is compiled into the `apid` binary —
 and identifies how it gets inside the verity squashfs
-(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/scripts/mosd-install.sh`). No second
+(`os/rootfs/build-v2.sh:80-81`, `os/rootfs/scripts/mosd-install.sh`). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.

@@ -270,9 +270,10 @@ async fn get_items_projects_both_trees_as_slash_paths() -> anyhow::Result<()> {
         assert!(attrs.contains_key("writable"), "no writable attr on {path}");
     }
 
-    // Writability is the platform-config surface: what a reconciler owns is
-    // writable, and everything else — schema bookkeeping, the credential
-    // metadata, provisioning, and the whole live-state tree — is not.
+    // Writability is the remote write surface, not "what a reconciler owns":
+    // `container` and `mqtt` have reconcilers and are deliberately read-only
+    // here (docs/design/bus.md §11.6), as are schema bookkeeping, the
+    // credential metadata, provisioning, and the whole live-state tree.
     for path in [
         "/hostname",
         "/wifi/ap/channel",
@@ -290,6 +291,8 @@ async fn get_items_projects_both_trees_as_slash_paths() -> anyhow::Result<()> {
         "/access/device/generation",
         "/access/console/shellEnabled",
         "/provisioning/state",
+        "/container/enabled",
+        "/mqtt/enabled",
         "/dry_run",
     ] {
         assert!(
@@ -537,6 +540,86 @@ async fn set_value_writes_a_settings_item_through_the_same_single_writer() -> an
 
     // Nothing above put a secret on the bus.
     assert_no_secret(&items, "GetItems after SetValue");
+    Ok(())
+}
+
+/// The class rule for platform switches (`docs/design/bus.md` §11.6): a switch
+/// outside `WRITABLE_SUBTREES` projects read-only on the item tree — so no
+/// broker client can reach it through the bridge's one write member — and is
+/// written through `SetSettings` alone.
+///
+/// Asserted for `container` and `mqtt` TOGETHER, because they are the class and
+/// not two keys that happen to agree. Widening either one has to delete an
+/// assertion here and say why, which is the point: the projection is pinned so
+/// it cannot drift back open quietly the way it drifted shut.
+#[tokio::test(flavor = "multi_thread")]
+async fn platform_switches_are_read_only_items_written_only_through_set_settings()
+-> anyhow::Result<()> {
+    let harness = start().await?;
+    let item_proxy = ItemProxy::new(&harness.connection).await?;
+    let items = wait_items(&item_proxy).await?;
+
+    // Both switches are projected, both read false, and both say so.
+    for path in ["/container/enabled", "/mqtt/enabled"] {
+        assert!(items.contains_key(path), "{path} is not projected at all");
+        assert!(
+            !bool::try_from(items[path]["writable"].clone())?,
+            "{path} must project read-only (docs/design/bus.md §11.6)"
+        );
+        assert!(!bool::try_from(items[path]["value"].clone())?);
+    }
+
+    // SetValue on each is refused with the read-only code and changes nothing.
+    // -2 exactly, not merely "not 0": the code is the contract (§1.1), and a
+    // widening would turn these into 0 rather than into some other refusal.
+    for path in ["/container/enabled", "/mqtt/enabled"] {
+        let item = item_at(&harness.connection, path).await?;
+        assert_eq!(
+            item.set_value(&Value::from(true)).await?,
+            -2,
+            "{path} must answer SET_READ_ONLY"
+        );
+        assert!(
+            !bool::try_from(item.get_value().await?)?,
+            "a refused SetValue must leave {path} as it was"
+        );
+    }
+
+    // The settings method is the write path, and it is not gated by the item
+    // tree's writable set: the same two keys go through SetSettings.
+    let mosd = MosdProxy::new(&harness.connection).await?;
+    for dot in ["container.enabled", "mqtt.enabled"] {
+        mosd.set_settings(dot, "true").await?;
+    }
+
+    // That write reached the store, not just the daemon's memory. Parsed
+    // rather than substring-matched: both tables serialize unconditionally, so
+    // their mere presence would assert nothing about the write.
+    let persisted: toml::Table = std::fs::read_to_string(&harness.settings_path)?.parse()?;
+    for key in ["container", "mqtt"] {
+        assert_eq!(
+            persisted[key]["enabled"].as_bool(),
+            Some(true),
+            "SetSettings must persist {key}.enabled, got: {persisted:?}"
+        );
+    }
+
+    // ... and round-trips through the item tree, still read-only. Read-only is
+    // a property of the WRITE path only: the value is published as it changes,
+    // which is what makes the switch observable over MQTT without being
+    // settable over it.
+    let items = item_proxy.get_items().await?;
+    for path in ["/container/enabled", "/mqtt/enabled"] {
+        assert!(
+            bool::try_from(items[path]["value"].clone())?,
+            "{path} must show the value SetSettings wrote"
+        );
+        assert!(
+            !bool::try_from(items[path]["writable"].clone())?,
+            "{path} must still project read-only after a settings write"
+        );
+    }
+
     Ok(())
 }
 

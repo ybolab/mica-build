@@ -252,7 +252,7 @@ The `*.zh.md` siblings carry the same `board.yaml` claims in Chinese
   `os/boards/cx3576/board.env:94` (86),
   `os/build-env/images.env:65` (84) and `:71` (83),
   `os/build-env/from.sh:29` (87) and `:49` (86),
-  `os/rootfs/build-v2.sh:181` (96), `:182` (90) and `:301` (84).
+  `os/rootfs/build-v2.sh:186` (96), `:182` (90) and `:301` (84).
 - **About 60 references to `os/verify-image-v2.sh` across `os/**`**, in
   `os/verify/src/*` and the board.env comment headers. These are deliberate
   port-provenance comments -- `os/verify/run.sh:57` frames it correctly as the

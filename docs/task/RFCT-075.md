@@ -310,7 +310,7 @@ sweep, not a claim that failed:
 | no `include_str!`/`include_bytes!` anywhere | holds, none in `mosd/` |
 | no non-Rust file in the crate but its manifest | holds, `mosd/apid/Cargo.toml` only |
 | the unit's `[Service]` is four directives, no `ProtectSystem=`, no `User=` | holds, `mosd/dist/apid.service` |
-| `os/rootfs/build-v2.sh:75-76` stages the binary and unit | holds, at those exact lines, `apid` for `webd` |
+| `os/rootfs/build-v2.sh:80-81` stages the binary and unit | holds, at those exact lines, `apid` for `webd` |
 | `os/rootfs/Dockerfile.v2:294-295`, `:297-299` install and assert the enable symlink | holds, at those exact lines, `apid` for `webd` |
 | the built-in error pages exist at `routes.rs:106-116` | the *page* exists (`bus_error`); the line numbers have moved and see F2 |
 

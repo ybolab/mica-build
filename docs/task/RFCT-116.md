@@ -265,7 +265,7 @@ commit (`95cbfb1`), and the gate was re-run after it.
 
 | test file:line | before | after |
 |---|---|---|
-| `os/verify/src/checks-engine.test.ts:504` | `.toContain("PLAN-012's switch gates nothing")` | `.toContain('the container.enabled switch gates nothing')` |
+| `os/verify/src/checks-engine.test.ts:507` | `.toContain("PLAN-012's switch gates nothing")` | `.toContain('the container.enabled switch gates nothing')` |
 | `os/verify/src/checks-ext4.test.ts:418` | `test('RED when EPHEMERAL is EMPTY -- the RFCT-106 race, from the other side', ...)` | `test('RED when EPHEMERAL is EMPTY -- the first-boot /var race, from the other side', ...)` |
 | `os/verify/src/checks-ext4.test.ts:424` | `expect(r.message).toContain('RFCT-106')` | `expect(r.message).toContain('the health gate intermittently')` |
 | `os/verify/src/checks-home.test.ts:717` | `test('the bind absent fails, naming PLAN-011 D5\'s extension model', ...)` | `test('the bind absent fails, naming the extension model it breaks', ...)` |
