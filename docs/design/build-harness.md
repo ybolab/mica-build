@@ -258,6 +258,52 @@ image:
 So an inspection task that only has to read bytes out of an arm64 artifact is
 not blocked here, while anything that has to run one is.
 
+### 5.1 A single-architecture tag does not refuse `--platform`; it misresolves
+
+*Measured 2026-08-28 (RFCT-235), appended to the above rather than replacing
+any of it.*
+
+The capability question above has a companion that reads like it and is not
+it: what happens when the emulator IS available and the BASE is the wrong
+architecture. The answer is the reason `os/pkgs/podman/Dockerfile` carries two
+base arguments for one image.
+
+`--platform` on a `FROM` selects a manifest out of an index. A digest-pinned
+upstream reference is an index, so `--platform=$BUILDPLATFORM` picks the right
+one; a `localhost/mos-build-*` tag is one manifest and no index, so there is
+nothing to select and docker serves what the tag holds. Buildkit still
+believes the stage is running at the platform the `FROM` named, applies no
+emulator, and the stage dies on its first `RUN`. Both driver paths, a
+`linux/arm64` build whose `src` stage was given the arm64 base under
+`--platform=$BUILDPLATFORM`:
+
+    # docker driver, tag resolved out of the image store
+    #4 resolve localhost/mos-build-base:arm64@sha256:b1f5a46d... 0.0s done
+    #5 0.444 exec /bin/sh: exec format error
+
+    # mos-arm64 docker-container driver, base handed over as an OCI layout
+    #6 [context localhost/mos-build-base:arm64] OCI load from client
+    #6 resolve localhost/mos-build-base:arm64@sha256:b1f5a46d... 0.0s done
+    #7 0.573 exec /bin/sh: exec format error
+
+Neither report names the base, the architecture or the argument, and both are
+the same `exec format error` that a MISSING emulator produces — which is what
+makes this worth writing down. `docker buildx build --platform` refusing a
+mismatch is the behaviour to expect and not the behaviour to get.
+
+The remedy is a second argument, not a second `--platform`: a stage that runs
+at the build platform takes a base resolved at the build platform's
+architecture. `os/pkgs/podman/build.sh` does this with `MOS_BUILD_BASE_NATIVE`,
+resolved through a second `os/build-env/from.sh` call with `--arch` from
+`uname -m`, and carried to a container-driver builder as a fifth OCI layout
+next to the four. Proved before it was written, with a two-stage throwaway
+whose `src` stood on the amd64 base and whose `verify` stood on the arm64 one,
+built `--platform linux/arm64` on `mos-arm64`:
+
+    #9 0.809 SRCARCH=x86_64 VERIFYARCH=aarch64
+
+One build, two architectures, one builder.
+
 ## 6. The image is an input, and "no image" reads as a harness failure
 
 `test/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
