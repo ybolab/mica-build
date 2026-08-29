@@ -46,7 +46,7 @@ first is the uptime read,
 (`os/pkgs/mosd/mosd/src/bus.rs:652`), which is `Failed` and reaches apid as 500
 `mosd_failed`. The second is the dot-path lookup,
 `let value = json_path_get(&inner.state, path)`
-(`os/pkgs/mosd/mosd/src/bus.rs:663`), whose `None` becomes
+(`os/pkgs/mosd/mosd/src/bus.rs:677`), whose `None` becomes
 `fdo::Error::InvalidArgs` on the line below it. The whole-tree read (`""`) and
 the `uptime` graft return early and cannot fail with a name at all.
 
@@ -79,16 +79,16 @@ produces is the same envelope §2.4 gives everywhere else: mosd's own message,
 apid's classification, the path attached. The 404 it produces names
 `settings_not_found` — the code the settings route already answers this
 condition with, at `MOSD_NOT_FOUND => (`
-(`os/pkgs/mosd/apid/src/routes.rs:3046`) — so the two trees now agree, which was
+(`os/pkgs/mosd/apid/src/routes.rs:3020`) — so the two trees now agree, which was
 the point. `docs/design/api.md`'s error table already reads
 *"the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound`"*
-(`docs/design/api.md:1822`) as the 404 row and the fix agrees with it; that file
+(`docs/design/api.md:1823`) as the 404 row and the fix agrees with it; that file
 belongs to M3b and PLAN-023 and was not edited here beyond section 4's
 re-anchor.
 
 **The settings route is untouched.** `bus_api_error`'s table still maps
 `FDO_INVALID_ARGS => (`
-(`os/pkgs/mosd/apid/src/routes.rs:3054`) to 422 `settings_rejected`, and every
+(`os/pkgs/mosd/apid/src/routes.rs:3028`) to 422 `settings_rejected`, and every
 other route still reaches it. Only `api_v1_state` reads the name differently,
 because only `api_v1_state` has the single-producer fact to read it with.
 
@@ -137,14 +137,14 @@ After:
 ```
 
 The last line of that run is the control: `a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422`
-(`os/pkgs/mosd/apid/src/tests.rs:4293`) is the settings route's existing
+(`os/pkgs/mosd/apid/src/tests.rs:4284`) is the settings route's existing
 assertion that a rejection is still 422, and it passed unchanged.
 
 **One existing test had to change, and it is the interesting one.**
 `each_fdo_error_name_gets_its_own_envelope` walks §2.4's five rows against
 **both** resource routes with one expected status per row, which is exactly the
 assumption this fix breaks: `assert_eq!(response.status(), status, "{fdo_name} at {path}");`
-(`os/pkgs/mosd/apid/src/tests.rs:4213`) failed with *"left: 404"* against
+(`os/pkgs/mosd/apid/src/tests.rs:4204`) failed with *"left: 404"* against
 *"right: 422"* at `/api/v1/state/wifiAp`. The row is now route-dependent in the
 loop, with the reason stated where the override is, and the other four rows and
 the whole settings column are untouched. That failure is the evidence the change

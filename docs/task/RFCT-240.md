@@ -27,7 +27,7 @@ bearer **or** cookie.
 
 | Dot-path | Body | Success |
 |---|---|---|
-| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3461`) | `204` |
+| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3435`) | `204` |
 | `access.ssh.enabled` | `true` or `false` | `204` |
 | `container.enabled` | `true` or `false` | `204` |
 | `mqtt.enabled` | `true` or `false` | `204` |
@@ -45,7 +45,7 @@ construction.
 
 **The hostname is not trimmed, and the form path trims.** `hostname_submit`
 trims -- `let hostname = form.hostname.trim();`
-(`os/pkgs/mosd/apid/src/routes.rs:5911`) -- because a browser sends whatever
+(`os/pkgs/mosd/apid/src/routes.rs:5885`) -- because a browser sends whatever
 was typed into a text input; a client that built a JSON string
 chose its bytes, and writing something other than what it sent is the worse
 answer. `" mos "` is a 422 here and a successful `mos` there. Recorded as a
@@ -57,7 +57,7 @@ for anything under `access`: *"the whole tree, `access` itself, or anything
 under it"* (`os/pkgs/mosd/apid/src/access_cache.rs:35-37`). That is what the
 `access.ssh` form path already relies on, whose whole write is
 `.set_settings("access.ssh.enabled", &Value::Bool(enabled))`
-(`os/pkgs/mosd/apid/src/routes.rs:6217`). The token routes invalidate by
+(`os/pkgs/mosd/apid/src/routes.rs:6191`). The token routes invalidate by
 hand because a revocation has to bite on the very next request; nothing this
 route writes is a credential.
 
@@ -97,7 +97,7 @@ asserts the admin password still logs in.
 **422**, because `docs/design/api.md` section 2.2 states it:
 *"a `PUT` whose body contains `"<redacted>"` is rejected at 422 rather than
 written, because writing the sentinel would silently destroy the credential"*
-(`docs/design/api.md:1475-1478`).
+(`docs/design/api.md:1476-1479`).
 
 **`validation_failed`**, from the existing set rather than a new token.
 Section 2.4's `code` is an open set whose contract is that an unrecognised
@@ -105,9 +105,9 @@ value falls back to the status class, so a new token is not free: every client
 that wants to branch on it has to learn it. `validation_failed` is already the
 code apid raises when it refuses a body at 422 — for the token name,
 `ApiError::apid("validation_failed", key_error_message(&err))`
-(`os/pkgs/mosd/apid/src/routes.rs:1648`), and for the token id,
+(`os/pkgs/mosd/apid/src/routes.rs:1622`), and for the token id,
 *"a token id is 1 to 64 lowercase hex characters"*
-(`os/pkgs/mosd/apid/src/routes.rs:1551`) — and that is what this is: apid
+(`os/pkgs/mosd/apid/src/routes.rs:1525`) — and that is what this is: apid
 inspected the body and refused it. `source` is `apid`, because no bus call was
 made. The message names the sentinel, so a client that reads only the message
 still learns which value was the problem.
@@ -156,7 +156,7 @@ class impossible instead of arguing about each member of it.
 2. **404 `settings_not_found`** — the path is well formed and names nothing.
    Answered by the shared helper M2 landed,
    `fn item_not_found(collection: &str, identifier: &str) -> Response {`
-   (`os/pkgs/mosd/apid/src/routes.rs:1586`), so the rule is inherited by
+   (`os/pkgs/mosd/apid/src/routes.rs:1560`), so the rule is inherited by
    reaching for the function rather than by remembering a decision.
 3. **409 `settings_read_only`** — the path names something real that this route
    does not write. 409 for the condition section 2.4 already spends it on and
@@ -209,7 +209,7 @@ Everything else gets one sentence naming the four paths this route writes.
 Bearer **or** cookie, matching the `ApiSession` extractor as it stood after M2.
 (That type no longer exists: M9 (RFCT-245) withdrew the cookie from `/api/v1/`
 and collapsed it into `pub(crate) struct ApiBearer;`
-(`os/pkgs/mosd/apid/src/routes.rs:3141`). The decision this section records was
+(`os/pkgs/mosd/apid/src/routes.rs:3115`). The decision this section records was
 M4's and is left as it was written.) PLAN-023 Amendment 1's
 bearer-only rule is about the token routes specifically — a permanent-credential
 factory must not sit behind a browser session — not about new routes in
@@ -253,7 +253,7 @@ was restated; see section 7.
    import at all.
 5. `docs/design/api.md` section 2.3's *"There is no
    `POST` and no `PUT` anywhere under `/api`"*
-   (`docs/design/api.md:1540-1541`). The `PUT` half is now false. Section 2.3
+   (`docs/design/api.md:1541-1542`). The `PUT` half is now false. Section 2.3
    is the M1 design's own input and its whole table is a dated measurement this
    campaign supersedes milestone by milestone; correcting one clause of it here
    would leave the twenty rows around it saying the opposite.

@@ -264,7 +264,7 @@ cited line — **39 of 42 do not resolve**, 1 does, and 2 carry no name to test
 with. Section 2.3's conversion table is where most of them live, and its rows
 read `` `POST /ssh/keys/add` (`routes.rs:2545`) `` where `ssh_key_add` is now
 *"async fn ssh_key_add(State(app): State<AppState>, Form(form): Form<SshKeyAddForm>) -> Response {"*
-(`os/pkgs/mosd/apid/src/routes.rs:6816`).
+(`os/pkgs/mosd/apid/src/routes.rs:6790`).
 
 None was rewritten here, because the task's stated scope is the three forms and
 widening it silently is the wrong way to grow a remit. It is the same rot, in

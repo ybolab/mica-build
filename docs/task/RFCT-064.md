@@ -62,7 +62,7 @@ the shape it must land in.
 
 **One credential: a long-lived, revocable bearer token in `Authorization`,
 stored hashed at `access.apiTokens` on STATE.** Nothing else — no cookie, no
-custom header, no signature, no timestamp (`docs/design/api.md:1381`). It is
+custom header, no signature, no timestamp (`docs/design/api.md:1382`). It is
 hashed with SHA-256 rather than argon2id, and the asymmetry is argued rather
 than assumed: argon2id guards a human-chosen password
 (`mosd/webd/src/auth.rs:13-19`), while a token is 256 bits of `OsRng`, for which

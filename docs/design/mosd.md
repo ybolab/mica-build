@@ -385,12 +385,12 @@ reaches its own file, and the module carries no logging statement at all.
 answers the new public key, and it is a method for the reason the transient root
 password is: *"Deliberately not a setting, for the reason a transient root
 password is not one: a key that reached the settings tree would be persisted and
-served back out of it"* (`os/pkgs/mosd/mosd/src/bus.rs:851-853`). It refuses an
+served back out of it"* (`os/pkgs/mosd/mosd/src/bus.rs:865-867`). It refuses an
 interface that is not a declared `network` entry of kind `wireguard`, runs under
 the same lock every mutating method takes, and then re-reconciles:
 *"The reconcilers are re-run afterwards so the tunnel's unit is re-rendered and
 networkd builds the device back around the key now on disk"*
-(`os/pkgs/mosd/mosd/src/bus.rs:857-859`). The re-run is not optional, because
+(`os/pkgs/mosd/mosd/src/bus.rs:871-873`). The re-run is not optional, because
 *"networkd reads `PrivateKeyFile=` when it creates the device and never again"*
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:206-207`) — a rotation that only
 rewrote the file would change what the public key says without changing what the
