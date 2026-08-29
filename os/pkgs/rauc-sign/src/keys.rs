@@ -9,7 +9,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use ring::rand::SystemRandom;
 use ring::signature::Ed25519KeyPair;
 use tough::key_source::{KeySource, LocalKeySource};
@@ -20,7 +20,7 @@ pub const ROLES: [&str; 4] = ["root", "targets", "snapshot", "timestamp"];
 /// Roles whose keys the release pipeline holds online.
 ///
 /// `root` is deliberately absent: the root key is an offline key and is only
-/// needed by `init` (and, in later phases, by root rotation).
+/// needed by `init` and by the root ceremonies that republish `root.json`.
 pub const ONLINE_ROLES: [&str; 3] = ["targets", "snapshot", "timestamp"];
 
 /// Path of the private key file for `role` inside `dir`.
@@ -34,10 +34,28 @@ pub fn key_path(dir: &Path, role: &str) -> PathBuf {
 /// Existing files are never overwritten, so a stale key cannot be silently
 /// replaced. Files are created mode 0600.
 pub fn generate(dir: &Path) -> Result<Vec<PathBuf>> {
+    generate_roles(dir, &ROLES)
+}
+
+/// Generates one ed25519 key for each of `roles` into `dir`.
+///
+/// Same refusal to overwrite, same 0600. A root rotation asks for `["root"]`
+/// alone: the media that leaves a rotation ceremony carries one new offline
+/// key, and writing three online keys beside it that the ceremony never uses
+/// would put spare copies of the release host's keys on offline media, each
+/// then needing its own destruction record.
+pub fn generate_roles(dir: &Path, roles: &[&str]) -> Result<Vec<PathBuf>> {
+    for role in roles {
+        ensure!(
+            ROLES.contains(role),
+            "unknown role {role:?}; expected one of {}",
+            ROLES.join(", ")
+        );
+    }
     fs::create_dir_all(dir).with_context(|| format!("create key directory {}", dir.display()))?;
 
     let mut written = Vec::new();
-    for role in ROLES {
+    for role in roles {
         let path = key_path(dir, role);
         if path.exists() {
             bail!(

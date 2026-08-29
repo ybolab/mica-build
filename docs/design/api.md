@@ -869,7 +869,7 @@ in the same four positions so the change is legible rather than overwritten.
    returns nothing, but neither hit is an asset: `os/pkgs/mosd/apid/src/routes.rs:10-11`
    is the module doc **stating** the rule — *"no `include_str!`, no
    `include_bytes!`, no asset directory"* — and
-   `include_str!("../openapi.json"),` (`os/pkgs/mosd/apid/src/tests.rs:1824`) reads the
+   `include_str!("../openapi.json"),` (`os/pkgs/mosd/apid/src/tests.rs:1929`) reads the
    committed document so a test can assert the generated one matches it. The built-in UI is still
    markup built by `maud` at request time, and the reason is recorded at
    `os/pkgs/mosd/apid/src/routes.rs:11-14`: dm-verity is the only protection on
@@ -3515,7 +3515,7 @@ stylesheet is a `&str` constant emitted into the page head
 `include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
 and no non-Rust file in the crate other than its manifest.
 
-**How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
+**How it gets there.** `os/rootfs/build-v2.sh:80-81` copies the cross-built
 `apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
 installs the binary as `/usr/bin/apid` mode `0755`, `os/rootfs/scripts/mosd-install.sh:35` installs the unit,
 and `:36-38` enables it by symlink and **asserts the symlink exists**. The
@@ -3771,7 +3771,7 @@ an absence measured four ways is a fact about the device, not a proposal.
 | Channel | Exists at `86cd669`? | Reaches `/srv/ui`? | Credential | Signed? |
 |---|---|---|---|---|
 | **The API upload path** | **no** — `grep -rn Multipart os/pkgs/mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
-| **SSH** | **yes**, but **off by default on both image profiles** (`os/pkgs/mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:196-202`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:209-214`; the pane says so and a test asserts the sentence, `os/pkgs/mosd/apid/src/routes.rs:5920`, `os/pkgs/mosd/apid/src/tests.rs:849`) | n/a |
+| **SSH** | **yes**, but **off by default on both image profiles** (`os/pkgs/mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:196-202`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:209-214`; the pane says so and a test asserts the sentence, `os/pkgs/mosd/apid/src/routes.rs:5920`, `os/pkgs/mosd/apid/src/tests.rs:954`) | n/a |
 | **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/pkgs/rauc/render-config.sh:234`), `rootfs.1` (`:240`), `boot.0` (`:260`) and `boot.1` (`:265`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:488`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/pkgs/rauc/system.conf.in:66-69`, `:78`) |
 | **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:378` names the path, `:408` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:437` `dd`s it into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md:57`) | none that works | n/a |
@@ -3832,7 +3832,7 @@ reusable here**, and the reasons are different, which is why the answer has to
 come from reading them rather than from their names.
 
 **RAUC's CMS bundle signature.** Bundles are signed at build time by
-`rauc bundle` with the material `make os-devkeys` generates (`Makefile:53-54` →
+`rauc bundle` with the material `make os-devkeys` generates (`Makefile:56-57` →
 `os/pkgs/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
 (`os/pkgs/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
@@ -3872,7 +3872,7 @@ host, never on a device, and its output is static content"*
 README names the missing half without being asked: the **on-device Uptane
 client** is named as *"Explicitly out of scope for the whole crate"*
 (`os/pkgs/rauc-sign/README.md:41`). Its own README also records that RAUC's CMS signature
-*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51`), so the two bodies of
+*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:52`), so the two bodies of
 machinery do not compose with each
 other either.
 
@@ -4042,7 +4042,7 @@ to move.
 built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — the built-in UI is compiled into the `apid` binary —
 and identifies how it gets inside the verity squashfs
-(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/scripts/mosd-install.sh`). No second
+(`os/rootfs/build-v2.sh:80-81`, `os/rootfs/scripts/mosd-install.sh`). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.

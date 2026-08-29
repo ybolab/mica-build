@@ -361,13 +361,14 @@ none of them is, because none has an M1 ambiguity site except RFCT-169.
 | `docs/task/RFCT-159.md` | 0 | 19 | yes | **no** | 8 | 9 |
 | `docs/task/RFCT-200.md` | 0 | 19 | yes | **no** | 82 | 9 |
 
-`docs/task/RFCT-210.md` is **not marked here and no floor row is added for
-it**: its marker is forced in PLAN-027, where RFCT-216's rewrite of
-release-signing.md section 1.6 deletes prose that four of its armed quotes
-cite. It is nonetheless **double-forced** — M2's inheritance rule independently
-makes its 16 no-antecedent bare tokens red under the ERROR reading — and the
-record should show that even though the tree must carry only one marking. Its
-cost, for the merge that brings it: `os` 81, `docs` 33.
+`docs/task/RFCT-210.md` was **not marked here and no floor row added for it**,
+and its marker **has since arrived**, from PLAN-027's merge to main as forecast:
+RFCT-216's rewrite of release-signing.md section 1.6 deleted prose that four of
+its armed quotes cite. It was nonetheless **double-forced** — M2's inheritance
+rule independently made its 16 no-antecedent bare tokens red under the ERROR
+reading, which the ruling in §11 has since dissolved — so the record shows both
+forcings while the tree carries one marking, placed by the milestone whose
+change compelled it.
 
 ### 5.4 Measured but deferred — the five withdrawn markers
 
@@ -847,10 +848,14 @@ whoever next touches them. Marking would hide the defect rather than resolve it.
 
 ### 12.4 Not ours
 
-`docs/task/RFCT-210.md` — forced independently by content deletion (RFCT-216's
-rewrite removes prose four of its armed quotes cite); marker arrives via
-PLAN-027. Not marked here, no floor row added. Expect a baseline conflict at
-that merge, resolved by §11.3's procedure.
+`docs/task/RFCT-210.md` — **its marker is now in the tree**, placed by PLAN-027
+and reaching this branch through that merge, exactly as §5.3 forecast. It was
+forced there by content deletion (RFCT-216's rewrite removes prose four of its
+armed quotes cite) and independently by M2's rule under the reading §11 has
+since withdrawn. Never marked here and no floor row added for it, so the double
+forcing is recorded without the tree carrying a double marking. The forecast
+baseline conflict did materialise at that merge and was resolved by §11.3's
+procedure — see §16.
 
 `RFCT-214`, `RFCT-159`, `RFCT-200` — **deferred**. Nothing forces them under the
 ruling.
@@ -1008,3 +1013,42 @@ The worklist is therefore 46 citations pointing into api.md at or past line
 1336, where the shift accumulates +5 from ~1336 to +9 by ~1554 and is then flat.
 **No constant applies, and emphatically not +9.** They are re-derived against
 the merged tree in the next pass, under the window rule — not against this one.
+
+## 16. The PLAN-027 merge, and re-measuring every floor
+
+PLAN-027 reached main and this branch through `e2b2352`. It brings
+`docs/task/RFCT-210.md`'s dated-record marker, so that document's citations
+leave coverage and the exempted count rises to 38. §5.3's forecast is now a
+statement about the past.
+
+**Floors were re-measured on the merged tree, all four, not only the one git
+asked about.** That is the lesson of this merge and it is worth stating
+precisely, because it landed on the artifact that exists to catch silent drops.
+The `os` row was a genuine conflict, 1816 here against 1777 on main, and was
+resolved by §11.3's procedure — drop the row so the census can mask nothing, run
+the gate, set the floor to what it reports. But the `docs` row was **not** a git
+conflict and still needed correcting: neither side had touched it, so git
+silently took one side's value over the other's. **A floor lowered by
+auto-merge, inside the baseline file itself.** Git asks only about rows both
+sides edited; a row edited by neither, whose correct value has nevertheless
+changed, passes through unremarked.
+
+That is the silent half of §15's hazard applied to the ratchet rather than to a
+citation, and it generalises: after any merge, re-measure every floor, not only
+the conflicted ones. Merged floors: `docs` 322, `.github` 4, `os` 1807,
+`test` 18.
+
+The unquoted baseline conflicted too and was **not** a real conflict: the two
+sides add rows for different documents — this milestone's `RFCT-257.md` and
+main's `RFCT-235.md` — colliding only because they are adjacent lines. Both
+kept, and the ceiling re-measured rather than taken from either side.
+
+**No displacement arose from this merge for the documents both sides touched.**
+Measured rather than assumed: `docs/design/api.md` is 4801 lines at the base, on
+this branch, on `bkd/tcdocsrm` and on the merge; `docs/design/dashboard.md` is
+1827 across all four; `docs/task/RFCT-172.md` 127 and `docs/task/RFCT-169.md`
+410 likewise. So no side displaced a shared document and no sum arose. Source
+files did move — `os/verify/src/checks-engine.ts`, `os/verify/src/checks.ts` and
+`os/verify/HARNESS.md` — but on one side only, PLAN-027's, which re-anchored
+them there; this milestone edits no source file, so the summed form of the
+hazard does not apply.

@@ -4,7 +4,15 @@
 # Called from os/rootfs/stages/90-pack.Dockerfile (closed stage), where the reasoning lives.
 
 set -eu
+# The logs go too, and they are the one part of this that has a prerequisite:
+# /var/log/dpkg.log is what the stage-order claim is measured with, so
+# package-manager-logs-capture.sh must already have taken it out of the tree.
+# Refuse rather than remove it, because a purge that quietly destroyed the
+# instrument would read as a clean image and cost the claim silently.
+[ -s /rootfs-report.pkglogs/dpkg.log ] ||
+    { echo "error: the package-manager logs were not captured before this purge; /rootfs-report.pkglogs/dpkg.log is missing or empty. Removing /var/log/dpkg.log without capturing it first destroys the instrument the stage-order claim is measured with -- os/rootfs/README.md, 'Check the apt order directly' -- and nothing downstream can tell that from a build that never needed it" >&2; exit 1; }
 rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \
+       /var/log/apt \
        /etc/apt /etc/dpkg /usr/lib/apt /usr/lib/dpkg /usr/share/debconf \
        /usr/share/perl /usr/share/perl5 \
        /usr/bin/dpkg /usr/bin/dpkg-deb /usr/bin/dpkg-divert \
@@ -16,7 +24,8 @@ rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \
        /usr/bin/gpgv /usr/bin/perl /usr/bin/perl5.* \
        /usr/lib/*-linux-gnu/perl-base /usr/lib/*-linux-gnu/libapt-pkg.so.* \
        /usr/lib/*-linux-gnu/libapt-private.so.*
-rm -f /usr/bin/debconf /usr/bin/debconf-apt-progress /usr/bin/debconf-communicate \
+rm -f /var/log/dpkg.log /var/log/alternatives.log \
+      /usr/bin/debconf /usr/bin/debconf-apt-progress /usr/bin/debconf-communicate \
       /usr/bin/debconf-copydb /usr/bin/debconf-escape /usr/bin/debconf-set-selections \
       /usr/bin/debconf-show /usr/bin/deb-systemd-helper /usr/bin/deb-systemd-invoke \
       /usr/bin/ucf /usr/bin/ucfq /usr/bin/ucfr \

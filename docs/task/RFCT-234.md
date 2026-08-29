@@ -652,3 +652,5 @@ change that breaks what already worked.
   substitute: two coexisting tags let a host hold both families, but a single
   build that needs both at one `FROM` still cannot be satisfied by two names.
 - Booting cx3576. There is no hardware on this host.
+
+<!-- dated-record: the PLAN-025 M2b measurement, frozen at its completion on 2026-08-28; it quotes `os/pkgs/podman/Dockerfile:74` as the src stage stood while the fix was still unshipped -- the sentence naming what "is NOT done here" is the record -- and RFCT-235 has since replaced that argument with `MOS_BUILD_BASE_NATIVE`, so re-pointing the citation would falsify what was measured when; exempt from docs/verify-citations.sh (RFCT-172) -->
