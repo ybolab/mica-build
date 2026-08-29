@@ -42,7 +42,7 @@ the wire.
 ## 2. RED first
 
 `the_typed_network_writes_refuse_an_address_that_is_not_a_cidr`
-(`os/pkgs/mosd/apid/src/tests.rs:8483`) was written and run before the fix
+(`os/pkgs/mosd/apid/src/tests.rs:8596`) was written and run before the fix
 existed, committed at `6e1bf6e`. The first assertion it reaches is the item
 route's status:
 
@@ -74,12 +74,12 @@ arms the test would pass against a fix that refused more than the wizard does.
 ## 3. What changed
 
 **One rule, three surfaces.** The address clause moved out of `validate_iface`
-into `fn validate_static_address` (`os/pkgs/mosd/apid/src/routes.rs:3544`),
+into `fn validate_static_address` (`os/pkgs/mosd/apid/src/routes.rs:3580`),
 which is the only place in the file that spells the condition
 `if !dhcp && !address.is_empty() && !valid_cidr(address) {`
-(`os/pkgs/mosd/apid/src/routes.rs:3545`). `validate_iface` now ends in
+(`os/pkgs/mosd/apid/src/routes.rs:3581`). `validate_iface` now ends in
 `validate_static_address(dhcp, address)`
-(`os/pkgs/mosd/apid/src/routes.rs:3528`), so the two form handlers and
+(`os/pkgs/mosd/apid/src/routes.rs:3564`), so the two form handlers and
 `POST /api/v1/setup` reach the rule exactly as before, through a tail call.
 
 Factored rather than called directly, and the reason is the name check. The
@@ -140,7 +140,7 @@ fixed"*. Both its name and its doc comment said the gap was open, so flipping
 the assertion alone would have left the file stating something false about
 itself. It is now
 `the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
-(`os/pkgs/mosd/apid/src/tests.rs:10446`): the same entry still goes three ways,
+(`os/pkgs/mosd/apid/src/tests.rs:10559`): the same entry still goes three ways,
 and the third arm asserts 422, the `validation_failed` code, `network.eth0` in
 `path`, the wizard's sentence in `message`, and that nothing was written. Its
 doc comment now records the convergence and keeps the reason the setup route

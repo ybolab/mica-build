@@ -24,18 +24,22 @@ The gate handed off exactly two things and then read a cookie:
 
 A path under `/api` that no route declares matched neither, so it fell through
 to the HTML branches and ended at `Redirect::to("/login").into_response()`
-(`os/pkgs/mosd/apid/src/routes.rs:3354`) in normal mode, or at
+(`os/pkgs/mosd/apid/src/routes.rs:3398`) in normal mode, or at
 `return Redirect::to("/setup").into_response();`
-(`os/pkgs/mosd/apid/src/routes.rs:3347`) in setup mode. The gate's entire
+(`os/pkgs/mosd/apid/src/routes.rs:3391`) in setup mode. The gate's entire
 credential test is the session cookie, and a bearer does not satisfy it, so
 **the answer depended on which credential the client carried** — a browser saw
 the API's envelope, and everything else saw an HTML redirect it cannot read.
 
 The brief's line references were taken at `a06e9dd` and this branch stands on a
 later merge, so they were re-verified rather than trusted: at the pre-image the
-gate spanned `:3271-3318`, the hand-off was at `:3273` and the cookie test at
-`:3294-3298`. All three reproduced exactly. The defect is real and this record
-is a fix, not a refutation.
+gate spanned lines 3271-3318 of `os/pkgs/mosd/apid/src/routes.rs`, the hand-off
+was at line 3273 and the cookie test at lines 3294-3298. All three reproduced
+exactly. Those three are written out rather than as citation tokens on purpose:
+they are dated statements about a commit this branch no longer stands on, and a
+mechanical re-anchor pass would move them to lines that say the same thing
+today, which is exactly the claim they are not making. The defect is real, and
+this record is a fix and not a refutation.
 
 ## 2. What decides the medium, and what does not
 
@@ -63,7 +67,7 @@ above everything else:
     }
 
 The test is `.is_some_and(|leaf| leaf.is_empty() || leaf.starts_with('/'))`
-(`os/pkgs/mosd/apid/src/routes.rs:3306-3311`).
+(`os/pkgs/mosd/apid/src/routes.rs:3350-3355`).
 
 **It releases the path; it does not answer it.** That choice is the whole of
 why section 4 below comes out clean. The reserved subtree already has a
@@ -95,7 +99,7 @@ a smaller one on a path the same reservation rule owns.
 leaf `is_declared_api_route` accepts begins with `/`, so every path it accepts
 this predicate accepts as well, so
 `if path == "/healthz" || is_declared_api_route(path) {`
-(`os/pkgs/mosd/apid/src/routes.rs:3277`) no longer decides whether anything is
+(`os/pkgs/mosd/apid/src/routes.rs:3321`) no longer decides whether anything is
 released. It was not folded in because PLAN-026 M4 (RFCT-250) owns that
 predicate and is rewriting it, and deleting its only caller would take the
 mechanism out from under that milestone. The source says so at the site, and

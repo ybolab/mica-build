@@ -408,7 +408,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
-  (`os/pkgs/mosd/apid/src/routes.rs:4755-4775`); mosd itself reads
+  (`os/pkgs/mosd/apid/src/routes.rs:4791-4811`); mosd itself reads
   `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:585-591`). RFCT-129 landed this.
 - **Availability: (a) available today** — gap-table **row 12**, no longer via a
   side channel. The old `/proc/uptime`-in-`apid` exception to the layering
@@ -1068,7 +1068,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:3358-3371`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:3394-3407`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
