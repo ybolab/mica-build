@@ -70,7 +70,7 @@ authenticated nothing would satisfy the letter of section 3.2 and none of it.
 Measured, not inferred. `setup_submit` refuses with
 `password_hash(&access).is_some()`, and `password_hash` is
 `.and_then(|admin| admin.get("password_hash"))`
-(`os/pkgs/mosd/apid/src/routes.rs:3281-3286`).
+(`os/pkgs/mosd/apid/src/routes.rs:3255-3260`).
 The API route runs that same predicate on the same subtree. It is not "a session
 exists" and not "the tree is non-empty", which is why the criterion was
 re-measured rather than copied from the rendering.
@@ -194,8 +194,8 @@ failure needs exactly one path to fail and the others to succeed.
 One further difference the same test records, and it is about rendering rather
 than about what was written: the wizard answers **503** on any failed mosd call,
 because `fn bus_error(err: &anyhow::Error) -> Response {`
-(`os/pkgs/mosd/apid/src/routes.rs:3292`) answers
-`StatusCode::SERVICE_UNAVAILABLE,` (`os/pkgs/mosd/apid/src/routes.rs:3295`)
+(`os/pkgs/mosd/apid/src/routes.rs:3266`) answers
+`StatusCode::SERVICE_UNAVAILABLE,` (`os/pkgs/mosd/apid/src/routes.rs:3269`)
 whatever mosd said, where the API carries the classification through as 500
 `settings_io`.
 
@@ -262,7 +262,7 @@ rendered markup would be a change to the pane this task has no reason to make.
 M6's helper hard-coded `path: &str` because all three of its callers write one
 subtree and name it. This route writes three, and a malformed body is not about
 any one of them, so the parameter is now `path: Option<&str>,`
-(`os/pkgs/mosd/apid/src/routes.rs:2578`) — which is what section 2.4 already says
+(`os/pkgs/mosd/apid/src/routes.rs:2552`) — which is what section 2.4 already says
 the member is: *"present only when the failure names a dot-path"*
 (`docs/design/api.md:1734`). The three M6 call sites pass `Some(...)` and their
 behaviour is unchanged.
@@ -522,7 +522,7 @@ citation named one construct and pointed at another. RFCT-246 corrected it to
 forward to 3204-3208, which at L2's tip `6d94d72` is the middle of the bearer
 check — `return false;` and the comment above
 `token::verify(&parse_tokens(&access).unwrap_or_default(), presented)`
-(`os/pkgs/mosd/apid/src/routes.rs:3234`). Both numbers are gate-green, because
+(`os/pkgs/mosd/apid/src/routes.rs:3208`). Both numbers are gate-green, because
 the interposed word in *"`redirect_app()` at …"* demotes the pair to
 resolution-only; only one is right. In this tree the citation reads 3232-3236
 and points at the function.

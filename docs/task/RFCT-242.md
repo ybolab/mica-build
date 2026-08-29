@@ -135,16 +135,16 @@ that exists with the wrong kind, which really is a 422, and a name that is not a
 declared `network` entry, which is a 404 everywhere else on this API. It now
 raises `SettingsFault::NotFound` for
 *"network.{iface} is not a declared network entry"*
-(`os/pkgs/mosd/mosd/src/bus.rs:884-888`) and keeps `InvalidArgs` for
+(`os/pkgs/mosd/mosd/src/bus.rs:898-902`) and keeps `InvalidArgs` for
 *"network.{iface} is not a WireGuard interface"*
-(`os/pkgs/mosd/mosd/src/bus.rs:871-873`), which meant changing its return type
+(`os/pkgs/mosd/mosd/src/bus.rs:885-887`), which meant changing its return type
 from `fdo::Result<String>` to `Result<String, SettingsFault>` — the same error
 type `GetSettings` and `SetSettings` already return.
 
 apid's classifier already mapped both names — `com.mos.mosd1.Error.NotFound` to
 404 `settings_not_found` and `InvalidArgs` to
 `ApiError::mosd("settings_rejected", message)`
-(`os/pkgs/mosd/apid/src/routes.rs:3090-3101`) — and had only ever been handed
+(`os/pkgs/mosd/apid/src/routes.rs:3064-3075`) — and had only ever been handed
 one of them. Two tests prove each half separately, which is what makes "no apid
 change" a measurement rather than a claim:
 
@@ -226,7 +226,7 @@ reconciler calls it rather than restating it —
 (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:239-248`) — and the WiFi route
 runs the same function at the place it already produces its 422,
 `ApiError::apid("validation_failed", message).at(WIFI_NETWORKS_PATH)`
-(`os/pkgs/mosd/apid/src/routes.rs:2226-2233`). The three local constants were
+(`os/pkgs/mosd/apid/src/routes.rs:2200-2207`). The three local constants were
 deleted from the reconciler; there is exactly one rule.
 
 **It is deliberately not enforced in `WifiNetwork`'s `Deserialize`**, and that is

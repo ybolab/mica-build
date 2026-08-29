@@ -27,7 +27,7 @@ fn is_quotable(value: &str) -> bool {
 ```
 
 What the write surface ran instead was `mosd_settings::validate_wifi_psk(psk)`
-(`os/pkgs/mosd/apid/src/routes.rs:2227`), and that function checked a 64-digit
+(`os/pkgs/mosd/apid/src/routes.rs:2201`), and that function checked a 64-digit
 hex PMK or IEEE 802.11i's length band and nothing else. `grep` over the crate
 found the predicate's only two call sites inside the station renderer,
 `encode_ssid` and `encode_psk`, and no third one anywhere on a write path.

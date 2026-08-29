@@ -23,7 +23,7 @@ is not in the settings tree, not in live state, not in an error and not in a
 response body, and this milestone adds no route that could produce one. The
 rotation's answer carries the public half alone — *"There is no `privateKey`
 member here and there will not be one"*
-(`os/pkgs/mosd/apid/src/routes.rs:1278`).
+(`os/pkgs/mosd/apid/src/routes.rs:1252`).
 
 ## Scope
 
@@ -107,9 +107,9 @@ writable without apid, so the boundary must hold here"*
 (`os/pkgs/mosd/apid/src/routes.rs:467`) for the reason the power and SSH
 mutations are: nothing that merely follows a link may replace a tunnel's
 identity. It calls `rotate_wireguard_key`
-(`os/pkgs/mosd/mosd/src/bus.rs:860`) and answers the new public key from
+(`os/pkgs/mosd/mosd/src/bus.rs:874`) and answers the new public key from
 `pub(crate) async fn api_v1_wireguard_rotate(`
-(`os/pkgs/mosd/apid/src/routes.rs:1332`).
+(`os/pkgs/mosd/apid/src/routes.rs:1306`).
 
 The interface name is passed to mosd unexamined. mosd owns the rule — a
 declared entry of kind `wireguard`, `InvalidArgs` for anything else — and apid
@@ -181,7 +181,7 @@ One trap is worth recording because it is invisible in review: `utoipa` copies
 a handler's doc comment into the published document, so an intra-doc link in it
 becomes an apid symbol name in front of every client. The link is prose:
 *"Prose and not an intra-doc link to the classifier"*
-(`os/pkgs/mosd/apid/src/routes.rs:1313`). This is the HTTP twin of the zbus trap
+(`os/pkgs/mosd/apid/src/routes.rs:1287`). This is the HTTP twin of the zbus trap
 RFCT-204 records for method doc comments.
 
 ## API classification

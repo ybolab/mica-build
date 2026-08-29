@@ -1244,33 +1244,7 @@ pub(crate) async fn api_v1_state(
     Path(path): Path<String>,
 ) -> Response {
     let value = state.api.get_state(&path).await;
-    // §2.4's table classifies fdo `InvalidArgs` as 422 `settings_rejected`,
-    // which is right where a value can be rejected and wrong here. `GetState`
-    // has exactly two failure paths -- `Failed` for the `/proc/uptime` read
-    // and `InvalidArgs` for `json_path_get` returning `None`
-    // (`os/pkgs/mosd/mosd/src/bus.rs:648-665`) -- so on THIS route the name
-    // has one producer and means only *"the dot-path does not resolve"*. That
-    // is the condition the settings tree answers 404 `settings_not_found` for,
-    // and one condition should not carry two codes. The cleaner fix is a
-    // `NotFound` error name mosd-side; PLAN-025's scope excludes mosd itself,
-    // so the reading is done here, where it is still unambiguous.
-    let unresolved = match value
-        .as_ref()
-        .err()
-        .and_then(|err| err.downcast_ref::<zbus::Error>())
-    {
-        Some(zbus::Error::MethodError(name, message, _)) if name.as_str() == FDO_INVALID_ARGS => {
-            Some(message.clone().unwrap_or_else(|| name.to_string()))
-        }
-        _ => None,
-    };
-    match unresolved {
-        Some(message) => api_response(
-            StatusCode::NOT_FOUND,
-            ApiError::mosd("settings_not_found", message).at(&path),
-        ),
-        None => resource_response(value, &path),
-    }
+    resource_response(value, &path)
 }
 
 /// The body of a successful key rotation: the public half, and nothing else.

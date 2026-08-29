@@ -88,7 +88,7 @@ stale and so is every line number. Re-measured:
    *"Interface name must be 1-15 characters of letters, digits, '.', '_' or '-'."*
    (`os/pkgs/mosd/apid/src/routes.rs:3562`) and the typed route's
    *"an interface name is 1 to 15 characters of letters, digits"*
-   (`os/pkgs/mosd/apid/src/routes.rs:2496`). The finding's first alternative —
+   (`os/pkgs/mosd/apid/src/routes.rs:2470`). The finding's first alternative —
    reject `.` and say why — was not taken, and the message did not have to
    change, because the name is now writable.
 

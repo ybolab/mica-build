@@ -30,7 +30,7 @@ recorded.** Path: top-level `uptime`, a bare JSON number of whole seconds
 since boot. Refresh point: computed at `GetState` time — mosd reads its own
 `/proc/uptime` inside the call and grafts the number onto the served view
 (the direct read and the whole-tree read both call
-`read_uptime_seconds()` `os/pkgs/mosd/mosd/src/bus.rs:649-668`), so no cached seconds-counter exists
+`read_uptime_seconds()` `os/pkgs/mosd/mosd/src/bus.rs:654-682`), so no cached seconds-counter exists
 anywhere to go stale. Grafted rather than stored: the stored tree stays
 reserved for pushed facts, so a read never manufactures a change edge for the
 item façade's diff stream, and `GetItems` is unchanged.

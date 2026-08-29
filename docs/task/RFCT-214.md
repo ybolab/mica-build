@@ -205,9 +205,10 @@ four groups. None was given a plausible-looking nearby line.
 **(a) A quote of code that no longer exists — 1.** Section 2.1's table row for
 `GET /api/v1/state/{*path}` quotes
 `resource_response(state.api.get_state(&path).await, &path)` at `:506`. PLAN-025's
-404 fix rewrote that expression to `resource_response(value, &path)`, now at
-`None => resource_response(value, &path),`
-(`os/pkgs/mosd/apid/src/routes.rs:1272`). Main corrected the same quote in two
+404 fix rewrote that expression to `resource_response(value, &path)`, now the
+whole of the handler body at `resource_response(value, &path)`
+(`os/pkgs/mosd/apid/src/routes.rs:1247`) — RFCT-251 deleted the `None =>` arm
+this line quoted when it moved the 404 mosd-side. Main corrected the same quote in two
 other places in this document and missed this one. Correcting a quotation is a
 content edit, not a citation edit, so it is recorded rather than made.
 

@@ -228,6 +228,23 @@ the *same file* at `:14`, `:22`, `:101`, `:123` and `:139` already say
 `os/boards/<board>/...`. A reader has both prefixes in one screen and no way to
 tell which is current.
 
+*(2026-08-29, appended by the campaign coordinator: this inventory is a dated
+measurement and the tree has since moved out from under most of it. `e1ae512`
+(RFCT-190) repointed the pre-rename tokens at twelve of the seventeen sites on
+2026-08-27, fourteen hours after this record was written. Re-measured on
+2026-08-29, five still carry a bare token:
+`os/verify/src/checks-bootchain.ts:19` *"PLAN-014's Scope section puts"*,
+`:20` *"BSP builds (digest pins only)"*,
+`:346` *"the last two are"*,
+`:347` *"section puts outside this campaign"*, and
+`os/build/src/bundle-cli.ts:42` *"exactly as they do there."*.
+The other twelve now read `os/boards/<b>/bsp/...`, so the heading's property no
+longer holds for them; their line numbers stay live and re-anchorable, which is
+why PLAN-027's re-anchor of the HARNESS.md continuation entry, from the 512 it
+sat at when this record was written to the 513 above, was correct on the number
+and independently re-confirmed by content on 2026-08-29. The list above is left
+as written.)*
+
 ## `.zh.md` residue — untouched by policy, not by oversight
 
 `*.zh.md` is excluded from both gates deliberately (`docs/verify-index.sh`

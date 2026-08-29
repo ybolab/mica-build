@@ -84,15 +84,15 @@ which is the only place in the file that spells the condition
 
 Factored rather than called directly, and the reason is the name check. The
 typed routes already refuse a bad interface name through `fn check_iface_name`
-(`os/pkgs/mosd/apid/src/routes.rs:2488`), whose message is the API's
+(`os/pkgs/mosd/apid/src/routes.rs:2462`), whose message is the API's
 (*"an interface name is 1 to 15 characters of letters, digits, `.`, `_` or
 `-`"*). Calling `validate_iface` from those routes would have carried a second,
 unreachable spelling of that same refusal into the cluster. Splitting the clause
 costs one function and leaves one copy of the CIDR rule in the file.
 
 **The API-side refusal** is `fn address_refusal`
-(`os/pkgs/mosd/apid/src/routes.rs:2532`), built beside `fn relational_refusal`
-(`os/pkgs/mosd/apid/src/routes.rs:2508`) and in its shape: it turns the
+(`os/pkgs/mosd/apid/src/routes.rs:2506`), built beside `fn relational_refusal`
+(`os/pkgs/mosd/apid/src/routes.rs:2482`) and in its shape: it turns the
 validator's own message into §2.4's envelope with `validation_failed` and
 nothing else.
 
@@ -100,10 +100,10 @@ nothing else.
 
 | Route | Call | What is checked |
 |---|---|---|
-| `PUT /api/v1/network` | `if let Err(response) = address_refusal(iface, cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2656`) | every entry of the body, which on this route is the whole map it will store |
-| `PUT /api/v1/network/{iface}` | `if let Err(response) = address_refusal(&iface, &cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2727`) | `cfg`, the one entry the request carries |
+| `PUT /api/v1/network` | `if let Err(response) = address_refusal(iface, cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2630`) | every entry of the body, which on this route is the whole map it will store |
+| `PUT /api/v1/network/{iface}` | `if let Err(response) = address_refusal(&iface, &cfg) {` (`os/pkgs/mosd/apid/src/routes.rs:2701`) | `cfg`, the one entry the request carries |
 
-`api_v1_network_iface_remove` (`os/pkgs/mosd/apid/src/routes.rs:2769`) is
+`api_v1_network_iface_remove` (`os/pkgs/mosd/apid/src/routes.rs:2743`) is
 untouched. It re-validates the map it read, without the removed entry, and
 putting the CIDR rule into that shared re-validation would make removing an
 unrelated interface start failing on bad data already on disk — data the

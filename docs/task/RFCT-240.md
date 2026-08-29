@@ -105,9 +105,9 @@ value falls back to the status class, so a new token is not free: every client
 that wants to branch on it has to learn it. `validation_failed` is already the
 code apid raises when it refuses a body at 422 — for the token name,
 `ApiError::apid("validation_failed", key_error_message(&err))`
-(`os/pkgs/mosd/apid/src/routes.rs:1648`), and for the token id,
+(`os/pkgs/mosd/apid/src/routes.rs:1622`), and for the token id,
 *"a token id is 1 to 64 lowercase hex characters"*
-(`os/pkgs/mosd/apid/src/routes.rs:1551`) — and that is what this is: apid
+(`os/pkgs/mosd/apid/src/routes.rs:1525`) — and that is what this is: apid
 inspected the body and refused it. `source` is `apid`, because no bus call was
 made. The message names the sentinel, so a client that reads only the message
 still learns which value was the problem.
@@ -156,7 +156,7 @@ class impossible instead of arguing about each member of it.
 2. **404 `settings_not_found`** — the path is well formed and names nothing.
    Answered by the shared helper M2 landed,
    `fn item_not_found(collection: &str, identifier: &str) -> Response {`
-   (`os/pkgs/mosd/apid/src/routes.rs:1586`), so the rule is inherited by
+   (`os/pkgs/mosd/apid/src/routes.rs:1560`), so the rule is inherited by
    reaching for the function rather than by remembering a decision.
 3. **409 `settings_read_only`** — the path names something real that this route
    does not write. 409 for the condition section 2.4 already spends it on and
@@ -209,7 +209,7 @@ Everything else gets one sentence naming the four paths this route writes.
 Bearer **or** cookie, matching the `ApiSession` extractor as it stood after M2.
 (That type no longer exists: M9 (RFCT-245) withdrew the cookie from `/api/v1/`
 and collapsed it into `pub(crate) struct ApiBearer;`
-(`os/pkgs/mosd/apid/src/routes.rs:3185`). The decision this section records was
+(`os/pkgs/mosd/apid/src/routes.rs:3159`). The decision this section records was
 M4's and is left as it was written.) PLAN-023 Amendment 1's
 bearer-only rule is about the token routes specifically — a permanent-credential
 factory must not sit behind a browser session — not about new routes in

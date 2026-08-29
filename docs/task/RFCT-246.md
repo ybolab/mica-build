@@ -33,8 +33,10 @@ Resolution, and why each way round:
   **union**. `bkd/vu5b6kk0`'s 401 wording, which names the bearer, and `main`'s
   404 `settings_not_found` row from PLAN-025 M3a. Taking either side alone would
   have made the document disagree with the merged handler, which still answers
-  `ApiError::mosd("settings_not_found", message).at(&path)`
-  (`os/pkgs/mosd/apid/src/routes.rs:1270`) on an unresolved dot-path — and the
+  `ApiError::mosd("settings_not_found", message)`
+  (`os/pkgs/mosd/apid/src/routes.rs:3066`) on an unresolved dot-path — reached
+  from the shared classifier since RFCT-251, and from a branch inside
+  `api_v1_state` when this was written — and the
   auto-merged `openapi.json` had already landed on exactly that union,
   so either side alone would also have desynchronised the two.
 - Every other hunk: resolved to `bkd/vu5b6kk0` with `-X theirs`, then
@@ -103,7 +105,7 @@ That is not a shortcut, it is the only door. The three `/api/v1/tokens` routes
 take `ApiBearer`, which refuses a session outright — *"this route accepts a
 bearer API token only; a session cookie is not a credential here, and a browser
 mints its first token at POST /builtin/tokens"*
-(`os/pkgs/mosd/apid/src/routes.rs:3198`) — so the first token cannot be minted
+(`os/pkgs/mosd/apid/src/routes.rs:3172`) — so the first token cannot be minted
 with a token.
 
 Every request after that mint is issued from a **second `Client`**, constructed

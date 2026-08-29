@@ -53,7 +53,7 @@ consequence of six months of growth.
 The measurement method used here: read the HTTPS router at
 `os/pkgs/mosd/apid/src/routes.rs:139-230`, the API sub-router at
 `os/pkgs/mosd/apid/src/routes.rs:414-497` and the HTTP-listener router
-(`os/pkgs/mosd/apid/src/routes.rs:3255-3258`); resolve every path constant
+(`os/pkgs/mosd/apid/src/routes.rs:3229-3232`); resolve every path constant
 (`os/pkgs/mosd/apid/src/routes.rs:253-320`, `:2442-2451`); one row per
 method+path the router actually declares, with both the declaration line and the
 handler line, because the old table mixed the two silently.
@@ -184,14 +184,14 @@ tree. The measurement that decides that case is in section 2.3 below.
 describe a result; `transient-root-password` because the value is never written
 into the settings tree at all — mosd's own words:
 *"Deliberately not a setting. Nothing is written into the settings tree"*
-(`os/pkgs/mosd/mosd/src/bus.rs:818-819`), and the password *"lives until the
-next boot"* (`os/pkgs/mosd/mosd/src/bus.rs:814-815`). `deactivate-bundle`
+(`os/pkgs/mosd/mosd/src/bus.rs:832-833`), and the password *"lives until the
+next boot"* (`os/pkgs/mosd/mosd/src/bus.rs:828-829`). `deactivate-bundle`
 because it renames a directory on DATA, not a settings node.
 `change-password` and `wireguard/{iface}/rotate-key` are already shipped in this
 shape, and the second states the test explicitly:
 *"An action and not a settings write, because there is no setting to write: the
 key lives in a mode-0640 file on STATE that the settings tree does not
-describe."* (`os/pkgs/mosd/apid/src/routes.rs:1291-1294`)
+describe."* (`os/pkgs/mosd/apid/src/routes.rs:1265-1268`)
 
 **Collection resources, 3.** SSH authorized keys (rows 25, 26), backed by
 `authorized_keys` (`os/pkgs/mosd/mosd-settings/src/model.rs:224`); WiFi client
@@ -342,11 +342,11 @@ is a 404; a rotate-key whose interface is not a declared entry is a 422. Both
 are "the thing you named does not exist", both are on `/api/v1/`, and they
 disagree today. The cause is in mosd, not apid: `rotate_wireguard_key` collapses
 two genuinely different conditions into one fdo error — *"network.{iface} is not
-a WireGuard interface"* (`os/pkgs/mosd/mosd/src/bus.rs:871-873`), where the entry
+a WireGuard interface"* (`os/pkgs/mosd/mosd/src/bus.rs:885-887`), where the entry
 exists and has the wrong kind, which really is a 422; and *"network.{iface} is
-not a declared network entry"* (`os/pkgs/mosd/mosd/src/bus.rs:885-887`), which is
+not a declared network entry"* (`os/pkgs/mosd/mosd/src/bus.rs:899-901`), which is
 a 404. Both are `InvalidArgs`, and apid maps `InvalidArgs` onto
-`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:3098-3101`)
+`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:3072-3075`)
 with no way to tell them apart. The published document does not declare 404 for
 that route at all — its response set is 200, 401, 422, 500 and 503
 (`os/pkgs/mosd/apid/openapi.json:256-348`). So the 422-where-404-is-meant pattern
@@ -372,7 +372,7 @@ Every route it binds:
   shipped route, not a new one.** Discharging the rule here means splitting
   mosd's single `InvalidArgs` into a `NotFound` for the undeclared entry and an
   `InvalidArgs` for the wrong kind, which apid already maps to 404 and 422
-  respectively (`os/pkgs/mosd/apid/src/routes.rs:3090-3101`) with no apid change
+  respectively (`os/pkgs/mosd/apid/src/routes.rs:3064-3075`) with no apid change
   at all. It is a mosd change plus an OpenAPI response addition, and it is
   additive to the document. Sequence it with M6, which is the milestone that
   already touches the network cluster.
@@ -626,7 +626,7 @@ operation:
    this step contains nothing.
 4. Reboot, or otherwise clear a transient root password. It is not in the
    settings tree and no read will show it; it *"lives until the next boot"*
-   (`os/pkgs/mosd/mosd/src/bus.rs:814-815`).
+   (`os/pkgs/mosd/mosd/src/bus.rs:828-829`).
 5. Check `/srv/ui/current`. Section 7.4 already requires this of any revocation
    runbook, because a bundle installed with a stolen credential survives the
    credential's revocation and survives an A/B update
