@@ -261,8 +261,12 @@ The 23 exclusions are the citations this branch wrote itself, seven in
 post-change line numbers already. Without the exclusion the pass would have
 shifted them a second time, which is the one way a content-verified remap can
 still be wrong — and it was caught by measurement rather than foresight: a
-trial run of the first pass did exactly that, turning a correct `:3277` into a
-`:3313` that content-verified clean because the two lines are the same line.
+trial run of the first pass did exactly that, moving a citation that correctly
+read line 3277 to line 3313, and it content-verified clean because a one-line
+check compares the pre-image line to the destination line and those two *are*
+the same line. Both numbers are written as prose here for the reason section 1
+gives: they name positions in trees this branch no longer stands on, and a
+citation token would resolve against today's file and be green while false.
 The excluded 23 were re-derived separately against the merged `routes.rs`, each
 also content-verified.
 
@@ -273,6 +277,43 @@ anywhere in a file. That is not a conservative difference: it exempted
 documents the gate does scan, this task file among them, because this section
 quotes the marker in prose. The redone pass uses the anchored form, which is
 where five of the six extra rewrites came from.
+
+**The pass was audited afterwards, because resolving the conflicts is not the
+job.** When two branches insert into one source file, the citations that
+*conflict* are the safe ones — git asks about those. The dangerous ones are the
+citations into that file that auto-merge silently: each side anchored correctly
+against its own tree, the merged file holds both sets of insertions, and the
+true line is displaced by the sum and matches neither side. A clean conflict
+list is not evidence about them.
+
+So every citation into `os/pkgs/mosd/apid/src/routes.rs` and
+`os/pkgs/mosd/apid/src/tests.rs` in every scanned, non-dated document was
+re-checked against the **merged** files, independently of the pass that wrote
+them. Each citation was traced to its own frame — the incoming tip for a
+document that side edited, the merge base for one it did not — its cited line
+read there, and the **longest byte-identical run** starting at that line
+required to sit at the cited line in the merged file and to be **unique**
+there. A one-line check is not enough for this: a lone `}` matches everywhere,
+and this campaign has already measured a bare `}` mapping 44 lines past its
+target with every gate green.
+
+| audit outcome | count |
+|---|---|
+| verified: run unique and at the cited line | 787 |
+| verified after ordinal alignment, where the citing line's own prose had been rewritten and positional matching could not pair it | 16 |
+| in this record, all gate-armed and therefore content-checked by `docs/verify-citations.sh` | 13 |
+| run is not unique, mapping confirmed by other means | 1 |
+| **wrong** | **0** |
+
+The one non-unique run is `docs/task/RFCT-244.md`'s citation of `token::mint`,
+and it is correct. `os/pkgs/mosd/apid/src/routes.rs` holds two byte-identical
+seven-line mint-failure blocks, one in `pub(crate) async fn api_v1_tokens_mint(`
+(`os/pkgs/mosd/apid/src/routes.rs:1448`) and one in
+`pub(crate) async fn api_v1_setup(` (`os/pkgs/mosd/apid/src/routes.rs:4168`), so
+content alone cannot separate them. RFCT-244 is the setup-route record and the
+citation resolves inside `api_v1_setup`. It is recorded rather than passed over
+because the next person to re-anchor that token will meet the same ambiguity and
+must not resolve it by search.
 
 **No constant offset was used, and none would have worked.** Three files moved,
 across ten regions, and the excluded 23 moved by an eleventh offset of their
