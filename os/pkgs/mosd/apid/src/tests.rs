@@ -1751,17 +1751,27 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
 }
 
 /// The declared paths are the only ones that changed. Every other path under
-/// `/api` keeps **both** of its answers: the subtree's own 404 with a session,
-/// and the gate's redirect without one, in either gate mode.
+/// `/api` has **one** answer — the subtree's own 404, byte for byte — with a
+/// session, without one, and in setup mode alike.
 ///
 /// The bare family prefixes are members of this class rather than exceptions
 /// to it. axum's `{*path}` wildcard matches at least one character, so
 /// `/api/v1/settings` and `/api/v1/settings/` name no dot-path and reach the
-/// not-found handler — and the gate's predicate has to agree with the router
-/// about that, or an unauthenticated request for one of them would be handed
-/// to a route that does not exist instead of being redirected.
+/// not-found handler.
+///
+/// Until PLAN-026 M2 (`docs/task/RFCT-248.md`) this test was
+/// `every_other_api_path_keeps_both_of_its_answers` and asserted **two**
+/// answers: this 404 with a session, and the gate's redirect to `/login` or
+/// `/setup` without one. The session arm is unchanged — the same handler
+/// answers it and the assertion below is the one it always carried — and the
+/// other two arms are what M2 closed. The reason the old comment gave for the
+/// redirect, that the gate's predicate has to agree with the router or an
+/// unauthenticated request would be handed to a route that does not exist,
+/// stopped applying with it: being handed to a route that does not exist is
+/// the intended outcome now, because the not-found handler is a route and it
+/// answers in §2.4's envelope.
 #[tokio::test]
-async fn every_other_api_path_keeps_both_of_its_answers() {
+async fn every_other_api_path_has_one_answer_in_every_mode() {
     // `/api/v1/ssh/authorized-keys` left this list when PLAN-023 M5 declared
     // it: it is now a served collection, and the test that holds its answers
     // is `the_ssh_key_collection_lists_adds_and_removes`.
@@ -1784,32 +1794,29 @@ async fn every_other_api_path_keeps_both_of_its_answers() {
     let (fresh, _) = test_app(unconfigured_tree());
 
     for path in UNDECLARED {
-        // With a session: the reserved subtree's own envelope, byte for byte.
-        let response = get(&router, path, Some(&cookie)).await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
-        assert_api_headers(&response, path);
-        assert_eq!(
-            body_string(response).await,
-            json!({
-                "error": {
-                    "code": "not_found",
-                    "message": format!("no API route at {path}"),
-                    "source": "apid",
-                }
-            })
-            .to_string(),
-            "{path}"
-        );
+        let expected = json!({
+            "error": {
+                "code": "not_found",
+                "message": format!("no API route at {path}"),
+                "source": "apid",
+            }
+        })
+        .to_string();
 
-        // Without one: the gate's redirect to `/login`.
-        let redirected = get(&router, path, None).await;
-        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
-        assert_eq!(location(&redirected), "/login", "{path}");
-
-        // And in setup mode, the gate's redirect to `/setup`.
-        let redirected = get(&fresh, path, None).await;
-        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
-        assert_eq!(location(&redirected), "/setup", "{path}");
+        // With a session, without one, and on a device that has no admin
+        // password at all: the reserved subtree's own envelope, byte for byte,
+        // three times. The router is the same one in the first two cases and a
+        // freshly built one in setup mode, which is the case a path-prefix
+        // gate used to break.
+        for (mode, response) in [
+            ("with a session", get(&router, path, Some(&cookie)).await),
+            ("without one", get(&router, path, None).await),
+            ("in setup mode", get(&fresh, path, None).await),
+        ] {
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path} {mode}");
+            assert_api_headers(&response, path);
+            assert_eq!(body_string(response).await, expected, "{path} {mode}");
+        }
     }
 }
 
