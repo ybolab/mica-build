@@ -203,12 +203,21 @@ change here:
 error: no pending RFCT-094 row in the fixture index to tick
 ```
 
-exit 1, with no case reporting a verdict — including the positive control. The
-three checkbox-vs-status cases were written against RFCT-094 by name;
-RFCT-094 was completed at e33ef7b and its row went `[ ]` → `[x]`, and from
-that commit the guard fired and `exit 1` ran before anything else. So the
-self-test could not have caught a regression in any assertion it covers, and
-the campaign's third gate had been reporting nothing for as long as that.
+exit 1, and NO `RESULT:` line. The three checkbox-vs-status cases were written
+against RFCT-094 by name; RFCT-094 was completed at e33ef7b and its row went
+`[ ]` → `[x]`, so from that commit the guard fired and `exit 1` ran.
+
+It aborts PARTWAY, not before everything, and the distinction matters to
+anyone reading this later. Measured by extracting the c5f7e96 tree and running
+it: 8 of the 11 cases run and pass first — the positive control (`863/863`)
+and cases 1 through 5c — and the run dies at the case-6 guard. What was dead
+is the three checkbox-vs-status cases, which never executed, plus the verdict
+line and the case count, which were never printed. So the assertions covered
+by the first 8 cases were still being exercised; the RFCT-171 checkbox
+assertions were not, and no automated reading of this gate's output could
+report a total. The gate was not reporting *nothing* — it was reporting
+partial results under a non-zero exit, which is a worse failure mode than
+silence because the passing lines above the abort look like a healthy run.
 
 Naming a record couples a test of the **assertion** to the lifecycle of one
 task, and every open task eventually closes. The exemplar is now discovered
@@ -217,6 +226,14 @@ read the same way case 4 already reads its research entry. Each mutation still
 verifies that it landed, and a tree with no pending row at all is still
 reported loudly rather than skipped. This landed in its own commit, ahead of
 the milestone, so that the M3 commit's green is a real before/after.
+
+That commit's message (05f9a39) says the guard ran `exit 1` "before any case",
+and this section said the same until it was measured properly. Both were
+wrong in the same direction — 8 cases run first. The commit message is history
+and is not rewritten; this paragraph is the correction of record, and the
+error is worth keeping visible because it is the exact failure this campaign
+exists to catch: a plausible claim about a gate, written from an abort message
+rather than from the run.
 
 ## 8. Upgrade discipline
 
@@ -267,7 +284,7 @@ re-measured on the merged tree.
 |---|---|---|---|---|
 | `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` | `983/983 PASS` | `987/987 PASS` |
 | `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` | `2173/2173 PASS` | `2178/2178 PASS` |
-| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, 0 cases | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
+| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, aborts after 8 of 11 cases, no `RESULT:` line | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
 
 Both merges moved the totals for the same reason and neither touched this
 milestone's logic. `d855804` brought M4's `docs/task/RFCT-259.md`; `fd79f53`
