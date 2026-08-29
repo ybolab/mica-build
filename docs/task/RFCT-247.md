@@ -140,7 +140,7 @@ fixed"*. Both its name and its doc comment said the gap was open, so flipping
 the assertion alone would have left the file stating something false about
 itself. It is now
 `the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
-(`os/pkgs/mosd/apid/src/tests.rs:10398`): the same entry still goes three ways,
+(`os/pkgs/mosd/apid/src/tests.rs:10446`): the same entry still goes three ways,
 and the third arm asserts 422, the `validation_failed` code, `network.eth0` in
 `path`, the wizard's sentence in `message`, and that nothing was written. Its
 doc comment now records the convergence and keeps the reason the setup route

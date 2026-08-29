@@ -246,7 +246,7 @@ memory of a report.
    (`os/pkgs/mosd/apid/src/routes.rs:4216`). **No route of M6's
    typed network cluster calls it.** Pinned by
    `the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
-   (`os/pkgs/mosd/apid/src/tests.rs:10398`). That test carried the gap under
+   (`os/pkgs/mosd/apid/src/tests.rs:10446`). That test carried the gap under
    its earlier name,
    the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not,
    and asserted 204 from M6's route; PLAN-026 M1 closed the gap and flipped it,
