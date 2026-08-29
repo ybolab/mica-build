@@ -151,14 +151,14 @@ with no change to `routes.rs`:
 
 Two tests are added.
 `an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential`
-(`os/pkgs/mosd/apid/src/tests.rs:6512`) walks five undeclared spellings against
+(`os/pkgs/mosd/apid/src/tests.rs:6617`) walks five undeclared spellings against
 four credentials — none, a stored bearer, an unstored bearer, a session cookie
 — and asserts the four envelopes are equal **to each other** as well as to the
 literal, so the symmetry itself is what is pinned; it also holds `/apibogus` to
 its redirect and `/healthz` to its 200, because an assertion has to distinguish
 the rule from its absence.
 `an_undeclared_api_path_is_a_404_in_setup_mode_too`
-(`os/pkgs/mosd/apid/src/tests.rs:6577`) closes the gate's other redirect exit,
+(`os/pkgs/mosd/apid/src/tests.rs:6682`) closes the gate's other redirect exit,
 which is a second exit and not the same one twice.
 
 ## 6. Two pinning tests, not one
@@ -167,7 +167,7 @@ The brief named one test to flip. The gate found a second.
 
 **Named in the brief.** The final arm of
 `an_absent_token_id_is_404_and_a_malformed_one_is_422`
-(`os/pkgs/mosd/apid/src/tests.rs:6434`) asserted the 303 to `/login` and said in
+(`os/pkgs/mosd/apid/src/tests.rs:6539`) asserted the 303 to `/login` and said in
 its comment that it was *left exactly as it was: a bearer does not satisfy the
 gate*. It now asserts the 404 and `not_found`, and the comment states the new
 rule and names what changed it. The comment on the arm above it was corrected in
@@ -183,7 +183,7 @@ for `/api/v1/settings`, `/api/v1/settings/`, `/api/v1/state` and
 session and the gate's redirect without one, in either gate mode. That is a
 direct statement of the defect, and its **name** states it too, so the test is
 renamed `every_other_api_path_has_one_answer_in_every_mode`
-(`os/pkgs/mosd/apid/src/tests.rs:1774`) and its three arms are folded into one
+(`os/pkgs/mosd/apid/src/tests.rs:1879`) and its three arms are folded into one
 byte-for-byte envelope assertion run three times. The session arm's assertion is
 unchanged. Its old name is left standing in `docs/task/RFCT-241.md` and
 `docs/task/RFCT-243.md`, which record what it was called when they were written;

@@ -54,7 +54,7 @@ before the file was written.
 document would have been a fifth opinion about the API alongside the four
 `utoipa::path` attributes. The regenerated document carries both new paths and
 both new schemas, and `mosd/apid`'s own staleness test — the one that says
-*"is stale; from mosd/, regenerate it with"* (`os/pkgs/mosd/apid/src/tests.rs:1832-1833`)
+*"is stale; from mosd/, regenerate it with"* (`os/pkgs/mosd/apid/src/tests.rs:1937-1938`)
 — passes on the merged tree, which is what proves the document describes the
 merged handlers and not one side's.
 
