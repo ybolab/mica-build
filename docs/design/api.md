@@ -3159,7 +3159,7 @@ directories beneath it, `0644` for files.**
   reason `mos-seed-home` documents — the directory outlives the rootfs that
   created it.
 - **Explicitly not under `/srv/home` or `/srv/root`.** Those are the bind
-  sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700` —
+  sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700`
   `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:44-47`). A UI bundle is
   appliance state, not a user's file, and mixing the two would make "delete my
   files" and "remove the UI" the same gesture.

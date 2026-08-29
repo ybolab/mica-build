@@ -57,8 +57,8 @@ Fixes 1-4 landed as specified:
    `set -e` at the assignment near the top of the script, before any
    message — that assignment now refuses with a FAIL sentence on stderr
    naming the build commands, then exits 1.
-4. `checks.test.ts:26` — `toBeGreaterThanOrEqual(0)` is now
-   `toBeGreaterThan(0)`.
+4. `toBeGreaterThanOrEqual(0)` is now `toBeGreaterThan(0)`
+   (`checks.test.ts:26`).
 
 ### Deviations from the plan's dead-code claims
 

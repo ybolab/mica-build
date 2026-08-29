@@ -228,7 +228,7 @@ history, Decisions item 4) and `*.zh.md`.
    carries `'pkgs'`: `checks-connd.ts:53`, `checks-system.ts:52`,
    `smoke-pins.ts:31` and `:134`, `smoke-pins.test.ts:157`, `smoke.test.ts:378`
    and `:379`. One new survivor, not on the briefed list:
-   `os/pkgs/mosd/apid/tests/e2e.rs:73` — `.join("mosd")` is the cargo target-dir
+   `os/pkgs/mosd/apid/tests/e2e.rs:73` `.join("mosd")` is the cargo target-dir
    **binary name**, not a repo path.
 3. **Escaped-regex literals** spelled `mosd\/` inside `.toThrow(/.../)`: one hit
    tree-wide, `os/build/src/boot-cx3576.test.ts:119`, and it is

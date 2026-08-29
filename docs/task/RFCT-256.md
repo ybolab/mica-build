@@ -577,6 +577,63 @@ where a line MOVED TO; it does not confirm that the line says what the prose
 claims. The window is a guard against mismapping, not a substitute for reading
 the destination.
 
+## 6c. The separator that silently disarms, and the test that catches it
+
+The repository's house style writes a citation and its quotation with an em
+dash between them:
+
+    `path:line` — *"quote"*
+
+and that citation is UNQUOTED. The backward scan skips only `[ \t\n*_(]` and
+the forward scan only `[ \t\n*_)]`; U+2014 is in neither set, so the scan stops
+on the dash and never reaches the fragment. Probed here against the real
+extractor, and the ASCII double hyphen fails identically, which the report of
+this class did not mention:
+
+| written as | result |
+|---|---|
+| `` `docs/verify-index.sh:2` — *"three document indexes"* `` | `qkind=none`, near-miss 1 |
+| `` *"three document indexes"* — `docs/verify-index.sh:2` `` | `qkind=none`, near-miss 1 |
+| `` `docs/verify-index.sh:2` -- *"three document indexes"* `` | `qkind=none`, near-miss 1 |
+| `` `docs/verify-index.sh:2` *"three document indexes"* `` | `qkind=text`, ARMED |
+
+These are not citations nobody thought about: every one is a citation somebody
+armed ON PURPOSE — the quotation was written, placed against the citation, and
+discarded by a separator. It scores near-miss 1, so like the table trap it has
+been visible in the summary all along and unread.
+
+**Measured on this tree: twelve such pairs in non-dated documents**, agreeing
+with the count routed to this milestone, across api.md, uboot-ab-handshake.md
+and RFCT-115 (4), RFCT-120 (2), RFCT-159, RFCT-167, RFCT-169 and RFCT-180.
+
+**But only four of the twelve are in scope at all**, and that qualifies the
+"cheapest arming wins in the corpus" framing. Eight cite paths this tree does
+not contain — `u-boot/`, `src/` and `mosd/` are none of them repository-root
+directories — so the citation is skipped before the content check could ever
+run, and removing the separator changes nothing whatever. The four that are in
+scope split two and two:
+
+- two were armed by deleting the separator, and both quotations hold:
+  api.md's `0700` against `mos-seed-home:46`, and RFCT-169's `.join("mosd")`
+  against `e2e.rs:73`;
+- two would have gone RED, and neither is a defect in the cited file. Both are
+  before-and-after sentences where the em dash happened to separate the citation
+  from the SUPERSEDED half. RFCT-180 reads *"`toBeGreaterThanOrEqual(0)` is now
+  `toBeGreaterThan(0)`"*, so deleting the dash would have asserted the old value
+  at the new line; re-ordered instead, and it now arms against what the line
+  says today. RFCT-159 lists `board/` as a stale token it FOUND at
+  `docs/architecture.md:23`, where the row now reads `os/boards/`; arming that
+  would falsify the finding, so it stays unarmed deliberately — the historical
+  reference of section 6a, and the reason a separator sweep cannot be mechanical.
+
+**The arming test, which costs nothing: write it, run the gate, and let the
+unquoted ceiling tell you whether the quote took.** The ratchet is the only
+mechanism here that can report an intended arming that FAILED — a citation
+meant to be armed and silently not is invisible to every other check, because
+resolution still passes and the content check never runs. That is the ratchet
+doing a job it was not designed for, and it is why a ceiling that refuses to
+drop after an arming pass is a finding rather than an annoyance.
+
 ## 7a. Arming, and the one place this record does not arm
 
 The campaign standard this milestone was written under: an ARMED citation buys

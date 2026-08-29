@@ -12,7 +12,7 @@
 # scope. Every row is a measured count, never summed and never taken from one
 # side of a merge; at a merge every row is re-measured, not only the rows git
 # raised a conflict on.
-docs/design/api.md 482
+docs/design/api.md 481
 docs/design/boards.md 2
 docs/design/bus.md 5
 docs/design/dashboard.md 146
@@ -55,10 +55,10 @@ docs/task/RFCT-162.md 11
 docs/task/RFCT-166.md 1
 docs/task/RFCT-167.md 10
 docs/task/RFCT-168.md 4
-docs/task/RFCT-169.md 69
+docs/task/RFCT-169.md 68
 docs/task/RFCT-170.md 5
 docs/task/RFCT-172.md 29
-docs/task/RFCT-180.md 2
+docs/task/RFCT-180.md 1
 docs/task/RFCT-190.md 19
 docs/task/RFCT-191.md 3
 docs/task/RFCT-200.md 65
@@ -71,7 +71,7 @@ docs/task/RFCT-226.md 2
 docs/task/RFCT-235.md 2
 docs/task/RFCT-240.md 3
 docs/task/RFCT-245.md 1
-docs/task/RFCT-256.md 15
+docs/task/RFCT-256.md 21
 docs/task/RFCT-257.md 50
 docs/research/venus-os-access.md 6
 docs/research/venus-os-ui.md 9
