@@ -662,6 +662,14 @@ nobody reads it as "nothing happened": `docs/design/api.md` 168 -> 133 (-35),
 `docs/design/dashboard.md` 35 -> 24 (-11), `docs/task/RFCT-215.md`'s 55 moved
 into the marked bucket, and **this record itself adds 46**. Net zero.
 
+**The `docs/` segment moved +34, and it was not the class A work.** The floor
+question is worth answering precisely because a segment moving in a direction
+nobody predicted should be explained in the record, not merely measured. It is
+**this document's own citations**: RFCT-257.md contributes 34 `docs/` citations.
+Class A full-forming contributed none — `docs/design/api.md` holds 69 `docs/`
+citations at base and 69 now, `docs/design/dashboard.md` 11 and 11. What
+full-forming moved was `os/`: api.md 1078 -> 1113.
+
 **The consequence, stated rather than buried.** Those 46 are the form under
 discussion — this document quotes other documents' bare citations in order to
 classify them. Ten are written double-backticked and are covered by M1's
@@ -678,3 +686,200 @@ false greens before. The implementing pass rewrites them to the double-backtick
 form on M1's merged base and verifies each against the rule as landed. Under
 the §6.2 recommendation they are counted skips in the meantime, visible in
 every run and ceilinged, not silent.
+
+## 11. The ruling, and what it changed
+
+L1 has ruled, amending PLAN-028 by dated correction; the *"unresolvable
+inheritance are ERRORS"* sentence is withdrawn. The outcome, quoted:
+
+> A no-antecedent bare token is a COUNTED SKIP WITH A REASON, not an error.
+> In addition, its per-document count is BASELINED and MUST NOT GROW — the same
+> shape as the existing unquoted ratchet. A new no-antecedent bare token
+> appearing anywhere trips a census-class failure, while the historical ones
+> stay visible, counted, reasoned skips in documents whose live citations
+> remain checked.
+
+Section 6 is kept as the decision record that produced it. The recommendation
+there — counted skip plus a per-document ceiling in
+`docs/verify-citations-bare-baseline.txt`, opening at today's measured count and
+lowerable only — is the same mechanism, reached from different evidence. The
+error reading's only real gain was future strictness, and the ratchet buys that
+at zero coverage cost.
+
+**The correction in §4.1 is not a widening of RFCT-214's boundary.** It changes
+what counts as an antecedent *within* the line; the same-line limit itself is
+untouched. Earlier-line inheritance stays out, exactly as RFCT-214 measured it.
+
+### 11.1 The origin of the class: the format manufactures it
+
+The bare-form concentration is not a coincidence of authorship. Writing a
+citation inside a markdown table silently converts it toward the form the gate
+cannot see, and the six frozen audits are all two-column re-measurement tables —
+`docs/task/RFCT-215.md`, `RFCT-159`, `RFCT-200`, `RFCT-169`, `RFCT-210` — which
+is precisely where the class lives. The mechanism, measured on this extractor:
+`|` is not in the backward scan's skippable set `[ \t\n*_(]`, so a quote in an
+**adjacent cell never arms** the citation.
+
+The accurate rule, from a direct probe of `extract_citations`:
+
+| where the quote sits | result |
+|---|---|
+| same cell, quote before citation | ARMED |
+| same cell, citation before quote | ARMED — the forward rule works inside a cell |
+| adjacent cell | NOT armed, and scores **near-miss = 1** |
+
+Tables are therefore not banned; prose is the safe default, not a mandate. And
+the adjacent-cell case is **not silent** — it is counted in the near-miss line
+of every run. The class was visible and unlooked-at rather than invisible, which
+is the same pattern as every other near-miss finding in this campaign.
+
+### 11.2 The motivating case the plan lacked
+
+`docs/task/RFCT-159.md:221` carried the bare continuation `` `:512` `` into
+`os/verify/HARNESS.md`. A coverage-table row shift of +1 from line 499 onward
+broke it, and **three green 2170/2170 runs said nothing**. It was caught only by
+a mandated post-commit hand-check and fixed to `` `:513` ``. That is a real
+bare-form defect the gate could not see and this resolver would have caught —
+better evidence than anything in PLAN-028's Context.
+
+Companion evidence against constant offsets, from the same commit pair:
+`checks.ts` moved in **three zones in a single commit** (+0 below line 47, +1
+for 47-154, +2 above 155) while `HARNESS.md` moved +1. No single constant works
+even across one commit pair.
+
+### 11.3 Two traps for the marker procedure
+
+**The re-quote trap.** After prose is deleted, a naive tree-wide grep reports
+the quoted fragments as surviving — because they survive in the frozen record
+quoting its source and in the deleting record quoting them to explain the
+deletion. Neither is a legitimate re-anchor target: re-pointing there changes
+the assertion from *the design says X* to *a document quoting the design says X*.
+
+**The floor-conflict procedure**, proven on a real two-sided conflict where one
+side read `os` 1831, the other 1768, and the merged truth was 1779 — both
+shortcuts wrong in different directions. What works: drop every conflicting
+floor to 1, run the gate, set each floor to what it reports, and record the
+reasoning in the merge commit.
+
+### 11.4 Cost 3 of the file-scoped marker: a merge-order dependency
+
+The class (b) treatment now has **three** independently measured costs.
+Cost 1 is the census floor; cost 2 is that the marker is broader than the
+sentence justifying it. Cost 3 is structural:
+
+Branch A appends a marker to a file with a rationale scoped in prose to one
+quote. Branch B legitimately re-anchors other citations *inside the same file*,
+correct on its branch where the file was unmarked. Git merges them cleanly and
+carrying both is right. But had A merged first, B would have been forbidden a
+correction it legitimately owed. **The same two commits produce different
+legitimate outcomes depending on merge order**, and that is invisible from
+either branch alone.
+
+Observed twice this round, independently:
+
+1. `docs/task/RFCT-231.md` — a marker scoped to one podman Dockerfile quote,
+   against a branch re-anchoring two `os/rootfs/build-v2.sh` citations in the
+   same file.
+2. **`docs/task/RFCT-215.md` — this milestone's own file.** While the marker
+   commit here was being written, main's `1135448` appended a dated pointer to
+   the RFCT-252 refutation to the same document. Different regions, clean merge,
+   both right — but had the marker reached main first, that author would have
+   been appending to a document already exempt from verification, a legitimate
+   edit whose value the marker had silently changed underneath it.
+
+An anchor-scoped marker removes all three. Three independent justifications now
+exist for that future task. **Record, do not build.**
+
+## 12. Markers re-evaluated under the ruling
+
+Under counted-skip a frozen bare token forces nothing, so every marker was
+re-examined. **Only M1's ambiguity rule still forces anything**, and the right
+answer turned out to differ between the two documents it touches.
+
+### 12.1 `docs/task/RFCT-215.md` — marker STANDS, full-forming does not work
+
+L1 asked whether full-forming `` `tests.rs:1821` `` at `docs/task/RFCT-215.md:54`
+would resolve the ambiguity at zero coverage cost, on the ground that the line
+number is the measurement and the path prefix is not. **The premise is right and
+the conclusion still fails.**
+
+The premise holds: the neighbouring row writes `reconciler/network.rs:432-438`,
+an abbreviation of a longer path, so the record already edits path prefixes
+editorially and the prefix is not a verbatim quotation.
+
+But full-forming does not clear the failure — it **moves** it. The row is
+`` | §1.6 `tests.rs:1821` "reads the committed `openapi.json`" | ... | ``, and
+the quote sits in the citation's own cell directly after it, so by §11.1's
+forward rule it **arms**. Line 1821 of `os/pkgs/mosd/apid/src/tests.rs` is
+`fn the_committed_openapi_document_is_the_generated_one() {` — the quoted phrase
+is api.md's prose about the test, not text in the file. Full-forming therefore
+converts M1's ambiguity error into a content failure on a frozen record that
+must not be re-anchored. The ambiguity was masking a content failure beneath it.
+The marker is the only green path, and it is kept.
+
+### 12.2 `docs/task/RFCT-169.md` — full-formed, NO marker, zero cost
+
+Here the cheaper path does hold, and is taken. `docs/task/RFCT-169.md:296` cited
+`` `README.md:41` ``, a basename with sixteen candidates. The document names its
+subject in the same sentence — the rauc-sign README — and the content proves the
+choice rather than guessing it: `os/pkgs/rauc-sign/README.md:41` reads
+*"Explicitly out of scope for the whole crate, still:"*, matching the quoted
+fragment, and `:43` names the Uptane director/image repository split, matching
+what the prose says is there. Full-formed to
+`os/pkgs/rauc-sign/README.md:41`; the bare `` `:43` `` now inherits it on the
+same line. The quoted fragment sits three words away so nothing arms, and the
+site is resolution-checked. **19 citations stay under live coverage and no
+marker is spent.**
+
+### 12.3 The five withdrawn markers, with triggers named
+
+Deferred, not refused. Each keeps its measurement in §5.4 and gains a trigger:
+mark `RFCT-058`, `RFCT-071` or `RFCT-212` when a change breaks a citation their
+frozen tables hold, and not before.
+
+`RFCT-064` and `RFCT-066` are decided **explicitly and differently**, because
+what they carry are **false greens, not reds**: `docs/design/api.md:655` resolves
+but points at TLS prose, and RFCT-066 places section 7.2 three hundred lines
+before 7.1. A marker converts a false green into an uncheckable, which is not
+the honest fix. The defect is **recorded here** and the documents left under
+live coverage; re-anchoring their deliverable indexes is a content task for
+whoever next touches them. Marking would hide the defect rather than resolve it.
+
+### 12.4 Not ours
+
+`docs/task/RFCT-210.md` — forced independently by content deletion (RFCT-216's
+rewrite removes prose four of its armed quotes cite); marker arrives via
+PLAN-027. Not marked here, no floor row added. Expect a baseline conflict at
+that merge, resolved by §11.3's procedure.
+
+`RFCT-214`, `RFCT-159`, `RFCT-200` — **deferred**. Nothing forces them under the
+ruling.
+
+## 13. Arming, and the one ceiling raised
+
+Campaign standard: arm by default. An armed citation buys fragment-versus-line
+verification; a raised ceiling is an override with nothing behind it. So a
+ceiling is raised only where arming would itself manufacture a defect, and the
+defect is named.
+
+RFCT-169's newly full-formed citation was **armed rather than ceilinged**. Its
+quoted fragment sat three words from the citation, so nothing verified it; the
+sentence is reworded so the quote and the citation are adjacent, and the gate
+now content-checks it and passes. The rewording moves no measurement, keeps the
+citation on its own line so the four incoming citations into that document are
+undisturbed, and leaves the line count unchanged.
+
+This record's own ceiling **is** raised, and the defect arming would manufacture
+is the one section 9.1 measures. A classification census references its sites —
+it says *this token, at this location, is class B* — and the adjacent prose is
+the classification, not a quotation of the cited line. Arming those references
+would mean quoting hundreds of cited lines verbatim purely to satisfy the check,
+which is precisely the name-rather-than-quote false arm that produced nine of
+this pass's fourteen api.md failures. Manufacturing that class inside the record
+that documents it is the defect, and it is why the ceiling moves instead.
+
+A related layout artefact, recorded because this document quotes gate output: two
+quoted gate records placed adjacently can arm a spurious pairing across unrelated
+messages, the second record's quoted span landing within three words of the
+first record's citation and scoring a near-miss purely from layout. The remedy is
+a blank line between quoted records — not arming, and not a raised ceiling.
