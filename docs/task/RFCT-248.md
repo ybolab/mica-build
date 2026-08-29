@@ -287,7 +287,10 @@ own:
 
 ## 9. Gates
 
-All four were run at `1d54784`, this branch's tip, on the merged tree.
+The Rust gate and `oasdiff` were run at `1d54784` on the merged tree; the two
+documentation gates were re-run at this file's final state, which is the only
+thing that moved between the two — every commit after `1d54784` touches
+`docs/` and nothing under `os/`.
 
 | Gate | Result |
 |---|---|
