@@ -2663,10 +2663,10 @@ HTTPS router matched its fifteen `.route()` declarations and declared **no
 fallback at all** — the only `.fallback` in the file belonged to the HTTP
 redirect router, which is why an unmatched path was then answered by the gate's
 redirect to `/login` or by axum's default not-found (section 1.6). As of
-`0d4f3c6` the fifteen declarations are at `os/pkgs/mosd/apid/src/routes.rs:151-170`,
-the redirect router's fallback is at `os/pkgs/mosd/apid/src/routes.rs:211`, the gate's `/login` redirect is at
-`os/pkgs/mosd/apid/src/routes.rs:286`, and the HTTPS router's fallback is declared: `.fallback(serve::fallback)`
-at `os/pkgs/mosd/apid/src/routes.rs:165`. Adding the asset service as the *fallback* therefore means declared
+`0d4f3c6` the fifteen declarations sat at lines 151-170, the redirect
+router's fallback at line 211, the gate's `/login` redirect at line 286, and
+the HTTPS router's fallback declared `.fallback(serve::fallback)` at line
+165 — prose, not citations: a citation would resolve green and assert a falsehood. Adding the asset service as the *fallback* therefore means declared
 routes win **structurally**: a bundle that ships a file
 at `api/v1/settings` cannot capture API traffic, because the router never
 consults the fallback for a path it matched. A rule enforced by the dispatch

@@ -883,3 +883,98 @@ quoted gate records placed adjacently can arm a spurious pairing across unrelate
 messages, the second record's quoted span landing within three words of the
 first record's citation and scoring a near-miss purely from layout. The remedy is
 a blank line between quoted records — not arming, and not a raised ceiling.
+
+## 14. The expansion exception, and a self-audit that caught one
+
+**Full-forming is wrong where the text records lines as they stood at a past
+commit.** Such a citation resolves against today's tree and asserts a falsehood,
+gate-green. The repair is not a better citation — the text should not be a
+citation at all.
+
+This is the third member of a family this milestone had already measured two of:
+
+| class | what the fragment does | sites found |
+|---|---|---|
+| naming rather than quoting | names a thing instead of excerpting it | 9, api.md |
+| elided paraphrase | writes `(...)` for an argument list | 3, api.md |
+| **historical reference** | records where lines *were*, at a named commit | 1 paragraph, api.md |
+
+Together they settle it: **full-forming is per-site judgement, never a sweep.**
+That governs the 148 class A sites still outstanding across 37 documents.
+
+### 14.1 The self-audit, and the one it caught
+
+The rule arrived after this milestone had already full-formed 45 citations, so
+all 50 changed lines were re-audited against it. Two paragraphs carry a
+provenance marker; they are not alike, and the difference is the whole point.
+
+**`docs/design/api.md` 2660-2674 was a false green, and it was this milestone's
+own doing.** The passage reads *"As of `0d4f3c6` the fifteen declarations are
+at ..."* — the line numbers are pinned to that commit. Three bare tokens there
+were full-formed into `os/pkgs/mosd/apid/src/routes.rs`, and they resolved, and
+the gate went green. They are false: `.fallback(serve::fallback)` is at line 227
+of that file today, not the 165 the passage names. Repaired to plain prose with
+a clause saying why it is not a citation. The pre-existing full citation in the
+same sentence was the same defect and is folded into the same repair — a
+sentence half-corrected would be worse than either state.
+
+**`docs/design/api.md` 486-499 was checked and left alone.** Its `86cd669`
+refers to a past *disagreement between documents*, not to the line numbers, and
+its citations are present-tense claims about the shipped policy. Verified by
+content rather than by the marker's presence:
+`os/pkgs/mosd/dist/com.mos.mosd.conf:74-78` holds the `<policy user="root">`
+block the prose describes, and `:47-67` holds the DEFERRED per-method allowlist.
+Live, correct, full-formed correctly.
+
+The discriminator is **not** whether a commit sha appears in the paragraph. It
+is whether the sha governs *the line numbers*. A sweep keyed on sha presence
+would have wrongly stripped four good citations from the second paragraph.
+
+### 14.2 Which repair to choose
+
+Two legitimate repairs exist, and they are not interchangeable:
+
+- **Rewrite to the historical path** — stays legible as a citation, the gate
+  skips it as outside-tree, provenance visible in the text. Fits when the *path*
+  is what changed, so a historical path exists to name.
+- **Plain prose plus a why-sentence** — no citation syntax, nothing to skip.
+  Fits when only the *lines* moved and the path is still live.
+
+This site took the second, and had to: `os/pkgs/mosd/apid/src/routes.rs` is
+still exactly where it was, so there is no historical path to rewrite to, and
+any citation naming that live file would resolve. Where the path did move, the
+first is better — it keeps the reader oriented and leaves the provenance in the
+text rather than in a clause about the text.
+
+## 15. The auto-merge hazard, and the window rule
+
+**Resolving the conflict list is not the job.** Git asks only about tokens both
+branches edited; it says nothing about tokens edited *disjointly* inside the
+same displaced document. Measured elsewhere: of 38 tokens recomputed after a
+merge, **eleven had auto-merged with no conflict and were wrong on both sides**.
+So every citation into any file both sides touched must be recomputed,
+conflicted or not.
+
+**Hardening, adopted here: a seven-line byte-identical window** around each
+destination before a recomputed line number is accepted. This designs out the
+repeated-content mismap rather than warning about it — a bare `}` cannot satisfy
+a seven-line window, which is exactly how one earlier re-anchor landed 44 lines
+past its target with the gates green.
+
+Scoped to this queue, the exposure is small and known, and the rule should not
+be over-applied:
+
+- **Neither M1 nor M2 edits a source file**, so "citations into a source file
+  both sides touched" is an empty set. Citations from the design documents into
+  `os/` are safe; their targets did not move.
+- **`docs/design/dashboard.md` is safe outright** — 1827 lines on all three
+  sides.
+- **`docs/design/api.md` is the single exposure**, and only one side displaces
+  it: 4801 at base, 4810 on M1 (+9), and **4801 on M2**. This milestone's edits,
+  including section 14.1's repair, are deliberately line-count-neutral precisely
+  so no sum arises. The merged displacement is M1's alone.
+
+The worklist is therefore 46 citations pointing into api.md at or past line
+1336, where the shift accumulates +5 from ~1336 to +9 by ~1554 and is then flat.
+**No constant applies, and emphatically not +9.** They are re-derived against
+the merged tree in the next pass, under the window rule — not against this one.
