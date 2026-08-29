@@ -322,8 +322,9 @@ api.md citations plus the three historical `mosd/` ones), bare-with-no-match
 
 ## 6. The self-test, and the proof that it can fail
 
-`docs/verify-citations-test.sh` gains six cases (27 → 35, all passing), and its
-fixtures become git repositories because the checker now reads `git ls-files`.
+`docs/verify-citations-test.sh` gains eight cases (27 → 37, all passing), and
+its fixtures become git repositories because the checker now reads
+`git ls-files`.
 `run_checker` refreshes the index immediately before every run, so a case that
 writes a file after `new_fixture` needs no bookkeeping of its own.
 
@@ -355,7 +356,41 @@ Both halves fire: the in-scope count grows from 5 to 7, the skip count drops
 from 2 to 0, and the past-the-end example raises a resolution failure. The skip
 was restored from a copy taken before the mutation — not with `git checkout`,
 which would have discarded the uncommitted extractor change with it — and the
-suite returns to `RESULT: PASS (35/35 cases)`.
+suite returns to `RESULT: PASS (37/37 cases)`.
+
+### The table trap, probed and pinned
+
+The eighth case is not about the no-slash form at all; it pins a trap the
+campaign measured while this milestone was in flight, and M1 owns the fixtures
+for the traps more than one milestone shares.
+
+Probed here against the real extractor, at `9ef57ee`, by running
+`extract_citations` over a document written three ways:
+
+| where the quoted fragment sits | result |
+|---|---|
+| the table cell BEFORE the citation's cell | `qkind=none`, near-miss 1 |
+| the citation's OWN cell | `qkind=code`, armed |
+| prose, directly against the citation | `qkind=code`, armed |
+
+The mechanism is one character: `|` is not in the backward scan's skippable
+set, so the scan stops on the pipe and never reaches the fragment in the
+neighbouring cell. Writing a re-measurement as a two-column table therefore
+demotes every citation in it to resolution-only, silently. The fixture pins
+both halves — the same WRONG quote across a pipe stays green and is surfaced
+only as a near-miss, while the same wrong quote inside the citation's own cell
+arms and fails — because the useful half is the fix: move the quote into the
+citation's own cell, or write the row as prose.
+
+**How far the format explains this milestone's class, measured rather than
+assumed.** Of the 392 no-slash sites at `c5f7e96`, **119 (30%)** sit on a
+markdown table row; the concentration is real (28 in api.md, 23 in
+docs/task/RFCT-169.md, 11 in dashboard.md) but 70% are in prose, so the table
+format is a contributing cause of this class and not its origin. For the bare
+form M2 owns the picture is similar and slightly stronger: **676** bare
+`` `:NNN` `` tokens in citation scope, **249 (36%)** of them on a table row.
+Both numbers are measured at `9ef57ee`; neither supports the stronger claim
+that the format manufactures the class outright.
 
 ## 7. Baseline and ceiling moves, with reasons
 
@@ -376,6 +411,24 @@ interchangeable:
   their row, twenty of them because they had no row at all (a document with no
   row has a ceiling of 0). Each row moves to its measured count, exactly, with
   no slack.
+
+## 7a. Arming, and the one place this record does not arm
+
+The campaign standard this milestone was written under: an ARMED citation buys
+fragment-versus-line verification, and a raised ceiling is an override with
+nothing behind it, so arm by default and raise a ceiling only when arming would
+itself manufacture a defect. Every citation this milestone ADDED to a design
+document is armed against a literal it verified — the four fragments in section
+4(c) exist precisely because arming a fragment that names rather than quotes
+produces a defect rather than a check.
+
+This record itself carries thirteen unquoted citations under the gate as
+committed today, and its row in the ceiling file is that measured number rather
+than an absent row, because a document with NO row has a ceiling of zero and
+its first unquoted citation would fail the ratchet. The unarmed ones are the
+citations in the two quoted gate outputs and in the before-and-after tables of
+section 4: arming a token this record is talking ABOUT rather than making would
+assert the very citation it exists to report as superseded.
 
 ## 8. Residues, recorded and not fixed
 
@@ -416,14 +469,23 @@ interchangeable:
    "`set_settings` … calls `record` for each overlapping reconciler" and is not
    where that happens. It is unquoted, in scope, and green. A re-anchoring
    sweep of the corpus's unquoted full-form citations is its own piece of work.
-6. **A citation inside a ``` fenced block is judged exactly like prose.** The
+6. **A citation inside a fenced block is judged exactly like prose.** The
    extractor reads the document as text and knows nothing about fences, so a
    token in a sample of output or a code listing resolves and is checked like
    any other. Measured corpus-wide at `d855804`: **one** in-scope citation sits
    inside a fence, in docs/task/RFCT-155.md, and it is green. The class is
    therefore recorded rather than closed — the two gate outputs quoted in this
    record are the reason it was noticed at all.
-7. **1151 in-scope citations carry no quote and 479 are near-misses.** Both
+7. **Two of the documents corrected here are candidates for a dated-record
+   marker, and the marker wins.** docs/task/RFCT-058.md is touched by this
+   milestone, by M3 and by M2, and M2 has committed a marker on it. When that
+   marker merges the document becomes exempt from both checks, and the six
+   full-formed citations this milestone put in it become pointless but
+   harmless. They are kept: a full-form citation is correct whether or not the
+   document is read, and unpicking them would be churn against a file three
+   workstreams are holding. The same logic applies in reverse to
+   docs/task/RFCT-215.md, which this milestone must NOT edit — see section 9.
+8. **1151 in-scope citations carry no quote and 479 are near-misses.** Both
    counts rose with the scope. The near-miss counter is the surfaced form of
    RFCT-170's zero-tolerance adjacency rule: one interposed word between a
    quotation and its citation demotes the pair to resolution-only, and at four
