@@ -329,10 +329,13 @@ only thing that made two thirds of this displacement visible without an audit
 nobody is obliged to run.
 
 **Then the audit itself was found to under-report, and the fix is the campaign's
-seven-line window.** The first pass accepted a re-anchored citation if the
-wanted token appeared ANYWHERE in the citing document. Two citations three lines
-apart into the same paragraph is exactly the shape that defeats: one row's
-correct token vouches for its neighbour's wrong one. Re-run per citing line,
+seven-line window.** The first pass accepted a re-anchored citation if the wanted
+token appeared ANYWHERE in the citing document. That is defeated by two
+citations three lines apart into the same paragraph: **one row's correct token
+vouches for its neighbour's wrong one**, and the audit reports green over a
+citation it never actually checked. The failure is in the MATCHING, not in the
+mapping — the destinations were computed correctly and then verified against the
+wrong thing. Re-run per citing line,
 with a **seven-line byte-identical window** required around the destination
 before a line number is accepted — three lines before the range, the range,
 three after, and it must occur exactly once in the current file — the same
@@ -554,12 +557,25 @@ docs/task/RFCT-058.md:283 carries two `Makefile` citations on one line, moving
 by different amounts (`:28` → `:29` and `:100` → `:103`), so a per-line
 constant would have been wrong on the same line it was derived from.
 
-**And one conflict where NEITHER side was right.** Both branches re-anchored the
-same citation of the `os-devkeys` recipe — this one to `Makefile:133-134`, the
-other to `Makefile:56-57` — and on the merged tree the recipe is at
-`Makefile:136-137`, because main's own Makefile changes moved it after both
-re-anchors were taken. Re-derived from the merged tree rather than resolved by
-picking a side, which is the whole of the standing rule in one line.
+**And one conflict where NEITHER side was right — this milestone's own 0-of-23
+finding, reproduced live, in a citation rather than in a floor.** Both branches
+re-anchored the same citation of the `os-devkeys` recipe, each correctly against
+its OWN Makefile: this one to `Makefile:133-134`, the other to `Makefile:56-57`.
+Git offered a two-way choice and BOTH CHOICES ARE FALSE on the merged tree,
+where main's own Makefile changes had moved the recipe to `Makefile:136-137`
+after both re-anchors were taken. The citation is unquoted, so take-ours and
+take-theirs would each have produced a green run over a wrong line and nothing
+would have caught it — which is the unarmed class this record measured at
+d855804, arriving in a merge on a single line instead of in a corpus sweep.
+
+Re-derived from the merged tree, and verified with the seven-line window rather
+than read off: `os-devkeys:` occurs once as a target, at `Makefile:136`, its
+recipe `bash os/pkgs/rauc/gen-dev-keys.sh` at `:137`, and the window around
+them is unique. One nuance the exercise exposed and it is worth keeping: BOTH
+losing windows are also unique in the merged file. A unique window confirms
+where a line MOVED TO; it does not confirm that the line says what the prose
+claims. The window is a guard against mismapping, not a substitute for reading
+the destination.
 
 ## 7a. Arming, and the one place this record does not arm
 
