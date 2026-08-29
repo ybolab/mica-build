@@ -414,6 +414,27 @@ pub const MIN_PASSPHRASE_LEN: usize = 8;
 /// IEEE 802.11i's longest.
 pub const MAX_PASSPHRASE_LEN: usize = 63;
 
+/// True when `value` can be carried inside a wpa_supplicant double-quoted
+/// string with no way of ending the string early.
+///
+/// Printable ASCII only, minus the quote that would close the string and the
+/// backslash that some wpa_supplicant string forms treat as an escape. A
+/// newline is excluded by the printable range, which is the character that
+/// would otherwise let a value close its `network={…}` block and append
+/// directives of its own.
+///
+/// **This is the one statement of the predicate.** `mosd`'s station renderer
+/// calls it for both the SSID and the pre-shared key, and
+/// [`validate_wifi_psk`] calls it so a write surface refuses what the renderer
+/// cannot carry rather than storing a value that dies at render time. A second
+/// copy could disagree with the first, which is the defect one level up.
+#[must_use]
+pub fn is_wpa_quotable(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\')
+}
+
 /// Refuse a [`WifiNetwork::psk`] no WPA2 supplicant could use.
 ///
 /// **Lifted out of the station reconciler's renderer** (PLAN-023 M6): the
@@ -442,10 +463,16 @@ pub const MAX_PASSPHRASE_LEN: usize = 63;
 /// does not load and whose every unrelated write fails. This is a rule about a
 /// value being written, and it is checked where a write is decided.
 ///
+/// A passphrase must also be one the station renderer can carry, which is
+/// [`is_wpa_quotable`]. That half was measured missing here by
+/// `docs/task/RFCT-215.md` section 6 item 3: a key carrying a quote or a
+/// backslash passed this function, was stored, and was then refused at render
+/// time with the error visible only in live state.
+///
 /// # Errors
 ///
 /// Returns the sentence a refusal carries when `psk` is neither a raw PMK nor
-/// a passphrase of an admissible length.
+/// a passphrase of an admissible length that the renderer can quote.
 pub fn validate_wifi_psk(psk: &str) -> Result<(), String> {
     if psk.len() == RAW_PMK_LEN && psk.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(());
@@ -455,6 +482,18 @@ pub fn validate_wifi_psk(psk: &str) -> Result<(), String> {
             "a WPA2 passphrase is {MIN_PASSPHRASE_LEN} to {MAX_PASSPHRASE_LEN} characters \
              (or a {RAW_PMK_LEN}-digit hex PMK)"
         ));
+    }
+    // A passphrase has no hex form -- bare hex means a raw PMK, not a
+    // passphrase -- so the renderer has nothing to fall back to and refuses.
+    // Refusing here instead means a key the renderer cannot carry is never
+    // accepted, rather than stored and dead. The sentence names neither the
+    // value nor its length, for the reason the length bound's does not.
+    if !is_wpa_quotable(psk) {
+        return Err(
+            "the pre-shared key contains a character wpa_supplicant configuration \
+             cannot carry; use printable ASCII without a quote or a backslash"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -891,6 +930,39 @@ mod tests {
             .set("access.apiTokens", Value::Array(Vec::new()))
             .unwrap();
         assert!(settings.access.api_tokens.is_empty());
+    }
+
+    /// A passphrase the station renderer cannot carry is refused here, so it
+    /// cannot be accepted at a write surface and then die at render time.
+    ///
+    /// The predicate is the renderer's own — printable ASCII, minus the quote
+    /// that would close the wpa_supplicant string and the backslash some of
+    /// its string forms treat as an escape — and it is stated once, in
+    /// [`is_wpa_quotable`], which the renderer calls.
+    #[test]
+    fn a_passphrase_the_renderer_cannot_quote_is_refused() {
+        for psk in [
+            "has\"quote1",
+            "has\\backslash",
+            "two\nlines1",
+            "tab\there1",
+            "cafe\u{301}-latte",
+            "caf\u{e9}-latte",
+        ] {
+            let Err(err) = validate_wifi_psk(psk) else {
+                panic!("{psk:?} must be refused");
+            };
+            assert!(err.contains("pre-shared key"), "{psk:?}: {err}");
+            // A refusal never echoes the value; a key is a secret and this
+            // sentence reaches an HTTP client.
+            assert!(!err.contains(psk), "the refusal echoed the key: {err}");
+        }
+
+        // Everything IEEE 802.11i's own passphrase alphabet allows and the
+        // renderer can quote still passes, and so does a raw PMK.
+        assert!(validate_wifi_psk("hunter2hunter2").is_ok());
+        assert!(validate_wifi_psk("p@ssw0rd!#$%^&*()_+-=[]{};:',.<>/? ~`").is_ok());
+        assert!(validate_wifi_psk(&"a".repeat(RAW_PMK_LEN)).is_ok());
     }
 
     /// One well-formed entry, spelled the way section 3.2 spells it.
