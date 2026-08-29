@@ -135,7 +135,7 @@ The alternative — pass the path to mosd and let its validators answer — is
 wrong here, and the reason is measured rather than stylistic. `Settings::set`'s
 documented contract is *"Missing intermediate map entries are created (e.g.
 setting `network.eth1.dhcp` creates `eth1`)"*
-(`os/pkgs/mosd/mosd-settings/src/model.rs:710-711`), proved by the committed
+(`os/pkgs/mosd/mosd-settings/src/model.rs:749-750`), proved by the committed
 test `set_scalar_and_create_intermediate_entries`
 (`os/pkgs/mosd/mosd-settings/tests/settings.rs:128-141`). So a `PUT` to a
 mistyped path does not fail under a passthrough — it grows a new subtree of

@@ -263,7 +263,7 @@ redirect (§1.4, §3.2).
 | `POST /api/v1/ssh/authorized-keys` | `get(api_v1_ssh_keys_list).post(api_v1_ssh_keys_add)` (`os/pkgs/mosd/apid/src/routes.rs:438-441`) | `fn api_v1_ssh_keys_add` (`os/pkgs/mosd/apid/src/routes.rs:1914`) | bearer | 201; 409 on a duplicate compared on canonical key text, `"key_exists",` (`os/pkgs/mosd/apid/src/routes.rs:1958`); 409 at the bound, `"key_limit_reached",` (`os/pkgs/mosd/apid/src/routes.rs:1970`) |
 | `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` | `delete(api_v1_ssh_keys_remove)` (`os/pkgs/mosd/apid/src/routes.rs:442`) | `fn api_v1_ssh_keys_remove` (`os/pkgs/mosd/apid/src/routes.rs:2023`) | bearer | 204, or 404 when the fingerprint names nothing |
 | `GET /api/v1/wifi/client/networks` | `get(api_v1_wifi_networks_list).post(api_v1_wifi_networks_add)` (`os/pkgs/mosd/apid/src/routes.rs:443-446`) | `fn api_v1_wifi_networks_list` (`os/pkgs/mosd/apid/src/routes.rs:2123`) | bearer | The stored station networks, psk redacted |
-| `POST /api/v1/wifi/client/networks` | `get(api_v1_wifi_networks_list).post(api_v1_wifi_networks_add)` (`os/pkgs/mosd/apid/src/routes.rs:443-446`) | `fn api_v1_wifi_networks_add` (`os/pkgs/mosd/apid/src/routes.rs:2174`) | bearer | 201; 409 `"ssid_exists",` (`os/pkgs/mosd/apid/src/routes.rs:2248`); 422 on the redaction sentinel (`os/pkgs/mosd/apid/src/routes.rs:2196`) or on `mosd_settings::validate_wifi_psk(psk)` (`os/pkgs/mosd/apid/src/routes.rs:2227`) |
+| `POST /api/v1/wifi/client/networks` | `get(api_v1_wifi_networks_list).post(api_v1_wifi_networks_add)` (`os/pkgs/mosd/apid/src/routes.rs:443-446`) | `fn api_v1_wifi_networks_add` (`os/pkgs/mosd/apid/src/routes.rs:2174`) | bearer | 201; 409 `"ssid_exists",` (`os/pkgs/mosd/apid/src/routes.rs:2248`); 422 on the redaction sentinel (`os/pkgs/mosd/apid/src/routes.rs:2196`) or on `mosd_settings::validate_wifi_psk(psk)` (`os/pkgs/mosd/apid/src/routes.rs:2227`), which admits a 64-digit hex PMK or an IEEE 802.11i passphrase of 8 to 63 characters that the station renderer can carry -- printable ASCII, no quote and no backslash, `is_wpa_quotable` (`os/pkgs/mosd/mosd-settings/src/model.rs:432`) |
 | `DELETE /api/v1/wifi/client/networks/{ssid}` | `delete(api_v1_wifi_networks_remove)` (`os/pkgs/mosd/apid/src/routes.rs:447`) | `fn api_v1_wifi_networks_remove` (`os/pkgs/mosd/apid/src/routes.rs:2296`) | bearer | 204, or 404 when the SSID names nothing |
 | `PUT /api/v1/network` | `put(api_v1_network_write)` (`os/pkgs/mosd/apid/src/routes.rs:454`) | `fn api_v1_network_write` (`os/pkgs/mosd/apid/src/routes.rs:2630`) | bearer | 204. The whole interface map replaced as one tree, which is the only way to make two entries legal in one step: *"It is the only way to make two entries legal in one step"* (`os/pkgs/mosd/apid/src/routes.rs:2605-2609`) |
 | `PUT /api/v1/network/{iface}` | `put(api_v1_network_iface_write).delete(api_v1_network_iface_remove)` (`os/pkgs/mosd/apid/src/routes.rs:455-458`) | `fn api_v1_network_iface_write` (`os/pkgs/mosd/apid/src/routes.rs:2700`) | bearer | 204, after the relational rules are checked against the candidate tree by `fn relational_refusal` (`os/pkgs/mosd/apid/src/routes.rs:2508`) |
@@ -679,9 +679,9 @@ why `GET /api/v1/meta` reads it from `mosd_settings::SCHEMA_VERSION` at request
 time (`os/pkgs/mosd/apid/src/routes.rs:809`) rather than copying it. It is **read-only
 through the write path**: a write whose first path segment is `schema_version`
 is rejected, `if segments[0] == "schema_version" {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:727`), and a whole-tree write that would
+(`os/pkgs/mosd/mosd-settings/src/model.rs:766`), and a whole-tree write that would
 change it is rejected too, `if candidate.schema_version != self.schema_version {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:737`). Documents are migrated forward and
+(`os/pkgs/mosd/mosd-settings/src/model.rs:776`). Documents are migrated forward and
 backward through a registered chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, public entry point at
 `pub fn migrate(doc: &mut toml::Table, from: u32, to: u32) -> Result<(), SettingsError> {`
@@ -713,14 +713,14 @@ WiFi fields they claim. Every row below is a full-form citation into
 |---|---|---|---|
 | `schema_version` | `u32` | `pub schema_version: u32,` (`os/pkgs/mosd/mosd-settings/src/model.rs:18`) | read-only, value **8** — `pub const SCHEMA_VERSION: u32 = 8;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`); it was 7 when this table was written and 4 when the section was, which is the row's third value and the reason §2.1 serves the number rather than documenting it |
 | `hostname` | `String` | `pub hostname: String,` (`os/pkgs/mosd/mosd-settings/src/model.rs:20`) | system hostname, default `hostname: "mos".to_string(),` (`os/pkgs/mosd/mosd-settings/src/model.rs:44`) |
-| `network.<iface>` | `IfaceSettings` | `pub network: BTreeMap<String, IfaceSettings>,` (`os/pkgs/mosd/mosd-settings/src/model.rs:22`); type `pub struct IfaceSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:561-579`) | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `pub enum IfaceKind {` (`os/pkgs/mosd/mosd-settings/src/model.rs:531-541`)), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `pub struct StaticConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:684-693`), `vlan` at `pub struct VlanConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:584-589`), `bridge` at `pub struct BridgeConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:594-598`), `wireguard` at `pub struct WireguardConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:610-622`) with its peers at `pub struct WireguardPeer {` (`os/pkgs/mosd/mosd-settings/src/model.rs:627-644`) |
+| `network.<iface>` | `IfaceSettings` | `pub network: BTreeMap<String, IfaceSettings>,` (`os/pkgs/mosd/mosd-settings/src/model.rs:22`); type `pub struct IfaceSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:600-618`) | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `pub enum IfaceKind {` (`os/pkgs/mosd/mosd-settings/src/model.rs:570-580`)), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `pub struct StaticConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:723-732`), `vlan` at `pub struct VlanConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:623-628`), `bridge` at `pub struct BridgeConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:633-637`), `wireguard` at `pub struct WireguardConfig {` (`os/pkgs/mosd/mosd-settings/src/model.rs:649-661`) with its peers at `pub struct WireguardPeer {` (`os/pkgs/mosd/mosd-settings/src/model.rs:666-683`) |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `pub web_admin: Option<WebAdminSettings>,` (`os/pkgs/mosd/mosd-settings/src/model.rs:149-151`); type `pub struct WebAdminSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:187-190`) | `password_hash` only; absent until first-run setup writes it |
 | `access.ssh` | `SshSettings` | `pub ssh: SshSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:152-154`); type `pub struct SshSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:198-225`) | `enabled` (default `enabled: false,`, `os/pkgs/mosd/mosd-settings/src/model.rs:230`), `port`, `permitRootLogin`, `passwordAuthentication`, `listenAddresses[]`, and `pub authorized_keys: Vec<AuthorizedKey>,` (`os/pkgs/mosd/mosd-settings/src/model.rs:223-224`), entry type `pub struct AuthorizedKey {` (`os/pkgs/mosd/mosd-settings/src/model.rs:248-254`) |
 | `access.console` | `ConsoleSettings` | `pub console: ConsoleSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:155-157`); type `pub struct ConsoleSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:259-264`) | `shellEnabled` |
 | `access.device` | `DeviceCredentialSettings` | `pub device: DeviceCredentialSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:158-160`); type `pub struct DeviceCredentialSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:274-285`) | `passwordHash` (optional) and `generation`; never a plaintext secret — *"Holds the hash of the per-device password and its revision, never the password itself"* (`os/pkgs/mosd/mosd-settings/src/model.rs:268-271`) |
 | `provisioning` | `ProvisioningSettings` | `pub provisioning: ProvisioningSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:26-28`); type `pub struct ProvisioningSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:334-343`) | `state` (`pending` \| `complete`, `pub enum ProvisioningState {` (`os/pkgs/mosd/mosd-settings/src/model.rs:348-354`)), `deviceId`, `seededGeneration` |
 | `wifi.client` | `WifiClientSettings` | `pub wifi: WifiSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:29-31`) → `pub client: WifiClientSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:361`); type `pub struct WifiClientSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:369-379`) | `enabled`, `interface`, `networks[]` (entry `pub struct WifiNetwork {`, `os/pkgs/mosd/mosd-settings/src/model.rs:394-406`) |
-| `wifi.ap` | `WifiApSettings` | `pub ap: WifiApSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:363`); type `pub struct WifiApSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:465-492`) | `mode` (`off` \| `provisioning` \| `always`, `pub enum ApMode {` (`os/pkgs/mosd/mosd-settings/src/model.rs:513-521`)), `interface`, `ssid`, `psk`, `channel`, `countryCode`, `address`, `holdDownSeconds`, `graceSeconds` |
+| `wifi.ap` | `WifiApSettings` | `pub ap: WifiApSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:363`); type `pub struct WifiApSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:504-531`) | `mode` (`off` \| `provisioning` \| `always`, `pub enum ApMode {` (`os/pkgs/mosd/mosd-settings/src/model.rs:552-560`)), `interface`, `ssid`, `psk`, `channel`, `countryCode`, `address`, `holdDownSeconds`, `graceSeconds` |
 | `container` | `ContainerSettings` | `pub container: ContainerSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:32-34`); type `pub struct ContainerSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:70-74`) | `enabled` only; false means the Quadlet directory is not bound from STATE and no container unit exists |
 | `mqtt` | `MqttSettings` | `pub mqtt: MqttSettings,` (`os/pkgs/mosd/mosd-settings/src/model.rs:35-37`); type `pub struct MqttSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:96-103`) | `enabled` (a master switch over both units), `listen` (`address`, `port`, `pub struct MqttListenSettings {` (`os/pkgs/mosd/mosd-settings/src/model.rs:113-118`)), `auth` (`pub struct MqttAuthSettings {`, `os/pkgs/mosd/mosd-settings/src/model.rs:140-143`) |
 | `access.apiTokens` | `Vec<ApiToken>` | `pub api_tokens: Vec<ApiToken>,` (`os/pkgs/mosd/mosd-settings/src/model.rs:180-181`); type `pub struct ApiToken {` (`os/pkgs/mosd/mosd-settings/src/model.rs:297-329`) | §3.2's token list, added by PLAN-023 M2 after this table was written: a stable hex `id`, an operator label, the stored hash and a creation stamp. Never the secret |
@@ -734,7 +734,7 @@ each reachable at its own dot-path.
 **validated against the typed tree before it is persisted**: `SetSettings`
 builds a candidate, calls `Settings::set` — which deserializes the whole root
 into a candidate `Self`, `serde_json::from_value(root)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:733`) — and only then calls
+(`os/pkgs/mosd/mosd-settings/src/model.rs:772`) — and only then calls
 `self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:467`), so a malformed
 write mutates nothing. Second, **the dot-path syntax has no array indexing**:
 the model comment says a list is *"Written as a whole JSON array through the
@@ -763,7 +763,7 @@ other. The root path (`""` or `"."`) matches everything"*
 | `hostname` | `hostname` | `os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132` |
 | `network` | `network` | `os/pkgs/mosd/mosd/src/reconciler/network.rs:633-639` |
 | `sshd` | `access.ssh` | `os/pkgs/mosd/mosd/src/reconciler/sshd.rs:371-377` |
-| `wifiClient` | `wifi.client` | `os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:455-461` |
+| `wifiClient` | `wifi.client` | `os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:456-462` |
 | `wifiAp` | `wifi` | `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:680-694` |
 | `container` | `container` | `os/pkgs/mosd/mosd/src/reconciler/container.rs:232-238` |
 | `mqtt` | `mqtt` | `os/pkgs/mosd/mosd/src/reconciler/mqtt.rs:308-314` |
@@ -1207,7 +1207,7 @@ be conflated.** The schema version is the shape of the tree on disk
 (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), moved by a registered migration chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, entry point at
 `os/pkgs/mosd/mosd-settings/src/migration.rs:93`) and read-only through the write path
-(`os/pkgs/mosd/mosd-settings/src/model.rs:727-728`, `:647-649`). The shipped handler
+(`os/pkgs/mosd/mosd-settings/src/model.rs:766-767`, `:647-649`). The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1390,7 +1390,7 @@ capable as the bus, including the bus's limits:
   lose one of the two writes, with no mechanism that notices.
 - **Whole-subtree writes are all-or-nothing.** `Settings::set` deserializes the
   entire root into `Settings` after the write and rejects the result if it does
-  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`), and every struct carries
+  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:771-775`), and every struct carries
   `#[serde(deny_unknown_fields)]`, so a `PUT` of a subtree with one extra key
   fails the whole write. That is a good property — it is also a surprising one
   for a client that expected a merge.
@@ -1421,7 +1421,7 @@ capable as the bus, including the bus's limits:
   `settings_rejected` and not as a 502. **A key containing a double quote has no
   spelling at all**, and schema v7 closes that hole from the other side rather
   than leaving it as an addressing gap: *"Refuse a `network` map key the kernel
-  could not name an interface"* (`os/pkgs/mosd/mosd-settings/src/model.rs:650`)
+  could not name an interface"* (`os/pkgs/mosd/mosd-settings/src/model.rs:689`)
   runs on the write path, which makes such a key structurally impossible instead
   of merely unaddressable.
 
@@ -1908,7 +1908,7 @@ message too — replacing mosd's text with apid's own phrasing per code — then
 every message mosd learns to produce is invisible until apid is taught it. The
 "unknown field `100`, expected `dhcp` or `static`" string in the example above
 comes from serde, through `SettingsError::Validation`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`),
+(`os/pkgs/mosd/mosd-settings/src/model.rs:771-775`),
 and no phrasing apid could have pre-written would have told the caller which
 field was wrong. A client debugging a rejected write would be reduced to
 guessing. That is the failure mode, and it is why `message` is passed through.
@@ -1920,7 +1920,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    caller can fix it locally, and the write definitely did not happen.
    `source: "mosd"` means mosd's typed tree rejected it; the write also did not
    happen (`Settings::set` is documented as leaving settings unchanged on error,
-   `os/pkgs/mosd/mosd-settings/src/model.rs:712-713`, and `store.save` runs only after
+   `os/pkgs/mosd/mosd-settings/src/model.rs:751-752`, and `store.save` runs only after
    the candidate validates, `os/pkgs/mosd/mosd/src/bus.rs:465-467`), but the rule that
    rejected it is not one apid knows. Both are 422. Knowing which is which is
    what tells a client whether re-reading this document will help.

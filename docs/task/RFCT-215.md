@@ -261,13 +261,13 @@ memory of a report.
    (`os/pkgs/mosd/apid/src/tests.rs:6427`), whose bearer arm asserts the 303.
 3. **`is_quotable` stays in the renderer, so the WiFi route still accepts a psk
    containing a quote or a backslash.** `fn is_quotable`
-   (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:200-204`) is applied only
-   inside `fn encode_psk` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:234`), at
-   `if !is_quotable(psk) {` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:248`). What the API route
+   (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:203-205`) is applied only
+   inside `fn encode_psk` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:235`), at
+   `if !is_quotable(psk) {` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:249`). What the API route
    runs is `mosd_settings::validate_wifi_psk(psk)`
    (`os/pkgs/mosd/apid/src/routes.rs:2227`), and that function checks a 64-digit
    hex PMK or a length band and nothing else
-   (`os/pkgs/mosd/mosd-settings/src/model.rs:449-460`). A psk carrying `"` is
+   (`os/pkgs/mosd/mosd-settings/src/model.rs:476-499`). A psk carrying `"` is
    accepted at the route and rejected at render time.
 4. **The gate-list/router agreement gap.** `fn is_declared_api_route`
    (`os/pkgs/mosd/apid/src/routes.rs:541-562`) is a second list of eighteen
@@ -290,6 +290,12 @@ memory of a report.
    negative as a measurement of its own, so the record no longer depends on
    that line surviving verbatim. **Folding them is a code change and was not
    made here.**
+   *(2026-08-28, appended: the "re-states that negative" premise above was
+   measured false by PLAN-026 M6 — section 1.2 documents the shipped route
+   table and restates no historical negative, and the fold breaks two armed
+   quotes in RFCT-210 and RFCT-240 with no line to re-anchor to. Ruled not to
+   fold; see RFCT-252 for the measurement and the unblock condition. The
+   original text above is left as written.)*
 
 ## 7. Out of scope, untouched
 

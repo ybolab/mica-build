@@ -68,9 +68,9 @@ the whole argument:
 3. **The settings setter runs none of them.** `Settings::set` validates by
    deserializing the candidate tree and nothing more —
    `serde_json::from_value(root)`
-   (`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`), and the model says so in
+   (`os/pkgs/mosd/mosd-settings/src/model.rs:771-775`), and the model says so in
    its own words: cross-field consistency *"is enforced in the network
-   reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:556-557`).
+   reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:595-596`).
 4. **The reconciler's verdict does not reach the caller.** `write_setting`
    returns `Ok(())` whatever the reconcilers said, having only recorded them:
    `record(&mut inner.state, reconciler.name(), result);`
@@ -193,7 +193,7 @@ the interface, only at
 `for (index, peer) in peers.iter().enumerate()`
 (`os/pkgs/mosd/apid/src/routes.rs:3751-3774`); and the setter creates them by
 documented contract — *"Missing intermediate map entries are created"*
-(`os/pkgs/mosd/mosd-settings/src/model.rs:710-712`).
+(`os/pkgs/mosd/mosd-settings/src/model.rs:749-751`).
 
 **The pane is left as it is, and the typed route fixes it structurally.**
 `the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one` is
@@ -220,10 +220,10 @@ by the renderer with the error visible only in live state.
 
 **The fix is the lift, not a second copy.** The rule now lives beside the typed
 model as `pub fn validate_wifi_psk(psk: &str) -> Result<(), String> {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:449-460`), the
+(`os/pkgs/mosd/mosd-settings/src/model.rs:476-499`), the
 reconciler calls it rather than restating it —
 `mosd_settings::validate_wifi_psk(psk).map_err(|message| anyhow!(message))?;`
-(`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:238-247`) — and the WiFi route
+(`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:239-248`) — and the WiFi route
 runs the same function at the place it already produces its 422,
 `ApiError::apid("validation_failed", message).at(WIFI_NETWORKS_PATH)`
 (`os/pkgs/mosd/apid/src/routes.rs:2226-2233`). The three local constants were

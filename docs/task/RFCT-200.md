@@ -30,16 +30,16 @@ configuration is a map keyed by interface name: *"Per-interface network
 configuration, keyed by interface name."* (`os/pkgs/mosd/mosd-settings/src/model.rs:21-22`),
 typed `BTreeMap<String, IfaceSettings>`. `IfaceSettings` carries
 `#[serde(deny_unknown_fields)]` and exactly two fields, `dhcp: bool` and an
-optional `static` block (`os/pkgs/mosd/mosd-settings/src/model.rs:524-532`);
+optional `static` block (`os/pkgs/mosd/mosd-settings/src/model.rs:563-571`);
 `StaticConfig` is `address` (CIDR), optional `gateway`, and `dns`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:681-693`). There is no interface
+(`os/pkgs/mosd/mosd-settings/src/model.rs:720-732`). There is no interface
 type, no parent/child relation, and no tunnel anywhere in the model.
 
 Writes go through `Settings::set` — `pub fn set(&mut self, path: &str, value: Value)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:721`):
+(`os/pkgs/mosd/mosd-settings/src/model.rs:760`):
 the path is split, the JSON tree is patched, and the whole candidate is
 re-deserialized into `Settings` — `deny_unknown_fields` everywhere makes that
-the validation step (`os/pkgs/mosd/mosd-settings/src/model.rs:584-588`).
+the validation step (`os/pkgs/mosd/mosd-settings/src/model.rs:623-627`).
 `split_path` splits on `.` unconditionally
 (`os/pkgs/mosd/mosd-settings/src/path.rs:26-32`), and the read side
 `json_path_get` does the same (`os/pkgs/mosd/mosd-settings/src/path.rs:11-23`).
@@ -199,10 +199,10 @@ impossible in a key rather than merely unaddressable.
 `BTreeMap<String, _>` accepts any key — so quoting changes *addressability*,
 not validation. The value at the quoted key is still deserialized into
 `IfaceSettings` under `deny_unknown_fields`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:559-561`), so `network."eth0.100"`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:598-600`), so `network."eth0.100"`
 must hold a valid interface body, and the whole-candidate re-deserialization
 in `Settings::set` — `serde_json::from_value(root)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:733`) — is untouched. The failure mode RFCT-135 describes — a *key* misread as a *field*
+(`os/pkgs/mosd/mosd-settings/src/model.rs:772`) — is untouched. The failure mode RFCT-135 describes — a *key* misread as a *field*
 — becomes unrepresentable, because the quoted segment never reaches the struct
 namespace.
 

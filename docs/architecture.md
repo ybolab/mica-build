@@ -57,7 +57,7 @@ device's settings and drives systemd to match them.
   `bridge` or `wireguard` — and the one optional block that belongs to it. The
   block is authoritative and the interface name is not:
   *"`eth0.100` is a convention, not a declaration"*
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:553-554`). A physical entry renders
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:592-593`). A physical entry renders
   one `.network` file, as it always did; each of the other three additionally
   renders a `.netdev` that creates the device, and the attachment is a line on
   the *other* interface's unit — `VLAN=` on the parent, `Bridge=` on the port.

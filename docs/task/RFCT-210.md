@@ -197,7 +197,7 @@ describe."* (`os/pkgs/mosd/apid/src/routes.rs:1291-1294`)
 `authorized_keys` (`os/pkgs/mosd/mosd-settings/src/model.rs:224`); WiFi client
 networks, backed by `networks` (`os/pkgs/mosd/mosd-settings/src/model.rs:378`);
 and — new, section 2.3 predates it — **WireGuard peers** (rows 15, 16), backed
-by `peers` (`os/pkgs/mosd/mosd-settings/src/model.rs:621`). All three are
+by `peers` (`os/pkgs/mosd/mosd-settings/src/model.rs:660`). All three are
 `Vec<T>` in a tree whose dot-path syntax cannot index an array, and all three
 have a natural identity that is not a position: fingerprint, `ssid`, and the
 peer's `public_key` respectively. The peer routes are the strongest case of the
@@ -235,11 +235,11 @@ bridges.
 
 **A raw `PUT /api/v1/settings/network.<iface>` runs none of them.** The write
 path is `SetSettings` → `Settings::set` → `Store::save`, and the setter at
-`os/pkgs/mosd/mosd-settings/src/model.rs:721-754` validates exactly three
+`os/pkgs/mosd/mosd-settings/src/model.rs:760-793` validates exactly three
 things: that the tree still deserializes, that `schema_version` is unchanged,
 and that a newly-introduced `network` key is a legal interface name. The model
 says so in its own doc comment — cross-field consistency *"is enforced in the
-network reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:556-557`) — and
+network reconciler"* (`os/pkgs/mosd/mosd-settings/src/model.rs:595-596`) — and
 the reconciler's `validate_network`
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-495`) is where those four
 rules actually live on the mosd side. But the reconciler runs *after* the save,
@@ -446,7 +446,7 @@ writes straight to the peer list's own dot-path
 missing intermediates by documented and tested behaviour — its own contract says
 *"Missing intermediate map entries are created (e.g. setting
 `network.eth1.dhcp` creates `eth1`)"*
-(`os/pkgs/mosd/mosd-settings/src/model.rs:710-711`), and the committed test
+(`os/pkgs/mosd/mosd-settings/src/model.rs:749-750`), and the committed test
 `set_scalar_and_create_intermediate_entries`
 (`os/pkgs/mosd/mosd-settings/tests/settings.rs:128-141`) proves that step on a
 `network` key specifically. `validate_peers`

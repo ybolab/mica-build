@@ -277,7 +277,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:682-702`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:721-741`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until
@@ -438,7 +438,7 @@ better mechanism and then hid it.**
   exactly this purpose (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:793-808`, and the
   single-radio conflict variant at `:739-750`); and `GetState("wifiClient")`,
   which publishes each known network's SSID and a `secured` boolean and never
-  the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:507-513`).
+  the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:508-514`).
 - **Availability: (a) available today** — gap-table **rows 15, 7 and 6**
   respectively, all three classified by `mos-ui-inventory.md` section 7.1 as
   needing only UI work. `os/pkgs/mosd/apid/src/` contains **zero** references to any of
@@ -511,7 +511,7 @@ names the reason, and where it belongs instead. **[proposal]**
   hash and generation are readable via `GetSettings("access.device")`
   (`mos-ui-inventory.md` section 7, row 9). This is a property to preserve
   deliberately, not a gap to close. Note that `wifiClient` state already never
-  publishes the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:500-510`); the
+  publishes the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:501-511`); the
   landing screen inherits that discipline.
 - **No CPU, memory, load, temperature, kernel version or build id.** None of
   these exist anywhere in mos's management plane
