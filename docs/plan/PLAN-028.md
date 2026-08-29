@@ -81,3 +81,20 @@ one, and only a booted run finds it.
   get corrected, `test/apid-api` only for M4's build-time check.
 - **Out**: PLAN-026/027 scopes, any relaxation of an existing assertion,
   retroactive edits to dated records, booted-run tooling.
+
+## Correction (2026-08-28, at dispatch)
+
+M2's rule as written — "unresolvable inheritance [is an] ERROR" — was measured
+against the corpus by the executing workstream and found to force dated-record
+markers onto all six frozen audit documents at once (~222 os/ citations leaving
+live coverage to freeze 149 historical bare tokens), defeating the lazy-marking
+rule entirely. Ruled: a bare token with NO same-line antecedent is a COUNTED
+SKIP UNDER A NO-GROW RATCHET — baselined per document like the existing
+unquoted ratchet, so any NEW no-antecedent bare token fails while the
+historical ones stay visible, counted and reasoned, and the frozen audits'
+still-valid citations remain under live coverage. Ambiguity under M1's basename
+rule stays an error. Net effect: three markers campaign-wide (RFCT-215 and
+RFCT-169 forced by M1's ambiguity rule; RFCT-210 forced independently in
+PLAN-027 by a content deletion, marker arriving from that branch) instead of
+six. RFCT-257 records both readings, their measured costs, and this ruling.
+
