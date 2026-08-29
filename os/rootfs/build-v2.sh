@@ -22,6 +22,11 @@
 
 # The rest are records rather than assembler inputs:
 #   rootfs-report-v2.txt: package list + installed size
+#   pkg-logs/: dpkg.log, alternatives.log and apt/, taken out of /var/log by
+#     stages/90-pack before the package-manager purge removes them. They are
+#     NOT in the image -- the purge takes them -- and they are kept because
+#     dpkg.log with its timestamps stripped is what the stage-order comparison
+#     in os/rootfs/README.md reads on each side.
 #   factory-root.oci: the packed root as an OCI image, in OCI-layout tar form.
 #     NOT consumed by the assembler -- this is what the smoke runner executes
 #     the self-built binaries in, so "it linked" and "it runs" stop being the

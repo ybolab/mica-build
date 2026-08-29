@@ -214,9 +214,9 @@ source comments. All 17 were re-verified on the merged tree:
 
 - inside the design set: `docs/architecture.md:23` — *"`board/`,
   `docs/design/boards.md`"* in the BSP-artifacts row
-- `os/rootfs/README.md:121`; `os/rootfs/build-v2.sh:622`;
+- `os/rootfs/README.md:121`; `os/rootfs/build-v2.sh:627`;
   `os/rootfs/stages/31-feature-containers.Dockerfile:16`;
-  `os/rootfs/stages/40-board.Dockerfile:21`, `:98`, `:124`, `:144`;
+  `os/rootfs/stages/40-board.Dockerfile:21`, `:100`, `:126`, `:146`;
   `os/rootfs/stages/README.md:249`, `:331`
 - `os/verify/HARNESS.md:200`, `:512`;
   `os/verify/src/checks-bootchain.ts:5`, `:19`, `:20`, `:346`, `:347`

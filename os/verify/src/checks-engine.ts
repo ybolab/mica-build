@@ -491,6 +491,22 @@ const PKGMGR_TREES = [
   '/var/lib/dpkg', '/var/lib/apt', '/etc/apt', '/usr/lib/apt',
   '/usr/share/factory/var/lib/dpkg', '/usr/share/factory/var/lib/apt',
 ] as const
+// The LOGS, which the databases and caches above do not cover and which the
+// purge left behind until RFCT-226: /var/log survived a purge written around
+// /var/lib and /var/cache, and the pack stage then carried the whole of /var
+// into the factory tree. They are listed in BOTH places for the same reason the
+// trees are -- a log left under /usr/share/factory/var is restored onto /var on
+// the first boot -- and one of them, dpkg.log, is 62 KB of every package
+// operation this build ran, which is a build record and not device content.
+// It survives as a build record instead: 90-pack's `closed` stage captures the
+// three into /out/pkg-logs before the purge and the driver exports them to
+// _out/<board>/pkg-logs/, so the stage-order comparison in os/rootfs/README.md
+// still reads the same bytes. This check is what holds the image side of that.
+const PKGMGR_LOGS = [
+  '/var/log/dpkg.log', '/var/log/apt', '/var/log/alternatives.log',
+  '/usr/share/factory/var/log/dpkg.log', '/usr/share/factory/var/log/apt',
+  '/usr/share/factory/var/log/alternatives.log',
+] as const
 
 const PURGE_CHECKS: readonly CheckCase[] = [
   {
@@ -524,8 +540,10 @@ const PURGE_CHECKS: readonly CheckCase[] = [
 
   {
     // `[ -e ]` for a binary and `[ -d ]` for a tree, in the oracle's own order:
-    // the binaries first, then the state directories, each appended with a
-    // trailing slash so the message says which kind it found.
+    // the binaries first, then the state directories, then the logs, each
+    // appended with a trailing slash so the message says which kind it found.
+    // The logs are a mixed set -- two files and a directory -- so the slash is
+    // decided per path rather than per list.
     id: 'purge-no-package-manager',
     shell: {
       pass: 'the packed root carries no package manager: none of ',
@@ -536,13 +554,16 @@ const PURGE_CHECKS: readonly CheckCase[] = [
       const found = [
         ...PKGMGR_BINARIES.filter(b => existsFollowingLinks(root, b)).map(b => ` ${b}`),
         ...PKGMGR_TREES.filter(d => isDirectoryFollowingLinks(root, d)).map(d => ` ${d}/`),
+        ...PKGMGR_LOGS.filter(l => existsFollowingLinks(root, l))
+          .map(l => isDirectoryFollowingLinks(root, l) ? ` ${l}/` : ` ${l}`),
       ]
       return [verdict(
         'purge-no-package-manager',
         found.length === 0,
         found.length === 0
-          ? `the packed root carries no package manager: none of ${PKGMGR_BINARIES.join(' ')} and no `
-            + `dpkg/apt state, in /var or under the factory tree`
+          ? `the packed root carries no package manager: none of ${PKGMGR_BINARIES.join(' ')}, no `
+            + `dpkg/apt state and none of ${PKGMGR_LOGS.slice(0, 3).join(' ')}, in /var or under the `
+            + `factory tree`
           : `the packed root still carries package management:${found.join('')}. The root is a `
             + `read-only dm-verity squashfs and updates arrive as whole RAUC slots, so nothing here `
             + `can install a package — but anyone who reaches a shell now has the tool to try, and it `

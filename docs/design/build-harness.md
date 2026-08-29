@@ -279,9 +279,9 @@ links fail the same way — as an apparently broken harness. In order:
    (`os/rootfs/stages/31-feature-containers.Dockerfile:103`) — and the build
    passes each one only when the matching feature is in the chain, as
    `--arg PODMAN_DIR="_out/$MOS_BOARD/podman"`
-   (`os/rootfs/build-v2.sh:637`) and
+   (`os/rootfs/build-v2.sh:642`) and
    `--arg RAUC_DIR="_out/$MOS_BOARD/rauc"`
-   (`os/rootfs/build-v2.sh:639`).
+   (`os/rootfs/build-v2.sh:644`).
 2. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build-v2.sh`.
 3. **The image.** `bash os/build/run.sh --mkimage-x64`, which writes the A/B disk
    image around the rootfs slot. Its name is read from the board definition,

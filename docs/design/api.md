@@ -3515,7 +3515,7 @@ stylesheet is a `&str` constant emitted into the page head
 `include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
 and no non-Rust file in the crate other than its manifest.
 
-**How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
+**How it gets there.** `os/rootfs/build-v2.sh:80-81` copies the cross-built
 `apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
 installs the binary as `/usr/bin/apid` mode `0755`, `:295` installs the unit,
 and `:297-299` enables it by symlink and **asserts the symlink exists**. The
@@ -4042,7 +4042,7 @@ to move.
 built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — the built-in UI is compiled into the `apid` binary —
 and identifies how it gets inside the verity squashfs
-(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/scripts/mosd-install.sh`). No second
+(`os/rootfs/build-v2.sh:80-81`, `os/rootfs/scripts/mosd-install.sh`). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.
