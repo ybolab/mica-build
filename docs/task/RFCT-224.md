@@ -161,6 +161,40 @@ silence for agreement.
 4. The answer is written down for the class, `mqtt` named alongside `container`
    (`docs/design/bus.md` §11.6).
 
+### The pin was proved by planting the widening, not by reading the test
+
+A test that pins a read-only projection is worth only what it does when the
+projection changes, and this task exists because a green run can assert nothing
+at all. So the widening this task declined was planted and measured: `container`
+added to `WRITABLE_SUBTREES` as `[&str; 6]`, tree tests run, then reverted.
+
+Five of seven passed and two failed — the new test, and the older projection
+test the two keys were added to:
+
+```
+FAIL (1/7) mosd::tree get_items_projects_both_trees_as_slash_paths
+FAIL (7/7) mosd::tree platform_switches_are_read_only_items_written_only_through_set_settings
+Summary 7 tests run: 5 passed, 2 failed, 0 skipped
+```
+
+So a later widening fails two tests in two files and cannot land quietly.
+
+### A note on the citation form used above
+
+Every citation added by this task names a file and no line. That is deliberate
+and it is a trade, so it is recorded rather than left to be inferred. Line
+numbers in this area have drifted before, and `docs/verify-citations.sh` checks
+a line-numbered citation only for resolution unless a quote sits adjacent to it
+— so a line number here would buy precision the gate would not verify while
+adding a number that later edits must chase. File-only citations match what
+`docs/design/bus.md` §11 items 1-3 already do.
+
+The cost is that the gate does not see them at all: a bare path is not a
+citation to it, which is why this task's citation total is unchanged rather than
+higher. Each path was therefore checked by hand, as was the test name §11.6 and
+this file cite, against the function actually defined in
+`os/pkgs/mosd/mosd/tests/tree.rs`.
+
 ### What would change the answer
 
 A write boundary on the item tree that is not the bridge's — per-client policy
