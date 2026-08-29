@@ -138,6 +138,21 @@ Every settings root checked against the list, not just the two handed over:
 Exactly two keys diverged from what the comment claimed, and they are the two
 this task names. Nothing else in the schema is in the same position.
 
+### The second falsehood in `containers.md`, and where it went
+
+The document also carried an example command, `mosctl set container.enabled
+true`. `mosctl` occurs exactly once in the whole repository — inside that code
+block. The command does not exist and never has, so the one instruction an
+integrator could have copied from that page was the one thing on it that could
+not work.
+
+**Disposition: fixed here, in this milestone.** `docs/design/containers.md`
+section 2 now shows the route the daemon actually serves, and its extractor was
+measured as `ApiBearer` rather than assumed, so the example is bearer-only and
+says so. Nothing about this is routed onward — it is closed, and it is recorded
+here because a falsehood that nobody filed is one that nobody would have
+noticed was fixed.
+
 ### Residue
 
 `access.ssh` is the one listed entry the rule strains against: it is remotely
@@ -147,6 +162,12 @@ is a behaviour change well outside this task, and the bridge defaults to
 `Mode::ReadOnly` (`os/pkgs/mosd/mqttd/src/config.rs`) so writes require an
 explicit operator opt-in. Named here so the next reader does not mistake the
 silence for agreement.
+
+**Filed as `docs/task/RFCT-253.md`** (P2, unclaimed) so it survives this
+milestone as claimable work rather than as a paragraph inside a closed record.
+That task cites this section as its evidence base and carries the constraint
+this one measured: narrowing a shipped writable subtree is a behaviour change
+and needs a plan of its own, not a documentation fix.
 
 ### Acceptance
 

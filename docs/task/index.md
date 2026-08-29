@@ -230,6 +230,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-233 PLAN-025 M4: the harness facts, committed as one citation-gated page**](RFCT-233.md) `P2`
 - [x] [**RFCT-234 PLAN-025 M2b: the arm64 builder family, cx3576 rauc, and the RFCT-206 section 7 pass**](RFCT-234.md) `P1`
 - [x] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
+- [ ] [**RFCT-253 `access.ssh` is bus-writable and grants a remote capability, which the platform-switch rule does not cover**](RFCT-253.md) `P2`
 - [ ] [**RFCT-260 The AP reconciler's third copy of the WPA byte rule, and a refusal that names the secret's length**](RFCT-260.md) `P2`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
 - [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
