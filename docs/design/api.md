@@ -577,23 +577,45 @@ which both credentials were accepted.
 `.layer(middleware::from_fn_with_state(state.clone(), gate))`
 (`os/pkgs/mosd/apid/src/routes.rs:228`), running from
 `async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Response {`
-(`os/pkgs/mosd/apid/src/routes.rs:3271`) to `Redirect::to("/login").into_response()`
-(`os/pkgs/mosd/apid/src/routes.rs:3318-3319`). It implements
-**four** decisions, one more than at `86cd669`:
+(`os/pkgs/mosd/apid/src/routes.rs:3275`) to `Redirect::to("/login").into_response()`
+(`os/pkgs/mosd/apid/src/routes.rs:3354-3355`). It implements
+**five** decisions, two more than at `86cd669`:
 
 1. `/healthz` and the declared `/api/` routes always pass —
    `if path == "/healthz" || is_declared_api_route(path) {`
-   (`os/pkgs/mosd/apid/src/routes.rs:3273`). The API routes answer for themselves in
+   (`os/pkgs/mosd/apid/src/routes.rs:3277`). The API routes answer for themselves in
    §2.4's envelope rather than in the gate's HTML redirect, and which paths
    qualify is decided by `is_declared_api_route`
    (`os/pkgs/mosd/apid/src/routes.rs:541-619`) rather than by a prefix test.
-2. A request carrying a **valid session cookie** passes without any bus call at
+   Since decision 2 exists, this test no longer decides whether anything is
+   *released* — every leaf the predicate accepts begins with `/`, so every path
+   it accepts decision 2 accepts as well. It is retained rather than folded in
+   because PLAN-026 M4 (`docs/task/RFCT-250.md`) owns the predicate.
+2. **The rest of the reserved `/api` subtree passes too**, and this one is a
+   prefix test — `.is_some_and(|leaf| leaf.is_empty() || leaf.starts_with('/'))`
+   (`os/pkgs/mosd/apid/src/routes.rs:3308`), spelled from `API` so it covers `/api`
+   and everything under `/api/` and nothing else. §4.1 rule 1's not-found
+   handler answers those paths in §2.4's envelope, so this release is for the
+   same reason decision 1 releases a declared route: a request addressed to
+   the JSON surface is answered in JSON. Both decisions run **before any
+   credential is read**, which is what makes an undeclared path under the
+   prefix one answer rather than one answer per credential. PLAN-026 M2
+   (`docs/task/RFCT-248.md`, 2026-08-29) added this decision; until it, such a
+   path fell through to decisions 4 and 5 and was answered with an HTML
+   redirect whenever the request carried no session cookie — which a
+   bearer-only client never does. That was a standing contradiction of §4.2's
+   *"a request that a developer expected to be JSON never returns HTML with a
+   200"*, since the 303 to `/login` is followed to a 200 HTML page.
+3. A request carrying a **valid session cookie** passes without any bus call at
    all — `if session::cookie_from_headers(request.headers())`
-   (`os/pkgs/mosd/apid/src/routes.rs:3294-3298`).
-3. **Setup mode** — no admin password hash present — only `/setup` passes and
-   everything else redirects there (`os/pkgs/mosd/apid/src/routes.rs:3307-3312`).
-4. **Normal mode** — `/login` and `/setup` pass and everything else redirects
-   to `/login` (`os/pkgs/mosd/apid/src/routes.rs:3313-3318`).
+   (`os/pkgs/mosd/apid/src/routes.rs:3330-3334`).
+4. **Setup mode** — no admin password hash present — only `/setup` passes and
+   everything else redirects there (`os/pkgs/mosd/apid/src/routes.rs:3343-3348`).
+   Decision 2 runs above this one, so a device with no admin password still
+   answers its reserved subtree rather than bouncing a JSON client to
+   `/setup`.
+5. **Normal mode** — `/login` and `/setup` pass and everything else redirects
+   to `/login` (`os/pkgs/mosd/apid/src/routes.rs:3349-3354`).
 
 The sentence this section carried at `86cd669` — that the gate calls
 `GetSettings("access")` on **every** request, so every request costs at least
@@ -2778,6 +2800,16 @@ subtree answers its own misses. That 404 must carry the API error shape rather
 than an empty body, so a client that mistypes a path gets the same
 machine-readable envelope as every other API error. The shape belongs to section
 2.4 and is **not specified here**.
+
+**The gate contradicted this rule until PLAN-026 M2** (`docs/task/RFCT-248.md`,
+2026-08-29). Condition 1 makes the subtree answer its own misses, but the gate
+only handed *declared* routes to it; an undeclared path under the prefix fell
+through to the HTML branches and was answered with a 303 to `/login` whenever
+the request carried no valid session cookie — which a bearer-only client never
+does, so the whole API-client population saw the redirect and only a browser
+saw the envelope. §2.3's decision 2 releases the reserved subtree before any
+credential is read, so the answer is this envelope for every credential and for
+none.
 
 **The property to test.** After this rule, a request that a developer expected
 to be JSON never returns HTML with a 200. That is one integration test per
