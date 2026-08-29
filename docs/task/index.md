@@ -239,3 +239,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-246 PLAN-023 M9 prerequisite: test/apid-api drives bearer end to end**](RFCT-246.md) `P1`
 - [x] [**RFCT-215 PLAN-023 closeout: api.md section 1 re-measured against the final surface**](RFCT-215.md) `P1`
 - [x] [**RFCT-259 PLAN-028 M4: the status-outruns-pinned-phase class, bounded**](RFCT-259.md) `P2`
+- [-] [**RFCT-256 PLAN-028 M1: the no-slash citation form, resolved and its violations corrected**](RFCT-256.md) `P1`
