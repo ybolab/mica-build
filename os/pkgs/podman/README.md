@@ -76,6 +76,45 @@ Building for **arm64 needs an arm64 builder family**, because a `localhost/` tag
 carries exactly one architecture where a `name:tag@sha256:` digest is a
 multi-architecture index. `os/pkgs/podman/build.sh` refuses the mismatch by name.
 
+### Two bases, and why there are five arguments for four images
+
+A cross build needs **both** families on the host, not just the target's. The
+Dockerfile takes five base arguments:
+
+| argument | architecture | which stages |
+| --- | --- | --- |
+| `MOS_BUILD_BASE` | the target's, `MOS_ARCH` | `verify` |
+| `MOS_BUILD_C` | the target's | `c-build` |
+| `MOS_BUILD_GO` | the target's | `go-build` |
+| `MOS_BUILD_RUST` | the target's | `rust-build` |
+| `MOS_BUILD_BASE_NATIVE` | the **host's**, `uname -m` | `src` |
+
+`src` is the odd one because it is the one stage that does not compile: it
+shallow-clones six upstreams and hashes them, and `FROM --platform=$BUILDPLATFORM`
+keeps that out of emulation. Its base is therefore `mos-build-base` at the
+architecture buildkit itself runs on, which under the architecture-qualified
+tag scheme is a different image with a different name — `:amd64` and `:arm64`
+coexist and neither is "the" base. `build.sh` resolves it through a second
+`os/build-env/from.sh` call with `--arch` set from `uname -m`, and hands the
+`mos-*` docker-container builder a second OCI layout for it, next to the four
+it already exports. On a native build the two resolve to the same tag and no
+fifth layout is exported.
+
+It has to be a second **argument**, because a single-architecture tag handed to
+`--platform=$BUILDPLATFORM` does not refuse — `--platform` selects a manifest
+out of an index, and a `localhost/` tag is one manifest and no index. Docker
+serves what the tag holds, buildkit believes the stage is running at the build
+platform, no emulator is applied, and the stage dies on its first `RUN` with
+`exec /bin/sh: exec format error` — a report that names neither the base, the
+architecture, nor the argument. The same is true of the OCI layout the
+docker-container driver gets instead. Measured on both driver paths; the arm64
+target's build for the amd64 host is what stopped on it.
+
+Practically: `MOS_ARCH=arm64 make podman` on an amd64 host needs
+`MOS_BUILD_PLATFORM=linux/arm64 make build-env` **and** the amd64 family from a
+plain `make build-env`. `build.sh` names the missing one and the command that
+makes it.
+
 ## Why build it, when trixie ships a working one
 
 Not to save space, and not because the package is missing a feature. What this

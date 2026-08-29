@@ -418,10 +418,20 @@ board facts.
 **The `apt` transactions run radios, containers, `grub-editenv`, kernel.**
 `30-feature-radios` is deliberately ahead of `31-feature-containers` for that
 reason. That order decides the order entries land in dpkg's database and in the
-logs the pack stage carries into `/usr/share/factory/var/log`, so keeping it is
-what makes a regrouping of the stages a regrouping rather than a re-install. It
-is directly checkable: `dpkg.log` with its timestamps stripped is byte-identical
-over all 694 operations when the order is intact.
+package-manager logs, so keeping it is what makes a regrouping of the stages a
+regrouping rather than a re-install. It is directly checkable: `dpkg.log` with
+its timestamps stripped is byte-identical over all 694 operations when the order
+is intact.
+
+The logs are no longer *in* the image. `90-pack`'s `closed` stage captures
+`dpkg.log`, `alternatives.log` and `apt/` out of `/var/log` before the purge
+removes them, the `pack` stage moves the capture to `/out/pkg-logs`, and the
+`artifact` stage exports it to `_out/<board>/pkg-logs/` — the lifecycle
+`rootfs-report.txt` already has. The comparison reads the same bytes from there;
+what changed is where it picks them up, not what it compares. The purge refuses
+to run if the capture did not, so the two cannot come apart, and the image
+verifier's `purge-no-package-manager` asserts the three paths are absent from
+the packed root in both `/var` and `/usr/share/factory/var`.
 
 **Accounts are created where their material is.** `account-mos.sh` is in
 `10-base` — the floor's operator account cannot come after a feature's service

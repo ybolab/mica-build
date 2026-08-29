@@ -49,7 +49,7 @@ serialisation rule is: every access to the redundant environment goes through
 UENV partitions directly. Both existing writers already comply — the
 machine-id oneshot calls the tools (`os/rootfs/overlay-v2/usr/lib/mos/mos-machine-id:43,52`),
 and RAUC's uboot backend execs them (recorded — *"the uboot backend execs
-fw_setenv"* (`os/rootfs/stages/40-board.Dockerfile:50`) — and cited from `rauc`'s own
+fw_setenv"* (`os/rootfs/stages/40-board.Dockerfile:52`) — and cited from `rauc`'s own
 `uboot.c` in `os/pkgs/rauc/system.conf.in`) — so implementing the rule for
 today's writers is proving the lock exists and pinning the rule where every
 future reader/writer will look.

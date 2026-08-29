@@ -52,7 +52,7 @@ tree move, d40a90a).
 
 Unmarked residuals, each left deliberately:
 
-- Scope 1 (6): `os/rootfs/build-v2.sh:320` and the template-literal
+- Scope 1 (6): `os/rootfs/build-v2.sh:325` and the template-literal
   messages at `os/verify/src/layout.ts:123`, `parity.ts:110`,
   `checks-engine.ts:136`, `checks-shape.ts:253` are runtime output strings
   -- the zero-behaviour-change rule wins; `os/verify/run.sh:57` is usage

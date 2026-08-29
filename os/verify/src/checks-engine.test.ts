@@ -16,6 +16,9 @@
 //     the next reboot with no operator decision in the path.
 //   - apt's TIMERS surviving a purge that removed only /usr/bin/apt. Found by
 //     booting the x64 image, in an arm64 image that had already shipped.
+//   - the package-manager LOGS surviving it, on /var and under the factory tree.
+//     A purge written around /var/lib and /var/cache does not reach /var/log,
+//     and the factory copy is restored onto /var on the first boot.
 
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -587,6 +590,67 @@ describe('the package manager is gone, and the licences are not', () => {
     }
     finally {
       fx.dispose()
+    }
+  })
+
+  test('the dpkg LOG left on /var fails, and the message names it as a file', async () => {
+    // The residue a purge written around /var/lib and /var/cache does not
+    // reach. 62 KB of every package operation the build ran, and the trailing
+    // slash is absent because it is a file, not a tree.
+    const fx = await mutated('purge-no-package-manager',
+      root => write(root, '/var/log/dpkg.log', '2026-08-28 00:00:00 install bash\n'))
+    try {
+      expect(await verdictOf(fx, 'purge-no-package-manager')).toBe('fail')
+      expect(await messageOf(fx, 'purge-no-package-manager'))
+        .toContain('still carries package management: /var/log/dpkg.log.')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the FACTORY copy of the dpkg log fails, not only the one on /var', async () => {
+    // Same first-boot restore as the database above: /var is relocated to
+    // /usr/share/factory/var by the pack stage, so a log left under the factory
+    // tree lands back on /var on the first boot.
+    const fx = await mutated('purge-no-package-manager',
+      root => write(root, '/usr/share/factory/var/log/dpkg.log', 'x\n'))
+    try {
+      expect(await messageOf(fx, 'purge-no-package-manager'))
+        .toContain('/usr/share/factory/var/log/dpkg.log.')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the apt log DIRECTORY fails, and gets the trailing slash a file does not', async () => {
+    // /var/log/apt is the one entry of the log set that is a tree --
+    // history.log, term.log and eipp.log.xz -- so the message decides the slash
+    // per path rather than per list.
+    const fx = await mutated('purge-no-package-manager',
+      root => mkdirSync(join(root, '/var/log/apt'), { recursive: true }))
+    try {
+      expect(await verdictOf(fx, 'purge-no-package-manager')).toBe('fail')
+      expect(await messageOf(fx, 'purge-no-package-manager'))
+        .toContain('still carries package management: /var/log/apt/.')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the alternatives log fails on both boards', async () => {
+    for (const board of [cx3576, x64]) {
+      const fx = await mutated('purge-no-package-manager',
+        root => write(root, '/var/log/alternatives.log', 'update-alternatives\n'), board)
+      try {
+        expect(`${board.name}: ${await verdictOf(fx, 'purge-no-package-manager')}`)
+          .toBe(`${board.name}: fail`)
+      }
+      finally {
+        fx.dispose()
+      }
     }
   })
 
