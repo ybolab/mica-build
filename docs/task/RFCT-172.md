@@ -82,18 +82,24 @@ within its design-doc-only inventory; the widened scan surfaces the whole
 
 Every target verified by opening it before re-pointing:
 
+The `was` column states its paths and lines as plain prose rather than as
+citations. They record where things stood before the move, so written as
+citations they would resolve against today's tree and assert a falsehood
+(RFCT-257 §14, L1's expansion exception). The `now` column is live and is
+written in full so the gate checks it.
+
 | document | was | now | why it is live |
 | --- | --- | --- | --- |
-| `docs/task/RFCT-041.md:24` | `venus-os-access.md:16-19` | `:17-20` | the cited scope paragraph drifted one line |
-| `docs/task/RFCT-042.md:42` | `dashboard.md:45` | `:61` | section 1 "Problem and current state" still exists |
-| `docs/task/RFCT-058.md:285` | `verify-index.sh:26` | `:42` | `README=docs/README.md` moved when RFCT-171 grew the file |
-| `docs/task/RFCT-066.md:62` | `os/rauc/system.conf.in` `:50-62` | `os/pkgs/rauc/system.conf.in:64-76` | the plain-refusal and CMS keyring text lives there today |
-| `docs/task/RFCT-105.md:355` | `os/qemu-run.sh` `:167` | `test/apid-api/src/qemu.ts:251` | `-no-reboot` still passed, file moved twice |
-| `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | `os/pkgs/rauc/system.conf.in:82-83` | moved by PLAN-019; the range then drifted +11 when this task's and RFCT-142's comment insertions grew the file, and the quote is intact at the new range |
-| `docs/task/RFCT-139.md:16` | `checks-root.ts` `:629-633` | `:601-620` | `packed-no-dev-keyring` check body |
-| `docs/task/RFCT-142.md:22` | `os/update/rauc/system.conf.in` `:35` | `os/pkgs/rauc/system.conf.in:35` | the fw_setenv comment, same line |
-| `docs/task/RFCT-162.md:132` | `os/update/rauc/build.sh` `:63` | `os/pkgs/rauc/build.sh:63` | `BUILDER_ARGS=(--builder default)`, same line |
-| `docs/task/RFCT-166.md:75` | `os/update/rauc/build.sh` `:63` | `os/pkgs/rauc/build.sh:63` | same, in the record of the move itself |
+| `docs/task/RFCT-041.md:24` | `docs/research/venus-os-access.md` lines 16-19 | `docs/research/venus-os-access.md:17-20` | the cited scope paragraph drifted one line |
+| `docs/task/RFCT-042.md:42` | `docs/design/dashboard.md` line 45 | `docs/design/dashboard.md:61` | section 1 "Problem and current state" still exists |
+| `docs/task/RFCT-058.md:285` | `docs/verify-index.sh` line 26 | `docs/verify-index.sh:43` | `README=docs/README.md` moved when RFCT-171 grew the file, and again since |
+| `docs/task/RFCT-066.md:62` | `os/rauc/system.conf.in` lines 50-62 | `os/pkgs/rauc/system.conf.in:64-76` | the plain-refusal and CMS keyring text lives there today |
+| `docs/task/RFCT-105.md:355` | `os/qemu-run.sh` line 167 | `test/apid-api/src/qemu.ts:251` | `-no-reboot` still passed, file moved twice |
+| `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` lines 71-78 | `os/pkgs/rauc/system.conf.in:82-83` | moved by PLAN-019; the range then drifted +11 when this task's and RFCT-142's comment insertions grew the file, and the quote is intact at the new range |
+| `docs/task/RFCT-139.md:16` | `checks-root.ts` lines 629-633 | `os/verify/src/checks-root.ts:601-620` | `packed-no-dev-keyring` check body |
+| `docs/task/RFCT-142.md:22` | `os/update/rauc/system.conf.in` line 35 | `os/pkgs/rauc/system.conf.in:35` | the fw_setenv comment, same line |
+| `docs/task/RFCT-162.md:132` | `os/update/rauc/build.sh` line 63 | `os/pkgs/rauc/build.sh:63` | `BUILDER_ARGS=(--builder default)`, same line |
+| `docs/task/RFCT-166.md:75` | `os/update/rauc/build.sh` line 63 | `os/pkgs/rauc/build.sh:63` | same, in the record of the move itself |
 | `docs/task/RFCT-169.md:139` | quote/citation pairing | restructured | the deliberately-false quote sat adjacent to the citation; the sentence now pairs the citation with what `:32` actually reads |
 | `docs/research/venus-os-access.md:271` | `access.md:199-202` | `:310-313`, quote re-cut | the not-cleared-by-reset sentence, reworded in place by the access.md rewrite |
 | `docs/research/venus-os-access.md:359` | `remote-management.md:68` | `:71`, quote re-cut | "without an inbound port" is the text the target carries today |
