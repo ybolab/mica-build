@@ -1,6 +1,6 @@
 # RFCT-248 PLAN-026 M2: the gate asymmetry on undeclared /api/ paths
 
-- **status**: completed — an undeclared path under `/api` answers section 2.4's 404 envelope for **every** credential and for none, where it previously answered a 303 to `/login` (or to `/setup`) for every client that was not a browser; two pinning tests asserted the old answer and both are flipped, one of them found by the gate rather than by the brief; the cookie arm's answer is measured byte-identical before and after; 841/841 (839 baseline + 2 added), 2239/2239 citations with near-miss 354, 883/883 index, oasdiff RC=0
+- **status**: completed — an undeclared path under `/api` answers section 2.4's 404 envelope for **every** credential and for none, where it previously answered a 303 to `/login` (or to `/setup`) for every client that was not a browser; two pinning tests asserted the old answer and both are flipped, one of them found by the gate rather than by the brief; the cookie arm's answer is measured byte-identical before and after; 845/845 (843 baseline + 2 added), 2153/2153 citations with near-miss 335, 887/887 index, oasdiff RC=0
 - **priority**: P1
 - **owner**: bkd/qzb6dsh2
 - **createdAt**: 2026-08-29
@@ -213,11 +213,14 @@ and its files are being edited by sibling milestones of the same campaign.
 
 ## 8. Citation re-anchor
 
-Done twice, and the second time is the one that ships.
+Done three times, because `bkd/5q6am5rw` moved twice under this branch. The
+method hardened at each step, and the last form is the one to copy.
 
-**The first pass, `fb33b31`, was reverted rather than merged.** Mid-task,
-`bkd/5q6am5rw` moved and the sync merge conflicted in **sixteen documents**,
-every conflict of this shape and nothing else:
+### 8.1 The first pass was reverted rather than merged
+
+`fb33b31` re-anchored against this branch's own tree. Then the sync branch
+moved and the merge conflicted in **sixteen documents**, every conflict of this
+shape and nothing else:
 
     <<<<<<< HEAD
     (`routes.rs:3330`), and only *declared* routes are handed
@@ -229,165 +232,166 @@ The conflicted line is from `docs/task/RFCT-245.md` and its citation names
 `os/pkgs/mosd/apid/src/routes.rs` in full; the path is abbreviated here so this
 illustration of two dead line numbers is not itself read as two citations.
 
-Both sides had re-anchored the same citation, by different offsets, and neither
+Both sides had shifted the same citation by different offsets, and neither
 number is right for the merged tree. `docs/task/RFCT-215.md` section 5 decides
-this case: *the side holding content re-derivations wins, because they cannot be
-recovered mechanically; the side holding shifts loses, because they can*. Both
-sides held shifts here, and only one of them is this branch's to withdraw, so
-the merge was aborted, `fb33b31` was reverted, the merge was retaken — it then
-conflicted in one file, `docs/design/api.md`, where this branch holds new prose
-and the incoming side held only shifts — and the pass was re-derived against
-the merged tree.
+it: *the side holding content re-derivations wins, because they cannot be
+recovered mechanically; the side holding shifts loses, because they can*. Only
+one of the two sides is this branch's to withdraw, so the merge was aborted,
+`fb33b31` reverted, the merge retaken — one conflict left, in
+`docs/design/api.md`, where this branch holds new prose and the incoming side
+held only shifts — and the pass re-derived against the merged tree. 468
+citations moved, 518 were already correct, 0 refused.
 
-**The second pass**, in its own commit after the merge, no prose changed:
+### 8.2 Resolving the conflicts is not the job
 
-| | count |
+When two branches insert into one source file, the citations that **conflict**
+are the safe ones: git asks about those. The dangerous ones auto-merge in
+silence — each side anchored correctly against its own tree, the merged file
+holds both sets of insertions, and the true line is displaced by the sum and
+matches neither side. A clean conflict list is evidence about nothing else.
+
+Measured at the second merge, after all eight conflicts were resolved: **40
+further citations were wrong**. Thirty were `tests.rs` citations standing on
+this branch's lines and needing the incoming side's `+105`; five were
+`routes.rs` citations standing on incoming lines and needing this branch's
+`+36`. The trap runs in both directions and neither direction announces itself.
+
+### 8.3 The final method: frame each citation by the commit that wrote its line
+
+A document is not in one frame. After a conflict resolution it holds values
+from both sides, line by line, so a per-document frame is a guess. The third
+pass reads `git blame` on the merged document, classifies each citation by
+whether the commit that last wrote its line is on this branch, on the incoming
+branch, or older than the merge base, and maps it from **that** tree.
+
+| frame | citations |
 |---|---|
-| full-form citations rewritten | 430 |
-| bare `:NNN` continuations rewritten | 38 |
-| already correct, left alone | 518 |
-| authored by this branch, excluded from the mechanical pass | 23 |
-| **refused as unresolvable** | **0** |
+| this branch | 517 |
+| the incoming side | 45 |
+| older than the merge base | 554 |
 
-The method is section 5's: mechanical remap from the pre-image — here the
-merge's incoming tip, since the incoming documents are correct for it — both
-endpoints of a range mapped independently, and a citation moved only when the
-pre-image line and the destination line are byte-identical. Nothing was
-refused, so no citation had to be re-derived from content or listed as
-unresolvable.
+Every accepted mapping had to clear a content check first: the **longest
+byte-identical run** starting at the cited line, up to seven lines, present at
+the destination and **unique** in the merged file. One line is not enough — a
+lone `}` matches everywhere, and this campaign has already measured a bare `}`
+mapping 44 lines past its target with every gate green.
 
-The 23 exclusions are the citations this branch wrote itself, seven in
-`docs/design/api.md` section 2.3 and sixteen in this file, all carrying
-post-change line numbers already. Without the exclusion the pass would have
-shifted them a second time, which is the one way a content-verified remap can
-still be wrong — and it was caught by measurement rather than foresight: a
-trial run of the first pass did exactly that, moving a citation that correctly
-read line 3277 to line 3313, and it content-verified clean because a one-line
-check compares the pre-image line to the destination line and those two *are*
-the same line. Both numbers are written as prose here for the reason section 1
-gives: they name positions in trees this branch no longer stands on, and a
-citation token would resolve against today's file and be green while false.
-The excluded 23 were re-derived separately against the merged `routes.rs`, each
-also content-verified.
-
-**A second correction the redo forced.** `docs/verify-citations.sh` anchors the
-dated-record marker at line start — `if grep -q '^<!-- dated-record:' "$doc"; then`
-(`docs/verify-citations.sh:356`) — and the first pass matched the marker
-anywhere in a file. That is not a conservative difference: it exempted
-documents the gate does scan, this task file among them, because this section
-quotes the marker in prose. The redone pass uses the anchored form, which is
-where five of the six extra rewrites came from.
-
-**The pass was audited afterwards, because resolving the conflicts is not the
-job.** When two branches insert into one source file, the citations that
-*conflict* are the safe ones — git asks about those. The dangerous ones are the
-citations into that file that auto-merge silently: each side anchored correctly
-against its own tree, the merged file holds both sets of insertions, and the
-true line is displaced by the sum and matches neither side. A clean conflict
-list is not evidence about them.
-
-So every citation into `os/pkgs/mosd/apid/src/routes.rs` and
-`os/pkgs/mosd/apid/src/tests.rs` in every scanned, non-dated document was
-re-checked against the **merged** files, independently of the pass that wrote
-them. Each citation was traced to its own frame — the incoming tip for a
-document that side edited, the merge base for one it did not — its cited line
-read there, and the **longest byte-identical run** starting at that line
-required to sit at the cited line in the merged file and to be **unique**
-there. A one-line check is not enough for this: a lone `}` matches everywhere,
-and this campaign has already measured a bare `}` mapping 44 lines past its
-target with every gate green.
-
-| audit outcome | count |
-|---|---|
-| verified: run unique and at the cited line | 787 |
-| verified after ordinal alignment, where the citing line's own prose had been rewritten and positional matching could not pair it | 16 |
-| in this record, all gate-armed and therefore content-checked by `docs/verify-citations.sh` | 13 |
-| run is not unique, mapping confirmed by other means | 1 |
-| **wrong** | **0** |
-
-The one non-unique run is `docs/task/RFCT-244.md`'s citation of `token::mint`,
-and it is correct. `os/pkgs/mosd/apid/src/routes.rs` holds two byte-identical
-seven-line mint-failure blocks, one in `pub(crate) async fn api_v1_tokens_mint(`
-(`os/pkgs/mosd/apid/src/routes.rs:1448`) and one in
-`pub(crate) async fn api_v1_setup(` (`os/pkgs/mosd/apid/src/routes.rs:4168`), so
-content alone cannot separate them. RFCT-244 is the setup-route record and the
-citation resolves inside `api_v1_setup`. It is recorded rather than passed over
-because the next person to re-anchor that token will meet the same ambiguity and
-must not resolve it by search.
-
-**No constant offset was used, and none would have worked.** Three files moved,
-across ten regions, and the excluded 23 moved by an eleventh offset of their
-own:
-
-| file | regions | offsets |
+| | first merge | second merge |
 |---|---|---|
-| `os/pkgs/mosd/apid/src/routes.rs` | 2 | +4, +36 |
-| `os/pkgs/mosd/apid/src/tests.rs` | 6 | +7, +10, +14, +89, +92, +113 |
-| `docs/design/api.md` | 2 | +22, +32 |
-| the 23 authored citations, against the merged `routes.rs` | 1 | +44 |
+| citations rewritten | 468 | 40 |
+| already correct, left alone | 518 | 1070 |
+| **refused rather than guessed at** | **0** | **6** |
+
+### 8.4 Three ways this pass was wrong before it was right
+
+**Scope.** The first attempt at the second merge targeted only `.rs` files and
+left two content failures behind — `docs/task/RFCT-216.md` and
+`docs/task/RFCT-226.md`, both citing lines the incoming side had moved inside
+`docs/design/api.md`. A citation into a *document* shifts exactly as a citation
+into a source file does. That attempt was reset rather than patched, because a
+frame-relative pass re-run over its own output shifts everything twice.
+
+**The dated-record marker.** `docs/verify-citations.sh` anchors it at line
+start — `if grep -q '^<!-- dated-record:' "$doc"; then`
+(`docs/verify-citations.sh:356`) — and an early pass matched it anywhere in a
+file. That is not a conservative difference: it silently exempted documents the
+gate does scan, this record among them, because section 8 quotes the marker in
+prose.
+
+**Self-shifting.** The citations this branch authored already carry
+post-change numbers. A trial run moved a correct line 3277 to line 3313 and it
+content-verified clean, because a one-line check compares the pre-image line to
+the destination line and those two *are* the same line. Both numbers are prose
+here for the reason section 1 gives. The blame framing in 8.3 removes the need
+for a hand-maintained exclusion list: an authored citation blames to this
+branch and is framed against this branch's tree, which is what it was written
+for.
+
+### 8.5 The six refusals, none of them this branch's
+
+A refusal is the method working. Each was read rather than re-pointed:
+
+- `docs/design/bus.md` cites `tree.rs:43` for `tree::redact`. That function is
+  `fn redact(value: &mut Json) {` (`os/pkgs/mosd/mosd/src/tree.rs:140`), and
+  line 43 is a doc comment at the merge base and on the incoming branch alike.
+  **Pre-existing, and unarmed, so `docs/verify-citations.sh` never checks it** —
+  it resolves, so the gate is green over a citation that has been wrong for
+  longer than this branch has existed.
+- `docs/task/RFCT-170.md` cites a `docs/design/bus.md` region the incoming side
+  replaced. Content-deleted, so there is nothing to map to.
+- Four are table rows in `docs/task/RFCT-155.md`, `docs/task/RFCT-159.md` and
+  `docs/task/RFCT-172.md` that record where a citation **used to** point.
+  Re-pointing them at today's tree would falsify the record they exist to keep.
+
+**No constant offset was used, and none would have worked.** Across the two
+merges the same three files moved by nine distinct offsets, and the two
+`tests.rs` shifts this branch had to compose — its own `+7/+10/+14/+89/+92/+113`
+and the incoming side's `+105`, then `+218` — are why a document's citations
+cannot be corrected by adding a number to them.
 
 ## 9. Gates
 
-The Rust gate and `oasdiff` were run at `1d54784` on the merged tree; the two
-documentation gates were re-run at this file's final state, which is the only
-thing that moved between the two — every commit after `1d54784` touches
-`docs/` and nothing under `os/`.
+`hack/check.sh` and `oasdiff` were run at `a0d9512`; every commit after it
+touches `docs/` and nothing under `os/`. The two documentation gates were re-run
+at this file's final state.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `docs/verify-citations.sh: 2239/2239 PASS`, `near-miss: no quote armed, but a quoted span sits 1-3 words away: 354` |
-| `bash docs/verify-index.sh` | `docs/verify-index.sh: 883/883 PASS` |
-| `bash hack/check.sh` (container, `localhost/mos-build-rust:amd64`) | `ALL CHECKS PASSED`; `841 tests run: 841 passed, 0 skipped` |
-| `oasdiff breaking` 1.29.1 vs `main` at `7566210` | `No breaking changes to report, but the specs are different.`, `RC=0` |
+| `bash docs/verify-citations.sh` | `docs/verify-citations.sh: 2153/2153 PASS`, `near-miss: no quote armed, but a quoted span sits 1-3 words away: 335` |
+| `bash docs/verify-index.sh` | `docs/verify-index.sh: 887/887 PASS` |
+| `bash hack/check.sh` (container, `localhost/mos-build-rust:amd64`) | `ALL CHECKS PASSED`; `845 tests run: 845 passed, 0 skipped` |
+| `oasdiff breaking` 1.29.1 vs `main` at `498f0e4` | `No breaking changes to report, but the specs are different.`, `RC=0` |
 
-**Citations, and why the total is not the reference figure.** The reference this
-branch was given was 2196/2196 with near-miss 354, taken at `bkd/5q6am5rw`'s
-tip before it moved. The corpus has since taken two milestones' worth of new
-task records through the merge, so the comparable statement is a delta and not
-a total: this branch adds **18** citations of its own — one in
-`docs/design/api.md` section 2.3, whose gate list gained a decision and with it
-one more full-form citation, from seven code citations in the old block to
-eight in the new, and seventeen in this file — and moves 468 more without
-adding or removing any.
+**Every number is a delta against the sync branch's tip, measured there rather
+than assumed.** The reference figures handed to this branch were 2196/2196 and
+871/871, then 2221/2221 and 879/879, both taken before the sync branch moved
+again. Rather than compare against a stale total, the gates were run on
+`bkd/5q6am5rw` at `d87abb4` itself, in a throwaway worktree, and read
+**2134/2134 PASS with near-miss 335, and 883/883**. Against that:
 
-**The near-miss count is 354, unchanged, and that is the figure to read.** A
-citation whose quote drifted one to three interposed words registers there and
-nowhere else, and a re-anchor pass is exactly what causes it. 354 before and
-354 after means the pass moved line numbers and disturbed no quote's adjacency.
-The one adjacency this branch did have to repair was in this file and not in
-the re-anchored corpus: a first draft put three words between a quote and its
-citation, `docs/verify-citations.sh`'s ratchet on unquoted citations in a new
-document caught it, and it was fixed rather than ceilinged.
+| | incoming tip `d87abb4` | this branch | delta |
+|---|---|---|---|
+| citations | 2134 | 2153 | **+19**, this record's own 18 and one added to `docs/design/api.md` section 2.3 |
+| near-miss | 335 | 335 | **0** |
+| index | 883 | 887 | **+4**, one added task file and its index row |
+| tests | 843 | 845 | **+2**, section 5's two |
 
-**Index, 883/883.** The reference was 871/871. One added task file and its index
-row costs four, which is what `docs/task/RFCT-246.md` cost too — recorded in
-`docs/task/RFCT-244.md` section 11 as 851 going to 855 — and the merge brought
-two more task files in.
+**The near-miss figure is 335 and not the 354 this branch was given.** The
+change is not drift and not this branch's: `d87abb4` reads 335 on its own, from
+its own re-anchor-by-provenance commit. 354 is a figure from before that
+landed. What matters is that this branch moved 508 citations across two merges
+and the count is **identical** to the tree it merged from — a re-anchor that
+disturbs a quote's adjacency shows up there and nowhere else.
 
-**Test-count arithmetic: 839 baseline + 2 added = 841.** The rename in section 6
-is net zero, and the two added are section 5's. Corroborated mechanically rather
-than asserted: counting `#[test]` and `#[tokio::test]` attributes across
-`os/pkgs/mosd` gives 821 at the merge's incoming tip and 823 here, a difference
-of exactly two. Measured per crate before the merge as well: `-p apid` reported
-353 tests at this branch's base and 355 after the two were added.
+**Test-count arithmetic: 843 baseline + 2 added = 845.** The rename in section 6
+is net zero. Corroborated mechanically rather than asserted: counting `#[test]`
+and `#[tokio::test]` attributes across `os/pkgs/mosd` gives 824 at `d87abb4` and
+826 here, a difference of exactly two.
+
+**Both ratchet checks on this record read zero.** `docs/verify-citations.sh`
+enforces a per-document ceiling on unquoted citations, and a document with no
+row in `docs/verify-citations-unquoted-baseline.txt` has a ceiling of **0**. This
+record has no row and needs none: its census line reads
+*"no quote, by document: docs/task/RFCT-248.md 0"*, and it carries **no bare
+`:NNN` form at all**, which matters because the gate skips that form entirely —
+a bare citation is not failed, not counted and not checked, so a document can be
+green and wholly unverified. The ceiling was hit twice while this record was
+drafted and both times the citation was **armed**, never ceilinged: once for
+five citations that named a file without quoting it, once for a quote separated
+from its citation by three interposed words. A raised ceiling is an override
+with nothing behind it; an armed citation gets its fragment checked against the
+cited line, so the next rename is caught.
 
 **oasdiff.** The binary is 1.29.1 at
 `541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`, the base is
-`main`'s tip re-read at the moment of the run (`7566210`), and the severity file
+`main`'s tip re-read at the moment of the run (`498f0e4`), and the severity file
 raises `response-optional-property-removed` and
 `response-non-success-status-removed` to `err`.
 
-The design constraint predicted *no change at all* to the document, and before
-the merge that is exactly what was measured: `No changes detected`. After it,
-the two specs differ — and the difference is **not this branch's**. It is two
-`description` strings on the network routes, from the milestones the merge
-brought in:
-
-    -"...a key is not an interface name, or a relational rule refuses it..."
-    +"...a key is not an interface name, an entry declares a static address that is not IPv4 CIDR notation..."
-
-`git diff` between the merge's incoming tip and this tip touches
-`os/pkgs/mosd/apid/openapi.json` not at all, which is the measurement that
-attributes the delta. The underlying prediction holds and is now measured
-rather than asserted: undeclared paths appear in no OpenAPI document, so a
-change to what the gate does with them cannot move the schema.
+The design constraint predicted **no change at all** to the document, and before
+the merges that is exactly what was measured: `No changes detected`. The specs
+differ now, and the difference is not this branch's: `git diff` between the
+sync branch's tip and this tip touches `os/pkgs/mosd/apid/openapi.json` not at
+all. The prediction itself is measured and holds — undeclared paths appear in no
+OpenAPI document, so a change to what the gate does with them cannot move the
+schema.
