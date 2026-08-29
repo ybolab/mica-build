@@ -219,7 +219,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-220 PLAN-011 bus v2 audited milestone by milestone, and its closeout recommended**](RFCT-220.md) `P1`
 - [x] [**RFCT-221 PLAN-012 container-engine audit: milestone verdicts and closeout recommendation**](RFCT-221.md) `P1`
 - [x] [**RFCT-222 PLAN-013 audited: the x64/QEMU vehicle measured against the tree it asked for**](RFCT-222.md) `P1`
-- [ ] [**RFCT-223 A scheduled upstream-tag check for the container engine's six pins**](RFCT-223.md) `P2`
+- [x] [**RFCT-223 A scheduled upstream-tag check for the container engine's six pins**](RFCT-223.md) `P2`
 - [ ] [**RFCT-224 Decide and settle container.enabled's bus writability, for the class and not one key**](RFCT-224.md) `P2`
 - [x] [**RFCT-225 The image-freshness guard did not survive the verifier port, and exists in no module today**](RFCT-225.md) `P2`
 - [x] [**RFCT-226 The /var/log package-manager residue, now load-bearing for the stage-order gate**](RFCT-226.md) `P2`
@@ -230,6 +230,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-233 PLAN-025 M4: the harness facts, committed as one citation-gated page**](RFCT-233.md) `P2`
 - [x] [**RFCT-234 PLAN-025 M2b: the arm64 builder family, cx3576 rauc, and the RFCT-206 section 7 pass**](RFCT-234.md) `P1`
 - [x] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
+- [ ] [**RFCT-260 The AP reconciler's third copy of the WPA byte rule, and a refusal that names the secret's length**](RFCT-260.md) `P2`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
 - [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
 - [x] [**RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404**](RFCT-242.md) `P1`

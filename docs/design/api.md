@@ -3832,7 +3832,7 @@ reusable here**, and the reasons are different, which is why the answer has to
 come from reading them rather than from their names.
 
 **RAUC's CMS bundle signature.** Bundles are signed at build time by
-`rauc bundle` with the material `make os-devkeys` generates (`Makefile:53-54` →
+`rauc bundle` with the material `make os-devkeys` generates (`Makefile:56-57` →
 `os/pkgs/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
 (`os/pkgs/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
