@@ -285,6 +285,12 @@ memory of a report.
    negative as a measurement of its own, so the record no longer depends on
    that line surviving verbatim. **Folding them is a code change and was not
    made here.**
+   *(2026-08-28, appended: the "re-states that negative" premise above was
+   measured false by PLAN-026 M6 — section 1.2 documents the shipped route
+   table and restates no historical negative, and the fold breaks two armed
+   quotes in RFCT-210 and RFCT-240 with no line to re-anchor to. Ruled not to
+   fold; see RFCT-252 for the measurement and the unblock condition. The
+   original text above is left as written.)*
 
 ## 7. Out of scope, untouched
 
