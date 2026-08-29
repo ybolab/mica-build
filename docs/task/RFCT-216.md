@@ -277,6 +277,14 @@ content-checked, not all of them. This is a cheaper loss than the all-armed
 shape found elsewhere in this workstream, and it is recorded that way rather
 than assumed to match.
 
+**The near-miss line moved too, and it is fully accounted for.** The run's
+near-miss count — in-scope citations with no armed quote but a quoted span
+within three words — was 352 at `c5f7e96` and stayed 352 across this task's
+code commit and its §1.6 rewrite, which is the evidence that neither unarmed
+anything. It moves only because `docs/task/RFCT-210.md` carries 19 near-misses
+of its own and an exempted document contributes none. This task's own documents
+contribute zero: every citation in this file is armed and content-checked.
+
 **The floor move.** Both segments drop below their floors, so both floors move
 in this same commit, per `docs/verify-citations-baseline.txt`'s own update
 rule. The numbers are measured on this branch, not estimated:
