@@ -1,6 +1,6 @@
 # RFCT-258 PLAN-028 M3: the plan-index status assertion
 
-- **status**: completed — `docs/verify-index.sh` grew a fourth section asserting `docs/plan/index.md` against the 28 plan files in both directions; the index gate went 863/863 → 979/979 with ZERO index edits, because the corpus was already consistent under a mapping wider than the one PLAN-028 proposed; the self-test was RED at the base commit for an unrelated reason and was repaired first
+- **status**: completed — `docs/verify-index.sh` grew a fourth section asserting `docs/plan/index.md` against the 28 plan files in both directions; the index gate went 863/863 → 979/979 (983/983 re-measured on the merged tree) with ZERO index edits, because the corpus was already consistent under a mapping wider than the one PLAN-028 proposed; the self-test was RED at the base commit for an unrelated reason and was repaired first
 - **priority**: P1
 - **owner**: bkd/z2jshmso
 - **createdAt**: 2026-08-28
@@ -260,11 +260,20 @@ should not add more of the very citations it is describing as fragile.
 
 ## 10. Gates
 
-| Gate | At c5f7e96 (base) | At this HEAD |
-|---|---|---|
-| `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` |
-| `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` |
-| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, 0 cases | `RESULT: PASS (18/18 cases)` |
+| Gate | At c5f7e96 (base) | At ced1658 (this milestone) | At 6cccf5c (merged with bkd/tcdocsrm) |
+|---|---|---|---|
+| `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` | `983/983 PASS` |
+| `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` | `2173/2173 PASS` |
+| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, 0 cases | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
+
+The last column is the re-measurement on the merged tree, not arithmetic over
+the two sides. The merge brought M4's `docs/task/RFCT-259.md` in, and a new
+task record costs the task section the same four assertions: 979 + 4 = 983.
+The merge's one conflict was in `docs/task/index.md` — the two-row append
+conflict, RFCT-258's row against RFCT-259's — resolved by keeping both, which
+is correct here because they are different records. Resolving it by keeping
+both sides of the *same* row is the mistake the "once each" assertion exists
+to catch.
 
 The index gate rises by 116, in two parts. **+112** is the new section:
 28 plans × 4 assertions (forward membership, reverse membership, once-each,
@@ -277,8 +286,9 @@ The self-test rises from 11 cases (its count once repaired, section 7) to 18.
 
 The citation gate rises by 3: one new citation in `docs/design/build-harness.md`
 for the fourth pairing, and two in this record. **No baseline was touched.**
-The census segments measured on this branch are `docs/` 306 (floor 303),
-`.github/` 2 (floor 2), `os/` 1847 (floor 1847), `test/` 18 (floor 18) — the
+The census segments re-measured on the merged tree 6cccf5c are `docs/` 306
+(floor 303), `.github/` 2 (floor 2), `os/` 1847 (floor 1847), `test/` 18
+(floor 18), 0 census failures — the
 last three sit exactly on their floors and this milestone moved none of them,
 because it removes no citation from scope. `docs/` gains 3 of headroom; the
 floor is deliberately left at 303 for re-measurement on the merged tree rather
