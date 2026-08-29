@@ -155,8 +155,14 @@ to 837.
 | `main` at `a06e9dd` | 418 | 18 | 400 | 836 |
 | this branch | 419 | 18 | 400 | 837 |
 
-`cargo nextest` reports `837 tests run: 837 passed`, which agrees with the
-attribute count.
+`cargo nextest` reported `837 tests run: 837 passed` on this branch before its
+last merge, which agrees with the attribute count. The gate row in section 8
+reads `839` because the merged tree also carries M3's two, which are RFCT-249's
+and not this task's.
+
+The near-miss counter is `354` both here and at `bkd/5q6am5rw`'s own tip, so
+this task's 471-token class A pass and the tests.rs pass below moved it by
+nothing: no citation was left with a quote sitting near it but not against it.
 
 ## 6. The published spec
 
@@ -227,9 +233,9 @@ passes. None was measured in the shared checkout.
 
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `2207/2207 PASS`, RC=0 |
-| `bash docs/verify-index.sh` | `875/875 PASS`, RC=0 |
-| `bash hack/check.sh` in the amd64 builder, `dbus` installed first | `Summary [ 108.263s] 837 tests run: 837 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
+| `bash docs/verify-citations.sh` | `2221/2221 PASS`, RC=0, near-miss `354` |
+| `bash docs/verify-index.sh` | `879/879 PASS`, RC=0 |
+| `bash hack/check.sh` in the amd64 builder, `dbus` installed first | `Summary [ 175.980s] 839 tests run: 839 passed (1 slow), 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
 | `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `7566210` | `No breaking changes to report, but the specs are different.`, **RC=0** |
 
 `main`'s own tree at `a06e9dd` reads `2175/2175` and `867/867`, measured here
@@ -249,16 +255,40 @@ and folded into the fix commit, and the citation pass was redone from the
 pre-image afterwards so no citation was ever anchored against an unformatted
 tree.
 
-`bkd/5q6am5rw` was merged twice, at the start and again at the end, and both
-merges brought docs and no code — the test `docs/task/RFCT-215.md` section 5
-prescribes, run before each. The second merge conflicted on
-`docs/task/index.md` alone and was resolved the campaign's way, both row blocks
-kept and ascending. It also exposed two citations in the arriving
-`docs/task/RFCT-252.md` that point into `docs/task/RFCT-215.md` section 6 item
-6 — lines this task's own class B edit to item 1 had pushed down by five. They
-were re-anchored by the same mechanical method, from the incoming side as the
-pre-image, both range ends mapped independently and both destination lines
-byte-checked.
+`bkd/5q6am5rw` was merged three times, and the test `docs/task/RFCT-215.md`
+section 5 prescribes was run before each. The first two brought docs and no
+code; the second conflicted on `docs/task/index.md` alone, resolved the
+campaign's way with both row blocks kept and ascending, and exposed two
+citations in the arriving `docs/task/RFCT-252.md` that point into
+`docs/task/RFCT-215.md` section 6 item 6 — lines this task's own class B edit to
+item 1 had pushed down by five, re-anchored mechanically from the incoming side
+as the pre-image.
+
+**The third merge is the one the rule was written for.** It brought M3
+(`docs/task/RFCT-249.md`), which changes code, and both sides had re-anchored
+the same documents. Twelve citation hunks conflicted. Under the corrected rule —
+*the side holding content re-derivations wins, because they cannot be recovered
+mechanically; the side holding shifts loses, because they can* — every conflict
+resolved to this side: eleven of them were shift-against-shift, where neither
+number survives the merge anyway, and the twelfth was this task's class B
+re-derivation of the renamed test against M3's mechanical shift of the line it
+used to sit on.
+
+Then the shifts were recomputed, because resolving a conflict does not make the
+kept number right. The two sides moved disjoint files except one:
+`os/pkgs/mosd/apid/src/routes.rs` is this branch's alone and
+`os/pkgs/mosd/mosd-settings/src/model.rs`, `lib.rs` and
+`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs` are M3's alone, so citations
+into those are already correct on their own side. `os/pkgs/mosd/apid/src/tests.rs`
+is the file **both** inserted into, so after the merge no citation into it held
+on either side and every one was recomputed against the merged file. Provenance
+was read rather than assumed — a token that conflicted and was resolved here is
+anchored to this tree, one that arrived from M3 to M3's, decided from each
+side's own version of the citing document. Fifteen mapped from this side, one
+from M3's, eleven agreed either way, eleven were already correct; nothing was
+ambiguous and nothing was refused. Each mapping was accepted only when a
+seven-line window around the destination is byte-identical to the source, so a
+lone `}` cannot match by accident.
 
 oasdiff is the 1.29.1 release the workflow pins, checked against the pinned
 `sha256:541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533`
