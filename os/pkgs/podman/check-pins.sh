@@ -123,12 +123,13 @@ else
     echo "asking six upstreams for their releases"
     for row in "${COMPONENTS[@]}"; do
         IFS='|' read -r name _var repo _policy <<< "${row}"
-        auth=()
-        [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+        # Started non-empty on purpose: "${arr[@]}" on an empty array is an
+        # unbound-variable error under `set -u` in bash before 4.4.
+        headers=(-H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+        # A token only raises the rate limit; the release lists are public.
+        [ -z "${GITHUB_TOKEN:-}" ] || headers+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
         curl -fsSL --max-time 60 \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "${auth[@]}" \
+            "${headers[@]}" \
             "https://api.github.com/repos/${repo}/releases?per_page=100" \
             -o "${WORK}/${name}.json" \
             || { echo "error: could not read releases for ${repo}. The check did not run; this is not a pass." >&2; exit 2; }
