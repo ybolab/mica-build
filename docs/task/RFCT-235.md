@@ -179,12 +179,12 @@ had no target and is forbidden for a dated record besides:
 
 | | |
 | --- | --- |
-| forced by | the replacement of `os/pkgs/podman/Dockerfile:74`'s text |
+| forced by | the replacement of the `src` stage's FROM in `os/pkgs/podman/Dockerfile` -- line 74 before this change, a comment line after it |
 | files marked | `docs/task/RFCT-231.md` (line 230), `docs/task/RFCT-234.md` (line 352) |
 | instrument | the `<!-- dated-record: ... -->` marker, appended to each; no word of either record was edited |
 | citations exempted | **16**, all of them ARMED, content-checked anchors |
 | of which broken | **2** -- one prose citation of `Dockerfile:74` per file |
-| of which collateral | **14** still-valid citations, into `os/build-env/build.sh` (10), `os/rootfs/build-v2.sh` (2) and `os/tests/quadlet-doc-test.sh:83-85` (2) |
+| of which collateral | **14** still-valid citations, into `os/build-env/build.sh` (10), `os/rootfs/build-v2.sh` (2) and `os/tests/quadlet-doc-test.sh` (2) |
 | resolution-only anchors lost | **0** -- that counter is 914 before and 914 after |
 | floor moved | `os 1847 -> 1831` in `docs/verify-citations-baseline.txt` |
 | base commit for 1847 | `c5f7e96`, where the gate read 2170/2170 PASS |
@@ -211,6 +211,7 @@ for. Both sides pinned to a sha, never a branch name.
     FAIL docs/task/RFCT-231.md:230 quotes "FROM --platform=$BUILDPLATFORM
       ${MOS_BUILD_BASE} AS src", and that text is not at
       `os/pkgs/podman/Dockerfile:74`
+
     FAIL docs/task/RFCT-234.md:352 quotes "FROM --platform=$BUILDPLATFORM
       ${MOS_BUILD_BASE} AS src", and that text is not at
       `os/pkgs/podman/Dockerfile:74`
@@ -229,10 +230,10 @@ the marking.
   registration for its smoke run, `/proc/sys/fs/binfmt_misc/` is empty on this
   host, and no tagging or base-argument change reaches it. The booted cx3576
   smoke remains the obligation RFCT-206 section 7 records.
-- The seven arm64 binaries were BUILT, not RUN. This host builds arm64 and does
-  not execute it (`docs/design/build-harness.md:199`), so nothing here reports
-  a `podman info` under aarch64 the way `os/pkgs/podman/README.md` does for
-  amd64.
+- The seven arm64 binaries were BUILT, not RUN. This host's answer is
+  "build yes, execute no" (`docs/design/build-harness.md:199`), so nothing here
+  reports a `podman info` under aarch64 the way `os/pkgs/podman/README.md` does
+  for amd64.
 - The `docs/task/RFCT-221.md` anchors. That record is dated-marked, so six of
   its anchors into `os/pkgs/podman/` now point at content this task moved and
   no gate can see it. It was deliberately NOT re-anchored -- re-pointing a

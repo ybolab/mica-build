@@ -229,7 +229,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-232 PLAN-025 M3a: /state 404 and the two mosd.md dated notes**](RFCT-232.md) `P2`
 - [x] [**RFCT-233 PLAN-025 M4: the harness facts, committed as one citation-gated page**](RFCT-233.md) `P2`
 - [x] [**RFCT-234 PLAN-025 M2b: the arm64 builder family, cx3576 rauc, and the RFCT-206 section 7 pass**](RFCT-234.md) `P1`
-- [ ] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
+- [x] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
 - [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
 - [x] [**RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404**](RFCT-242.md) `P1`
