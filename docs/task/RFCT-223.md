@@ -64,8 +64,9 @@ there.
 
 The check never writes the file it reads. `versions.env` states the procedure
 itself — "change the tag, set its hash to the literal string `PENDING`, and run
-`make podman`" — and says of it that recording a hash "is an act rather than a
-copy from an upstream page nobody re-checked". A job that pasted the new tag in
+`make podman`" (`os/pkgs/podman/versions.env:16-17`) — and says of it that
+recording a hash "is an act rather than a copy from an upstream page nobody
+re-checked" (`os/pkgs/podman/versions.env:19-20`). A job that pasted the new tag in
 would be exactly that copy, so a red run prints the component, its pin, the
 newer tag and that procedure, and stops. Case 9 of the suite asserts the
 contract by bytes rather than by review: `sha256sum` of the real `versions.env`
@@ -83,7 +84,8 @@ nothing is not a pass.
 
 **podman's line.** Upstream ships v5.8.6 and v6.1.0 concurrently, and
 `versions.env` is explicit: "podman is pinned to the 5.x line, NOT the newest
-tag". The comparison is confined to the pinned major, read from the pin, so
+tag" (`os/pkgs/podman/versions.env:22`). The comparison is confined to the pinned
+major, read from the pin, so
 moving the pin to 6.x moves the check with it and needs no edit to the checker.
 The other line is printed as a note that cannot change the exit status. The
 suite asserts both halves: a correct 5.x pin is not called behind while v6.1.0
@@ -133,11 +135,13 @@ comparison gets backwards.
 - **The job does not use `runs-on: privileged`**, unlike every other job in that
   file, and the file's header — which cannot be edited without moving the line
   RFCT-221 cites — still says "Until a runner with this label is registered,
-  Gitea never schedules these jobs". The job's own comment states the exception
+  Gitea never schedules these jobs" (`.github/workflows/privileged.yml:39-40`).
+  The job's own comment states the exception
   at the top of the jobs list. The check needs outbound HTTPS and nothing else,
   and an alarm behind an unmatched label is an alarm that never rings.
 - **CVE tracking is not this.** The README calls the cost "Six upstreams to
-  track for CVEs, in three languages"; a tag check answers "has upstream
+  track for CVEs, in three languages" (`os/pkgs/podman/README.md:159`); a tag
+  check answers "has upstream
   released" and not "is the pinned release vulnerable". The second is a
   different feed and a different piece of work.
 - **`check.yml`'s closing summary was not extended** to list `make podman-pins`
