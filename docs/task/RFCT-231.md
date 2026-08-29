@@ -40,7 +40,7 @@ says why, and it is not an oversight.
 
 The pin read `BUILDER_ARGS=(--builder default)` with a refusal under it. What
 replaces it is the register `if [ -n "${BUILDX_BUILDER:-}" ]; then`
-(`os/rootfs/build-v2.sh:571`) already uses -- an explicitly named builder, with
+(`os/rootfs/build-v2.sh:576`) already uses -- an explicitly named builder, with
 `BUILDX_BUILDER` winning when a caller names one, because a caller who names a
 builder has made a decision:
 
@@ -218,7 +218,7 @@ context rather than as the daemon configuration it is.
 The task allowed leaving `os/pkgs/podman/build.sh` alone if measured not to be
 on the cx3576 image path. It is on it:
 `PODMAN_OUT="$REPO_ROOT/os/pkgs/podman/out-$MOS_ARCH"`
-(`os/rootfs/build-v2.sh:223`) stages
+(`os/rootfs/build-v2.sh:228`) stages
 `os/pkgs/podman/out-$MOS_ARCH` into the root the image is packed from, and that
 directory is produced by `os/pkgs/podman/build.sh` and by nothing else. It
 carried the identical pin and the identical refusal, and it now carries the
