@@ -301,14 +301,17 @@ Two scripts, both read-only, both needing nothing but bash and coreutils.
 
 `bash docs/verify-index.sh` asserts that the indexes agree with the tree **in
 both directions** — it is written to catch a rename, because
-"Asserts that the two document indexes agree with the tree, in BOTH"
+"Asserts that the three document indexes agree with the tree, in BOTH"
 (`docs/verify-index.sh:2`) directions is the half that a forward-only check
-omits. It covers three pairings:
+omits. It covers four pairings:
 `1. docs/design/*.md      <-> docs/README.md` (`docs/verify-index.sh:9`),
-the same for `docs/research/`, and
-`3. docs/task/RFCT-*.md   <-> docs/task/index.md` (`docs/verify-index.sh:11`).
-So a new design page needs its row in `docs/README.md` and a new task file needs
-its row in `docs/task/index.md`, in the same commit.
+the same for `docs/research/`,
+`3. docs/task/RFCT-*.md   <-> docs/task/index.md` (`docs/verify-index.sh:11`),
+and `4. docs/plan/PLAN-*.md   <-> docs/plan/index.md`
+(`docs/verify-index.sh:12`).
+So a new design page needs its row in `docs/README.md`, a new task file needs
+its row in `docs/task/index.md` and a new plan needs its row in
+`docs/plan/index.md`, in the same commit.
 
 `bash docs/verify-citations.sh` scans
 "docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:10`)

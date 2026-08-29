@@ -12,12 +12,12 @@ Each plan is a single line linking to its detail file. All detailed information 
 
 ### Status Markers
 
-| Marker | Meaning |
-|--------|---------|
-| `[ ]`  | Draft / Pending review |
-| `[-]`  | Approved / Implementing |
-| `[x]`  | Completed |
-| `[~]`  | Rejected / Abandoned |
+| Marker | Meaning | Plan status heads |
+|--------|---------|-------------------|
+| `[ ]`  | Draft / Pending review | `draft` |
+| `[-]`  | Approved / Implementing | `approved`, `implementing`, `in progress`, `partially implemented` |
+| `[x]`  | Completed | `completed`, `completed by supersession` |
+| `[~]`  | Rejected / Abandoned | `rejected` |
 
 ### Rules
 

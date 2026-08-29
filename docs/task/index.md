@@ -230,6 +230,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-233 PLAN-025 M4: the harness facts, committed as one citation-gated page**](RFCT-233.md) `P2`
 - [x] [**RFCT-234 PLAN-025 M2b: the arm64 builder family, cx3576 rauc, and the RFCT-206 section 7 pass**](RFCT-234.md) `P1`
 - [ ] [**RFCT-235 The podman base at two architectures in one build: MOS_BUILD_BASE_NATIVE**](RFCT-235.md) `P2`
+- [ ] [**RFCT-260 The AP reconciler's third copy of the WPA byte rule, and a refusal that names the secret's length**](RFCT-260.md) `P2`
 - [x] [**RFCT-240 PLAN-023 M4: the scalar settings writes and the redaction-sentinel refusal**](RFCT-240.md) `P1`
 - [x] [**RFCT-241 PLAN-023 M5: the SSH authorized-keys and WiFi-networks collections**](RFCT-241.md) `P1`
 - [x] [**RFCT-242 PLAN-023 M6: the network cluster typed, WireGuard peers, rotate-key 404**](RFCT-242.md) `P1`
@@ -238,5 +239,6 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-245 PLAN-023 M9: the cookie cutover on /api/v1/**](RFCT-245.md) `P1`
 - [x] [**RFCT-246 PLAN-023 M9 prerequisite: test/apid-api drives bearer end to end**](RFCT-246.md) `P1`
 - [x] [**RFCT-215 PLAN-023 closeout: api.md section 1 re-measured against the final surface**](RFCT-215.md) `P1`
+- [x] [**RFCT-258 PLAN-028 M3: the plan-index status assertion**](RFCT-258.md) `P1`
 - [x] [**RFCT-259 PLAN-028 M4: the status-outruns-pinned-phase class, bounded**](RFCT-259.md) `P2`
 - [-] [**RFCT-256 PLAN-028 M1: the no-slash citation form, resolved and its violations corrected**](RFCT-256.md) `P1`
