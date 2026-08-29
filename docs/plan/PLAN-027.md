@@ -1,6 +1,7 @@
 # PLAN-027 The filed-task batch: seven standing tasks claimed and settled
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-29 10:25
 - **createdAt**: 2026-08-28 19:45
 - **approvedAt**: 2026-08-28 19:45
 - **relatedTask**: claims RFCT-135, RFCT-216, RFCT-223, RFCT-224, RFCT-225, RFCT-226, RFCT-235; RFCT-253..255 reserved for discoveries
@@ -76,3 +77,24 @@ milestone's own HEAD — a filed measurement is not a measurement
   and whatever RFCT-135's re-measurement still implicates.
 - **Out**: PLAN-026 and PLAN-028 scopes, any new feature surface, wall 3
   of the cx3576 chain (hardware/binfmt), auto-bumping pins.
+
+## Close (2026-08-29)
+
+All seven claimed tasks settled and merged (bkd/9bbr6jl7, 57 commits). M1
+RFCT-135 closed by PLAN-022, proved by a reproduction that also fixed a test
+harness which could not have caught the regression. M2 RFCT-216 shipped root
+rotation with cross-signing, a distinct same-key annual refresh, and section 1.6
+rewritten from not-implemented to a runbook. M3 RFCT-223 wired an upstream-tag
+signal into the existing weekly schedule, read-only to versions.env and never an
+auto-bump. M4 RFCT-224 decided the class — container and mqtt stay read-only,
+the rule written into bus.md 11.6 — after measuring that WRITABLE_SUBTREES
+bounds the remote write surface rather than bus access. M5 RFCT-225 rebuilt the
+image-freshness guard board-correctly with sentinel drives. M6 RFCT-226 removed
+the package-manager residue and proved criterion 1 on a real build: capture
+before purge, the three log paths absent from the packed root, pkg-logs exported.
+M7 RFCT-235 built both base architectures in one build — seven aarch64 binaries,
+amd64 control first — taking down the first of the cx3576 walls. Filed onward:
+RFCT-253 (access.ssh remote writability vs the platform-switch class rule).
+Residues without an owner are listed in the milestone records, including the
+non-byte-reproducible root metadata and the unimplemented online-key replacement.
+
