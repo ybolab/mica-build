@@ -39,15 +39,15 @@ pub const ROOT_PATH: &str = "/";
 /// inside arrays the dot-path syntax cannot name.
 const SECRET_KEYS: [&str; 4] = ["password_hash", "passwordHash", "psk", "hash"];
 
-/// Settings subtrees a bus client may write, as dot-path prefixes: the
-/// platform-config surface, which is exactly what a reconciler applies to the
-/// running system.
-///
-/// A fixed list rather than the daemon's reconciler set, because a dry-run
-/// daemon carries no reconcilers at all and its tree must still report the
-/// writability a real one has. Everything else — `schema_version`, the
-/// credential metadata, provisioning bookkeeping, and the whole live-state
-/// tree — is read-only on the bus.
+/// Settings subtrees a bus client may write, as dot-path prefixes. NOT an
+/// access boundary: `SetSettings` writes any path without consulting it, and
+/// the bus policy grants that member to root alone. What this list bounds is
+/// `SetValue`, the one write member the MQTT bridge holds
+/// (`os/pkgs/mosd/dist/mos-mqttd.conf`) — so it is the REMOTE write surface.
+/// Hence the class rule for platform switches (`docs/design/bus.md` §11.6): a
+/// switch belongs here only if a broker client may flip it, which `container`
+/// and `mqtt` may not, nor `schema_version`, the credential metadata,
+/// provisioning or live state. A fixed list, because dry-run has no reconcilers.
 const WRITABLE_SUBTREES: [&str; 5] = [
     "hostname",
     "network",

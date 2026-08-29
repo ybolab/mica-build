@@ -297,7 +297,7 @@ exists.
 | the units (`network-and-ssh-units.sh`) | `os/rootfs/stages/20-install.Dockerfile:41` |
 
 **The purge is itself a contract that ssh survives.**
-`os/rootfs/scripts/package-manager-purge.sh:48` keeps, by name:
+`os/rootfs/scripts/package-manager-purge.sh:57` keeps, by name:
 
 ```
 for kept in bash sh ls cp mv rm sed awk grep find systemctl sshd ssh scp curl ip; do

@@ -125,16 +125,16 @@ Every MUST-KEEP class with an instance in these files is listed. Items marked
 
 | # | MUST-KEEP item | file | state |
 | --- | --- | --- | --- |
-| 1 | single-processor mksquashfs, and why no `-all-root` | `os/rootfs/stages/90-pack.Dockerfile:266-282` | reworded, quoted below |
-| 2 | `FILE_MTIME`/`@epoch` and the shared `SOURCE_DATE_EPOCH` | `os/rootfs/build-v2.sh:160-167` | reworded, quoted below |
-| 3 | verity UUID/salt pinning | `os/rootfs/stages/90-pack.Dockerfile:295-301` | **byte-identical** |
+| 1 | single-processor mksquashfs, and why no `-all-root` | `os/rootfs/stages/90-pack.Dockerfile:290-306` | reworded, quoted below |
+| 2 | `FILE_MTIME`/`@epoch` and the shared `SOURCE_DATE_EPOCH` | `os/rootfs/build-v2.sh:165-172` | reworded, quoted below |
+| 3 | verity UUID/salt pinning | `os/rootfs/stages/90-pack.Dockerfile:319-325` | **byte-identical** |
 | 4 | sgdisk silently relocates a non-2048-aligned start | `os/boards/cx3576/board.env:68-71` | reworded, quoted below |
 | 5 | mkimage falls back to the wall clock without `SOURCE_DATE_EPOCH` | `os/tests/handshake-test/harness.sh:94-100` | reworded, quoted below |
 | 6 | pipefail/SIGPIPE inversion under an early-exiting `grep -q` | `os/podman/build.sh:64-70` | reworded, quoted below |
 | 7 | "a hash inside a signed rootfs is a fleet-wide shared secret" | `os/rootfs/build-v2.sh:7-14` | reworded, quoted below |
-| 8 | the shadow chain's two distinct failure messages | `os/rootfs/stages/90-pack.Dockerfile:227-236` | reworded, quoted below |
-| 9 | `/etc/shadow` relocated onto STATE, `/etc/passwd` stays read-only | `os/rootfs/stages/90-pack.Dockerfile:201-216` | reworded (caps only) |
-| 10 | `dm-mod.waitfor=` is mandatory, not an optimisation | `os/rootfs/build-v2.sh:746-750` | reworded (caps only) |
+| 8 | the shadow chain's two distinct failure messages | `os/rootfs/stages/90-pack.Dockerfile:251-260` | reworded, quoted below |
+| 9 | `/etc/shadow` relocated onto STATE, `/etc/passwd` stays read-only | `os/rootfs/stages/90-pack.Dockerfile:225-240` | reworded (caps only) |
+| 10 | `dm-mod.waitfor=` is mandatory, not an optimisation | `os/rootfs/build-v2.sh:751-755` | reworded (caps only) |
 | 11 | RAUC refuses `boot-attempts` with `bootloader=grub` | `os/update/rauc/system.conf.in:37-42`, `os/boards/x64/board.env:204-208` | reworded (caps only) |
 | 12 | the U-Boot radix trap (`setexpr` hex vs `test -gt` decimal) | `os/update/rauc/system.conf.in:50-60` | reworded (rewrap only) |
 | 13 | systemd-repart TRIMs every unpartitioned region | `os/boards/cx3576/board.env:44-52`, `os/tests/repart-loader-test.sh:4-10` | reworded (caps only) |

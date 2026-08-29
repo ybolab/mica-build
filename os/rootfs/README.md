@@ -507,15 +507,24 @@ pairing the differing set is the same six of 9,241 entries:
 | Entry | Why it moves |
 |---|---|
 | `/boot/initrd.img-*` | `update-initramfs` does not compress reproducibly. The 961 files *inside* are identical between runs; only the container's bytes differ (three runs gave 37190070, 37189886 and 37189690 bytes) |
-| `/usr/share/factory/var/log/dpkg.log` | records the wall-clock time of each of its 694 operations. Strip the timestamps and two runs are byte-identical: same operations, same order |
-| `/usr/share/factory/var/log/apt/history.log`, `.../term.log` | same, `Start-Date`/`End-Date` |
-| `/usr/share/factory/var/log/alternatives.log` | same |
 | `/usr/share/factory/var/cache/ldconfig/aux-cache` | build-time cache |
 
-They survive because the package-manager purge takes `/var/lib/dpkg` and
-`/var/lib/apt` but not `/var/log`, and the pack stage then moves `/var` to
-`/usr/share/factory/var` whole. Removing them would be an image content
-change.
+Four further entries were in that set until RFCT-226 —
+`/usr/share/factory/var/log/dpkg.log`, `apt/history.log`, `apt/term.log` and
+`alternatives.log`, each differing only by a wall-clock stamp. They survived
+because the package-manager purge took `/var/lib/dpkg` and `/var/lib/apt` but
+not `/var/log`, and the pack stage then moved `/var` to
+`/usr/share/factory/var` whole. They are now removed by the purge, so the
+control set is **two of 9,241 entries rather than six**, and the seventh
+outside-the-tree entry below — `apt/eipp.log.xz`, which lives under
+`/var/log/apt` — cannot arrive at all. A control that admits fewer differences
+admits fewer real ones with them, so this is a strictly tighter comparison than
+the one it replaces.
+
+Removing them from the *image* is what RFCT-226 did; removing them from the
+*build* would have been the mistake, because `dpkg.log` is the instrument two
+bullets down. `90-pack`'s `closed` stage captures the three log paths before
+the purge and the driver exports them to `_out/<board>/pkg-logs/`.
 
 **What this means for a byte-identity gate.** Changing the build necessarily
 invalidates the layer cache, so "byte-identical before and after" cannot be
@@ -579,25 +588,34 @@ there is one.
   the other's failure. Drive both from the failing side before believing them:
   one mode bit, one gid and one renamed path each register, and an unmutated
   pair is 0.
-- **Check the apt order directly.** `dpkg.log` with its timestamps stripped is
+- **Check the apt order directly**, from `_out/<board>/pkg-logs/` on each side
+  rather than from the extracted root. `dpkg.log` with its timestamps stripped is
   byte-identical over all 694 operations while the ordering the feature stages
   are arranged to preserve is intact — the `apt` transactions run radios,
   containers, `grub-editenv`, kernel. `alternatives.log` and `apt/history.log`
   are identical once `update-alternatives`' own timestamp and
-  `Start-Date`/`End-Date` are removed.
+  `Start-Date`/`End-Date` are removed. These are the same bytes the packed root
+  used to carry: `stages/90-pack` copies them out of `/var/log` before the purge
+  and the purge refuses to run if that copy is missing, so the check cannot be
+  silently lost to a later cleanup. Nothing in this repository runs this
+  comparison automatically — it is an instrument a person drives across two
+  builds, and there is no green run to inherit.
 - **Expect the host-key echo in `apt/term.log`.** The RSA/ECDSA/ED25519
   fingerprints `openssh-server`'s postinst prints as it generates them differ on
   every build, three per side, and they appear in the control pairing as well.
   The keys themselves are removed by `stages/10-base` and are not in the image.
-- **A seventh control entry can arrive from outside the tree.**
-  `/usr/share/factory/var/log/apt/eipp.log.xz` is apt's dump of the problem it
-  hands its solver: 1,490 lines, of which 12 differ by `APT-ID:` and nothing
-  else, by a constant offset, when `deb.debian.org`'s index gains records
+- **A seventh control entry could once arrive from outside the tree**, and
+  since RFCT-226 removed `/var/log/apt` from the packed root it no longer can.
+  `/usr/share/factory/var/log/apt/eipp.log.xz` was apt's dump of the problem it
+  handed its solver: 1,490 lines, of which 12 differed by `APT-ID:` and nothing
+  else, by a constant offset, when `deb.debian.org`'s index gained records
   between the two builds. `APT-ID` indexes apt's in-memory package cache, which
   spans every package the lists offer and not just the ones installed, so it
-  says nothing about what is in the image — and `dpkg.log` proves that half
-  directly. It belongs to the day rather than to the change: a second cold build
-  of the unmodified tree on the same side of the archive move gives the six.
+  said nothing about what is in the image — and `dpkg.log` proves that half
+  directly. It belonged to the day rather than to the change: a second cold
+  build of the unmodified tree on the same side of the archive move gave the
+  six. It is recorded because the `pkg-logs/` export still carries it, so it is
+  a difference the log comparison can still see even though the image cannot.
 - **Account-family entries mean an account moved.** `/etc/passwd`, `/etc/group`,
   `/etc/gshadow`, `/usr/share/factory/etc/shadow` and the four `-` backups move
   together when a `RUN` that creates an account crosses another one. They are

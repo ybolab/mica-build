@@ -349,7 +349,7 @@ domain another approved plan already owns.
   "qemu-run.sh ported into test/apid-api's TS harness"
   (`docs/plan/PLAN-025.md:34`).
 - `os/rootfs/build-v2.sh` still deciding the architecture in a local
-  `case "$MOS_BOARD" in` (`os/rootfs/build-v2.sh:47`) although both boards now
+  `case "$MOS_BOARD" in` (`os/rootfs/build-v2.sh:52`) although both boards now
   declare it — `MOS_ARCH=amd64` (`os/boards/x64/board.env:273`) and
   `MOS_ARCH=arm64` (`os/boards/cx3576/board.env:398`). This is M1.1's last
   bullet, unfinished — **route to PLAN-025**.

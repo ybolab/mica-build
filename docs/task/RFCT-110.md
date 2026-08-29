@@ -194,4 +194,22 @@ than kept able to refuse. `os/verify/HARNESS.md` records every defect the
 deletion froze, marked SHIPS or GONE — including two that were expected to leave
 with the file and did not, because their reproductions live in the port.
 
+> **Amended 2026-08-28, by RFCT-225.** The parity gate this record reports as
+> green could not have carried one of the oracle's guards, and did not: the
+> image-**freshness** check. It was never a check. It lived in
+> `os/verify-image-v2.sh`'s prologue, printed `error:` on stderr and exited 1
+> before the first conclusion, and `parseShellRun` reads only `PASS:`/`FAIL:`/
+> `SKIP:` lines and the `RESULT:` line off the oracle's **stdout**. So it could
+> not become a row, could not diverge, and could not be counted `unclaimed` —
+> and clause 1's `0 unclaimed` is silent about it for that reason rather than
+> because it was ported. It was live during every parity run all the same
+> (`parity-cli.ts` set `MOS_BOARD` and left `MOS_VERIFY_ALLOW_STALE` unset), so
+> it was a **precondition of the comparison, not a member of it**. Nothing here
+> is retracted: clause 1 is a claim about conclusions and it is true of them.
+> What is corrected is the reading that "0 unclaimed" covered everything the
+> oracle did. The guard is now `image-fresher-than-build-inputs` in
+> `os/verify/src/checks-freshness.ts`; the finding and the rebuild are
+> `docs/task/RFCT-225.md`, and `os/verify/HARNESS.md` §12 carries it for the
+> next reader.
+
 <!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

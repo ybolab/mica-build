@@ -5,11 +5,12 @@
 
 # Four stages in one file:
 #   closed        FROM the previous chain tag, on the target platform. The last
-#     three things done to the device root: take the package inventory, remove
-#     package management, write the build report. They are here rather than in
-#     10-base because they are ordered last by construction -- dpkg-query has
-#     to see every package any feature or board stage installed, and the purge
-#     has to be the last step that needs dpkg.
+#     four things done to the device root: take the package inventory, capture
+#     the package-manager logs, remove package management, write the build
+#     report. They are here rather than in 10-base because they are ordered
+#     last by construction -- dpkg-query has to see every package any feature
+#     or board stage installed, and the purge has to be the last step that
+#     needs dpkg.
 #   pack          FROM bookworm, on the build platform. Packing runs mksquashfs
 #     and veritysetup over a tree and never executes anything from it, so it
 #     does not want emulation.
@@ -41,7 +42,7 @@
 ARG MOS_STAGE_PREV
 ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
-# Close the device root: inventory, purge, report.
+# Close the device root: inventory, log capture, purge, report.
 FROM ${MOS_STAGE_PREV} AS closed
 
 # Package inventory. Split from the size measurement below because the package
@@ -59,6 +60,29 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #
 # /rootfs-report.rauc is written where rauc is INSTALLED, further up, from the
 # version os/pkgs/rauc/ pinned; there is no rauc package to query.
+
+# The package-manager logs, taken out of the tree before the purge below
+# removes them. They are not image content and never were -- the packed root
+# ships them only because /var was moved wholesale to /usr/share/factory/var --
+# but one of them is EVIDENCE, and that is why this step exists rather than a
+# longer `rm -rf` list.
+#
+# `dpkg.log` records all 694 apt operations in the order they happened. Strip
+# its timestamps and two builds are byte-identical, which is how the stage
+# arrangement is checked: `../README.md` under "Running the gate", "Check the
+# apt order directly", and `README.md` on why 30-feature-radios runs ahead of
+# 31-feature-containers. That check compares two builds, so it cannot run
+# inside one, and it needs the bytes to survive somewhere a human can reach
+# them on both sides.
+#
+# Here rather than in the image: the tree surgery in `pack` moves this to
+# /out/pkg-logs and the `artifact` stage exports it to _out/<board>/pkg-logs/,
+# the same lifecycle /rootfs-report.txt already has -- produced in the root,
+# moved out of it, never shipped. The comparison reads exactly the same bytes
+# it read before; only where it picks them up changed. The purge refuses to run
+# if this step did not, so the two cannot come apart.
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/package-manager-logs-capture.sh
 
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and
@@ -335,6 +359,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 
 FROM scratch AS artifact
 COPY --from=pack /out/factory-var/ /factory-var/
+COPY --from=pack /out/pkg-logs/ /pkg-logs/
 COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
 COPY --from=pack /out/rootfs-report-v2.txt /
