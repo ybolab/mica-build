@@ -27,7 +27,7 @@ bearer **or** cookie.
 
 | Dot-path | Body | Success |
 |---|---|---|
-| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3497`) | `204` |
+| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3461`) | `204` |
 | `access.ssh.enabled` | `true` or `false` | `204` |
 | `container.enabled` | `true` or `false` | `204` |
 | `mqtt.enabled` | `true` or `false` | `204` |
@@ -45,7 +45,7 @@ construction.
 
 **The hostname is not trimmed, and the form path trims.** `hostname_submit`
 trims -- `let hostname = form.hostname.trim();`
-(`os/pkgs/mosd/apid/src/routes.rs:5947`) -- because a browser sends whatever
+(`os/pkgs/mosd/apid/src/routes.rs:5911`) -- because a browser sends whatever
 was typed into a text input; a client that built a JSON string
 chose its bytes, and writing something other than what it sent is the worse
 answer. `" mos "` is a 422 here and a successful `mos` there. Recorded as a
@@ -57,7 +57,7 @@ for anything under `access`: *"the whole tree, `access` itself, or anything
 under it"* (`os/pkgs/mosd/apid/src/access_cache.rs:35-37`). That is what the
 `access.ssh` form path already relies on, whose whole write is
 `.set_settings("access.ssh.enabled", &Value::Bool(enabled))`
-(`os/pkgs/mosd/apid/src/routes.rs:6253`). The token routes invalidate by
+(`os/pkgs/mosd/apid/src/routes.rs:6217`). The token routes invalidate by
 hand because a revocation has to bite on the very next request; nothing this
 route writes is a credential.
 
@@ -97,7 +97,7 @@ asserts the admin password still logs in.
 **422**, because `docs/design/api.md` section 2.2 states it:
 *"a `PUT` whose body contains `"<redacted>"` is rejected at 422 rather than
 written, because writing the sentinel would silently destroy the credential"*
-(`docs/design/api.md:1497-1500`).
+(`docs/design/api.md:1475-1478`).
 
 **`validation_failed`**, from the existing set rather than a new token.
 Section 2.4's `code` is an open set whose contract is that an unrecognised
@@ -253,7 +253,7 @@ was restated; see section 7.
    import at all.
 5. `docs/design/api.md` section 2.3's *"There is no
    `POST` and no `PUT` anywhere under `/api`"*
-   (`docs/design/api.md:1562-1563`). The `PUT` half is now false. Section 2.3
+   (`docs/design/api.md:1540-1541`). The `PUT` half is now false. Section 2.3
    is the M1 design's own input and its whole table is a dated measurement this
    campaign supersedes milestone by milestone; correcting one clause of it here
    would leave the twenty rows around it saying the opposite.

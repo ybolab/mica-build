@@ -24,21 +24,21 @@ laid. Four stub lines consumed, verified at merge.
 
 | section | line | subject |
 | --- | --- | --- |
-| 7.1 | `docs/design/api.md:3797` | The channels that actually exist — **[implemented]** |
-| 7.2 | `:3468` | The honest baseline: anyone with SSH is already root — **[implemented]** |
-| 7.3 | `:3509` | The signing machinery this project already has, having read it — **[implemented]** |
-| 7.4 | `:3566` | Recommendation |
-| 8.1 | `:2753` | What happens to today's server-rendered pages |
-| 8.2 | `:2838` | Six phases |
-| 8.3 | `:3226` | What is deliberately not phased |
-| 9 | `:3250` | Eleven foreclosures |
-| 10.3 | `:3639` | Fourteen routed findings |
+| 7.1 | `docs/design/api.md:3765` | The channels that actually exist — **[implemented]** |
+| 7.2 | `:3436` | The honest baseline: anyone with SSH is already root — **[implemented]** |
+| 7.3 | `:3477` | The signing machinery this project already has, having read it — **[implemented]** |
+| 7.4 | `:3534` | Recommendation |
+| 8.1 | `:2731` | What happens to today's server-rendered pages |
+| 8.2 | `:2806` | Six phases |
+| 8.3 | `:3194` | What is deliberately not phased |
+| 9 | `:3218` | Eleven foreclosures |
+| 10.3 | `:3607` | Fourteen routed findings |
 
 ## Decisions
 
 **Do not sign UI bundles in phase 1 or phase 5.** The recommendation runs
 against the instinct, so it is argued as three separately checkable claims
-(`docs/design/api.md:3931-3954`):
+(`docs/design/api.md:3899-3922`):
 
 1. **A signature and the upload credential authorise the same blast radius.** A
    caller holding a token can already power the appliance off, flip

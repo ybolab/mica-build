@@ -54,14 +54,14 @@ Re-measured at this HEAD rather than relayed. Four facts, and together they are
 the whole argument:
 
 1. **The rules are relational.** `validate_entries`
-   (`os/pkgs/mosd/apid/src/routes.rs:3763-3803`) enforces four: a VLAN's parent
+   (`os/pkgs/mosd/apid/src/routes.rs:3727-3767`) enforces four: a VLAN's parent
    must name a declared entry, a bridge port must name a declared entry, a
    bridge port must carry no addressing of its own, and no port may be claimed
    by two bridges. Its own comment says why it must run over the tree and not
    the entry — *"every rule here is about two entries at once"*
-   (`os/pkgs/mosd/apid/src/routes.rs:3759-3762`). The pane already runs it over
+   (`os/pkgs/mosd/apid/src/routes.rs:3723-3726`). The pane already runs it over
    *"The candidate tree, not the one entry"*
-   (`os/pkgs/mosd/apid/src/routes.rs:5574-5580`).
+   (`os/pkgs/mosd/apid/src/routes.rs:5538-5544`).
 2. **mosd's own copy is in the reconciler**, `validate_network`
    (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-499`), which is the
    boundary for a settings file anything with STATE write access can edit.
@@ -185,13 +185,13 @@ Run alone at the commit that introduced it, before any other M6 code existed:
 
 Every step of the chain the design named is therefore real: `stored_peers`
 answers an empty list rather than an error for an unknown interface, by
-`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5352-5359`);
+`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5316-5323`);
 `write_peers` writes straight to the peer list's own dot-path,
 `.set_settings(&peers_settings_path(iface), &value)`
-(`os/pkgs/mosd/apid/src/routes.rs:5665-5668`); `validate_peers` never looks at
+(`os/pkgs/mosd/apid/src/routes.rs:5629-5632`); `validate_peers` never looks at
 the interface, only at
 `for (index, peer) in peers.iter().enumerate()`
-(`os/pkgs/mosd/apid/src/routes.rs:3726-3749`); and the setter creates them by
+(`os/pkgs/mosd/apid/src/routes.rs:3690-3713`); and the setter creates them by
 documented contract — *"Missing intermediate map entries are created"*
 (`os/pkgs/mosd/mosd-settings/src/model.rs:710-712`).
 

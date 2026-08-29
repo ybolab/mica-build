@@ -70,7 +70,7 @@ Fixes 1-4 landed as specified:
 - **5b — WITHDRAWN, knob left in place.** The `SYSTEM_CONF_IN` knob is dead
   as claimed (no caller sets it anywhere in the tree), but deleting its six
   lines shifts `render-config.sh`'s interior up by five, and `rootfs.0`
-  (`docs/design/api.md:3807`, since renumbered from `:3405`) is quoted there
+  (`docs/design/api.md:3775`, since renumbered from `:3373`) is quoted there
   against `render-config.sh:239` — measured: `docs/verify-citations.sh` goes
   1 FAILED / 901 passed under the deletion. `api.md` is outside this task's
   file scope, so the deletion cannot ride with the repoint it requires
@@ -79,7 +79,7 @@ Fixes 1-4 landed as specified:
   citation in the same commit; the only other line-numbered citation into
   the file, `:10-11`, sits above the knob and is unaffected.
 - **5c — plan claim false: test-used.** `verify_password` in `identity.rs`
-  is called by tests at `:396`, `:452`, `:653`, `:659`, `:660`, exactly as
+  is called by tests at `:396`, `:452`, `:631`, `:637`, `:638`, exactly as
   its own doc comment records. Not dead; left unchanged.
 
 ### Check evidence
