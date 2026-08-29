@@ -6456,20 +6456,27 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // The empty spelling is not this route -- measured, and not assumed from
     // the rotate action, whose empty `{iface}` segment is interior rather than
     // trailing and IS served. `/api/v1/tokens/` reaches the reserved subtree's
-    // own not-found handler, so `token_id` must not release it to the gate: a
-    // path the gate released to a route that does not exist would answer a 404
-    // where an unauthenticated caller is supposed to be redirected.
+    // own not-found handler. That measurement carried a consequence until
+    // PLAN-026 M2 -- `token_id` had to refuse this spelling, or the gate would
+    // release an unauthenticated caller to a 404 where a redirect was owed --
+    // and the consequence is gone now that the gate releases the whole subtree
+    // either way. What is left is the measurement of which handler answers,
+    // and this arm's answer is unchanged by M2 in status, code and body.
     let cookie = login(&router, "hunter2secret").await;
     let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 
-    // And the bearer arm of the same path, which was already asserted here and
-    // is left exactly as it was: a bearer does not satisfy the gate, so a
-    // bearer-only client asking for an undeclared path under /api is redirected.
+    // And the bearer arm of the same path answers the same thing, because the
+    // gate releases the whole reserved subtree and stops there: the credential
+    // is never read, so it cannot decide the medium. This arm asserted the 303
+    // to `/login` until PLAN-026 M2 (`docs/task/RFCT-248.md`) closed that
+    // asymmetry; `an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential`
+    // is the general statement, and this is the one path that carried the old
+    // answer.
     let response = bearer(&router, "DELETE", "/api/v1/tokens/", &wires[0]).await;
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&response), "/login");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
 
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
