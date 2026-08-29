@@ -202,5 +202,3 @@ Touched: `mosd/apid/src/bundle.rs` (new), `mosd/apid/src/main.rs` (one line),
 `tests.rs`, `config.rs`, `session.rs`, `tls.rs`, `auth.rs`, `bus_client.rs`,
 `settings_api.rs`, `tests/e2e.rs`, anything under `os/`, `docs/design/api.md`,
 `docs/README.md`. No route was added and no dependency was added.
-
-<!-- dated-record: a completed record whose line citations are discussed as line numbers that go stale, not as claims about today's tree; exempt from docs/verify-citations.sh (RFCT-257) -->

@@ -297,37 +297,104 @@ implementing pass, so that it lands beside the rule that reads it.
 
 ## 5. The dated-record decisions
 
-The marker is not free and the trade is stated on both sides for every
-document. A `dated-record` marker exempts the **whole** document from both
-checks and drops it out of the unquoted ratchet — it protects the frozen bare
-tokens and simultaneously stops checking every full citation the document
-carries. Each decision below is made on its own merits, and where the trade is
-wrong the document is left alone and its bare tokens become residue.
+All counts in this section are measured at this branch's merge base
+**c5f7e96**, in this worktree. State the base with the number: floors are
+moving on several branches this round and a floor with no stated base is
+unreadable next month.
 
-### 5.1 Marked
+### 5.1 The rule this section follows
 
-Five documents, all `completed` tasks whose bare tokens are the record of a
-measurement rather than a claim about today's tree. Total coverage cost: **10
-in-scope citations stop being checked**.
+**Lazy marking.** Mark exactly those frozen audits that would otherwise go RED
+under the gate as it will exist *after* M1 and M2 land — where M1's ambiguity
+error or M2's newly-armed inheritance turns a stale-by-design citation into a
+failure — in the same commit as, or ahead of, the rule change that forces it.
+Defer every marker not forced that way, and leave still-valid citations under
+live coverage until a real change breaks them.
 
-| document | costs | protects | why |
-|---|---|---|---|
-| `docs/task/RFCT-058.md` | 2 | 4 B, 1 A, 1 D | Its table measures a 12-line pre-image through `git show 637295e^`. The stanza ranges are what the file held then; the file has since been replaced. |
-| `docs/task/RFCT-064.md` | 3 | 7 E | A completed deliverable index into api.md sections at completion. Already stale: its naming row `docs/design/api.md:655` now points at TLS prose, so one of the three it costs is a false green today. |
-| `docs/task/RFCT-066.md` | 3 | 8 E, 3 A | The same deliverable-index shape. Already stale: it places section 7.2 three hundred lines before section 7.1. |
-| `docs/task/RFCT-071.md` | **0** | 4 B, 1 A | Holds no in-scope citation at all, so the marker costs nothing. Its bare tokens sit in prose that is explicitly *about* a line number going stale. |
-| `docs/task/RFCT-212.md` | 2 | 3 B | Its bare tokens record where a pre-image put three symbols, against what the line actually held. Both citations it costs sit in that same frozen comparison. |
+An earlier draft of this section marked five documents on a coverage-cost
+argument (RFCT-058, RFCT-064, RFCT-066, RFCT-071, RFCT-212). That framing is
+superseded and those five markers are **withdrawn** in the same commit that
+adds the one below: none of them is forced by M1's or M2's rules, so under lazy
+marking they wait for a real breakage. The measurement that justified them is
+kept in 5.4 as evidence, because it is what a future forced marker will cite.
 
-### 5.2 Left unmarked, and why — the residue
+### 5.2 Marked: `docs/task/RFCT-215.md`
 
-| document | would cost | would protect | decision |
-|---|---|---|---|
-| `docs/design/api.md` | **1148** | 6 B, 3 E | **No**, and not close. A design document under active revision; the marker would end citation coverage for the largest document in the corpus to protect nine tokens. |
-| `docs/task/RFCT-210.md` | **114** | 16 E | **No in this pass, and a decision for a human.** RFCT-214 already ruled its inventory a dated audit at `f7cb5ba`, which argues *for* the marker; 114 citations is the largest single coverage drop available anywhere in the corpus, which argues hard against. Both halves are real and the milestone should not settle it unilaterally. |
-| `docs/task/RFCT-215.md` | 31 (23 content-checked) | 20 B, 21 E | **No.** The most recent closeout; its full citations were re-measured against the current tree days ago and are the freshest coverage in `docs/task/`. Its 41 frozen tokens stay a residue. |
-| `docs/task/RFCT-169.md` | 19 | 16 B | **No.** Roughly a one-for-one trade with no tie-breaker either way; under-claiming is the safe side. |
-| `docs/task/RFCT-214.md` | 4 | 12 B, 5 C | **No**, though it is cheap. Its five metalinguistic sites are handled by §4.6's rule rather than by exempting the document, and it also carries 15 live class A continuations that a marker would put permanently out of reach. |
-| `docs/task/RFCT-150.md` | 72 | 3 B | **No.** |
-| `docs/task/RFCT-159.md` | 17 | 2 B | **No.** |
-| `docs/task/RFCT-043.md` | 5 | 3 E, 2 A | **No.** Costs more than it protects, and the case is not clean enough to spend that. |
-| `docs/task/RFCT-115.md` | **0** | 1 E | **No.** Free, but a single token is too thin a basis for exempting a whole document; a marker asserts something about the document, not about one line. |
+- **Forced by**: M1's ambiguity rule. `docs/task/RFCT-215.md:54` cites
+  `tests.rs:1821`, and `tests.rs` has two candidates in this tree
+  (`os/pkgs/mosd/apid/src/tests.rs` and
+  `os/pkgs/mosd/mosd/src/reconciler/container/tests.rs`). M1 fails an ambiguous
+  basename rather than guessing, so that site becomes an ERROR the moment M1
+  lands. It is the corpus's **only** ambiguous `tests.rs` site, and it sits in
+  a table that must not be edited — so this marker is what makes M1 landable.
+  M2's rule forces the same document independently: 43 of its bare tokens have
+  no same-line antecedent, and one inherits an ambiguous basename.
+- **Citations leaving coverage**: 31, all in the `os/` segment.
+- **Floor move**: `os` 1847 -> 1816 in the same commit.
+
+**The shape that forces it**, stated explicitly so the rule survives its own
+reasoning. `docs/task/RFCT-215.md:54` reads:
+
+    | §1.6 `tests.rs:1821` "reads the committed `openapi.json`" | the `include_str!` is at `:1824` |
+
+The left column deliberately quotes the **original wrong citation**; the right
+column is the correction. Both columns are the measurement. A resolver that
+"fixes" both destroys the finding the table exists to hold, and a resolver that
+fixes only one produces a table asserting that a value equals itself. The whole
+table runs `docs/task/RFCT-215.md:38-56` and every row has this shape. Note the
+row hits both milestones in one line: the left column is M1's no-slash form,
+the right column is M2's bare form. No span-scoped or line-scoped mechanism is
+proposed for this — the document-scoped marker is the correct instrument,
+because the whole document is an audit at a commit.
+
+### 5.3 Held, pending the open question in section 6.3
+
+Measured at c5f7e96; **not marked in this pass**. Whether each is forced
+depends entirely on the error-versus-counted-skip decision, which is still
+open. Under the ERROR reading all are forced; under the COUNTED-SKIP reading
+none of them is, because none has an M1 ambiguity site except RFCT-169.
+
+| document | M1 ambiguous | M2 no-antecedent | forced under ERROR | forced under SKIP | cost `os` | cost `docs` |
+|---|---|---|---|---|---|---|
+| `docs/task/RFCT-214.md` | 0 | 27 | yes | **no** | 4 | 0 |
+| `docs/task/RFCT-169.md` | 3 | 25 | yes | **yes** | 16 | 3 |
+| `docs/task/RFCT-159.md` | 0 | 19 | yes | **no** | 8 | 9 |
+| `docs/task/RFCT-200.md` | 0 | 19 | yes | **no** | 82 | 9 |
+
+`docs/task/RFCT-210.md` is **not marked here and no floor row is added for
+it**: its marker is forced in PLAN-027, where RFCT-216's rewrite of
+release-signing.md section 1.6 deletes prose that four of its armed quotes
+cite. It is nonetheless **double-forced** — M2's inheritance rule independently
+makes its 16 no-antecedent bare tokens red under the ERROR reading — and the
+record should show that even though the tree must carry only one marking. Its
+cost, for the merge that brings it: `os` 81, `docs` 33.
+
+### 5.4 Measured but deferred — the five withdrawn markers
+
+Kept as evidence for whichever future change forces them. Costs at c5f7e96:
+`RFCT-058` docs 2; `RFCT-064` docs 3; `RFCT-066` docs 2 + os 1; `RFCT-071`
+nothing at all; `RFCT-212` os 2. What makes them frozen: RFCT-058's tables
+measure a 12-line pre-image through `git show 637295e^`; RFCT-064's and
+RFCT-066's deliverable indexes into api.md are already stale, one naming row
+pointing at TLS prose and the other placing section 7.2 three hundred lines
+before section 7.1; RFCT-071's line numbers are discussed *as* numbers that go
+stale; RFCT-212 records where a pre-image put three symbols.
+
+### 5.5 The two measured costs of a file-scoped marker
+
+The treatment has two independently measured costs and this record carries
+both.
+
+**Cost 1, the census floor.** All four floored segments sit exactly on their
+floors at c5f7e96 — `docs` 303, `.github` 2, `os` 1847, `test` 18, summing to
+2170 with nothing spare. There is **zero headroom in every segment**, not just
+`os/`, so any commit that takes even one citation out of scope fails the census
+check unless the floor drops in the same commit. Marking the six candidate
+audits would remove 222 `os/` and 54 `docs/` citations in total.
+
+**Cost 2, the marker is broader than the sentence that justifies it.** It is
+file-scoped, so it exempts anchors its rationale never contemplated: RFCT-221's
+marker was justified entirely in terms of plan documents and also silently
+exempts eight `os/pkgs/podman` anchors, six of them now stale, with no gate able
+to notice. A marker scoped to the anchors it actually froze is a **future
+task** — recorded here, not built.

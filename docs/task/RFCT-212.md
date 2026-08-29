@@ -370,5 +370,3 @@ discards the `-e PATH` the invocation passes. `cargo` lives at
 `/opt/rust/bin/cargo` in that image and `$HOME/.cargo/bin` does not exist, so
 `bash -lc` reaches `hack/check.sh` with no `cargo` on `PATH` and the run dies at
 its first line. Measured, both ways, before the substitution was made.
-
-<!-- dated-record: the section 1.2 comparison records where a pre-image put three symbols against what those lines actually held; re-anchoring it would destroy the finding; exempt from docs/verify-citations.sh (RFCT-257) -->

@@ -113,5 +113,3 @@ Sections 0 and 1 were not edited (hash-verified across every merge, see
 `l1-o7ee8v0o-20260819152009-apid` and is cited, never edited.
 
 No product code changed.
-
-<!-- dated-record: a completed deliverable index into docs/design/api.md sections as they stood at completion; api.md has been rewritten since (RFCT-215) and the index rows name where those sections were; exempt from docs/verify-citations.sh (RFCT-257) -->
