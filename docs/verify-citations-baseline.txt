@@ -21,10 +21,10 @@
 # very file, and that is the one artifact where a silent drop must not happen.
 # These were measured by RFCT-256 on the merged tree that took bkd/tcdocsrm at
 # 9dafa12.
-docs 428
+docs 482
 .github 4
 .gitignore 5
-Makefile 17
-os 2051
+Makefile 18
+os 2209
 README.md 1
 test 22

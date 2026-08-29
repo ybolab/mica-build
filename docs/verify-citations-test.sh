@@ -133,6 +133,15 @@ TXT
 # the fixture comment for why the ceiling sits at 4.
 docs/design/fixture.md 4
 TXT
+
+    # The bare-continuation ratchet (RFCT-257). The base fixture writes no bare
+    # continuation at all, so every row is zero and the cases below add their
+    # own; the file has to exist regardless, because a missing one is an error
+    # rather than an empty set of ceilings.
+    cat >"${dir}/docs/verify-citations-bare-baseline.txt" <<'TXT'
+# Fixture ceilings for bare continuations with no same-line antecedent.
+docs/design/fixture.md 0
+TXT
 }
 
 # Appends a paragraph to the fixture document.
@@ -734,6 +743,71 @@ expect_fail "a wrong quote arms inside the citation's own table cell and not acr
     'quotes "Path=/; HttpOnly; Wrong", and that text is not at `os/pkgs/mosd/apid/src/settings_api.rs:8`'
 expect_report "the demoted across-the-pipe pairing is surfaced as a near-miss, not silence" \
     "near-miss: no quote armed, but a quoted span sits 1-3 words away: 1"
+
+# --- the bare continuation form (RFCT-257) ----------------------------------
+# `:NNN` carries no path and inherits one from earlier on ITS OWN LINE. These
+# cases drive every arm: the two antecedent kinds, the pass-over that keeps a
+# route from capturing a continuation, the same-line boundary, composition with
+# the no-slash rule, and the ratchet that holds the unresolvable ones down.
+
+FIX="${WORK}/bare-inherits-citation"; new_fixture "${FIX}"
+add_para "${FIX}" 'The trait is at `os/pkgs/mosd/apid/src/settings_api.rs:5` and the constant at `:8`.'
+expect_all_pass "a bare continuation inherits the full citation before it on the line" "6/6"
+expect_report "the inheriting continuation is counted as such" \
+    "in scope, bare continuation inheriting a path from earlier on its line: 1"
+
+FIX="${WORK}/bare-inherits-path"; new_fixture "${FIX}"
+add_para "${FIX}" 'In `os/pkgs/mosd/apid/src/settings_api.rs` the trait sits at `:5`.'
+expect_all_pass "a bare continuation inherits a bare PATH before it on the line" "5/5"
+
+FIX="${WORK}/bare-inherits-out-of-range"; new_fixture "${FIX}"
+add_para "${FIX}" 'The trait is at `os/pkgs/mosd/apid/src/settings_api.rs:5`, and also at `:99`.'
+expect_fail "a bare continuation is range-checked against the file it inherited" 1 \
+    'cites `:99` (inherited from `os/pkgs/mosd/apid/src/settings_api.rs` earlier on the line), and os/pkgs/mosd/apid/src/settings_api.rs has 10 lines'
+
+FIX="${WORK}/bare-arms-a-quote"; new_fixture "${FIX}"
+add_para "${FIX}" 'Cited in full at `os/pkgs/mosd/apid/src/settings_api.rs:5`, and `fn reboot` (`:8`).'
+expect_fail "the content check arms through an inherited path, and reads the wrong line" 1 \
+    'quotes "fn reboot", and that text is not at `:8`'
+
+FIX="${WORK}/bare-passes-over-a-route"; new_fixture "${FIX}"
+add_para "${FIX}" 'At `os/pkgs/mosd/apid/src/settings_api.rs:5` the gate serves `/login` and the constant is at `:8`.'
+expect_all_pass "a route span between a citation and its continuation is stepped over, not bound" "6/6"
+
+FIX="${WORK}/bare-not-past-the-line"; new_fixture "${FIX}"
+add_para "${FIX}" 'The trait is at `os/pkgs/mosd/apid/src/settings_api.rs:5`.
+Its constant is at `:8`, on the next line and inheriting nothing.'
+printf '%s\n' 'docs/design/fixture.md 1' >"${FIX}/docs/verify-citations-bare-baseline.txt"
+expect_all_pass "inheritance stops at the line start: RFCT-214 continuation, not shorthand" "5/5"
+expect_report "the continuation on the next line is a counted skip, not an error" \
+    "skipped, bare continuation with nothing on its line to inherit from: 1"
+
+FIX="${WORK}/bare-ratchet"; new_fixture "${FIX}"
+add_para "${FIX}" 'Two orphans on one line, `:3` and `:4`, with nothing to inherit.'
+expect_fail "a document over its bare-continuation ceiling fails the ratchet" 1 \
+    'has 2 bare continuations with no same-line antecedent, above its ceiling 0'
+
+FIX="${WORK}/bare-inherits-basename"; new_fixture "${FIX}"
+add_para "${FIX}" 'The handler is at `settings_api.rs:5` and the constant at `:8`.'
+expect_all_pass "a continuation composes with the no-slash rule, inheriting a resolved basename" "6/6"
+
+FIX="${WORK}/bare-inherits-ambiguous"; new_fixture "${FIX}"
+mkdir -p "${FIX}/os/pkgs/mosd/mosd/src"
+cp "${FIX}/os/pkgs/mosd/apid/src/settings_api.rs" "${FIX}/os/pkgs/mosd/mosd/src/settings_api.rs"
+add_para "${FIX}" 'The handler is at `settings_api.rs:5` and the constant at `:8`.'
+expect_fail "a continuation behind an ambiguous basename is ambiguous, and gets no looser second chance" 2 \
+    'cites `settings_api.rs:5`, and settings_api.rs is the basename of several tracked files' \
+    'cites `:8` (inherited from `settings_api.rs` earlier on the line), and settings_api.rs is the basename of several tracked files'
+
+FIX="${WORK}/bare-metalinguistic"; new_fixture "${FIX}"
+add_para "${FIX}" 'The continuation form is written `` `:512` `` and cites nothing at all.'
+expect_all_pass "a bare continuation inside a double-backtick span is an example, not a citation" "4/4"
+expect_report "the quoted continuation form is counted as an example" \
+    "skipped, bare continuation quoted as an example of the citation form: 1"
+
+FIX="${WORK}/bare-not-a-quote"; new_fixture "${FIX}"
+add_para "${FIX}" 'The trait at `os/pkgs/mosd/apid/src/settings_api.rs:5` `:8` spans both.'
+expect_all_pass "a bare continuation adjacent to a citation is a chained citation, not a quote of it" "6/6"
 
 echo
 total=$((PASS_N + FAIL_N))

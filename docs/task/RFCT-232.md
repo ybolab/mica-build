@@ -87,7 +87,7 @@ condition with, at `MOSD_NOT_FOUND => (`
 (`os/pkgs/mosd/apid/src/routes.rs:3064`) — so the two trees now agree, which was
 the point. `docs/design/api.md`'s error table already reads
 *"the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound`"*
-(`docs/design/api.md:1854`) as the 404 row and the fix agrees with it; that file
+(`docs/design/api.md:1860`) as the 404 row and the fix agrees with it; that file
 belongs to M3b and PLAN-023 and was not edited here beyond section 4's
 re-anchor.
 

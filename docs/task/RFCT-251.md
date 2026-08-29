@@ -172,7 +172,7 @@ the sentence was rewritten; nothing but reading it would have caught it.
 
 §2.4's own contract rows were **not** touched, because the contract did not
 move: *"the dot-path does not resolve: mosd answered
-`com.mos.mosd1.Error.NotFound`"* (`docs/design/api.md:1854`) was already the
+`com.mos.mosd1.Error.NotFound`"* (`docs/design/api.md:1860`) was already the
 written rule for the settings tree, and the state tree has simply stopped being
 the exception to it.
 
@@ -285,7 +285,7 @@ running it and reading it rather than trusting a clean conflict list.
 **A defect in the re-anchor tooling, found and fixed mid-pass.** The script
 tested the dated-record exemption as a substring, where the gate anchors it to
 the start of a line — `grep -q '^<!-- dated-record:'`
-(`docs/verify-citations.sh:451`). Four documents that merely *discuss* the
+(`docs/verify-citations.sh:580`). Four documents that merely *discuss* the
 marker were therefore exempted by the script while the gate still checked them.
 Re-measured: none of the four carries a citation into a shifted region, so
 nothing was in fact missed. It is recorded because the next script to copy that

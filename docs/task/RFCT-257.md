@@ -193,11 +193,13 @@ The brief states the rule as *inherit the nearest preceding full citation's
 path on the same line*. **Measured against the corpus, that rule is wrong, and
 it is wrong in the silent direction.** It mis-binds at six sites, all in
 `docs/task/RFCT-172.md`'s stale-citation table, whose columns are
-`[citing site] | [old path and its range] | [new full citation] | [note]`:
+`[citing site] | [old path and its range] | [new full citation] | [note]`. As
+it then read, with `<range>` standing for the bare token this reproduction must
+not itself assert (§17.1):
 
-    | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | ...
+    | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` <range> | ...
 
-The bare `` `:71-78` `` belongs to the old path beside it. The nearest
+The bare range belongs to the old path beside it. The nearest
 preceding *full citation* is the citing site in column 1, a different file
 entirely. Under the brief's rule the six sites land as:
 
@@ -229,10 +231,12 @@ A span is a candidate antecedent when it is either:
 The nearest candidate wins. A span that is neither is passed over, never
 bound. That clause is load-bearing, and each half is forced by a measured site:
 
-- passing over is required by `docs/task/RFCT-074.md:242`, where the route
-  `` `/login` `` sits between `` `routes.rs:149` `` and its `` `:230` ``. Its
-  first segment is empty, so it is not a path token, and `` `:230` `` reaches
-  the citation behind it. Binding to `/login` instead would lose the site.
+- passing over is required by `docs/design/api.md:2634`, where the reserved
+  route `` `/api` `` sits between a full citation and the continuation
+  `` `:155-156` ``. Its first segment is empty, so it is not a path token, and
+  the continuation reaches the citation behind it. Binding to `/api` instead
+  would lose the site. Measured corpus-wide, five sites step over a
+  slash-bearing span this way.
 - the trailing-slash exclusion is required by `docs/task/RFCT-169.md:133`,
   where `` `os/pkgs/mosd/` `` names a directory, not a file.
 - the repo-root test is required by `docs/task/RFCT-169.md:254`, where
@@ -531,11 +535,12 @@ The milestone was briefed with this as its one real defect: the site cites
 Derived at `35b9f3c`, that is **not** what the site says, and the correction
 runs the other way.
 
-The row's columns are `document | was | now | why it is live`:
+The row's columns are `document | was | now | why it is live`, and as it then
+read — `<range>` again standing in for the bare token:
 
-    | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | ... |
+    | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` <range> | ... |
 
-The bare `` `:71-78` `` sits in the **was** column and belongs to the old path
+The bare range sat in the **was** column and belongs to the old path
 printed beside it, not to the citing site in column 1. Under §4.1's corrected
 antecedent rule it inherits `os/update/rauc/system.conf.in`, which is outside
 this tree, and routes to the outside-tree skip. It is correct as written and
@@ -622,7 +627,7 @@ that fails on a correct document.
   and three in `os/pkgs/mosd/apid/src/main.rs`, `:151` -> `:153`, `:153` -> `:155`,
   `:154` -> `:156`, each on its own `tls::` call, all three unique.
 - **Two re-derived from a restructured file**: api.md cited
-  `os/rootfs/scripts/mosd-install.sh` at `:295` and `:297-299`; that file is 56
+  `os/rootfs/scripts/mosd-install.sh` at lines 295 and 297-299; that file is 56
   lines long. Line 35 installs the unit and lines 36-38 symlink it and
   `test -L` the result, matching the prose exactly, so the citations become
   `:35` and `:36-38`.

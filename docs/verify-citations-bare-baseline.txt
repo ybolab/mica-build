@@ -1,0 +1,69 @@
+# Per-document ceilings for BARE CONTINUATIONS THAT RESOLVE AGAINST NOTHING,
+# read by docs/verify-citations.sh (PLAN-028 M2, RFCT-257).
+#
+# A bare continuation is `:NNN`. It inherits the nearest citation or path
+# earlier on its own line and is then checked in full. Where its line offers
+# nothing to inherit from it is a counted skip and not an error -- PLAN-028's
+# "unresolvable inheritance are ERRORS" was withdrawn by dated correction,
+# because only a minority of the measured sites are document defects and the
+# rest are correct as written: a form quoted rather than used, a port, a
+# shorthand whose file is named in a table header, a frozen audit whose
+# numbers ARE the measurement.
+#
+# The strictness the error arm was wanted for lives here instead. Format:
+# <document> <ceiling>. A scanned document whose count EXCEEDS its row fails
+# the run; a document with no row has a ceiling of 0, so a new document starts
+# with none. The counts below are the corpus as measured when the resolver
+# landed. Update procedure, and the only permitted direction is down: when a
+# document's count drops -- a continuation given a path, a paragraph rewritten
+# -- lower its row, or delete it at zero, in the SAME commit. Raising a row is
+# possible and is meant to be conspicuous: it says a new unresolvable
+# continuation was deliberately written, and the diff carries the decision.
+# Dated records are exempt exactly as they are from the checks themselves.
+docs/design/api.md 32
+docs/design/bus.md 1
+docs/design/dashboard.md 3
+docs/design/uboot-ab-handshake.md 2
+docs/task/RFCT-004.md 1
+docs/task/RFCT-043.md 5
+docs/task/RFCT-058.md 5
+docs/task/RFCT-064.md 7
+docs/task/RFCT-066.md 11
+docs/task/RFCT-068.md 1
+docs/task/RFCT-069.md 6
+docs/task/RFCT-071.md 5
+docs/task/RFCT-072.md 2
+docs/task/RFCT-076.md 3
+docs/task/RFCT-081.md 1
+docs/task/RFCT-105.md 1
+docs/task/RFCT-111.md 1
+docs/task/RFCT-114.md 5
+docs/task/RFCT-115.md 2
+docs/task/RFCT-117.md 1
+docs/task/RFCT-129.md 1
+docs/task/RFCT-132.md 1
+docs/task/RFCT-134.md 7
+docs/task/RFCT-135.md 2
+docs/task/RFCT-138.md 1
+docs/task/RFCT-140.md 3
+docs/task/RFCT-142.md 4
+docs/task/RFCT-150.md 3
+docs/task/RFCT-153.md 4
+docs/task/RFCT-155.md 2
+docs/task/RFCT-156.md 1
+docs/task/RFCT-159.md 22
+docs/task/RFCT-168.md 2
+docs/task/RFCT-169.md 21
+docs/task/RFCT-180.md 7
+docs/task/RFCT-190.md 1
+docs/task/RFCT-200.md 19
+docs/task/RFCT-203.md 5
+docs/task/RFCT-212.md 4
+docs/task/RFCT-214.md 27
+docs/task/RFCT-240.md 2
+docs/task/RFCT-242.md 2
+docs/task/RFCT-243.md 2
+docs/task/RFCT-244.md 4
+docs/task/RFCT-256.md 61
+docs/task/RFCT-257.md 25
+docs/task/RFCT-261.md 2

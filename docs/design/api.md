@@ -1372,9 +1372,15 @@ disagreement is named and the choice is costed.
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
-| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:610`) and `set_settings` (`:586`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
+<<<<<<< HEAD
+| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:610`) and `set_settings` (`:619`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs:654`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs:54`), in memory, written only from inside mosd by the four writers section 1.5 names |
 | `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:840`) | `POST` only | not state at all — see §2.3 |
+=======
+| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:610`) and `set_settings` (`os/pkgs/mosd/mosd/src/bus.rs:619`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs:654`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs:54`), in memory, written only from inside mosd by the four writers section 1.5 names |
+| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:840`) | `POST` only | not state at all — see §2.3 |
+>>>>>>> bkd/tcdocsrm
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `os/pkgs/mosd/mosd/src/bus.rs:53-54`),
@@ -3122,7 +3128,7 @@ to everything under it. The root is created lazily on first activation and
 never at start-up, which is this subsection's *"absence is a defined state"*
 written as code. No mount unit and no seed unit was added, and the eight binds
 are still eight. The image side is asserted rather than assumed:
-`os/verify-image-v2.sh`'s `check_ui_location` (`:254`) fixes `/srv/ui` as the root
+the image verifier's `check_ui_location` fixed `/srv/ui` as the root
 (`:210`) and chains to the packed-mountpoint check, and every one of those
 assertions is driven against an input in which its fact is false by
 `os/verify/src/checks-fstab.test.ts`.
@@ -3540,7 +3546,7 @@ whenever a bundle cannot be served — `built_in` in
 and from §6.1 classes 1, 2 and 4 — and it is reachable unconditionally at
 §6.3's reserved prefix, `builtin_home` in `os/pkgs/mosd/apid/src/routes.rs:3435`. Its
 form is unchanged and is asserted on the image rather than assumed:
-`os/verify-image-v2.sh`'s `check_builtin_ui` (`:341`) requires the deactivate
+the image verifier's `check_builtin_ui` required the deactivate
 form's rendered markup (`:248`) to be present in `/usr/bin/apid`, which is the
 compiled-into-the-binary property checked as an on-image fact rather than as a
 crate test, and `os/verify/src/checks-root.test.ts` drives that assertion against an input

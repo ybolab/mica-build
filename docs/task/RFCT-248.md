@@ -50,7 +50,7 @@ is not part of that decision.** Section 4.2 already stated the consequence —
 200"* — and the gate contradicted it, because a 303 to `/login` is followed to
 a 200 HTML page. That contradiction is recorded as
 *"The gate contradicted this rule until PLAN-026 M2"*
-(`docs/design/api.md:2805-2814`), and the fix as
+(`docs/design/api.md:2820-2829`), and the fix as
 *"The rest of the reserved `/api` subtree passes too"*
 (`docs/design/api.md:594-609`).
 
@@ -293,7 +293,7 @@ frame-relative pass re-run over its own output shifts everything twice.
 
 **The dated-record marker.** `docs/verify-citations.sh` anchors it at line
 start — `if grep -q '^<!-- dated-record:' "$doc"; then`
-(`docs/verify-citations.sh:451`) — and an early pass matched it anywhere in a
+(`docs/verify-citations.sh:580`) — and an early pass matched it anywhere in a
 file. That is not a conservative difference: it silently exempted documents the
 gate does scan, this record among them, because section 8 quotes the marker in
 prose.

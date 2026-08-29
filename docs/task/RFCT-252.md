@@ -141,7 +141,7 @@ are frozen measurement records. The line is load-bearing for both.
 
 `docs/verify-citations.sh` exempts a whole document from both checks when the
 document carries a marker line beginning `<!-- dated-record:` — the gate reads
-it with `grep -q '^<!-- dated-record:'` (`docs/verify-citations.sh:451`).
+it with `grep -q '^<!-- dated-record:'` (`docs/verify-citations.sh:580`).
 Thirty-four documents in this corpus carry one; these two do not.
 
     $ grep -c 'dated-record' docs/task/RFCT-210.md docs/task/RFCT-240.md
@@ -329,6 +329,6 @@ fold deletes is one more class-B failure standing in the fold's way. So the row
 `docs/verify-citations-unquoted-baseline.txt`, which is the override the gate
 documents for this case -- *"when a new unquoted citation is genuinely wanted,
 raising the row in the same commit is the explicit, reviewable override"*
-(`docs/verify-citations.sh:149-151`). Two of the five are inside the verbatim
+(`docs/verify-citations.sh:191-193`). Two of the five are inside the verbatim
 gate output quoted in section 5 and could not be armed in any case without
 altering quoted output.

@@ -370,7 +370,7 @@ Two properties decide how you write a citation here.
 **Citations are quote-armed.** Resolution alone passes on a quotation whose
 source was renamed underneath it, so check 2 compares the quoted text against the
 cited lines — but only when quote and citation are *directly adjacent*, since
-"a citation carries a" (`docs/verify-citations.sh:90`) quote when it sits
+"a citation carries a" (`docs/verify-citations.sh:132`) quote when it sits
 directly against a quoted fragment on either side, with nothing between them but
 whitespace, emphasis characters and one parenthesis. One interposed word demotes
 the pair to resolution-only, silently as far as the run's exit status goes. A
