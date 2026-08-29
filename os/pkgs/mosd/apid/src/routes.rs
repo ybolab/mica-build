@@ -3281,6 +3281,10 @@ fn bus_error(err: &anyhow::Error) -> Response {
 /// - `/healthz` always passes.
 /// - The declared `/api/` routes always pass: they answer for themselves, in
 ///   §2.4's envelope rather than in HTML.
+/// - The rest of the reserved `/api` subtree passes too, and for the same
+///   reason: the subtree's own not-found handler answers it in §2.4's
+///   envelope. No credential is consulted for either, so an undeclared path
+///   under the prefix is one 404 and not four different answers.
 /// - Setup mode (no admin password configured yet): only `/setup` passes,
 ///   everything else redirects there.
 /// - Normal mode: `/login` and `/setup` pass (the setup handlers answer 409
@@ -3289,6 +3293,38 @@ fn bus_error(err: &anyhow::Error) -> Response {
 async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let path = request.uri().path();
     if path == "/healthz" || is_declared_api_route(path) {
+        return next.run(request).await;
+    }
+
+    // The rest of the reserved subtree is released too, so §4.1 rule 1's own
+    // not-found handler answers it in §2.4's envelope. Above, the release is
+    // *because a route answers*; here it is *because no route does*, and both
+    // are the one decision: a request addressed to the JSON surface gets a
+    // JSON answer. A redirect to `/login` is not an answer a client that asked
+    // for `/api/v1/nope` can read, and it is not made readable by the client
+    // having sent no credential.
+    //
+    // Nothing below this line is reached for these paths, which is the point:
+    // the gate never inspects a credential here, so no bearer, a bearer that
+    // is not stored, a bearer that is, a session cookie and nothing at all all
+    // get the same 404. Which credential a request happened to carry is not
+    // what decides the medium of the answer to it.
+    //
+    // The condition is exactly what the router claims -- `.nest(API, ...)`
+    // takes `/api` and everything under `/api/`, and the explicit
+    // `.route("/api/", ...)` beside it takes the one spelling `nest` does not
+    // -- and it is spelled from `API` so it cannot drift from the prefix they
+    // mount under. `/apibogus` is outside it and stays an HTML path.
+    //
+    // This subsumes the `is_declared_api_route` arm above: every declared leaf
+    // begins with `/`, so a path that predicate accepts is a path this one
+    // accepts. The arm is left standing rather than folded in because
+    // PLAN-026 M4 owns that predicate and is rewriting it; deleting its only
+    // caller here would take the mechanism out from under that milestone.
+    if path
+        .strip_prefix(API)
+        .is_some_and(|leaf| leaf.is_empty() || leaf.starts_with('/'))
+    {
         return next.run(request).await;
     }
 

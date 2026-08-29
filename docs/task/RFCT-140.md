@@ -31,7 +31,7 @@ mosd call — now answers **503 Service Unavailable with `Retry-After: 5`**:
 the *"503 page for failed mosd calls, with `Retry-After`"*
 (`os/pkgs/mosd/apid/src/routes.rs:3262-3277`), the same status and the same
 header the API path answers for the same condition
-(`mosd_unreachable`, `:3028`, header at `:3017-3021`). One outage now
+(`mosd_unreachable`, `:3002`, header at `:2991-2995`). One outage now
 reports one way on both surfaces. The page body is unchanged.
 
 Tests (commit `054bceb`): the one assertion of the old 502 control

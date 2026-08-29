@@ -35,18 +35,18 @@ it cites.
 | §1.2 "named in twelve handler signatures" (`Form<...>`) | seventeen |
 | §1.2 "`status_body`… `GetSettings("hostname")`, `GetState("network")`" | three bus calls: `hostname`, `network` and `uptime` |
 | §1.1 "`grep -ci '<script\|javascript' mosd/apid/src/routes.rs` returns `0`" | returns `1`; the hit is prose in a doc comment. The substantive claim (no `script` element) still holds and is now evidenced by a command that measures it |
-| §1.1 the `STYLE` body was said to run from `:3326` to a line holding `Err(err) => return bus_error(&err),` (`os/pkgs/mosd/apid/src/routes.rs:3323`) | it ends at line 3333; the line it named is inside `gate` |
+| §1.1 the `STYLE` body was said to run from `:3326` to a line holding `Err(err) => return bus_error(&err),` (`os/pkgs/mosd/apid/src/routes.rs:3359`) | it ends at line 3333; the line it named is inside `gate` |
 | §1.3 "**five** [methods], across two proxy traits" | six: `rotate_wireguard_key` was added by M6 |
 | §1.3 "`com.mos.mosd1` now serves **eleven** methods" | twelve |
 | §1.3 "four [live-state] paths" | five literal paths, plus the health probe and the wildcard passthrough |
-| §1.4 the gate was said to run from `:3271` to a line holding `static asset still serves while mosd is down` (`os/pkgs/mosd/apid/src/routes.rs:3309`) | it ends at line 3319; the line it named is inside the ordering comment |
-| §1.4 decision 2 cited at `:3266-3270` | the session check is at `:3294-3298`; `:3266-3270` is the doc comment |
+| §1.4 the gate was said to run from `:3245` to a line holding `static asset still serves while mosd is down` (`os/pkgs/mosd/apid/src/routes.rs:3345`) | it ends at line 3319; the line it named is inside the ordering comment |
+| §1.4 decision 2 cited at `:3240-3244` | the session check is at `:3268-3272`; `:3240-3244` is the doc comment |
 | §1.4 "There is no `Authorization` header path, no API key, and no token of any kind in the crate" | false in every clause since M2 |
 | §1.4 the `access` read "is now paid only by an **unauthenticated** request" | every bearer check pays it too — see section 3 |
-| §1.4 "sets the cookie … at `:4332-4336`" and `POST /setup` at `:3926-3931` | `:4360-4364` and `:3954-3958`; `:4332-4336` is the 429 branch |
+| §1.4 "sets the cookie … at `:4342-4346`" and `POST /setup` at `:3936-3941` | `:4370-4374` and `:3964-3968`; `:4342-4346` is the 429 branch |
 | §1.5 `schema_version` row "read-only, value 7" | **8**, which the prose two paragraphs above already said |
 | §1.5 `wifi.client` at `model.rs:295-296`, `wifi.ap` at `:297-298` | both land inside `pub struct ApiToken`; the fields are at `:361` and `:363` |
-| §1.5 the SSH pane "edits it in memory (`:6711-6715`)" | `:6711-6715` is inside `ssh_password`; the edits are `keys.push(parsed);` at `:6828` and `keys.remove(index);` at `:6868` |
+| §1.5 the SSH pane "edits it in memory (`:6721-6725`)" | `:6721-6725` is inside `ssh_password`; the edits are `keys.push(parsed);` at `:6838` and `keys.remove(index);` at `:6878` |
 | §1.5 "apid's HTML panes read four paths today" | five |
 | §1.5 `network` reconciler at `reconciler/network.rs:432-438` | `:633-639` |
 | §1.6 the stylesheet "emitted into the page head (`:3316`)" | `:3344` |
@@ -92,7 +92,7 @@ live.
 That is why the fix is structural rather than per-row: **§1.2's two tables were
 rebuilt with full-form citations, each armed by an adjacent literal that the
 gate can check.** A row that names a handler now names it as
-`` `fn ssh_key_add` (`os/pkgs/mosd/apid/src/routes.rs:6851`) ``, which the gate
+`` `fn ssh_key_add` (`os/pkgs/mosd/apid/src/routes.rs:6887`) ``, which the gate
 resolves *and* content-checks. The same was done for §1.5's settings-subtree
 table, which was written entirely in the no-slash form.
 
@@ -231,21 +231,21 @@ HEAD so whoever plans the next phase starts from evidence rather than from a
 memory of a report.
 
 1. **The CIDR gap — `PUT /api/v1/network/{iface}` accepts an invalid CIDR and
-   answers 204.** `fn valid_cidr` (`os/pkgs/mosd/apid/src/routes.rs:3467`) has
-   exactly one caller, `fn validate_iface` (`os/pkgs/mosd/apid/src/routes.rs:3498`), which
+   answers 204.** `fn valid_cidr` (`os/pkgs/mosd/apid/src/routes.rs:3503`) has
+   exactly one caller, `fn validate_iface` (`os/pkgs/mosd/apid/src/routes.rs:3534`), which
    runs it at `if !dhcp && !address.is_empty() && !valid_cidr(address) {`
-   (`os/pkgs/mosd/apid/src/routes.rs:3519`).
+   (`os/pkgs/mosd/apid/src/routes.rs:3555`).
    `validate_iface` has three callers: `iface_settings_from_form`, at
    `validate_iface(form.iface.trim(), dhcp, address)?;`
-   (`os/pkgs/mosd/apid/src/routes.rs:3614`), and `setup_submit`, at
+   (`os/pkgs/mosd/apid/src/routes.rs:3650`), and `setup_submit`, at
    `&& let Err(message) = validate_iface(iface, dhcp, address)`
-   (`os/pkgs/mosd/apid/src/routes.rs:3928`) — both HTML — and, since M8,
+   (`os/pkgs/mosd/apid/src/routes.rs:3964`) — both HTML — and, since M8,
    `api_v1_setup`, at
    `if let Err(message) = validate_iface(iface, cfg.dhcp, address) {`
-   (`os/pkgs/mosd/apid/src/routes.rs:4190`). **No route of M6's
+   (`os/pkgs/mosd/apid/src/routes.rs:4226`). **No route of M6's
    typed network cluster calls it.** Pinned by
    `the_setup_route_and_the_network_routes_run_one_shared_cidr_bound`
-   (`os/pkgs/mosd/apid/src/tests.rs:10552`). That test carried the gap under
+   (`os/pkgs/mosd/apid/src/tests.rs:10665`). That test carried the gap under
    its earlier name,
    the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not,
    and asserted 204 from M6's route; PLAN-026 M1 closed the gap and flipped it,
@@ -253,11 +253,11 @@ memory of a report.
    measurement above is left as this task made it.
 2. **The gate asymmetry — a bearer-only client asking for an *undeclared* path
    under `/api/` is redirected to `/login`.** The gate hands off only declared
-   routes (`os/pkgs/mosd/apid/src/routes.rs:3291`) and its whole credential test
-   is the cookie (`os/pkgs/mosd/apid/src/routes.rs:3312-3316`); a bearer does not
+   routes (`os/pkgs/mosd/apid/src/routes.rs:3295`) and its whole credential test
+   is the cookie (`os/pkgs/mosd/apid/src/routes.rs:3348-3352`); a bearer does not
    satisfy it. Predates M2. Asserted by
    `an_absent_token_id_is_404_and_a_malformed_one_is_422`
-   (`os/pkgs/mosd/apid/src/tests.rs:6533`), whose bearer arm asserts the 303.
+   (`os/pkgs/mosd/apid/src/tests.rs:6540`), whose bearer arm asserts the 303.
 3. **`is_quotable` stays in the renderer, so the WiFi route still accepts a psk
    containing a quote or a backslash.** `fn is_quotable`
    (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:203-205`) is applied only
@@ -271,7 +271,7 @@ memory of a report.
 4. **The gate-list/router agreement gap.** `fn is_declared_api_route`
    (`os/pkgs/mosd/apid/src/routes.rs:541-562`) is a second list of eighteen
    clauses, and nothing checks it against the router's registrations — the one
-   test that names it (`os/pkgs/mosd/apid/src/tests.rs:5980`) is about path
+   test that names it (`os/pkgs/mosd/apid/src/tests.rs:5987`) is about path
    matching, not membership. axum exposes no route table to compare against.
 5. **The mosd-side convergence.** `api_v1_state` read an fdo error name and
    rewrote it, and its own comment said the cleaner fix was a `NotFound` name

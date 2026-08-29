@@ -1856,17 +1856,27 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
 }
 
 /// The declared paths are the only ones that changed. Every other path under
-/// `/api` keeps **both** of its answers: the subtree's own 404 with a session,
-/// and the gate's redirect without one, in either gate mode.
+/// `/api` has **one** answer — the subtree's own 404, byte for byte — with a
+/// session, without one, and in setup mode alike.
 ///
 /// The bare family prefixes are members of this class rather than exceptions
 /// to it. axum's `{*path}` wildcard matches at least one character, so
 /// `/api/v1/settings` and `/api/v1/settings/` name no dot-path and reach the
-/// not-found handler — and the gate's predicate has to agree with the router
-/// about that, or an unauthenticated request for one of them would be handed
-/// to a route that does not exist instead of being redirected.
+/// not-found handler.
+///
+/// Until PLAN-026 M2 (`docs/task/RFCT-248.md`) this test was
+/// `every_other_api_path_keeps_both_of_its_answers` and asserted **two**
+/// answers: this 404 with a session, and the gate's redirect to `/login` or
+/// `/setup` without one. The session arm is unchanged — the same handler
+/// answers it and the assertion below is the one it always carried — and the
+/// other two arms are what M2 closed. The reason the old comment gave for the
+/// redirect, that the gate's predicate has to agree with the router or an
+/// unauthenticated request would be handed to a route that does not exist,
+/// stopped applying with it: being handed to a route that does not exist is
+/// the intended outcome now, because the not-found handler is a route and it
+/// answers in §2.4's envelope.
 #[tokio::test]
-async fn every_other_api_path_keeps_both_of_its_answers() {
+async fn every_other_api_path_has_one_answer_in_every_mode() {
     // `/api/v1/ssh/authorized-keys` left this list when PLAN-023 M5 declared
     // it: it is now a served collection, and the test that holds its answers
     // is `the_ssh_key_collection_lists_adds_and_removes`.
@@ -1889,32 +1899,29 @@ async fn every_other_api_path_keeps_both_of_its_answers() {
     let (fresh, _) = test_app(unconfigured_tree());
 
     for path in UNDECLARED {
-        // With a session: the reserved subtree's own envelope, byte for byte.
-        let response = get(&router, path, Some(&cookie)).await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
-        assert_api_headers(&response, path);
-        assert_eq!(
-            body_string(response).await,
-            json!({
-                "error": {
-                    "code": "not_found",
-                    "message": format!("no API route at {path}"),
-                    "source": "apid",
-                }
-            })
-            .to_string(),
-            "{path}"
-        );
+        let expected = json!({
+            "error": {
+                "code": "not_found",
+                "message": format!("no API route at {path}"),
+                "source": "apid",
+            }
+        })
+        .to_string();
 
-        // Without one: the gate's redirect to `/login`.
-        let redirected = get(&router, path, None).await;
-        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
-        assert_eq!(location(&redirected), "/login", "{path}");
-
-        // And in setup mode, the gate's redirect to `/setup`.
-        let redirected = get(&fresh, path, None).await;
-        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
-        assert_eq!(location(&redirected), "/setup", "{path}");
+        // With a session, without one, and on a device that has no admin
+        // password at all: the reserved subtree's own envelope, byte for byte,
+        // three times. The router is the same one in the first two cases and a
+        // freshly built one in setup mode, which is the case a path-prefix
+        // gate used to break.
+        for (mode, response) in [
+            ("with a session", get(&router, path, Some(&cookie)).await),
+            ("without one", get(&router, path, None).await),
+            ("in setup mode", get(&fresh, path, None).await),
+        ] {
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path} {mode}");
+            assert_api_headers(&response, path);
+            assert_eq!(body_string(response).await, expected, "{path} {mode}");
+        }
     }
 }
 
@@ -6562,22 +6569,128 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // The empty spelling is not this route -- measured, and not assumed from
     // the rotate action, whose empty `{iface}` segment is interior rather than
     // trailing and IS served. `/api/v1/tokens/` reaches the reserved subtree's
-    // own not-found handler, so `token_id` must not release it to the gate: a
-    // path the gate released to a route that does not exist would answer a 404
-    // where an unauthenticated caller is supposed to be redirected.
+    // own not-found handler. That measurement carried a consequence until
+    // PLAN-026 M2 -- `token_id` had to refuse this spelling, or the gate would
+    // release an unauthenticated caller to a 404 where a redirect was owed --
+    // and the consequence is gone now that the gate releases the whole subtree
+    // either way. What is left is the measurement of which handler answers,
+    // and this arm's answer is unchanged by M2 in status, code and body.
     let cookie = login(&router, "hunter2secret").await;
     let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(envelope(response).await["code"], "not_found");
 
-    // And the bearer arm of the same path, which was already asserted here and
-    // is left exactly as it was: a bearer does not satisfy the gate, so a
-    // bearer-only client asking for an undeclared path under /api is redirected.
+    // And the bearer arm of the same path answers the same thing, because the
+    // gate releases the whole reserved subtree and stops there: the credential
+    // is never read, so it cannot decide the medium. This arm asserted the 303
+    // to `/login` until PLAN-026 M2 (`docs/task/RFCT-248.md`) closed that
+    // asymmetry; `an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential`
+    // is the general statement, and this is the one path that carried the old
+    // answer.
     let response = bearer(&router, "DELETE", "/api/v1/tokens/", &wires[0]).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// §4.1 rule 1's medium rule, stated the way the gate has to implement it: a
+/// path inside the reserved `/api` subtree that no route declares answers
+/// §2.4's 404 envelope, and **which credential the request carried is not
+/// what decides that**. A client that addressed the JSON surface is answered
+/// in JSON whether it sent nothing at all, a token that is not stored, a
+/// token that is, or a session cookie.
+///
+/// The four answers are compared to each other and not only to a literal, so
+/// what is asserted is the symmetry itself. The cookie arm is the fixed point:
+/// it is the answer this repository already documented — `an_absent_token_id_
+/// is_404_and_a_malformed_one_is_422` asserts `not_found` on `/api/v1/tokens/`
+/// through a cookie — and the other three are required to be the same bytes,
+/// so a future change that moves the cookie arm fails here rather than
+/// silently taking the other three with it.
+///
+/// `/apibogus` is in the list for the reason
+/// `each_guard_is_exercised_by_exactly_one_hostile_feature` states: the
+/// assertion has to distinguish the rule from its absence. The subtree is
+/// `/api` and what nests under it, not the four characters, so a path that
+/// merely begins with them is an HTML path and still redirects.
+#[tokio::test]
+async fn an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api",
+        "/api/",
+        "/api/v1/tokens/",
+        "/api/v1/nope",
+        "/api/v2/meta",
+    ] {
+        let mut answers: Vec<(&str, serde_json::Value)> = Vec::new();
+        for (credential, response) in [
+            (
+                "no credential",
+                request(&router, "DELETE", path, None, None).await,
+            ),
+            (
+                "a stored bearer",
+                bearer(&router, "DELETE", path, &wires[0]).await,
+            ),
+            (
+                "an unstored bearer",
+                bearer(&router, "DELETE", path, "0000000000000000").await,
+            ),
+            (
+                "a session cookie",
+                request(&router, "DELETE", path, Some(&cookie), None).await,
+            ),
+        ] {
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "{path} with {credential}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "not_found", "{path} with {credential}");
+            assert_eq!(error["source"], "apid", "{path} with {credential}");
+            answers.push((credential, error));
+        }
+        let (_, expected) = &answers[0];
+        for (credential, error) in &answers[1..] {
+            assert_eq!(error, expected, "{path} answers {credential} differently");
+        }
+    }
+
+    let response = request(&router, "GET", "/apibogus", None, None).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/login");
 
+    let response = request(&router, "GET", "/healthz", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The same rule in **setup mode**, which is where the gate's *other* redirect
+/// lives and so is a second exit that has to be closed rather than the same
+/// one twice.
+///
+/// A device with no admin password yet still has a reserved `/api` subtree,
+/// and a client asking it for a path that does not exist is asking a question
+/// the setup form is not an answer to.
+#[tokio::test]
+async fn an_undeclared_api_path_is_a_404_in_setup_mode_too() {
+    let (router, _fake) = test_app(unconfigured_tree());
+
+    let response = request(&router, "GET", "/api/v1/nope", None, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    // The HTML surface is untouched: setup mode still bounces it to /setup.
+    let response = request(&router, "GET", "/hostname", None, None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/setup");
 }
 
 /// The HTML half of the split recorded in `docs/task/RFCT-210.md` §2.4: the

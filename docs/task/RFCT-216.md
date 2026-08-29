@@ -251,7 +251,7 @@ the marker is ever lifted that citation needs re-anchoring, not repair.
 than exempted.** The crate README's out-of-scope list gained a bullet, so the
 line reading *"a separate key hierarchy applied"*
 (`os/pkgs/rauc-sign/README.md:52`) moved down one. The failing citation quoted
-*"is a separate key hierarchy"* (`docs/design/api.md:3876`); a second, quoting
+*"is a separate key hierarchy"* (`docs/design/api.md:3908`); a second, quoting
 *"a separate key hierarchy"* (`docs/design/remote-management.md:135`), was
 passing only because its fragment happened to land inside the stale two-line
 range, and was corrected anyway — a citation that resolves by luck reads

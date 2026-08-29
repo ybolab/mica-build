@@ -63,8 +63,8 @@ later superseded by RFCT-214, as the note below records:
 
 | citation | why the map could not answer it |
 |---|---|
-| *"resource_response(value, &path)"* (`docs/design/api.md:816`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
-| *"resource_response(value, &path)"* (`docs/design/api.md:1289`) | the same call, quoted a second time in section 2.2 |
+| *"resource_response(value, &path)"* (`docs/design/api.md:838`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
+| *"resource_response(value, &path)"* (`docs/design/api.md:1311`) | the same call, quoted a second time in section 2.2 |
 | *"pub const SCHEMA_VERSION: u32 = 8;"* (`docs/design/mosd.md:433`) | RFCT-232's dated note quoted the constant at 7, and the campaign branch's M2-part-1 bump made it 8 |
 | the same quote in `docs/task/RFCT-232.md` | the same problem, in the record that made the note |
 
@@ -146,7 +146,7 @@ back across the reboot.
 Item 5's fingerprint carries a `/`, deliberately, and is sent percent-encoded —
 the spelling apid's own route tests use in `ssh_key_url`:
 `fingerprint.replace('/', "%2F")`
-(`os/pkgs/mosd/apid/src/tests.rs:7335`). Sent raw it would split the segment
+(`os/pkgs/mosd/apid/src/tests.rs:7448`). Sent raw it would split the segment
 and the resulting 404 would read as "apid forgot the key".
 
 ### 2.3 What it leaves behind
