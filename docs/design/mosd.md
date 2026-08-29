@@ -353,7 +353,7 @@ unconverged.
 
 **A WireGuard private key never enters the settings tree.** The schema is
 explicit that it never will: *"There is no private-key field here and there
-never will be"* (`os/pkgs/mosd/mosd-settings/src/model.rs:602`). The key lives
+never will be"* (`os/pkgs/mosd/mosd-settings/src/model.rs:641`). The key lives
 in a file under the STATE directory that holds `settings.toml`, in
 `networkd-secrets/` — *"A sibling of `secrets/` rather than anything under it,
 and the name says so because the path is load-bearing"*

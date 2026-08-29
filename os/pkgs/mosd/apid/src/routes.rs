@@ -2514,6 +2514,35 @@ fn relational_refusal(entries: &NetworkEntries, path: &str) -> Result<(), Box<Re
     })
 }
 
+/// One entry's static address refused by the wizard's rule, in section 2.4's
+/// envelope.
+///
+/// The message is [`validate_static_address`]'s own -- the sentence the setup
+/// wizard and the network pane already print -- so the typed routes and the
+/// forms cannot state the rule in two ways.
+///
+/// The `path` member names the entry and not the subtree the route writes: on
+/// `PUT /api/v1/network` that subtree is `network`, which would not say which
+/// of the entries the body carried is the wrong one.
+///
+/// Called on the entries a **request** carries and never on the tree as read.
+/// [`api_v1_network_iface_remove`] re-validates the stored map without the
+/// removed entry, and putting this rule in that shared re-validation would make
+/// removing an unrelated interface start failing on bad data already on disk.
+fn address_refusal(iface: &str, cfg: &IfaceSettings) -> Result<(), Box<Response>> {
+    let address = cfg
+        .static_
+        .as_ref()
+        .map_or("", |static_| static_.address.as_str());
+    validate_static_address(cfg.dhcp, address).map_err(|message| {
+        Box::new(api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", message.to_string())
+                .at(&iface_settings_path(iface)),
+        ))
+    })
+}
+
 /// A candidate map written back whole, at the `network` root.
 async fn write_network_map(
     state: &AppState,
@@ -2592,7 +2621,7 @@ fn json_body<T: serde::de::DeserializeOwned>(
         (status = 204, description = "The map was replaced; the reconciler has re-rendered every unit from it"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
-        (status = 422, description = "The body is not a map of interfaces, a key is not an interface name, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 422, description = "The body is not a map of interfaces, a key is not an interface name, an entry declares a static address that is not IPv4 CIDR notation, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
@@ -2618,6 +2647,15 @@ pub(crate) async fn api_v1_network_write(
     }
     if let Err(response) = relational_refusal(&entries, NETWORK_SETTINGS_PATH) {
         return *response;
+    }
+    // After the relational pass and not before it, so a body that breaks both
+    // still gets the answer it got before this rule existed. Every entry here
+    // is one the request carried: this route replaces the map rather than
+    // merging into it.
+    for (iface, cfg) in &entries {
+        if let Err(response) = address_refusal(iface, cfg) {
+            return *response;
+        }
     }
     // No read first, deliberately: this route's whole contract is that the map
     // it sends is the map that ends up stored, so a read-modify-write would be
@@ -2653,7 +2691,7 @@ pub(crate) async fn api_v1_network_write(
         (status = 204, description = "The entry was written; the reconciler has re-rendered its units"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
-        (status = 422, description = "The name is not an interface name, the body is not an interface, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
+        (status = 422, description = "The name is not an interface name, the body is not an interface, the entry declares a static address that is not IPv4 CIDR notation, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
@@ -2681,6 +2719,12 @@ pub(crate) async fn api_v1_network_iface_write(
     // comment gives: every relational rule is about two entries at once.
     candidate.insert(iface.clone(), cfg.clone());
     if let Err(response) = relational_refusal(&candidate, &path) {
+        return *response;
+    }
+    // `cfg` and not `candidate`: the one entry the request carries. A stored
+    // entry that already holds an unparseable address is not this request's
+    // fault and must not make an edit to a different interface fail.
+    if let Err(response) = address_refusal(&iface, &cfg) {
         return *response;
     }
     // The entry's own dot-path and not the whole map, so a concurrent edit of
@@ -3517,6 +3561,23 @@ fn validate_iface(iface: &str, dhcp: bool, address: &str) -> Result<(), &'static
     if !valid_iface_name(iface) {
         return Err("Interface name must be 1-15 characters of letters, digits, '.', '_' or '-'.");
     }
+    validate_static_address(dhcp, address)
+}
+
+/// The address clause of [`validate_iface`], as its own function.
+///
+/// It is factored out rather than copied because M6's typed network routes
+/// have to run this rule too and must not be able to disagree with the forms
+/// about what an address is: `PUT /api/v1/network/{iface}` took an address the
+/// kernel cannot parse and answered 204 until PLAN-026 M1
+/// (`docs/task/RFCT-247.md`). Those routes cannot call `validate_iface`
+/// itself, because they check the name with [`check_iface_name`] and would
+/// otherwise carry two spellings of the name refusal.
+///
+/// The condition is unchanged and is not widened: DHCP off with an empty
+/// address is an interface with no addressing, for the reason
+/// [`validate_iface`] states.
+fn validate_static_address(dhcp: bool, address: &str) -> Result<(), &'static str> {
     if !dhcp && !address.is_empty() && !valid_cidr(address) {
         return Err("Static address must be IPv4 CIDR notation, e.g. 192.168.1.10/24.");
     }
