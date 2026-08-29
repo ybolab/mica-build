@@ -1,6 +1,6 @@
 # RFCT-258 PLAN-028 M3: the plan-index status assertion
 
-- **status**: completed — `docs/verify-index.sh` grew a fourth section asserting `docs/plan/index.md` against the 28 plan files in both directions; the index gate went 863/863 → 979/979 (983/983 re-measured on the merged tree) with ZERO index edits, because the corpus was already consistent under a mapping wider than the one PLAN-028 proposed; the self-test was RED at the base commit for an unrelated reason and was repaired first
+- **status**: completed — `docs/verify-index.sh` grew a fourth section asserting `docs/plan/index.md` against the 28 plan files in both directions; the index gate went 863/863 → 979/979 (987/987 re-measured on the merged tree at 41ae539) with ZERO index edits, because the corpus was already consistent under a mapping wider than the one PLAN-028 proposed; the self-test was RED at the base commit for an unrelated reason and was repaired first
 - **priority**: P1
 - **owner**: bkd/z2jshmso
 - **createdAt**: 2026-08-28
@@ -260,20 +260,28 @@ should not add more of the very citations it is describing as fragile.
 
 ## 10. Gates
 
-| Gate | At c5f7e96 (base) | At ced1658 (this milestone) | At 6cccf5c (merged with bkd/tcdocsrm) |
-|---|---|---|---|
-| `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` | `983/983 PASS` |
-| `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` | `2173/2173 PASS` |
-| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, 0 cases | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
+Every column is a run, not arithmetic over the previous one. Each merge is
+re-measured on the merged tree.
 
-The last column is the re-measurement on the merged tree, not arithmetic over
-the two sides. The merge brought M4's `docs/task/RFCT-259.md` in, and a new
-task record costs the task section the same four assertions: 979 + 4 = 983.
-The merge's one conflict was in `docs/task/index.md` — the two-row append
-conflict, RFCT-258's row against RFCT-259's — resolved by keeping both, which
-is correct here because they are different records. Resolving it by keeping
-both sides of the *same* row is the mistake the "once each" assertion exists
-to catch.
+| Gate | c5f7e96 (base) | ced1658 (this milestone) | 6cccf5c (+ bkd/tcdocsrm@d855804) | 41ae539 (+ bkd/tcdocsrm@fd79f53) |
+|---|---|---|---|---|
+| `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` | `983/983 PASS` | `987/987 PASS` |
+| `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` | `2173/2173 PASS` | `2178/2178 PASS` |
+| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, 0 cases | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
+
+Both merges moved the totals for the same reason and neither touched this
+milestone's logic. `d855804` brought M4's `docs/task/RFCT-259.md`; `fd79f53`
+brought `docs/task/RFCT-260.md` (and, from main, PLAN-028's dated correction,
+which is scoped to M2 and leaves M3's Proposal — the text section 1 corrects —
+unchanged). A new task record costs the task section the same four assertions
+each time: 979 → 983 → 987. RFCT-260 also brought five `os/` citations:
+2173 → 2178.
+
+The `6cccf5c` merge's one conflict was in `docs/task/index.md` — the two-row
+append conflict, RFCT-258's row against RFCT-259's — resolved by keeping both,
+which is correct here because they are different records. Resolving it by
+keeping both sides of the *same* row is the mistake the "once each" assertion
+exists to catch. The `fd79f53` merge was clean.
 
 The index gate rises by 116, in two parts. **+112** is the new section:
 28 plans × 4 assertions (forward membership, reverse membership, once-each,
@@ -284,15 +292,27 @@ record existed, took the gate to `975/975`.
 
 The self-test rises from 11 cases (its count once repaired, section 7) to 18.
 
-The citation gate rises by 3: one new citation in `docs/design/build-harness.md`
-for the fourth pairing, and two in this record. **No baseline was touched.**
-The census segments re-measured on the merged tree 6cccf5c are `docs/` 306
-(floor 303), `.github/` 2 (floor 2), `os/` 1847 (floor 1847), `test/` 18
-(floor 18), 0 census failures — the
-last three sit exactly on their floors and this milestone moved none of them,
-because it removes no citation from scope. `docs/` gains 3 of headroom; the
-floor is deliberately left at 303 for re-measurement on the merged tree rather
-than raised on a branch, since `docs/verify-citations-baseline.txt` and
+This milestone's own contribution to the citation gate is +3: one new citation
+in `docs/design/build-harness.md` for the fourth pairing, and two in this
+record. **No baseline was touched**, because the milestone removes no citation
+from scope.
+
+Census, re-measured at each merge — the segment margins are volatile and are
+stated against the commit they were measured at, never carried forward:
+
+| Segment | Floor | At 6cccf5c | At 41ae539 |
+|---|---|---|---|
+| `docs/` | 303 | 306 (+3) | 306 (+3) |
+| `.github/` | 2 | 2 (0) | 2 (0) |
+| `os/` | 1847 | 1847 (0) | 1852 (+5) |
+| `test/` | 18 | 18 (0) | 18 (0) |
+
+0 census failures at both. `os/` gained its five from RFCT-260 arriving on
+main, not from anything here; a margin that appears from another workstream's
+commit can disappear the same way, and none of it is spent by this milestone.
+`docs/`'s three are this milestone's own, and its floor is deliberately left at
+303 for re-measurement on the merged tree rather than raised on a branch, since
+`docs/verify-citations-baseline.txt` and
 `docs/verify-citations-unquoted-baseline.txt` are moving concurrently in
 sibling workstreams. This record needed no row in the unquoted baseline: a new
 document's ceiling is 0 and both of its citations are quoted (section 4).
