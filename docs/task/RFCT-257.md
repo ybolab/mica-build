@@ -398,3 +398,153 @@ marker was justified entirely in terms of plan documents and also silently
 exempts eight `os/pkgs/podman` anchors, six of them now stale, with no gate able
 to notice. A marker scoped to the anchors it actually froze is a **future
 task** — recorded here, not built.
+
+## 6. The open question: is an unresolvable bare token an error or a counted skip?
+
+PLAN-028 says the resolver fails closed and an unresolvable bare token is an
+ERROR. That single sub-decision is what makes the milestone expensive: it
+forces 149 of the 155 forced marker sites, and with them 222 `os/` and 54
+`docs/` citations out of live coverage. Under the alternative it forces
+nothing except M1's ambiguity, and roughly 47 citations leave coverage.
+
+Both readings honour *fail closed, never guess a path*. Neither guesses.
+They differ only in whether a site the resolver cannot see is a **failure** or
+a **counted, visible skip**.
+
+### 6.1 The design accommodates either — it is one switch
+
+The resolver's outcome for a bare token with no same-line antecedent is read
+from a single variable, not baked into the control flow:
+
+    BARE_UNRESOLVABLE=skip      # counted with its own summary reason
+    BARE_UNRESOLVABLE=error     # fail_resolve, listing the site
+
+Every other arm of §4.4 is unchanged by the choice. This is deliberate: the
+milestone may be told either way and must not need restructuring to comply.
+
+### 6.2 My recommendation: counted skip, plus a ceiling
+
+I have read all 613 sites. **The counted-skip reading is the correct one**,
+and the reason is not cost — it is that the ERROR reading is factually wrong
+about the corpus.
+
+Of the 385 no-antecedent sites, only class A (245) is a document defect. The
+other 140 are **correct as written**:
+
+- classes C and D (12 sites) cite nothing at all — a quoted form and a port
+  number. An error on them is not strict, it is false.
+- class E (59) is RFCT-214's shorthand, which PLAN-028 M2 explicitly places
+  out of scope: *"Earlier-line inheritance stays out."* A milestone that
+  declines to resolve a class and then fails it is incoherent.
+- class B (70) is the frozen-audit class the campaign's standing rule forbids
+  re-anchoring. The only green path is a marker, so an error here is a
+  scheduled, mandatory marker — which is how 222 citations end up leaving
+  coverage to fix 245 defects.
+
+An error arm that fires on 140 correct sites to catch 245 repairable ones is
+not failing closed; it is failing indiscriminately. And each marker it forces
+carries Cost 2 from §5.5 — file-scoped, broader than its justification — so
+the ERROR reading imports that documented blind spot six more times.
+
+**But a bare skip loses the ratchet**, and that is the real objection: a class
+A site that should have resolved would sit silently forever, which is the
+silence PLAN-028 exists to end. So the recommendation is not a bare skip.
+
+**Counted skip plus a per-document ceiling**, reusing the mechanism the gate
+already has for exactly this problem — `docs/verify-citations-unquoted-baseline.txt`
+and the RFCT-173 ratchet. A committed
+`docs/verify-citations-bare-baseline.txt` holds a per-document CEILING on
+unresolvable bare tokens; a document exceeding its row FAILS. Today's measured
+385 is the opening ceiling, and it can only ever be lowered.
+
+That gives the tightening property without a flag day. A newly written
+unresolvable bare token fails on the commit that adds it. The existing 385 are
+counted, named per document, and visible in every run — never silently green —
+and each class A repair lowers a row. It needs no marker it did not already
+need, and it is the same shape the gate already uses for the class it could not
+mechanise before.
+
+## 7. Named residues
+
+Recorded, not built. Each is evidence for a future task, on the list PLAN-028
+itself came from.
+
+**7.1 The slash-compound form — a fourth form neither milestone sees.**
+`docs/task/RFCT-190.md:83` reads:
+
+    `render-config.sh:239/:245/:265/:270` became `:234/:240/:260/:265`
+
+One path and four lines joined by slashes. Split at the last colon as the gate
+does, the first token's path is `render-config.sh:239/:245/:265/`, which
+contains a `/`, so the scope rule reads its first segment as
+`render-config.sh:239`, finds no such repo-root directory, and skips it as
+outside this tree. The second token behaves identically with first segment
+`:234`. Both escape M1 and M2 silently. Measured corpus-wide: this is the
+**only** site, two tokens on one line. No resolver is proposed for it.
+
+**7.2 The interposed-word demotion.** Measured by this workstream by sourcing
+`extract_citations` out of the gate and feeding it fixtures: a quote at the end
+of the *preceding* line still ARMS the content check — the line break is
+irrelevant, because the backward scan skips whitespace and newline is in that
+set. What disarms it is interposed words, RFCT-170's deliberate zero-tolerance
+rule. One word ("at") demotes the citation to resolution-only with
+`near-miss=1`; four words ("asserts the shape at") demote it with
+`near-miss=0`, fully silent. The demotion is invisible in a PASS line, because
+`docs/verify-citations.sh:400` counts it into `N_NOQUOTE` and continues. A
+fixture for this must encode the INTERPOSED-WORD case; one built on "quote on
+the preceding line" would not fail on the defect it was built for.
+
+**7.3 A marker scoped to the anchors it froze.** See §5.5 Cost 2.
+
+**7.4 Four never-valid citations into a deleted script.** `docs/design/api.md`
+asserts image-side checks against `os/verify-image-v2.sh` at six bare tokens
+across four sites; no such file exists anywhere in this tree. The bash script
+was replaced by the TypeScript suite under `os/verify/src/`, where
+`check_ui_location` survives only as a name inside a comment at
+`os/verify/src/checks-fstab.ts:14`. The line numbers are offsets into a deleted
+bash file and the TypeScript is not a renumbering of it, so they are
+**unresolvable for a human**, not guessable. Listed rather than guessed.
+
+**7.5 Three metalinguistic sites that no rule can see.** `docs/task/RFCT-215.md:78`,
+`docs/task/RFCT-242.md:494` and `:495` quote the form single-backticked and are
+mechanically identical to real citations. M1 owns the double-backtick skip and
+covers the five sites in `docs/task/RFCT-214.md`; these three would need a
+document correction to become machine-visible. M1's own corpus has the same
+shape at `docs/task/RFCT-170.md:64`, which is in scope and content-checked
+today while asserting nothing about the tree.
+
+## 8. `docs/task/RFCT-172.md:92`, derived
+
+The milestone was briefed with this as its one real defect: the site cites
+`:71-78` inheriting `docs/task/RFCT-139.md`, which has 73 lines, and fails.
+Derived at `35b9f3c`, that is **not** what the site says, and the correction
+runs the other way.
+
+The row's columns are `document | was | now | why it is live`:
+
+    | `docs/task/RFCT-139.md:8` | `os/update/rauc/system.conf.in` `:71-78` | ... |
+
+The bare `` `:71-78` `` sits in the **was** column and belongs to the old path
+printed beside it, not to the citing site in column 1. Under §4.1's corrected
+antecedent rule it inherits `os/update/rauc/system.conf.in`, which is outside
+this tree, and routes to the outside-tree skip. It is correct as written and
+needs no change. The briefed failure was the naive rule mis-binding across a
+table column, not a defect in the document.
+
+**There is nonetheless a real defect on that line, and it is in the `now`
+column.** The table header calls that column live, and the task's own status
+records its citations as included in the gate's count. It read
+`os/pkgs/rauc/system.conf.in:71-78`, and the `[keyring]` text it stands for is
+not there: this task's and RFCT-142's comment insertions grew the file, and the
+quoted passage is at `:82-83`. Forward-anchored on *"Production keyring"* and
+backward-anchored on *"fails closed."*, the range is exactly `:82-83`, and
+`docs/task/RFCT-139.md` already cites it there under an armed quote the content
+check passes — an independent confirmation, not a second guess. The row is
+corrected to `:82-83` with its note amended, in the same commit as this
+section.
+
+The defect was invisible because the citation carries no quote: a `|` sits
+between it and the neighbouring cell, so the backward scan finds no quoted span
+and the site gets resolution only. It is RFCT-128's class 1 — resolves, names
+the wrong line — and the bare-form resolver is not what catches it. Line 93 of
+the same table is M1's and is untouched here.
