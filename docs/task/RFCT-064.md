@@ -27,12 +27,12 @@ laid. Ten stub lines consumed, verified at merge.
 | --- | --- | --- |
 | 2.1 | `docs/design/api.md:677` | Versioning and path shape |
 | 2.2 | `:695` | Resource model, derived from mosd's two trees plus an actions namespace |
-| 2.3 | `:869` | Operation inventory: today's form posts, tomorrow's API |
-| 2.4 | `:965` | Error shape |
-| 3.1 | `:1124` | Browser session versus programmatic client — **[implemented]**, the mechanics that rule the cookie out |
-| 3.2 | `:1188` | The proposal: a bearer API token |
-| 3.3 | `:1411` | Threat model, and what it does not protect against |
-| 10.1 | `:3473` | Twelve routed findings |
+| 2.3 | `:870` | Operation inventory: today's form posts, tomorrow's API |
+| 2.4 | `:966` | Error shape |
+| 3.1 | `:1125` | Browser session versus programmatic client — **[implemented]**, the mechanics that rule the cookie out |
+| 3.2 | `:1189` | The proposal: a bearer API token |
+| 3.3 | `:1412` | Threat model, and what it does not protect against |
+| 10.1 | `:3474` | Twelve routed findings |
 
 ## Decisions
 
@@ -62,7 +62,7 @@ the shape it must land in.
 
 **One credential: a long-lived, revocable bearer token in `Authorization`,
 stored hashed at `access.apiTokens` on STATE.** Nothing else — no cookie, no
-custom header, no signature, no timestamp (`docs/design/api.md:1403`). It is
+custom header, no signature, no timestamp (`docs/design/api.md:1404`). It is
 hashed with SHA-256 rather than argon2id, and the asymmetry is argued rather
 than assumed: argon2id guards a human-chosen password
 (`mosd/webd/src/auth.rs:13-19`), while a token is 256 bits of `OsRng`, for which

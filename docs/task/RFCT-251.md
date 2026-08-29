@@ -172,7 +172,7 @@ the sentence was rewritten; nothing but reading it would have caught it.
 
 §2.4's own contract rows were **not** touched, because the contract did not
 move: *"the dot-path does not resolve: mosd answered
-`com.mos.mosd1.Error.NotFound`"* (`docs/design/api.md:1823`) was already the
+`com.mos.mosd1.Error.NotFound`"* (`docs/design/api.md:1845`) was already the
 written rule for the settings tree, and the state tree has simply stopped being
 the exception to it.
 

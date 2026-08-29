@@ -24,9 +24,9 @@ The gate handed off exactly two things and then read a cookie:
 
 A path under `/api` that no route declares matched neither, so it fell through
 to the HTML branches and ended at `Redirect::to("/login").into_response()`
-(`os/pkgs/mosd/apid/src/routes.rs:3398`) in normal mode, or at
+(`os/pkgs/mosd/apid/src/routes.rs:3372`) in normal mode, or at
 `return Redirect::to("/setup").into_response();`
-(`os/pkgs/mosd/apid/src/routes.rs:3391`) in setup mode. The gate's entire
+(`os/pkgs/mosd/apid/src/routes.rs:3365`) in setup mode. The gate's entire
 credential test is the session cookie, and a bearer does not satisfy it, so
 **the answer depended on which credential the client carried** — a browser saw
 the API's envelope, and everything else saw an HTML redirect it cannot read.
@@ -50,7 +50,7 @@ is not part of that decision.** Section 4.2 already stated the consequence —
 200"* — and the gate contradicted it, because a 303 to `/login` is followed to
 a 200 HTML page. That contradiction is recorded as
 *"The gate contradicted this rule until PLAN-026 M2"*
-(`docs/design/api.md:2804-2813`), and the fix as
+(`docs/design/api.md:2805-2814`), and the fix as
 *"The rest of the reserved `/api` subtree passes too"*
 (`docs/design/api.md:594-609`).
 
@@ -67,7 +67,7 @@ above everything else:
     }
 
 The test is `.is_some_and(|leaf| leaf.is_empty() || leaf.starts_with('/'))`
-(`os/pkgs/mosd/apid/src/routes.rs:3350-3355`).
+(`os/pkgs/mosd/apid/src/routes.rs:3324-3329`).
 
 **It releases the path; it does not answer it.** That choice is the whole of
 why section 4 below comes out clean. The reserved subtree already has a
@@ -99,7 +99,7 @@ a smaller one on a path the same reservation rule owns.
 leaf `is_declared_api_route` accepts begins with `/`, so every path it accepts
 this predicate accepts as well, so
 `if path == "/healthz" || is_declared_api_route(path) {`
-(`os/pkgs/mosd/apid/src/routes.rs:3321`) no longer decides whether anything is
+(`os/pkgs/mosd/apid/src/routes.rs:3295`) no longer decides whether anything is
 released. It was not folded in because PLAN-026 M4 (RFCT-250) owns that
 predicate and is rewriting it, and deleting its only caller would take the
 mechanism out from under that milestone. The source says so at the site, and
@@ -151,14 +151,14 @@ with no change to `routes.rs`:
 
 Two tests are added.
 `an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential`
-(`os/pkgs/mosd/apid/src/tests.rs:6617`) walks five undeclared spellings against
+(`os/pkgs/mosd/apid/src/tests.rs:6618`) walks five undeclared spellings against
 four credentials — none, a stored bearer, an unstored bearer, a session cookie
 — and asserts the four envelopes are equal **to each other** as well as to the
 literal, so the symmetry itself is what is pinned; it also holds `/apibogus` to
 its redirect and `/healthz` to its 200, because an assertion has to distinguish
 the rule from its absence.
 `an_undeclared_api_path_is_a_404_in_setup_mode_too`
-(`os/pkgs/mosd/apid/src/tests.rs:6682`) closes the gate's other redirect exit,
+(`os/pkgs/mosd/apid/src/tests.rs:6683`) closes the gate's other redirect exit,
 which is a second exit and not the same one twice.
 
 ## 6. Two pinning tests, not one
@@ -167,7 +167,7 @@ The brief named one test to flip. The gate found a second.
 
 **Named in the brief.** The final arm of
 `an_absent_token_id_is_404_and_a_malformed_one_is_422`
-(`os/pkgs/mosd/apid/src/tests.rs:6539`) asserted the 303 to `/login` and said in
+(`os/pkgs/mosd/apid/src/tests.rs:6540`) asserted the 303 to `/login` and said in
 its comment that it was *left exactly as it was: a bearer does not satisfy the
 gate*. It now asserts the 404 and `not_found`, and the comment states the new
 rule and names what changed it. The comment on the arm above it was corrected in

@@ -67,7 +67,7 @@ documented-but-untested, stated as such in both documents.
 Check evidence: `bash os/pkgs/rauc/render-config.sh --check` green after the
 comment edits (config renders and matches); `bash docs/verify-citations.sh`
 905/905 and `bash docs/verify-index.sh` 525/525 green. Two pre-existing
-quoted citations into `system.conf.in` (`docs/design/api.md:3878`,
+quoted citations into `system.conf.in` (`docs/design/api.md:3879`,
 `docs/design/dashboard.md:845`) were renumbered because this task's and
 RFCT-142's comment insertions shifted the cited lines — line numbers only,
 no text changed.

@@ -229,7 +229,7 @@ is a narrow one: two code points, on a path that has never carried them.
 | Test, and where | What it holds |
 |---|---|
 | `fn a_passphrase_the_renderer_cannot_quote_is_refused` (`os/pkgs/mosd/mosd-settings/src/model.rs:943`) | The unit rule, over a quote, a backslash, a newline, a tab and a non-ASCII byte, each inside the length band so the length arm cannot pass it for the wrong reason; and that the admissible shapes — an in-range passphrase over the whole printable alphabet, and a raw PMK — still pass |
-| `async fn a_psk_the_renderer_cannot_quote_is_refused_by_the_wifi_route` (`os/pkgs/mosd/apid/src/tests.rs:9546`) | The route answers 422 with section 2.4's envelope, `validation_failed`, `source` `apid`, the dot path; the message never echoes the key; and `fake.set_paths()` is empty, so a refused key never reaches mosd |
+| `async fn a_psk_the_renderer_cannot_quote_is_refused_by_the_wifi_route` (`os/pkgs/mosd/apid/src/tests.rs:9547`) | The route answers 422 with section 2.4's envelope, `validation_failed`, `source` `apid`, the dot path; the message never echoes the key; and `fake.set_paths()` is empty, so a refused key never reaches mosd |
 | `fn the_lifted_psk_bound_is_the_one_the_renderer_enforces` (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:785`) | Extended, not replaced. The existing agreement table gained the five unquotable shapes, so the property it was built for — that no input exists on which the renderer and the lifted rule disagree — now covers the predicate as well as the length band |
 
 The renderer's own refusal test,
