@@ -230,10 +230,10 @@ them.
 | where | tokens | why |
 |---|---|---|
 | §2.4, the error box | `:1737`, `:1757` | *"the pane already shows mosd's message text in an error box"* — `error_box` has many call sites and the prose picks none |
-| §6.2, the built-in pane | `:658` | *"(`home`, at `…:58` and `:658`)"* gives two anchors for one function; `home` is at `:4361` and what the second was meant to be cannot be recovered |
+| §6.2, the built-in pane | `:658` | *"(`home`, at `…:58` and `:658`)"* gives two anchors for one function; `home` is at `:4397` and what the second was meant to be cannot be recovered |
 | §6.2, the image assertion | `:341`, `:248` | the sentence cites `os/verify-image-v2.sh`, which no longer exists in the tree — the checks were ported to `os/verify/src/`, which the same sentence already names |
 | §6.3, the navigation | `:341` | *"the navigation on every built-in pane"* names no function that exists under that description |
-| §8.1, items (iv) and (v) | `:2245`, `:1975`, `:1985`, `:2501`, `:3270` | five anchors in a bare list with no adjacent name and no prose that says which shipped pane each one is |
+| §8.1, items (iv) and (v) | `:2245`, `:1975`, `:1985`, `:2501`, `:3274` | five anchors in a bare list with no adjacent name and no prose that says which shipped pane each one is |
 
 ## 9. Content defects recorded, not fixed
 
@@ -264,7 +264,7 @@ cited line — **39 of 42 do not resolve**, 1 does, and 2 carry no name to test
 with. Section 2.3's conversion table is where most of them live, and its rows
 read `` `POST /ssh/keys/add` (`routes.rs:2545`) `` where `ssh_key_add` is now
 *"async fn ssh_key_add(State(app): State<AppState>, Form(form): Form<SshKeyAddForm>) -> Response {"*
-(`os/pkgs/mosd/apid/src/routes.rs:6816`).
+(`os/pkgs/mosd/apid/src/routes.rs:6852`).
 
 None was rewritten here, because the task's stated scope is the three forms and
 widening it silently is the wrong way to grow a remit. It is the same rot, in
