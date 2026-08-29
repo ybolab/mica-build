@@ -12,6 +12,7 @@ BOARDS := cx3576 x64
 .PHONY: help os os-rootfs-cx3576-v2 \
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
+	podman-pins podman-pins-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
@@ -44,6 +45,8 @@ help:
 	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
 	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
+	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
+	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}:<arch>"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
@@ -285,6 +288,22 @@ os-quadlet-doc-test:
 # this image's libc; os/pkgs/podman/README.md has the reasoning.
 podman:
 	bash os/pkgs/podman/build.sh
+
+# Is any of those seven binaries built from a source tree upstream has moved
+# past? versions.env is the upgrade interface and this is what says there is
+# something to bump: it READS the file and never writes it, opens no pull
+# request and bumps nothing, because recording a hash is an act rather than a
+# copy from an upstream page nobody re-checked. Needs the network, so it runs
+# in the weekly privileged lane rather than the fast one.
+podman-pins:
+	bash os/pkgs/podman/check-pins.sh
+
+# The check on that check, against upstream responses recorded in
+# os/tests/podman-pins/. Offline, and it drives the red directions too -- most
+# of all catatonit, whose upstream has been quiet since 2024, where "correctly
+# pinned" and "never actually compared" produce the same green.
+podman-pins-test:
+	bash os/tests/podman-pins-test.sh
 
 # The builder image every component build stands on, built from a base pinned by
 # DIGEST in os/build-env/images.env rather than by a tag upstream repoints
