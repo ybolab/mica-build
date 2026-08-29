@@ -200,7 +200,7 @@ Both were measured by deleting the attribute and compiling, not by reading.
 
 **`mosd/mosd/src/reconciler/mod.rs`** carried `#[allow(dead_code)]` on the
 `Reconciler` trait with the comment *"unused until the daemon loop lands; drop
-this then"*. The daemon loop landed: `bus.rs:129` and `:205-207` call `apply`,
+this then"*. The daemon loop landed: `mosd/mosd/src/bus.rs:129` and `:205-207` call `apply`,
 `:206` calls `subtree`, and `record` uses `name`. With the attribute removed,
 `cargo clippy -p mosd --all-targets` emits **zero warnings**. Deleted.
 

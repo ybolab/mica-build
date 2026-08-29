@@ -129,8 +129,8 @@ prose containing the sentence *"The previous policy was a development skeleton
 that let any local uid send to all of it."* **A reader who followed the citation
 landed on text that appeared to confirm the claim that had become false.**
 
-The sharpest case: §6.3 said the policy *"calls itself a dev skeleton
-(`com.mos.mosd.conf:4`)"*, while line 4 today reads *"com.mos.mosd is a
+The sharpest case: §6.3 said the policy *"calls itself a dev skeleton"*,
+citing `com.mos.mosd.conf:4`, while line 4 today reads *"com.mos.mosd is a
 ROOT-ONLY bus name (RFCT-048)"* — **the citation had come to assert the exact
 negation of the claim it was offered as evidence for.**
 
@@ -261,7 +261,7 @@ reference only"*. **This is the only other change to `README.md`**, and the diff
 is therefore two hunks rather than one.
 
 **`Makefile` is untouched** — verified by its absence from the changed-file
-list. `Makefile:31` still routes `make os` into `talos/`. That is a build change,
+list. `Makefile:32` still routes `make os` into `talos/`. That is a build change,
 it is **L1's**, and it will be made on main after this campaign merges with the
 full suite. Whether the Talos base remains a build target is **settled and not
 this record's to settle**: it is not, and L1 is making the tree say so. **No
@@ -280,8 +280,8 @@ are dismissed on an **inertness** basis instead: **no build step reads the root
     grep -rn 'README.md' Makefile os/ mosd/ --include='*.sh' --include='Makefile' --include='*.rs'
 
 returns exactly three hits (ugrep), and **none of them is the root README**:
-`Makefile:28` and `Makefile:100` name **`board/x64/README.md`** inside `@echo`
-strings, and `Makefile:88` is a **comment** about `docs/README.md`. The docs gate
+`Makefile:29` and `Makefile:103` name **`board/x64/README.md`** inside `@echo`
+strings, and `Makefile:91` is a **comment** about `docs/README.md`. The docs gate
 itself reads `docs/README.md` (`docs/verify-index.sh:43`), not the root file.
 The root `README.md` is documentation that nothing in the build consumes, so the
 image builds, both verifiers and the health/shadow/dbus/repart/bundle gates are
@@ -309,7 +309,7 @@ Changed files:
   with explicitly. It is not a mechanical fact and no check enforces it.
 - **Whether the `talos/` directory should exist at all is not settled here**, and
   this record deliberately does not settle it. The build target that still points
-  at it (`Makefile:31`) is L1's to change.
+  at it (`Makefile:32`) is L1's to change.
 - **`docs/design/*.zh.md` translations were not checked** for the same stale
   policy claim. The repo-wide sweep above covers them by pattern and returned no
   hits, but the pattern is English; a Chinese rendering of the same assertion

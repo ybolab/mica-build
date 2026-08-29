@@ -1,18 +1,30 @@
 # Per-first-segment floors for docs/verify-citations.sh's in-scope census.
 #
 # Each row is `<first-segment> <floor>`: the minimum number of in-scope
-# citations whose cited path starts with that repository-root directory.
+# citations whose cited path starts with that repository-root directory -- or,
+# for a citation that resolved to a repository-root FILE, that file's own name
+# (RFCT-256's no-slash rule counts a citation under the first segment of the
+# path it resolved to, and `Makefile` has no directory above it).
 # The checker FAILS when a segment named here counts zero in-scope citations
 # or fewer than its floor; growth never fails. This is the mechanical catch
 # for a root directory vanishing out from under its citations, which the
 # scope rule otherwise reclassifies as skipped-outside without a failure
 # (RFCT-167 lost six citations that way).
 #
-# Updating: when a drop is intended -- citations rewritten, a tree renamed --
-# lower or remove the segment's row in the SAME commit as the change, so the
-# decision is visible in the diff. Floors are the measured counts at the
-# commit that last touched this file.
-docs 323
+# Updating: when a drop is intended -- citations rewritten, a tree renamed, a
+# document marked as a dated record -- lower or remove the segment's row in the
+# SAME commit as the change, so the decision is visible in the diff.
+#
+# Floors are the measured counts at the commit that last touched this file. At
+# a merge EVERY row is re-measured on the merged tree, not only the rows git
+# raised a conflict on: a floor can be lowered by a silent auto-merge, in this
+# very file, and that is the one artifact where a silent drop must not happen.
+# These were measured by RFCT-256 on the merged tree that took bkd/tcdocsrm at
+# 7ef3edc.
+docs 399
 .github 4
-os 1807
-test 18
+.gitignore 5
+Makefile 16
+os 1993
+README.md 1
+test 22

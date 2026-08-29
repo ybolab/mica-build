@@ -82,7 +82,7 @@ condition with, at `MOSD_NOT_FOUND => (`
 (`os/pkgs/mosd/apid/src/routes.rs:3046`) — so the two trees now agree, which was
 the point. `docs/design/api.md`'s error table already reads
 *"the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound`"*
-(`docs/design/api.md:1822`) as the 404 row and the fix agrees with it; that file
+(`docs/design/api.md:1831`) as the 404 row and the fix agrees with it; that file
 belongs to M3b and PLAN-023 and was not edited here beyond section 4's
 re-anchor.
 
@@ -179,7 +179,7 @@ M3b may want to say more there about why the two routes now differ.
 `:NNN` citations — the form that names no file and resolves against a path given
 earlier in the prose. `docs/verify-citations.sh` skips them by design — *"is shorthand for a path
 named earlier in the prose and has no base to resolve against"*
-(`docs/verify-citations.sh:39-41`) — so the gate is green with them stale.
+(`docs/verify-citations.sh:44-46`) — so the gate is green with them stale.
 Most of them do resolve against `routes.rs` and are now off by 28. No mechanical
 rule re-anchors them safely: the base is context-dependent, and the same table
 mixes `routes.rs` shorthand with `bus_client.rs` shorthand on one line. Guessing

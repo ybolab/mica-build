@@ -360,7 +360,7 @@ its row in `docs/task/index.md` and a new plan needs its row in
 `docs/plan/index.md`, in the same commit.
 
 `bash docs/verify-citations.sh` scans
-"docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:10`)
+"docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:13`)
 `docs/research/*.md`, each excluding `*.zh.md`, plus `docs/architecture.md`. It
 does **not** scan `test/`, which is why this page lives under `docs/design/`: a
 harness page under `test/apid-api/` would be gated by nothing.
@@ -370,7 +370,7 @@ Two properties decide how you write a citation here.
 **Citations are quote-armed.** Resolution alone passes on a quotation whose
 source was renamed underneath it, so check 2 compares the quoted text against the
 cited lines — but only when quote and citation are *directly adjacent*, since
-"a citation carries a" (`docs/verify-citations.sh:52`) quote when it sits
+"a citation carries a" (`docs/verify-citations.sh:90`) quote when it sits
 directly against a quoted fragment on either side, with nothing between them but
 whitespace, emphasis characters and one parenthesis. One interposed word demotes
 the pair to resolution-only, silently as far as the run's exit status goes. A
@@ -381,7 +381,7 @@ be fully quoted**.
 **A green gate does not mean every citation is fresh.** Shorthand citations are
 skipped by design: a token whose path has no `/` — the continuation form, where
 the file was named earlier in the prose — "is shorthand for a path named earlier
-in the prose and has no base to resolve" (`docs/verify-citations.sh:40`) against.
+in the prose and has no base to resolve" (`docs/verify-citations.sh:45`) against.
 It is counted in the summary and never opened. A citation written that way points
 nowhere checkable, so write the full path every time. The script says the rest
 itself: a provenance claim such as "measured at <commit>" is validated against no

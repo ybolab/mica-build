@@ -21,7 +21,7 @@ inside the read-only root is a trusted signer on every device.
 Everything downstream of that is complete. `mosd/mosd/src/rauc.rs` wraps
 RAUC's D-Bus API, `InstallUpdate` is served on the bus
 (`mosd/mosd/src/bus.rs:654`), path validation and lifecycle recording are
-tested (`bus.rs:899`, `:930`, `:983`). The one missing piece is the key
+tested (`mosd/mosd/src/bus.rs:899`, `:930`, `:983`). The one missing piece is the key
 material, and it is the piece that decides who may sign an update for a
 customer device — a product decision about key custody and rotation, not a
 code change.
@@ -67,7 +67,7 @@ documented-but-untested, stated as such in both documents.
 Check evidence: `bash os/pkgs/rauc/render-config.sh --check` green after the
 comment edits (config renders and matches); `bash docs/verify-citations.sh`
 905/905 and `bash docs/verify-index.sh` 525/525 green. Two pre-existing
-quoted citations into `system.conf.in` (`docs/design/api.md:3846`,
+quoted citations into `system.conf.in` (`docs/design/api.md:3855`,
 `docs/design/dashboard.md:845`) were renumbered because this task's and
 RFCT-142's comment insertions shifted the cited lines — line numbers only,
 no text changed.

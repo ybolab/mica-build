@@ -268,7 +268,7 @@ The brief's single failing site was the rule's artifact, not the corpus's.
 Admitting path tokens as antecedents makes nine sites reachable that were
 invisible before, and they resolve to paths that do not exist. Seven are
 `RFCT-172.md`'s frozen record of paths that moved, and are correct as records.
-**Two are a live defect in a design document**: `docs/design/api.md:3083` and
+**Two are a live defect in a design document**: `docs/design/api.md:3092` and
 `:3501` assert image-side checks against `os/verify-image-v2.sh`, and no such
 file exists anywhere in this tree — the bash script was replaced by the
 TypeScript suite under `os/verify/src/`, where `check_ui_location` survives
@@ -321,7 +321,7 @@ kept in 5.4 as evidence, because it is what a future forced marker will cite.
 ### 5.2 Marked: `docs/task/RFCT-215.md`
 
 - **Forced by**: M1's ambiguity rule. `docs/task/RFCT-215.md:54` cites
-  `tests.rs:1821`, and `tests.rs` has two candidates in this tree
+  `` `tests.rs:1821` ``, and `tests.rs` has two candidates in this tree
   (`os/pkgs/mosd/apid/src/tests.rs` and
   `os/pkgs/mosd/mosd/src/reconciler/container/tests.rs`). M1 fails an ambiguous
   basename rather than guessing, so that site becomes an ERROR the moment M1
@@ -335,7 +335,11 @@ kept in 5.4 as evidence, because it is what a future forced marker will cite.
 **The shape that forces it**, stated explicitly so the rule survives its own
 reasoning. `docs/task/RFCT-215.md:54` reads:
 
-    | §1.6 `tests.rs:1821` "reads the committed `openapi.json`" | the `include_str!` is at `:1824` |
+    | §1.6 `tests.rs` `:1821` "reads the committed `openapi.json`" | the `include_str!` is at `:1824` |
+
+(The reproduction above splits the token into a path and a line, and the
+paragraph before it double-backticks it, so that this record does not itself
+make the ambiguous citation it is reporting. RFCT-215's own row is untouched.)
 
 The left column deliberately quotes the **original wrong citation**; the right
 column is the correction. Both columns are the measurement. A resolver that
@@ -491,7 +495,7 @@ set. What disarms it is interposed words, RFCT-170's deliberate zero-tolerance
 rule. One word ("at") demotes the citation to resolution-only with
 `near-miss=1`; four words ("asserts the shape at") demote it with
 `near-miss=0`, fully silent. The demotion is invisible in a PASS line, because
-`docs/verify-citations.sh:400` counts it into `N_NOQUOTE` and continues. A
+`docs/verify-citations.sh:406` counts it into `N_NOQUOTE` and continues. A
 fixture for this must encode the INTERPOSED-WORD case; one built on "quote on
 the preceding line" would not fail on the defect it was built for.
 
@@ -499,7 +503,7 @@ the preceding line" would not fail on the defect it was built for.
 
 **7.6 The elided paraphrase.** A quoted fragment that writes `(...)` for an
 argument list is a paraphrase, not an excerpt, and can never match the source.
-Three sites at `docs/design/api.md:3473-3475`. The resolver will arm this check
+Three sites at `docs/design/api.md:3482-3484`. The resolver will arm this check
 on the bare token, so the implementing pass meets it whether or not the sites
 are full-formed. Repair needs the prose re-worded, not the citation moved.
 
@@ -581,7 +585,7 @@ dot-paths, file modes, a path, and bare identifiers. Four of them appear
 symbol paths written in prose, not excerpts of source.
 
 The other three are a second, distinct kind, and worth naming separately: an
-**elided paraphrase**. `docs/design/api.md:3473-3475` write
+**elided paraphrase**. `docs/design/api.md:3482-3484` write
 `tls::ensure_state_dir(...)`, `tls::load_or_generate_certificate(...)?` and
 `tls::load_or_generate_session_key(...)?`, where `(...)` stands in for the
 argument list. The source says `(&config.state_dir)`. Normalisation collapses

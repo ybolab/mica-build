@@ -406,7 +406,7 @@ written, was deleted whole (RFCT-122).
 ## 8. Structural redaction is a bus-level contract [implemented]
 
 **[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
-(around `docs/design/api.md:1465`) applies to the bus itself: **the value of
+(around `docs/design/api.md:1470`) applies to the bus itself: **the value of
 any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
 the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
 in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a

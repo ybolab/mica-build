@@ -3,7 +3,10 @@
 # resolve, and that where the citing text quotes its source, the quote still
 # appears at the lines it cites. Read-only: it opens files and prints, and
 # changes nothing. It needs no network, no root and no container -- bash,
-# coreutils, grep, sed and awk, the same floor docs/verify-index.sh sits on.
+# coreutils, grep, sed, awk and `git ls-files`. The one addition to
+# docs/verify-index.sh's floor is git, and it is load-bearing rather than
+# convenient: the no-slash citation form below resolves against the set of
+# TRACKED files, which is a question only git can answer.
 #
 #   bash docs/verify-citations.sh [--advisory]   (or: make docs-verify-citations)
 #
@@ -34,14 +37,49 @@
 # review reads the census rather than trusting silence.
 #
 # A citation is a backticked token of the form `path:line` or `path:line-line`.
-# It is in scope only when its path contains a `/` and its first segment names a
-# directory that exists at the repo root. Everything else is skipped by reason
-# and counted, never dropped: `0.0.0.0:443` is a host and a port; `routes.rs:95`
+# A path containing a `/` is in scope when its first segment names a directory
+# that exists at the repo root.
+#
+# The no-slash form. A path with no `/` at all -- `routes.rs:2545` -- matched
+# the token regex and was then dropped, on the ground that `routes.rs:95`
 # is shorthand for a path named earlier in the prose and has no base to resolve
-# against; `u-boot/env/mmc.c:118` and `axum-0.8.9/src/lib.rs:10` cite trees this
-# repository does not contain and never will. Each of those reasons appears in
-# the summary with its count, because a summary that reads "N checked" while M
-# were never opened is the false assurance this check exists to prevent.
+# against. That left 392 citations in this corpus checked by nothing (RFCT-214
+# measured the class, RFCT-256 closed it), which is silence rather than a
+# policy. The form is now read the way a reader reads it. If the token is itself a tracked path, it IS a citation and
+# resolves to that file: `Makefile:31` and `.gitignore:8` name repository-root
+# files whose path happens to carry no directory. Otherwise the tracked files
+# whose basename it names are its candidates, and exactly one candidate
+# resolves it. Several candidates is an ERROR that names them all, because a
+# gate that picked the first would assert a file the writer did not mean --
+# `bus.rs:461` is os/pkgs/mosd/mosd/src/bus.rs or os/pkgs/mosd/mosd/tests/bus.rs
+# and nothing here can tell which. That is fixed by writing the citation in
+# full in the document, never by a waiver here. No candidate at all is a
+# counted SKIP, not a failure: `localhost:8080`, `eth0:1`, `10-base:`,
+# `do_mounts.c:1442` and `PageSettingsWifi.qml:74` all land there, and a gate
+# that failed on a host and a port would be broken rather than strict.
+#
+# Candidates come from `git ls-files` and not from a filesystem walk. A walk
+# would pull in target/ and node_modules/, whose basenames would make ordinary
+# names spuriously ambiguous, and a citation into a build artefact is not a
+# citation into this repository. Nothing else is excluded.
+#
+# Metalinguistic examples. Some documents quote the citation FORM rather than
+# citing anything: docs/task/RFCT-214.md writes `` `routes.rs:2545` `` as an
+# example of the form under discussion, and docs/task/RFCT-170.md quotes whole
+# quote-and-citation pairs as illustrations of an adjacency rule. Under the
+# basename rule those resolve and would go silently green while asserting
+# nothing, so a no-slash token inside a `` double-backtick span `` is a counted
+# SKIP with its own reason -- eight sites in two documents when the rule
+# landed. Only the no-slash form is treated this way: a full-form citation
+# inside such a span is resolved and green today, and taking it out of scope
+# would loosen an assertion this milestone had no mandate to loosen.
+#
+# Everything else is skipped by reason and counted, never dropped:
+# `0.0.0.0:443` is a host and a port; `u-boot/env/mmc.c:118` and
+# `axum-0.8.9/src/lib.rs:10` cite trees this repository does not contain and
+# never will. Each of those reasons appears in the summary with its count,
+# because a summary that reads "N checked" while M were never opened is the
+# false assurance this check exists to prevent.
 #
 # Check 1, resolution. The cited path exists, is a regular file, and every line
 # number named -- both ends of a range -- is at least 1 and at most the file's
@@ -85,7 +123,9 @@
 # tightening so the quote actually gets checked.
 #
 # The census. The summary reports the in-scope citation count per first path
-# segment (`os/`, `docs/`, ...), and docs/verify-citations-baseline.txt holds a
+# segment (`os/`, `docs/`, ...) -- of the path the citation RESOLVED to, so a
+# no-slash citation to a repository-root file counts under that file's own name
+# (`Makefile`, `.gitignore`) -- and docs/verify-citations-baseline.txt holds a
 # committed floor per segment. A segment named there FAILS the run when its
 # count reaches zero or falls below its floor. This is what catches a
 # repository-root directory vanishing out from under its citations: the scope
@@ -136,8 +176,38 @@ esac
 BASELINE=docs/verify-citations-baseline.txt
 UNQUOTED_BASELINE=docs/verify-citations-unquoted-baseline.txt
 
+# The tracked files, indexed both by full path and by basename, for resolving
+# the no-slash citation form. `git ls-files` and not a `find`: see the header.
+# A repository with no tracked files at all is a broken invocation rather than
+# an empty index, so it is an error here instead of 392 silent skips later.
+command -v git >/dev/null 2>&1 || {
+    echo "error: git is not on PATH; the no-slash citation form has no tracked-file set to resolve against" >&2
+    exit 1
+}
+declare -A TRACKED=()
+declare -A BYBASE=()
+N_TRACKED=0
+while IFS= read -r tracked_path; do
+    [ -n "$tracked_path" ] || continue
+    # One path, once. `git ls-files` prints an UNMERGED path once per index
+    # stage, so during a merge with conflicts every conflicted file appears
+    # three times; without this guard `docs/design/api.md` becomes its own
+    # ambiguity and every citation to it fails with a candidate list naming the
+    # same file three times. Measured on a real merge, not imagined.
+    [ -z "${TRACKED[$tracked_path]+x}" ] || continue
+    TRACKED[$tracked_path]=1
+    tracked_base=${tracked_path##*/}
+    BYBASE[$tracked_base]="${BYBASE[$tracked_base]:+${BYBASE[$tracked_base]} }$tracked_path"
+    N_TRACKED=$((N_TRACKED + 1))
+done < <(git ls-files)
+[ "$N_TRACKED" -gt 0 ] || {
+    echo "error: \`git ls-files\` listed no files here; the no-slash citation form cannot be resolved" >&2
+    exit 1
+}
+
 FAIL_RESOLVE=0
 FAIL_CONTENT=0
+FAIL_AMBIGUOUS=0
 FAIL_CENSUS=0
 FAIL_RATCHET=0
 N_DOCS=0
@@ -147,21 +217,26 @@ N_QUOTED=0
 N_NOQUOTE=0
 N_NEARMISS=0
 N_SKIP_HOSTPORT=0
-N_SKIP_BARE=0
+N_SKIP_BARE_OUTSIDE=0
+N_SKIP_BARE_META=0
+N_BARE_RESOLVED=0
 N_SKIP_OUTSIDE=0
 N_DATED=0
 DATED_DOCS=()
 declare -A SEG_COUNT=()
 declare -A NOQUOTE_BY_DOC=()
 
-fail_resolve() { echo "  FAIL $*" >&2; FAIL_RESOLVE=$((FAIL_RESOLVE + 1)); }
-fail_content() { echo "  FAIL $*" >&2; FAIL_CONTENT=$((FAIL_CONTENT + 1)); }
+fail_resolve()   { echo "  FAIL $*" >&2; FAIL_RESOLVE=$((FAIL_RESOLVE + 1)); }
+fail_content()   { echo "  FAIL $*" >&2; FAIL_CONTENT=$((FAIL_CONTENT + 1)); }
+fail_ambiguous() { echo "  FAIL $*" >&2; FAIL_AMBIGUOUS=$((FAIL_AMBIGUOUS + 1)); }
 fail_census()  { echo "  FAIL $*" >&2; FAIL_CENSUS=$((FAIL_CENSUS + 1)); }
 fail_ratchet() { echo "  FAIL $*" >&2; FAIL_RATCHET=$((FAIL_RATCHET + 1)); }
 
 # Every citation token in the document named by $1, one per line, tab
 # separated: citing line, path, first line, last line, the token as written,
-# the quote kind (`text`, `code` or `none`), the near-miss flag (0 or 1), and
+# the quote kind (`text`, `code` or `none`), the near-miss flag (0 or 1), the
+# metalinguistic flag (0 or 1: the token sits inside a `` double-backtick
+# span ``, so it quotes the citation form rather than citing), and
 # the quote. Only the last field can be empty, which is what keeps a
 # tab-delimited read of this correct: with tab in IFS an interior empty field
 # would collapse into its neighbour, so the quote kind says `none` rather than
@@ -224,8 +299,27 @@ extract_citations() {
             }
             return 0
         }
+        # Is position p inside one of the double-backtick spans found below?
+        function in_metaspan(p, q,    t) {
+            for (t = 1; t <= nspan; t++)
+                if (spanb[t] <= p && q <= spane[t]) return 1
+            return 0
+        }
         { txt = txt $0 "\n" }
         END {
+            # The `` spans, left to right. A run of three or more backticks is a
+            # fenced block rather than an inline span, so it is stepped over.
+            nspan = 0; i = 1
+            while ((k = index(substr(txt, i), "``")) > 0) {
+                b = i + k - 1
+                if (substr(txt, b, 3) == "```") { i = b + 3; continue }
+                m = index(substr(txt, b + 2), "``")
+                if (m == 0) break
+                e = b + 2 + m - 1
+                nspan++; spanb[nspan] = b; spane[nspan] = e + 1
+                i = e + 2
+            }
+
             rest = txt; absbase = 1; line = 1; para = 1
             while (match(rest, /`[^` ]+:-?[0-9]+(--?[0-9]+)?`/)) {
                 abs = absbase + RSTART - 1
@@ -314,7 +408,8 @@ extract_citations() {
                     for (i = 2; i <= length(tail); i++) if (substr(tail, i, 1) == "-") { di = i; break }
                     first = substr(tail, 1, di - 1) + 0; last = substr(tail, di + 1) + 0
                 }
-                printf "%d\t%s\t%d\t%d\t%s\t%s\t%d\t%s\n", line, path, first, last, tok, qkind, near, q
+                meta = in_metaspan(abs, tokend - 1)
+                printf "%d\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%s\n", line, path, first, last, tok, qkind, near, meta, q
 
                 absbase = abs + RLENGTH
                 rest = substr(rest, RSTART + RLENGTH)
@@ -359,40 +454,65 @@ for doc in "${DOCS[@]}"; do
         continue
     fi
     NOQUOTE_BY_DOC[$doc]=0
-    while IFS=$'\t' read -r dline path first last tok qkind near quote; do
+    while IFS=$'\t' read -r dline path first last tok qkind near meta quote; do
         N_FOUND=$((N_FOUND + 1))
 
+        resolved=$path
         case "$path" in
-            */*) ;;
+            */*)
+                if [ ! -d "${path%%/*}" ]; then
+                    N_SKIP_OUTSIDE=$((N_SKIP_OUTSIDE + 1)); continue
+                fi
+                ;;
             *[!0-9.]*)
-                N_SKIP_BARE=$((N_SKIP_BARE + 1)); continue ;;
+                # The no-slash form. Read by the tracked-path-then-unique-
+                # basename rule of the header, in that order: an exact tracked
+                # path is a citation written in full that happens to carry no
+                # directory, and it is never ambiguous.
+                if [ "$meta" = 1 ]; then
+                    N_SKIP_BARE_META=$((N_SKIP_BARE_META + 1)); continue
+                fi
+                if [ -z "${TRACKED[$path]+x}" ]; then
+                    cands=${BYBASE[$path]:-}
+                    if [ -z "$cands" ]; then
+                        N_SKIP_BARE_OUTSIDE=$((N_SKIP_BARE_OUTSIDE + 1)); continue
+                    fi
+                    case "$cands" in
+                        *' '*)
+                            fail_ambiguous "$doc:$dline cites \`$tok\`, and $path is the basename of several tracked files: $cands; write the citation in full so it names one"
+                            continue ;;
+                    esac
+                    resolved=$cands
+                fi
+                N_BARE_RESOLVED=$((N_BARE_RESOLVED + 1))
+                ;;
             *)
                 # digits and dots only, and no directory: an address and a port
                 N_SKIP_HOSTPORT=$((N_SKIP_HOSTPORT + 1)); continue ;;
         esac
-        if [ ! -d "${path%%/*}" ]; then
-            N_SKIP_OUTSIDE=$((N_SKIP_OUTSIDE + 1)); continue
-        fi
+        # The resolved path, so a bare filename is reported where it landed
+        via=""
+        [ "$resolved" = "$path" ] || via=" (resolved to $resolved)"
         N_INSCOPE=$((N_INSCOPE + 1))
-        seg=${path%%/*}
+        seg=${resolved%%/*}
         SEG_COUNT[$seg]=$((${SEG_COUNT[$seg]:-0} + 1))
 
         # --- check 1: resolution -------------------------------------------
-        if [ ! -e "$path" ]; then
-            fail_resolve "$doc:$dline cites \`$tok\`, and $path does not exist"
+        if [ ! -e "$resolved" ]; then
+            fail_resolve "$doc:$dline cites \`$tok\`$via, and $resolved does not exist"
             continue
         fi
-        if [ ! -f "$path" ]; then
-            fail_resolve "$doc:$dline cites \`$tok\`, and $path is not a regular file"
+        if [ ! -f "$resolved" ]; then
+            fail_resolve "$doc:$dline cites \`$tok\`$via, and $resolved is not a regular file"
             continue
         fi
         if [ "$first" -lt 1 ] || [ "$last" -lt 1 ]; then
-            fail_resolve "$doc:$dline cites \`$tok\`, and line numbers start at 1"
+            fail_resolve "$doc:$dline cites \`$tok\`$via, and line numbers start at 1"
             continue
         fi
-        nlines=$(awk 'END { print NR }' "$path")
+        nlines=$(awk 'END { print NR }' "$resolved")
         if [ "$first" -gt "$nlines" ] || [ "$last" -gt "$nlines" ]; then
-            fail_resolve "$doc:$dline cites \`$tok\`, and $path has $nlines lines"
+            fail_resolve "$doc:$dline cites \`$tok\`$via, and $resolved has $nlines lines"
             continue
         fi
 
@@ -410,11 +530,11 @@ for doc in "${DOCS[@]}"; do
         # that opens each of its lines, so the marker is stripped from the
         # cited lines before the comparison. Only a leading run is stripped;
         # anything further into the line is source text.
-        haystack=$(normalise "$(sed -n "${first},${last}p" "$path" | sed -E 's@^[[:space:]]*(///?!?|#+)[[:space:]]*@@')")
+        haystack=$(normalise "$(sed -n "${first},${last}p" "$resolved" | sed -E 's@^[[:space:]]*(///?!?|#+)[[:space:]]*@@')")
         needle=$(normalise "$quote")
         case "$haystack" in
             *"$needle"*) ;;
-            *) fail_content "$doc:$dline quotes \"$quote\", and that text is not at \`$tok\`" ;;
+            *) fail_content "$doc:$dline quotes \"$quote\", and that text is not at \`$tok\`$via" ;;
         esac
     done < <(extract_citations "$doc")
 done
@@ -475,11 +595,14 @@ echo "  in scope:               $N_INSCOPE"
 for seg in $(printf '%s\n' "${!SEG_COUNT[@]}" | sort); do
     echo "  in scope, first segment $seg/: ${SEG_COUNT[$seg]}"
 done
+echo "  in scope, bare filename resolved against the tracked files: $N_BARE_RESOLVED"
 echo "  skipped, path is outside this repository's tree: $N_SKIP_OUTSIDE"
-echo "  skipped, bare filename with no directory to resolve against: $N_SKIP_BARE"
+echo "  skipped, bare filename matching no tracked file, so outside this tree: $N_SKIP_BARE_OUTSIDE"
+echo "  skipped, bare filename quoted as an example of the citation form: $N_SKIP_BARE_META"
 echo "  skipped, a host and a port rather than a citation: $N_SKIP_HOSTPORT"
 echo "  resolution failures:    $FAIL_RESOLVE"
 echo "  content failures:       $FAIL_CONTENT"
+echo "  ambiguous bare filenames: $FAIL_AMBIGUOUS"
 echo "  census failures:        $FAIL_CENSUS"
 echo "  ratchet failures:       $FAIL_RATCHET"
 echo "  in-scope citations carrying a quote: $N_QUOTED"
@@ -491,15 +614,15 @@ for doc in "${DOCS[@]}"; do
 done
 echo "  near-miss: no quote armed, but a quoted span sits 1-3 words away: $N_NEARMISS"
 echo "  not checked here, and not checkable: a provenance claim such as \"measured at <commit>\" is validated against no file at all, so a green run here does not mean the citations are handled"
-echo "  not distinguished: a skipped-as-outside path that once existed in this tree reads the same as one that never did"
+echo "  not distinguished: a skipped-as-outside path that once existed in this tree reads the same as one that never did, and a bare filename matching no tracked file is the same refusal by the same reason"
 
-TOTAL_FAIL=$((FAIL_RESOLVE + FAIL_CONTENT + FAIL_CENSUS + FAIL_RATCHET))
+TOTAL_FAIL=$((FAIL_RESOLVE + FAIL_CONTENT + FAIL_AMBIGUOUS + FAIL_CENSUS + FAIL_RATCHET))
 if [ "$ADVISORY" -eq 1 ]; then
     echo "docs/verify-citations.sh: advisory run, exit 0 whatever the counts above say"
     exit 0
 fi
 if [ "$TOTAL_FAIL" -ne 0 ]; then
-    echo "docs/verify-citations.sh: $TOTAL_FAIL FAILED ($FAIL_RESOLVE resolution, $FAIL_CONTENT content, $FAIL_CENSUS census, $FAIL_RATCHET ratchet), $((N_INSCOPE - FAIL_RESOLVE - FAIL_CONTENT)) citations passed" >&2
+    echo "docs/verify-citations.sh: $TOTAL_FAIL FAILED ($FAIL_RESOLVE resolution, $FAIL_CONTENT content, $FAIL_AMBIGUOUS ambiguous, $FAIL_CENSUS census, $FAIL_RATCHET ratchet), $((N_INSCOPE - FAIL_RESOLVE - FAIL_CONTENT)) citations passed" >&2
     exit 1
 fi
 echo "docs/verify-citations.sh: $N_INSCOPE/$N_INSCOPE PASS"

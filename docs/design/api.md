@@ -1336,7 +1336,12 @@ exposes the whole live-state tree to any authenticated caller, which is wider
 than the HTML panes read (section 1.5).
 
 Derived from `os/pkgs/mosd/mosd-settings/src/model.rs` and `os/pkgs/mosd/mosd/src/bus.rs`,
-re-measured at `f7cb5ba`. Nothing here invents a model alongside mosd's; where
+re-measured at `f7cb5ba`. The inventory below cites that commit's lines under
+that commit's paths -- `mosd/mosd-settings/src/model.rs`, before the tree moved
+under `os/pkgs/` -- because they are a pinned measurement and re-anchoring them
+at today's tree would falsify it; `docs/verify-citations.sh` skips them as
+paths this tree does not contain.
+Nothing here invents a model alongside mosd's; where
 the settings tree and a sensible REST resource genuinely disagree, the
 disagreement is named and the choice is costed.
 
@@ -1481,17 +1486,17 @@ destroy the credential.
 
 | Concern | API resource | Backing | Notes |
 |---|---|---|---|
-| System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`model.rs:266-278`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
-| Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`model.rs:11`) | read-only; a write to `schema_version` is rejected by mosd (`model.rs:459-462`) so the API does not expose one |
-| Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`model.rs:20`) | body is a bare JSON string; reconciled by `hostname` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132`) |
-| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`model.rs:22`, `:431-460`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
-| WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`model.rs:301-314`) | `psk` redacted on read |
-| WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:343-373`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:391-402`) |
-| SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:171-204`) | default `enabled: false` (`:206-209`) |
+| System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`mosd/mosd-settings/src/model.rs:266-278`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
+| Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`mosd/mosd-settings/src/model.rs:11`) | read-only; a write to `schema_version` is rejected by mosd (`mosd/mosd-settings/src/model.rs:459-462`) so the API does not expose one |
+| Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`mosd/mosd-settings/src/model.rs:20`) | body is a bare JSON string; reconciled by `hostname` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132`) |
+| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`mosd/mosd-settings/src/model.rs:22`, `:431-460`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
+| WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`mosd/mosd-settings/src/model.rs:301-314`) | `psk` redacted on read |
+| WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`mosd/mosd-settings/src/model.rs:343-373`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:391-402`) |
+| SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`mosd/mosd-settings/src/model.rs:171-204`) | default `enabled: false` (`:206-209`) |
 | SSH keys | the authorized-keys collection above | `access.ssh.authorizedKeys` | **every key is a root key** (`docs/design/access.md` §4.1, `os/pkgs/mosd/apid/src/routes.rs:5913`); the API response must carry that sentence in a `notice` field for the same reason the pane must carry it |
 | Transient root password | `POST /api/v1/actions/transient-root-password` | `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:826`) | an action, not a setting — see §2.3 |
-| Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:163-169`) | see §3.2 for why the API does not offer a password change in phase 1 |
-| Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:235-243`) | only the `debug` image ships the shell at all (`model.rs:239-240`) |
+| Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`mosd/mosd-settings/src/model.rs:163-169`) | see §3.2 for why the API does not offer a password change in phase 1 |
+| Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`mosd/mosd-settings/src/model.rs:235-243`) | only the `debug` image ships the shell at all (`mosd/mosd-settings/src/model.rs:239-240`) |
 | Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`) | actions — see §2.3 |
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`os/pkgs/mosd/mosd/src/bus.rs:470-474`, `:453-455`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
 | Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`os/pkgs/mosd/mosd/src/bus.rs:223-225`) | recorded *before* the action, so it survives the machine going down |
@@ -1549,30 +1554,34 @@ table.
 
 Input is section 1.2's route table, re-measured at `f7cb5ba`. One row per
 method+path that exists today; the line numbers in the first column are this
-commit's.
+commit's. So are the paths every citation in the table carries --
+`mosd/apid/src/routes.rs`, which is where `apid` lived before the tree moved
+under `os/pkgs/`. They are a pinned measurement rather than a claim about
+today's tree, so `docs/verify-citations.sh` skips them as paths this tree does
+not contain instead of re-anchoring a frozen table row by row.
 
 | Today (at `f7cb5ba`) | Form POST? | API equivalent | Request → response |
 |---|---|---|---|
-| `GET /` (`routes.rs:120`) | — | **none, deliberately.** It is a rendering, not data. Its inputs are `GET /api/v1/settings/hostname`, `GET /api/v1/state/network`, and `GET /api/v1/state/uptime` (§2.2) | — |
-| `GET /setup` (`routes.rs:149`) | — | **none** — a form. Its data is `GET /api/versions` plus the 409 condition below | — |
-| `POST /setup` (`routes.rs:947`) | yes | `POST /api/v1/setup` | `{"password": "...", "hostname": "...", "network": {...}}` → `201` with `{"token": "..."}` (§3.2), `409` when already configured (`routes.rs:956-965`), `422` on any validation failure. **Unauthenticated by necessity** — it is the only route the gate lets through in setup mode (`routes.rs:701-706`) |
-| `GET /login` (`routes.rs:150`) | — | **none** — a form | — |
-| `POST /login` (`routes.rs:1091`) | yes | **none for the API.** §3.2 authenticates with a bearer token, not a session; minting a token is `POST /api/v1/tokens`, which is a different operation with a different lifecycle | — |
-| `POST /logout` (`routes.rs:1159`) | yes | **none.** The API has no session to drop. The nearest operation is `DELETE /api/v1/tokens/{id}`, which is revocation, not logout — it is permanent and it affects every holder of that token, not one browser | — |
-| `GET /network` (`routes.rs:1499`) | — | `GET /api/v1/settings/network` — **shipped** | → `{"eth0": {"dhcp": true}, ...}` |
-| `POST /network` (`routes.rs:1509`) | yes | `PUT /api/v1/settings/network.<iface>` | `{"dhcp": true}` or `{"dhcp": false, "static": {"address": "...", "gateway": "...", "dns": [...]}}` → `204`; `422` on an invalid name or CIDR (apid's own validators, `routes.rs:841-851`) |
-| `GET /hostname` (`routes.rs:1556`) | — | `GET /api/v1/settings/hostname` — **shipped** | → `"mos"` |
-| `POST /hostname` (`routes.rs:1721`) | yes | `PUT /api/v1/settings/hostname` | `"router"` → `204`; `422` from `valid_hostname` (`routes.rs:830-839`) |
-| `GET /power` (`routes.rs:1650`) | — | **none** — a confirmation form. Its only content is two constant tokens (`routes.rs:1587-1592`) | — |
-| `POST /power/reboot` (`routes.rs:1703`) | yes | `POST /api/v1/actions/reboot` | `{}` → **`202 Accepted`**, matching today (`routes.rs:1697`) |
-| `POST /power/poweroff` (`routes.rs:1711`) | yes | `POST /api/v1/actions/poweroff` | `{}` → **`202 Accepted`** |
-| `GET /ssh` (`routes.rs:2011`) | — | `GET /api/v1/settings/access.ssh` + `GET /api/v1/state/sshd` — **both shipped** | two calls, because the pane merges two trees (`routes.rs:1845-1869`) |
-| `POST /ssh/enable` (`routes.rs:2027`) | yes | `PUT /api/v1/settings/access.ssh.enabled` | `true` → `204` |
-| `POST /ssh/password` (`routes.rs:2515`) | yes | `POST /api/v1/actions/transient-root-password` | `{"password": "..."}` → `204`; `422` from `validate_transient_password` (`routes.rs:2494-2509`) |
-| `POST /ssh/keys/add` (`routes.rs:2545`) | yes | `POST /api/v1/ssh/authorized-keys` | `{"key": "<type> <blob> [comment]"}` → `201` with the parsed entry and its fingerprint; `422` on a rejected key |
-| `POST /ssh/keys/remove` (`routes.rs:2578`) | yes | `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` | → `204`; `404` when nothing matches (`routes.rs:2590-2596` is a 422 today; see below) |
-| `GET /healthz` (`routes.rs:172`, `:3278`) | — | **none, and it must not change.** See below | — |
-| every path on the HTTP listener (`routes.rs:612-616`) | — | unchanged: 308 to the HTTPS origin (`routes.rs:618-632`), API paths included | — |
+| `GET /` (`mosd/apid/src/routes.rs:120`) | — | **none, deliberately.** It is a rendering, not data. Its inputs are `GET /api/v1/settings/hostname`, `GET /api/v1/state/network`, and `GET /api/v1/state/uptime` (§2.2) | — |
+| `GET /setup` (`mosd/apid/src/routes.rs:149`) | — | **none** — a form. Its data is `GET /api/versions` plus the 409 condition below | — |
+| `POST /setup` (`mosd/apid/src/routes.rs:947`) | yes | `POST /api/v1/setup` | `{"password": "...", "hostname": "...", "network": {...}}` → `201` with `{"token": "..."}` (§3.2), `409` when already configured (`mosd/apid/src/routes.rs:956-965`), `422` on any validation failure. **Unauthenticated by necessity** — it is the only route the gate lets through in setup mode (`mosd/apid/src/routes.rs:701-706`) |
+| `GET /login` (`mosd/apid/src/routes.rs:150`) | — | **none** — a form | — |
+| `POST /login` (`mosd/apid/src/routes.rs:1091`) | yes | **none for the API.** §3.2 authenticates with a bearer token, not a session; minting a token is `POST /api/v1/tokens`, which is a different operation with a different lifecycle | — |
+| `POST /logout` (`mosd/apid/src/routes.rs:1159`) | yes | **none.** The API has no session to drop. The nearest operation is `DELETE /api/v1/tokens/{id}`, which is revocation, not logout — it is permanent and it affects every holder of that token, not one browser | — |
+| `GET /network` (`mosd/apid/src/routes.rs:1499`) | — | `GET /api/v1/settings/network` — **shipped** | → `{"eth0": {"dhcp": true}, ...}` |
+| `POST /network` (`mosd/apid/src/routes.rs:1509`) | yes | `PUT /api/v1/settings/network.<iface>` | `{"dhcp": true}` or `{"dhcp": false, "static": {"address": "...", "gateway": "...", "dns": [...]}}` → `204`; `422` on an invalid name or CIDR (apid's own validators, `mosd/apid/src/routes.rs:841-851`) |
+| `GET /hostname` (`mosd/apid/src/routes.rs:1556`) | — | `GET /api/v1/settings/hostname` — **shipped** | → `"mos"` |
+| `POST /hostname` (`mosd/apid/src/routes.rs:1721`) | yes | `PUT /api/v1/settings/hostname` | `"router"` → `204`; `422` from `valid_hostname` (`mosd/apid/src/routes.rs:830-839`) |
+| `GET /power` (`mosd/apid/src/routes.rs:1650`) | — | **none** — a confirmation form. Its only content is two constant tokens (`mosd/apid/src/routes.rs:1587-1592`) | — |
+| `POST /power/reboot` (`mosd/apid/src/routes.rs:1703`) | yes | `POST /api/v1/actions/reboot` | `{}` → **`202 Accepted`**, matching today (`mosd/apid/src/routes.rs:1697`) |
+| `POST /power/poweroff` (`mosd/apid/src/routes.rs:1711`) | yes | `POST /api/v1/actions/poweroff` | `{}` → **`202 Accepted`** |
+| `GET /ssh` (`mosd/apid/src/routes.rs:2011`) | — | `GET /api/v1/settings/access.ssh` + `GET /api/v1/state/sshd` — **both shipped** | two calls, because the pane merges two trees (`mosd/apid/src/routes.rs:1845-1869`) |
+| `POST /ssh/enable` (`mosd/apid/src/routes.rs:2027`) | yes | `PUT /api/v1/settings/access.ssh.enabled` | `true` → `204` |
+| `POST /ssh/password` (`mosd/apid/src/routes.rs:2515`) | yes | `POST /api/v1/actions/transient-root-password` | `{"password": "..."}` → `204`; `422` from `validate_transient_password` (`mosd/apid/src/routes.rs:2494-2509`) |
+| `POST /ssh/keys/add` (`mosd/apid/src/routes.rs:2545`) | yes | `POST /api/v1/ssh/authorized-keys` | `{"key": "<type> <blob> [comment]"}` → `201` with the parsed entry and its fingerprint; `422` on a rejected key |
+| `POST /ssh/keys/remove` (`mosd/apid/src/routes.rs:2578`) | yes | `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` | → `204`; `404` when nothing matches (`mosd/apid/src/routes.rs:2590-2596` is a 422 today; see below) |
+| `GET /healthz` (`mosd/apid/src/routes.rs:172`, `:715`) | — | **none, and it must not change.** See below | — |
+| every path on the HTTP listener (`mosd/apid/src/routes.rs:612-616`) | — | unchanged: 308 to the HTTPS origin (`mosd/apid/src/routes.rs:618-632`), API paths included | — |
 
 **Actions, not resources.** Three operations are verbs with no state to `GET`
 and no idempotency to promise: `reboot`, `poweroff` and
@@ -1817,7 +1826,7 @@ Content-Type: application/json
 | `not_found` | 404 | apid | unknown route, or a collection item that does not exist |
 | `method_not_allowed` | 405 | apid | a declared route was called with a method it does not serve; the response carries `Allow` naming the methods it does |
 | `request_invalid` | 400 | apid | the body is not JSON, or not the shape the route takes |
-| `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`routes.rs:830-839`), `validate_iface` (`routes.rs:841-851`), `validate_transient_password` (`routes.rs:2494-2509`), `parse_authorized_key` (`routes.rs:2549`), and the change-password floor |
+| `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`os/pkgs/mosd/apid/src/routes.rs:3461`), `validate_iface` (`os/pkgs/mosd/apid/src/routes.rs:3480`), `validate_transient_password` (`os/pkgs/mosd/apid/src/routes.rs:6680`), `parse_authorized_key` (`os/pkgs/mosd/mosd-settings/src/authorized_key.rs:76`, called from apid), and the change-password floor |
 | `wrong_password` | 403 | apid | the current password in a change-password request does not verify; the session is valid, the credential is not |
 | `settings_not_found` | 404 | mosd | the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound` |
 | `settings_read_only` | 409 | mosd | the dot-path exists and rejects writes: mosd answered `com.mos.mosd1.Error.ReadOnly` |
@@ -3643,7 +3652,7 @@ button.
 
 - **Rejected.** The cmdline is generated into the verity target
   (`docs/design/ro-root.md:135`) and is not operator-editable on a device, and
-  `docs/design/uboot-ab-handshake.md:232` records that this board ships no
+  `docs/design/uboot-ab-handshake.md:236` records that this board ships no
   `button recovery` and no `PREBOOT` rockusb entry. There is no shipped hardware
   escape to hang this on; inventing one is a bootloader change, not a daemon
   change, and it would be a large cost for a case (A) and (B) already cover.
@@ -3832,7 +3841,7 @@ reusable here**, and the reasons are different, which is why the answer has to
 come from reading them rather than from their names.
 
 **RAUC's CMS bundle signature.** Bundles are signed at build time by
-`rauc bundle` with the material `make os-devkeys` generates (`Makefile:56-57` →
+`rauc bundle` with the material `make os-devkeys` generates (`Makefile:136-137` →
 `os/pkgs/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
 (`os/pkgs/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,

@@ -46,7 +46,7 @@ guessing. apid writes exactly two trees:
   does not appear in `ReadWritePaths=`.
 - **The bundle store** (`/srv/ui`): `bundle.rs` stages, activates
   (`fs::rename`, `write_record`), deactivates (`remove_file` of `current`)
-  and deletes generations under `Store`'s root, `DEFAULT_ROOT = "/srv/ui"`
+  and deletes generations under `Store`'s root, `pub const DEFAULT_ROOT: &str = "/srv/ui"`
   (`bundle.rs:41`); `startup.rs` drives activation/deactivation at boot. This
   is the one entry in the list.
 

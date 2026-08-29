@@ -320,8 +320,8 @@ round-trip test.
 ### Why the e2e suite was not run, and what was run instead
 
 `make os-apid-api-test` *"IT BUILDS NOTHING and assumes
-`_out/x64/x64-mos-v2-latest.img` already exists"*
-(`Makefile:333`). No such image exists anywhere on this host and no `_out`
+_out/x64/x64-mos-v2-latest.img already exists"*
+(`Makefile:352`). No such image exists anywhere on this host and no `_out`
 directory exists in any checkout of this repository on it, so the harness has no
 guest to talk to. Producing one is not a step this milestone can absorb: it
 needs the rootfs stage chain and the dev signing keys built from scratch, and

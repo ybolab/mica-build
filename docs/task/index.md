@@ -243,3 +243,4 @@ its record's head fails naming both sides (RFCT-171).
 - [-] [**RFCT-257 PLAN-028 M2: the bare-continuation resolver**](RFCT-257.md) `P1`
 - [x] [**RFCT-258 PLAN-028 M3: the plan-index status assertion**](RFCT-258.md) `P1`
 - [x] [**RFCT-259 PLAN-028 M4: the status-outruns-pinned-phase class, bounded**](RFCT-259.md) `P2`
+- [x] [**RFCT-256 PLAN-028 M1: the no-slash citation form, resolved and its violations corrected**](RFCT-256.md) `P1`

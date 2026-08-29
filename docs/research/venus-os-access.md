@@ -631,7 +631,7 @@ shape mos wants for rootfs slots exists in Venus — just aimed elsewhere.
 
 mos's slot counters are decremented **before** boot and refunded only when
 userspace reaches a health gate and runs `rauc status mark-good`
-(`docs/design/uboot-ab-handshake.md:418-444`). Venus has no counter and no health
+(`docs/design/uboot-ab-handshake.md:422-448`). Venus has no counter and no health
 gate at all (§5.7). This is not a contradiction in the mos documents — it is a
 capability Venus simply does not have.
 

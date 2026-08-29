@@ -27,12 +27,12 @@ being deleted. Verbatim, old and new:
 
 The "talos image pipeline" has not existed since PLAN-010 replaced the Talos
 base with systemd + mosd -- the retirement is stated in this same file, in the
-`os:` recipe at `Makefile:57`. The replacement names the measured entry point:
+`os:` recipe at `Makefile:60`. The replacement names the measured entry point:
 `--mkimage-x64` is an arm of `os/build/run.sh`'s dispatch (`os/build/run.sh:106`,
 documented in the usage text at `os/build/run.sh:45`).
 
 The recipe's shape is unchanged on purpose -- still one `@echo` and still
-`&& false`. The comment at `Makefile:52-56` exists because a retired build path
+`&& false`. The comment at `Makefile:55-59` exists because a retired build path
 that exits 0 prints "Nothing to be done" and reads as success, which is the
 failure mode every check here is built to prevent. Correcting the text must not
 quietly correct the exit code with it.

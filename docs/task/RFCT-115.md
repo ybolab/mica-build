@@ -130,7 +130,7 @@ checked by grepping the load-bearing phrase after the sweep:
 | `MOSD_DRY_RUN=1` harness block | `mosd/mosd/tests/bus.rs:116`, `tree.rs`, `scan.rs` | untouched |
 | `MOSD_SHADOW_PATH` redirection | same three files | untouched |
 | "never be pointed at the host's /etc/shadow" | `mosd/mosd/tests/bus.rs:111` | untouched, verbatim |
-| shadow(5) nine fields | `tests/bus.rs:33`, `tests/scan.rs:27`, `transient.rs:277`, `bus.rs:744`, `sshd.rs:487` | all five untouched |
+| shadow(5) nine fields | `tests/bus.rs:33`, `tests/scan.rs:27`, `transient.rs:277`, `mosd/mosd/src/bus.rs:744`, `sshd.rs:487` | all five untouched |
 | bcrypt 72-byte truncation | `transient.rs:69` | untouched |
 | OpenSSH fingerprint format | `sshd.rs` `SHA256:`+unpadded-base64 doc | untouched |
 | MQTT QoS-0 / retained-delete / topic grammar | `mqttd/src/{transport,payload,topic}.rs` | untouched |
