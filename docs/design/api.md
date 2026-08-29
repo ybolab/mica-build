@@ -3652,7 +3652,7 @@ button.
 
 - **Rejected.** The cmdline is generated into the verity target
   (`docs/design/ro-root.md:135`) and is not operator-editable on a device, and
-  `docs/design/uboot-ab-handshake.md:232` records that this board ships no
+  `docs/design/uboot-ab-handshake.md:236` records that this board ships no
   `button recovery` and no `PREBOOT` rockusb entry. There is no shipped hardware
   escape to hang this on; inventing one is a bootloader change, not a daemon
   change, and it would be a large cost for a case (A) and (B) already cover.

@@ -60,7 +60,7 @@ GET network.eth0.100 -> Err(NotFound("network.eth0.100"))
 Four facts in one run:
 
 1. The dot-path write of a VLAN name fails exactly as RFCT-135 and
-   `docs/design/api.md:1397-1426` describe.
+   `docs/design/api.md:1402-1431` describe.
 2. **The persistence layer already spells the key correctly**: serializing a
    tree that structurally contains the key `eth0.100` writes
    `[network."eth0.100"]` — TOML quoted-key syntax, produced by the `toml`
@@ -530,7 +530,7 @@ open"*.
 | `privateKey` joining the redaction denylist | additive | no shipped response carries such a field to remove |
 
 Nothing on the breaking list is touched; **no `/api/v2` is required.** This
-also discharges the debt api.md records at `docs/design/api.md:4626-4636`
+also discharges the debt api.md records at `docs/design/api.md:4635-4645`
 — the dot-path fix reaches the published contract as an additive change, not
 a versioned one.
 

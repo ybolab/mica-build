@@ -22,7 +22,7 @@ differs from section 2.3's, both are given.
 
 ### 1.1 How this was measured, and why the old table could not be trusted
 
-Section 2.3's table (`docs/design/api.md:1531`) states its own provenance:
+Section 2.3's table (`docs/design/api.md:1536`) states its own provenance:
 *"Input is section 1.2's route table, re-measured at `f7cb5ba`. One row per
 method+path that exists today; the line numbers in the first column are this
 commit's."* (`docs/design/api.md:1555-1557`) Two things have happened to it since.
@@ -265,7 +265,7 @@ candidate tree exactly as the pane does, answering 422 with mosd's own message.
 `PUT /api/v1/settings/network...` answers 409 `settings_read_only` and names the
 typed route. This is the one place this design departs from section 2.2's
 "the passthrough route must **not** be removed" rule
-(`docs/design/api.md:1456-1458`), and the departure is argued, not assumed:
+(`docs/design/api.md:1461-1463`), and the departure is argued, not assumed:
 section 2.2's reason for keeping the passthrough is atomic whole-list
 replacement, and `PUT /api/v1/network` (the whole map, validated) provides that
 atomicity while the passthrough does not provide the validation. The cost is
@@ -304,7 +304,7 @@ row this design adds, not the section 6 prose where it lives today.
 
 Folded in from a sibling workstream's measurement. The paragraph it comes from
 is `docs/design/api.md`'s section 2.3 closing note, re-anchored at this HEAD to
-`docs/design/api.md:1672-1676`: it records that `ssh_key_remove` answers 422
+`docs/design/api.md:1681-1685`: it records that `ssh_key_remove` answers 422
 when the identifier matches nothing and argues that for a `DELETE` on a
 collection resource *"that is a **404** — the identified item does not exist."*
 (`docs/design/api.md:1684-1685`) That paragraph's own two citations are accurate
@@ -473,7 +473,7 @@ PLAN-023 and are not re-planned here.
 **M4 — the scalar settings writes.** `PUT /api/v1/settings/<dot-path>` for
 `hostname`, `access.ssh.enabled`, `container.enabled`, `mqtt.enabled`, plus the
 `"<redacted>"`-body 422 rule section 2.2 requires
-(`docs/design/api.md:1474-1477`) and a write-refusal list. Acceptance: a `PUT`
+(`docs/design/api.md:1479-1482`) and a write-refusal list. Acceptance: a `PUT`
 of a bare JSON string to `/api/v1/settings/hostname` returns 204 and
 `GET /api/v1/state/hostname` shows the applied result; a `PUT` to
 `/api/v1/settings/schema_version` returns 409 `settings_read_only`; a `PUT`
@@ -553,7 +553,7 @@ is deliberate"* (`docs/design/api.md:2383-2384`), with the reason
 (`docs/design/api.md:2384-2385`) and the obligation
 *"The UI's password pane has to say so."* (`docs/design/api.md:2386-2387`) Section 9
 treats it as settled and reasons from it
-(`docs/design/api.md:4732`).
+(`docs/design/api.md:4741`).
 
 **(3) The shipped code already revokes the adjacent thing.** The
 `change_password` helper ends with
@@ -585,7 +585,7 @@ opposite treatment from arguments that would each apply to the other: a script
 is as inconvenienced by a dead token as a second browser tab is by a dead
 session, and a stolen session is exactly as dangerous as a stolen token
 (section 3.2: *"A token can do everything the operator can do over the API."*,
-`docs/design/api.md:2373-2374`). Whichever way this resolves, the asymmetry has
+`docs/design/api.md:2382-2383`). Whichever way this resolves, the asymmetry has
 to be argued rather than inherited.
 
 ### 3.3 Recommendation
@@ -601,7 +601,7 @@ would destroy N credentials the operator cannot see at the moment they act — t
 password pane does not list tokens and cannot, since it is a different resource
 — with no confirmation, no count, and no undo, because tokens are shown once at
 mint and never again (section 3.2: *"never the hash, never the plaintext"*,
-`docs/design/api.md:2326`). An operator doing routine hygiene would silently
+`docs/design/api.md:2335`). An operator doing routine hygiene would silently
 kill production automation. Sessions are different in exactly the way that
 matters: a dead session costs a re-login, and the operator holds the credential
 that fixes it.
@@ -618,7 +618,7 @@ operation:
    (`os/pkgs/mosd/apid/src/routes.rs:4489-4491`) and no token.
 2. `GET /api/v1/tokens`, then `DELETE /api/v1/tokens/{id}` **for every id
    returned** — including ones they do not recognise, which is the point.
-   Revocation takes effect on the next request (`docs/design/api.md:2327-2329`).
+   Revocation takes effect on the next request (`docs/design/api.md:2336-2338`).
    Neither route exists yet; M2 ships them.
 3. `GET /api/v1/settings/access.ssh` and remove every authorized key that is not
    theirs. Every key is a root key
@@ -630,7 +630,7 @@ operation:
 5. Check `/srv/ui/current`. Section 7.4 already requires this of any revocation
    runbook, because a bundle installed with a stolen credential survives the
    credential's revocation and survives an A/B update
-   (`docs/design/api.md:3924-3932`).
+   (`docs/design/api.md:3933-3941`).
 6. Accept that step 2's list is the only inventory that exists. Nothing on the
    device records which credential served which request — section 3.3 records
    that absence — so "was this token used?" is unanswerable.
@@ -701,7 +701,7 @@ deliberately"* (`docs/design/release-signing.md:291-292`).
 
 **One thing that is not in scope of this memo, and should not be confused with
 it.** `docs/design/api.md` section 7.4 already recommends **not** signing UI
-bundles in phase 1 (`docs/design/api.md:3887-3890`), and this memo does not
+bundles in phase 1 (`docs/design/api.md:3896-3899`), and this memo does not
 reopen that. What follows is about the **release** signing keys — the ones that
 authorise a kernel and rootfs replacement.
 
@@ -820,7 +820,7 @@ risk.
 
 Section 2.4 was folded in after the first pass, routed from a sibling
 workstream; its citations were measured at the same HEAD as everything else and
-the `docs/design/api.md:1672-1676` anchor was re-derived rather than trusted.
+the `docs/design/api.md:1681-1685` anchor was re-derived rather than trusted.
 
 This task wrote `docs/task/RFCT-210.md`, one row in `docs/task/index.md`, and
 one ceiling row in `docs/verify-citations-unquoted-baseline.txt` (the update

@@ -40,7 +40,7 @@ fragment, so every pairing the old rule made is preserved.
 
 Measured effect on the corpus: exactly ONE citation moves from unquoted to
 quoted (355 -> 356), and it is precisely RFCT-163's worked example —
-`docs/design/uboot-ab-handshake.md:210` quoting `console=ttyFIQ0,1500000`
+`docs/design/uboot-ab-handshake.md:214` quoting `console=ttyFIQ0,1500000`
 directly after citing `os/boards/cx3576/board.env:349`. RFCT-163 fixed that
 fragment by hand and recorded that the gate could not see it; the gate now
 checks it on every run, and it passes.

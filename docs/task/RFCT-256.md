@@ -281,18 +281,48 @@ append moved 50-73 → 68-92, the `vdd-microvolts` block 68-72 → 88-92, and th
 `bootcmd` tail 108 → 107 (its `PREBOOT` sibling, cited in full at line 516, was
 one line off in the same direction and is corrected with it).
 
-### (f) 33 citations re-anchored because this work moved their targets
+### (f) 56 citations re-anchored because this work moved their targets
 
 Adding the pinned-path notes to api.md and the corrected sentence to
-uboot-ab-handshake.md moved lines that 26 citations in 11 other documents point
-at; the gate's own header gained lines that 7 more point at. All 33 are
-re-anchored numbers-only, each by locating its quoted text and preserving the
-window length, never by a constant offset. Two sentences were deliberately
-rewritten so they did NOT change: api.md §2.3's "the line numbers in the first
-column are this commit's" and the gate header's "is shorthand for a path named
-earlier in the prose and has no base to resolve against" are each quoted
-verbatim by three or four other documents, so the new text is appended around
-them rather than replacing them.
+uboot-ab-handshake.md moved lines that other documents point at; so did the
+gate's own header. All 56 are re-anchored numbers-only, each by locating its
+quoted text and preserving the window length, never by a constant offset. Two
+sentences were deliberately rewritten so they did NOT change: api.md §2.3's
+"the line numbers in the first column are this commit's" and the gate header's
+"is shorthand for a path named earlier in the prose and has no base to resolve
+against" are each quoted verbatim by three or four other documents, so the new
+text is appended around them rather than replacing them.
+
+**The gate found 33 of the 56. A deliberate audit found the other 23, and that
+gap is the whole argument for arming.** The 33 were the ARMED citations: the
+content check caught each one because a quotation sat against it and the
+quotation no longer matched. The remaining 23 carried no quote, so they resolved
+into a file long enough to contain their number and the run was green with every
+one of them pointing at the wrong line.
+
+They were found by re-deriving, not by inspection. For each of the three files
+this milestone lengthened, the pre-image is diffed against the current text and
+a map is built from the byte-identical blocks ONLY; a cited line inside a
+rewritten block gets no map entry and is re-derived from its content by hand
+rather than guessed at. No constant offset is applied anywhere, and the reason
+is visible in the measurement: api.md displaces by **+0 below line 1339, +5 from
+1340 to 1552, and +9 from 1553 on**, three zones inside a single change.
+
+| file this milestone lengthened | delta | citations into it, at or past the first moved line | already right | displaced, now repaired |
+|---|---|---|---|---|
+| docs/design/api.md | +9 | 40 | 18 | 19 |
+| docs/design/uboot-ab-handshake.md | +4 | 8 | 5 | 3 |
+| docs/verify-citations.sh | +117 | 8 | 4 | 1 |
+
+Every repair was checked by reading the pre-image line and the new line and
+confirming they are byte-identical — for example the pre-image's
+`access.device.passwordHash` row, cited from docs/design/bus.md, is the same
+text at 1465 before and 1470 after.
+
+This is the class that hides in the unquoted set, and this milestone enlarged
+that set from 936 to 1155 while it was at it. Arming is not a stylistic
+preference: it is the only thing that made two thirds of this displacement
+visible without an audit nobody is obliged to run.
 
 ## 5. Before and after
 
