@@ -116,6 +116,9 @@ echo "docs/verify-index.sh: task/RFCT-*.md <-> $TASK_INDEX"
 
 # forward: every record has a row
 for f in docs/task/RFCT-*.md; do
+    # An unmatched glob expands to itself; a record set can legitimately be
+    # empty once every task is closed and pruned.
+    [ -e "$f" ] || continue
     base=$(basename "$f")
     case "$base" in *.zh.md) continue ;; esac
     if grep -qF -- "($base)" "$TASK_INDEX"; then
@@ -268,6 +271,7 @@ plan_rows() {
 
 # forward: every plan has a row
 for f in docs/plan/PLAN-*.md; do
+    [ -e "$f" ] || continue
     base=$(basename "$f")
     case "$base" in *.zh.md) continue ;; esac
     # not `grep -q`: see the SIGPIPE note at the head of check_readme_dir

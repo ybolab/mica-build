@@ -53,7 +53,7 @@ help:
 # reports success is the failure mode every check in this repository exists to
 # prevent.
 os:
-	@echo "os: retired (Talos base -> systemd + mosd)." >&2
+	@echo "os: retired." >&2
 	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
 	@false
 

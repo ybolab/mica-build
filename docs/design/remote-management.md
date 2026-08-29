@@ -4,13 +4,6 @@
 >
 > Who reaches the device, over what, with which trust — as the tree stands
 > today, plus the one requirement stated here and designed nowhere.
->
-> **Naming convention for this document, because the name collided.** Bare
-> **`apid`** below means the mos product daemon: the HTTPS management daemon
-> that serves the API, with the dashboard as one client of it. The upstream
-> Talos machine API daemon, written **Talos `apid`** in older material, is not
-> part of this system and exists nowhere in this repository; no sentence below
-> uses the bare name for both.
 
 ## 0. How to read the status markers
 

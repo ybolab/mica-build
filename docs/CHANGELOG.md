@@ -4,6 +4,35 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Talos removed from the tree, and the settled records pruned (2026-08-29)
+
+Talos is gone. The three references that were not history went with it: the
+`.gitignore` entry for a `talos/` directory that does not exist, the base name
+in the Makefile's retired-`os` message (the target keeps its recipe — a retired
+build path that exits 0 is the failure mode every check here exists to
+prevent), and the `apid` name-collision note in `remote-management.md`, which
+disambiguated a daemon no reader can now encounter.
+
+`README.md` keeps one mention, deliberately: the design-lineage sentence.
+Talos really is where the immutable-root idea came from, and crediting an
+influence is not the same as naming a dependency.
+
+The rest of the Talos residue was inside settled records, so applying this
+campaign's own rule cleared it. PLAN-029 M3 established that a record is
+deleted when it closes; the closures in the previous commit left seven behind,
+which contradicted it. Every settled record is now pruned — thirteen in all,
+including this campaign's own PLAN-029 and RFCT-262/263/264. `docs/plan/` holds
+no plan records, and `docs/task/` holds RFCT-253 and RFCT-260, the two that are
+genuinely open.
+
+An empty plan set turned out to break `docs/verify-index.sh`: an unmatched glob
+expands to the pattern itself, and the forward loop reported `PLAN-*.md` as a
+record with no row. It failed closed rather than passing green, which is the
+right direction, but it was still a defect. Both forward loops now skip a path
+that does not exist. The negative suite stays at 17/17 — it mints its own
+`PLAN-900` fixture rather than borrowing a real record, which is what keeps the
+plan assertions armed against an empty tree.
+
 ## Backlog cleanup (2026-08-29)
 
 The open set was four plans and five tasks; most of it was bookkeeping rather
@@ -11,9 +40,12 @@ than work. Verified against the tree, then closed:
 
 - **RFCT-005 and PLAN-007 — the Talos rebase, abandoned.** Both proposed
   rebasing the fork onto upstream Talos v1.14.0-rc.1. The project took the
-  other fork, PLAN-010's systemd base. Talos survives in three places, none of
-  them code: a `.gitignore` line, the Makefile's own "retired" message, and a
-  comparison paragraph in `README.md`. There is no fork left to rebase.
+  other fork, PLAN-010's systemd base. There is no fork left to rebase. The
+  last three references outside the records — a `.gitignore` entry for a
+  directory that does not exist, the base name in the Makefile's own "retired"
+  message, and the `apid` name-collision note in `remote-management.md` — went
+  with them. What stays is the design-lineage sentence in `README.md`, which
+  credits an influence rather than naming a dependency.
 - **RFCT-008 and PLAN-010 M1 — superseded.** The systemd rootfs prototype was
   replaced by the v2 chain (`os/rootfs/build-v2.sh` over nine stage
   Dockerfiles, squashfs+dm-verity, A/B layout) that M2-M5 build on and that
