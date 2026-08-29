@@ -236,3 +236,83 @@ own edits shifted, not to correct someone else's target.
 - The first cold rootfs build is what would confirm the export lands and that
   the packed root is clean by measurement rather than by argument. Unclaimed.
 - `api.md`'s stale `build-v2.sh:75-76` citation, above, is unowned.
+
+## Addendum, 2026-08-29: criterion 1 executed
+
+The record above says criterion 1 was proven by fixture and by wiring review and
+NOT by a build. It has since been proven by a build. This section is dated
+because it is a later measurement against the same record, not a rewrite of it.
+
+**The run.** `MOS_BOARD=x64 MOS_ROOTFS_WITHOUT="rauc containers" bash
+os/rootfs/build-v2.sh`, at `06b6455`, working tree clean, 13 minutes. It exited
+non-zero, and the reason is not this milestone's: the smoke runner refuses a
+feature-declined tree by design, downstream of the pack, because "a skip reports
+the same green as a pass". Everything the pack produces was produced first.
+
+**The chain executed, in order, both steps reporting:**
+
+    #11 [closed 3/5] sh /mos-scripts/package-manager-logs-capture.sh
+    #11 0.316 package-manager logs captured: 5 files, 104 KB
+    #12 [closed 4/5] sh /mos-scripts/package-manager-purge.sh
+    #12 2.971 package management removed; 158 copyright files kept
+
+The second line is the load-bearing one. The purge refuses unless
+`/rootfs-report.pkglogs/dpkg.log` exists and is non-empty, so its running at all
+is the capture-before-purge ordering holding on a real build rather than in
+review.
+
+**The export landed**, `_out/x64/pkg-logs/`: `dpkg.log` at 44678 bytes and 653
+lines, `alternatives.log`, and `apt/`. Its first two lines are
+`2026-08-28 03:34:58 startup archives unpack` and
+`2026-08-28 03:34:58 install libsystemd-shared:amd64 <none> 257.13-1~deb13u1`,
+so the instrument the stage-order comparison reads survives outside the image
+with real content.
+
+**The assertion**, read out of `_out/x64/factory-root.oci`
+(sha256 `063d6a3f87da49ac6401b7cf04c486cab420c8452b31c88ae8cd4086f5ad00a9`,
+ref `localhost/mos-factory-root:x64` taken from `factory-root.txt` rather than
+guessed), with two controls so a false pass is detectable:
+
+    control A: usr/share/factory/var/ entries: 86, of which lib/: 62
+               (a packed root has the factory tree; a pre-pack stage image
+                does not, which is how a first attempt against the wrong
+                image was caught and discarded)
+    control B: none of usr/bin/dpkg, usr/bin/apt, usr/bin/apt-get is present
+               (the purge ran in the image under test)
+
+    RESULT: PASS -- none of /var/log/dpkg.log, /var/log/apt/,
+    /var/log/alternatives.log is present, in /var or under
+    /usr/share/factory/var
+
+**The removal is surgical, which the fixtures could not show.** The packed root
+still carries the rest of the log surface:
+
+    usr/share/factory/var/log/README
+    usr/share/factory/var/log/btmp
+    usr/share/factory/var/log/journal/
+    usr/share/factory/var/log/lastlog
+    usr/share/factory/var/log/private/
+    usr/share/factory/var/log/runit/ssh/
+    usr/share/factory/var/log/wtmp
+
+So the change removed the package-manager logs and nothing else; it is not a
+blanket wipe of `/var/log` that happened to satisfy the assertion.
+
+### What this covers, and what it does not
+
+**Covered:** the absence of the three log paths from a real packed root, and the
+`pkg-logs/` export, on a feature-reduced x64 root.
+
+**Not covered:** the shipping cx3576 full-feature root, and the stage-order
+comparison itself, which needs two cold builds.
+
+The configuration reduction does not weaken the result, and the reason is
+structural rather than convenient: the capture -> purge -> export path lives in
+`90-pack`'s `closed` stage and runs after every feature stage unconditionally.
+A feature stage can only ADD log content ahead of the capture point; none of
+them decides whether the three paths survive into the packed root or whether
+`pkg-logs/` receives them.
+
+The shipping-configuration confirmation arrives free with the next ordinary
+image build — any RFCT-206 section 7 run or a release build — so it is a
+standing expectation on the next builder rather than a debt on this milestone.
