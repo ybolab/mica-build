@@ -194,14 +194,23 @@ pair rather than against a relayed number.
 | `docs/verify-index.sh` | 863/863 PASS | 863/863 PASS |
 | `os/verify/run.sh` | 1092/1092 PASS | 1096/1096 PASS |
 | `os/tests/shell-pipefail-lint.sh` | 30/30 clean | 30/30 clean |
-| `docs/verify-citations.sh` | see below | see below |
+| `docs/verify-citations.sh` | 2170/2170 PASS, near-miss 352 | 2171/2171 PASS, near-miss 352 |
 
-The four new tests are this task's negative fixtures. The citation run at the
-code commit read **7 FAILED (0 resolution, 7 content), 2163 passed** — every one
-of them a line-number shift caused by the insertions above, re-anchored
-mechanically in the commit that follows. Near-miss counts are reported with the
-totals, per the campaign rule, because a near-miss delta on one's own diff means
-a citation whose quote is not being checked.
+The four new tests are this task's negative fixtures. The one extra citation is
+this record's own, armed with a quote.
+
+The citation gate was run three times, and the middle run is the one worth
+keeping. At the code commit it read **7 FAILED (0 resolution, 7 content), 2163
+passed** — every one a line-number shift from the insertions above, re-anchored
+mechanically in the commit that follows. The next run read **1 FAILED (0
+resolution, 0 content, 1 ratchet)**: this record had introduced a citation with
+no adjacent quote, above its ceiling of 0. It was quoted rather than having the
+ceiling raised, because a quoted citation is content-checked on every future run
+and a raised ceiling is a permanent licence not to check.
+
+The near-miss count is **352 on both sides, unchanged**. It is reported because
+a near-miss delta on one's own diff means a citation whose quote is silently not
+being checked — the gate says so on a line most readers skip.
 
 The bare `` `:NNN` `` continuation form is invisible to that gate, so
 `RFCT-159.md:219`'s three continuation citations into
