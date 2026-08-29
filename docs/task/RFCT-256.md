@@ -534,6 +534,14 @@ the reason above.
 
 ## 6b. What the merges taught the rule, after it was written
 
+**A self-test that runs only on a clean tree cannot see the mid-merge class at
+all.** That is the durable form of the next finding, and it is not specific to
+this gate or to this bug: every fixture in this repository builds a pristine
+tree, runs against it, and tears it down, so an entire category of behaviour —
+what the tooling does while a merge is in progress — is outside what any of them
+can observe. The instance below was found only by doing what the merge protocol
+tells everyone to do.
+
 **`git ls-files` prints an unmerged path once per index stage, and the rule read
 that as ambiguity.** Taking a base with conflicts in the working tree, the very
 next run reported 46 ambiguous-basename errors whose candidate list named
@@ -633,6 +641,69 @@ meant to be armed and silently not is invisible to every other check, because
 resolution still passes and the content check never runs. That is the ratchet
 doing a job it was not designed for, and it is why a ceiling that refuses to
 drop after an arming pass is a finding rather than an annoyance.
+
+## 6d. The near-miss counter IS the intended-arming-that-failed set
+
+Three separate hand-written counts of the em-dash class were in circulation —
+15, 12 and 7 — and all three were counts of a SHAPE. The gate's own extractor
+settles it: the near-miss counter is not an approximation of the
+citations-somebody-meant-to-arm set, it IS that set, complete, and it has been
+printed in the summary on every run all campaign. The em dash is one contributor
+to it, not a class of its own.
+
+**Measured here by instrumenting the gate itself** — the same extractor, the
+same scope rule, the same dated-record exemption, so the total must agree with
+the printed counter and does: **497 sites across 47 documents.**
+
+**About 162 of those are this milestone's doing, and that is the honest way to
+say it.** Near-miss is counted only for IN-SCOPE citations, and the no-slash
+rule moved 228 bare filenames into scope. The class was always there; the gate
+could not see it until the paths could be resolved. Arming's worklist grew
+because the milestone that makes arming possible made more of the corpus
+visible — an increase that is a measurement improving, not a regression.
+
+### The causes, and why the cheapest block is not the biggest one
+
+| cause | all 497 | of api.md's 207 |
+|---|---|---|
+| prose, words between the quote and the citation | 377 | 172 |
+| table, quote in an ADJACENT cell | 62 | 12 |
+| table, quote in the same cell but not adjacent | 58 | 23 |
+
+This corrects the expectation the work was routed with. The table trap is NOT
+the largest contributor in api.md: it is 12 of 207 adjacent-cell sites, against
+172 that are RFCT-170's deliberate zero-tolerance prose rule doing exactly what
+it was designed to do. Closing a one-to-three word gap in prose is a per-sentence
+rewrite, not a mechanical fix, so the 377 are not cheap and are not claimed.
+
+### What was armed, and what was deliberately not
+
+Five sites, all in api.md's proxy-method table, where the adjacent cell held a
+true literal of the cited line: `fn get_settings` and its four siblings are
+declared verbatim at `os/pkgs/mosd/apid/src/bus_client.rs:28-32`, so moving the
+name into the citation's own cell arms it against text that is really there. The
+fix is the one this record already proved in fixture case 33.
+
+Two blocks were left, and the reasons are the point:
+
+- **20 of the 62 adjacent-cell sites are in docs/task/RFCT-172.md, where the
+  adjacent cell holds a SUPERSEDED CITATION rather than a quotation.** Its rows
+  read `| citing site | old citation | new citation | note |`, so the span one
+  cell away from the flagged citation is `venus-os-access.md:16-19`, not an
+  excerpt of anything. There is nothing to arm; the near-miss counter is
+  reporting a table shape, not an intended arming.
+- **7 more in api.md, rows 763-769, would arm GREEN and be wrong.** The adjacent
+  cell names a settings subtree — `hostname`, `network`, `access.ssh`, `wifi`,
+  `container` — against its reconciler. Those words very probably DO occur
+  somewhere in the cited range, so arming would produce a passing content check
+  by substring coincidence rather than by quotation: a false arm, the
+  naming-rather-than-quoting family, and the gate cannot tell the difference.
+  Left deliberately, and worth more as a recorded reason than as five green
+  lines.
+
+**Remaining after this pass: 492 near-misses across 47 documents**, ranked
+above, with 377 of them the prose class that no mechanical rule closes. It is
+not a completion target and it is not claimed as one.
 
 ## 7a. Arming, and the one place this record does not arm
 

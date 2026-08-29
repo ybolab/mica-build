@@ -747,6 +747,30 @@ a mandated post-commit hand-check and fixed to `` `:513` ``. That is a real
 bare-form defect the gate could not see and this resolver would have caught —
 better evidence than anything in PLAN-028's Context.
 
+Adjudicated and re-verified independently of the commit message that carried it:
+at `5b1192d`, when RFCT-159 was written, HARNESS.md lines 200 and 512 each held
+the token; `36981cc` inserted a coverage-table row at 499, moving everything
+from 499 onward by +1; the same sentence is at 513 today, same text. Line 200
+sits before the insertion and correctly did not move — which is itself the
+three-zone lesson of the paragraph below, visible inside a single file.
+
+**The case does not depend on the inventory being live, and should not be read
+as if it did.** What it demonstrates is that a bare continuation went stale
+under three green runs. That is a fact about the gate, not about the tokens the
+inventory was cataloguing — and it would remain the motivating case even if
+every entry in that list were repointed tomorrow.
+
+Which is close to what happened. The list's heading asserts a property the tree
+no longer has for most of it: `e1ae512` repointed twelve of the seventeen sites
+at `os/boards/<b>/bsp` a day before PLAN-027 touched anything, and five still
+carry the token. The disposition was a **dated correction appended in the
+record's own voice, and deliberately no marker** — a file-scoped marker would
+have frozen the file and forbidden exactly the re-anchor that was correct. That
+is §11.4's cost 2 avoided rather than paid, and it is the clearest instance yet
+of why the anchor-scoped marker is worth building: the right answer here needed
+a mechanism that marks *some* claims in a file as frozen while leaving the rest
+re-anchorable, and having none, it had to be done in prose.
+
 Companion evidence against constant offsets, from the same commit pair:
 `checks.ts` moved in **three zones in a single commit** (+0 below line 47, +1
 for 47-154, +2 above 155) while `HARNESS.md` moved +1. No single constant works

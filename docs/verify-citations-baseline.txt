@@ -20,11 +20,11 @@
 # raised a conflict on: a floor can be lowered by a silent auto-merge, in this
 # very file, and that is the one artifact where a silent drop must not happen.
 # These were measured by RFCT-256 on the merged tree that took bkd/tcdocsrm at
-# b374405.
-docs 404
+# 9dafa12.
+docs 405
 .github 4
 .gitignore 5
 Makefile 17
-os 1995
+os 1996
 README.md 1
 test 22

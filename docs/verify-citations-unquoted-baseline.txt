@@ -8,11 +8,11 @@
 # decision. Ceilings are the measured counts, exact, not slack.
 #
 # Re-measured wholesale by RFCT-256 on the merged tree that took bkd/tcdocsrm
-# at b374405: resolving the no-slash citation form moved 228 citations into
+# at 9dafa12: resolving the no-slash citation form moved 228 citations into
 # scope. Every row is a measured count, never summed and never taken from one
 # side of a merge; at a merge every row is re-measured, not only the rows git
 # raised a conflict on.
-docs/design/api.md 481
+docs/design/api.md 476
 docs/design/boards.md 2
 docs/design/bus.md 5
 docs/design/dashboard.md 146
@@ -71,7 +71,7 @@ docs/task/RFCT-226.md 2
 docs/task/RFCT-235.md 2
 docs/task/RFCT-240.md 3
 docs/task/RFCT-245.md 1
-docs/task/RFCT-256.md 21
+docs/task/RFCT-256.md 23
 docs/task/RFCT-257.md 50
 docs/research/venus-os-access.md 6
 docs/research/venus-os-ui.md 9
