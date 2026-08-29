@@ -1,18 +1,25 @@
 # Per-first-segment floors for docs/verify-citations.sh's in-scope census.
 #
 # Each row is `<first-segment> <floor>`: the minimum number of in-scope
-# citations whose cited path starts with that repository-root directory.
+# citations whose cited path starts with that repository-root directory -- or,
+# for a citation that resolved to a repository-root FILE, that file's own name
+# (RFCT-256's no-slash rule counts a citation under the first segment of the
+# path it resolved to, and `Makefile` has no directory above it).
 # The checker FAILS when a segment named here counts zero in-scope citations
 # or fewer than its floor; growth never fails. This is the mechanical catch
 # for a root directory vanishing out from under its citations, which the
 # scope rule otherwise reclassifies as skipped-outside without a failure
 # (RFCT-167 lost six citations that way).
 #
-# Updating: when a drop is intended -- citations rewritten, a tree renamed --
-# lower or remove the segment's row in the SAME commit as the change, so the
-# decision is visible in the diff. Floors are the measured counts at the
-# commit that last touched this file.
-docs 303
-.github 2
-os 1816
-test 18
+# Updating: when a drop is intended -- citations rewritten, a tree renamed, a
+# document marked as a dated record -- lower or remove the segment's row in the
+# SAME commit as the change, so the decision is visible in the diff. Floors are
+# the measured counts at the commit that last touched this file, measured by
+# RFCT-256 on the merged tree that took bkd/tcdocsrm at 3fba775.
+docs 419
+.github 3
+.gitignore 5
+Makefile 13
+os 2062
+README.md 1
+test 22

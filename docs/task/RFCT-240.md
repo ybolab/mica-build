@@ -317,7 +317,7 @@ held constant so no citation *into* `api.md` moved.
 expanded to the full form in a copy of the pre-image tree so
 `docs/verify-citations.sh` could see them at all — it skips a form that *"is shorthand for a path named earlier
 in the prose and has no base to resolve against"*
-(`docs/verify-citations.sh:39-41`) — and the checker was then run
+(`docs/verify-citations.sh:44-46`) — and the checker was then run
 against the pre-image. Of the 171, **57 carry an armed quote and all 57 fail**;
 the other 114 carry no quote and are unprovable either way. So not one
 continuation into `routes.rs` was correct *before* this change, and re-anchoring

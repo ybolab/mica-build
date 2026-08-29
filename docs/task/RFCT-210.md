@@ -32,7 +32,7 @@ commit's."* (`docs/design/api.md:1555-1557`) Two things have happened to it sinc
 `docs/verify-citations.sh`'s scope by construction — the checker's own header
 records it, of exactly that shorthand: *"is shorthand for a path named earlier
 in the prose and has no base to resolve against"*
-(`docs/verify-citations.sh:40-41`). So no
+(`docs/verify-citations.sh:45-46`). So no
 gate has ever checked those twenty numbers, and they have drifted by as much as
 1078 lines. `POST /setup` is cited at `routes.rs:947`; its handler is at
 `os/pkgs/mosd/apid/src/routes.rs:3844`. `POST /ssh/password` is cited at
@@ -548,9 +548,9 @@ there is nothing to revoke."* (`docs/design/api.md:1658-1659`)
 
 **(2) Section 3.2 decides it, the other way, as a property with an
 obligation.** *"**Changing the admin password does not revoke any token.** That
-is deliberate"* (`docs/design/api.md:2383-2384`), with the reason
+is deliberate"* (`docs/design/api.md:2384-2385`), with the reason
 *"a human rotating their own password must not break every script"*
-(`docs/design/api.md:2384-2385`) and the obligation
+(`docs/design/api.md:2385-2386`) and the obligation
 *"The UI's password pane has to say so."* (`docs/design/api.md:2386-2387`) Section 9
 treats it as settled and reasons from it
 (`docs/design/api.md:4741`).
@@ -608,7 +608,7 @@ that fixes it.
 
 The cost of keeping it, stated plainly: **"I changed my password" is not a
 containment action**, and that is section 3.2's own wording
-(`docs/design/api.md:2377-2378`).
+(`docs/design/api.md:2386-2387`).
 
 **What an operator who believes a password change contains a breach actually has
 to do.** Six steps, in this order, and every one of them is a separate
@@ -826,7 +826,7 @@ This task wrote `docs/task/RFCT-210.md`, one row in `docs/task/index.md`, and
 one ceiling row in `docs/verify-citations-unquoted-baseline.txt` (the update
 procedure the checker's header states: *"when a new unquoted citation is
 genuinely wanted, raising the row in the same commit is the explicit, reviewable
-override"*, `docs/verify-citations.sh:109-111`). Nothing under `os/`,
+override"*, `docs/verify-citations.sh:149-151`). Nothing under `os/`,
 `docs/design/`, `docs/plan/`, `test/` or `.github/` was touched: this milestone
 is design, and two sibling tasks are editing `os/pkgs/mosd/**` concurrently.
 

@@ -321,7 +321,7 @@ kept in 5.4 as evidence, because it is what a future forced marker will cite.
 ### 5.2 Marked: `docs/task/RFCT-215.md`
 
 - **Forced by**: M1's ambiguity rule. `docs/task/RFCT-215.md:54` cites
-  `tests.rs:1821`, and `tests.rs` has two candidates in this tree
+  `` `tests.rs:1821` ``, and `tests.rs` has two candidates in this tree
   (`os/pkgs/mosd/apid/src/tests.rs` and
   `os/pkgs/mosd/mosd/src/reconciler/container/tests.rs`). M1 fails an ambiguous
   basename rather than guessing, so that site becomes an ERROR the moment M1
@@ -335,7 +335,11 @@ kept in 5.4 as evidence, because it is what a future forced marker will cite.
 **The shape that forces it**, stated explicitly so the rule survives its own
 reasoning. `docs/task/RFCT-215.md:54` reads:
 
-    | §1.6 `tests.rs:1821` "reads the committed `openapi.json`" | the `include_str!` is at `:1824` |
+    | §1.6 `tests.rs` `:1821` "reads the committed `openapi.json`" | the `include_str!` is at `:1824` |
+
+(The reproduction above splits the token into a path and a line, and the
+paragraph before it double-backticks it, so that this record does not itself
+make the ambiguous citation it is reporting. RFCT-215's own row is untouched.)
 
 The left column deliberately quotes the **original wrong citation**; the right
 column is the correction. Both columns are the measurement. A resolver that

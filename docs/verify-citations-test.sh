@@ -27,6 +27,12 @@
 # The fixture is therefore small enough that every count in the summary is
 # stated below by hand and asserted exactly.
 #
+# Each fixture is a git repository, because the checker resolves the no-slash
+# citation form against `git ls-files` (RFCT-256). Nothing is committed: `git
+# add` is enough to populate the index `ls-files` reads, and run_checker
+# refreshes it immediately before every run so a case that writes a file after
+# new_fixture needs no bookkeeping of its own.
+#
 # No root, no network, nothing outside a temp dir. It fails loudly when it
 # cannot run rather than skipping.
 #
@@ -39,6 +45,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKER="${HERE}/verify-citations.sh"
 
 [ -e "${CHECKER}" ] || { echo "error: ${CHECKER} not found" >&2; exit 1; }
+command -v git >/dev/null 2>&1 || {
+    echo "error: git is not on PATH, and the checker needs it to resolve the no-slash form" >&2
+    exit 1
+}
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -64,6 +74,7 @@ new_fixture() {
     local dir="$1" n
     rm -rf "${dir}"
     mkdir -p "${dir}/docs/design" "${dir}/os/pkgs/mosd/apid/src"
+    git init -q "${dir}"
     cp "${CHECKER}" "${dir}/docs/verify-citations.sh"
 
     cat >"${dir}/os/pkgs/mosd/apid/src/settings_api.rs" <<'RS'
@@ -155,6 +166,10 @@ must_replace() {
 # and its exit status in ${RC}. Any argument is passed straight through.
 run_checker() {
     RC=0
+    # The index is what `git ls-files` reads, and a case may have written files
+    # after new_fixture returned; refreshing here keeps every case honest
+    # without each one remembering to.
+    git -C "${FIX}" add -A >/dev/null 2>&1
     bash "${FIX}/docs/verify-citations.sh" "$@" >"${WORK}/out" 2>&1 || RC=$?
 }
 
@@ -234,9 +249,12 @@ expect_report "the report counts what it skipped, by reason, and what it never e
     "citations found:        8" \
     "in scope:               4" \
     "in scope, first segment os/: 4" \
+    "in scope, bare filename resolved against the tracked files: 0" \
     "skipped, path is outside this repository's tree: 1" \
-    "skipped, bare filename with no directory to resolve against: 1" \
+    "skipped, bare filename matching no tracked file, so outside this tree: 1" \
+    "skipped, bare filename quoted as an example of the citation form: 0" \
     "skipped, a host and a port rather than a citation: 2" \
+    "ambiguous bare filenames: 0" \
     "census failures:        0" \
     "ratchet failures:       0" \
     "in-scope citations carrying a quote: 3" \
@@ -262,9 +280,10 @@ cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
 os 1
 TXT
 run_checker
-expect_report "a document with nothing skipped still prints all three skipped categories" \
+expect_report "a document with nothing skipped still prints every skipped category" \
     "skipped, path is outside this repository's tree: 0" \
-    "skipped, bare filename with no directory to resolve against: 0" \
+    "skipped, bare filename matching no tracked file, so outside this tree: 0" \
+    "skipped, bare filename quoted as an example of the citation form: 0" \
     "skipped, a host and a port rather than a citation: 0"
 
 # --- 3. resolution: a path that is not there ---------------------------------
@@ -592,8 +611,133 @@ os 3
 TXT
 expect_all_pass "an unquoted count dropping below its ceiling" "3/3"
 
+# --- 27. the no-slash form resolves by unique basename, and is checked --------
+# The RFCT-256 class. `settings_api.rs:2-4` was skipped as shorthand before
+# this rule, so its quotation was checked by nothing at all; now it resolves
+# against the one tracked file of that name and the quote is compared.
+FIX="${WORK}/bare-unique"
+new_fixture "${FIX}"
+add_para "${FIX}" 'The rule again, cited short: *"apid never spawns a process and never talks to systemd itself"* (`settings_api.rs:2-4`).'
+expect_all_pass "a bare filename with exactly one tracked match, quoted and correct" "5/5"
+expect_report "the resolved bare citation is counted as such, under the segment it resolved to" \
+    "in scope, bare filename resolved against the tracked files: 1" \
+    "in scope, first segment os/: 5"
+
+# --- 28. the no-slash form goes red when its quotation no longer holds --------
+# The point of case 27: resolving the form is only worth doing if the content
+# check then bites. The message names where the bare filename landed.
+FIX="${WORK}/bare-unique-misquote"
+new_fixture "${FIX}"
+add_para "${FIX}" 'The cookie is `Path=/; HttpOnly; Wrong` (`settings_api.rs:8`).'
+expect_fail "a bare filename resolving to a file that does not carry the quoted text" 1 \
+    'quotes "Path=/; HttpOnly; Wrong", and that text is not at `settings_api.rs:8` (resolved to os/pkgs/mosd/apid/src/settings_api.rs)'
+
+# --- 29. a bare filename that IS a tracked path, at the repository root -------
+# `Makefile:1` carries no directory because it has none. The exact-path branch
+# runs before the basename branch, so a root file is never ambiguous, and it
+# counts in the census under its own name.
+FIX="${WORK}/bare-root-file"
+new_fixture "${FIX}"
+cat >"${FIX}/Makefile" <<'MK'
+# fixture root Makefile, one target and no heavy lifting
+all:
+	@echo fixture
+MK
+add_para "${FIX}" 'The root recipe says of itself `fixture root Makefile, one target and no heavy lifting` (`Makefile:1`).'
+expect_all_pass "a bare filename that is itself a tracked repository-root path" "5/5"
+expect_report "a repository-root file counts as its own census segment" \
+    "in scope, first segment Makefile/: 1" \
+    "in scope, bare filename resolved against the tracked files: 1"
+
+# --- 30. several candidates is an error that names them all -------------------
+# Never a guess and never the first match: the fix belongs in the document.
+FIX="${WORK}/bare-ambiguous"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/os/pkgs/mosd/mosd/src"
+cp "${FIX}/os/pkgs/mosd/apid/src/settings_api.rs" "${FIX}/os/pkgs/mosd/mosd/src/settings_api.rs"
+add_para "${FIX}" 'The trait is declared at `settings_api.rs:5`, and this sentence quotes nothing of it.'
+expect_fail "a bare filename matching two tracked files" 1 \
+    'cites `settings_api.rs:5`, and settings_api.rs is the basename of several tracked files: os/pkgs/mosd/apid/src/settings_api.rs os/pkgs/mosd/mosd/src/settings_api.rs'
+
+# --- 31. a metalinguistic example is skipped, with its own reason -------------
+# The trap this encodes, exactly as the corpus carries it: docs/task/RFCT-214.md
+# writes `` `routes.rs:2545` `` as an example of the FORM under discussion, and
+# `routes.rs` resolves uniquely into a file thousands of lines long. A naive
+# basename rule resolves that token, finds the line, and reports it green while
+# the document asserted nothing whatever about it -- a citation counted as
+# checked that was never a citation. So the fixture below carries a long file
+# with a unique basename and two form examples against it: one at a line that
+# EXISTS, which is the silent-green half, and one past the end, which is the
+# loud half.
+#
+# Removing the skip fails this case twice over: the in-scope count grows past
+# 4/4 and the skip line drops to 0 (the first paragraph), and the second
+# paragraph raises a resolution failure. A fixture that could not fail on the
+# defect it was built for is what docs/verify-index.sh's header warns against.
+FIX="${WORK}/bare-metalinguistic"
+new_fixture "${FIX}"
+awk 'BEGIN { for (i = 1; i <= 200; i++) print "// fixture routes line " i }' \
+    >"${FIX}/os/pkgs/mosd/apid/src/routes.rs"
+add_para "${FIX}" 'A document naming the form writes it `` `routes.rs:120` ``, and line 120 of that file exists.'
+add_para "${FIX}" 'The same example past the end of the file: `` `routes.rs:2545` ``.'
+# The fixture document's own closing paragraph carries a plain `routes.rs:95-105`,
+# which the long file above now resolves; that is why five citations are in
+# scope here and four in the baseline fixture.
+run_checker
+if [ "${RC}" -eq 0 ] && [ "$(grep -c '^  FAIL ' "${WORK}/out" || true)" -eq 0 ] \
+   && grep -q ': 5/5 PASS$' "${WORK}/out" \
+   && grep -qF 'in scope:               5' "${WORK}/out" \
+   && grep -qF 'skipped, bare filename quoted as an example of the citation form: 2' "${WORK}/out"; then
+    pass "a bare filename inside a double-backtick span is skipped as an example, resolvable or not"
+else
+    fail "a metalinguistic bare filename: expected 5/5, exit 0, 5 in scope and a skip count of 2, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 32. no candidate at all is a counted skip, never a failure ---------------
+# `localhost:8080` is a host and a port whose host is not digits and dots, and
+# `do_mounts.c:1442` cites a kernel this repository does not contain. A gate
+# that failed on either would be broken rather than strict.
+FIX="${WORK}/bare-no-candidate"
+new_fixture "${FIX}"
+add_para "${FIX}" 'The dev server answers on `localhost:8080`, and the kernel mounts root in `do_mounts.c:1442`.'
+run_checker
+if [ "${RC}" -eq 0 ] && [ "$(grep -c '^  FAIL ' "${WORK}/out" || true)" -eq 0 ] \
+   && grep -q ': 4/4 PASS$' "${WORK}/out" \
+   && grep -qF 'skipped, bare filename matching no tracked file, so outside this tree: 3' "${WORK}/out"; then
+    pass "bare filenames matching no tracked file are skipped and counted, and the run stays green"
+else
+    fail "bare filenames with no candidate: expected 4/4, exit 0 and a skip count of 3, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 33. the table trap: a quote in the ADJACENT cell never arms -------------
+# Measured by probing the real extractor: `|` is not in the backward scan's
+# skippable set (`[ \t\n*_(]`), so a quoted fragment sitting in the cell before
+# a citation is separated from it by a character the scan stops on, and the
+# pair never arms. Writing a re-measurement as a two-column table therefore
+# converts every one of its citations to resolution-only, silently -- which is
+# a format choice manufacturing a class, not an authoring mistake.
+#
+# Both halves are pinned here, because the useful half is the fix. The SAME
+# wrong quote is written twice against the same citation: across a pipe, where
+# it stays green and is surfaced only as a near-miss, and inside the citation's
+# OWN cell, where it arms and the content check bites. Exactly one FAIL, and it
+# is the second row.
+FIX="${WORK}/table-cell-arming"
+new_fixture "${FIX}"
+add_para "${FIX}" '| claim | citation |
+|---|---|
+| `Path=/; HttpOnly; Wrong` | (`os/pkgs/mosd/apid/src/settings_api.rs:8`) |
+| the cookie | `Path=/; HttpOnly; Wrong` (`os/pkgs/mosd/apid/src/settings_api.rs:8`) |'
+expect_fail "a wrong quote arms inside the citation's own table cell and not across the pipe" 1 \
+    'quotes "Path=/; HttpOnly; Wrong", and that text is not at `os/pkgs/mosd/apid/src/settings_api.rs:8`'
+expect_report "the demoted across-the-pipe pairing is surfaced as a near-miss, not silence" \
+    "near-miss: no quote armed, but a quoted span sits 1-3 words away: 1"
+
 echo
 total=$((PASS_N + FAIL_N))
+
 if [ "${FAIL_N}" -eq 0 ]; then
     echo "RESULT: PASS (${PASS_N}/${total} cases)"
 else

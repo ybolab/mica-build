@@ -179,7 +179,7 @@ M3b may want to say more there about why the two routes now differ.
 `:NNN` citations — the form that names no file and resolves against a path given
 earlier in the prose. `docs/verify-citations.sh` skips them by design — *"is shorthand for a path
 named earlier in the prose and has no base to resolve against"*
-(`docs/verify-citations.sh:39-41`) — so the gate is green with them stale.
+(`docs/verify-citations.sh:44-46`) — so the gate is green with them stale.
 Most of them do resolve against `routes.rs` and are now off by 28. No mechanical
 rule re-anchors them safely: the base is context-dependent, and the same table
 mixes `routes.rs` shorthand with `bus_client.rs` shorthand on one line. Guessing

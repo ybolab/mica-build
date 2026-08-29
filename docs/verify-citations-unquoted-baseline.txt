@@ -6,45 +6,71 @@
 # or delete it at zero -- in the same commit; when a new unquoted citation is
 # genuinely wanted, raise the row in the same commit so the diff shows the
 # decision. Ceilings are the measured counts, exact, not slack.
-docs/design/api.md 479
+#
+# Re-measured wholesale by RFCT-256 on the merged tree that took bkd/tcdocsrm
+# at 3fba775: resolving the no-slash citation form moved 226 citations into
+# scope, so more documents carry unquoted citations and twenty that had no row
+# at all now have one. Every row below is a measured count, never summed and
+# never taken from one side of a merge.
+docs/design/api.md 482
 docs/design/boards.md 2
 docs/design/bus.md 5
-docs/design/dashboard.md 109
+docs/design/dashboard.md 146
 docs/design/remote-management.md 5
 docs/design/uboot-ab-handshake.md 14
 docs/task/RFCT-040.md 4
 docs/task/RFCT-042.md 1
 docs/task/RFCT-043.md 5
 docs/task/RFCT-045.md 1
-docs/task/RFCT-058.md 1
+docs/task/RFCT-055.md 3
+docs/task/RFCT-058.md 8
 docs/task/RFCT-064.md 3
 docs/task/RFCT-066.md 3
 docs/task/RFCT-068.md 7
-docs/task/RFCT-069.md 3
+docs/task/RFCT-069.md 4
+docs/task/RFCT-071.md 4
+docs/task/RFCT-074.md 4
+docs/task/RFCT-081.md 1
+docs/task/RFCT-082.md 1
+docs/task/RFCT-089.md 1
 docs/task/RFCT-093.md 1
-docs/task/RFCT-105.md 4
+docs/task/RFCT-105.md 6
 docs/task/RFCT-111.md 8
+docs/task/RFCT-114.md 2
+docs/task/RFCT-115.md 13
+docs/task/RFCT-121.md 1
+docs/task/RFCT-129.md 1
+docs/task/RFCT-136.md 3
+docs/task/RFCT-137.md 1
 docs/task/RFCT-138.md 1
 docs/task/RFCT-139.md 1
 docs/task/RFCT-141.md 1
 docs/task/RFCT-142.md 3
-docs/task/RFCT-150.md 72
+docs/task/RFCT-150.md 89
 docs/task/RFCT-153.md 4
-docs/task/RFCT-155.md 3
+docs/task/RFCT-155.md 7
 docs/task/RFCT-157.md 2
-docs/task/RFCT-159.md 17
-docs/task/RFCT-162.md 8
+docs/task/RFCT-159.md 19
+docs/task/RFCT-162.md 11
 docs/task/RFCT-166.md 1
-docs/task/RFCT-167.md 2
-docs/task/RFCT-168.md 3
-docs/task/RFCT-169.md 21
-docs/task/RFCT-170.md 4
-docs/task/RFCT-172.md 21
-docs/task/RFCT-190.md 10
+docs/task/RFCT-167.md 10
+docs/task/RFCT-168.md 4
+docs/task/RFCT-169.md 69
+docs/task/RFCT-170.md 5
+docs/task/RFCT-172.md 29
+docs/task/RFCT-180.md 2
+docs/task/RFCT-190.md 19
+docs/task/RFCT-191.md 3
 docs/task/RFCT-200.md 65
-docs/task/RFCT-201.md 2
-docs/task/RFCT-210.md 56
-docs/task/RFCT-256.md 5
-docs/task/RFCT-257.md 47
+docs/task/RFCT-201.md 5
+docs/task/RFCT-202.md 2
+docs/task/RFCT-203.md 2
+docs/task/RFCT-207.md 1
+docs/task/RFCT-210.md 62
+docs/task/RFCT-212.md 1
+docs/task/RFCT-240.md 3
+docs/task/RFCT-245.md 1
+docs/task/RFCT-256.md 11
+docs/task/RFCT-257.md 49
 docs/research/venus-os-access.md 6
 docs/research/venus-os-ui.md 9

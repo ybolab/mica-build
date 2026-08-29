@@ -33,7 +33,7 @@ run **unmodified**, because the harness is the container it runs in.
 
 PLAN-025 offered "docs/ or test/apid-api/HARNESS extension, citation-gated". The
 two halves of that are in tension and only one resolves them. `docs/verify-citations.sh`
-scans "docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:10`)
+scans "docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:13`)
 `docs/research/*.md` plus `docs/architecture.md` — and nothing under `test/`. A
 page at `test/apid-api/HARNESS.md` would be gated by nothing at all, which is the
 opposite of the milestone's requirement. So `docs/design/build-harness.md`, which

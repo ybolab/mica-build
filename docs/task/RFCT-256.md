@@ -1,6 +1,6 @@
 # RFCT-256 PLAN-028 M1: the no-slash citation form, resolved and its violations corrected
 
-- **status**: in progress — the corpus corrections have landed (`d1254bd`); the extractor change is written, self-tested 37/37, and HELD on one blocker named in section 9
+- **status**: completed — the no-slash form is resolved by the tracked-path-then-unique-basename rule, ambiguity is an error naming its candidates, the metalinguistic and no-candidate classes are counted skips, 392 sites were classified and their 41 violations corrected, and the fixture suite is 37/37; 2525/2525 citations, 995/995 index
 - **priority**: P1
 - **owner**: bkd/b0jd5e1a
 - **createdAt**: 2026-08-29
@@ -320,9 +320,32 @@ confirming they are byte-identical — for example the pre-image's
 text at 1465 before and 1470 after.
 
 This is the class that hides in the unquoted set, and this milestone enlarged
-that set from 936 to 1155 while it was at it. Arming is not a stylistic
-preference: it is the only thing that made two thirds of this displacement
-visible without an audit nobody is obliged to run.
+that set while it was at it. Arming is not a stylistic preference: it is the
+only thing that made two thirds of this displacement visible without an audit
+nobody is obliged to run.
+
+**Then the audit itself was found to under-report, and the fix is the campaign's
+seven-line window.** The first pass accepted a re-anchored citation if the
+wanted token appeared ANYWHERE in the citing document. Two citations three lines
+apart into the same paragraph is exactly the shape that defeats: one row's
+correct token vouches for its neighbour's wrong one. Re-run per citing line,
+with a **seven-line byte-identical window** required around the destination
+before a line number is accepted — three lines before the range, the range,
+three after, and it must occur exactly once in the current file — the same
+audit found **four** wrong where it had found two, all four in the same
+paragraph of docs/task/RFCT-210.md and docs/task/RFCT-139.md. A bare `}` cannot
+satisfy a seven-line window, so a repeated-content mismap is designed out rather
+than warned about, and a window that is not unique is REFUSED rather than
+guessed at.
+
+Confirmed on the merged tree after taking bkd/tcdocsrm: of the citations into
+docs/design/api.md, 48 are confirmed by a unique seven-line window matched at
+their own line, none is wrong, none has an ambiguous window, and 7 sit in
+regions this milestone rewrote where the window cannot apply — every one of
+those 7 is armed, so the content check holds them instead. The same sweep over
+docs/design/uboot-ab-handshake.md confirms 7 with 1 rewritten-region case, and
+over docs/verify-citations.sh confirms the rest with four armed re-anchors the
+gate itself reported.
 
 ## 5. Before and after
 
@@ -455,6 +478,53 @@ interchangeable:
   row has a ceiling of 0). Each row moves to its measured count, exactly, with
   no slack.
 
+## 6a. The expansion exception, and the ruling on how to write it
+
+Full-forming a citation is per-site judgement and never a sweep. Three families
+have been measured where expansion is the wrong repair, and the third is the one
+this milestone met head on:
+
+- a fragment that NAMES rather than quotes (section 4(c) here, nine more
+  measured in api.md by M2);
+- an elided paraphrase presented as a quotation;
+- a **historical reference** — text recording lines as they stood at a past
+  commit. Full-forming one of those produces a citation that RESOLVES against
+  today's tree and asserts a falsehood, gate-green. api.md sections 2.2 and 2.3
+  are exactly that, 41 sites of it.
+
+Two forms answer it, and this milestone used the first:
+
+**A, the pinned historical path.** Rewrite the citation with the path the file
+had at the pinned commit, so it stays legible AS a citation, keeps its
+provenance visible in the text, and the gate skips it as a path this tree does
+not contain.
+
+**B, prose plus a why sentence.** Strip the citation syntax — "sat at line
+3449" — and say in a sentence why it is not a citation. There is nothing left
+for the gate to resolve or to skip.
+
+**The ruling is L1's, carried to this milestone by L2, and it is B for every
+new instance; A is tolerated where it has already landed and is green, which is
+why api.md §2.2/§2.3 are not being reworked.** The deciding argument is
+state-dependence, and this workstream supplied the proof for it: A's safety is a
+property of the TREE, not of the text. It holds only while no repository-root
+directory of that name exists. `mosd/` WAS a repository-root directory before
+the move under `os/pkgs/`, and M2 found an antecedent still naming it at
+docs/task/RFCT-169.md:254. Re-create a top-level `mosd/` tomorrow and every
+pinned-historical citation whose first segment is `mosd` stops being skipped and
+starts resolving against whatever now lives there — with no commit touching the
+document and nothing to announce it. It is the same scheduled-hazard shape as
+the live-id self-test M3 closed, and it parks the text in precisely the bucket
+this gate's own summary declares indistinguishable: *"a skipped-as-outside path
+that once existed in this tree reads the same as one that never did"*
+(`docs/verify-citations.sh:611`). B has no such dependency and cannot fire
+under any future tree.
+
+**api.md §2.2 and §2.3 are therefore a recorded, dated exception**: form A,
+correct when chosen, green, and not to be repeated. Asked which I would choose
+in future, the answer is settled rather than preferred — B, on L1's ruling, for
+the reason above.
+
 ## 7a. Arming, and the one place this record does not arm
 
 The campaign standard this milestone was written under: an ARMED citation buys
@@ -542,7 +612,7 @@ them, and the near-miss probe above confirms neither manufactured a pairing.
    or more words even the near-miss counter goes quiet. M1 does not change that
    rule; it enlarges the population subject to it.
 
-## 9. Held, and why
+## 9. The blocker, and how it cleared
 
 **docs/task/RFCT-215.md:54 is the one site the ambiguity error still fires on**,
 and this milestone must not touch it:
@@ -563,8 +633,23 @@ instead, which exempts it from both checks and from the ratchet, and M2
 awk -F/ '$NF=="tests.rs"'` returns the two candidates above, and
 `grep -rn '`tests\.rs:[0-9]' docs/` returns exactly that one line.
 
-The corpus corrections landed at `d1254bd`, green on both gates. The extractor
-change, its baselines and its self-test are written and verified in advisory
-mode — 0 resolution failures, 0 content failures, 1 ambiguity, 0 census
-failures — and the arming commit is held until the marker merges into
-`bkd/tcdocsrm`.
+**Cleared.** M2 landed the marker; docs/task/RFCT-215.md carries exactly one
+anchored `<!-- dated-record:` line on the merged tree, its 31 citations left
+coverage, and its `os` floor was lowered from 1847 to 1816 in the marker's own
+commit. The ambiguity error stopped firing there and the arming commit landed.
+
+M2's own record reproduced RFCT-215's row twice while explaining it, at
+docs/task/RFCT-257.md:324 and :338, and the ambiguity error fired on those
+instead. They are written here in the non-asserting forms this milestone
+defines — double-backticked in the prose, split into a path and a line inside
+the indented reproduction, since a double-backtick cannot reach there — with a
+notice in that document saying so. Not a word of M2's argument changed, and
+RFCT-215's own row was not touched.
+
+M2 also measured that the ambiguity was MASKING a content failure underneath
+it: full-forming `` `tests.rs:1821` `` arms the quotation in its own cell, and
+the cited line declares
+`fn the_committed_openapi_document_is_the_generated_one()` while the quoted
+phrase is api.md's prose ABOUT the test. So the marker was the only green path
+there, and the ambiguity error was pointing at something real rather than
+merely at an ambiguous basename.
