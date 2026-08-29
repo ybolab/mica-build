@@ -1,6 +1,6 @@
 # RFCT-256 PLAN-028 M1: the no-slash citation form, resolved and its violations corrected
 
-- **status**: in progress — the corpus corrections have landed (`d1254bd`); the extractor change is written, self-tested 35/35, and HELD on one blocker named in section 9
+- **status**: in progress — the corpus corrections have landed (`d1254bd`); the extractor change is written, self-tested 37/37, and HELD on one blocker named in section 9
 - **priority**: P1
 - **owner**: bkd/b0jd5e1a
 - **createdAt**: 2026-08-29
