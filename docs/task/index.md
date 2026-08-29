@@ -244,3 +244,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-258 PLAN-028 M3: the plan-index status assertion**](RFCT-258.md) `P1`
 - [x] [**RFCT-259 PLAN-028 M4: the status-outruns-pinned-phase class, bounded**](RFCT-259.md) `P2`
 - [x] [**RFCT-256 PLAN-028 M1: the no-slash citation form, resolved and its violations corrected**](RFCT-256.md) `P1`
+- [ ] [**RFCT-261 docs/plan/ is half-read: its index is asserted, its citations are not**](RFCT-261.md) `P2`
