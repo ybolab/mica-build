@@ -235,6 +235,80 @@ error is worth keeping visible because it is the exact failure this campaign
 exists to catch: a plausible claim about a gate, written from an abort message
 rather than from the run.
 
+## 7b. The consequence: CI was red by construction
+
+The cause above had a consequence neither this record nor the campaign saw at
+first. The check job's index step is `run: make docs-verify docs-verify-test`
+(`.github/workflows/check.yml:307`), which runs on every push, so the aborting
+self-test was not a latent defect in a script nobody runs — it was a RED check
+job on `main`, on every merge, for about 24 hours (L1's measurement: the abort
+dates from e33ef7b, 2026-08-27T23:15Z). L1 also found the exit code was being
+eaten by a `tail` in the reporting path, which is the second reason the death
+read as quiet.
+
+That pairing is the finding, and neither half is much use alone: a gate that
+aborts partway is a *cause*, and "the repository's check job is red on every
+merge" is what it *cost*. My own fix (05f9a39) went to `main` as L1's
+cherry-pick 7566210 with authorship preserved.
+
+## 7c. The other live id: RFCT-073, and the rule
+
+L1's sweep found this file was the only campaign self-test naming live record
+ids. RFCT-094 was one; RFCT-073 was the other, named at seven points across
+cases 1, 2 and 5.
+
+It was put to me that RFCT-073 is a weaker dependency than RFCT-094 — no
+pre-flight `grep … || exit 1`, so it could not abort the run, and the
+dependency is only "the record exists and is indexed once" rather than a
+status. **Measured, that is not so.** There are three abort paths, not zero:
+
+1. `duplicate_line` runs `exit 1` unless the pattern matches exactly once, and
+   cases 1 and 2 pass it `(RFCT-073.md)`.
+2. `set -euo pipefail` plus case 5's `rm "${FIX}/docs/task/RFCT-073.md"`.
+3. The same, for case 5's `cp` of that file.
+
+And it is positioned worse. Case 1 is the SECOND case, so an abort there
+reports **one** case — the positive control — against the eight the RFCT-094
+abort reached.
+
+Demonstrated rather than argued. A scratch copy of the docs tree with RFCT-073
+renamed out *consistently* (record deleted and its row deleted, so
+`docs/verify-index.sh` stays green over the tree at `983/983`):
+
+| self-test | result |
+|---|---|
+| the version naming RFCT-073 | aborts after 1 case, `rc=1`, no `RESULT:` line |
+| the version discovering its exemplar | `task exemplar discovered: RFCT-001`, `RESULT: PASS (18/18 cases)` |
+
+What IS true is that the trigger is rarer: a record deletion or rename, or its
+row appearing twice, rather than a status transition that happens as a matter
+of routine. But "rare" is what "an assertion nobody has ever seen fail" means,
+and this file exists because that is not evidence. So it is closed the same way
+the RFCT-094 exemplar was — `pick_task_exemplar` reads the first row in the
+fixture index that links to an existing record exactly once — and the
+campaign-standard rule is recorded here:
+
+> **A self-test fixture names a SYNTHETIC id, or discovers its exemplar from
+> the fixture. A live id is a scheduled silent death.**
+
+`docs/verify-citations-test.sh` was measured safe by construction under this
+rule: it uses the synthetic `RFCT-999` throughout. This file now uses `RFCT-999`
+for the record it *creates* (case 5's unindexed record, which must not be
+indexed and so cannot be a real one) and discovery for the record it *needs to
+already exist*. Those are the two correct shapes; a live id is neither.
+
+The helper's own `exit 1` is not the same hazard, and the distinction is worth
+stating because it would otherwise look like the defect being re-introduced: it
+fires only when NO row in the entire index is usable, which means the shipped
+index is already broken and `docs/verify-index.sh` is already red. It cannot be
+armed by one record moving on. That is the same footing case 4's research-entry
+guard has always stood on.
+
+Two mentions of RFCT-073 remain in the file deliberately, neither a dependency:
+the header's account of what was measured when the duplicate assertions were
+first written, and the comment explaining this history. Both are prose about
+the past, which is what the RFCT-094 comment at the exemplar block is too.
+
 ## 8. Upgrade discipline
 
 `new_fixture` copied `docs/README.md`, `docs/design`, `docs/research` and
@@ -280,11 +354,11 @@ should not add more of the very citations it is describing as fragile.
 Every column is a run, not arithmetic over the previous one. Each merge is
 re-measured on the merged tree.
 
-| Gate | c5f7e96 (base) | ced1658 (this milestone) | 6cccf5c (+ bkd/tcdocsrm@d855804) | 41ae539 (+ bkd/tcdocsrm@fd79f53) |
-|---|---|---|---|---|
-| `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` | `983/983 PASS` | `987/987 PASS` |
-| `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` | `2173/2173 PASS` | `2178/2178 PASS` |
-| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, aborts after 8 of 11 cases, no `RESULT:` line | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
+| Gate | c5f7e96 (base) | ced1658 (this milestone) | 6cccf5c (+ tcdocsrm@d855804) | 41ae539 (+ tcdocsrm@fd79f53) | after §7c (this commit) |
+|---|---|---|---|---|---|
+| `bash docs/verify-index.sh` | `863/863 PASS` | `979/979 PASS` | `983/983 PASS` | `987/987 PASS` | `987/987 PASS` |
+| `bash docs/verify-citations.sh` | `2170/2170 PASS` | `2173/2173 PASS` | `2173/2173 PASS` | `2178/2178 PASS` | `2179/2179 PASS` |
+| `bash docs/verify-index-test.sh` | **red** — `error: no pending RFCT-094 row…`, exit 1, aborts after 8 of 11 cases, no `RESULT:` line | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` | `RESULT: PASS (18/18 cases)` |
 
 Both merges moved the totals for the same reason and neither touched this
 milestone's logic. `d855804` brought M4's `docs/task/RFCT-259.md`; `fd79f53`
@@ -317,14 +391,17 @@ from scope.
 Census, re-measured at each merge — the segment margins are volatile and are
 stated against the commit they were measured at, never carried forward:
 
-| Segment | Floor | At 6cccf5c | At 41ae539 |
-|---|---|---|---|
-| `docs/` | 303 | 306 (+3) | 306 (+3) |
-| `.github/` | 2 | 2 (0) | 2 (0) |
-| `os/` | 1847 | 1847 (0) | 1852 (+5) |
-| `test/` | 18 | 18 (0) | 18 (0) |
+| Segment | Floor | At 6cccf5c | At 41ae539 | After §7c |
+|---|---|---|---|---|
+| `docs/` | 303 | 306 (+3) | 306 (+3) | 306 (+3) |
+| `.github/` | 2 | 2 (0) | 2 (0) | 3 (+1) |
+| `os/` | 1847 | 1847 (0) | 1852 (+5) | 1852 (+5) |
+| `test/` | 18 | 18 (0) | 18 (0) | 18 (0) |
 
-0 census failures at both. `os/` gained its five from RFCT-260 arriving on
+0 census failures at all three. `.github/`'s +1 is section 7b's citation of
+the check job's index step — the first thing in this campaign to give that
+segment any margin at all; its floor is left at 2 for the same reason `docs/`'s
+is left at 303. `os/` gained its five from RFCT-260 arriving on
 main, not from anything here; a margin that appears from another workstream's
 commit can disappear the same way, and none of it is spent by this milestone.
 `docs/`'s three are this milestone's own, and its floor is deliberately left at
@@ -341,7 +418,10 @@ Changed files:
 
 - `docs/verify-index.sh` — section 4
 - `docs/verify-index-test.sh` — the exemplar de-hardcoding, `docs/plan` in the
-  fixture, seven plan cases
+  fixture, seven plan cases, and the RFCT-073 discovery (section 7c)
+- `.github/workflows/check.yml` — the index step's name said "Both document
+  indexes" and this milestone made that three; a one-line consequence of
+  section 4, in the same class as the `build-harness.md` re-anchor below
 - `docs/plan/index.md` — the Status Markers table's third column; **no row
   changed**
 - `docs/design/build-harness.md`, `docs/task/RFCT-058.md` — citations

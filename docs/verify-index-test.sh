@@ -56,6 +56,46 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
+# THE EXEMPLAR TASK RECORD, DISCOVERED RATHER THAN NAMED. Cases 1, 2 and 5
+# need one real record that is indexed exactly once and whose file exists:
+# case 1 duplicates its row, case 5 deletes its file and copies it. They were
+# written against RFCT-073 BY NAME, which is the same defect the exemplar at
+# case 6 had -- and it is not milder for having a different trigger. Three
+# distinct paths abort the whole run: duplicate_line `exit 1`s unless the row
+# appears exactly once, and `set -e` kills the run on the `rm` and the `cp` if
+# the record is gone. Case 1 is the SECOND case, so an abort there reports one
+# case instead of the eight the RFCT-094 abort reached.
+#
+# The trigger is rarer than RFCT-094's -- a record deletion or rename, or the
+# row appearing twice -- but "rare" is what "nobody has ever seen it fail"
+# means, and this file exists because that is not evidence. The rule it now
+# follows, campaign-wide: a self-test fixture names a SYNTHETIC id or
+# discovers its exemplar from the fixture. A live id is a scheduled silent
+# death.
+#
+# This helper's own `exit 1` is not the same hazard. It fires only when NO row
+# in the whole index is usable, which means the shipped index is already
+# broken and docs/verify-index.sh is already red -- the same reasoning case 4's
+# research-entry guard rests on. It cannot be armed by one record moving on.
+pick_task_exemplar() {
+    local idx="$1" dir id
+    dir="$(dirname "${idx}")"
+    while read -r id; do
+        [ "$(grep -cF -- "(${id}.md)" "${idx}")" -eq 1 ] || continue
+        [ -e "${dir}/${id}.md" ] || continue
+        printf '%s' "${id}"
+        return 0
+    done < <(sed -n 's/^- \[.\] \[\*\*\(RFCT-[0-9]*\) .*/\1/p' "${idx}")
+    return 1
+}
+
+TASK_ID="$(pick_task_exemplar "${HERE}/task/index.md" || true)"
+[ -n "${TASK_ID}" ] || {
+    echo "error: no row in ${HERE}/task/index.md is usable as an exemplar -- none links to an existing record exactly once" >&2
+    exit 1
+}
+echo "task exemplar discovered: ${TASK_ID}"
+
 PASS_N=0
 FAIL_N=0
 pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $*"; }
@@ -165,9 +205,9 @@ expect_all_pass "baseline: the shipped docs tree, copied verbatim"
 # and keeping both sides is the likeliest wrong resolution.
 FIX="${WORK}/task-row-twice"
 new_fixture "${FIX}"
-duplicate_line "${FIX}/docs/task/index.md" "(RFCT-073.md)"
-expect_fail "docs/task/index.md carrying the RFCT-073 row twice" 1 \
-    "carries 2 rows for 'RFCT-073.md'" \
+duplicate_line "${FIX}/docs/task/index.md" "(${TASK_ID}.md)"
+expect_fail "docs/task/index.md carrying the ${TASK_ID} row twice" 1 \
+    "carries 2 rows for '${TASK_ID}.md'" \
     "lives in two places that can disagree"
 
 # --- 2. the same row kept three times ---------------------------------------
@@ -176,9 +216,9 @@ expect_fail "docs/task/index.md carrying the RFCT-073 row twice" 1 \
 # operator resolving it needs to know which one is on the table.
 FIX="${WORK}/task-row-thrice"
 new_fixture "${FIX}"
-duplicate_line "${FIX}/docs/task/index.md" "(RFCT-073.md)" 2
-expect_fail "docs/task/index.md carrying the RFCT-073 row three times" 1 \
-    "carries 3 rows for 'RFCT-073.md'"
+duplicate_line "${FIX}/docs/task/index.md" "(${TASK_ID}.md)" 2
+expect_fail "docs/task/index.md carrying the ${TASK_ID} row three times" 1 \
+    "carries 3 rows for '${TASK_ID}.md'"
 
 # --- 3. a design/ document listed twice in the README ------------------------
 FIX="${WORK}/design-entry-twice"
@@ -205,13 +245,13 @@ expect_fail "docs/README.md listing a research document twice" 1 \
 # disarm them while the duplicate cases above go on passing.
 FIX="${WORK}/dangling-row"
 new_fixture "${FIX}"
-rm "${FIX}/docs/task/RFCT-073.md"
+rm "${FIX}/docs/task/${TASK_ID}.md"
 expect_fail "a row whose record a rename deleted" 1 \
-    "has a row for 'RFCT-073.md', but docs/task/RFCT-073.md does not exist"
+    "has a row for '${TASK_ID}.md', but docs/task/${TASK_ID}.md does not exist"
 
 FIX="${WORK}/unindexed-record"
 new_fixture "${FIX}"
-cp "${FIX}/docs/task/RFCT-073.md" "${FIX}/docs/task/RFCT-999.md"
+cp "${FIX}/docs/task/${TASK_ID}.md" "${FIX}/docs/task/RFCT-999.md"
 expect_fail "a task record with no row" 1 \
     "docs/task/RFCT-999.md exists but has no row in docs/task/index.md"
 
