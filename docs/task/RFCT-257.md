@@ -1105,3 +1105,38 @@ only its bytes.
 It is the same shape as §11.1's near-miss and §16's auto-merge floor: the
 mechanism reports faithfully on the thing it measures, and the thing it measures
 is narrower than the thing a reader assumes it measured.
+
+### 17.1 This record hit the class it documents
+
+Measured by M1 after merging: this document's own §5.2 fired M1's ambiguity
+error, at two sites where it **reproduces** RFCT-215's row in order to explain
+why that row forces a marker. Reproducing a citation as evidence is
+indistinguishable, to the extractor, from making it. The record arguing that a
+citation quoted as data must not assert was itself asserting one, twice.
+
+That is the same shape as §11.1's near-miss, §16's auto-merge floor and §17's
+negation: **the mechanism sees bytes, not intent.** It is worth more as a
+measured instance than as a caution, because it happened to the document best
+placed to have anticipated it — this milestone had already named the
+metalinguistic class in §7.5 and still wrote two asserting reproductions.
+
+M1's repair is accepted as made, and it is correct under **both** milestones'
+rules, which is not obvious and was checked here rather than assumed:
+
+- in prose, double-backticked, taking the metalinguistic skip M1 owns;
+- inside the indented reproduction, where a double backtick cannot reach,
+  split into a path span and a line span — `` `tests.rs` `` then `` `:1821` ``.
+  `tests.rs` alone matches no citation token, so M1's basename rule never sees
+  it; and it contains no `/`, so under §4.2 it is **not a valid path antecedent**
+  either, leaving both bare tokens with no same-line antecedent. Under §11's
+  ruling they are counted skips, not errors.
+
+The cost is two tokens added to the no-antecedent baseline, which is the correct
+place for them. RFCT-215's own row is untouched, as it must be.
+
+**A reproduction is not a citation, and the corpus has no way to say so.** The
+split form is the workaround, not the fix; it makes the reproduction non-verbatim
+in the one respect a reader is least likely to notice. That belongs on the
+residue list beside §7.1 and §7.5 — a way to mark a span as reproduced-not-
+asserted would retire the metalinguistic class, the reproduction class and part
+of the frozen-audit pressure at once. **Record, do not build.**
