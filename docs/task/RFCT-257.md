@@ -965,21 +965,38 @@ someone else's lifecycle moves, silent when it does.
 Prose has no such dependency. It cannot fire under any future tree. **Prose is
 the default because its safety is unconditional, not because it reads better.**
 
-The what-moved distinction still decides something, and survives the ruling
-reframed — only the verdict on the second case flips:
+**The what-moved distinction is the ruling's own structure**, and it originated
+here rather than being handed down: the two forms are selected by what moved,
+not by taste. What the ruling corrected was one *verdict*, not the analysis.
 
-- **Only the lines moved, path still live** — prose is the *only* option, not
-  the preferred one. There is no historical path to name, and any citation
-  naming the live file resolves and lies. This site is that case:
-  `os/pkgs/mosd/apid/src/routes.rs` is exactly where it always was.
-- **The path moved** — prose is *still* the standard, on unconditional-safety
-  grounds, even though a historical path exists to name.
+- **(a) Only the lines moved, the path is still live** — **prose is mandatory**,
+  not merely preferred. There is no historical path to name, and any citation
+  naming the live file resolves and lies; nothing else can be correct. This
+  section reached that independently, before the ruling, and it is now ruling
+  text. This site is that case: `os/pkgs/mosd/apid/src/routes.rs` is exactly
+  where it always was.
+- **(b) The path also moved** — prose-plus-why still stands over the
+  historical-path form. The trade is unconditional safety against conditional
+  legibility. This is the verdict an earlier draft here got wrong.
 
-One honest cost of the standard, recorded rather than buried: prose leaves the
-provenance in a clause *about* the text rather than in the text itself, where a
-citation would have kept the reader oriented. That cost is real and was the
-basis of the superseded draft; it is judged to be worth paying for a safety
-property that does not depend on the shape of a future tree.
+**The cost is recorded inside the ruling rather than denied**: prose moves
+provenance out of the citation position and into a clause *about* the text,
+losing the orientation a citation would have given a later reader. It loses
+anyway — because the condition it depends on has already failed once in this
+tree.
+
+### 14.3 What the superseded draft got wrong, and why it is left on the record
+
+The earlier draft was not merely un-informed by the ruling. **It reasoned from
+the wrong property.** It judged the two repair forms on how they *read* to a
+later reader, when the deciding property is whether their safety is
+**conditional on the tree**. The `mosd/` counter-example was already in §4.2 of
+this same document, measured by this milestone, and was not connected to it.
+
+That is the same failure mode as trusting a green gate: a property that holds
+today read as a property that holds. It is left stated rather than quietly
+rewritten, because a record that names its own near-miss is worth more than one
+that reads better.
 
 ## 15. The auto-merge hazard, and the window rule
 
@@ -1052,3 +1069,39 @@ files did move — `os/verify/src/checks-engine.ts`, `os/verify/src/checks.ts` a
 `os/verify/HARNESS.md` — but on one side only, PLAN-027's, which re-anchored
 them there; this milestone edits no source file, so the summed form of the
 hazard does not apply.
+
+## 17. The gate cannot distinguish a quote from its negation
+
+Measured by api-residues, and it constrains the resolver pass directly.
+
+The content check is a substring test. **A quoted fragment and its negation are
+the same bytes to it.** So a passage can be edited into a falsehood, the run
+goes green over the false sentence, and — the sharp part — *the falsifying edit
+can itself supply the token that keeps it green*. Nothing mechanises this. Only
+reading the passage catches it.
+
+This is not an argument against arming. An armed citation still buys
+fragment-versus-line verification, which is the only thing that makes §15's
+merge displacement visible at all. It is a statement about what a green content
+check means: **the bytes are present, not that the sentence is true.**
+
+It bears on the two things this milestone does next, and the exposure is
+specific rather than general:
+
+- The resolver **arms citations that were never armed before**. Every bare token
+  that resolves under the same-line rule and carries an adjacent quote gets a
+  content check on its first run. A green result there says the fragment is
+  present at the inherited lines — not that the surrounding claim is true.
+- The class A work **changes the truth of passages**, not just their citation
+  syntax. §14.1's repair is exactly that: a passage that asserted the wrong line
+  numbers now asserts none, and its truth changed with the edit.
+
+So the rule for the remaining passes: **where an edit changes what a passage
+asserts, read the passage — do not trust the run.** That applies to the 148
+class A sites, and it applies with more force to the newly armed set, because a
+citation arming for the first time has never had its sentence checked by anyone,
+only its bytes.
+
+It is the same shape as §11.1's near-miss and §16's auto-merge floor: the
+mechanism reports faithfully on the thing it measures, and the thing it measures
+is narrower than the thing a reader assumes it measured.
