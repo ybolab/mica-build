@@ -347,17 +347,20 @@ Two scripts, both read-only, both needing nothing but bash and coreutils.
 
 `bash docs/verify-index.sh` asserts that the indexes agree with the tree **in
 both directions** — it is written to catch a rename, because
-"Asserts that the two document indexes agree with the tree, in BOTH"
+"Asserts that the three document indexes agree with the tree, in BOTH"
 (`docs/verify-index.sh:2`) directions is the half that a forward-only check
-omits. It covers three pairings:
+omits. It covers four pairings:
 `1. docs/design/*.md      <-> docs/README.md` (`docs/verify-index.sh:9`),
-the same for `docs/research/`, and
-`3. docs/task/RFCT-*.md   <-> docs/task/index.md` (`docs/verify-index.sh:11`).
-So a new design page needs its row in `docs/README.md` and a new task file needs
-its row in `docs/task/index.md`, in the same commit.
+the same for `docs/research/`,
+`3. docs/task/RFCT-*.md   <-> docs/task/index.md` (`docs/verify-index.sh:11`),
+and `4. docs/plan/PLAN-*.md   <-> docs/plan/index.md`
+(`docs/verify-index.sh:12`).
+So a new design page needs its row in `docs/README.md`, a new task file needs
+its row in `docs/task/index.md` and a new plan needs its row in
+`docs/plan/index.md`, in the same commit.
 
 `bash docs/verify-citations.sh` scans
-"docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:10`)
+"docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:13`)
 `docs/research/*.md`, each excluding `*.zh.md`, plus `docs/architecture.md`. It
 does **not** scan `test/`, which is why this page lives under `docs/design/`: a
 harness page under `test/apid-api/` would be gated by nothing.
@@ -367,7 +370,7 @@ Two properties decide how you write a citation here.
 **Citations are quote-armed.** Resolution alone passes on a quotation whose
 source was renamed underneath it, so check 2 compares the quoted text against the
 cited lines — but only when quote and citation are *directly adjacent*, since
-"a citation carries a" (`docs/verify-citations.sh:52`) quote when it sits
+"a citation carries a" (`docs/verify-citations.sh:90`) quote when it sits
 directly against a quoted fragment on either side, with nothing between them but
 whitespace, emphasis characters and one parenthesis. One interposed word demotes
 the pair to resolution-only, silently as far as the run's exit status goes. A
@@ -378,7 +381,7 @@ be fully quoted**.
 **A green gate does not mean every citation is fresh.** Shorthand citations are
 skipped by design: a token whose path has no `/` — the continuation form, where
 the file was named earlier in the prose — "is shorthand for a path named earlier
-in the prose and has no base to resolve" (`docs/verify-citations.sh:40`) against.
+in the prose and has no base to resolve" (`docs/verify-citations.sh:45`) against.
 It is counted in the summary and never opened. A citation written that way points
 nowhere checkable, so write the full path every time. The script says the rest
 itself: a provenance claim such as "measured at <commit>" is validated against no

@@ -65,7 +65,7 @@ record and the document cannot drift:
    *"probes systemd, mosd and apid first"* (`docs/design/mosd.md:484`) and the
    U-Boot attempt-counter fallback — *"a slot that cannot complete a boot is
    guaranteed to exhaust its credits"*
-   (`docs/design/uboot-ab-handshake.md:434-435`).
+   (`docs/design/uboot-ab-handshake.md:438-439`).
 4. **The surviving invariant**, which is a constraint on any future trigger and
    not a decision about any existing one: every trigger — a policy pull, a
    remote trigger over section 2's channel, a local one — converges on the one

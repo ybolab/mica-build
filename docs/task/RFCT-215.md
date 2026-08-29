@@ -332,3 +332,5 @@ floors were raised to the measured counts in the commit that raised them.
 the same commit as the change, which is the ratchet's own override procedure.
 The net is a document with 18 more unquoted citations and 246 fewer unresolved
 ones. `docs/task/RFCT-215.md` takes a ceiling of 8.
+
+<!-- dated-record: a closeout audit of docs/design/api.md section 1 against the surface as it stood at PLAN-023 M9; every row of its section 1 table quotes the ORIGINAL wrong citation on the left and the correction on the right, so both columns are the measurement and neither may be re-anchored -->

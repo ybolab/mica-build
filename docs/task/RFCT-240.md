@@ -97,7 +97,7 @@ asserts the admin password still logs in.
 **422**, because `docs/design/api.md` section 2.2 states it:
 *"a `PUT` whose body contains `"<redacted>"` is rejected at 422 rather than
 written, because writing the sentinel would silently destroy the credential"*
-(`docs/design/api.md:1475-1478`).
+(`docs/design/api.md:1480-1483`).
 
 **`validation_failed`**, from the existing set rather than a new token.
 Section 2.4's `code` is an open set whose contract is that an unrecognised
@@ -253,7 +253,7 @@ was restated; see section 7.
    import at all.
 5. `docs/design/api.md` section 2.3's *"There is no
    `POST` and no `PUT` anywhere under `/api`"*
-   (`docs/design/api.md:1540-1541`). The `PUT` half is now false. Section 2.3
+   (`docs/design/api.md:1545-1546`). The `PUT` half is now false. Section 2.3
    is the M1 design's own input and its whole table is a dated measurement this
    campaign supersedes milestone by milestone; correcting one clause of it here
    would leave the twenty rows around it saying the opposite.
@@ -317,7 +317,7 @@ held constant so no citation *into* `api.md` moved.
 expanded to the full form in a copy of the pre-image tree so
 `docs/verify-citations.sh` could see them at all — it skips a form that *"is shorthand for a path named earlier
 in the prose and has no base to resolve against"*
-(`docs/verify-citations.sh:39-41`) — and the checker was then run
+(`docs/verify-citations.sh:44-46`) — and the checker was then run
 against the pre-image. Of the 171, **57 carry an armed quote and all 57 fail**;
 the other 114 carry no quote and are unprovable either way. So not one
 continuation into `routes.rs` was correct *before* this change, and re-anchoring

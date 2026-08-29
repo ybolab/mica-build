@@ -216,7 +216,7 @@ The bare `` `:NNN` `` continuation form is invisible to that gate, so
 `RFCT-159.md:219`'s three continuation citations into
 `stages/40-board.Dockerfile` were checked by hand against the pre-image, line by
 line, and moved. One pre-existing error was found and deliberately NOT fixed:
-`docs/design/api.md:3518` *"copies the cross-built"* — and `:4045` with it —
+`docs/design/api.md:3527` *"copies the cross-built"* — and `:4045` with it —
 names `build-v2.sh` at its lines 75-76 for prose about staging the cross-built
 binary, but those lines held `exit 1` and a case terminator at the parent commit
 already. That path is written without a slash on purpose: naming it as a

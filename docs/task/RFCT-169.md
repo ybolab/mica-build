@@ -127,7 +127,7 @@ repo-path token against the tree, not by reading. The sweep had rewritten it to
 **(a) `api.md:3461-3462`.** "`mos-sign` is a member of the same cargo workspace"
 was made false by M3's extraction. The gate could not catch it: that citation
 carries no adjacent quoted fragment, so it is resolution-checked only, and
-`Cargo.toml:3` still exists. Restated for the extracted reality, and its two
+`os/pkgs/mosd/Cargo.toml:3` still exists. Restated for the extracted reality, and its two
 citations repointed at `os/pkgs/rauc-sign/Cargo.toml:39-44` (the workspace
 declaration and the comment recording that `cargo clippy --workspace` from
 `os/pkgs/mosd/` no longer reaches this crate) and `:66-68` (rauc-sign's own
@@ -228,7 +228,7 @@ history, Decisions item 4) and `*.zh.md`.
    carries `'pkgs'`: `checks-connd.ts:53`, `checks-system.ts:52`,
    `smoke-pins.ts:31` and `:134`, `smoke-pins.test.ts:157`, `smoke.test.ts:378`
    and `:379`. One new survivor, not on the briefed list:
-   `os/pkgs/mosd/apid/tests/e2e.rs:73` — `.join("mosd")` is the cargo target-dir
+   `os/pkgs/mosd/apid/tests/e2e.rs:73` `.join("mosd")` is the cargo target-dir
    **binary name**, not a repo path.
 3. **Escaped-regex literals** spelled `mosd\/` inside `.toThrow(/.../)`: one hit
    tree-wide, `os/build/src/boot-cx3576.test.ts:119`, and it is
@@ -280,7 +280,7 @@ here: 17 bare-`mosd` occurrences across the three stages files, and 3
   script that was ported to TypeScript. They read worse now that `os/update/` is
   gone, but rewriting them would be wrong — they name where the ported-from code
   lived. Same class: `os/mkimage-v2.sh` and `os/mkimage-x64.sh` at
-  `boot-cx3576.ts:204` and `board.env:115`, and 24 unresolvable backticked
+  `boot-cx3576.ts:204` and `os/boards/x64/board.env:115`, and 24 unresolvable backticked
   tokens in the design docs, mostly `os/mkimage-v2.sh` and
   `os/verify-image-v2.sh`.
 - **The rauc measurements that have gone stale.** `grep -rci rauc
@@ -292,8 +292,8 @@ here: 17 bare-`mosd` occurrences across the three stages files, and 3
   `docs/research/mos-ui-inventory.md`, falsified by mosd's own development. A
   present-tense re-measure is a content edit for the design workstream.
 - **`api.md:3464`** says the rauc-sign README "names the **on-device Uptane
-  client**" as *"Explicitly out of scope for the whole crate"*. The quote
-  resolves at `README.md:41`, but the item named out of scope at `:43` is the
+  client**" as *"Explicitly out of scope for the whole crate"*
+  (`os/pkgs/rauc-sign/README.md:41`) — it resolves, but the item named out of scope at `:43` is the
   Uptane director/image-repository split, not the on-device client. Pre-existing;
   a sibling of the `:3559` defect but not on M5's enumerated list.
 - **`release-signing.md:313`** names a planned `update/lockbox/` path. `update/`

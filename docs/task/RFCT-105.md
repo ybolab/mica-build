@@ -404,7 +404,7 @@ mosd-managed interface, or a harness that can reach the guest another way.
 ## What the live run cost the documentation: one stale number
 
 `test/apid-api/README.md:14` justifies the one-boot design with *"A TCG boot of
-the image takes roughly **ten minutes**"*, and `HARNESS.md:120` says ~200–260s
+the image takes roughly **ten minutes**"*, and `test/apid-api/HARNESS.md:120` says ~200–260s
 to a login prompt. **Measured on this host, under TCG with no `/dev/kvm`,
 across this campaign's eight runs**: launch to `APID_LISTENING` is **60–66 s**,
 ready (both signals) at **65–72 s**, and a full two-boot lifecycle run takes

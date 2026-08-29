@@ -34,10 +34,11 @@
 # hook is needed and the real tree is never written to.
 #
 # The baseline is not hand-written either: it is the SHIPPED docs/README.md,
-# docs/task/index.md and document tree, copied verbatim. Every case then MUTATES
-# that baseline. An index this script had authored would prove only that the
-# script can spell. Nothing is hardcoded about how many checks the baseline
-# reports, because that number grows with every document added.
+# docs/task/index.md, docs/plan/index.md and document tree, copied verbatim.
+# Every case then MUTATES that baseline. An index this script had authored
+# would prove only that the script can spell. Nothing is hardcoded about how
+# many checks the baseline reports, because that number grows with every
+# document added.
 #
 # No root, no network, nothing outside a temp dir. It fails loudly when it
 # cannot run rather than skipping.
@@ -47,12 +48,53 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
 VERIFIER="${HERE}/verify-index.sh"
 
-for required in "${VERIFIER}" "${HERE}/README.md" "${HERE}/task/index.md"; do
+for required in "${VERIFIER}" "${HERE}/README.md" "${HERE}/task/index.md" \
+                "${HERE}/plan/index.md"; do
     [ -e "${required}" ] || { echo "error: ${required} not found" >&2; exit 1; }
 done
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
+
+# THE EXEMPLAR TASK RECORD, DISCOVERED RATHER THAN NAMED. Cases 1, 2 and 5
+# need one real record that is indexed exactly once and whose file exists:
+# case 1 duplicates its row, case 5 deletes its file and copies it. They were
+# written against RFCT-073 BY NAME, which is the same defect the exemplar at
+# case 6 had -- and it is not milder for having a different trigger. Three
+# distinct paths abort the whole run: duplicate_line `exit 1`s unless the row
+# appears exactly once, and `set -e` kills the run on the `rm` and the `cp` if
+# the record is gone. Case 1 is the SECOND case, so an abort there reports one
+# case instead of the eight the RFCT-094 abort reached.
+#
+# The trigger is rarer than RFCT-094's -- a record deletion or rename, or the
+# row appearing twice -- but "rare" is what "nobody has ever seen it fail"
+# means, and this file exists because that is not evidence. The rule it now
+# follows, campaign-wide: a self-test fixture names a SYNTHETIC id or
+# discovers its exemplar from the fixture. A live id is a scheduled silent
+# death.
+#
+# This helper's own `exit 1` is not the same hazard. It fires only when NO row
+# in the whole index is usable, which means the shipped index is already
+# broken and docs/verify-index.sh is already red -- the same reasoning case 4's
+# research-entry guard rests on. It cannot be armed by one record moving on.
+pick_task_exemplar() {
+    local idx="$1" dir id
+    dir="$(dirname "${idx}")"
+    while read -r id; do
+        [ "$(grep -cF -- "(${id}.md)" "${idx}")" -eq 1 ] || continue
+        [ -e "${dir}/${id}.md" ] || continue
+        printf '%s' "${id}"
+        return 0
+    done < <(sed -n 's/^- \[.\] \[\*\*\(RFCT-[0-9]*\) .*/\1/p' "${idx}")
+    return 1
+}
+
+TASK_ID="$(pick_task_exemplar "${HERE}/task/index.md" || true)"
+[ -n "${TASK_ID}" ] || {
+    echo "error: no row in ${HERE}/task/index.md is usable as an exemplar -- none links to an existing record exactly once" >&2
+    exit 1
+}
+echo "task exemplar discovered: ${TASK_ID}"
 
 PASS_N=0
 FAIL_N=0
@@ -65,8 +107,17 @@ new_fixture() {
     rm -rf "${dir}"
     mkdir -p "${dir}/docs"
     cp "${ROOT}/docs/README.md" "${ROOT}/docs/verify-index.sh" "${dir}/docs/"
-    cp -R "${ROOT}/docs/design" "${ROOT}/docs/research" "${ROOT}/docs/task" "${dir}/docs/"
+    cp -R "${ROOT}/docs/design" "${ROOT}/docs/research" "${ROOT}/docs/task" \
+          "${ROOT}/docs/plan" "${dir}/docs/"
 }
+
+# docs/plan is copied rather than guarded against. verify-index.sh's plan
+# section could have been made skippable when docs/plan/index.md is absent --
+# the shape docs/verify-citations.sh uses for its widened scope -- but that
+# would leave the section unexercised here, including by the positive control,
+# which is the state RFCT-258 was written to end. verify-index.sh is the gate
+# that DEFINES what the real tree must contain, so a missing index there is a
+# failure and not a reason to fall silent.
 
 # Duplicates the line matching $2 in file $1, and fails loudly if that line was
 # not there exactly once to begin with: a mutation that silently changed nothing
@@ -154,9 +205,9 @@ expect_all_pass "baseline: the shipped docs tree, copied verbatim"
 # and keeping both sides is the likeliest wrong resolution.
 FIX="${WORK}/task-row-twice"
 new_fixture "${FIX}"
-duplicate_line "${FIX}/docs/task/index.md" "(RFCT-073.md)"
-expect_fail "docs/task/index.md carrying the RFCT-073 row twice" 1 \
-    "carries 2 rows for 'RFCT-073.md'" \
+duplicate_line "${FIX}/docs/task/index.md" "(${TASK_ID}.md)"
+expect_fail "docs/task/index.md carrying the ${TASK_ID} row twice" 1 \
+    "carries 2 rows for '${TASK_ID}.md'" \
     "lives in two places that can disagree"
 
 # --- 2. the same row kept three times ---------------------------------------
@@ -165,9 +216,9 @@ expect_fail "docs/task/index.md carrying the RFCT-073 row twice" 1 \
 # operator resolving it needs to know which one is on the table.
 FIX="${WORK}/task-row-thrice"
 new_fixture "${FIX}"
-duplicate_line "${FIX}/docs/task/index.md" "(RFCT-073.md)" 2
-expect_fail "docs/task/index.md carrying the RFCT-073 row three times" 1 \
-    "carries 3 rows for 'RFCT-073.md'"
+duplicate_line "${FIX}/docs/task/index.md" "(${TASK_ID}.md)" 2
+expect_fail "docs/task/index.md carrying the ${TASK_ID} row three times" 1 \
+    "carries 3 rows for '${TASK_ID}.md'"
 
 # --- 3. a design/ document listed twice in the README ------------------------
 FIX="${WORK}/design-entry-twice"
@@ -194,13 +245,13 @@ expect_fail "docs/README.md listing a research document twice" 1 \
 # disarm them while the duplicate cases above go on passing.
 FIX="${WORK}/dangling-row"
 new_fixture "${FIX}"
-rm "${FIX}/docs/task/RFCT-073.md"
+rm "${FIX}/docs/task/${TASK_ID}.md"
 expect_fail "a row whose record a rename deleted" 1 \
-    "has a row for 'RFCT-073.md', but docs/task/RFCT-073.md does not exist"
+    "has a row for '${TASK_ID}.md', but docs/task/${TASK_ID}.md does not exist"
 
 FIX="${WORK}/unindexed-record"
 new_fixture "${FIX}"
-cp "${FIX}/docs/task/RFCT-073.md" "${FIX}/docs/task/RFCT-999.md"
+cp "${FIX}/docs/task/${TASK_ID}.md" "${FIX}/docs/task/RFCT-999.md"
 expect_fail "a task record with no row" 1 \
     "docs/task/RFCT-999.md exists but has no row in docs/task/index.md"
 
@@ -259,6 +310,81 @@ grep -q '^- \*\*status\*\*: ' "${FIX}/docs/task/${pending_rec}" || {
 sed -i '/^- \*\*status\*\*: /d' "${FIX}/docs/task/${pending_rec}"
 expect_fail "a record whose status line was deleted outright" 1 \
     "docs/task/${pending_rec} has no parseable status line"
+
+# --- 7. the plan section (PLAN-028 M3, RFCT-258) -----------------------------
+# The plan index went unread by this verifier until RFCT-258, and the defect
+# that motivated it is case 7c: `[-]` standing over a `completed` plan file,
+# green, until someone caught it by hand (77a3278).
+#
+# 7a is the FORMAT-EXAMPLE case and the reason the row parser is anchored to
+# the `## Plans` section. docs/plan/index.md:11 carries a real `(PLAN-001.md)`
+# link and a real `[ ]` marker inside the Usage section; its only other
+# distinguishing feature is a literal `YYYY-MM-DD` where a row carries a date.
+# So the mutation makes it MAXIMALLY row-shaped -- a real date -- and the
+# verifier must still see zero rows there. Without the section anchor this
+# fixture produces two failures (PLAN-001 listed twice, and `[ ]` against
+# PLAN-001.md's `completed`), which is what a string-matched exclusion of the
+# placeholder title would have let back in.
+FIX="${WORK}/plan-format-example-is-not-a-row"
+new_fixture "${FIX}"
+grep -q '^- \[ \] \[\*\*PLAN-001 Short plan title\*\*\](PLAN-001\.md) `YYYY-MM-DD`$' "${FIX}/docs/plan/index.md" || {
+    echo "error: the Usage format example is not where this case expects it in docs/plan/index.md" >&2; exit 1; }
+sed -i 's/^- \[ \] \[\*\*PLAN-001 Short plan title\*\*\](PLAN-001\.md) `YYYY-MM-DD`$/- [ ] [**PLAN-001 Short plan title**](PLAN-001.md) `2026-01-01`/' "${FIX}/docs/plan/index.md"
+grep -q '^- \[ \] \[\*\*PLAN-001 Short plan title\*\*\](PLAN-001\.md) `2026-01-01`$' "${FIX}/docs/plan/index.md" || {
+    echo "error: dating the Usage format example changed nothing" >&2; exit 1; }
+expect_all_pass "the Usage format example, given a real date, is still not a row"
+
+# 7b: a plan row kept twice, the same append conflict as case 1.
+FIX="${WORK}/plan-row-twice"
+new_fixture "${FIX}"
+duplicate_line "${FIX}/docs/plan/index.md" "(PLAN-020.md)"
+expect_fail "docs/plan/index.md carrying the PLAN-020 row twice" 1 \
+    "carries 2 rows for 'PLAN-020.md'" \
+    "lives in two places that can disagree"
+
+# 7c: THE DEFECT ON RECORD -- `[-]` over a completed plan.
+FIX="${WORK}/plan-marker-behind-status"
+new_fixture "${FIX}"
+grep -q '^- \[x\] \[\*\*PLAN-020 ' "${FIX}/docs/plan/index.md" || {
+    echo "error: no completed PLAN-020 row in the fixture plan index to un-tick" >&2; exit 1; }
+sed -i 's/^- \[x\] \[\*\*PLAN-020 /- [-] [**PLAN-020 /' "${FIX}/docs/plan/index.md"
+expect_fail "a plan row left [-] over a file that says completed" 1 \
+    "marks 'PLAN-020.md' '[-]'" \
+    "status head 'completed', which maps to '[x]'"
+
+# 7d: an unknown status head FAILS CLOSED. `withdrawn` is a plausible word
+# that no plan currently uses and that the Status Markers table does not name,
+# which is exactly the case that must not be quietly defaulted.
+FIX="${WORK}/plan-unknown-head"
+new_fixture "${FIX}"
+grep -q '^- \*\*status\*\*: completed$' "${FIX}/docs/plan/PLAN-020.md" || {
+    echo "error: PLAN-020.md does not carry the bare completed head to mutate" >&2; exit 1; }
+sed -i 's/^- \*\*status\*\*: completed$/- **status**: withdrawn/' "${FIX}/docs/plan/PLAN-020.md"
+expect_fail "a plan status head outside the vocabulary" 1 \
+    "docs/plan/PLAN-020.md status head 'withdrawn' is not one of"
+
+# 7e: an unknown MARKER fails closed too. `[X]` reads as a tick to a human and
+# is not one of the four the index declares.
+FIX="${WORK}/plan-unknown-marker"
+new_fixture "${FIX}"
+sed -i 's/^- \[x\] \[\*\*PLAN-020 /- [X] [**PLAN-020 /' "${FIX}/docs/plan/index.md"
+grep -q '^- \[X\] \[\*\*PLAN-020 ' "${FIX}/docs/plan/index.md" || {
+    echo "error: rewriting the PLAN-020 marker to [X] changed nothing" >&2; exit 1; }
+expect_fail "a plan row marker outside the four the index declares" 1 \
+    "marks 'PLAN-020.md' '[X]', which is not one of the four"
+
+# 7f + 7g: both directions of membership.
+FIX="${WORK}/plan-unindexed"
+new_fixture "${FIX}"
+cp "${FIX}/docs/plan/PLAN-020.md" "${FIX}/docs/plan/PLAN-999.md"
+expect_fail "a plan file with no row" 1 \
+    "docs/plan/PLAN-999.md exists but has no row in the ## Plans section"
+
+FIX="${WORK}/plan-dangling-row"
+new_fixture "${FIX}"
+rm "${FIX}/docs/plan/PLAN-020.md"
+expect_fail "a plan row whose file a rename deleted" 1 \
+    "has a row for 'PLAN-020.md', but docs/plan/PLAN-020.md does not exist"
 
 echo
 total=$((PASS_N + FAIL_N))

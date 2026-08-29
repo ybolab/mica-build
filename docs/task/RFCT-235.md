@@ -183,7 +183,7 @@ had no target and is forbidden for a dated record besides:
 | files marked | `docs/task/RFCT-231.md` (line 230), `docs/task/RFCT-234.md` (line 352) |
 | instrument | the `<!-- dated-record: ... -->` marker, appended to each; no word of either record was edited |
 | citations exempted | **16**, all of them ARMED, content-checked anchors |
-| of which broken | **2** -- one prose citation of `Dockerfile:74` per file |
+| of which broken | **2** -- one prose citation of `` `Dockerfile:74` `` per file |
 | of which collateral | **14** still-valid citations, into `os/build-env/build.sh` (10), `os/rootfs/build-v2.sh` (2) and `os/tests/quadlet-doc-test.sh` (2) |
 | resolution-only anchors lost | **0** -- that counter is 914 before and 914 after |
 | floor moved | `os 1847 -> 1831` in `docs/verify-citations-baseline.txt` |

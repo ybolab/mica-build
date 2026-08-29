@@ -121,6 +121,24 @@ always fail does not satisfy it either.
 Run it before and after touching anything in `src/`. An assertion that stays
 green on a wrong input is the defect this file exists to catch.
 
+The other no-boot check, and the only one CI runs:
+
+```sh
+bash spec-pins.sh          # or: make os-apid-api-spec-pins, from the repo root
+```
+
+`src/spec-pins.ts` asserts that every literal a phase pins which
+`os/pkgs/mosd/apid/openapi.json` ALSO states agrees with the document — 38 of
+them, read out of the phase files' own bytes rather than imported, so both
+directions of drift go red. It exists because the phases below only run under a
+booted run: a milestone that moves a shipped status otherwise leaves every
+phase pinning the old one green until somebody boots the image (PLAN-028 M4).
+Its header states what is out of scope and why; `docs/task/RFCT-259.md`
+section 4 states the residue, which is most of this file's pins.
+
+It runs on a host bun when there is one and in the bun pinned as `IMAGE_BUN_1`
+otherwise, and says which. `MOS_APID_CONTAINER=1` forces the pinned container.
+
 bun is not required on the host — run it in a container, mounting the
 **repository** (a `/tmp` mount does not propagate to the docker daemon here and
 silently yields an empty directory):
@@ -133,6 +151,8 @@ docker run --rm -v "$(git rev-parse --show-toplevel):/w" -w /w/test/apid-api \
 ## Layout
 
 ```
+src/spec-pins.ts  the build-time pin check: the phase literals openapi.json
+                  also states, asserted against it with no boot
 src/config.ts     the environment contract; validates once, then freezes
 src/client.ts     the browser-simulating client: jar, manual redirects,
                   per-request TLS scoped to APID_HOST, and raw() for
