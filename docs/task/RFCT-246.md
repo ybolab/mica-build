@@ -33,8 +33,10 @@ Resolution, and why each way round:
   **union**. `bkd/vu5b6kk0`'s 401 wording, which names the bearer, and `main`'s
   404 `settings_not_found` row from PLAN-025 M3a. Taking either side alone would
   have made the document disagree with the merged handler, which still answers
-  `ApiError::mosd("settings_not_found", message).at(&path)`
-  (`os/pkgs/mosd/apid/src/routes.rs:1270`) on an unresolved dot-path — and the
+  `ApiError::mosd("settings_not_found", message)`
+  (`os/pkgs/mosd/apid/src/routes.rs:3022`) on an unresolved dot-path — reached
+  from the shared classifier since RFCT-251, and from a branch inside
+  `api_v1_state` when this was written — and the
   auto-merged `openapi.json` had already landed on exactly that union,
   so either side alone would also have desynchronised the two.
 - Every other hunk: resolved to `bkd/vu5b6kk0` with `-X theirs`, then

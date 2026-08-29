@@ -70,9 +70,8 @@ it cites.
 
 `api.md:231` quoted
 `resource_response(state.api.get_state(&path).await, &path)` against `:506`.
-That expression exists nowhere in the tree: `api_v1_state` now separates an
-unresolved dot-path out as a 404 before calling
-`resource_response(value, &path)` (`os/pkgs/mosd/apid/src/routes.rs:1272`).
+That expression exists nowhere in the tree: `api_v1_state` ends in
+`resource_response(value, &path)` (`os/pkgs/mosd/apid/src/routes.rs:1247`).
 
 The citation gate could not see it. Its content check arms only on a
 `path:line` token whose path contains a `/`; a bare `:506` continuation is
@@ -269,14 +268,22 @@ memory of a report.
    clauses, and nothing checks it against the router's registrations — the one
    test that names it (`os/pkgs/mosd/apid/src/tests.rs:5875`) is about path
    matching, not membership. axum exposes no route table to compare against.
-5. **The mosd-side convergence.** `api_v1_state` reads an fdo error name and
-   rewrites it — `if name.as_str() == FDO_INVALID_ARGS`
-   (`os/pkgs/mosd/apid/src/routes.rs:1262`) — and its own comment says the
-   cleaner fix is a `NotFound` name mosd-side
-   (`os/pkgs/mosd/apid/src/routes.rs:1247-1256`). M6 shipped exactly that split
-   for the rotate-key path, `return Err(SettingsFault::NotFound(format!(`
-   (`os/pkgs/mosd/mosd/src/bus.rs:899`), so the two paths now disagree about
-   which side names the condition.
+5. **The mosd-side convergence.** `api_v1_state` read an fdo error name and
+   rewrote it, and its own comment said the cleaner fix was a `NotFound` name
+   mosd-side. M6 had shipped exactly that split for the rotate-key path,
+   `return Err(SettingsFault::NotFound(format!(`
+   (`os/pkgs/mosd/mosd/src/bus.rs:899`), so the two paths disagreed about which
+   side named the condition.
+   *(2026-08-29, appended: closed by RFCT-251. `get_state` now raises that name
+   for that condition, `SettingsFault::NotFound(format!(`
+   (`os/pkgs/mosd/mosd/src/bus.rs:678`), and the route is the single call it
+   should always have been, `resource_response(value, &path)`
+   (`os/pkgs/mosd/apid/src/routes.rs:1247`). The two citations this item
+   originally carried — the `FDO_INVALID_ARGS` test and the comment above it —
+   name no line today, because the fix deleted both; they are removed rather
+   than re-pointed at a neighbour. The wire did not move: an unresolved
+   dot-path was 404 `settings_not_found` before and is 404 `settings_not_found`
+   after, in the same envelope.)*
 6. **The import unsplits are now unblocked.** `use axum::routing::delete;` and
    `use axum::routing::put;` sit on their own lines
    (`os/pkgs/mosd/apid/src/routes.rs:30-31`) to keep RFCT-210's quoted negative

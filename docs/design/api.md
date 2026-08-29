@@ -419,7 +419,7 @@ because M4-M9 gave each of them a JSON surface rather than a second code path
 |---|---|---|---|
 | `fn get_settings` | `os/pkgs/mosd/apid/src/bus_client.rs:28` | `async fn get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:610`) | the gate's unauthenticated path and every bearer check (`fn access_settings`, `os/pkgs/mosd/apid/src/routes.rs:3173`), the `/`, `/builtin`, `/setup`, `/login`, `/password`, `/network`, `/hostname`, `/ssh`, `/containers` and `/mqtt` handlers, and the settings read route, `resource_response(state.api.get_settings(&path).await, &path)` (`os/pkgs/mosd/apid/src/routes.rs:962`) |
 | `fn set_settings` | `os/pkgs/mosd/apid/src/bus_client.rs:29` | `async fn set_settings` (`os/pkgs/mosd/mosd/src/bus.rs:619`) | `/setup`, `/password`, `/network`, `/network/peers/*`, `/hostname`, `/ssh/enable`, `/ssh/keys/*`, `/containers/enable`, `/mqtt/enable`, `/builtin/tokens*`, and every `/api/v1/` write — twenty call sites in `os/pkgs/mosd/apid/src/routes.rs` |
-| `fn get_state` | `os/pkgs/mosd/apid/src/bus_client.rs:30` | `async fn get_state` (`os/pkgs/mosd/mosd/src/bus.rs:649`) | five literal live-state paths: `get_state("network")` (`os/pkgs/mosd/apid/src/routes.rs:4674`), `.get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs:4677`), `get_state("sshd")` (`os/pkgs/mosd/apid/src/routes.rs:6016`), `get_state("container")` (`os/pkgs/mosd/apid/src/routes.rs:6239`) and `get_state("mqtt")` (`os/pkgs/mosd/apid/src/routes.rs:6497`), plus the health probe `get_state(HEALTH_PROBE_PATH)` (`os/pkgs/mosd/apid/src/routes.rs:890`) and the passthrough `get_state(&path)` (`os/pkgs/mosd/apid/src/routes.rs:1246`), which serves any dot-path a client asks for |
+| `fn get_state` | `os/pkgs/mosd/apid/src/bus_client.rs:30` | `async fn get_state` (`os/pkgs/mosd/mosd/src/bus.rs:654`) | five literal live-state paths: `get_state("network")` (`os/pkgs/mosd/apid/src/routes.rs:4674`), `.get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs:4677`), `get_state("sshd")` (`os/pkgs/mosd/apid/src/routes.rs:6016`), `get_state("container")` (`os/pkgs/mosd/apid/src/routes.rs:6239`) and `get_state("mqtt")` (`os/pkgs/mosd/apid/src/routes.rs:6497`), plus the health probe `get_state(HEALTH_PROBE_PATH)` (`os/pkgs/mosd/apid/src/routes.rs:890`) and the passthrough `get_state(&path)` (`os/pkgs/mosd/apid/src/routes.rs:1246`), which serves any dot-path a client asks for |
 | `fn set_value` on `/Actions/reboot` | `os/pkgs/mosd/apid/src/bus_client.rs:50`, path at `os/pkgs/mosd/apid/src/bus_client.rs:55` | `os/pkgs/mosd/mosd/src/tree.rs:491` → `os/pkgs/mosd/mosd/src/actions.rs:101` | `POST /power/reboot` and `POST /api/v1/actions/reboot`, both through `PowerAction::Reboot => api.reboot().await,` (`os/pkgs/mosd/apid/src/routes.rs:5785`) |
 | `fn set_value` on `/Actions/poweroff` | `os/pkgs/mosd/apid/src/bus_client.rs:50`, path at `os/pkgs/mosd/apid/src/bus_client.rs:56` | `os/pkgs/mosd/mosd/src/tree.rs:491` → `os/pkgs/mosd/mosd/src/actions.rs:102` | `POST /power/poweroff` and `POST /api/v1/actions/poweroff`, both through `PowerAction::PowerOff => api.power_off().await,` (`os/pkgs/mosd/apid/src/routes.rs:5786`) |
 | `fn set_transient_root_password` | `os/pkgs/mosd/apid/src/bus_client.rs:31` | `async fn set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:840`) | `POST /ssh/password`, at `app.api.set_transient_root_password(&form.password)` (`os/pkgs/mosd/apid/src/routes.rs:6690`), and `POST /api/v1/actions/transient-root-password`, at `app.api.set_transient_root_password(&request.password)` (`os/pkgs/mosd/apid/src/routes.rs:6769`) |
@@ -814,7 +814,7 @@ is not a pane: `GET /api/v1/health` probes `get_state(HEALTH_PROBE_PATH)`
 (`os/pkgs/mosd/apid/src/routes.rs:890`). The whole of the tree is reachable over
 HTTP as well, because `GET /api/v1/state/{path}` passes any dot-path straight
 through with `resource_response(value, &path)`
-(`os/pkgs/mosd/apid/src/routes.rs:1272`) — which is the one place where
+(`os/pkgs/mosd/apid/src/routes.rs:1247`) — which is the one place where
 the shipped API is still **wider** than the shipped UI, and section 2.2 is
 where that widening is argued for.
 
@@ -1287,7 +1287,7 @@ for, with no second model beside it. The live-state root is the same shape,
 `const V1_STATE_ROUTE: &str = "/v1/state/{*path}";`
 (`os/pkgs/mosd/apid/src/routes.rs:293`) at `:368` and `:406`, ending in
 `resource_response(value, &path)`
-(`os/pkgs/mosd/apid/src/routes.rs:1272`). Both answer `ResourceValue`
+(`os/pkgs/mosd/apid/src/routes.rs:1247`). Both answer `ResourceValue`
 (`os/pkgs/mosd/apid/src/routes.rs:934`), which carries a
 `serde(transparent)` attribute (`os/pkgs/mosd/apid/src/routes.rs:933`) so the body is
 mosd's value and not a wrapper around it.
@@ -1346,7 +1346,7 @@ disagreement is named and the choice is costed.
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
 | `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:610`) and `set_settings` (`:586`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
-| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs:649`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs:54`), in memory, written only from inside mosd by the four writers section 1.5 names |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs:654`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs:54`), in memory, written only from inside mosd by the four writers section 1.5 names |
 | `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:840`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
