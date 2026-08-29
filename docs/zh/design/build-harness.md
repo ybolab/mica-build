@@ -72,15 +72,13 @@ OpenAPI 文档一致。**apid 表面改动之后，请手动跑这个套件。**
 
 **一个脚本**，只读，除 bash 和 coreutils 之外别无依赖。
 
-`bash docs/verify-index.sh` **双向**断言索引与树一致——它就是为抓住重命名而写的，
-因为只做正向的检查会在一个满是指向已不存在文件的索引上愉快通过。覆盖三对：
+`bash docs/verify-index.sh` **双向**断言 `docs/design/*.md` 与 `docs/README.md` 一致——
+它就是为抓住重命名而写的，因为只做正向的检查会在一个满是指向已不存在文件的索引上愉快通过。
+所以新增一篇设计文档，必须在**同一个提交**里补上 `docs/README.md` 的那一行。
 
-1. `docs/design/*.md` ↔ `docs/README.md`
-2. `docs/task/RFCT-*.md` ↔ `docs/task/index.md`
-3. `docs/plan/PLAN-*.md` ↔ `docs/plan/index.md`
-
-第 2、3 项还会比对每条记录的状态头与它的索引标记，
-所以一行被打勾为完成、而记录说 pending 的情况会失败。
+**`docs/plan/` 与 `docs/task/` 刻意不设门禁。** 它们是 PMA 的流程跟踪而非产品的一部分，
+而且记录一关闭就被删除——所以索引检查要断言的集合是空的或接近空的，
+而**一个对空集合的检查会在什么都没检查的情况下报绿**。
 
 **刻意没有引用门禁。** `docs/verify-citations.sh` 及其三份基线，
 连同它们所维护的那种耦合一起被移除了：文档不再用 `path:line` 引用代码，

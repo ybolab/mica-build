@@ -350,20 +350,18 @@ file is gone, and a search for it is a search for something deleted.
 
 One script, read-only, needing nothing but bash and coreutils.
 
-`bash docs/verify-index.sh` asserts that the indexes agree with the tree **in
-both directions** — it is written to catch a rename, because a forward-only
-check passes happily on an index full of entries pointing at files that no
-longer exist. It covers three pairings:
+`bash docs/verify-index.sh` asserts that `docs/design/*.md` and
+`docs/README.md` agree **in both directions** — it is written to catch a
+rename, because a forward-only check passes happily on an index full of
+entries pointing at files that no longer exist. So a new design page needs its
+row in `docs/README.md` in the same commit.
 
-1. `docs/design/*.md` <-> `docs/README.md`
-2. `docs/task/RFCT-*.md` <-> `docs/task/index.md`
-3. `docs/plan/PLAN-*.md` <-> `docs/plan/index.md`
-
-So a new design page needs its row in `docs/README.md`, a new task file needs
-its row in `docs/task/index.md` and a new plan needs its row in
-`docs/plan/index.md`, in the same commit. Sections 2 and 3 also compare each
-record's status head with its index marker, so a row ticked complete over a
-record that says pending fails.
+**`docs/plan/` and `docs/task/` are not gated, deliberately.** They are PMA
+process tracking rather than product, and a record is deleted when it closes,
+so the set an index check would assert is empty or nearly so — and a check over
+an empty set reports green without having checked anything. If a second shipped
+directory appears, `check_readme_dir` already takes the directory as an
+argument and one call adds it.
 
 **There is no citation gate, deliberately.** `docs/verify-citations.sh` and its
 three baselines were removed with the coupling they existed to police:

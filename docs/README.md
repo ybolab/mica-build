@@ -26,9 +26,14 @@
 
 Rules. `architecture.md` and `design/` are the English design record and are
 authoritative; `zh/` carries the Chinese documentation and yields to the
-English on conflict. `plan/` and `task/` are PMA process documents, English
-only, following the PMA lifecycle (investigate -> proposal -> implement) with
-status markers in `plan/index.md`.
+English on conflict. Those are the documents that ship, and `docs/README.md`
+is asserted against `design/` in both directions by `make docs-verify`, so a
+new design page needs its row here in the same commit.
+
+`plan/` and `task/` are PMA process tracking, not product: English only,
+following the PMA lifecycle (investigate -> proposal -> implement), and a
+record is deleted when it closes. They carry no index gate, because the set one
+would assert is empty or nearly so.
 
 These documents describe design and behaviour. They do not cite code by line
 and do not narrate implementations statement by statement, because a document

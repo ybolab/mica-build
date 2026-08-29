@@ -303,7 +303,7 @@ jobs:
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git
 
-      - name: All three document indexes agree with the tree, in both directions
+      - name: docs/README.md and the design tree agree, in both directions
         run: make docs-verify docs-verify-test
 
       - name: Health gate, machine-id oneshot, and their overlay copies

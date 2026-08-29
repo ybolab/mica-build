@@ -38,8 +38,8 @@ help:
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
-	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
-	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
+	@echo "  docs-verify         assert docs/README.md and the design tree agree, in both directions"
+	@echo "  docs-verify-test    prove those assertions actually fail on a duplicate or a missing row"
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
@@ -228,20 +228,23 @@ os-rauc:
 os-shell-pipefail-lint:
 	bash os/tests/shell-pipefail-lint.sh
 
-# Structural check on the two document indexes. It exists because the indexes
-# are the one thing no other check can reach: a document that is never listed in
-# docs/README.md is not broken, does not fail a build, and is simply never found
-# again. Both directions are asserted, because the forward half alone passes
-# happily on an index full of entries pointing at files a rename deleted.
+# Structural check on docs/README.md. It exists because the index is the one
+# thing no other check can reach: a document that is never listed there is not
+# broken, does not fail a build, and is simply never found again. Both
+# directions are asserted, because the forward half alone passes happily on an
+# index full of entries pointing at files a rename deleted. docs/plan/ and
+# docs/task/ are NOT gated: they are PMA process tracking rather than product,
+# and a record is deleted when it closes, so the set would be empty or nearly
+# so -- a check over an empty set reports green without having checked.
 docs-verify:
 	bash docs/verify-index.sh
 
-# Negative tests for the target above. Each assertion is driven against an index
-# where its fact is false and required to fail with ITS OWN message -- a
-# duplicated row is the likeliest wrong resolution of the two-row append
-# conflict every task record produces, and a forward `grep -q` plus a reverse
-# `sort -u` cannot see one. Needs no root and no network, and it fails loudly
-# when it cannot run rather than skipping.
+# Negative tests for the target above. Each assertion is driven against an
+# index where its fact is false and required to fail with ITS OWN message -- a
+# duplicated entry is the likeliest wrong resolution of a two-row append
+# conflict, and a forward `grep -q` plus a reverse `sort -u` cannot see one.
+# Needs no root and no network, and it fails loudly when it cannot run rather
+# than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
 

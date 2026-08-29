@@ -4,6 +4,32 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The docs gate narrowed to what ships (2026-08-29)
+
+`docs/plan/` and `docs/task/` are PMA process tracking. They are not part of
+the product, and a record is deleted when it closes, so the sets an index gate
+asserted over them were down to two task records and zero plans — a check that
+reports green without having checked anything. Both sections are removed.
+
+What remains is the pairing a reader depends on: `docs/design/*.md` against
+`docs/README.md`, both directions, plus the once-each assertion that catches a
+document listed twice. A design document that no index lists is not broken,
+does not fail a build, and is simply never found again; nothing else in the
+tree can catch that.
+
+The gate goes from 352 lines to 118 and the negative suite from 398 to 202 —
+750 to 320 against 16 documents, where it had been 750 against 18 rows.
+
+One gap closed on the way out. The forward direction for `design/` — a
+document that exists with no row — had no negative case of its own: the task
+half of that pair had been carrying it, and removing the task section would
+have left the gate's primary assertion untested. It has a case now, and the
+suite is 4/4.
+
+`docs/research/` is not gated because it does not exist; it went with the
+Venus OS evaluation. `check_readme_dir` still takes its directory as an
+argument, so if a second shipped tree appears, one call adds it.
+
 ## Talos removed from the tree, and the settled records pruned (2026-08-29)
 
 Talos is gone. The three references that were not history went with it: the
