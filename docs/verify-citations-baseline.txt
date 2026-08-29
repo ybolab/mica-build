@@ -12,7 +12,7 @@
 # lower or remove the segment's row in the SAME commit as the change, so the
 # decision is visible in the diff. Floors are the measured counts at the
 # commit that last touched this file.
-docs 303
+docs 278
 .github 2
-os 1847
+os 1768
 test 18

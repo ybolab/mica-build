@@ -1,6 +1,6 @@
 # RFCT-216 rauc-sign root-rotation tooling, before the first ceremony's one-year expiry
 
-- **status**: completed — `rotate-root` publishes a cross-signed `<n+1>.root.json` and `refresh-root` republishes over the same key; 12 tests in a new `tests/rotation.rs` prove both directions of the overlap window and seven refusals, one of them found by executing the runbook's literal commands through the CLI; `docs/design/release-signing.md` §1.6 rewritten from **[not implemented]** to a six-step **[runbook]**; online-key revocation is still not implemented and is now said so narrowly; the RFCT-210 citation/census trade is measured and PROPOSED, not settled
+- **status**: completed — `rotate-root` publishes a cross-signed `<n+1>.root.json` and `refresh-root` republishes over the same key; 12 tests in a new `tests/rotation.rs` prove both directions of the overlap window and seven refusals, one of them found by executing the runbook's literal commands through the CLI; `docs/design/release-signing.md` §1.6 rewritten from **[not implemented]** to a six-step **[runbook]**; online-key revocation is still not implemented and is now said so narrowly; RFCT-210 marked a dated record with both census floors moved in the same commit (os 1847->1768, docs 303->278)
 - **priority**: P1
 - **owner**: bkd/dcg5mmqd
 - **createdAt**: 2026-08-28
@@ -204,84 +204,105 @@ trust and for re-anchoring a device whose chain is broken.
   here: the fix is a canonical serializer on the write path, it changes `init`'s
   output as much as the ceremonies', and whether §1.3/§1.5 should promise byte
   reproducibility or stop implying it is the prior question.
-## 6. The RFCT-210 citations — **proposed, pending the census decision**
+## 6. The RFCT-210 marker, its census cost, and the floor move
 
-Nothing in this section is settled. The marker described below is committed on
-this branch (`1f28129`) so its cost can be measured, and L2/L1 own whether it
-stays; it may equally be reverted in favour of leaving four citations failing.
+Everything about this decision is here, in one place, so the census history is
+readable without git archaeology.
 
-`docs/verify-citations.sh` was green at 2170/2170 before this change. After it,
-one ordinary drift failed in a live design document and a second citation was
-silently stale rather than failing. Both were re-anchored mechanically from the
-pre-image, in their own commit: the crate README's out-of-scope list gained a
-bullet, so the line reading *"a separate key hierarchy applied"*
-(`os/pkgs/rauc-sign/README.md:52`) moved down one. The failing citation was the
-one quoting *"is a separate key hierarchy"* (`docs/design/api.md:3875`); the
-silently stale one quotes *"a separate key hierarchy"*
-(`docs/design/remote-management.md:135`) and now names the two-line range
-*"a separate key hierarchy applied"* (`os/pkgs/rauc-sign/README.md:52-53`). The
-second was passing only because its fragment happened to land inside the stale
-range. It was corrected anyway: a citation that resolves by luck reads exactly
-like a correct one, which is the case the checker's own header says it cannot
-distinguish.
+**Forced by.** This task's rewrite of `docs/design/release-signing.md` §1.6,
+from **[not implemented]** to a runbook. That rewrite is the whole point of
+RFCT-216, and it deletes the prose four of `docs/task/RFCT-210.md`'s citations
+quote. Under the campaign's lazy-marking rule the marker is spent at the moment
+of breakage, by the workstream whose change forces it, in the commit that
+forces it. That is this one.
 
-The remaining five failures are all in `docs/task/RFCT-210.md`. Four of them
-have nothing to re-anchor to, because the text they quote is gone from the tree
-rather than moved within it:
+**The four broken citations, and why none could be re-quoted instead.** Each
+fragment was searched for across every tracked file. All four are gone from the
+source the citation asserts about — not moved within it:
 
 - *"`rauc-sign` has no command that produces such a file"*
-  (`docs/task/RFCT-210.md:693-694`) — the sentence this task exists to falsify;
+  (`docs/task/RFCT-210.md:693-694`) — **absent** from
+  `docs/design/release-signing.md`. It is the sentence this task exists to
+  falsify.
 - *"a compromised online key ends the repository's lineage"*
-  (`docs/task/RFCT-210.md:695-696`) — §1.6 still makes this claim, but as "still
-  ends", so no verbatim fragment survives;
+  (`docs/task/RFCT-210.md:695-696`) — **absent**. §1.6 still makes the claim,
+  but as "still ends", so no verbatim fragment survives.
 - *"the 1-year horizon in §1.4 is the deadline for building it"*
-  (`docs/task/RFCT-210.md:697-698`) — deleted; the deadline was met;
+  (`docs/task/RFCT-210.md:697-698`) — **absent**. Deleted; the deadline was met.
 - *"rotation, so the chain is depth one in practice"*
-  (`docs/task/RFCT-210.md:767-768`) — deleted from the crate README.
+  (`docs/task/RFCT-210.md:767-768`) — **absent** from
+  `os/pkgs/rauc-sign/README.md`, deleted from its out-of-scope list.
 
-The fifth is different in kind and matters to the decision: *"No such bind
-exists yet, deliberately"* (`docs/task/RFCT-210.md:699-700`) quotes text that is
-**intact** and has only moved down `docs/design/release-signing.md` as §1.6
-grew. Re-anchoring that one falsifies nothing — a record that says the design
-document said X, where the document still says X, stays true when the line
-number is corrected. It is independently fixable whether or not the marker
-stays, which shrinks the unrecoverable set from five to four.
+Each fragment does still appear in exactly two places, and neither is a
+legitimate re-quote target: `docs/task/RFCT-210.md` itself, which is the citing
+document quoting its source, and this file, which quotes them in order to
+explain that they were deleted. Re-pointing a citation at either would change
+what the record asserts — from "the design document says X" to "a document
+quoting the design document says X" — which is the falsification the marker
+exists to prevent. So the marker could not be shrunk below four.
 
-### The measured cost of the marker
+A fifth citation fails and is **not** in that class: *"No such bind exists yet,
+deliberately"* (`docs/task/RFCT-210.md:699-700`) quotes text that is intact and
+has only moved down `release-signing.md` as §1.6 grew. Re-anchoring it would
+falsify nothing. It is subsumed by the marker rather than fixed by it, and if
+the marker is ever lifted that citation needs re-anchoring, not repair.
 
-A marked document contributes zero to the in-scope census: the checker
-`continue`s before it increments the per-segment count. Measured on this branch
-with the gate's own `extract_citations`, `docs/task/RFCT-210.md` carries **81
-`os/` citations and 33 `docs/` citations** in scope (plus 6 no-slash forms the
-scope rule drops anyway). Only four of those 81 + 33 are the broken ones.
+**Two citations elsewhere were ordinary drift, and were re-anchored rather
+than exempted.** The crate README's out-of-scope list gained a bullet, so the
+line reading *"a separate key hierarchy applied"*
+(`os/pkgs/rauc-sign/README.md:52`) moved down one. The failing citation quoted
+*"is a separate key hierarchy"* (`docs/design/api.md:3875`); a second, quoting
+*"a separate key hierarchy"* (`docs/design/remote-management.md:135`), was
+passing only because its fragment happened to land inside the stale two-line
+range, and was corrected anyway — a citation that resolves by luck reads
+exactly like a correct one. Both were re-derived by grepping the moved text in
+the post-edit file, never by applying an offset, and both now name
+*"a separate key hierarchy applied"* (`os/pkgs/rauc-sign/README.md:52-53`).
 
-With the marker in place the run reports:
+**The collateral, priced at both ends.** A marked document contributes zero to
+the in-scope census: the checker `continue`s before incrementing the
+per-segment count. Measured on this branch with the gate's own
+`extract_citations`, `docs/task/RFCT-210.md` carries **114 in-scope citations**
+(plus 6 no-slash forms the scope rule drops anyway). Only 4 are broken, so
+**110 still-valid citations leave the corpus**:
 
-```
-FAIL segment docs has 277 in-scope citations, below its floor 303 ...
-FAIL segment os has 1768 in-scope citations, below its floor 1847 ...
-docs/verify-citations.sh: 3 FAILED (0 resolution, 0 content, 2 census, 1 ratchet), 2065 citations passed
-```
+| segment | in scope | forced red | collateral | armed (content-checked) | resolution-only |
+| --- | --- | --- | --- | --- | --- |
+| `os/` | 81 | 1 | 80 | 41 | 40 |
+| `docs/` | 33 | 3 | 30 | 17 | 16 |
+| **total** | **114** | **4** | **110** | **58** | **56** |
 
-`os` lands at 1768 rather than 1847 − 81 = 1766 because this task adds two new
-`os/` citations of its own; `docs` at 277 rather than 303 − 33 = 270 for the
-same reason. **The floors in `docs/verify-citations-baseline.txt` were left
-untouched deliberately** — the drop is not mine to ratify, and floors are
-re-measured on the merged tree rather than summed across branches.
+The armed/resolution-only split is close to even — 58 of the 114 were being
+content-checked, not all of them. This is a cheaper loss than the all-armed
+shape found elsewhere in this workstream, and it is recorded that way rather
+than assumed to match.
 
-So the trade is **114 in-scope citations exempted to absorb 4 broken ones**, of
-which 110 are still valid today. That is the number the decision should be made
-on.
+**The floor move.** Both segments drop below their floors, so both floors move
+in this same commit, per `docs/verify-citations-baseline.txt`'s own update
+rule. The numbers are measured on this branch, not estimated:
+
+| segment | floor was | floor now |
+| --- | --- | --- |
+| `os` | 1847 | **1768** |
+| `docs` | 303 | **278** |
+
+Base commit for the measurement: `c5f7e96`, this branch's dispatch point, where
+the gate read 2170/2170 PASS. The drops are smaller than the exempted counts
+(81 and 33) because this task adds citations of its own: 2 new `os/` and 8 new
+`docs/`. These floors are this branch's honest numbers and nothing else — they
+are deliberately **not** reconciled against any sibling branch that moves the
+same floors, because floors are re-measured on the merged tree and never summed
+across branches.
 
 ## 7. Residue, continued
 
-- **The RFCT-210 census trade is unresolved and is not this task's to
-  resolve.** See §6: 114 in-scope citations exempted to absorb 4 broken ones.
-  The floors were deliberately not lowered. Whichever way it is settled, the
-  fifth citation — *"No such bind exists yet, deliberately"*
-  (`docs/task/RFCT-210.md:699-700`) — is separately re-anchorable and does not
-  depend on the outcome.
-- **The marker is file-scoped; the problem is anchor-scoped.** Four dead
-  anchors in an 834-line memo cost that memo's entire citation contribution.
+- **The marker is file-scoped; the breakage is anchor-scoped.** Four dead
+  anchors in an 834-line memo cost that memo's entire citation contribution:
+  110 still-valid citations left the corpus to absorb 4 broken ones (§6).
   Nothing in the current mechanism can exempt a citation without exempting its
-  document. That is the general shape of the issue, not a fact about this task.
+  document. That is the general shape of the problem, not a fact about this
+  task, and it outlives this task.
+- **If the marker is ever lifted**, the fifth failing citation —
+  *"No such bind exists yet, deliberately"*
+  (`docs/task/RFCT-210.md:699-700`) — needs re-anchoring rather than repair: its
+  text is intact and has only moved. The other four have nothing to point at.
