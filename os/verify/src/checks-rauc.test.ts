@@ -323,7 +323,7 @@ describe('a packed root with no RAUC config at all', () => {
     // are no slot devices, so the answer is no and the check is green about an
     // image that ships no update configuration at all.
     //
-    // os/verify-image-v2.sh:2884 (deleted: PLAN-014) does exactly the same thing: its awk over a
+    // os/verify-image-v2.sh:2884 (deleted) does exactly the same thing: its awk over a
     // missing file is redirected to /dev/null, `bad_devs` comes back empty and
     // `[ -z "${bad_devs}" ]` passes. Diverging here would be a divergence
     // introduced by the PORT, so this reproduces it -- and reports it. The

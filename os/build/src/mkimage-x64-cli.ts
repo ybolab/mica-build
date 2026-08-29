@@ -22,7 +22,7 @@ import { REPO_ROOT } from './paths.ts'
 const USAGE = `usage: bash os/build/run.sh --mkimage-x64 [--out-dir DIR] [--grub-cfg FILE]
 
 Assembles the flashable x64 A/B GPT disk image -- the TypeScript port of
-os/mkimage-x64.sh (PLAN-014 M6c, RFCT-112). Inputs come from _out/${BOARD}/
+os/mkimage-x64.sh. Inputs come from _out/${BOARD}/
 exactly as they do there.
 
   --out-dir DIR    where the rootfs-side inputs are and the image is written

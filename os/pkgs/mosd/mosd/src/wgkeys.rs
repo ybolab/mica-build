@@ -98,7 +98,7 @@ impl Keystore {
     /// systemd-networkd that reads the key, and refusing here would abort the
     /// whole network reconcile — every physical interface included — over one
     /// tunnel that could not have come up either way. Proving the group can
-    /// read the file on a real image is the on-image check RFCT-200 section 4
+    /// read the file on a real image is the on-image check
     /// assigns to the kernel-and-image milestone.
     #[must_use]
     pub fn production(state_dir: &Path) -> Self {

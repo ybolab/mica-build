@@ -14,8 +14,7 @@ unsafe_code = "forbid"
 all = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
-# The one `com.mos.*` bus-name rule, shared by every consumer of it
-# (PLAN-011 D5).
+# The one `com.mos.*` bus-name rule, shared by every consumer of it.
 mos-busname = { path = "busname" }
 
 serde = { version = "1", features = ["derive"] }
@@ -49,7 +48,7 @@ base64 = "0.22"
 x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
 url = "2"
 # tough 0.18 is the last release whose crypto backend is `ring`; 0.19+ hard-depend
-# on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md.
+# on aws-lc-rs, which builds C (AWS-LC), which the workspace ban list refuses.
 tough = { version = "=0.18.0", default-features = false }
 axum = "0.8"
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
@@ -80,7 +79,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # rumqttc without default features is TCP-only: no TLS, and every remaining
 # dependency is pure Rust. The `use-rustls` default would pull tokio-rustls in;
-# TLS to the broker is a later decision (docs/task/RFCT-091.md).
+# TLS to the broker is a later decision.
 rumqttc = { version = "0.25", default-features = false }
 # The broker, used as a library rather than as its own daemon. Defaults off
 # buys three things: TCP only, so no `use-rustls` and therefore no rustls 0.22

@@ -337,7 +337,7 @@ async fn network_post_writes_static_variant() {
     );
 }
 
-/// The RFCT-135 reproduction, end to end: the form accepts `eth0.100`, the
+/// The reproduction, end to end: the form accepts `eth0.100`, the
 /// write reaches the single key `eth0.100`, and the pane reads it back.
 ///
 /// The write path is quoted, so `split_path` yields two segments and not
@@ -374,7 +374,7 @@ async fn network_post_quotes_a_dotted_iface_name() {
 }
 
 /// The path apid builds for a dotted name is a path the real settings model
-/// accepts — the half of RFCT-135 that lived below the fake backend.
+/// accepts — the half that lived below the fake backend.
 ///
 /// `FakeSettings` answers for the bus, not for `mosd_settings`; this drives
 /// the string apid actually sends into [`mosd_settings::Settings`], whose
@@ -394,7 +394,7 @@ fn the_dotted_iface_path_apid_builds_is_accepted_by_the_settings_model() {
     );
     assert!(settings.network["eth0.100"].dhcp);
 
-    // The spelling RFCT-135 recorded: three segments, so `100` is offered as a
+    // The recorded spelling: three segments, so `100` is offered as a
     // field of `IfaceSettings` and refused.
     let err = mosd_settings::Settings::default().set("network.eth0.100", value);
     assert!(
@@ -1688,15 +1688,14 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/v1"),
         ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
-        // `/api/v1/actions/reboot` was here until PLAN-023 M7 declared it, and
+        // `/api/v1/actions/reboot` was here until it was declared, and
         // its prefix and trailing-slash spelling take its place for the reason
         // the WiFi collection's did: neither is a route this router serves, so
         // both must still reach the reservation rather than the three action
         // routes beside them.
         ("GET", "/api/v1/actions"),
         ("GET", "/api/v1/actions/"),
-        // `/api/v1/wifi/client/networks` was here until PLAN-023 M5 declared
-        // it. Its prefix and its trailing-slash spelling took its place, and
+        // `/api/v1/wifi/client/networks` was here until it was declared. Its prefix and its trailing-slash spelling took its place, and
         // they are the more useful cases: neither is a route this router
         // serves, so both must still reach the reservation rather than the
         // collection beside them.
@@ -1864,7 +1863,7 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
 /// `/api/v1/settings` and `/api/v1/settings/` name no dot-path and reach the
 /// not-found handler.
 ///
-/// Until PLAN-026 M2 (`docs/task/RFCT-248.md`) this test was
+/// Until the fix landed this test was
 /// `every_other_api_path_keeps_both_of_its_answers` and asserted **two**
 /// answers: this 404 with a session, and the gate's redirect to `/login` or
 /// `/setup` without one. The session arm is unchanged — the same handler
@@ -1877,11 +1876,11 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
 /// answers in §2.4's envelope.
 #[tokio::test]
 async fn every_other_api_path_has_one_answer_in_every_mode() {
-    // `/api/v1/ssh/authorized-keys` left this list when PLAN-023 M5 declared
+    // `/api/v1/ssh/authorized-keys` left this list when the API declared
     // it: it is now a served collection, and the test that holds its answers
     // is `the_ssh_key_collection_lists_adds_and_removes`.
     //
-    // `/api/v1/actions/reboot` left it the same way when PLAN-023 M7 declared
+    // `/api/v1/actions/reboot` left it the same way when the API declared
     // it. A `GET` on it is now a declared route answering 405 rather than an
     // undeclared path answering 404, which is the whole of what M7 changed
     // about it; the tests that hold its answers are
@@ -4198,7 +4197,7 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
-    /// The settings root stopped being read-only with PLAN-023 M4, and this
+    /// The settings root stopped being read-only, and this
     /// fixture answers the write the same way it answers a read: §2.4's
     /// classification is exactly what the write route has to inherit.
     async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
@@ -4209,7 +4208,7 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
-    /// PLAN-023 M7 gave these three a route each, so they answer the failure
+    /// The API gave these three a route each, so they answer the failure
     /// rather than panicking. `reboot` and `power_off` are called from a
     /// detached task whose result only reaches a log, so what they return
     /// changes no response; an `unreachable!` in them would abort that task
@@ -4238,7 +4237,7 @@ impl SettingsApi for FailingSettings {
 /// cookie for it.
 async fn failing_app(fdo_name: Option<&'static str>) -> (Router, String) {
     // A seeded token rather than a minted one, and a bearer rather than the
-    // cookie these returned before M9 (RFCT-245): `/api/v1/` takes a bearer
+    // cookie these returned before M9: `/api/v1/` takes a bearer
     // and nothing else now, and this fixture's whole point is that a settings
     // write FAILS -- so `POST /builtin/tokens`, which is a settings write,
     // could not mint here. Seeding puts the credential in the tree the fake
@@ -4373,7 +4372,7 @@ async fn an_unreachable_mosd_is_503_with_retry_after() {
 async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
     let (router, _token) = failing_app(None).await;
     // A pane and not an API route, so this half still presents the cookie.
-    // `failing_app` returns a bearer since M9 (RFCT-245), so the login that
+    // `failing_app` returns a bearer since M9, so the login that
     // used to live inside it lives here, where the cookie is actually used.
     let cookie = login(&router, "hunter2secret").await;
 
@@ -4498,7 +4497,7 @@ fn the_resource_path_spellings_agree() {
     }
 }
 
-// RFCT-134: the admin password can be changed after setup, on both surfaces.
+// The admin password can be changed after setup, on both surfaces.
 
 /// POST a JSON body, the shape the API's one write route takes.
 async fn post_json(
@@ -4579,7 +4578,7 @@ async fn the_password_pane_changes_the_password_and_keeps_the_acting_session() {
     assert!(auth::verify_password(stored, "newsecret9"));
 
     // The acting session survives its own change; the other session is gone.
-    // Untouched by M9 (RFCT-245): this is the PANE, the change is authenticated
+    // Untouched by M9: this is the PANE, the change is authenticated
     // by the cookie, and so there is an acting session to keep. The API half of
     // this pair drops both, because a bearer names no session -- the two tests
     // now assert different things for the same daemon rule.
@@ -4642,7 +4641,7 @@ async fn the_api_password_change_rejects_a_wrong_current_password() {
 /// The API half of the success: 204, the hash written, and **every** browser
 /// session dropped.
 ///
-/// "the calling session kept" until M9 (RFCT-245), and it cannot be kept now:
+/// "the calling session kept" until M9, and it cannot be kept now:
 /// the caller authenticates with a bearer, so there is no calling session to
 /// name. The name of this test moved with the assertion.
 #[tokio::test]
@@ -4679,7 +4678,7 @@ async fn the_api_password_change_succeeds_and_drops_every_browser_session() {
         "newsecret9"
     ));
 
-    // M9 (RFCT-245) moved this assertion, and the daemon is right rather than
+    // M9 moved this assertion, and the daemon is right rather than
     // the test: the change is authenticated by a BEARER now, so there is no
     // acting session to keep. `password_change` passes
     // `acting_session.unwrap_or("")` to `remove_all_except`, whose comment
@@ -4761,7 +4760,7 @@ async fn the_api_password_change_rejects_a_malformed_body_with_the_envelope() {
     assert!(fake.set_paths().is_empty());
 }
 
-// RFCT-132 / RFCT-133: the gate's cache of the `access` subtree.
+// The gate's cache of the `access` subtree.
 //
 // The subscription itself — the proxy's `#[zbus(signal)]` member feeding the
 // cache over a real bus — is exercised in `tests/settings_signal.rs`. Here
@@ -4818,7 +4817,7 @@ async fn the_gate_serves_access_from_the_cache_only_while_subscribed() {
     );
 }
 
-/// The password change against the cache — the sequence RFCT-132 names as
+/// The password change against the cache — the sequence named as
 /// the hard case, made real by the change-password route: the flow itself
 /// verifies against the bus even while the cache is primed, its write drops
 /// the cached snapshot without waiting for the `SettingsChanged` round trip,
@@ -4901,7 +4900,7 @@ async fn completing_setup_drops_the_cached_setup_mode_decision() {
     );
 }
 
-// PLAN-022 M6: the typed network pane, the rotate-key route, and the two
+// The typed network pane, the rotate-key route, and the two
 // live-state fields M5 added.
 
 /// A settings tree with `network` entries of every kind, in the shape schema
@@ -4976,7 +4975,7 @@ fn network_state() -> serde_json::Value {
 /// A router over [`kinds_tree`] with [`network_state`] published, plus a
 /// session cookie for it.
 async fn kinds_app() -> (Router, Arc<FakeSettings>, String, String) {
-    // Both credentials, since M9 (RFCT-245) split them: the panes in this
+    // Both credentials, since M9 split them: the panes in this
     // cluster take the cookie and the `/api/v1/network` routes beside them take
     // the bearer, and several tests assert the two surfaces agree. The token is
     // seeded into the tree rather than minted through the pane because most of
@@ -5364,7 +5363,7 @@ async fn a_dotted_tunnel_name_is_quoted_on_the_peer_path() {
     );
 }
 
-/// `docs/task/RFCT-210.md` section 2.4's sweep, settled by running it: the
+/// the sweep, settled by running it: the
 /// pane's peer-add for an interface that is **not a declared network entry**
 /// neither refuses nor 404s -- it succeeds, and writes a `network.wg9` entry
 /// of the default kind carrying a WireGuard block.
@@ -5544,7 +5543,7 @@ async fn a_rotation_writes_nothing_to_the_settings_tree() {
 #[tokio::test]
 async fn the_rotate_routes_failures_take_the_shared_envelope() {
     for (fdo_name, code, status) in [
-        // PLAN-023 M6's correction, on the apid side: **no apid logic
+        // the correction, on the apid side: **no apid logic
         // changed**. mosd split its one `InvalidArgs` into a not-found for an
         // undeclared entry and an `InvalidArgs` for one of the wrong kind, and
         // the classifier below already mapped both names. This row is the
@@ -5683,7 +5682,7 @@ fn the_openapi_document_covers_the_rotate_route() {
 
     let responses =
         &document["paths"]["/api/v1/actions/wireguard/{iface}/rotate-key"]["post"]["responses"];
-    // 404 arrived with PLAN-023 M6: an interface that is not a declared entry
+    // The 404 arrived later: an interface that is not a declared entry
     // names nothing, which is what every other read on this API already
     // answered 404 for.
     for status in ["200", "401", "404", "422", "500", "503"] {
@@ -5732,7 +5731,7 @@ async fn a_private_key_planted_in_either_tree_never_reaches_the_wire() {
         "/api/v1/state/network.wg0",
         "/network",
     ] {
-        // Both surfaces in one list, and since M9 (RFCT-245) they take
+        // Both surfaces in one list, and since M9 they take
         // different credentials: the four API paths take the bearer and the
         // pane takes the cookie. The list stays one list on purpose -- the
         // claim is that the canary reaches NEITHER surface, and splitting it
@@ -5786,8 +5785,8 @@ async fn the_state_route_serves_the_kind_and_the_public_key() {
     }
 }
 
-// RFCT-212: `GET /api/v1/health` (§2.4 case 3) and §2.4's envelope on a method
-// a declared `/api/` route does not serve.
+// `GET /api/v1/health` (§2.4 case 3) and §2.4's envelope on a method a
+// declared `/api/` route does not serve.
 
 /// A tree with an admin password, and a live-state tree carrying the `uptime`
 /// key mosd serves at read time.
@@ -5801,7 +5800,7 @@ fn health_app(uptime: u64) -> (Router, Arc<FakeSettings>) {
 /// carrying the appliance's uptime.
 ///
 /// `checkedAt` is asserted as a JSON **number**, which is the decision
-/// `docs/task/RFCT-212.md` §3 records: there is no trusted wall clock in this
+/// The measurement records: there is no trusted wall clock in this
 /// crate, and the one clock there is — `GET /api/v1/state/uptime` — is a bare
 /// count of whole seconds. A health answer stamped any other way would be
 /// stamped with a clock this appliance does not have.
@@ -6090,8 +6089,8 @@ fn the_openapi_document_covers_health_and_the_405() {
     }
 }
 
-// RFCT-213: §3.2's bearer token — the credential, the three `/api/v1/tokens`
-// routes, and the bootstrap pane under §6.3's reserved prefix.
+// §3.2's bearer token — the credential, the three `/api/v1/tokens` routes,
+// and the bootstrap pane under §6.3's reserved prefix.
 
 /// A stored entry and the plaintext that opens it, both derived from `index`
 /// so two calls differ in every field identity is keyed on.
@@ -6115,7 +6114,7 @@ fn seeded_token(index: usize) -> (serde_json::Value, String) {
 /// `tree` with one usable bearer token seeded into it, and that token's
 /// plaintext.
 ///
-/// The M9 (RFCT-245) shape of every fixture whose subject is an `/api/v1/`
+/// The M9 shape of every fixture whose subject is an `/api/v1/`
 /// route. Seeded and **not** minted through §3.2's pane, for a reason the
 /// tests would otherwise have to excuse one at a time: a mint is itself a
 /// write to `access.apiTokens`, and twenty of the tests below assert
@@ -6223,7 +6222,7 @@ async fn mint_via_pane(router: &Router, cookie: &str, name: &str) -> String {
         .to_string()
 }
 
-/// The pane's sentence, ratified by `docs/task/RFCT-210.md` §3 and asserted
+/// The pane's sentence, ratified and asserted
 /// byte for byte.
 ///
 /// Token revocation on a password change stays out — a password change would
@@ -6275,7 +6274,7 @@ async fn the_bootstrap_pane_mints_a_token_that_authenticates_the_api() {
     assert_eq!(body_string(response).await, meta_body());
 }
 
-/// **The cutover, asserted (M9, RFCT-245).** Amendment 1 opened a
+/// **The cutover, asserted (M9).** Amendment 1 opened a
 /// dual-credential window and scheduled its close for a named milestone; this
 /// is the assertion that it closed. Every `/api/v1/` route takes the bearer,
 /// and the session cookie that used to work on the shipped four is now a 401.
@@ -6529,7 +6528,7 @@ async fn a_name_the_store_refuses_is_a_422() {
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
 
-/// The collection error contract (`docs/task/RFCT-210.md` §2.4): a well-formed
+/// The collection error contract: a well-formed
 /// identifier that names nothing is **404**, and 422 is reserved for an
 /// identifier that is not well formed at all.
 ///
@@ -6570,7 +6569,7 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // the rotate action, whose empty `{iface}` segment is interior rather than
     // trailing and IS served. `/api/v1/tokens/` reaches the reserved subtree's
     // own not-found handler. That measurement carried a consequence until
-    // PLAN-026 M2 -- `token_id` had to refuse this spelling, or the gate would
+    // `token_id` had to refuse this spelling, or the gate would
     // release an unauthenticated caller to a 404 where a redirect was owed --
     // and the consequence is gone now that the gate releases the whole subtree
     // either way. What is left is the measurement of which handler answers,
@@ -6583,7 +6582,7 @@ async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
     // And the bearer arm of the same path answers the same thing, because the
     // gate releases the whole reserved subtree and stops there: the credential
     // is never read, so it cannot decide the medium. This arm asserted the 303
-    // to `/login` until PLAN-026 M2 (`docs/task/RFCT-248.md`) closed that
+    // to `/login` until that was closed
     // asymmetry; `an_undeclared_api_path_answers_the_404_envelope_whatever_the_credential`
     // is the general statement, and this is the one path that carried the old
     // answer.
@@ -6693,7 +6692,7 @@ async fn an_undeclared_api_path_is_a_404_in_setup_mode_too() {
     assert_eq!(location(&response), "/setup");
 }
 
-/// The HTML half of the split recorded in `docs/task/RFCT-210.md` §2.4: the
+/// The HTML half of the split recorded here: the
 /// pane answers **422** where `DELETE /api/v1/tokens/{id}` answers **404**, on
 /// the same condition.
 ///
@@ -6881,7 +6880,7 @@ fn the_openapi_document_covers_the_token_routes() {
     assert!(minted["token"].is_object(), "{minted}");
 }
 
-// PLAN-023 M4 (`docs/task/RFCT-240.md`): the four scalar settings writes, the
+// The four scalar settings writes, the
 // redaction-sentinel refusal, and the write-refusal list.
 
 /// `PUT` a JSON body with a session cookie -- the second of the two
@@ -6913,7 +6912,7 @@ fn writable_tree(password: &str) -> serde_json::Value {
     tree
 }
 
-/// The four dot-paths `docs/task/RFCT-210.md` §2.2 admits, each written and
+/// The four dot-paths admitted, each written and
 /// each read back through the route that answers for it.
 ///
 /// 204 and an empty body: the value the caller sent is the value that was
@@ -7102,7 +7101,7 @@ async fn the_two_named_refusals_say_why_rather_than_only_that() {
 
     // `network` names the typed route that owns it, because a raw write here
     // creates an entry of the default kind rather than refusing an interface
-    // the device does not have (`docs/task/RFCT-210.md` §2.4).
+    // the device does not have.
     let response = bearer_json(
         &router,
         "PUT",
@@ -7293,7 +7292,7 @@ async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
     );
 }
 
-/// The credential: bearer **or** cookie, which is PLAN-023 Amendment 1's
+/// The credential: bearer **or** cookie, which is the
 /// ruling applied to a new route. The bearer-only rule is about the token
 /// routes specifically, so this route matches the shipped reads instead.
 #[tokio::test]
@@ -7313,7 +7312,7 @@ async fn the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_s
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert!(fake.set_paths().contains(&"hostname".to_string()));
 
-    // M9 (RFCT-245): the cookie that minted the token above is not itself a
+    // M9: the cookie that minted the token above is not itself a
     // credential on this route. The name of this test carried "and a cookie"
     // until the cutover, and the arm is amended rather than dropped -- the
     // request is the same one, and only the expected answer moved from 204 to
@@ -7419,7 +7418,7 @@ fn the_openapi_document_covers_the_settings_write() {
     );
 }
 
-// PLAN-023 M5 (`docs/task/RFCT-241.md`): the two array collections that already
+// The two array collections that already
 // exist in the settings tree -- the SSH authorized keys, identified by
 // fingerprint, and the WiFi station's known networks, identified by SSID.
 
@@ -7430,7 +7429,7 @@ async fn body_json(response: Response<axum::body::Body>) -> serde_json::Value {
     serde_json::from_str(&body).unwrap_or_else(|_| panic!("a JSON body, got: {body}"))
 }
 
-/// The sentence `docs/task/RFCT-210.md` section 2.5 requires on the listing and
+/// The sentence required on the listing and
 /// on the add, spelled out here rather than read from the constant: a test that
 /// compares the code against itself cannot notice the sentence being reworded.
 const ROOT_KEY_NOTICE_TEXT: &str = "Every authorized key is a root key.";
@@ -7613,7 +7612,7 @@ async fn the_key_add_runs_the_same_parser_the_pane_runs() {
 /// rather than a weakening.** M5 answered 422 because the duplicate check lives
 /// inside `validate_authorized_keys` and the only ways out were exporting a
 /// private constant or matching the validator's words; it declined both and
-/// took the validator's own message. PLAN-023 M6's error-contract ruling gives
+/// took the validator's own message. the error-contract ruling gives
 /// the contract a third clause -- absent is 404, malformed is 422, **duplicate
 /// is 409 with a per-collection code** -- and picks the export. This route now
 /// decides the duplicate itself, before the validator runs, so the status is
@@ -7771,7 +7770,7 @@ async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
     );
 }
 
-/// The HTML half of the split recorded in `docs/task/RFCT-210.md` section 2.4:
+/// The HTML half of the split recorded here:
 /// the pane answers **422** where `DELETE /api/v1/ssh/authorized-keys/
 /// {fingerprint}` answers **404**, on the same condition.
 ///
@@ -8151,7 +8150,7 @@ async fn an_absent_ssid_is_404_and_this_collection_has_no_pane_to_disagree_with(
 /// Both collections take a bearer token **and** a session cookie, and neither
 /// takes nothing.
 ///
-/// PLAN-023 Amendment 1's bearer-only ruling is about the token routes
+/// the bearer-only ruling is about the token routes
 /// specifically -- the credential factory -- and not about new routes in
 /// general, so these are dual-credential exactly as the shipped reads are.
 #[tokio::test]
@@ -8173,7 +8172,7 @@ async fn the_two_collections_take_a_bearer_and_401_without_one() {
             StatusCode::OK,
             "bearer: {path}"
         );
-        // M9 (RFCT-245): the cookie arm asserted 200 until the cutover and
+        // M9: the cookie arm asserted 200 until the cutover and
         // asserts 401 after it. Amended, not dropped -- the same request, a
         // moved answer -- because a collection that quietly kept taking the
         // cookie is exactly what this test exists to catch.
@@ -8306,7 +8305,7 @@ fn the_wifi_schema_matches_the_settings_model() {
     );
 }
 
-// PLAN-023 M6 (`docs/task/RFCT-242.md`): the network cluster typed, the
+// The network cluster typed, the
 // WireGuard peer collection, and the rotate-key 404.
 
 /// The API path of one interface.
@@ -8341,8 +8340,7 @@ const SLASHED_PEER_KEY: &str = "Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8=";
 
 /// The four relational rules, each with its own route-level test, because the
 /// whole reason this cluster is typed rather than a dot-path passthrough is
-/// that these rules exist and a passthrough runs none of them
-/// (`docs/task/RFCT-210.md` section 2.3 item (i)).
+/// that these rules exist and a passthrough runs none of them.
 ///
 /// Each asserts the same three things: **422**, the rule's own sentence in the
 /// message, and the stored tree unchanged. The last one is what separates this
@@ -8379,7 +8377,7 @@ async fn a_vlan_parent_that_is_not_declared_is_422_and_writes_nothing() {
     assert_eq!(stored_network_map(&fake).await, before);
 }
 
-/// Rule two. This is the exact submission `docs/task/RFCT-210.md` section 2.3
+/// Rule two. This is the exact submission the contract
 /// names as the concrete failure a bare passthrough produces: a bridge naming
 /// a port that does not exist, which a `PUT` to
 /// `/api/v1/settings/network.br9` would have answered 204 to.
@@ -8689,10 +8687,10 @@ async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
     }
 }
 
-/// PLAN-026 M1 (`docs/task/RFCT-247.md`): both typed write paths run the
+/// Both typed write paths run the
 /// wizard's CIDR rule, on the entries the *request* carries.
 ///
-/// RED-first for the gap `docs/task/RFCT-215.md` section 6 item 1 pinned: both
+/// RED-first for the pinned gap: both
 /// refused bodies below were answered `204` and written before this milestone.
 ///
 /// The condition is the wizard's and is not widened here, so the two accepted
@@ -8879,7 +8877,7 @@ async fn the_peer_collection_lists_adds_and_removes() {
     assert_eq!(peers[0]["publicKey"], json!(PEER_KEY));
 }
 
-/// `docs/task/RFCT-210.md` section 2.4's sweep, discharged: the typed route
+/// the sweep, discharged: the typed route
 /// answers **404 before anything is written** for the interface the pane
 /// silently creates a broken entry for.
 ///
@@ -8977,7 +8975,7 @@ async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
 /// one a `DELETE` names -- the argument the WiFi route's 409 makes about an
 /// SSID. The SSH 422 is the *shared validator's* own message, inherited rather
 /// than decided, and no validator on either side of the bus refuses a
-/// duplicate peer. `docs/task/RFCT-242.md` flags this as an open contract
+/// duplicate peer. This is flagged as an open contract
 /// question: the ratified rule covers absent and malformed and says nothing
 /// about duplicate.
 #[tokio::test]
@@ -9034,7 +9032,7 @@ async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
 /// The API answers **404** where the pane answers 422, on the same condition.
 ///
 /// Paired with `an_absent_peer_key_is_404_and_a_malformed_one_is_422` above
-/// and kept for the reason `docs/task/RFCT-210.md` section 2.4 gives about the
+/// and kept for the reason given about the
 /// SSH pane: a form's body is a re-rendered page no consumer reads a status
 /// from, and its message asks for a re-submit.
 #[tokio::test]
@@ -9232,7 +9230,7 @@ async fn the_network_cluster_takes_a_bearer_and_401_without_one() {
             StatusCode::OK,
             "bearer: {path}"
         );
-        // M9 (RFCT-245): amended from 200 to 401. The cluster is the last of
+        // M9: amended from 200 to 401. The cluster is the last of
         // the four dual-credential assertions to flip, and it flips for the
         // same reason the other three do.
         let refused = get(&router, path, Some(&cookie)).await;
@@ -9479,7 +9477,7 @@ fn the_network_schema_matches_the_settings_model() {
 
 /// The lifted pre-shared key bound, run by the WiFi route for the first time.
 ///
-/// `docs/task/RFCT-241.md` recorded that M5 could not check it: the bound lived
+/// M5 could not check it: the bound lived
 /// inside a private function of the `mosd` binary crate's station reconciler,
 /// so a key outside IEEE 802.11i's range was accepted, stored, and refused
 /// later by the renderer with the error visible only in live state. M6 lifted
@@ -9537,7 +9535,7 @@ async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
 
 /// The quotable half of the lifted bound, run by the WiFi route.
 ///
-/// `docs/task/RFCT-215.md` section 6 item 3 measured the gap this closes: a key
+/// The measured gap this closes: a key
 /// carrying a quote or a backslash passed `validate_wifi_psk`, was stored, and
 /// was then refused at render time by the station renderer's own `is_quotable`
 /// — accepted at the route and dead on the reconciler, with the error visible
@@ -9636,7 +9634,7 @@ async fn every_collection_answers_409_for_a_duplicate() {
     assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
 }
 
-// PLAN-023 M7: the three actions. No state to `GET` and no idempotency to
+// The three actions. No state to `GET` and no idempotency to
 // promise, so every assertion below is about the status code, the call that
 // did or did not reach mosd, and what the response body does not contain.
 
@@ -10059,9 +10057,8 @@ fn the_openapi_document_covers_the_three_actions() {
     );
 }
 
-// PLAN-023 M8 (`docs/task/RFCT-244.md`): `POST /api/v1/setup`, the one
-// unauthenticated write, and the one behaviour `docs/task/RFCT-210.md` allows
-// this campaign to fix rather than document.
+// `POST /api/v1/setup`, the one unauthenticated write, and the one behaviour
+// this campaign fixed rather than documented.
 
 const SETUP_PATH: &str = "/api/v1/setup";
 
@@ -10239,7 +10236,7 @@ async fn the_api_setup_route_writes_the_password_after_the_settings_it_may_fail_
 ///
 /// The wizard is not fixed, deliberately: what is left there is a bus failure
 /// between two writes, and closing it needs a transactional multi-path write
-/// on the bus, which is a mosd change outside PLAN-023.
+/// on the bus, which is a mosd change outside this crate.
 #[tokio::test]
 async fn the_api_setup_route_validates_before_writing_where_the_form_path_does_not() {
     // The API: the failing write is the first one, so nothing else happens.
@@ -10299,7 +10296,7 @@ async fn the_api_setup_route_validates_before_writing_where_the_form_path_does_n
     );
 }
 
-/// The acceptance criterion RFCT-210 section 2.5 states for M8, on the rule the
+/// The acceptance criterion for M8, on the rule the
 /// route cannot reach any other way.
 ///
 /// A bridge naming a port that is not a declared entry is one of the four
@@ -10649,7 +10646,7 @@ fn the_openapi_document_covers_the_setup_route() {
 /// The wizard's CIDR bound runs on this route and on the typed network routes
 /// beside it, in the same three spellings, with the same sentence.
 ///
-/// This test recorded a divergence until PLAN-026 M1 (`docs/task/RFCT-247.md`):
+/// This test recorded a divergence until it was fixed:
 /// `valid_cidr` had one caller, `validate_iface`, whose callers were the two
 /// HTML form handlers and this route, so `PUT /api/v1/network/{iface}` took an
 /// address the kernel cannot parse and answered 204. The rule now lives in
@@ -10707,7 +10704,7 @@ async fn the_setup_route_and_the_network_routes_run_one_shared_cidr_bound() {
     assert_eq!(
         put.status(),
         StatusCode::UNPROCESSABLE_ENTITY,
-        "the gap PLAN-023 M6 left open is closed: the typed route runs the rule"
+        "the gap left open is closed: the typed route runs the rule"
     );
     let error = envelope(put).await;
     assert_eq!(error["code"], "validation_failed");

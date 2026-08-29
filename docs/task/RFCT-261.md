@@ -1,6 +1,6 @@
 # RFCT-261 docs/plan/ is half-read: its index is asserted, its citations are not
 
-- **status**: pending
+- **status**: closed — obsoleted by PLAN-029 M2. The gap this recorded was that `docs/plan/` citations went unasserted; PLAN-029 removed citations from the documents instead of extending the gate to reach them.
 - **priority**: P2
 - **owner**: unassigned
 - **createdAt**: 2026-08-29

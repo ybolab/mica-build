@@ -1,4 +1,4 @@
-// The PLAN-022 kernel checks, driven from the failing side.
+// The networking kernel checks, driven from the failing side.
 //
 // Every case here mutates the healthy packed-root fixture and asserts the
 // baseline green FIRST, because a check that reports PASS and a check that

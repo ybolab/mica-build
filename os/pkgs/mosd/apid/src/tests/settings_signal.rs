@@ -1,6 +1,6 @@
-//! RFCT-133: the proxy's `SettingsChanged` member, received over a real
+//! the proxy's `SettingsChanged` member, received over a real
 //! private bus from a fake mosd that emits it exactly as the real one does —
-//! and RFCT-132's watcher semantics on top: the subscription going live marks
+//! and the watcher semantics on top: the subscription going live marks
 //! the cache synchronised, an access-touching change invalidates it, an
 //! unrelated change does not, and the stream lapsing drops the cache back to
 //! direct reads.

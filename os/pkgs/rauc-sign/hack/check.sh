@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The gate for this workspace. It exists because `rauc-sign` is no longer a
-# member of the mosd workspace: PLAN-019 M3 gave it its own `[workspace]`, and
+# member of the mosd workspace: the split gave it its own `[workspace]`, and
 # from that moment `cargo clippy --workspace` and `cargo nextest run --workspace`
 # run from os/pkgs/mosd/ stopped reaching this crate. Without this script the code would
 # ship unchecked with every other gate still green.

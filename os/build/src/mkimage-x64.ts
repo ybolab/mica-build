@@ -8,7 +8,7 @@
 // here and nothing re-reads that file.
 //
 // Not src/mkimage-v2.ts with a board parameter, the same question
-// os/mkimage-x64.sh answers about os/mkimage-v2.sh (deleted: PLAN-014). That assembler is U-Boot: a
+// os/mkimage-x64.sh answers about os/mkimage-v2.sh (deleted). That assembler is U-Boot: a
 // loader partition at a fixed sector, a redundant environment pair, a compiled
 // boot.scr and geometry assertions about all three, none of which exists on a
 // UEFI machine, and threading conditionals through it would put a second
@@ -347,7 +347,7 @@ export async function assembleX64(
   if (verity.salt.toLowerCase() !== geometry.veritySalt.toLowerCase()) {
     // Not one of os/mkimage-x64.sh's refusals -- that script reads VERITY_SALT
     // out of the env file and never compares it to the board's. It is here
-    // because os/mkimage-v2.sh (deleted: PLAN-014) DOES make this comparison for cx3576 and the
+    // because os/mkimage-v2.sh (deleted) DOES make this comparison for cx3576 and the
     // reason is board-independent: a hash tree built with a salt other than the
     // pinned one is not reproducible, and the fragment would carry the built
     // salt while board.env claimed another. Named as an addition rather than

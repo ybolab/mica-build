@@ -2,8 +2,6 @@
 
 > WiFi station and access point on the systemd/mosd base. Companion to
 > mosd.md, access.md and provisioning.md.
->
-> No `.zh.md` translation exists for this document.
 
 ## 1. What ships
 
@@ -73,7 +71,7 @@ Three model decisions are load-bearing:
   purpose: index segments would add read-modify-write races between two writers
   on one array, and a second addressing syntax for the UI to learn, for a list
   that is edited as a unit anyway.
-- **The AP subnet is `192.168.4.0/24`, not PLAN-008 Part B's `10.42.0.0/24`.**
+- **The AP subnet is `192.168.4.0/24`, not the `10.42.0.0/24`.**
   192.168.4.0/24 is the conventional embedded-AP block and is far less likely
   to collide with an operator's management network than 10.42.0.0/24, which
   systemd-networkd already uses for its own ranges. It is a setting, so a
@@ -193,7 +191,7 @@ The conflict is decided on `wifi.client.enabled` alone, not on whether the
 station has any networks to join: a station the operator switched on owns the
 radio as far as configuration is concerned, and reporting that is the point.
 
-**Automatic arbitration is PLAN-008 Part D's later phase and is explicitly not
+**Automatic arbitration is the later phase and is explicitly not
 here.** `wifi.ap.holdDownSeconds` and `wifi.ap.graceSeconds` are in the schema
 and are **consumed by nothing** — that is deliberate, not an oversight. Raising
 the AP on loss of carrier after a hold-down, and dropping it a grace period
@@ -202,7 +200,7 @@ outlive a single `apply`. Until that lands, **`mode: provisioning` behaves
 exactly like `always`**; the mode is recorded in live state so a UI can tell
 them apart, and a test pins that this is the decided behaviour.
 
-So of PLAN-008 Part D's state machine, step 4 (`always` / `off`) shipped and
+So of the state machine, step 4 (`always` / `off`) shipped and
 steps 1–3 (the automatic trigger and exit) did not.
 
 ## 6. The networkd naming constraint — read this before writing another reconciler
@@ -359,7 +357,7 @@ anywhere in this repository:
 - that a station actually associates and gets a DHCP lease;
 - that the AP actually beacons, that a client can associate with it, and that
   networkd's DHCP server hands out a usable address;
-- that the AP6275S vendor driver supports AP mode at all — PLAN-008 Risks
+- that the AP6275S vendor driver supports AP mode at all — a recorded risk
   records this as the known hardware risk and only a radio can settle it;
 - that the masked units stay masked and the templated instances come up cleanly
   on a real boot.

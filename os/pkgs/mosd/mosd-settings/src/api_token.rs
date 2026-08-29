@@ -91,7 +91,7 @@ pub fn validate_api_tokens(tokens: &[ApiToken]) -> Result<(), SettingsError> {
 /// The grammar and the lookup are different questions, and a route that
 /// answers them with one check answers the wrong one: an item route owes a
 /// **404** for an identifier that is well formed and names nothing and a
-/// **422** for one that is not well formed at all (`docs/task/RFCT-210.md`
+/// **422** for one that is not well formed at all (the contract
 /// section 2.4). It cannot tell those apart without asking this separately,
 /// and a second copy of the grammar at the route could disagree with the copy
 /// the store enforces.

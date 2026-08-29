@@ -557,7 +557,7 @@ const ACCOUNT_CHECKS: readonly CheckCase[] = [
         return [verdict(id, false,
           `'${MOS_USER}' is a member of supplementary group(s): ${extra.join(' ')}. Phase 1 grants `
           + `none — not adm, not shadow, nothing reaching the settings tree — and this is a recorded `
-          + `deferral (docs/task/RFCT-039.md), so a grant appearing here is an undocumented privilege `
+          + `deferral, so a grant appearing here is an undocumented privilege `
           + `decision`)]
       }
       if (regularFileFollowingLinks(root, '/usr/bin/sudo') || regularFileFollowingLinks(root, '/bin/sudo')) {
@@ -567,7 +567,7 @@ const ACCOUNT_CHECKS: readonly CheckCase[] = [
       }
       return [verdict(id, true,
         `'${MOS_USER}' has no supplementary groups and no sudo ships in the image (a deliberate `
-        + `phase-1 deferral, recorded in docs/task/RFCT-039.md)`)]
+        + `phase-1 deferral, recorded on record)`)]
     },
   },
 

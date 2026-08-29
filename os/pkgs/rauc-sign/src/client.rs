@@ -1,5 +1,4 @@
-//! Device-side Uptane/TUF metadata verifier (PLAN-006 Part A/L, phase 2,
-//! first half).
+//! Device-side Uptane/TUF metadata verifier.
 //!
 //! Verifies a LOCAL copy of the repository that [`crate::repo`] publishes,
 //! starting from a pinned trusted `root.json` that reached the device out of

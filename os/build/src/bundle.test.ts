@@ -221,7 +221,7 @@ describe('the boot-attempts range guard, and the empty read that made it vacuous
   })
 
   test('THE EMPTY READ IS REFUSED, which is the shell\'s hole', () => {
-    // os/update/bundle.sh (deleted: PLAN-014): `done < <(grep -oE ... | awk ...)`. With no match the
+    // os/update/bundle.sh (deleted): `done < <(grep -oE ... | awk ...)`. With no match the
     // loop body never runs and the guard passes having compared nothing --
     // before mkimage dies on the same path, which is how os-bundle-cx3576
     // stayed broken through two merges earlier in this campaign.
@@ -303,7 +303,7 @@ describe('a slot\'s mos-verity-<slot>.env, and the five cmdlines it refuses', ()
   })
 
   test('no dm-mod.waitfor= is refused with the SAME sentence, which is bundle.sh\'s shape', () => {
-    // os/mkimage-v2.sh (deleted: PLAN-014) gives the two their own sentences; os/update/bundle.sh
+    // os/mkimage-v2.sh (deleted) gives the two their own sentences; os/update/bundle.sh
     // does not. Transcribed rather than harmonised -- a reader running the same
     // broken cmdline through both should get each script's own words.
     const broken = mutate(CMDLINE_A, /dm-mod\.waitfor=[^ ]*/, 'rootwait')
@@ -414,7 +414,7 @@ describe('the manifest is spliced by LINE, then substituted', () => {
 
   // The $-expansion class, driven from the failing side.
   //
-  // os/update/bundle.sh:289 (deleted: PLAN-014) substituted with `sed`, where an `&` in the
+  // os/update/bundle.sh:289 (deleted) substituted with `sed`, where an `&` in the
   // replacement expands to the whole match; BUNDLE_COMPATIBLE has no guard
   // against one (BUNDLE_VERSION does). The first version of this port fixed `&`
   // and reintroduced the SAME CLASS under `$`, because a string replacement in

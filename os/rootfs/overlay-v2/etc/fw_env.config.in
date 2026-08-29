@@ -22,7 +22,7 @@
 #
 # Two writers exist for this environment (RAUC slot marking and the first-boot
 # machine-id oneshot), and the dashboard's boot-credit poll will add a reader
-# with no boot-time ordering against either. The serialisation rule (RFCT-142):
+# with no boot-time ordering against either. The serialisation rule:
 # every access goes through fw_printenv/fw_setenv. The shipped libubootenv
 # (Debian trixie, 0.3.5) takes flock(LOCK_EX) on /var/lock/fw_printenv.lock
 # inside libuboot_open and holds it across the whole open-read-modify-write,

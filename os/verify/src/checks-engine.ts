@@ -492,7 +492,7 @@ const PKGMGR_TREES = [
   '/usr/share/factory/var/lib/dpkg', '/usr/share/factory/var/lib/apt',
 ] as const
 // The LOGS, which the databases and caches above do not cover and which the
-// purge left behind until RFCT-226: /var/log survived a purge written around
+// purge left behind until later: /var/log survived a purge written around
 // /var/lib and /var/cache, and the pack stage then carried the whole of /var
 // into the factory tree. They are listed in BOTH places for the same reason the
 // trees are -- a log left under /usr/share/factory/var is restored onto /var on

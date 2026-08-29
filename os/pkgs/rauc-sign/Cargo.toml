@@ -25,7 +25,7 @@ tempfile = { workspace = true }
 # This crate is its own cargo workspace, of exactly one member. It used to be a
 # member of the mosd workspace named through `workspace = "../../mosd"`, which
 # was already the awkward case -- cargo only auto-discovers a workspace root in
-# a parent directory, and os/pkgs/mosd/ never was one. After PLAN-019 the two trees are
+# a parent directory, and os/pkgs/mosd/ never was one. The two trees are
 # siblings under os/pkgs/ and neither contains the other, so the reach is gone
 # rather than merely redirected.
 #
@@ -64,6 +64,6 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
 url = "2"
 # tough 0.18 is the last release whose crypto backend is `ring`; 0.19+ hard-depend
-# on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md.
+# on aws-lc-rs, which builds C (AWS-LC).
 tough = { version = "=0.18.0", default-features = false }
 tempfile = "3"

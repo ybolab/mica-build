@@ -12,7 +12,7 @@
 // A verity slot's size is content-derived, so the layout does not declare it --
 // `walkLayout` takes it as a parameter and everything downstream of the slots
 // follows from it. It is read off the image here, once, exactly as
-// os/verify-image-v2.sh:1441 (deleted: PLAN-014) reads it, and it is refused unless it is a
+// os/verify-image-v2.sh:1441 (deleted) reads it, and it is refused unless it is a
 // positive whole-MiB multiple. When it is refused the walk is fed 0, which is
 // what makes the size and image-size checks FAIL rather than compare a slot
 // against a size derived from itself.

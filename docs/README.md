@@ -1,6 +1,6 @@
 # mos documentation
 
-> English | [中文](README.zh.md)
+> English | [中文](zh/README.md)
 
 - `architecture.md` — top-level system architecture and component map (start here)
 - `design/` — subsystem design records
@@ -20,35 +20,20 @@
   - `bus.md` — device bus v2: `com.mos.Item1` contract, class registry, actions as items, Sparkplug B evaluation
   - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
   - `build-harness.md` — how this repository's checks are run: the pinned bun container, the Rust gate's container and PATH, scratch that is not `/tmp`, arm64 build-vs-execute, and the docs gates
-- `research/` — decision-basis studies
-  - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
-  - `init-strategy.md` — init core strategy: Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1, with triggers
-  - `venus-os-ui.md` — Venus OS gui-v2 reference study: what it is, how it is served, its information architecture
-  - `venus-os-access.md` — Venus OS reference study: SSH/root access, remote support, firmware-update and rollback UX
-  - `mos-ui-inventory.md` — what the mos management UI ships today, measured from the tree
 - `plan/` — PMA plans (numbered, with status index)
 - `task/` — PMA task tracking
+- `zh/` — Chinese documentation, written against the current version
 
-Rules: architecture/design/research docs are bilingual (`*.zh.md` is the
-Chinese counterpart; English is authoritative on conflict, update both
-together); `plan/` and `task/` are PMA process docs, English only, following
-the PMA lifecycle (investigate → proposal → implement) with status markers in
-`plan/index.md`.
+Rules. `architecture.md` and `design/` are the English design record and are
+authoritative; `zh/` carries the Chinese documentation and yields to the
+English on conflict. `plan/` and `task/` are PMA process documents, English
+only, following the PMA lifecycle (investigate -> proposal -> implement) with
+status markers in `plan/index.md`.
 
-Exception, deliberate and recorded: the documents added by the dashboard
-campaign (`design/dashboard.md`, `research/venus-os-ui.md`,
-`research/venus-os-access.md`, `research/mos-ui-inventory.md`) ship
-**English-only**, because whether the existing `*.zh.md` files are kept current
-is a decision parked with the user and unresolved; if bilingual coverage is
-revived these get translated then, as a deliberate act rather than a half-kept
-convention (`task/RFCT-045.md`). `design/api.md` joins that same exception for
-the same unresolved reason: it is the API-first follow-on to
-`design/dashboard.md`, cites it and `research/mos-ui-inventory.md` throughout,
-and is written by sibling tasks in one campaign against a moving crate — a
-translation kept in step with that would be a second moving target, and one
-kept out of step would be worse than none. There is deliberately no
-`design/api.zh.md`. `design/build-harness.md` joins the exception on the same
-unresolved ground: it is a register of measured host facts that go stale as the
-harness moves, and a translation of dated measurements kept out of step would
-misreport what this machine does. There is deliberately no
-`design/build-harness.zh.md` (`task/RFCT-233.md`).
+These documents describe design and behaviour. They do not cite code by line
+and do not narrate implementations statement by statement, because a document
+coupled to line numbers is falsified by edits that leave its design intact.
+Where a precise contract is needed, the artifact that carries it is named
+instead: the HTTP surface is specified by `os/pkgs/mosd/apid/openapi.json`,
+which CI holds equal to what the shipped binary prints, and the rest lives in
+the code the document points at by module.

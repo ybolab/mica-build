@@ -990,7 +990,7 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // Nothing at /etc/modules-load.d/wifi.conf on ANY board: mos-modules
   // superseded it, and the check that says so is board-unconditional.
 
-  // The kernel's own record of itself, for the PLAN-022 networking checks.
+  // The kernel's own record of itself, for the networking checks.
   // Seeded on every board although only x64 registers those checks: the fixture
   // describes a healthy root, and a root with no /boot/config-* is not one.
   //

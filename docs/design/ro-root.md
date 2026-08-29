@@ -1,10 +1,10 @@
 # Read-only root: squashfs + dm-verity on cx3576
 
-Decision record for PLAN-010 M4 / RFCT-013. Covers how the root filesystem is
+Decision record. Covers how the root filesystem is
 packed, how the kernel assembles it without an initramfs, and where every
 runtime write goes once `/` is immutable.
 
-Companion documents: `docs/plan/PLAN-006.md` Parts C, D and J (the A/B update
+Companion documents: the A/B update
 design this implements), `os/boards/cx3576/board.env` (every layout constant),
 `os/rootfs/README.md` (how to build it).
 
@@ -111,22 +111,22 @@ of the built `Image`:
    `module_param_array(waitfor, charp, NULL, 0)`, and `dm_init_init()` spins on
    `dm_get_dev_t()` for each entry before building any table.
 
-Because (A) holds, the fallback described in PLAN-006 Part D ("a micro-initramfs
+Because (A) holds, the fallback described on record ("a micro-initramfs
 is kept as a fallback profile for kernels/boards where `dm-mod.create=` is
 unavailable") is not built for cx3576. If on-hardware bring-up disproves this,
 the shape of (B) would be: a ~5 MB cpio with busybox, `veritysetup` and the
 cryptsetup libraries; an `init` that reads the root hash from the cmdline, runs
 `veritysetup open --hash-offset` against the slot partition, mounts
 `/dev/mapper/rootfs` and `switch_root`s. It costs a second signed artifact per
-boot slot and permanent RAM for the cpio, which is exactly what PLAN-006 Part D
+boot slot and permanent RAM for the cpio, which is exactly what the A/B design
 set out to avoid. The cmdline generated here stays valid either way, so the
 decision is re-testable on hardware without a rebuild.
 
-RFCT-018 has since reached the same conclusions independently and they are now
+A later pass reached the same conclusions independently and they are now
 settled, not open: `dm-mod.waitfor=` exists and is required
-(`drivers/md/dm-init.c:26,297-305,324`); `PARTUUID=` resolves through the
+(`drivers/md/dm-init.c,297-305,324`); `PARTUUID=` resolves through the
 `name_to_dev_t()` fallback in `dm_get_dev_t()`
-(`drivers/md/dm-table.c:334-341`, `init/do_mounts.c:277-295`, and
+(`drivers/md/dm-table.c`, `init/do_mounts.c`, and
 `name_to_dev_t` is `EXPORT_SYMBOL_GPL`, not `__init`); dm-verity's SHA-256 is
 already built in (`CRYPTO_SHA256=y`, `CRYPTO_SHA256_ARM64=y`,
 `CRYPTO_SHA2_ARM64_CE=y`), so no kernel fragment change is needed. The two
@@ -136,7 +136,7 @@ investigations agree on every point.
 
 `build-v2.sh` writes one line per slot into `boot-cmdline-a.txt` /
 `boot-cmdline-b.txt`. The boot slots deliberately carry **no**
-`extlinux/extlinux.conf`: RFCT-018 found that both U-Boot boot frameworks try
+`extlinux/extlinux.conf`: the boot-framework investigation found that both U-Boot boot frameworks try
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
 bypass the whole RAUC A/B handshake. `os/mkimage-v2.sh` instead compiles
 `os/boards/cx3576/boot.cmd` into a `boot.scr` shared by both slots and derives a
@@ -184,11 +184,11 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   canonical lowercase spelling everywhere is the least surprising choice.
   `os/mkimage-v2.sh` cross-checks each slot's table against `ROOTFS_A_GUID` /
   `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
-  case-insensitively (RFCT-020), so the two spellings coexist by design.
+  case-insensitively, so the two spellings coexist by design.
 - The console/earlycon/storagemedia/net.ifnames arguments are board facts and
   live in `os/boards/<board>/board.env` as `BOARD_CMDLINE_ARGS`. They were
   carried over from the `APPEND` line of the v1 single-slot assembler, which
-  RFCT-107 deleted; the root argument is `root=/dev/dm-0 ... ro` rather than
+  the v1 removal deleted; the root argument is `root=/dev/dm-0 ... ro` rather than
   v1's `root=PARTLABEL=rootfs rw`.
 - `rootwait` is kept. Note that if `dm-init` fails, `/dev/dm-0` never appears
   and `rootwait` waits forever; recovery from that state is U-Boot's job
@@ -256,14 +256,14 @@ partitions absorb everything:
 | `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
 | `/etc/wpa_supplicant` | bind from `/mnt/state/wpa_supplicant` | mosd's rendered supplicant config (M5) |
 | `/etc/hostapd` | bind from `/mnt/state/hostapd` | mosd's rendered hostapd config (M5) |
-| `/usr/local/lib/systemd/system` | bind from `/mnt/state/systemd-units` | third-party systemd units an integrator installs (PLAN-011 D5). The only bind target **inside `/usr`** — see below |
-| `/home` | bind from `/srv/home` | operator home directories, on **DATA** (RFCT-039); source created by `mos-seed-home` |
-| `/root` | bind from `/srv/root` | root's home directory, on **DATA** (RFCT-054); source created by `mos-seed-root` |
+| `/usr/local/lib/systemd/system` | bind from `/mnt/state/systemd-units` | third-party systemd units an integrator installs. The only bind target **inside `/usr`** — see below |
+| `/home` | bind from `/srv/home` | operator home directories, on **DATA**; source created by `mos-seed-home` |
+| `/root` | bind from `/srv/root` | root's home directory, on **DATA**; source created by `mos-seed-root` |
 | **`/etc/shadow`** | **symlink → `/var/lib/mos/shadow`** | **not read-only any more — see below (M5)** |
 | `/run`, `/run/lock`, `/dev/shm` | tmpfs | systemd API mounts, unchanged |
 
 > **Partition numbers shifted in M5.** The Rockchip loader area became a real
-> GPT partition at p1 (RFCT-031), so every partition after it moved up by one.
+> GPT partition at p1, so every partition after it moved up by one.
 > The numbers above are the current ones and match `os/boards/cx3576/board.env`.
 > Partition **GUIDs did not move** — the identity digits in each GUID are
 > allocated in the order partitions were added and are frozen once allocated,
@@ -272,7 +272,7 @@ partitions absorb everything:
 
 ### `/usr/local/lib/systemd/system` — a writable unit directory, and what it costs
 
-**Added 2026-08-22 (PLAN-011 D5 / M5).** Every other *bind* row above redirects a
+**Added 2026-08-22.** Every other *bind* row above redirects a
 path under `/etc`, `/var/lib` or a home directory; the remaining rows are the
 partitions and tmpfs themselves. This one lands in `/usr`, which is otherwise
 entirely inside the signed, verity-covered tree, and that is the point: it is the
@@ -310,7 +310,7 @@ means **the set of things that start at boot is no longer determined by the imag
 hash**. That is a real departure from `docs/architecture.md` §4, where a prod
 image's contents are part of what is signed. Two things bound it: the directory
 is **root-writable only**, so it grants no privilege that SSH-as-root did not
-already grant; and mosd's `com.mos.ext.*` bus scan (PLAN-011 D5(b)) turns "this
+already grant; and mosd's `com.mos.ext.*` bus scan turns "this
 device has been modified" from invisible into an observable fact. It is the same
 trade Venus makes with `/data/rc.local`, and mos is better placed to observe it
 because the rest of the root stays verity-protected.
@@ -323,7 +323,7 @@ that fails at boot), that the bind is enabled and STATE-backed, and — negative
 ### `/etc/shadow` is writable, and this document used to say it was not
 
 **This is a correction.** Earlier revisions listed `/etc/shadow` among the
-read-only paths on the verity squashfs. Since PLAN-010 M5 that is no longer
+read-only paths on the verity squashfs. That is no longer
 true, and the change is load-bearing: **per-device password authentication works
 on v2 ONLY because of it.**
 
@@ -380,7 +380,7 @@ to a locked marker and the marker file is deleted**, so the password vanishes;
 credential the reconciler did not write — a hash set by hand on STATE, or by
 any tool other than mosd, never matches a marker and therefore survives. That
 distinction is the whole reason a marker exists instead of "lock root on every
-boot". (RFCT-083 removed the v2 `ROOT_PASSWORD` build argument this paragraph
+boot". (the signing fix removed the v2 `ROOT_PASSWORD` build argument this paragraph
 used as its example: the pack-stage assertion had always rejected the hash it
 would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `os/pkgs/mosd/mosd/src/transient.rs`.
 
@@ -468,7 +468,7 @@ Two operations follow from that table:
 ~9 MiB; journald runs `Storage=volatile` so there is no persistent journal to
 grow; the remaining consumers are `/var/tmp`, `/var/cache` and dpkg working
 space; and balena-engine's data-root is pinned to `/srv/balena-engine`
-(PLAN-010 M6), on DATA, so no container layer ever lands here. 512 MiB is ~50x
+, on DATA, so no container layer ever lands here. 512 MiB is ~50x
 the seeded content and under 2% of the smallest realistic eMMC, so `/var` can
 never compete with DATA for the disk. Changing the number moves DATA's start
 offset, so it is frozen for a flashed fleet in the same way
@@ -559,10 +559,10 @@ What the audit of the built tree found:
 | `/var/lib/dpkg`, `/var/lib/apt`, `/var/cache/*`, `/var/log/*` | package db, caches, logs | accepted-discardable; restored from the factory copy on first boot |
 | RAUC statusfile | **update state** | Must NOT be on `/var`. See below. |
 
-**RAUC statusfile — recommend META.** RFCT-014 owns the `statusfile=` line in
+**RAUC statusfile — recommend META.** the rootfs work owns the `statusfile=` line in
 `system.conf`, and of the two safe tiers META is the right one. STATE is
 configuration and identity — things a user sets. META is update and appliance
-metadata, which is exactly what slot status is, and PLAN-006 Part C already
+metadata, which is exactly what slot status is, and the A/B design already
 scopes it that way. Putting it on META also keeps STATE's contents entirely
 user-meaningful, which matters for describing what a factory reset destroys.
 `/mnt/meta` is an fstab mount brought up in the local-fs phase, long before
@@ -588,7 +588,7 @@ than dies:
   ldconfig and debconf caches — and no distro rule ages it today).
 
 Ordinary housekeeping, deliberately not a garbage collector. Reporting `/var`
-pressure as a degraded health signal is RFCT-015's side, and it must **not**
+pressure as a degraded health signal is the side, and it must **not**
 fail `mark-good`: a log flood must never trigger an update rollback.
 
 ### First-boot growth moved to DATA
@@ -684,7 +684,7 @@ have a RAUC post-install hook refresh the non-key files from
 
 **`mos-seed-state` runs on every boot and creates only what is missing** —
 `cp -an` for seeded content, `mkdir -p` for bare directories, never touching
-anything that already exists. RFCT-083 removed the original
+anything that already exists. the signing fix removed the original
 `ConditionPathExists=!/mnt/state/.mos-state-seeded` run-once stamp, because the
 stamp had exactly the failure mode `mos-seed-home.service`'s own comment
 rejects a stamp for:
@@ -738,7 +738,7 @@ on genuinely exists on a v2 device, which is also why `/etc/fw_env.config`
 addresses something real rather than something planned.
 
 What is still pending is the oneshot that *populates* `machine_id`, which is
-RFCT-015's. Until it lands and has run once, nothing sets the variable, the
+the machine-id oneshot's. Until it lands and has run once, nothing sets the variable, the
 boot script's `test -n` guard leaves the cmdline argument off, and systemd finds
 an empty `/etc/machine-id` on a read-only filesystem, falls back to a transient
 id in `/run` and bind-mounts it over `/etc/machine-id`. The machine-id is
@@ -747,7 +747,7 @@ the id changes on every reboot. Note it stays transient for one extra boot even
 after the oneshot lands, since the value it writes only reaches the cmdline on
 the following boot.
 
-That fallback has a hard prerequisite, independently flagged by RFCT-018: the
+That fallback has a hard prerequisite, independently flagged deliberately: the
 image must ship `/etc/machine-id` as an **empty regular file**. systemd
 bind-mounts the transient id over that path, and if the file is absent there is
 nothing to mount over. The pack stage creates it (`: > /rootfs/etc/machine-id`),
@@ -763,7 +763,7 @@ respect this.
 `/etc/fw_env.config` is shipped by this task pointing both entries at the uenv
 partitions by GUID (`/dev/disk/by-partuuid/…`, offset 0, size 64 KiB) rather
 than at a hardcoded `/dev/mmcblk0` offset: the GUIDs are layout constants, the
-disk name is not. It is the single `fw_env.config` source in the tree — RFCT-014
+disk name is not. It is the single `fw_env.config` source in the tree — the rootfs work
 deliberately did not create a competing `os/pkgs/rauc/fw_env.config.in` and instead
 **asserts this file's structure** in `os/pkgs/rauc/render-config.sh`: exactly two
 device lines (which is what marks the environment redundant to libubootenv),
@@ -772,8 +772,8 @@ each matching its UENV GUID case-insensitively at offset 0 with size
 `UENV_A/B_OFFSET_BYTES` so that the partition-relative offset provably denotes
 the same bytes as U-Boot's absolute `ENV_OFFSET`.
 
-The oneshot itself is **RFCT-015's** deliverable and the U-Boot side is
-**RFCT-018's**; neither is implemented here.
+The oneshot itself is **the machine-id oneshot's** deliverable and the U-Boot side is
+**the boot-framework investigation's**; neither is implemented here.
 
 ## 6. Runtime writers to `/etc` — audit
 
@@ -788,7 +788,7 @@ Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
 | `/etc/ssh/sshd_config.d/10-mos.conf` | **Writable.** Rendered by mosd's sshd reconciler into the existing `/etc/ssh` STATE bind. No new mount was needed. |
 | `/etc/wpa_supplicant`, `/etc/hostapd` | **Writable** (M5). New STATE binds, mode 0700; mosd's WiFi reconcilers render 0600 config files into them. The paths are contracts with Debian's `wpa_supplicant@.service` / `hostapd@.service` templates, not preferences. |
 | hostname persistence | **Solved**, and it had a live consumer — see below. `/etc/hostname` is bound from `/mnt/state/hostname` and re-applied by `mos-apply-hostname.service`. |
-| `/etc/machine-id` | **Solved via the U-Boot env** (§5). The U-Boot half is live; transient per boot until RFCT-015's oneshot populates the `machine_id` variable. |
+| `/etc/machine-id` | **Solved via the U-Boot env** (§5). The U-Boot half is live; transient per boot until later's oneshot populates the `machine_id` variable. |
 | `/etc/mos/otg-mode` (hwinit-otg override) | **Read-only in v2.** The documented per-device USB OTG role override cannot be created on the device. Defaults from `otg.conf` are unaffected — see below. |
 | `/etc/adjtime` (hwclock) | Not written: no RTC sync unit is enabled. |
 | `/etc/mtab` | Symlink to `/proc/self/mounts` in Debian; never written. |
@@ -815,7 +815,7 @@ actually wanted, the fix is the same shape as everything else here — read it
 from `/mnt/state` (persistent) or `/run` (per-boot) with the `/etc/mos` path
 kept as a fallback. That is a change to `os/boards/cx3576/hwinit/`. It was held
 back while that directory was shared with the v1 chain and a v2-side change
-would have been unilateral; RFCT-107 deleted v1 and moved the directory under
+would have been unilateral; the v1 removal deleted v1 and moved the directory under
 the board, so what holds it back now is only that nothing needs the override
 yet.
 
@@ -842,12 +842,12 @@ change. Nothing depends on it — systemd's `nss-myhostname`, which is in
 ## 7. What this task does not cover
 
 - The RAUC slot definitions and `system.conf`, including the `statusfile=`
-  line this document recommends putting on META (RFCT-014).
+  line this document recommends putting on META.
 - The DATA partition and the fixed EPHEMERAL size in the layout env and the
-  assembler (RFCT-020).
-- Reporting `/var` pressure as a degraded health signal (RFCT-015).
-- The machine-id oneshot (RFCT-015).
+  assembler.
+- Reporting `/var` pressure as a degraded health signal.
+- The machine-id oneshot.
 - The U-Boot side: `ENV_OFFSET` pinning, `BOOT_ORDER` handshake, appending
-  `systemd.machine_id=` (RFCT-018 — since landed).
-- v2 image contract verification (RFCT-017).
+  `systemd.machine_id=` (the boot-framework investigation — since landed).
+- v2 image contract verification.
 - Any initramfs. Per §2, M4 ships none.

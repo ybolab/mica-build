@@ -1,4 +1,4 @@
-//! TUF signing and verification for mos releases (PLAN-006 Part A/L).
+//! TUF signing and verification for mos releases.
 //!
 //! Two halves share this crate because they share one metadata format:
 //!

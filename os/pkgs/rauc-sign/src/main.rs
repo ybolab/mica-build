@@ -1,4 +1,4 @@
-//! `rauc-sign` — release-side TUF repository tool for mos (PLAN-006 phase 1).
+//! `rauc-sign` — release-side TUF repository tool for mos.
 
 use std::path::PathBuf;
 

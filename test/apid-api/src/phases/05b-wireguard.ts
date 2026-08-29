@@ -1,5 +1,5 @@
 /**
- * Phase 05b -- the PLAN-022 M6 surface: typed pane forms, the live-state
+ * Phase 05b -- the typed network surface: typed pane forms, the live-state
  * readers, and the rotate-key action.
  *
  * The three kinds M2..M5 taught mosd to render are only reachable through apid
@@ -20,7 +20,7 @@
  * which is everything about them that can be checked without taking the link.
  *
  * IMAGE SKEW. Every check below needs an image built from a tree that carries
- * PLAN-022 M6. An older image has no `kind` control, no `/api/v1/actions/...`
+ * An older image has no `kind` control, no `/api/v1/actions/...`
  * route and no `publicKey` in its live state, and this phase goes red on all
  * three at once -- which is the correct reading of "the image predates the
  * milestone", not a defect in apid. 04-readonly documents the same hazard for
@@ -49,7 +49,7 @@ function bearerHeaders(token: string): Record<string, string> {
 /**
  * Mint this phase's bearer through §3.2's bootstrap.
  *
- * PLAN-023 M9 (RFCT-245) withdrew the session cookie from `/api/v1/`, so the
+ * The session cookie was withdrawn from `/api/v1/`, so the
  * jar 05-mutate left behind no longer authenticates the four API reads and the
  * rotate action below. It still authenticates `POST /builtin/tokens`, which is
  * not an `/api/v1/` route and is exactly the bootstrap an operator holding only
@@ -471,8 +471,8 @@ async function assertRotation(
     [`expected: 405`, `actual:   ${viaGet.status}${describe(viaGet)}`].join("\n"),
   );
 
-  // An interface that is not DECLARED AT ALL is 404, since PLAN-023 M6 split
-  // mosd's rotate-key error: `docs/task/RFCT-242.md` section 1 rules that on
+  // An interface that is not DECLARED AT ALL is 404, since split
+  // mosd's rotate-key error: the contract rules that on
   // this route *"404 added: an undeclared entry. 422 now means only 'exists and
   // is not a tunnel'"*. This phase was written against a tree that predated
   // that split and asserted 422 here, so the two conditions had one status
@@ -569,8 +569,8 @@ async function assertNoPrivateKeyAnywhere(ctx: PhaseContext, token: string): Pro
     `/api/v1/settings/network.${TUNNEL}`,
     "/network",
   ]) {
-    // Both surfaces in one list, taking different credentials since M9
-    // (RFCT-245): the two API paths take the bearer, the pane takes the cookie.
+    // Both surfaces in one list, taking different credentials since M9: the
+    // two API paths take the bearer, the pane takes the cookie.
     // It stays one list because the claim is that NO surface serves the key,
     // and two loops would let one of them quietly stop being checked.
     const response = path.startsWith("/api/")

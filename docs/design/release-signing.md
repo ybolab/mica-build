@@ -1,6 +1,6 @@
 # Release signing: the production key ceremonies
 
-> **Status:** runbook. RFCT-083 made the tooling accept real keys — the bundle
+> **Status:** runbook. The tooling accepts real keys — the bundle
 > builder honours caller CERT/KEY/KEYRING, `rauc-sign verify` demands an out-of-band root,
 > rollback publication is gated — and then named the remaining step plainly:
 > *owning* production keys is an operational act, not a code change. This
@@ -8,11 +8,6 @@
 > performed nothing is improvised. The audience is the release owner who will
 > hold these keys, and any auditor who asks how a mos release comes to be
 > trusted.
->
-> This document ships **English-only**, joining the recorded exception in
-> `docs/README.md`: whether the `*.zh.md` translations are kept current is a
-> decision parked with the user (`docs/task/RFCT-045.md`), and a translation of
-> a live runbook that drifted from it would be worse than none.
 
 ## 0. How to read this document
 
@@ -88,7 +83,7 @@ reads the wall clock, so what a ceremony *signs* is reproducible from its
 inputs. The file's bytes are not; see §1.6, step 3.
 
 `--threshold` applies to every role, and today it must be `1`:
-`rauc-sign` holds exactly one key per role, and since RFCT-083 a threshold
+`rauc-sign` holds exactly one key per role, and since a threshold
 above a role's key count is rejected at `init` rather than producing metadata
 no set of signatures can ever satisfy. Multi-key roles, delegated targets and
 hardware-backed key stores are explicitly out of phase 1
@@ -370,7 +365,7 @@ is warranted.
 ### 2.3 How the keyring reaches devices — **[not implemented]**, the honest gap
 
 Today, **no provisioning path ships a production keyring**. The facts, all
-post-RFCT-083:
+with the fix in place:
 
 - `os/rootfs/overlay-v2/etc/rauc/system.conf` names
   `/etc/rauc/keyring.pem`, and the root filesystem deliberately does not
@@ -385,27 +380,26 @@ post-RFCT-083:
 - Therefore a production image, as buildable today, cannot install any
   bundle: RAUC has no keyring to verify against. The refusal is correct —
   it is what stopped the dev CA from riding along in prod images (the
-  RFCT-083 P1 finding) — but the affirmative half is missing.
+  a P1 finding) — but the affirmative half is missing.
 
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
 enrolment) rather than baking it into the signed root — is the trust-anchor
-provisioning story RFCT-088 designed — **completed 2026-08-23**
-(`docs/task/RFCT-088.md`) — together with the TUF root anchor from §1.5,
+provisioning story designed and **completed 2026-08-23** — together with the TUF root anchor from §1.5,
 which has the same shape and should ship through the same channel. Until
 provisioning ships, this runbook produces a CA whose keyring has no road to a
 production device, and says so rather than gesturing at one.
 
 What is pinned down today, so the eventual decision has a fixed place to
-land (RFCT-139):
+land:
 
 - **The read path is settled and testable without a booted device.** What
   RAUC verifies bundles against is `path=` in the rendered
   `/etc/rauc/system.conf`, and two verifier checks hold the contract from
   both directions: `rauc-keyring-path`
-  (`os/verify/src/checks-rauc.ts:201`) asserts the rendered config names
-  exactly `/etc/rauc/keyring.pem` (`os/pkgs/rauc/system.conf.in:102`), and
-  `packed-no-dev-keyring` (`os/verify/src/checks-root.ts:601`) asserts the
+  (`os/verify/src/checks-rauc.ts`) asserts the rendered config names
+  exactly `/etc/rauc/keyring.pem` (`os/pkgs/rauc/system.conf.in`), and
+  `packed-no-dev-keyring` (`os/verify/src/checks-root.ts`) asserts the
   shipped root carries nothing at that path. So a keyring provisioned at
   the documented path is, by the shipped configuration, what RAUC reads.
   Whether a provisioned keyring is honoured end to end — `rauc install`
@@ -439,7 +433,7 @@ MOS_PROFILE=prod make os-rootfs-cx3576-v2
 
 # 2. Build and CMS-sign the bundle. Caller-supplied CERT/KEY/KEYRING win over
 #    the dev-key defaults on both the host and the container build path --
-#    this is the RFCT-083 fix; before it, both branches hardcoded .devkeys
+#    this is the fix; before it, both branches hardcoded .devkeys
 #    and no production bundle was buildable at all. KEYRING is used by the
 #    script's own read-back verification (rauc info against the shipped
 #    system.conf), so passing the production ca.cert.pem here is also the

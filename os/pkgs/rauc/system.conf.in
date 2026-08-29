@@ -82,7 +82,7 @@ bundle-formats=verity
 # is gitignored). Production keyring provisioning is out of scope here; until
 # one is installed, `rauc install` on device fails closed.
 #
-# The provisioning path on a shipped device (RFCT-139): what RAUC reads is
+# The provisioning path on a shipped device: what RAUC reads is
 # exactly the path= below, in the rendered /etc/rauc/system.conf — the image
 # verifier's rauc-keyring-path check asserts the rendered config names this
 # path, and packed-no-dev-keyring asserts the shipped root carries nothing

@@ -201,8 +201,8 @@ address_on_network() {
 # the copy's ESP grub.cfg and runs QEMU in a container. It was a shell tool
 # under os/tools/ that this harness was the only caller of and was told not to
 # edit; it is TypeScript now, beside the suite that drives it, and the four
-# defects RFCT-206 section 5 found in it are negative fixtures in
-# src/selftest.ts rather than a comment saying they were fixed (RFCT-230).
+# defects the record in it are negative fixtures in
+# src/selftest.ts rather than a comment saying they were fixed.
 #
 # It needs bun AND a docker client in ONE place, and the pinned bun image
 # carries no client -- os/verify/Dockerfile is two digest FROMs and one COPY of
@@ -533,7 +533,7 @@ PREPARED=1
 pass "disk prepared at ${RUN_DIR}/disk.img"
 
 # --- 3b. seed the traversal fixture into DATA -------------------------------
-# RFCT-141. asset_path::resolve -- the function holding every §4.4 traversal
+# asset_path::resolve -- the function holding every §4.4 traversal
 # guard -- runs only when a bundle is active at /srv/ui, and no device under
 # test ships one, so without this step not one line of the guard set executes
 # over the wire and 04-readonly's traversal rows measure §4.2's conditions

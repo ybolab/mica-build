@@ -390,7 +390,7 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
         `RESULT: INCOMPLETE (${counts.pass} pass, 0 fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
         + `UNCLAIMED: ${named('unclaimed')}. `
         + `Nothing failed and not everything was asked. An unclaimed artifact is not a pass and is `
-        + `not a skip: RFCT-113 requires a reported version from every one of them, and this run `
+        + `not a skip: the record a reported version from every one of them, and this run `
         + `exits non-zero so that a gate cannot be held by a summary with holes in it.`,
     }
   }
@@ -501,7 +501,7 @@ export function readFactoryRoot(
       + `       is exported by os/rootfs/stages/90-pack.Dockerfile's \`factory-root\` target. Build it\n`
       + `       with: MOS_BOARD=${board} bash os/rootfs/build-v2.sh\n`
       + `       This refuses rather than skipping: a skip reports the same green as a pass, and an\n`
-      + `       image that ships its binaries unexecuted is exactly what RFCT-113 exists to end.`,
+      + `       image that ships its binaries unexecuted is exactly what this check exists to end.`,
     )
   }
   const parsed = parseFactoryRootRecord(readFileSync(record, 'utf8'), record)

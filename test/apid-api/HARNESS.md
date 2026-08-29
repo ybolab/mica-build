@@ -49,7 +49,7 @@ directory, and it compares **resolved** paths — `docker inspect` reports the
 path it was *given*, not the path it *resolved*, so a run directory reached
 through a symlink would otherwise slip past the guard.
 
-The boot engine is **this harness's own** since RFCT-230: `src/qemu.ts` is the
+The boot engine is **this harness's own** since: `src/qemu.ts` is the
 port of a shell tool under `os/tools/` that this harness was the only caller of
 and was told not to edit. The path is still a single fixed one and is still
 guarded rather than moved, because `os/tools/qemu-seed-state.sh` names it too.

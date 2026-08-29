@@ -54,8 +54,7 @@ pub fn quote_path_segment(segment: &str) -> String {
 ///
 /// The public half of [`split_path`], for a caller that has to tell a
 /// malformed path from a well-formed one *before* deciding an answer. apid's
-/// settings write route is that caller: `docs/task/RFCT-210.md` §2.4 gives
-/// **404** to a path that names nothing and **422** to a path that is not a
+/// settings write route is that caller: the record /// **404** to a path that names nothing and **422** to a path that is not a
 /// path, and those two conditions are indistinguishable from below because
 /// [`split_path`] and [`Settings::get`] both report a malformed path as
 /// [`SettingsError::NotFound`].

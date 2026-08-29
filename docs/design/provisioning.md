@@ -1,12 +1,11 @@
 # Design: Configuration Without a Network (Provisioning Model)
 
-> English | [中文](provisioning.zh.md)
+> English | [中文](../zh/design/provisioning.md)
 >
 > How the appliance obtains and changes its machine configuration when no
 > network can be assumed. Approved 2026-08-17. Companion to access.md §7 and
 > connd.md.
 >
-> The `.zh.md` sibling has not been updated since 2026-08-19 and is stale.
 
 ## 1. The break from upstream
 
@@ -136,7 +135,7 @@ Nothing is derived from the hostname, the MAC, the machine-id or the clock: a
 secret derived from a per-device-but-guessable input is a fleet-wide secret with
 extra steps.
 
-**This DEVIATES from PLAN-008 Part D**, which states that the AP PSK "defaults
+**This DEVIATES from the baseline**, which states that the AP PSK "defaults
 to the per-device provisioning PIN". Both readings satisfy "never a fleet-wide
 constant", so the plan is not violated in spirit — but reusing one string
 couples two very differently exposed credentials. **The WPA2 PSK is
@@ -262,7 +261,7 @@ authenticated its admin against `access.webAdmin` rather than against this. No
 code path in the repository calls a verifier against
 `access.device.passwordHash`; `os/pkgs/mosd/mosd/src/identity.rs::verify_password`, the
 function that was written to, is now `#[cfg(test)]` precisely because it had no
-caller outside its own tests (RFCT-037).
+caller outside its own tests.
 
 Both halves — the Argon2id hash in `access.device.passwordHash` and the
 plaintext at `/var/lib/mos/secrets/device-password` — are still minted at first

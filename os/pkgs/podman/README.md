@@ -158,7 +158,7 @@ follows that.
 
 Six upstreams to track for CVEs, in three languages. On the packaged path
 Debian's security team does that work; here it is ours. `versions.env` plus a
-scheduled upstream-tag check in the privileged CI lane (PLAN-012 M5) is the
+scheduled upstream-tag check in the privileged CI lane is the
 mitigation, and it is not optional — a pinned version with nothing watching it
 is a version that silently rots.
 
@@ -172,7 +172,7 @@ identical, and the M5 check cannot tell them apart.
 `make podman-pins` reads `versions.env`, asks each of the six upstreams for its
 releases, and goes red when a pin is behind. `check-pins.sh` is the whole of it.
 It is the mitigation the section above calls not optional, and it closes
-PLAN-012 M5.
+The pin check runs on its own schedule.
 
 **It reads the file and never writes it.** No bump, no pull request, no
 `versions.env` edit. Moving a pin costs a tag, a hash set to `PENDING` and a

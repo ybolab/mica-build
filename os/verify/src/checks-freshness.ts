@@ -6,20 +6,20 @@
 // green run is a statement about SOME image, in the present tense, and the run
 // says nothing about which.
 //
-// That is not hypothetical. During PLAN-012 M2 the verifier was one command away
+// That is not hypothetical. The verifier was once one command away
 // from checking a six-hour-old image built from the distribution's podman and
-// reading PASS as a description of the self-built one (docs/task/RFCT-103.md,
-// "The verifier could have checked the wrong image"). The guard added there
+// reading PASS as a description of the self-built one -- "the verifier could
+// have checked the wrong image". The guard added then
 // lived in the shell verifier's PROLOGUE -- it printed `error:` on stderr and
 // exited 1 before the first check ran -- which is why the per-check parity gate
 // that governed the port to this package never carried it: the harness paired
 // conclusions, and a preflight publishes none. It was lost without a diverging
-// row, and RFCT-225 is that finding.
+// row, and that was the finding.
 //
 // Rebuilt here as a CHECK, so it is a named result in the register's own output
 // and its absence would now show up as one.
 //
-// BOARD-DERIVED, which is the other half of the finding. PLAN-013 M1.1 raised a
+// BOARD-DERIVED, which is the other half of the finding. the record a
 // defect in the original: the two inputs were written down as the literals
 // `_out/cx3576/rootfs-verity.img` and `os/podman/out-arm64/podman`, so an x64
 // run's freshness was decided by arm64 artefacts -- it passed on a stale x64
@@ -48,7 +48,7 @@ const ID = 'image-fresher-than-build-inputs'
  * `os/pkgs` -- where the engine build leaves the binary this check dates.
  *
  * The environment variable has exactly one reader, `checks-freshness.test.ts`,
- * and it exists because the cross-board case PLAN-013 M1.1 reported can only be
+ * and it exists because the reported cross-board case can only be
  * PLANTED: proving that an x64 run ignores `out-arm64/podman` needs an
  * `out-arm64/podman` whose mtime the test chose, and writing one into the real
  * `os/pkgs/` would mutate the checkout the suite is run from. The same seam

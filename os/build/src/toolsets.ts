@@ -21,7 +21,7 @@ import type { Toolset } from './toolbox.ts'
 /**
  * Can THIS host's mke2fs write the filesystems these boards declare?
  *
- * `command -v mke2fs` is not the question. os/mkimage-v2.sh's (deleted: PLAN-014)
+ * `command -v mke2fs` is not the question. os/mkimage-v2.sh's (deleted)
  * host_can_assemble() probes instead of guessing, and its comment says why:
  * the layouts ask for `-O ^orphan_file` and `-E hash_seed`, and an e2fsprogs
  * older than 1.47 "silently cannot". This host carries 1.46.5, which is the
@@ -60,7 +60,7 @@ export async function mke2fsCanWriteTheseLayouts(): Promise<{ ok: boolean, why: 
 /**
  * cx3576's assembly toolset.
  *
- * The package list is os/mkimage-v2.sh's (deleted: PLAN-014), verbatim:
+ * The package list is os/mkimage-v2.sh's (deleted), verbatim:
  *   apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs \
  *       e2fsprogs-extra u-boot-tools
  * `coreutils` is there because alpine's dd and truncate are busybox's, and the
@@ -74,7 +74,7 @@ export const CX3576_ASSEMBLY: Toolset = {
   imageKey: 'IMAGE_ALPINE_3_21',
   manager: 'apk',
   packages: ['bash', 'coreutils', 'sgdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'e2fsprogs-extra', 'u-boot-tools'],
-  // cp, find and touch are asserted alongside the rest because os/mkimage-v2.sh (deleted: PLAN-014)
+  // cp, find and touch are asserted alongside the rest because os/mkimage-v2.sh (deleted)
   // runs all three INSIDE this container -- `cp -a` to stage the factory /var,
   // `find ... -exec touch -h -d` to pin the staged boot files -- and the port
   // keeps them there rather than doing that work on the host. That is not
@@ -111,7 +111,7 @@ export const X64_ASSEMBLY: Toolset = {
   // cp, find and touch are asserted for the reason they are in CX3576_ASSEMBLY,
   // but the two assemblers stage different things: os/mkimage-x64.sh runs
   // `cp -a` of the factory /var on the host (line 161, outside its docker run)
-  // and `cp`, `find ... -exec touch` and the seed stamp inside; os/mkimage-v2.sh (deleted: PLAN-014)
+  // and `cp`, `find ... -exec touch` and the seed stamp inside; os/mkimage-v2.sh (deleted)
   // runs all of it inside. src/mkimage-x64.ts keeps each on its own shell's side
   // because `cp -a` is `--preserve=all`, xattrs included, mke2fs -d copies
   // xattrs into the image, and this host runs SELinux while neither container
@@ -186,7 +186,7 @@ export interface BundleToolsetOptions {
 /**
  * The bundle toolset, with the rauc this tree built carried into it.
  *
- * The package list is os/update/bundle.sh's (deleted: PLAN-014), verbatim -- squashfs-tools,
+ * The package list is os/update/bundle.sh's (deleted), verbatim -- squashfs-tools,
  * dosfstools, mtools, u-boot-tools, jq and the four libraries the self-built
  * rauc links against -- and `rauc` itself is NOT among them, exactly as there.
  * It arrives as a carried file, which is `install -m0755 "${RAUC_BIN}"
@@ -217,7 +217,7 @@ export function bundleToolset(options: BundleToolsetOptions = {}): Toolset & { p
     ],
     // rauc, mksquashfs, mcopy, mkimage and jq are the shell's own list -- the
     // five it names in host_can_build(). The other five are the coreutils and
-    // dosfstools binaries os/update/bundle.sh (deleted: PLAN-014) runs INSIDE this container after
+    // dosfstools binaries os/update/bundle.sh (deleted) runs INSIDE this container after
     // it has started: `truncate -s <N>M`, `mkfs.vfat --invariant`, two `cp`s of
     // the kernel and the slot image, and `find ... -exec touch -h -d` to pin
     // every staged file to FILE_MTIME. They are asserted for the reason the

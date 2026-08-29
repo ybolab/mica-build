@@ -140,7 +140,7 @@ impl FakeSettings {
 /// [`mosd_settings::path_segments`] and not `str::split('.')`: a quoted
 /// segment carries a dot as an ordinary character, so a fake that split
 /// unconditionally would put a VLAN write at the two keys `"eth0` and `100"`
-/// and let a route test assert the write "arrived" (RFCT-135).
+/// and let a route test assert the write "arrived".
 #[cfg(test)]
 fn fake_segments(path: &str) -> anyhow::Result<Vec<String>> {
     mosd_settings::path_segments(path).ok_or_else(|| anyhow::anyhow!("malformed path: `{path}`"))

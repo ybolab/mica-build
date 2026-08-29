@@ -20,7 +20,7 @@ a device" (`rauc-sign/README.md:6-7`), while the device half verifies on the dev
 because the alternative — splitting one crate across two trees over which
 binary runs where — buys nothing.
 
-`rauc-sign/` arrived at PLAN-019 M3 and `mosd/` at M4. Naming the second one
+`rauc-sign/` arrived here and `mosd/` at M4. Naming the second one
 before it landed was correct: this file states the parent's rule, not its
 current contents, and a rule written only after the fact is a description
 rather than a constraint.

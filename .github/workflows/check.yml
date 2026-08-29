@@ -79,7 +79,7 @@ jobs:
       # Reading it back is also the only thing that makes `rust-version` an
       # enforced claim rather than documentation.
       #
-      # There are TWO manifests since PLAN-019 M3 split rauc-sign into its own
+      # There are TWO manifests since split rauc-sign into its own
       # workspace, and this job installs ONE toolchain. So the two MSRVs are not
       # merely read, they are required to AGREE: taking the higher of the two
       # would silently let a crate claim an MSRV this job never actually proves,
@@ -163,7 +163,7 @@ jobs:
         run: bash os/pkgs/mosd/hack/check.sh
 
       # The SECOND cargo workspace, and the reason it needs its own step: until
-      # PLAN-019 M3, this crate was a member of the mosd workspace, reached by a
+      # Before the split, this crate was a member of the mosd workspace, reached by a
       # `../` entry in os/pkgs/mosd/Cargo.toml's members list, so the `--workspace` flags
       # inside the script above covered it. The extraction ended that. A `--workspace`
       # that no longer spans a crate does not complain -- it simply checks less
@@ -306,9 +306,6 @@ jobs:
       - name: All three document indexes agree with the tree, in both directions
         run: make docs-verify docs-verify-test
 
-      - name: Docs citations resolve and their quotes still match
-        run: make docs-verify-citations docs-verify-citations-test
-
       - name: Health gate, machine-id oneshot, and their overlay copies
         run: make os-health-test
 
@@ -344,10 +341,10 @@ jobs:
   # first. This way the tool-less-host path is not a claim tested once by hand;
   # it is the path CI takes, so it goes red the day it stops working.
   #
-  # THIS IS A COVERAGE INCREASE, not a like-for-like replacement. Neither
-  # os-layout-lint nor os-layout-lint-test ran here before, so the
-  # board-definition schema is checked on push for the first time; and since the
-  # lint's 42 cases live in the same suite, os-verify-test covers them too.
+  # THIS IS A COVERAGE INCREASE, not a like-for-like replacement.
+  # os-layout-lint did not run here before, so the board-definition schema is
+  # checked on push for the first time; and since the lint's 42 cases live in
+  # the same suite, os-verify-test covers them too.
   os-verify:
     runs-on: ubuntu-latest
     steps:
@@ -440,7 +437,7 @@ jobs:
           echo "including whatever bun a developer has on PATH, which is the route" >&2
           echo "run.sh prefers locally." >&2
           echo >&2
-          echo "It also does not run make os-verify-cx3576-v2 (PLAN-014 M4). That" >&2
+          echo "It also does not run make os-verify-cx3576-v2. That" >&2
           echo "target needs a BUILT IMAGE and docker, and a bun on the host --" >&2
           echo "run.sh refuses --verify on the container route, because the verifier" >&2
           echo "drives docker itself and the pinned bun image has no docker client." >&2
@@ -452,5 +449,5 @@ jobs:
           echo "image in QEMU and drives apid over a real socket, and there is no image" >&2
           echo "here. What ran above is its build-time half only -- the phase literals" >&2
           echo "openapi.json also states. Every phase assertion whose only source of" >&2
-          echo "truth is the running device (docs/task/RFCT-259.md section 4) is" >&2
+          echo "truth is the running device is" >&2
           echo "unchecked on this runner and is checked by a booted run or not at all." >&2

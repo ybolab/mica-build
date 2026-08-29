@@ -16,13 +16,12 @@ BOARDS := cx3576 x64
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
-	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
-	docs-verify docs-verify-test \
-	docs-verify-citations docs-verify-citations-test build-env
+	os-layout-lint os-verify-test os-build-test \
+	docs-verify docs-verify-test build-env
 
 help:
 	@echo "mos build targets:"
-	@echo "  os                  RETIRED by PLAN-010; use the os-*-cx3576-v2 targets"
+	@echo "  os                  RETIRED; use the os-*-cx3576-v2 targets"
 	@echo "v2 (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
 	@echo "  os-rootfs-cx3576-v2 build the squashfs+dm-verity rootfs slot image"
 	@echo "  os-image-cx3576-v2  build the cx3576 A/B disk image (layout v2)"
@@ -37,13 +36,10 @@ help:
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
-	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition, including one declared empty"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
-	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
-	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
@@ -57,7 +53,7 @@ help:
 # reports success is the failure mode every check in this repository exists to
 # prevent.
 os:
-	@echo "os: retired by PLAN-010 (Talos base -> systemd + mosd)." >&2
+	@echo "os: retired (Talos base -> systemd + mosd)." >&2
 	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
 	@false
 
@@ -188,14 +184,9 @@ os-uboot-handshake-test:
 #
 # Both go through os/verify/run.sh so that there is exactly ONE place deciding
 # how bun is invoked; on a host without bun they run in the container pinned as
-# IMAGE_BUN_1. os-layout-lint-test is os-verify-test filtered to the lint's own
-# cases; run.sh's vacuity guard counts `Ran N tests`, so a filter that matched
-# nothing is red rather than green.
+# IMAGE_BUN_1.
 os-layout-lint:
 	bash os/verify/run.sh --lint
-
-os-layout-lint-test:
-	bash os/verify/run.sh src/lint.test.ts
 
 # The os/verify bun+TypeScript suite, entered through one script.
 #
@@ -253,27 +244,6 @@ docs-verify:
 # when it cannot run rather than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
-
-# Every `path:line` citation in the English design documents, checked twice: the
-# path resolves and the lines exist, and where the citing text quotes its
-# source, the quote is still at the lines it cites. Resolution alone is not
-# enough -- a quotation whose source was renamed underneath it still resolves,
-# and reads as a statement the source contradicts. This gates: a citation that
-# does not resolve, or a quote no longer at the lines it cites, fails the build.
-# A provenance claim -- "measured at <commit>" -- is validated against no file at
-# all, here or anywhere, and stays a human responsibility; so is a citation whose
-# line still resolves while the text it names has moved.
-docs-verify-citations:
-	bash docs/verify-citations.sh
-
-# Negative tests for the target above. Each assertion is driven against a
-# fixture where its fact is false and required to fail with its own message,
-# and the report's skipped counts are asserted as output -- a check that drops
-# a category quietly reads green while part of its input was never opened.
-# Needs no root and no network, and it fails loudly when it cannot run rather
-# than skipping.
-docs-verify-citations-test:
-	bash docs/verify-citations-test.sh
 
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
 # generator the image ships. A configuration example nothing executes is a claim
@@ -377,8 +347,8 @@ os-apid-api-test:
 # It exists because os-apid-api-test above is the only thing that runs the
 # phases, and it needs a built image and a nine-minute boot. A milestone that
 # moved a shipped status therefore left every phase pinning the old one green
-# until somebody booted the image (PLAN-028 M4, docs/task/RFCT-259.md). This
-# closes the part of that gap that needs no boot; RFCT-259 section 4 states the
+# until somebody booted the image. This
+# closes the part of that gap that needs no boot; the record the
 # part that does, which is most of it.
 #
 # Needs bun OR docker: it runs on a host bun when there is one and in the bun

@@ -276,7 +276,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     // §3.2's bootstrap, end to end and against a live server: the operator
     // holds a browser session and nothing else, and mints the first bearer at
     // `POST /builtin/tokens` -- not an `/api/v1/` route, which is the whole
-    // reason it can still take the cookie after M9 (RFCT-245) withdrew the
+    // reason it can still take the cookie after M9 withdrew the
     // cookie from `/api/v1/`. The plaintext is displayed once, in a <pre>.
     let response = admin
         .post(format!("{https_base}/builtin/tokens"))
@@ -322,7 +322,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
     assert_eq!(error["error"]["code"], "not_authenticated");
 
-    // M9 (RFCT-245): and the session cookie is refused here exactly as the
+    // M9: and the session cookie is refused here exactly as the
     // absent credential is. `admin` carries a cookie jar, so this request is
     // the authenticated browser -- 401 with the envelope, never a 303 to
     // /login, against a live server rather than a router in a unit test.
@@ -335,7 +335,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let error: serde_json::Value = serde_json::from_str(&response.text().await?)?;
     assert_eq!(error["error"]["code"], "not_authenticated");
 
-    // PLAN-023 M4's write route, against a live mosd on a real bus: a bare
+    // the write route, against a live mosd on a real bus: a bare
     // JSON string at `hostname` answers 204 and the value is in mosd's own
     // settings tree afterwards. Read back through `GetSettings` rather than
     // through `GetState`, for the reason the form-path assertion above reads

@@ -327,7 +327,7 @@ const phase: Phase = {
     "before the first boot, so apid's start-up activated it and a custom UI bundle IS active. " +
     "The bundle is not incidental: with one active, `/` serves the bundle's index and the " +
     "fallback rows are decided by asset_path::resolve -- the function holding §4.4's traversal " +
-    "guards -- before §4.2's conditions, which is the entire point (RFCT-141): bundle-less, " +
+    "guards -- before §4.2's conditions, which is the entire point: bundle-less, " +
     "not one line of the guard set executes over the wire. Section 3 asserts the bundle is " +
     "active before trusting any traversal row.",
 
@@ -561,7 +561,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
     "  -- 3. the fallback AND §4.4's traversal guards: the seeded bundle makes",
   );
   report.note(
-    "        asset_path::resolve execute for every probe below (RFCT-141).",
+    "        asset_path::resolve execute for every probe below.",
   );
 
   // The anchors, before any traversal row is trusted. Every guard rejection

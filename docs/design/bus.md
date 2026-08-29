@@ -1,9 +1,9 @@
 # Device bus v2 — the `com.mos.*` item-tree contract
 
-> **Status:** partly implemented. This document is the M1 deliverable of
-> `docs/plan/PLAN-011.md` and records decisions D1 (one item interface), D2
-> (service naming, mandatory paths, class registry) and D3's item semantics as
-> a bus-level contract, plus the D6 Sparkplug B evaluation. PLAN-011 M1 landed
+> **Status:** partly implemented. This document is the bus contract itself. It
+> records decisions D1 (one item interface), D2 (service naming, mandatory
+> paths, class registry) and D3's item semantics as a bus-level contract, plus
+> the D6 Sparkplug B evaluation. The read-only half landed first —
 > the **read-only** half — `GetItems`, the coalesced `ItemsChanged`, the
 > invalid-value convention and structural redaction, all in
 > `os/pkgs/mosd/mosd/src/tree.rs` — and those statements now read **[implemented]**.
@@ -43,7 +43,7 @@ against the tree from what is only being asked for.
 - **[proposed]** — no code; this document is asking for it.
 
 access.md's reason applies unchanged: a contract that exists only as prose has
-no mechanism that will ever notice it is absent. What PLAN-011 M1 and M2
+no mechanism that will ever notice it is absent. What the first two milestones
 shipped is **[implemented]** and named by path; the rest of this document is
 **[proposed]** today, and marking the split rather than the intent is the
 point. Sections 0 and 10 carry no marker where they record evaluation and
@@ -52,10 +52,9 @@ state. §10.1 is the one part of §10 that outgrew that exemption: since M3 the
 grammar it describes is shipped code, not a candidate, so it carries markers
 and paths like every other mechanism here.
 
-**Authority.** Where this document and `docs/plan/PLAN-011.md` disagree, the
-plan's decision record wins and the disagreement is a defect in this document.
-Venus OS citations reuse the source study anchors recorded in the plan and in
-`docs/research/venus-os-ui.md`.
+**Authority.** This document is the contract. Where an implementation and this
+document disagree, the disagreement is a defect in one of them and is resolved
+here rather than in a process record.
 
 ## 1. D1 — One item interface: `com.mos.Item1` [proposed]
 
@@ -132,7 +131,7 @@ a pure edge component.
   items, `false` on everything else including all of live state.
 - **[implemented]** `ItemsChanged` is **coalesced per event-loop turn**:
   changes accumulate during a turn and flush as one signal at its end (the
-  veutil pattern, `ve_qitem_exported_dbus_service.cpp:241`). A burst of N item
+  veutil pattern, `ve_qitem_exported_dbus_service.cpp`). A burst of N item
   changes in one turn produces exactly one signal carrying N entries, never N
   signals. `tree::run` (`os/pkgs/mosd/mosd/src/tree.rs`) diffs successive projections
   behind a watch channel that collapses marks arriving mid-projection into one
@@ -180,7 +179,7 @@ client-side. Formatting is a client concern — locale, unit
 preference and precision belong to the consumer — and the metadata a
 formatter needs (`unit`, `min`, `max`) already travels in `GetItems`.
 Shipping a server-side display string would bake one client's formatting into
-every service and every bridge payload. Rationale recorded in PLAN-011 D1;
+every service and every bridge payload. Rationale recorded on record;
 this closes the corresponding entry in the deviation register (§9).
 
 ## 3. The invalid-value convention [implemented]
@@ -244,7 +243,7 @@ things the plan's source study found documented nowhere in Venus itself.
   `com.mos.sensor.abc123`, `com.mos.ext.sensor.abc123`). Both grammars are
   parsed by `mos_busname::parse` (`os/pkgs/mosd/busname/src/lib.rs`) and consumed by
   the MQTT bridge (`os/pkgs/mosd/mqttd/src/topic.rs`). The extension half is the half
-  PLAN-011 D5's `own_prefix="com.mos.ext"` grant makes ownable
+  the `own_prefix="com.mos.ext"` grant makes ownable
   (`os/pkgs/mosd/dist/com.mos.ext.conf`); every other name under `com.mos.` is the
   system's and stays closed by D-Bus's default `<deny own="*"/>`.
 - **[implemented]** **A service's class is the FOURTH dotted component of an
@@ -260,7 +259,7 @@ things the plan's source study found documented nowhere in Venus itself.
   `com.mos.extra` is an ordinary system name whose class is `extra`, not an
   extension (`os/pkgs/mosd/busname/src/lib.rs`). The D-Bus policy draws the boundary in
   the same place — `own_prefix` requires the next character to be a `.`, so it
-  refuses `com.mos.extra` (measured, `docs/task/RFCT-093.md` §"Investigation —
+  refuses `com.mos.extra` (measured, §"Investigation —
   `own_prefix` semantics (measured 2026-08-22)"). Parser and policy agree on
   one rule, which is what makes the agreement checkable.
 - **[implemented]** **`com.mos.ext` — the bare namespace, with nothing under
@@ -268,9 +267,8 @@ things the plan's source study found documented nowhere in Venus itself.
   system-origin** (`os/pkgs/mosd/busname/src/lib.rs`, consumed by
   `os/pkgs/mosd/mqttd/src/topic.rs`). The reason is measured, not reasoned: an
   unprivileged uid can own that exact name, because `own_prefix` matches the
-  bare prefix itself (uid 65534, `OWNED`, dbus-daemon 1.12.20 —
-  `docs/task/RFCT-093.md` §"Investigation — `own_prefix` semantics (measured
-  2026-08-22)"), so classifying it as system-origin would let any third party
+  bare prefix itself (uid 65534, `OWNED`, dbus-daemon 1.12.20, measured
+  2026-08-22), so classifying it as system-origin would let any third party
   present itself to operators, to the dashboard and to the bridge **as the
   system**. It has no fourth component, so there is no class to read and none
   is invented — `ext` or an empty segment would put a service on the bridge
@@ -296,7 +294,7 @@ things the plan's source study found documented nowhere in Venus itself.
 - **[proposed]** **Energy-domain classes are explicitly out of scope**
   (battery, solarcharger, inverter, vebus, …) until a product need exists.
   The registry starting small and industrial is the fence against Venus's
-  breadth (PLAN-011 "Risks": scope creep).
+  breadth (a recorded risk: scope creep).
 
 ## 6. Mandatory paths and the alarm convention [proposed]
 
@@ -314,7 +312,7 @@ things the plan's source study found documented nowhere in Venus itself.
   | `/Connected` | `1` when the backing device is reachable, `0` when not |
 
   A service missing any of these is **non-conforming**. That is not licence for
-  a consumer to ignore it: the registry (PLAN-011 D5) publishes it anyway,
+  a consumer to ignore it: the registry publishes it anyway,
   best-effort, and **names the gap** in a `conformance` field, so what a
   consumer sees is the service *and* what it is missing.
 - **[implemented]** **The registry publishes non-conformance rather than
@@ -349,7 +347,7 @@ things the plan's source study found documented nowhere in Venus itself.
   `os/pkgs/mosd/mosd/src/tree.rs` projects and dispatches them). Writability is an
   explicit three-way `Access` on each projected leaf — read-only, setting,
   action — so an action is a case of its own rather than an entry bolted onto
-  the writable-subtree list. **[proposed]** RFCT-084's update verbs arrive
+  the writable-subtree list. **[proposed]** the update verbs arrive
   under this same rule as they land.
 - **[implemented]** `SetValue` on an action item **triggers the action**, and
   **any** written value triggers it: the write *is* the trigger, so the value
@@ -357,7 +355,7 @@ things the plan's source study found documented nowhere in Venus itself.
   write and **emits a change signal even on the `0 -> 0` edge** — the forced
   re-zero is observable, so a subscriber sees the consumption edge of every
   trigger (the `VeQItemAction` semantics,
-  `veutil ve_qitem_utils.hpp:146-162`). Because the value is constant, no diff
+  `veutil ve_qitem_utils.hpp`). Because the value is constant, no diff
   of two projections can ever carry that edge; `os/pkgs/mosd/mosd/src/tree.rs` injects
   it into the **same coalesced `ItemsChanged` batch** as the live-state record
   of the request, so the edge costs no second signal and §1.1's coalescing
@@ -378,15 +376,14 @@ things the plan's source study found documented nowhere in Venus itself.
   from. The trigger is attributed to its caller through the message header
   (`bus::sender_of`), so a reboot through the item is logged exactly as one
   through the method. apid's confirm-token gate stays in apid. The bus remains
-  root-only by policy until PLAN-011 D5 lands, so the bus-side gate *is* the
+  root-only by policy until later lands, so the bus-side gate *is* the
   policy. What this ordering cannot promise on a real reboot is §11's fourth
   known limit.
 
 This is what makes a value-only remote bridge sufficient: Venus's MQTT bridge
-carries only `SetValue` (`dbus-flashmq/src/state.cpp:317-354`) and that is
+carries only `SetValue` (`dbus-flashmq/src/state.cpp`) and that is
 enough to reboot, update and reconfigure a remote device. It resolves the
-actions-as-items-vs-methods fork recorded in `docs/research/venus-os-ui.md`
-§7 item 2 and left open in `docs/design/api.md`'s research appendix — in
+actions-as-items-vs-methods fork recorded in the inventory and left open in `docs/design/api.md`'s research appendix — in
 favor of items. `POST /api/v1/actions/<verb>` becomes a thin mapping onto
 these items with no HTTP-visible change.
 
@@ -399,14 +396,13 @@ without it. The switch sits **below** the `SettingsApi` trait and
 gate and the `202 Accepted` are byte-for-byte what they were. The
 `com.mos.mosd1` `Reboot` and `PowerOff` methods are **still served** and are
 neither deprecated nor removed (§1.2); apid simply no longer calls them.
-`docs/task/RFCT-090.md` §"The D3 fork, resolved in writing" records the
-same resolution from the API side; api.md's §10 register, where it was first
-written, was deleted whole (RFCT-122).
+The same resolution was reached from the API side; api.md's §10 register,
+where it was first written, has since been deleted whole.
 
 ## 8. Structural redaction is a bus-level contract [implemented]
 
 **[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
-(around `docs/design/api.md:1488`) applies to the bus itself: **the value of
+(around `docs/design/api.md`) applies to the bus itself: **the value of
 any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
 the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
 in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a
@@ -420,7 +416,7 @@ Consequences, stated once:
 - **[implemented]** Redaction happens in the publishing service, **before**
   serialization — a bus consumer, including the M3 MQTT bridge, never holds
   the secret and needs no masking logic of its own. The bridge's
-  publish-side masking (PLAN-011 D6) is defense in depth, not the primary
+  publish-side masking is defense in depth, not the primary
   control; it shipped in `os/pkgs/mosd/mqttd/src/payload.rs`, applies this same
   structural rule to every payload leaving that process, and should find
   nothing to mask.
@@ -435,7 +431,7 @@ Consequences, stated once:
 
 This contract copies Venus's *shape* — one tiny interface, one value tree,
 actions as items, mandatory paths — and deliberately not its permissiveness.
-Per PLAN-011 "What we deliberately do not copy" (each confirmed in Venus
+What this design deliberately does not copy (each confirmed in Venus
 source during the 2026-08-21 study), the following are **rejected**, not
 deferred:
 
@@ -448,12 +444,12 @@ deferred:
    remounted rootfs. mos root stays read-only; credential changes go through
    the typed settings tree and its reconcilers.
 4. **daemontools supervision.** mos services are systemd units with the
-   hardening defaults PLAN-011 D5 specifies.
+   hardening defaults the integrator contract specifies.
 5. **Dynamic settings registration into the core schema.** localsettings has
    no schema, no migration, and factory-resets on a corrupt file
-   (`localsettings.py:890-894`). mos keeps the typed core schema with priced
+   (`localsettings.py`). mos keeps the typed core schema with priced
    migrations; extension settings are namespaced and separately stored
-   (PLAN-011 D4), so a corrupt extension file resets only that extension.
+, so a corrupt extension file resets only that extension.
 
 Additionally, conventions Venus leaves implicit are stated here explicitly:
 the invalid-value convention (§3) and the coalescing guarantee (§1.1) are
@@ -528,7 +524,7 @@ them nowhere: nothing installed `mos-mqttd` into the image. The wiring is
 enable) and `os/pkgs/mosd/hack/build-aarch64.sh` (cross-build), and it is asserted by
 the MQTT bridge checks in `os/verify/src/checks-mqtt.ts`, driven offline from
 fixtures by `checks-mqtt.test.ts`. (Both were `check_mqttd` in
-`os/verify-image-v2.sh` and `os/tests/ui-location-test.sh` until RFCT-110 M4e
+`os/verify-image-v2.sh` and `os/tests/ui-location-test.sh` until later
 ported them and deleted those two files.) Three properties are worth stating here rather than
 leaving in the unit, because each was a defect the wiring exposed and none of
 them is visible from the code side.
@@ -559,7 +555,7 @@ them is visible from the code side.
   an optional `EnvironmentFile=-/var/lib/mos/mqttd.env`, which sits on a
   STATE-backed bind (`var-lib-mos.mount`) and therefore survives a reboot and an
   A/B update. An unconfigured device runs on the unit's `Environment=` defaults
-  rather than failing to start. (Until RFCT-104 this bullet read *"The broker
+  rather than failing to start. (This bullet used to read *"The broker
   address is **not in the image**"* without qualification, and that sentence was
   doing two jobs at once. The address is still not in the image, for exactly the
   reasons above, and none of that reasoning has changed. **A broker now is** —
@@ -585,7 +581,7 @@ by a test that fails if rumqttc ever grows a backoff of its own.
 §10.1a's bridge was installed, enabled and pointed at `localhost:1883` by
 default, and no shipped image carried anything listening there. The bridge had
 therefore never once connected — it had only ever retried, warning every 30s
-against a broker that was not in the image. RFCT-104 put one there and gave the
+against a broker that was not in the image. One was put there, which gave the
 pair a switch.
 
 - **[implemented]** A broker **is** in the image: `/usr/bin/mos-mqtt-broker`,
@@ -636,7 +632,7 @@ The switch is a **master switch and nothing else**: `mqtt.listen` and
 any combination of them. A broker bound off-host with authentication disabled
 earns a WARN from the reconciler and an `error_box` notice on the pane; it does
 not earn a gate. The full reasoning, the measured cost of rumqttd against mosquitto, and
-the supply-chain decision that came with it are in RFCT-104 and PLAN-011 D7.
+the supply-chain decision that came with it are on record.
 
 ### 10.2 Sparkplug B, compared
 
@@ -655,7 +651,7 @@ MQTT last-will), metric aliases, sequence numbers, and a primary-host
 | Interop | mos tooling and anything Venus-shaped | SCADA/IIoT platforms (Ignition, etc.) consume it natively |
 | Cost to mos | none beyond M3 as planned | Protobuf dep, birth-certificate lifecycle, metric-alias state, a second full protocol surface to test |
 
-The two differ **mainly in envelope**, as PLAN-011 D6 observed: both are
+The two differ **mainly in envelope**, as the evaluation observed: both are
 value-oriented, both carry writes as value publishes, and the item tree
 (D1–D3) supports either. Nothing in this contract forecloses Sparkplug.
 
@@ -663,7 +659,7 @@ value-oriented, both carry writes as value publishes, and the item tree
 
 Native-only now. The arguments:
 
-- The product need on record (PLAN-011, user annotation 2026-08-21) is MQTT
+- The product need on record is MQTT
   **data publishing**, which the native grammar satisfies with the least
   code, the least dependency surface, and 1:1 fidelity to the tree.
 - No consumer requiring Sparkplug exists in the product today; building it
@@ -720,7 +716,7 @@ the contract above.
    expected case it is: `sync_objects` records a key that cannot be a path
    element at DEBUG and keeps `WARN` for a registration failure at a path
    that IS valid — a warning that fires during correct operation warns
-   nobody (RFCT-094). Asserted against the daemon's own log by
+   nobody. Asserted against the daemon's own log by
    `os/pkgs/mosd/mosd/tests/tree.rs::a_dotted_key_syncs_through_get_items_without_a_warn`.
    The tree keeps refusing such keys rather than escaping them; this is §4's
    dot-path limit's sibling one layer down, and the bus adds no escape syntax
@@ -750,16 +746,16 @@ the contract above.
    not. This divergence is deliberate, and harmonising the two in either
    direction breaks something.** `tree::redact` strips every key named
    `password_hash`, `passwordHash`, `psk` or `hash` at any depth
-   (`os/pkgs/mosd/mosd/src/tree.rs:43`) and every projection passes through it
-   (`os/pkgs/mosd/mosd/src/tree.rs:217`), so no `GetValue` reply and no `ItemsChanged`
+   (`os/pkgs/mosd/mosd/src/tree.rs`) and every projection passes through it
+   (`os/pkgs/mosd/mosd/src/tree.rs`), so no `GetValue` reply and no `ItemsChanged`
    payload can carry a secret (§8). `GetSettings` applies no redaction at all —
-   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs:282-286`).
+   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs`).
    The façade redacts because it is the surface that leaves the device: the M3
    MQTT bridge publishes from the item tree (§8), so a secret that reached an
    item would reach a broker. `GetSettings` **cannot** redact, because apid
    authenticates against a value it reads through it — `login_submit` calls
-   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs:4408`) and lifts
-   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs:4384`,
+   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs`) and lifts
+   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs`,
    helper at `:3168-3173`) to verify the submitted password against the stored
    argon2id hash. Redacting that key from `GetSettings` would harden nothing
    reachable from the bus — the façade already covers that surface — and would

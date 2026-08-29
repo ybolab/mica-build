@@ -3,7 +3,7 @@
 // an image is to run it.
 //
 // The two assembly toolsets are the ones that matter here. Their package lists
-// are transcribed from os/mkimage-v2.sh and os/mkimage-x64.sh (both deleted: PLAN-014) and they use
+// are transcribed from os/mkimage-v2.sh and os/mkimage-x64.sh (both deleted) and they use
 // DIFFERENT base images on purpose, so nothing about one of them being right
 // says anything about the other -- which is the same reason every geometry
 // assertion in this package runs over both boards. x64's toolset is otherwise

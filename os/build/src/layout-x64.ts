@@ -20,11 +20,11 @@ import type { GptSpec } from './tools/sgdisk.ts'
 //      -- percentage first on the byte count, then the ceiling to MiB. cx3576's
 //      is `(payload_mib * pct + 99) / 100`, ceiling first. Those are not the
 //      same function: they agree whenever the payload is a whole MiB (which
-//      os/mkimage-v2.sh (deleted: PLAN-014) refuses to proceed without and os/mkimage-x64.sh never
+//      os/mkimage-v2.sh (deleted) refuses to proceed without and os/mkimage-x64.sh never
 //      checks) and diverge otherwise -- layout-x64.test.ts drives both
 //      spellings over the same payloads, agreeing on all 2048 whole-MiB ones
 //      and disagreeing on thousands of others.
-//   2. There is no pinned mode. os/mkimage-v2.sh (deleted: PLAN-014) captures
+//   2. There is no pinned mode. os/mkimage-v2.sh (deleted) captures
 //      `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the board file so an
 //      environment pin selects the frozen-geometry mode; os/mkimage-x64.sh
 //      sources os/boards/x64/board.env at line 74 and reads

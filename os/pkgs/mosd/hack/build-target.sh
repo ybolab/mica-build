@@ -122,7 +122,7 @@ MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
 
 # The repository is mounted, not os/pkgs/mosd/. That used to be forced: os/pkgs/mosd/Cargo.toml
 # listed one workspace member outside this directory, and mounting os/pkgs/mosd/ alone
-# made cargo fail on a manifest it could not see. PLAN-019 M3 extracted that
+# made cargo fail on a manifest it could not see. The split extracted that
 # crate into its own workspace under os/pkgs/, so no member reaches outside
 # os/pkgs/mosd/ any more and that reason is gone.
 #

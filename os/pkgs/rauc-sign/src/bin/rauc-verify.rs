@@ -1,5 +1,5 @@
 //! `rauc-verify` — device-side TUF metadata and target verifier
-//! (PLAN-006 phase 2, first half).
+//!.
 //!
 //! Scriptable contract: exit 0 means verified; any other exit means not
 //! verified, with a one-line reason on stderr. On success stdout carries the

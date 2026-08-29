@@ -672,8 +672,7 @@ impl MosdService {
         // well-formed, there is simply no value under it. Under one shared
         // name apid could only tell the two apart by knowing that on the state
         // route the name had a single producer, and it read the name against
-        // that private fact to answer 404 (`docs/task/RFCT-215.md` section 6
-        // item 5). Naming the condition here is what lets that reading go.
+        // that private fact to answer 404. Naming the condition here is what lets that reading go.
         let value = json_path_get(&inner.state, path)
             .ok_or_else(|| SettingsFault::NotFound(format!("state path not found: `{path}`")))?;
         Ok(value.to_string())
@@ -889,10 +888,10 @@ impl MosdService {
             // The entry does not exist: the path names nothing, which is the
             // condition every other read on this bus already raises
             // [`NOT_FOUND_ERROR`] for and which apid already maps to 404.
-            // These two travelled under one error name until PLAN-023 M6, and
+            // These two travelled under one error name until later, and
             // that is why the shipped rotate-key route answered 422 where the
             // settings and state reads beside it answered 404 for the same
-            // class of condition (`docs/task/RFCT-210.md` section 2.4). The
+            // class of condition. The
             // split is here rather than in apid because apid had nothing left
             // to tell them apart with.
             None => {
@@ -1350,11 +1349,10 @@ mod tests {
 
     /// The two refusals, and the error name each one travels under.
     ///
-    /// **The names are the assertion, not decoration** (PLAN-023 M6). Both
+    /// **The names are the assertion, not decoration**. Both
     /// conditions were `InvalidArgs` until this split, so apid answered 422 for
     /// an interface that does not exist — where every other read on the API
-    /// answers 404 for a path that names nothing
-    /// (`docs/task/RFCT-210.md` section 2.4). apid needed no change: it
+    /// answers 404 for a path that names nothing. apid needed no change: it
     /// already maps [`NOT_FOUND_ERROR`] to 404 and `InvalidArgs` to 422, and
     /// had only been handed one of them.
     #[tokio::test]
@@ -1400,9 +1398,9 @@ mod tests {
     /// could not tell "this path names nothing" from "this argument is bad"
     /// without knowing that on this one route the name had a single producer.
     /// It answered 404 by reading the name against that private fact
-    /// (`docs/task/RFCT-215.md` section 6 item 5). The condition is the same
+    /// The condition is the same
     /// one [`a_rotation_refuses_an_interface_that_is_not_a_tunnel`] split for
-    /// the rotate-key path in PLAN-023 M6 — a path that names nothing is
+    /// the rotate-key path on record — a path that names nothing is
     /// [`NOT_FOUND_ERROR`] — and this brings the state read into line with it.
     #[tokio::test]
     async fn a_state_path_that_does_not_resolve_is_not_found() {

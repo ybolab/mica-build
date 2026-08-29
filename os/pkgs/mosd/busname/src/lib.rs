@@ -30,7 +30,7 @@ pub const PREFIX: &str = "com.mos.";
 ///
 /// The D-Bus policy draws that boundary in the same place:
 /// `own_prefix="com.mos.ext"` requires the next character to be a `.`, so it
-/// refuses `com.mos.extra` — measured, `docs/task/RFCT-093.md` §"Investigation
+/// refuses `com.mos.extra` — measured.md` §"Investigation
 /// — `own_prefix` semantics (measured 2026-08-22)". Policy and parser agree on
 /// one rule, which is the point.
 pub const EXTENSION_PREFIX: &str = "com.mos.ext.";
@@ -98,7 +98,7 @@ pub struct BusName<'a> {
 /// `None`. An unprivileged uid can own the bare name, because
 /// `own_prefix="com.mos.ext"` matches the bare prefix itself, so the extension
 /// grant governs it and the default `<deny own="*"/>` does not. That is
-/// measured, not reasoned — `docs/task/RFCT-093.md` §"Investigation —
+/// measured, not reasoned — measured against dbus-daemon —
 /// `own_prefix` semantics (measured 2026-08-22)" against dbus-daemon 1.12.20,
 /// asserted by `mosd/hack/dbus-policy-test.sh` section 4, where uid 65534
 /// requesting the bare name is OWNED. Calling it system-origin would let an
@@ -203,7 +203,7 @@ mod tests {
     /// component, so a class that merely begins with those three characters
     /// is an ordinary system class. The D-Bus policy draws the boundary in the
     /// same place — `own_prefix="com.mos.ext"` refuses `com.mos.extra`,
-    /// measured in `docs/task/RFCT-093.md` — so these rows are where the
+    /// measured on record` — so these rows are where the
     /// parser and the policy are asserted to agree.
     #[test]
     fn ext_is_a_namespace_only_as_a_whole_component() {
@@ -231,7 +231,7 @@ mod tests {
     ///
     /// `own_prefix="com.mos.ext"` matches the bare prefix itself, so an
     /// unprivileged uid (65534) requesting `com.mos.ext` is OWNED — measured
-    /// against dbus-daemon 1.12.20, `docs/task/RFCT-093.md` §"Investigation —
+    /// against dbus-daemon 1.12.20.md` §"Investigation —
     /// `own_prefix` semantics (measured 2026-08-22)", asserted by
     /// `mosd/hack/dbus-policy-test.sh` section 4.
     #[test]

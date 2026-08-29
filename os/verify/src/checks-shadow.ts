@@ -28,7 +28,7 @@
 // (:3875-3899) treats it as the worst case, passwordless login rather than a
 // locked marker. The second is right and the first would pass an image the
 // second fails. Recorded here and in the M4d report as a finding about
-// os/verify-image-v2.sh (deleted: PLAN-014).
+// os/verify-image-v2.sh (deleted).
 
 import { readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'

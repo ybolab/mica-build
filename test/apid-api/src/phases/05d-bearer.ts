@@ -1,11 +1,11 @@
 /**
  * Phase 05d -- the bearer credential, end to end, and the 401 M9 depends on.
  *
- * PLAN-023 M9 removes the session cookie from `/api/v1/`. It may not be
+ * The session cookie is removed from `/api/v1/`. It may not be
  * scheduled until something proves a bearer token drives the whole API surface,
  * because after that cutover the cookie is gone and a harness that still leans
  * on it is a harness that cannot run. This phase is that proof, and it is a
- * proof only because it runs: RFCT-212 declined to write an `apid-api` phase it
+ * proof only because it runs: an earlier pass declined to write an `apid-api` phase it
  * would not execute, on the reasoning that *a phase written but never run is a
  * claim, not a measurement*.
  *
@@ -25,8 +25,8 @@
  * phase reads its key.
  *
  * IMAGE SKEW. Every check here needs an image built from a tree carrying
- * PLAN-023 M2 part 2 (bearer auth and the token routes), M4 (the scalar write),
- * M5 (the authorized-keys collection) and PLAN-022 M6 (the rotate action). An
+ * Bearer auth and the token routes, M4 (the scalar write),
+ * M5 (the authorized-keys collection) and the rotate action. An
  * older image has no `/builtin/tokens` at all and this phase goes red at its
  * first check -- which is the correct reading of "the image predates the
  * milestone", the hazard 04-readonly and 05b document for their own surfaces.

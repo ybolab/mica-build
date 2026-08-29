@@ -23,10 +23,8 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 // `delete` and `put` are imported on their own lines rather than folded into
-// the routing import below. `docs/task/RFCT-210.md` quotes that line verbatim
-// as the measurement behind its central negative -- apid had never served a
-// write verb -- and a record of what was true is not edited by the change that
-// makes it untrue.
+// the routing import below, which is how they were added: apid had served no
+// write verb at all until these two arrived.
 use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{any, get, post};
@@ -293,9 +291,8 @@ const V1_STATE_PREFIX: &str = "/v1/state/";
 const V1_STATE_ROUTE: &str = "/v1/state/{*path}";
 const V1_STATE_DOC: &str = "/v1/state/{path}";
 
-/// §2.1's action route for a WireGuard key rotation, as
-/// `docs/task/RFCT-200.md` §6 classifies it: a new route, and therefore
-/// additive.
+/// §2.1's action route for a WireGuard key rotation. A new route, and
+/// therefore additive.
 ///
 /// One spelling and not three, unlike the resource roots above: `{iface}` is a
 /// single-segment parameter, which axum and OpenAPI spell the same way, so
@@ -319,7 +316,7 @@ const V1_WIREGUARD_PREFIX: &str = "/v1/actions/wireguard/";
 const V1_WIREGUARD_ROTATE_LEAF: &str = "/rotate-key";
 const V1_WIREGUARD_ROTATE_ROUTE: &str = "/v1/actions/wireguard/{iface}/rotate-key";
 
-/// M7's three verbs (`docs/task/RFCT-210.md` section 2.5).
+/// M7's three verbs.
 ///
 /// No collection, no identifier and nothing to read back, so each is one
 /// constant rather than the prefix/route/doc triple a resource path needs.
@@ -327,7 +324,7 @@ const V1_REBOOT_PATH: &str = "/v1/actions/reboot";
 const V1_POWEROFF_PATH: &str = "/v1/actions/poweroff";
 const V1_TRANSIENT_PASSWORD_PATH: &str = "/v1/actions/transient-root-password";
 
-/// M8's one route (`docs/task/RFCT-210.md` section 2.5).
+/// M8's one route.
 ///
 /// Not under `/v1/actions/`, and the reason is the reason section 2.3 item
 /// (ii) gives for it needing a milestone of its own: it is neither a settings
@@ -336,8 +333,7 @@ const V1_TRANSIENT_PASSWORD_PATH: &str = "/v1/actions/transient-root-password";
 /// the first-run operation, so it is named for that and nothing else.
 const V1_SETUP_PATH: &str = "/v1/setup";
 
-/// M5's two array collections and their item routes
-/// (`docs/task/RFCT-210.md` section 2.5).
+/// M5's two array collections and their item routes.
 ///
 /// Each collection needs its prefix separately for the reason the token
 /// collection does: [`is_declared_api_route`] has to recognise the item shape
@@ -356,7 +352,7 @@ const V1_WIFI_NETWORK_ROUTE: &str = "/v1/wifi/client/networks/{ssid}";
 /// writes it: one dot-path for one list, whichever surface is writing it.
 const WIFI_NETWORKS_PATH: &str = "wifi.client.networks";
 
-/// M6's network cluster (`docs/task/RFCT-210.md` section 2.3 item (i)): the
+/// M6's network cluster: the
 /// interface map, one interface, and a tunnel's peer collection.
 ///
 /// The prefix is needed separately for the reason the token collection's is:
@@ -446,8 +442,7 @@ fn api_router() -> Router<AppState> {
         )
         .route(V1_WIFI_NETWORK_ROUTE, delete(api_v1_wifi_networks_remove))
         // M6's network cluster. Typed rather than a dot-path passthrough
-        // because the rules under `network` are relational
-        // (`docs/task/RFCT-210.md` section 2.3 item (i)): a bridge port has to
+        // because the rules under `network` are relational: a bridge port has to
         // name a declared entry, which no check confined to the entry being
         // written could see. `PUT /api/v1/settings/network...` is refused at
         // 409 by [`settings_write_refusal`] and names these routes.
@@ -500,9 +495,9 @@ fn api_router() -> Router<AppState> {
 ///
 /// §2.4 states **one** shape for every failure on every `/api/v1/` route, and a
 /// wrong method is a failure like any other. Without this the answer is axum's
-/// own: a bare 405 with no body and no `Content-Type` at all — measured,
-/// `docs/task/RFCT-212.md` §2 — so a client that parses the envelope on every
-/// other failure had nothing to parse on this one.
+/// own: a bare 405 with no body and no `Content-Type` at all — measured — so a
+/// client that parses the envelope on every other failure had nothing to parse
+/// on this one.
 ///
 /// The `Allow` header is left to axum deliberately. axum accumulates it from
 /// the very `get`/`post` calls that declare each route above and attaches it to
@@ -677,7 +672,7 @@ fn api_response(status: StatusCode, body: impl serde::Serialize) -> Response {
         .into_response()
 }
 
-/// §2.4's envelope: the one shape every failure under `/api/` takes.
+/// The one shape every failure under `/api/` takes.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct ApiError {
     error: ApiErrorDetail,
@@ -693,7 +688,7 @@ pub(crate) struct ApiErrorDetail {
     message: String,
     /// The side the failure came from.
     source: &'static str,
-    /// The settings dot-path at fault (§2.4), when the failure names one.
+    /// The settings dot-path at fault, when the failure names one.
     ///
     /// Optional, and omitted rather than sent empty: an unmatched route and a
     /// failed authentication name no dot-path, and a member present with a
@@ -756,15 +751,13 @@ pub(crate) struct ApiMeta {
     daemon: &'static str,
 }
 
-/// The served set, unauthenticated (§2.1).
+// Unauthenticated deliberately: it must be answerable before the caller holds
+// a credential, and it carries nothing identifying because anyone who can
+// reach the listener can read it.
+/// List the API major versions this build serves, and which one to prefer.
 ///
-/// It must be answerable before the caller holds a credential, which is why
-/// the gate hands it off above its own `GetSettings` call: a factory-fresh
-/// device has no `access.webAdmin` and redirects everything else to `/setup`,
-/// and a UI that survived the update it is incompatible with has to be able
-/// to say so. The response carries the served set and nothing else — no
-/// hostname, no device id, no build string — because anyone who can reach the
-/// listener can read it.
+/// Unauthenticated. Answers 200 with the served set and the current version;
+/// carries no hostname, device id or build string.
 #[utoipa::path(
     get,
     path = VERSIONS_PATH,
@@ -785,11 +778,11 @@ pub(crate) async fn api_versions() -> Response {
     )
 }
 
-/// What the caller is talking to, in detail (§2.1).
+/// Report what the caller is talking to.
 ///
-/// `settingsSchemaVersion` is read from `mosd_settings` and never copied: the
-/// number a client uses to decide whether it understands a settings body has
-/// exactly one source.
+/// Answers the API major version, the daemon name, and
+/// `settingsSchemaVersion` — the shape of the settings tree on disk, which
+/// moves independently of the API version. Authenticated.
 #[utoipa::path(
     get,
     path = V1_META_PATH,
@@ -812,34 +805,30 @@ pub(crate) async fn api_v1_meta(_bearer: ApiBearer) -> Response {
     )
 }
 
-/// `GET /api/v1/health` (§2.4 case 3).
+// Optional members are omitted rather than sent null, the same rule the error
+// envelope follows: a member present with a meaningless value is worse than an
+// absent one.
+/// The body of `GET /api/v1/health`.
 ///
-/// Two members always, and the other two by outcome: `checkedAt` on the
-/// reachable answer and `detail` on the unreachable one, each omitted rather
-/// than sent null. That is the rule the error envelope's own optional member
-/// already follows, and for the same reason: a member present with a
-/// meaningless value is worse than an absent one.
+/// `apid` and `mosd` are always present. `checkedAt` is present only on the
+/// reachable answer and `detail` only on the unreachable one.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiHealth {
-    /// Always `"ok"`. A request that got a body at all was served by an apid
-    /// that is up, so there is no second value this member could take; it is
-    /// on the wire so that a client reads one document rather than inferring
-    /// half of it from the fact that a response arrived.
+    // On the wire so a client reads one document rather than inferring half of
+    // it from the fact that a response arrived.
+    /// Always `"ok"`: a request that got a body was served by an apid that is
+    /// up.
     apid: &'static str,
-    /// `"ok"` when the probe below completed, `"unreachable"` when it did not.
-    /// Two values and no third: §2.4 case 3 defines exactly these two shapes,
-    /// and a health answer that needs a taxonomy is not one a monitor can act
-    /// on.
+    // Two values and no third: a health answer that needs a taxonomy is not
+    // one a monitor can act on.
+    /// `"ok"` when the probe completed, `"unreachable"` when it did not.
     mosd: &'static str,
+    // Uptime and not a wall-clock stamp: there is no trusted wall clock in
+    // this crate, and `SessionStore` is monotonic `Instant` throughout.
     /// Whole seconds since boot, at the moment the probe answered.
     ///
-    /// A number and not a timestamp string. There is no trusted wall clock in
-    /// this crate — §3.2's expiry paragraph is the argument, and `SessionStore`
-    /// is the evidence, monotonic `Instant` throughout — so the only honest
-    /// stamp is the appliance's own uptime, which is exactly what
-    /// `GET /api/v1/state/uptime` already serves and is spelled the same way
-    /// there: a bare JSON number of whole seconds.
+    /// The same value and spelling `GET /api/v1/state/uptime` serves.
     #[serde(skip_serializing_if = "Option::is_none")]
     checked_at: Option<u64>,
     /// Why the probe did not complete, in the words of whatever refused it.
@@ -847,34 +836,19 @@ pub(crate) struct ApiHealth {
     detail: Option<String>,
 }
 
-/// Whether this appliance is manageable (§2.4 case 3).
+// Never serve this from `access_cache`: that cache answers from apid's own
+// memory, so a health route reading it would report mosd healthy for as long
+// as the last fill survived. `GetState("uptime")` is the probe because it is
+// one call, cheap, and also yields `checkedAt`.
+/// Report whether this appliance is manageable.
 ///
-/// **200 in both states, and that is the whole point of the route.** A dead
-/// mosd is reported in the body and never as a status code: a 503 here would be
-/// indistinguishable from this endpoint itself being down, which is the
-/// confusion the route exists to remove. The client rule §2.4 states is
-/// therefore exact — `/healthz` answers "is apid's listener up", this answers
-/// "is this appliance manageable", and neither implies the other.
+/// Answers **200 in every state**, including when mosd is unreachable — a
+/// failure is reported in the body, never as a status code, so it cannot be
+/// confused with this endpoint being down. mosd's state is determined by one
+/// live bus call per request.
 ///
-/// mosd is decided by **one real bus call**, never by a cached flag. That rules
-/// out `access_cache` specifically: the cache exists so the auth gate can skip
-/// a per-request `GetSettings("access")`, it is filled from a `SettingsChanged`
-/// subscription, and it answers from apid's own memory. A health route served
-/// from it would report `mosd: "ok"` for as long as the last fill survived,
-/// which is precisely the failure — a monitor seeing a healthy device — that
-/// §2.4 case 3 was written to prevent.
-///
-/// The call is `GetState("uptime")` rather than §2.4's suggested
-/// `GetSettings("")`, and the swap is a deviation recorded in
-/// `docs/task/RFCT-212.md` §3. It is still one call, which is what the section
-/// asks for; it is cheaper than the call the section named, which is the reason
-/// that section gave for naming it — mosd answers with a bare integer instead
-/// of serialising the entire settings tree, password hash included, onto the
-/// bus for a liveness ping; and it is the one call that also yields
-/// `checkedAt`, so the alternative was two round trips to answer one question.
-///
-/// Authenticated, like every other `/api/v1/` route. The unauthenticated
-/// listener-liveness question already has an answer at `/healthz`.
+/// Authenticated. For plain listener liveness use the unauthenticated
+/// `/healthz` instead; neither answer implies the other.
 #[utoipa::path(
     get,
     path = V1_HEALTH_PATH,
@@ -917,27 +891,27 @@ pub(crate) async fn api_v1_health(_bearer: ApiBearer, State(state): State<AppSta
 
 /// The body of a resource `GET`: the value at the dot-path, as mosd holds it.
 ///
-/// Any JSON value, because a dot-path names a subtree, an array or a scalar
-/// and §2.2's passthrough imposes no shape of its own. The string
-/// `"<redacted>"` is a value a client can receive anywhere inside it: every
-/// field named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,
-/// at any depth
-/// and inside arrays, carries that sentinel instead of its value, and so does
-/// the whole body when the dot-path names one of those fields directly. It is
-/// read-only — writing it back would destroy the credential — and the write
-/// route refuses any body that carries it, at 422, rather than storing it.
-/// `privateKey` is on the same list;
-/// no shipped schema has such a field, and the entry is the fail-closed guard
-/// for the day one appears.
+// `privateKey` is on the redaction list as a fail-closed guard: no shipped
+// schema has such a field yet.
+/// Any JSON value: a dot-path can name a subtree, an array or a scalar.
+///
+/// Secrets are replaced by the string `"<redacted>"`, which a client can
+/// receive anywhere inside the body. Every field named `psk`, `passwordHash`,
+/// `password_hash`, `hash` or `privateKey` carries the sentinel instead of its
+/// value, at any depth and inside arrays, and so does the whole body when the
+/// dot-path names one of those fields directly.
+///
+/// The sentinel is read-only: writing it back is refused at **422** rather
+/// than stored, because storing it would destroy the credential.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(transparent)]
 pub(crate) struct ResourceValue(Value);
 
-/// The settings tree at a dot-path (§2.2).
+/// Read the settings tree at a dot-path.
 ///
-/// The dot-path IS the resource identifier: this answers exactly what
-/// `GetSettings("<dot-path>")` returns, redacted. There is no second model
-/// beside `mosd-settings`, so there is nothing for one to drift from.
+/// The dot-path is the resource identifier. Secrets are redacted in the
+/// response. An empty path returns the whole tree. Answers **404** when the
+/// path names nothing and **422** when it is not a well-formed dot-path.
 #[utoipa::path(
     get,
     path = V1_SETTINGS_DOC,
@@ -964,9 +938,9 @@ pub(crate) async fn api_v1_settings(
 
 /// What the value at a writable dot-path has to be.
 ///
-/// Two shapes and not one validator per path, because `docs/task/RFCT-210.md`
-/// §2.2 admits exactly four paths on one ground: each value is *"a scalar
-/// whose validity depends on nothing else in the tree"*. A hostname, which
+/// Two shapes and not one validator per path, because the write surface admits
+/// exactly four paths on one ground: each value is *"a scalar whose validity
+/// depends on nothing else in the tree"*. A hostname, which
 /// `valid_hostname` decides on its own, and three switches, which *"cannot be
 /// invalid at all"*. Anything relational is a later milestone by construction,
 /// because a third shape here would be the first thing to need the rest of the
@@ -980,7 +954,7 @@ enum ScalarShape {
 }
 
 /// The dot-paths `PUT /api/v1/settings/{path}` writes, and the shape each
-/// value has to have (`docs/task/RFCT-210.md` §2.2).
+/// value has to have.
 ///
 /// An allowlist rather than a passthrough, and the reason is measured rather
 /// than stylistic. `Settings::set`'s documented contract is *"Missing
@@ -988,8 +962,8 @@ enum ScalarShape {
 /// creates `eth1`)"* (`os/pkgs/mosd/mosd-settings/src/model.rs:656-657`), so a
 /// `PUT` to a mistyped path handed straight through to mosd does not fail —
 /// it grows a new subtree, of whatever kind the schema defaults to, and the
-/// reconciler is the first thing to notice. `docs/task/RFCT-210.md` §2.4 walks
-/// that exact failure on `POST /network/peers/add`, where adding a peer to an
+/// reconciler is the first thing to notice. That exact failure is reachable on
+/// `POST /network/peers/add`, where adding a peer to an
 /// undeclared `wg9` writes a physical-kind `network.wg9` carrying a WireGuard
 /// block. Every path this list does not carry is refused by
 /// [`settings_write_refusal`] before any bus call is made.
@@ -1052,9 +1026,9 @@ fn is_settings_root(root: &str) -> bool {
 
 /// Why this route will not write `path`, in §2.4's envelope.
 ///
-/// Three answers, and `docs/task/RFCT-210.md` §2.4 is why they are not
-/// interchangeable. **422** is a path that is not a path — an empty segment,
-/// an unterminated quote — which is the *malformed* half of that section's
+/// Three answers, and they are not interchangeable. **422** is a path that is
+/// not a path — an empty segment, an unterminated quote — which is the
+/// *malformed* half of the
 /// rule. **404** is a path that names nothing, which is the *well-formed but
 /// absent* half, and it comes from [`item_not_found`] so the rule is inherited
 /// rather than remembered. **409** is a path that names something real which
@@ -1106,7 +1080,7 @@ fn settings_write_refusal(path: &str) -> Response {
         "schema_version" => "`schema_version` is read-only in the settings tree itself: the store refuses every write that would change it, and the version moves only when a migration moves it".to_string(),
         // Named rather than folded into the sentence below, because this is
         // the subtree where a passthrough is actively destructive rather than
-        // merely wrong (`docs/task/RFCT-210.md` §2.4).
+        // merely wrong.
         "network" => "the `network` subtree is not written through this route: it is written through the typed network routes — `PUT /api/v1/network/{iface}` and the `DELETE` beside it, `PUT /api/v1/network` for the whole map, and the peer collection under each interface. A raw write here would create an entry of the default kind for an interface that has none, and would run none of the relational rules: a bridge naming a port that does not exist would be accepted".to_string(),
         _ => WRITES_FOUR.to_string(),
     })
@@ -1114,32 +1088,24 @@ fn settings_write_refusal(path: &str) -> Response {
 
 /// The body of a settings `PUT`: the value to write, and nothing around it.
 ///
-/// A bare JSON value, the same shape `GET` answers, so a client reads and
-/// writes one document and not two. The schema is wide because the dot-path
-/// decides what is acceptable and OpenAPI has no way to say that; what is
-/// actually accepted is narrow — a JSON string for `hostname`, `true` or
-/// `false` for the three switches — and the route is what says so, per
-/// dot-path, in a 422.
+/// A bare JSON value, the same shape `GET` answers.
+///
+/// The schema is wide because the dot-path decides what is acceptable. What
+/// is actually accepted is narrow: a JSON string for `hostname`, `true` or
+/// `false` for the three switches. Anything else is **422**.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(transparent)]
 pub(crate) struct SettingsWrite(Value);
 
-/// Write one scalar setting (`docs/task/RFCT-210.md` §2.2's raw dot-path
-/// `PUT`).
+// No body on success on purpose: echoing the written value invites a client
+// to trust the echo over its own GET.
+/// Write one scalar setting by dot-path.
 ///
-/// Four dot-paths and no others: `hostname`, `access.ssh.enabled`,
-/// `container.enabled` and `mqtt.enabled`. `204` and no body on success,
-/// because the value the caller sent is the value that was written and echoing
-/// it back would only invite a client to believe the echo over its own `GET`.
+/// Accepts four paths and no others: `hostname`, `access.ssh.enabled`,
+/// `container.enabled` and `mqtt.enabled`. Any other path is refused.
 ///
-/// Bearer **or** cookie, like every route on the two resource roots: PLAN-023
-/// Amendment 1's ruling is about the token routes specifically, not about new
-/// routes in general, so this one is dual-credential exactly as the shipped
-/// reads are.
-///
-/// Prose and not intra-doc links, for the reason the rotate route already
-/// records: `utoipa` copies this comment into the published document, where a
-/// link would put an apid symbol name in front of every client.
+/// Answers **204** with no body on success. Takes a bearer token or a session
+/// cookie.
 #[utoipa::path(
     put,
     path = V1_SETTINGS_DOC,
@@ -1217,11 +1183,11 @@ pub(crate) async fn api_v1_settings_write(
         .into_response()
 }
 
-/// The live-state tree at a dot-path (§2.2).
+/// Read the live-state tree at a dot-path.
 ///
-/// A separate root and not a corner of the settings one, because mosd holds
-/// two trees with different types, different mutability and different
-/// lifetimes. `GET` only: there is no `SetState` on the bus to expose.
+/// Live state is observed, not configured, and is a separate root from
+/// settings. Read-only: there is no write counterpart. Answers **404** when
+/// the path names nothing and **422** when it is not a well-formed dot-path.
 #[utoipa::path(
     get,
     path = V1_STATE_DOC,
@@ -1250,9 +1216,9 @@ pub(crate) async fn api_v1_state(
 /// The body of a successful key rotation: the public half, and nothing else.
 ///
 /// There is no `privateKey` member here and there will not be one. The private
-/// half never leaves mosd — `docs/task/RFCT-200.md` §4 states *"there is no
-/// read-back route for the private key, ever — not redacted-on-read;
-/// nonexistent"* — so this struct is the whole of what a rotation can answer.
+/// half never leaves mosd — there is no read-back route for the private key,
+/// ever; not redacted-on-read, nonexistent — so this struct is the whole of
+/// what a rotation can answer.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WireguardRotation {
@@ -1260,33 +1226,19 @@ pub(crate) struct WireguardRotation {
     public_key: String,
 }
 
-/// Rotate a WireGuard interface's private key (§2.1's action family).
+// `iface` goes to mosd unexamined: mosd owns the "declared entry of kind
+// wireguard" rule and raises a distinct error name for each half of it. A
+// second copy of that rule here could disagree with the first.
+/// Rotate a WireGuard interface's private key.
 ///
-/// An action and not a settings write, because there is no setting to write:
-/// the key lives in a mode-0640 file on STATE that the settings tree does not
-/// describe. mosd draws the new key, deletes the device holding the old one and
-/// reconciles, so a caller that gets a 200 has a tunnel running on the key
-/// whose public half it was just handed.
+/// An action rather than a settings write: the private key lives in a
+/// mode-0640 file on STATE that the settings tree does not describe. mosd
+/// draws a new key, tears down the device holding the old one and reconciles.
 ///
-/// `iface` is passed to mosd unexamined. mosd owns the rule — the name must be
-/// a declared `network` entry of kind `wireguard` — and it raises the error
-/// name for whichever half of that rule failed. A second copy of that rule
-/// here could disagree with the first.
-///
-/// **Those two halves used to share one error name, and this route answered
-/// 422 for both.** An interface that is not a declared entry names nothing,
-/// which is the condition the settings and state reads beside it already
-/// answer 404 for; an entry of the wrong kind is a bad argument, which really
-/// is a 422. mosd collapsed them into one `InvalidArgs` and apid had nothing
-/// left to tell them apart with (`docs/task/RFCT-210.md` section 2.4). The
-/// correction is entirely in mosd: it now raises its interface-scoped
-/// not-found name for the undeclared entry, and the classifier below — which
-/// already mapped that name to 404 and `InvalidArgs` to 422 — was not touched.
-/// The document gained a response; no apid logic changed.
-///
-/// Prose and not an intra-doc link to the classifier, deliberately: `utoipa`
-/// copies this comment into the published document, where a link would put an
-/// apid symbol name in front of every client.
+/// Answers **200** with the new public key — the tunnel is already running on
+/// it. The private half is never returned. **404** when `iface` names no
+/// declared `network` entry; **422** when the entry exists but is not of kind
+/// `wireguard`.
 #[utoipa::path(
     post,
     path = V1_WIREGUARD_ROTATE_ROUTE,
@@ -1318,10 +1270,12 @@ pub(crate) async fn api_v1_wireguard_rotate(
 
 // §3.2's token collection: the listing, the mint and the revocation.
 
-/// One row of `GET /api/v1/tokens` (§3.2).
+// Three members and not four: the digest is not on this wire and neither is
+// the plaintext.
+/// One row of `GET /api/v1/tokens`.
 ///
-/// Three members and not four: the digest is not on this wire and neither is
-/// the plaintext, which exists in exactly one response and never again.
+/// Carries no secret: the token's plaintext appears in exactly one response,
+/// when it is minted, and never again.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct ApiTokenSummary {
     /// The token's stable identity, which is also its `DELETE` path segment.
@@ -1360,7 +1314,11 @@ pub(crate) struct MintedToken {
     token: String,
 }
 
-/// Every token this device holds, without the halves that are secrets (§3.2).
+/// List every API token this device holds.
+///
+/// Returns each token's id, label and creation time. Secrets are not stored
+/// and are never returned — a token's secret is shown once, when it is
+/// minted.
 #[utoipa::path(
     get,
     path = V1_TOKENS_PATH,
@@ -1394,14 +1352,15 @@ pub(crate) async fn api_v1_tokens_list(
     }
 }
 
-/// Mint a token (§3.2).
+// Cookie deliberately not accepted: that would put a permanent-credential
+// factory on the browser surface.
+/// Mint an API token.
 ///
-/// **A bearer token is the only credential this route takes**, and the
-/// bootstrap is a path rather than an exception: the first token is minted
-/// through `POST /builtin/tokens`, a form post outside the `v1` contract.
-/// Leaving the mint here and letting it take a cookie was considered and
-/// rejected by name in §3.2, because it would put a permanent-credential
-/// factory inside the one surface §3.3 makes its strongest statement about.
+/// Takes a **bearer token only** — a session cookie is not accepted. The
+/// secret is returned once, in this response, and is not retrievable
+/// afterwards.
+///
+/// To obtain a first token, use the built-in pane at `POST /builtin/tokens`.
 #[utoipa::path(
     post,
     path = V1_TOKENS_PATH,
@@ -1485,13 +1444,12 @@ pub(crate) async fn api_v1_tokens_mint(
     )
 }
 
-/// Revoke one token, identified by its id (§3.2).
+// Identity is the id and never a list position: an index is meaningful only
+// against the list the caller last read, and a concurrent mint slides it.
+/// Revoke one API token by its id.
 ///
-/// Identity is the id and never a list position, for the reason the SSH key
-/// pane records about fingerprints: an index is meaningful only against the
-/// list the caller last read, and a concurrent mint slides it onto a different
-/// entry. Revocation takes effect on the next request, because the token set is
-/// read per request from the `access` subtree.
+/// Takes effect on the next request; the token set is read per request.
+/// Answers **404** when no token carries that id.
 #[utoipa::path(
     delete,
     path = V1_TOKEN_ROUTE,
@@ -1513,8 +1471,8 @@ pub(crate) async fn api_v1_tokens_revoke(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Response {
-    // Malformed and absent are different answers and must not share a status
-    // (`docs/task/RFCT-210.md` §2.4). An id that is not an id could never name
+    // Malformed and absent are different answers and must not share a status.
+    // An id that is not an id could never name
     // an entry, so a 404 here would send the caller looking for a token they
     // deleted instead of at the URL they typed.
     if !mosd_settings::is_api_token_id(&id) {
@@ -1548,9 +1506,9 @@ pub(crate) async fn api_v1_tokens_revoke(
 /// §2.4's envelope for the condition every API collection item route shares: a
 /// well-formed identifier that names no item.
 ///
-/// One shared function and not one per handler, which is what
-/// `docs/task/RFCT-210.md` §2.4 requires of this rule: a collection route added
-/// later inherits the 404 by reaching for this, rather than by remembering a
+/// One shared function and not one per handler, which is what the rule
+/// requires: a collection route added later inherits the 404 by reaching for
+/// this, rather than by remembering a
 /// decision, and the 422 beside it stays reserved for an identifier that is not
 /// well formed at all.
 ///
@@ -1646,7 +1604,7 @@ fn device_clock_seconds() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-// M5's two array collections (`docs/task/RFCT-210.md` section 2.5): the SSH
+// M5's two array collections: the SSH
 // authorized keys, whose identity is a fingerprint, and the WiFi station's
 // known networks, whose identity is an SSID.
 //
@@ -1668,7 +1626,7 @@ pub(crate) struct AuthorizedKeyEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
     /// This entry's `DELETE` path segment: `SHA256:` followed by the unpadded
-    /// base64 of the SHA-256 digest of the decoded blob, which is the string
+    /// base64 of the SHA-256 digest of the decoded blob — the string
     /// `ssh-keygen -lf` prints.
     ///
     /// `null` for a stored line whose blob does not decode. Nothing this route
@@ -1681,9 +1639,8 @@ pub(crate) struct AuthorizedKeyEntry {
 /// `GET /api/v1/ssh/authorized-keys` response body.
 ///
 /// An object and not a bare array, because of `notice`: the sentence is a
-/// property of the collection rather than of any entry, and
-/// `docs/task/RFCT-210.md` section 2.5 requires it on the listing **and** on
-/// the add. A client that only ever adds keys must still be told what a key
+/// property of the collection rather than of any entry, and the contract
+/// requires it on the listing **and** on the add. A client that only ever adds keys must still be told what a key
 /// grants.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct AuthorizedKeyList {
@@ -1714,19 +1671,12 @@ pub(crate) struct AddedAuthorizedKey {
 
 /// One known WiFi network, in both directions.
 ///
-/// The route's body is built from and validated against
-/// `mosd_settings::WifiNetwork` itself, and this struct is what describes that
-/// shape to a client reading only `openapi.json`;
-/// `the_wifi_schema_matches_the_settings_model` holds the two together so a
-/// field added to the model cannot go undocumented here.
+// Held field-for-field against `mosd_settings::WifiNetwork` by a test, so a
+// field added to the model cannot go undocumented here.
 ///
-/// `psk` means different things in the two directions, and that is the
-/// redaction rule rather than an inconsistency. On the way **in** it is the
-/// pre-shared key. On the way **out** it is `"<redacted>"` whenever a key is
-/// stored, because it is one of the field names section 2.2's structural
-/// redactor covers -- and a body carrying that sentinel back is refused at 422
-/// rather than written, which is the whole reason the sentinel is checked
-/// before anything else.
+/// `psk` differs by direction. On the way **in** it is the pre-shared key. On
+/// the way **out** it is `"<redacted>"` whenever a key is stored. A body
+/// carrying the sentinel back is refused at **422** rather than written.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct WifiNetworkEntry {
     /// The network name, which is also this entry's `DELETE` path segment.
@@ -1826,8 +1776,10 @@ async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), 
     Ok(())
 }
 
-/// Every authorized key this device holds, with the fingerprint that removes
-/// each one.
+/// List every authorized SSH key.
+///
+/// Each entry carries the fingerprint that identifies it for removal. The
+/// response also carries a `notice`: every authorized key grants root.
 #[utoipa::path(
     get,
     path = V1_SSH_KEYS_PATH,
@@ -1857,17 +1809,16 @@ pub(crate) async fn api_v1_ssh_keys_list(
     }
 }
 
+// The line is parsed exactly as submitted, untrimmed: surrounding whitespace
+// is one of the things the parser exists to reject, and trimming here would
+// accept a line mosd would not.
 /// Authorize one SSH public key.
 ///
-/// The line is handed to `parse_authorized_key` exactly as submitted, which is
-/// the same call the pane makes and for the same reason nothing is trimmed
-/// first: a leading or trailing space is one of the things that parser exists
-/// to reject, and trimming here would accept a line mosd would not.
+/// The key line is validated as submitted; a malformed line is **422**.
 ///
-/// **Every authorized key is a root key**, which is why the answer carries
-/// `notice` and not only the entry. `AuthorizedKeysFile` is `%u`-expanded over
-/// one shared list, so a key added by a caller who expected to be granting an
-/// unprivileged shell grants root.
+/// **Every authorized key grants root.** `AuthorizedKeysFile` is `%u`-expanded
+/// over one shared list, so the response carries a `notice` saying so
+/// alongside the created entry.
 #[utoipa::path(
     post,
     path = V1_SSH_KEYS_PATH,
@@ -1963,21 +1914,13 @@ pub(crate) async fn api_v1_ssh_keys_add(
     )
 }
 
-/// Remove one authorized key, identified by its fingerprint.
+// 404 here where the HTML pane answers 422 on the same condition, and that
+// split is deliberate: a path segment has one interpretation, a typed form
+// field does not. Paired tests name each other so it cannot read as drift.
+/// Remove one authorized SSH key by its fingerprint.
 ///
-/// **The fingerprint and nothing else**, unlike [`ssh_key_remove`], which also
-/// accepts the exact canonical key text. That difference is the reason the two
-/// surfaces answer differently, and `docs/task/RFCT-210.md` section 2.4 spends
-/// a paragraph on it: on the form the submitted string is as likely mistyped
-/// as absent, which is the re-submit condition 422 means there; here the
-/// identifier is a path segment with one interpretation, and a segment that
-/// names no key means this URL names no resource.
-///
-/// So an unmatched fingerprint is **404** here and 422 on the pane, on the same
-/// condition, deliberately. The paired tests
-/// `an_absent_key_fingerprint_is_404_where_the_pane_is_422` and
-/// `the_ssh_pane_answers_422_where_the_api_answers_404` name each other so the
-/// split cannot be read as drift.
+/// The fingerprint is the only accepted identifier; the key text is not.
+/// Answers **404** when no authorized key carries it.
 #[utoipa::path(
     delete,
     path = V1_SSH_KEY_ROUTE,
@@ -2070,8 +2013,7 @@ async fn stored_networks(state: &AppState) -> Result<Vec<WifiNetwork>, Box<Respo
 /// `WifiNetwork` this route deserializes into IS the validator mosd runs — plus
 /// `mosd_settings::validate_wifi_psk`, which M6 lifted out of the station
 /// reconciler's renderer so that the crate holding the model states its own
-/// field's rule. `docs/task/RFCT-241.md` records what it cost while that rule
-/// was out of reach.
+/// field's rule, which was out of reach while it lived in the binary crate.
 async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<(), Box<Response>> {
     let value = serde_json::to_value(networks).expect("wifi networks serialize");
     if let Err(err) = state.api.set_settings(WIFI_NETWORKS_PATH, &value).await {
@@ -2080,7 +2022,10 @@ async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<()
     Ok(())
 }
 
-/// Every WiFi network this device knows, with each pre-shared key redacted.
+/// List every known WiFi network.
+///
+/// Each entry's pre-shared key is redacted. Posting an entry back with the
+/// redaction sentinel still in place is refused rather than stored.
 #[utoipa::path(
     get,
     path = V1_WIFI_NETWORKS_PATH,
@@ -2113,21 +2058,15 @@ pub(crate) async fn api_v1_wifi_networks_list(
     }
 }
 
+// This collection has no HTML pane, so there is no form-path behaviour to
+// stay consistent with.
 /// Add one known WiFi network.
 ///
-/// **This collection has no pane.** It exists in the settings model and is
-/// reachable today only by editing the settings file on STATE, so this route is
-/// its first management surface. There is therefore no form-path behaviour for
-/// it to be consistent with, and no paired 422/404 test to write beside its
-/// item route -- unlike the SSH keys, where both exist and the split is
-/// deliberate.
+/// The redaction sentinel is rejected before anything else: a client that read
+/// this list and posted an entry back would otherwise store the literal
+/// `"<redacted>"` as the `psk` and destroy a working key.
 ///
-/// The redaction sentinel is checked **before** anything else, which matters
-/// more here than it did on the scalar write route that landed the rule: this
-/// is the collection with a redacted field. A client that read this list,
-/// edited `hidden` and posted an entry back hands over `"<redacted>"` as the
-/// `psk`, and storing it would replace a working key with ten literal
-/// characters.
+/// Answers **422** for a malformed entry or a redacted `psk`.
 #[utoipa::path(
     post,
     path = V1_WIFI_NETWORKS_PATH,
@@ -2185,8 +2124,8 @@ pub(crate) async fn api_v1_wifi_networks_add(
             );
         }
     };
-    // The pre-shared key's own bounds, run here for the first time.
-    // `docs/task/RFCT-241.md` recorded that M5 could not: they lived inside
+    // The pre-shared key's own bounds, run here for the first time. They could
+    // not be run before: they lived inside
     // `encode_psk`, a private function of the `mosd` binary crate's station
     // reconciler, so a key outside IEEE 802.11i's range was accepted, stored,
     // and refused later by the renderer with the error visible only in live
@@ -2242,16 +2181,13 @@ pub(crate) async fn api_v1_wifi_networks_add(
     api_response(StatusCode::CREATED, echoed)
 }
 
-/// Forget one known WiFi network, identified by its SSID.
+// No 422 here, and that is the rule applied rather than an exception: an SSID
+// has no grammar, so no path segment is malformed. Inventing a length bound to
+// manufacture a 422 would refuse a network a hand-edited settings file holds.
+/// Forget one known WiFi network by its SSID.
 ///
-/// Section 2.4's rule holds here with its 422 half **vacant**, and that is the
-/// rule applied rather than an exception to it. An SSID has no grammar: it is
-/// an operator-chosen name, and every non-empty single path segment spells a
-/// possible one. So there is no malformed identifier for this route to answer
-/// 422 about, and everything that names no stored network is 404 -- which is
-/// exactly what the rule asks for. Inventing a length bound here to
-/// manufacture a 422 would be a second opinion about a model that has none, and
-/// it would answer 422 for a network a hand-edited settings file really holds.
+/// Answers **404** when no stored network carries that SSID. There is no
+/// malformed-SSID case: any non-empty path segment is a possible name.
 #[utoipa::path(
     delete,
     path = V1_WIFI_NETWORK_ROUTE,
@@ -2290,7 +2226,7 @@ pub(crate) async fn api_v1_wifi_networks_remove(
         .into_response()
 }
 
-// M6's network cluster (`docs/task/RFCT-210.md` section 2.3 item (i)): the
+// M6's network cluster: the
 // interface map, one interface, and a tunnel's peer collection.
 //
 // **Typed, and not `PUT /api/v1/settings/network.<iface>`.** That is the one
@@ -2317,13 +2253,11 @@ pub(crate) async fn api_v1_wifi_networks_remove(
 // and is not in this schema -- deliberately, and the model says so -- and
 // `deny_unknown_fields` refuses a body that invents it.
 
-/// `static` addressing, as the document describes it.
-///
-/// These four structs exist for `openapi.json` and are never deserialized
-/// from: the routes below parse into `mosd_settings`' own types, which are the
-/// validator mosd runs. `the_network_schema_matches_the_settings_model` holds
-/// each one against the model field for field, so a field added to the schema
-/// cannot go undocumented here.
+// These four structs exist for `openapi.json` and are never deserialized
+// from: the routes parse into `mosd_settings`' own types, which are the
+// validator mosd runs. A test holds each one against the model field for
+// field.
+/// `static` addressing.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct StaticAddressing {
     /// Interface address in CIDR notation, e.g. `192.168.1.10/24`.
@@ -2571,20 +2505,12 @@ fn json_body<T: serde::de::DeserializeOwned>(
 
 /// Replace the whole interface map, validated as one tree.
 ///
-/// This is the route that gives back what refusing the passthrough took away.
-/// Section 2.2 kept the settings passthrough for atomic whole-list
-/// replacement; this provides that atomicity **and** the validation the
-/// passthrough does not, which is the trade the departure was argued on.
+/// The only way to make two interdependent entries legal in one step: adding a
+/// bridge and its ports through the per-interface route means declaring the
+/// ports first, because a bridge naming an undeclared port is refused.
 ///
-/// It is the only way to make two entries legal in one step. Adding a bridge
-/// and its ports one at a time through `PUT /api/v1/network/{iface}` means
-/// ordering the ports first, because a bridge naming a port that is not yet
-/// declared is refused; a client that has the whole map can send it and not
-/// care.
-///
-/// Prose and not an intra-doc link, deliberately: `utoipa` copies this comment
-/// into the published document, where a link would put an apid symbol name in
-/// front of every client.
+/// Answers **422** with the failing rule's own message when the map does not
+/// validate; nothing is written in that case.
 #[utoipa::path(
     put,
     path = V1_NETWORK_PATH,
@@ -2640,20 +2566,17 @@ pub(crate) async fn api_v1_network_write(
     no_content()
 }
 
+// The HTML pane carries stored peers across a save and this route does not,
+// because a form posts only the fields it renders while a JSON body says
+// exactly what the client meant.
 /// Declare or replace one interface, validated against the whole map.
 ///
-/// **A `PUT` replaces the entry entirely**, which includes a tunnel's peer
-/// list: a body with no `wireguard` block on an interface that had one leaves
-/// it with none. That is what `PUT` means, and it is the cost section 2.3
-/// names for the departure -- *"a client that wants to flip one boolean on one
-/// interface now sends the whole entry"*. The pane behaves differently
-/// (`network_submit` carries the stored peers across a save) because a form
-/// posts the fields it renders and cannot say anything about the ones it does
-/// not; a client that built a JSON body said exactly what it meant.
+/// **A `PUT` replaces the entry entirely**, including a tunnel's peer list: a
+/// body with no `wireguard` block on an interface that had one leaves it with
+/// none. To change one field, send the whole entry.
 ///
-/// `iface` is an identifier that may legitimately not exist yet -- this route
-/// creates it -- so there is no 404 here. A name outside the interface charset
-/// is 422, which is section 2.4's malformed half.
+/// Creates the interface when it does not exist, so there is no 404. A name
+/// outside the interface charset, or a map that fails validation, is **422**.
 #[utoipa::path(
     put,
     path = V1_NETWORK_IFACE_ROUTE,
@@ -2711,19 +2634,15 @@ pub(crate) async fn api_v1_network_iface_write(
     no_content()
 }
 
-/// Remove one interface, with the rest of the map re-validated without it.
+// The whole map is rewritten because the dot-path syntax has no delete: the
+// only way to say "this key is gone" is to send the map without it.
+/// Remove one interface, re-validating the rest of the map without it.
 ///
-/// The re-validation is the point and not a formality: removing `eth1` while
-/// `br0` lists it as a port leaves a bridge naming an entry that no longer
-/// exists, which is one of the four relational rules, so it is refused at 422
-/// with the rule's own sentence and nothing is written. Remove the port from
-/// the bridge first.
+/// Removing an interface another entry depends on — a port still listed by a
+/// bridge — is **422** with the failing rule's own message, and nothing is
+/// written. Remove the dependent reference first.
 ///
-/// The whole map is rewritten because the dot-path syntax has no delete: a
-/// `SetSettings` writes a value at a path, and the only way to say "this key
-/// is gone" is to send the map without it. **Two concurrent removals lose
-/// one**, the same read-modify-write cost every collection in this file
-/// records.
+/// Read-modify-write: two concurrent removals lose one.
 #[utoipa::path(
     delete,
     path = V1_NETWORK_IFACE_ROUTE,
@@ -2770,9 +2689,8 @@ pub(crate) async fn api_v1_network_iface_remove(
 /// The three answers this cluster gives about an `{iface}` that is not a
 /// usable tunnel, and none of them is interchangeable with another:
 ///
-/// - **404** when no `network` entry has that name. This is what
-///   `docs/task/RFCT-210.md` section 2.4's sweep found the pane getting wrong:
-///   `POST /network/peers/add` on an undeclared interface *succeeds* there and
+/// - **404** when no `network` entry has that name. This is what the pane gets
+///   wrong: `POST /network/peers/add` on an undeclared interface *succeeds* there and
 ///   writes an entry of the default kind carrying a WireGuard block, because
 ///   the pane's `stored_peers` answers an empty list rather than an error and
 ///   the settings setter creates missing intermediates by documented contract.
@@ -2842,7 +2760,9 @@ async fn api_write_peers(
     Ok(())
 }
 
-/// Every far end configured on one tunnel.
+/// List every peer configured on one WireGuard tunnel.
+///
+/// Answers **404** when `iface` names no declared interface.
 #[utoipa::path(
     get,
     path = V1_NETWORK_PEERS_ROUTE,
@@ -2879,24 +2799,14 @@ pub(crate) async fn api_v1_peers_list(
     }
 }
 
-/// Add one far end to a tunnel.
+// 409 and not 422 for a duplicate: the public key IS this collection's
+// identity — it is the DELETE path segment — so a second entry under one key
+// would leave no answer to which of the two a DELETE names.
+/// Add one peer to a WireGuard tunnel.
 ///
-/// **404 before anything is written, when `{iface}` is not a declared entry.**
-/// That is this route's reason for existing in the shape it has, and
-/// `docs/task/RFCT-210.md` section 2.4's sweep is why: the pane's equivalent
-/// succeeds on an undeclared interface and grows a broken `network` entry.
-/// Fixed structurally rather than with a guard -- the interface has to be read
-/// anyway, to know whether it is a tunnel and what peers it already has.
-///
-/// A duplicate public key is **409 `peer_exists`**, which is the ratified error
-/// contract's third clause and no longer a choice between precedents: an
-/// absent identifier is 404, a malformed one is 422, and a duplicate is 409
-/// with a per-collection code. A duplicate is a conflict with the collection's
-/// current state, and that is what 409 means. It also happens to be the only
-/// answer that keeps this route coherent with the item route beside it: the
-/// public key **is** this collection's identity -- it is the `DELETE` path
-/// segment -- so a second entry under one key would leave no answer to which
-/// of the two a `DELETE` names.
+/// Answers **404** when `iface` names no declared interface, checked before
+/// anything is written. A duplicate public key is **409** with code
+/// `peer_exists`; a malformed peer is **422**.
 #[utoipa::path(
     post,
     path = V1_NETWORK_PEERS_ROUTE,
@@ -2962,19 +2872,13 @@ pub(crate) async fn api_v1_peers_add(
     api_response(StatusCode::CREATED, redact::redact(echoed, &path))
 }
 
-/// Remove one far end, identified by its public key.
+// The HTML pane answers 422 where this answers 404, deliberately: a form's
+// body is a re-rendered page no consumer reads a status from.
+/// Remove one peer from a tunnel, identified by its public key.
 ///
-/// Section 2.4's rule with both halves live. A string that is not 32 bytes of
-/// base64 could never be a WireGuard public key and is **422**; a well-formed
-/// key that no stored peer carries is **404**, from the one shared not-found
-/// helper every item route in this file reaches for.
-///
-/// The pane answers 422 for the second condition -- *"No peer of this tunnel
-/// has that public key; the list may have changed since the page was loaded."*
-/// -- and that split stays, for the reason section 2.4 gives about the SSH
-/// pane: a form's body is a re-rendered page no consumer reads a status from,
-/// and its message asks for a re-submit. Its paired test is
-/// `the_network_pane_answers_422_where_the_peer_route_answers_404`.
+/// A string that is not 32 bytes of base64 could never be a WireGuard public
+/// key and is **422**. A well-formed key that no stored peer carries is
+/// **404**.
 #[utoipa::path(
     delete,
     path = V1_NETWORK_PEER_ROUTE,
@@ -3118,8 +3022,8 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
 /// Proof that the request carried a bearer API token, and the only credential
 /// extractor `/api/v1/` has.
 ///
-/// **The one extractor, since PLAN-023 M9 (RFCT-245).** It began as the
-/// stricter of two: Amendment 1 ruled option 1, dual-credential, so `ApiSession`
+/// **The one extractor.** It began as the
+/// stricter of two: the dual-credential option was ruled, so `ApiSession`
 /// took a bearer *or* the browser session cookie every route naming it had
 /// already shipped accepting, while the token routes -- which had not shipped --
 /// took this one. That made §3.2's "only accepted credential" sentence false for
@@ -3318,9 +3222,9 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
     //
     // This subsumes the `is_declared_api_route` arm above: every declared leaf
     // begins with `/`, so a path that predicate accepts is a path this one
-    // accepts. The arm is left standing rather than folded in because
-    // PLAN-026 M4 owns that predicate and is rewriting it; deleting its only
-    // caller here would take the mechanism out from under that milestone.
+    // accepts. The arm is left standing rather than folded in because the
+    // predicate it guards is being rewritten elsewhere; deleting its only
+    // caller here would take the mechanism out from under that work.
     if path
         .strip_prefix(API)
         .is_some_and(|leaf| leaf.is_empty() || leaf.starts_with('/'))
@@ -3543,8 +3447,8 @@ fn validate_iface(iface: &str, dhcp: bool, address: &str) -> Result<(), &'static
 /// It is factored out rather than copied because M6's typed network routes
 /// have to run this rule too and must not be able to disagree with the forms
 /// about what an address is: `PUT /api/v1/network/{iface}` took an address the
-/// kernel cannot parse and answered 204 until PLAN-026 M1
-/// (`docs/task/RFCT-247.md`). Those routes cannot call `validate_iface`
+/// kernel cannot parse and answered 204 until this was factored out. Those
+/// routes cannot call `validate_iface`
 /// itself, because they check the name with [`check_iface_name`] and would
 /// otherwise carry two spellings of the name refusal.
 ///
@@ -4049,15 +3953,12 @@ pub(crate) struct SetupRequest {
     /// something other than what it sent is the worse answer.
     #[serde(default)]
     hostname: Option<String>,
+    // Merged and not replacing: a route that replaced the map could unmake the
+    // entry a factory-fresh device is reachable over.
     /// `network` entries to declare, merged into the stored map by name.
     ///
-    /// Merged and not replacing it, which is what the wizard's one interface
-    /// field does: it writes `network.<iface>` and leaves every other entry
-    /// alone. A route that replaced the map could unmake the entry a
-    /// factory-fresh device is reachable over, which is the failure this
-    /// milestone exists to make impossible rather than to introduce. An entry
-    /// whose name is already declared is replaced whole; one that is not is
-    /// added.
+    /// An entry whose name is already declared is replaced whole; one that is
+    /// not is added. Entries the body does not name are left alone.
     #[serde(default)]
     #[schema(value_type = Option<std::collections::BTreeMap<String, NetworkInterface>>)]
     network: Option<NetworkEntries>,
@@ -4084,45 +3985,23 @@ pub(crate) struct SetupToken {
 /// which is the only thing a listing can usefully say about it.
 const SETUP_TOKEN_NAME: &str = "first-run setup";
 
-/// First-run setup over the API: the admin password, optionally a hostname and
-/// network entries, and a minted API token (`docs/task/RFCT-210.md` sections
-/// 2.3 item (ii) and 2.5).
+// The write order fails safe: nothing before `access.webAdmin` takes the
+// device out of setup mode, so a failure at any point leaves the wizard
+// reachable. The browser wizard writes in a different order and is not changed
+// here; closing that gap needs a transactional multi-path write on the bus.
+/// First-run setup: set the admin password, optionally a hostname and network
+/// entries, and mint an API token.
 ///
-/// **Unauthenticated by necessity.** It is the operation that creates the
-/// device's first credential, so it cannot demand one. The gate lets every
-/// declared `/api/` route through and each answers for itself, so what makes
-/// this route open is that its signature names no credential extractor -- and
-/// the 409 below is what closes it again the moment a password exists.
+/// **Unauthenticated**, because it creates the device's first credential.
+/// Answers **409** once a password exists, which closes it permanently.
 ///
-/// **It mints a token where the browser wizard does not** (§3.2). The reason is
-/// stated there: a caller who drove first-run setup over the API demonstrably
-/// wants API access, where a human who filled in a form did not ask for a
-/// permanent credential they may never rotate. It mints through the same
-/// routine `POST /api/v1/tokens` mints through, so the two cannot produce
-/// credentials of different shapes.
+/// Everything is validated before anything is written; a rejected request
+/// leaves the device untouched and still in setup mode. On success the writes
+/// run in the order hostname, network, `access.webAdmin`, token.
 ///
-/// **Everything is validated before anything is written, and that is the one
-/// behaviour this milestone changes rather than documents.** The form path
-/// writes `access.webAdmin` and records the audit event *before* the hostname
-/// and network writes are attempted, so a bus failure halfway leaves the device
-/// out of setup mode with no hostname -- unreachable by the wizard that was
-/// meant to configure it. Here every rule is checked and the password is
-/// hashed first, and then the writes run in the order that fails safe:
-/// hostname, network, `access.webAdmin`, token. Nothing before the third write
-/// takes the device out of setup mode, so a failure at any point leaves the
-/// wizard reachable.
-///
-/// **The browser wizard is not changed**, deliberately: what is left there is a
-/// *bus* failure between two writes, and closing that needs a transactional
-/// multi-path write on the bus -- a mosd change, outside this API's scope. The
-/// two surfaces therefore diverge, and both halves are asserted.
-///
-/// Prose and not intra-doc links, for the reason the rotate-key route states:
-/// `utoipa` copies this comment into the published document, where a link
-/// would put an apid symbol name in front of every client. The implementation
-/// notes those links would carry are in the body -- which paired test names
-/// the divergence, and which of M6's validators this route calls rather than
-/// copies.
+/// Answers **200** with the minted token secret, returned once. Unlike the
+/// browser wizard, this route always mints one: a caller driving setup over
+/// the API wants API access.
 #[utoipa::path(
     post,
     path = V1_SETUP_PATH,
@@ -4217,8 +4096,8 @@ pub(crate) async fn api_v1_setup(
                 // because a factory-fresh device configured with an address the
                 // kernel cannot parse is exactly the unreachable box this
                 // milestone exists to prevent. That M6's network routes do not
-                // call it is a finding recorded in `docs/task/RFCT-244.md`, not
-                // something this route may fix on their behalf.
+                // call it is a finding on its own, not something this route may
+                // fix on their behalf.
                 let address = cfg
                     .static_
                     .as_ref()
@@ -4564,7 +4443,7 @@ async fn change_password(
     Ok(())
 }
 
-/// The sentence `docs/task/RFCT-210.md` §3 fixed for this pane, verbatim.
+/// The ratified sentence for this pane, verbatim.
 ///
 /// Token revocation on a password change stays **out**, ratified there: it
 /// would destroy N credentials the operator cannot see at the moment they act,
@@ -4656,9 +4535,11 @@ pub(crate) struct ChangePasswordRequest {
     new_password: String,
 }
 
-/// The same operation as `POST /password`, answering §2.4's envelope instead
-/// of HTML. 204 on success: the outcome is the state change, and there is
-/// nothing to say about it that the status does not.
+/// Change the admin password.
+///
+/// Requires the current password. Answers **204** on success; every session
+/// but the acting one is dropped. A wrong current password is **401**, and a
+/// new password below the length floor is **422**.
 #[utoipa::path(
     post,
     path = V1_CHANGE_PASSWORD_PATH,
@@ -5008,8 +4889,8 @@ struct TokenRevokeForm {
 /// `POST /builtin/tokens/revoke` — §8.1's capability (iii) in full.
 ///
 /// An id matching nothing is **422** here and **404** on
-/// `DELETE /api/v1/tokens/{id}`, and the split is on the record
-/// (`docs/task/RFCT-210.md` §2.4): this response body is a re-rendered pane, no
+/// `DELETE /api/v1/tokens/{id}`, and the split is deliberate: this response
+/// body is a re-rendered pane, no
 /// consumer on this surface reads the status, and the condition really is the
 /// re-submit-the-form one — the list may have changed since the page was
 /// loaded. Its paired test is
@@ -5216,8 +5097,7 @@ type NetworkEntries = std::collections::BTreeMap<String, IfaceSettings>;
 /// The kinds the pane offers, in the order the `<select>` lists them.
 ///
 /// `physical` first because it is the default and the only kind a v6 tree ever
-/// had; the three virtual kinds follow in the order `docs/task/RFCT-200.md` §2
-/// introduces them.
+/// had; the three virtual kinds follow in the order the schema introduces them.
 const IFACE_KINDS: [IfaceKind; 4] = [
     IfaceKind::Physical,
     IfaceKind::Vlan,
@@ -5920,7 +5800,7 @@ async fn power_poweroff(
 /// compile-time constants, not secrets and not per-session; they exist to stop
 /// a mis-click on a rendered page. There is no mis-click on a `POST` a script
 /// constructed, so the bearer token is the authorisation and the constant would
-/// be friction that protects nothing. Ratified in PLAN-023's M1 design.
+/// be friction that protects nothing. Ratified in the M1 design.
 ///
 /// The body is empty: the outcome is the machine going down, and there is
 /// nothing to say about it that the status does not.
@@ -5933,7 +5813,10 @@ fn power_accepted(state: &AppState, action: PowerAction, source: &str) -> Respon
         .into_response()
 }
 
-/// Reboot the appliance (§2.1's action family).
+/// Reboot the appliance.
+///
+/// Answers **202**: the request is accepted and the reboot is dispatched, so
+/// there may be no connection left to carry a later status.
 #[utoipa::path(
     post,
     path = V1_REBOOT_PATH,
@@ -5953,7 +5836,10 @@ pub(crate) async fn api_v1_reboot(
     power_accepted(&state, PowerAction::Reboot, &source)
 }
 
-/// Power the appliance off (§2.1's action family).
+/// Power the appliance off.
+///
+/// Answers **202**: the request is accepted and the power-off is dispatched,
+/// so there may be no connection left to carry a later status.
 #[utoipa::path(
     post,
     path = V1_POWEROFF_PATH,
@@ -6802,27 +6688,19 @@ pub(crate) struct TransientRootPasswordRequest {
     password: String,
 }
 
-/// Set a transient root password (§2.1's action family).
+// Bounds are checked by the same function the form path calls, not a second
+// copy, and none of its three messages interpolates the password.
+/// Set a transient root password.
 ///
-/// The password must be 8 to 72 bytes and must contain no NUL, no newline and
-/// no carriage return. 72 is bcrypt's own limit: a longer password would be
-/// silently shortened to its first 72 bytes, so it is refused rather than
-/// accepted as something other than what was sent.
+/// The password must be 8 to 72 bytes and contain no NUL, newline or carriage
+/// return. 72 is bcrypt's limit — a longer password would be silently
+/// truncated, so it is refused instead.
 ///
-/// A rejection states the bound it broke and never repeats the password back.
 /// The password is written into no setting, is never logged, and lasts until
-/// the next reboot.
+/// the next reboot. A **422** states which bound was broken and never repeats
+/// the password back.
 ///
-/// 204 and not the 202 the two power verbs answer: this awaits the call, so a
-/// caller that gets a 204 has a password channel that is actually open.
-///
-/// Prose and not intra-doc links, deliberately, for the reason the rotate-key
-/// route above states: `utoipa` copies this comment into the published
-/// document, where a link would put an apid symbol name in front of every
-/// client. The implementation notes those links would carry are in the body:
-/// the bounds are checked by the same function the form path calls rather than
-/// by a second copy, and the rejection cannot echo the password because none of
-/// that function's three messages interpolates it.
+/// Answers **204** once the password is actually set.
 #[utoipa::path(
     post,
     path = V1_TRANSIENT_PASSWORD_PATH,

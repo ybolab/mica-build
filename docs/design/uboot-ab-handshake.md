@@ -1,8 +1,8 @@
 # Design: U-Boot A/B Handshake — Contract for a Custom Mainline U-Boot
 
 > Specification the custom U-Boot is built against. The U-Boot tree itself lives
-> outside this repository; nothing under `os/boards/` (formerly `board/`, moved by PLAN-018) is changed by this document.
-> Written for PLAN-010 M4 (= PLAN-006 A/B updates on systemd), RFCT-018.
+> outside this repository; nothing under `os/boards/` (formerly `board/`, moved deliberately) is changed by this document.
+> The A/B update contract on the systemd base.
 
 ## 0. Scope, status and evidence rules
 
@@ -14,17 +14,17 @@ bootloader backend, `/etc/fw_env.config` and the dm-verity boot path all agree.
 Evidence convention used throughout:
 
 - **[V]** verified in this environment, with the file and line it came from.
-  Paths starting `os/` are this repository (`board/` paths are dated: PLAN-018 moved that tree under `os/boards/`); paths starting
+  Paths starting `os/` are this repository (`board/` paths are dated: that tree moved under `os/boards/`); paths starting
   `u-boot/` are the upstream tree at tag `v2026.07`, cloned read-only into a
   scratch directory for this analysis; paths starting `linux/` are
   `armbian/linux-rockchip` branch `rk-6.1-rkr5.1` (`Makefile` reports
   `6.1.115` [V]), fetched read-only.
 - **[U]** UNVERIFIED — cannot be established without a board build or hardware.
 
-The board definition (RFCT-020) had **not** landed when this analysis was
+The board definition had **not** landed when this analysis was
 written against branch base `fd6233f`; no directory in the tree held it [V].
 Every constant below is therefore quoted from the campaign layout-v2 table. It
-has since landed, and RFCT-107 (PLAN-014 M1) moved it to its present path, so
+has since landed and moved to its present path, so
 every generated file (defconfig fragment, `fw_env.config`, `boot.cmd`) **must
 be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
 drift.
@@ -62,7 +62,7 @@ header -- and builds `make "${BOARD}_defconfig"`
 
 - Rockchip **binary blobs** from `rockchip-linux/rkbin` — DDR init
   `rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin` and TF-A
-  `rk3576_bl31_v1.24.elf` (`Dockerfile:31,41-42`) [V];
+  `rk3576_bl31_v1.24.elf` (`Dockerfile,41-42`) [V];
 - one local patch, `patches/0001-rockchip-usb-rockusb-loader-mode-and-maskrom-reboot.patch`,
   which sets `bcdUSB=0x0201` so Rockchip host tools see a *loader* rather than a
   maskrom device, and implements `rkusb_set_reboot_flag()` for `K_FW_RESET`
@@ -141,22 +141,22 @@ unused here [V].
 **before** `boot.scr`:
 
 - legacy `distro_bootcmd`: `scan_dev_for_boot` runs `scan_dev_for_extlinux`
-  then `scan_dev_for_scripts` (`u-boot/include/config_distro_bootcmd.h:535-541`)
+  then `scan_dev_for_scripts` (`u-boot/include/config_distro_bootcmd.h`)
   [V];
 - bootstd: with no `bootmeths` ordering set, bootmeths run in linker-list order,
   which is alphabetical by driver name — and the drivers are deliberately
   numbered `bootmeth_1extlinux`, `bootmeth_2script`, `bootmeth_3efi_mgr`,
-  `bootmeth_4efi` (`u-boot/boot/bootmeth_extlinux.c:260`,
-  `bootmeth_script.c:270`, `bootmeth_efi_mgr.c:126`, `bootmeth_efi.c:380`) [V].
-  `bootmeth_rauc` is unnumbered (`bootmeth_rauc.c:475`) and therefore sorts
+  `bootmeth_4efi` (`u-boot/boot/bootmeth_extlinux.c`,
+  `bootmeth_script.c`, `bootmeth_efi_mgr.c`, `bootmeth_efi.c`) [V].
+  `bootmeth_rauc` is unnumbered (`bootmeth_rauc.c`) and therefore sorts
   *last* [V].
 
 Both frameworks also **continue to the next candidate when a boot attempt
 fails**: `distro_bootcmd`'s `scan_dev_for_boot_part` loops over `devplist` and
 only enters a partition whose `fstype` probe succeeds
-(`config_distro_bootcmd.h:545-560`) [V]; bootstd's `bootflow scan -b` loop calls
+(`config_distro_bootcmd.h`) [V]; bootstd's `bootflow scan -b` loop calls
 `bootflow_run_boot()` and keeps iterating on failure
-(`u-boot/cmd/bootflow.c:220-234`) [V].
+(`u-boot/cmd/bootflow.c`) [V].
 
 The practical consequence: **if `extlinux/extlinux.conf` is present in a v2 boot
 slot, it wins and the A/B handshake is silently bypassed.** See §5.4.
@@ -164,8 +164,8 @@ slot, it wins and the A/B handshake is silently bypassed.** See §5.4.
 ### 1.4 Raw SPL + U-Boot placement
 
 The assembler writes `u-boot-rockchip.bin` at `UBOOT_SEEK_SECTOR`, sector 64
-(`os/boards/cx3576/board.env:92`), with a `dd` whose block size is the sector
-size (`os/build/src/mkimage-v2.ts:426-429`) [V]. Inside that combined image,
+(`os/boards/cx3576/board.env`), with a `dd` whose block size is the sector
+size (`os/build/src/mkimage-v2.ts`) [V]. Inside that combined image,
 SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
 
@@ -177,12 +177,12 @@ keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
 (14 MiB) so that `u-boot.itb` still ends before 16 MiB; `0x4000` satisfies this
 with ~7 MiB of headroom. The assembler asserts the fit rather than trusting it:
 a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
-`os/boards/cx3576/board.env:93` — fails the build
-(`os/build/src/mkimage-v2.ts:292-299`) [V].
+`os/boards/cx3576/board.env` — fails the build
+(`os/build/src/mkimage-v2.ts`) [V].
 
-The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:791`
+The kernel command line is not the assembler's. `os/rootfs/build-v2.sh`
 composes one per rootfs slot from that slot's verity parameters and the board's
-`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:349`) [V].
+`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env`) [V].
 
 ---
 
@@ -208,24 +208,24 @@ What `generic-rk3576_defconfig` at `v2026.07` provides [V]
 
 - **eMMC**: `CONFIG_MMC_SDHCI=y`, `CONFIG_MMC_SDHCI_ROCKCHIP=y`,
   `CONFIG_MMC_SDHCI_SDMA=y`, `CONFIG_SUPPORT_EMMC_RPMB=y`, plus `MMC_DW` /
-  `MMC_DW_ROCKCHIP` for SD (lines 33-38).
+  `MMC_DW_ROCKCHIP` for SD.
 - **Serial**: `CONFIG_DEBUG_UART_BASE=0x2AD40000`, `CONFIG_BAUDRATE=1500000`,
-  `CONFIG_SYS_NS16550_MEM32=y` (lines 8, 40, 42) — matches
-  `os/boards/cx3576/board.env:349` `console=ttyFIQ0,1500000` /
+  `CONFIG_SYS_NS16550_MEM32=y` — matches
+  `os/boards/cx3576/board.env` `console=ttyFIQ0,1500000` /
   `earlycon=...0x2ad40000` [V].
-- **USB**: DWC3 host + gadget, `CONFIG_USB_FUNCTION_ROCKUSB=y` (lines 44-49).
+- **USB**: DWC3 host + gadget, `CONFIG_USB_FUNCTION_ROCKUSB=y`.
 - **DM / distro boot**: full driver model; bootstd with extlinux, script and EFI
   bootmeths (`CONFIG_BOOTSTD_DEFAULTS=y`) [V].
 - **Device tree**: `arch/arm/dts/rk3576-generic.dts` with
   `aliases { mmc0 = &sdhci; mmc1 = &sdmmc; }` — **eMMC is `mmc 0`**
-  (`u-boot/arch/arm/dts/rk3576-generic.dts:15-18`) [V]. This is what makes
+  (`u-boot/arch/arm/dts/rk3576-generic.dts`) [V]. This is what makes
   `CONFIG_ENV_MMC_DEVICE_INDEX=0` correct in §3.
 
 Known gaps / vendor-only pieces, i.e. what mainline does **not** give you:
 
 1. **DDR init (TPL) and BL31 are closed-source blobs.** Upstream documents
    building rk3576 with `ROCKCHIP_TPL=` and `BL31=` from `rkbin`
-   (`u-boot/doc/board/rockchip/rockchip.rst:306-312`) [V]. Mainline has no
+   (`u-boot/doc/board/rockchip/rockchip.rst`) [V]. Mainline has no
    open TPL for RK3576. The current Dockerfile already pins DDR `v1.12` /
    BL31 `v1.24` with a comment that armbian reports `v1.09+` failing to boot on
    some RK3576 boards (`os/boards/cx3576/bsp/uboot/Dockerfile:8-11`) [V] — **keep these
@@ -269,12 +269,12 @@ UENV_SIZE_BYTES     = 0x10000      # 64 KiB per copy
 They are non-negotiable because three independent artefacts are already pinned
 to them: the layout-v2 GPT (p1/p2 exist purely to reserve this space and to give
 Linux a bounds-checked block device per copy), `/etc/fw_env.config` shipped by
-RFCT-014, and RAUC's `uboot` backend which reaches the env only through
+the boot contract, and RAUC's `uboot` backend which reaches the env only through
 `fw_setenv`/`fw_printenv`.
 
 ### 3.1 Why redundant, precisely
 
-PLAN-006 Part F's power-loss table has a row "Mid-env-write → redundant UENV
+the power-loss table has a row "Mid-env-write → redundant UENV
 pair → One valid CRC copy always exists". That guarantee is not rhetorical: with
 `CONFIG_ENV_REDUNDANT=y` each copy carries a CRC and an active/obsolete flag
 byte, and U-Boot writes the *inactive* copy first, then flips the flag. A power
@@ -289,7 +289,7 @@ slot re-selected.
 
 Verified symbol names and semantics against `v2026.07`. Regenerate the three
 hex values from `os/boards/cx3576/board.env`, which has since landed with
-RFCT-020, whenever the layout changes.
+the image assembler, whenever the layout changes.
 
 ```
 # --- persistent environment: redundant pair in the eMMC user area -----------
@@ -326,20 +326,20 @@ CONFIG_HUSH_PARSER=y
 Notes, each with its evidence:
 
 - `CONFIG_ENV_MMC_DEVICE_INDEX=0` — `mmc0 = &sdhci` = eMMC in the generic DT
-  (`u-boot/arch/arm/dts/rk3576-generic.dts:15-18`) [V]. Rockchip additionally
+  (`u-boot/arch/arm/dts/rk3576-generic.dts`) [V]. Rockchip additionally
   overrides `mmc_get_env_dev()` to resolve `/chosen/u-boot,spl-boot-device`
-  when present (`u-boot/arch/arm/mach-rockchip/board.c:509-536`) [V], which
+  when present (`u-boot/arch/arm/mach-rockchip/board.c`) [V], which
   lands on the same device.
 - `CONFIG_ENV_MMC_EMMC_HW_PARTITION=0` — "partition 0 … is the user area"
   (`u-boot/env/Kconfig:748-757`) [V]. This is the symbol the brief calls
   `CONFIG_SYS_MMC_ENV_PART`.
-- The three "keep OFF" symbols matter. `env/mmc.c:151-204` resolves the env
+- The three "keep OFF" symbols matter. `env/mmc.c` resolves the env
   offset in priority order: a software partition name
   (`CONFIG_ENV_MMC_SW_PARTITION` or the `u-boot,mmc-env-partition` DT
   property), then a GPT partition carrying the "U-Boot ENV" type GUID (only if
   `CONFIG_PARTITION_TYPE_GUID`), and only then `CONFIG_ENV_OFFSET` [V].
   The partition paths place the env at the **end** of the partition
-  (`env/mmc.c:145-146`) [V], which would silently move it off the pinned
+  (`env/mmc.c`) [V], which would silently move it off the pinned
   offsets. Leaving all three off forces the plain `ENV_OFFSET` path.
 - `CONFIG_ENV_SIZE` must be `0x10000`, not the `0x1f000` the Rockchip default
   produces (§1.2) — 0x1f000 is 124 KiB and would overrun the 64 KiB partition
@@ -347,7 +347,7 @@ Notes, each with its evidence:
 - `CONFIG_CMD_SETEXPR` is off in the generic defconfig
   (`configs/generic-rk3576_defconfig:24`) [V] and must be turned back on.
 
-### 3.3 `/etc/fw_env.config` (shipped by RFCT-014)
+### 3.3 `/etc/fw_env.config` (shipped deliberately)
 
 ```
 # /etc/fw_env.config — U-Boot environment access from Linux.
@@ -369,7 +369,7 @@ sides from the same file".
 **Toolchain**: in Debian bookworm `fw_printenv` and `fw_setenv` are shipped by
 **`libubootenv-tool`**, not `u-boot-tools` (`dpkg -S` on a bookworm container
 resolves both binaries to `libubootenv-tool`) [V]. Bookworm ships **no**
-`/etc/fw_env.config` by default [V], so RFCT-014 must add both the package to
+`/etc/fw_env.config` by default [V], so the rootfs work must add both the package to
 the rootfs allowlist and the file above.
 
 `fw_setenv` infers redundancy from the presence of two device lines; the
@@ -395,24 +395,24 @@ RAUC's side of this is fixed by its source, not by convention
 (`rauc/src/bootloaders/uboot.c`, master) [V]:
 
 - it reads `BOOT_ORDER` and `BOOT_<bootname>_LEFT` where `<bootname>` is the
-  slot's `bootname=` from `system.conf` (lines 128, 147);
-- `mark-good` → `BOOT_<slot>_LEFT` = `boot-attempts` (default 3) (lines 205-219);
+  slot's `bootname=` from `system.conf`;
+- `mark-good` → `BOOT_<slot>_LEFT` = `boot-attempts` (default 3);
 - `mark-bad` → the slot is **removed from `BOOT_ORDER`** and its counter set to
-  0 (lines 173-201, 214);
+  0;
 - `set_primary` → the slot is moved to the **front** of `BOOT_ORDER` and its
-  counter set to `boot-attempts-primary` (lines 296-332). Both attempt counts
+  counter set to `boot-attempts-primary`. Both attempt counts
   come from `[system] boot-attempts=` / `boot-attempts-primary=` in
-  `system.conf` (`rauc/src/config_file.c:359,373`) [V].
+  `system.conf` (`rauc/src/config_file.c`) [V].
 
 ### 4.1 Radix trap — the counter is hexadecimal
 
 RAUC **writes** the counter with `g_strdup_printf("%x", attempts)` and **reads**
-it with `g_ascii_strtoull(..., 16)` (`rauc/src/bootloaders/uboot.c:213, 152`)
+it with `g_ascii_strtoull(..., 16)` (`rauc/src/bootloaders/uboot.c, 152`)
 [V] — i.e. bare hex, no `0x` prefix. On the U-Boot side:
 
 - `setexpr` parses arguments with `hextoul()` and stores results with
-  `env_set_hex()` (`u-boot/cmd/setexpr.c:119, 439`) [V] — also hex. **Matches.**
-- `test -gt` parses with `simple_strtol(..., 0)` (`u-boot/cmd/test.c:168-173`)
+  `env_set_hex()` (`u-boot/cmd/setexpr.c, 439`) [V] — also hex. **Matches.**
+- `test -gt` parses with `simple_strtol(..., 0)` (`u-boot/cmd/test.c`)
   [V] — i.e. decimal unless `0x`-prefixed. **Does not match**, but the two
   agree for every value 0–9.
 
@@ -443,10 +443,10 @@ condition we want to test.
 
 Failure handling when no slot has credits left: reset **all** counters to the
 default, `saveenv`, and `reset` the board. This is the same policy as upstream's
-`CONFIG_BOOTMETH_RAUC_RESET_ALL_ZERO_TRIES` (`u-boot/boot/bootmeth_rauc.c:341-357`)
+`CONFIG_BOOTMETH_RAUC_RESET_ALL_ZERO_TRIES` (`u-boot/boot/bootmeth_rauc.c`)
 [V]. It prevents a permanently unbootable device at the cost of one extra reset
 loop; the operator-visible symptom is a device that reboots repeatedly, which is
-what the PLAN-006 Part D rescue path is for.
+what the rescue path is for.
 
 ---
 
@@ -464,7 +464,7 @@ default environment / `bootcmd`, or by enabling upstream's
 `BOOT_ORDER` and `BOOT_<slot>_LEFT`, picks the first slot with credits,
 decrements, `env_save()`s, exports `distro_bootpart` / `distro_rootpart` /
 `raucargs`, then sources that slot's `boot.scr`
-(`u-boot/boot/bootmeth_rauc.c:141-172, 306-360, 393-445`) [V].
+(`u-boot/boot/bootmeth_rauc.c, 306-360, 393-445`) [V].
 
 ### 5.2 Recommendation: (A), with (B) as a documented fallback
 
@@ -482,8 +482,8 @@ Take **(A)**. The decisive arguments:
 - **Fall-through when BOOT-A's filesystem is unreadable** works in (A) without
   any extra machinery, because both boot partitions carry the *same* script:
   U-Boot tries the p3 bootflow, fails to read the FAT or the script, and
-  continues to the p4 bootflow (`u-boot/cmd/bootflow.c:220-234` [V]; the legacy
-  equivalent is `config_distro_bootcmd.h:545-560` [V]). Whichever copy actually
+  continues to the p4 bootflow (`u-boot/cmd/bootflow.c` [V]; the legacy
+  equivalent is `config_distro_bootcmd.h` [V]). Whichever copy actually
   runs then honours `BOOT_ORDER` and can boot *either* slot — the script is
   slot-agnostic by construction (§5.3), so BOOT-A's script booting rootfs-B is
   a normal, tested path rather than a special case.
@@ -511,9 +511,9 @@ CONFIG_BOOTMETH_RAUC_RESET_ALL_ZERO_TRIES=y
 (`"3,5 4,6"` = slot A is boot p3 + root p5, slot B is boot p4 + root p6, in the
 `<boot>,<root>` pair syntax of `u-boot/boot/Kconfig:902-909` [V].) Note that
 this bootmeth reads the counter with `env_get_ulong(..., 10, ...)`
-(`bootmeth_rauc.c:317`) [V] — decimal — so §4.1's 1–9 range still applies.
+(`bootmeth_rauc.c`) [V] — decimal — so §4.1's 1–9 range still applies.
 
-**Rescue path.** PLAN-006 Part D wants a last-resort rescue when every slot is
+**Rescue path.** The A/B design wants a last-resort rescue when every slot is
 exhausted. It does **not** need U-Boot-resident logic: the "reset all counters
 and `reset`" behaviour of §4.2 keeps the device alive, and the actual rescue
 entry is the existing `PREBOOT` recovery-button path into rockusb
@@ -541,7 +541,7 @@ provenance header:
    an unsuffixed file cannot identify a slot. With the original unsuffixed load,
    every installed slot took the else-branch and rolled back. The unsuffixed
    fallback is kept only for hand-assembled boot partitions; nothing this tree
-   builds relies on it. (RFCT-014 escalation E1.)
+   builds relies on it. (escalation E1.)
 2. **`bootargs` carries `rauc.slot=${bootslot}`.** The root device is
    `/dev/dm-0`, a device-mapper node rather than a partition, and rauc cannot
    match that against any slot's `bootname`, slot name or `realpath(device)`.
@@ -549,7 +549,7 @@ provenance header:
    booted slot (matching '/dev/dm-0')"*, so the health gate never reaches
    `rauc status mark-good` and the installed slot is rolled back. This is a
    requirement on the boot path that only became visible once the handshake was
-   integrated end to end. (RFCT-017 integration check, fixed by RFCT-020.)
+   integrated end to end. (integration check, fixed deliberately.)
 
 ```sh
 # boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
@@ -666,11 +666,11 @@ reset
 
 `${kernel_addr_r}` = `0x42000000`, `${fdt_addr_r}` = `0x52000000`,
 `${scriptaddr}` = `0x40c00000`, `${pxefile_addr_r}` = `0x40e00000`
-(`u-boot/include/configs/rk3576_common.h:23-33`) [V]; `verityaddr=0x40f00000`
+(`u-boot/include/configs/rk3576_common.h`) [V]; `verityaddr=0x40f00000`
 sits in the gap between `pxefile_addr_r` and `kernel_addr_r`.
 
 The `Image` / `rk3576-src.dtb` filenames match what the assembler stages into
-each boot partition (`os/build/src/mkimage-v2.ts:583-584`) [V].
+each boot partition (`os/build/src/mkimage-v2.ts`) [V].
 
 ### 5.4 Composition with `extlinux/extlinux.conf`
 
@@ -698,12 +698,12 @@ CONFIG_BOOTCOMMAND="bootmeth order script; bootflow scan -lb; echo BOOT FAILED -
 ```
 
 `bootmeth order` takes bootmeth **device** names, which are the driver names with
-the `bootmeth_` prefix stripped (`u-boot/boot/bootstd-uclass.c:198-205`) [V] —
+the `bootmeth_` prefix stripped (`u-boot/boot/bootstd-uclass.c`) [V] —
 so `script` here, and `rauc` if option (B) is taken. Names are matched exactly
-(`u-boot/boot/bootmeth-uclass.c:259-272`) [V]. `CONFIG_CMD_BOOTMETH=y` is
+(`u-boot/boot/bootmeth-uclass.c`) [V]. `CONFIG_CMD_BOOTMETH=y` is
 already on in the current config [V].
 
-### 5.5 `mkimage` invocation and the RFCT-020 handoff
+### 5.5 `mkimage` invocation and the assembler handoff
 
 ```sh
 SOURCE_DATE_EPOCH=1577836800 \
@@ -711,18 +711,18 @@ mkimage -T script -C none -n "mos boot" -d boot.cmd boot.scr
 ```
 
 `SOURCE_DATE_EPOCH` is **mandatory**: `mkimage` stamps the legacy image header
-with the current time unless it is set (`u-boot/tools/imagetool.c:180-190`) [V],
+with the current time unless it is set (`u-boot/tools/imagetool.c`) [V],
 which would break the campaign's byte-identical-rebuild contract. `1577836800`
 is the layout-v2 fixed mtime (2020-01-01T00:00:00Z). `-C none` because the
 script is not compressed; `-T script` requires `CONFIG_LEGACY_IMAGE_FORMAT=y`
 in U-Boot, which is already set [V].
 
-**Owner of the assembly step: RFCT-020** (`os/mkimage-v2.sh`). What it must do:
+**Owner of the assembly step: the image assembler** (`os/mkimage-v2.sh`). What it must do:
 
 1. Build `boot.scr` from the `boot.cmd` above with the exact invocation above,
    and write the **same** `boot.scr` to both BOOT-A and BOOT-B (FAT root, since
    bootstd's default filename prefixes are `/` and `/boot/` —
-   `u-boot/boot/bootstd-uclass.c:24` [V]).
+   `u-boot/boot/bootstd-uclass.c` [V]).
 2. Write a per-slot `mos-verity-<slot>.env` into each boot partition
    (`mos-verity-a.env` in BOOT-A, `mos-verity-b.env` in BOOT-B — see §5.3 for
    why the name carries the slot), containing exactly one line:
@@ -731,7 +731,7 @@ in U-Boot, which is already set [V].
    references PARTUUID `...0005`, slot B's references `...0006`.
 3. Not write `extlinux/extlinux.conf` into the v2 boot slots (§5.4).
 4. Apply the fixed mtime `@1577836800` to every staged file before the `mcopy`
-   that fills the slot (`os/build/src/mkimage-v2.ts:600-614`) [V].
+   that fills the slot (`os/build/src/mkimage-v2.ts`) [V].
 5. Zero-fill uenv-a/uenv-b so a freshly flashed device starts from the
    compiled-in default environment rather than stale bytes. (These were p1/p2
    when this section was written; they are **p2/p3** since the loader partition
@@ -778,7 +778,7 @@ or equivalently `systemd-id128 new` (which emits the 32-hex form directly).
 read-only; if the file does not exist there is nothing to mount over. [U] — the
 exact code path lives in `libsystemd-shared`, which was not disassembled here;
 the requirement is stated from documented `machine-id(5)` behaviour. Note this
-is a *rootfs build* requirement, not a U-Boot one, and belongs to RFCT-013/014.
+is a *rootfs build* requirement, not a U-Boot one, and belongs to the root and rootfs work.
 
 ### 6.3 U-Boot side
 
@@ -799,7 +799,7 @@ first-boot unit would never run and the device would never acquire an identity.
 `test -n` on an unset variable is false in hush, so an unset `machine_id`
 correctly yields no argument at all.
 
-### 6.4 Linux side (implemented by RFCT-015)
+### 6.4 Linux side (implemented deliberately)
 
 A oneshot unit gated on the option being absent:
 
@@ -852,7 +852,7 @@ rely on [U]. Ownership is therefore partitioned by variable and by time:
 The unit is **inert on current hardware**: today's U-Boot has no persistent
 environment at all (§1.2), so `fw_setenv` has nothing to write to and no
 `machine_id` can ever reach the kernel command line. Until the custom U-Boot
-ships, **machine-id is per-boot transient**. RFCT-015 should ship the unit
+ships, **machine-id is per-boot transient**. the machine-id oneshot should ship the unit
 anyway — it is condition-gated and harmless — but must not claim machine-id
 persistence as working until §8's checklist passes on hardware.
 
@@ -868,40 +868,40 @@ All four questions answered against the actual vendor kernel tree
 - `DM_INIT` is `bool` and `depends on BLK_DEV_DM=y`
   (`linux/drivers/md/Kconfig:501-503`) [V] — it *cannot* be modular, and it
   cannot be enabled unless device-mapper itself is built in. Both are asserted
-  by `os/boards/common/mos-required.fragment:7-8` [V].
+  by `os/boards/common/mos-required.fragment` [V].
 - `dm_init_init()` is registered with `late_initcall()`
-  (`linux/drivers/md/dm-init.c:319`) [V]. `late_initcall` runs inside
+  (`linux/drivers/md/dm-init.c`) [V]. `late_initcall` runs inside
   `do_basic_setup()`, which completes before `prepare_namespace()` mounts the
   root filesystem — so `/dev/dm-0` exists by the time the kernel looks for
   `root=`. Effective, no initramfs needed.
 - `dm-init` only permits a fixed target list, and `verity` is on it
-  (`linux/drivers/md/dm-init.c:45-52`) [V].
+  (`linux/drivers/md/dm-init.c`) [V].
 
 ### 7.2 `PARTUUID=` references resolve, and `dm-mod.waitfor=` exists
 
 - `dm_get_dev_t()` tries `lookup_bdev()` first and falls back to
-  `name_to_dev_t()` (`linux/drivers/md/dm-table.c:334-341`) [V]. At
+  `name_to_dev_t()` (`linux/drivers/md/dm-table.c`) [V]. At
   `late_initcall` there is no populated `/dev`, so `lookup_bdev()` fails and the
   fallback is what actually runs.
 - `name_to_dev_t()` handles `PARTUUID=` (with optional `/PARTNROFF=`),
   `PARTLABEL=`, `/dev/<name>` and `<major>:<minor>`
-  (`linux/init/do_mounts.c:277-295`) [V], and it is **not** `__init` — it is
-  `EXPORT_SYMBOL_GPL`'d (`do_mounts.c:295`) [V], so calling it from a
+  (`linux/init/do_mounts.c`) [V], and it is **not** `__init` — it is
+  `EXPORT_SYMBOL_GPL`'d (`do_mounts.c`) [V], so calling it from a
   `late_initcall` is legitimate.
   `PARTUUID=` is resolved by `devt_from_partuuid()` walking `block_class`
-  (`do_mounts.c:100-127`) [V].
+  (`do_mounts.c`) [V].
 
   **So layout-v2's fixed partition GUIDs are directly usable in the verity
   table** — no `/dev/mmcblk0p5` hardcoding, and slot A vs slot B differ only by
   which GUID is named.
 - `dm-mod.waitfor=` **exists** on this tree: `static char *waitfor[DM_MAX_WAITFOR]`
   with `module_param_array(waitfor, charp, NULL, 0)`
-  (`linux/drivers/md/dm-init.c:26, 324`) [V], consumed by a
+  (`linux/drivers/md/dm-init.c, 324`) [V], consumed by a
   `while (!dm_get_dev_t(waitfor[i])) msleep(5)` loop before any table is created
-  (`dm-init.c:297-305`) [V].
+  (`dm-init.c`) [V].
 
   **It is required, not optional.** `dm_init_init()` does call
-  `wait_for_device_probe()` first (`dm-init.c:295`) [V], but eMMC card discovery
+  `wait_for_device_probe()` first (`dm-init.c`) [V], but eMMC card discovery
   runs from a delayed workqueue that `wait_for_device_probe()` does not cover,
   so without `dm-mod.waitfor=` the verity table can be created before the
   partitions exist and the device-mapper setup fails outright — the no-initramfs
@@ -914,7 +914,7 @@ All four questions answered against the actual vendor kernel tree
   (`linux/drivers/md/Kconfig:525-538`) [V] — "You'll need to activate the digests
   you're going to use in the cryptoapi configuration".
 - The board config already provides them built-in:
-  `CONFIG_CRYPTO_SHA256=y` (`os/boards/cx3576/bsp/kernel/config/kernel-cx3576z.config:7494`),
+  `CONFIG_CRYPTO_SHA256=y` (`os/boards/cx3576/bsp/kernel/config/kernel-cx3576z.config`),
   `CONFIG_CRYPTO_SHA256_ARM64=y` (`:7558`),
   `CONFIG_CRYPTO_SHA2_ARM64_CE=y` (`:7559`) [V]. Nothing is modular.
   No fragment change is needed today; if a future board's defconfig lacks
@@ -947,7 +947,7 @@ into each slot's `mos-verity-<slot>.env` as `verity_args=` (§5.3, §5.5), toget
 
 Root device: **`root=/dev/dm-0`**, not `/dev/mapper/rootfs` — there is no udev at
 root-mount time, and `devt_from_devname()` resolves `dm-0` through
-`blk_lookup_devt()` (`linux/init/do_mounts.c:184-200`) [V]. Add
+`blk_lookup_devt()` (`linux/init/do_mounts.c`) [V]. Add
 `rootfstype=squashfs ro rootwait`.
 
 ### 7.4 What U-Boot must NOT do to the command line
@@ -977,11 +977,11 @@ root-mount time, and `devt_from_devname()` resolves `dm-0` through
    checklist as an explicit step (§8.6) because it is the single most likely
    failure of this design.
 
-### 7.5 Cross-check with RFCT-013
+### 7.5 Cross-check with the read-only-root work
 
-RFCT-013 is answering §7.1–§7.3 in parallel for `docs/design/ro-root.md`. The
+the read-only-root work is answering §7.1–§7.3 in parallel for `docs/design/ro-root.md`. The
 findings above are all sourced to specific lines in the 6.1.115 tree. If
-RFCT-013 reports anything different — in particular about `PARTUUID=` support or
+the read-only-root work reports anything different — in particular about `PARTUUID=` support or
 `dm-mod.waitfor=` availability — that disagreement must be resolved explicitly
 rather than by picking one document; it is flagged in the completion report.
 
@@ -1051,7 +1051,7 @@ Run in order on the custom U-Boot. Each step is independently observable.
 3. **Redundancy survives a power cut.** Loop `saveenv` in U-Boot while cutting
    power at random points, at least 50 iterations. After every cut, U-Boot must
    come up with a valid environment (no `*** Warning - bad CRC, using default
-   environment`). This is the direct test of PLAN-006 Part F's "mid-env-write"
+   environment`). This is the direct test of the "mid-env-write"
    row.
 4. **Linux ↔ U-Boot round trip.** From Linux: `fw_printenv mos_probe` must print
    the value set in step 1. Then `fw_setenv mos_probe 2`, reboot, and
@@ -1111,7 +1111,7 @@ Ordered by how badly each could sink the approach.
 4. **Boot ROM signing expectations.** [U] Nothing in the current build signs
    SPL or the FIT, and the board evidently boots unsigned images. Whether this
    part is fused for secure boot, and what that would require of a custom
-   U-Boot, is unknown from this environment. PLAN-006 Part A's trust model
+   U-Boot, is unknown from this environment. the trust model
    assumes signature verification of `boot.fit` in U-Boot; that is **not**
    implemented today and is not in M4 scope. Flagging it so it is not assumed.
 5. **Hush fragility around the verity command line** (§7.4 item 5). Mitigation
@@ -1198,11 +1198,11 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
 
 Dependencies this creates on other subtasks, for scheduling:
 
-- **RFCT-020** (`os/mkimage-v2.sh`): generate and install `boot.scr` +
+- **the image assembler** (`os/mkimage-v2.sh`): generate and install `boot.scr` +
   per-slot `mos-verity-<slot>.env`, drop `extlinux.conf` from v2 boot slots,
   zero-fill p1/p2 (§5.5). **Delivered.**
-- **RFCT-014** (rootfs): add `libubootenv-tool` to the package allowlist, ship
+- **the rootfs work** (rootfs): add `libubootenv-tool` to the package allowlist, ship
   `/etc/fw_env.config` from §3.3, ship an empty `/etc/machine-id` (§6.2).
-- **RFCT-015**: the machine-id oneshot of §6.4, inert until this U-Boot lands.
+- **the machine-id oneshot**: the machine-id oneshot of §6.4, inert until this U-Boot lands.
 - **RAUC `system.conf` renderer**: `bootloader=uboot`, `bootname=A`/`bootname=B`,
   `boot-attempts` in 1–9 (§4.1).

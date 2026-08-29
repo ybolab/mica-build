@@ -20,14 +20,14 @@
 #     This line USED TO SAY the opposite -- that host emulation was not
 #     required, because os/rootfs/build-v2.sh created a docker-container
 #     builder with bundled QEMU when the host builder lacked the platform.
-#     RFCT-111 (PLAN-014 M5b) made the rootfs a CHAIN of one Dockerfile per
+#     The rootfs is a CHAIN of one Dockerfile per
 #     stage, each `FROM` the local image tag the previous one was written to,
 #     and a docker-container builder cannot resolve a local tag -- measured, it
 #     reports "pull access denied" about a registry for an image that is
 #     present. build-v2.sh now uses the `default` docker-driver builder and
 #     refuses up front, naming the binfmt command, if it cannot reach the
 #     platform. NOT VERIFIED ON A RUNNER: no arm64-capable host was available
-#     to RFCT-111 M5b, so this is the requirement as analysed, not as observed.
+#     to that change, so this is the requirement as analysed, not as observed.
 #   - the daemon must be able to bind-mount paths the job writes (the
 #     os/build suite points TMPDIR into the workspace for exactly this;
 #     a rootless daemon in a different mount namespace fails its visible-
@@ -74,7 +74,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # PLAN-012 M5, filed as RFCT-223. Six upstreams in three languages are pinned
+  # Six upstreams in three languages are pinned
   # in os/pkgs/podman/versions.env, and until this job existed nothing in the
   # tree ever asked whether any of them had moved. `make podman-pins` asks, and
   # goes red when a pin is behind.
@@ -91,7 +91,7 @@ jobs:
   # tick appears. For the deep lane that is the honest outcome -- there is no
   # runner that can build the image. For an alarm it is the opposite of the
   # point. A pin-freshness check that silently never runs is exactly the state
-  # RFCT-221 measured and this job exists to end, so it runs on the same
+  # the record and this job exists to end, so it runs on the same
   # ubuntu-latest that check.yml's jobs already run on today.
   #
   # It never edits versions.env, never opens a pull request and bumps nothing.
@@ -186,8 +186,8 @@ jobs:
       # BOTH assemblers against synthetic fixtures: byte-identical reassembly,
       # the full GPT contract, and every guard's negative direction.
       #
-      # This step ran os/tests/mkimage-v2-selftest.sh until PLAN-014 M6e
-      # (RFCT-112) deleted the shell assemblers and the two selftests that
+      # This step ran os/tests/mkimage-v2-selftest.sh until later
+      # deleted the shell assemblers and the two selftests that
       # drove them. It is REPOINTED rather than removed because os-build-test
       # was not in any workflow: dropping the step would have taken every
       # assembler assertion out of CI, which is the opposite of what deleting
@@ -204,8 +204,8 @@ jobs:
   # The full pipeline: BSP kernel and U-Boot, the v2 image, its verification,
   # a signed (dev-key) bundle, and os-repart-test against the image just
   # built -- the one suite that cannot run without one. On demand and weekly,
-  # not per push: the kernel and U-Boot builds are the long pole and RFCT-083
-  # recorded them honestly as "hours". Expect the first cold run to take on
+  # not per push: the kernel and U-Boot builds are the long pole and were
+  # measured honestly as "hours". Expect the first cold run to take on
   # the order of 3-6 hours on a capable runner; nobody has measured a real
   # runner yet, and this comment should be corrected to the measured figure
   # when one exists. Warm runs are bounded by what the docker layer cache
@@ -265,7 +265,7 @@ jobs:
         run: make cx3576-uboot-mos
 
       # rootfs (squashfs + dm-verity, built for linux/arm64 -- this needs host
-      # binfmt since RFCT-111 M5b; see the preflight note at the top of this
+      # binfmt since; see the preflight note at the top of this
       # file for what changed and why) and the eleven-partition A/B image
       # around it.
       - name: make os-image-cx3576-v2
@@ -274,7 +274,7 @@ jobs:
       - name: make os-verify-cx3576-v2
         run: make os-verify-cx3576-v2
 
-      # RFCT-113 M7c. THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
+      # THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
       # os/rootfs/build-v2.sh runs it as its last step under `set -e`, so the
       # step above that builds the image has already executed every self-built
       # binary inside the root it packed. A second invocation here would report
@@ -289,7 +289,7 @@ jobs:
       #
       # Both need the arm64 emulation this lane's label already promises: they
       # EXECUTE what is in an arm64 root. Neither has been run on cx3576 by
-      # anybody -- see RFCT-113's disposition -- and this lane is where that
+      # anybody and this lane is where that
       # first happens.
       - name: make os-factory-root-gate
         run: MOS_BOARD=cx3576 make os-factory-root-gate

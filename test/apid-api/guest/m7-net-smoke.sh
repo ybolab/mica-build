@@ -1,5 +1,5 @@
 #!/bin/bash
-# PLAN-022 M7: the kernel half of VLAN, bridge and WireGuard, proved by USING it
+# the kernel half of VLAN, bridge and WireGuard, proved by USING it
 # on a booted device rather than by reading a config file.
 #
 # This runs INSIDE the guest. `os/verify`'s two kernel checks read
@@ -135,7 +135,7 @@ fi
 link_check link-bridge "${BRIDGE_DEV}" ip link add name "${BRIDGE_DEV}" type bridge
 link_check link-wireguard "${WG_DEV}" ip link add dev "${WG_DEV}" type wireguard
 
-# 3. The traversal check RFCT-204 handed forward.
+# 3. The traversal check handed forward.
 #
 # Run AS the user, never by reading mode bits. The M5 defect the amendment
 # corrected -- a key under a 0700 `secrets/` -- left every mode assertion green

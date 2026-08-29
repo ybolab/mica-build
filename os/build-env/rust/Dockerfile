@@ -259,7 +259,7 @@ RUN set -eu; \
         *) say "error: cargo --target ${otriple} produced '${gotelf}', which is not a ${otherelf} ELF; this image cannot cross-build for the architecture the other board ships" ;; \
         esac; \
     else \
-        say "error: cargo --target ${otriple} failed, so os/pkgs/mosd/hack/build-target.sh could not run in this image -- which is the one job RFCT-108 M2c gives it: $(tail -n5 "${d}/cross.log" | tr '\n' ' ')"; \
+        say "error: cargo --target ${otriple} failed, so os/pkgs/mosd/hack/build-target.sh could not run in this image -- which is the one job the record it: $(tail -n5 "${d}/cross.log" | tr '\n' ' ')"; \
     fi; \
     rm -rf "${d}"; \
     [ "${fail}" = 0 ] || { echo "mos-build-rust: the toolchain this image promises is not what it contains; see the errors above" >&2; exit 1; }; \

@@ -122,7 +122,7 @@ export interface VerityVerifySpec {
 /**
  * `veritysetup verify` -- walks the tree in USERSPACE.
  *
- * os/verify-image-v2.sh's (deleted: PLAN-014) note is worth keeping attached to it: it "never
+ * os/verify-image-v2.sh's (deleted) note is worth keeping attached to it: it "never
  * creates a device-mapper target, never calls losetup and never mounts
  * anything, which is what makes this safe to run against the host."
  *

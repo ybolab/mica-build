@@ -7,7 +7,6 @@ mode asks for, and then checks that step actually ran.
 
     make os-verify-test                 # the whole suite
     make os-layout-lint                 # the schema lint over every shipped board
-    make os-layout-lint-test            # the lint's own cases
     make os-verify-cx3576-v2            # verify an assembled image
     bash os/verify/run.sh --help
     bash os/verify/run.sh -t "arith"    # extra arguments go to `bun test`
@@ -496,7 +495,7 @@ plainly here because unreachable code with a passing test reads as live.
 | `src/checks-bootchain.test.ts` | the U-Boot chain, including the BSP byte-compare's PASSING direction, which no shipped tree reaches; and a `mutate()` helper that refuses an edit which changed nothing |
 | `src/checks-cmdline.test.ts` | one set of conclusions over TWO readers — a U-Boot verity env and a GRUB command line composed from `grub.cfg` and the slot's own fragment — with nearly every case run against both |
 | `src/checks-shape.test.ts` | the partition count as a per-board derivation, and the capability pair including the environment probe that keeps it from passing for the wrong reason |
-| `src/checks-freshness.test.ts` | that an image is dated by ITS OWN board's artefacts: both failing directions, the vacuous-green case turned into a skip, and the cross-board tree PLAN-013 M1.1 reported, asserted in both directions so a check that simply never looked at the other board could not satisfy it |
+| `src/checks-freshness.test.ts` | that an image is dated by ITS OWN board's artefacts: both failing directions, the vacuous-green case turned into a skip, and the reported cross-board tree, asserted in both directions so a check that simply never looked at the other board could not satisfy it |
 
 A model exercised only on fixtures its author wrote is a model of its author's
 expectations. Anything that passes on cx3576 alone is half tested.
@@ -868,7 +867,7 @@ per-check parity gate that governed the port compared **conclusions** —
 `RESULT:` line and nothing else — so a preflight that publishes no conclusion
 could not appear as a row, could not diverge, and could not even be counted
 `unclaimed`. The port reached full parity with the guard absent, and no gate in
-this tree noticed for two months. RFCT-225 is that finding; this section is
+this tree noticed for two months; this section is
 where it is written down.
 
 Rebuilt as a register entry, its absence would now show up the way any other
@@ -876,7 +875,7 @@ check's would.
 
 ### The cross-board case, which is the point
 
-`PLAN-013` M1.1 raised a defect in the original: its two inputs were written
+the record a defect in the original: its two inputs were written
 down as the literals `_out/cx3576/rootfs-verity.img` and
 `os/podman/out-arm64/podman`, so an x64 run's freshness was decided by arm64
 artefacts — it passed a stale x64 image and refused a fresh one whenever the

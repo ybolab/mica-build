@@ -35,7 +35,7 @@ mkdir -p /etc/containers/systemd && chmod 0755 /etc/containers/systemd &&
         /etc/systemd/system/local-fs.target.wants/boot.mount &&
     test -L /etc/systemd/system/local-fs.target.wants/boot.mount; }; } &&
 : "etc-containers-systemd.mount is INSTALLED and deliberately NOT linked into" \
-  "local-fs.target.wants below. It was, until PLAN-012 M3: RFCT-102 added the" \
+  "local-fs.target.wants below. It was, until the overlay added the" \
   "symlink because without it the Quadlet directory was the image's empty one" \
   "and nothing persisted. That was the right fix for an image with no switch," \
   "and it pre-empted the switch. Statically enabled, the bind comes up at every" \

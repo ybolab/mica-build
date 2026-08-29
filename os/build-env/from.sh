@@ -13,7 +13,7 @@
 #
 # A LOCAL_ key resolves to a tag that CARRIES its architecture, and --arch is
 # what says which. os/build-env/images.env holds the repository name and no tag;
-# this is the one place that puts the two together. RFCT-234 records why: the
+# this is the one place that puts the two together. the record why: the
 # tag used to be architecture-less, so an arm64 `make build-env` overwrote the
 # amd64 family's four tags on the same host, and an hour later the reverse.
 #

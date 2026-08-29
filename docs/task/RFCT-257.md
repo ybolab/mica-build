@@ -1,6 +1,6 @@
 # RFCT-257 PLAN-028 M2: the bare-continuation resolver
 
-- **status**: in progress — pass 1 of 2. The census is measured and committed; the class A corrections and the dated-record decisions land on it; the resolver itself waits for M1 (RFCT-256) to merge, because both milestones change the same extractor in `docs/verify-citations.sh` and a two-sided edit would collide.
+- **status**: closed — obsoleted by PLAN-029 M2, which deleted `docs/verify-citations.sh` outright. The bare-continuation resolver was a fix to an extractor in a gate that no longer exists; the coupling it policed was removed rather than made more precise. Pass 1's census is in the history.
 - **priority**: P1
 - **owner**: bkd/n50ivit0
 - **createdAt**: 2026-08-28

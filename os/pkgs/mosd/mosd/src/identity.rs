@@ -86,7 +86,7 @@ pub enum Outcome {
 /// random bytes as lowercase hex); `access.device.password_hash` plus the
 /// plaintext device password at `<state_dir>/secrets/device-password`, bumping
 /// `access.device.generation`; and the AP PSK at `<state_dir>/secrets/ap-psk`.
-/// The two secrets are drawn independently — PLAN-008 Part D reads as though
+/// The two secrets are drawn independently — the plan reads as though
 /// the AP PSK could be the device password again, but recovering the WiFi PSK
 /// would then also hand over the root shell, and a second CSPRNG draw costs
 /// nothing. The settings tree is mutated in place and not saved: the caller

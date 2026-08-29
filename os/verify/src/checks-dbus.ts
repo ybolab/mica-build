@@ -576,7 +576,7 @@ const EXT_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// bluez's policy -- os/verify-image-v2.sh:3183 (deleted: PLAN-014). Board-conditional.
+// bluez's policy -- os/verify-image-v2.sh:3183 (deleted). Board-conditional.
 
 const hasBluetooth = (board: Board): boolean => hasRadio(board, 'bluetooth')
 

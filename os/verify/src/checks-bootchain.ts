@@ -16,7 +16,7 @@
 //
 // `os/boards/cx3576/bsp/out/` is not populated in a checkout, so the oracle's own run is
 // `RESULT FAIL (387/395)` with eight conclusions reading `... compare source not
-// found`. PLAN-014's Scope section puts `board/` BSP builds outside this
+// found`. the Scope section puts `board/` BSP builds outside this
 // campaign -- "No change to ... `board/` BSP builds (digest pins only)" -- so
 // the port expresses the absence exactly as the oracle does: same paths, same
 // sentence. Fixtures drive all three directions (byte-identical source,
@@ -343,7 +343,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
  * `BOARD_HAS_STATUS_LED=1` and nothing about polarity. The same three facts per
  * LED are asserted in three places in this tree -- here, at
  * `os/boards/cx3576/bsp/kernel/Dockerfile:134-139`, and in the .dts the kernel build
- * compiles -- and the last two are `board/` BSP files that PLAN-014's Scope
+ * compiles -- and the last two are `board/` BSP files that the Scope
  * section puts outside this campaign ("No change to ... `board/` BSP builds
  * (digest pins only)"), so reading them would be a dependency on a tree this
  * port must not require.

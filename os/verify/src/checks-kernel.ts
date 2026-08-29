@@ -1,4 +1,4 @@
-// The networking symbols PLAN-022 needs from the kernel, read off the image
+// The networking symbols the network reconciler needs from the kernel, read off the image
 // that ships it.
 //
 // x64 ONLY, and the scope is the point. cx3576 builds its kernel in-tree, so
@@ -191,7 +191,7 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
       if (release === '') {
         return [verdict(CONFIG_ID, false,
           'no single /boot/config-* in the packed root, so which kernel config describes the kernel '
-          + 'this image boots cannot be decided. PLAN-022 needs VLAN_8021Q, BRIDGE and WIREGUARD, and '
+          + 'this image boots cannot be decided. The virtual link kinds need VLAN_8021Q, BRIDGE and WIREGUARD, and '
           + 'none of the three can be read')]
       }
       const found = configLines(root, release)

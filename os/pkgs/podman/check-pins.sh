@@ -5,7 +5,7 @@
 #   bash os/pkgs/podman/check-pins.sh                    # live, needs network
 #   bash os/pkgs/podman/check-pins.sh --releases-dir DIR # against recorded JSON
 #
-# PLAN-012 M5, filed as RFCT-223. `versions.env` is the upgrade interface and it
+# `versions.env` is the upgrade interface and it
 # says so itself: "Bump a tag, bump its hash, run the image chain, read the
 # verifier." This script is the other half of that sentence -- the thing that
 # tells a reader there is something to bump. It READS versions.env and never

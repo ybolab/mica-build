@@ -1632,7 +1632,7 @@ fn a_newer_document_keeps_every_v7_interface_kind() {
 
 // --- Quoted path segments --------------------------------------------------
 
-/// The RFCT-135 reproduction as a fixture: the write of a VLAN-named entry
+/// The reproduction as a fixture: the write of a VLAN-named entry
 /// used to fail with `unknown field \`100\`` because the dot-path split the
 /// key into two segments. Quoted, it lands on the key `eth0.100`, and every
 /// layer — get, set of a leaf inside it, TOML persistence, reload — spells it

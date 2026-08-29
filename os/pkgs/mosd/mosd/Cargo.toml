@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 mosd-settings = { path = "../mosd-settings" }
-# The one `com.mos.*` bus-name rule (PLAN-011 D5): the service registry takes
+# The one `com.mos.*` bus-name rule: the service registry takes
 # it rather than restating it.
 mos-busname = { workspace = true }
 serde_json = { workspace = true }

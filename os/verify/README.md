@@ -333,7 +333,6 @@ because those are the failures that would otherwise be silent.
 ```sh
 make os-verify-test          # the whole suite
 make os-layout-lint          # the schema lint, over every board this tree ships
-make os-layout-lint-test     # the lint's own cases, which is the suite filtered
 make os-smoke-test           # execute the built artifacts in the factory root (docker)
 make os-smoke-negative-test  # break that root three ways, require each red (docker)
 make os-factory-root-gate    # is the OCI export the tree that ships? (docker)

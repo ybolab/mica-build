@@ -6,7 +6,7 @@
 //
 // The bytes come from `dd if=IMG bs=1M skip=${PART_START_MIB_x}
 // count=${x_SIZE_MIB}` -- the layout's offset, walked by `walkLayout` exactly as
-// :1491-1517 walks it, and NOT the GPT's first sector, which
+// the shell verifier walked it, and NOT the GPT's first sector, which
 // `gpt-partition-start` asserts separately. The tier order is the layout's too:
 // every `ext4`-role partition in LAYOUT_PARTITIONS order, which on both shipped
 // boards is meta, state, ephemeral, data, so a fifth tier arrives as a new
@@ -393,7 +393,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
  * three tiers and fails on the fourth, i.e. it would look like a defect in the
  * image. A layout-partition ROLE would be the honest place for this if a board
  * ever needed to spell it differently; that is a change to `os/boards/` that
- * changes what the image mounts, and PLAN-014's Scope section puts that outside
+ * changes what the image mounts, and the Scope section puts that outside
  * this task -- "No change to device-side runtime behaviour, image content
  * contracts (outside explicitly anchored baselines)".
  */

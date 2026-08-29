@@ -9,8 +9,8 @@
 # be run on a checkout: it reads the phase files' own bytes and the committed
 # OpenAPI document and compares them. The other half -- run.sh -- needs a built
 # image and a nine-minute boot, which is exactly why the pins it carries could
-# go stale unnoticed (PLAN-028 M4). src/spec-pins.ts's header states what is
-# and is not in scope; docs/task/RFCT-259.md section 4 states the residue.
+# go stale unnoticed. src/spec-pins.ts's header states what is
+# and is not in scope; the record the residue.
 #
 # Same two routes as os/verify/run.sh, for the same reason: a developer with a
 # bun runs on it, and a host without one runs the bun this tree pins by digest

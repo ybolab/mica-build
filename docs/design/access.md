@@ -1,12 +1,11 @@
 # Design: Debug & Maintenance Access
 
-> English | [中文](access.zh.md)
+> English | [中文](../zh/design/access.md)
 >
 > Shell/SSH/console access for an immutable appliance — configuration-driven,
 > auditable, lockable, and absent from production images. Companion to
 > architecture.md §5.
 >
-> The `.zh.md` sibling has not been updated since 2026-08-19 and is stale.
 
 ## 0. How to read the status markers
 
@@ -16,18 +15,18 @@ Every section below that describes a **mechanism** carries one of:
 - **[partial]** — some of it exists; what is missing is named.
 - **[not implemented]** — deliberately, no code at all. Prose only.
 - **[decided]** — a question that was open is now settled by the user, with the
-  campaign that settled it named. Added by RFCT-056 (campaign `apid`). It marks
+  campaign that settled it named. Added deliberately (campaign `apid`). It marks
   a *decision*, not a state of the code: a section can be **[decided]** and
   **[not implemented]** at the same time, and where it is, both markers appear.
 
-`PLAN-010 M4` applies this discipline at milestone level, and its six
+The milestone records apply this discipline at milestone level, and its six
 explicitly-not-claimed items are why that record is trustworthy. A design
 document needs it for the same reason, and for one worse case: **dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
 control that exists only as prose has no mechanism that will ever notice it is
 absent.** An undated design paragraph describing a control is not evidence the
 control exists. One section below — §5.2 — is exactly that, and is marked
-accordingly; §6 was the other until RFCT-085 moved two of its four intents
+accordingly; §6 was the other until later moved two of its four intents
 into code, and it now names which two per intent.
 
 Sections without a marker (§1, §7, §9's reasoning, §11) state principles,
@@ -135,7 +134,7 @@ The reconciler re-renders, compares against what is on disk, and skips the write
 when the bytes match — the drop-in lives on STATE, so an unconditional rewrite
 would cost a flash write on every reconcile. One case is deliberately not a
 no-op: when the drop-in changed and sshd is already running, the unit is
-**reloaded** (RFCT-047), because a rewritten configuration that nothing re-reads
+**reloaded**, because a rewritten configuration that nothing re-reads
 is a configuration that silently did not take effect. Adding or removing a key
 needs neither: sshd re-reads the authorized-keys file on every attempt.
 
@@ -260,7 +259,7 @@ model is stated in `docs/design/provisioning.md` §3.
 Why it was superseded:
 
 - **A password is a persistent credential with no rotation path.** M5 shipped
-  with nothing that could change one after first boot (PLAN-010 M5's own
+  with nothing that could change one after first boot (the own
   recorded follow-up); a key list is rotated by editing a list.
 - **A password is guessable at network speed** the moment sshd is up, and M5's
   brute-force accounting (§6) was never implemented. A public key is not.
@@ -362,7 +361,7 @@ no longer protects SSH; the effective defenses are default-off config, key-only
 persistent auth (§4.1), and — when they exist — META lockdown (§5.2) and audit
 (§6).
 
-## 6. Brute force & audit — **[partial]** (RFCT-085)
+## 6. Brute force & audit — **[partial]**
 
 Four intents were stated here. Two now have code and tests; two do not, and
 saying which is which is the point of this section.
@@ -443,7 +442,7 @@ follow. Today the only path in is apid over an existing network.
 1. BOOT-partition provisioning file (edit on SD/USB with any reader; physical
    possession of the boot medium already implies full control).
 2. Signed config drop via USB (udev-triggered import; vendor-key signature).
-3. AP-mode captive setup (connd + apid; PLAN-008 Part D).
+3. AP-mode captive setup (connd + apid).
 4. HDMI local setup: kiosk display renders the apid wizard with USB
    keyboard/touch input (design/display.md).
 5. Console wizard (tty2) as the no-display, no-WiFi fallback.
@@ -452,9 +451,9 @@ follow. Today the only path in is apid over an existing network.
 
 | Phase | Scope | Campaign | Status |
 |---|---|---|---|
-| 1 | `access.ssh` / `access.console` / `access.device` subtrees + `SshdReconciler`; OpenSSH driven by mosd; `dev`/`prod` image profile | PLAN-010 M5 | **shipped 2026-08-19**, with the credential model **superseded** the same day (§4.2) |
-| 1 | key-based access (schema v4 `authorizedKeys`), transient root password, SSH off and root passwordless on both profiles, `/home` and `/root` on DATA | PLAN-010 addendum, campaign `sshweb` | **shipped 2026-08-19** (locally verified; every on-device behaviour is the user's hardware acceptance) |
-| 1 | brute-force counters (persistent) + bounded audit trail | RFCT-085 | **shipped 2026-08-23** — on STATE, not META (§6 records the deviation) |
+| 1 | `access.ssh` / `access.console` / `access.device` subtrees + `SshdReconciler`; OpenSSH driven by mosd; `dev`/`prod` image profile | M5 | **shipped 2026-08-19**, with the credential model **superseded** the same day (§4.2) |
+| 1 | key-based access (schema v4 `authorizedKeys`), transient root password, SSH off and root passwordless on both profiles, `/home` and `/root` on DATA | campaign `sshweb` | **shipped 2026-08-19** (locally verified; every on-device behaviour is the user's hardware acceptance) |
+| 1 | brute-force counters (persistent) + bounded audit trail | audit work | **shipped 2026-08-23** — on STATE, not META (§6 records the deviation) |
 | 1 | tty3 console shell; META lockdown; hard lockout + physical presence; session/upload audit; factory reset | — | **not implemented** (§5.2, §6) |
 | 2 | wizard TUI + derived PIN + provisioning file/USB import | with connd P2 | not started |
 | 3 | challenge-response, physical presence, variant split enforcement in CI | hardening campaign | not started |
@@ -568,7 +567,7 @@ file and the upgrade appears to do nothing.
 
 ## 11. Where this design diverges from Venus OS, and why
 
-`docs/research/venus-os-access.md` is the reference study. This document cites
+the inventory is the reference study. This document cites
 Venus as its UX reference and then does the opposite in two places. Both
 departures are deliberate; neither was written down until now.
 

@@ -321,7 +321,7 @@ describe('no baked credential', () => {
   })
 
   test('THE TWO LOCKED CHECKS DISAGREE ABOUT AN EMPTY FIELD, and both are the oracle', async () => {
-    // os/verify-image-v2.sh:3765 (deleted: PLAN-014) treats an empty password field as locked (its
+    // os/verify-image-v2.sh:3765 (deleted) treats an empty password field as locked (its
     // awk is `$2 !~ /^[!*]/ && $2 != ""`); :3875-3899 treats it as passwordless
     // login and fails. The second is right. Both are ported AS THEY ARE: a port
     // that hardened the first would agree with the oracle on both shipped
@@ -508,7 +508,7 @@ describe('the reconcile unit and script', () => {
     const documented = packedRootFixture(cx3576)
     try {
       rewrite(documented.root, '/usr/lib/mos/mos-seed-state',
-        t => `${t}# no /mnt/state/mos/shadow here: the file is built in RAM (RFCT-105)\n`)
+        t => `${t}# no /mnt/state/mos/shadow here: the file is built in RAM\n`)
       expect(await verdictOf(documented, 'seed-state-no-shadow-on-state')).toBe('pass')
     }
     finally {

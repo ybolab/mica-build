@@ -89,7 +89,7 @@ ARG MOS_BUILD_RUST
 # report names the base, the architecture or the argument. The same is true of
 # the OCI layout the docker-container driver is handed instead: a layout named
 # after a tag holds that tag's one architecture, and buildx serves it rather
-# than refusing the mismatch (`docs/task/RFCT-231.md:232-234`).
+# than refusing the mismatch.
 ARG MOS_BUILD_BASE_NATIVE
 
 # Sources: fetched once, hashed, shared by every builder below.

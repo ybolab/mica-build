@@ -2,13 +2,13 @@
  * The build-time half of `test/apid-api`: every phase literal that is ALSO
  * stated in `os/pkgs/mosd/apid/openapi.json`, asserted to agree with it.
  *
- * WHAT THIS EXISTS FOR (PLAN-028 M4, RFCT-259). A milestone changes a shipped,
+ * WHAT THIS EXISTS FOR. A milestone changes a shipped,
  * wire-visible value -- a status, a media type, a response member -- and a phase
  * under `src/phases/` goes on pinning the OLD value as a literal. Nothing fails
  * until somebody boots the image, because the phase only runs under a booted
  * run: `make os-apid-api-test`, forty minutes and a built image away. This file
  * closes the part of that gap that needs no boot, and says nothing about the
- * part that does (`docs/task/RFCT-259.md` section 4 is the residue).
+ * part that does.
  *
  * THERE ARE EXACTLY TWO COPIES OF EVERY VALUE, AND THIS ASSERTS THEY AGREE.
  * The phase file's literal is read out of the phase file's own bytes -- never
@@ -41,7 +41,7 @@
  * HEADERS (`openapi.json` carries no `headers` member anywhere -- measured:
  * zero occurrences), the `/api/v1/state/...` bodies (declared `ResourceValue`,
  * i.e. any JSON), and everything timing-, console- or reboot-shaped. Those are
- * RFCT-259's section 4, not this file's silence.
+ * the section 4, not this file's silence.
  *
  * Runs with no network, no docker, no QEMU and no image:
  *

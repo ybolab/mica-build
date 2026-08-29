@@ -11,7 +11,7 @@
 // that never equals a PASS, so pass-vs-skip is a named divergence rather than
 // noise in a total.
 //
-// Identity is assigned rather than parsed. os/verify-image-v2.sh (deleted: PLAN-014) prints
+// Identity is assigned rather than parsed. os/verify-image-v2.sh (deleted) prints
 // `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>` and nothing else -- measured
 // on both boards' real images 2026-08-25, every one of 398 and 312 stdout lines
 // is a verdict line or the final RESULT line -- but the prose is not an

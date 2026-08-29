@@ -7,7 +7,6 @@
 # Four sections, each checked forward and backward:
 #
 #   1. docs/design/*.md      <-> docs/README.md
-#   2. docs/research/*.md    <-> docs/README.md
 #   3. docs/task/RFCT-*.md   <-> docs/task/index.md
 #   4. docs/plan/PLAN-*.md   <-> docs/plan/index.md
 #
@@ -112,9 +111,6 @@ check_readme_dir() {
 
 echo "docs/verify-index.sh: design/ <-> $README"
 check_readme_dir design
-echo "docs/verify-index.sh: research/ <-> $README"
-check_readme_dir research
-
 # --- section 3: docs/task/RFCT-*.md <-> docs/task/index.md -----------------
 echo "docs/verify-index.sh: task/RFCT-*.md <-> $TASK_INDEX"
 

@@ -3,7 +3,7 @@
 // FAILURE SIGNAL. Its exit status.
 //
 // SOURCE_DATE_EPOCH IS NOT OPTIONAL and it is not a flag -- mkimage reads it
-// out of the ENVIRONMENT. os/mkimage-v2.sh's (deleted: PLAN-014) comment: "without it mkimage
+// out of the ENVIRONMENT. os/mkimage-v2.sh's (deleted) comment: "without it mkimage
 // stamps the legacy image header with the current time, which would break the
 // byte-identical rebuild contract." So it is a required field here rather than
 // something a caller may forget, and the empty string is refused as loudly as
@@ -15,14 +15,14 @@ import type { Toolbox, ToolResult } from '../toolbox.ts'
 export interface BootScriptSpec {
   readonly input: string
   readonly output: string
-  /** `-n`. os/mkimage-v2.sh (deleted: PLAN-014) passes "mos boot"; it lands in the legacy header. */
+  /** `-n`. os/mkimage-v2.sh (deleted) passes "mos boot"; it lands in the legacy header. */
   readonly name: string
   /** The bare epoch -- FILE_MTIME without its leading `@`. Geometry.ext4.sourceDateEpoch is it. */
   readonly sourceDateEpoch: string
 }
 
 export function bootScriptArgs(spec: BootScriptSpec): string[] {
-  // -T script -C none: os/mkimage-v2.sh's (deleted: PLAN-014) shape, and no -A. A boot script is
+  // -T script -C none: os/mkimage-v2.sh's (deleted) shape, and no -A. A boot script is
   // architecture-independent; passing one would put a claim in the header that
   // U-Boot then checks.
   return ['mkimage', '-T', 'script', '-C', 'none', '-n', spec.name, '-d', spec.input, spec.output]

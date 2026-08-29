@@ -1,6 +1,6 @@
 # Design: Local Display (HDMI Kiosk UI)
 
-> English | [中文](display.zh.md)
+> English | [中文](../zh/design/display.md)
 >
 > A dedicated product UI on the HDMI output — status panel, setup wizard,
 > and application UI on an attached screen, with optional touch/USB input.
@@ -78,7 +78,7 @@ provide:
 - Output and default rotation, which are a comment in the board definition and
   not yet a key: "Display defaults, recorded rather than declared: the output is
   hdmi and the default rotation is 0"
-  (`os/boards/cx3576/board.env:487-488`). DisplayConfig therefore has no
+  (`os/boards/cx3576/board.env`). DisplayConfig therefore has no
   board-supplied default, and gains one when a key does.
 
 ## 6. Security notes

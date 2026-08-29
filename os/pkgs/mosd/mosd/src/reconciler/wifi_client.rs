@@ -192,7 +192,7 @@ fn validate_interface(interface: &str) -> Result<()> {
 /// True when `value` can be carried inside a wpa_supplicant double-quoted
 /// string with no way of ending the string early.
 ///
-/// **Lifted into `mosd-settings`** (PLAN-026 M3), for the reason the length
+/// **Lifted into `mosd-settings`**, for the reason the length
 /// bound was lifted before it: a write surface has to be able to refuse what
 /// this renderer cannot carry, and a second copy of the bytes could disagree
 /// with the first. `mosd_settings::is_wpa_quotable` states the predicate --
@@ -237,7 +237,7 @@ fn encode_psk(psk: &str) -> Result<String> {
         return Ok(psk.to_string());
     }
     // IEEE 802.11i's passphrase bounds, called and no longer restated: they
-    // were lifted into `mosd-settings` beside the typed model (PLAN-023 M6) so
+    // were lifted into `mosd-settings` beside the typed model so
     // that the crate holding `WifiNetwork` states its own field's rule and
     // every write surface can run the same one. The reason they are checked at
     // all is unchanged — wpa_supplicant rejects an out-of-range passphrase by
@@ -773,8 +773,8 @@ mod tests {
     }
 
     /// The bound the renderer enforces is the one `mosd-settings` states, and
-    /// there is no second copy of it left here (PLAN-023 M6's lift for the
-    /// length band, PLAN-026 M3's for the quotable predicate).
+    /// there is no second copy of it left here (the lift for the
+    /// length band, the for the quotable predicate).
     ///
     /// Asserted as an agreement over a table rather than by reading the
     /// constants: what matters is that no input exists for which the renderer
@@ -792,7 +792,7 @@ mod tests {
             &"a".repeat(64),
             &"A".repeat(64),
             &"x".repeat(200),
-            // PLAN-026 M3: the quotable half of the agreement. Each of these
+            // the quotable half of the agreement. Each of these
             // is inside the length band and was accepted by the lifted rule
             // while the renderer refused it -- accepted at a write surface,
             // dead at render time.

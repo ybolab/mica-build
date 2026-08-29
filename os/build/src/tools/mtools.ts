@@ -30,7 +30,7 @@ export interface FatSpec {
    * pin it, because a slot's filesystem is that slot's: BOOT_A carries
    * C3576003 and BOOT_B C3576004, and an image whose volume id came out
    * different from the pinned one is a reproducibility failure only a byte
-   * comparison would see. os/update/bundle.sh (deleted: PLAN-014) pins NEITHER label nor volume
+   * comparison would see. os/update/bundle.sh (deleted) pins NEITHER label nor volume
    * id, and says why: "one image, two possible destinations" -- a bundle's
    * boot payload is installed into whichever boot slot is inactive, so it
    * cannot carry that slot's FAT identity. `--invariant` is what keeps the

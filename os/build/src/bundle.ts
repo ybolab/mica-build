@@ -1,4 +1,4 @@
-// os/update/bundle.sh (deleted: PLAN-014), ported: the signed RAUC update bundle.
+// os/update/bundle.sh (deleted), ported: the signed RAUC update bundle.
 //
 // One bundle carries one image per slot class of the RAUC slot group --
 // `rootfs.img`, the raw squashfs+dm-verity slot image, and `boot.vfat`, the
@@ -52,7 +52,7 @@ import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
 // stdout, the loop body never runs and the range guard passes by finding
 // nothing. requireBootAttempts refuses an empty read by name. It can only turn
 // a vacuous pass into a refusal, and today's os/boards/cx3576/boot.cmd declares
-// four credits, so it changes nothing about the bytes. os/mkimage-v2.sh's (deleted: PLAN-014) copy
+// four credits, so it changes nothing about the bytes. os/mkimage-v2.sh's (deleted) copy
 // of the same guard is covered by accident -- checkBootCmdTokens runs next and
 // refuses a boot.cmd with no `rauc.slot=` in it -- while bundle.sh runs no such
 // second guard, so it is the one path where the hole is reachable.
@@ -270,7 +270,7 @@ export interface BundleVerityEnvInputs {
  * some other build's root hash, would otherwise land in a signed bundle and
  * fail on hardware after the slot was already written.
  *
- * Two things differ from os/mkimage-v2.sh's (deleted: PLAN-014) mkverityenv(), both the shell's and
+ * Two things differ from os/mkimage-v2.sh's (deleted) mkverityenv(), both the shell's and
  * both kept: an absent dm-mod.create= and an absent dm-mod.waitfor= share one
  * sentence here, and the salt is additionally required to appear in the table --
  * the assembler checks the salt only against the pin, not against the table it
@@ -426,7 +426,7 @@ export function spliceBootImages(template: string, bootImages: string): string {
  * replacement is NOT literal in JavaScript -- `replaceAll` expands `$&`,
  * `` $` ``, `$'`, `$$` and `$n` inside it -- while a replacer function is never
  * scanned for those, so the value lands byte for byte whatever it contains.
- * `os/update/bundle.sh:289` (deleted: PLAN-014) carries the same defect under a different
+ * `os/update/bundle.sh:289` (deleted) carries the same defect under a different
  * character, substituting with `sed`, where an `&` in the replacement expands
  * to the whole match. Measured without the fix: `mos-a$&b` renders as
  * `compatible=mos-a@COMPATIBLE@b`, a manifest nobody wrote, which
@@ -712,7 +712,7 @@ export async function openBundleToolbox(options: {
 /**
  * Build and sign the bundle.
  *
- * The order of the refusals is os/update/bundle.sh's (deleted: PLAN-014) and is kept: a reader
+ * The order of the refusals is os/update/bundle.sh's (deleted) and is kept: a reader
  * running the same broken input through both should get the same sentence
  * first.
  */

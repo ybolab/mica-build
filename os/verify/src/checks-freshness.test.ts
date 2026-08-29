@@ -1,5 +1,5 @@
 // The freshness guard, driven from the failing side and from the cross-board
-// side -- which is the case PLAN-013 M1.1 reported and the reason this check
+// side -- which is the reported case and the reason this check
 // was rebuilt rather than transcribed.
 //
 // Every fixture sets its mtimes with `utimesSync` rather than by writing files
@@ -180,7 +180,7 @@ describe('image-fresher-than-build-inputs', () => {
   })
 
   test('RED when the container engine is newer than the image', async () => {
-    // The incident this guard was built for: PLAN-012 M2's six-hour-old image,
+    // The incident this guard was built for: the six-hour-old image,
     // built from the distribution's podman while the self-built one sat beside
     // it, newer and unshipped.
     const r = await drive(world(x64, { roots: { x64: OLD }, engines: { amd64: NEW } }))
@@ -231,7 +231,7 @@ describe('image-fresher-than-build-inputs', () => {
   })
 })
 
-describe('PLAN-013 M1.1: one board’s run is not decided by another board’s artefacts', () => {
+describe('one board’s run is not decided by another board’s artefacts', () => {
   /**
    * The tree the original defect needed: x64's own inputs old, cx3576's newer.
    *

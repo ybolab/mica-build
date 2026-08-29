@@ -298,7 +298,7 @@ export function auditChain(
   if (!last.targets.includes(ociTarget)) {
     faults.push({
       path: last.path,
-      message: `is the last stage and defines no \`AS ${ociTarget}\` target. That target is the packed root exported as an OCI image, and it is what RFCT-113's smoke runner executes the self-built binaries inside; without it there is nothing to run them in, and a build that ships them unexecuted is indistinguishable from one that ran them all and passed`,
+      message: `is the last stage and defines no \`AS ${ociTarget}\` target. That target is the packed root exported as an OCI image, and it is what the smoke runner executes the self-built binaries inside; without it there is nothing to run them in, and a build that ships them unexecuted is indistinguishable from one that ran them all and passed`,
     })
   }
   return faults
@@ -590,7 +590,7 @@ export function ociRecord(fields: {
 }): string {
   return [
     `# The ${fields.board} factory root, exported as an OCI image by os/rootfs/stages/90-pack.Dockerfile.`,
-    '# RFCT-113 M7: the root the self-built binaries are executed in before the image ships them.',
+    '# The root the self-built binaries are executed in before the image ships them.',
     `# Load it with: docker load -i ${fields.archive}`,
     '#',
     '# The sha256 is what this build produced, for comparison with another build.',

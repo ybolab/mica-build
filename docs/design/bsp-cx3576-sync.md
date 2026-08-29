@@ -29,7 +29,7 @@ this record exists to prevent.
 
 | | |
 |---|---|
-| Repository | `ssh://git@git.ds.cc:33/miehq/cx3576-alpine.git` |
+| Repository | `ssh://git@git.ds.cc/miehq/cx3576-alpine.git` |
 | Relationship | `os/boards/cx3576/bsp/` is **derived from** that tree, not authored in this repository |
 
 `os/boards/cx3576/bsp/` is a drifted derivative, not a mirror. Measured at `b4b7c72`

@@ -1,6 +1,6 @@
 # rauc-sign
 
-Update trust tooling (PLAN-006 Part A/L). This one crate carries both
+Update trust tooling. This one crate carries both
 halves of the TUF trust model because they share one metadata format:
 
 - the **release side** (`rauc-sign`, phase 1): runs on a build host, never on a
@@ -16,11 +16,11 @@ halves of the TUF trust model because they share one metadata format:
 Two binaries, both from cargo's auto-discovery — there is no `[[bin]]` section,
 so each binary's name is the thing that declares it:
 
-- `rauc-sign` — the TUF signing tool (phase 1, RFCT-016). Creates and
+- `rauc-sign` — the TUF signing tool (phase 1). Creates and
   maintains the static TUF repository that pins RAUC bundles. Named by the
   package, with `src/main.rs`.
 - `rauc-verify` — the device-side metadata and target verifier
-  (phase 2 first half, RFCT-088). Walks the metadata from a pinned root and
+  (phase 2 first half). Walks the metadata from a pinned root and
   prints a verified local target path for an installer to consume. Named by
   its own filename, `src/bin/rauc-verify.rs`.
 
@@ -33,8 +33,7 @@ Two neighbours that are deliberately not here:
 
 ## Phase-1 scope of `rauc-sign`
 
-`rauc-sign` implements the repository half of the trust model in PLAN-006 Part
-A: the four TUF top-level roles (`root`, `targets`, `snapshot`, `timestamp`),
+`rauc-sign` implements the repository half of the trust model on record: the four TUF top-level roles (`root`, `targets`, `snapshot`, `timestamp`),
 a sign/verify roundtrip, and target metadata that pins each RAUC bundle's
 sha256, length and dm-verity root hash.
 
@@ -48,7 +47,6 @@ Explicitly out of scope for the whole crate, still:
   different online key can still only be introduced by a fresh repository;
 - transport: nothing here fetches metadata over a network, on either side;
 - mosd's install orchestration (RAUC install/confirm) — named as roadmap by
-  RFCT-083;
 - RAUC's own CMS bundle signature, which is a separate key hierarchy applied
   by `rauc bundle` at build time.
 

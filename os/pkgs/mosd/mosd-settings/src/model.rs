@@ -437,7 +437,7 @@ pub fn is_wpa_quotable(value: &str) -> bool {
 
 /// Refuse a [`WifiNetwork::psk`] no WPA2 supplicant could use.
 ///
-/// **Lifted out of the station reconciler's renderer** (PLAN-023 M6): the
+/// **Lifted out of the station reconciler's renderer**: the
 /// bound used to live inside `mosd`'s private `encode_psk`, so the one crate
 /// that holds the typed model could not state its own field's rule and every
 /// write surface accepted a key the renderer would later refuse. The renderer
@@ -465,7 +465,7 @@ pub fn is_wpa_quotable(value: &str) -> bool {
 ///
 /// A passphrase must also be one the station renderer can carry, which is
 /// [`is_wpa_quotable`]. That half was measured missing here by
-/// `docs/task/RFCT-215.md` section 6 item 3: a key carrying a quote or a
+/// A key carrying a quote or a
 /// backslash passed this function, was stored, and was then refused at render
 /// time with the error visible only in live state.
 ///
@@ -512,7 +512,6 @@ pub struct WifiApSettings {
     pub ssid: Option<String>,
     /// Pre-shared key; absent means derive it from the device credential at
     /// render time. A fleet-wide constant default is forbidden
-    /// (`docs/plan/PLAN-008.md` Part D auth note).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub psk: Option<String>,
     /// 2.4 GHz channel the access point uses.

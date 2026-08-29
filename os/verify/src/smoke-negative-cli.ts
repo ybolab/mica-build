@@ -18,7 +18,7 @@ import { CASES, negativeRun } from './smoke-negative.ts'
 
 const USAGE = `usage: bun run src/smoke-negative-cli.ts [--board NAME]
 
-RFCT-113's three negative tests. Each one really makes its defect -- a
+the three negative tests. Each one really makes its defect -- a
 wrong-arch binary, a missing soname, a version-skewed binary -- in a real image
 built from that board's real factory root, and requires the smoke run to go red
 naming the right cause.

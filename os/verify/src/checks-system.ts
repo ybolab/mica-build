@@ -20,7 +20,7 @@
 // crypt(3) prefix out of `transient.rs`, both the oracle's own reads: mosd fails
 // closed on a profile it cannot parse, so an image whose key had drifted would
 // self-provision to prod and disable its own sshd with every check still green.
-// Reading those sources is in scope under PLAN-014's Scope section -- "No change
+// Reading those sources is in scope under the Scope section -- "No change
 // to ... `mosd/` Rust sources" -- and nothing here writes to them.
 //
 // One defect is reproduced rather than fixed:

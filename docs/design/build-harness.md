@@ -7,36 +7,34 @@ and a confusing red one have until now lived in task records and in operators'
 heads. They are collected here so that the next tool does not rediscover them by
 failing first.
 
-**Two kinds of claim, and they are marked.** A claim with a citation is a fact
-about a file in this tree, and `docs/verify-citations.sh` checks it. A claim
-marked *measured* is an observation of **this host** on the date given; no gate
-can check it, it can go stale under you, and it is dated for that reason. The
-host measurements below were taken on **2026-08-28** unless another date is
-given.
+**A claim marked *measured* is an observation of THIS host** on the date given.
+No gate can check it, it can go stale under you, and it is dated for that
+reason. The host measurements below were taken on **2026-08-28** unless another
+date is given.
 
 ## 1. bun runs in a pinned container, and that is a decision
 
 Both bun suites resolve their runtime the same way, from the digest pinned as
 `IMAGE_BUN_1` in `os/build-env/images.env`. `os/verify` reads it as
 `BUN_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1`
-(`os/verify/run.sh:280`), and `test/apid-api/run.sh` the same:
+(`os/verify/run.sh`), and `test/apid-api/run.sh` the same:
 
     bash os/build-env/from.sh --ref IMAGE_BUN_1
 
 `test/apid-api/run.sh` does exactly that, with an override for a caller who
 means it —
 `BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)}"`
-(`test/apid-api/run.sh:101`). The pin is a digest and not the `oven/bun:1` tag
+(`test/apid-api/run.sh`). The pin is a digest and not the `oven/bun:1` tag
 because that tag is repointed upstream on every 1.x release, and this harness is
 what decides whether apid's API is judged conformant.
 
 `os/verify/run.sh` holds the one seam where host-or-container is decided:
 "The seam. Everything above and below passes an argv and reads a status,"
-(`os/verify/run.sh:433-435`). Above it the route is chosen once —
-`WHY="MOS_VERIFY_CONTAINER=1"` (`os/verify/run.sh:196-198`) — and the
+(`os/verify/run.sh`). Above it the route is chosen once —
+`WHY="MOS_VERIFY_CONTAINER=1"` (`os/verify/run.sh`) — and the
 environment variable is documented as
 "MOS_VERIFY_CONTAINER=1 use the pinned container even where a host bun exists,"
-(`os/verify/run.sh:91`). That is the knob to reach for when you want to compare
+(`os/verify/run.sh`). That is the knob to reach for when you want to compare
 the two routes on one machine.
 
 **The container is a pin, not a workaround.** *Measured 2026-08-28:* this host
@@ -50,11 +48,11 @@ does have a usable bun and it works.
 
 So a host route is *possible* here and is nevertheless not taken. The reason is
 recorded where the decision was made: `run.sh` has
-"no host-bun route for any of its other bun invocations" (`docs/task/RFCT-230.md:69`)
+"no host-bun route for any of its other bun invocations"
 — the suite and the `/healthz` probe both run in the pinned image — so a host
 route for one caller of three would be
 "a second route for one of three callers, and configurability"
-(`docs/task/RFCT-230.md:71`) nobody asked for. Read a green run announcing the
+nobody asked for. Read a green run announcing the
 container as the pin doing its job, not as a fallback.
 
 ## 2. The pinned bun image carries no docker client
@@ -65,7 +63,7 @@ doing:
 "docker client, so inside it every route ends at `docker: command not found`."
 (`os/verify/Dockerfile:16-17`), and the pin's own block says the same —
 "this every route inside it ends at `docker: command not found`. Mounting the"
-(`os/build-env/images.env:103-104`) daemon socket does not help, because what is
+(`os/build-env/images.env`) daemon socket does not help, because what is
 missing is the client, not the socket.
 
 `os/verify/Dockerfile` exists solely to close that gap, and it is the file to
@@ -76,7 +74,7 @@ reuse rather than a second one to write. It is two digest `FROM`s and one copy �
 whose source moved upstream fails at build rather than three steps later inside a
 verify run. The client half is pinned as `IMAGE_DOCKER_CLI_28`, chosen because
 the "`-cli` variant carries the client and NOT dockerd. The client is a static"
-(`os/build-env/images.env:109-110`) binary, which is what lets an alpine-built
+(`os/build-env/images.env`) binary, which is what lets an alpine-built
 client run on the debian-based bun image.
 
 Both `os/verify/run.sh` and `test/apid-api/run.sh` build that image on demand and
@@ -87,10 +85,10 @@ builds it; whichever of the two runs first pays the few seconds for it.
 ## 3. The Rust gate: `os/pkgs/mosd/hack/check.sh`
 
 The gate is five commands, unremarkable in themselves —
-`cargo fmt --all --check` (`os/pkgs/mosd/hack/check.sh:6`),
+`cargo fmt --all --check` (`os/pkgs/mosd/hack/check.sh`),
 `cargo clippy --workspace --all-targets --locked -- -D warnings`
-(`os/pkgs/mosd/hack/check.sh:7`) and
-`cargo nextest run --workspace --locked` (`os/pkgs/mosd/hack/check.sh:8`) among
+(`os/pkgs/mosd/hack/check.sh`) and
+`cargo nextest run --workspace --locked` (`os/pkgs/mosd/hack/check.sh`) among
 them. **Run it unmodified.** The harness is the container it runs in, not an
 edit to the script; every trap below is fixed by how you invoke the container.
 
@@ -151,12 +149,12 @@ dependencies are broken. They are not: with `/tools/bin` first,
 dbus-daemon` in the image prints nothing. Several tests assert real bus
 behaviour over a private session bus and are written to fail rather than skip
 without it: "real bus behaviour over a private session bus and MUST NOT skip: install it"
-(`os/pkgs/mosd/apid/tests/e2e.rs:53`), and the identical refusal is repeated in
+(`os/pkgs/mosd/apid/tests/e2e.rs`), and the identical refusal is repeated in
 "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts"
-(`os/pkgs/mosd/mosd/tests/scan.rs:76`). Measured without it, the gate exits
+(`os/pkgs/mosd/mosd/tests/scan.rs`). Measured without it, the gate exits
 **`rc=100`**:
 
-    thread 'web_flow_end_to_end' panicked at apid/tests/e2e.rs:51:9:
+    thread 'web_flow_end_to_end' panicked at apid/tests/e2e.rs:9:
     dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. [...]
     Summary [   5.853s] 57/705 tests run: 56 passed, 1 failed, 0 skipped
     warning: 648/705 tests were not run due to test failure
@@ -164,7 +162,7 @@ without it: "real bus behaviour over a private session bus and MUST NOT skip: in
     rc=100
 
 **Which** test surfaces it first is scheduling, not signal: `bus_roundtrip`
-(`os/pkgs/mosd/mosd/tests/bus.rs:107`) carries the same requirement, and nextest
+(`os/pkgs/mosd/mosd/tests/bus.rs`) carries the same requirement, and nextest
 cancels the remaining 648 at the first failure. Read `rc=100` together with a
 `dbus-daemon was not found` panic as one fact, whatever the test name is.
 `apt-get install -y dbus` in the container before the gate is what makes it
@@ -194,7 +192,7 @@ found — and the file is there; it is the mount that is empty. `os/verify/run.s
 carries a preflight against exactly this, whose message is worth reading before
 you debug anything else:
 "The mount succeeded and delivered nothing, which is how a bind mount of /tmp"
-(`os/verify/run.sh:423`).
+(`os/verify/run.sh`).
 
 ## 5. arm64 on this host: build yes, execute no
 
@@ -239,12 +237,11 @@ is only worth as much as the amd64 control run beside it.
 `/proc/sys/fs/binfmt_misc/` is empty here — `ls -A` prints nothing. The
 documented remedy, `docker run --privileged --rm tonistiigi/binfmt --install
 arm64`, does not close it. That is the one claim here taken from a record rather
-than re-run: RFCT-206 measured that it reports success and leaves the directory
+than re-run: it was measured reporting success and leaves the directory
 unchanged, so
 "the registration does not stick in this container's"
-(`docs/task/RFCT-206.md:371`) namespace. The same record states the inspection
-trap in the same breath, a throwaway build having
-"printed `aarch64`" (`docs/task/RFCT-206.md:374`) where `docker buildx ls`
+namespace. The inspection trap comes in the same breath, a throwaway build having
+"printed `aarch64`" where `docker buildx ls`
 under-reported it as amd64/386 only.
 
 **The consequence worth carrying.** Reading a **file** out of an arm64 image
@@ -260,7 +257,7 @@ not blocked here, while anything that has to run one is.
 
 ### 5.1 A single-architecture tag does not refuse `--platform`; it misresolves
 
-*Measured 2026-08-28 (RFCT-235), appended to the above rather than replacing
+*Measured 2026-08-28, appended to the above rather than replacing
 any of it.*
 
 The capability question above has a companion that reads like it and is not
@@ -309,10 +306,10 @@ One build, two architectures, one builder.
 `test/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
 it is absent it refuses by name and prints the two commands that make it:
 "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
-(`test/apid-api/run.sh:332`). The same sentence guards the missing directory one
+(`test/apid-api/run.sh`). The same sentence guards the missing directory one
 step earlier:
 "does not exist, so there is no image to boot; this harness builds nothing."
-(`test/apid-api/run.sh:48`).
+(`test/apid-api/run.sh`).
 
 Those two commands are the last two links of a longer chain, and the earlier
 links fail the same way — as an apparently broken harness. In order:
@@ -320,72 +317,60 @@ links fail the same way — as an apparently broken harness. In order:
 1. **The packages.** `bash os/pkgs/rauc/build.sh` and `bash os/pkgs/podman/build.sh`
    produce `_out/<board>/rauc` and `_out/<board>/podman`. The rootfs stages
    consume those directories by name — `COPY ${RAUC_DIR}/ /tmp/rauc/`
-   (`os/rootfs/stages/32-feature-rauc.Dockerfile:35`) and
+   (`os/rootfs/stages/32-feature-rauc.Dockerfile`) and
    `COPY ${PODMAN_DIR}/ /tmp/podman/`
-   (`os/rootfs/stages/31-feature-containers.Dockerfile:103`) — and the build
+   (`os/rootfs/stages/31-feature-containers.Dockerfile`) — and the build
    passes each one only when the matching feature is in the chain, as
    `--arg PODMAN_DIR="_out/$MOS_BOARD/podman"`
-   (`os/rootfs/build-v2.sh:642`) and
+   (`os/rootfs/build-v2.sh`) and
    `--arg RAUC_DIR="_out/$MOS_BOARD/rauc"`
-   (`os/rootfs/build-v2.sh:644`).
+   (`os/rootfs/build-v2.sh`).
 2. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build-v2.sh`.
 3. **The image.** `bash os/build/run.sh --mkimage-x64`, which writes the A/B disk
    image around the rootfs slot. Its name is read from the board definition,
-   `IMAGE_LATEST_NAME=x64-mos-v2-latest.img` (`os/boards/x64/board.env:182`),
+   `IMAGE_LATEST_NAME=x64-mos-v2-latest.img` (`os/boards/x64/board.env`),
    rather than repeated in the harness.
 4. **The run.** `make os-apid-api-test`, or `bash test/apid-api/run.sh`.
    `bash test/apid-api/run.sh --dry-run` does the preconditions and the network
    discovery and boots nothing, which is how to check the harness in seconds.
 
+**This suite runs nowhere in CI, and that is the standing decision rather than
+an oversight.** It boots an x64 image under QEMU, so putting it on push would
+lengthen the feedback loop for a suite that is run deliberately, against an
+image the harness does not build. What CI does check is narrower and cheap:
+`make os-apid-api-spec-pins` asserts that the suite's expectations still agree
+with the committed OpenAPI document. Run the suite itself by hand after a
+change to apid's surface.
+
 The boot engine itself is `test/apid-api/src/qemu.ts`, beside the suite that
-drives it. It was a shell tool under `os/tools/` until RFCT-230 ported it; that
+drives it. It was a shell tool under `os/tools/` until later ported it; that
 file is gone, and a search for it is a search for something deleted.
 
-## 7. The docs gates
+## 7. The docs gate
 
-Two scripts, both read-only, both needing nothing but bash and coreutils.
+One script, read-only, needing nothing but bash and coreutils.
 
 `bash docs/verify-index.sh` asserts that the indexes agree with the tree **in
-both directions** — it is written to catch a rename, because
-"Asserts that the three document indexes agree with the tree, in BOTH"
-(`docs/verify-index.sh:2`) directions is the half that a forward-only check
-omits. It covers four pairings:
-`1. docs/design/*.md      <-> docs/README.md` (`docs/verify-index.sh:9`),
-the same for `docs/research/`,
-`3. docs/task/RFCT-*.md   <-> docs/task/index.md` (`docs/verify-index.sh:11`),
-and `4. docs/plan/PLAN-*.md   <-> docs/plan/index.md`
-(`docs/verify-index.sh:12`).
+both directions** — it is written to catch a rename, because a forward-only
+check passes happily on an index full of entries pointing at files that no
+longer exist. It covers three pairings:
+
+1. `docs/design/*.md` <-> `docs/README.md`
+2. `docs/task/RFCT-*.md` <-> `docs/task/index.md`
+3. `docs/plan/PLAN-*.md` <-> `docs/plan/index.md`
+
 So a new design page needs its row in `docs/README.md`, a new task file needs
 its row in `docs/task/index.md` and a new plan needs its row in
-`docs/plan/index.md`, in the same commit.
+`docs/plan/index.md`, in the same commit. Sections 2 and 3 also compare each
+record's status head with its index marker, so a row ticked complete over a
+record that says pending fails.
 
-`bash docs/verify-citations.sh` scans
-"docs/design/*.md, docs/task/*.md and" (`docs/verify-citations.sh:13`)
-`docs/research/*.md`, each excluding `*.zh.md`, plus `docs/architecture.md`. It
-does **not** scan `test/`, which is why this page lives under `docs/design/`: a
-harness page under `test/apid-api/` would be gated by nothing.
-
-Two properties decide how you write a citation here.
-
-**Citations are quote-armed.** Resolution alone passes on a quotation whose
-source was renamed underneath it, so check 2 compares the quoted text against the
-cited lines — but only when quote and citation are *directly adjacent*, since
-"a citation carries a" (`docs/verify-citations.sh:132`) quote when it sits
-directly against a quoted fragment on either side, with nothing between them but
-whitespace, emphasis characters and one parenthesis. One interposed word demotes
-the pair to resolution-only, silently as far as the run's exit status goes. A
-per-document ceiling in `docs/verify-citations-unquoted-baseline.txt` holds the
-ratchet: a document with no row has a ceiling of zero, so **a new document must
-be fully quoted**.
-
-**A green gate does not mean every citation is fresh.** Shorthand citations are
-skipped by design: a token whose path has no `/` — the continuation form, where
-the file was named earlier in the prose — "is shorthand for a path named earlier
-in the prose and has no base to resolve" (`docs/verify-citations.sh:45`) against.
-It is counted in the summary and never opened. A citation written that way points
-nowhere checkable, so write the full path every time. The script says the rest
-itself: a provenance claim such as "measured at <commit>" is validated against no
-file at all.
+**There is no citation gate, deliberately.** `docs/verify-citations.sh` and its
+three baselines were removed with the coupling they existed to police:
+documents no longer cite code by `path:line`, so there is no citation to keep
+resolvable. Where a document needs a precise contract it names the artifact
+that carries it — the HTTP surface is `os/pkgs/mosd/apid/openapi.json`, which
+CI holds equal to what the shipped binary prints.
 
 ## 8. Verification
 
@@ -395,13 +380,12 @@ gate ran in `localhost/mos-build-rust` with `/srv/mos-rust-tools` mounted at
 
 | command | final line |
 | --- | --- |
-| `bash docs/verify-citations.sh` | `docs/verify-citations.sh: 1457/1457 PASS` |
 | `bash docs/verify-index.sh` | `docs/verify-index.sh: 767/767 PASS` |
 | `bash hack/check.sh` in `os/pkgs/mosd`, dbus installed | `705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
 | the same nextest line with **no** `dbus-daemon` | `57/705 tests run: 56 passed, 1 failed, 0 skipped`, `error: test run failed`, `rc=100` |
 | `cargo fmt --all --check`, `/tools/bin` first | clean |
 | the gate's clippy line, `/tools/rust96/bin` first | `error[E0463]: can't find crate for 'std'`, `rc=101` |
 
-`docs/task/RFCT-233.md` carries the full table — every command in this page with
-its output, including the two deliberately-red runs above and the bun, scratch
-and arm64 measurements.
+The full table — every command in this page with its output, including the two
+deliberately-red runs above and the bun, scratch and arm64 measurements — was
+recorded when these facts were measured and is in the repository history.

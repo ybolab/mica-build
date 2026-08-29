@@ -307,7 +307,7 @@ fi
 # 32 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
 # silicon revisions -- and only the confirmed runtime set may enter a signed
 # root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
-# was: os/verify-image-v2.sh (deleted: PLAN-014) has asserted the image against it since x64
+# was: os/verify-image-v2.sh (deleted) has asserted the image against it since x64
 # arrived. Read here rather than copied, so the build and the verifier cannot
 # disagree about which firmware the board carries.
 #
@@ -697,7 +697,7 @@ FACTORY_ROOT_OCI="$OUT_DIR/factory-root.oci"
 # presence is what distinguishes an OCI archive from any other tar.
 if [ ! -s "$FACTORY_ROOT_OCI" ]; then
     echo "error: $FACTORY_ROOT_OCI is missing or empty after a build that reported success." >&2
-    echo "       RFCT-113's smoke run executes the self-built binaries inside this image; with no" >&2
+    echo "       the smoke run executes the self-built binaries inside this image; with no" >&2
     echo "       image there is nothing to execute them in, and an image that ships them unexecuted" >&2
     echo "       looks exactly like one whose smoke run passed." >&2
     exit 1

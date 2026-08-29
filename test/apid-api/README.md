@@ -35,7 +35,7 @@ invocation and the phases hand state to each other in a fixed order:
 | `04-readonly` | every GET route, `/healthz`, the `/api` 404 envelope |
 | `05-mutate` | hostname, network, ssh, containers |
 | `05b-wireguard` | the M6 surface: typed pane forms per kind, the live `kind`/`publicKey` readers, the rotate-key action |
-| `05c-kernel-net` | PLAN-022 M7 on a live guest: the kernel creating the three link kinds, and the key store readable by the account that reads it |
+| `05c-kernel-net` | On a live guest: the kernel creating the three link kinds, and the key store readable by the account that reads it |
 | `05d-bearer` | the bearer credential end to end: the bootstrap mint, then read, write, collection, action and the token lifecycle over `Authorization: Bearer` alone, and 401 with no credential |
 | `06-backoff` | the login guard: global, doubling, persistent |
 | `07-reboot` | `POST`-only, the confirm token, taking the machine down |
@@ -132,9 +132,8 @@ bash spec-pins.sh          # or: make os-apid-api-spec-pins, from the repo root
 them, read out of the phase files' own bytes rather than imported, so both
 directions of drift go red. It exists because the phases below only run under a
 booted run: a milestone that moves a shipped status otherwise leaves every
-phase pinning the old one green until somebody boots the image (PLAN-028 M4).
-Its header states what is out of scope and why; `docs/task/RFCT-259.md`
-section 4 states the residue, which is most of this file's pins.
+phase pinning the old one green until somebody boots the image.
+Its header states what is out of scope and why; the record the residue, which is most of this file's pins.
 
 It runs on a host bun when there is one and in the bun pinned as `IMAGE_BUN_1`
 otherwise, and says which. `MOS_APID_CONTAINER=1` forces the pinned container.

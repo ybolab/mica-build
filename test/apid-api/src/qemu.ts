@@ -30,7 +30,7 @@
  * container is not a thing to keep on the strength of a usage line.
  *
  * The exported functions above main() are pure and are driven by
- * src/selftest.ts against wrong inputs -- the four defects RFCT-206 section 5
+ * src/selftest.ts against wrong inputs -- the four measured defects
  * found in the shell original are negative fixtures there, and they need no
  * docker, no QEMU and no image because the logic they cover is text.
  */

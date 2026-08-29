@@ -7,7 +7,7 @@
 //
 // Every path, prefix and unit name the Wi-Fi assertions compare against is read
 // out of `os/pkgs/mosd/mosd/src/reconciler/` rather than restated here, exactly as the
-// oracle reads it. Reading those sources is in scope under PLAN-014's Scope
+// oracle reads it. Reading those sources is in scope under the Scope
 // section -- "No change to ... `mosd/` Rust sources" -- while changing them is
 // not, and nothing here writes. A reconciler that renders into a directory the
 // image does not provide, or drives a unit the image does not install, fails on

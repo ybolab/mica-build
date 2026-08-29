@@ -159,8 +159,7 @@ const SHAPE_CHECKS: readonly CheckCase[] = [
         // tripwire for the day a cap-carrying package lands.
         return [verdict(id, true,
           `packed file-capability set matches the source inventory (both EMPTY: this rootfs carries `
-          + `no file capabilities, so xattr survival is NOT demonstrated by this image — see `
-          + `docs/task/RFCT-017.md)`)]
+          + `no file capabilities, so xattr survival is NOT demonstrated by this image — see `)]
       }
       return [verdict(id, true,
         `all ${source.length} file capabilities survived packing into the squashfs `

@@ -59,7 +59,7 @@ describe('the board this file is about reads the way the file says', () => {
 
 describe('the mode is chosen by PRESENCE, never by value', () => {
   test('a pin equal to the built-in default still selects the frozen mode', () => {
-    // os/mkimage-v2.sh (deleted: PLAN-014) captures `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the
+    // os/mkimage-v2.sh (deleted) captures `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the
     // layout precisely so this holds. A port that compared the value against the
     // board's default would agree on every number and disagree about the MODE --
     // and the mode is what decides whether an oversized rootfs is a failure or a
@@ -269,7 +269,7 @@ describe('the GPT this assembler asks sgdisk for', () => {
   const spec = gptSpecFor(g, layout)
 
   test('the order is LAYOUT_PARTITIONS, read off the board and not written here', () => {
-    // os/mkimage-v2.sh (deleted: PLAN-014) spells eleven --new flags in a fixed sequence, which is a
+    // os/mkimage-v2.sh (deleted) spells eleven --new flags in a fixed sequence, which is a
     // second copy of LAYOUT_PARTITIONS that nothing checks. This walks the list,
     // so a partition added to the board file cannot be a partition sgdisk never
     // writes.

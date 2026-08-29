@@ -788,7 +788,7 @@ try {
   // -- the boot engine's four defects, as fixtures --------------------------
   //
   // src/qemu.ts is the port of the shell boot engine this harness used to call
-  // out to, and RFCT-206 section 5 found four defects in the block of it that
+  // out to, and the record four defects in the block of it that
   // rewrites the disk copy's ESP grub.cfg. Three of them (5.2, 5.3, 5.4) made
   // `make os-apid-api-test` unable to reach a boot AT ALL, because this harness
   // always sets MOS_QEMU_APPEND -- its readiness signal is the journald console
@@ -888,7 +888,7 @@ try {
     "the four-space pattern the shell original carried would have matched nothing in that same file",
     [
       `expected: /^ {4}linux /m to match nothing -- the template indents with eight`,
-      `actual:   it matched, so this fixture no longer reproduces RFCT-206 section 5.3`,
+      `actual:   it matched, so this fixture no longer reproduces the measured defect`,
     ].join("\n"),
   );
 

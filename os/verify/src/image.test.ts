@@ -634,7 +634,7 @@ describe('fdtget refuses honestly, except in the one place it does not', () => {
   test('-t x on a STRING property answers anyway, and that is REPRODUCED', async () => {
     // Measured: `fdtget -t x T.dtb /leds/status-red label` exits 0 and prints
     // the string's bytes. So a `gpios` that had become a string hands
-    // os/verify-image-v2.sh:1942 (deleted: PLAN-014) the third BYTE of it -- `61` here -- as the
+    // os/verify-image-v2.sh:1942 (deleted) the third BYTE of it -- `61` here -- as the
     // GPIO flags cell. Refusing would be the better tool and the wrong port:
     // the oracle FAILS that check, and a throw is a different parity row.
     const rt = stub([['fdtget -t x', { stdout: '73 74 61 74 75 73 2d 72 65 64 0\n' }]])
@@ -699,7 +699,7 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
   test('A TRUNCATED FILESYSTEM EXITS 0, and this reproduces that', async () => {
     // The vacuous PASS in the code under test, asserted as its own case rather
     // than repaired. e2fsck says the superblock or the partition table is
-    // likely to be corrupt and then exits 0; os/verify-image-v2.sh:2342 (deleted: PLAN-014) sends
+    // likely to be corrupt and then exits 0; os/verify-image-v2.sh:2342 (deleted) sends
     // both streams to /dev/null and reads the status, so it concludes
     // `e2fsck -fn on data is clean`. A port that read the REPORT instead would
     // answer FAIL where the oracle answers PASS -- a divergence, and the
@@ -748,7 +748,7 @@ describe('the uImage header reader, which has no tool to lie for it', () => {
   })
 
   test('a file that is not there is the EMPTY string, as `od 2>/dev/null` is', () => {
-    // Not a throw. os/verify-image-v2.sh:2024 (deleted: PLAN-014) compares '' against 27051956 and
+    // Not a throw. os/verify-image-v2.sh:2024 (deleted) compares '' against 27051956 and
     // FAILS the check; a throw here would be a run that died instead.
     expect(uImageMagic(join(dir, 'never-written'))).toBe('')
   })

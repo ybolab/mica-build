@@ -372,7 +372,7 @@ from the layout env so the shipped image carries no placeholder:
 | `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
 | `etc/systemd/system/etc-wpa_supplicant.mount` | binds `/mnt/state/wpa_supplicant` onto `/etc/wpa_supplicant`, the path `wpa_supplicant@.service` reads and the station reconciler writes |
 | `etc/systemd/system/etc-hostapd.mount` | binds `/mnt/state/hostapd` onto `/etc/hostapd`, the path `hostapd@.service` reads and the AP reconciler writes |
-| `etc/systemd/system/usr-local-lib-systemd-system.mount` | binds `/mnt/state/systemd-units` onto `/usr/local/lib/systemd/system`, the writable unit directory PLAN-011 D5 gives integrators. Empty in the Debian base, so nothing is seeded into it; `/etc/systemd/system` is not the target, because a bind there hides the boot chain's own units and their `local-fs.target.wants` enablement. The mountpoint is created by the pack stage — a verity root cannot make it at runtime |
+| `etc/systemd/system/usr-local-lib-systemd-system.mount` | binds `/mnt/state/systemd-units` onto `/usr/local/lib/systemd/system`, the writable unit directory the record integrators. Empty in the Debian base, so nothing is seeded into it; `/etc/systemd/system` is not the target, because a bind there hides the boot chain's own units and their `local-fs.target.wants` enablement. The mountpoint is created by the pack stage — a verity root cannot make it at runtime |
 | `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 reads the squashfs copy long before mount units run |
 | `usr/lib/mos/mos-seed-*` | the two seed scripts |
 
@@ -509,7 +509,7 @@ pairing the differing set is the same six of 9,241 entries:
 | `/boot/initrd.img-*` | `update-initramfs` does not compress reproducibly. The 961 files *inside* are identical between runs; only the container's bytes differ (three runs gave 37190070, 37189886 and 37189690 bytes) |
 | `/usr/share/factory/var/cache/ldconfig/aux-cache` | build-time cache |
 
-Four further entries were in that set until RFCT-226 —
+Four further entries were in that set until later —
 `/usr/share/factory/var/log/dpkg.log`, `apt/history.log`, `apt/term.log` and
 `alternatives.log`, each differing only by a wall-clock stamp. They survived
 because the package-manager purge took `/var/lib/dpkg` and `/var/lib/apt` but
@@ -521,7 +521,7 @@ outside-the-tree entry below — `apt/eipp.log.xz`, which lives under
 admits fewer real ones with them, so this is a strictly tighter comparison than
 the one it replaces.
 
-Removing them from the *image* is what RFCT-226 did; removing them from the
+Removing them from the *image* is what the purge did; removing them from the
 *build* would have been the mistake, because `dpkg.log` is the instrument two
 bullets down. `90-pack`'s `closed` stage captures the three log paths before
 the purge and the driver exports them to `_out/<board>/pkg-logs/`.
@@ -605,7 +605,7 @@ there is one.
   every build, three per side, and they appear in the control pairing as well.
   The keys themselves are removed by `stages/10-base` and are not in the image.
 - **A seventh control entry could once arrive from outside the tree**, and
-  since RFCT-226 removed `/var/log/apt` from the packed root it no longer can.
+  since removed `/var/log/apt` from the packed root it no longer can.
   `/usr/share/factory/var/log/apt/eipp.log.xz` was apt's dump of the problem it
   handed its solver: 1,490 lines, of which 12 differed by `APT-ID:` and nothing
   else, by a constant offset, when `deb.debian.org`'s index gained records

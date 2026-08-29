@@ -25,7 +25,7 @@ pub const REDACTED: &str = "<redacted>";
 ///
 /// `privateKey` is on the list for a value nothing in this tree serves. A
 /// WireGuard private key is not in the settings schema and is not in live
-/// state — `docs/task/RFCT-200.md` §4 puts it in a mode-0640 file on STATE and
+/// state — it lives in a mode-0640 file on STATE and
 /// states *"there is no read-back route for the private key, ever"* — so today
 /// this entry redacts nothing. It is the fail-closed half of that rule: the day
 /// a field of that name appears anywhere in either tree, it is already covered,

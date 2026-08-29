@@ -453,7 +453,7 @@ for row in "${IMAGES[@]}"; do
 
     # The architecture is IN THE TAG, and this is why.
     #
-    # This line read `TAG="localhost/mos-build-${name}"` until RFCT-234. One tag
+    # This line read `TAG="localhost/mos-build-${name}"` until later. One tag
     # per image, no architecture in it -- so the day an arm64 family could
     # finally be built on an amd64 host, `MOS_BUILD_PLATFORM=linux/arm64 make
     # build-env` wrote the same four tags the amd64 family occupied and left the

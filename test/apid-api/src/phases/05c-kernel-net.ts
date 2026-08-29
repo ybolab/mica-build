@@ -1,11 +1,11 @@
 /**
- * Phase 05c -- PLAN-022 M7: the kernel actually creating the three link kinds,
+ * Phase 05c -- the kernel actually creating the three link kinds,
  * and the key store actually being readable by the account that reads it.
  *
  * WHY THIS HARNESS AND NOT `os/verify`. os/verify has four modes and not one of
  * them boots anything: `--lint` reads board definitions, `--verify` reads an
  * assembled image, `--smoke` executes self-built binaries inside the packed
- * root, `--smoke-negative` rejects three defective images. Its two new PLAN-022
+ * root, `--smoke-negative` rejects three defective images. Its two new
  * checks read `/boot/config-*` and the module indexes out of an unpacked
  * squashfs, and that is the limit of what an offline reader can say: a config
  * symbol is a claim about what was COMPILED, and `modules.dep` is a claim about
@@ -134,7 +134,7 @@ async function waitForSmoke(log: ConsoleLog, marker: Marker): Promise<boolean> {
 const phase: Phase = {
   id: "05c-kernel-net",
   title:
-    "PLAN-022 M7 on the booted image: VLAN, bridge and WireGuard devices, and the key store " +
+    "On the booted image: VLAN, bridge and WireGuard devices, and the key store " +
     "read as the systemd-network user",
   assumes:
     "the guest booted from a disk that run.sh seeded with test/apid-api/guest/m7-net-smoke.sh " +
