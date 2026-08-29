@@ -105,7 +105,7 @@ In `docs/verify-citations.sh`, for a token whose path carries no `/`:
 
 1. inside a `` `` `` span → counted skip, `skipped, bare filename quoted as an
    example of the citation form`;
-2. the path is itself a tracked file → resolve to it. `Makefile:31` and
+2. the path is itself a tracked file → resolve to it. `Makefile:32` and
    `.gitignore:8` are citations written in full whose path happens to carry no
    directory, and they are never ambiguous;
 3. exactly one tracked file has that basename → resolve to it;
@@ -293,12 +293,16 @@ sentences were deliberately rewritten so they did NOT change: api.md §2.3's
 against" are each quoted verbatim by three or four other documents, so the new
 text is appended around them rather than replacing them.
 
-**The gate found 33 of the 56. A deliberate audit found the other 23, and that
-gap is the whole argument for arming.** The 33 were the ARMED citations: the
-content check caught each one because a quotation sat against it and the
-quotation no longer matched. The remaining 23 carried no quote, so they resolved
-into a file long enough to contain their number and the run was green with every
-one of them pointing at the wrong line.
+**Measured against the pre-image `d855804`: the gate found 33 of the 56, and a
+deliberate audit found the other 23.** That gap is the whole argument for
+arming. The 33 were the ARMED citations: the content check caught each one
+because a quotation sat against it and the quotation no longer matched. The
+remaining 23 carried no quote, so they resolved into a file long enough to
+contain their number and the run read green at 2239/2239 with every one of them
+pointing at the wrong line. The sha is stated here rather than left implicit
+because this campaign has already retracted one measurement that was taken
+through a moving symbolic ref: a number this load-bearing has to carry the
+commit it was measured against.
 
 They were found by re-deriving, not by inspection. For each of the three files
 this milestone lengthened, the pre-image is diffed against the current text and
@@ -517,13 +521,45 @@ document and nothing to announce it. It is the same scheduled-hazard shape as
 the live-id self-test M3 closed, and it parks the text in precisely the bucket
 this gate's own summary declares indistinguishable: *"a skipped-as-outside path
 that once existed in this tree reads the same as one that never did"*
-(`docs/verify-citations.sh:611`). B has no such dependency and cannot fire
+(`docs/verify-citations.sh:617`). B has no such dependency and cannot fire
 under any future tree.
 
 **api.md §2.2 and §2.3 are therefore a recorded, dated exception**: form A,
 correct when chosen, green, and not to be repeated. Asked which I would choose
 in future, the answer is settled rather than preferred — B, on L1's ruling, for
 the reason above.
+
+## 6b. What the merges taught the rule, after it was written
+
+**`git ls-files` prints an unmerged path once per index stage, and the rule read
+that as ambiguity.** Taking a base with conflicts in the working tree, the very
+next run reported 46 ambiguous-basename errors whose candidate list named
+`docs/design/api.md` three times — one file, three stages, read as three
+candidates. Every citation to a conflicted document would fail for as long as
+the merge was unresolved, which is exactly when a person is most likely to run
+the gate. The index is now built one path once. It is a small guard and it was
+not imagined: it was measured on a real merge, and it is the kind of thing that
+only shows up in a state nobody thinks to test.
+
+**Twelve citations were displaced by a merge and git flagged none of them.**
+Git raises a conflict only where BOTH branches edited the same token; it says
+nothing about a token edited on one side that points into a document displaced
+on the other. So the unit of work after a merge is *files whose length changed*,
+not *files git asked about*. Sweeping every moved-and-cited file with the
+seven-line window found twelve wrong — five `Makefile` citations in
+docs/task/RFCT-058.md, two in docs/task/RFCT-162.md, one in
+docs/task/RFCT-205.md and four more including two in this record — against zero
+conflicts raised. One of the twelve is the shape the seven-line rule exists for:
+docs/task/RFCT-058.md:283 carries two `Makefile` citations on one line, moving
+by different amounts (`:28` → `:29` and `:100` → `:103`), so a per-line
+constant would have been wrong on the same line it was derived from.
+
+**And one conflict where NEITHER side was right.** Both branches re-anchored the
+same citation of the `os-devkeys` recipe — this one to `Makefile:133-134`, the
+other to `Makefile:56-57` — and on the merged tree the recipe is at
+`Makefile:136-137`, because main's own Makefile changes moved it after both
+re-anchors were taken. Re-derived from the merged tree rather than resolved by
+picking a side, which is the whole of the standing rule in one line.
 
 ## 7a. Arming, and the one place this record does not arm
 
@@ -575,7 +611,7 @@ them, and the near-miss probe above confirms neither manufactured a pairing.
    in that file — the build takes the board from an `ARG`. Both are unquoted,
    so the gate cannot see either.
 4. **Two historical records whose claims no longer hold, deliberately not
-   re-anchored.** docs/task/RFCT-058.md:264 says `` `Makefile:31` `` "still routes
+   re-anchored.** docs/task/RFCT-058.md:264 says `` `Makefile:32` `` "still routes
    `make os` into `talos/`"; that line is an `@echo` about
    `os-factory-root-gate` today, and PLAN-010 retired the Talos path.
    docs/task/RFCT-105.md:407 says `` `HARNESS.md:120` `` gives ~200–260s to a login
@@ -596,16 +632,30 @@ them, and the near-miss probe above confirms neither manufactured a pairing.
    inside a fence, in docs/task/RFCT-155.md, and it is green. The class is
    therefore recorded rather than closed — the two gate outputs quoted in this
    record are the reason it was noticed at all.
-7. **Two of the documents corrected here are candidates for a dated-record
-   marker, and the marker wins.** docs/task/RFCT-058.md is touched by this
-   milestone, by M3 and by M2, and M2 has committed a marker on it. When that
-   marker merges the document becomes exempt from both checks, and the six
-   full-formed citations this milestone put in it become pointless but
-   harmless. They are kept: a full-form citation is correct whether or not the
-   document is read, and unpicking them would be churn against a file three
-   workstreams are holding. The same logic applies in reverse to
-   docs/task/RFCT-215.md, which this milestone must NOT edit — see section 9.
-8. **1151 in-scope citations carry no quote and 479 are near-misses.** Both
+7. **The RFCT-058 marker was withdrawn, so its citations stay live — and that
+   is the better outcome.** An earlier draft of this record said M2 had
+   committed a dated-record marker on docs/task/RFCT-058.md, which would have
+   made the six citations this milestone full-formed in it exempt and therefore
+   pointless. M2 landed five speculative markers under an eager framing
+   (RFCT-058, 064, 066, 071, 212) and WITHDREW all five when L1 ruled for lazy
+   marking; none is forced by this milestone's rule or by M2's. Verified here
+   by the anchored grep the gate itself uses, `^<!-- dated-record:`:
+   RFCT-058 carries 0, and the documents that do carry one are RFCT-215 (M2's,
+   which is what made this milestone landable) and RFCT-210 (arriving from
+   PLAN-027). So RFCT-058's six full-formed citations are live and checked, not
+   pointless, and the marker this milestone forced is exactly one.
+8. **The content check cannot tell a quotation from its negation.** It is a
+   substring test, and *"the API is read-only"* and *"the API is not
+   read-only"* both contain the bytes a quoted fragment names; an edit that
+   falsifies a sentence can supply the token that keeps its citation green.
+   Nothing mechanises this and nothing here proposes to. It bears on this
+   milestone specifically because arming a citation that was never armed
+   changes what a green run means for that site: the bytes are present, not
+   the sentence true. Every passage whose truth this milestone's own edits
+   changed and which is now armed was therefore read, not merely re-run — the
+   four fragments of section 4(c), where the source text was substituted for a
+   name, and the eight citations armed in this record's own tables.
+9. **1151 in-scope citations carry no quote and 479 are near-misses.** Both
    counts rose with the scope. The near-miss counter is the surfaced form of
    RFCT-170's zero-tolerance adjacency rule: one interposed word between a
    quotation and its citation demotes the pair to resolution-only, and at four

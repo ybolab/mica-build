@@ -1,10 +1,11 @@
-//! Shared fixture for the repository (signer) and client (device) suites.
+//! Shared fixture for the repository (signer), client (device) and root-
+//! ceremony suites.
 //!
 //! Everything happens inside a `TempDir`: keys are generated per test and
 //! thrown away, no fixture holds key material, no host state is touched and no
 //! network access occurs (tough's default transport is filesystem-only here).
 //! Each test binary compiles its own copy of this module, so everything in it
-//! is used by both suites.
+//! is used by every suite.
 
 use std::fs;
 use std::path::{Path, PathBuf};

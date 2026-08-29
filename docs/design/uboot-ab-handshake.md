@@ -180,7 +180,7 @@ a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
 `os/boards/cx3576/board.env:93` — fails the build
 (`os/build/src/mkimage-v2.ts:292-299`) [V].
 
-The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:786`
+The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:791`
 composes one per rootfs slot from that slot's verity parameters and the board's
 `BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:349`) [V].
 

@@ -61,7 +61,7 @@ row describes. The id is not a separate member because it is the token's own
 second segment, so a caller holding the string can address it for a later
 `DELETE` without being told it twice.
 `the_api_setup_route_configures_the_device_and_returns_a_token`
-(`os/pkgs/mosd/apid/src/tests.rs:9801`) asserts the member set exactly, and then
+(`os/pkgs/mosd/apid/src/tests.rs:9906`) asserts the member set exactly, and then
 asserts the token by *using* it against `GET /api/v1/meta` — a token that
 authenticated nothing would satisfy the letter of section 3.2 and none of it.
 
@@ -82,7 +82,7 @@ state refuses the request. 409 and not 422 for the reason
 wrong; what refuses it is the collection's — here the device's — current state.
 
 `the_api_setup_route_answers_409_on_the_form_paths_own_condition`
-(`os/pkgs/mosd/apid/src/tests.rs:10032`) drives both surfaces against **one**
+(`os/pkgs/mosd/apid/src/tests.rs:10137`) drives both surfaces against **one**
 tree, so neither can drift into answering about a different one.
 
 ### 2.3 422 on any validation failure, with nothing written
@@ -106,7 +106,7 @@ rule below is about two entries at once."*
 (`os/pkgs/mosd/apid/src/routes.rs:5538-5539`) A bridge port may legitimately name
 an interface the device already declares, and
 `the_setup_network_tree_is_merged_with_the_stored_one_before_it_is_judged`
-(`os/pkgs/mosd/apid/src/tests.rs:9997`) is the case that would be refused by a
+(`os/pkgs/mosd/apid/src/tests.rs:10102`) is the case that would be refused by a
 route that judged the submission on its own.
 
 Merging is also why the whole map is written in one `SetSettings` at `network`
@@ -118,7 +118,7 @@ factory-fresh device is reachable over, which is the harm this milestone exists
 to prevent rather than to introduce.
 
 `every_setup_validation_failure_is_422_and_writes_nothing`
-(`os/pkgs/mosd/apid/src/tests.rs:10063`) drives four rejections and asserts, for
+(`os/pkgs/mosd/apid/src/tests.rs:10168`) drives four rejections and asserts, for
 each, the 422, the code, the message, `assert_nothing_written`, and that the
 device is still in setup mode.
 
@@ -162,7 +162,7 @@ write is third because it is the write that takes the device out of setup mode.
 That ordering is not a change to a shipped behaviour — there was no route here
 to change — but it is a decision, so it is asserted as an order and not as a set
 by `the_api_setup_route_writes_the_password_after_the_settings_it_may_fail_on`
-(`os/pkgs/mosd/apid/src/tests.rs:9851`), which also asserts the wizard's opposite
+(`os/pkgs/mosd/apid/src/tests.rs:9956`), which also asserts the wizard's opposite
 order in the same test.
 
 What survives, named: a bus failure on the **last** write leaves a configured
@@ -177,7 +177,7 @@ write on the bus, which is a mosd change and outside PLAN-023's scope — the
 scope boundary RFCT-210 item (ii) already drew.
 
 `the_api_setup_route_validates_before_writing_where_the_form_path_does_not`
-(`os/pkgs/mosd/apid/src/tests.rs:9893`) drives **one** partial failure through
+(`os/pkgs/mosd/apid/src/tests.rs:9998`) drives **one** partial failure through
 both surfaces and asserts both outcomes:
 
 | | write log | after the failure |
@@ -185,7 +185,7 @@ both surfaces and asserts both outcomes:
 | `POST /api/v1/setup` | empty | still in setup mode |
 | `POST /setup` | `["access.webAdmin"]` | out of setup mode, hostname still `mos` |
 
-The fixture is `RefusesOnePath` (`os/pkgs/mosd/apid/src/tests.rs:9726`), added
+The fixture is `RefusesOnePath` (`os/pkgs/mosd/apid/src/tests.rs:9831`), added
 because no existing one can make this assertion. `FailingSettings` fails *every*
 write, and a route that writes nothing is then indistinguishable from one that
 writes the password first: both come back 5xx with an empty tree. A partial
@@ -221,7 +221,7 @@ Calling it makes this route stricter than `PUT /api/v1/network/{iface}`, and
 that gap is **recorded, not closed**: harmonising M4-M7's shipped routes is
 outside this task. It is measured rather than read —
 `the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not`
-(`os/pkgs/mosd/apid/src/tests.rs:10312`) sends the same entry three ways and
+(`os/pkgs/mosd/apid/src/tests.rs:10417`) sends the same entry three ways and
 asserts 422 from this route, 422 from the wizard, and **204** from M6's route.
 
 The reason this route does not wait for the cluster-wide fix is that the harm is
@@ -292,9 +292,9 @@ error inside `network` reports no dot-path where M6's `PUT /api/v1/network`
 would report `network`.
 
 `a_malformed_setup_body_is_refused_at_400_and_names_no_dot_path`
-(`os/pkgs/mosd/apid/src/tests.rs:10150`) holds the absent member, and
+(`os/pkgs/mosd/apid/src/tests.rs:10255`) holds the absent member, and
 `a_rejected_setup_password_is_never_echoed`
-(`os/pkgs/mosd/apid/src/tests.rs:10125`) holds that no refusal repeats the
+(`os/pkgs/mosd/apid/src/tests.rs:10230`) holds that no refusal repeats the
 password, in body or headers, not even as a fragment.
 
 ## 7. Unauthenticated, and how narrowly
@@ -307,7 +307,7 @@ extension is one line in that predicate, `|| leaf == V1_SETUP_PATH`
 its signature names no `ApiSession` and no `ApiBearer`.
 
 `the_setup_route_is_the_one_api_route_that_takes_no_credential`
-(`os/pkgs/mosd/apid/src/tests.rs:10171`) asserts both halves in setup mode, which
+(`os/pkgs/mosd/apid/src/tests.rs:10276`) asserts both halves in setup mode, which
 is the only mode where the question is live: five other write routes answer 401
 with section 2.4's envelope and **no** `Location` header — a redirect is what a
 script reads as success — and the setup route answers 201 with nothing
@@ -318,7 +318,7 @@ The audit event is the wizard's own —
 (`os/pkgs/mosd/apid/src/routes.rs:4258`) — because it is the same event: section
 6's trail says what happened to the device, not which surface asked.
 `the_api_setup_route_records_the_wizards_own_audit_event`
-(`os/pkgs/mosd/apid/src/tests.rs:10220`) checks the event and that neither the
+(`os/pkgs/mosd/apid/src/tests.rs:10325`) checks the event and that neither the
 password nor the minted token reaches any line of the log.
 
 ## 8. Gate results

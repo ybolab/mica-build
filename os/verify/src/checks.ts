@@ -44,6 +44,7 @@ import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
 import { EXT4_CHECKS } from './checks-ext4.ts'
 import { HOME_CHECKS } from './checks-home.ts'
 import { KERNEL_CHECKS } from './checks-kernel.ts'
+import { FRESHNESS_CHECKS } from './checks-freshness.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
 import { MQTT_CHECKS } from './checks-mqtt.ts'
@@ -152,6 +153,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...CMDLINE_CHECKS_ALL,
   ...SHAPE_CHECKS_ALL,
   ...KERNEL_CHECKS,
+  ...FRESHNESS_CHECKS,
 ]
 
 /**

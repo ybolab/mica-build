@@ -268,7 +268,7 @@ The brief's single failing site was the rule's artifact, not the corpus's.
 Admitting path tokens as antecedents makes nine sites reachable that were
 invisible before, and they resolve to paths that do not exist. Seven are
 `RFCT-172.md`'s frozen record of paths that moved, and are correct as records.
-**Two are a live defect in a design document**: `docs/design/api.md:3083` and
+**Two are a live defect in a design document**: `docs/design/api.md:3092` and
 `:3501` assert image-side checks against `os/verify-image-v2.sh`, and no such
 file exists anywhere in this tree — the bash script was replaced by the
 TypeScript suite under `os/verify/src/`, where `check_ui_location` survives
@@ -365,13 +365,14 @@ none of them is, because none has an M1 ambiguity site except RFCT-169.
 | `docs/task/RFCT-159.md` | 0 | 19 | yes | **no** | 8 | 9 |
 | `docs/task/RFCT-200.md` | 0 | 19 | yes | **no** | 82 | 9 |
 
-`docs/task/RFCT-210.md` is **not marked here and no floor row is added for
-it**: its marker is forced in PLAN-027, where RFCT-216's rewrite of
-release-signing.md section 1.6 deletes prose that four of its armed quotes
-cite. It is nonetheless **double-forced** — M2's inheritance rule independently
-makes its 16 no-antecedent bare tokens red under the ERROR reading — and the
-record should show that even though the tree must carry only one marking. Its
-cost, for the merge that brings it: `os` 81, `docs` 33.
+`docs/task/RFCT-210.md` was **not marked here and no floor row added for it**,
+and its marker **has since arrived**, from PLAN-027's merge to main as forecast:
+RFCT-216's rewrite of release-signing.md section 1.6 deleted prose that four of
+its armed quotes cite. It was nonetheless **double-forced** — M2's inheritance
+rule independently made its 16 no-antecedent bare tokens red under the ERROR
+reading, which the ruling in §11 has since dissolved — so the record shows both
+forcings while the tree carries one marking, placed by the milestone whose
+change compelled it.
 
 ### 5.4 Measured but deferred — the five withdrawn markers
 
@@ -494,7 +495,7 @@ set. What disarms it is interposed words, RFCT-170's deliberate zero-tolerance
 rule. One word ("at") demotes the citation to resolution-only with
 `near-miss=1`; four words ("asserts the shape at") demote it with
 `near-miss=0`, fully silent. The demotion is invisible in a PASS line, because
-`docs/verify-citations.sh:400` counts it into `N_NOQUOTE` and continues. A
+`docs/verify-citations.sh:406` counts it into `N_NOQUOTE` and continues. A
 fixture for this must encode the INTERPOSED-WORD case; one built on "quote on
 the preceding line" would not fail on the defect it was built for.
 
@@ -502,7 +503,7 @@ the preceding line" would not fail on the defect it was built for.
 
 **7.6 The elided paraphrase.** A quoted fragment that writes `(...)` for an
 argument list is a paraphrase, not an excerpt, and can never match the source.
-Three sites at `docs/design/api.md:3473-3475`. The resolver will arm this check
+Three sites at `docs/design/api.md:3482-3484`. The resolver will arm this check
 on the bare token, so the implementing pass meets it whether or not the sites
 are full-formed. Repair needs the prose re-worded, not the citation moved.
 
@@ -584,7 +585,7 @@ dot-paths, file modes, a path, and bare identifiers. Four of them appear
 symbol paths written in prose, not excerpts of source.
 
 The other three are a second, distinct kind, and worth naming separately: an
-**elided paraphrase**. `docs/design/api.md:3473-3475` write
+**elided paraphrase**. `docs/design/api.md:3482-3484` write
 `tls::ensure_state_dir(...)`, `tls::load_or_generate_certificate(...)?` and
 `tls::load_or_generate_session_key(...)?`, where `(...)` stands in for the
 argument list. The source says `(&config.state_dir)`. Normalisation collapses
@@ -851,10 +852,14 @@ whoever next touches them. Marking would hide the defect rather than resolve it.
 
 ### 12.4 Not ours
 
-`docs/task/RFCT-210.md` — forced independently by content deletion (RFCT-216's
-rewrite removes prose four of its armed quotes cite); marker arrives via
-PLAN-027. Not marked here, no floor row added. Expect a baseline conflict at
-that merge, resolved by §11.3's procedure.
+`docs/task/RFCT-210.md` — **its marker is now in the tree**, placed by PLAN-027
+and reaching this branch through that merge, exactly as §5.3 forecast. It was
+forced there by content deletion (RFCT-216's rewrite removes prose four of its
+armed quotes cite) and independently by M2's rule under the reading §11 has
+since withdrawn. Never marked here and no floor row added for it, so the double
+forcing is recorded without the tree carrying a double marking. The forecast
+baseline conflict did materialise at that merge and was resolved by §11.3's
+procedure — see §16.
 
 `RFCT-214`, `RFCT-159`, `RFCT-200` — **deferred**. Nothing forces them under the
 ruling.
@@ -936,19 +941,66 @@ would have wrongly stripped four good citations from the second paragraph.
 
 ### 14.2 Which repair to choose
 
-Two legitimate repairs exist, and they are not interchangeable:
+**Ruled by L1: plain prose plus a why-sentence is the campaign standard for
+every new instance.** The rewrite-to-the-historical-path form is tolerated where
+it has already landed green — M1's `docs/design/api.md` §2.2/§2.3 stay as they
+are, a recorded dated exception — but is not to be used again.
 
-- **Rewrite to the historical path** — stays legible as a citation, the gate
-  skips it as outside-tree, provenance visible in the text. Fits when the *path*
-  is what changed, so a historical path exists to name.
-- **Plain prose plus a why-sentence** — no citation syntax, nothing to skip.
-  Fits when only the *lines* moved and the path is still live.
+The deciding argument is **state-dependence**, and it is what an earlier draft
+of this section got wrong. That draft concluded that where the *path* moved, the
+historical-path form was better. It is not, and the counter-evidence is this
+milestone's own: the historical-path form is safe only while the old path stays
+outside the tree, and that is a property of **the tree, not of the text**. Any
+future restructure that re-creates a first segment of that name silently re-arms
+those citations against whatever now lives there — no commit touches the
+document, and nothing announces it.
 
-This site took the second, and had to: `os/pkgs/mosd/apid/src/routes.rs` is
-still exactly where it was, so there is no historical path to rewrite to, and
-any citation naming that live file would resolve. Where the path did move, the
-first is better — it keeps the reader oriented and leaves the provenance in the
-text rather than in a clause about the text.
+That is not hypothetical here. `mosd/` **was** a repo-root directory before the
+`os/pkgs` move, and §4.2 records a live antecedent still naming it at
+`docs/task/RFCT-169.md:254`, gone since PLAN-019. Re-create a top-level `mosd/`
+tomorrow and every pinned-historical citation with that first segment stops
+being skipped and starts resolving against the wrong files. It also parks the
+text in the one bucket the gate's own header declares indistinguishable: *"a
+skipped-as-outside path that once existed in this tree reads the same as one
+that never did."* And it belongs to the same scheduled-hazard family as the
+file-scoped marker's merge-order dependency in §11.4 — safe today, dies when
+someone else's lifecycle moves, silent when it does.
+
+Prose has no such dependency. It cannot fire under any future tree. **Prose is
+the default because its safety is unconditional, not because it reads better.**
+
+**The what-moved distinction is the ruling's own structure**, and it originated
+here rather than being handed down: the two forms are selected by what moved,
+not by taste. What the ruling corrected was one *verdict*, not the analysis.
+
+- **(a) Only the lines moved, the path is still live** — **prose is mandatory**,
+  not merely preferred. There is no historical path to name, and any citation
+  naming the live file resolves and lies; nothing else can be correct. This
+  section reached that independently, before the ruling, and it is now ruling
+  text. This site is that case: `os/pkgs/mosd/apid/src/routes.rs` is exactly
+  where it always was.
+- **(b) The path also moved** — prose-plus-why still stands over the
+  historical-path form. The trade is unconditional safety against conditional
+  legibility. This is the verdict an earlier draft here got wrong.
+
+**The cost is recorded inside the ruling rather than denied**: prose moves
+provenance out of the citation position and into a clause *about* the text,
+losing the orientation a citation would have given a later reader. It loses
+anyway — because the condition it depends on has already failed once in this
+tree.
+
+### 14.3 What the superseded draft got wrong, and why it is left on the record
+
+The earlier draft was not merely un-informed by the ruling. **It reasoned from
+the wrong property.** It judged the two repair forms on how they *read* to a
+later reader, when the deciding property is whether their safety is
+**conditional on the tree**. The `mosd/` counter-example was already in §4.2 of
+this same document, measured by this milestone, and was not connected to it.
+
+That is the same failure mode as trusting a green gate: a property that holds
+today read as a property that holds. It is left stated rather than quietly
+rewritten, because a record that names its own near-miss is worth more than one
+that reads better.
 
 ## 15. The auto-merge hazard, and the window rule
 
@@ -982,3 +1034,78 @@ The worklist is therefore 46 citations pointing into api.md at or past line
 1336, where the shift accumulates +5 from ~1336 to +9 by ~1554 and is then flat.
 **No constant applies, and emphatically not +9.** They are re-derived against
 the merged tree in the next pass, under the window rule — not against this one.
+
+## 16. The PLAN-027 merge, and re-measuring every floor
+
+PLAN-027 reached main and this branch through `e2b2352`. It brings
+`docs/task/RFCT-210.md`'s dated-record marker, so that document's citations
+leave coverage and the exempted count rises to 38. §5.3's forecast is now a
+statement about the past.
+
+**Floors were re-measured on the merged tree, all four, not only the one git
+asked about.** That is the lesson of this merge and it is worth stating
+precisely, because it landed on the artifact that exists to catch silent drops.
+The `os` row was a genuine conflict, 1816 here against 1777 on main, and was
+resolved by §11.3's procedure — drop the row so the census can mask nothing, run
+the gate, set the floor to what it reports. But the `docs` row was **not** a git
+conflict and still needed correcting: neither side had touched it, so git
+silently took one side's value over the other's. **A floor lowered by
+auto-merge, inside the baseline file itself.** Git asks only about rows both
+sides edited; a row edited by neither, whose correct value has nevertheless
+changed, passes through unremarked.
+
+That is the silent half of §15's hazard applied to the ratchet rather than to a
+citation, and it generalises: after any merge, re-measure every floor, not only
+the conflicted ones. Merged floors: `docs` 322, `.github` 4, `os` 1807,
+`test` 18.
+
+The unquoted baseline conflicted too and was **not** a real conflict: the two
+sides add rows for different documents — this milestone's `RFCT-257.md` and
+main's `RFCT-235.md` — colliding only because they are adjacent lines. Both
+kept, and the ceiling re-measured rather than taken from either side.
+
+**No displacement arose from this merge for the documents both sides touched.**
+Measured rather than assumed: `docs/design/api.md` is 4801 lines at the base, on
+this branch, on `bkd/tcdocsrm` and on the merge; `docs/design/dashboard.md` is
+1827 across all four; `docs/task/RFCT-172.md` 127 and `docs/task/RFCT-169.md`
+410 likewise. So no side displaced a shared document and no sum arose. Source
+files did move — `os/verify/src/checks-engine.ts`, `os/verify/src/checks.ts` and
+`os/verify/HARNESS.md` — but on one side only, PLAN-027's, which re-anchored
+them there; this milestone edits no source file, so the summed form of the
+hazard does not apply.
+
+## 17. The gate cannot distinguish a quote from its negation
+
+Measured by api-residues, and it constrains the resolver pass directly.
+
+The content check is a substring test. **A quoted fragment and its negation are
+the same bytes to it.** So a passage can be edited into a falsehood, the run
+goes green over the false sentence, and — the sharp part — *the falsifying edit
+can itself supply the token that keeps it green*. Nothing mechanises this. Only
+reading the passage catches it.
+
+This is not an argument against arming. An armed citation still buys
+fragment-versus-line verification, which is the only thing that makes §15's
+merge displacement visible at all. It is a statement about what a green content
+check means: **the bytes are present, not that the sentence is true.**
+
+It bears on the two things this milestone does next, and the exposure is
+specific rather than general:
+
+- The resolver **arms citations that were never armed before**. Every bare token
+  that resolves under the same-line rule and carries an adjacent quote gets a
+  content check on its first run. A green result there says the fragment is
+  present at the inherited lines — not that the surrounding claim is true.
+- The class A work **changes the truth of passages**, not just their citation
+  syntax. §14.1's repair is exactly that: a passage that asserted the wrong line
+  numbers now asserts none, and its truth changed with the edit.
+
+So the rule for the remaining passes: **where an edit changes what a passage
+asserts, read the passage — do not trust the run.** That applies to the 148
+class A sites, and it applies with more force to the newly armed set, because a
+citation arming for the first time has never had its sentence checked by anyone,
+only its bytes.
+
+It is the same shape as §11.1's near-miss and §16's auto-merge floor: the
+mechanism reports faithfully on the thing it measures, and the thing it measures
+is narrower than the thing a reader assumes it measured.

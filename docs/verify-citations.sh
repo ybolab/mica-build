@@ -189,6 +189,12 @@ declare -A BYBASE=()
 N_TRACKED=0
 while IFS= read -r tracked_path; do
     [ -n "$tracked_path" ] || continue
+    # One path, once. `git ls-files` prints an UNMERGED path once per index
+    # stage, so during a merge with conflicts every conflicted file appears
+    # three times; without this guard `docs/design/api.md` becomes its own
+    # ambiguity and every citation to it fails with a candidate list naming the
+    # same file three times. Measured on a real merge, not imagined.
+    [ -z "${TRACKED[$tracked_path]+x}" ] || continue
     TRACKED[$tracked_path]=1
     tracked_base=${tracked_path##*/}
     BYBASE[$tracked_base]="${BYBASE[$tracked_base]:+${BYBASE[$tracked_base]} }$tracked_path"

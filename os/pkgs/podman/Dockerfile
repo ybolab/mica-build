@@ -64,6 +64,34 @@ ARG MOS_BUILD_C
 ARG MOS_BUILD_GO
 ARG MOS_BUILD_RUST
 
+# Five arguments and four images, because one of the four is wanted at two
+# architectures in the same build. Every stage below compiles for the TARGET
+# and takes its base from MOS_BUILD_BASE, MOS_BUILD_C, MOS_BUILD_GO or
+# MOS_BUILD_RUST; the src stage alone runs at the BUILD platform, because a
+# `git clone` of six upstreams has no reason to run under emulation. Its base
+# is therefore mos-build-base at the HOST's architecture, and that is a
+# different image with a different name -- os/build-env/from.sh resolves a
+# LOCAL_ key to a tag that CARRIES its architecture, so
+# localhost/mos-build-base:amd64 and :arm64 coexist and neither is "the" base.
+#
+# It is a second ARGUMENT and not a second --platform because of what the
+# single-architecture tag does when it is wrong, which is not to refuse.
+# Measured on this host, both driver paths, a linux/arm64 build of this shape
+# with the arm64 base resolved into the src stage:
+#
+#   #4 resolve localhost/mos-build-base:arm64@sha256:b1f5a46d... 0.0s done
+#   #5 0.444 exec /bin/sh: exec format error
+#
+# `--platform=$BUILDPLATFORM` selects a manifest out of an index, and a
+# `localhost/` tag is one manifest and no index -- so docker serves what the
+# tag holds, buildkit believes the stage is running at the build platform, no
+# emulator is applied, and the stage dies on its first RUN. Nothing in that
+# report names the base, the architecture or the argument. The same is true of
+# the OCI layout the docker-container driver is handed instead: a layout named
+# after a tag holds that tag's one architecture, and buildx serves it rather
+# than refusing the mismatch (`docs/task/RFCT-231.md:232-234`).
+ARG MOS_BUILD_BASE_NATIVE
+
 # Sources: fetched once, hashed, shared by every builder below.
 
 # No apt-get here. This stage needs git and a CA bundle, two of the five
@@ -71,7 +99,7 @@ ARG MOS_BUILD_RUST
 # (os/build-env/base/Dockerfile). Re-installing them would make that assertion
 # decorative, and the first slimmed base would be found by a failed clone in a
 # component build instead of by the image that claims the floor.
-FROM --platform=$BUILDPLATFORM ${MOS_BUILD_BASE} AS src
+FROM --platform=$BUILDPLATFORM ${MOS_BUILD_BASE_NATIVE} AS src
 # versions.lock, not versions.env: build.sh derives it by stripping comments
 # and blank lines. The two carry identical values, and the lock is what this
 # stage's cache key is computed over. Measured: adding a paragraph of prose to

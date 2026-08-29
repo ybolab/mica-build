@@ -629,7 +629,7 @@ pair a switch.
 - **[implemented]** `mqtt` is **not** in `WRITABLE_SUBTREES`, matching
   `container`. The switch is reachable from apid's `/mqtt` pane
   (`os/pkgs/mosd/apid/src/routes.rs`) and not over the item tree; bus writability is
-  unchanged by this work.
+  unchanged by this work, for the reason §11.6 gives for the whole class.
 
 The switch is a **master switch and nothing else**: `mqtt.listen` and
 `mqtt.auth` are deliberately not coupled to it, and nothing refuses to start on
@@ -687,7 +687,7 @@ mapper when a named integration requires it.**
 
 ## 11. Known limits of the shipped item tree
 
-Five properties of what M1 and M2 shipped that a reader would otherwise
+Six properties of what M1 and M2 shipped that a reader would otherwise
 discover by hitting them. Each is a **decision with a reason**, recorded here
 so it is a documented decision rather than tribal knowledge, and each names
 what would change it. They are limits of the implementation, not exceptions to
@@ -771,3 +771,36 @@ the contract above.
    behind the bus — after which `GetSettings` could redact like the façade
    does. Until that exists the asymmetry is the design, and a change that
    "harmonises" it is a change that breaks login.
+
+6. **[implemented]** **A platform switch is read-only on the item tree unless a
+   broker client may flip it. This is the rule for the class, not a judgement
+   about one key: `container` and `mqtt` are both outside
+   `WRITABLE_SUBTREES` and both belong there.** The list
+   (`os/pkgs/mosd/mosd/src/tree.rs`) is **not an access boundary**, and reading it
+   as one is the mistake this entry exists to prevent. `SetSettings` writes any
+   settings path without consulting it (`os/pkgs/mosd/mosd/src/bus.rs`), and the
+   bus policy grants that member to **root alone** — the default context is
+   denied outright (`os/pkgs/mosd/dist/com.mos.mosd.conf`). What the list actually
+   bounds is `SetValue`, because the MQTT bridge is the one non-root client on
+   this interface and holds exactly three members — `GetItems`, `SetValue` and
+   `ItemsChanged`, and nothing at all on `com.mos.mosd1`
+   (`os/pkgs/mosd/dist/mos-mqttd.conf`). So `WRITABLE_SUBTREES` is the **remote**
+   write surface and only that: widening it grants a key to broker clients and
+   to nobody else, root having had it all along. The test a switch must pass is
+   therefore not "does a reconciler own it" — `container` and `mqtt` both have
+   reconcilers, so that reading would admit both — but **"may a remote broker
+   client flip this"**. Both fail it. `container.enabled` grants root-capable
+   containers (`docs/design/containers.md` §2), and `mqtt` carries the broker's own
+   bind and auth policy while `MqttAuthSettings::enabled` defaults to false
+   (`os/pkgs/mosd/mosd-settings/src/model.rs`), so a listed `mqtt` would let an
+   unauthenticated client widen the very listener that carries it. Both are
+   written through `SetSettings` alone, which is the path apid's `/containers`
+   and `/mqtt` panes and its `PUT /api/v1/settings/{path}` route already take
+   (`os/pkgs/mosd/apid/src/routes.rs`). Pinned for both keys together by
+   `os/pkgs/mosd/mosd/tests/tree.rs::platform_switches_are_read_only_items_written_only_through_set_settings`,
+   so a later widening has to delete an assertion and say why. What would change
+   it: a write boundary on the item tree that is not the bridge's — per-client
+   policy on `SetValue`, or a bridge that may publish a subtree it may not write.
+   Until one exists, a new platform switch is read-only here by default, and the
+   burden is on the widening to argue this test rather than on the omission to
+   justify itself.

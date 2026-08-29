@@ -131,7 +131,7 @@ trixie (`os/rootfs/stages/10-base.Dockerfile:64`). There is no
 `wireguard-tools` anywhere in the stage chain (measured: `grep -rin wireguard
 os/` matches only the kernel fragment and the cx3576 kernel config; see §5).
 `hostapd`/`wpasupplicant` are installed only on boards that declare a radio
-(`os/rootfs/stages/30-feature-radios.Dockerfile:32-33`), so nothing about this
+(`os/rootfs/stages/30-feature-radios.Dockerfile:34-35`), so nothing about this
 design may depend on the radio userland.
 
 ### 1.6 Data-flow narrative
@@ -474,7 +474,7 @@ board and no vendor kernel tree"* (`os/boards/x64/board.env:201-205`); the kerne
 Debian's `linux-image-6.12.101+deb13-amd64`, kept whole because *"Debian's
 generic kernel carries a module set for all hardware"*
 (`os/boards/x64/board.env:222-225`), installed with its initramfs and modules
-as one package (`os/rootfs/stages/40-board.Dockerfile:79-81`); `kmod` is in
+as one package (`os/rootfs/stages/40-board.Dockerfile:81-83`); `kmod` is in
 the image (`os/rootfs/stages/10-base.Dockerfile:120`), so `=m` is loadable at
 runtime — unlike cx3576, whose fragment requires `=y` for the verity boot path
 (`os/boards/common/mos-required.fragment:3-5`).
@@ -483,7 +483,7 @@ runtime — unlike cx3576, whose fragment requires `=y` for the verity boot path
 above is a snapshot and not a pin: RFCT-206 measured **6.12.105+deb13-amd64** on
 the built x64 image. Nothing in the tree pins one — the stage takes *"Debian's
 own linux-image-amd64, which brings its kernel, its initramfs and its modules in
-one package"* (`os/rootfs/stages/40-board.Dockerfile:79-81`), so the number
+one package"* (`os/rootfs/stages/40-board.Dockerfile:81-83`), so the number
 follows Debian's archive — and neither check M7 wired up pins one either: both
 derive the release from the image, which is why the drift changed no result. The
 sentence above is left standing as what this record measured on 2026-08-27, and

@@ -74,6 +74,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # PLAN-012 M5, filed as RFCT-223. Six upstreams in three languages are pinned
+  # in os/pkgs/podman/versions.env, and until this job existed nothing in the
+  # tree ever asked whether any of them had moved. `make podman-pins` asks, and
+  # goes red when a pin is behind.
+  #
+  # IT IS HERE FOR THE SCHEDULE ABOVE, NOT FOR THE LABEL. The check needs
+  # outbound HTTPS and nothing else -- no root, no docker, no emulation -- and
+  # this file is where the repository's only weekly cron lives. A second cron
+  # in check.yml would be a second answer to "when does the weekly work run",
+  # free to drift from this one.
+  #
+  # AND SO IT DOES NOT USE `runs-on: privileged`, deliberately, unlike every
+  # other job in this file. The header explains that Gitea never schedules a
+  # job whose label matches no registered runner: the run sits waiting and no
+  # tick appears. For the deep lane that is the honest outcome -- there is no
+  # runner that can build the image. For an alarm it is the opposite of the
+  # point. A pin-freshness check that silently never runs is exactly the state
+  # RFCT-221 measured and this job exists to end, so it runs on the same
+  # ubuntu-latest that check.yml's jobs already run on today.
+  #
+  # It never edits versions.env, never opens a pull request and bumps nothing.
+  # Moving a pin costs a tag, a hash set to PENDING and a `make podman`, and
+  # versions.env is explicit that recording a hash is an act rather than a copy
+  # from a page nobody re-checked. This job's whole output is the red tick and
+  # the sentence naming which component moved.
+  container-pin-freshness:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # Six HTTPS requests. A check still running after ten minutes is a hung
+    # fetch, not a slow one.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # curl and python3 are what check-pins.sh runs on. No `|| true`: a runner
+      # that cannot install them must go red here rather than skip the check.
+      - name: Install suite dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends bash make ca-certificates curl python3
+
+      # The offline suite first, and as a hard gate rather than a courtesy.
+      # It drives the comparison against recorded upstream responses in both
+      # directions -- most of all catatonit's, quiet since 2024-12-14, where a
+      # checker that had stopped comparing anything would look identical to a
+      # correct pin. If the checker is broken, the live run below would report
+      # its brokenness as good news, so this runs first and stops the job.
+      - name: make podman-pins-test
+        run: make podman-pins-test
+
+      # The live question. GITHUB_TOKEN only raises the API rate limit, which
+      # is 60 requests an hour per address unauthenticated and shared across
+      # everything else on the runner; the check reads public release lists and
+      # needs no permission beyond that.
+      - name: make podman-pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make podman-pins
+
   # The two excluded suites that need no BSP artifacts: the dbus policy test
   # stands up its own bus, and the os/build suite fabricates synthetic fixtures
   # for every input the real pipeline would build. Every push and PR.
