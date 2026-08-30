@@ -43,7 +43,7 @@ help:
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}:<arch>"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
