@@ -148,3 +148,45 @@ account that is exactly the pin and still fails, by name, on one held by
 anybody else. `useradd`, `groupadd` and `chage` come from `passwd`, which both
 packages declare in `Depends`: `dpkg-shlibdeps` cannot see a program `exec`ed
 by name.
+
+## `mosd` depends on `mos-system`
+
+`mosd.service` declares `RequiresMountsFor=/var/lib/mos`, and that path is the
+STATE bind-mount target: `var-lib-mos.mount` and the `/var/lib/mos` mountpoint
+directory are two halves of one mechanism, so one package owns both. That
+package is `mos-system`, built by the rootfs-composition workstream, and `mosd`
+names it in `Depends` rather than shipping the directory itself.
+
+The dependency is UNVERSIONED -- `mos-system` is not built from this
+workspace's commit and pins nothing to it -- and it is declared once. `mos-apid`
+inherits it through its exact-version dependency on `mosd`, and so do both MQTT
+packages; no other control template mentions it.
+
+`mos-system` is not in this pool and will not be until that workstream lands.
+That is expected: it is an EXTERNAL name to these producers, the same as
+`passwd`, and the gate below classifies it as one. Installing these four
+packages into a clean root is therefore the composer's check and not this
+directory's.
+
+## The package gate
+
+```
+make os-debs              # every producer, both architectures, then both indexes
+make os-deb-package-gate  # bash os/tests/deb-package-gate.sh
+```
+
+The gate reads the built pools and asserts, out of the archives themselves:
+unique non-directory file ownership across the four packages with no `Replaces`
+escape; the fields and the `Depends` closure, with every local dependency
+pinned to the exact version the pool was built at; a non-empty
+`/usr/share/doc/<package>/copyright` in each; the enablement asymmetry
+described above -- one `multi-user.target.wants` symlink in each mosd-family
+payload, none in either MQTT payload; no `DEBIAN/conffiles`; and `sh -n` over
+every maintainer script, which the pipefail lint does not cover because these
+are `#!/bin/sh` and never enable it.
+
+It also rebuilds one producer per architecture and requires byte-identical
+archives. That rebuild runs on a buildx builder the gate CREATES, whose cache is
+empty by construction: a second build on the normal builder replays the cached
+packing layer and re-exports the same bytes, which would prove the export is
+deterministic and nothing at all about `pack.sh`.
