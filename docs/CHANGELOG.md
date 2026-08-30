@@ -41,7 +41,7 @@ mosd retains its explicit local `com.mos.mosd1` management API because APID and
 mosd are separate processes, but exports no Item1 façade and no settings,
 state, signal, or action to MQTT. This entry supersedes the extension-namespace
 and single-`GetDeviceId` exception described in the immediately following
-entry; the retained-topic cleanup guidance there remains applicable.
+entry.
 
 ## MQTT restricted to application data (2026-08-30)
 
@@ -60,9 +60,6 @@ obsolete system `com.mos.Item1` façade and action-item implementation are gone.
 D-Bus policy and image verification pin the exact grant across all policy
 files. Application disappearance, watcher failure, invalid item paths and
 address collisions withdraw retained values rather than leaving stale state.
-Upgrades from the former bridge require operators to enumerate and delete old
-retained `N/<deviceId>/mosd/#` records; MQTT provides no wildcard retained
-delete.
 
 ## Mosd workspace tests consolidated and repository prose audited (2026-08-30)
 

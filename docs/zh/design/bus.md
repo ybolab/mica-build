@@ -110,23 +110,11 @@ keepalive 打开 60 秒发布窗口并请求全量发布；窗口内每 3 秒发
 `<class>/<instance>` 必须唯一。发生冲突时双方都不发布，读写都不路由，并删除
 之前为冲突地址发布的 retained 记录；冲突解除后剩余应用在下一次全量发布恢复。
 
-## 5. 生命周期与升级清理
+## 5. 生命周期
 
 mosd 的 MQTT 协调器根据系统设置 `mqtt.enabled` 管理 broker 和 bridge 单元，
 但该设置本身不进入 MQTT。bridge 在镜像中默认禁用，以静态非特权用户运行，
 默认模式为 `read-only`。
-
-旧版本可能在 broker 中留下：
-
-```text
-N/<deviceId>/mosd/#
-```
-
-新桥接器无法得知旧 topic，MQTT 也不支持通配符删除 retained 消息。因此升级后，
-运维人员必须枚举准确的 `N/<deviceId>/mosd/` 前缀，通过逐条发送零长度 retained
-消息或 broker 管理工具删除；执行 broker 范围维护前先备份状态。不要删除
-`N/<deviceId>/<application-class>/...`。这是连接过旧版系统树桥接器的 broker
-所需的一次性迁移；全新安装不会发布 `mosd` class。
 
 ## 6. mosd 服务注册表
 

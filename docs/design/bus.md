@@ -127,7 +127,7 @@ MQTT-enabled application package owns both sides of its admission:
 
 The policy grants the bridge `GetItems` and `ItemsChanged`, and grants
 `SetValue` only when remote writes are part of that application's contract.
-It also grants root `GetItems`: mosd's registry (section 8) probes the
+It also grants root `GetItems`: mosd's registry (section 7) probes the
 service with that call, and the stock system bus denies method calls by
 default with no exemption for root. For example:
 
@@ -243,29 +243,7 @@ unprivileged `mos-mqttd` account. Broker connection settings come from the
 optional STATE-backed `/var/lib/mos/mqttd.env`; the default bridge mode is
 `read-only`.
 
-## 7. Upgrade cleanup for the removed system projection
-
-Older releases may have retained system records under:
-
-```text
-N/<deviceId>/mosd/#
-```
-
-The new bridge cannot discover those old topics because the system projection
-no longer exists, and MQTT has no wildcard retained-delete operation. Upgrading
-the device therefore cannot remove unknown retained records automatically.
-
-Before treating an upgraded broker as clean, an operator must enumerate every
-retained topic under the exact `N/<deviceId>/mosd/` prefix and delete each one
-using a zero-length retained publication or the broker's administrative purge
-facility. Back up broker state first when using a broker-wide maintenance
-operation. Do not purge `N/<deviceId>/<application-class>/...` topics.
-
-This is a one-time migration for brokers that were connected to a release that
-published the mosd system tree. Fresh installations have no `mosd` class
-publication path.
-
-## 8. mosd's service registry
+## 7. mosd's service registry
 
 The management daemon separately observes every other `com.mos.*` service for
 operator diagnostics. This registry is not an MQTT source and does not grant a
@@ -300,7 +278,7 @@ The registry describes every `com.mos.*` service. MQTT admits only exact
 package-enrolled application services and independently fails closed on
 collisions.
 
-## 9. Sparkplug B
+## 8. Sparkplug B
 
 Sparkplug B is not implemented by `mos-mqttd`. Its birth/death certificates,
 sequence numbers, metric aliases, and host coordination are a different wire

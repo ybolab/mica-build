@@ -11,7 +11,7 @@
   - [`boards.md`](design/boards.md) — BSP 契约：产物、内核断言、新板卡清单
   - [`bsp-cx3576-sync.md`](design/bsp-cx3576-sync.md) — cx3576 上游 BSP 同步记录与偏离登记
   - [`build-harness.md`](design/build-harness.md) — 本仓库的检查怎么跑：固定容器、临时空间、文档门禁
-  - [`bus.md`](design/bus.md) — 系统管理与应用数据边界、扩展 `com.mos.Item1` 契约、MQTT topic 与迁移
+  - [`bus.md`](design/bus.md) — 系统管理与应用数据边界、按包登记的 `com.mos.Item1` 应用契约、D-Bus 策略与 MQTT topic 语法
   - [`connd.md`](design/connd.md) — 连接性关注点：WiFi station/AP 的两个协调器
   - [`containers.md`](design/containers.md) — 集成商指南：Quadlet unit、互联、持久化
   - [`dashboard.md`](design/dashboard.md) — 仪表盘提案：着陆页、信息架构、技术姿态
