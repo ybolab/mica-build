@@ -94,12 +94,27 @@ A **dirty tree keeps the same commit timestamp**. The version already says
 instead would additionally make two dirty builds of one tree differ from each
 other, and that is the property worth keeping.
 
-## Units ship disabled
+## Enablement is package-owned
 
-No package here ships a `multi-user.target.wants` symlink and no maintainer
-script runs `systemctl enable`. A package describes what it owns; the composer
-decides what runs. This differs on purpose from
-`os/rootfs/scripts/mosd-install.sh`, which enables `mosd.service` and
-`apid.service` in the image built by the stage chain -- an image preset in a
-later workstream closes that gap, and until it does, a root composed from these
-packages boots with both units installed and inactive.
+A package that ships a unit ships the `multi-user.target.wants` symlink that
+starts it, as a **file in its payload**. `mosd` owns
+`/etc/systemd/system/multi-user.target.wants/mosd.service` and `mos-apid` owns
+`apid.service`, matching link for link what
+`os/rootfs/scripts/mosd-install.sh` creates in the image the stage chain
+builds. Installing the package is what makes the daemon run.
+
+No maintainer script is involved and nothing calls `systemctl enable` --
+both control archives hold `control` and `md5sums` and nothing else. A unit
+enabled by a script is enabled by something you have to run to see; a symlink
+in the archive is visible to `dpkg-deb --contents` and to every gate that reads
+one.
+
+The links are **not** conffiles. They sit under `/etc`, where dpkg would
+normally expect configuration a user edits and wants preserved across upgrades,
+but this root filesystem is an immutable dm-verity squashfs and nothing in it is
+edited. A `DEBIAN/conffiles` entry would promise a merge that cannot happen.
+
+A package that must NOT start on its own ships no such link -- the MQTT
+packages are the case: `mosd` owns their lifecycle at runtime and turns them on
+through settings, so shipping them enabled would start a broker nobody asked
+for.

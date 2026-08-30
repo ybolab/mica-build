@@ -32,24 +32,40 @@ ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
 
-# Two staged roots and two pack.sh runs. The paths and modes are the ones
-# os/rootfs/scripts/mosd-install.sh writes today, so a device composed from
-# these packages carries the same tree the stage chain installs -- with one
-# deliberate difference: NO multi-user.target.wants symlink. A package
-# describes what it owns; the composer decides what is enabled. The image
-# preset that restores enablement is a later workstream, and until it lands
-# this producer's output is intentionally less than what the chain ships.
+# Two staged roots and two pack.sh runs. The paths, the modes and the
+# enablement links are the ones os/rootfs/scripts/mosd-install.sh writes today,
+# so a root composed from these packages is the tree the stage chain installs.
 #
-# /usr/share/doc/<package>/copyright is per package and not shared, which is
-# what keeps the two payloads disjoint: no path is owned by both.
+# ENABLEMENT IS OWNED BY THE PACKAGE. Each package ships its own
+# multi-user.target.wants symlink as a FILE IN ITS PAYLOAD -- not as something
+# a maintainer script creates. There is no postinst here and nothing calls
+# `systemctl enable`: a unit that is enabled by a script is enabled by
+# something a reader has to run to see, while a symlink in the archive is
+# visible to `dpkg-deb --contents` and to every gate that reads one.
+#
+# NOT a conffile, deliberately. These two links live under /etc, which is where
+# dpkg would normally expect configuration a user edits and preserves across
+# upgrades -- but this root filesystem is an immutable dm-verity squashfs and
+# nobody edits anything in it. A conffiles entry would promise a merge that
+# cannot happen. Do not "fix" this into one.
+#
+# /usr/share/doc/<package>/copyright is per package and not shared, and each
+# wants-symlink names its own unit, which is what keeps the two payloads
+# disjoint: no path is owned by both.
 RUN set -eu; \
     install -D -m 0755 /in/bin/mosd               /stage/mosd/usr/bin/mosd; \
     install -D -m 0644 /in/dist/mosd.service      /stage/mosd/usr/lib/systemd/system/mosd.service; \
     install -D -m 0644 /in/dist/com.mos.mosd.conf /stage/mosd/usr/share/dbus-1/system.d/com.mos.mosd.conf; \
     install -D -m 0644 /in/copyright              /stage/mosd/usr/share/doc/mosd/copyright; \
+    install -d -m 0755 /stage/mosd/etc/systemd/system/multi-user.target.wants; \
+    ln -s /usr/lib/systemd/system/mosd.service \
+          /stage/mosd/etc/systemd/system/multi-user.target.wants/mosd.service; \
     install -D -m 0755 /in/bin/apid               /stage/apid/usr/bin/apid; \
     install -D -m 0644 /in/dist/apid.service      /stage/apid/usr/lib/systemd/system/apid.service; \
     install -D -m 0644 /in/copyright              /stage/apid/usr/share/doc/mos-apid/copyright; \
+    install -d -m 0755 /stage/apid/etc/systemd/system/multi-user.target.wants; \
+    ln -s /usr/lib/systemd/system/apid.service \
+          /stage/apid/etc/systemd/system/multi-user.target.wants/apid.service; \
     pack.sh --root /stage/mosd --control /in/control/mosd.control \
             --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out; \
     pack.sh --root /stage/apid --control /in/control/mos-apid.control \

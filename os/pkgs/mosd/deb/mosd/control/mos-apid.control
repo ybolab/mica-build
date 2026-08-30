@@ -11,4 +11,8 @@ Description: mos API daemon
  .
  The dependency on mosd is pinned to the exact version because the two are
  built from one workspace commit and speak an interface that carries no
- compatibility promise across commits. The unit ships disabled.
+ compatibility promise across commits.
+ .
+ The package owns its enablement: apid.service and the
+ multi-user.target.wants symlink that starts it are both payload, so
+ installing this package is what makes the daemon run.

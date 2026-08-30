@@ -10,5 +10,6 @@ Description: mos management daemon
  power actions and update state. Ships the root-only bus policy for that name
  alongside the binary, so the daemon's access boundary travels with it.
  .
- The unit ships disabled. What runs on a device is the composer's decision,
- not the package's.
+ The package owns its enablement: mosd.service and the
+ multi-user.target.wants symlink that starts it are both payload, so
+ installing this package is what makes the daemon run.
