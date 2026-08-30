@@ -397,12 +397,12 @@ fn has(services: &Json, name: &str) -> bool {
     services.get(name).is_some()
 }
 
-/// 1. A conforming extension service appears and is published with its class,
-///    its origin, and an empty conformance object.
+/// 1. A conforming service appears with its direct-name class and an empty
+///    conformance object.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_conforming_service_appears_with_no_conformance_gaps() {
     let harness = Harness::start().await;
-    let name = "com.mos.ext.sensor.fake";
+    let name = "com.mos.sensor.fake";
     let _fake = harness.fake(name, conforming(3)).await;
 
     let services = harness.wait_for(name, |services| has(services, name)).await;
@@ -411,9 +411,8 @@ async fn a_conforming_service_appears_with_no_conformance_gaps() {
     assert_eq!(entry["name"], name);
     assert_eq!(
         entry["class"], "sensor",
-        "the class of com.mos.ext.sensor.fake is `sensor`, never `ext`; got {entry:#}"
+        "the class of com.mos.sensor.fake is `sensor`; got {entry:#}"
     );
-    assert_eq!(entry["origin"], "extension", "{entry:#}");
     assert_eq!(entry["connected"], true, "{entry:#}");
     assert_eq!(entry["instance"], 3, "{entry:#}");
     assert_eq!(
@@ -432,8 +431,7 @@ async fn a_conforming_service_appears_with_no_conformance_gaps() {
     assert_eq!(
         entry,
         &serde_json::json!({
-            "name": "com.mos.ext.sensor.fake",
-            "origin": "extension",
+            "name": "com.mos.sensor.fake",
             "class": "sensor",
             "connected": true,
             "instance": 3,
@@ -456,7 +454,7 @@ async fn a_conforming_service_appears_with_no_conformance_gaps() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_vanished_service_is_retained_and_only_then_forgettable() {
     let harness = Harness::start().await;
-    let name = "com.mos.ext.sensor.fake";
+    let name = "com.mos.sensor.fake";
     let fake = harness.fake(name, conforming(1)).await;
     harness.wait_for(name, |services| has(services, name)).await;
 
@@ -542,8 +540,8 @@ async fn a_vanished_service_is_retained_and_only_then_forgettable() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_service_without_item1_is_registered_and_warned_about() {
     let harness = Harness::start().await;
-    let silent = "com.mos.ext.sensor.silent";
-    let other = "com.mos.ext.sensor.other";
+    let silent = "com.mos.sensor.silent";
+    let other = "com.mos.sensor.other";
     let _silent = harness.fake_that_answers_nothing(silent).await;
     let _other = harness.fake_with_another_interface(other).await;
 
@@ -598,7 +596,7 @@ async fn a_service_without_item1_is_registered_and_warned_about() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_service_without_a_device_instance_falls_back_to_zero() {
     let harness = Harness::start().await;
-    let name = "com.mos.ext.meter.noinstance";
+    let name = "com.mos.meter.noinstance";
     let _fake = harness.fake(name, conforming_without_instance()).await;
 
     let services = harness.wait_for(name, |services| has(services, name)).await;
@@ -626,8 +624,8 @@ async fn a_service_without_a_device_instance_falls_back_to_zero() {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_instanceless_services_of_a_class_both_carry_the_collision() {
     let harness = Harness::start().await;
-    let one = "com.mos.ext.sensor.one";
-    let two = "com.mos.ext.sensor.two";
+    let one = "com.mos.sensor.one";
+    let two = "com.mos.sensor.two";
     let _first = harness.fake(one, conforming_without_instance()).await;
     let _second = harness.fake(two, conforming_without_instance()).await;
 
@@ -654,10 +652,9 @@ async fn two_instanceless_services_of_a_class_both_carry_the_collision() {
     }
 }
 
-/// 6. The bare namespace `com.mos.ext`: extension origin, NO class, and the
-///    gap recorded rather than a class invented.
+/// 6. `ext` is an ordinary direct class, not a privileged namespace.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_bare_extension_namespace_has_no_class_and_is_not_system() {
+async fn ext_is_an_ordinary_direct_class() {
     let harness = Harness::start().await;
     let name = "com.mos.ext";
     let _fake = harness.fake(name, conforming(9)).await;
@@ -665,27 +662,11 @@ async fn the_bare_extension_namespace_has_no_class_and_is_not_system() {
     let services = harness.wait_for(name, |services| has(services, name)).await;
     let entry = entry(&services, name);
 
-    assert_eq!(
-        entry["origin"], "extension",
-        "com.mos.ext is EXTENSION origin: an unprivileged uid can own this name (measured \
-         against dbus-daemon 1.12.20), so publishing it as system-origin would let any third \
-         party present itself to operators and to the bridge as the system; got {entry:#}"
-    );
-    assert!(
-        entry["class"].is_null(),
-        "com.mos.ext has no fourth component, so it has no class — `ext` is the invented class \
-         this whole rule exists to prevent, and an empty segment is no better; got {entry:#}"
-    );
-    assert_eq!(
-        entry["conformance"]["no_class"], true,
-        "a service in the extension namespace that names no class is non-conforming, and the \
-         registry is where that gap is recorded; got {entry:#}"
-    );
+    assert_eq!(entry["class"], "ext", "{entry:#}");
     assert_eq!(
         entry["conformance"],
-        serde_json::json!({ "no_class": true }),
-        "the only gap is the missing class: the fake publishes all seven mandatory paths; \
-         got {entry:#}"
+        serde_json::json!({}),
+        "the fake publishes all seven mandatory paths; got {entry:#}"
     );
     assert_eq!(entry["instance"], 9, "{entry:#}");
 }
@@ -700,7 +681,7 @@ async fn the_bare_extension_namespace_has_no_class_and_is_not_system() {
 #[tokio::test(flavor = "multi_thread")]
 async fn dry_run_constructs_no_scan() {
     let harness = Harness::start_without_scan().await;
-    let name = "com.mos.ext.sensor.unwatched";
+    let name = "com.mos.sensor.unwatched";
     let _fake = harness.fake(name, conforming(2)).await;
 
     let refused = harness

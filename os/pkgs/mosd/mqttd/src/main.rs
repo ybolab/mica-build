@@ -1,4 +1,4 @@
-//! `mos-mqttd` — the MQTT bridge over extension application item trees.
+//! `mos-mqttd` — the MQTT bridge over explicitly enrolled application trees.
 //!
 //! Everything the daemon does is in the library ([`mos_mqttd`]); this is the
 //! command line, the logger and the call into [`mos_mqttd::runtime::run`].
@@ -7,10 +7,18 @@ use clap::Parser;
 use mos_mqttd::config::{Mode, Timings};
 use mos_mqttd::runtime::{self, Settings};
 
-/// The MQTT data-publishing bridge for `com.mos.ext.*` applications.
+/// The MQTT data-publishing bridge for explicitly enrolled `com.mos.*` applications.
 #[derive(Debug, Parser)]
 #[command(name = "mos-mqttd", version)]
 struct Args {
+    /// Stable device identity used as the MQTT topic address.
+    #[arg(long)]
+    device_id: String,
+
+    /// Package-owned directory whose file names are exact application D-Bus names.
+    #[arg(long, default_value = "/usr/lib/mos/mqtt-applications.d")]
+    applications_dir: std::path::PathBuf,
+
     /// Broker host to connect to.
     #[arg(long, default_value = "localhost")]
     broker_host: String,
@@ -45,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
         "starting"
     );
     runtime::run(Settings {
+        device_id: args.device_id,
+        applications_dir: args.applications_dir,
         broker_host: args.broker_host,
         broker_port: args.broker_port,
         client_id: args.client_id,

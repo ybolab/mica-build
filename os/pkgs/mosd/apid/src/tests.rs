@@ -3284,8 +3284,12 @@ async fn the_mqtt_pane_states_the_application_only_boundary() {
     // data only" notice could otherwise drift back into publishing a system
     // subtree without making the operator-facing contract fail.
     assert!(
-        body.contains("com.mos.ext.* application item trees"),
-        "the pane must name the positive application namespace: {body}"
+        body.contains("com.mos application item trees enrolled by exact service name"),
+        "the pane must name the positive application enrollment boundary: {body}"
+    );
+    assert!(
+        body.contains("com.mos.mosd has no MQTT access"),
+        "the pane must state the structural mosd exclusion: {body}"
     );
     assert!(
         body.contains("SSH, networking, credentials, containers, MQTT configuration, health, updates and power"),

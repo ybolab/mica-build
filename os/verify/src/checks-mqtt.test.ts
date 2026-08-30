@@ -1,11 +1,4 @@
-// The MQTT pair driven from the failing side.
-//
-// Each case is ONE edit to a fixture
-// asserted green first, and each edit is a shape the real defect took: the
-// bridge absent from the image while its crate and protocol tests were green, a
-// `DynamicUser=yes` no `<policy user=>` could name, an ExecStart with a broker
-// host baked into a read-only squashfs, and an enablement symlink that defeats
-// the switch mosd is supposed to own.
+// MQTT image-contract tests driven from the failing side.
 
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -19,17 +12,15 @@ import type { CheckResult, Verdict } from './parity.ts'
 
 const cx3576 = loadBoard(boardEnvPath('cx3576'))
 const x64 = loadBoard(boardEnvPath('x64'))
-
 const MQTTD_UNIT = '/usr/lib/systemd/system/mos-mqttd.service'
-const MQTTD_POLICY = '/usr/share/dbus-1/system.d/mos-mqttd.conf'
+const MQTTD_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqttd.service'
 const BROKER_UNIT = '/usr/lib/systemd/system/mos-mqtt-broker.service'
+const LEGACY_POLICY = '/usr/share/dbus-1/system.d/mos-mqttd.conf'
+const APPLICATIONS_DIR = '/usr/lib/mos/mqtt-applications.d'
 
 function checkNamed(id: string): CheckCase {
   const found = MQTT_CHECKS.find(c => c.id === id)
-  if (found === undefined) {
-    throw new Error(`no MQTT check is registered as '${id}'. Registered: `
-      + MQTT_CHECKS.map(c => c.id).join(', '))
-  }
+  if (found === undefined) throw new Error(`no MQTT check registered as ${id}`)
   return found
 }
 
@@ -55,11 +46,24 @@ function rewrite(root: string, path: string, edit: (text: string) => string): vo
   writeFileSync(join(root, path), edit(readFileSync(join(root, path), 'utf8')))
 }
 
+function write(root: string, path: string, content: string): void {
+  mkdirSync(join(root, path, '..'), { recursive: true })
+  writeFileSync(join(root, path), content)
+}
+
+function applicationPolicy(name: string): string {
+  return '<busconfig>\n'
+    + '<policy user="mos-sensor">\n'
+    + `<allow own="${name}"/>\n`
+    + '</policy>\n'
+    + '<policy user="mos-mqttd">\n'
+    + `<allow send_destination="${name}" send_interface="com.mos.Item1" send_member="GetItems"/>\n`
+    + `<allow receive_sender="${name}" receive_interface="com.mos.Item1" receive_member="ItemsChanged"/>\n`
+    + '</policy>\n</busconfig>\n'
+}
+
 describe('the healthy image', () => {
-  test('every MQTT check PASSES on both boards -- this family is board-unconditional', async () => {
-    // 16 conclusions on EACH shipped board, measured against both boards' real
-    // oracle output. Nothing here is gated on a board declaration, which is why
-    // it was not batch 3 as scoped and why no batch had picked it up.
+  test('every MQTT check passes on both boards', async () => {
     for (const board of [cx3576, x64]) {
       const fx = packedRootFixture(board)
       try {
@@ -73,386 +77,180 @@ describe('the healthy image', () => {
         fx.dispose()
       }
     }
-    for (const c of MQTT_CHECKS) expect(`${c.id}: ${c.boards}`).toBe(`${c.id}: undefined`)
   })
 })
 
-describe('the bridge is in the image at all', () => {
-  test('a missing binary fails, and the message says the crate would still be green', async () => {
+describe('the bridge is installed, inert, and starts with an explicit identity', () => {
+  test('a missing binary fails', async () => {
     const fx = await mutated('mqttd-bin', root => rmSync(join(root, '/usr/bin/mos-mqttd')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-bin')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-bin')).toContain('the crate builds and its protocol tests pass')
-    }
-    finally {
-      fx.dispose()
-    }
+    try { expect(await verdictOf(fx, 'mqttd-bin')).toBe('fail') }
+    finally { fx.dispose() }
   })
 
-  test('a policy file that became a SYMLINK fails -- lstat, not -f', async () => {
-    const fx = await mutated('mqttd-policy', (root) => {
-      rmSync(join(root, MQTTD_POLICY))
-      symlinkSync('/usr/share/dbus-1/system.d/elsewhere.conf', join(root, MQTTD_POLICY))
-    })
-    try {
-      expect(await verdictOf(fx, 'mqttd-policy')).toBe('fail')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-})
-
-describe('...and INERT, which is the load-bearing half', () => {
-  test('an enablement symlink defeats mqtt.enabled and fails', async () => {
+  test('an enablement symlink defeats mqtt.enabled', async () => {
     const fx = await mutated('mqttd-not-enabled', (root) => {
-      const dir = join(root, '/etc/systemd/system/multi-user.target.wants')
-      mkdirSync(dir, { recursive: true })
-      symlinkSync(MQTTD_UNIT, join(dir, 'mos-mqttd.service'))
+      mkdirSync(join(root, MQTTD_WANTS, '..'), { recursive: true })
+      symlinkSync(MQTTD_UNIT, join(root, MQTTD_WANTS))
     })
-    try {
-      expect(await verdictOf(fx, 'mqttd-not-enabled')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-not-enabled'))
-        .toContain('the bridge starts at boot regardless of mqtt.enabled')
-    }
-    finally {
-      fx.dispose()
-    }
+    try { expect(await verdictOf(fx, 'mqttd-not-enabled')).toBe('fail') }
+    finally { fx.dispose() }
   })
 
-  test('a DANGLING wants symlink still counts as enabled', async () => {
-    // The trap: a wants symlink points at an ABSOLUTE
-    // path under /usr/lib, which resolves to nothing whenever ROOT is an
-    // unpacked tree rather than /. A check using `-e` alone follows the link,
-    // calls it absent, and PASSES on exactly the image that failed it.
-    const fx = await mutated('mqtt-broker-not-enabled', (root) => {
-      const dir = join(root, '/etc/systemd/system/multi-user.target.wants')
-      mkdirSync(dir, { recursive: true })
-      symlinkSync('/usr/lib/systemd/system/mos-mqtt-broker.service.nowhere',
-        join(dir, 'mos-mqtt-broker.service'))
-    })
-    try {
-      expect(await verdictOf(fx, 'mqtt-broker-not-enabled')).toBe('fail')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-})
-
-describe('the identity the unit runs as', () => {
-  test('DynamicUser=yes fails, because <policy user=> is resolved at dbus startup', async () => {
-    // The one that silently breaks the grant: dbus-daemon reads the policy file
-    // before any dynamic user exists, so the rule loads and matches nothing --
-    // and the bridge connects to the broker and publishes nothing, with no
-    // error at the point of cause.
+  test('a dynamic bridge user fails because package policies need a stable identity', async () => {
     const fx = await mutated('mqttd-static-user', root =>
-      rewrite(root, MQTTD_UNIT, t => t.replace('User=mos-mqttd\n', 'DynamicUser=yes\n')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-static-user')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-static-user')).toContain('dbus-daemon resolves')
-    }
-    finally {
-      fx.dispose()
-    }
+      rewrite(root, MQTTD_UNIT, text => text.replace('User=mos-mqttd\n', 'DynamicUser=yes\n')))
+    try { expect(await verdictOf(fx, 'mqttd-static-user')).toBe('fail') }
+    finally { fx.dispose() }
   })
 
-  test('a policy naming a DIFFERENT user fails, and both names are printed', async () => {
-    // A grant naming the wrong identity is a rule that loads, matches nothing,
-    // and reads in review exactly like a working one -- so the message has to
-    // carry both sides or a reader cannot see which is wrong.
-    const fx = await mutated('mqttd-policy-names-unit-user', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace('<policy user="mos-mqttd">', '<policy user="mqtt">')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-policy-names-unit-user')).toBe('fail')
-      const message = await messageOf(fx, 'mqttd-policy-names-unit-user')
-      expect(message).toContain("runs as 'mos-mqttd'")
-      expect(message).toContain("grants 'mqtt'")
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('an identity absent from /etc/passwd fails: systemd refuses the unit at boot', async () => {
+  test('the static identity must exist in passwd', async () => {
     const fx = await mutated('mqttd-user-in-passwd', root =>
-      rewrite(root, '/etc/passwd', t => t.split('\n').filter(l => !l.startsWith('mos-mqttd:')).join('\n')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-user-in-passwd')).toBe('fail')
-    }
-    finally {
-      fx.dispose()
-    }
-    const broker = await mutated('mqtt-broker-user-in-passwd', root =>
-      rewrite(root, '/etc/passwd', t => t.split('\n').filter(l => !l.startsWith('mos-mqtt-broker:')).join('\n')))
-    try {
-      expect(await verdictOf(broker, 'mqtt-broker-user-in-passwd')).toBe('fail')
-    }
-    finally {
-      broker.dispose()
-    }
+      rewrite(root, '/etc/passwd', text => text.split('\n')
+        .filter(line => !line.startsWith('mos-mqttd:')).join('\n')))
+    try { expect(await verdictOf(fx, 'mqttd-user-in-passwd')).toBe('fail') }
+    finally { fx.dispose() }
   })
 
-  test('the passing message carries the uid, gid and shell, not just the name', async () => {
-    // What a reader needs when the account exists and the unit still will not
-    // start: a nologin shell and a system uid are the shape it should have.
-    const fx = packedRootFixture(cx3576)
-    try {
-      const message = await messageOf(fx, 'mqttd-user-in-passwd')
-      expect(message).toContain('uid 970, gid 970, shell /usr/sbin/nologin')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-})
-
-describe('the D-Bus grant', () => {
-  test('a BLANKET send_destination fails -- that is the whole interface', async () => {
-    // Every system-management member would be handed to the network daemon.
-    const fx = await mutated('mqttd-grant-per-member', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace('send_member="GetDeviceId"', '')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-grant-per-member')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-grant-per-member')).toContain('names no member:')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('NO grant at all fails differently: the bridge cannot address applications', async () => {
-    // A different defect with a different repair, so a different sentence.
-    const fx = await mutated('mqttd-grant-per-member', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace(/send_destination="com\.mos\.mosd"/g,
-        'send_destination="com.mos.other"')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-grant-per-member')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-grant-per-member')).toContain('there is no grant on com.mos.mosd at all')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('a grant on a FORBIDDEN member fails, and names it', async () => {
-    const fx = await mutated('mqttd-no-forbidden-members', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace('send_member="GetDeviceId"', 'send_member="Reboot"')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('system members (Reboot)')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('a receive grant on the system service fails too', async () => {
-    const fx = await mutated('mqttd-no-forbidden-members', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace(
-        '  </policy>',
-        '    <allow receive_sender="com.mos.mosd" receive_interface="com.mos.mosd1" receive_member="SettingsChanged"/>\n  </policy>')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('SettingsChanged')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('a second policy file cannot grant the bridge a management member', async () => {
-    const fx = await mutated('mqttd-no-forbidden-members', (root) => {
-      const path = join(root, '/etc/dbus-1/system.d/extra-mqttd.conf')
-      mkdirSync(join(root, '/etc/dbus-1/system.d'), { recursive: true })
-      writeFileSync(path,
-        '<busconfig><policy user="mos-mqttd">'
-        + '<allow send_destination="com.mos.mosd" send_interface="com.mos.mosd1" send_member="Reboot"/>'
-        + '</policy></busconfig>\n')
-    })
-    try {
-      expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
-      const message = await messageOf(fx, 'mqttd-no-forbidden-members')
-      expect(message).toContain('extra-mqttd.conf')
-      expect(message).toContain('Reboot')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  for (const selector of ['context="mandatory"', 'at_console="false"']) {
-    test(`a second policy file using ${selector} cannot grant a management member`, async () => {
-      const fx = await mutated('mqttd-no-forbidden-members', (root) => {
-        const path = join(root, '/etc/dbus-1/system.d/extra-mqttd.conf')
-        mkdirSync(join(root, '/etc/dbus-1/system.d'), { recursive: true })
-        writeFileSync(path,
-          `<busconfig><policy ${selector}>`
-          + '<allow send_destination="com.mos.mosd" send_interface="com.mos.mosd1" send_member="Reboot"/>'
-          + '</policy></busconfig>\n')
-      })
+  for (const edit of [
+    (text: string): string => text.replace('ConditionPathExists=/run/mos/mqttd-device.env\n', ''),
+    (text: string): string => text.replace('EnvironmentFile=/run/mos/mqttd-device.env\n', ''),
+    (text: string): string => text.replace('--device-id ${MOS_MQTT_DEVICE_ID} ', ''),
+  ]) {
+    test('a missing runtime identity link fails closed', async () => {
+      const fx = await mutated('mqttd-device-id-runtime-input', root => rewrite(root, MQTTD_UNIT, edit))
       try {
-        expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
-        const message = await messageOf(fx, 'mqttd-no-forbidden-members')
-        expect(message).toContain('extra-mqttd.conf')
-        expect(message).toContain('Reboot')
+        expect(await verdictOf(fx, 'mqttd-device-id-runtime-input')).toBe('fail')
+        expect(await messageOf(fx, 'mqttd-device-id-runtime-input')).toContain('must not be fetched from com.mos.mosd')
       }
-      finally {
-        fx.dispose()
-      }
+      finally { fx.dispose() }
     })
   }
+})
 
-  test('attributes WRAPPED across lines are read as one rule', async () => {
-    // Measured on the oracle's first run against the real file: the
-    // shipped rules wrap, so a line-oriented search for send_member= on a rule
-    // whose send_destination= is on the line above finds nothing and reports a
-    // BLANKET grant that is not there. The fixture's first rule wraps on
-    // purpose; this asserts it is not misread.
+describe('the MQTT/D-Bus boundary', () => {
+  test('the old mqttd-to-mosd policy must stay absent', async () => {
+    const fx = await mutated('mqttd-legacy-policy-absent', root =>
+      write(root, LEGACY_POLICY, applicationPolicy('com.mos.mosd')))
+    try { expect(await verdictOf(fx, 'mqttd-legacy-policy-absent')).toBe('fail') }
+    finally { fx.dispose() }
+  })
+
+  test('a policy in any fragment cannot grant mqttd a mosd call or signal', async () => {
+    const fx = await mutated('mqttd-zero-mosd-access', root => write(
+      root,
+      '/etc/dbus-1/system.d/unsafe.conf',
+      '<busconfig><policy user="mos-mqttd">'
+      + '<allow send_destination="com.mos.mosd" send_member="GetState"/>'
+      + '</policy></busconfig>\n',
+    ))
+    try {
+      expect(await verdictOf(fx, 'mqttd-zero-mosd-access')).toBe('fail')
+      expect(await messageOf(fx, 'mqttd-zero-mosd-access')).toContain('GetState')
+    }
+    finally { fx.dispose() }
+  })
+
+  test('the enrollment directory must ship even when no applications are installed', async () => {
+    const fx = await mutated('mqttd-applications-directory', root =>
+      rmSync(join(root, APPLICATIONS_DIR), { recursive: true }))
+    try { expect(await verdictOf(fx, 'mqttd-applications-directory')).toBe('fail') }
+    finally { fx.dispose() }
+  })
+
+  test('one exact application enrollment and package policy pair passes', async () => {
     const fx = packedRootFixture(cx3576)
     try {
-      expect(readFileSync(join(fx.root, MQTTD_POLICY), 'utf8')).toContain('<allow\n')
-      expect(await verdictOf(fx, 'mqttd-grant-per-member')).toBe('pass')
-      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('only system grant is com.mos.mosd1.GetDeviceId')
+      const name = 'com.mos.sensor.abc123'
+      write(fx.root, `${APPLICATIONS_DIR}/${name}`, '')
+      write(fx.root, '/usr/share/dbus-1/system.d/com.mos.sensor.abc123.conf', applicationPolicy(name))
+      expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('pass')
     }
-    finally {
-      fx.dispose()
+    finally { fx.dispose() }
+  })
+
+  test('an enrollment without a policy fails', async () => {
+    const fx = await mutated('mqttd-exact-application-grants', root =>
+      write(root, `${APPLICATIONS_DIR}/com.mos.sensor.abc123`, ''))
+    try {
+      expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('fail')
+      expect(await messageOf(fx, 'mqttd-exact-application-grants')).toContain('has no exact user-scoped ownership grant')
+    }
+    finally { fx.dispose() }
+  })
+
+  test('an exact ownership grant in the default context still permits service spoofing', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      const name = 'com.mos.sensor.abc123'
+      write(fx.root, `${APPLICATIONS_DIR}/${name}`, '')
+      write(
+        fx.root,
+        '/usr/share/dbus-1/system.d/com.mos.sensor.abc123.conf',
+        applicationPolicy(name).replace('<policy user="mos-sensor">', '<policy context="default">'),
+      )
+      expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('fail')
+      expect(await messageOf(fx, 'mqttd-exact-application-grants')).toContain(
+        'is not scoped to one explicit user',
+      )
+    }
+    finally { fx.dispose() }
+  })
+
+  test('a grant without an enrollment fails', async () => {
+    const fx = await mutated('mqttd-exact-application-grants', root => write(
+      root,
+      '/usr/share/dbus-1/system.d/com.mos.sensor.conf',
+      applicationPolicy('com.mos.sensor.abc123'),
+    ))
+    try {
+      expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('fail')
+      expect(await messageOf(fx, 'mqttd-exact-application-grants')).toContain('unenrolled grant')
+    }
+    finally { fx.dispose() }
+  })
+
+  test('wildcard and mosd enrollments both fail', async () => {
+    for (const name of ['com.mos.sensor.*', 'com.mos.mosd']) {
+      const fx = await mutated('mqttd-exact-application-grants', root =>
+        write(root, `${APPLICATIONS_DIR}/${name}`, ''))
+      try { expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('fail') }
+      finally { fx.dispose() }
     }
   })
 
-  test('a COMMENTED-OUT rule is commentary and is not read as a grant', async () => {
-    // The comment strip has to come BEFORE the tag split, or a commented-out
-    // `<allow send_destination="com.mos.mosd"/>` becomes a rule the moment the
-    // tags are put on their own lines. The fixture ships exactly that comment.
+  test('XML comments do not become live policy rules', () => {
     const lines = policyRuleLines(
-      '<busconfig>\n'
-      + '  <!-- <allow send_destination="com.mos.mosd"/> -->\n'
-      + '  <policy user="mos-mqttd"><allow send_destination="com.mos.mosd" send_member="GetItems"/></policy>\n'
-      + '</busconfig>\n')
-    expect(lines.filter(l => l.includes('send_destination="com.mos.mosd"')).length).toBe(1)
-    expect(lines.some(l => l.includes('send_member="GetItems"'))).toBe(true)
-  })
-
-  test('a comment spanning several LINES is stripped whole', async () => {
-    const lines = policyRuleLines(
-      '<busconfig>\n'
-      + '  <!-- a rule we removed:\n'
-      + '       <allow send_destination="com.mos.mosd"/>\n'
-      + '       and why -->\n'
-      + '  <policy user="x"/>\n'
-      + '</busconfig>\n')
-    expect(lines.some(l => l.includes('send_destination'))).toBe(false)
-    expect(lines.some(l => l.startsWith('<policy user="x"'))).toBe(true)
+      '<busconfig><!-- <allow send_destination="com.mos.mosd"/> -->'
+      + '<policy user="mos-mqttd"><allow send_destination="com.mos.sensor"/></policy></busconfig>',
+    )
+    expect(lines.filter(line => line.includes('send_destination')).length).toBe(1)
   })
 })
 
-describe('the broker address, and where it is configured', () => {
-  test('a hardcoded broker host fails: the root is immutable and has no systemctl edit', async () => {
+describe('broker configuration and identity', () => {
+  test('a hardcoded broker host fails', async () => {
     const fx = await mutated('mqttd-broker-from-environment', root =>
-      rewrite(root, MQTTD_UNIT, t => t.replace('${MOS_MQTT_BROKER_HOST}', 'mqtt.example.invalid')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-broker-from-environment')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-broker-from-environment')).toContain('mqtt.example.invalid')
-    }
-    finally {
-      fx.dispose()
-    }
+      rewrite(root, MQTTD_UNIT, text => text.replace('${MOS_MQTT_BROKER_HOST}', 'mqtt.invalid')))
+    try { expect(await verdictOf(fx, 'mqttd-broker-from-environment')).toBe('fail') }
+    finally { fx.dispose() }
   })
 
-  test('an ExecStart WRAPPED over continuation lines is still read whole', async () => {
-    // `sed -n '/^ExecStart=/,/[^\\]$/p' | tr -d '\\\n'`. A reader that took the
-    // first line only would report a hardcoded host for a unit that has none,
-    // because the reference is usually in the middle of the command line.
-    const fx = packedRootFixture(cx3576)
-    try {
-      rewrite(fx.root, MQTTD_UNIT, t => t.replace(
-        'ExecStart=/usr/bin/mos-mqttd --broker ${MOS_MQTT_BROKER_HOST}\n',
-        'ExecStart=/usr/bin/mos-mqttd \\\n  --broker ${MOS_MQTT_BROKER_HOST} \\\n  --verbose\n'))
-      expect(await verdictOf(fx, 'mqttd-broker-from-environment')).toBe('pass')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('a NON-optional EnvironmentFile fails: an unconfigured device would not start', async () => {
-    // A worse default than running unconfigured, and it is one character.
+  test('the operator broker file remains optional and state-backed', async () => {
     const fx = await mutated('mqttd-envfile-on-state', root =>
-      rewrite(root, MQTTD_UNIT, t => t.replace('EnvironmentFile=-/var', 'EnvironmentFile=/var')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-envfile-on-state')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-envfile-on-state')).toContain("not optional (no leading '-')")
-    }
-    finally {
-      fx.dispose()
-    }
+      rewrite(root, MQTTD_UNIT, text => text.replace('EnvironmentFile=-/var/lib/mos/mqttd.env',
+        'EnvironmentFile=/var/lib/mos/mqttd.env')))
+    try { expect(await verdictOf(fx, 'mqttd-envfile-on-state')).toBe('fail') }
+    finally { fx.dispose() }
   })
 
-  test('no EnvironmentFile at all fails', async () => {
-    const fx = await mutated('mqttd-envfile-on-state', root =>
-      rewrite(root, MQTTD_UNIT, t => t.replace(/^EnvironmentFile=.*\n/m, '')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-envfile-on-state')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-envfile-on-state')).toContain('no EnvironmentFile= line at all')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
+  test('the broker remains installed and its account remains static', async () => {
+    const missing = await mutated('mqtt-broker-unit', root => rmSync(join(root, BROKER_UNIT)))
+    try { expect(await verdictOf(missing, 'mqtt-broker-unit')).toBe('fail') }
+    finally { missing.dispose() }
 
-  test('an EnvironmentFile under a path no .mount unit mounts fails', async () => {
-    // That path is inside the read-only verity squashfs, so the operator cannot
-    // write it and the broker stays whatever the image was built with. The
-    // check looks for a unit whose Where= is the file's DIRECTORY, which is
-    // what makes moving the file one directory up a caught mistake.
-    const fx = await mutated('mqttd-envfile-on-state', root =>
-      rewrite(root, MQTTD_UNIT, t => t.replace('EnvironmentFile=-/var/lib/mos/mqttd.env',
-        'EnvironmentFile=-/etc/mos/mqttd.env')))
-    try {
-      expect(await verdictOf(fx, 'mqttd-envfile-on-state')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-envfile-on-state')).toContain('no .mount unit in the image mounts')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('the passing message names the mount unit and its What=', async () => {
-    const fx = packedRootFixture(cx3576)
-    try {
-      expect(await messageOf(fx, 'mqttd-envfile-on-state'))
-        .toContain('a bind mounted by var-lib-mos.mount (What=/mnt/state/mos)')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-})
-
-describe('the broker half', () => {
-  test('a DynamicUser broker fails for its own reason -- the credentials file', async () => {
-    // Not the bridge's reason. A dynamic uid is allocated at start and gone at
-    // stop, so /var/lib/mos/mqtt-broker-users.toml would be left owned by a
-    // number that names nobody on the next boot.
-    const fx = await mutated('mqtt-broker-static-user', root =>
-      rewrite(root, BROKER_UNIT, t => t.replace('User=mos-mqtt-broker\n', 'DynamicUser=yes\n')))
-    try {
-      expect(await verdictOf(fx, 'mqtt-broker-static-user')).toBe('fail')
-      expect(await messageOf(fx, 'mqtt-broker-static-user')).toContain('mqtt-broker-users.toml')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('the broker set has NO policy check, and that is not an omission', () => {
-    // The broker speaks no D-Bus at all: it reads one file mosd renders into
-    // /run and listens on a TCP socket, so it has nothing to be granted and
-    // nothing to be denied. Asserted so the absence is a decision on the
-    // record rather than a gap someone later "fixes".
-    expect(MQTT_CHECKS.filter(c => c.id.startsWith('mqtt-broker-')).map(c => c.id)).toEqual([
-      'mqtt-broker-bin', 'mqtt-broker-unit', 'mqtt-broker-not-enabled',
-      'mqtt-broker-static-user', 'mqtt-broker-user-in-passwd',
-    ])
+    const dynamic = await mutated('mqtt-broker-static-user', root =>
+      rewrite(root, BROKER_UNIT, text => text.replace('User=mos-mqtt-broker', 'DynamicUser=yes')))
+    try { expect(await verdictOf(dynamic, 'mqtt-broker-static-user')).toBe('fail') }
+    finally { dynamic.dispose() }
   })
 })

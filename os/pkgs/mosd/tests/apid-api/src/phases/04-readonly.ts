@@ -85,7 +85,7 @@ const PANES: readonly Pane[] = [
     // marker that moved with the setting would make this pane's presence
     // depend on its state.
     path: "/mqtt",
-    marker: "The bridge carries only com.mos.ext.* application item trees.",
+    marker: "The bridge carries only com.mos application item trees enrolled by exact service name.",
     markerName: "the MQTT pane's application-only scope notice",
   },
 ];

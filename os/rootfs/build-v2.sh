@@ -270,16 +270,14 @@ if ! declined mosd; then
     cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
     cp "$REPO_ROOT/os/pkgs/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
     cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
-    cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
     cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
     cp "$REPO_ROOT/os/pkgs/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
     # The MQTT bridge. Its unit lives in the crate rather than
-    # os/pkgs/mosd/dist because the crate is where it is maintained; its D-Bus grant
-    # lives in os/pkgs/mosd/dist beside the policy it is layered over.
+    # os/pkgs/mosd/dist because the crate is where it is maintained. It has no
+    # mosd D-Bus grant; MQTT-enabled applications ship exact policies.
     cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqttd" \
         "$MOSD_STAGE/mos-mqttd"
     cp "$REPO_ROOT/os/pkgs/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
-    cp "$REPO_ROOT/os/pkgs/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
     # The broker the bridge above connects to. No D-Bus grant to
     # stage beside it: it is not a bus client, it only listens on TCP. Its
     # config is not staged either -- mosd renders /run/mos/mqtt-broker.toml at

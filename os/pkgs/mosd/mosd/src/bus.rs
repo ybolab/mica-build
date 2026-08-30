@@ -573,23 +573,6 @@ fn transient_to_fdo(err: anyhow::Error) -> fdo::Error {
 
 #[zbus::interface(name = "com.mos.mosd1")]
 impl MosdService {
-    /// The stable device identifier used to address application MQTT topics.
-    ///
-    /// This deliberately exposes one fact rather than granting the
-    /// network-facing bridge `GetSettings`: a path-taking settings method
-    /// would also let it read SSH, networking, credentials and every future
-    /// system setting.
-    async fn get_device_id(&self) -> fdo::Result<String> {
-        self.inner
-            .lock()
-            .await
-            .settings
-            .provisioning
-            .device_id
-            .clone()
-            .ok_or_else(|| fdo::Error::Failed("device identity is not provisioned".to_string()))
-    }
-
     /// JSON-encoded settings value at dot-path `path` (`""` = whole tree).
     async fn get_settings(&self, path: &str) -> Result<String, SettingsFault> {
         let inner = self.inner.lock().await;

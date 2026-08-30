@@ -41,9 +41,10 @@ FROM ${MOS_STAGE_PREV}
 
 # The broker ships no D-Bus policy file, and that absence is deliberate: it
 # never speaks D-Bus. It reads one file mosd renders into /run and listens on a
-# TCP socket. The bridge is the half of this pair that talks to D-Bus: it may
-# read only GetDeviceId from com.mos.mosd, while each MQTT-enabled application
-# grants access to its exact com.mos.ext.* Item1 service.
+# TCP socket. The bridge is the half of this pair that talks to D-Bus, but it
+# has zero access to com.mos.mosd. Each MQTT-enabled application enrolls and
+# grants its exact com.mos.<class>[.<suffix>] Item1 service; mosd renders the
+# bridge's topic identity into /run before starting it.
 ARG MOSD_DIR
 COPY ${MOSD_DIR}/ /tmp/mosd/
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \

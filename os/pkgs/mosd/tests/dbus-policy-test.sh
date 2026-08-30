@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
-# Live-bus tests for the shipped D-Bus policies: os/pkgs/mosd/dist/com.mos.mosd.conf
-# (sections 0-3) and os/pkgs/mosd/dist/com.mos.ext.conf (section 5).
+# Live-bus tests for the shipped mosd D-Bus policy.
 #
 #   bash os/pkgs/mosd/tests/dbus-policy-test.sh
 #
-# The policies claim com.mos.mosd is reachable only by root and that extensions
-# may own com.mos.ext.* and nothing else. Reading the XML back proves nothing
-# about what dbus-daemon does with it, so this harness stands up real
-# dbus-daemons whose configurations <include> the shipped files verbatim, owns
-# the name from a root connection, and drives root and non-root clients at them.
+# The policy claims com.mos.mosd is reachable only by root. Reading XML back
+# proves nothing about what dbus-daemon does with it, so this harness stands up
+# real dbus-daemons whose configurations include the shipped file verbatim,
+# owns the name from a root connection, and drives root and non-root clients.
 # Every guard is exercised in both directions: a refusal-only suite would pass
 # against a policy that denied everything, including root.
 #
-# Three buses per run, one per group -- sections 0-3, section 4, section 5 -- so
-# nothing in one group can explain a result in another; their only shared base
-# is a verbatim copy of the stock system.conf default stanza. Section 4 is not
-# about a shipped file at all: it measures what dbus-daemon means by own_prefix=
-# on a bus of its own, because the whole com.mos.ext namespace is granted by one
-# such rule. Section 5 then establishes that the file mos installs behaves that
-# way.
+# The last section repeats the live checks specifically as the mos-mqttd uid
+# and audits every repository policy fragment: mqttd may receive exact Item1
+# grants from application packages, but no policy may grant it any access to
+# com.mos.mosd.
 #
 # Needs root (to drop to uid 65534 with setpriv) plus dbus-daemon and python3.
 # It fails loudly when it cannot run rather than skipping: a skipped case that
@@ -44,16 +39,12 @@ done
 
 WORK=$(mktemp -d)
 BUS_PID=""
-MEASURE_BUS_PID=""
-EXT_BUS_PID=""
 SERVER_PIDS=()
 cleanup() {
     for pid in ${SERVER_PIDS[@]+"${SERVER_PIDS[@]}"}; do
         kill "${pid}" 2>/dev/null || true
     done
     [ -n "${BUS_PID}" ] && kill "${BUS_PID}" 2>/dev/null || true
-    [ -n "${MEASURE_BUS_PID}" ] && kill "${MEASURE_BUS_PID}" 2>/dev/null || true
-    [ -n "${EXT_BUS_PID}" ] && kill "${EXT_BUS_PID}" 2>/dev/null || true
     rm -rf "${WORK}"
 }
 trap cleanup EXIT
@@ -494,265 +485,11 @@ check "non-root OWN of ${NAME} is refused" \
     "$(as_nobody own "${SOCK}" "${NAME}")"
 
 
-# --- 4. own_prefix semantics against a real dbus-daemon ----------------------
-# Third-party extensions get the com.mos.ext.* namespace from one rule, <allow
-# own_prefix="com.mos.ext"/>, with no deny list beside it: system names such as
-# com.mos.mosd stay closed only if they fall outside the prefix. That is
-# load-bearing -- if the prefix reached com.mos.mosd, a unit with
-# DefaultDependencies=no could claim the daemon's own name before mosd does and
-# apid would be talking to an impostor -- so this section measures it rather
-# than assuming it.
-#
-# The grant under test is a scaffolding fragment written into ${WORK};
-# os/pkgs/mosd/dist/com.mos.ext.conf is neither read nor created here, because what
-# own_prefix means has to be established independent of anything mos ships. It
-# gets its own dbus-daemon rather than a second <include> on the bus above:
-# there com.mos.mosd is already owned by a root connection and the shipped
-# policy carries com.mos.mosd rules of its own, so a refusal could be the
-# shipped policy talking rather than own_prefix, and the mutation that proves
-# this section can fail (widening the prefix to com.mos) would measure the wrong
-# file. Here the base is the stock default stanza, <deny own="*"/> included, so
-# the own_prefix grant is the only thing on the bus that can hand out any name.
-MEASURE_SOCK="${WORK}/measure.sock"
-MEASURE_CONF="${WORK}/measure-bus.conf"
-EXT_FRAGMENT="${WORK}/own-prefix-scaffold.conf"
 
-# The single stanza under test. Scaffolding, written into ${WORK}: nothing under
-# os/pkgs/mosd/dist/ is involved and none is created.
-cat >"${EXT_FRAGMENT}" <<XML
-<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig>
-  <policy context="default">
-    <allow own_prefix="com.mos.ext"/>
-  </policy>
-</busconfig>
-XML
-
-cat >"${MEASURE_CONF}" <<XML
-<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig>
-  <type>system</type>
-  <listen>unix:path=${MEASURE_SOCK}</listen>
-  <auth>EXTERNAL</auth>
-
-  <policy context="default">
-    <allow user="*"/>
-    <deny own="*"/>
-    <deny send_type="method_call"/>
-    <allow send_type="signal"/>
-    <allow send_requested_reply="true" send_type="method_return"/>
-    <allow send_requested_reply="true" send_type="error"/>
-    <allow receive_type="method_call"/>
-    <allow receive_type="method_return"/>
-    <allow receive_type="error"/>
-    <allow receive_type="signal"/>
-    <allow send_destination="org.freedesktop.DBus"
-           send_interface="org.freedesktop.DBus"/>
-  </policy>
-
-  <include>${EXT_FRAGMENT}</include>
-</busconfig>
-XML
-
-dbus-daemon --config-file="${MEASURE_CONF}" --nofork &
-MEASURE_BUS_PID=$!
-for _ in $(seq 1 50); do
-    [ -S "${MEASURE_SOCK}" ] && break
-    sleep 0.1
-done
-# Fail loudly. A measurement bus that never came up would otherwise refuse every
-# name and read as six tidy AccessDenied results.
-[ -S "${MEASURE_SOCK}" ] || {
-    echo "measurement dbus-daemon did not create ${MEASURE_SOCK}" >&2
-    exit 1
-}
-chmod 0777 "${MEASURE_SOCK}"
-
-# Unprivileged only. uid 65534 is the identity a third-party extension would run
-# as if it were not root, and it is the only identity the single default-context
-# grant is supposed to serve; root would be indistinguishable from it here.
-measure_own() { as_nobody own "${MEASURE_SOCK}" "$1"; }
-
-DENIED="ERROR org.freedesktop.DBus.Error.AccessDenied"
-DBUS_VERSION=$(dbus-daemon --version | awk 'NR == 1 {print $NF}')
-
-echo
-echo "measurement bus: ${MEASURE_SOCK} (dbus-daemon ${DBUS_VERSION})"
-echo "grant under test: <allow own_prefix=\"com.mos.ext\"/> (scaffolding, ${EXT_FRAGMENT})"
-echo
-
-# The positive control. It is what tells "the prefix refused everything else"
-# apart from "the unprivileged connection never reached this bus", the same
-# reasoning section 0 states for the controls on the shipped-policy bus.
-check "own_prefix grants com.mos.ext.foo to an unprivileged uid" "OWNED" \
-    "$(measure_own com.mos.ext.foo)"
-check "own_prefix grants a deeper suffix, com.mos.ext.sensor.abc123" "OWNED" \
-    "$(measure_own com.mos.ext.sensor.abc123)"
-
-# The load-bearing case. If this is ever OWNED, the com.mos.ext namespace grant
-# does not hold and needs an explicit deny list after all.
-check "own_prefix does NOT reach the system name com.mos.mosd" "${DENIED}" \
-    "$(measure_own com.mos.mosd)"
-check "own_prefix does NOT reach a second system-shaped name, com.mos.other" \
-    "${DENIED}" "$(measure_own com.mos.other)"
-
-# MEASURED on dbus-daemon 1.12.20, not inferred: own_prefix requires the very
-# next character after the prefix to be '.', so com.mos.extra is refused despite
-# being a literal string-prefix match. This is the mechanism the com.mos.mosd
-# case above rests on -- string-prefix matching would have granted com.mos.mosd
-# too -- which is why it is asserted separately rather than assumed.
-check "own_prefix requires a '.' separator: com.mos.extra is refused" \
-    "${DENIED}" "$(measure_own com.mos.extra)"
-
-# Measured on dbus-daemon 1.12.20, not inferred, and the answer is not the
-# conservative one: own_prefix matches the prefix itself, so an unprivileged uid
-# may own com.mos.ext with no suffix at all. That is inside the namespace
-# extensions are given, so it gives away nothing extra, but it is a name the
-# com.mos.ext.<class>[.<suffix>] grammar does not contemplate -- anything that
-# derives a class from the fourth dotted component has no fourth component here.
-check "own_prefix matches the bare prefix itself: com.mos.ext is OWNED" "OWNED" \
-    "$(measure_own com.mos.ext)"
-
-# The negative control: a name the grant plainly cannot reach and that the base
-# configuration does not open either. Without it, a bus that had somehow lost its
-# <deny own="*"/> would still let every refusal case above look like a refusal
-# case -- there would be nothing left asserting the default is closed.
-check "a name outside the prefix is still refused (org.example.thing)" \
-    "${DENIED}" "$(measure_own org.example.thing)"
-# --- 5. the shipped extension policy, os/pkgs/mosd/dist/com.mos.ext.conf -------------
-# Sections 0-3 test com.mos.mosd.conf; this section tests the other shipped
-# policy file, on its own dbus-daemon.
-#
-# A separate bus, for attribution. This bus <include>s com.mos.ext.conf and
-# nothing else of ours, so when the unprivileged uid is refused com.mos.mosd
-# here the refusal has exactly one available explanation: the extension policy
-# did not grant it and the stock <deny own="*"/> stood. Had the bus also
-# included com.mos.mosd.conf the result would be over-determined, and
-# misleadingly so, because com.mos.mosd.conf does not deny own= in the default
-# context at all -- it grants own= to root and leans on the same stock deny.
-#
-# Both directions are asserted. A suite that only showed system names being
-# refused would pass unchanged against a policy file that granted nothing at
-# all, which is the most likely way this file breaks: a typo in the prefix costs
-# every extension its bus name and denies nothing that was not already denied.
-EXT_POLICY="${REPO_ROOT}/os/pkgs/mosd/dist/com.mos.ext.conf"
-[ -f "${EXT_POLICY}" ] || { echo "no ${EXT_POLICY} to test" >&2; exit 1; }
-
-EXT_SOCK="${WORK}/ext-bus.sock"
-EXT_CONF="${WORK}/ext-bus.conf"
-cat >"${EXT_CONF}" <<XML
-<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig>
-  <type>system</type>
-  <listen>unix:path=${EXT_SOCK}</listen>
-  <auth>EXTERNAL</auth>
-
-  <policy context="default">
-    <allow user="*"/>
-    <deny own="*"/>
-    <deny send_type="method_call"/>
-    <allow send_type="signal"/>
-    <allow send_requested_reply="true" send_type="method_return"/>
-    <allow send_requested_reply="true" send_type="error"/>
-    <allow receive_type="method_call"/>
-    <allow receive_type="method_return"/>
-    <allow receive_type="error"/>
-    <allow receive_type="signal"/>
-    <allow send_destination="org.freedesktop.DBus"
-           send_interface="org.freedesktop.DBus"/>
-  </policy>
-
-  <!-- TEST SCAFFOLDING, not part of anything shipped. org.example.harness is
-       deliberately ownable and sits OUTSIDE com.mos entirely, so it stays a
-       valid control no matter what the shipped file below grants or how it is
-       mutated. Without it, "the unprivileged uid was refused com.mos.mosd" and
-       "the unprivileged uid could not reach this bus at all" are the same
-       observation. -->
-  <policy context="default">
-    <allow own="org.example.harness"/>
-  </policy>
-
-  <include>${EXT_POLICY}</include>
-</busconfig>
-XML
-
-dbus-daemon --config-file="${EXT_CONF}" --nofork &
-EXT_BUS_PID=$!
-for _ in $(seq 1 50); do
-    [ -S "${EXT_SOCK}" ] && break
-    sleep 0.1
-done
-[ -S "${EXT_SOCK}" ] || { echo "dbus-daemon did not create ${EXT_SOCK}" >&2; exit 1; }
-chmod 0777 "${EXT_SOCK}"
-
-echo
-echo "extension bus: ${EXT_SOCK}"
-echo "policy under test: ${EXT_POLICY}"
-echo
-
-# The harness first: everything below is a claim about an unprivileged uid, and
-# all of it is worthless if that uid cannot own anything here.
-check "ext: nobody can own a scaffolding name outside the namespace" "OWNED" \
-    "$(as_nobody own "${EXT_SOCK}" org.example.harness)"
-check "ext: nobody is refused an ungranted name outside the namespace" \
-    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_nobody own "${EXT_SOCK}" org.example.thing)"
-echo
-
-# CAN own extension names. This is the half the whole feature depends on.
-check "ext: nobody CAN own com.mos.ext.foo" "OWNED" \
-    "$(as_nobody own "${EXT_SOCK}" com.mos.ext.foo)"
-check "ext: nobody CAN own com.mos.ext.sensor.abc123 (multi-component suffix)" \
-    "OWNED" "$(as_nobody own "${EXT_SOCK}" com.mos.ext.sensor.abc123)"
-# own_prefix matches the bare prefix itself. Accepted, and asserted so that it
-# stays a decision rather than a surprise: see com.mos.ext.conf's comment.
-check "ext: nobody CAN own the bare prefix com.mos.ext" "OWNED" \
-    "$(as_nobody own "${EXT_SOCK}" com.mos.ext)"
-echo
-
-# CANNOT own system names. com.mos.extra is the load-bearing one: it shares the
-# characters "com.mos.ext" and is refused anyway, which is the demonstration
-# that own_prefix is not a string-prefix match -- and therefore the reason
-# com.mos.mosd is closed without a deny list naming it.
-check "ext: nobody CANNOT own com.mos.mosd (the name this must never grant)" \
-    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_nobody own "${EXT_SOCK}" com.mos.mosd)"
-check "ext: nobody CANNOT own com.mos.other (a future system name, unenumerated)" \
-    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_nobody own "${EXT_SOCK}" com.mos.other)"
-check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" \
-    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_nobody own "${EXT_SOCK}" com.mos.extra)"
-
-
-# --- 6. the MQTT bridge's grant, os/pkgs/mosd/dist/mos-mqttd.conf --------------------
-# The bridge is a non-root client of a root-only name. Sections 1-2 establish
-# that com.mos.mosd.conf refuses every non-root uid outright; this section is
-# about the file that punches one identity member through that refusal and must
-# punch through nothing else.
-#
-# Both files on one bus, unlike section 5. Section 5 keeps the files apart
-# because its question is what com.mos.ext.conf grants on its own; the question
-# here is whether the grant survives the deny it is layered over, in the
-# combination the device loads. Split across two buses the interesting result --
-# an allow overriding a deny in the same context -- could not occur at all.
-#
-# The username is substituted, and that limit is explicit. <policy user="X">
-# resolves X when dbus-daemon starts, and mos-mqttd is created by the image
-# rather than by this host, so a verbatim copy would load a rule matching no uid
-# -- and a rule that matches nothing passes a refusal suite for the wrong
-# reason. So the copy under test substitutes exactly one token, the substitution
-# is asserted to have changed exactly one line, and the shipped file's own
-# username is asserted separately. That the image creates mos-mqttd, and that
-# the unit runs as it, is the image verifier's half of the pair (`bash
-# os/verify/run.sh --verify`).
-MQTTD_POLICY="${REPO_ROOT}/os/pkgs/mosd/dist/mos-mqttd.conf"
-[ -f "${MQTTD_POLICY}" ] || { echo "no ${MQTTD_POLICY} to test" >&2; exit 1; }
-
-MQTTD_USER=mos-mqttd
+# --- 4. the MQTT bridge has zero mosd access -------------------------------
+# The bridge is a non-root bus client, but it is not a mosd client. Application
+# packages may grant this uid exact Item1 access to their own direct service
+# names; nothing punches through com.mos.mosd.conf.
 MQTTD_UID=65534
 # The ungranted control uid. Distinct from MQTTD_UID because "an unprivileged
 # uid is refused" and "the granted uid is allowed" have to be two different
@@ -768,23 +505,11 @@ OTHER_UID=33
 
 MQTTD_SOCK="${WORK}/mqttd-bus.sock"
 MQTTD_CONF="${WORK}/mqttd-bus.conf"
-MQTTD_POLICY_COPY="${WORK}/mos-mqttd.subst.conf"
-sed "s/user=\"${MQTTD_USER}\"/user=\"${MQTTD_UID}\"/" \
-    "${MQTTD_POLICY}" >"${MQTTD_POLICY_COPY}"
 
 echo
 echo "mqttd bus: ${MQTTD_SOCK}"
-echo "policies under test: ${POLICY} + ${MQTTD_POLICY}"
+echo "policy under test: ${POLICY}"
 echo
-
-# The substitution itself, before anything leans on it.
-check "mqttd: the shipped policy names exactly one user, and it is ${MQTTD_USER}" \
-    "1 ${MQTTD_USER}" \
-    "$(grep -Eo '<policy user="[^"]*"' "${MQTTD_POLICY}" |
-        sed 's/.*user="\(.*\)"/\1/' | sort -u |
-        awk '{u=$0; n++} END {print n" "u}')"
-check "mqttd: substituting the username changed exactly one line" "1" \
-    "$(diff "${MQTTD_POLICY}" "${MQTTD_POLICY_COPY}" | grep -c '^> ' || true)"
 
 cat >"${MQTTD_CONF}" <<XML
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
@@ -810,7 +535,6 @@ cat >"${MQTTD_CONF}" <<XML
   </policy>
 
   <include>${POLICY}</include>
-  <include>${MQTTD_POLICY_COPY}</include>
 </busconfig>
 XML
 
@@ -850,21 +574,21 @@ as_other() {
 }
 
 # The harness first. Every claim below is about a bus with a live owner on it.
-check "mqttd: root owns ${NAME} on the combined bus" "OWNED" \
+check "mqttd: root owns ${NAME} on the policy bus" "OWNED" \
     "$(head -n1 "${WORK}/mqttd-server.log")"
-check "mqttd: root can still reach ${NAME} (the grant did not break root)" "OK" \
+check "mqttd: root can still reach ${NAME}" "OK" \
     "$(as_root call "${MQTTD_SOCK}" "${NAME}")"
 
 echo
-# GRANTED. This one fact addresses application topics without exposing a
-# path-taking settings read.
-check "mqttd: the bridge's uid CAN call com.mos.mosd1.GetDeviceId" "OK" \
+# Even the former read-only exception is gone: device identity is runtime
+# configuration, not a mosd call.
+check "mqttd: the bridge's uid CANNOT call the removed GetDeviceId member" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetDeviceId /com/mos/mosd)"
 
 echo
-# REFUSED. The reason the grant is per-member: mos-mqttd is the only daemon in
-# the image holding a network socket, and these are the members that would turn
-# a bridge compromise into device control.
+# The network-facing bridge has no system-management read, write, action, or
+# signal surface.
 check "mqttd: the bridge's uid CANNOT call system com.mos.Item1.GetItems" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetItems /)"
@@ -883,6 +607,18 @@ check "mqttd: the bridge's uid CANNOT call SetTransientRootPassword" \
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.SetSettings" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 SetSettings)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.GetState" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetState)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.ReportHealth" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 ReportHealth)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.ForgetService" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 ForgetService)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.RotateWireguardKey" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 RotateWireguardKey)"
 # The update members ride the same root-only interface and inherit the same
 # refusal; asserted by name anyway, because these are the members whose
 # accidental grant would be worst — a uid that can install a bundle or mark a
@@ -896,22 +632,17 @@ check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.MarkUpdate" \
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.GetUpdateState" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetUpdateState)"
-# The same management interface the grant names, members it does not: proves
-# the rule discriminates on send_member= and not merely on send_interface=.
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.GetSettings" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetSettings /com/mos/mosd)"
 # SettingsChanged carries the settings VALUE, including the web admin password
-# hash. The identity grant must not open this broadcast.
+# hash. The bridge cannot receive this broadcast.
 check "mqttd: the bridge's uid CANNOT receive com.mos.mosd1.SettingsChanged" "NONE" \
     "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" SettingsChanged 3)"
 check "mqttd: the bridge's uid CANNOT receive system com.mos.Item1.ItemsChanged" "NONE" \
     "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" ItemsChanged 3)"
 
 echo
-# USER-SCOPED. Without this, every check above is equally consistent with the
-# grant having reopened the name to all local uids.
-#
 # CONNECTIVITY FIRST, for both uids. A client that cannot authenticate fails
 # every call below, and fails them in a way that reads as a policy refusal
 # unless something checks — which is not hypothetical: the control uid was
@@ -936,11 +667,74 @@ check "mqttd: the bridge's uid is connected (so its refusals are policy, not aut
 check "mqttd: the control uid is connected (so its refusals are policy, not auth)" \
     "CONNECTED" \
     "$(connectivity "$(as_other call "${MQTTD_SOCK}" org.freedesktop.DBus org.freedesktop.DBus GetId /org/freedesktop/DBus)")"
-check "mqttd: another unprivileged uid CANNOT call GetDeviceId (the grant is user-scoped)" \
+check "mqttd: another unprivileged uid CANNOT call mosd either" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_other call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetDeviceId /com/mos/mosd)"
+    "$(as_other call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetSettings /com/mos/mosd)"
 check "mqttd: another unprivileged uid CANNOT receive SettingsChanged" "NONE" \
     "$(as_other recv "${MQTTD_SOCK}" "${NAME}" SettingsChanged 3)"
+
+# Repository-wide static audit. Application packages may name mos-mqttd, but
+# only for exact direct service destinations. No prefix ownership grant and no
+# mosd destination/sender may hide in another policy fragment.
+check "mqttd: legacy global extension policy is absent" "ABSENT" \
+    "$([ ! -e "${REPO_ROOT}/os/pkgs/mosd/dist/com.mos.ext.conf" ] && echo ABSENT || echo PRESENT)"
+check "mqttd: legacy mosd exception policy is absent" "ABSENT" \
+    "$([ ! -e "${REPO_ROOT}/os/pkgs/mosd/dist/mos-mqttd.conf" ] && echo ABSENT || echo PRESENT)"
+
+policy_audit=$(python3 - "${REPO_ROOT}" <<'PY'
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+root = pathlib.Path(sys.argv[1])
+violations = []
+for path in root.joinpath("os").rglob("*.conf"):
+    try:
+        tree = ET.parse(path)
+    except (ET.ParseError, OSError):
+        continue
+    if tree.getroot().tag != "busconfig":
+        continue
+    for allow in tree.findall(".//allow"):
+        prefix = allow.get("own_prefix")
+        if prefix == "com.mos" or (prefix and prefix.startswith("com.mos.")):
+            violations.append(f"{path}: prefix ownership grant {prefix}")
+    for policy in tree.findall(".//policy"):
+        policy_user = policy.get("user")
+        for allow in policy.findall("allow"):
+            owned = allow.get("own")
+            if (owned and owned.startswith("com.mos.") and
+                    (not policy_user or policy_user == "*")):
+                violations.append(
+                    f"{path}: exact com.mos ownership grant is not scoped to one explicit user"
+                )
+        if policy.get("user") != "mos-mqttd":
+            continue
+        for allow in policy.findall("allow"):
+            destination = allow.get("send_destination")
+            sender = allow.get("receive_sender")
+            if destination == "com.mos.mosd" or sender == "com.mos.mosd":
+                violations.append(f"{path}: mos-mqttd reaches com.mos.mosd")
+            send_item = allow.get("send_interface") == "com.mos.Item1"
+            receive_item = allow.get("receive_interface") == "com.mos.Item1"
+            endpoint = destination if send_item else sender if receive_item else None
+            if send_item or receive_item:
+                if (not endpoint or "*" in endpoint or
+                        not endpoint.startswith("com.mos.") or
+                        endpoint == "com.mos.mosd"):
+                    violations.append(f"{path}: Item1 grant lacks a safe exact application endpoint")
+                member = allow.get("send_member") if send_item else allow.get("receive_member")
+                if not member:
+                    violations.append(f"{path}: Item1 grant lacks an exact member")
+            elif ((destination and destination.startswith("com.mos.")) or
+                    (sender and sender.startswith("com.mos."))):
+                violations.append(f"{path}: mos-mqttd has non-Item1 com.mos access")
+
+print("OK" if not violations else " | ".join(violations))
+PY
+)
+check "mqttd: all policy fragments keep exact application grants and zero mosd access" \
+    "OK" "${policy_audit}"
 
 echo
 echo "$PASS passed, $FAIL failed"

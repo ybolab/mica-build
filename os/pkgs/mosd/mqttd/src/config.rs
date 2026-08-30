@@ -15,7 +15,7 @@ pub enum Mode {
     #[default]
     ReadOnly,
     /// `W` topics become `SetValue` on the uniquely addressed application
-    /// item. The extension-only admission boundary still applies.
+    /// item. Exact package enrollment still applies.
     Full,
 }
 

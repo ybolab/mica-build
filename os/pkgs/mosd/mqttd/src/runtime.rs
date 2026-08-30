@@ -1,6 +1,7 @@
 //! MQTT and D-Bus I/O around the application-only protocol state machine.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -11,7 +12,8 @@ use zbus::{MatchRule, MessageStream};
 
 use crate::bridge::{Bridge, Effects, Write};
 use crate::config::{Mode, Timings};
-use crate::source::{BusSource, IdentityProxy, ItemSource, ItemTreeProxy, batch_of};
+use crate::enrollment::Enrollment;
+use crate::source::{BusSource, ItemSource, ItemTreeProxy, batch_of};
 use crate::topic::{self, Application};
 use crate::transport::{MqttTransport, Transport};
 
@@ -51,6 +53,8 @@ pub async fn apply(
 
 /// Everything the daemon is told at startup.
 pub struct Settings {
+    pub device_id: String,
+    pub applications_dir: PathBuf,
     pub broker_host: String,
     pub broker_port: u16,
     pub client_id: String,
@@ -169,16 +173,19 @@ fn handle_application_event(
     }
 }
 
-/// Match only ownership changes inside the extension namespace. The bus does
-/// the namespace filtering, so system services never enter the runtime's
-/// discovery path.
-fn extension_owner_rule() -> zbus::Result<MatchRule<'static>> {
+/// Match ownership changes in the mos namespace.
+///
+/// The signal comes from the bus daemon, not from the named service. The
+/// runtime checks the exact enrollment before asking for an owner or creating
+/// an Item1 proxy, so an unregistered service such as mosd is observed only as
+/// a string and is never called or subscribed to.
+fn mos_owner_rule() -> zbus::Result<MatchRule<'static>> {
     Ok(MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
         .sender("org.freedesktop.DBus")?
         .interface("org.freedesktop.DBus")?
         .member("NameOwnerChanged")?
-        .arg0ns(mos_busname::EXTENSION_NAMESPACE)?
+        .arg0ns(mos_busname::PREFIX.trim_end_matches('.'))?
         .build())
 }
 
@@ -324,22 +331,21 @@ async fn activate_application(
     }
 }
 
-/// Connect to the management identity method, application services and the
-/// broker, then run until the process is asked to stop.
+/// Connect to enrolled application services and the broker, then run until
+/// the process is asked to stop.
 pub async fn run(settings: Settings) -> anyhow::Result<()> {
+    if !topic::valid_topic_segment(&settings.device_id) {
+        anyhow::bail!("configured device id cannot form an MQTT topic segment");
+    }
+    let enrollment = Enrollment::load(&settings.applications_dir).await?;
     let connection = if settings.session_bus {
         zbus::Connection::session().await?
     } else {
         zbus::Connection::system().await?
     };
-    let identity = IdentityProxy::new(&connection).await?;
-    let device_id = identity.get_device_id().await?;
-    if !topic::valid_topic_segment(&device_id) {
-        anyhow::bail!("mosd returned a device id that cannot form an MQTT topic segment");
-    }
     let source = BusSource::new(connection.clone());
 
-    let owner_rule = extension_owner_rule()?;
+    let owner_rule = mos_owner_rule()?;
     let mut owners = Box::pin(MessageStream::for_match_rule(owner_rule, &connection, None).await?);
     let bus = zbus::fdo::DBusProxy::new(&connection).await?;
 
@@ -389,7 +395,7 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     let (changes_tx, mut changes) = mpsc::channel(REQUEST_CAPACITY);
     let mut active = BTreeMap::new();
     let mut next_generation = 0u64;
-    let mut bridge = Bridge::new(device_id, settings.mode, settings.timings);
+    let mut bridge = Bridge::new(settings.device_id, settings.mode, settings.timings);
     let mut subscribed = Vec::new();
     let start = Instant::now();
 
@@ -397,7 +403,7 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     // appears during it is either listed or queued as a signal (possibly
     // both; owner equality makes the duplicate harmless).
     for name in bus.list_names().await? {
-        let Some(application) = topic::application_of(name.as_str()) else {
+        let Some(application) = enrollment.application(name.as_str()) else {
             continue;
         };
         let owner = match bus.get_name_owner(name.clone().into()).await {
@@ -433,7 +439,7 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
                 let owner = owner?;
                 let (name, _old_owner, new_owner) =
                     owner.body().deserialize::<(String, String, String)>()?;
-                let Some(application) = topic::application_of(&name) else {
+                let Some(application) = enrollment.application(&name) else {
                     continue;
                 };
                 if new_owner.is_empty() {
@@ -511,29 +517,26 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{
-        ActiveApplication, ApplicationEvent, extension_owner_rule, handle_application_event,
-    };
+    use super::{ActiveApplication, ApplicationEvent, handle_application_event, mos_owner_rule};
     use crate::bridge::Bridge;
     use crate::config::{Mode, Timings};
     use crate::item::Item;
-    use crate::topic;
 
     #[test]
-    fn the_bus_filters_discovery_to_the_extension_namespace() {
-        let rule = extension_owner_rule().expect("valid extension ownership rule");
+    fn the_bus_filters_discovery_to_the_mos_namespace() {
+        let rule = mos_owner_rule().expect("valid mos ownership rule");
         let rendered = rule.to_string();
-        assert!(
-            rendered.contains("arg0namespace='com.mos.ext'"),
-            "{rendered}"
-        );
+        assert!(rendered.contains("arg0namespace='com.mos'"), "{rendered}");
         assert!(rendered.contains("member='NameOwnerChanged'"), "{rendered}");
     }
 
     #[tokio::test]
     async fn a_stopped_current_watcher_withdraws_stale_application_state() {
-        let application =
-            topic::application_of("com.mos.ext.sensor.example").expect("an extension application");
+        let enrollment = crate::enrollment::Enrollment::from_names(["com.mos.sensor.example"])
+            .expect("valid enrollment");
+        let application = enrollment
+            .application("com.mos.sensor.example")
+            .expect("enrolled application");
         let mut bridge = Bridge::new("abc123", Mode::Full, Timings::default());
         bridge.upsert_service(
             Duration::ZERO,
@@ -546,7 +549,7 @@ mod tests {
         bridge.on_keepalive(Duration::ZERO);
 
         let mut active = BTreeMap::from([(
-            "com.mos.ext.sensor.example".to_string(),
+            "com.mos.sensor.example".to_string(),
             ActiveApplication {
                 owner: ":1.42".to_string(),
                 generation: 7,
@@ -558,7 +561,7 @@ mod tests {
             &mut bridge,
             &mut active,
             ApplicationEvent::WatcherStopped {
-                bus_name: "com.mos.ext.sensor.example".to_string(),
+                bus_name: "com.mos.sensor.example".to_string(),
                 generation: 7,
                 detail: "signal stream ended".to_string(),
             },

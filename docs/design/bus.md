@@ -1,14 +1,15 @@
 # Device bus and MQTT application-data contract
 
 This document describes the shipped boundary between the mos management plane,
-application services, and MQTT. The boundary is positive and namespace-based:
+application services, and MQTT. The boundary is positive and package-enrolled:
 
-- `com.mos.mosd1` is the system-management API. APID is its client.
-- `com.mos.ext.<class>[.<suffix>]` names application services that may expose
-  `com.mos.Item1`.
-- `mos-mqttd` discovers and mirrors only the second group. A system service is
-  not an MQTT application even if it implements an interface with the same
-  member names.
+- `com.mos.mosd1` is a local system-management API. APID is its network-facing
+  client; the boot-health gate is its other approved local caller.
+- `com.mos.<class>[.<suffix>]` is the uniform service-name grammar. `mosd` is
+  therefore an application name too; the name alone grants no capability.
+- `mos-mqttd` mirrors only exact service names enrolled by their package. It
+  never calls or subscribes to `com.mos.mosd`, even if a malformed package
+  tries to enroll that name.
 
 The old `com.mos.Item1` projection on `com.mos.mosd` has been removed. It was
 unsafe as an MQTT source because it combined system settings, runtime state,
@@ -33,27 +34,29 @@ APID calls the dedicated management members such as `GetSettings`,
 `SetSettings`, `GetState`, `Reboot`, and `PowerOff`. It never routes management
 operations through MQTT or application items.
 
-The bridge makes one narrowly scoped management call:
-`com.mos.mosd1.GetDeviceId` on `com.mos.mosd`. The returned identifier is used
-only as an MQTT topic-address segment. It is not exposed as an item, and the
-bridge's D-Bus policy grants no other mosd member.
+The bridge makes no mosd call. mosd renders the already-provisioned topic
+identity to `/run/mos/mqttd-device.env` before starting the bridge, and systemd
+passes it through `--device-id`. The file is a one-purpose runtime input, not a
+general settings export.
+
+mosd still has a D-Bus interface because mosd and APID are separate local
+processes: APID needs a typed, policy-controlled IPC boundary to request system
+operations. That local management interface is not an MQTT source. Keeping IPC
+and remote publication as separate decisions is the point of this boundary.
 
 This is a fail-closed boundary. `mos-mqttd` constructs an application identity
-only when the shared bus-name parser reports both:
-
-1. extension origin; and
-2. a non-empty application class.
-
-Consequently `com.mos.mosd`, all other `com.mos.<system>` names, names outside
-the mos namespace, and the classless name `com.mos.ext` cannot enter bridge
-state or become read/write targets.
+only when `/usr/lib/mos/mqtt-applications.d` contains a regular file whose file
+name is that exact, valid D-Bus service name. `com.mos.mosd` is rejected
+structurally after loading as a second defence. A sibling service, a wildcard,
+or a valid but unenrolled `com.mos.*` name cannot enter bridge state or become a
+read/write target.
 
 ## 2. Application service contract
 
 An MQTT-visible application owns a well-known name with this grammar:
 
 ```text
-com.mos.ext.<class>[.<suffix>]
+com.mos.<class>[.<suffix>]
 ```
 
 The `<class>` segment becomes the MQTT class. The optional suffix distinguishes
@@ -99,9 +102,12 @@ to publish secrets from an application.
 
 ## 3. Discovery and D-Bus policy
 
-At startup the bridge installs a bus-side `NameOwnerChanged` match restricted
-to the `com.mos.ext` namespace, then performs `ListNames`. This ordering covers
-applications that appear during the initial sweep. For each admitted name it:
+At startup the bridge loads the exact enrollment set, installs a bus-side
+`NameOwnerChanged` match for the `com.mos` namespace, then performs `ListNames`.
+The broad signal match is discovery only: each name is checked against the
+exact enrollment set before mqttd asks for its owner, creates a proxy, calls a
+method, or subscribes to a signal. This ordering covers applications that
+appear during the initial sweep. For each admitted name it:
 
 1. reads the initial root `GetItems` snapshot;
 2. watches root `ItemsChanged` signals;
@@ -111,21 +117,29 @@ applications that appear during the initial sweep. For each admitted name it:
 Watcher generations prevent a late signal from an old owner from repopulating
 a service after it has disappeared or restarted.
 
-`os/pkgs/mosd/dist/com.mos.ext.conf` grants extension processes ownership of
-the extension namespace only. It does not grant clients access to every
-extension. Debian's shipped dbus-daemon 1.12 supports `own_prefix` but cannot
-express a safe `send_destination_prefix` client rule.
+There is no global `own_prefix` grant and no central mqttd policy. Every
+MQTT-enabled application package owns both sides of its admission:
 
-Every MQTT-enabled application package must therefore ship an exact-name,
-user-scoped policy for `mos-mqttd`. It grants `GetItems`, and grants `SetValue`
-only when remote writes are part of that application's contract. For example:
+1. an empty enrollment file named for the exact service, for example
+   `/usr/lib/mos/mqtt-applications.d/com.mos.sensor.example`; and
+2. an exact-name D-Bus policy that lets the application own that name and lets
+   `mos-mqttd` access only its `com.mos.Item1` surface.
+
+The policy grants `GetItems` and `ItemsChanged`; it grants `SetValue` only when
+remote writes are part of that application's contract. For example:
 
 ```xml
+<policy user="mos-sensor">
+  <allow own="com.mos.sensor.example"/>
+</policy>
 <policy user="mos-mqttd">
-  <allow send_destination="com.mos.ext.sensor.example"
+  <allow send_destination="com.mos.sensor.example"
          send_interface="com.mos.Item1"
          send_member="GetItems"/>
-  <allow send_destination="com.mos.ext.sensor.example"
+  <allow receive_sender="com.mos.sensor.example"
+         receive_interface="com.mos.Item1"
+         receive_member="ItemsChanged"/>
+  <allow send_destination="com.mos.sensor.example"
          send_interface="com.mos.Item1"
          send_member="SetValue"/>
 </policy>
@@ -133,8 +147,10 @@ only when remote writes are part of that application's contract. For example:
 
 Do not replace exact destinations with a wildcard or an interface-only grant.
 That would let the network-facing bridge address unrelated system services.
-An application without its exact grant is discovered but its initial read
-fails with `AccessDenied`; nothing is published for it.
+An application missing either half fails closed: an unenrolled policy target is
+never proxied, while an enrollment with no exact policy fails its initial read
+with `AccessDenied` and publishes nothing. `com.mos.mosd` is forbidden on both
+sides.
 
 ## 4. MQTT grammar
 
@@ -160,7 +176,7 @@ is observed through the later `ItemsChanged` notification.
 
 The default `read-only` mode neither subscribes to nor executes `W` requests.
 `full` mode enables application writes. This setting does not weaken the
-namespace gate: system services remain unaddressable in both modes.
+enrollment gate: system services remain unaddressable in both modes.
 
 Device-wide protocol topics have no class or instance:
 
@@ -234,8 +250,8 @@ publication path.
 
 The management daemon separately observes every other `com.mos.*` service for
 operator diagnostics. This registry is not an MQTT source and does not grant a
-service MQTT eligibility. It records only the service name, origin, class,
-connection status, instance, collision flag, and conformance gaps; it never
+service MQTT eligibility. It records only the service name, class, connection
+status, instance, collision flag, and conformance gaps; it never
 copies the service's arbitrary item values into system state.
 
 A conforming service exposes `com.mos.Item1.GetItems` at `/` and includes these
@@ -258,13 +274,14 @@ calls `ForgetService`. Class/instance collisions are marked on every connected
 side.
 
 The registry and MQTT bridge intentionally have different admission rules.
-The registry describes system and extension services. MQTT admits only
-class-bearing extension services and independently fails closed on collisions.
+The registry describes every `com.mos.*` service. MQTT admits only exact
+package-enrolled application services and independently fails closed on
+collisions.
 
 ## 9. Sparkplug B
 
 Sparkplug B is not implemented by `mos-mqttd`. Its birth/death certificates,
 sequence numbers, metric aliases, and host coordination are a different wire
 contract. A future Sparkplug publisher should sit beside this bridge and reuse
-the same extension-only admission boundary; it must not reintroduce the system
-management tree as telemetry.
+the same exact-enrollment boundary and structural mosd exclusion; it must not
+reintroduce the system management tree as telemetry.

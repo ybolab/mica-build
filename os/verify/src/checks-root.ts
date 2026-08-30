@@ -87,7 +87,6 @@ const REGULAR_FILES: readonly string[] = [
   '/usr/lib/systemd/systemd',
   '/usr/bin/mosd',
   '/usr/share/dbus-1/system.d/com.mos.mosd.conf',
-  '/usr/share/dbus-1/system.d/com.mos.ext.conf',
   '/usr/bin/apid',
   '/etc/mos/health.conf',
   '/usr/bin/rauc',

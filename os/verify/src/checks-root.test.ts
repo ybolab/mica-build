@@ -185,7 +185,7 @@ describe('sq_regular -- a path is a regular file, and not a link to one', () => 
   test('every path in the family is registered under its own id, and no two share one', () => {
     const ids = ROOT_CHECKS.filter(c => c.id.startsWith('packed-regular')).map(c => c.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids.length).toBe(26)
+    expect(ids.length).toBe(25)
     // The matcher CARRIES THE PATH, which is what keeps this family from
     // colliding with M4d's board-conditional sq_regular calls: a `many` check
     // claiming ' is a regular file' would claim the radio firmware and hostapd

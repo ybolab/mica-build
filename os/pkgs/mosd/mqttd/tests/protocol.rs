@@ -17,23 +17,20 @@ use serde_json::{Value as Json, json};
 
 use mos_mqttd::bridge::{Bridge, Effects, Publication};
 use mos_mqttd::config::{Mode, Timings};
+use mos_mqttd::enrollment::Enrollment;
 use mos_mqttd::item::Item;
 use mos_mqttd::runtime::{ReconnectBackoff, apply};
 use mos_mqttd::source::{ItemSource, WriteOutcome};
 use mos_mqttd::topic::{self, Address, Request};
 use mos_mqttd::transport::Transport;
 
-/// The device identity supplied by the narrow management method.
+/// The device identity supplied as root-rendered runtime configuration.
 const DEVICE: &str = "abc123";
-/// The bus name of an extension service under the extension grammar, whose
-/// class is its **fourth** dotted component.
-const EXTENSION_SERVICE: &str = "com.mos.ext.sensor.abc123";
-/// The class [`EXTENSION_SERVICE`] must publish under.
-const EXTENSION_CLASS: &str = "sensor";
-const CLASS: &str = EXTENSION_CLASS;
-/// The extension namespace with no service under it — in the extension half
-/// of the namespace, but naming no class.
-const EXTENSION_NAMESPACE: &str = "com.mos.ext";
+/// One exact service enrolled by its application package.
+const APPLICATION_SERVICE: &str = "com.mos.sensor.abc123";
+/// The class [`APPLICATION_SERVICE`] must publish under.
+const APPLICATION_CLASS: &str = "sensor";
+const CLASS: &str = APPLICATION_CLASS;
 
 fn secs(seconds: u64) -> Duration {
     Duration::from_secs(seconds)
@@ -45,7 +42,7 @@ fn notify(path: &str) -> String {
 }
 
 /// A representative application tree. Device identity is deliberately absent:
-/// it comes from `GetDeviceId`, outside every publishable item tree.
+/// it is process runtime configuration, outside every publishable item tree.
 fn tree() -> BTreeMap<String, Item> {
     BTreeMap::from([
         ("/DeviceInstance".to_string(), Item::new(json!(0))),
@@ -57,7 +54,14 @@ fn tree() -> BTreeMap<String, Item> {
 }
 
 fn application() -> topic::Application {
-    topic::application_of(EXTENSION_SERVICE).expect("fixture is an extension application")
+    application_named(APPLICATION_SERVICE)
+}
+
+fn application_named(bus_name: &str) -> topic::Application {
+    Enrollment::from_names([bus_name])
+        .expect("fixture is a valid enrollment")
+        .application(bus_name)
+        .expect("fixture name is enrolled")
 }
 
 /// A [`Transport`] that records instead of connecting.
@@ -171,7 +175,7 @@ impl ItemSource for Fake {
         &self,
         application: &topic::Application,
     ) -> anyhow::Result<BTreeMap<String, Item>> {
-        assert_eq!(application.bus_name(), EXTENSION_SERVICE);
+        assert_eq!(application.bus_name(), APPLICATION_SERVICE);
         Ok(self.items.clone())
     }
 
@@ -256,7 +260,7 @@ async fn verbs_map_to_notify_read_and_write() {
     harness.transport.clear();
     let effects = harness.bridge.on_items_changed(
         secs(1),
-        EXTENSION_SERVICE,
+        APPLICATION_SERVICE,
         BTreeMap::from([("/Temperature".to_string(), Some(Item::new(json!(22))))]),
     );
     harness.run(effects).await;
@@ -294,7 +298,7 @@ async fn verbs_map_to_notify_read_and_write() {
     assert_eq!(
         harness.source.writes(),
         vec![(
-            EXTENSION_SERVICE.to_string(),
+            APPLICATION_SERVICE.to_string(),
             "/Enabled".to_string(),
             json!(false)
         )]
@@ -306,7 +310,7 @@ async fn verbs_map_to_notify_read_and_write() {
     harness.transport.clear();
     let effects = harness.bridge.on_items_changed(
         secs(4),
-        EXTENSION_SERVICE,
+        APPLICATION_SERVICE,
         BTreeMap::from([("/SampleCount".to_string(), None)]),
     );
     harness.run(effects).await;
@@ -492,7 +496,7 @@ async fn read_only_mode_refuses_writes() {
     assert_eq!(
         full.source.writes(),
         vec![(
-            EXTENSION_SERVICE.to_string(),
+            APPLICATION_SERVICE.to_string(),
             "/Enabled".to_string(),
             json!(false)
         )],
@@ -529,7 +533,7 @@ async fn a_refused_write_publishes_nothing() {
 
         assert_eq!(
             harness.source.writes(),
-            vec![(EXTENSION_SERVICE.to_string(), path.to_string(), json!(1))],
+            vec![(APPLICATION_SERVICE.to_string(), path.to_string(), json!(1))],
             "the request must still reach SetValue"
         );
         assert!(
@@ -555,7 +559,7 @@ async fn a_vanished_application_clears_its_retained_state() {
     harness.transport.clear();
     let effects = harness
         .bridge
-        .on_service_vanished(secs(1), EXTENSION_SERVICE);
+        .on_service_vanished(secs(1), APPLICATION_SERVICE);
     harness.run(effects).await;
 
     let mut cleared = harness.transport.topics();
@@ -600,7 +604,7 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
     harness.transport.clear();
     let effects = harness
         .bridge
-        .on_service_vanished(secs(120), EXTENSION_SERVICE);
+        .on_service_vanished(secs(120), APPLICATION_SERVICE);
     harness.run(effects).await;
     assert!(
         harness.transport.topics().is_empty(),
@@ -632,46 +636,16 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
     );
 }
 
-/// An extension publishes under its class, not under `ext`.
-///
-/// An extension carries the name `com.mos.ext.<class>[.<suffix>]`, so the
-/// class is the fourth component where a system service's is the third.
-/// Reading the third unconditionally puts every extension's items under the
-/// class `ext`, which is the wrong answer this test rules out. The negative
-/// assertion is half the test: the equality alone would not say which wrong
-/// answer was ruled out.
+/// A direct service publishes under the third component of its exact name.
 #[tokio::test]
-async fn an_extension_publishes_under_its_class_and_never_under_ext() {
+async fn a_direct_service_publishes_under_its_class() {
     let mut harness = Harness::new(Mode::Full);
     harness.start(secs(0)).await;
 
     let published = harness.transport.topics();
     assert!(
-        published.contains(&format!("N/{DEVICE}/{EXTENSION_CLASS}/0/Temperature")),
-        "{EXTENSION_SERVICE} did not publish under its class {EXTENSION_CLASS}; saw {published:?}"
-    );
-    assert!(
-        !published
-            .iter()
-            .any(|topic| topic.starts_with(&format!("N/{DEVICE}/ext/"))),
-        "{EXTENSION_SERVICE} published under the namespace `ext` instead of its class; saw {published:?}"
-    );
-}
-
-/// System services are management-plane names and cannot enter the MQTT
-/// application bridge. The positive extension case above and these negative
-/// system cases pin the namespace boundary in both directions.
-#[test]
-fn system_services_cannot_be_mqtt_applications() {
-    for service in ["com.mos.mosd", "com.mos.network", "com.example.thing"] {
-        assert!(
-            topic::application_of(service).is_none(),
-            "{service} crossed the application-only MQTT boundary"
-        );
-    }
-    assert!(
-        topic::application_of(EXTENSION_SERVICE).is_some(),
-        "the boundary denied a real extension along with system services"
+        published.contains(&format!("N/{DEVICE}/{APPLICATION_CLASS}/0/Temperature")),
+        "{APPLICATION_SERVICE} did not publish under its class {APPLICATION_CLASS}; saw {published:?}"
     );
 }
 
@@ -699,13 +673,13 @@ fn invalid_application_paths_never_reach_mqtt_topics() {
         topics
             .iter()
             .all(|topic| !topic.contains("relative") && !topic.contains('#')),
-        "an extension-controlled invalid object path reached MQTT: {topics:?}"
+        "an application-controlled invalid object path reached MQTT: {topics:?}"
     );
     assert!(
         bridge
             .on_items_changed(
                 secs(1),
-                EXTENSION_SERVICE,
+                APPLICATION_SERVICE,
                 BTreeMap::from([("/bad/+".to_string(), Some(Item::new(json!(3))))]),
             )
             .publications
@@ -721,6 +695,9 @@ fn mqtt_topic_identity_and_item_path_inputs_are_strict() {
         "device/other",
         "device+",
         "device#",
+        "device other",
+        "device$other",
+        "设备",
         "device\0other",
         "device\nother",
     ] {
@@ -746,7 +723,7 @@ fn mqtt_topic_identity_and_item_path_inputs_are_strict() {
 #[test]
 fn multiple_applications_share_one_device_liveness_protocol() {
     let sensor = application();
-    let meter = topic::application_of("com.mos.ext.meter.abc123").expect("meter application");
+    let meter = application_named("com.mos.meter.abc123");
     let mut bridge = Bridge::new(DEVICE, Mode::Full, Timings::default());
     bridge.upsert_service(
         secs(0),
@@ -796,7 +773,7 @@ fn multiple_applications_share_one_device_liveness_protocol() {
 #[test]
 fn a_class_instance_collision_fails_closed_for_publication_and_control() {
     let first = application();
-    let second = topic::application_of("com.mos.ext.sensor.second").expect("sensor application");
+    let second = application_named("com.mos.sensor.second");
     let items = BTreeMap::from([
         ("/DeviceInstance".to_string(), Item::new(json!(0))),
         ("/Enabled".to_string(), Item::writable(json!(true))),
@@ -821,7 +798,7 @@ fn a_class_instance_collision_fails_closed_for_publication_and_control() {
         "an ambiguous write must not reach either application"
     );
 
-    let restored = bridge.on_service_vanished(secs(5), "com.mos.ext.sensor.second");
+    let restored = bridge.on_service_vanished(secs(5), "com.mos.sensor.second");
     assert!(
         restored
             .publications
@@ -831,25 +808,26 @@ fn a_class_instance_collision_fails_closed_for_publication_and_control() {
     );
 }
 
-/// Building and parsing agree for an extension too: a topic built for an
-/// extension's address parses back to the request that built it, and a topic
-/// addressed under `ext` is not one of ours.
+/// Building and parsing agree for a direct application's address.
 #[test]
-fn an_extension_topic_round_trips() {
+fn an_application_topic_round_trips() {
     let address = Address {
         device_id: DEVICE.to_string(),
-        class: topic::class_of(EXTENSION_SERVICE)
+        class: topic::class_of(APPLICATION_SERVICE)
             .expect("a com.mos.* bus name")
             .to_string(),
         instance: 0,
     };
 
     let read = address.item_topic(topic::READ, "/SampleCount");
-    assert_eq!(read, format!("R/{DEVICE}/{EXTENSION_CLASS}/0/SampleCount"));
+    assert_eq!(
+        read,
+        format!("R/{DEVICE}/{APPLICATION_CLASS}/0/SampleCount")
+    );
     assert_eq!(
         topic::parse(&read, DEVICE),
         Some(Request::Read {
-            class: EXTENSION_CLASS.to_string(),
+            class: APPLICATION_CLASS.to_string(),
             instance: 0,
             path: "/SampleCount".to_string()
         })
@@ -867,33 +845,13 @@ fn an_extension_topic_round_trips() {
     );
 }
 
-/// A bus name that yields no class cannot be addressed, and no class is
-/// invented for it.
-///
-/// `com.mos.ext` is in the extension namespace but names no service under it,
-/// so there is no `<class>` segment to build `N/<deviceId>/<class>/...` from.
-/// The bridge's gate is [`topic::application_of`] returning `None`, so the
-/// classless name can never become a service mirror.
+/// `ext` is an ordinary direct class now; only the bare `com.mos` namespace
+/// has no class.
 #[test]
-fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
-    let class = topic::class_of(EXTENSION_NAMESPACE);
-    assert_eq!(
-        class, None,
-        "{EXTENSION_NAMESPACE} names no service, so the bridge must refuse it rather than \
-         publish under a class it chose itself"
-    );
-    assert_ne!(
-        class,
-        Some("ext"),
-        "the namespace was substituted for a class, which is the wrong-class defect \
-         this rule exists to prevent, reached by the other route"
-    );
-    assert_ne!(
-        class,
-        Some(""),
-        "an empty class segment would publish on N/<deviceId>//<instance>/<path>"
-    );
-    assert!(topic::application_of(EXTENSION_NAMESPACE).is_none());
+fn direct_name_classification_has_no_extension_special_case() {
+    assert_eq!(topic::class_of("com.mos.ext"), Some("ext"));
+    assert_eq!(topic::class_of("com.mos.ext.sensor"), Some("ext"));
+    assert_eq!(topic::class_of("com.mos"), None);
 }
 
 // ---------------------------------------------------------------------------

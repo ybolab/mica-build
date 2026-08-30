@@ -16,14 +16,10 @@
 // override, and the root is a read-only verity squashfs so nothing on the device
 // can remove it.
 //
-// The policy is tag-normalised before it is read. The shipped rules wrap their
-// attributes across three lines, so a line-oriented search for `send_member=` on
-// a rule whose `send_destination=` is on the line above finds nothing and reports
-// a blanket grant that is not there; the oracle hit that on its first run against
-// the real file and answers it by stripping comments and then putting
-// one XML tag per line. This does the same, in that order, because the comment
-// strip has to come first: a commented-out
-// `<allow send_destination="com.mos.mosd"/>` must not read as a grant.
+// Application access is positive and package-owned: a regular file named for
+// one exact `com.mos.<class>[.<suffix>]` service enrolls it, and a package policy
+// grants the static bridge user only that destination's Item1 members. There is
+// no mosd exception and no prefix-wide ownership policy.
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -34,17 +30,14 @@ import { verdict } from './verdict.ts'
 
 const MQTTD_BIN = '/usr/bin/mos-mqttd'
 const MQTTD_UNIT = '/usr/lib/systemd/system/mos-mqttd.service'
-const MQTTD_POLICY = '/usr/share/dbus-1/system.d/mos-mqttd.conf'
+const LEGACY_MQTTD_POLICY = '/usr/share/dbus-1/system.d/mos-mqttd.conf'
+const APPLICATIONS_DIR = '/usr/lib/mos/mqtt-applications.d'
+const DEVICE_ID_ENV = '/run/mos/mqttd-device.env'
 const MQTTD_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqttd.service'
 const BROKER_BIN = '/usr/bin/mos-mqtt-broker'
 const BROKER_UNIT = '/usr/lib/systemd/system/mos-mqtt-broker.service'
 const BROKER_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service'
 const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
-
-/**
- * The complete system-service member set the bridge may hold.
- */
-const ALLOWED_SYSTEM_MEMBERS = ['GetDeviceId'] as const
 
 /** `${prefix}: ${path} is a regular file`, as check_mqttd and check_mqtt_broker say it. */
 function prefixedRegularFile(id: string, prefix: string, path: string, why: string): CheckCase {
@@ -69,13 +62,17 @@ function prefixedRegularFile(id: string, prefix: string, path: string, why: stri
 }
 
 /** The last `Key=` value in a unit, which is what `sed -n 's/^Key=//p' | tail -n1` takes. */
-function unitValue(root: string, unit: string, key: string): string {
+function unitValues(root: string, unit: string, key: string): string[] {
   const st = entry(root, unit)
-  if (st === undefined) return ''
-  const hits = readFileSync(join(root, unit), 'utf8')
+  if (st === undefined) return []
+  return readFileSync(join(root, unit), 'utf8')
     .split('\n')
     .filter(l => l.startsWith(`${key}=`))
     .map(l => l.slice(key.length + 1))
+}
+
+function unitValue(root: string, unit: string, key: string): string {
+  const hits = unitValues(root, unit, key)
   return hits[hits.length - 1] ?? ''
 }
 
@@ -123,7 +120,7 @@ function accounts(root: string): Account[] {
     })
 }
 
-interface IdentitySystemRule {
+interface IdentityPolicyRule {
   readonly path: string
   readonly tag: string
 }
@@ -158,12 +155,12 @@ function identityGroups(root: string, user: string): Set<string> {
  * an image check cannot prove the runtime console classification will keep a
  * network daemon out of either at-console branch.
  */
-function identitySystemRules(root: string, user: string): IdentitySystemRule[] {
+function identityPolicyRules(root: string, user: string): IdentityPolicyRule[] {
   const account = accounts(root).find(candidate => candidate.name === user)
   const userSelectors = new Set([user, ...(account === undefined ? [] : [account.uid]), '*'])
   const groupSelectors = identityGroups(root, user)
   groupSelectors.add('*')
-  const found: IdentitySystemRule[] = []
+  const found: IdentityPolicyRule[] = []
 
   for (const dir of POLICY_DIRS) {
     let names: string[]
@@ -200,15 +197,72 @@ function identitySystemRules(root: string, user: string): IdentitySystemRule[] {
           applies = false
           continue
         }
-        if (!applies || !tag.startsWith('<allow')) continue
-        if (tag.includes('send_destination="com.mos.mosd"')
-          || tag.includes('receive_sender="com.mos.mosd"')) {
-          found.push({ path, tag })
-        }
+        if (applies && tag.startsWith('<allow')) found.push({ path, tag })
       }
     }
   }
   return found
+}
+
+function exactApplicationName(name: string): boolean {
+  return /^com\.mos\.[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(name)
+    && name !== 'com.mos.mosd'
+}
+
+function enrolledApplications(root: string): { names: Set<string>, invalid: string[] } {
+  const names = new Set<string>()
+  const invalid: string[] = []
+  let entries: string[]
+  try {
+    entries = readdirSync(join(root, APPLICATIONS_DIR)).sort()
+  }
+  catch {
+    return { names, invalid }
+  }
+  for (const name of entries) {
+    const st = entry(root, `${APPLICATIONS_DIR}/${name}`)
+    if (st?.isFile() !== true || !exactApplicationName(name)) invalid.push(name)
+    else names.add(name)
+  }
+  return { names, invalid }
+}
+
+interface OwnershipGrant {
+  readonly name: string
+  readonly path: string
+  readonly user: string | undefined
+  readonly tag: string
+}
+
+function exactOwnershipGrants(root: string): OwnershipGrant[] {
+  const grants: OwnershipGrant[] = []
+  for (const dir of POLICY_DIRS) {
+    let entries: string[]
+    try {
+      entries = readdirSync(join(root, dir)).sort()
+    }
+    catch {
+      continue
+    }
+    for (const entryName of entries) {
+      const path = `${dir}/${entryName}`
+      if (entry(root, path)?.isFile() !== true) continue
+      let policyUser: string | undefined
+      for (const tag of policyRuleLines(readFileSync(join(root, path), 'utf8'))) {
+        if (tag.startsWith('<policy')) {
+          policyUser = tag.match(/\buser="([^"]*)"/)?.[1]
+          continue
+        }
+        if (tag.startsWith('</policy')) {
+          policyUser = undefined
+          continue
+        }
+        const owned = tag.match(/^<allow\b[^>]*\bown="([^"]*)"/)?.[1]
+        if (owned !== undefined) grants.push({ name: owned, path, user: policyUser, tag })
+      }
+    }
+  }
+  return grants
 }
 
 /**
@@ -244,12 +298,6 @@ export function policyRuleLines(text: string): string[] {
   return out.replace(/</g, '\n<').split('\n').map(l => l.trim()).filter(l => l !== '')
 }
 
-function policyRules(root: string, path: string): string[] {
-  const st = entry(root, path)
-  if (st === undefined) return []
-  return policyRuleLines(readFileSync(join(root, path), 'utf8'))
-}
-
 // check_mqttd
 
 const MQTTD_CHECKS: readonly CheckCase[] = [
@@ -259,9 +307,45 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
   prefixedRegularFile('mqttd-unit', 'mqttd', MQTTD_UNIT,
     'so the MQTT bridge is not in this image at all — the crate builds and its '
     + 'protocol tests pass either way'),
-  prefixedRegularFile('mqttd-policy', 'mqttd', MQTTD_POLICY,
-    'so the MQTT bridge is not in this image at all — the crate builds and its '
-    + 'protocol tests pass either way'),
+
+  {
+    id: 'mqttd-legacy-policy-absent',
+    shell: {
+      pass: 'mqttd: the legacy mosd exception policy is absent',
+      fail: 'mqttd: the legacy mosd exception policy still exists',
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const present = entry(await packedRoot(ctx), LEGACY_MQTTD_POLICY) !== undefined
+      return [verdict(
+        'mqttd-legacy-policy-absent',
+        !present,
+        present
+          ? `mqttd: the legacy mosd exception policy still exists at ${LEGACY_MQTTD_POLICY}; the `
+            + 'bridge must receive no com.mos.mosd calls or signals'
+          : `mqttd: the legacy mosd exception policy is absent (${LEGACY_MQTTD_POLICY}); application `
+            + 'packages own their exact Item1 grants',
+      )]
+    },
+  },
+
+  {
+    id: 'mqttd-applications-directory',
+    shell: {
+      pass: `mqttd: ${APPLICATIONS_DIR} is a directory`,
+      fail: `mqttd: ${APPLICATIONS_DIR} is missing or not a directory`,
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const ok = entry(await packedRoot(ctx), APPLICATIONS_DIR)?.isDirectory() === true
+      return [verdict(
+        'mqttd-applications-directory',
+        ok,
+        ok
+          ? `mqttd: ${APPLICATIONS_DIR} is a directory for exact package-owned enrollments`
+          : `mqttd: ${APPLICATIONS_DIR} is missing or not a directory, so no application package can `
+            + 'make its explicit MQTT enrollment visible to the bridge',
+      )]
+    },
+  },
 
   {
     // NOT enabled. An enablement symlink baked into the image is the one thing
@@ -315,39 +399,8 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
         ok
           ? `mqttd: the unit runs as the static user '${user}', an identity a <policy user=> can resolve`
           : `mqttd: the unit sets User='${user}' DynamicUser='${dynamic}'. dbus-daemon resolves `
-            + `<policy user=> when it reads the file at startup, before any dynamic user for the unit `
-            + `exists, so the grant in ${MQTTD_POLICY} would load and match nothing. The bridge then `
-            + `connects to the broker and publishes nothing, with no error at the point of cause`,
-      )]
-    },
-  },
-
-  {
-    // ...and the policy names THAT user. Two files, one identity; either alone
-    // is consistent with a grant nobody holds, and a rule naming the wrong one
-    // reads in review exactly like a working one.
-    id: 'mqttd-policy-names-unit-user',
-    shell: {
-      pass: 'mqttd: the D-Bus grant names the same user the unit runs as (',
-      fail: '(after comment stripping)',
-    },
-    run: async (ctx): Promise<readonly CheckResult[]> => {
-      const root = await packedRoot(ctx)
-      const user = unitValue(root, MQTTD_UNIT, 'User')
-      const named = [...new Set(policyRules(root, MQTTD_POLICY)
-        .flatMap(l => [...l.matchAll(/<policy user="([^"]*)"/g)].map(m => m[1] as string)))]
-        .sort()
-      const policyUser = named[0] ?? ''
-      const ok = user !== '' && policyUser === user
-      return [verdict(
-        'mqttd-policy-names-unit-user',
-        ok,
-        ok
-          ? `mqttd: the D-Bus grant names the same user the unit runs as ('${user}'), as a live rule `
-            + `and not commentary`
-          : `mqttd: the unit runs as '${user}' but ${MQTTD_POLICY} grants '${policyUser}' (after `
-            + `comment stripping). A grant naming the wrong identity is a rule that loads, matches `
-            + `nothing, and reads in review exactly like a working one`,
+            + `<policy user=> when it reads each application package's policy, before any dynamic user `
+            + `for the unit exists, so every exact Item1 grant would load and match nothing`,
       )]
     },
   },
@@ -380,75 +433,118 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // The grant is PER-MEMBER. A blanket send_destination would hand the
-    // network-facing daemon the whole of com.mos.mosd -- Reboot, PowerOff,
-    // SetSettings and SetTransientRootPassword included.
-    id: 'mqttd-grant-per-member',
+    id: 'mqttd-device-id-runtime-input',
     shell: {
-      pass: 'mqttd: every grant on com.mos.mosd names a member',
-      fail: ['mqttd: there is no grant on com.mos.mosd at all in ', 'names no member:'],
+      pass: 'mqttd: device identity is a mandatory /run input and an explicit argument',
+      fail: 'mqttd: device identity is not isolated as the mandatory runtime input',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const sends = policyRules(root, MQTTD_POLICY)
-        .filter(l => l.startsWith('<allow') && l.includes('send_destination="com.mos.mosd"'))
-      const blanket = sends.filter(l => !l.includes('send_member='))
-      if (sends.length === 0) {
-        return [verdict('mqttd-grant-per-member', false,
-          `mqttd: there is no grant on com.mos.mosd at all in ${MQTTD_POLICY}. com.mos.mosd is `
-          + `root-only, so the bridge cannot obtain the device identity and exits before it can `
-          + `address any application topic`)]
-      }
+      const conditions = unitValues(root, MQTTD_UNIT, 'ConditionPathExists')
+      const envfiles = unitValues(root, MQTTD_UNIT, 'EnvironmentFile')
+      const exec = execStart(root, MQTTD_UNIT)
+      const ok = conditions.includes(DEVICE_ID_ENV)
+        && envfiles.includes(DEVICE_ID_ENV)
+        && !envfiles.includes(`-${DEVICE_ID_ENV}`)
+        && exec.includes('--device-id ${MOS_MQTT_DEVICE_ID}')
       return [verdict(
-        'mqttd-grant-per-member',
-        blanket.length === 0,
-        blanket.length === 0
-          ? 'mqttd: every grant on com.mos.mosd names a member; the bridge cannot reach the interface '
-            + 'at large'
-          : `mqttd: a grant on com.mos.mosd in ${MQTTD_POLICY} names no member:`
-            + `${blanket.map(r => ` [${r}]`).join('')}. That is the whole interface — `
-            + `settings, state, power, updates and credentials included — handed to the daemon with `
-            + `a network socket`,
+        'mqttd-device-id-runtime-input',
+        ok,
+        ok
+          ? `mqttd: device identity is a mandatory /run input and an explicit argument (${DEVICE_ID_ENV})`
+          : `mqttd: device identity is not isolated as the mandatory runtime input ${DEVICE_ID_ENV}: `
+            + `ConditionPathExists=[${conditions.join(' ')}] EnvironmentFile=[${envfiles.join(' ')}] `
+            + `ExecStart=[${exec}]. It must not be fetched from com.mos.mosd`,
       )]
     },
   },
 
   {
-    // ...and the complete system grant is exactly GetDeviceId on
-    // com.mos.mosd1. A path-taking read or any other member would cross the
-    // system/application boundary.
-    id: 'mqttd-no-forbidden-members',
+    id: 'mqttd-zero-mosd-access',
     shell: {
-      pass: 'mqttd: the only system grant is com.mos.mosd1.GetDeviceId',
-      fail: 'the only permitted system grant is com.mos.mosd1.GetDeviceId',
+      pass: 'mqttd: no D-Bus policy grants the bridge access to com.mos.mosd',
+      fail: 'mqttd: D-Bus policy still grants the bridge access to com.mos.mosd',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const user = unitValue(root, MQTTD_UNIT, 'User')
-      const rules = identitySystemRules(root, user)
-      const members = [...new Set(rules
-        .flatMap(rule => [...rule.tag.matchAll(/(?:send|receive)_member="([^"]*)"/g)]
-          .map(m => m[1] as string)))]
-        .sort()
-      const exact = rules.length === 1
-        && rules[0]?.path === MQTTD_POLICY
-        && rules[0]?.tag.includes('send_destination="com.mos.mosd"')
-        && rules[0]?.tag.includes('send_interface="com.mos.mosd1"')
-        && rules[0]?.tag.includes('send_member="GetDeviceId"')
-        && !rules[0]?.tag.includes('receive_sender=')
-      const ok = exact
-        && members.length === ALLOWED_SYSTEM_MEMBERS.length
-        && ALLOWED_SYSTEM_MEMBERS.every(m => members.includes(m))
+      const rules = identityPolicyRules(root, user).filter(rule =>
+        rule.tag.includes('send_destination="com.mos.mosd"')
+        || rule.tag.includes('receive_sender="com.mos.mosd"'))
       return [verdict(
-        'mqttd-no-forbidden-members',
-        ok,
-        ok
-          ? 'mqttd: the only system grant is com.mos.mosd1.GetDeviceId; settings, state, '
-            + 'power, updates and the application Item1 interface remain unreachable'
-          : `mqttd: the '${user}' identity receives system members (${members.join(' ')}) through `
-            + `${rules.map(rule => `${rule.path} [${rule.tag}]`).join(' ')}; the only permitted `
-            + `system grant across all D-Bus policy files is com.mos.mosd1.GetDeviceId in `
-            + MQTTD_POLICY,
+        'mqttd-zero-mosd-access',
+        rules.length === 0,
+        rules.length === 0
+          ? 'mqttd: no D-Bus policy grants the bridge calls to or signals from com.mos.mosd'
+          : `mqttd: D-Bus policy still grants the bridge access to com.mos.mosd: `
+            + rules.map(rule => `${rule.path} [${rule.tag}]`).join(' '),
+      )]
+    },
+  },
+
+  {
+    id: 'mqttd-exact-application-grants',
+    shell: {
+      pass: 'mqttd: every enrollment and Item1 grant names the same exact application service',
+      fail: 'mqttd: application enrollment and Item1 grants are not exact and paired',
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const user = unitValue(root, MQTTD_UNIT, 'User')
+      const enrollment = enrolledApplications(root)
+      const ownership = exactOwnershipGrants(root)
+      const applicationRules = identityPolicyRules(root, user).filter((rule) => {
+        const endpoint = rule.tag.match(/(?:send_destination|receive_sender)="([^"]*)"/)?.[1]
+        return endpoint === '*'
+          || endpoint?.startsWith('com.mos') === true
+          || rule.tag.includes('send_interface="com.mos.Item1"')
+          || rule.tag.includes('receive_interface="com.mos.Item1"')
+      })
+      const granted = new Map<string, Set<string>>()
+      const invalid = [...enrollment.invalid.map(name => `invalid enrollment ${name}`)]
+      for (const rule of applicationRules) {
+        const endpoint = rule.tag.match(/(?:send_destination|receive_sender)="([^"]*)"/)?.[1] ?? ''
+        const member = rule.tag.match(/(?:send|receive)_member="([^"]*)"/)?.[1] ?? ''
+        const direction = rule.tag.includes('send_destination=') ? 'send' : 'receive'
+        const interfaceName = rule.tag.match(/(?:send|receive)_interface="([^"]*)"/)?.[1] ?? ''
+        const allowedMember = direction === 'send'
+          ? member === 'GetItems' || member === 'SetValue'
+          : member === 'ItemsChanged'
+        if (!exactApplicationName(endpoint) || interfaceName !== 'com.mos.Item1' || !allowedMember) {
+          invalid.push(`${rule.path} [${rule.tag}]`)
+          continue
+        }
+        const members = granted.get(endpoint) ?? new Set<string>()
+        members.add(`${direction}:${member}`)
+        granted.set(endpoint, members)
+        if (!enrollment.names.has(endpoint)) invalid.push(`unenrolled grant ${endpoint} in ${rule.path}`)
+      }
+      for (const name of enrollment.names) {
+        const ownerGrants = ownership.filter(grant => grant.name === name)
+        if (ownerGrants.length === 0) {
+          invalid.push(`enrollment ${name} has no exact user-scoped ownership grant`)
+        }
+        else {
+          for (const grant of ownerGrants) {
+            if (grant.user === undefined || grant.user === '' || grant.user === '*') {
+              invalid.push(
+                `ownership grant ${name} in ${grant.path} is not scoped to one explicit user [${grant.tag}]`,
+              )
+            }
+          }
+        }
+        const members = granted.get(name)
+        if (members?.has('send:GetItems') !== true || members.has('receive:ItemsChanged') !== true) {
+          invalid.push(`enrollment ${name} lacks GetItems and ItemsChanged grants`)
+        }
+      }
+      return [verdict(
+        'mqttd-exact-application-grants',
+        invalid.length === 0,
+        invalid.length === 0
+          ? `mqttd: every enrollment and Item1 grant names the same exact application service `
+            + `(${enrollment.names.size} enrolled)`
+          : `mqttd: application enrollment and Item1 grants are not exact and paired: ${invalid.join('; ')}`,
       )]
     },
   },
@@ -500,7 +596,8 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const envfile = unitValue(root, MQTTD_UNIT, 'EnvironmentFile')
+      const envfile = unitValues(root, MQTTD_UNIT, 'EnvironmentFile')
+        .find(value => value.startsWith('-')) ?? ''
       if (envfile === '') {
         return [verdict('mqttd-envfile-on-state', false,
           `mqttd: the unit has no EnvironmentFile= line at all, so ${MQTTD_UNIT}'s Environment= `

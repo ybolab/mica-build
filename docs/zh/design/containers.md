@@ -32,8 +32,9 @@
 
 管理设置树里的 `container.enabled`，**默认 `false`**。它只通过 APID 读取和写入，
 APID 调用 mosd 已校验的 `GetSettings` / `SetSettings` 方法。mosd 不再导出系统
-Item1 投影，`mos-mqttd` 也只接纳 `com.mos.ext.*` 应用，因此容器开关没有任何
-MQTT 读写路径。`mqtt.enabled` 同样留在管理面：系统生命周期开关不属于应用数据。
+Item1 投影，`mos-mqttd` 也只接纳应用包按准确 `com.mos.<class>[.<suffix>]` 名称登记
+的应用，并硬性排除 `com.mos.mosd`，因此容器开关没有任何 MQTT 读写路径。
+`mqtt.enabled` 同样留在管理面：系统生命周期开关不属于应用数据。
 
 `false` 意味着**什么都不跑**：`/etc/containers/systemd` 不被挂载，
 所以它就是只读根里的一个空目录，生成器找不到文件，也就不存在任何容器 unit。

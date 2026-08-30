@@ -13,7 +13,7 @@
 # Omitting this stage leaves the image carrying /usr/bin/mos-mqttd and
 # mos-mqttd.service, the unit still saying User=mos-mqttd, and /etc/passwd with
 # no such account -- so systemd refuses to start the unit and dbus-daemon drops
-# the mos-mqttd.conf policy rule. Both failures are at boot, on the device.
+# application-owned exact policy rules. Both failures are at boot, on the device.
 # os/verify reports it as "mqttd: the unit runs as 'mos-mqttd' and no such
 # account is in .../etc/passwd". build-v2.sh does NOT couple this to mosd:
 # `--without mosd` and `--without mqtt` are separate decisions.
@@ -27,27 +27,24 @@ ARG MOS_STAGE_PREV
 FROM ${MOS_STAGE_PREV}
 
 # The mos-mqttd service account, static rather than DynamicUser.
-# mos-mqttd.service ran under DynamicUser=yes until the bridge was wired into
-# an image. The bridge needs an explicit, single-member identity grant on the
-# root-only com.mos.mosd name plus exact grants supplied by applications, and
-# <policy user="..."> resolves its user when
+# Application-owned exact grants use <policy user="...">, which resolves its
+# user when
 # dbus-daemon reads the file at startup -- before any dynamic user exists. The
 # rule would load and match nothing, and the bridge would publish nothing with
-# no error anywhere. The grant is mos-mqttd.conf; this account is the identity
-# it names.
+# no error anywhere. This account is the identity those grants name.
 
 # uid and gid are pinned for the same reason the mos account's are, arrived at
 # by a different route: the D-Bus policy names the account by name, and
 # dbus-daemon resolves that name to a number at startup. An unpinned allocator
 # would make the number a build-time detail, and a build that resolved it
-# differently would leave the shipped policy granting a uid the unit does not
+# differently would leave application policy granting a uid the unit does not
 # run as -- a live rule matching nobody, which is the failure this whole
 # arrangement exists to avoid.
 
 # The number is 970 because 990 collided, and that collision is why the check
 # below exists. 990 was free on bookworm and is taken by `sshd` on trixie, so
 # the base-image upgrade failed here rather than silently producing an account
-# at some other uid -- which would have left mos-mqttd.conf granting a uid the
+# at some other uid -- which would have left application policy granting a uid the
 # unit does not run as, and the bridge publishing nothing with no error at the
 # point of cause. 970 is free on both, and sits well below the 999 that
 # Debian's `useradd --system` allocates downward from, so it does not race the

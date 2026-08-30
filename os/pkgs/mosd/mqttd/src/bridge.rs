@@ -1,10 +1,9 @@
 //! Device-wide MQTT protocol state over application item trees.
 //!
-//! The bridge accepts only typed [`Application`] values produced by
-//! [`application_of`](crate::topic::application_of). That makes the
-//! system/application boundary structural: `com.mos.mosd` and every other
-//! system-origin name are unrepresentable here, rather than paths that a
-//! growing denylist must remember to remove.
+//! The bridge accepts only typed [`Application`] values produced by package
+//! [`Enrollment`](crate::enrollment::Enrollment). That makes the remote
+//! publication boundary structural: an arbitrary observed bus name is
+//! unrepresentable here rather than a path a growing denylist must remember.
 //!
 //! One bridge coordinates every application on the device. Keepalive,
 //! heartbeat, subscriptions and `full_publish_completed` are device-scoped,

@@ -103,9 +103,10 @@ with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
   `multi-user.target.wants` symlink
 - `/usr/share/dbus-1/system.d/com.mos.mosd.conf` — D-Bus system bus policy
   (com.mos.mosd is root-only)
-- `/usr/share/dbus-1/system.d/com.mos.ext.conf` — D-Bus system bus policy
-  granting `own_prefix="com.mos.ext"` (v2 only), so integrator-installed
-  extension units can own `com.mos.ext.*` names; system names stay closed
+- `/usr/lib/mos/mqtt-applications.d` — exact package-owned MQTT application
+  enrollments; each application package also ships its own exact D-Bus name
+  ownership and `mos-mqttd` Item1 grants. There is no global prefix policy and
+  mqttd has no policy access to `com.mos.mosd`
 - `/var/lib/mos` — daemon state directory
 
 No new apt packages: mosd only needs `dbus` and `systemd`, both already in the

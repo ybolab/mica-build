@@ -37,7 +37,8 @@ CI 保证它等于实际发布的二进制所打印的内容，并对基线分�
 
 三者都通过 `com.mos.mosd1` 管理接口到达 mosd。重启和关机分别调用专用的
 `Reboot`、`PowerOff` 方法；APID 不声明 `com.mos.Item1` 代理，也不通过 MQTT
-读写系统功能。`com.mos.ext.*` 下的 Item1 属于应用数据面。
+读写系统功能。应用 Item1 可以使用直接的 `com.mos.<class>[.<suffix>]` 名称，但只有
+应用包按准确服务名登记后才进入 MQTT 数据面；`com.mos.mosd` 不具备 MQTT 权限。
 
 ### 2.3 操作清单 —— 已被已发布的 schema 取代
 

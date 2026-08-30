@@ -6494,7 +6494,7 @@ async fn load_mqtt_view(app: &AppState) -> anyhow::Result<MqttView> {
 /// The bridge's application-only scope. This belongs on the operator-facing
 /// pane because enabling the network service must not imply that system
 /// management settings become remote-control topics.
-const MQTT_SCOPE_NOTICE: &str = "The bridge carries only com.mos.ext.* application item trees. System management functions — including SSH, networking, credentials, containers, MQTT configuration, health, updates and power — remain available through APID and are never published or written through MQTT.";
+const MQTT_SCOPE_NOTICE: &str = "The bridge carries only com.mos application item trees enrolled by exact service name. com.mos.mosd has no MQTT access. System management functions — including SSH, networking, credentials, containers, MQTT configuration, health, updates and power — remain available through APID and are never published or written through MQTT.";
 
 /// Why nothing on this page refuses to save.
 ///

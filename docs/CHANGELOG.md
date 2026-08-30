@@ -4,6 +4,25 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## MQTT enrollment decoupled from service naming (2026-08-30)
+
+`com.mos.ext.*` is no longer a privileged application namespace. All services
+use the uniform `com.mos.<class>[.<suffix>]` grammar, while MQTT eligibility is
+an independent package-owned contract: an exact regular-file enrollment under
+`/usr/lib/mos/mqtt-applications.d` must be paired with exact D-Bus name
+ownership and `mos-mqttd` Item1 grants. Global prefix ownership and the central
+mqttd policy were removed; wildcard, prefix, unenrolled, and unpaired grants
+fail image verification.
+
+`mos-mqttd` now has zero D-Bus access to `com.mos.mosd`. `GetDeviceId` and the
+bridge identity proxy were removed; mosd instead renders the already-validated
+topic identity into `/run/mos/mqttd-device.env` before starting the bridge.
+mosd retains its explicit local `com.mos.mosd1` management API because APID and
+mosd are separate processes, but exports no Item1 façade and no settings,
+state, signal, or action to MQTT. This entry supersedes the extension-namespace
+and single-`GetDeviceId` exception described in the immediately following
+entry; the retained-topic cleanup guidance there remains applicable.
+
 ## MQTT restricted to application data (2026-08-30)
 
 `mos-mqttd` no longer mirrors the `com.mos.mosd` management tree. It now

@@ -1,5 +1,5 @@
-// Batch 4a: the D-Bus policies -- the system bus, mosd's root-only grant, the
-// extension namespace, and bluez's.
+// The D-Bus policies: the system bus, mosd's local root-only management name,
+// the absence of namespace-wide application grants, and bluez's policy.
 //
 // Eleven conclusions on each board, one of them a SKIP on x64. Everything here
 // reads the unpacked root and nothing else.
@@ -8,10 +8,7 @@
 // lines, so a line-oriented reader sees the bus name and the member on different
 // lines and concludes the grant names no member -- the dangerous direction,
 // because it turns a correctly scoped grant into a reported hazard whose obvious
-// repair is to stop scoping it. And com.mos.ext.conf documents its own widening
-// hazard in prose that names com.mos.mosd, so a reader that could not tell an
-// XML comment from a rule would report the warning as an instance of the thing
-// it warns about. So both of the oracle's readers are ported as readers:
+// repair is to stop scoping it. So both of the oracle's readers are ported as readers:
 // `stripComments` is `dbus_policy_rules_only`, an awk state machine over
 // `<!--`/`-->` that spans lines and preserves line structure; `policyTags` is
 // `dbus_policy_tags`, the same text reflowed to one XML tag per line,
@@ -34,7 +31,7 @@ import type { CheckResult } from './parity.ts'
 import { skipped, verdict } from './verdict.ts'
 
 const MOSD_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.mosd.conf'
-const EXT_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.ext.conf'
+const LEGACY_EXT_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.ext.conf'
 const MOSD_UNIT = '/usr/lib/systemd/system/mosd.service'
 const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
 
@@ -227,11 +224,9 @@ export interface SecondFile {
  * blessed file is excluded by name rather than by directory, because a second
  * file in /usr/share is exactly as dangerous as one in /etc.
  *
- * A second file is not automatically a defect and the oracle is explicit about
- * why: mos-mqttd.conf grants the bridge one named identity member on
- * com.mos.mosd on purpose. What must hold is that every rule naming the bus sits inside a
- * `<policy user=|group=>` block AND names a member -- judged per reflowed tag
- * line, which is what `policyTags` exists for.
+ * mosd is a local management service. Its own policy is the only policy file
+ * allowed to mention its exact name; mqttd and application packages receive no
+ * exception, even when a second rule looks narrow.
  */
 export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
   const found: SecondFile[] = []
@@ -251,21 +246,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
       if (!regularFileFollowingLinks(root, path)) continue
       const tags = policyTags(readOrEmpty(root, path))
       if (!tags.some(t => t.includes(bus))) continue
-      let scoped = false
-      const unscoped: string[] = []
-      for (const tag of tags) {
-        if (tag.startsWith('<policy')) {
-          scoped = tag.includes('user=') || tag.includes('group=')
-          continue
-        }
-        if (tag.startsWith('</policy')) {
-          scoped = false
-          continue
-        }
-        if (!tag.includes(bus)) continue
-        const member = tag.includes('send_member=') || tag.includes('receive_member=')
-        if (!scoped || !member) unscoped.push(tag)
-      }
+      const unscoped = tags.filter(tag => tag.includes(bus))
       found.push({ path, unscoped })
     }
   }
@@ -412,39 +393,23 @@ const MOSD_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // ONE policy file, or a second one that only narrows. THREE branches and
-    // two of them PASS, which is why this entry's `pass` matcher is a LIST:
-    // "the only other file(s) naming X ... grant it strictly per-member" and
-    // "X is the ONLY file under ..." are both green and share no substring
-    // that is not also in the other's neighbours.
+    // One policy file. A narrow-looking second exception is still a management
+    // export and therefore a boundary violation.
     id: 'mosd-policy-no-second-file-widens',
     shell: {
-      pass: [
-        ' -- grant it strictly per-member inside a <policy user=|group=> block',
-        ' that mentions ',
-      ],
-      fail: 'a second D-Bus policy file grants ',
+      pass: ' is the ONLY file under ',
+      fail: 'a second D-Bus policy file mentions ',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const bus = mosdBusName(root)
       const others = secondPolicyFiles(root, bus)
-      const dups = others.filter(f => f.unscoped.length > 0)
-      const scoped = others.filter(f => f.unscoped.length === 0)
       const id = 'mosd-policy-no-second-file-widens'
-      if (dups.length > 0) {
-        const detail = dups.map(f => ` ${f.path} [${f.unscoped.join(' ')} ]`).join('')
+      if (others.length > 0) {
+        const detail = others.map(f => ` ${f.path} [${f.unscoped.join(' ')} ]`).join('')
         return [verdict(id, false,
-          `a second D-Bus policy file grants ${bus === '' ? 'the mosd bus name' : bus} outside a named `
-          + `identity or without naming a member:${detail}. dbus-daemon reads both system.d directories `
-          + `and applies later rules over earlier ones, so this reinstates what ${MOSD_POLICY_PATH} `
-          + `removes -- and every other policy check here would still pass`)]
-      }
-      if (scoped.length > 0) {
-        return [verdict(id, true,
-          `the only other file(s) naming ${bus} --${scoped.map(f => ` ${f.path}`).join('')} -- grant it `
-          + `strictly per-member inside a <policy user=|group=> block, so nothing outside `
-          + `${MOSD_POLICY_PATH} widens the name to the default context`)]
+          `a second D-Bus policy file mentions ${bus === '' ? 'the mosd bus name' : bus}:${detail}. `
+          + 'mosd is local management only, so even a per-member identity exception is forbidden')]
       }
       return [verdict(id, true,
         `${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d `
@@ -454,123 +419,62 @@ const MOSD_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// check_ext_policy
-
-const EXT_GRANT_RE = /allow own_prefix="com\.mos\.ext"/
-const EXT_WIDE_RE = /own_prefix="com\.mos"/
-const EXT_GRANT_WHAT = 'the extension D-Bus policy grants own_prefix=com.mos.ext, so extension '
-  + 'services can take their bus names at all'
-
-/** The rules half of com.mos.ext.conf: comments stripped, absence an empty file. */
-function extRules(root: string): string {
-  return regularFileFollowingLinks(root, EXT_POLICY_PATH)
-    ? stripXmlComments(readOrEmpty(root, EXT_POLICY_PATH))
-    : ''
+function mosPrefixGrants(root: string): string[] {
+  const found: string[] = []
+  for (const dir of POLICY_DIRS) {
+    let entries: string[]
+    try {
+      entries = readdirSync(join(root, dir)).sort()
+    }
+    catch {
+      continue
+    }
+    for (const name of entries) {
+      const path = `${dir}/${name}`
+      if (!regularFileFollowingLinks(root, path)) continue
+      for (const tag of policyTags(readOrEmpty(root, path))) {
+        const prefix = tag.match(/\bown_prefix="([^"]*)"/)?.[1]
+        if (prefix === 'com.mos' || prefix?.startsWith('com.mos.') === true) {
+          found.push(`${path} [${tag}]`)
+        }
+      }
+    }
+  }
+  return found
 }
 
-const EXT_CHECKS: readonly CheckCase[] = [
+const NAMESPACE_CHECKS: readonly CheckCase[] = [
   {
-    // sq_grep, over the RAW file -- comments and all. The pair below is what
-    // separates the rule from the commentary; this one only asks whether the
-    // string is in the file at all, and the oracle asks it that way.
-    id: 'ext-policy-grants-prefix',
-    shell: { pass: EXT_GRANT_WHAT },
+    id: 'legacy-ext-policy-absent',
+    shell: {
+      pass: 'the legacy com.mos.ext prefix policy is absent',
+      fail: 'the legacy com.mos.ext prefix policy still exists',
+    },
     run: async (ctx): Promise<readonly CheckResult[]> => {
-      const root = await packedRoot(ctx)
-      const ok = regularFileFollowingLinks(root, EXT_POLICY_PATH)
-        && readOrEmpty(root, EXT_POLICY_PATH).split('\n').some(l => EXT_GRANT_RE.test(l))
+      const present = regularFileFollowingLinks(await packedRoot(ctx), LEGACY_EXT_POLICY_PATH)
       return [verdict(
-        'ext-policy-grants-prefix',
-        ok,
-        ok
-          ? EXT_GRANT_WHAT
-          : `${EXT_GRANT_WHAT} — ${EXT_POLICY_PATH} missing or does not match `
-            + `/${EXT_GRANT_RE.source}/`,
+        'legacy-ext-policy-absent',
+        !present,
+        present
+          ? `the legacy com.mos.ext prefix policy still exists at ${LEGACY_EXT_POLICY_PATH}`
+          : `the legacy com.mos.ext prefix policy is absent (${LEGACY_EXT_POLICY_PATH})`,
       )]
     },
   },
-
   {
-    // ...and it survives comment-stripping, i.e. it is a RULE and not the
-    // example markup in the file's own commentary. Without this the check
-    // above passes on a policy whose only grant is inside <!-- -->, and every
-    // extension unit dies at RequestName with AccessDenied.
-    id: 'ext-policy-grant-is-live',
+    id: 'mos-namespace-no-prefix-ownership',
     shell: {
-      pass: 'the own_prefix=com.mos.ext grant is a live rule, not text inside an XML comment',
-      fail: 'mentions own_prefix=com.mos.ext only inside an XML comment',
+      pass: 'no D-Bus policy grants prefix ownership inside com.mos',
+      fail: 'a D-Bus policy grants prefix ownership inside com.mos',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
-      const ok = extRules(await packedRoot(ctx)).split('\n').some(l => EXT_GRANT_RE.test(l))
+      const grants = mosPrefixGrants(await packedRoot(ctx))
       return [verdict(
-        'ext-policy-grant-is-live',
-        ok,
-        ok
-          ? 'the own_prefix=com.mos.ext grant is a live rule, not text inside an XML comment'
-          : `${EXT_POLICY_PATH} mentions own_prefix=com.mos.ext only inside an XML comment. `
-            + `dbus-daemon ignores comments, so no extension can own a com.mos.ext.* name and every `
-            + `extension unit dies at RequestName with AccessDenied`,
-      )]
-    },
-  },
-
-  {
-    // The one-character edit. own_prefix="com.mos" reads in a diff like a
-    // simplification and actually grants ownership of com.mos.mosd to every
-    // local uid -- with the root-only rules in com.mos.mosd.conf fully intact
-    // and every mosd policy check above still passing, because none of them can
-    // see a grant that lives in another file.
-    id: 'ext-policy-not-widened',
-    shell: {
-      pass: 'does not grant the widened own_prefix="com.mos"',
-      fail: 'grants own_prefix="com.mos", not "com.mos.ext"',
-    },
-    run: async (ctx): Promise<readonly CheckResult[]> => {
-      const wide = extRules(await packedRoot(ctx)).split('\n').some(l => EXT_WIDE_RE.test(l))
-      return [verdict(
-        'ext-policy-not-widened',
-        !wide,
-        wide
-          ? `${EXT_POLICY_PATH} grants own_prefix="com.mos", not "com.mos.ext". That hands ownership `
-            + `of com.mos.mosd to every local uid: a unit with DefaultDependencies=no can claim the `
-            + `name before mosd does and apid then talks to an impostor for the rest of the boot. The `
-            + `root-only rules in ${MOSD_POLICY_PATH} do not stop this -- own= is granted here`
-          : `${EXT_POLICY_PATH} does not grant the widened own_prefix="com.mos"; com.mos.mosd and `
-            + `every future system name stay outside the extension grant`,
-      )]
-    },
-  },
-
-  {
-    // own_prefix="com.mos.ext" is the ONLY ownership this file may hand out. An
-    // own= rule here would name a specific bus name, and the only names worth
-    // naming are the system ones.
-    id: 'ext-policy-grants-nothing-else',
-    shell: {
-      pass: 'grants exactly one thing -- own_prefix=com.mos.ext -- and no <allow own=>',
-      fail: 'grants ownership beyond the extension namespace:',
-    },
-    run: async (ctx): Promise<readonly CheckResult[]> => {
-      const rules = extRules(await packedRoot(ctx))
-      // `grep -Eo '<allow[^>]*own="[^"]*"'` and `grep -Eo 'own_prefix="[^"]*"'`,
-      // each printing every match on its own line, then the second filtered by
-      // `grep -Fxv` against the one blessed prefix.
-      const ownGrants = [...rules.matchAll(/<allow[^>]*own="[^"]*"/g)].map(m => m[0])
-      const badPrefix = [...rules.matchAll(/own_prefix="[^"]*"/g)].map(m => m[0])
-        .filter(s => s !== 'own_prefix="com.mos.ext"')
-      const ok = ownGrants.length === 0 && badPrefix.length === 0
-      const detail = (ownGrants.length === 0 ? '' : ` own rules [${ownGrants.join('\n')}]`)
-        + (badPrefix.length === 0 ? '' : ` unexpected prefixes [${badPrefix.join('\n')}]`)
-      return [verdict(
-        'ext-policy-grants-nothing-else',
-        ok,
-        ok
-          ? `${EXT_POLICY_PATH} grants exactly one thing -- own_prefix=com.mos.ext -- and no `
-            + `<allow own=> for any system name such as com.mos.mosd`
-          : `${EXT_POLICY_PATH} grants ownership beyond the extension namespace:${detail}. Every name `
-            + `outside com.mos.ext.* is a system name; granting one here opens it to every local uid on `
-            + `the device while com.mos.mosd.conf's root-only rules keep passing, because they cannot `
-            + `see a grant made in another file`,
+        'mos-namespace-no-prefix-ownership',
+        grants.length === 0,
+        grants.length === 0
+          ? 'no D-Bus policy grants prefix ownership inside com.mos; application names require exact package grants'
+          : `a D-Bus policy grants prefix ownership inside com.mos: ${grants.join(' ')}`,
       )]
     },
   },
@@ -639,6 +543,6 @@ const BLUEZ_CHECKS: readonly CheckCase[] = [
  */
 export const DBUS_CHECKS: readonly CheckCase[] = [
   ...MOSD_CHECKS,
-  ...EXT_CHECKS,
+  ...NAMESPACE_CHECKS,
   ...BLUEZ_CHECKS,
 ]

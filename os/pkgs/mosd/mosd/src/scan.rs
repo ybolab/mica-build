@@ -28,11 +28,9 @@
 //!
 //! # The class comes from `mos-busname`, never from here
 //!
-//! `com.mos.ext.sensor.abc123` is class `sensor`, not `ext`; the bare
-//! namespace `com.mos.ext` is extension-origin with NO class. Both facts come
-//! out of [`mos_busname::parse`], which is the one implementation of that rule
-//! in the tree — the `no_class` conformance gap below is that type's
-//! `class: None` recorded, not a prefix test of our own.
+//! `com.mos.sensor.abc123` is class `sensor`. That fact comes out of
+//! [`mos_busname::parse`], which is the one implementation of the direct
+//! `com.mos.<class>[.<suffix>]` rule in the tree.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::poll_fn;
@@ -40,7 +38,6 @@ use std::pin::pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use mos_busname::Origin;
 use serde_json::{Map, Value as Json};
 use zbus::export::futures_core::Stream;
 use zbus::object_server::InterfaceRef;
@@ -115,19 +112,12 @@ struct Conformance {
     no_device_instance: bool,
     /// The subset of [`MANDATORY_PATHS`] the service does not publish.
     missing_paths: Vec<&'static str>,
-    /// The bus name is in the `com.mos.ext` namespace but names no class —
-    /// [`mos_busname::parse`] returning `class: None`, which happens for the
-    /// bare namespace and nothing else.
-    no_class: bool,
 }
 
 impl Conformance {
     /// Nothing is missing.
     fn is_clean(&self) -> bool {
-        !self.no_item1
-            && !self.no_device_instance
-            && self.missing_paths.is_empty()
-            && !self.no_class
+        !self.no_item1 && !self.no_device_instance && self.missing_paths.is_empty()
     }
 
     /// The gaps, as the `conformance` object: absent keys are things that are
@@ -151,9 +141,6 @@ impl Conformance {
                 ),
             );
         }
-        if self.no_class {
-            out.insert("no_class".to_string(), Json::Bool(true));
-        }
         Json::Object(out)
     }
 }
@@ -164,7 +151,6 @@ impl Conformance {
 /// it parsed, and the registry outlives every one of those borrows.
 #[derive(Debug, Clone)]
 struct Entry {
-    origin: Origin,
     class: Option<String>,
     connected: bool,
     instance: i64,
@@ -179,10 +165,6 @@ impl Entry {
     fn to_json(&self, name: &str, collision: bool) -> Json {
         serde_json::json!({
             "name": name,
-            "origin": match self.origin {
-                Origin::System => "system",
-                Origin::Extension => "extension",
-            },
             "class": self.class,
             "connected": self.connected,
             "instance": self.instance,
@@ -271,11 +253,9 @@ impl Registry {
     /// same instance (`docs/design/bus.md`: unique within the class), and
     /// **both** sides are marked — neither is more at fault than the other,
     /// and neither is dropped or shadowed, because a registry that hid one of
-    /// them would hide the very fact an operator needs. Services with no class
-    /// (the bare `com.mos.ext`) do not take part: there is no class for them
-    /// to be unique within, and their gap is already `no_class`. Disconnected
-    /// entries do not either — a service that is not there publishes nothing
-    /// to collide with.
+    /// them would hide the very fact an operator needs. Disconnected entries
+    /// do not take part — a service that is not there publishes nothing to
+    /// collide with.
     fn snapshot_of(entries: &BTreeMap<String, Entry>) -> Json {
         let mut counts: HashMap<(&str, i64), usize> = HashMap::new();
         for entry in entries.values().filter(|entry| entry.connected) {
@@ -397,10 +377,6 @@ async fn record_appearance(
         no_item1: !probe.item1,
         no_device_instance: probe.instance.is_none(),
         missing_paths: probe.missing_paths,
-        // Straight off the type: `class: None` is the bare `com.mos.ext` and
-        // nothing else, and recording that gap is this registry's job — the
-        // parser's job was to stop `ext` being published as a class.
-        no_class: parsed.class.is_none(),
     };
     if !conformance.is_clean() {
         // Exactly one warning per non-conforming service, naming the service
@@ -411,16 +387,14 @@ async fn record_appearance(
             item1 = probe.item1,
             device_instance = probe.instance.is_some(),
             missing_paths = ?conformance.missing_paths,
-            no_class = conformance.no_class,
             "service does not conform to docs/design/bus.md service registry contract; \
              registered best-effort"
         );
     }
     let entry = Entry {
-        origin: parsed.origin,
         // `BusName` borrows from `name`, so an entry that outlives this call
         // has to own its class.
-        class: parsed.class.map(str::to_string),
+        class: Some(parsed.class.to_string()),
         connected: true,
         instance: probe.instance.unwrap_or(FALLBACK_INSTANCE),
         conformance,
@@ -539,7 +513,7 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::{Conformance, Entry, Origin, Registry, as_i64, name_owner_changed_rule};
+    use super::{Conformance, Entry, Registry, as_i64, name_owner_changed_rule};
     use zbus::zvariant::Value;
 
     /// The rule the BUS is given, in the form it is given it: the filtering
@@ -561,7 +535,6 @@ mod tests {
 
     fn entry(class: Option<&str>, instance: i64, connected: bool) -> Entry {
         Entry {
-            origin: Origin::Extension,
             class: class.map(str::to_string),
             connected,
             instance,
@@ -585,7 +558,6 @@ mod tests {
             no_item1: true,
             no_device_instance: true,
             missing_paths: vec!["/DeviceInstance", "/ProductId"],
-            no_class: true,
         };
         assert!(!gaps.is_clean());
         assert_eq!(
@@ -594,7 +566,6 @@ mod tests {
                 "item1": false,
                 "device_instance": false,
                 "missing_paths": ["/DeviceInstance", "/ProductId"],
-                "no_class": true,
             })
         );
     }
@@ -604,17 +575,11 @@ mod tests {
     #[test]
     fn a_shared_instance_marks_both_sides() {
         let registry = Registry::new();
-        registry.record("com.mos.ext.sensor.one", entry(Some("sensor"), 0, true));
-        let snapshot = registry.record("com.mos.ext.sensor.two", entry(Some("sensor"), 0, true));
+        registry.record("com.mos.sensor.one", entry(Some("sensor"), 0, true));
+        let snapshot = registry.record("com.mos.sensor.two", entry(Some("sensor"), 0, true));
 
-        assert_eq!(
-            snapshot["com.mos.ext.sensor.one"]["instance_collision"],
-            true
-        );
-        assert_eq!(
-            snapshot["com.mos.ext.sensor.two"]["instance_collision"],
-            true
-        );
+        assert_eq!(snapshot["com.mos.sensor.one"]["instance_collision"], true);
+        assert_eq!(snapshot["com.mos.sensor.two"]["instance_collision"], true);
     }
 
     /// The neighbouring cases: a different class, a different instance, and a
@@ -622,16 +587,16 @@ mod tests {
     #[test]
     fn what_does_not_collide() {
         let registry = Registry::new();
-        registry.record("com.mos.ext.sensor.one", entry(Some("sensor"), 0, true));
-        registry.record("com.mos.ext.meter.two", entry(Some("meter"), 0, true));
-        registry.record("com.mos.ext.sensor.three", entry(Some("sensor"), 1, true));
-        let snapshot = registry.record("com.mos.ext.sensor.gone", entry(Some("sensor"), 0, false));
+        registry.record("com.mos.sensor.one", entry(Some("sensor"), 0, true));
+        registry.record("com.mos.meter.two", entry(Some("meter"), 0, true));
+        registry.record("com.mos.sensor.three", entry(Some("sensor"), 1, true));
+        let snapshot = registry.record("com.mos.sensor.gone", entry(Some("sensor"), 0, false));
 
         for name in [
-            "com.mos.ext.sensor.one",
-            "com.mos.ext.meter.two",
-            "com.mos.ext.sensor.three",
-            "com.mos.ext.sensor.gone",
+            "com.mos.sensor.one",
+            "com.mos.meter.two",
+            "com.mos.sensor.three",
+            "com.mos.sensor.gone",
         ] {
             assert_eq!(
                 snapshot[name]["instance_collision"], false,
@@ -640,28 +605,15 @@ mod tests {
         }
     }
 
-    /// A classless service (the bare `com.mos.ext`) has no class to be unique
-    /// within, so two of them are not a collision.
-    #[test]
-    fn classless_services_do_not_collide() {
-        let registry = Registry::new();
-        registry.record("com.mos.ext", entry(None, 0, true));
-        let snapshot = registry.record("com.mos.ext.other", entry(None, 0, true));
-
-        assert_eq!(snapshot["com.mos.ext"]["instance_collision"], false);
-        assert_eq!(snapshot["com.mos.ext"]["class"], serde_json::Value::Null);
-        assert_eq!(snapshot["com.mos.ext.other"]["instance_collision"], false);
-    }
-
     /// Retention and removal: a vanished service stays, `ForgetService`'s
     /// backing call drops it, and a connected one is refused.
     #[test]
     fn forget_takes_a_disconnected_entry_and_refuses_a_connected_one() {
         let registry = Registry::new();
-        registry.record("com.mos.ext.sensor.fake", entry(Some("sensor"), 3, true));
+        registry.record("com.mos.sensor.fake", entry(Some("sensor"), 3, true));
 
         let refused = registry
-            .forget("com.mos.ext.sensor.fake")
+            .forget("com.mos.sensor.fake")
             .expect_err("a connected service must not be forgettable");
         assert!(
             refused.to_string().contains("still connected"),
@@ -669,17 +621,17 @@ mod tests {
         );
 
         let snapshot = registry
-            .disconnect("com.mos.ext.sensor.fake")
+            .disconnect("com.mos.sensor.fake")
             .expect("the entry is there");
-        assert_eq!(snapshot["com.mos.ext.sensor.fake"]["connected"], false);
+        assert_eq!(snapshot["com.mos.sensor.fake"]["connected"], false);
 
         let snapshot = registry
-            .forget("com.mos.ext.sensor.fake")
+            .forget("com.mos.sensor.fake")
             .expect("a disconnected entry can be forgotten");
         assert_eq!(snapshot, serde_json::json!({}));
 
         assert!(
-            registry.forget("com.mos.ext.sensor.fake").is_err(),
+            registry.forget("com.mos.sensor.fake").is_err(),
             "forgetting what is already gone is an error, not a silent no-op"
         );
     }
@@ -689,7 +641,7 @@ mod tests {
     fn forgetting_an_unknown_name_is_refused() {
         let registry = Registry::new();
         let err = registry
-            .forget("com.mos.ext.sensor.never")
+            .forget("com.mos.sensor.never")
             .expect_err("unknown name");
         assert!(
             err.to_string().contains("no service registry entry"),

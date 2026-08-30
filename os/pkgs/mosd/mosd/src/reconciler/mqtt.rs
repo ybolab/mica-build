@@ -2,7 +2,9 @@
 //! needs it, and the broker's runtime config rendered from `mqtt`.
 //!
 //! `/run/mos/mqtt-broker.toml` is rendered from `mqtt.listen` and `mqtt.auth`
-//! (the three keys the `mos-mqtt-broker` binary parses), then
+//! (the three keys the `mos-mqtt-broker` binary parses), and
+//! `/run/mos/mqttd-device.env` carries only the validated device identity.
+//! Both are rendered before
 //! `mos-mqtt-broker.service` and `mos-mqttd.service` are brought to the state
 //! `mqtt.enabled` asks for. Config before service start, as in `sshd.rs`: a
 //! broker on a stale config listens on the wrong address, and the unit's state
@@ -36,6 +38,10 @@ const BRIDGE_UNIT: &str = "mos-mqttd.service";
 /// would only create a second copy of the truth that could disagree with the
 /// first.
 const DEFAULT_CONFIG_PATH: &str = "/run/mos/mqtt-broker.toml";
+/// Root-rendered runtime identity read by `mos-mqttd.service`.
+const IDENTITY_FILE_NAME: &str = "mqttd-device.env";
+/// Fixed production path required by `mos-mqttd.service`.
+const DEFAULT_IDENTITY_PATH: &str = "/run/mos/mqttd-device.env";
 /// Environment variable overriding the rendered config path.
 ///
 /// Nothing in the image sets it; the override exists so tests run entirely
@@ -63,6 +69,8 @@ const FAILED_STATE: &str = "failed";
 pub struct MqttReconciler<C: UnitControl> {
     /// Path the broker config is rendered to.
     config_path: PathBuf,
+    /// One-purpose runtime identity file beside the broker configuration.
+    identity_path: PathBuf,
     control: C,
 }
 
@@ -73,8 +81,13 @@ impl<C: UnitControl> MqttReconciler<C> {
     /// The path is a parameter so tests run entirely inside a temporary
     /// directory and never touch the host's `/run`.
     pub fn new(config_path: PathBuf, control: C) -> Self {
+        let identity_path = config_path
+            .parent()
+            .map(|parent| parent.join(IDENTITY_FILE_NAME))
+            .unwrap_or_else(|| PathBuf::from(IDENTITY_FILE_NAME));
         Self {
             config_path,
+            identity_path,
             control,
         }
     }
@@ -87,7 +100,12 @@ impl MqttReconciler<Systemd> {
         let config_path = std::env::var(CONFIG_PATH_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_CONFIG_PATH));
-        Self::new(config_path, Systemd)
+        let mut reconciler = Self::new(config_path, Systemd);
+        // The broker-config override exists for tests and diagnostics, but the
+        // systemd unit intentionally names one fixed identity path. Never let
+        // an unrelated broker path move this security boundary.
+        reconciler.identity_path = PathBuf::from(DEFAULT_IDENTITY_PATH);
+        reconciler
     }
 }
 
@@ -148,6 +166,27 @@ fn render_config(mqtt: &MqttSettings) -> String {
     out
 }
 
+/// Render the one environment assignment consumed by `mos-mqttd.service`.
+///
+/// Device identities are generated as lowercase hex, but accepting the wider
+/// identifier alphabet keeps existing provisioned devices compatible. Shell,
+/// systemd-environment and MQTT metacharacters are rejected so the value can
+/// be written without quoting or escaping and still remain exactly one topic
+/// segment.
+fn render_device_identity(device_id: Option<&str>) -> Result<String> {
+    let device_id = device_id.context("mqtt: device identity is not provisioned")?;
+    if device_id.is_empty()
+        || !device_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+    {
+        anyhow::bail!(
+            "mqtt: device identity must contain only ASCII letters, digits, '.', '_', '-' or ':'"
+        );
+    }
+    Ok(format!("MOS_MQTT_DEVICE_ID={device_id}\n"))
+}
+
 impl<C: UnitControl> MqttReconciler<C> {
     /// Render the broker config and report whether its bytes changed.
     ///
@@ -169,6 +208,23 @@ impl<C: UnitControl> MqttReconciler<C> {
         }
         write_config(&self.config_path, &rendered, CONFIG_MODE)
             .with_context(|| format!("render {}", self.config_path.display()))?;
+        Ok(true)
+    }
+
+    /// Render the bridge identity and report whether its bytes changed.
+    fn apply_identity(&self, settings: &Settings) -> Result<bool> {
+        let rendered = render_device_identity(settings.provisioning.device_id.as_deref())?;
+        if let Ok(current) = std::fs::read_to_string(&self.identity_path)
+            && current == rendered
+        {
+            return Ok(false);
+        }
+        if let Some(directory) = self.identity_path.parent() {
+            std::fs::create_dir_all(directory)
+                .with_context(|| format!("create {}", directory.display()))?;
+        }
+        write_config(&self.identity_path, &rendered, CONFIG_MODE)
+            .with_context(|| format!("render {}", self.identity_path.display()))?;
         Ok(true)
     }
 
@@ -266,16 +322,18 @@ impl<C: UnitControl> MqttReconciler<C> {
         Ok(())
     }
 
-    /// Bring the bridge up.
-    ///
-    /// No config concern: the bridge reads its own settings subtree, which this
-    /// reconciler does not render, so a broker config change is nothing to it
-    /// beyond a reconnect its retry loop already handles.
-    async fn turn_bridge_on(&self) -> Result<()> {
+    /// Bring the bridge up, restarting it when its root-rendered identity
+    /// changed. Broker configuration changes still need no bridge restart: its
+    /// reconnect loop handles the broker transition.
+    async fn turn_bridge_on(&self, identity_changed: bool) -> Result<()> {
         if !is_enabled(&self.control.unit_file_state(BRIDGE_UNIT).await?) {
             self.control.enable(BRIDGE_UNIT).await?;
         }
-        if !is_active(&self.control.active_state(BRIDGE_UNIT).await?) {
+        if is_active(&self.control.active_state(BRIDGE_UNIT).await?) {
+            if identity_changed {
+                self.control.restart(BRIDGE_UNIT).await?;
+            }
+        } else {
             self.start_or_warn(BRIDGE_UNIT).await;
         }
         Ok(())
@@ -328,6 +386,7 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
         // reads as perfectly healthy having never run. Do not move this below
         // the unit calls.
         let config_changed = self.apply_config(mqtt)?;
+        let identity_changed = self.apply_identity(settings)?;
 
         if mqtt.enabled {
             // WARNs, and deliberately not gates. Neither may become a refusal
@@ -365,7 +424,7 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
             }
             // Broker first: the bridge is its client.
             self.turn_broker_on(config_changed).await?;
-            self.turn_bridge_on().await?;
+            self.turn_bridge_on(identity_changed).await?;
         } else {
             // Bridge first, the reverse of start: the client goes before the
             // server it talks to, so a deliberate shutdown does not read as a
@@ -415,6 +474,7 @@ mod tests {
     /// What `apply` renders for default `mqtt` settings.
     const GOLDEN_DEFAULTS: &str =
         "listen_address = \"127.0.0.1\"\nlisten_port = 1883\nauth_enabled = false\n";
+    const GOLDEN_IDENTITY: &str = "MOS_MQTT_DEVICE_ID=00112233445566778899aabbccddeeff\n";
 
     fn mqtt_settings(enabled: bool, address: &str, port: u16, auth: bool) -> MqttSettings {
         MqttSettings {
@@ -428,10 +488,12 @@ mod tests {
     }
 
     fn settings_with(mqtt: MqttSettings) -> Settings {
-        Settings {
+        let mut settings = Settings {
             mqtt,
             ..Settings::default()
-        }
+        };
+        settings.provisioning.device_id = Some("00112233445566778899aabbccddeeff".to_string());
+        settings
     }
 
     /// The two above composed, because every unit test names all four values
@@ -534,6 +596,25 @@ mod tests {
         assert_eq!(
             reconciler.control.calls()[after_first..],
             ["restart mos-mqtt-broker.service".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_changed_device_identity_restarts_only_the_bridge() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "disabled");
+        let initial = settings(true, "127.0.0.1", 1883, false);
+
+        reconciler.apply(&initial).await.unwrap();
+        let after_first = reconciler.control.calls().len();
+
+        let mut changed = initial;
+        changed.provisioning.device_id = Some("ffeeddccbbaa99887766554433221100".to_string());
+        reconciler.apply(&changed).await.unwrap();
+
+        assert_eq!(
+            reconciler.control.calls()[after_first..],
+            ["restart mos-mqttd.service".to_string()]
         );
     }
 
@@ -737,6 +818,29 @@ mod tests {
 
         assert!(config.parent().unwrap().is_dir());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), GOLDEN_DEFAULTS);
+        assert_eq!(
+            std::fs::read_to_string(config.parent().unwrap().join(IDENTITY_FILE_NAME)).unwrap(),
+            GOLDEN_IDENTITY
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unsafe_device_identity_is_refused_before_any_unit_is_touched() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "disabled");
+        let mut invalid = settings(true, "127.0.0.1", 1883, false);
+        invalid.provisioning.device_id = Some("device id$injected".to_string());
+
+        let error = reconciler
+            .apply(&invalid)
+            .await
+            .expect_err("an environment-file-unsafe identity must be refused");
+
+        assert!(error.to_string().contains("device identity"), "{error:#}");
+        assert!(
+            reconciler.control.calls().is_empty(),
+            "no unit may start against an invalid identity"
+        );
     }
 
     #[tokio::test]

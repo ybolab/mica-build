@@ -1,8 +1,8 @@
 //! zbus client for mosd, implementing [`SettingsApi`].
 //!
 //! APID uses only the `com.mos.mosd1` management interface. Application item
-//! trees belong to `com.mos.ext.*` services and are not a system-control
-//! surface.
+//! trees may use direct `com.mos.<class>[.<suffix>]` service names, but enter
+//! MQTT only through exact package-owned enrollment and policy.
 
 use std::future::poll_fn;
 use std::pin::pin;

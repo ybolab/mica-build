@@ -16,8 +16,10 @@ layout:
   against `apid/openapi.json`. See `apid-api/README.md` and
   `apid-api/HARNESS.md` before running it.
 - `dbus-policy-test.sh` starts isolated D-Bus daemons and verifies the shipped
-  mosd, extension, and MQTT bridge policies in both the permitted and refused
-  directions. It requires root, `dbus-daemon`, `setpriv`, and Python 3.
+  mosd policy plus the MQTT bridge's zero-mosd boundary in both the permitted
+  and refused directions. It also audits all repository policy fragments for
+  prefix and wildcard grants. It requires root, `dbus-daemon`, `setpriv`, and
+  Python 3.
 
 Run the repository entry points rather than depending on the harnesses'
 internal commands:

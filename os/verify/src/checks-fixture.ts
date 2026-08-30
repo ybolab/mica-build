@@ -274,7 +274,6 @@ function seedHealthyRoot(root: string, board: Board): void {
   // --- the regular files ---
   for (const p of [
     '/usr/lib/systemd/systemd', '/usr/bin/mosd',
-    '/usr/share/dbus-1/system.d/com.mos.ext.conf',
     '/usr/bin/rauc', '/etc/rauc/system.conf',
     '/usr/share/dbus-1/system.d/de.pengutronix.rauc.conf',
     '/usr/share/dbus-1/system-services/de.pengutronix.rauc.service',
@@ -357,15 +356,7 @@ function seedHealthyRoot(root: string, board: Board): void {
 // M4f: the D-Bus policies
 
 /**
- * The system bus, the mosd policy and the extension policy.
- *
- * The extension policy is seeded WITH the commentary the shipped file carries,
- * and that is the point rather than realism for its own sake: com.mos.ext.conf
- * documents its own widening hazard in prose that NAMES com.mos.mosd and shows
- * `own_prefix="com.mos"` as the mistake. A reader that could not tell an XML
- * comment from a rule reports the warning as an instance of the thing it warns
- * about -- so the fixture has to contain the trap, or the tests would prove
- * comment-stripping works on a file that needs none.
+ * The system bus and mosd's sole local-management policy.
  *
  * com.mos.mosd.conf is seeded by `seedHealthyRoot` above, beside the sq_grep
  * that reads it; the parse-level facts this batch asserts are mutations OF that
@@ -374,14 +365,6 @@ function seedHealthyRoot(root: string, board: Board): void {
 function seedDbus(root: string, file: WriteFile): void {
   file('/usr/lib/systemd/system/dbus.service', '[Unit]\n')
   file('/usr/lib/systemd/system/dbus.socket', '[Unit]\n')
-  file('/usr/share/dbus-1/system.d/com.mos.ext.conf',
-    '<busconfig>\n'
-    + '  <!-- Extension point. Do NOT widen this to own_prefix="com.mos": that\n'
-    + '       would grant ownership of com.mos.mosd to every local uid. -->\n'
-    + '  <policy context="default">\n'
-    + '    <allow own_prefix="com.mos.ext"/>\n'
-    + '  </policy>\n'
-    + '</busconfig>\n')
 }
 
 // M4f: the container engine, the purge, and the trust store
@@ -859,13 +842,17 @@ function seedMqtt(root: string, file: WriteFile): void {
   file('/usr/bin/mos-mqttd')
   file('/usr/bin/mos-mqtt-broker')
 
-  // A STATIC identity, an EnvironmentFile on a STATE-backed bind, and a broker
-  // host that comes from the environment rather than from the read-only root.
+  // A STATIC identity, a broker EnvironmentFile on a STATE-backed bind, and a
+  // mandatory root-rendered topic identity under /run.
   file('/usr/lib/systemd/system/mos-mqttd.service',
-    '[Service]\n'
+    '[Unit]\n'
+    + 'ConditionPathExists=/run/mos/mqttd-device.env\n'
+    + '[Service]\n'
     + 'User=mos-mqttd\n'
     + 'EnvironmentFile=-/var/lib/mos/mqttd.env\n'
-    + 'ExecStart=/usr/bin/mos-mqttd --broker ${MOS_MQTT_BROKER_HOST}\n')
+    + 'EnvironmentFile=/run/mos/mqttd-device.env\n'
+    + 'ExecStart=/usr/bin/mos-mqttd --device-id ${MOS_MQTT_DEVICE_ID} '
+    + '--broker-host ${MOS_MQTT_BROKER_HOST}\n')
   file('/usr/lib/systemd/system/mos-mqtt-broker.service',
     '[Service]\nUser=mos-mqtt-broker\n')
 
@@ -875,20 +862,9 @@ function seedMqtt(root: string, file: WriteFile): void {
   file('/etc/systemd/system/var-lib-mos.mount',
     '[Mount]\nWhat=/mnt/state/mos\nWhere=/var/lib/mos\nType=none\nOptions=bind\n')
 
-  // The grant: the same user the unit runs as, with exactly the private
-  // device-identity member. Attributes wrapped across lines on purpose -- the
-  // shipped file wraps them, and a line-oriented reader that did not normalise
-  // tags would report a blanket grant that is not there.
-  file('/usr/share/dbus-1/system.d/mos-mqttd.conf',
-    '<busconfig>\n'
-    + '  <!-- <allow send_destination="com.mos.mosd"/> commentary, not a rule -->\n'
-    + '  <policy user="mos-mqttd">\n'
-    + '    <allow\n'
-    + '      send_destination="com.mos.mosd"\n'
-    + '      send_interface="com.mos.mosd1"\n'
-    + '      send_member="GetDeviceId"/>\n'
-    + '  </policy>\n'
-    + '</busconfig>\n')
+  // Empty is valid: no application is remotely published until its package
+  // installs both an exact enrollment file and its exact Item1 policy.
+  mkdirSync(join(root, '/usr/lib/mos/mqtt-applications.d'), { recursive: true })
 
   // NOT enabled: no *.wants symlink for either. mosd starts them from
   // mqtt.enabled, and an enablement baked into the image is the one thing that

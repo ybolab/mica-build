@@ -90,7 +90,6 @@ fn error_name(err: &zbus::Error) -> &str {
     default_path = "/com/mos/mosd"
 )]
 trait Mosd {
-    fn get_device_id(&self) -> zbus::Result<String>;
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
@@ -159,9 +158,6 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     let defaults: serde_json::Value = serde_json::from_str(&defaults)?;
     assert_eq!(defaults["hostname"], "mos");
     assert_eq!(defaults["schema_version"], mosd_settings::SCHEMA_VERSION);
-
-    let device_id = proxy.get_device_id().await?;
-    assert_eq!(device_id, DEVICE_ID);
 
     let mut changed = proxy.receive_settings_changed().await?;
     proxy.set_settings("hostname", "\"unit-test-host\"").await?;
@@ -256,6 +252,10 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
         .build()
         .await?;
     let xml = introspectable.introspect().await?;
+    assert!(
+        !xml.contains("<method name=\"GetDeviceId\">"),
+        "device identity is runtime configuration for mqttd, not a mosd D-Bus member:\n{xml}"
+    );
     let root_xml = zbus::fdo::IntrospectableProxy::builder(&connection)
         .destination("com.mos.mosd")?
         .path("/")?

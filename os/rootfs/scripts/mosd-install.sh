@@ -14,9 +14,9 @@
 # stage asks for, and a missing member is a build failure naming the file.
 
 set -eu
-for f in mosd mosd.service com.mos.mosd.conf com.mos.ext.conf \
+for f in mosd mosd.service com.mos.mosd.conf \
          apid apid.service \
-         mos-mqttd mos-mqttd.service mos-mqttd.conf \
+         mos-mqttd mos-mqttd.service \
          mos-mqtt-broker mos-mqtt-broker.service; do
     [ -f "/tmp/mosd/${f}" ] ||
         { echo "error: ${f} is not in the staged mosd output at MOSD_DIR. This chain includes stages/33-feature-mosd, which asks for the management daemon; leave the stage out with --without mosd for a board that declines it. Continuing would produce an image that boots, reports itself healthy, and has no way to be managed" >&2; exit 1; }
@@ -25,7 +25,6 @@ done
 install -m 0755 /tmp/mosd/mosd /usr/bin/mosd
 install -m 0644 /tmp/mosd/mosd.service /usr/lib/systemd/system/mosd.service
 install -m 0644 /tmp/mosd/com.mos.mosd.conf /usr/share/dbus-1/system.d/com.mos.mosd.conf
-install -m 0644 /tmp/mosd/com.mos.ext.conf /usr/share/dbus-1/system.d/com.mos.ext.conf
 mkdir -p /var/lib/mos /etc/systemd/system/multi-user.target.wants
 ln -sf /usr/lib/systemd/system/mosd.service \
        /etc/systemd/system/multi-user.target.wants/mosd.service
@@ -40,8 +39,7 @@ test -L /etc/systemd/system/multi-user.target.wants/apid.service
 install -m 0755 /tmp/mosd/mos-mqttd /usr/bin/mos-mqttd
 install -m 0644 /tmp/mosd/mos-mqttd.service \
         /usr/lib/systemd/system/mos-mqttd.service
-install -m 0644 /tmp/mosd/mos-mqttd.conf \
-        /usr/share/dbus-1/system.d/mos-mqttd.conf
+mkdir -p /usr/lib/mos/mqtt-applications.d
 rm -f /etc/systemd/system/multi-user.target.wants/mos-mqttd.service
 test ! -e /etc/systemd/system/multi-user.target.wants/mos-mqttd.service
 echo "mos-mqttd.service left DISABLED in the image (mosd owns the lifecycle; mqtt.enabled starts it)"

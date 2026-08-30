@@ -1653,6 +1653,7 @@ dependencies = [
  "mos-busname",
  "rumqttc",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

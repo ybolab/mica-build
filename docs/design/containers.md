@@ -37,9 +37,11 @@ connect to if you were expecting one.
 `container.enabled` in the management settings tree, `false` by default. It is
 read and written through APID, which calls mosd's validated `GetSettings` and
 `SetSettings` methods. mosd exports no system Item1 projection, and
-`mos-mqttd` admits only `com.mos.ext.*` applications, so container enablement
-has no MQTT read or write path. `mqtt.enabled` is kept on the same management
-side for the same reason: a system lifecycle switch is not application data.
+`mos-mqttd` admits only application packages enrolled by exact direct
+`com.mos.<class>[.<suffix>]` name, with `com.mos.mosd` structurally forbidden,
+so container enablement has no MQTT read or write path. `mqtt.enabled` is kept
+on the same management side for the same reason: a system lifecycle switch is
+not application data.
 
 Turn it on from the `/containers` pane in the built-in UI, or through the API
 route the pane itself uses, which takes a bearer token and no other credential:

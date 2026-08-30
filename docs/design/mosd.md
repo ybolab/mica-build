@@ -374,7 +374,6 @@ changed.
 
 | Member | Kind |
 |---|---|
-| `GetDeviceId` | method (read-only identity for MQTT topic addressing) |
 | `GetSettings` / `SetSettings` | method |
 | `GetState` | method |
 | `ReportHealth` | method |
@@ -390,8 +389,10 @@ changed.
 
 mosd deliberately exports no `com.mos.Item1` façade. System settings, live
 state and actions remain on this management interface and are not MQTT
-application data. `mos-mqttd` is granted only `GetDeviceId`; APID receives the
-management permissions it needs through its own policy.
+application data. `mos-mqttd` has zero policy access to `com.mos.mosd`; APID
+runs as root and reaches the interface through the root-only local policy. mosd
+renders the bridge's already-provisioned topic identity to the one-purpose
+`/run/mos/mqttd-device.env` runtime file before starting it.
 
 `Reboot` and `PowerOff` forward to `Reboot` / `PowerOff` on
 `org.freedesktop.systemd1.Manager`. They are **not reconcilers** and do not live

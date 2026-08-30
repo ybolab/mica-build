@@ -1,10 +1,10 @@
 //! `mos-mqttd` — the MQTT application-data bridge.
 //!
-//! The bridge discovers only class-bearing `com.mos.ext.*` services and knows
-//! their `GetItems`, `ItemsChanged` and `SetValue` application surface. System
-//! services are rejected by a typed namespace gate. The only management call
-//! is `com.mos.mosd1.GetDeviceId`, used privately to address topics; no system
-//! setting, state or action becomes an MQTT item.
+//! The bridge discovers only exact `com.mos.*` names installed in its
+//! package-owned enrollment directory and knows their `GetItems`,
+//! `ItemsChanged` and `SetValue` application surface. It never calls or
+//! subscribes to mosd. Device identity arrives as runtime configuration, so no
+//! system setting, state, signal, method or action becomes an MQTT item.
 //!
 //! # The protocol is the mos-native grammar, and only that
 //!
@@ -54,6 +54,7 @@
 
 pub mod bridge;
 pub mod config;
+pub mod enrollment;
 pub mod item;
 pub mod payload;
 pub mod runtime;

@@ -1,5 +1,5 @@
 //! The application side of the bridge: `com.mos.Item1` reads, signals and
-//! writes on admitted extension services.
+//! writes on explicitly enrolled application services.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -8,7 +8,7 @@ use serde_json::Value as Json;
 use zbus::zvariant::{OwnedValue, Value};
 
 use crate::item::Item;
-use crate::topic::{self, Application};
+use crate::topic::Application;
 
 /// What became of an application `SetValue`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,16 +134,6 @@ pub trait ItemTree {
     ) -> zbus::Result<()>;
 }
 
-/// The one system-management fact the MQTT runtime may read.
-#[zbus::proxy(
-    interface = "com.mos.mosd1",
-    default_service = "com.mos.mosd",
-    default_path = "/com/mos/mosd"
-)]
-pub trait Identity {
-    fn get_device_id(&self) -> zbus::Result<String>;
-}
-
 /// [`ItemSource`] over a real D-Bus connection.
 pub struct BusSource {
     connection: zbus::Connection,
@@ -177,20 +167,12 @@ impl ItemSource for BusSource {
     }
 
     async fn set_value(&self, application: &Application, path: &str, value: Json) -> WriteOutcome {
-        // Keep the namespace gate at the I/O boundary too. An Application can
-        // only be constructed by `application_of`, but validating the owned
-        // name here makes that invariant explicit at the last possible point.
-        let Some(validated) = topic::application_of(application.bus_name()) else {
-            return WriteOutcome::Unreachable {
-                detail: "system service refused by the MQTT application boundary".to_string(),
-            };
-        };
         let Some(value) = value_of(&value) else {
             return WriteOutcome::Unrepresentable;
         };
         let proxy = match zbus::Proxy::new(
             &self.connection,
-            validated.bus_name(),
+            application.bus_name(),
             path,
             "com.mos.Item1",
         )

@@ -310,10 +310,12 @@ means **the set of things that start at boot is no longer determined by the imag
 hash**. That is a real departure from `docs/architecture.md` §4, where a prod
 image's contents are part of what is signed. Two things bound it: the directory
 is **root-writable only**, so it grants no privilege that SSH-as-root did not
-already grant; and mosd's `com.mos.ext.*` bus scan turns "this
-device has been modified" from invisible into an observable fact. It is the same
-trade Venus makes with `/data/rc.local`, and mos is better placed to observe it
-because the rest of the root stays verity-protected.
+already grant; and mosd's diagnostic `com.mos.*` bus registry turns "this
+device has been modified" from invisible into an observable fact. That registry
+does not grant MQTT eligibility: MQTT requires a package-owned exact enrollment
+inside the verity root. It is the same trade Venus makes with `/data/rc.local`,
+and mos is better placed to observe it because the rest of the root stays
+verity-protected.
 
 `os/verify/src/checks-home.ts` asserts the mountpoint exists in the packed root (a
 verity root cannot create it at runtime, so a missing directory is a mount unit

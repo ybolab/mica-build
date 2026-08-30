@@ -5,8 +5,6 @@
 //! publishes, `R` and `W` are what it subscribes to. Building and parsing both
 //! live here so the two can never drift apart.
 
-use mos_busname::Origin;
-
 use crate::item::Item;
 
 /// Notification: device -> broker. The only verb this bridge publishes under.
@@ -31,9 +29,9 @@ pub const HEARTBEAT: &str = "heartbeat";
 
 /// A bus service admitted to the MQTT application data plane.
 ///
-/// Construction is deliberately private to [`application_of`]. A bridge can
-/// therefore carry only a class-bearing extension name; a system name cannot
-/// be smuggled in by pairing it with an application-looking class string.
+/// Construction is deliberately private to package enrollment. A raw D-Bus
+/// name observed at runtime cannot be smuggled into bridge state by pairing it
+/// with an application-looking class string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Application {
     bus_name: String,
@@ -41,6 +39,21 @@ pub struct Application {
 }
 
 impl Application {
+    /// Construct one application from an exact package enrollment.
+    pub(crate) fn from_enrollment(bus_name: &str) -> anyhow::Result<Self> {
+        zbus::names::WellKnownName::try_from(bus_name)
+            .map_err(|error| anyhow::anyhow!("not a valid D-Bus service name: {error}"))?;
+        let parsed = mos_busname::parse(bus_name)
+            .ok_or_else(|| anyhow::anyhow!("not a com.mos.<class>[.<suffix>] service name"))?;
+        if !valid_topic_segment(parsed.class) {
+            anyhow::bail!("class is not a safe MQTT topic segment");
+        }
+        Ok(Self {
+            bus_name: bus_name.to_string(),
+            class: parsed.class.to_string(),
+        })
+    }
+
     /// The exact well-known D-Bus name to read and write.
     pub fn bus_name(&self) -> &str {
         &self.bus_name
@@ -52,28 +65,10 @@ impl Application {
     }
 }
 
-/// Admit one D-Bus name to the MQTT application data plane.
-///
-/// Only `com.mos.ext.<class>[.<suffix>]` is accepted. System-origin names,
-/// names outside the mos namespace, and the classless `com.mos.ext`
-/// namespace are all refused. This positive application allowlist is the
-/// MQTT system/application security boundary.
-pub fn application_of(bus_name: &str) -> Option<Application> {
-    let parsed = mos_busname::parse(bus_name)?;
-    if parsed.origin != Origin::Extension {
-        return None;
-    }
-    Some(Application {
-        bus_name: bus_name.to_string(),
-        class: parsed.class?.to_string(),
-    })
-}
-
 /// The three topic segments between the verb and the item path.
 ///
-/// `class` is the admitted application's class: the fourth component of
-/// `com.mos.ext.<class>[.<suffix>]`, so an application publishes under its
-/// class and never under `ext`. `instance` is the service's
+/// `class` is the admitted application's class: the third component of
+/// `com.mos.<class>[.<suffix>]`. `instance` is the service's
 /// `/DeviceInstance`, or `0` when a non-conforming application omits one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
@@ -174,20 +169,21 @@ pub fn parse(topic: &str, device_id: &str) -> Option<Request> {
 
 /// Whether `segment` can safely occupy one MQTT topic level.
 ///
-/// `/` would add an unintended level, `+` and `#` are subscription wildcards,
-/// and control characters are not accepted in identifiers. Device identities
-/// originate in persistent settings, so validating at the I/O edge prevents
-/// corrupted or migrated state from changing the topic grammar.
+/// Only an environment-file-safe identifier alphabet is accepted. Device
+/// identities originate in persistent settings and arrive through a
+/// root-rendered systemd environment file, so validating again at the I/O
+/// edge prevents corrupted or manually supplied state from changing either
+/// the environment grammar or the MQTT topic grammar.
 pub fn valid_topic_segment(segment: &str) -> bool {
     !segment.is_empty()
-        && !segment
-            .chars()
-            .any(|character| character.is_control() || matches!(character, '/' | '+' | '#'))
+        && segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
 }
 
 /// Whether an application item key is a real D-Bus object path.
 ///
-/// Application `GetItems` replies cross a trust boundary: an extension can
+/// Application `GetItems` replies cross a trust boundary: an application can
 /// return arbitrary strings even though `SetValue` can address only object
 /// paths. Rejecting invalid keys here also prevents MQTT wildcard characters
 /// from reaching a publish topic and making the transport tear down the
@@ -197,25 +193,13 @@ pub fn valid_item_path(path: &str) -> bool {
 }
 
 /// The `class` a `com.mos.*` bus name declares, or `None` when the name is not
-/// one: the third
-/// component of a system name `com.mos.<class>[.<suffix>]`, the fourth of an
-/// extension name `com.mos.ext.<class>[.<suffix>]`.
+/// one: the third component of `com.mos.<class>[.<suffix>]`.
 ///
 /// The rule itself lives in [`mos_busname`] and only there. mosd's service
 /// registry derives the same class from the same names, and a second copy
-/// here would be a second rule — one that can drift into publishing an
-/// extension under `ext`.
-///
-/// The two ways of having no class are one answer here, deliberately: a name
-/// that is not ours at all and the bare `com.mos.ext` namespace, which is in
-/// the extension half but names no service under it, both yield `None`. The
-/// bridge's only question is which class to address a service by, and neither
-/// answers it — so [`application_of`] refuses to admit it rather than invent
-/// one. Telling the two apart matters to mosd's service
-/// registry, which records the second as a conformance gap; it reads
-/// `mos_busname` directly and gets the distinction from the type.
+/// here would be a second rule that could classify a service differently.
 pub fn class_of(bus_name: &str) -> Option<&str> {
-    mos_busname::parse(bus_name).and_then(|name| name.class)
+    mos_busname::parse(bus_name).map(|name| name.class)
 }
 
 /// The `/DeviceInstance` an item map declares, or `0` when it declares none.

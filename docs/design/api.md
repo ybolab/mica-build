@@ -223,8 +223,9 @@ written and the daemon's rename carried it — and the match that reads it is
 `com.mos.mosd1` trait (`os/pkgs/mosd/apid/src/bus_client.rs`) declares seven
 methods and one signal: settings read/write, live-state read, transient root
 password, WireGuard rotation, reboot, and power-off. APID declares no
-`com.mos.Item1` proxy. Application item trees belong to `com.mos.ext.*` and
-are not a system-control surface.
+`com.mos.Item1` proxy. Application item trees may use direct
+`com.mos.<class>[.<suffix>]` names, but MQTT admits them only through exact
+package-owned enrollment; they are not a system-control surface.
 
 The **Called from** column is a change in kind rather than in degree. At
 `f7cb5ba` every caller was an HTML form handler; now every one of these methods
@@ -249,11 +250,11 @@ uses one interface and one object path; power is now expressed by the dedicated
 management methods rather than an item write.
 
 **What apid does not call, and cannot receive.** `com.mos.mosd1` now serves
-thirteen methods, and apid's proxy declares seven. The six it does not declare
-are `GetDeviceId`, `ReportHealth`, `ForgetService`, `InstallUpdate`,
-`GetUpdateState`, and `MarkUpdate`. `GetDeviceId` is the narrow identity call
-reserved for the MQTT bridge; `ReportHealth` belongs to the boot health gate;
-the registry and update members have their own system clients. APID calls
+twelve methods, and apid's proxy declares seven. The five it does not declare
+are `ReportHealth`, `ForgetService`, `InstallUpdate`, `GetUpdateState`, and
+`MarkUpdate`. `ReportHealth` belongs to the boot health gate; the registry and
+update members have their own system clients. mqttd is not one of them and has
+no policy access to this interface. APID calls
 `Reboot` and `PowerOff` directly, so its D-Bus boundary matches its role as the
 system-management API.
 
@@ -267,8 +268,8 @@ invalidating it on every change that can touch `access`
 (`pub async fn watch_settings_changed`, `os/pkgs/mosd/apid/src/bus_client.rs`). That is apid's push notification of a
 settings change, and its consumer is internal — no change-stream API is served
 (§8.3 item 2). mosd exports no `ItemsChanged` signal or Item1 façade; those
-members are application-owned under `com.mos.ext.*` and APID does not subscribe
-to them.
+members are application-owned under exact enrolled `com.mos.*` names and APID
+does not subscribe to them.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
 (`os/pkgs/mosd/apid/src/settings_api.rs`), not on zbus, which is what lets the

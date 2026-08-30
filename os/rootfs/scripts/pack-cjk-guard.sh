@@ -11,7 +11,6 @@ set -e
              /rootfs/usr/lib/systemd/system/mosd.service \
              /rootfs/usr/lib/systemd/system/apid.service \
              /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
-             /rootfs/usr/share/dbus-1/system.d/com.mos.ext.conf \
              /rootfs/etc/systemd/network/*.network \
              /rootfs/etc/systemd/system/mos-*.service \
              /rootfs/etc/systemd/system/etc-ssh.mount \
