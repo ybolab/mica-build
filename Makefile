@@ -17,6 +17,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
+	os-deb-mosd \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -44,6 +45,7 @@ help:
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
+	@echo "  os-deb-mosd         build the mosd and mos-apid Debian packages for amd64 and arm64 (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -219,6 +221,18 @@ os-build-test:
 # of which the image already carries.
 os-rauc:
 	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/pkgs/rauc/build.sh
+
+# The mosd/apid package producer: compiles ONLY mosd and apid and emits the
+# `mosd` and `mos-apid` archives into _out/debs/<arch>/pool/. Both
+# architectures, because the two are what os/build-env/images.env pins a Rust
+# std and a mos-build-deb for, and a target that built one would leave the
+# other's pool holding the previous commit's packages.
+#
+# It changes nothing about what the rootfs chain installs; os/rootfs/ still
+# ships these binaries as loose files until a later workstream switches it.
+os-deb-mosd:
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
