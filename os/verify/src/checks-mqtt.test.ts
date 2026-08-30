@@ -59,6 +59,9 @@ function applicationPolicy(name: string): string {
     + '<policy user="mos-mqttd">\n'
     + `<allow send_destination="${name}" send_interface="com.mos.Item1" send_member="GetItems"/>\n`
     + `<allow receive_sender="${name}" receive_interface="com.mos.Item1" receive_member="ItemsChanged"/>\n`
+    + '</policy>\n'
+    + '<policy user="root">\n'
+    + `<allow send_destination="${name}" send_interface="com.mos.Item1" send_member="GetItems"/>\n`
     + '</policy>\n</busconfig>\n'
 }
 
@@ -174,6 +177,22 @@ describe('the MQTT/D-Bus boundary', () => {
     try {
       expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('fail')
       expect(await messageOf(fx, 'mqttd-exact-application-grants')).toContain('has no exact user-scoped ownership grant')
+    }
+    finally { fx.dispose() }
+  })
+
+  test('a policy that does not let the registry probe the application fails', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      const name = 'com.mos.sensor.abc123'
+      write(fx.root, `${APPLICATIONS_DIR}/${name}`, '')
+      write(
+        fx.root,
+        '/usr/share/dbus-1/system.d/com.mos.sensor.abc123.conf',
+        applicationPolicy(name).replace(/<policy user="root">[\s\S]*?<\/policy>\n/, ''),
+      )
+      expect(await verdictOf(fx, 'mqttd-exact-application-grants')).toBe('fail')
+      expect(await messageOf(fx, 'mqttd-exact-application-grants')).toContain('lacks a root GetItems grant')
     }
     finally { fx.dispose() }
   })

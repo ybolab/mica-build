@@ -2,6 +2,7 @@
 //! writes on explicitly enrolled application services.
 
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::Value as Json;
@@ -37,6 +38,58 @@ pub trait ItemSource: Send + Sync {
     async fn get_items(&self, application: &Application) -> anyhow::Result<BTreeMap<String, Item>>;
 
     async fn set_value(&self, application: &Application, path: &str, value: Json) -> WriteOutcome;
+}
+
+/// How long one call into an application may take before it counts as
+/// unanswered.
+///
+/// An application is a third-party process, and a bus call to one has no
+/// bound of its own: zbus waits for the reply indefinitely. One application
+/// that accepts a call and never answers must not hold the heartbeat and
+/// every other application with it. mosd's registry probe applies the same
+/// figure for the same reason.
+pub const APPLICATION_CALL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// An [`ItemSource`] whose calls are bounded by a timeout.
+///
+/// A `GetItems` that does not answer in time is an error, which leaves the
+/// application unactivated; a `SetValue` that does not answer is an
+/// unreachable write. Either way the runtime moves on.
+pub struct Bounded<S> {
+    inner: S,
+    timeout: Duration,
+}
+
+impl<S> Bounded<S> {
+    pub fn new(inner: S, timeout: Duration) -> Self {
+        Self { inner, timeout }
+    }
+}
+
+#[async_trait]
+impl<S: ItemSource> ItemSource for Bounded<S> {
+    async fn get_items(&self, application: &Application) -> anyhow::Result<BTreeMap<String, Item>> {
+        tokio::time::timeout(self.timeout, self.inner.get_items(application))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "{} did not answer GetItems within {:?}",
+                    application.bus_name(),
+                    self.timeout
+                )
+            })?
+    }
+
+    async fn set_value(&self, application: &Application, path: &str, value: Json) -> WriteOutcome {
+        match tokio::time::timeout(self.timeout, self.inner.set_value(application, path, value))
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(_) => WriteOutcome::Unreachable {
+                detail: format!("SetValue did not answer within {:?}", self.timeout),
+            },
+        }
+    }
 }
 
 /// Convert a D-Bus value into the JSON carried by MQTT payloads.

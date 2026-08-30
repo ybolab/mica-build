@@ -125,8 +125,11 @@ MQTT-enabled application package owns both sides of its admission:
 2. an exact-name D-Bus policy that lets the application own that name and lets
    `mos-mqttd` access only its `com.mos.Item1` surface.
 
-The policy grants `GetItems` and `ItemsChanged`; it grants `SetValue` only when
-remote writes are part of that application's contract. For example:
+The policy grants the bridge `GetItems` and `ItemsChanged`, and grants
+`SetValue` only when remote writes are part of that application's contract.
+It also grants root `GetItems`: mosd's registry (section 8) probes the
+service with that call, and the stock system bus denies method calls by
+default with no exemption for root. For example:
 
 ```xml
 <policy user="mos-sensor">
@@ -143,14 +146,28 @@ remote writes are part of that application's contract. For example:
          send_interface="com.mos.Item1"
          send_member="SetValue"/>
 </policy>
+<policy user="root">
+  <allow send_destination="com.mos.sensor.example"
+         send_interface="com.mos.Item1"
+         send_member="GetItems"/>
+</policy>
 ```
 
 Do not replace exact destinations with a wildcard or an interface-only grant.
 That would let the network-facing bridge address unrelated system services.
 An application missing either half fails closed: an unenrolled policy target is
 never proxied, while an enrollment with no exact policy fails its initial read
-with `AccessDenied` and publishes nothing. `com.mos.mosd` is forbidden on both
-sides.
+with `AccessDenied` and publishes nothing. Image verification requires the
+enrollment, the user-scoped ownership grant, the bridge's `GetItems` and
+`ItemsChanged` grants and the root `GetItems` grant to name the same exact
+service. `com.mos.mosd` is forbidden on both sides.
+
+Every call the bridge makes into an application is bounded by five seconds.
+An application that accepts `GetItems` or `SetValue` and never answers is
+recorded as unreachable and the bridge carries on with the others. An
+application whose activation fails while it still owns its name -- one that
+claims the name before it registers `/`, for instance -- is retried by a
+sweep of the bus five seconds later, so it needs no restart of either side.
 
 ## 4. MQTT grammar
 
@@ -169,7 +186,9 @@ Item payloads are JSON objects:
 ```
 
 `min` and `max` are present only when the application supplied them. A read
-request republishes the current retained `N` value. A write request must carry
+request republishes the current retained `N` value; a read of a path the
+application does not publish is ignored rather than answered, so a client
+cannot mint retained topics under names of its choosing. A write request must carry
 `{"value": ...}` and is forwarded to the uniquely addressed application's
 `SetValue`. There is no MQTT write-acknowledgement topic; a successful change
 is observed through the later `ItemsChanged` notification.
@@ -269,7 +288,10 @@ seven paths from the moment it claims its name:
 
 The scan is best-effort. Missing Item1 support, mandatory paths, class, or a
 usable device instance is reported under `conformance`; it does not make mosd
-drop the registry entry. Disconnected entries remain visible until an operator
+drop the registry entry. The probe is a method call made as root, which the
+system bus refuses unless the application's policy allows it; the template in
+section 3 carries that grant, and a package without it is reported as having
+no `Item1`. Disconnected entries remain visible until an operator
 calls `ForgetService`. Class/instance collisions are marked on every connected
 side.
 

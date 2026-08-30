@@ -4,6 +4,26 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## MQTT bridge hardened against its application peers (2026-08-30)
+
+A review of the decoupled bridge found it still treating its D-Bus peers as
+mosd. Every `GetItems` and `SetValue` into an application is now bounded by
+five seconds, so a hung application is recorded as unreachable instead of
+stopping the heartbeat and every other application. The rumqttc event-loop
+task no longer waits on the runtime: requests that arrive while it is busy
+are dropped, and a reconnect travels on its own channel, closing a deadlock
+between the two bounded channels. An activation that fails while the
+application still owns its name -- one that claims the name before it
+registers `/` -- is retried by a bus sweep five seconds later.
+
+The documented application policy now grants root `GetItems`: the stock
+system bus has no root exemption, so a package that granted only the bridge
+was published to MQTT and reported non-conforming by mosd's registry on every
+boot. Image verification requires that grant for every enrollment. The MQTT
+reconciler no longer lets an identity that fails validation block the off
+path, and a read of a path no application publishes is ignored rather than
+answered with a retained null under the client's chosen name.
+
 ## MQTT enrollment decoupled from service naming (2026-08-30)
 
 `com.mos.ext.*` is no longer a privileged application namespace. All services

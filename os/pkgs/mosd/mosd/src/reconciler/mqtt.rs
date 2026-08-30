@@ -386,7 +386,12 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
         // reads as perfectly healthy having never run. Do not move this below
         // the unit calls.
         let config_changed = self.apply_config(mqtt)?;
-        let identity_changed = self.apply_identity(settings)?;
+        // Not `?`: the identity is the bridge's input and nobody else's. An
+        // identity that cannot be rendered withholds the bridge below and
+        // must not stop the broker, and must never stop the off path -- a
+        // switch that cannot turn the units off is worse than a bridge that
+        // does not start.
+        let identity = self.apply_identity(settings);
 
         if mqtt.enabled {
             // WARNs, and deliberately not gates. Neither may become a refusal
@@ -424,7 +429,14 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
             }
             // Broker first: the bridge is its client.
             self.turn_broker_on(config_changed).await?;
-            self.turn_bridge_on(identity_changed).await?;
+            match identity {
+                Ok(identity_changed) => self.turn_bridge_on(identity_changed).await?,
+                Err(error) => tracing::warn!(
+                    %error,
+                    "mqtt: the bridge identity could not be rendered; the bridge is not started \
+                     and a running one keeps the identity it has"
+                ),
+            }
         } else {
             // Bridge first, the reverse of start: the client goes before the
             // server it talks to, so a deliberate shutdown does not read as a
@@ -824,22 +836,56 @@ mod tests {
         );
     }
 
+    /// An identity the environment grammar cannot carry withholds the bridge
+    /// and nothing else. The broker does not read the identity, so it is
+    /// driven as usual, and the reconcile of `mqtt.enabled` succeeds: the
+    /// master switch is not coupled to the provisioning subtree any more than
+    /// it is to `listen`.
     #[tokio::test]
-    async fn an_unsafe_device_identity_is_refused_before_any_unit_is_touched() {
+    async fn an_unsafe_device_identity_withholds_only_the_bridge() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, _config) = fixture(dir.path(), "inactive", "disabled");
         let mut invalid = settings(true, "127.0.0.1", 1883, false);
         invalid.provisioning.device_id = Some("device id$injected".to_string());
 
-        let error = reconciler
+        let state = reconciler
             .apply(&invalid)
             .await
-            .expect_err("an environment-file-unsafe identity must be refused");
+            .expect("an unsafe identity warns; it must not fail the reconcile");
 
-        assert!(error.to_string().contains("device identity"), "{error:#}");
-        assert!(
-            reconciler.control.calls().is_empty(),
-            "no unit may start against an invalid identity"
+        assert_eq!(
+            reconciler.control.calls(),
+            vec![
+                "enable mos-mqtt-broker.service".to_string(),
+                "start mos-mqtt-broker.service".to_string(),
+            ],
+            "the bridge must not start against an invalid identity; the broker still does"
+        );
+        assert_eq!(state["units"][1]["activeState"], json!("inactive"));
+    }
+
+    /// The off path never depends on the identity render. A device whose
+    /// identity fails validation must still be able to stop both units.
+    #[tokio::test]
+    async fn an_unsafe_device_identity_does_not_block_the_off_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "active", "enabled");
+        let mut invalid = settings(false, "127.0.0.1", 1883, false);
+        invalid.provisioning.device_id = Some("device id$injected".to_string());
+
+        reconciler
+            .apply(&invalid)
+            .await
+            .expect("turning the switch off must not depend on the identity");
+
+        assert_eq!(
+            reconciler.control.calls(),
+            vec![
+                "stop mos-mqttd.service".to_string(),
+                "disable mos-mqttd.service".to_string(),
+                "stop mos-mqtt-broker.service".to_string(),
+                "disable mos-mqtt-broker.service".to_string(),
+            ]
         );
     }
 

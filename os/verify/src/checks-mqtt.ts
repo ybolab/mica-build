@@ -519,7 +519,20 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
         granted.set(endpoint, members)
         if (!enrollment.names.has(endpoint)) invalid.push(`unenrolled grant ${endpoint} in ${rule.path}`)
       }
+      // mosd's registry probes every com.mos.* service with GetItems as root,
+      // and the stock system bus denies method calls by default with no root
+      // exemption. A package that grants only the bridge is published to MQTT
+      // and reported non-conforming by the registry on every boot.
+      const registryGrants = identityPolicyRules(root, 'root').filter((rule) => {
+        const interfaceName = rule.tag.match(/\bsend_interface="([^"]*)"/)?.[1]
+        const member = rule.tag.match(/\bsend_member="([^"]*)"/)?.[1]
+        return (interfaceName === undefined || interfaceName === 'com.mos.Item1')
+          && (member === undefined || member === 'GetItems')
+      })
       for (const name of enrollment.names) {
+        if (!registryGrants.some(rule => rule.tag.includes(`send_destination="${name}"`))) {
+          invalid.push(`enrollment ${name} lacks a root GetItems grant for the mosd registry`)
+        }
         const ownerGrants = ownership.filter(grant => grant.name === name)
         if (ownerGrants.length === 0) {
           invalid.push(`enrollment ${name} has no exact user-scoped ownership grant`)

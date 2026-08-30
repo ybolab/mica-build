@@ -248,12 +248,20 @@ impl Bridge {
                     tracing::warn!(class, instance, "read has no unique application target");
                     return Effects::default();
                 };
-                let item = self
+                // A path the application does not publish is not republished
+                // as invalid: that would let a broker client mint retained
+                // topics under names of its choosing, and grow `published`
+                // by one entry per request.
+                let Some(item) = self
                     .services
                     .get(&bus_name)
                     .and_then(|service| service.items.get(&path))
-                    .cloned();
-                self.publish_item(&bus_name, &path, item.as_ref())
+                    .cloned()
+                else {
+                    tracing::debug!(class, instance, path, "read names no published item");
+                    return Effects::default();
+                };
+                self.publish_item(&bus_name, &path, Some(&item))
                     .into_iter()
                     .collect::<Vec<_>>()
                     .into()

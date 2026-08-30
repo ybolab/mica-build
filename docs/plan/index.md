@@ -32,3 +32,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-030 Consolidate mosd workspace-level test harnesses**](PLAN-030.md) `2026-08-29`
 - [x] [**PLAN-031 Separate MQTT application data from system management**](PLAN-031.md) `2026-08-30`
 - [x] [**PLAN-032 Decouple MQTT eligibility from D-Bus service names**](PLAN-032.md) `2026-08-30`
+- [x] [**PLAN-033 Close the six defects found in the MQTT decoupling review**](PLAN-033.md) `2026-08-30`

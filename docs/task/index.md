@@ -42,3 +42,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-265 Consolidate mosd workspace-level tests under the workspace**](RFCT-265.md) `P2`
 - [x] [**RFCT-266 Separate MQTT application data from system management**](RFCT-266.md) `P1`
 - [x] [**RFCT-267 Decouple MQTT eligibility from D-Bus service names**](RFCT-267.md) `P1`
+- [x] [**RFCT-268 Close the six defects found in the MQTT decoupling review**](RFCT-268.md) `P1`

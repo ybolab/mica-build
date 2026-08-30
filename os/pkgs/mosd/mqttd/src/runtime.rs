@@ -6,14 +6,17 @@ use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use zbus::{MatchRule, MessageStream};
 
 use crate::bridge::{Bridge, Effects, Write};
 use crate::config::{Mode, Timings};
 use crate::enrollment::Enrollment;
-use crate::source::{BusSource, ItemSource, ItemTreeProxy, batch_of};
+use crate::source::{
+    APPLICATION_CALL_TIMEOUT, Bounded, BusSource, ItemSource, ItemTreeProxy, batch_of,
+};
 use crate::topic::{self, Application};
 use crate::transport::{MqttTransport, Transport};
 
@@ -66,6 +69,13 @@ pub struct Settings {
 const REQUEST_CAPACITY: usize = 64;
 const RECONNECT_BACKOFF_MIN: Duration = Duration::from_secs(1);
 const RECONNECT_BACKOFF_MAX: Duration = Duration::from_secs(30);
+/// How long after a failed activation the bus is swept again.
+///
+/// An application can fail its first `GetItems` and still own its name: one
+/// that claims the name before it registers `/`, or one whose `ItemsChanged`
+/// stream ended. No `NameOwnerChanged` will follow, so the runtime comes
+/// back on its own rather than waiting for a restart.
+const ACTIVATION_RETRY: Duration = Duration::from_secs(5);
 
 /// Doubling broker reconnect backoff with a floor and ceiling.
 #[derive(Debug, Clone, Copy)]
@@ -93,9 +103,34 @@ impl ReconnectBackoff {
     }
 }
 
-enum Incoming {
-    Message { topic: String, payload: Vec<u8> },
-    Connected,
+/// A message on a subscribed topic, handed from the event-loop task to the
+/// runtime.
+struct Incoming {
+    topic: String,
+    payload: Vec<u8>,
+}
+
+/// Hand one broker message to the runtime without waiting for it.
+///
+/// The event-loop task is the only thing that drains rumqttc's request
+/// channel, and [`apply`] waits on that channel when it is full. If this task
+/// waited on the runtime in turn, a burst of requests arriving during a large
+/// full publish would leave each side waiting for the other. A request the
+/// runtime has no room for is dropped instead: the protocol is QoS 0, and a
+/// keepalive asks for everything again. Returns `false` once the runtime is
+/// gone.
+fn forward(tx: &mpsc::Sender<Incoming>, message: Incoming) -> bool {
+    match tx.try_send(message) {
+        Ok(()) => true,
+        Err(TrySendError::Full(dropped)) => {
+            tracing::warn!(
+                topic = dropped.topic,
+                "runtime is busy; dropping the broker request"
+            );
+            true
+        }
+        Err(TrySendError::Closed(_)) => false,
+    }
 }
 
 enum ApplicationEvent {
@@ -129,12 +164,15 @@ fn merge(mut left: Effects, right: Effects) -> Effects {
     left
 }
 
+/// Apply one application event. The flag asks the runtime to sweep the bus
+/// again: a watcher that stopped while its owner is still there is an
+/// application worth re-activating.
 fn handle_application_event(
     now: Duration,
     bridge: &mut Bridge,
     active: &mut BTreeMap<String, ActiveApplication>,
     event: ApplicationEvent,
-) -> Effects {
+) -> (Effects, bool) {
     match event {
         ApplicationEvent::Items {
             bus_name,
@@ -145,9 +183,9 @@ fn handle_application_event(
                 .get(&bus_name)
                 .is_some_and(|current| current.generation == generation)
             {
-                bridge.on_items_changed(now, &bus_name, items)
+                (bridge.on_items_changed(now, &bus_name, items), false)
             } else {
-                Effects::default()
+                (Effects::default(), false)
             }
         }
         ApplicationEvent::WatcherStopped {
@@ -165,9 +203,9 @@ fn handle_application_event(
                     error = detail,
                     "application ItemsChanged watcher stopped; withdrawing stale MQTT state"
                 );
-                bridge.on_service_vanished(now, &bus_name)
+                (bridge.on_service_vanished(now, &bus_name), true)
             } else {
-                Effects::default()
+                (Effects::default(), false)
             }
         }
     }
@@ -232,102 +270,138 @@ async fn watch_application(
     anyhow::bail!("ItemsChanged stream ended")
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn activate_application(
-    connection: &zbus::Connection,
-    source: &BusSource,
-    bridge: &mut Bridge,
-    active: &mut BTreeMap<String, ActiveApplication>,
-    next_generation: &mut u64,
-    changes_tx: &mpsc::Sender<ApplicationEvent>,
-    now: Duration,
-    application: Application,
-    owner: String,
-) -> Effects {
-    let bus_name = application.bus_name().to_string();
-    if active
-        .get(&bus_name)
-        .is_some_and(|current| current.owner == owner)
-    {
-        return Effects::default();
-    }
+/// The mirrors the runtime holds, and what it needs to open one.
+struct Activation<'a> {
+    connection: &'a zbus::Connection,
+    source: &'a dyn ItemSource,
+    changes_tx: &'a mpsc::Sender<ApplicationEvent>,
+    active: BTreeMap<String, ActiveApplication>,
+    next_generation: u64,
+}
 
-    let effects = if active.remove(&bus_name).is_some() {
-        bridge.on_service_vanished(now, &bus_name)
-    } else {
-        Effects::default()
-    };
-
-    *next_generation = next_generation.wrapping_add(1);
-    let generation = *next_generation;
-    let watcher_application = application.clone();
-    let watcher_connection = connection.clone();
-    let watcher_tx = changes_tx.clone();
-    let stopped_tx = changes_tx.clone();
-    let stopped_application = application.clone();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    let watcher = tokio::spawn(async move {
-        if let Err(err) = watch_application(
-            watcher_connection,
-            watcher_application.clone(),
-            generation,
-            ready_tx,
-            watcher_tx,
-        )
-        .await
+impl Activation<'_> {
+    async fn activate(
+        &mut self,
+        bridge: &mut Bridge,
+        now: Duration,
+        application: Application,
+        owner: String,
+    ) -> Effects {
+        let bus_name = application.bus_name().to_string();
+        if self
+            .active
+            .get(&bus_name)
+            .is_some_and(|current| current.owner == owner)
         {
-            let _ = stopped_tx
-                .send(ApplicationEvent::WatcherStopped {
-                    bus_name: stopped_application.bus_name().to_string(),
-                    generation,
-                    detail: err.to_string(),
-                })
-                .await;
+            return Effects::default();
         }
-    });
 
-    match ready_rx.await {
-        Ok(Ok(())) => {}
-        Ok(Err(detail)) => {
-            watcher.abort();
-            tracing::warn!(
-                application = application.bus_name(),
-                error = detail,
-                "application is present but its ItemsChanged watcher cannot be established"
-            );
-            return effects;
+        let effects = if self.active.remove(&bus_name).is_some() {
+            bridge.on_service_vanished(now, &bus_name)
+        } else {
+            Effects::default()
+        };
+
+        self.next_generation = self.next_generation.wrapping_add(1);
+        let generation = self.next_generation;
+        let watcher_application = application.clone();
+        let watcher_connection = self.connection.clone();
+        let watcher_tx = self.changes_tx.clone();
+        let stopped_tx = self.changes_tx.clone();
+        let stopped_application = application.clone();
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let watcher = tokio::spawn(async move {
+            if let Err(err) = watch_application(
+                watcher_connection,
+                watcher_application.clone(),
+                generation,
+                ready_tx,
+                watcher_tx,
+            )
+            .await
+            {
+                let _ = stopped_tx
+                    .send(ApplicationEvent::WatcherStopped {
+                        bus_name: stopped_application.bus_name().to_string(),
+                        generation,
+                        detail: err.to_string(),
+                    })
+                    .await;
+            }
+        });
+
+        match ready_rx.await {
+            Ok(Ok(())) => {}
+            Ok(Err(detail)) => {
+                watcher.abort();
+                tracing::warn!(
+                    application = application.bus_name(),
+                    error = detail,
+                    "application is present but its ItemsChanged watcher cannot be established"
+                );
+                return effects;
+            }
+            Err(_) => {
+                watcher.abort();
+                tracing::warn!(
+                    application = application.bus_name(),
+                    "application ItemsChanged watcher stopped before it became ready"
+                );
+                return effects;
+            }
         }
-        Err(_) => {
-            watcher.abort();
-            tracing::warn!(
-                application = application.bus_name(),
-                "application ItemsChanged watcher stopped before it became ready"
-            );
-            return effects;
+
+        match self.source.get_items(&application).await {
+            Ok(items) => {
+                self.active.insert(
+                    bus_name,
+                    ActiveApplication {
+                        owner,
+                        generation,
+                        watcher,
+                    },
+                );
+                merge(effects, bridge.upsert_service(now, application, items))
+            }
+            Err(err) => {
+                watcher.abort();
+                tracing::warn!(
+                    application = application.bus_name(),
+                    error = %err,
+                    "application is present but its Item1 tree is not readable; check its exact-name D-Bus policy grant"
+                );
+                effects
+            }
         }
     }
 
-    match source.get_items(&application).await {
-        Ok(items) => {
-            active.insert(
-                bus_name,
-                ActiveApplication {
-                    owner,
-                    generation,
-                    watcher,
-                },
-            );
-            merge(effects, bridge.upsert_service(now, application, items))
+    /// Activate every enrolled name that is on the bus and not yet mirrored.
+    /// Returns whether any of them could not be activated, so the caller can
+    /// come back after [`ACTIVATION_RETRY`].
+    async fn sweep(
+        &mut self,
+        bus: &zbus::fdo::DBusProxy<'_>,
+        enrollment: &Enrollment,
+        bridge: &mut Bridge,
+        transport: &dyn Transport,
+        start: Instant,
+    ) -> anyhow::Result<bool> {
+        let mut failed = false;
+        for name in bus.list_names().await? {
+            let Some(application) = enrollment.application(name.as_str()) else {
+                continue;
+            };
+            let owner = match bus.get_name_owner(name.clone().into()).await {
+                Ok(owner) => owner.to_string(),
+                Err(_) => continue,
+            };
+            let effects = self
+                .activate(bridge, start.elapsed(), application, owner)
+                .await;
+            apply(effects, transport, self.source).await?;
+            failed |= !self.active.contains_key(name.as_str());
         }
-        Err(err) => {
-            watcher.abort();
-            tracing::warn!(
-                application = application.bus_name(),
-                error = %err,
-                "application is present but its Item1 tree is not readable; check its exact-name D-Bus policy grant"
-            );
-            effects
-        }
+        Ok(failed)
     }
 }
 
@@ -343,7 +417,10 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     } else {
         zbus::Connection::system().await?
     };
-    let source = BusSource::new(connection.clone());
+    let source = Bounded::new(
+        BusSource::new(connection.clone()),
+        APPLICATION_CALL_TIMEOUT,
+    );
 
     let owner_rule = mos_owner_rule()?;
     let mut owners = Box::pin(MessageStream::for_match_rule(owner_rule, &connection, None).await?);
@@ -358,7 +435,12 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     let (client, mut eventloop) = AsyncClient::new(options, REQUEST_CAPACITY);
     let transport = MqttTransport::new(client);
 
+    // Two channels out of the event-loop task, neither of which it waits on:
+    // requests are dropped when the runtime is busy (see `forward`), and a
+    // connection is a counter the runtime catches up with when it can, so a
+    // reconnect is never lost behind a queue of requests.
     let (incoming_tx, mut incoming) = mpsc::channel(REQUEST_CAPACITY);
+    let (connected_tx, mut connected) = watch::channel(0u64);
     tokio::spawn(async move {
         let mut backoff = ReconnectBackoff::default();
         loop {
@@ -378,51 +460,45 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
                     continue;
                 }
             };
-            let forwarded = match event {
-                Event::Incoming(Packet::Publish(publish)) => Incoming::Message {
-                    topic: publish.topic,
-                    payload: publish.payload.to_vec(),
-                },
-                Event::Incoming(Packet::ConnAck(_)) => Incoming::Connected,
-                _ => continue,
-            };
-            if incoming_tx.send(forwarded).await.is_err() {
-                return;
+            match event {
+                Event::Incoming(Packet::Publish(publish)) => {
+                    let message = Incoming {
+                        topic: publish.topic,
+                        payload: publish.payload.to_vec(),
+                    };
+                    if !forward(&incoming_tx, message) {
+                        return;
+                    }
+                }
+                Event::Incoming(Packet::ConnAck(_)) => {
+                    connected_tx.send_modify(|count| *count += 1);
+                }
+                _ => {}
             }
         }
     });
 
     let (changes_tx, mut changes) = mpsc::channel(REQUEST_CAPACITY);
-    let mut active = BTreeMap::new();
-    let mut next_generation = 0u64;
+    let mut activation = Activation {
+        connection: &connection,
+        source: &source,
+        changes_tx: &changes_tx,
+        active: BTreeMap::new(),
+        next_generation: 0,
+    };
     let mut bridge = Bridge::new(settings.device_id, settings.mode, settings.timings);
     let mut subscribed = Vec::new();
     let start = Instant::now();
+    let mut resweep_at: Option<Instant> = None;
 
     // The ownership match is installed before this sweep, so a service that
     // appears during it is either listed or queued as a signal (possibly
     // both; owner equality makes the duplicate harmless).
-    for name in bus.list_names().await? {
-        let Some(application) = enrollment.application(name.as_str()) else {
-            continue;
-        };
-        let owner = match bus.get_name_owner(name.clone().into()).await {
-            Ok(owner) => owner.to_string(),
-            Err(_) => continue,
-        };
-        let effects = activate_application(
-            &connection,
-            &source,
-            &mut bridge,
-            &mut active,
-            &mut next_generation,
-            &changes_tx,
-            start.elapsed(),
-            application,
-            owner,
-        )
-        .await;
-        apply(effects, &transport, &source).await?;
+    if activation
+        .sweep(&bus, &enrollment, &mut bridge, &transport, start)
+        .await?
+    {
+        resweep_at = Some(Instant::now() + ACTIVATION_RETRY);
     }
     resubscribe(&bridge, &transport, &mut subscribed).await?;
 
@@ -432,7 +508,12 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
         let effects = tokio::select! {
             event = changes.recv() => {
                 let Some(event) = event else { return Ok(()) };
-                handle_application_event(start.elapsed(), &mut bridge, &mut active, event)
+                let (effects, resweep) =
+                    handle_application_event(start.elapsed(), &mut bridge, &mut activation.active, event);
+                if resweep {
+                    resweep_at.get_or_insert(Instant::now() + ACTIVATION_RETRY);
+                }
+                effects
             }
             owner = owners.next() => {
                 let Some(owner) = owner else { return Ok(()) };
@@ -443,37 +524,42 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
                     continue;
                 };
                 if new_owner.is_empty() {
-                    if active.remove(&name).is_some() {
+                    if activation.active.remove(&name).is_some() {
                         tracing::info!(application = name, "application left the bus; clearing retained MQTT state");
                         bridge.on_service_vanished(start.elapsed(), &name)
                     } else {
                         Effects::default()
                     }
                 } else {
-                    activate_application(
-                        &connection,
-                        &source,
-                        &mut bridge,
-                        &mut active,
-                        &mut next_generation,
-                        &changes_tx,
-                        start.elapsed(),
-                        application,
-                        new_owner,
-                    ).await
+                    let effects = activation
+                        .activate(&mut bridge, start.elapsed(), application, new_owner)
+                        .await;
+                    if !activation.active.contains_key(&name) {
+                        resweep_at.get_or_insert(Instant::now() + ACTIVATION_RETRY);
+                    }
+                    effects
                 }
             }
-            message = incoming.recv() => {
-                let Some(message) = message else { return Ok(()) };
-                match message {
-                    Incoming::Message { topic, payload } => {
-                        bridge.on_request(start.elapsed(), &topic, &payload)
-                    }
-                    Incoming::Connected => {
-                        subscribed.clear();
-                        Effects::default()
-                    }
+            () = sleep_until(resweep_at) => {
+                resweep_at = None;
+                if activation
+                    .sweep(&bus, &enrollment, &mut bridge, &transport, start)
+                    .await?
+                {
+                    resweep_at = Some(Instant::now() + ACTIVATION_RETRY);
                 }
+                Effects::default()
+            }
+            message = incoming.recv() => {
+                let Some(Incoming { topic, payload }) = message else { return Ok(()) };
+                bridge.on_request(start.elapsed(), &topic, &payload)
+            }
+            changed = connected.changed() => {
+                if changed.is_err() {
+                    return Ok(());
+                }
+                subscribed.clear();
+                Effects::default()
             }
             () = sleep_until(wake) => bridge.on_tick(start.elapsed()),
             _ = tokio::signal::ctrl_c() => return Ok(()),
@@ -517,7 +603,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{ActiveApplication, ApplicationEvent, handle_application_event, mos_owner_rule};
+    use super::{
+        ActiveApplication, ApplicationEvent, Incoming, forward, handle_application_event,
+        mos_owner_rule,
+    };
     use crate::bridge::Bridge;
     use crate::config::{Mode, Timings};
     use crate::item::Item;
@@ -556,7 +645,7 @@ mod tests {
                 watcher: tokio::spawn(std::future::pending()),
             },
         )]);
-        let effects = handle_application_event(
+        let (effects, resweep) = handle_application_event(
             Duration::from_secs(1),
             &mut bridge,
             &mut active,
@@ -569,6 +658,10 @@ mod tests {
 
         assert!(active.is_empty(), "the stale mirror remained active");
         assert!(
+            resweep,
+            "the owner is still on the bus, so the runtime must sweep again rather than wait for a restart"
+        );
+        assert!(
             effects.publications.iter().any(|publication| {
                 publication.topic == "N/abc123/sensor/0/Temperature"
                     && publication.payload.is_empty()
@@ -576,5 +669,47 @@ mod tests {
             }),
             "the stale retained value was not withdrawn"
         );
+    }
+
+    #[tokio::test]
+    async fn a_stale_watcher_report_asks_for_no_resweep() {
+        let mut bridge = Bridge::new("abc123", Mode::Full, Timings::default());
+        let mut active = BTreeMap::from([(
+            "com.mos.sensor.example".to_string(),
+            ActiveApplication {
+                owner: ":1.42".to_string(),
+                generation: 8,
+                watcher: tokio::spawn(std::future::pending()),
+            },
+        )]);
+        let (effects, resweep) = handle_application_event(
+            Duration::from_secs(1),
+            &mut bridge,
+            &mut active,
+            ApplicationEvent::WatcherStopped {
+                bus_name: "com.mos.sensor.example".to_string(),
+                generation: 7,
+                detail: "signal stream ended".to_string(),
+            },
+        );
+        assert_eq!(effects, crate::bridge::Effects::default());
+        assert!(!resweep, "a report from a superseded watcher changes nothing");
+        assert_eq!(active.len(), 1);
+    }
+
+    /// The event-loop task must never wait on the runtime. A request that
+    /// arrives while the inbound channel is full is dropped, not queued
+    /// behind a publish that is itself waiting on the event loop.
+    #[test]
+    fn an_inbound_request_is_dropped_rather_than_awaited_when_the_runtime_is_busy() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let message = || Incoming {
+            topic: "R/abc123/keepalive".to_string(),
+            payload: Vec::new(),
+        };
+        assert!(forward(&tx, message()));
+        assert!(forward(&tx, message()));
+        assert!(rx.try_recv().is_ok(), "the first request is queued");
+        assert!(rx.try_recv().is_err(), "the second request was dropped, not awaited");
     }
 }

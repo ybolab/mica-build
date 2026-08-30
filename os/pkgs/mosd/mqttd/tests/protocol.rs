@@ -931,3 +931,72 @@ async fn rumqttc_reconnects_with_no_delay_of_its_own() {
          be reconsidered -- see the RECONNECT_BACKOFF_MIN docs"
     );
 }
+
+/// An application that accepts a call and never answers must not hold the
+/// bridge: the bound is applied above the bus, so a hung `GetItems` is an
+/// error and a hung `SetValue` is an unreachable write, both within the
+/// configured window.
+struct Hung;
+
+#[async_trait]
+impl ItemSource for Hung {
+    async fn get_items(
+        &self,
+        _application: &topic::Application,
+    ) -> anyhow::Result<BTreeMap<String, Item>> {
+        std::future::pending().await
+    }
+
+    async fn set_value(
+        &self,
+        _application: &topic::Application,
+        _path: &str,
+        _value: Json,
+    ) -> WriteOutcome {
+        std::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn a_hung_application_is_bounded_by_the_call_timeout() {
+    let source = mos_mqttd::source::Bounded::new(Hung, Duration::from_millis(50));
+    let application = application();
+
+    let started = std::time::Instant::now();
+    let items = source.get_items(&application).await;
+    let outcome = source.set_value(&application, "/Enabled", json!(true)).await;
+    let elapsed = started.elapsed();
+
+    assert!(items.is_err(), "a hung GetItems must be an error, not a wait");
+    assert!(
+        matches!(outcome, WriteOutcome::Unreachable { .. }),
+        "a hung SetValue is an unreachable write: {outcome:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "both calls together took {elapsed:?}; the bound is not being applied"
+    );
+}
+
+/// A read of a path no application publishes is not an invitation to create
+/// a retained topic under the client's chosen name. Nothing is published,
+/// and the bridge remembers nothing about the path.
+#[tokio::test]
+async fn a_read_of_an_unknown_path_publishes_nothing() {
+    let mut harness = Harness::new(Mode::ReadOnly);
+    harness.start(secs(0)).await;
+    harness.transport.clear();
+
+    let effects = harness.bridge.on_request(
+        secs(1),
+        &format!("R/{DEVICE}/{CLASS}/0/NoSuchItem/at/all"),
+        b"",
+    );
+    harness.run(effects).await;
+
+    assert!(
+        harness.transport.topics().is_empty(),
+        "an unknown path must not become a retained topic: {:?}",
+        harness.transport.topics()
+    );
+}

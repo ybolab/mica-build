@@ -69,10 +69,18 @@ com.mos.<class>[.<suffix>]
 2. 只允许应用拥有该准确名称、并只允许 `mos-mqttd` 访问该名称 `com.mos.Item1`
    成员的 D-Bus 策略。
 
-只读应用授权 `GetItems` 和 `ItemsChanged`；允许远程写入时才授权 `SetValue`。
+只读应用向 `mos-mqttd` 授权 `GetItems` 和 `ItemsChanged`；允许远程写入时才授权
+`SetValue`。策略还要向 root 授权 `GetItems`：mosd 服务注册表（第 6 节）以 root
+身份用这一调用探测服务，而系统总线默认拒绝方法调用，root 没有豁免。
 禁止 destination 通配符、前缀拥有授权或只按接口授权。登记和策略缺少任一侧都会
 失败关闭：未登记的目标不会创建 proxy，缺少策略的登记会收到 `AccessDenied` 并且
-不发布数据。`com.mos.mosd` 在两侧都禁止。
+不发布数据。镜像校验要求登记文件、按用户限定的拥有授权、桥接器的 `GetItems`
+与 `ItemsChanged` 授权、以及 root 的 `GetItems` 授权指向同一个准确服务名。
+`com.mos.mosd` 在两侧都禁止。
+
+桥接器对应用的每次调用都有 5 秒上限：接受 `GetItems` 或 `SetValue` 却不应答的
+应用会被记为不可达，其它应用不受影响。仍持有名称但激活失败的应用（例如先认领
+名称、后注册 `/` 对象）会在 5 秒后由总线重扫再次激活，两侧都不需要重启。
 
 ## 4. MQTT 协议
 
@@ -83,7 +91,8 @@ W/<deviceId>/<class>/<instance>/<path>  broker 发起的写入
 ```
 
 payload 为 `{"value":...}`，应用提供范围时还包含 `min`、`max`。读取会重新发布
-当前 `N` 值；写入只在 `full` 模式下转成唯一目标应用的 `SetValue`。协议没有写
+当前 `N` 值，应用未发布的路径会被忽略而不是应答，客户端无法借此创建任意 retained
+topic；写入只在 `full` 模式下转成唯一目标应用的 `SetValue`。协议没有写
 确认 topic，成功变更通过应用后续的 `ItemsChanged` 体现。默认 `read-only` 模式
 既不订阅也不执行 `W`；无论哪种模式，未登记服务都不可寻址。
 
