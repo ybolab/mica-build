@@ -2,9 +2,10 @@
 # Build one producer's Debian packages for one architecture.
 #
 #   bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
-#   bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
+#   bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
 #
 #   -> _out/debs/<arch>/pool/{mosd,mos-apid}_<version>_<arch>.deb
+#   -> _out/debs/<arch>/pool/{mos-mqttd,mos-mqtt-broker}_<version>_<arch>.deb
 #
 # A PRODUCER is a subset of this workspace compiled and packaged on its own:
 # its own crate list, its own CARGO_TARGET_DIR, its own control templates and
@@ -72,10 +73,25 @@ ALL_BINARIES=(mosd apid mos-mqttd mos-mqtt-broker)
 
 # The producer register. Adding one is a case here plus os/pkgs/mosd/deb/<name>/
 # holding a Dockerfile and control/; nothing else in this file changes.
+#
+# DIST_CONTEXTS names the buildx contexts the producer's Dockerfile reads its
+# unit files and D-Bus policy out of. It is registered per producer rather than
+# fixed, because the unit sources are not all in one place: mosd.service and
+# apid.service sit in os/pkgs/mosd/dist/, while mos-mqttd.service and
+# mos-mqtt-broker.service sit beside their own crates in mqttd/dist/ and
+# broker/dist/. The only directory holding both of those is the workspace root,
+# which carries the cargo target trees buildx must not walk -- so the MQTT
+# producer takes two contexts instead of one.
 case "${PRODUCER}" in
 mosd)
     BINARIES=(mosd apid)
     PACKAGES=(mosd mos-apid)
+    DIST_CONTEXTS=("dist=${WORKSPACE}/dist")
+    ;;
+mqtt)
+    BINARIES=(mos-mqttd mos-mqtt-broker)
+    PACKAGES=(mos-mqttd mos-mqtt-broker)
+    DIST_CONTEXTS=("mqttd-dist=${WORKSPACE}/mqttd/dist" "broker-dist=${WORKSPACE}/broker/dist")
     ;;
 *)
     echo "error: '${PRODUCER}' is not a producer this repository defines. os/pkgs/mosd/deb/README.md lists them and says what registering one takes; a producer named here but absent from that directory would build an empty package set and report success" >&2
@@ -344,13 +360,18 @@ for p in "${PACKAGES[@]}"; do
     rm -f "${POOL}/${p}"_*.deb
 done
 
+DIST_ARGS=()
+for c in "${DIST_CONTEXTS[@]}"; do
+    DIST_ARGS+=(--build-context "${c}")
+done
+
 echo "build-deb: packing ${PACKAGES[*]} ${VERSION} for ${ARCH} on builder '${BUILDER}' (${BUILDER_DRIVER})"
 docker buildx build --builder "${BUILDER}" \
     --platform "linux/${ARCH}" \
     "${FROM_ARGS[@]}" \
     ${CTX_ARGS[@]+"${CTX_ARGS[@]}"} \
     --build-context "packer=${REPO_ROOT}/os/build-env/deb" \
-    --build-context "dist=${WORKSPACE}/dist" \
+    "${DIST_ARGS[@]}" \
     --build-context "bin=${STAGE}" \
     --build-arg "MOS_DEB_VERSION=${VERSION}" \
     --build-arg "MOS_DEB_ARCH=${ARCH}" \

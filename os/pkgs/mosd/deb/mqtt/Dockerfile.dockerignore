@@ -1,0 +1,14 @@
+# The build context is os/pkgs/mosd/deb/, the producer family directory, and
+# this producer needs three things out of it: the shared copyright file, its own
+# control templates and its own maintainer scripts. Everything else -- the
+# README, and the mosd producer that sits beside it -- is excluded, so an edit
+# there does not invalidate this producer's context.
+#
+# The binaries and the unit files are NOT here. They arrive through the `bin`,
+# `mqttd-dist` and `broker-dist` named contexts, which is what keeps a cargo
+# target directory of several gigabytes out of the path buildx has to walk.
+*
+!copyright
+!mqtt/control/*.control
+!mqtt/maintainer/mos-mqttd/postinst
+!mqtt/maintainer/mos-mqtt-broker/postinst
