@@ -97,6 +97,7 @@ VLAN 的 netdev 带 `Kind=vlan` 和 `[VLAN] Id=`，桥带 `Kind=bridge`，
 
 | 成员 | 类型 |
 |---|---|
+| `GetDeviceId` | 方法（只读，仅供 MQTT topic 设备地址使用） |
 | `GetSettings` / `SetSettings` | 方法 |
 | `GetState` | 方法 |
 | `SettingsChanged` | 信号 |
@@ -107,7 +108,9 @@ VLAN 的 netdev 带 `Kind=vlan` 和 `[VLAN] Id=`，桥带 `Kind=bridge`，
 | `InstallUpdate` / `GetUpdateState` / `MarkUpdate` | 方法 |
 | `RotateWireguardKey` | 方法 |
 
-根路径 `/` 上的 `com.mos.Item1` 门面是**另一个接口**，有它自己的契约，见 `../design/bus.md`。
+mosd 刻意不再导出 `com.mos.Item1` 门面。系统设置、实时状态和动作都留在管理接口，
+不属于 MQTT 应用数据。`mos-mqttd` 只被授权调用 `GetDeviceId`；APID 通过自己的策略
+获得所需的管理权限。
 
 ## 7. 边界
 

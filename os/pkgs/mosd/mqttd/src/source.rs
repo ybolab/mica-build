@@ -1,9 +1,5 @@
-//! The bus side: reading the item tree and writing to it.
-//!
-//! [`ItemSource`] is the whole of what the bridge asks of mosd, and it is
-//! deliberately two calls wide. Everything else the bridge knows about the
-//! tree it learns from `ItemsChanged` payloads, which the runtime converts
-//! with [`batch_of`] and hands to the state machine.
+//! The application side of the bridge: `com.mos.Item1` reads, signals and
+//! writes on admitted extension services.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -11,88 +7,39 @@ use async_trait::async_trait;
 use serde_json::Value as Json;
 use zbus::zvariant::{OwnedValue, Value};
 
-use crate::config::{ACTIONS_PREFIX, SERVICE};
 use crate::item::Item;
+use crate::topic::{self, Application};
 
-/// What became of a `SetValue`.
-///
-/// Deliberately **not** the result-code numbers. `docs/design/bus.md` §1.1
-/// fixes the vocabulary — `0` ok, negative on failure, positives reserved —
-/// and the negative half is still being refined in mosd. A bridge that
-/// switched on literal values would be a second place that vocabulary has to
-/// be kept in step, for no gain: the bridge cannot act differently on one
-/// negative code than on another, because reasons never leave mosd (§3).
-///
-/// The distinction that *does* matter to a client, and that this bridge can
-/// make without any code at all, is by **path** rather than by number:
-///
-/// - a write to a settings item that failed did not take effect — the item is
-///   unchanged (§3), so retrying is safe;
-/// - a write to an `/Actions/<verb>` item is a *dispatch*, and mosd logs it
-///   and records it in live state **before** the power call (§7). A failure
-///   reported back therefore does not mean nothing happened, so retrying is
-///   not obviously safe. That distinction matters most for a reboot arriving
-///   over MQTT.
-///
-/// [`retry_note`] is that reasoning, applied to a path, for the log line.
+/// What became of an application `SetValue`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteOutcome {
     /// `SetValue` returned `0`.
     Accepted,
-    /// `SetValue` returned a negative code. Carried for the log; nothing in
-    /// the bridge branches on its value.
+    /// `SetValue` returned a non-zero result code.
     Refused { code: i32 },
-    /// No item object at that path.
-    ///
-    /// A distinct case, not a generic failure: zbus dispatches by **exact**
-    /// object path with no fallback handler, so a path the tree does not
-    /// carry answers with a D-Bus `UnknownObject` error rather than with a
-    /// result code. So does a path that is not a valid object path at all,
-    /// which a settings key is free to be (`network.br-lan`).
+    /// No item object exists at the requested path.
     UnknownObject,
-    /// The value could not be carried to the bus at all: JSON `null`, which
-    /// is the invalid marker rather than a value, or a number D-Bus has no
-    /// type for. Nothing was written.
+    /// The JSON value has no D-Bus representation used by this bridge.
     Unrepresentable,
-    /// The call did not reach the service: it is not on the bus, or the
-    /// connection failed.
+    /// The service or bus could not be reached.
     Unreachable { detail: String },
 }
 
 impl WriteOutcome {
-    /// Whether the write took effect.
     pub fn accepted(&self) -> bool {
         matches!(self, Self::Accepted)
     }
 }
 
-/// What a failed write at `path` implies for a retry — the persist/dispatch
-/// distinction of [`WriteOutcome`], resolved from the path alone.
-pub fn retry_note(path: &str) -> &'static str {
-    if path.starts_with(ACTIONS_PREFIX) {
-        "dispatch: the action was recorded before the power call, so a retry is not obviously safe"
-    } else {
-        "persist: the item is unchanged, so a retry is safe"
-    }
-}
-
-/// The two things the bridge does to the item tree.
+/// The two operations MQTT performs on an application item tree.
 #[async_trait]
 pub trait ItemSource: Send + Sync {
-    /// Every currently valid item: absolute slash path -> attributes.
-    async fn get_items(&self) -> anyhow::Result<BTreeMap<String, Item>>;
+    async fn get_items(&self, application: &Application) -> anyhow::Result<BTreeMap<String, Item>>;
 
-    /// `SetValue` on the item at `path`.
-    async fn set_value(&self, path: &str, value: Json) -> WriteOutcome;
+    async fn set_value(&self, application: &Application, path: &str, value: Json) -> WriteOutcome;
 }
 
-/// Convert a D-Bus value into the JSON a payload carries.
-///
-/// The empty array is `docs/design/bus.md` §3's invalid sentinel and becomes
-/// `null`, which is the same convention expressed in the only type system
-/// that can express it. An item whose value genuinely is an empty array is
-/// therefore indistinguishable from an invalid one — that is the contract's
-/// own trade, inherited here rather than papered over.
+/// Convert a D-Bus value into the JSON carried by MQTT payloads.
 pub fn json_of(value: &Value<'_>) -> Json {
     match value {
         Value::Bool(flag) => Json::Bool(*flag),
@@ -123,10 +70,7 @@ pub fn json_of(value: &Value<'_>) -> Json {
     }
 }
 
-/// Convert JSON back into the D-Bus value a `SetValue` carries.
-///
-/// `None` for what D-Bus cannot hold: a non-finite number, and a `null`,
-/// which is the invalid marker rather than a value and is never written.
+/// Convert JSON back into the D-Bus value an application `SetValue` carries.
 pub fn value_of(json: &Json) -> Option<Value<'static>> {
     Some(match json {
         Json::Null => return None,
@@ -150,8 +94,7 @@ pub fn value_of(json: &Json) -> Option<Value<'static>> {
     })
 }
 
-/// The item one `a{sv}` attribute dict describes, or `None` when it describes
-/// an invalid one (`docs/design/bus.md` §3: absent key, or the sentinel).
+/// The item one `a{sv}` attribute dictionary describes.
 pub fn item_of(attrs: &HashMap<String, OwnedValue>) -> Option<Item> {
     let bound = |key: &str| attrs.get(key).map(|value| json_of(value));
     let value = bound("value")?;
@@ -169,8 +112,7 @@ pub fn item_of(attrs: &HashMap<String, OwnedValue>) -> Option<Item> {
     })
 }
 
-/// An `ItemsChanged` payload as the bridge consumes it: path -> new item, or
-/// `None` where the item became invalid.
+/// Convert one `ItemsChanged` payload into bridge state.
 pub fn batch_of(
     items: HashMap<String, HashMap<String, OwnedValue>>,
 ) -> BTreeMap<String, Option<Item>> {
@@ -180,14 +122,8 @@ pub fn batch_of(
         .collect()
 }
 
-/// The tree-wide half of `com.mos.Item1`, served on the service root
-/// (`docs/design/bus.md` §1.1) — which is the object path `/`, since item
-/// object paths are absolute slash paths below it (§4).
-#[zbus::proxy(
-    interface = "com.mos.Item1",
-    default_service = "com.mos.mosd",
-    default_path = "/"
-)]
+/// The tree-wide half of `com.mos.Item1`, served at `/` by each application.
+#[zbus::proxy(interface = "com.mos.Item1", default_path = "/")]
 pub trait ItemTree {
     fn get_items(&self) -> zbus::Result<HashMap<String, HashMap<String, OwnedValue>>>;
 
@@ -196,6 +132,16 @@ pub trait ItemTree {
         &self,
         items: HashMap<String, HashMap<String, OwnedValue>>,
     ) -> zbus::Result<()>;
+}
+
+/// The one system-management fact the MQTT runtime may read.
+#[zbus::proxy(
+    interface = "com.mos.mosd1",
+    default_service = "com.mos.mosd",
+    default_path = "/com/mos/mosd"
+)]
+pub trait Identity {
+    fn get_device_id(&self) -> zbus::Result<String>;
 }
 
 /// [`ItemSource`] over a real D-Bus connection.
@@ -207,15 +153,8 @@ impl BusSource {
     pub fn new(connection: zbus::Connection) -> Self {
         Self { connection }
     }
-
-    pub fn connection(&self) -> &zbus::Connection {
-        &self.connection
-    }
 }
 
-/// D-Bus errors that mean "there is no item object at that path", as opposed
-/// to "the call failed". zbus dispatches by exact object path and has no
-/// fallback handler, so this is the only answer an unknown path can give.
 const NO_SUCH_ITEM: [&str; 3] = [
     "org.freedesktop.DBus.Error.UnknownObject",
     "org.freedesktop.DBus.Error.UnknownInterface",
@@ -224,8 +163,11 @@ const NO_SUCH_ITEM: [&str; 3] = [
 
 #[async_trait]
 impl ItemSource for BusSource {
-    async fn get_items(&self) -> anyhow::Result<BTreeMap<String, Item>> {
-        let proxy = ItemTreeProxy::new(&self.connection).await?;
+    async fn get_items(&self, application: &Application) -> anyhow::Result<BTreeMap<String, Item>> {
+        let proxy = ItemTreeProxy::builder(&self.connection)
+            .destination(application.bus_name().to_string())?
+            .build()
+            .await?;
         Ok(proxy
             .get_items()
             .await?
@@ -234,14 +176,26 @@ impl ItemSource for BusSource {
             .collect())
     }
 
-    async fn set_value(&self, path: &str, value: Json) -> WriteOutcome {
+    async fn set_value(&self, application: &Application, path: &str, value: Json) -> WriteOutcome {
+        // Keep the namespace gate at the I/O boundary too. An Application can
+        // only be constructed by `application_of`, but validating the owned
+        // name here makes that invariant explicit at the last possible point.
+        let Some(validated) = topic::application_of(application.bus_name()) else {
+            return WriteOutcome::Unreachable {
+                detail: "system service refused by the MQTT application boundary".to_string(),
+            };
+        };
         let Some(value) = value_of(&value) else {
             return WriteOutcome::Unrepresentable;
         };
-        // A settings key is free to be a string no object path can spell, and
-        // such an item has no object of its own — the same case as a path the
-        // tree does not carry, reported the same way.
-        let proxy = match zbus::Proxy::new(&self.connection, SERVICE, path, "com.mos.Item1").await {
+        let proxy = match zbus::Proxy::new(
+            &self.connection,
+            validated.bus_name(),
+            path,
+            "com.mos.Item1",
+        )
+        .await
+        {
             Ok(proxy) => proxy,
             Err(zbus::Error::Variant(_) | zbus::Error::InvalidField) => {
                 return WriteOutcome::UnknownObject;

@@ -28,8 +28,9 @@ FROM ${MOS_STAGE_PREV}
 
 # The mos-mqttd service account, static rather than DynamicUser.
 # mos-mqttd.service ran under DynamicUser=yes until the bridge was wired into
-# an image. com.mos.mosd is a root-only bus name, so the bridge needs an
-# explicit D-Bus grant, and <policy user="..."> resolves its user when
+# an image. The bridge needs an explicit, single-member identity grant on the
+# root-only com.mos.mosd name plus exact grants supplied by applications, and
+# <policy user="..."> resolves its user when
 # dbus-daemon reads the file at startup -- before any dynamic user exists. The
 # rule would load and match nothing, and the bridge would publish nothing with
 # no error anywhere. The grant is mos-mqttd.conf; this account is the identity

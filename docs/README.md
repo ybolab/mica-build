@@ -17,7 +17,7 @@
   - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture
   - `api.md` — API-first apid: current HTTP/bus surface, proposed API, static hosting, replaceable UI
   - `bsp-cx3576-sync.md` — cx3576 upstream BSP: source repo, synced commit, deviation register
-  - `bus.md` — device bus v2: `com.mos.Item1` contract, class registry, actions as items, Sparkplug B evaluation
+  - `bus.md` — management/application boundary, extension `com.mos.Item1`, MQTT grammar and retained-topic migration
   - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
   - `build-harness.md` — how this repository's checks are run: the pinned bun container, the Rust gate's container and PATH, scratch that is not `/tmp`, arm64 build-vs-execute, and the docs gates
 - `plan/` — PMA plans (numbered, with status index)

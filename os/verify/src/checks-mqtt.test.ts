@@ -209,12 +209,9 @@ describe('the identity the unit runs as', () => {
 
 describe('the D-Bus grant', () => {
   test('a BLANKET send_destination fails -- that is the whole interface', async () => {
-    // Reboot, PowerOff, SetSettings and SetTransientRootPassword included,
-    // handed to the only daemon in the image with a network socket.
+    // Every system-management member would be handed to the network daemon.
     const fx = await mutated('mqttd-grant-per-member', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace(
-        '<allow send_destination="com.mos.mosd" send_member="SetValue"/>',
-        '<allow send_destination="com.mos.mosd"/>')))
+      rewrite(root, MQTTD_POLICY, t => t.replace('send_member="GetDeviceId"', '')))
     try {
       expect(await verdictOf(fx, 'mqttd-grant-per-member')).toBe('fail')
       expect(await messageOf(fx, 'mqttd-grant-per-member')).toContain('names no member:')
@@ -224,7 +221,7 @@ describe('the D-Bus grant', () => {
     }
   })
 
-  test('NO grant at all fails differently: the bridge publishes an empty tree forever', async () => {
+  test('NO grant at all fails differently: the bridge cannot address applications', async () => {
     // A different defect with a different repair, so a different sentence.
     const fx = await mutated('mqttd-grant-per-member', root =>
       rewrite(root, MQTTD_POLICY, t => t.replace(/send_destination="com\.mos\.mosd"/g,
@@ -240,15 +237,71 @@ describe('the D-Bus grant', () => {
 
   test('a grant on a FORBIDDEN member fails, and names it', async () => {
     const fx = await mutated('mqttd-no-forbidden-members', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace('send_member="SetValue"', 'send_member="Reboot"')))
+      rewrite(root, MQTTD_POLICY, t => t.replace('send_member="GetDeviceId"', 'send_member="Reboot"')))
     try {
       expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
-      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('grants the bridge Reboot')
+      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('system members (Reboot)')
     }
     finally {
       fx.dispose()
     }
   })
+
+  test('a receive grant on the system service fails too', async () => {
+    const fx = await mutated('mqttd-no-forbidden-members', root =>
+      rewrite(root, MQTTD_POLICY, t => t.replace(
+        '  </policy>',
+        '    <allow receive_sender="com.mos.mosd" receive_interface="com.mos.mosd1" receive_member="SettingsChanged"/>\n  </policy>')))
+    try {
+      expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
+      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('SettingsChanged')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a second policy file cannot grant the bridge a management member', async () => {
+    const fx = await mutated('mqttd-no-forbidden-members', (root) => {
+      const path = join(root, '/etc/dbus-1/system.d/extra-mqttd.conf')
+      mkdirSync(join(root, '/etc/dbus-1/system.d'), { recursive: true })
+      writeFileSync(path,
+        '<busconfig><policy user="mos-mqttd">'
+        + '<allow send_destination="com.mos.mosd" send_interface="com.mos.mosd1" send_member="Reboot"/>'
+        + '</policy></busconfig>\n')
+    })
+    try {
+      expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
+      const message = await messageOf(fx, 'mqttd-no-forbidden-members')
+      expect(message).toContain('extra-mqttd.conf')
+      expect(message).toContain('Reboot')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  for (const selector of ['context="mandatory"', 'at_console="false"']) {
+    test(`a second policy file using ${selector} cannot grant a management member`, async () => {
+      const fx = await mutated('mqttd-no-forbidden-members', (root) => {
+        const path = join(root, '/etc/dbus-1/system.d/extra-mqttd.conf')
+        mkdirSync(join(root, '/etc/dbus-1/system.d'), { recursive: true })
+        writeFileSync(path,
+          `<busconfig><policy ${selector}>`
+          + '<allow send_destination="com.mos.mosd" send_interface="com.mos.mosd1" send_member="Reboot"/>'
+          + '</policy></busconfig>\n')
+      })
+      try {
+        expect(await verdictOf(fx, 'mqttd-no-forbidden-members')).toBe('fail')
+        const message = await messageOf(fx, 'mqttd-no-forbidden-members')
+        expect(message).toContain('extra-mqttd.conf')
+        expect(message).toContain('Reboot')
+      }
+      finally {
+        fx.dispose()
+      }
+    })
+  }
 
   test('attributes WRAPPED across lines are read as one rule', async () => {
     // Measured on the oracle's first run against the real file: the
@@ -260,7 +313,7 @@ describe('the D-Bus grant', () => {
     try {
       expect(readFileSync(join(fx.root, MQTTD_POLICY), 'utf8')).toContain('<allow\n')
       expect(await verdictOf(fx, 'mqttd-grant-per-member')).toBe('pass')
-      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('GetItems SetValue')
+      expect(await messageOf(fx, 'mqttd-no-forbidden-members')).toContain('only system grant is com.mos.mosd1.GetDeviceId')
     }
     finally {
       fx.dispose()

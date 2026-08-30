@@ -28,7 +28,6 @@
 
 #![forbid(unsafe_code)]
 
-mod actions;
 mod bus;
 mod fswrite;
 mod identity;
@@ -38,7 +37,6 @@ mod rauc;
 mod reconciler;
 mod scan;
 mod transient;
-mod tree;
 mod wgkeys;
 
 use std::path::{Path, PathBuf};
@@ -246,8 +244,6 @@ async fn serve() -> anyhow::Result<()> {
         service = service.with_service_registry(Arc::clone(registry));
     }
     service.apply_all().await;
-    let changes = service.subscribe_changes();
-
     let builder = match bus_kind.as_str() {
         "system" => zbus::connection::Builder::system()?,
         "session" => zbus::connection::Builder::session()?,
@@ -258,38 +254,14 @@ async fn serve() -> anyhow::Result<()> {
         .build()
         .await
         .with_context(|| format!("connect to {bus_kind} bus"))?;
-    // The com.mos.Item1 façade at the root object path, registered — and its
-    // change watcher started — before the well-known name is claimed, so a
-    // client never resolves the name without the item tree behind it.
-    let object_server = connection.object_server();
-    let service_ref = object_server
-        .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
-        .await
-        .context("look up served MosdService")?;
-    object_server
-        .at(tree::ROOT_PATH, tree::ItemTree::new(service_ref))
-        .await
-        .context("serve com.mos.Item1")?;
-    let service_ref = object_server
-        .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
-        .await
-        .context("look up served MosdService")?;
-    let tree_ref = object_server
-        .interface::<_, tree::ItemTree>(tree::ROOT_PATH)
-        .await
-        .context("look up served ItemTree")?;
-    // The per-item objects that carry GetValue/SetValue, registered here for
-    // the same reason: the name is claimed below, never before an item a
-    // client can see is one it can also write.
-    let snapshot = tree::install(&tree_ref, &service_ref).await;
-    tokio::spawn(tree::run(service_ref, tree_ref, changes, snapshot));
     // The service scan, started before the well-known name is claimed so that
     // its NameOwnerChanged subscription is in place before anything can react
     // to mosd appearing — a service that claims its name in that window is
     // seen by the signal rather than missed between the sweep and the
     // subscription.
     if let Some(registry) = registry {
-        let service_ref = object_server
+        let service_ref = connection
+            .object_server()
             .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
             .await
             .context("look up served MosdService")?;

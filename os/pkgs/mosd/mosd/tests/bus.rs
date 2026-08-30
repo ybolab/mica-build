@@ -34,6 +34,7 @@ use zbus::export::futures_core::Stream;
 /// `root` locked the way `mos-shadow-reconcile` leaves it.
 const SHADOW: &str = "root:!:19000:0:99999:7:::\n\
     daemon:*:19000:0:99999:7:::\n";
+const DEVICE_ID: &str = "00112233445566778899aabbccddeeff";
 
 /// Kills the wrapped child on drop, including on panic.
 struct ChildGuard(Child);
@@ -89,6 +90,7 @@ fn error_name(err: &zbus::Error) -> &str {
     default_path = "/com/mos/mosd"
 )]
 trait Mosd {
+    fn get_device_id(&self) -> zbus::Result<String>;
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
@@ -119,6 +121,9 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
 
     let dir = tempfile::tempdir()?;
     let settings_path = dir.path().join("settings.toml");
+    let mut seeded = mosd_settings::Settings::default();
+    seeded.provisioning.device_id = Some(DEVICE_ID.to_string());
+    mosd_settings::Store::new(&settings_path).save(&seeded)?;
     // The daemon must never be pointed at the host's /etc/shadow, so the
     // transient-password method gets a throwaway file of its own.
     let shadow_path = dir.path().join("shadow");
@@ -154,6 +159,9 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     let defaults: serde_json::Value = serde_json::from_str(&defaults)?;
     assert_eq!(defaults["hostname"], "mos");
     assert_eq!(defaults["schema_version"], mosd_settings::SCHEMA_VERSION);
+
+    let device_id = proxy.get_device_id().await?;
+    assert_eq!(device_id, DEVICE_ID);
 
     let mut changed = proxy.receive_settings_changed().await?;
     proxy.set_settings("hostname", "\"unit-test-host\"").await?;
@@ -248,6 +256,17 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
         .build()
         .await?;
     let xml = introspectable.introspect().await?;
+    let root_xml = zbus::fdo::IntrospectableProxy::builder(&connection)
+        .destination("com.mos.mosd")?
+        .path("/")?
+        .build()
+        .await?
+        .introspect()
+        .await?;
+    assert!(
+        !root_xml.contains("com.mos.Item1"),
+        "system management must not expose an application item tree at /:\n{root_xml}"
+    );
     let opening = "<method name=\"SetTransientRootPassword\">";
     let start = xml
         .find(opening)

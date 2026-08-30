@@ -731,8 +731,8 @@ check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" 
 # --- 6. the MQTT bridge's grant, os/pkgs/mosd/dist/mos-mqttd.conf --------------------
 # The bridge is a non-root client of a root-only name. Sections 1-2 establish
 # that com.mos.mosd.conf refuses every non-root uid outright; this section is
-# about the file that punches three members through that refusal and must punch
-# through nothing else.
+# about the file that punches one identity member through that refusal and must
+# punch through nothing else.
 #
 # Both files on one bus, unlike section 5. Section 5 keeps the files apart
 # because its question is what com.mos.ext.conf grants on its own; the question
@@ -828,8 +828,9 @@ done
 }
 chmod 0777 "${MQTTD_SOCK}"
 
-# One root server owns com.mos.mosd and broadcasts BOTH signals: ItemsChanged
-# on com.mos.Item1 (granted) and SettingsChanged on com.mos.mosd1 (not).
+# One root server owns com.mos.mosd and deliberately broadcasts a legacy Item1
+# signal plus a management signal. The bridge must receive neither even if a
+# future regression or hostile system service emits them.
 setsid python3 "${CLIENT}" serve "${MQTTD_SOCK}" "${NAME}" ItemsChanged \
     com.mos.Item1 /com/mos/mosd com.mos.mosd1/SettingsChanged \
     >"${WORK}/mqttd-server.log" 2>&1 &
@@ -855,19 +856,21 @@ check "mqttd: root can still reach ${NAME} (the grant did not break root)" "OK" 
     "$(as_root call "${MQTTD_SOCK}" "${NAME}")"
 
 echo
-# GRANTED. This is the half the feature depends on: without it the bridge
-# publishes nothing, silently, and the unit still reports active.
-check "mqttd: the bridge's uid CAN call com.mos.Item1.GetItems" "OK" \
-    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetItems /)"
-check "mqttd: the bridge's uid CAN call com.mos.Item1.SetValue" "OK" \
-    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 SetValue /hostname)"
-check "mqttd: the bridge's uid CAN receive com.mos.Item1.ItemsChanged" "GOT" \
-    "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" ItemsChanged 3)"
+# GRANTED. This one fact addresses application topics without exposing a
+# path-taking settings read.
+check "mqttd: the bridge's uid CAN call com.mos.mosd1.GetDeviceId" "OK" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetDeviceId /com/mos/mosd)"
 
 echo
 # REFUSED. The reason the grant is per-member: mos-mqttd is the only daemon in
 # the image holding a network socket, and these are the members that would turn
 # a bridge compromise into device control.
+check "mqttd: the bridge's uid CANNOT call system com.mos.Item1.GetItems" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetItems /)"
+check "mqttd: the bridge's uid CANNOT call system com.mos.Item1.SetValue" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 SetValue /hostname)"
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.Reboot" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 Reboot)"
@@ -893,15 +896,17 @@ check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.MarkUpdate" \
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.GetUpdateState" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetUpdateState)"
-# The same interface the grant names, a member it does not: proves the rule
-# discriminates on send_member= and not merely on send_interface=.
-check "mqttd: the bridge's uid CANNOT call com.mos.Item1.GetValue (ungranted member)" \
+# The same management interface the grant names, members it does not: proves
+# the rule discriminates on send_member= and not merely on send_interface=.
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.GetSettings" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetValue /hostname)"
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetSettings /com/mos/mosd)"
 # SettingsChanged carries the settings VALUE, including the web admin password
-# hash. The bridge is granted ItemsChanged and must not inherit this one.
+# hash. The identity grant must not open this broadcast.
 check "mqttd: the bridge's uid CANNOT receive com.mos.mosd1.SettingsChanged" "NONE" \
     "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" SettingsChanged 3)"
+check "mqttd: the bridge's uid CANNOT receive system com.mos.Item1.ItemsChanged" "NONE" \
+    "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" ItemsChanged 3)"
 
 echo
 # USER-SCOPED. Without this, every check above is equally consistent with the
@@ -931,11 +936,11 @@ check "mqttd: the bridge's uid is connected (so its refusals are policy, not aut
 check "mqttd: the control uid is connected (so its refusals are policy, not auth)" \
     "CONNECTED" \
     "$(connectivity "$(as_other call "${MQTTD_SOCK}" org.freedesktop.DBus org.freedesktop.DBus GetId /org/freedesktop/DBus)")"
-check "mqttd: another unprivileged uid CANNOT call GetItems (the grant is user-scoped)" \
+check "mqttd: another unprivileged uid CANNOT call GetDeviceId (the grant is user-scoped)" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
-    "$(as_other call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetItems /)"
-check "mqttd: another unprivileged uid CANNOT receive ItemsChanged" "NONE" \
-    "$(as_other recv "${MQTTD_SOCK}" "${NAME}" ItemsChanged 3)"
+    "$(as_other call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetDeviceId /com/mos/mosd)"
+check "mqttd: another unprivileged uid CANNOT receive SettingsChanged" "NONE" \
+    "$(as_other recv "${MQTTD_SOCK}" "${NAME}" SettingsChanged 3)"
 
 echo
 echo "$PASS passed, $FAIL failed"

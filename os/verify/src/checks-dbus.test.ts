@@ -368,10 +368,10 @@ describe('a second policy file may narrow, never widen', () => {
 
   test('a second file granting the name WITHOUT a member fails', async () => {
     // The grant that reads like the bridge's and is not: dropping send_member=
-    // turns three named methods into every method, Reboot and
+    // turns one identity method into every method, Reboot and
     // SetTransientRootPassword included.
     const fx = await mutated('mosd-policy-no-second-file-widens', root =>
-      rewrite(root, MQTTD_POLICY, t => t.replace(' send_member="SetValue"', '')))
+      rewrite(root, MQTTD_POLICY, t => t.replace('send_member="GetDeviceId"', '')))
     try {
       expect(await verdictOf(fx, 'mosd-policy-no-second-file-widens')).toBe('fail')
       const message = await messageOf(fx, 'mosd-policy-no-second-file-widens')
@@ -409,15 +409,13 @@ describe('a second policy file may narrow, never widen', () => {
     }
   })
 
-  test('the bridge grant WRAPPED across lines still reads as per-member', async () => {
-    // The fixture already wraps one of the two grants; this asserts the other
-    // one wrapped as well, because a line-oriented reader would call BOTH of
-    // them unscoped and report the file as reopening the name.
+  test('the bridge identity grant WRAPPED across lines still reads as per-member', async () => {
+    // The fixture deliberately wraps the sole GetDeviceId grant. A
+    // line-oriented reader would call it unscoped and report the file as
+    // reopening the whole management name.
     const fx = packedRootFixture(cx3576)
     try {
-      rewrite(fx.root, MQTTD_POLICY, t => t.replace(
-        '<allow send_destination="com.mos.mosd" send_member="SetValue"/>',
-        '<allow\n      send_destination="com.mos.mosd"\n      send_member="SetValue"/>'))
+      expect(readFileSync(join(fx.root, MQTTD_POLICY), 'utf8')).toContain('<allow\n')
       expect(await verdictOf(fx, 'mosd-policy-no-second-file-widens')).toBe('pass')
     }
     finally {
@@ -625,7 +623,7 @@ describe('the policy directory walk', () => {
     try {
       const text = readFileSync(join(fx.root, MQTTD_POLICY), 'utf8')
       rmSync(join(fx.root, MQTTD_POLICY))
-      write(fx.root, '/usr/lib/mos/mqttd-policy.xml', text.replace(' send_member="SetValue"', ''))
+      write(fx.root, '/usr/lib/mos/mqttd-policy.xml', text)
       symlinkSync('/usr/lib/mos/mqttd-policy.xml', join(fx.root, MQTTD_POLICY))
       // The link's TARGET is inside the tree, so the fixture's absolute
       // symlink would resolve against the host root -- exactly as the oracle's

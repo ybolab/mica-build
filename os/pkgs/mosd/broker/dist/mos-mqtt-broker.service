@@ -56,9 +56,9 @@ Type=simple
 # three from the `mqtt` settings subtree into /run/mos/mqtt-broker.toml before
 # it starts this unit, so the device's own configuration is the only source.
 #
-# Credentials are not here either, and are not in the settings tree: mosd
-# publishes that tree over com.mos.Item1, so a password in it would be a
-# published password. They live in /var/lib/mos/mqtt-broker-users.toml on
+# Credentials are not here either, and are not in the settings tree. Secrets
+# stay outside both the system-management settings document and every MQTT
+# application item tree. They live in /var/lib/mos/mqtt-broker-users.toml on
 # STATE, the same way the device password already does. The file is optional;
 # with auth on and no file the broker starts and refuses every login.
 ExecStart=/usr/bin/mos-mqtt-broker --config /run/mos/mqtt-broker.toml

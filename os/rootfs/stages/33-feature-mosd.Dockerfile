@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # stages/33-feature-mosd -- the management daemon and the HTTP API beside it:
-# mosd, apid, the MQTT bridge, the MQTT broker, their units and their two D-Bus
-# policies.
+# mosd, apid, the MQTT bridge, the MQTT broker, their units and the D-Bus
+# policies that separate management identity from application data.
 
 # This stage is the switch. A build that does not want mosd does not build this
 # file, and rootfs-stages.txt records which stages ran, so "this image has no
@@ -41,8 +41,9 @@ FROM ${MOS_STAGE_PREV}
 
 # The broker ships no D-Bus policy file, and that absence is deliberate: it
 # never speaks D-Bus. It reads one file mosd renders into /run and listens on a
-# TCP socket. The bridge is the half of this pair that talks to com.mos.mosd,
-# and mos-mqttd.conf is its grant.
+# TCP socket. The bridge is the half of this pair that talks to D-Bus: it may
+# read only GetDeviceId from com.mos.mosd, while each MQTT-enabled application
+# grants access to its exact com.mos.ext.* Item1 service.
 ARG MOSD_DIR
 COPY ${MOSD_DIR}/ /tmp/mosd/
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \

@@ -16,7 +16,7 @@
 | 系统内核层 | Debian trixie，systemd 作 PID 1，打包为 squashfs 并附加 dm-verity 哈希树 | `os/rootfs/` |
 | 管理面 | `mosd` — 设置树、驱动 unit 的协调器、D-Bus 接口 | `os/pkgs/mosd/mosd/`，[`design/mosd.md`](design/mosd.md) |
 | API | `apid` — HTTPS 守护进程；仪表盘只是它所服务 API 的一个客户端 | `os/pkgs/mosd/apid/`，`../design/api.md` |
-| 遥测 | `mos-mqttd` 把 item 树桥接到 MQTT；`mos-mqtt-broker` 是设备本地 broker | `os/pkgs/mosd/mqttd/`、`os/pkgs/mosd/broker/` |
+| 应用数据 | `mos-mqttd` 只把 `com.mos.ext.*` 应用 item 树桥接到 MQTT；`mos-mqtt-broker` 是设备本地 broker | `os/pkgs/mosd/mqttd/`、`os/pkgs/mosd/broker/`、[`design/bus.md`](design/bus.md) |
 | A/B 安装器 | RAUC；cx3576 上配合 U-Boot 的 `BOOT_ORDER` 握手，x64 上用 GRUB | `os/pkgs/rauc/`，`../design/uboot-ab-handshake.md` |
 | 更新信任 | TUF 元数据锁定一个 CMS 签名的 RAUC bundle | `os/pkgs/rauc-sign/`，`../design/release-signing.md` |
 | BSP 产物 | 每块板一套 buildkit Dockerfile，产出内核、设备树与引导程序 | `os/boards/`，[`design/boards.md`](design/boards.md) |
@@ -27,13 +27,14 @@
 ```
                   设置树（TOML，STATE 分区）
                               |
-                 mosd  --  com.mos.mosd，系统总线
-     _________________________|__________________________
-    |          |            |           |         |      |
-  apid     协调器      RAUC 控制    mos-mqttd    sshd   podman
-  HTTPS    wifi/sshd  InstallUpdate  item ->    OpenSSH Quadlet
-  API +    hostname   GetUpdateState  MQTT      由 mosd  unit，
-  仪表盘   network    MarkUpdate      桥接       驱动    默认关
+                 mosd  --  com.mos.mosd1，系统总线
+     _________________________|________________________
+    |          |            |          |       |       |
+  apid     协调器      RAUC 控制      sshd   podman  GetDeviceId
+  HTTPS    wifi/sshd  InstallUpdate  OpenSSH  Quadlet   |
+  API +    hostname   GetUpdateState  由 mosd  unit   mos-mqttd -- MQTT
+  仪表盘   network    MarkUpdate      驱动    默认关     |
+           mqtt/container                         com.mos.ext.* 应用
 ```
 
 - **systemd 是 PID 1。** 上面每个部件都是一个 unit。mosd 启停并重新渲染这些 unit，
@@ -52,8 +53,10 @@
   `.netdev` 来创建设备，而挂接关系写在**对端**接口的 unit 上（父接口上的 `VLAN=`、
   端口上的 `Bridge=`）。被移除的虚拟条目会被拆除，而不只是取消链接。WireGuard 隧道的
   私钥在设备上生成，落在设置文件旁的 `networkd-secrets/` 目录里，**绝不进入设置树**。
-- **`mos-mqttd`** 把 item 树发布给 broker，并把写入经 mosd 回灌；`mos-mqtt-broker`
-  是本地 broker，以库的形式基于 `rumqttd` 构建，而不是作为第三个守护进程发布。
+- **`mos-mqttd`** 只动态发布带 class 的 `com.mos.ext.*` 应用 item 树；full 模式的
+  写入也只发往准确的应用服务。它对 mosd 的唯一调用是用于 topic 地址的只读
+  `GetDeviceId`。SSH、网络、凭据、容器、MQTT 配置、健康、更新和电源都留在管理面，
+  不会成为 MQTT item。`mos-mqtt-broker` 是基于 `rumqttd` 的本地 broker。
 - **容器**经 podman 与 Quadlet 生成器运行。只要 `container.enabled` 为假（默认），
   `/etc/containers/systemd` 就不挂载，也不存在任何容器 unit。
 

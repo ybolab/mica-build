@@ -1,8 +1,8 @@
 # RFCT-253 `access.ssh` is bus-writable and grants a remote capability, which the platform-switch rule does not cover
 
-- **status**: pending
+- **status**: closed
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: codex/root-mqtt-separation-20260830
 - **createdAt**: 2026-08-29
 - **plan**: PLAN-027 (historical M4 residue; the completed plan record was pruned)
 
@@ -72,3 +72,5 @@ tests failed.
   plan of its own; this is not a documentation fix)
 - **blocks**: nothing. The exposure is not open by default, which is why this is
   P2 rather than higher.
+
+- close: Superseded by RFCT-266: the approved fix removes the entire system-management item tree from MQTT rather than deciding one SSH subtree.

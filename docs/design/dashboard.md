@@ -83,13 +83,14 @@ JavaScript** anywhere in the repository, confirmed by four separate probes
 one 7-line inline stylesheet at `routes.rs` whose own doc comment says
 *"Inline stylesheet shared by every page; no external assets."*
 
-`mosd` offers an **eleven-method, one-signal** bus surface on `com.mos.mosd1`
+`mosd` offers a **thirteen-method, one-signal** bus surface on `com.mos.mosd1`
 (`os/pkgs/mosd/mosd/src/bus.rs`): `GetSettings`, `SetSettings`, `GetState`,
-`ReportHealth`, `ForgetService`, `Reboot`, `PowerOff`, `InstallUpdate`,
-`GetUpdateState`, `MarkUpdate`, `SetTransientRootPassword`, and the
-`SettingsChanged` signal. `apid`'s own proxy declares four of those methods and
-no signal member (`os/pkgs/mosd/apid/src/bus_client.rs`); reboot and power-off
-reach `mosd` through the `com.mos.Item1` façade instead (`os/pkgs/mosd/apid/src/bus_client.rs`).
+`GetDeviceId`, `ReportHealth`, `ForgetService`, `Reboot`, `PowerOff`,
+`InstallUpdate`, `GetUpdateState`, `MarkUpdate`, `SetTransientRootPassword`,
+`RotateWireguardKey`, and the `SettingsChanged` signal. `apid`'s own proxy
+declares seven of those methods and the signal (`os/pkgs/mosd/apid/src/bus_client.rs`);
+reboot and power-off use the dedicated management methods. APID declares no
+`com.mos.Item1` proxy, and no system operation is routed through MQTT.
 
 ### 1.2 The shape of the problem, in one paragraph
 

@@ -228,8 +228,8 @@ export interface SecondFile {
  * file in /usr/share is exactly as dangerous as one in /etc.
  *
  * A second file is not automatically a defect and the oracle is explicit about
- * why: mos-mqttd.conf grants the bridge three named members on com.mos.mosd on
- * purpose. What must hold is that every rule naming the bus sits inside a
+ * why: mos-mqttd.conf grants the bridge one named identity member on
+ * com.mos.mosd on purpose. What must hold is that every rule naming the bus sits inside a
  * `<policy user=|group=>` block AND names a member -- judged per reflowed tag
  * line, which is what `policyTags` exists for.
  */
@@ -642,4 +642,3 @@ export const DBUS_CHECKS: readonly CheckCase[] = [
   ...EXT_CHECKS,
   ...BLUEZ_CHECKS,
 ]
-

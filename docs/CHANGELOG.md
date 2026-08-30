@@ -4,6 +4,27 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## MQTT restricted to application data (2026-08-30)
+
+`mos-mqttd` no longer mirrors the `com.mos.mosd` management tree. It now
+discovers only class-bearing `com.mos.ext.*` application services, validates
+their identities and item paths at the trust boundary, coordinates one
+device-wide heartbeat/full-publish lifecycle, and fails closed when two
+applications claim the same class and instance. System settings and state —
+including SSH, networking, credentials, containers and MQTT configuration —
+and power or update actions have no MQTT read, publication or write path.
+
+The bridge's sole system-management permission is the new read-only
+`com.mos.mosd1.GetDeviceId` method used to form topic addresses. APID now calls
+the dedicated `Reboot` and `PowerOff` management methods directly, and mosd's
+obsolete system `com.mos.Item1` façade and action-item implementation are gone.
+D-Bus policy and image verification pin the exact grant across all policy
+files. Application disappearance, watcher failure, invalid item paths and
+address collisions withdraw retained values rather than leaving stale state.
+Upgrades from the former bridge require operators to enumerate and delete old
+retained `N/<deviceId>/mosd/#` records; MQTT provides no wildcard retained
+delete.
+
 ## Mosd workspace tests consolidated and repository prose audited (2026-08-30)
 
 The repository-root `test/apid-api/` harness now lives at

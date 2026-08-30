@@ -1,5 +1,5 @@
 //! Integration test: mosd's service registry against a REAL private session
-//! bus (`docs/design/bus.md` §5, §6).
+//! bus (`docs/design/bus.md`, service registry).
 //!
 //! Every test here spawns a private `dbus-daemon --session` and the `mosd`
 //! binary, then claims `com.mos.*` names from this process with real zbus
@@ -30,7 +30,7 @@ use zbus::zvariant::{OwnedValue, Value};
 const SHADOW: &str = "root:!:19000:0:99999:7:::\n\
     daemon:*:19000:0:99999:7:::\n";
 
-/// The seven mandatory paths (`docs/design/bus.md` §6), restated here on
+/// The seven mandatory paths (`docs/design/bus.md`, service registry), restated here on
 /// purpose: a test that imported the daemon's own list could not notice the
 /// daemon dropping one from it.
 const MANDATORY_PATHS: [&str; 7] = [
@@ -117,7 +117,7 @@ impl FakeOther {
     }
 }
 
-/// One item's attribute dict, as `docs/design/bus.md` §1.1 shapes it.
+/// One item's attribute dict, as `docs/design/bus.md` shapes it.
 fn attrs(value: Value<'static>) -> HashMap<String, OwnedValue> {
     HashMap::from([
         (

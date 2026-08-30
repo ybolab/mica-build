@@ -374,6 +374,7 @@ changed.
 
 | Member | Kind |
 |---|---|
+| `GetDeviceId` | method (read-only identity for MQTT topic addressing) |
 | `GetSettings` / `SetSettings` | method |
 | `GetState` | method |
 | `ReportHealth` | method |
@@ -387,8 +388,10 @@ changed.
 | **`MarkUpdate`** | method |
 | **`RotateWireguardKey`** | method |
 
-(The `com.mos.Item1` façade at `/` is a separate interface with its own
-contract; see `docs/design/bus.md`.)
+mosd deliberately exports no `com.mos.Item1` façade. System settings, live
+state and actions remain on this management interface and are not MQTT
+application data. `mos-mqttd` is granted only `GetDeviceId`; APID receives the
+management permissions it needs through its own policy.
 
 `Reboot` and `PowerOff` forward to `Reboot` / `PowerOff` on
 `org.freedesktop.systemd1.Manager`. They are **not reconcilers** and do not live
@@ -423,8 +426,8 @@ recorded in the **live-state** tree under `update`: `operation`, `last_error`,
 `progress`, a curated per-slot `slots` map, `booted_slot`, `primary`, a
 `pending_not_confirmed` flag, plus `install` (`running`/`done`/`failed`, the
 bundle path, the requesting bus name, the error text on failure) and
-`last_mark`. The entry projects into the `com.mos.Item1` tree read-only, like
-all live state.
+`last_mark`. The entry is available through management `GetState`; it is not
+projected into an item tree or MQTT.
 
 - `InstallUpdate(bundle_path)` validates the path (absolute, existing regular
   file), refuses a second install while one runs, records
@@ -449,8 +452,7 @@ decide (e.g. a failed unit the operator has judged acceptable).
 
 **Resolved follow-up (recorded at M5, closed deliberately):** rebooting a slot
 RAUC has installed but that has not completed a confirmed boot **burns a boot
-attempt**, and nothing warned about it. `Reboot` (and therefore
-`/Actions/reboot`, which dispatches through the same request path) now reads
+attempt**, and nothing warned about it. `Reboot` now reads
 the slot status first and, when the bootloader's first pick is not the booted
 slot, logs the warning and records it as `power.update_warning` beside
 `last_action` — before the power call, like the rest of the power record. A

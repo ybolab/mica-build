@@ -1,33 +1,21 @@
-//! Where effects become I/O, and the daemon's event loop.
-//!
-//! [`apply`] is the only place a publication reaches a broker and the only
-//! place a write reaches the bus, which is what lets the protocol tests
-//! drive the production path with a [`Transport`] of their own.
-//!
-//! [`run`] is the rest: zbus streams, the rumqttc event loop, and the timer.
-//! It is kept deliberately thin, because it is the one part of the crate the
-//! transport double does not cover.
+//! MQTT and D-Bus I/O around the application-only protocol state machine.
 
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
+use zbus::{MatchRule, MessageStream};
 
 use crate::bridge::{Bridge, Effects, Write};
-use crate::config::{Mode, SERVICE, Timings};
-use crate::source::{BusSource, ItemSource, ItemTreeProxy, batch_of, retry_note};
-use crate::topic;
+use crate::config::{Mode, Timings};
+use crate::source::{BusSource, IdentityProxy, ItemSource, ItemTreeProxy, batch_of};
+use crate::topic::{self, Application};
 use crate::transport::{MqttTransport, Transport};
 
-/// Carry out one event's effects.
-///
-/// Publications go out first: they are the answer to whatever produced them,
-/// and a write's own consequences arrive later as an `ItemsChanged` of their
-/// own. A publication that cannot be handed to the broker aborts the batch —
-/// it means the client is gone, and the caller reconnects — while a write
-/// that the bus refuses is logged and does not: a refused write is an answer,
-/// not a failure of this process.
+/// Carry out one event's broker publications and application writes.
 pub async fn apply(
     effects: Effects,
     transport: &dyn Transport,
@@ -36,19 +24,25 @@ pub async fn apply(
     for publication in &effects.publications {
         transport.publish(publication).await?;
     }
-    for Write { path, value } in &effects.writes {
-        let outcome = source.set_value(path, value.clone()).await;
+    for Write {
+        application,
+        path,
+        value,
+    } in &effects.writes
+    {
+        let outcome = source.set_value(application, path, value.clone()).await;
         if outcome.accepted() {
-            tracing::info!(path, "write request carried through to SetValue");
+            tracing::info!(
+                application = application.bus_name(),
+                path,
+                "write request carried through to application SetValue"
+            );
         } else {
-            // Only the outcome travels; the reason stayed inside mosd
-            // (`docs/design/bus.md` §3). What a client can still act on is the
-            // persist/dispatch distinction, which is a property of the path.
             tracing::warn!(
+                application = application.bus_name(),
                 path,
                 outcome = ?outcome,
-                retry = retry_note(path),
-                "write request was not carried out"
+                "application write request was not carried out"
             );
         }
     }
@@ -65,35 +59,11 @@ pub struct Settings {
     pub timings: Timings,
 }
 
-/// Capacity of the channel between the caller and rumqttc's event loop.
 const REQUEST_CAPACITY: usize = 64;
-
-/// Backoff between reconnect attempts, applied by THIS crate because rumqttc
-/// does not apply one of its own.
-///
-/// `EventLoop::poll` reconnects the moment its network handle is gone: the
-/// first thing it does is `if self.network.is_none() { connect(...) }`, with
-/// no delay before it (`EventLoop::poll` in rumqttc 0.25.1). Its
-/// `connection_timeout` bounds a connect that HANGS and does nothing for one
-/// that is REFUSED, which returns immediately — and refused is the default
-/// case on this appliance, because the shipped unit points at
-/// `localhost:1883` until an operator configures a broker on STATE. Polling
-/// in a bare loop therefore spins as fast as the kernel can return
-/// ECONNREFUSED: a pegged core and a warning per iteration into a journal
-/// that lives on the STATE partition.
-///
-/// `mosd/mqttd/tests/protocol.rs::rumqttc_reconnects_with_no_delay_of_its_own`
-/// holds that premise. If rumqttc grows its own backoff the test fails, and
-/// this can go.
 const RECONNECT_BACKOFF_MIN: Duration = Duration::from_secs(1);
-/// The ceiling. A device whose broker is down for a day must not have stopped
-/// trying, so the backoff caps rather than gives up.
 const RECONNECT_BACKOFF_MAX: Duration = Duration::from_secs(30);
 
-/// Doubling backoff with a floor and a ceiling, reset by any successful poll.
-///
-/// Separated from the loop so the schedule is testable without a broker, a
-/// socket or a clock.
+/// Doubling broker reconnect backoff with a floor and ceiling.
 #[derive(Debug, Clone, Copy)]
 pub struct ReconnectBackoff {
     next: Duration,
@@ -108,44 +78,270 @@ impl Default for ReconnectBackoff {
 }
 
 impl ReconnectBackoff {
-    /// The delay to wait before the next reconnect attempt, and advance.
     pub fn next_delay(&mut self) -> Duration {
         let delay = self.next;
         self.next = (self.next * 2).min(RECONNECT_BACKOFF_MAX);
         delay
     }
 
-    /// Back to the floor. Called on every successful poll: a connection that
-    /// worked once must not inherit the penalty of the outage before it.
     pub fn reset(&mut self) {
         self.next = RECONNECT_BACKOFF_MIN;
     }
 }
 
-/// What the event loop feeds the bridge.
 enum Incoming {
-    /// A message on a subscribed topic.
     Message { topic: String, payload: Vec<u8> },
-    /// The broker accepted a connection: every subscription has to be made
-    /// again, because this bridge connects with a clean session.
     Connected,
 }
 
-/// Connect to the bus and the broker and run until the process is asked to
-/// stop.
+enum ApplicationEvent {
+    Items {
+        bus_name: String,
+        generation: u64,
+        items: BTreeMap<String, Option<crate::item::Item>>,
+    },
+    WatcherStopped {
+        bus_name: String,
+        generation: u64,
+        detail: String,
+    },
+}
+
+struct ActiveApplication {
+    owner: String,
+    generation: u64,
+    watcher: JoinHandle<()>,
+}
+
+impl Drop for ActiveApplication {
+    fn drop(&mut self) {
+        self.watcher.abort();
+    }
+}
+
+fn merge(mut left: Effects, right: Effects) -> Effects {
+    left.publications.extend(right.publications);
+    left.writes.extend(right.writes);
+    left
+}
+
+fn handle_application_event(
+    now: Duration,
+    bridge: &mut Bridge,
+    active: &mut BTreeMap<String, ActiveApplication>,
+    event: ApplicationEvent,
+) -> Effects {
+    match event {
+        ApplicationEvent::Items {
+            bus_name,
+            generation,
+            items,
+        } => {
+            if active
+                .get(&bus_name)
+                .is_some_and(|current| current.generation == generation)
+            {
+                bridge.on_items_changed(now, &bus_name, items)
+            } else {
+                Effects::default()
+            }
+        }
+        ApplicationEvent::WatcherStopped {
+            bus_name,
+            generation,
+            detail,
+        } => {
+            if active
+                .get(&bus_name)
+                .is_some_and(|current| current.generation == generation)
+            {
+                active.remove(&bus_name);
+                tracing::warn!(
+                    application = bus_name,
+                    error = detail,
+                    "application ItemsChanged watcher stopped; withdrawing stale MQTT state"
+                );
+                bridge.on_service_vanished(now, &bus_name)
+            } else {
+                Effects::default()
+            }
+        }
+    }
+}
+
+/// Match only ownership changes inside the extension namespace. The bus does
+/// the namespace filtering, so system services never enter the runtime's
+/// discovery path.
+fn extension_owner_rule() -> zbus::Result<MatchRule<'static>> {
+    Ok(MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender("org.freedesktop.DBus")?
+        .interface("org.freedesktop.DBus")?
+        .member("NameOwnerChanged")?
+        .arg0ns(mos_busname::EXTENSION_NAMESPACE)?
+        .build())
+}
+
+async fn watch_application(
+    connection: zbus::Connection,
+    application: Application,
+    generation: u64,
+    ready: oneshot::Sender<Result<(), String>>,
+    tx: mpsc::Sender<ApplicationEvent>,
+) -> anyhow::Result<()> {
+    let proxy = match ItemTreeProxy::builder(&connection)
+        .destination(application.bus_name().to_string())?
+        .build()
+        .await
+    {
+        Ok(proxy) => proxy,
+        Err(err) => {
+            let _ = ready.send(Err(err.to_string()));
+            return Err(err.into());
+        }
+    };
+    let mut changes = match proxy.receive_items_changed().await {
+        Ok(changes) => changes,
+        Err(err) => {
+            let _ = ready.send(Err(err.to_string()));
+            return Err(err.into());
+        }
+    };
+    let _ = ready.send(Ok(()));
+    while let Some(signal) = changes.next().await {
+        let items = batch_of(signal.args()?.items);
+        if tx
+            .send(ApplicationEvent::Items {
+                bus_name: application.bus_name().to_string(),
+                generation,
+                items,
+            })
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+    }
+    anyhow::bail!("ItemsChanged stream ended")
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn activate_application(
+    connection: &zbus::Connection,
+    source: &BusSource,
+    bridge: &mut Bridge,
+    active: &mut BTreeMap<String, ActiveApplication>,
+    next_generation: &mut u64,
+    changes_tx: &mpsc::Sender<ApplicationEvent>,
+    now: Duration,
+    application: Application,
+    owner: String,
+) -> Effects {
+    let bus_name = application.bus_name().to_string();
+    if active
+        .get(&bus_name)
+        .is_some_and(|current| current.owner == owner)
+    {
+        return Effects::default();
+    }
+
+    let effects = if active.remove(&bus_name).is_some() {
+        bridge.on_service_vanished(now, &bus_name)
+    } else {
+        Effects::default()
+    };
+
+    *next_generation = next_generation.wrapping_add(1);
+    let generation = *next_generation;
+    let watcher_application = application.clone();
+    let watcher_connection = connection.clone();
+    let watcher_tx = changes_tx.clone();
+    let stopped_tx = changes_tx.clone();
+    let stopped_application = application.clone();
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let watcher = tokio::spawn(async move {
+        if let Err(err) = watch_application(
+            watcher_connection,
+            watcher_application.clone(),
+            generation,
+            ready_tx,
+            watcher_tx,
+        )
+        .await
+        {
+            let _ = stopped_tx
+                .send(ApplicationEvent::WatcherStopped {
+                    bus_name: stopped_application.bus_name().to_string(),
+                    generation,
+                    detail: err.to_string(),
+                })
+                .await;
+        }
+    });
+
+    match ready_rx.await {
+        Ok(Ok(())) => {}
+        Ok(Err(detail)) => {
+            watcher.abort();
+            tracing::warn!(
+                application = application.bus_name(),
+                error = detail,
+                "application is present but its ItemsChanged watcher cannot be established"
+            );
+            return effects;
+        }
+        Err(_) => {
+            watcher.abort();
+            tracing::warn!(
+                application = application.bus_name(),
+                "application ItemsChanged watcher stopped before it became ready"
+            );
+            return effects;
+        }
+    }
+
+    match source.get_items(&application).await {
+        Ok(items) => {
+            active.insert(
+                bus_name,
+                ActiveApplication {
+                    owner,
+                    generation,
+                    watcher,
+                },
+            );
+            merge(effects, bridge.upsert_service(now, application, items))
+        }
+        Err(err) => {
+            watcher.abort();
+            tracing::warn!(
+                application = application.bus_name(),
+                error = %err,
+                "application is present but its Item1 tree is not readable; check its exact-name D-Bus policy grant"
+            );
+            effects
+        }
+    }
+}
+
+/// Connect to the management identity method, application services and the
+/// broker, then run until the process is asked to stop.
 pub async fn run(settings: Settings) -> anyhow::Result<()> {
-    // No class, no address: a name that yields none — not ours at all, or the
-    // bare `com.mos.ext` namespace, which names no service under it — cannot
-    // form `N/<deviceId>/<class>/...`, and the bridge refuses to start rather
-    // than substitute `ext` or an empty segment for one.
-    let class = topic::class_of(SERVICE)
-        .ok_or_else(|| anyhow::anyhow!("{SERVICE} names no class to publish under"))?;
     let connection = if settings.session_bus {
         zbus::Connection::session().await?
     } else {
         zbus::Connection::system().await?
     };
+    let identity = IdentityProxy::new(&connection).await?;
+    let device_id = identity.get_device_id().await?;
+    if !topic::valid_topic_segment(&device_id) {
+        anyhow::bail!("mosd returned a device id that cannot form an MQTT topic segment");
+    }
     let source = BusSource::new(connection.clone());
+
+    let owner_rule = extension_owner_rule()?;
+    let mut owners = Box::pin(MessageStream::for_match_rule(owner_rule, &connection, None).await?);
+    let bus = zbus::fdo::DBusProxy::new(&connection).await?;
 
     let mut options = MqttOptions::new(
         settings.client_id.clone(),
@@ -156,8 +352,6 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     let (client, mut eventloop) = AsyncClient::new(options, REQUEST_CAPACITY);
     let transport = MqttTransport::new(client);
 
-    // rumqttc's event loop is not cancel-safe, so it is never a branch of the
-    // select below: it owns a task and reports through a channel.
     let (incoming_tx, mut incoming) = mpsc::channel(REQUEST_CAPACITY);
     tokio::spawn(async move {
         let mut backoff = ReconnectBackoff::default();
@@ -192,25 +386,37 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
         }
     });
 
-    let tree = ItemTreeProxy::new(&connection).await?;
-    let mut changes = tree.receive_items_changed().await?;
-    let bus = zbus::fdo::DBusProxy::new(&connection).await?;
-    let mut owners = bus
-        .receive_name_owner_changed_with_args(&[(0, SERVICE)])
-        .await?;
-
-    let mut bridge = Bridge::new(class, settings.mode, settings.timings);
-    let mut subscribed: Vec<String> = Vec::new();
+    let (changes_tx, mut changes) = mpsc::channel(REQUEST_CAPACITY);
+    let mut active = BTreeMap::new();
+    let mut next_generation = 0u64;
+    let mut bridge = Bridge::new(device_id, settings.mode, settings.timings);
+    let mut subscribed = Vec::new();
     let start = Instant::now();
 
-    // A device that is not on the bus yet is simply an empty mirror: the
-    // NameOwnerChanged stream above brings it in when it arrives.
-    match source.get_items().await {
-        Ok(items) => {
-            let effects = bridge.seed(start.elapsed(), items);
-            apply(effects, &transport, &source).await?;
-        }
-        Err(err) => tracing::info!(error = %err, "{SERVICE} is not on the bus yet"),
+    // The ownership match is installed before this sweep, so a service that
+    // appears during it is either listed or queued as a signal (possibly
+    // both; owner equality makes the duplicate harmless).
+    for name in bus.list_names().await? {
+        let Some(application) = topic::application_of(name.as_str()) else {
+            continue;
+        };
+        let owner = match bus.get_name_owner(name.clone().into()).await {
+            Ok(owner) => owner.to_string(),
+            Err(_) => continue,
+        };
+        let effects = activate_application(
+            &connection,
+            &source,
+            &mut bridge,
+            &mut active,
+            &mut next_generation,
+            &changes_tx,
+            start.elapsed(),
+            application,
+            owner,
+        )
+        .await;
+        apply(effects, &transport, &source).await?;
     }
     resubscribe(&bridge, &transport, &mut subscribed).await?;
 
@@ -218,20 +424,37 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
         let now = start.elapsed();
         let wake = bridge.next_wake(now).map(|wake| start + wake);
         let effects = tokio::select! {
-            signal = changes.next() => {
-                let Some(signal) = signal else { return Ok(()) };
-                let items = signal.args()?.items;
-                bridge.on_items_changed(start.elapsed(), batch_of(items))
+            event = changes.recv() => {
+                let Some(event) = event else { return Ok(()) };
+                handle_application_event(start.elapsed(), &mut bridge, &mut active, event)
             }
-            change = owners.next() => {
-                let Some(change) = change else { return Ok(()) };
-                let args = change.args()?;
-                if args.new_owner().is_none() {
-                    tracing::info!("{SERVICE} left the bus; clearing its retained state");
-                    bridge.on_device_vanished(start.elapsed())
+            owner = owners.next() => {
+                let Some(owner) = owner else { return Ok(()) };
+                let owner = owner?;
+                let (name, _old_owner, new_owner) =
+                    owner.body().deserialize::<(String, String, String)>()?;
+                let Some(application) = topic::application_of(&name) else {
+                    continue;
+                };
+                if new_owner.is_empty() {
+                    if active.remove(&name).is_some() {
+                        tracing::info!(application = name, "application left the bus; clearing retained MQTT state");
+                        bridge.on_service_vanished(start.elapsed(), &name)
+                    } else {
+                        Effects::default()
+                    }
                 } else {
-                    let items = source.get_items().await.unwrap_or_default();
-                    bridge.seed(start.elapsed(), items)
+                    activate_application(
+                        &connection,
+                        &source,
+                        &mut bridge,
+                        &mut active,
+                        &mut next_generation,
+                        &changes_tx,
+                        start.elapsed(),
+                        application,
+                        new_owner,
+                    ).await
                 }
             }
             message = incoming.recv() => {
@@ -254,10 +477,6 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     }
 }
 
-/// Bring the broker's subscription set in line with what the bridge needs.
-///
-/// The set changes when the device id first arrives, when it moves, and after
-/// a reconnect drops it.
 async fn resubscribe(
     bridge: &Bridge,
     transport: &dyn Transport,
@@ -278,10 +497,81 @@ async fn resubscribe(
     Ok(())
 }
 
-/// Sleep until `deadline`, or forever when the bridge has nothing due.
 async fn sleep_until(deadline: Option<Instant>) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    use serde_json::json;
+
+    use super::{
+        ActiveApplication, ApplicationEvent, extension_owner_rule, handle_application_event,
+    };
+    use crate::bridge::Bridge;
+    use crate::config::{Mode, Timings};
+    use crate::item::Item;
+    use crate::topic;
+
+    #[test]
+    fn the_bus_filters_discovery_to_the_extension_namespace() {
+        let rule = extension_owner_rule().expect("valid extension ownership rule");
+        let rendered = rule.to_string();
+        assert!(
+            rendered.contains("arg0namespace='com.mos.ext'"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("member='NameOwnerChanged'"), "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn a_stopped_current_watcher_withdraws_stale_application_state() {
+        let application =
+            topic::application_of("com.mos.ext.sensor.example").expect("an extension application");
+        let mut bridge = Bridge::new("abc123", Mode::Full, Timings::default());
+        bridge.upsert_service(
+            Duration::ZERO,
+            application,
+            BTreeMap::from([
+                ("/DeviceInstance".to_string(), Item::new(json!(0))),
+                ("/Temperature".to_string(), Item::new(json!(21))),
+            ]),
+        );
+        bridge.on_keepalive(Duration::ZERO);
+
+        let mut active = BTreeMap::from([(
+            "com.mos.ext.sensor.example".to_string(),
+            ActiveApplication {
+                owner: ":1.42".to_string(),
+                generation: 7,
+                watcher: tokio::spawn(std::future::pending()),
+            },
+        )]);
+        let effects = handle_application_event(
+            Duration::from_secs(1),
+            &mut bridge,
+            &mut active,
+            ApplicationEvent::WatcherStopped {
+                bus_name: "com.mos.ext.sensor.example".to_string(),
+                generation: 7,
+                detail: "signal stream ended".to_string(),
+            },
+        );
+
+        assert!(active.is_empty(), "the stale mirror remained active");
+        assert!(
+            effects.publications.iter().any(|publication| {
+                publication.topic == "N/abc123/sensor/0/Temperature"
+                    && publication.payload.is_empty()
+                    && publication.retain
+            }),
+            "the stale retained value was not withdrawn"
+        );
     }
 }

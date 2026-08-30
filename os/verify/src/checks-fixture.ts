@@ -875,8 +875,8 @@ function seedMqtt(root: string, file: WriteFile): void {
   file('/etc/systemd/system/var-lib-mos.mount',
     '[Mount]\nWhat=/mnt/state/mos\nWhere=/var/lib/mos\nType=none\nOptions=bind\n')
 
-  // The grant: the same user the unit runs as, per MEMBER, and none of the
-  // four dangerous ones. Attributes wrapped across lines on purpose -- the
+  // The grant: the same user the unit runs as, with exactly the private
+  // device-identity member. Attributes wrapped across lines on purpose -- the
   // shipped file wraps them, and a line-oriented reader that did not normalise
   // tags would report a blanket grant that is not there.
   file('/usr/share/dbus-1/system.d/mos-mqttd.conf',
@@ -885,8 +885,8 @@ function seedMqtt(root: string, file: WriteFile): void {
     + '  <policy user="mos-mqttd">\n'
     + '    <allow\n'
     + '      send_destination="com.mos.mosd"\n'
-    + '      send_member="GetItems"/>\n'
-    + '    <allow send_destination="com.mos.mosd" send_member="SetValue"/>\n'
+    + '      send_interface="com.mos.mosd1"\n'
+    + '      send_member="GetDeviceId"/>\n'
     + '  </policy>\n'
     + '</busconfig>\n')
 

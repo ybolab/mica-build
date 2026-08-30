@@ -219,14 +219,12 @@ written and the daemon's rename carried it — and the match that reads it is
 `match std::env::var("APID_BUS").as_deref()`
 (`os/pkgs/mosd/apid/src/config.rs`).
 
-**Every method apid calls today — six, across two proxy traits.** Five when
-this section was last measured, six now: M6 added
-`rotate_wireguard_key`, the one operation whose answer the settings tree cannot
-produce. The `com.mos.mosd1` trait (`os/pkgs/mosd/apid/src/bus_client.rs`)
-declares five methods and one signal; the power actions are the sixth method,
-`fn set_value` (`os/pkgs/mosd/apid/src/bus_client.rs`) on the `com.mos.Item1`
-trait (`os/pkgs/mosd/apid/src/bus_client.rs`), written to one action item per
-verb and so listed once per verb below.
+**Every method apid calls today is on one management proxy.** The
+`com.mos.mosd1` trait (`os/pkgs/mosd/apid/src/bus_client.rs`) declares seven
+methods and one signal: settings read/write, live-state read, transient root
+password, WireGuard rotation, reboot, and power-off. APID declares no
+`com.mos.Item1` proxy. Application item trees belong to `com.mos.ext.*` and
+are not a system-control surface.
 
 The **Called from** column is a change in kind rather than in degree. At
 `f7cb5ba` every caller was an HTML form handler; now every one of these methods
@@ -239,36 +237,27 @@ because M4-M9 gave each of them a JSON surface rather than a second code path
 | `fn get_settings` | `fn get_settings` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | the gate's unauthenticated path and every bearer check (`fn access_settings`, `os/pkgs/mosd/apid/src/routes.rs`), the `/`, `/builtin`, `/setup`, `/login`, `/password`, `/network`, `/hostname`, `/ssh`, `/containers` and `/mqtt` handlers, and the settings read route, `resource_response(state.api.get_settings(&path).await, &path)` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn set_settings` | `fn set_settings` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn set_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | `/setup`, `/password`, `/network`, `/network/peers/*`, `/hostname`, `/ssh/enable`, `/ssh/keys/*`, `/containers/enable`, `/mqtt/enable`, `/builtin/tokens*`, and every `/api/v1/` write — twenty call sites in `os/pkgs/mosd/apid/src/routes.rs` |
 | `fn get_state` | `fn get_state` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | five literal live-state paths: `get_state("network")` (`os/pkgs/mosd/apid/src/routes.rs`), `.get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs`), `get_state("sshd")` (`os/pkgs/mosd/apid/src/routes.rs`), `get_state("container")` (`os/pkgs/mosd/apid/src/routes.rs`) and `get_state("mqtt")` (`os/pkgs/mosd/apid/src/routes.rs`), plus the health probe `get_state(HEALTH_PROBE_PATH)` (`os/pkgs/mosd/apid/src/routes.rs`) and the passthrough `get_state(&path)` (`os/pkgs/mosd/apid/src/routes.rs`), which serves any dot-path a client asks for |
-| `fn set_value` on `/Actions/reboot` | method and path constant in `os/pkgs/mosd/apid/src/bus_client.rs` | `os/pkgs/mosd/mosd/src/tree.rs` → `os/pkgs/mosd/mosd/src/actions.rs` | `POST /power/reboot` and `POST /api/v1/actions/reboot`, both through `PowerAction::Reboot => api.reboot().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
-| `fn set_value` on `/Actions/poweroff` | method and path constant in `os/pkgs/mosd/apid/src/bus_client.rs` | `os/pkgs/mosd/mosd/src/tree.rs` → `os/pkgs/mosd/mosd/src/actions.rs` | `POST /power/poweroff` and `POST /api/v1/actions/poweroff`, both through `PowerAction::PowerOff => api.power_off().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
+| `fn reboot` | `fn reboot` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn reboot` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /power/reboot` and `POST /api/v1/actions/reboot`, both through `PowerAction::Reboot => api.reboot().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
+| `fn power_off` | `fn power_off` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn power_off` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /power/poweroff` and `POST /api/v1/actions/poweroff`, both through `PowerAction::PowerOff => api.power_off().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn set_transient_root_password` | `fn set_transient_root_password` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /ssh/password`, at `app.api.set_transient_root_password(&form.password)` (`os/pkgs/mosd/apid/src/routes.rs`), and `POST /api/v1/actions/transient-root-password`, at `app.api.set_transient_root_password(&request.password)` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn rotate_wireguard_key` | `fn rotate_wireguard_key` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn rotate_wireguard_key` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /api/v1/actions/wireguard/{iface}/rotate-key` only (`os/pkgs/mosd/apid/src/routes.rs`); no HTML pane calls it |
 
 The read surface is wider than it was at `86cd669` — two live-state paths then,
 five literal ones now, plus a passthrough that reaches the whole tree — and the
-write surface is wider by every dot-path M4-M8 gave a route. The *shape* of the
-client has changed by exactly one method: six proxy methods, no new interface,
-no new object path.
+write surface is wider by every dot-path M4-M8 gave a route. The client still
+uses one interface and one object path; power is now expressed by the dedicated
+management methods rather than an item write.
 
 **What apid does not call, and cannot receive.** `com.mos.mosd1` now serves
-**twelve** methods, and apid's proxy declares five of them. The seven it does
-not declare are `async fn report_health`
-(`os/pkgs/mosd/mosd/src/bus.rs`), `async fn forget_service`
-(`os/pkgs/mosd/mosd/src/bus.rs`), `async fn reboot`
-(`os/pkgs/mosd/mosd/src/bus.rs`), `async fn power_off`
-(`os/pkgs/mosd/mosd/src/bus.rs`), `async fn install_update`
-(`os/pkgs/mosd/mosd/src/bus.rs`), `async fn get_update_state`
-(`os/pkgs/mosd/mosd/src/bus.rs`) and `async fn mark_update`
-(`os/pkgs/mosd/mosd/src/bus.rs`). Two of those are worth
-naming precisely. `ReportHealth`'s caller in the tree is the boot health gate,
-not apid. And mosd serves `Reboot` and `PowerOff` as bus methods, yet apid
-reaches the same two actions through the item tree instead: the shipped path is
-`SetValue` on `/Actions/reboot` and `/Actions/poweroff`, and the two arrive at
-the same place — *"a power action triggered here is logged and recorded under
-the same caller name as one called through `Reboot`/`PowerOff`"*
-(`os/pkgs/mosd/mosd/src/tree.rs`).
+thirteen methods, and apid's proxy declares seven. The six it does not declare
+are `GetDeviceId`, `ReportHealth`, `ForgetService`, `InstallUpdate`,
+`GetUpdateState`, and `MarkUpdate`. `GetDeviceId` is the narrow identity call
+reserved for the MQTT bridge; `ReportHealth` belongs to the boot health gate;
+the registry and update members have their own system clients. APID calls
+`Reboot` and `PowerOff` directly, so its D-Bus boundary matches its role as the
+system-management API.
 
-mosd also emits two signals, and apid subscribes to one.
+mosd emits `SettingsChanged`, and apid subscribes to it.
 `SettingsChanged(path, value_json)` fires after every successful settings write
 (`os/pkgs/mosd/mosd/src/bus.rs`), and the proxy declares the matching
 `#[zbus(signal)]` member (`os/pkgs/mosd/apid/src/bus_client.rs`): a dedicated
@@ -277,10 +266,9 @@ its own connection and feeds the auth gate's cache of the `access` subtree,
 invalidating it on every change that can touch `access`
 (`pub async fn watch_settings_changed`, `os/pkgs/mosd/apid/src/bus_client.rs`). That is apid's push notification of a
 settings change, and its consumer is internal — no change-stream API is served
-(§8.3 item 2). `ItemsChanged` fires once per accumulated batch of item-tree
-changes, declared on `com.mos.Item1` (`os/pkgs/mosd/mosd/src/tree.rs`),
-served at the service root, which is `pub const ROOT_PATH: &str = "/";`
-(`os/pkgs/mosd/mosd/src/tree.rs`); apid still declares no member for it.
+(§8.3 item 2). mosd exports no `ItemsChanged` signal or Item1 façade; those
+members are application-owned under `com.mos.ext.*` and APID does not subscribe
+to them.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
 (`os/pkgs/mosd/apid/src/settings_api.rs`), not on zbus, which is what lets the
@@ -1185,7 +1173,7 @@ disagreement is named and the choice is costed.
 |---|---|---|---|
 | `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) and `set_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs`), survives reboot and A/B update (`docs/design/access.md`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs`), in memory, written only from inside mosd by the four writers section 1.5 names |
-| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST` only | not state at all — see §2.3 |
+| `/api/v1/actions/<verb>` | dedicated `Reboot`, `PowerOff`, and `SetTransientRootPassword` methods on `com.mos.mosd1` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `os/pkgs/mosd/mosd/src/bus.rs`),
@@ -1330,7 +1318,7 @@ destroy the credential.
 | Transient root password | `POST /api/v1/actions/transient-root-password` | `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | an action, not a setting — see §2.3 |
 | Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | see §3.2 for why the API does not offer a password change in phase 1 |
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | only the `debug` image ships the shell at all (`os/pkgs/mosd/mosd-settings/src/model.rs`) |
-| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs`) | actions — see §2.3 |
+| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | dedicated `Reboot` / `PowerOff` methods on `com.mos.mosd1` | actions — see §2.3 |
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`os/pkgs/mosd/mosd/src/bus.rs`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
 | Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`os/pkgs/mosd/mosd/src/bus.rs`) | recorded *before* the action, so it survives the machine going down |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | the `health` subtree, one key per component (`os/pkgs/mosd/mosd/src/bus.rs`) | the two are different questions — see §2.4 |

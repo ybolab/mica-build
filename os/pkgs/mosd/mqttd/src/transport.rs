@@ -23,7 +23,7 @@ pub trait Transport: Send + Sync {
 ///
 /// The protocol's recovery mechanism is not the broker's: a keepalive asks
 /// for a full republish, which restores any state a dropped publication lost
-/// (`docs/design/bus.md` §10.1). Buying delivery guarantees on top of that
+/// (`docs/design/bus.md`, MQTT grammar). Buying delivery guarantees on top of that
 /// would pay for the same property twice, in broker state per device.
 const QOS: QoS = QoS::AtMostOnce;
 

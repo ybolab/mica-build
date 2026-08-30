@@ -6491,15 +6491,10 @@ async fn load_mqtt_view(app: &AppState) -> anyhow::Result<MqttView> {
     })
 }
 
-/// The consequence of this switch existing, in the terms the container pane
-/// set: the specific behaviour change, not a generic caution.
-///
-/// The switch defaults to false, so updating a fielded device to this image
-/// stops a unit that was running before the update. That is the fact an
-/// operator needs on the page. "MQTT is disabled by default" would be true and
-/// would let them read straight past it; what they have to know is that
-/// something they had is now off, and why nothing that worked has broken.
-const MQTT_UPDATE_NOTICE: &str = "Updating to this image stops the MQTT bridge until this switch is turned on. mos-mqttd ran on every earlier image and does not run here while MQTT is off. Nothing that worked has stopped working: no shipped image ever carried a broker for the bridge to reach, so the bridge has never once connected and has only ever retried.";
+/// The bridge's application-only scope. This belongs on the operator-facing
+/// pane because enabling the network service must not imply that system
+/// management settings become remote-control topics.
+const MQTT_SCOPE_NOTICE: &str = "The bridge carries only com.mos.ext.* application item trees. System management functions — including SSH, networking, credentials, containers, MQTT configuration, health, updates and power — remain available through APID and are never published or written through MQTT.";
 
 /// Why nothing on this page refuses to save.
 ///
@@ -6543,7 +6538,7 @@ fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
         html! {
             @if let Some(banner) = banner { (banner) }
             @for problem in &view.problems { (error_box(problem)) }
-            p { b { (MQTT_UPDATE_NOTICE) } }
+            p { b { (MQTT_SCOPE_NOTICE) } }
 
             h2 { "Switch" }
             p { "MQTT: " b { (if view.enabled { "enabled" } else { "disabled" }) } }

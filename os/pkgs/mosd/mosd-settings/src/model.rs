@@ -55,8 +55,8 @@ impl Default for Settings {
 /// Container engine policy, reconciled by `ContainerReconciler`.
 ///
 /// Named for the capability, not the implementation: if the engine is replaced,
-/// this key, its bus item and its apid pane are unchanged and only the binaries
-/// move. Disabled by default, and false means nothing runs — the engine is
+/// this key and its APID pane are unchanged and only the binaries move.
+/// Disabled by default, and false means nothing runs — the engine is
 /// daemonless, with no socket and no service to leave stopped, so what this
 /// switch gates is whether `/etc/containers/systemd` is bound from STATE.
 /// Unbound, that path is the empty directory inside the read-only verity root,
@@ -87,10 +87,10 @@ pub struct ContainerSettings {
 /// widened the bind made a decision and a daemon that answers by quietly not
 /// starting is one whose reason for being down cannot be read anywhere.
 ///
-/// The default is false because no shipped device has a broker, so the bridge
-/// has only ever retried; defaulting to true would ship that retry loop under a
-/// new name. The accepted cost is that fielded devices drop the bridge until
-/// the switch is set.
+/// The default is false because enabling the pair opens an application-data
+/// plane and may expose a listener outside loopback. That is an explicit
+/// operator decision, not a service every device starts merely because its
+/// binaries ship in the image.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MqttSettings {
@@ -129,9 +129,9 @@ impl Default for MqttListenSettings {
 /// Whether the broker demands credentials from a connecting client.
 ///
 /// **There is no username and no password here, and that absence is the
-/// point.** mosd publishes the settings tree over `com.mos.Item1`, so a
-/// credential in this struct would be a credential published to every client
-/// that can call `GetItems`. The broker reads its accounts from
+/// point.** System settings are management data and never enter MQTT, but
+/// credential material still does not belong in the ordinary settings value
+/// returned to authorized management clients. The broker reads its accounts from
 /// `/var/lib/mos/mqtt-broker-users.toml` on STATE instead, which is how the
 /// device password is already handled: the tree carries the policy, the STATE
 /// file carries the secret.
@@ -831,8 +831,8 @@ mod tests {
         assert_eq!(settings.mqtt.listen.port, 1883);
         assert!(!settings.mqtt.auth.enabled);
 
-        // No credential field exists in the subtree to be published over
-        // `com.mos.Item1`; the broker's accounts live in a STATE file instead.
+        // No credential field exists in this management subtree; the broker's
+        // accounts live in a mode-restricted STATE file instead.
         let mqtt = toml::to_string(&settings.mqtt).unwrap();
         assert!(!mqtt.contains("password"), "{mqtt}");
         assert!(!mqtt.contains("username"), "{mqtt}");

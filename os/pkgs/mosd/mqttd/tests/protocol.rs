@@ -23,15 +23,14 @@ use mos_mqttd::source::{ItemSource, WriteOutcome};
 use mos_mqttd::topic::{self, Address, Request};
 use mos_mqttd::transport::Transport;
 
-/// The device id the fixture tree carries at `/provisioning/deviceId`.
+/// The device identity supplied by the narrow management method.
 const DEVICE: &str = "abc123";
-/// `com.mos.mosd`'s class (`docs/design/bus.md` §5).
-const CLASS: &str = "mosd";
 /// The bus name of an extension service under the extension grammar, whose
 /// class is its **fourth** dotted component.
 const EXTENSION_SERVICE: &str = "com.mos.ext.sensor.abc123";
 /// The class [`EXTENSION_SERVICE`] must publish under.
 const EXTENSION_CLASS: &str = "sensor";
+const CLASS: &str = EXTENSION_CLASS;
 /// The extension namespace with no service under it — in the extension half
 /// of the namespace, but naming no class.
 const EXTENSION_NAMESPACE: &str = "com.mos.ext";
@@ -45,22 +44,20 @@ fn notify(path: &str) -> String {
     format!("N/{DEVICE}/{CLASS}/0{path}")
 }
 
-/// A tree shaped like the one mosd projects: the provisioning identity, two
-/// writable platform-config items, a read-only live-state item, and an action.
+/// A representative application tree. Device identity is deliberately absent:
+/// it comes from `GetDeviceId`, outside every publishable item tree.
 fn tree() -> BTreeMap<String, Item> {
     BTreeMap::from([
-        (
-            "/provisioning/deviceId".to_string(),
-            Item::new(json!(DEVICE)),
-        ),
-        ("/hostname".to_string(), Item::writable(json!("mos-abc123"))),
-        (
-            "/network/eth0/dhcp".to_string(),
-            Item::writable(json!(true)),
-        ),
-        ("/system/uptime".to_string(), Item::new(json!(42))),
-        ("/Actions/reboot".to_string(), Item::writable(json!(0))),
+        ("/DeviceInstance".to_string(), Item::new(json!(0))),
+        ("/Temperature".to_string(), Item::new(json!(21))),
+        ("/SampleCount".to_string(), Item::new(json!(42))),
+        ("/Enabled".to_string(), Item::writable(json!(true))),
+        ("/Calibration/offset".to_string(), Item::writable(json!(0))),
     ])
+}
+
+fn application() -> topic::Application {
+    topic::application_of(EXTENSION_SERVICE).expect("fixture is an extension application")
 }
 
 /// A [`Transport`] that records instead of connecting.
@@ -150,7 +147,7 @@ impl Recorder {
 /// An [`ItemSource`] that records writes instead of making them.
 struct Fake {
     items: BTreeMap<String, Item>,
-    writes: Mutex<Vec<(String, Json)>>,
+    writes: Mutex<Vec<(String, String, Json)>>,
     outcome: WriteOutcome,
 }
 
@@ -163,22 +160,32 @@ impl Fake {
         }
     }
 
-    fn writes(&self) -> Vec<(String, Json)> {
+    fn writes(&self) -> Vec<(String, String, Json)> {
         self.writes.lock().unwrap().clone()
     }
 }
 
 #[async_trait]
 impl ItemSource for Fake {
-    async fn get_items(&self) -> anyhow::Result<BTreeMap<String, Item>> {
+    async fn get_items(
+        &self,
+        application: &topic::Application,
+    ) -> anyhow::Result<BTreeMap<String, Item>> {
+        assert_eq!(application.bus_name(), EXTENSION_SERVICE);
         Ok(self.items.clone())
     }
 
-    async fn set_value(&self, path: &str, value: Json) -> WriteOutcome {
-        self.writes
-            .lock()
-            .unwrap()
-            .push((path.to_string(), value.clone()));
+    async fn set_value(
+        &self,
+        application: &topic::Application,
+        path: &str,
+        value: Json,
+    ) -> WriteOutcome {
+        self.writes.lock().unwrap().push((
+            application.bus_name().to_string(),
+            path.to_string(),
+            value.clone(),
+        ));
         self.outcome.clone()
     }
 }
@@ -192,15 +199,8 @@ struct Harness {
 
 impl Harness {
     fn new(mode: Mode) -> Self {
-        Self::with_class(CLASS, mode)
-    }
-
-    /// The same wiring for a bridge publishing under some other class — an
-    /// extension's, which is not the one its bus name's third component
-    /// carries.
-    fn with_class(class: &str, mode: Mode) -> Self {
         Self {
-            bridge: Bridge::new(class, mode, Timings::default()),
+            bridge: Bridge::new(DEVICE, mode, Timings::default()),
             transport: Recorder::default(),
             source: Fake::new(),
         }
@@ -216,8 +216,9 @@ impl Harness {
     /// The startup path: `GetItems` into the mirror, then a keepalive to open
     /// the alive window every later publication is gated on.
     async fn start(&mut self, now: Duration) {
-        let items = self.source.get_items().await.expect("seed");
-        let effects = self.bridge.seed(now, items);
+        let application = application();
+        let items = self.source.get_items(&application).await.expect("seed");
+        let effects = self.bridge.upsert_service(now, application, items);
         self.run(effects).await;
         let effects = self.bridge.on_keepalive(now);
         self.run(effects).await;
@@ -232,15 +233,15 @@ async fn verbs_map_to_notify_read_and_write() {
 
     // N: the full republish carries every item under its own topic.
     assert_eq!(
-        harness.transport.payload(&notify("/hostname")),
-        json!({"value": "mos-abc123"})
+        harness.transport.payload(&notify("/Temperature")),
+        json!({"value": 21})
     );
     assert_eq!(
-        harness.transport.payload(&notify("/network/eth0/dhcp")),
+        harness.transport.payload(&notify("/Enabled")),
         json!({"value": true})
     );
     assert_eq!(
-        harness.transport.payload(&notify("/Actions/reboot")),
+        harness.transport.payload(&notify("/Calibration/offset")),
         json!({"value": 0})
     );
     assert_eq!(
@@ -255,16 +256,14 @@ async fn verbs_map_to_notify_read_and_write() {
     harness.transport.clear();
     let effects = harness.bridge.on_items_changed(
         secs(1),
-        BTreeMap::from([(
-            "/hostname".to_string(),
-            Some(Item::writable(json!("mos-renamed"))),
-        )]),
+        EXTENSION_SERVICE,
+        BTreeMap::from([("/Temperature".to_string(), Some(Item::new(json!(22))))]),
     );
     harness.run(effects).await;
-    assert_eq!(harness.transport.topics(), vec![notify("/hostname")]);
+    assert_eq!(harness.transport.topics(), vec![notify("/Temperature")]);
     assert_eq!(
-        harness.transport.payload(&notify("/hostname")),
-        json!({"value": "mos-renamed"})
+        harness.transport.payload(&notify("/Temperature")),
+        json!({"value": 22})
     );
     assert!(
         harness.transport.published.lock().unwrap()[0].retain,
@@ -276,11 +275,11 @@ async fn verbs_map_to_notify_read_and_write() {
     let effects =
         harness
             .bridge
-            .on_request(secs(2), &format!("R/{DEVICE}/{CLASS}/0/system/uptime"), b"");
+            .on_request(secs(2), &format!("R/{DEVICE}/{CLASS}/0/SampleCount"), b"");
     harness.run(effects).await;
-    assert_eq!(harness.transport.topics(), vec![notify("/system/uptime")]);
+    assert_eq!(harness.transport.topics(), vec![notify("/SampleCount")]);
     assert_eq!(
-        harness.transport.payload(&notify("/system/uptime")),
+        harness.transport.payload(&notify("/SampleCount")),
         json!({"value": 42})
     );
 
@@ -288,36 +287,41 @@ async fn verbs_map_to_notify_read_and_write() {
     harness.transport.clear();
     let effects = harness.bridge.on_request(
         secs(3),
-        &format!("W/{DEVICE}/{CLASS}/0/network/eth0/dhcp"),
+        &format!("W/{DEVICE}/{CLASS}/0/Enabled"),
         br#"{"value": false}"#,
     );
     harness.run(effects).await;
     assert_eq!(
         harness.source.writes(),
-        vec![("/network/eth0/dhcp".to_string(), json!(false))]
+        vec![(
+            EXTENSION_SERVICE.to_string(),
+            "/Enabled".to_string(),
+            json!(false)
+        )]
     );
     assert!(harness.transport.topics().is_empty());
 
-    // An item that became invalid publishes the JSON form of the §3 sentinel,
+    // An item that became invalid publishes the JSON form of the bus sentinel,
     // so a subscriber sees the transition rather than inferring it.
     harness.transport.clear();
     let effects = harness.bridge.on_items_changed(
         secs(4),
-        BTreeMap::from([("/system/uptime".to_string(), None)]),
+        EXTENSION_SERVICE,
+        BTreeMap::from([("/SampleCount".to_string(), None)]),
     );
     harness.run(effects).await;
     assert_eq!(
-        harness.transport.payload(&notify("/system/uptime")),
+        harness.transport.payload(&notify("/SampleCount")),
         json!({ "value": Json::Null })
     );
 
     // Topics belonging to someone else are not instructions to this bridge.
     harness.transport.clear();
     for foreign in [
-        format!("R/other-device/{CLASS}/0/hostname"),
-        format!("R/{DEVICE}/sensor/0/hostname"),
-        format!("R/{DEVICE}/{CLASS}/7/hostname"),
-        notify("/hostname"),
+        format!("R/other-device/{CLASS}/0/Temperature"),
+        format!("R/{DEVICE}/meter/0/Temperature"),
+        format!("R/{DEVICE}/{CLASS}/7/Temperature"),
+        notify("/Temperature"),
     ] {
         let effects = harness.bridge.on_request(secs(5), &foreign, b"");
         assert_eq!(effects, Effects::default(), "{foreign} was acted on");
@@ -333,8 +337,9 @@ async fn keepalive_republishes_fully_and_is_rate_limited() {
 
     // Nothing at all before the first keepalive: publishing is gated on the
     // alive window.
-    let items = harness.source.get_items().await.expect("seed");
-    let effects = harness.bridge.seed(secs(0), items);
+    let application = application();
+    let items = harness.source.get_items(&application).await.expect("seed");
+    let effects = harness.bridge.upsert_service(secs(0), application, items);
     harness.run(effects).await;
     assert!(
         harness.transport.topics().is_empty(),
@@ -355,7 +360,7 @@ async fn keepalive_republishes_fully_and_is_rate_limited() {
         "a keepalive storm produced more than one full republish"
     );
     assert_eq!(
-        harness.transport.count(&notify("/hostname")),
+        harness.transport.count(&notify("/Temperature")),
         1,
         "the storm republished the tree more than once"
     );
@@ -416,15 +421,14 @@ async fn secrets_are_masked_at_publish() {
     const SECRET: &str = "s3cr3t-never-on-the-wire";
 
     let mut harness = Harness::new(Mode::Full);
-    // Neither of these can reach a real bridge — mosd redacts them
-    // structurally before they are items at all (`docs/design/bus.md` §8) —
-    // which is exactly why the second control is tested against them.
+    // Applications are responsible for their own source-side redaction; the
+    // bridge's structural masking is an independent last line of defence.
     harness
         .source
         .items
-        .insert("/access/ssh/hash".to_string(), Item::new(json!(SECRET)));
+        .insert("/Credentials/hash".to_string(), Item::new(json!(SECRET)));
     harness.source.items.insert(
-        "/wifi/client/networks".to_string(),
+        "/Networks".to_string(),
         Item::new(json!([
             {"ssid": "home", "psk": SECRET},
             {"ssid": "field", "password_hash": SECRET, "nested": {"passwordHash": SECRET}},
@@ -435,12 +439,12 @@ async fn secrets_are_masked_at_publish() {
     // A secret-named path is the secret, so it publishes as invalid rather
     // than as a masked value.
     assert_eq!(
-        harness.transport.payload(&notify("/access/ssh/hash")),
+        harness.transport.payload(&notify("/Credentials/hash")),
         json!({ "value": Json::Null })
     );
     // A secret-named key inside a value is stripped, and its siblings are not.
     assert_eq!(
-        harness.transport.payload(&notify("/wifi/client/networks")),
+        harness.transport.payload(&notify("/Networks")),
         json!({"value": [
             {"ssid": "home"},
             {"ssid": "field", "nested": {}},
@@ -462,7 +466,7 @@ async fn secrets_are_masked_at_publish() {
 /// so the refusal cannot be an accident of the fixture.
 #[tokio::test]
 async fn read_only_mode_refuses_writes() {
-    let topic = format!("W/{DEVICE}/{CLASS}/0/network/eth0/dhcp");
+    let topic = format!("W/{DEVICE}/{CLASS}/0/Enabled");
     let payload = br#"{"value": false}"#;
 
     let mut read_only = Harness::new(Mode::ReadOnly);
@@ -487,7 +491,11 @@ async fn read_only_mode_refuses_writes() {
     full.run(effects).await;
     assert_eq!(
         full.source.writes(),
-        vec![("/network/eth0/dhcp".to_string(), json!(false))],
+        vec![(
+            EXTENSION_SERVICE.to_string(),
+            "/Enabled".to_string(),
+            json!(false)
+        )],
         "the same request must reach the bus in full mode"
     );
     assert_eq!(
@@ -498,19 +506,14 @@ async fn read_only_mode_refuses_writes() {
 
 /// A refused write puts nothing on the wire.
 ///
-/// `SetValue`'s result codes are deliberately **not** part of this bridge's
-/// grammar: `docs/design/bus.md` §10.1 has no acknowledgement topic, and §3
-/// keeps the reason inside mosd. What a client observes is the item — a
-/// successful write arrives as the `N` its `ItemsChanged` produces, and a
-/// successful action arrives as the forced re-zero of §7 — so a refusal is
-/// exactly the absence of that, and nothing here invents a topic to say so.
+/// `SetValue` result codes are deliberately not part of the MQTT grammar. A
+/// client observes a successful write through the application's subsequent
+/// `ItemsChanged`; a refusal is the absence of that update.
 #[tokio::test]
 async fn a_refused_write_publishes_nothing() {
     for (path, outcome) in [
-        // The two halves of the persist/dispatch distinction, which this
-        // bridge draws by path rather than by result code.
-        ("/network/eth0/dhcp", WriteOutcome::Refused { code: -2 }),
-        ("/Actions/reboot", WriteOutcome::UnknownObject),
+        ("/Enabled", WriteOutcome::Refused { code: -2 }),
+        ("/Calibration/offset", WriteOutcome::UnknownObject),
     ] {
         let mut harness = Harness::new(Mode::Full);
         harness.source.outcome = outcome;
@@ -526,7 +529,7 @@ async fn a_refused_write_publishes_nothing() {
 
         assert_eq!(
             harness.source.writes(),
-            vec![(path.to_string(), json!(1))],
+            vec![(EXTENSION_SERVICE.to_string(), path.to_string(), json!(1))],
             "the request must still reach SetValue"
         );
         assert!(
@@ -536,9 +539,9 @@ async fn a_refused_write_publishes_nothing() {
     }
 }
 
-/// (e) A device that leaves the bus has its retained state cleared.
+/// (e) An application that leaves the bus has its retained state cleared.
 #[tokio::test]
-async fn a_vanished_device_clears_its_retained_state() {
+async fn a_vanished_application_clears_its_retained_state() {
     let mut harness = Harness::new(Mode::Full);
     harness.start(secs(0)).await;
     let published: Vec<String> = harness
@@ -550,7 +553,9 @@ async fn a_vanished_device_clears_its_retained_state() {
     assert_eq!(published.len(), 5, "the fixture tree published five items");
 
     harness.transport.clear();
-    let effects = harness.bridge.on_device_vanished(secs(1));
+    let effects = harness
+        .bridge
+        .on_service_vanished(secs(1), EXTENSION_SERVICE);
     harness.run(effects).await;
 
     let mut cleared = harness.transport.topics();
@@ -575,13 +580,11 @@ async fn a_vanished_device_clears_its_retained_state() {
     }
 }
 
-/// A device that vanishes while the bridge is silent still owes those clears,
+/// An application that vanishes while the bridge is silent still owes clears,
 /// and pays them at the next keepalive.
 ///
 /// The alive gate makes the vanish itself silent, and the vanish takes the
-/// device id with it — so the clears have to survive both, or the retained
-/// state is stranded on the broker under an address nothing will publish to
-/// again.
+/// so the pending deletes must survive until the next keepalive.
 #[tokio::test]
 async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
     let mut harness = Harness::new(Mode::Full);
@@ -595,7 +598,9 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
 
     // The window shuts, and only then does the device leave the bus.
     harness.transport.clear();
-    let effects = harness.bridge.on_device_vanished(secs(120));
+    let effects = harness
+        .bridge
+        .on_service_vanished(secs(120), EXTENSION_SERVICE);
     harness.run(effects).await;
     assert!(
         harness.transport.topics().is_empty(),
@@ -623,7 +628,7 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
             .transport
             .payload(&format!("N/{DEVICE}/full_publish_completed")),
         json!({"value": 0}),
-        "the republish of a vanished device carries no items"
+        "the republish after the application vanished carries no items"
     );
 }
 
@@ -637,13 +642,12 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
 /// answer was ruled out.
 #[tokio::test]
 async fn an_extension_publishes_under_its_class_and_never_under_ext() {
-    let class = topic::class_of(EXTENSION_SERVICE).expect("a com.mos.* bus name");
-    let mut harness = Harness::with_class(class, Mode::Full);
+    let mut harness = Harness::new(Mode::Full);
     harness.start(secs(0)).await;
 
     let published = harness.transport.topics();
     assert!(
-        published.contains(&format!("N/{DEVICE}/{EXTENSION_CLASS}/0/hostname")),
+        published.contains(&format!("N/{DEVICE}/{EXTENSION_CLASS}/0/Temperature")),
         "{EXTENSION_SERVICE} did not publish under its class {EXTENSION_CLASS}; saw {published:?}"
     );
     assert!(
@@ -654,19 +658,176 @@ async fn an_extension_publishes_under_its_class_and_never_under_ext() {
     );
 }
 
-/// And the system half does not move: `com.mos.mosd` still publishes under
-/// `mosd`, the third component, exactly as it did before the rule learnt
-/// about extensions.
-#[tokio::test]
-async fn a_system_service_still_publishes_under_its_third_component() {
-    let class = topic::class_of("com.mos.mosd").expect("a com.mos.* bus name");
-    let mut harness = Harness::with_class(class, Mode::Full);
-    harness.start(secs(0)).await;
-
-    let published = harness.transport.topics();
+/// System services are management-plane names and cannot enter the MQTT
+/// application bridge. The positive extension case above and these negative
+/// system cases pin the namespace boundary in both directions.
+#[test]
+fn system_services_cannot_be_mqtt_applications() {
+    for service in ["com.mos.mosd", "com.mos.network", "com.example.thing"] {
+        assert!(
+            topic::application_of(service).is_none(),
+            "{service} crossed the application-only MQTT boundary"
+        );
+    }
     assert!(
-        published.contains(&format!("N/{DEVICE}/mosd/0/hostname")),
-        "com.mos.mosd stopped publishing under mosd; saw {published:?}"
+        topic::application_of(EXTENSION_SERVICE).is_some(),
+        "the boundary denied a real extension along with system services"
+    );
+}
+
+#[test]
+fn invalid_application_paths_never_reach_mqtt_topics() {
+    let mut bridge = Bridge::new(DEVICE, Mode::Full, Timings::default());
+    bridge.upsert_service(
+        secs(0),
+        application(),
+        BTreeMap::from([
+            ("/DeviceInstance".to_string(), Item::new(json!(0))),
+            ("relative".to_string(), Item::new(json!(1))),
+            ("/wild/#".to_string(), Item::new(json!(2))),
+        ]),
+    );
+    let topics: Vec<String> = bridge
+        .on_keepalive(secs(0))
+        .publications
+        .into_iter()
+        .map(|publication| publication.topic)
+        .collect();
+
+    assert!(topics.contains(&"N/abc123/sensor/0/DeviceInstance".to_string()));
+    assert!(
+        topics
+            .iter()
+            .all(|topic| !topic.contains("relative") && !topic.contains('#')),
+        "an extension-controlled invalid object path reached MQTT: {topics:?}"
+    );
+    assert!(
+        bridge
+            .on_items_changed(
+                secs(1),
+                EXTENSION_SERVICE,
+                BTreeMap::from([("/bad/+".to_string(), Some(Item::new(json!(3))))]),
+            )
+            .publications
+            .is_empty(),
+        "an invalid ItemsChanged key reached MQTT"
+    );
+}
+
+#[test]
+fn mqtt_topic_identity_and_item_path_inputs_are_strict() {
+    for segment in [
+        "",
+        "device/other",
+        "device+",
+        "device#",
+        "device\0other",
+        "device\nother",
+    ] {
+        assert!(
+            !topic::valid_topic_segment(segment),
+            "invalid MQTT segment was accepted: {segment:?}"
+        );
+    }
+    assert!(topic::valid_topic_segment(DEVICE));
+
+    for request in [
+        format!("R/{DEVICE}/{CLASS}/0/not-an-object-path"),
+        format!("W/{DEVICE}/{CLASS}/0/bad-path"),
+    ] {
+        assert_eq!(
+            topic::parse(&request, DEVICE),
+            None,
+            "invalid D-Bus path was accepted: {request}"
+        );
+    }
+}
+
+#[test]
+fn multiple_applications_share_one_device_liveness_protocol() {
+    let sensor = application();
+    let meter = topic::application_of("com.mos.ext.meter.abc123").expect("meter application");
+    let mut bridge = Bridge::new(DEVICE, Mode::Full, Timings::default());
+    bridge.upsert_service(
+        secs(0),
+        sensor,
+        BTreeMap::from([
+            ("/DeviceInstance".to_string(), Item::new(json!(0))),
+            ("/Temperature".to_string(), Item::new(json!(21))),
+        ]),
+    );
+    bridge.upsert_service(
+        secs(0),
+        meter,
+        BTreeMap::from([
+            ("/DeviceInstance".to_string(), Item::new(json!(2))),
+            ("/Power".to_string(), Item::new(json!(900))),
+        ]),
+    );
+
+    let full = bridge.on_keepalive(secs(0));
+    let topics: Vec<&str> = full
+        .publications
+        .iter()
+        .map(|publication| publication.topic.as_str())
+        .collect();
+    assert!(topics.contains(&"N/abc123/sensor/0/Temperature"));
+    assert!(topics.contains(&"N/abc123/meter/2/Power"));
+    assert_eq!(
+        topics
+            .iter()
+            .filter(|topic| **topic == "N/abc123/full_publish_completed")
+            .count(),
+        1,
+        "a device-wide full publish has one completion marker"
+    );
+    assert_eq!(
+        bridge
+            .on_tick(secs(3))
+            .publications
+            .iter()
+            .filter(|publication| publication.topic == "N/abc123/heartbeat")
+            .count(),
+        1,
+        "multiple applications must not duplicate the device heartbeat"
+    );
+}
+
+#[test]
+fn a_class_instance_collision_fails_closed_for_publication_and_control() {
+    let first = application();
+    let second = topic::application_of("com.mos.ext.sensor.second").expect("sensor application");
+    let items = BTreeMap::from([
+        ("/DeviceInstance".to_string(), Item::new(json!(0))),
+        ("/Enabled".to_string(), Item::writable(json!(true))),
+    ]);
+    let mut bridge = Bridge::new(DEVICE, Mode::Full, Timings::default());
+    bridge.upsert_service(secs(0), first, items.clone());
+    bridge.on_keepalive(secs(0));
+
+    let collision = bridge.upsert_service(secs(1), second, items);
+    assert!(
+        collision
+            .publications
+            .iter()
+            .all(|publication| publication.payload.is_empty()),
+        "introducing a collision may clear old retained state but must publish neither claimant"
+    );
+    assert!(
+        bridge
+            .on_request(secs(2), "W/abc123/sensor/0/Enabled", br#"{"value": false}"#,)
+            .writes
+            .is_empty(),
+        "an ambiguous write must not reach either application"
+    );
+
+    let restored = bridge.on_service_vanished(secs(5), "com.mos.ext.sensor.second");
+    assert!(
+        restored
+            .publications
+            .iter()
+            .any(|publication| publication.topic == "N/abc123/sensor/0/Enabled"),
+        "the remaining application must become publishable when the collision clears"
     );
 }
 
@@ -674,7 +835,7 @@ async fn a_system_service_still_publishes_under_its_third_component() {
 /// extension's address parses back to the request that built it, and a topic
 /// addressed under `ext` is not one of ours.
 #[test]
-fn an_extension_topic_round_trips_and_ext_is_not_ours() {
+fn an_extension_topic_round_trips() {
     let address = Address {
         device_id: DEVICE.to_string(),
         class: topic::class_of(EXTENSION_SERVICE)
@@ -683,23 +844,26 @@ fn an_extension_topic_round_trips_and_ext_is_not_ours() {
         instance: 0,
     };
 
-    let read = address.item_topic(topic::READ, "/system/uptime");
+    let read = address.item_topic(topic::READ, "/SampleCount");
+    assert_eq!(read, format!("R/{DEVICE}/{EXTENSION_CLASS}/0/SampleCount"));
     assert_eq!(
-        read,
-        format!("R/{DEVICE}/{EXTENSION_CLASS}/0/system/uptime")
-    );
-    assert_eq!(
-        topic::parse(&read, &address),
+        topic::parse(&read, DEVICE),
         Some(Request::Read {
-            path: "/system/uptime".to_string()
+            class: EXTENSION_CLASS.to_string(),
+            instance: 0,
+            path: "/SampleCount".to_string()
         })
     );
 
-    let under_ext = format!("R/{DEVICE}/ext/0/system/uptime");
+    let under_ext = format!("R/{DEVICE}/ext/0/SampleCount");
     assert_eq!(
-        topic::parse(&under_ext, &address),
-        None,
-        "a topic addressed to the namespace rather than the class was accepted as ours"
+        topic::parse(&under_ext, DEVICE),
+        Some(Request::Read {
+            class: "ext".to_string(),
+            instance: 0,
+            path: "/SampleCount".to_string()
+        }),
+        "the grammar parses an address before the application bridge decides whether a service owns it"
     );
 }
 
@@ -708,12 +872,8 @@ fn an_extension_topic_round_trips_and_ext_is_not_ours() {
 ///
 /// `com.mos.ext` is in the extension namespace but names no service under it,
 /// so there is no `<class>` segment to build `N/<deviceId>/<class>/...` from.
-/// The bridge's gate is [`topic::class_of`] returning `None`: `runtime::run`
-/// takes the class from it and fails startup on `None` before it opens either
-/// connection. That call passes a `const SERVICE`, so the refusal cannot be
-/// driven from a test without editing the constant — what is asserted here is
-/// the value the refusal keys on, and that neither wrong answer is produced
-/// in its place.
+/// The bridge's gate is [`topic::application_of`] returning `None`, so the
+/// classless name can never become a service mirror.
 #[test]
 fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
     let class = topic::class_of(EXTENSION_NAMESPACE);
@@ -733,6 +893,7 @@ fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
         Some(""),
         "an empty class segment would publish on N/<deviceId>//<instance>/<path>"
     );
+    assert!(topic::application_of(EXTENSION_NAMESPACE).is_none());
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-//! `mos-mqttd` — the MQTT bridge over the `com.mos.Item1` item tree.
+//! `mos-mqttd` — the MQTT bridge over extension application item trees.
 //!
 //! Everything the daemon does is in the library ([`mos_mqttd`]); this is the
 //! command line, the logger and the call into [`mos_mqttd::runtime::run`].
@@ -7,7 +7,7 @@ use clap::Parser;
 use mos_mqttd::config::{Mode, Timings};
 use mos_mqttd::runtime::{self, Settings};
 
-/// The MQTT data-publishing bridge for the mos item tree.
+/// The MQTT data-publishing bridge for `com.mos.ext.*` applications.
 #[derive(Debug, Parser)]
 #[command(name = "mos-mqttd", version)]
 struct Args {

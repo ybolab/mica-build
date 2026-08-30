@@ -1,5 +1,5 @@
 //! `mos-busname` — the one rule that turns a `com.mos.*` bus name into the
-//! `<class>` the rest of the system keys off (`docs/design/bus.md` §5).
+//! `<class>` the rest of the system keys off (`docs/design/bus.md`).
 //!
 //! Two grammars share one namespace:
 //!
@@ -10,8 +10,9 @@
 //!
 //! So the class is the third dotted component of a system name and the fourth
 //! of an extension name; a reader that takes the third unconditionally
-//! publishes `com.mos.ext.sensor.abc123` under the class `ext`. The MQTT bridge
-//! and mosd's service registry both need that distinction, so it lives here
+//! could publish `com.mos.ext.sensor.abc123` under the class `ext`. The MQTT
+//! bridge accepts only the extension origin, while mosd's registry describes
+//! both origins; both consumers need that distinction, so it lives here
 //! once. The bare namespace `com.mos.ext` is extension origin with no class —
 //! measurably ownable by an unprivileged uid, so calling it system-origin would
 //! be origin spoofing, and it has no fourth component to name; [`parse`]
@@ -67,7 +68,8 @@ pub enum Origin {
 pub struct BusName<'a> {
     /// System or extension — which of the two grammars matched.
     pub origin: Origin,
-    /// The class: `docs/design/bus.md` §5's registry entry, and the
+    /// The class recorded by the service registry and used in MQTT application
+    /// addresses, and the
     /// `<class>` segment of an MQTT topic. Never `ext` for an extension.
     ///
     /// `None` for the bare [`EXTENSION_NAMESPACE`] and only for it: a name in
@@ -108,7 +110,8 @@ pub struct BusName<'a> {
 /// from.
 ///
 /// The MQTT bridge and mosd's service registry both read this rule: the bridge
-/// refuses to address a service it cannot name a class for, and the registry's
+/// additionally refuses every non-extension origin and cannot address a
+/// service with no class, while the registry's
 /// conformance gap falls out of the type rather than being re-derived from the
 /// prefix. Recording that gap is the registry's job, not this crate's.
 ///

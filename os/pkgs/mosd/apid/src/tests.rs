@@ -3275,27 +3275,25 @@ fn set_unit_state(state: &mut serde_json::Value, unit: &str, active_state: &str)
 }
 
 #[tokio::test]
-async fn the_mqtt_pane_states_the_behaviour_change_not_a_generic_warning() {
+async fn the_mqtt_pane_states_the_application_only_boundary() {
     let (router, _fake) = test_app(mqtt_tree(false));
     let cookie = login(&router, "hunter2secret").await;
     let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
 
-    // The container pane's rule, applied here: state the consequence, not a
-    // caution. Each clause separately, because a page that said only "MQTT is
-    // disabled by default" would pass a check for the switch's name while
-    // leaving out the thing an operator has to act on -- that a unit which was
-    // running before the update is not running now.
+    // Each clause pins part of the security boundary. A vague "application
+    // data only" notice could otherwise drift back into publishing a system
+    // subtree without making the operator-facing contract fail.
     assert!(
-        body.contains("stops the MQTT bridge"),
-        "the pane must say the update stops a unit that was running: {body}"
+        body.contains("com.mos.ext.* application item trees"),
+        "the pane must name the positive application namespace: {body}"
     );
     assert!(
-        body.contains("mos-mqttd"),
-        "the pane must name the unit that stops, or the operator cannot look for it: {body}"
+        body.contains("SSH, networking, credentials, containers, MQTT configuration, health, updates and power"),
+        "the pane must name the system concerns excluded from MQTT: {body}"
     );
     assert!(
-        body.contains("only ever retried"),
-        "the pane must say why nothing that worked has broken: {body}"
+        body.contains("never published or written through MQTT"),
+        "the pane must state that both directions are excluded: {body}"
     );
 }
 

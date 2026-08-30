@@ -39,14 +39,12 @@ const MQTTD_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqttd.servi
 const BROKER_BIN = '/usr/bin/mos-mqtt-broker'
 const BROKER_UNIT = '/usr/lib/systemd/system/mos-mqtt-broker.service'
 const BROKER_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service'
+const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
 
 /**
- * Members of com.mos.mosd the bridge must never be granted.
- *
- * Reboot and PowerOff are the appliance; SetSettings rewrites the persisted
- * tree; SetTransientRootPassword writes a root credential into /etc/shadow.
+ * The complete system-service member set the bridge may hold.
  */
-const FORBIDDEN_MEMBERS = ['Reboot', 'PowerOff', 'SetSettings', 'SetTransientRootPassword'] as const
+const ALLOWED_SYSTEM_MEMBERS = ['GetDeviceId'] as const
 
 /** `${prefix}: ${path} is a regular file`, as check_mqttd and check_mqtt_broker say it. */
 function prefixedRegularFile(id: string, prefix: string, path: string, why: string): CheckCase {
@@ -123,6 +121,94 @@ function accounts(root: string): Account[] {
       const f = l.split(':')
       return { name: f[0] ?? '', uid: f[2] ?? '', gid: f[3] ?? '', shell: f[6] ?? '' }
     })
+}
+
+interface IdentitySystemRule {
+  readonly path: string
+  readonly tag: string
+}
+
+/** D-Bus groups that apply to `user`, as both names and numeric gids. */
+function identityGroups(root: string, user: string): Set<string> {
+  const account = accounts(root).find(candidate => candidate.name === user)
+  const groups = new Set<string>()
+  if (account !== undefined) groups.add(account.gid)
+  try {
+    for (const line of readFileSync(join(root, '/etc/group'), 'utf8').split('\n')) {
+      if (line.trim() === '') continue
+      const [name = '', , gid = '', members = ''] = line.split(':')
+      const listed = members.split(',').includes(user)
+      if (listed || (account !== undefined && gid === account.gid)) {
+        groups.add(name)
+        groups.add(gid)
+      }
+    }
+  }
+  catch {
+    // The separate passwd/group existence checks explain a malformed image.
+  }
+  return groups
+}
+
+/**
+ * Every allow on com.mos.mosd that can apply to the bridge identity, across
+ * both policy directories. Looking only at mos-mqttd.conf would miss a grant
+ * added by a second package -- dbus-daemon unions all of the files. Default,
+ * mandatory and at-console blocks are treated conservatively as applicable;
+ * an image check cannot prove the runtime console classification will keep a
+ * network daemon out of either at-console branch.
+ */
+function identitySystemRules(root: string, user: string): IdentitySystemRule[] {
+  const account = accounts(root).find(candidate => candidate.name === user)
+  const userSelectors = new Set([user, ...(account === undefined ? [] : [account.uid]), '*'])
+  const groupSelectors = identityGroups(root, user)
+  groupSelectors.add('*')
+  const found: IdentitySystemRule[] = []
+
+  for (const dir of POLICY_DIRS) {
+    let names: string[]
+    try {
+      names = readdirSync(join(root, dir)).sort()
+    }
+    catch {
+      continue
+    }
+    for (const name of names) {
+      const path = `${dir}/${name}`
+      let text: string
+      try {
+        text = readFileSync(join(root, path), 'utf8')
+      }
+      catch {
+        continue
+      }
+      let applies = false
+      for (const tag of policyRuleLines(text)) {
+        if (tag.startsWith('<policy')) {
+          const policyUser = tag.match(/\buser="([^"]*)"/)?.[1]
+          const policyGroup = tag.match(/\bgroup="([^"]*)"/)?.[1]
+          const context = tag.match(/\bcontext="([^"]*)"/)?.[1]
+          const atConsole = tag.match(/\bat_console="([^"]*)"/)?.[1]
+          applies = context === 'default'
+            || context === 'mandatory'
+            || atConsole !== undefined
+            || (policyUser !== undefined && userSelectors.has(policyUser))
+            || (policyGroup !== undefined && groupSelectors.has(policyGroup))
+          continue
+        }
+        if (tag.startsWith('</policy')) {
+          applies = false
+          continue
+        }
+        if (!applies || !tag.startsWith('<allow')) continue
+        if (tag.includes('send_destination="com.mos.mosd"')
+          || tag.includes('receive_sender="com.mos.mosd"')) {
+          found.push({ path, tag })
+        }
+      }
+    }
+  }
+  return found
 }
 
 /**
@@ -310,8 +396,8 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
       if (sends.length === 0) {
         return [verdict('mqttd-grant-per-member', false,
           `mqttd: there is no grant on com.mos.mosd at all in ${MQTTD_POLICY}. com.mos.mosd is `
-          + `root-only, so the bridge reaches nothing: it connects to the broker, subscribes, and `
-          + `publishes an empty tree forever`)]
+          + `root-only, so the bridge cannot obtain the device identity and exits before it can `
+          + `address any application topic`)]
       }
       return [verdict(
         'mqttd-grant-per-member',
@@ -321,37 +407,48 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
             + 'at large'
           : `mqttd: a grant on com.mos.mosd in ${MQTTD_POLICY} names no member:`
             + `${blanket.map(r => ` [${r}]`).join('')}. That is the whole interface — `
-            + `${FORBIDDEN_MEMBERS.join(', ')} included — handed to the only daemon in the image with `
+            + `settings, state, power, updates and credentials included — handed to the daemon with `
             + `a network socket`,
       )]
     },
   },
 
   {
-    // ...and none of the members it does name is one of the dangerous ones. A
-    // compromise of the network-facing daemon would otherwise become device
-    // control, and mosd's own root-only policy keeps passing because it cannot
-    // see a grant made in another file.
+    // ...and the complete system grant is exactly GetDeviceId on
+    // com.mos.mosd1. A path-taking read or any other member would cross the
+    // system/application boundary.
     id: 'mqttd-no-forbidden-members',
     shell: {
-      pass: 'mqttd: the granted members (',
-      fail: 'grants the bridge',
+      pass: 'mqttd: the only system grant is com.mos.mosd1.GetDeviceId',
+      fail: 'the only permitted system grant is com.mos.mosd1.GetDeviceId',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const members = [...new Set(policyRules(root, MQTTD_POLICY)
-        .flatMap(l => [...l.matchAll(/send_member="([^"]*)"/g)].map(m => m[1] as string)))]
+      const user = unitValue(root, MQTTD_UNIT, 'User')
+      const rules = identitySystemRules(root, user)
+      const members = [...new Set(rules
+        .flatMap(rule => [...rule.tag.matchAll(/(?:send|receive)_member="([^"]*)"/g)]
+          .map(m => m[1] as string)))]
         .sort()
-      const danger = FORBIDDEN_MEMBERS.filter(m => members.includes(m))
+      const exact = rules.length === 1
+        && rules[0]?.path === MQTTD_POLICY
+        && rules[0]?.tag.includes('send_destination="com.mos.mosd"')
+        && rules[0]?.tag.includes('send_interface="com.mos.mosd1"')
+        && rules[0]?.tag.includes('send_member="GetDeviceId"')
+        && !rules[0]?.tag.includes('receive_sender=')
+      const ok = exact
+        && members.length === ALLOWED_SYSTEM_MEMBERS.length
+        && ALLOWED_SYSTEM_MEMBERS.every(m => members.includes(m))
       return [verdict(
         'mqttd-no-forbidden-members',
-        danger.length === 0,
-        danger.length === 0
-          ? `mqttd: the granted members (${members.join(' ')}) include none of `
-            + `${FORBIDDEN_MEMBERS.join(', ')}`
-          : `mqttd: ${MQTTD_POLICY} grants the bridge${danger.map(m => ` ${m}`).join('')}. A `
-            + `compromise of the network-facing daemon becomes device control, and mosd's own `
-            + `root-only policy keeps passing because it cannot see a grant made in another file`,
+        ok,
+        ok
+          ? 'mqttd: the only system grant is com.mos.mosd1.GetDeviceId; settings, state, '
+            + 'power, updates and the application Item1 interface remain unreachable'
+          : `mqttd: the '${user}' identity receives system members (${members.join(' ')}) through `
+            + `${rules.map(rule => `${rule.path} [${rule.tag}]`).join(' ')}; the only permitted `
+            + `system grant across all D-Bus policy files is com.mos.mosd1.GetDeviceId in `
+            + MQTTD_POLICY,
       )]
     },
   },

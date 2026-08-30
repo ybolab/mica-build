@@ -17,7 +17,7 @@ device's settings and drives systemd to match them.
 | OS core | Debian trixie with systemd as PID 1, packed into a squashfs with a dm-verity hash tree over it | `os/rootfs/` |
 | Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `os/pkgs/mosd/mosd/`, `docs/design/mosd.md` |
 | API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `os/pkgs/mosd/apid/`, `docs/design/api.md` |
-| Telemetry | `mos-mqttd` bridges the item tree to MQTT; `mos-mqtt-broker` is the on-device broker | `os/pkgs/mosd/mqttd/`, `os/pkgs/mosd/broker/` |
+| Application data | `mos-mqttd` bridges only `com.mos.ext.*` application item trees to MQTT; `mos-mqtt-broker` is the on-device broker | `os/pkgs/mosd/mqttd/`, `os/pkgs/mosd/broker/`, `docs/design/bus.md` |
 | A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `os/pkgs/rauc/`, `docs/design/uboot-ab-handshake.md` |
 | Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `os/pkgs/rauc-sign/`, `docs/design/release-signing.md` |
 | BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `os/boards/`, `docs/design/boards.md` |
@@ -28,14 +28,15 @@ device's settings and drives systemd to match them.
 ```
                   settings tree (TOML, STATE partition)
                                   |
-                     mosd  --  com.mos.mosd, system bus
-     _____________________________|______________________________
-    |            |             |            |          |         |
-  apid      reconcilers   RAUC control  mos-mqttd    sshd     podman
-  HTTPS     wifi, sshd,   InstallUpdate  item ->    OpenSSH   Quadlet
-  API +     hostname,     GetUpdateState  MQTT      driven    units,
-  dashboard network,      MarkUpdate      bridge    by mosd   off by
-            mqtt, container                                   default
+                     mosd  --  com.mos.mosd1, system bus
+     _____________________________|_________________________
+    |            |             |          |        |        |
+  apid      reconcilers   RAUC control   sshd    podman   GetDeviceId
+  HTTPS     wifi, sshd,   InstallUpdate OpenSSH  Quadlet      |
+  API +     hostname,     GetUpdateState driven   units,  mos-mqttd -- MQTT
+  dashboard network,      MarkUpdate     by mosd   off        |
+            mqtt, container                       by default  |
+                                                   com.mos.ext.* apps
 ```
 
 - **systemd** is PID 1. Every piece above is a unit, and mosd starts, stops and
@@ -65,9 +66,14 @@ device's settings and drives systemd to match them.
   tunnel's private key is drawn on the device into a `networkd-secrets/`
   directory beside the settings file, never into the settings tree
   (`docs/design/mosd.md` §5.3a).
-- **`mos-mqttd`** publishes the item tree to a broker and applies writes back
-  through mosd; `mos-mqtt-broker` is the local broker, built from `rumqttd` as
-  a library rather than shipped as a third daemon (`os/pkgs/mosd/Cargo.toml`).
+- **`mos-mqttd`** dynamically publishes only class-bearing `com.mos.ext.*`
+  application item trees and, in full mode, applies writes to the exact
+  application service. Its only call to mosd is the read-only `GetDeviceId`
+  used for topic addressing. SSH, networking, credentials, containers, MQTT
+  configuration, health, updates and power stay on the management plane and
+  never become MQTT items (`docs/design/bus.md`). `mos-mqtt-broker` is the
+  local broker, built from `rumqttd` as a library
+  (`os/pkgs/mosd/Cargo.toml`).
 - **Containers** run through podman with the Quadlet generator. While the
   `container.enabled` switch is false — the default — `/etc/containers/systemd`
   is not mounted and no container unit exists (`docs/design/containers.md`).

@@ -76,7 +76,7 @@ impl HostnameExecutor for Hostnamed {
     /// and the device's hostname was right anyway, because
     /// mos-apply-hostname.service sets it from the file at boot. So the
     /// failure was invisible in every way except the log: what did not work
-    /// was CHANGING the hostname at runtime, through apid or the bus or MQTT.
+    /// was CHANGING the hostname at runtime through the management API or bus.
     ///
     /// mosd writes the file itself -- the same thing the sshd reconciler does
     /// with its drop-in -- and asks hostnamed only for the transient hostname,

@@ -1,5 +1,5 @@
 [Unit]
-Description=mos MQTT bridge (publishes the com.mos.Item1 item tree)
+Description=mos MQTT bridge (publishes extension application item trees)
 Documentation=file:///usr/share/doc/mos/bus.md
 After=network.target mosd.service
 Wants=mosd.service
@@ -44,29 +44,26 @@ RestartSec=5
 
 # IDENTITY: a STATIC system user, not DynamicUser.
 #
-# com.mos.mosd is a ROOT-ONLY bus name (mosd/dist/com.mos.mosd.conf): the
-# default context DENIES both send_destination and receive_sender. Under
-# DynamicUser=yes this bridge is refused by that policy, and it starts,
-# connects to the broker and publishes nothing at all -- a failure with no
-# error at the point of cause.
+# com.mos.mosd is a ROOT-ONLY bus name. The bridge receives one exact grant
+# for GetDeviceId; application packages grant their own exact com.mos.ext.*
+# destination. A D-Bus grant therefore needs a stable identity to name.
 #
-# A D-Bus grant needs an identity to name. <policy user="..."> resolves its
-# user when dbus-daemon reads the file at startup, which is before any dynamic
-# user for this unit exists, so a DynamicUser name can be granted nothing: the
-# rule parses, loads, and matches nothing. A rule that cannot match is worse
-# than a missing rule -- it reads, in a diff and in a review, exactly like a
-# working grant.
+# <policy user="..."> resolves its user when dbus-daemon reads the file at
+# startup, which is before any dynamic user for this unit exists, so a
+# DynamicUser name can be granted nothing: the rule parses, loads, and matches
+# nothing. A rule that cannot match is worse than a missing rule -- it reads,
+# in a diff and in a review, exactly like a working grant.
 #
-# So: a static system user with a pinned uid/gid, granted exactly three
-# members in mosd/dist/mos-mqttd.conf. Everything DynamicUser would provide
+# So: a static system user with a pinned uid/gid, granted exactly one system
+# member in mosd/dist/mos-mqttd.conf. Everything DynamicUser would provide
 # implicitly is stated explicitly below instead.
 User=mos-mqttd
 Group=mos-mqttd
 
-# Sandboxing. The bridge is a pure bus client with one outbound TCP
-# connection: it owns no state, writes no files, execs nothing, and needs
+# Sandboxing. The bridge discovers application bus names and has one outbound
+# TCP connection: it owns no state, writes no files, execs nothing, and needs
 # neither root nor any capability. It is the most exposed daemon in the image
-# -- the only one that speaks to the network -- and is confined accordingly.
+# and is confined accordingly.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

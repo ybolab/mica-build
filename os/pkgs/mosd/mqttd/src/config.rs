@@ -2,8 +2,7 @@
 
 use std::time::Duration;
 
-/// Whether write requests are carried through to the bus
-/// (`docs/design/bus.md` §10.1).
+/// Whether application write requests are carried through to the bus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum Mode {
     /// `N` only. `W` topics are refused and never reach `SetValue`, and the
@@ -15,9 +14,8 @@ pub enum Mode {
     /// The default: a bridge nobody configured cannot be a control path.
     #[default]
     ReadOnly,
-    /// `W` topics become `SetValue` on the addressed item — which is
-    /// sufficient for all control, since actions are writable items
-    /// (`docs/design/bus.md` §7).
+    /// `W` topics become `SetValue` on the uniquely addressed application
+    /// item. The extension-only admission boundary still applies.
     Full,
 }
 
@@ -28,7 +26,7 @@ impl Mode {
     }
 }
 
-/// The protocol's three time constants (`docs/design/bus.md` §10.1).
+/// The protocol's three time constants (`docs/design/bus.md`, MQTT grammar).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timings {
     /// How long one keepalive keeps the bridge publishing. Every publication
@@ -56,21 +54,3 @@ impl Default for Timings {
         }
     }
 }
-
-/// The bus name the bridge publishes for.
-///
-/// One service today. mosd's service registry is what turns this into a set,
-/// and when it does the change is here and in the runtime's subscription
-/// bookkeeping — the grammar already carries `<class>/<instance>` for exactly
-/// that reason.
-pub const SERVICE: &str = "com.mos.mosd";
-
-/// The item the device id is read from: `provisioning.deviceId` in the
-/// settings tree, which is the slash path below on the bus (§4).
-pub const DEVICE_ID_PATH: &str = "/provisioning/deviceId";
-
-/// The `/Actions/<verb>` prefix (`docs/design/bus.md` §7). The bridge treats
-/// these paths as ordinary items in every respect but one — see
-/// [`crate::source::WriteOutcome`] on why a refused dispatch is not a refused
-/// write.
-pub const ACTIONS_PREFIX: &str = "/Actions/";

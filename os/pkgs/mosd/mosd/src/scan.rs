@@ -1,5 +1,5 @@
 //! The service registry: what mosd knows about every OTHER `com.mos.*`
-//! service on the bus (`docs/design/bus.md` §5 and §6).
+//! service on the bus (`docs/design/bus.md`, service registry).
 //!
 //! mosd subscribes to `org.freedesktop.DBus`'s `NameOwnerChanged` under
 //! `arg0namespace='com.mos'`, so the bus does the filtering and mosd is never
@@ -10,7 +10,7 @@
 //!
 //! # Best-effort, never refused
 //!
-//! A service that does not conform to §6 is published anyway, with a
+//! A service that does not conform to the registry contract is published anyway, with a
 //! `conformance` object naming what is missing and exactly one `warn!` on the
 //! way in. Nothing here refuses, drops or panics on a malformed service: the
 //! difference between best-effort and silently degraded is that the registry
@@ -53,7 +53,7 @@ use crate::bus::{BUS_NAME, MosdService};
 pub const STATE_KEY: &str = "services";
 
 /// The seven paths every `com.mos.*` service must publish from the moment it
-/// claims its name (`docs/design/bus.md` §6). Absence is a conformance gap,
+/// claims its name (`docs/design/bus.md`, service registry). Absence is a conformance gap,
 /// never a reason to refuse the service.
 const MANDATORY_PATHS: [&str; 7] = [
     "/Mgmt/ProcessName",
@@ -100,7 +100,7 @@ struct Probe {
     instance: Option<i64>,
 }
 
-/// What a service does NOT do that `docs/design/bus.md` §6 says it must.
+/// What a service does NOT do that the `docs/design/bus.md` registry contract requires.
 ///
 /// Every field is a gap, and an all-false `Conformance` is a conforming
 /// service. The JSON only ever carries the gaps ([`Self::to_json`]), so an
@@ -268,7 +268,7 @@ impl Registry {
     /// as it goes.
     ///
     /// A collision is two CONNECTED services of the same class publishing the
-    /// same instance (`docs/design/bus.md` §6: unique within the class), and
+    /// same instance (`docs/design/bus.md`: unique within the class), and
     /// **both** sides are marked — neither is more at fault than the other,
     /// and neither is dropped or shadowed, because a registry that hid one of
     /// them would hide the very fact an operator needs. Services with no class
@@ -326,13 +326,7 @@ fn as_i64(value: &Value<'_>) -> Option<i64> {
 /// object at the root, a service that answers nothing — is the same registry
 /// fact: no `com.mos.Item1`, which is published as a conformance gap.
 async fn probe(connection: &Connection, name: &str) -> Probe {
-    let call = connection.call_method(
-        Some(name),
-        crate::tree::ROOT_PATH,
-        Some("com.mos.Item1"),
-        "GetItems",
-        &(),
-    );
+    let call = connection.call_method(Some(name), "/", Some("com.mos.Item1"), "GetItems", &());
     let items = match tokio::time::timeout(PROBE_TIMEOUT, call).await {
         Ok(Ok(reply)) => {
             let body = reply.body();
@@ -418,7 +412,7 @@ async fn record_appearance(
             device_instance = probe.instance.is_some(),
             missing_paths = ?conformance.missing_paths,
             no_class = conformance.no_class,
-            "service does not conform to docs/design/bus.md §6; \
+            "service does not conform to docs/design/bus.md service registry contract; \
              registered best-effort"
         );
     }

@@ -1,8 +1,8 @@
 //! Payload encoding, and the publish-side secret mask.
 //!
 //! A payload is `{"value": ...}` with optional `min`/`max`
-//! (`docs/design/bus.md` §10.1). An invalid item is `{"value": null}`: JSON is
-//! where the empty-array sentinel of §3 becomes expressible, and `null` is
+//! (`docs/design/bus.md`, MQTT grammar). An invalid item is `{"value": null}`:
+//! JSON is where the empty-array sentinel becomes expressible, and `null` is
 //! what it becomes. The zero-length payload is a different thing entirely —
 //! see [`CLEAR`].
 
@@ -12,15 +12,13 @@ use crate::item::Item;
 
 /// Key names whose value never leaves this process, matched at any depth.
 ///
-/// The list and the rule are `docs/design/bus.md` §8's, restated in the
-/// bridge because D6 asks for masking at publish as defence in depth. mosd
-/// redacts these structurally before they are items at all, so in practice
-/// this finds nothing — which is the point of a second control, not an
-/// argument against it.
+/// Applications own source-side redaction. This independent publish-side
+/// mask prevents common credential-shaped values from crossing MQTT even
+/// when an application tree is implemented incorrectly.
 pub const SECRET_KEYS: [&str; 4] = ["password_hash", "passwordHash", "psk", "hash"];
 
 /// The zero-length payload, published retained to **delete** a retained
-/// topic. It is how a vanished device's state is cleared off the broker, and
+/// topic. It is how a vanished application's state is cleared off the broker, and
 /// it means "there is nothing here", where `{"value": null}` means "this item
 /// is here and currently invalid".
 pub const CLEAR: &[u8] = b"";
@@ -35,10 +33,8 @@ pub fn path_is_secret(path: &str) -> bool {
 /// Strip every secret-named key from `value`, at any depth, including inside
 /// arrays.
 ///
-/// Mirrors `mosd::tree::redact` deliberately: the same rule applied at the
-/// other end of the wire. Arrays are recursed into because that is where the
-/// `psk` fields live (`docs/design/bus.md` §8), and a whole array is one
-/// item's value in the projection this bridge mirrors.
+/// Arrays are recursed into because one application item may carry an array
+/// of objects containing credential fields.
 pub fn mask(value: &mut Json) {
     match value {
         Json::Object(map) => {
@@ -83,8 +79,7 @@ pub fn value_only(value: Json) -> Vec<u8> {
         .into_bytes()
 }
 
-/// `{"value": null}` — the item is present but invalid (`docs/design/bus.md`
-/// §3).
+/// `{"value": null}` — the item is present but invalid.
 pub fn invalid() -> Vec<u8> {
     value_only(Json::Null)
 }
@@ -94,8 +89,8 @@ pub fn invalid() -> Vec<u8> {
 ///
 /// Strict on purpose: the grammar has exactly one payload shape, and a
 /// request the bridge cannot read is dropped rather than guessed at. There is
-/// no error channel back to the publisher (§3's rule that only the code
-/// travels, applied to the wire), so the alternative to dropping is writing
+/// no error channel back to the publisher, so the alternative to dropping is
+/// writing
 /// something nobody asked for.
 pub fn decode(payload: &[u8]) -> Option<Json> {
     match serde_json::from_slice::<Json>(payload).ok()? {

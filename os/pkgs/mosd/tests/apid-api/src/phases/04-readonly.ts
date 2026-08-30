@@ -79,14 +79,14 @@ const PANES: readonly Pane[] = [
     markerName: "the Containers pane's root notice",
   },
   {
-    // The update notice, which `mqtt_page` renders unconditionally --
-    // `p { b { (MQTT_UPDATE_NOTICE) } }` sits outside every branch, unlike the
+    // The scope notice, which `mqtt_page` renders unconditionally --
+    // `p { b { (MQTT_SCOPE_NOTICE) } }` sits outside every branch, unlike the
     // switch and listener blocks whose text follows the current setting. A
     // marker that moved with the setting would make this pane's presence
     // depend on its state.
     path: "/mqtt",
-    marker: "Updating to this image stops the MQTT bridge until this switch is turned on.",
-    markerName: "the MQTT pane's update notice",
+    marker: "The bridge carries only com.mos.ext.* application item trees.",
+    markerName: "the MQTT pane's application-only scope notice",
   },
 ];
 

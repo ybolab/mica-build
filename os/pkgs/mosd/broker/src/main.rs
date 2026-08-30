@@ -23,7 +23,7 @@ use rumqttd::{Broker, ConnectionSettings, RouterConfig, ServerSettings};
 
 mod config;
 
-/// The MQTT broker for the mos item tree and its local clients.
+/// The MQTT broker for mos application item trees and local clients.
 #[derive(Debug, Parser)]
 #[command(name = "mos-mqtt-broker", version)]
 struct Args {

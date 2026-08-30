@@ -30,12 +30,10 @@
 
 ## 2. 那个开关
 
-设置树里的 `container.enabled`，**默认 `false`**。它在 item 树能到达的所有地方都**可读**——
-内建界面的 `/containers`、D-Bus 的 `com.mos.Item1`、以及 MQTT——但**只在一个地方可写**：
-mosd 的 `SetSettings`。`container` 刻意不在 mosd 的可写子树列表里，
-所以 `/container/enabled` 投影为只读，对它 `SetValue` 返回 `-2`，
-任何 MQTT `W` 主题都翻不动它。这是这一类平台开关的规则，不是这一个的疏漏：
-`mqtt` 因为同样的理由处在同样的位置。
+管理设置树里的 `container.enabled`，**默认 `false`**。它只通过 APID 读取和写入，
+APID 调用 mosd 已校验的 `GetSettings` / `SetSettings` 方法。mosd 不再导出系统
+Item1 投影，`mos-mqttd` 也只接纳 `com.mos.ext.*` 应用，因此容器开关没有任何
+MQTT 读写路径。`mqtt.enabled` 同样留在管理面：系统生命周期开关不属于应用数据。
 
 `false` 意味着**什么都不跑**：`/etc/containers/systemd` 不被挂载，
 所以它就是只读根里的一个空目录，生成器找不到文件，也就不存在任何容器 unit。

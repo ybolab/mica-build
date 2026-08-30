@@ -34,15 +34,12 @@ connect to if you were expecting one.
 
 ## 2. The switch
 
-`container.enabled` in the settings tree, `false` by default. It **reads**
-everywhere the item tree reaches — the built-in UI at `/containers`, D-Bus as
-`com.mos.Item1`, and MQTT — but it is **written in exactly one place**: mosd's
-`SetSettings`. `container` is deliberately absent from mosd's writable-subtree
-list, so `/container/enabled` projects read-only, `SetValue` on it answers `-2`,
-and no MQTT `W` topic can flip it. That is the rule for the class of platform
-switches and not a gap in this one: `mqtt` sits in the same position for the
-same reason, and `docs/design/bus.md` §11.6 records the test a switch must pass
-before it becomes writable on the item tree.
+`container.enabled` in the management settings tree, `false` by default. It is
+read and written through APID, which calls mosd's validated `GetSettings` and
+`SetSettings` methods. mosd exports no system Item1 projection, and
+`mos-mqttd` admits only `com.mos.ext.*` applications, so container enablement
+has no MQTT read or write path. `mqtt.enabled` is kept on the same management
+side for the same reason: a system lifecycle switch is not application data.
 
 Turn it on from the `/containers` pane in the built-in UI, or through the API
 route the pane itself uses, which takes a bearer token and no other credential:

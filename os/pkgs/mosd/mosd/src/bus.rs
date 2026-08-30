@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use mosd_settings::{Settings, SettingsError, Store, json_path_get};
 use serde_json::Value;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::Mutex;
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
@@ -75,9 +75,6 @@ pub struct MosdService {
     /// `Arc` so the install background task can record its outcome into the
     /// live-state tree after the bus call that spawned it has returned.
     inner: Arc<Mutex<Inner>>,
-    /// Bumped after every mutation of either tree; the `com.mos.Item1` façade
-    /// (`crate::tree`) watches it to project changes onto the bus.
-    changed: watch::Sender<u64>,
     /// The service registry the scan task fills ([`crate::scan`]), shared so
     /// that `ForgetService` drops an entry from the same table the scan
     /// publishes from — one table, so the bus surface and the live-state tree
@@ -131,7 +128,6 @@ impl MosdService {
             installing: Arc::new(AtomicBool::new(false)),
             shadow_path,
             inner: Arc::new(Mutex::new(Inner { settings, state })),
-            changed: watch::channel(0).0,
             registry: None,
             wireguard: Arc::new(NoRotation),
         }
@@ -185,30 +181,14 @@ impl MosdService {
             root.insert(crate::scan::STATE_KEY.to_string(), services);
         }
         drop(inner);
-        self.mark_changed();
     }
 
-    /// Subscribe to tree-change notifications for the item façade. The
-    /// receiver coalesces: marks arriving while unread collapse into one wake.
-    pub fn subscribe_changes(&self) -> watch::Receiver<u64> {
-        self.changed.subscribe()
-    }
-
-    /// Clones of the two trees the item façade projects: the settings tree
-    /// rendered to JSON, and the live-state tree.
+    /// Clones of settings and live state for unit-test assertions.
+    #[cfg(test)]
     pub async fn trees(&self) -> (Value, Value) {
         let inner = self.inner.lock().await;
         let settings = inner.settings.get("").unwrap_or(Value::Null);
         (settings, inner.state.clone())
-    }
-
-    /// Record that a tree mutation completed; called after the mutation so an
-    /// observer that snapshots on the mark always sees the finished write.
-    ///
-    /// Reachable from [`crate::actions`] as well, whose forced re-zero
-    /// (`docs/design/bus.md` §7) is a change no tree write marks.
-    pub(crate) fn mark_changed(&self) {
-        self.changed.send_modify(|generation| *generation += 1);
     }
 
     /// Log a power request from `sender` and record it in the live-state tree
@@ -231,7 +211,6 @@ impl MosdService {
             root.insert("power".to_string(), Value::Object(entry));
         }
         drop(inner);
-        self.mark_changed();
     }
 
     /// The unconfirmed-slot warning a reboot should carry, or `None`.
@@ -339,12 +318,10 @@ impl MosdService {
         let mut inner = self.inner.lock().await;
         rauc::update_entry(&mut inner.state).insert("install".into(), started);
         drop(inner);
-        self.mark_changed();
 
         let rauc_client = Arc::clone(&self.rauc);
         let inner = Arc::clone(&self.inner);
         let installing = Arc::clone(&self.installing);
-        let changed = self.changed.clone();
         let sender = sender.to_string();
         tokio::spawn(async move {
             let result = rauc_client.install_bundle(&bundle).await;
@@ -382,7 +359,6 @@ impl MosdService {
             // admitted at this point sees `done`/`failed`, never a stale
             // `running` beside an idle flag.
             installing.store(false, Ordering::Release);
-            changed.send_modify(|generation| *generation += 1);
         });
         Ok(())
     }
@@ -405,7 +381,6 @@ impl MosdService {
         query.merge_into(entry);
         let rendered = Value::Object(entry.clone()).to_string();
         drop(inner);
-        self.mark_changed();
         Ok(rendered)
     }
 
@@ -442,7 +417,6 @@ impl MosdService {
             }),
         );
         drop(inner);
-        self.mark_changed();
         Ok((slot_name, message))
     }
 
@@ -450,11 +424,8 @@ impl MosdService {
     /// typed tree, persist it atomically, then re-apply every reconciler whose
     /// subtree overlaps `path` and record each result in the live-state tree.
     ///
-    /// The ONE settings-write path inside the daemon. `SetSettings` below and
-    /// the `com.mos.Item1` façade's `SetValue` ([`crate::tree`]) both come
-    /// through here, so the two write paths cannot diverge
-    /// (`docs/design/bus.md` §1.2). On any error nothing is stored, nothing is
-    /// persisted and no reconciler runs.
+    /// The one settings-write path inside the daemon. On any error nothing is
+    /// stored, nothing is persisted and no reconciler runs.
     ///
     /// # Errors
     ///
@@ -474,7 +445,6 @@ impl MosdService {
             }
         }
         drop(inner);
-        self.mark_changed();
         Ok(())
     }
 
@@ -488,7 +458,6 @@ impl MosdService {
             record(&mut inner.state, reconciler.name(), result);
         }
         drop(inner);
-        self.mark_changed();
     }
 }
 
@@ -509,9 +478,7 @@ fn record(state: &mut Value, name: &str, result: anyhow::Result<Value>) {
 
 /// Unique bus name of the caller, or `"(unknown)"` on an unnamed message.
 ///
-/// Shared with the item façade ([`crate::tree`]), so a power action triggered
-/// through `/Actions/<verb>` is attributed exactly as one called through
-/// `Reboot`/`PowerOff` is.
+/// Used by management methods so audit state names the exact D-Bus caller.
 pub(crate) fn sender_of<'a>(header: &'a Header<'a>) -> &'a str {
     header.sender().map_or("(unknown)", |name| name.as_str())
 }
@@ -606,6 +573,23 @@ fn transient_to_fdo(err: anyhow::Error) -> fdo::Error {
 
 #[zbus::interface(name = "com.mos.mosd1")]
 impl MosdService {
+    /// The stable device identifier used to address application MQTT topics.
+    ///
+    /// This deliberately exposes one fact rather than granting the
+    /// network-facing bridge `GetSettings`: a path-taking settings method
+    /// would also let it read SSH, networking, credentials and every future
+    /// system setting.
+    async fn get_device_id(&self) -> fdo::Result<String> {
+        self.inner
+            .lock()
+            .await
+            .settings
+            .provisioning
+            .device_id
+            .clone()
+            .ok_or_else(|| fdo::Error::Failed("device identity is not provisioned".to_string()))
+    }
+
     /// JSON-encoded settings value at dot-path `path` (`""` = whole tree).
     async fn get_settings(&self, path: &str) -> Result<String, SettingsFault> {
         let inner = self.inner.lock().await;
@@ -644,8 +628,8 @@ impl MosdService {
     /// level — is computed here, at read time, and grafted onto the served
     /// view. Reading it per call is what keeps a cached seconds-counter from
     /// ever being served stale; grafting rather than storing keeps the stored
-    /// tree reserved for pushed facts, so a read never manufactures a change
-    /// edge for the item façade ([`crate::tree`]) to project.
+    /// tree reserved for pushed facts, so a read never manufactures stored
+    /// state.
     ///
     /// Two failure paths, under two names: [`NOT_FOUND_ERROR`] when the
     /// dot-path resolves to nothing, and fdo `Failed` when the `/proc/uptime`
@@ -727,7 +711,6 @@ impl MosdService {
             }
         }
         drop(inner);
-        self.mark_changed();
         tracing::info!(component, status, detail, "health report recorded");
         Ok(())
     }

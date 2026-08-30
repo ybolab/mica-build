@@ -1,9 +1,11 @@
 //! The topic grammar: `N|R|W/<deviceId>/<class>/<instance>/<path>`
-//! (`docs/design/bus.md` §10.1).
+//! (`docs/design/bus.md`, MQTT grammar).
 //!
 //! Three verbs, and the direction is part of the verb: `N` is what the bridge
 //! publishes, `R` and `W` are what it subscribes to. Building and parsing both
 //! live here so the two can never drift apart.
+
+use mos_busname::Origin;
 
 use crate::item::Item;
 
@@ -27,16 +29,52 @@ pub const FULL_PUBLISH_COMPLETED: &str = "full_publish_completed";
 /// alive window holds.
 pub const HEARTBEAT: &str = "heartbeat";
 
+/// A bus service admitted to the MQTT application data plane.
+///
+/// Construction is deliberately private to [`application_of`]. A bridge can
+/// therefore carry only a class-bearing extension name; a system name cannot
+/// be smuggled in by pairing it with an application-looking class string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Application {
+    bus_name: String,
+    class: String,
+}
+
+impl Application {
+    /// The exact well-known D-Bus name to read and write.
+    pub fn bus_name(&self) -> &str {
+        &self.bus_name
+    }
+
+    /// The MQTT class derived by the shared bus-name parser.
+    pub fn class(&self) -> &str {
+        &self.class
+    }
+}
+
+/// Admit one D-Bus name to the MQTT application data plane.
+///
+/// Only `com.mos.ext.<class>[.<suffix>]` is accepted. System-origin names,
+/// names outside the mos namespace, and the classless `com.mos.ext`
+/// namespace are all refused. This positive application allowlist is the
+/// MQTT system/application security boundary.
+pub fn application_of(bus_name: &str) -> Option<Application> {
+    let parsed = mos_busname::parse(bus_name)?;
+    if parsed.origin != Origin::Extension {
+        return None;
+    }
+    Some(Application {
+        bus_name: bus_name.to_string(),
+        class: parsed.class?.to_string(),
+    })
+}
+
 /// The three topic segments between the verb and the item path.
 ///
-/// `class` is the publishing service's class (`docs/design/bus.md` §5), and
-/// the two halves of the namespace put it in different places: it is the
-/// third component of a system name `com.mos.<class>[.<suffix>]` — `mosd` for
-/// the management core — and the fourth of an extension name
-/// `com.mos.ext.<class>[.<suffix>]`, so an extension publishes under its
-/// class and never under `ext`. [`class_of`] is that one rule.
-/// `instance` is the service's `/DeviceInstance` (§6), `0` until a service
-/// publishes one.
+/// `class` is the admitted application's class: the fourth component of
+/// `com.mos.ext.<class>[.<suffix>]`, so an application publishes under its
+/// class and never under `ext`. `instance` is the service's
+/// `/DeviceInstance`, or `0` when a non-conforming application omits one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
     pub device_id: String,
@@ -80,22 +118,28 @@ pub enum Request {
     /// `R/<deviceId>/keepalive`.
     Keepalive,
     /// `R/<deviceId>/<class>/<instance>/<path>`.
-    Read { path: String },
+    Read {
+        class: String,
+        instance: u64,
+        path: String,
+    },
     /// `W/<deviceId>/<class>/<instance>/<path>`.
-    Write { path: String },
+    Write {
+        class: String,
+        instance: u64,
+        path: String,
+    },
 }
 
 /// The request `topic` carries, or `None` when it is not one of ours.
 ///
-/// "Not ours" is every topic addressed to another device, another class,
-/// another instance, or published under a verb this bridge does not accept —
-/// including `N`, which is the bridge's own output and never an instruction
-/// to it. A malformed topic is silently not-ours too: there is no error
-/// channel back to a publisher, so the only sound answer is to ignore it.
-pub fn parse(topic: &str, address: &Address) -> Option<Request> {
+/// This function validates the grammar and device identity. The bridge then
+/// resolves class and instance against its admitted application set; a valid
+/// topic with no unique application target is ignored there.
+pub fn parse(topic: &str, device_id: &str) -> Option<Request> {
     let mut segments = topic.split('/');
     let verb = segments.next()?;
-    if segments.next()? != address.device_id {
+    if segments.next()? != device_id {
         return None;
     }
     let rest: Vec<&str> = segments.collect();
@@ -105,22 +149,55 @@ pub fn parse(topic: &str, address: &Address) -> Option<Request> {
     let [class, instance, path @ ..] = rest.as_slice() else {
         return None;
     };
-    if *class != address.class
-        || instance.parse::<u64>().ok()? != address.instance
-        || path.is_empty()
-    {
+    let instance = instance.parse::<u64>().ok()?;
+    if path.is_empty() {
         return None;
     }
     let path = format!("/{}", path.join("/"));
+    if !valid_item_path(&path) {
+        return None;
+    }
     match verb {
-        READ => Some(Request::Read { path }),
-        WRITE => Some(Request::Write { path }),
+        READ => Some(Request::Read {
+            class: (*class).to_string(),
+            instance,
+            path,
+        }),
+        WRITE => Some(Request::Write {
+            class: (*class).to_string(),
+            instance,
+            path,
+        }),
         _ => None,
     }
 }
 
-/// The `class` a `com.mos.*` bus name publishes under
-/// (`docs/design/bus.md` §5), or `None` when the name is not one: the third
+/// Whether `segment` can safely occupy one MQTT topic level.
+///
+/// `/` would add an unintended level, `+` and `#` are subscription wildcards,
+/// and control characters are not accepted in identifiers. Device identities
+/// originate in persistent settings, so validating at the I/O edge prevents
+/// corrupted or migrated state from changing the topic grammar.
+pub fn valid_topic_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && !segment
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '/' | '+' | '#'))
+}
+
+/// Whether an application item key is a real D-Bus object path.
+///
+/// Application `GetItems` replies cross a trust boundary: an extension can
+/// return arbitrary strings even though `SetValue` can address only object
+/// paths. Rejecting invalid keys here also prevents MQTT wildcard characters
+/// from reaching a publish topic and making the transport tear down the
+/// bridge.
+pub fn valid_item_path(path: &str) -> bool {
+    zbus::zvariant::ObjectPath::try_from(path).is_ok()
+}
+
+/// The `class` a `com.mos.*` bus name declares, or `None` when the name is not
+/// one: the third
 /// component of a system name `com.mos.<class>[.<suffix>]`, the fourth of an
 /// extension name `com.mos.ext.<class>[.<suffix>]`.
 ///
@@ -133,8 +210,8 @@ pub fn parse(topic: &str, address: &Address) -> Option<Request> {
 /// that is not ours at all and the bare `com.mos.ext` namespace, which is in
 /// the extension half but names no service under it, both yield `None`. The
 /// bridge's only question is which class to address a service by, and neither
-/// answers it — so [`runtime::run`](crate::runtime::run) refuses to start
-/// rather than invent one. Telling the two apart matters to mosd's service
+/// answers it — so [`application_of`] refuses to admit it rather than invent
+/// one. Telling the two apart matters to mosd's service
 /// registry, which records the second as a conformance gap; it reads
 /// `mos_busname` directly and gets the distinction from the type.
 pub fn class_of(bus_name: &str) -> Option<&str> {
@@ -143,9 +220,9 @@ pub fn class_of(bus_name: &str) -> Option<&str> {
 
 /// The `/DeviceInstance` an item map declares, or `0` when it declares none.
 ///
-/// `/DeviceInstance` is `docs/design/bus.md` §6's mandatory path and is
-/// `[proposed]` — mosd publishes no such item today, so the default is what
-/// every mos service resolves to until §6 lands.
+/// `/DeviceInstance` is mandatory for applications. The `0` fallback keeps a
+/// non-conforming application observable, while collision handling prevents
+/// ambiguous reads or writes.
 pub fn instance_of(items: &std::collections::BTreeMap<String, Item>) -> u64 {
     items
         .get("/DeviceInstance")
