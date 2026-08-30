@@ -7,6 +7,7 @@ templates and its own archives, and it emits nothing outside that set:
 | Producer | Compiles | Emits |
 | --- | --- | --- |
 | `mosd` | `mosd`, `apid` | `mosd`, `mos-apid` |
+| `mqtt` | `mos-mqttd`, `mos-mqtt-broker` | `mos-mqttd`, `mos-mqtt-broker` |
 
 One driver runs them all:
 
@@ -15,8 +16,9 @@ bash os/pkgs/mosd/hack/build-deb.sh --producer <name> --arch <amd64|arm64>
   -> _out/debs/<arch>/pool/<package>_<version>_<arch>.deb
 ```
 
-`make os-deb-mosd` runs the `mosd` producer for both architectures.
-`bash os/build-env/deb/repo.sh --arch <arch>` then indexes the pool.
+`make os-deb-mosd` and `make os-deb-mqtt` run one producer each for both
+architectures. `bash os/build-env/deb/repo.sh --arch <arch>` then indexes the
+pool, which is shared: a producer deletes only its own archives from it.
 
 ## Why the split
 
@@ -42,6 +44,14 @@ four-binary build satisfy the assertion with binaries nobody asked for.
 3. `os/pkgs/mosd/deb/<producer>/control/<package>.control` per package, against
    the field rules in `os/build-env/deb/README.md`.
 4. A `make` target beside `os-deb-mosd`.
+
+The unit files reach the Dockerfile through the `DIST_CONTEXTS` the register
+names, because they are not all in one directory: `mosd.service` and
+`apid.service` are in `dist/`, while `mos-mqttd.service` and
+`mos-mqtt-broker.service` sit beside their own crates in `mqttd/dist/` and
+`broker/dist/`. The `mqtt` producer therefore takes two contexts,
+`mqttd-dist` and `broker-dist`, rather than one pointed at their only common
+parent -- which is the workspace root, cargo target trees and all.
 
 `copyright` is shared by every package of every producer here and is written
 once, in this directory. It is installed per package as
@@ -114,7 +124,27 @@ normally expect configuration a user edits and wants preserved across upgrades,
 but this root filesystem is an immutable dm-verity squashfs and nothing in it is
 edited. A `DEBIAN/conffiles` entry would promise a merge that cannot happen.
 
-A package that must NOT start on its own ships no such link -- the MQTT
-packages are the case: `mosd` owns their lifecycle at runtime and turns them on
-through settings, so shipping them enabled would start a broker nobody asked
-for.
+A package that must NOT start on its own ships no such link, and the `mqtt`
+producer is that case: `mosd` renders `/run/mos/mqtt-broker.toml` and
+`/run/mos/mqttd-device.env` from the settings tree and starts both units from
+`mqtt.enabled`, so a symlink in either payload would start a broker nobody
+asked for, before mosd has rendered anything for it to read. Both units keep
+their `[Install]` section so `systemctl enable` stays meaningful on a writable
+root; neither postinst calls it.
+
+## Maintainer scripts
+
+`mos-mqttd` and `mos-mqtt-broker` each carry a `postinst` that creates their
+pinned service account (uid/gid 970 and 969), moved out of
+`os/rootfs/scripts/account-mos-mqtt*.sh` into the package that owns the
+account. `postinst` and not `preinst`, because no path in either payload is
+owned by those accounts: they are needed when the unit starts, not when the
+files are unpacked.
+
+The rootfs scripts hard-fail when the uid already exists, which is right for a
+once-per-build script and wrong for a maintainer script -- a postinst runs
+again on every upgrade and reinstall. The packaged form accepts an existing
+account that is exactly the pin and still fails, by name, on one held by
+anybody else. `useradd`, `groupadd` and `chage` come from `passwd`, which both
+packages declare in `Depends`: `dpkg-shlibdeps` cannot see a program `exec`ed
+by name.

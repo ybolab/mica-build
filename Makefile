@@ -17,7 +17,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
-	os-deb-mosd \
+	os-deb-mosd os-deb-mqtt \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -46,6 +46,7 @@ help:
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-mosd         build the mosd and mos-apid Debian packages for amd64 and arm64 (docker)"
+	@echo "  os-deb-mqtt         build the mos-mqttd and mos-mqtt-broker Debian packages for amd64 and arm64 (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -233,6 +234,18 @@ os-rauc:
 os-deb-mosd:
 	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
 	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
+
+# The MQTT package producer: compiles ONLY mos-mqttd and mos-mqtt-broker and
+# emits those two archives into _out/debs/<arch>/pool/, beside the mosd
+# producer's. Both architectures, for the reason above.
+#
+# Unlike mosd and mos-apid, neither of these packages ships an enablement
+# symlink: mosd renders their configuration and starts them from the mqtt
+# settings subtree, so an installed unit that started itself would be a broker
+# nobody asked for. It changes nothing about what the rootfs chain installs.
+os-deb-mqtt:
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch amd64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
