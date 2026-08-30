@@ -44,7 +44,7 @@ if [ ! -s "${HERE}/versions.lock" ]; then
 fi
 
 # The builder is NAMED rather than inherited, and named rather than pinned --
-# the same register os/rootfs/build-v2.sh:571 uses. BUILDX_BUILDER wins,
+# the same BUILDX_BUILDER register as os/rootfs/build-v2.sh. BUILDX_BUILDER wins,
 # because a caller who names a builder has made a decision; with nothing named,
 # `default` is the docker driver on every docker installation. What must not
 # happen is inheriting the ambient selection: a leftover `mos-rauc-arm64` from
@@ -54,8 +54,8 @@ fi
 # `default` reaches linux/${MOS_ARCH} exactly when the host has binfmt
 # registered for it. When it does not, this no longer refuses: it selects the
 # `mos-${MOS_ARCH}` docker-container builder, whose buildkit image bundles the
-# emulators and needs no host registration -- same name and same creation as
-# os/tests/quadlet-doc-test.sh:83-85, so there is one way to get a
+# emulators and needs no host registration -- same name and creation path as
+# os/tests/quadlet-doc-test.sh, so there is one way to get a
 # cross-capable builder in this tree. That it genuinely executes the target
 # architecture is measured rather than inspected: `docker buildx ls` reports
 # mos-arm64 as linux/amd64 (+3), linux/386 on this host, and a throwaway

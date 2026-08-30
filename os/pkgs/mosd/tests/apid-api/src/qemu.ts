@@ -15,7 +15,7 @@
  * here means a green run means the same thing on someone else's laptop.
  *
  * WHERE THIS RUNS. It drives `docker run` and it is TypeScript, so it needs bun
- * and a docker client in one place. `test/apid-api/run.sh` gives it both: the
+ * and a docker client in one place. `os/pkgs/mosd/tests/apid-api/run.sh` gives it both: the
  * bun pinned as IMAGE_BUN_1 plus the client pinned as IMAGE_DOCKER_CLI_28, the
  * image os/verify/Dockerfile assembles, with the daemon socket mounted and the
  * repository mounted at its own path. Its own path and not /w, because every
@@ -158,7 +158,7 @@ export function applyKernelAppend(text: string, append: string): AppendResult {
 // --- everything below runs; nothing above it does ---------------------------
 
 const HERE = import.meta.dir;
-const REPO_ROOT = path.resolve(HERE, "../../..");
+const REPO_ROOT = path.resolve(HERE, "../../../../../..");
 const OUT_DIR = path.join(REPO_ROOT, "_out/x64");
 const RUN_DIR = path.join(OUT_DIR, ".qemu");
 

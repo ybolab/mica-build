@@ -16,10 +16,10 @@
 // The capability pair carries a vacuous pass. The oracle establishes that the
 // environment can observe a capability before it compares any inventory, because
 // an empty capability set and a container that silently drops security.* xattrs
-// are the same observation (:4255); that probe is honest and is ported as it
+// are the same observation; that probe is honest and is ported as it
 // stands. What it does not cover is that `getcap -r DIR` on a directory that is
 // not there exits 0 and prints `DIR (No such file or directory)` on stderr,
-// measured 2026-08-26 in the pinned alpine. :4283's `2>/dev/null` discards it,
+// measured 2026-08-26 in the pinned alpine. The former verifier's `2>/dev/null` discards it,
 // so the packed inventory comes out empty, and on these two images the source
 // inventory is empty too, so the comparison passes about a root nothing read.
 // Reproduced here -- the getcap binding returns stdout and nothing else -- and
@@ -64,7 +64,7 @@ function key(board: Board, name: string): string {
 
 const SHAPE_CHECKS: readonly CheckCase[] = [
   {
-    // `check 0` (:1380), and it runs ONLY under --expect-symlink -- which the
+    // `check 0`, and it runs ONLY under --expect-symlink -- which the
     // parity harness passes exactly when the image is the board's default path,
     // because that is how `make os-verify-<board>-v2` invokes the oracle. An
     // image named explicitly on the command line prints no such conclusion, and
@@ -169,7 +169,7 @@ const SHAPE_CHECKS: readonly CheckCase[] = [
 ]
 
 /**
- * `setcap cap_net_raw+ep FILE && getcap FILE | grep cap_net_raw` (:4261).
+ * `setcap cap_net_raw+ep FILE && getcap FILE | grep cap_net_raw`.
  *
  * Run once per context and remembered, because both entries above ask it and
  * asking twice would let the two disagree.
@@ -238,7 +238,7 @@ async function capsFromRoot(ctx: ImageContext): Promise<string[]> {
 /**
  * `exactly ${EXPECT_PARTS} partitions`, as one entry per board.
  *
- * The count is `LAYOUT_PARTITIONS`' length, which is exactly what :1411-1412
+ * The count is `LAYOUT_PARTITIONS`' length, which is exactly what
  * counts, and it is the same list every other layout-derived check in this
  * package walks. `part_count` on the other side is the number of rows sgdisk
  * printed, read off the IMAGE -- so the two sides of this comparison come from
@@ -249,7 +249,7 @@ function partitionCountChecks(board: Board): CheckCase[] {
   if (declared.length === 0) {
     throw new ToolOutputError(
       `${board.path} declares no LAYOUT_PARTITIONS, so this check has nothing to count. `
-      + `os/verify-image-v2.sh:1413 refuses the same state, and for the same reason: a count of `
+      + `The verification contract refuses the same state, and for the same reason: a count of `
       + `zero would be satisfied by an image with no partition table at all.`,
     )
   }

@@ -73,7 +73,7 @@ const REQUEST_CAPACITY: usize = 64;
 ///
 /// `EventLoop::poll` reconnects the moment its network handle is gone: the
 /// first thing it does is `if self.network.is_none() { connect(...) }`, with
-/// no delay before it (`rumqttc-0.25.1/src/eventloop.rs:150`). Its
+/// no delay before it (`EventLoop::poll` in rumqttc 0.25.1). Its
 /// `connection_timeout` bounds a connect that HANGS and does nothing for one
 /// that is REFUSED, which returns immediately — and refused is the default
 /// case on this appliance, because the shipped unit points at

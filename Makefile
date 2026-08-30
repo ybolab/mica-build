@@ -150,7 +150,7 @@ os-shadow-test:
 # policy that denies root too. Needs root (it drops to uid 65534 with setpriv)
 # and fails loudly when it cannot run rather than skipping.
 os-dbus-policy-test:
-	bash os/pkgs/mosd/hack/dbus-policy-test.sh
+	bash os/pkgs/mosd/tests/dbus-policy-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
@@ -334,13 +334,13 @@ x64-%:
 # another container holds that directory rather than discovering the collision
 # halfway through a nine-minute boot.
 #
-# `bash test/apid-api/run.sh --dry-run` performs the preconditions and the
+# `bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` performs the preconditions and the
 # network discovery and boots nothing; it is how to check the harness in
 # seconds. Needs docker, and it fails loudly when it cannot run rather than
 # skipping.
 .PHONY: os-apid-api-test
 os-apid-api-test:
-	bash test/apid-api/run.sh
+	bash os/pkgs/mosd/tests/apid-api/run.sh
 
 # The BUILD-TIME half of that suite, and the only part of it that runs on a
 # checkout: every literal a phase pins which openapi.json ALSO states, asserted
@@ -350,13 +350,12 @@ os-apid-api-test:
 # It exists because os-apid-api-test above is the only thing that runs the
 # phases, and it needs a built image and a nine-minute boot. A milestone that
 # moved a shipped status therefore left every phase pinning the old one green
-# until somebody booted the image. This
-# closes the part of that gap that needs no boot; the record the
-# part that does, which is most of it.
+# until somebody booted the image. This target closes the part of that gap that
+# needs no boot; the full black-box suite remains the runtime check.
 #
 # Needs bun OR docker: it runs on a host bun when there is one and in the bun
 # pinned as IMAGE_BUN_1 otherwise, and says which. MOS_APID_CONTAINER=1 forces
 # the pinned container.
 .PHONY: os-apid-api-spec-pins
 os-apid-api-spec-pins:
-	bash test/apid-api/spec-pins.sh
+	bash os/pkgs/mosd/tests/apid-api/spec-pins.sh

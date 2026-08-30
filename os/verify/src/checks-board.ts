@@ -22,7 +22,7 @@
 // fourteen lines on cx3576 where `BOOT-A contains Image` names one. So each path
 // gets its own check with the path in its matcher, and the boot-slot listing is
 // generated per (board, slot, file) out of `BOOT_SLOT_REQUIRED_FILES` with
-// `@SLOT@` substituted as the oracle substitutes it (:1838).
+// `@SLOT@` substituted as the oracle substitutes it.
 //
 // Where a group skips as one line the skip gets a dedicated `<family>-skipped`
 // entry, scoped by `boards:` to where the group skips while the per-item checks
@@ -188,7 +188,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
     // the partition is what these disagreeing produces.
     //
     // Read from the DEFINITION on both sides, exactly as the oracle does
-    // (:1608): this is the one loader assertion that is about the board file
+    //: this is the one loader assertion that is about the board file
     // rather than about the image, and reading one side out of the GPT would
     // change what it says.
     id: 'loader-size-matches-uboot-max',
@@ -296,7 +296,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-/** The oracle's own `else` sentence at :1645, rebuilt from the same values. */
+/** The negative-branch sentence, rebuilt from the same values. */
 function loaderSkipMessage(board: Board): string {
   const parts = (board.layoutPartitions ?? []).length
   return `the loader-partition protections (${parts}-partition ${board.name} layout has no loader): `
@@ -312,7 +312,7 @@ function loaderSkipMessage(board: Board): string {
  * One `one` check per (board, slot, required file).
  *
  * `@SLOT@` is substituted with the lowercase trailing letter of the slot NAME,
- * which is how the oracle spells it (:1837-1838) -- so cx3576's
+ * which is how the oracle spells it -- so cx3576's
  * `mos-verity-@SLOT@.env` becomes `mos-verity-a.env` in BOOT-A and
  * `mos-verity-b.env` in BOOT-B, and x64's list, which contains no `@SLOT@`,
  * comes through unchanged in both.
@@ -445,7 +445,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-/** The oracle's own `else` sentence at :1892. */
+/** The negative-branch sentence for boards that do not use U-Boot. */
 function uBootSlotSkipMessage(board: Board, slot: string): string {
   return `${slot}: the extlinux, no-initramfs and Image/dtb assertions `
     + `(bootloader=${board.get('RAUC_BOOTLOADER') ?? ''}). extlinux is a U-Boot boot framework; a `
@@ -453,7 +453,7 @@ function uBootSlotSkipMessage(board: Board, slot: string): string {
     + `than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build`
 }
 
-// the radio -- firmware set (:2488-2494) and module list (:2559-2570)
+// the radio -- firmware set and module list
 
 function radioFirmwareChecks(board: Board): CheckCase[] {
   return (board.firmwareFiles ?? []).map(fw => boardRegularFile('board-firmware', board.name, fw))
@@ -718,7 +718,7 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
 
 const RECONCILER_OWNED: readonly string[] = ['mos-mqttd.service', 'mos-mqtt-broker.service']
 
-// the Bluetooth userland -- os/verify-image-v2.sh:2695-2705 (deleted), and wifi.conf
+// the Bluetooth userland -- the verification contract, and wifi.conf
 
 const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   boardRegularFileForFeature(
@@ -809,7 +809,7 @@ const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// the status indicator -- check_status_led (:531) and the overlay set (:2720)
+// the status indicator -- check_status_led and the overlay set
 
 const LED_SCRIPT = '/usr/lib/mos/mos-status-led'
 const LED_UNIT = '/usr/lib/systemd/system/mos-status-led.service'
@@ -1028,7 +1028,7 @@ const LED_CHECKS: readonly CheckCase[] = [
  * instant where both LEDs are off and the board reads as dead. Nothing else can
  * catch that -- either order is valid shell and passes every syntax check.
  *
- * Region-scoped by line, exactly as the oracle's awk is (:2773-2778): the
+ * Region-scoped by line, exactly as the oracle's awk is: the
  * branch label opens the region and the next bare `;;` closes it, so a write in
  * the other branch cannot satisfy this one.
  */

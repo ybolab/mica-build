@@ -1,5 +1,5 @@
-// os/mkimage-x64.sh, ported: the x64 board (amd64 industrial PC, UEFI
-// firmware) A/B GPT disk image -- layout v2, nine partitions.
+// X64 board (amd64 industrial PC, UEFI firmware) A/B GPT disk-image assembler:
+// layout v2, nine partitions.
 //
 // One static ESP that GRUB is loaded from, a FAT32 boot partition per slot, two
 // raw squashfs+dm-verity rootfs slots and the meta/state/ephemeral/data ext4
@@ -7,8 +7,8 @@
 // os/verify's typed model and this package's geometry; nothing is duplicated
 // here and nothing re-reads that file.
 //
-// Not src/mkimage-v2.ts with a board parameter, the same question
-// os/mkimage-x64.sh answers about os/mkimage-v2.sh (deleted). That assembler is U-Boot: a
+// This is intentionally not src/mkimage-v2.ts with a board parameter. The
+// cx3576 assembler is U-Boot-specific: it has a
 // loader partition at a fixed sector, a redundant environment pair, a compiled
 // boot.scr and geometry assertions about all three, none of which exists on a
 // UEFI machine, and threading conditionals through it would put a second
@@ -30,7 +30,7 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 //
 //   * the same pinned debian (IMAGE_DEBIAN_TRIXIE) out of the same apt package
 //     list -- BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in
-//     that image, the header note os/mkimage-x64.sh opens with;
+//     that image, the header note the x64 assembly contract opens with;
 //   * grub-mkstandalone and grub-editenv run with the work directory as cwd and
 //     relative filenames, exactly as the shell's `cd /w` gives them. An
 //     absolute path handed to grub-mkstandalone is a string this assembler
@@ -42,7 +42,7 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 //     land in the FAT directory. The ESP takes one `mcopy -s -m` of a staged
 //     tree, because `mmd` has no source to take a time from and stamps ::/EFI
 //     with the wall clock -- measured at 18 moving bytes in the shell's header;
-//   * `cp -a` of the factory /var runs on the host, where os/mkimage-x64.sh:161
+//   * `cp -a` of the factory /var runs on the host, where the x64 assembly contract
 //     runs it. That is the opposite of src/mkimage-v2.ts and it is deliberate:
 //     that script stages inside its container and this one does not, `cp -a` is
 //     `--preserve=all` (xattrs included), mke2fs -d copies xattrs into the
@@ -138,7 +138,7 @@ export function mountsFor(inputs: AssemblyInputs, workDir: string): string[] {
 }
 
 /**
- * The five inputs os/mkimage-x64.sh:81 requires before it does anything.
+ * The five inputs the x64 assembly contract requires before it does anything.
  *
  * One sentence, five files, in the shell's order -- and the sentence names the
  * script that MAKES them, because "rootfs-verity.img not found" is only
@@ -153,7 +153,7 @@ export function requiredInputs(inputs: AssemblyInputs, grubCfgIn: string): strin
  *
  * Its own function so the one step this assembler deliberately runs outside its
  * container is visible as such rather than buried in a hundred-line assembly,
- * and so the reason travels with it: os/mkimage-x64.sh:161 runs this on the
+ * and so the reason travels with it: the x64 assembly contract runs this on the
  * host, `cp -a` is `--preserve=all`, and mke2fs -d copies xattrs into EPHEMERAL,
  * so staging it in the container instead would change the shipped bytes.
  *
@@ -169,16 +169,16 @@ export async function stageFactoryVarOnHost(source: string, destination: string)
     throw new Error(
       `could not stage the factory /var tree from ${source} with 'cp -a' (exit ${r.exitCode}):\n`
       + `${r.stderr.toString().trimEnd() || '(no output)'}\n`
-      + `This step runs on the HOST because os/mkimage-x64.sh runs it there, and 'cp -a' is what `
+      + `This step runs on the HOST because the x64 assembly contract runs it there, and 'cp -a' is what `
       + `carries the tree's ownership and extended attributes into the filesystem mke2fs seeds.`,
     )
   }
 }
 
 /**
- * The ESP is a real FAT32 -- by cluster count, at the point the shell asks.
+ * The ESP is a real FAT32 -- by cluster count, at the point this assembler checks.
  *
- * Read this before moving the call. os/mkimage-x64.sh:263 parses free clusters
+ * Read this before moving the call. This check parses free clusters
  * out of minfo's FSInfo sector, where the FAT specification defines the type by
  * total clusters. On a filesystem nothing has been copied into, free is total
  * minus the root directory's one cluster, so the comparison is conservative by
@@ -243,7 +243,7 @@ export function checkGrubenvSize(path: string, bytes: bigint): void {
  * file on the one partition RAUC never installs into.
  *
  * The names come from the board (SLOT_KERNEL_NAME and friends), not from three
- * literals: os/mkimage-x64.sh spells `vmlinuz initrd.img cmdline.cfg`, which is
+ * literals: the x64 assembly contract spells `vmlinuz initrd.img cmdline.cfg`, which is
  * a second copy of the same three keys, and a board that renamed one would have
  * the stray check quietly stop covering it.
  */
@@ -288,7 +288,7 @@ export function bootSlotFault(aList: readonly string[], bList: readonly string[]
  * exit 4 -- the relocation there would push uenv-b into boot-a and there is no
  * room. The shape depends on the geometry rather than on the flag, and on x64
  * this read-back is the only thing that would report it. It also keeps measured,
- * on every run, that this assembler's `-a 2048` and os/mkimage-x64.sh's absent
+ * on every run, that this assembler's `-a 2048` and the x64 assembly contract's absent
  * alignment are the same bytes. Every mismatch is collected rather than thrown
  * at the first: nine drifting partitions should produce nine lines.
  */
@@ -321,7 +321,7 @@ function requireFile(path: string): void {
 /**
  * Assemble the image.
  *
- * The order of the refusals is os/mkimage-x64.sh's, and it is kept: a reader
+ * The order of the refusals is the x64 assembly contract's, and it is kept: a reader
  * comparing the two should be able to run the same broken input through both and
  * get the same sentence first.
  */
@@ -345,14 +345,13 @@ export async function assembleX64(
 
   const verity = verityFactsFrom(readFileSync(inputs.rootfsVerityEnv, 'utf8'), inputs.rootfsVerityEnv)
   if (verity.salt.toLowerCase() !== geometry.veritySalt.toLowerCase()) {
-    // Not one of os/mkimage-x64.sh's refusals -- that script reads VERITY_SALT
-    // out of the env file and never compares it to the board's. It is here
-    // because os/mkimage-v2.sh (deleted) DOES make this comparison for cx3576 and the
-    // reason is board-independent: a hash tree built with a salt other than the
+    // Unlike the earlier implementation, this compares VERITY_SALT from the
+    // env file with the board's pin. The cx3576 assembler makes the same
+    // comparison, and the reason is board-independent: a hash tree built with a salt other than the
     // pinned one is not reproducible, and the fragment would carry the built
     // salt while board.env claimed another. Named as an addition rather than
-    // presented as a port, and it cannot change the gate: the shipped inputs
-    // carry the pinned salt, so on every input the shell accepts this is silent.
+    // presented as inherited behavior. It does not change shipped output: the
+    // current inputs carry the pinned salt.
     throw new Error(
       `${inputs.rootfsVerityEnv} salt '${verity.salt}' does not match the pinned VERITY_SALT `
       + `'${geometry.veritySalt}' in ${geometry.path}; fix ${ROOTFS_PRODUCER}`,
@@ -404,7 +403,7 @@ export async function assembleX64(
     // E2FSPROGS_FAKE_TIME is on the toolset, not on the one call that reads it.
     // mke2fs takes it out of the environment, and sourcing a file sets without
     // exporting -- the pin sits in board.env doing nothing until
-    // os/mkimage-x64.sh:232 exports it, "a documented layout key doing nothing,
+    // the x64 assembly contract exports it, "a documented layout key doing nothing,
     // which is worse than an absent one because it reads as covered". That
     // `export` covers the whole inner script, so every e2fsprogs tool in the
     // assembly sees it; this puts it in the same place, on the session, rather
@@ -574,7 +573,7 @@ export async function assembleX64(
     const spec = gptSpecFor(geometry, layout)
     await writeGpt(tb, imgTmp, spec)
 
-    // conv=notrunc and NOT sparse, which is os/mkimage-x64.sh's spelling.
+    // conv=notrunc and NOT sparse, which is the x64 assembly contract's spelling.
     // src/tools/dd.ts declines to normalise the two assemblers here: they agree
     // on the bytes for a target that is already zero, and which one a call passes
     // is that call's decision.

@@ -21,7 +21,7 @@
 # closed pipe.
 #
 # NOT flagged, though they exit early too: `| grep -m1`, `| head`, `| sed q`.
-# These PRINT, so they are normally used for their output -- test/apid-api/run.sh
+# These PRINT, so they are normally used for their output -- os/pkgs/mosd/tests/apid-api/run.sh
 # does `hit="$(console_since ... | grep -m1 APID_LISTENING || true)"`, where the
 # matched line is the point and the status is discarded. Flagging -m as well
 # would make that line the rule's only hit in the tree, and a rule whose every

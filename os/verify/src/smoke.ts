@@ -390,7 +390,7 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
         `RESULT: INCOMPLETE (${counts.pass} pass, 0 fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
         + `UNCLAIMED: ${named('unclaimed')}. `
         + `Nothing failed and not everything was asked. An unclaimed artifact is not a pass and is `
-        + `not a skip: the record a reported version from every one of them, and this run `
+        + `not a skip: the smoke contract requires a reported version from every one of them, and this run `
         + `exits non-zero so that a gate cannot be held by a summary with holes in it.`,
     }
   }

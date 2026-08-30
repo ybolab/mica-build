@@ -307,7 +307,7 @@ fi
 # 32 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
 # silicon revisions -- and only the confirmed runtime set may enter a signed
 # root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
-# was: os/verify-image-v2.sh (deleted) has asserted the image against it since x64
+# was: the verification suite has asserted the image against it since x64
 # arrived. Read here rather than copied, so the build and the verifier cannot
 # disagree about which firmware the board carries.
 #
@@ -322,7 +322,7 @@ for fw in ${BOARD_FIRMWARE_FILES}; do
     case "$fw" in
     /usr/lib/firmware/*) ;;
     *)
-        echo "error: $LAYOUT_ENV declares BOARD_FIRMWARE_FILES entry '$fw', which is not under /usr/lib/firmware/. The entries are INSTALLED paths -- os/verify-image-v2.sh checks the image for each one, and stages/40-board's installer asserts the same paths after the move" >&2
+        echo "error: $LAYOUT_ENV declares BOARD_FIRMWARE_FILES entry '$fw', which is not under /usr/lib/firmware/. The entries are INSTALLED paths -- the verification suite checks the image for each one, and stages/40-board's installer asserts the same paths after the move" >&2
         exit 1
         ;;
     esac

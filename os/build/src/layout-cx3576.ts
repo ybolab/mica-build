@@ -17,7 +17,7 @@ import type { Geometry, PlacedPartition } from './geometry.ts'
 import type { GptSpec } from './tools/sgdisk.ts'
 
 // The two slot modes are selected by presence, never by value, and that is a
-// requirement. os/mkimage-v2.sh (deleted) captures MOS_ROOTFS_SLOT_MIB with
+// requirement. The cx3576 assembly contract captures MOS_ROOTFS_SLOT_MIB with
 // `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the layout, "so a release that
 // legitimately pins the same number as the built-in default still gets the
 // strict mode". Comparing the value against the board file's
@@ -32,7 +32,7 @@ export interface SlotDecision {
   readonly slotMib: bigint
   /** The payload that decided it, in MiB. */
   readonly payloadMib: bigint
-  /** The line os/mkimage-v2.sh (deleted) prints, so the two assemblers say the same thing. */
+  /** The line the cx3576 assembly contract prints, so the two assemblers say the same thing. */
   readonly summary: string
 }
 
@@ -267,7 +267,7 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
 /**
  * The whole GPT, as one spec, in LAYOUT_PARTITIONS order.
  *
- * Order is read off the board, not written here. os/mkimage-v2.sh (deleted) spells eleven
+ * Order is read off the board, not written here. The cx3576 assembly contract spells eleven
  * --new flags in a fixed sequence, a second copy of LAYOUT_PARTITIONS that
  * nothing checks; this walks the list, so a partition added to the board file
  * and forgotten here cannot become one sgdisk never writes.
@@ -283,7 +283,7 @@ export function gptSpecFor(geometry: Geometry, layout: DerivedLayout): GptSpec {
     diskGuid: geometry.disk.guid,
     // Not `?? something`: an alignment nobody asked for is how the loader moved
     // in the first place. cx3576 declares 1; a board that declares none gets
-    // sgdisk's default, which is what os/mkimage-x64.sh relies on.
+    // sgdisk's default, which is what the x64 assembly contract relies on.
     alignSectors: geometry.disk.alignSectors === 0n ? undefined : geometry.disk.alignSectors,
     clear: true,
     partitions: geometry.partitions.map(p => ({

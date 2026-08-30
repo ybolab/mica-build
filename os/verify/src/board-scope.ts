@@ -31,14 +31,14 @@ export function boardsWhere(predicate: (board: Board) => boolean): string[] {
 /** `is_uboot_board`, asked of a definition. */
 export const isUBoot = (board: Board): boolean => board.bootloader === 'uboot'
 
-/** `board_has_radio` (:241). */
+/** `board_has_radio`. */
 export const hasRadio = (board: Board, kind: string): boolean => (board.radios ?? []).includes(kind)
 
-/** `board_has_hwinit` (:247). */
+/** `board_has_hwinit`. */
 export const hasHwinit = (board: Board, fact: string): boolean => (board.hwinitConfs ?? []).includes(fact)
 
-/** `[ -n "${BOARD_FIRMWARE_FILES}" ]` (:2488). Declared-empty is not absent. */
+/** `[ -n "${BOARD_FIRMWARE_FILES}" ]`. Declared-empty is not absent. */
 export const hasFirmware = (board: Board): boolean => (board.firmwareFiles ?? []).length > 0
 
-/** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]` (:2720). A string compare, as the oracle spells it. */
+/** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]`. A string compare, as the oracle spells it. */
 export const hasLed = (board: Board): boolean => board.hasStatusLed === '1'

@@ -200,7 +200,7 @@ export function imageFixture(request: FixtureRequest): Fixture {
  *
  * What is not invented here. /etc/fstab is rendered from the SHIPPED template,
  * os/rootfs/overlay-v2/etc/fstab.in, with the board's own GUIDs -- the same
- * discipline os/tests/ui-location-test.sh:223-236 follows and for the same
+ * discipline the image fixture contract follows and for the same
  * reason: a fixture built from this file's idea of the table would test that
  * idea rather than the shipped one, and an fstab.in that grew a new placeholder
  * would go on passing here. The renderer refuses a leftover placeholder, which
@@ -906,7 +906,7 @@ function seedMqtt(root: string, file: WriteFile): void {
  * fact, no radio and BOARD_HAS_STATUS_LED=0, so it gets none of these files.
  * That is precisely what `status-led-absent` asserts, and its FAILING direction
  * -- a board declaring no indicator that ships the unit anyway -- had never been
- * driven anywhere in this tree before: os/tests/ui-location-test.sh:55 sources
+ * driven anywhere in this tree before: the image fixture contract sources
  * cx3576's board.env, which declares 1, so the =0 branch had only ever been
  * observed passing.
  */

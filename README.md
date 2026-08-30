@@ -18,9 +18,9 @@ mos/
 │                    (Rockchip RK3576, arm64: U-Boot, kernel, firmware) and x64 (generic
 │                    x86_64 UEFI, the QEMU/CI baseline, no BSP build); os/pkgs/ holds the
 │                    compiled components: podman, RAUC, the mosd Rust workspace (mosd,
-│                    apid and the MQTT broker), and TUF release signing
+│                    apid and the MQTT broker; its workspace-level tests live under
+│                    os/pkgs/mosd/tests/), and TUF release signing
 ├── extensions/      the optional-layer slot; see extensions/README.md
-├── test/            the apid HTTP API suite (test/apid-api)
 └── Makefile         top-level routing; run `make help` for the full target list
 ```
 

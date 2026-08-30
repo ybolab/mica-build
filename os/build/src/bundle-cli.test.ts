@@ -297,7 +297,7 @@ describe('the arguments, and the defaults they fall back to', () => {
     })
   })
 
-  test('a positional VERSION is taken, exactly as `bash os/update/bundle.sh 1.2.3` took one', () => {
+  test('a positional VERSION is accepted by the bundle CLI', () => {
     expect(parseArgs(['1.2.3'], {}).version).toBe('1.2.3')
   })
 

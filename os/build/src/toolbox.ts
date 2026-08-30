@@ -17,8 +17,8 @@ import { randomUUID } from 'node:crypto'
 import { resolveImage } from './images.ts'
 
 // The container is the normal route, not a degraded one. Both shell assemblers
-// have a route already: os/mkimage-v2.sh (deleted) probes the host with
-// host_can_assemble() and falls back to an alpine container; os/mkimage-x64.sh
+// have a route already: the cx3576 assembly contract probes the host with
+// host_can_assemble() and falls back to an alpine container; the x64 assembly contract
 // does not even probe -- "no sgdisk, no mtools and no grub-mkstandalone, and
 // requiring them would make [the build] a host-configuration problem". This
 // host has none of sgdisk, mcopy, mkimage or veritysetup, and its e2fsprogs is
@@ -46,7 +46,7 @@ export type RouteKind = 'host' | 'container'
 /** How a toolset's packages are installed, which differs by base image family. */
 export type PackageManager = 'apk' | 'apt'
 
-/** A host binary carried into the container, the way os/update/bundle.sh (deleted) installs its rauc. */
+/** A host binary carried into the container, the way the bundle contract installs its rauc. */
 export interface CarriedFile {
   readonly from: string
   readonly to: string
@@ -137,7 +137,7 @@ export interface OpenOptions {
   /**
    * Host directories the container must see, each mounted at its own path.
    *
-   * Identity mounts, not /w or /work. os/verify/run.sh:189 states the rule --
+   * Identity mounts, not /w or /work. os/verify/run.sh states the rule --
    * short names for containers that run a script and build their paths inside,
    * identity for containers handed paths from outside -- and every tool here is
    * the second kind: the caller passes absolute host paths and reads absolute
@@ -335,8 +335,8 @@ export class Toolbox {
 
       for (const file of toolset.carry ?? []) {
         // docker cp rather than a bind mount: the file is an INPUT that has to
-        // be on PATH inside, which a mount cannot arrange, and os/update/
-        // bundle.sh installs its rauc into /usr/local/bin for the same reason.
+        // be on PATH inside, which a mount cannot arrange. The bundle toolset
+        // installs its shipped rauc into /usr/local/bin for the same reason.
         // It also needs no mount, so a binary anywhere on the host works.
         const cp = await $`${docker} cp ${file.from} ${`${container}:${file.to}`}`.nothrow().quiet()
         if (cp.exitCode !== 0) {

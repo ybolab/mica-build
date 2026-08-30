@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-08-27
+> Updated: 2026-08-30
 
 ## Usage
 
@@ -15,16 +15,15 @@ Each task is a single line linking to its detail file. All detailed information 
 | Marker | Meaning | Record status head |
 |--------|---------|--------------------|
 | `[ ]`  | Pending | `pending` |
-| `[-]`  | In progress | `in progress` |
+| `[-]`  | In progress | `in_progress` |
 | `[x]`  | Completed | `completed` |
 | `[~]`  | Closed / Won't do | `closed` |
 
 Each record's front matter carries a status line of the shape
 `- **status**: <head>` or `- **status**: <head> — <free detail>`, where
 `<head>` is exactly one of the four heads above and the detail after ` — ` is
-free text. `docs/verify-index.sh` enforces the pair: a record with no such
-line or a non-canonical head fails, and a row whose checkbox does not match
-its record's head fails naming both sides (RFCT-171).
+free text. PMA's `task-state.sh` serializer updates the record and index under
+one lock and rejects a transition when their current states do not match.
 
 ### Priority: P0 (blocking) > P1 (high) > P2 (medium) > P3 (low)
 
@@ -40,3 +39,4 @@ its record's head fails naming both sides (RFCT-171).
 
 - [ ] [**RFCT-253 `access.ssh` is bus-writable and grants a remote capability, which the platform-switch rule does not cover**](RFCT-253.md) `P2`
 - [ ] [**RFCT-260 The AP reconciler's third copy of the WPA byte rule, and a refusal that names the secret's length**](RFCT-260.md) `P2`
+- [x] [**RFCT-265 Consolidate mosd workspace-level tests under the workspace**](RFCT-265.md) `P2`

@@ -1,7 +1,7 @@
 // The seam that decides HOW an image-inspection tool is invoked, and the only
 // place that decides it.
 //
-// Os/verify-image-v2.sh (deleted) reads a disk image with sgdisk, mtools at an offset,
+// The verification contract reads a disk image with sgdisk, mtools at an offset,
 // debugfs/tune2fs over a dd-extracted partition, unsquashfs and a userspace
 // `veritysetup verify` -- and nothing else: no loop mounts, no losetup, no
 // device-mapper, no mount(8). The port keeps that toolset exactly, so this
@@ -10,8 +10,8 @@
 // Two routes, one seam: a caller passes an argv and reads an exit status and
 // cannot tell which answered, which makes a host without gptfdisk a supported
 // host. The container is the pinned IMAGE_ALPINE_3_21 -- the same key
-// os/mkimage-v2.sh (deleted) assembles from and the shell verifier re-execs into, resolved
-// through os/build-env/from.sh --ref -- so this reads back a GPT, a FAT slot and
+// the image assembler and verifier both resolve through
+// `os/build-env/from.sh --ref`, so this reads back a GPT, a FAT slot and
 // a squashfs with tools out of the same base the assembler used.
 //
 // One container per runtime, not one per call: `docker run` costs ~200 ms and
@@ -36,10 +36,9 @@ export const TOOL_IMAGE_KEY = 'IMAGE_ALPINE_3_21'
 /**
  * The tools this package drives, and the ones the host route must all have.
  *
- * The same set os/verify-image-v2.sh:121 (deleted) requires, minus the ones no helper
- * here calls yet. It is stated rather than read out of that script on purpose:
- * the script is deleted at M4e, and a derivation whose source is scheduled for
- * deletion is a dependency with a fuse in it.
+ * The set is explicit because the host route must validate every binary before
+ * running a check; deriving it from a container package list would leave host
+ * availability implicit.
  */
 export const REQUIRED_TOOLS = [
   'sgdisk',
@@ -65,22 +64,21 @@ export const REQUIRED_TOOLS = [
   'veritysetup',
   'getcap',
   // setcap writes the xattr that getcap then reads back. The oracle's
-  // capability check (:4261) establishes that the environment can round-trip
+  // capability check establishes that the environment can round-trip
   // one BEFORE it compares any inventory, because an empty capability set and
   // a container that silently drops security.* xattrs are the same observation.
   'setcap',
   // fdtget reads the status-LED nodes out of the device tree extracted from the
-  // boot slot (:1923). It ships in `dtc`.
+  // boot slot. It ships in `dtc`.
   'fdtget',
 ] as const
 
 /**
  * The Alpine packages that carry them.
  *
- * Byte-for-byte the list at os/verify-image-v2.sh:187 (deleted), for the same reason the
- * image key is shared: the container the port reads an image in must be the
- * container the oracle read it in, or a parity divergence could be a package
- * difference rather than a check difference.
+ * This is the package set required by the verification contract. Keeping it
+ * beside the shared image key prevents a check difference from being masked by
+ * a tool-package difference.
  */
 export const TOOL_PACKAGES = [
   'bash', 'coreutils', 'diffutils', 'gptfdisk', 'sgdisk', 'dosfstools', 'mtools',
@@ -318,7 +316,7 @@ export function chooseRoute(forced: string | undefined, missing: readonly string
  * Separate from chooseRoute because the ROUTE and the REASON have different
  * inputs, and conflating them cost a message: once parity-cli started deciding
  * the route up front and passing it in, createToolRuntime stopped computing the
- * missing list at all and announced "(no  on this host)" -- a sentence with the
+ * missing list at all and announced "(no <empty tool list> on this host)" -- a sentence with the
  * subject removed. The announce line is the only thing that says which tools
  * produced a verdict, so an empty one is not cosmetic.
  */
@@ -483,8 +481,8 @@ async function createContainerRuntime(
   // see: it checks the SHAPE of a reference, not that a registry has it. Left
   // to `docker run`, it arrives as exit 125 -- indistinguishable at this seam
   // from a tool exiting 125. So the image is obtained once, here, where the
-  // failure can still be attributed to the key that carries it. Same reasoning,
-  // same words, as os/verify/run.sh:158.
+  // failure can still be attributed to the key that carries it. This is the
+  // same image-acquisition rule enforced by os/verify/run.sh.
   const have = await capture(['docker', 'image', 'inspect', image])
   if (have.code !== 0) {
     log(`os/verify: ${image} is not in the local image store; pulling it`)
@@ -539,7 +537,7 @@ async function createContainerRuntime(
 
   // The mount that succeeds and carries nothing. On this host a bind mount of
   // anything under /tmp propagates as an empty directory rather than failing --
-  // measured 2026-08-25 and recorded at os/verify/run.sh:217. Without a guard, a
+  // measured 2026-08-25 and recorded by os/verify/run.sh's mount probe. Without a guard, a
   // helper would report "sgdisk: cannot open image.img" about a file the host
   // reads fine, and send the reader to look for a path they can `cat`.
   //

@@ -3,7 +3,7 @@
 // an image is to run it.
 //
 // The two assembly toolsets are the ones that matter here. Their package lists
-// are transcribed from os/mkimage-v2.sh and os/mkimage-x64.sh (both deleted) and they use
+// are transcribed from the cx3576 and x64 assembly contracts, and they use
 // DIFFERENT base images on purpose, so nothing about one of them being right
 // says anything about the other -- which is the same reason every geometry
 // assertion in this package runs over both boards. x64's toolset is otherwise
@@ -54,7 +54,7 @@ describe('the declarations themselves', () => {
   })
 
   test('the two assembly toolsets are on DIFFERENT base images, as their scripts are', () => {
-    // os/mkimage-x64.sh's header: BOOTX64.EFI is only as reproducible as the
+    // the x64 assembly contract's header: BOOTX64.EFI is only as reproducible as the
     // grub-efi-amd64-bin in its container, and that is a Debian package.
     expect(CX3576_ASSEMBLY.imageKey).toBe('IMAGE_ALPINE_3_21')
     expect(X64_ASSEMBLY.imageKey).toBe('IMAGE_DEBIAN_TRIXIE')

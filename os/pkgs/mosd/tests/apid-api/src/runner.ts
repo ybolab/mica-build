@@ -131,7 +131,7 @@ export async function runPhases(
     } catch (error) {
       // A throw is a failed check, not a crashed suite: the RESULT line must
       // still be printed, and the later phases must still be skipped rather
-      // than vanish. verify-image-v2.sh learned the same lesson from SIGPIPE.
+      // than vanish. The image verifier learned the same lesson from SIGPIPE.
       ctx.report.fail(`${phase.id} threw instead of reporting`, describeThrow(error));
     }
     ctx.report.endPhase();

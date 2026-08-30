@@ -3,8 +3,8 @@
 // Thin on purpose. Every decision lives in lint.ts, which is pure and is what
 // the suite exercises; this reads argv, prints, and picks an exit status. A
 // checker whose logic can only be reached through its own command line can only
-// be tested through its own command line, and os/verify/lint-test.sh had to
-// copy a real board and shell out for every one of its fourteen cases.
+// be tested through its own command line; the pure implementation lets the
+// current suite exercise all fourteen cases without copying a real board.
 //
 // It is invoked through os/verify/run.sh, which is the one place that decides
 // how bun is run -- see HARNESS.md. Paths arrive already absolute, because

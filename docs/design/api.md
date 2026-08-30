@@ -239,8 +239,8 @@ because M4-M9 gave each of them a JSON surface rather than a second code path
 | `fn get_settings` | `fn get_settings` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | the gate's unauthenticated path and every bearer check (`fn access_settings`, `os/pkgs/mosd/apid/src/routes.rs`), the `/`, `/builtin`, `/setup`, `/login`, `/password`, `/network`, `/hostname`, `/ssh`, `/containers` and `/mqtt` handlers, and the settings read route, `resource_response(state.api.get_settings(&path).await, &path)` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn set_settings` | `fn set_settings` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn set_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | `/setup`, `/password`, `/network`, `/network/peers/*`, `/hostname`, `/ssh/enable`, `/ssh/keys/*`, `/containers/enable`, `/mqtt/enable`, `/builtin/tokens*`, and every `/api/v1/` write — twenty call sites in `os/pkgs/mosd/apid/src/routes.rs` |
 | `fn get_state` | `fn get_state` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | five literal live-state paths: `get_state("network")` (`os/pkgs/mosd/apid/src/routes.rs`), `.get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs`), `get_state("sshd")` (`os/pkgs/mosd/apid/src/routes.rs`), `get_state("container")` (`os/pkgs/mosd/apid/src/routes.rs`) and `get_state("mqtt")` (`os/pkgs/mosd/apid/src/routes.rs`), plus the health probe `get_state(HEALTH_PROBE_PATH)` (`os/pkgs/mosd/apid/src/routes.rs`) and the passthrough `get_state(&path)` (`os/pkgs/mosd/apid/src/routes.rs`), which serves any dot-path a client asks for |
-| `fn set_value` on `/Actions/reboot` | `os/pkgs/mosd/apid/src/bus_client.rs`, path at `os/pkgs/mosd/apid/src/bus_client.rs` | `os/pkgs/mosd/mosd/src/tree.rs` → `os/pkgs/mosd/mosd/src/actions.rs` | `POST /power/reboot` and `POST /api/v1/actions/reboot`, both through `PowerAction::Reboot => api.reboot().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
-| `fn set_value` on `/Actions/poweroff` | `os/pkgs/mosd/apid/src/bus_client.rs`, path at `os/pkgs/mosd/apid/src/bus_client.rs` | `os/pkgs/mosd/mosd/src/tree.rs` → `os/pkgs/mosd/mosd/src/actions.rs` | `POST /power/poweroff` and `POST /api/v1/actions/poweroff`, both through `PowerAction::PowerOff => api.power_off().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
+| `fn set_value` on `/Actions/reboot` | method and path constant in `os/pkgs/mosd/apid/src/bus_client.rs` | `os/pkgs/mosd/mosd/src/tree.rs` → `os/pkgs/mosd/mosd/src/actions.rs` | `POST /power/reboot` and `POST /api/v1/actions/reboot`, both through `PowerAction::Reboot => api.reboot().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
+| `fn set_value` on `/Actions/poweroff` | method and path constant in `os/pkgs/mosd/apid/src/bus_client.rs` | `os/pkgs/mosd/mosd/src/tree.rs` → `os/pkgs/mosd/mosd/src/actions.rs` | `POST /power/poweroff` and `POST /api/v1/actions/poweroff`, both through `PowerAction::PowerOff => api.power_off().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn set_transient_root_password` | `fn set_transient_root_password` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /ssh/password`, at `app.api.set_transient_root_password(&form.password)` (`os/pkgs/mosd/apid/src/routes.rs`), and `POST /api/v1/actions/transient-root-password`, at `app.api.set_transient_root_password(&request.password)` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn rotate_wireguard_key` | `fn rotate_wireguard_key` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn rotate_wireguard_key` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /api/v1/actions/wireguard/{iface}/rotate-key` only (`os/pkgs/mosd/apid/src/routes.rs`); no HTML pane calls it |
 
@@ -270,14 +270,15 @@ the same caller name as one called through `Reboot`/`PowerOff`"*
 
 mosd also emits two signals, and apid subscribes to one.
 `SettingsChanged(path, value_json)` fires after every successful settings write
-(`os/pkgs/mosd/mosd/src/bus.rs`, declared at `os/pkgs/mosd/mosd/src/bus.rs`), and the proxy declares
-the matching `#[zbus(signal)]` member (`os/pkgs/mosd/apid/src/bus_client.rs`): a dedicated watcher task subscribes on
+(`os/pkgs/mosd/mosd/src/bus.rs`), and the proxy declares the matching
+`#[zbus(signal)]` member (`os/pkgs/mosd/apid/src/bus_client.rs`): a dedicated
+watcher task subscribes on
 its own connection and feeds the auth gate's cache of the `access` subtree,
 invalidating it on every change that can touch `access`
 (`pub async fn watch_settings_changed`, `os/pkgs/mosd/apid/src/bus_client.rs`). That is apid's push notification of a
 settings change, and its consumer is internal — no change-stream API is served
 (§8.3 item 2). `ItemsChanged` fires once per accumulated batch of item-tree
-changes, declared on `com.mos.Item1` (`os/pkgs/mosd/mosd/src/tree.rs`, `:441-442`),
+changes, declared on `com.mos.Item1` (`os/pkgs/mosd/mosd/src/tree.rs`),
 served at the service root, which is `pub const ROOT_PATH: &str = "/";`
 (`os/pkgs/mosd/mosd/src/tree.rs`); apid still declares no member for it.
 
@@ -534,21 +535,16 @@ backward through a registered chain
 *"Persist `settings` atomically: write to a temp file in the target directory,
 fsync it, rename it over the target, then fsync the directory"*
 (`os/pkgs/mosd/mosd-settings/src/store.rs`), implemented at
-`os/pkgs/mosd/mosd-settings/src/store.rs`. Every struct in the model carries
-`#[serde(deny_unknown_fields)]` (for example
-`os/pkgs/mosd/mosd-settings/src/model.rs`, `:69`, `:95`, `:112`, `:139`, `:147`,
-`os/pkgs/mosd/mosd-settings/src/model.rs`, `:197`, `:247`, `:258`, `:273`, `:333`, `:358`, `:368`, `:393`,
-`os/pkgs/mosd/mosd-settings/src/model.rs`, `:506`, `:529`, `:539`, `:555`, `:572`, `:629`), so an unknown key
-fails the load rather than being silently dropped.
+`os/pkgs/mosd/mosd-settings/src/store.rs`. Every settings struct in
+`os/pkgs/mosd/mosd-settings/src/model.rs` carries
+`#[serde(deny_unknown_fields)]`, so an unknown key fails the load rather than
+being silently dropped.
 
 **The settings subtrees, from `pub struct Settings {`
 (`os/pkgs/mosd/mosd-settings/src/model.rs`):**
 
-Re-derived here's closeout: the third column was written in the
-no-slash `model.rs:NNN` form, which the citation gate matches and then drops
-unresolved, and two of its rows had come to name `ApiToken` rather than the
-WiFi fields they claim. Every row below is a full-form citation into
-`os/pkgs/mosd/mosd-settings/src/model.rs`.
+The table is derived from `os/pkgs/mosd/mosd-settings/src/model.rs`; the source
+module remains authoritative when fields are added or renamed.
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
@@ -735,7 +731,7 @@ in the same four positions so the change is legible rather than overwritten.
 any other method (`os/pkgs/mosd/apid/src/assets/serve.rs`,
 `os/pkgs/mosd/apid/src/assets/serve.rs`), then hands the path to `respond`
 (`os/pkgs/mosd/apid/src/assets/serve.rs`): a file out of the active bundle when
-one resolves (`os/pkgs/mosd/apid/src/assets/serve.rs`), a 404 when a path guard fired (`:95`), and otherwise
+one resolves (`os/pkgs/mosd/apid/src/assets/serve.rs`), a 404 when a path guard fired, and otherwise
 §4.2's SPA fallback — but only when the client offered HTML explicitly
 (`os/pkgs/mosd/apid/src/assets/serve.rs`) and the final path segment contains
 no `.` (`os/pkgs/mosd/apid/src/assets/serve.rs`). When that fallback finds no
@@ -792,7 +788,7 @@ merged into mosd — and the HTTPS management daemon is named `apid`
 (`docs/design/dashboard.md`). **The bus as a contract:** `com.mos.mosd1`
 stays served whatever the UI does, because the boot health gate is a second
 consumer calling it directly
-(`os/rootfs/overlay-v2/usr/lib/mos/mos-health:47-48`, `:209-213`), and its
+(`os/rootfs/overlay-v2/usr/lib/mos/mos-health`), and its
 failure path is an A/B rollback. This document therefore assumes a
 server-rendered no-JavaScript built-in UI, two processes, a bus that keeps
 existing, and the name `apid`; a section below that needs any of those to change
@@ -811,9 +807,9 @@ closeout measures is the fact. The document says so about itself: it is *"a snap
 `d0bcae9`, not maintained"*, so what
 follows is a reading of a snapshot and not a defect in it.
 
-1. **Line numbers throughout its section 2.1 no longer resolve to the routes
-   they name.** It cites `GET /` at route `:42` and handler `:566`; today the
-   route is `.route("/", get(serve::root))` (`os/pkgs/mosd/apid/src/routes.rs`) and the
+1. **The source positions cited throughout its section 2.1 no longer resolve
+   to the routes they name.** Today `GET /` is declared as
+   `.route("/", get(serve::root))` (`os/pkgs/mosd/apid/src/routes.rs`) and the
    handler is `pub async fn root`
    (`os/pkgs/mosd/apid/src/assets/serve.rs`), with the built-in branch at
    `pub(crate) async fn home` (`os/pkgs/mosd/apid/src/routes.rs`).
@@ -1049,7 +1045,7 @@ be conflated.** The schema version is the shape of the tree on disk
 (`os/pkgs/mosd/mosd-settings/src/store.rs`), moved by a registered migration chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs`, entry point at
 `os/pkgs/mosd/mosd-settings/src/migration.rs`) and read-only through the write path
-(`os/pkgs/mosd/mosd-settings/src/model.rs`, `:647-649`). The shipped handler
+(`os/pkgs/mosd/mosd-settings/src/model.rs`). The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1120,13 +1116,13 @@ promises, and they are not the same promise:
 
 **What ships.** Two of the three roots below exist, read-only. The settings
 root is `const V1_SETTINGS_ROUTE: &str = "/v1/settings/{*path}";`
-(`os/pkgs/mosd/apid/src/routes.rs`) declared at `os/pkgs/mosd/apid/src/routes.rs` and
-handled by `api_v1_settings` (`:915`), whose whole body is
+and is declared and handled in `os/pkgs/mosd/apid/src/routes.rs` by
+`api_v1_settings`, whose whole body is
 `resource_response(state.api.get_settings(&path).await, &path)`
 (`os/pkgs/mosd/apid/src/routes.rs`) — the dot-path passthrough this section asks
 for, with no second model beside it. The live-state root is the same shape,
 `const V1_STATE_ROUTE: &str = "/v1/state/{*path}";`
-(`os/pkgs/mosd/apid/src/routes.rs`) at `:368` and `:406`, ending in
+(`os/pkgs/mosd/apid/src/routes.rs`), ending in
 `resource_response(value, &path)`
 (`os/pkgs/mosd/apid/src/routes.rs`). Both answer `ResourceValue`
 (`os/pkgs/mosd/apid/src/routes.rs`), which carries a
@@ -1187,15 +1183,9 @@ disagreement is named and the choice is costed.
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
-<<<<<<< HEAD
-| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) and `set_settings` (`:619`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs`), survives reboot and A/B update (`docs/design/access.md`) |
-| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs`), in memory, written only from inside mosd by the four writers section 1.5 names |
-| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST` only | not state at all — see §2.3 |
-=======
 | `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) and `set_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs`), survives reboot and A/B update (`docs/design/access.md`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs`), in memory, written only from inside mosd by the four writers section 1.5 names |
 | `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST` only | not state at all — see §2.3 |
->>>>>>> bkd/tcdocsrm
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `os/pkgs/mosd/mosd/src/bus.rs`),
@@ -1222,10 +1212,9 @@ field added to `Settings` is invisible over the API until someone also adds it
 to the resource layer, and a field that is invisible over the API is, by this
 project's own rule, unsupported: *"An unmodelled setting is an unsupported
 setting"* (`docs/design/access.md`). Hand-shaped nouns reproduce exactly
-that failure one layer up, where nothing — no compiler, no
-`deny_unknown_fields` (`os/pkgs/mosd/mosd-settings/src/model.rs`, `:69`, `:95`, and
-nineteen more) — will ever notice the omission. The passthrough cannot drift, because
-there is nothing to drift from.
+that failure one layer up, where neither the compiler nor the model's
+`deny_unknown_fields` guards can notice the omission. The passthrough cannot
+drift, because there is nothing to drift from.
 
 **What the passthrough costs, stated plainly.** The API becomes exactly as
 capable as the bus, including the bus's limits:
@@ -1311,14 +1300,14 @@ have to issue N deletes and M posts with no atomicity at all.
 (`os/pkgs/mosd/mosd/src/bus.rs`), and the admin hash lives under it as
 `password_hash` (`os/pkgs/mosd/mosd-settings/src/model.rs`). A settings
 passthrough with no redaction therefore hands the admin password hash — and
-`access.device.passwordHash` (`:277-282`), `wifi.ap.psk` (`:423-424`) and every
-`wifi.client.networks[].psk` (`:398-399`) — to any authenticated API caller. The
+`access.device.passwordHash`, `wifi.ap.psk` and every
+`wifi.client.networks[].psk` — to any authenticated API caller. The
 rule: **every `GET` under `/api/v1/settings/` passes the value through a
 structural redactor before serialising it**, replacing the value of any field
 named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in the tree,
 at any depth — with the sentinel `"<redacted>"`. It must be structural rather
 than a list of dot-paths, because the two `psk` fields sit inside arrays and the
-dot-path syntax cannot name them (`os/pkgs/mosd/mosd-settings/src/model.rs`, `:423-424`).
+dot-path syntax cannot name them (`os/pkgs/mosd/mosd-settings/src/model.rs`).
 The residual risk is stated: this is a denylist, so a future secret-bearing field
 under a name not on it is exposed by default. That is a fail-open design and the
 mitigation is a test, not a hope. A redacted field is
@@ -1330,19 +1319,19 @@ destroy the credential.
 
 | Concern | API resource | Backing | Notes |
 |---|---|---|---|
-| System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`mosd/mosd-settings/src/model.rs`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
-| Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`mosd/mosd-settings/src/model.rs`) | read-only; a write to `schema_version` is rejected by mosd (`mosd/mosd-settings/src/model.rs`) so the API does not expose one |
-| Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`mosd/mosd-settings/src/model.rs`) | body is a bare JSON string; reconciled by `hostname` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs`) |
-| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`mosd/mosd-settings/src/model.rs`, `:431-460`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
-| WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`mosd/mosd-settings/src/model.rs`) | `psk` redacted on read |
-| WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`mosd/mosd-settings/src/model.rs`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:391-402`) |
-| SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`mosd/mosd-settings/src/model.rs`) | default `enabled: false` (`:206-209`) |
+| System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
+| Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | read-only; a write to `schema_version` is rejected by mosd (`os/pkgs/mosd/mosd-settings/src/model.rs`) so the API does not expose one |
+| Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | body is a bare JSON string; reconciled by `hostname` (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs`) |
+| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
+| WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | `psk` redacted on read |
+| WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` |
+| SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | default `enabled: false` |
 | SSH keys | the authorized-keys collection above | `access.ssh.authorizedKeys` | **every key is a root key** (`docs/design/access.md` §4.1, `os/pkgs/mosd/apid/src/routes.rs`); the API response must carry that sentence in a `notice` field for the same reason the pane must carry it |
 | Transient root password | `POST /api/v1/actions/transient-root-password` | `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs`) | an action, not a setting — see §2.3 |
-| Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`mosd/mosd-settings/src/model.rs`) | see §3.2 for why the API does not offer a password change in phase 1 |
-| Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`mosd/mosd-settings/src/model.rs`) | only the `debug` image ships the shell at all (`mosd/mosd-settings/src/model.rs`) |
+| Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | see §3.2 for why the API does not offer a password change in phase 1 |
+| Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | only the `debug` image ships the shell at all (`os/pkgs/mosd/mosd-settings/src/model.rs`) |
 | Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs`) | actions — see §2.3 |
-| Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`os/pkgs/mosd/mosd/src/bus.rs`, `:453-455`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
+| Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`os/pkgs/mosd/mosd/src/bus.rs`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
 | Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`os/pkgs/mosd/mosd/src/bus.rs`) | recorded *before* the action, so it survives the machine going down |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | the `health` subtree, one key per component (`os/pkgs/mosd/mosd/src/bus.rs`) | the two are different questions — see §2.4 |
 | Dry-run marker | `GET /api/v1/state/dry_run` | set from `std::env::var("MOSD_DRY_RUN")` (`os/pkgs/mosd/mosd/src/main.rs`) and inserted at `os/pkgs/mosd/mosd/src/main.rs` | in that mode no reconcilers are registered at all (`os/pkgs/mosd/mosd/src/main.rs`), so every other state key is absent |
@@ -1451,7 +1440,7 @@ finding rather than a thing to quietly align:
 | Field | Proposed below | In `os/pkgs/mosd/apid/openapi.json` | Difference |
 |---|---|---|---|
 | `error` | the only top-level member | `"required": [ "error" ]` (`os/pkgs/mosd/apid/openapi.json`) | none |
-| `code` | *"stable machine token; an OPEN set"* | `"type": "string"` (`os/pkgs/mosd/apid/openapi.json`), required (`:237-241`) | none in shape. The **open set** is stated only in the description (`os/pkgs/mosd/apid/openapi.json`); nothing in the schema expresses it, so a generated client learns the rule only if a human reads the prose |
+| `code` | *"stable machine token; an OPEN set"* | `"type": "string"` (`os/pkgs/mosd/apid/openapi.json`), required | none in shape. The **open set** is stated only in the description (`os/pkgs/mosd/apid/openapi.json`); nothing in the schema expresses it, so a generated client learns the rule only if a human reads the prose |
 | `message` | *"human-readable; not for matching on"* | `"type": "string"` (`os/pkgs/mosd/apid/openapi.json`), required | none |
 | `source` | `"apid" \| "mosd"`, an enum of exactly two | `"type": "string"` (`os/pkgs/mosd/apid/openapi.json`), required, **no `enum`** | **a real difference.** The Rust type admits only two values, because `ApiError` is constructed by exactly two constructors, `ApiError::apid`, which passes `Self::new(code, message, "apid")`
 (`os/pkgs/mosd/apid/src/routes.rs`), and `ApiError::mosd`, which passes
@@ -1498,8 +1487,8 @@ answering this section's envelope.
 | `not_authenticated` | **yes**, 401 | `ApiError::apid("not_authenticated", message.to_string())` (`os/pkgs/mosd/apid/src/routes.rs`). Raised by the bearer extractor (`os/pkgs/mosd/apid/src/routes.rs`), and since M9 by nothing else: the 401 means *"this route accepts a bearer API token only; a session cookie is not a credential here, and a browser mints its first token at POST /builtin/tokens"* (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `not_found` | **yes**, 404 | `ApiError::apid("not_found", format!("no API route at {}", uri.path()))` (`os/pkgs/mosd/apid/src/routes.rs`), from the reserved subtree's fallback |
 | `method_not_allowed` | **yes**, 405 with `Allow` | `"method_not_allowed",` (`os/pkgs/mosd/apid/src/routes.rs`), inside `fn api_method_not_allowed` (`os/pkgs/mosd/apid/src/routes.rs`), reached through the one `.method_not_allowed_fallback(api_method_not_allowed)` (`os/pkgs/mosd/apid/src/routes.rs`) that covers every route in `api_router` |
-| `request_invalid` | **yes**, 400 — this snapshot said **no** | seven sites, one per JSON-body route that reports a rejected body itself, plus the shared reader `fn json_body`, at `at(ApiError::apid("request_invalid", rejection.body_text())),` (`os/pkgs/mosd/apid/src/routes.rs`): `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/routes.rs`. It could not ship when this row was written because no route took a body; ten do now (section 1.2) |
-| `validation_failed` | **yes**, 422 — this snapshot said **no** | twenty-two sites, the most-used code in the crate, from `"validation_failed",` (`os/pkgs/mosd/apid/src/routes.rs`) to `os/pkgs/mosd/apid/src/routes.rs`. The four validators the row below names are all reachable from `/api/v1/` now: `valid_hostname` through the settings write, `validate_iface` through `POST /api/v1/setup`, at `if let Err(message) = validate_iface(iface, cfg.dhcp, address) {` (`os/pkgs/mosd/apid/src/routes.rs`), `validate_transient_password` and `parse_authorized_key` through their action and collection routes |
+| `request_invalid` | **yes**, 400 — this snapshot said **no** | emitted by each JSON-body route that reports a rejected body and by the shared `json_body` reader in `os/pkgs/mosd/apid/src/routes.rs`. It could not ship when this row was written because no route took a body; ten do now (section 1.2) |
+| `validation_failed` | **yes**, 422 — this snapshot said **no** | the most-used code in the crate, emitted throughout `os/pkgs/mosd/apid/src/routes.rs`. The four validators the row below names are all reachable from `/api/v1/` now: `valid_hostname` through the settings write, `validate_iface` through `POST /api/v1/setup`, and `validate_transient_password` and `parse_authorized_key` through their action and collection routes |
 | `wrong_password` | **yes**, 403 | `"wrong_password",` (`os/pkgs/mosd/apid/src/routes.rs`), on `POST /api/v1/actions/change-password` |
 | `settings_not_found` | **yes**, 404 | `ApiError::mosd("settings_not_found", message)` (`os/pkgs/mosd/apid/src/routes.rs`), on `MOSD_NOT_FOUND` (`os/pkgs/mosd/apid/src/routes.rs`); also raised by apid itself for an absent collection item (`os/pkgs/mosd/apid/src/routes.rs`). The live-state route no longer raises it directly: mosd names the condition and the classifier above answers it |
 | `settings_read_only` | **yes**, 409 | `ApiError::mosd("settings_read_only", message)` (`os/pkgs/mosd/apid/src/routes.rs`), on `MOSD_READ_ONLY` (`os/pkgs/mosd/apid/src/routes.rs`); also raised by apid's own write refusal (`os/pkgs/mosd/apid/src/routes.rs`) |
@@ -1568,9 +1557,9 @@ Content-Type: application/json
 | `wrong_password` | 403 | apid | the current password in a change-password request does not verify; the session is valid, the credential is not |
 | `settings_not_found` | 404 | mosd | the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound` |
 | `settings_read_only` | 409 | mosd | the dot-path exists and rejects writes: mosd answered `com.mos.mosd1.Error.ReadOnly` |
-| `settings_rejected` | 422 | mosd | mosd answered fdo `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs`, `:593`, `:631`) |
+| `settings_rejected` | 422 | mosd | mosd answered fdo `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs`) |
 | `settings_io` | 500 | mosd | mosd answered `IOError` (`os/pkgs/mosd/mosd/src/bus.rs`) |
-| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs`, `:571`) |
+| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs`) |
 | `mosd_unreachable` | **503** | apid | the call could not be made at all |
 | `ssid_exists` | 409 | apid | a stored WiFi network already carries the posted SSID |
 | `key_exists` | 409 | apid | a stored authorized key already carries the posted public key, compared on the canonical key text so a relabel is not a new key |
@@ -1616,8 +1605,7 @@ verbatim, and always say which side it came from.**
 
 The reason is what the HTML path does today, which is neither. It **flattens**:
 `BusSettings` converts every `zbus::Error` to `anyhow::Error` with `err.into()`
-(`os/pkgs/mosd/apid/src/bus_client.rs`, and the same shape at `:235-244`, `:246-258`,
-`os/pkgs/mosd/apid/src/bus_client.rs`), and every form handler renders one page for the result — `bus_error`,
+(`os/pkgs/mosd/apid/src/bus_client.rs`), and every form handler renders one page for the result — `bus_error`,
 HTTP **503** with `Retry-After`, body *"The management daemon is unavailable."*
 (`os/pkgs/mosd/apid/src/routes.rs`, message at `os/pkgs/mosd/apid/src/routes.rs`). So a settings value mosd
 rejected as invalid is reported to the operator as the daemon being down:
@@ -1647,7 +1635,7 @@ copy of every chained message from every method extends a one-method promise
 across the whole interface, silently, and the extension is not written down
 anywhere. **Translating the classification while copying the message keeps the
 same exposure the HTML path already has** — the pane already shows mosd's message
-text in an error box (`os/pkgs/mosd/apid/src/routes.rs`, `:1711`, `:1731`) — without
+text in an error box (`os/pkgs/mosd/apid/src/routes.rs`) — without
 widening it.
 
 **And the failure mode of the choice this rejects.** If the API translated the
@@ -1675,7 +1663,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    rather than today's 502 because apid itself is up and answering — 503 says
    "this server, temporarily", which is exactly what the connection cache makes
    true: the proxy is dropped after any failed call so the next request
-   reconnects (`os/pkgs/mosd/apid/src/bus_client.rs`, `:187-190`). **This shipped**:
+   reconnects (`os/pkgs/mosd/apid/src/bus_client.rs`). **This shipped**:
    `mosd_unreachable` answers 503 (`os/pkgs/mosd/apid/src/routes.rs`) with
    `Retry-After` attached (`os/pkgs/mosd/apid/src/routes.rs`). The cost this
    paragraph once named — the HTML path answering 502 for the same underlying
@@ -1691,9 +1679,9 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    answers the literal `"ok"` (`os/pkgs/mosd/apid/src/routes.rs`), so **an appliance whose mosd is dead
    answers `/healthz` with `ok`**. A monitor polling it sees a healthy device.
    `/healthz` cannot be fixed, because the boot health gate depends on exactly
-   that behaviour (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:219-232`) — its
+   that behaviour (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) — its
    comment says so in as many words: *"/healthz is apid's existing endpoint and
-   bypasses its auth gate"* (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:218`).
+   bypasses its auth gate"* (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`).
 
    So the API adds a second, differently-scoped endpoint:
 
@@ -1769,7 +1757,7 @@ whose whole test since M9 is
 401 rather than the gate's HTML redirect
 (`os/pkgs/mosd/apid/src/routes.rs`). The gate hands the declared `/api` routes
 off to it with `is_declared_api_route(path)`
-(`os/pkgs/mosd/apid/src/routes.rs`, predicate at `:503-520`). There is no bearer
+(`os/pkgs/mosd/apid/src/routes.rs`, predicate). There is no bearer
 token, no `Authorization` header path and no second credential anywhere in the
 crate (section 1.4).
 
@@ -1831,12 +1819,12 @@ code at `f7cb5ba`.
    whenever the fleet is updated, and per item 1 the job's next run gets a 200
    and an HTML page.
 4. **The TTL is fixed at 24 hours and is not renewed by use.** The expiry is
-   stamped once at creation (`os/pkgs/mosd/apid/src/session.rs`, TTL at `:19`) and
+   stamped once at creation (`os/pkgs/mosd/apid/src/session.rs`, TTL) and
    `verify` only compares against it — it never extends it
    (`os/pkgs/mosd/apid/src/session.rs`). A long-running client is logged out
    mid-operation exactly 24 hours in, with no warning in any response before
    that point.
-5. **The expiry is monotonic, not absolute.** `Instant` (`session.rs`, `:53`)
+5. **The expiry is monotonic, not absolute.** `Instant` (`session.rs`)
    is a monotonic clock. A client cannot compute when its session dies from
    anything the server told it, because nothing on the wire carries the
    server's notion of now.
@@ -1852,9 +1840,9 @@ code at `f7cb5ba`.
    *"the appliance has one admin password, so per-client tracking buys nothing
    against an online guesser"* (`os/pkgs/mosd/apid/src/auth.rs`). Each consecutive
    failure doubles the wait before the next attempt is accepted, from one second
-   to a five-minute cap (`os/pkgs/mosd/apid/src/auth.rs`, `:16`, `:39-47`), and the
+   to a five-minute cap (`os/pkgs/mosd/apid/src/auth.rs`), and the
    window rejects **every** login attempt while it holds
-   (`os/pkgs/mosd/apid/src/auth.rs`, `:117-126`; the 429 at
+   (`os/pkgs/mosd/apid/src/auth.rs`; the 429 at
    `os/pkgs/mosd/apid/src/routes.rs`). A script retrying with a
    stale password holds the human admin out of the web UI indefinitely. That
    comment's reasoning is sound *for one password*; adding a second class of
@@ -1949,7 +1937,7 @@ The store is `access.apiTokens`, an array whose items are
 `{id, name, hash, created}` — the naming follows the tree's existing
 convention of camelCase renames for multi-word keys (`webAdmin`,
 `authorizedKeys`, `passwordHash`;
-`os/pkgs/mosd/mosd-settings/src/model.rs`, `:223`, `:278`). Five reasons, and the
+`os/pkgs/mosd/mosd-settings/src/model.rs`). Five reasons, and the
 tier is chosen rather than inherited:
 
 1. **It is the tier that matches the credential's required lifetime.** The
@@ -2089,7 +2077,7 @@ Two costs, both inherited from the tree rather than introduced here:
 
 **Expiry: none in phase 1, and that is a decision, not an omission.** An
 absolute expiry needs a wall clock, and nothing in the crate reads one —
-`SessionStore` uses `Instant` throughout (`os/pkgs/mosd/apid/src/session.rs`, `:53`,
+`SessionStore` uses `Instant` throughout (`os/pkgs/mosd/apid/src/session.rs`,
 `os/pkgs/mosd/apid/src/session.rs`), which is monotonic and cannot express a deadline that survives a reboot.
 Adding an `expiresAt` before there is a trusted wall clock would produce a field
 that is either unenforced or enforced against a clock that resets. So: tokens do
@@ -2109,7 +2097,7 @@ derive from it.**
   (`docs/design/dashboard.md`), which has no use for a bearer token.
 - **Coexisting means two credentials at one privilege level** — and there is
   only one privilege level, because apid runs as root (`os/pkgs/mosd/dist/apid.service`
-  sets no `User=`, `:1-13`; `os/pkgs/mosd/dist/com.mos.mosd.conf` records the same
+  sets no `User=`; `os/pkgs/mosd/dist/com.mos.mosd.conf` records the same
   from the other side) and every route it serves is behind the same gate
   (`os/pkgs/mosd/apid/src/routes.rs`). A token can do everything the operator can do
   over the API. There are no scopes in phase 1, and inventing them would mean a
@@ -2153,8 +2141,8 @@ building §3.2, and it is recorded here rather than left for a reader to derive.
 (`os/pkgs/mosd/Cargo.toml`, installed explicitly at `os/pkgs/mosd/apid/src/main.rs`),
 carrying a **self-signed certificate apid generates on first start**: CN `mos`,
 SANs `DNS:mos`, `DNS:localhost` and the v4 loopback
-(`os/pkgs/mosd/apid/src/tls.rs`, SAN construction at `:59-67`), private key mode
-`0o600` (`:78`, `:37`) in a state directory created mode `0o700` (`:24`).
+(`os/pkgs/mosd/apid/src/tls.rs`, SAN construction), private key mode
+`0o600` in a state directory created mode `0o700`.
 There is no ACME client, no rotation and no way to install an operator-supplied
 certificate anywhere in that file. Three things follow immediately:
 
@@ -2196,7 +2184,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
    address operators actually use (`os/pkgs/mosd/apid/src/tls.rs`), every client
    is configured to skip verification — the shipped boot health probe does
    exactly that, `curl -k` with a `wget --no-check-certificate` fallback
-   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:222`, `:228`). An attacker who
+   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`). An attacker who
    can answer for the device's address terminates TLS with their own
    certificate, and the client, told to accept anything, hands over the bearer
    token in the first request. Nothing in this design stops that. The mitigation
@@ -2305,7 +2293,7 @@ anywhere in the crate — `grep -ni csrf mosd/apid/src/*.rs` returns nothing at
 paragraph said the gate calls `GetSettings("access")` on **every** request
 before deciding anything, so an unauthenticated flood costs one D-Bus round
 trip per request against the single lock mosd holds over both trees
-(`os/pkgs/mosd/mosd/src/bus.rs`, `:578-580`). At `f7cb5ba` the bus call is paid
+(`os/pkgs/mosd/mosd/src/bus.rs`). At `f7cb5ba` the bus call is paid
 only by a request **without** a valid session cookie
 (`os/pkgs/mosd/apid/src/routes.rs`), so an authenticated flood no longer
 reaches mosd through the gate. The unauthenticated path has since been
@@ -2327,7 +2315,7 @@ not solve it.
 Section 1.6 measured the starting point at `86cd669`: apid served no static
 asset of any kind, from anywhere, and the only disk paths it read at all were
 `/proc/uptime` (read in apid then; mosd publishes uptime now — §2.2 item 3)
-and its own state directory (`os/pkgs/mosd/apid/src/tls.rs`, `:86`). Everything in this section was therefore
+and its own state directory (`os/pkgs/mosd/apid/src/tls.rs`). Everything in this section was therefore
 new code rather than a configuration change to something that existed, and it
 was marked **[proposed]** throughout for that reason. §8.2 phase 4 has since
 landed; the paragraphs below say where.
@@ -2366,10 +2354,10 @@ claim is made anywhere in this section"* stays true.
 
 ### 4.1 Routing between API and assets — **[implemented]**
 
-**Implemented at `os/pkgs/mosd/apid/src/routes.rs`** — `app` (`:88-161`), whose
+**Implemented at `os/pkgs/mosd/apid/src/routes.rs`** — `app`, whose
 *declaration order* is this subsection's precedence rule: `/` (`os/pkgs/mosd/apid/src/routes.rs`), the
 reserved `/builtin` subtree (`os/pkgs/mosd/apid/src/routes.rs`), the fifteen legacy declarations
-(`os/pkgs/mosd/apid/src/routes.rs`), the reserved `/api` subtree (`:155-156`), and rule 4's
+(`os/pkgs/mosd/apid/src/routes.rs`), the reserved `/api` subtree, and rule 4's
 `.fallback(serve::fallback)` (`os/pkgs/mosd/apid/src/routes.rs`). The asset side is
 `os/pkgs/mosd/apid/src/assets/serve.rs` (`root` and `fallback`). Nothing re-checks a
 prefix: no handler under `assets/` reads one, which is the property this
@@ -2450,8 +2438,8 @@ status pane. So `/` is the single exception to rule 3:
   and its index is readable (section 5.3's definition of active);
 - otherwise `GET /` serves the built-in UI.
 
-The built-in status pane that occupies `GET /` today (`home`, at
-`os/pkgs/mosd/apid/src/routes.rs` and `:658`) moves under section 6.3's reserved
+The built-in status pane that occupies `GET /` today (`home` in
+`os/pkgs/mosd/apid/src/routes.rs`) moves under section 6.3's reserved
 prefix, where it is reachable unconditionally. `/` is therefore **conditional**
 and the reserved prefix is **not** — and section 6.3 requires exactly one
 unconditional path, not two, so this trade is the one that section makes.
@@ -2571,7 +2559,7 @@ response, not only the unknown ones. Without it a browser may sniff an uploaded
 file as HTML and execute it on the management origin — which turns "upload a UI
 bundle" into stored cross-site scripting against the same origin that holds the
 session cookie (`apid_session`, `Path=/; HttpOnly; Secure; SameSite=Lax`,
-`os/pkgs/mosd/apid/src/session.rs`, `:91`). The cookie is `HttpOnly`, so script
+`os/pkgs/mosd/apid/src/session.rs`). The cookie is `HttpOnly`, so script
 cannot read it, but same-origin script does not need to read it: it can issue
 authenticated requests directly.
 
@@ -2694,12 +2682,12 @@ file read **as root**, and the reachable set includes at least:
   (`docs/design/access.md`).
 - **apid's own state directory**, `/var/lib/mos/apid` by default
   (`os/pkgs/mosd/apid/src/config.rs`): the TLS private key, mode `0o600`
-  (`os/pkgs/mosd/apid/src/tls.rs`, called from `:78`), and **`session.key`**, the 32-byte HMAC
+  (`os/pkgs/mosd/apid/src/tls.rs`), and **`session.key`**, the 32-byte HMAC
   signing key (`os/pkgs/mosd/apid/src/tls.rs`).
 
 That last one is the escalation nobody should have to discover during an
 incident. A session cookie is `<id>.<hmac>` where the MAC is HMAC-SHA256 of the
-id under the persistent signing key (`os/pkgs/mosd/apid/src/session.rs`, `:51-61`). **Reading
+id under the persistent signing key (`os/pkgs/mosd/apid/src/session.rs`). **Reading
 `session.key` lets an attacker mint a valid session cookie**, which converts a
 file-read primitive into full administrative access without ever guessing the
 password.
@@ -2747,7 +2735,7 @@ verity's coverage by design.
    "canonicalize\|symlink_metadata\|read_link"` over
    `tower-http-0.6.11/src/` returns no match, and `build_and_validate_path`
    (`tower-http-0.6.11/src/services/fs/serve_dir/mod.rs`) is purely
-   lexical — it rejects `Component::ParentDir`, `RootDir` and `Prefix` at `:488`
+   lexical — it rejects `Component::ParentDir`, `RootDir` and `Prefix`
    and then simply pushes the remaining names onto the base path.
 
    A bundle is **operator-supplied content**, and planting a symlink inside one
@@ -2825,17 +2813,16 @@ possible.
 
 ### 5.2 The location, and the bind — **[implemented]**
 
-**Implemented at `os/pkgs/mosd/apid/src/bundle.rs`** — `DEFAULT_ROOT` is `/srv/ui`
-(`:42`), the layout beneath it is `bundles/<generation>/`, `current`,
+**Implemented at `os/pkgs/mosd/apid/src/bundle.rs`** — `DEFAULT_ROOT` is
+`/srv/ui`, and the layout beneath it is `bundles/<generation>/`, `current`,
 `records/`, `.staging-<generation>/` and `.trash-<generation>/`, and the modes
-are `DIR_MODE` `0755` and `FILE_MODE` `0644` (`:53`, `:55`), applied to the root and
+are `DIR_MODE` `0755` and `FILE_MODE` `0644`, applied to the root and
 to everything under it. The root is created lazily on first activation and
 never at start-up, which is this subsection's *"absence is a defined state"*
 written as code. No mount unit and no seed unit was added, and the eight binds
 are still eight. The image side is asserted rather than assumed:
-the image verifier's `check_ui_location` fixed `/srv/ui` as the root
-(`:210`) and chains to the packed-mountpoint check, and every one of those
-assertions is driven against an input in which its fact is false by
+the checks in `os/verify/src/checks-fstab.ts` fix `/srv/ui` as the root and
+chain to the packed-mountpoint check. Their negative cases live in
 `os/verify/src/checks-fstab.test.ts`.
 
 **The path is `/srv/ui/`.**
@@ -2875,7 +2862,7 @@ Two facts the image already guarantees and that this depends on:
 **It needs no seed unit either.** `mos-seed-home` exists for one reason:
 `mount(8)` does not create the source of a bind, so the source must exist before
 the mount runs (`os/rootfs/overlay-v2/etc/systemd/system/home.mount`;
-`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:9-18`). There is no bind here,
+`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home`). There is no bind here,
 so nothing fails if `/srv/ui` is absent. **Absence is a defined state** — it is
 section 6.1's first failure class, and it is the shipped state of every device
 — and apid creating the directory lazily on first install is strictly simpler
@@ -2897,14 +2884,14 @@ directories beneath it, `0644` for files.**
   and `0700` would force a group or an ownership change the day apid stops
   being root.
 - **The owner is not pinned to a numeric uid**, unlike `/srv/home/mos`
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:41-42`), because
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home`), because
   root is `0` on every image that will ever exist. If a future `apid` account
   owns this tree instead, that uid **must** be pinned by number for exactly the
   reason `mos-seed-home` documents — the directory outlives the rootfs that
   created it.
 - **Explicitly not under `/srv/home` or `/srv/root`.** Those are the bind
   sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700`
-  `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:44-47`). A UI bundle is
+  `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home`). A UI bundle is
   appliance state, not a user's file, and mixing the two would make "delete my
   files" and "remove the UI" the same gesture.
 
@@ -2912,9 +2899,9 @@ directories beneath it, `0644` for files.**
 
 **Implemented at `os/pkgs/mosd/apid/src/bundle.rs`** — `Store::activate` performs the
 five steps in this subsection's order (`os/pkgs/mosd/apid/src/bundle.rs`), `validate_tree` enforces the
-three requirements a bundle has, `deactivate` (`:531`) and `delete` (`:552`)
-are the two operations this subsection refuses to conflate, `prune` (`:582`)
-keeps the current generation and the previous one, and `Store::status` (`:605`)
+three requirements a bundle has, `deactivate` and `delete`
+are the two operations this subsection refuses to conflate, `prune`
+keeps the current generation and the previous one, and `Store::status`
 is the *"what is installed right now?"* read, answering from the served tree
 with `NO_CUSTOM_BUNDLE` as the named answer for "no bundle active". The module
 contains no HTTP.
@@ -3112,7 +3099,7 @@ set declared.
 
 **The constraint is implemented as a constraint, not as care.**
 `startup::discover` is called from `os/pkgs/mosd/apid/src/main.rs`, after both
-listeners bind (`os/pkgs/mosd/apid/src/main.rs`, `:67`) and after `APID_LISTENING` is printed (`:73`). It
+listeners bind (`os/pkgs/mosd/apid/src/main.rs`) and after `APID_LISTENING` is printed. It
 has **no error variant**: every outcome — an unreadable disk, a garbage
 manifest, an absent `/srv/ui` — is a `BundleState`, and the work runs on the
 blocking pool so that a panic raised below it arrives as a `JoinError` and
@@ -3223,10 +3210,10 @@ log line is what makes the two distinguishable after the fact.
 *One constraint on where that evaluation may happen, and it is not negotiable.*
 apid's `main` propagates every startup step with `?` —
 `config::Config::from_env()?` (`os/pkgs/mosd/apid/src/main.rs`),
-`tls::ensure_state_dir(...)` (`:153`),
-`tls::load_or_generate_certificate(...)?` (`:155`),
-`tls::load_or_generate_session_key(...)?` (`:156`) — all **before** the
-listeners bind at `os/pkgs/mosd/apid/src/main.rs` and `:167`, and the unit is `Restart=on-failure`
+`tls::ensure_state_dir(...)`,
+`tls::load_or_generate_certificate(...)?`,
+`tls::load_or_generate_session_key(...)?` — all **before** the
+listeners bind in `os/pkgs/mosd/apid/src/main.rs`, and the unit is `Restart=on-failure`
 (`os/pkgs/mosd/dist/apid.service`). A startup error therefore becomes a **crash loop
 with no listener bound**, which is precisely the failure this section exists to
 prevent. **Bundle discovery and evaluation must happen after the listeners bind
@@ -3252,14 +3239,14 @@ and from §6.1 classes 1, 2 and 4 — and it is reachable unconditionally at
 §6.3's reserved prefix, `builtin_home` in `os/pkgs/mosd/apid/src/routes.rs`. Its
 form is unchanged and is asserted on the image rather than assumed:
 the image verifier's `check_builtin_ui` required the deactivate
-form's rendered markup (`:248`) to be present in `/usr/bin/apid`, which is the
+form's rendered markup to be present in `/usr/bin/apid`, which is the
 compiled-into-the-binary property checked as an on-image fact rather than as a
 crate test, and `os/verify/src/checks-root.test.ts` drives that assertion against an input
 in which it is false.
 
 **Where it lives in the image: it is not a directory of files.** The built-in
 UI is **compiled into the `apid` binary**. The pages are `maud` `html!` macro
-expansions in `os/pkgs/mosd/apid/src/routes.rs` (the macro is imported at `:34` and
+expansions in `os/pkgs/mosd/apid/src/routes.rs` (the macro is imported and
 used by every page handler), and the only
 stylesheet is a `&str` constant emitted into the page head
 (`os/pkgs/mosd/apid/src/routes.rs`), described in the source as
@@ -3271,7 +3258,8 @@ and no non-Rust file in the crate other than its manifest.
 **How it gets there.** `os/rootfs/build-v2.sh` copies the cross-built
 `apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
 installs the binary as `/usr/bin/apid` mode `0755`, `os/rootfs/scripts/mosd-install.sh` installs the unit,
-and `:36-38` enables it by symlink and **asserts the symlink exists**. The
+and the same installer enables it by symlink and **asserts the symlink
+exists**. The
 binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
 squashfs and covers with the dm-verity hash tree
 (`docs/design/ro-root.md`).
@@ -3327,19 +3315,19 @@ mechanism behind it.
 `.nest(BUILTIN, …)` at `os/pkgs/mosd/apid/src/routes.rs`, which claims the **whole** `/builtin`
 subtree, its own not-found handler included, and is unshadowable for exactly
 the structural reason `/api/` is; candidate (B) is the deactivate control the
-pane carries, `builtin_deactivate` behind `POST /builtin/deactivate`
-(`:122`, `:851`), which performs §5.3's deactivate. The two together are the
+pane carries, `builtin_deactivate` behind `POST /builtin/deactivate`, which
+performs §5.3's deactivate. The two together are the
 chosen mechanism, and both spellings answer: `nest` claims the bare `/builtin`
 and **not** `/builtin/`, so the trailing-slash spelling — the one this document
 writes — is declared outside the nest at `os/pkgs/mosd/apid/src/routes.rs`. An operator recovering a
 device should not have to get the slash right. The escape is driven from every
 one of §6.1's five classes, identically and without diagnosis, by
 `os/pkgs/mosd/apid/src/tests/broken_classes.rs`, and the shadowing guard is fired in
-both directions as a standing test. On the image, `os/verify-image-v2.sh`'s
-`check_builtin_ui` (`:341`) asserts two facts the escape depends on: the packed
+both directions as a standing test. On the image,
+`os/verify/src/checks-root.ts` asserts two facts the escape depends on: the packed
 read-only root ships **nothing** at or under `/builtin`, so the prefix has not
 grown a second, separately-built on-disk half; and the deactivate form's
-rendered markup (`:231`) is present in `/usr/bin/apid`, which is true if and
+rendered markup is present in `/usr/bin/apid`, which is true if and
 only if the pane is compiled into the binary. Both are guard-fired against a
 mutated input by `os/verify/src/checks-root.test.ts`.
 
@@ -3376,7 +3364,7 @@ because of how dispatch works rather than because of a check.
   a path that is down. The prefix is instead named on the three built-in
   surfaces an operator with a broken custom UI actually reaches: the sign-in
   page (`os/pkgs/mosd/apid/src/routes.rs`), the navigation on every built-in pane
-  (`os/pkgs/mosd/apid/src/routes.rs`), and the reserved subtree's own 404 (`:4739`). The cost that must not be glossed: **(A) is a way *in*, not a way
+  (`os/pkgs/mosd/apid/src/routes.rs`), and the reserved subtree's own 404. The cost that must not be glossed: **(A) is a way *in*, not a way
   *out*.** It deactivates nothing, so the next navigation to `/` is broken
   again.
 
@@ -3415,7 +3403,7 @@ because a comfortable one here would be worthless:
 
 - **Under this design, a bad bundle cannot take the listener down.** 6.1's
   constraint puts bundle discovery and evaluation *after* the listeners bind
-  (`os/pkgs/mosd/apid/src/main.rs`, `:85`) and makes every bundle outcome a state rather
+  (`os/pkgs/mosd/apid/src/main.rs`) and makes every bundle outcome a state rather
   than an error return. So the realistic causes of an unreachable API — a crash
   loop, a bind failure, a network misconfiguration — are **not caused by the UI
   mechanism**. That is the actual safety claim, and it is stronger than any
@@ -3456,7 +3444,7 @@ provisioning as a hard failure on purpose, and the code says why in as many
 words: *"Hard failure on purpose: an unwritable STATE means no device identity
 and no device credential, so there is no usable device to serve. A loud exit is
 better than a daemon that quietly serves an unprovisioned tree the operator
-cannot log in to."* (`os/pkgs/mosd/mosd/src/main.rs`, with the `?` at `:183`).
+cannot log in to."* (`os/pkgs/mosd/mosd/src/main.rs`, with the `?`).
 A single-process design would make that exit take the UI with it: a provisioning
 failure would leave a device with no diagnostic surface at all, reachable only
 by serial console. Two processes are what keep the exit loud and the device
@@ -3467,7 +3455,7 @@ the component that failed.** dashboard.md applies it to processes — mosd may
 exit hard *because* apid is a different process and survives to render the 502
 page *"The management daemon is unavailable."* (`os/pkgs/mosd/apid/src/routes.rs`,
 reachable because the bus client connects lazily and drops its cache on error,
-`os/pkgs/mosd/apid/src/bus_client.rs`, `:56-73`).
+`os/pkgs/mosd/apid/src/bus_client.rs`).
 
 **Section 6 applies the same principle one layer up, to the UI.** The custom UI
 may fail *because* the built-in UI is a different artifact with a different
@@ -3525,8 +3513,8 @@ an absence measured four ways is a fact about the device, not a proposal.
 |---|---|---|---|---|
 | **The API upload path** | **no** — `grep -rn Multipart os/pkgs/mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`os/pkgs/mosd/mosd-settings/src/model.rs`; `docs/design/access.md`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md`; the pane says so and a test asserts the sentence, `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/tests.rs`) | n/a |
-| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/pkgs/rauc/render-config.sh`), `rootfs.1` (`:240`), `boot.0` (`:260`) and `boot.1` (`:265`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/pkgs/rauc/system.conf.in`, `:78`) |
-| **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:378` names the path, `:408` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:437` `dd`s it into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
+| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/pkgs/rauc/render-config.sh`), `rootfs.1`, `boot.0` and `boot.1`. DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/pkgs/rauc/system.conf.in`) |
+| **A factory image** | **yes**, but it ships DATA **empty.** In `os/build/src/mkimage-v2.ts`, `dataImg` is created with `makeExt4` without a `seedDir`, then written into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md`) | none that works | n/a |
 
 **The count that matters.** Of five candidate channels, exactly **one reaches
@@ -3588,7 +3576,7 @@ come from reading them rather than from their names.
 `rauc bundle` with the material `make os-devkeys` generates (`Makefile` →
 `os/pkgs/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
-(`os/pkgs/rauc/gen-dev-keys.sh`, `:8-10`). On device, verification is `rauc`'s,
+(`os/pkgs/rauc/gen-dev-keys.sh`). On device, verification is `rauc`'s,
 against `/etc/rauc/keyring.pem`, with `plain`-format bundles refused by
 configuration (`os/pkgs/rauc/system.conf.in`). Three reasons it does not
 transfer:
@@ -3787,7 +3775,7 @@ one of the four triggers above becomes true.**
 **First, the fact this subsection is a decision about.** Measured at `86cd669`:
 apid's pages are `maud` `html!` expansions compiled into the `apid` binary, with
 one inline stylesheet constant and no external asset of any kind
-(`os/pkgs/mosd/apid/src/routes.rs`, `:3257-3264`, `:3275`; §1.1 constraint 1 and §1.6
+(`os/pkgs/mosd/apid/src/routes.rs`; §1.1 constraint 1 and §1.6
 evidence it four ways). There is no build chain to retire and no asset directory
 to move.
 
@@ -3822,8 +3810,8 @@ do is the decision that makes B affordable:
 > in whatever UI a site builds on it**, and the built-in UI falling behind on
 > them is not a defect.
 
-Items (iv) and (v) are already shipped — `os/pkgs/mosd/apid/src/routes.rs`, `:2245`,
-`os/pkgs/mosd/apid/src/routes.rs`, `:1985`, `:2501`, `:3270`. Items (i), (ii) and (iii) are new panes, and
+Items (iv) and (v) already ship through the hostname, network, and SSH handlers
+in `os/pkgs/mosd/apid/src/routes.rs`. Items (i), (ii) and (iii) are new panes, and
 they are the only built-in-UI work any phase below schedules.
 
 **One contradiction between sibling sections, named here and reconciled here
@@ -3903,7 +3891,7 @@ so.
 
 **What ships.** The HTML path stops flattening every `zbus::Error` into one
 502. `BusSettings` converts with `err.into()` at four call sites
-(`os/pkgs/mosd/apid/src/bus_client.rs`, `:241`, `:252`, `:277`) and `zbus` 5.19.0
+(`os/pkgs/mosd/apid/src/bus_client.rs`) and `zbus` 5.19.0
 (`os/pkgs/mosd/Cargo.lock`) carries the distinction in
 `Error::MethodError(OwnedErrorName, ...)`. The phase matches on it, carries
 the fdo error name into a typed error, and teaches the HTML handlers to stop
@@ -3926,7 +3914,7 @@ calls this out with the VLAN example. **This phase is a visible bug fix that
 needs no API at all.**
 
 **Acceptance.** A route test in which the in-memory `SettingsApi` fake
-(`os/pkgs/mosd/apid/src/settings_api.rs`, `:33-48`) returns a mosd validation error
+(`os/pkgs/mosd/apid/src/settings_api.rs`) returns a mosd validation error
 renders mosd's message in the pane and does **not** render the 502 page; and a
 test in which the fake returns a transport failure still renders the 502 page.
 Both directions, because a test that only proves the new path leaves the old one
@@ -3934,15 +3922,15 @@ unasserted.
 
 **What is explicitly still missing.** There is no API. Nothing about static
 hosting. `/healthz` still answers `ok` while mosd is dead (§2.4 case 3), because
-it must (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:219-232`).
+it must (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`).
 
 **Why this is first and not folded into phase 2.** Two reasons, and the second
 is the load-bearing one. First, §2.4's *whole error table* depends on
 recovering the fdo error name, and §2.4 is not implementable until it is —
 which apid now does, by downcasting to the concrete `zbus::Error`
 (`os/pkgs/mosd/apid/src/routes.rs`) and mapping `FDO_INVALID_ARGS`,
-`FDO_IO_ERROR` and `FDO_FAILED` onto three distinct API error codes
-(`:2970-2981`). Second: §2.1's breaking-change list makes *"changing
+`FDO_IO_ERROR` and `FDO_FAILED` onto three distinct API error codes. Second:
+§2.1's breaking-change list makes *"changing
 which `error.code` an existing failure emits"* a **major-version bump**. Landing
 the classification before `v1` freezes is the difference between a refactor and
 a `v2`. If `to_fdo`'s three collapsed cases are split *after* v1 ships,
@@ -3965,7 +3953,7 @@ pane in the built-in UI that §3.2's bootstrap depends on.
 because it is the highest-consequence detail in the whole plan — and measured by
 running it, not by reading.** `access.apiTokens` is a new field in a tree whose
 every struct carries `#[serde(deny_unknown_fields)]` (§1.5, e.g.
-`os/pkgs/mosd/mosd-settings/src/model.rs`, `:49`), so `SCHEMA_VERSION` must move 4 → 5
+`os/pkgs/mosd/mosd-settings/src/model.rs`), so `SCHEMA_VERSION` must move 4 → 5
 (`os/pkgs/mosd/mosd-settings/src/model.rs`).
 
 **The obvious answer — "add a `MigrateV4ToV5` whose `down` drops the field" — does
@@ -4009,8 +3997,8 @@ below are the run's actual output.
    succeeds and rewrites `schema_version` to `3` — which is what made the wrong
    answer plausible. It is reachable only from an explicit caller with
    `from > to`, and **the only such callers in the tree are tests**
-   (`os/pkgs/mosd/mosd-settings/tests/settings.rs`, `:280`, `:512`, `:542`, `:1002`,
-   `os/pkgs/mosd/mosd-settings/tests/settings.rs`, `:1087`). `os/pkgs/mosd/mosd-settings/src/store.rs` is the sole
+   (`os/pkgs/mosd/mosd-settings/tests/settings.rs`).
+   `os/pkgs/mosd/mosd-settings/src/store.rs` is the sole
    production caller of `migrate` and it can only ever walk **upward**.
 
 **What follows, corrected.** An A/B rollback into a phase-1 slot after a token
@@ -4038,7 +4026,7 @@ with one header and no browser emulation. §3.1's items 1 through 5 are fixed fo
 reads in this phase: an unauthenticated call gets a **401 with a body**, not a
 303 that a redirect-following client reports as success; the credential survives
 an A/B update, because it is on STATE rather than in a `HashMap`
-(`os/pkgs/mosd/apid/src/session.rs`, `:5-6`); and it does not expire at 24 hours.
+(`os/pkgs/mosd/apid/src/session.rs`); and it does not expire at 24 hours.
 
 **Acceptance.** Four checks, each of which fails loudly if the phase is wrong:
 
@@ -4146,9 +4134,9 @@ startup steps with `?` (`os/pkgs/mosd/apid/src/main.rs`) under
 `Restart=on-failure` (`os/pkgs/mosd/dist/apid.service`), so a bundle that could fail
 startup would produce a crash loop with no listener bound. **The marker is
 `APID_LISTENING`, not `WEBD_LISTENING` as this phase and §6.1 were written**;
-the rename moved the string as well as the paths. As landed, the two binds are
-`os/pkgs/mosd/apid/src/main.rs` and `:68`, the marker is printed at `:74`, and
-`startup::discover` is called at `os/pkgs/mosd/apid/src/main.rs` with no error variant to propagate.
+the rename moved the string as well as the paths. As landed,
+`os/pkgs/mosd/apid/src/main.rs` binds both listeners, prints the marker, and
+calls `startup::discover` with no error variant to propagate.
 
 **What an operator can do that they could not before.** Ship their own UI. For
 the population that has SSH — which per §7.2 is root — this is the whole
@@ -4307,7 +4295,7 @@ a reason that already exists in this document, and each is named so that its
 absence is a decision rather than an oversight.
 
 1. **Token expiry.** Needs a wall clock apid does not read — `SessionStore` uses
-   `Instant` throughout (`os/pkgs/mosd/apid/src/session.rs`, `:53`, `:72`), which is
+   `Instant` throughout (`os/pkgs/mosd/apid/src/session.rs`), which is
    monotonic and cannot express a deadline surviving a reboot (§3.2). It is not
    phased because the prerequisite is not scheduled anywhere.
 2. **A change-stream API.** The `SettingsChanged` subscription itself now
@@ -4435,7 +4423,7 @@ can help. Those two mechanisms exist for this cost specifically.
 
 **6. The testing surface multiplies, and it multiplies in the daemon that must
 never fail to bind.** Today apid's tests are handler tests against an in-memory
-`SettingsApi` fake (`os/pkgs/mosd/apid/src/settings_api.rs`, `:33-48`) plus an
+`SettingsApi` fake (`os/pkgs/mosd/apid/src/settings_api.rs`) plus an
 end-to-end suite on a private bus. After phase 5 the matrix is (every operation
 × HTML and JSON) × (bundle absent, present, corrupt, unreadable, incompatible)
 × (every major version served), plus §4.4's five traversal cases, §4.2's five
@@ -4462,7 +4450,7 @@ this device serves is verified"* stops being true.
 §4.4's install-time rejection of non-regular entries plus canonicalise-and-
 assert; §4.3's `nosniff` and fixed MIME table, which is what stops an uploaded
 file being sniffed into HTML on the origin that holds `apid_session`
-(`os/pkgs/mosd/apid/src/session.rs`, `:103`); §6.2 layer 1, which keeps the built-in
+(`os/pkgs/mosd/apid/src/session.rs`); §6.2 layer 1, which keeps the built-in
 UI unwritable by anything including root. **Not mitigated:** the process-level
 bound. `os/pkgs/mosd/dist/apid.service` sandboxes the daemon in several
 directions but carries no `ProtectSystem=` and no `ReadWritePaths=`

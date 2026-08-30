@@ -7,15 +7,15 @@
 // say nothing about which slot.
 //
 // The slots come from the layout's `<SLOT>_OFFSET_BYTES`, which is what the
-// oracle uses (:1769-1770), and not from the GPT's first sector though both
+// oracle uses, and not from the GPT's first sector though both
 // agree on a healthy image: where a slot is is asserted by
 // `gpt-partition-start`, and reading the offset back out of the same table would
 // make these checks agree with a partition that had moved. The offset is the
 // layout's claim; what is under test is the filesystem at it.
 //
 // Three factory assertions: the FAT32 signature, the volume serial and the
-// volume label. The last two are factory-only and the oracle says why at :1796
-// and :1804 -- a RAUC-installed slot legitimately reads volume id 1234ABCD and
+// volume label. The last two are factory-only: a RAUC-installed slot
+// legitimately reads volume id 1234ABCD and
 // label "BOOT", because a bundle's boot.vfat is built with
 // `mkfs.vfat --invariant`. Nothing resolves a slot by either; the PARTLABEL and
 // partition GUID are the real identity and survive an install.

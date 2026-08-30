@@ -186,7 +186,7 @@ async fn serve() -> anyhow::Result<()> {
     // bind and after `APID_LISTENING` is printed, and the outcome is a state
     // this function holds rather than an error it returns. Note the absence of
     // `?`: every step above this line propagates, and under
-    // `Restart=on-failure` (`mosd/dist/apid.service:9`) a propagated error is
+    // `Restart=on-failure` (`os/pkgs/mosd/dist/apid.service`) a propagated error is
     // a crash loop with no listener bound. A bundle must not be able to stop
     // apid from listening, so `discover` has no error variant to propagate.
     let bundle_state = startup::discover(state.bundles().clone(), state.audit().clone()).await;

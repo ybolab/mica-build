@@ -15,6 +15,6 @@ install -m0644 /tmp/rauc/rauc.service    /usr/lib/systemd/system/rauc.service
 install -m0644 /tmp/rauc/de.pengutronix.rauc.conf    /usr/share/dbus-1/system.d/de.pengutronix.rauc.conf
 install -m0644 /tmp/rauc/de.pengutronix.rauc.service /usr/share/dbus-1/system-services/de.pengutronix.rauc.service
 sed -n 's/^RAUC_VERSION=//p' /tmp/rauc/RAUC_VERSION.env >/rootfs-report.rauc
-[ -s /rootfs-report.rauc ] || { echo "error: the staged rauc carries no RAUC_VERSION; os/update/bundle.sh compares that against its own rauc before it writes a bundle, and an empty value would make the comparison pass by finding nothing" >&2; exit 1; }
+[ -s /rootfs-report.rauc ] || { echo "error: the staged rauc carries no RAUC_VERSION; the bundle contract compares that against its own rauc before it writes a bundle, and an empty value would make the comparison pass by finding nothing" >&2; exit 1; }
 echo "rauc: installed $(cat /rootfs-report.rauc), $(stat -c%s /usr/bin/rauc) bytes"
 rm -rf /tmp/rauc

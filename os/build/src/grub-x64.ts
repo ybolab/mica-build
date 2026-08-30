@@ -60,7 +60,7 @@ export const VERITY_KEYS: readonly (readonly [keyof VerityFacts, string, string]
 /**
  * The five variables a linux line must actually consume.
  *
- * os/mkimage-x64.sh:196 spells this list; it is a subset of VERITY_KEYS on
+ * the x64 assembly contract spells this list; it is a subset of VERITY_KEYS on
  * purpose, transcribed rather than widened to all eight. The three it leaves
  * out (MOS_DATA_BLOCK_SIZE, MOS_HASH_BLOCK_SIZE and MOS_HASH_ALGO) have values
  * constant across every build this tree produces, so a grub.cfg hardcoding them
@@ -108,7 +108,7 @@ export function verityFactsFrom(text: string, path: string): VerityFacts {
 }
 
 /**
- * The per-slot fragment: `cmdline_facts()` in os/mkimage-x64.sh, byte for byte.
+ * The per-slot fragment: `cmdline_facts()` in the x64 assembly contract, byte for byte.
  *
  * Identical for both slots today -- both ship the same rootfs image -- and each
  * replaced independently by an install, which is why it is written once and
@@ -118,7 +118,7 @@ export function cmdlineFacts(facts: VerityFacts): string {
   return `${VERITY_KEYS.map(([field, , grubVar]) => `set ${grubVar}=${facts[field]}`).join('\n')}\n`
 }
 
-/** The `@NAME@` substitutions os/mkimage-x64.sh:167-172 makes into grub.cfg. */
+/** The `@NAME@` substitutions the x64 assembly contract makes into grub.cfg. */
 export function grubSubstitutions(geometry: Geometry): Record<string, string> {
   return {
     // `lower()` in the shell. The PARTUUIDs the kernel matches are lowercase;
@@ -178,7 +178,7 @@ export function linuxLines(rendered: string): { line: number, text: string }[] {
 /**
  * A literal hash on a `linux` line -- asserted by shape, never by the word.
  *
- * A run of 32 or more hex characters. os/mkimage-x64.sh records that grepping
+ * A run of 32 or more hex characters. The x64 assembly contract records that grepping
  * for the word "verity" rejects the correct file, "once for a comment and once
  * for the console message printed when a fragment is missing" -- so the shape
  * is what is tested, against the rendered text, because the placeholders
@@ -215,7 +215,7 @@ export interface RenderedGrubCfg {
 }
 
 /**
- * Render grub.cfg and refuse it three ways, in os/mkimage-x64.sh's order.
+ * Render grub.cfg and refuse it three ways, in the x64 assembly contract's order.
  *
  * The order is kept so a reader running the same broken file through both gets
  * the same sentence first.

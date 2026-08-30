@@ -2,7 +2,7 @@
 //
 // Cheap and pure -- nothing here assembles. What it is about is the seam between
 // "the caller said where things are" and "the assembler was handed paths", which
-// is the layer at which os/mkimage-x64.sh derives everything from its own
+// is the layer at which the x64 assembly contract derives everything from its own
 // ${BASH_SOURCE[0]} and can therefore be pointed nowhere.
 
 import { describe, expect, test } from 'bun:test'
@@ -41,7 +41,7 @@ describe('the arguments', () => {
   })
 
   test('MOS_ROOTFS_SLOT_MIB is NOT read, and the usage says so', () => {
-    // os/mkimage-x64.sh sources os/boards/x64/board.env before it reads that key,
+    // the x64 assembly contract sources os/boards/x64/board.env before it reads that key,
     // so the board's 512 has already overwritten anything the environment said.
     // A CLI that honoured it would give the x64 release path a slot mode its
     // shell has never had. Asserted by the absence of the plumbing: neither the
@@ -78,7 +78,7 @@ describe('the inputs it derives', () => {
   })
 
   test('the producer sentence names x64 as a LITERAL, never ${MOS_BOARD}', () => {
-    // os/mkimage-x64.sh:150 records the failure this prevents: the message used
+    // the x64 assembly contract records the failure this prevents: the message used
     // to interpolate a variable no board.env sets, so under `set -u` the one case
     // someone had written an actionable message for died with "MOS_BOARD: unbound
     // variable" instead of printing it. A `${MOS_BOARD:-x64}` default would still

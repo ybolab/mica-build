@@ -17,14 +17,14 @@ date is given.
 Both bun suites resolve their runtime the same way, from the digest pinned as
 `IMAGE_BUN_1` in `os/build-env/images.env`. `os/verify` reads it as
 `BUN_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1`
-(`os/verify/run.sh`), and `test/apid-api/run.sh` the same:
+(`os/verify/run.sh`), and `os/pkgs/mosd/tests/apid-api/run.sh` the same:
 
     bash os/build-env/from.sh --ref IMAGE_BUN_1
 
-`test/apid-api/run.sh` does exactly that, with an override for a caller who
+`os/pkgs/mosd/tests/apid-api/run.sh` does exactly that, with an override for a caller who
 means it —
 `BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)}"`
-(`test/apid-api/run.sh`). The pin is a digest and not the `oven/bun:1` tag
+(`os/pkgs/mosd/tests/apid-api/run.sh`). The pin is a digest and not the `oven/bun:1` tag
 because that tag is repointed upstream on every 1.x release, and this harness is
 what decides whether apid's API is judged conformant.
 
@@ -43,8 +43,8 @@ does have a usable bun and it works.
 | what | command | result |
 | --- | --- | --- |
 | a host bun exists | `command -v bun; bun --version` | `/srv/bkd/runtime/bun`, `1.4.0` |
-| it parses the committed lockfile | `cd test/apid-api && bun install --frozen-lockfile --dry-run` | all five packages resolved, `[2.00ms] done` |
-| it runs the suite's selftest green | `cd test/apid-api && bun run src/selftest.ts` | `RESULT: PASS (47/47 checks)` |
+| it parses the committed lockfile | `cd os/pkgs/mosd/tests/apid-api && bun install --frozen-lockfile --dry-run` | all five packages resolved, `[2.00ms] done` |
+| it runs the suite's selftest green | `cd os/pkgs/mosd/tests/apid-api && bun run src/selftest.ts` | `RESULT: PASS (47/47 checks)` |
 
 So a host route is *possible* here and is nevertheless not taken. The reason is
 recorded where the decision was made: `run.sh` has
@@ -77,7 +77,7 @@ the "`-cli` variant carries the client and NOT dockerd. The client is a static"
 (`os/build-env/images.env`) binary, which is what lets an alpine-built
 client run on the debian-based bun image.
 
-Both `os/verify/run.sh` and `test/apid-api/run.sh` build that image on demand and
+Both `os/verify/run.sh` and `os/pkgs/mosd/tests/apid-api/run.sh` build that image on demand and
 tag it with both input digests, so bumping either pin names an image that was
 never built and there is no stale parent to find. Nothing in `make build-env`
 builds it; whichever of the two runs first pays the few seconds for it.
@@ -152,9 +152,10 @@ without it: "real bus behaviour over a private session bus and MUST NOT skip: in
 (`os/pkgs/mosd/apid/tests/e2e.rs`), and the identical refusal is repeated in
 "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts"
 (`os/pkgs/mosd/mosd/tests/scan.rs`). Measured without it, the gate exits
-**`rc=100`**:
+**`rc=100`** (the panic location below is normalized because source-line
+positions are not part of the contract):
 
-    thread 'web_flow_end_to_end' panicked at apid/tests/e2e.rs:9:
+    thread 'web_flow_end_to_end' panicked in apid/tests/e2e.rs:
     dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. [...]
     Summary [   5.853s] 57/705 tests run: 56 passed, 1 failed, 0 skipped
     warning: 648/705 tests were not run due to test failure
@@ -306,13 +307,13 @@ One build, two architectures, one builder.
 
 ## 6. The image is an input, and "no image" reads as a harness failure
 
-`test/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
+`os/pkgs/mosd/tests/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
 it is absent it refuses by name and prints the two commands that make it:
 "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
-(`test/apid-api/run.sh`). The same sentence guards the missing directory one
+(`os/pkgs/mosd/tests/apid-api/run.sh`). The same sentence guards the missing directory one
 step earlier:
 "does not exist, so there is no image to boot; this harness builds nothing."
-(`test/apid-api/run.sh`).
+(`os/pkgs/mosd/tests/apid-api/run.sh`).
 
 Those two commands are the last two links of a longer chain, and the earlier
 links fail the same way — as an apparently broken harness. In order:
@@ -333,8 +334,8 @@ links fail the same way — as an apparently broken harness. In order:
    image around the rootfs slot. Its name is read from the board definition,
    `IMAGE_LATEST_NAME=x64-mos-v2-latest.img` (`os/boards/x64/board.env`),
    rather than repeated in the harness.
-4. **The run.** `make os-apid-api-test`, or `bash test/apid-api/run.sh`.
-   `bash test/apid-api/run.sh --dry-run` does the preconditions and the network
+4. **The run.** `make os-apid-api-test`, or `bash os/pkgs/mosd/tests/apid-api/run.sh`.
+   `bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` does the preconditions and the network
    discovery and boots nothing, which is how to check the harness in seconds.
 
 **This suite runs nowhere in CI, and that is the standing decision rather than
@@ -345,7 +346,7 @@ image the harness does not build. What CI does check is narrower and cheap:
 with the committed OpenAPI document. Run the suite itself by hand after a
 change to apid's surface.
 
-The boot engine itself is `test/apid-api/src/qemu.ts`, beside the suite that
+The boot engine itself is `os/pkgs/mosd/tests/apid-api/src/qemu.ts`, beside the suite that
 drives it. It was a shell tool under `os/tools/` until later ported it; that
 file is gone, and a search for it is a search for something deleted.
 

@@ -875,9 +875,9 @@ check's would.
 
 ### The cross-board case, which is the point
 
-the record a defect in the original: its two inputs were written
+The original implementation had a defect: its two inputs were written
 down as the literals `_out/cx3576/rootfs-verity.img` and
-`os/podman/out-arm64/podman`, so an x64 run's freshness was decided by arm64
+`os/pkgs/podman/out-arm64/podman`, so an x64 run's freshness was decided by arm64
 artefacts — it passed a stale x64 image and refused a fresh one whenever the
 arm64 tree happened to be newer. A board-agnostic mtime comparison is the bug,
 not the fix, so `src/checks-freshness.test.ts` plants that tree: x64's own

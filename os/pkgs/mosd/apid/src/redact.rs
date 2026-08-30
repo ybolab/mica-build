@@ -86,7 +86,7 @@ fn walk(value: Value) -> Value {
 /// names: *"A redacted field is **read-only through the API**: a `PUT` whose
 /// body contains `"<redacted>"` is rejected at 422 rather than written,
 /// because writing the sentinel would silently destroy the credential."*
-/// (`docs/design/api.md:1292-1295`) A client that reads a subtree, edits one
+/// (`docs/design/api.md` §2.2) A client that reads a subtree, edits one
 /// field and writes the whole thing back is not doing anything unusual; what
 /// it hands back is the redacted view, and without this check the write
 /// succeeds and the password hash on the device becomes the literal string

@@ -20,7 +20,7 @@
 // attributes across three lines, so a line-oriented search for `send_member=` on
 // a rule whose `send_destination=` is on the line above finds nothing and reports
 // a blanket grant that is not there; the oracle hit that on its first run against
-// the real file (:838-846) and answers it by stripping comments and then putting
+// the real file and answers it by stripping comments and then putting
 // one XML tag per line. This does the same, in that order, because the comment
 // strip has to come first: a commented-out
 // `<allow send_destination="com.mos.mosd"/>` must not read as a grant.

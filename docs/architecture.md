@@ -154,13 +154,13 @@ mos/
 │   │              podman/ (the container engine), rauc/ (the RAUC binary, its slot
 │   │              config and the manifest templates), rauc-sign/ (TUF release trust
 │   │              tooling, its own cargo workspace) and mosd/ — the Rust workspace:
-│   │              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings
+│   │              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings; workspace-level
+│   │              black-box harnesses are kept together under mosd/tests/
 │   ├── rootfs/    the root filesystem: stage Dockerfiles under stages/, plus build-v2.sh
 │   ├── tests/     shell suites over the built image
 │   ├── tools/     three QEMU helper scripts
 │   └── verify/    TypeScript: the board model, and the checks an assembled image must pass
 ├── extensions/    reserved for optional sysext layers; nothing is built from it
-├── test/          the apid API suite, run against a booted image in QEMU
 └── Makefile       top-level routing; `make help` lists every target
 ```
 

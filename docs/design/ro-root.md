@@ -25,7 +25,7 @@ design this implements), `os/boards/cx3576/board.env` (every layout constant),
 The hash tree lives in the same file as the data it covers, at
 `--hash-offset=SQUASHFS_BYTES`. One file means one artifact to sign, one raw
 `dd` into a slot, and one RAUC image per slot. The trailing pad exists because
-`os/mkimage-v2.sh` writes the file into the slot at a MiB boundary.
+`os/build/src/mkimage-v2.ts` writes the file into the slot at a MiB boundary.
 
 The parameters needed to reconstruct the verity target are written next to it in
 `_out/cx3576/rootfs-verity.env`, as strict `KEY=value` lines: `VERITY_ROOT_HASH`,
@@ -62,7 +62,7 @@ Remaining deviation: the byte layout still depends on the `squashfs-tools` and
 `cryptsetup` versions in the pack stage, both of which come from
 `debian:bookworm-slim` at build time. Pinning the base image digest is the
 follow-up that would close this; it is the same class of deviation
-`os/mkimage-v2.sh` already documents for mtools.
+`os/build/src/mkimage-v2.ts` already documents for mtools.
 
 Verified: two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
 `rootfs-verity.img` and the same `VERITY_ROOT_HASH`.
@@ -124,7 +124,7 @@ decision is re-testable on hardware without a rebuild.
 
 A later pass reached the same conclusions independently and they are now
 settled, not open: `dm-mod.waitfor=` exists and is required
-(`drivers/md/dm-init.c,297-305,324`); `PARTUUID=` resolves through the
+(`drivers/md/dm-init.c`, `dm_init_init`); `PARTUUID=` resolves through the
 `name_to_dev_t()` fallback in `dm_get_dev_t()`
 (`drivers/md/dm-table.c`, `init/do_mounts.c`, and
 `name_to_dev_t` is `EXPORT_SYMBOL_GPL`, not `__init`); dm-verity's SHA-256 is
@@ -138,7 +138,7 @@ investigations agree on every point.
 `boot-cmdline-b.txt`. The boot slots deliberately carry **no**
 `extlinux/extlinux.conf`: the boot-framework investigation found that both U-Boot boot frameworks try
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
-bypass the whole RAUC A/B handshake. `os/mkimage-v2.sh` instead compiles
+bypass the whole RAUC A/B handshake. `os/build/src/mkimage-v2.ts` instead compiles
 `os/boards/cx3576/boot.cmd` into a `boot.scr` shared by both slots and derives a
 per-slot `mos-verity-<slot>.env` by extracting the `dm-mod.create="..."` and
 `dm-mod.waitfor=` fragments out of these files with `sed`. The filename carries
@@ -170,7 +170,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   `docs/design/uboot-ab-handshake.md` §7.3 originally said `mos`; this
   generator is the authority and that section has been reconciled.
 - `dm-mod.waitfor=` is **mandatory**, not an optimisation, and
-  `os/mkimage-v2.sh` rejects a cmdline file that lacks it. `dm_init_init()`
+  `os/build/src/mkimage-v2.ts` rejects a cmdline file that lacks it. `dm_init_init()`
   runs at `late_initcall` and the `wait_for_device_probe()` it already calls
   does **not** cover eMMC card discovery, which happens on a delayed
   workqueue. Without the wait, the verity table is built before the partitions
@@ -182,7 +182,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   same one udev gives `/dev/disk/by-partuuid/` (libblkid formats GUIDs
   lowercase). The kernel compares with `strncasecmp` and accepts either, so one
   canonical lowercase spelling everywhere is the least surprising choice.
-  `os/mkimage-v2.sh` cross-checks each slot's table against `ROOTFS_A_GUID` /
+  `os/build/src/mkimage-v2.ts` cross-checks each slot's table against `ROOTFS_A_GUID` /
   `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
   case-insensitively, so the two spellings coexist by design.
 - The console/earlycon/storagemedia/net.ifnames arguments are board facts and
@@ -315,7 +315,7 @@ device has been modified" from invisible into an observable fact. It is the same
 trade Venus makes with `/data/rc.local`, and mos is better placed to observe it
 because the rest of the root stays verity-protected.
 
-`os/verify-image-v2.sh` asserts the mountpoint exists in the packed root (a
+`os/verify/src/checks-home.ts` asserts the mountpoint exists in the packed root (a
 verity root cannot create it at runtime, so a missing directory is a mount unit
 that fails at boot), that the bind is enabled and STATE-backed, and — negatively
 — that **no** unit in the image mounts over `/etc/systemd/system`.
@@ -730,7 +730,7 @@ That is the only form systemd accepts for `systemd.machine_id=` and for
 `/etc/machine-id`; a dashed UUID is rejected.
 
 **Status — steps 1 and 2 are live; step 3 is what remains.** The U-Boot half has
-landed: `uboot-mos` is on main, a v2 image carries it (and `os/mkimage-v2.sh`
+landed: `uboot-mos` is on main, a v2 image carries it (and `os/build/src/mkimage-v2.ts`
 refuses to assemble a v2 image around the debug variant), and
 `os/boards/cx3576/boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
 that environment variable is set. The redundant environment this design depends

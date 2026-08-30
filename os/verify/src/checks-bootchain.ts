@@ -8,15 +8,15 @@
 //
 // A shell line has exactly one owner, and the oracle wraps whole groups in
 // `if is_uboot_board ... else skip "..."`, so one skip conclusion stands for as
-// many as nine checks: :1750 the raw pre-GPT loader area (four), :2096 the
-// boot.scr assertions (nine), :2277 the boot.scr root-argument pair (two), :2299
-// the zero-filled U-Boot env pair (two), :1951 the status-LED device tree (six,
+// many as nine checks: the raw pre-GPT loader area (four), the boot.scr
+// assertions (nine), the boot.scr root-argument pair (two), the zero-filled
+// U-Boot env pair (two), and the status-LED device tree (six,
 // once per slot). So in each group one entry applies to every board and owns the
 // skip, and the rest are scoped by `boardsWhere(isUBoot)` or `hasLed`.
 //
 // `os/boards/cx3576/bsp/out/` is not populated in a checkout, so the oracle's own run is
 // `RESULT FAIL (387/395)` with eight conclusions reading `... compare source not
-// found`. the Scope section puts `board/` BSP builds outside this
+// found`. The Scope section puts `board/` BSP builds outside this
 // campaign -- "No change to ... `board/` BSP builds (digest pins only)" -- so
 // the port expresses the absence exactly as the oracle does: same paths, same
 // sentence. Fixtures drive all three directions (byte-identical source,
@@ -57,7 +57,7 @@ const NOT_LED = boardsWhere(b => !hasLed(b))
  * `${BOARD_DIR}` -- where this board's BSP build puts its artefacts.
  *
  * The environment variable first, because that is how the oracle's own
- * container re-exec supplies it (`-e BOARD_DIR=/board`, :185) and a run made
+ * container re-exec supplies it (`-e BOARD_DIR=/board`) and a run made
  * that way must read the same tree. Otherwise `os/boards/<board>/bsp/`, derived from
  * the board's name; see the header for the literal the oracle defaults to.
  */
@@ -86,12 +86,12 @@ function intKey(board: Board, name: string): number {
   return Number(raw)
 }
 
-// 1. the raw pre-GPT area, and the two BSP compares over it (:1690-1750)
+// 1. the raw pre-GPT area, and the two BSP compares over it
 
 /**
  * The uboot-mos blob's size on disk, and 0 when its compare source is absent.
  *
- * `uboot_size=0` in the not-found branch (:1705) is what the two containment
+ * `uboot_size=0` in the not-found branch is what the two containment
  * checks below then read, so they conclude about a blob of zero bytes rather
  * than about the image. Shared here rather than recomputed per check, because
  * the oracle shares one variable and a second derivation could disagree with
@@ -258,7 +258,7 @@ const RAW_BLOB_SKIP: readonly CheckCase[] = [
   },
 ]
 
-// 2. the BSP kernel artefacts each slot must match (:1893-1907)
+// 2. the BSP kernel artefacts each slot must match
 
 /**
  * The boot-slot files that come out of the BSP build rather than the assembler.
@@ -266,8 +266,8 @@ const RAW_BLOB_SKIP: readonly CheckCase[] = [
  * Derived, not named: every entry of this board's own BOOT_SLOT_REQUIRED_FILES
  * that is neither the compiled boot script nor a per-slot verity env is a BSP
  * artefact, and lives at `${BOARD_DIR}/out/kernel/<name>`. On cx3576 that is
- * exactly `Image` and `rk3576-src.dtb`, which is the pair the oracle names at
- * :1893 as a literal list.
+ * exactly `Image` and `rk3576-src.dtb`, the literal pair required by the
+ * verification contract.
  */
 export function bspArtefacts(board: Board): string[] {
   const script = board.get('BOOT_SCRIPT_NAME')
@@ -333,10 +333,10 @@ function bspCompareChecks(board: Board): CheckCase[] {
   }))
 }
 
-// 3. the status-LED device tree (:1918-1953)
+// 3. the status-LED device tree
 
 /**
- * The indicator contract, as the oracle states it at :1922.
+ * The status-indicator contract.
  *
  * TRANSCRIBED, not derived, and the reason is that there is nowhere board-side
  * to derive it from: `os/boards/cx3576/board.env` declares
@@ -452,7 +452,7 @@ const LED_SKIP: readonly CheckCase[] = [
   },
 ]
 
-// 4. boot.scr -- the compiled boot script (:2014-2052, :2258-2276)
+// 4. boot.scr -- the compiled boot script
 
 /** The compiled script out of a slot, or undefined when it is not there. */
 async function bootScript(ctx: ImageContext, slot: BootSlot): Promise<string | undefined> {
@@ -469,7 +469,7 @@ async function bootScript(ctx: ImageContext, slot: BootSlot): Promise<string | u
 /**
  * `setenv <var> <value>` inside the `setenv bootslot <SLOT>` stanza.
  *
- * awk over the NUL-stripped whole file, which is what :2039-2044 does: the
+ * This uses awk over the NUL-stripped whole file: the
  * uImage header's own bytes survive the strip and never look like `setenv`, so
  * the parse works and a reader that started at the payload offset would be a
  * better reader and a different one.
@@ -622,7 +622,7 @@ const BOOT_SCRIPT_SKIPS: readonly CheckCase[] = [
   },
 ]
 
-// 5. the per-slot verity environment pair (:2056-2094)
+// 5. the per-slot verity environment pair
 
 /** `${BOOT_VERITY_ENV_<X>_NAME}` out of the slot, as text. */
 export async function verityEnvText(ctx: ImageContext, slot: BootSlot): Promise<string> {
@@ -724,7 +724,7 @@ const VERITY_ENV_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// 6. the regions that must ship zero-filled (:2264-2298)
+// 6. the regions that must ship zero-filled
 
 /**
  * How many NON-ZERO bytes a range holds -- `tr -d '\0' | wc -c`.

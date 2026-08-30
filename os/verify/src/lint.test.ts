@@ -71,12 +71,12 @@ interface RejectCase {
   readonly says: string
   /** A substring the rejection must NOT contain -- a message that misdirects. */
   readonly neverSays?: string
-  /** Measured: os/verify/lint.sh accepted this exact mutation on 2026-08-25. */
+  /** Measured: the predecessor shell linter accepted this mutation on 2026-08-25. */
   readonly shellPassed?: true
   readonly why?: string
 }
 
-// --- the fourteen cases ported from os/verify/lint-test.sh -------------------
+// --- the fourteen cases ported from the predecessor shell suite --------------
 
 const PORTED: readonly RejectCase[] = [
   // The case this linter was written for. x64 carried BOOT_ATTEMPTS_DEFAULT=3

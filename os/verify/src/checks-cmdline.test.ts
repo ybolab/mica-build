@@ -355,7 +355,7 @@ describe('verity-payload-verifies', () => {
   })
 
   test('a hash_start_block that is not a number makes the offset 0, and that is a FAIL', async () => {
-    // Reproduced from :2177: a non-numeric field leaves hash_offset at 0, and 0
+    // Reproduced behavior: a non-numeric field leaves hash_offset at 0, and 0
     // is the sentinel the branch above tests for -- so a malformed table is
     // reported as unreadable rather than verified at offset zero.
     const guidA = (cx3576.partition('ROOTFS_A')?.guid ?? '').toLowerCase()
@@ -521,7 +521,7 @@ describe('rauc-slot-on-boot-path', () => {
   })
 
   test('U-Boot: rauc.slot= comes from boot.scr, which is NOT the verity env', async () => {
-    // The oracle concatenates scr-A with the slot's verity env (:3256) rather
+    // The oracle concatenates scr-A with the slot's verity env rather
     // than composing, because either may legitimately carry it. Removing it
     // from the script alone is enough to fail both slots.
     const fat = cxFat({ [`${offsetOf(cx3576, 'BOOT_A')}::boot.scr`]: 'setenv rootargs "root=/dev/dm-0"\n' })

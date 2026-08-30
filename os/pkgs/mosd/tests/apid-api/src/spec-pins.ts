@@ -1,5 +1,5 @@
 /**
- * The build-time half of `test/apid-api`: every phase literal that is ALSO
+ * The build-time half of `os/pkgs/mosd/tests/apid-api`: every phase literal that is ALSO
  * stated in `os/pkgs/mosd/apid/openapi.json`, asserted to agree with it.
  *
  * WHAT THIS EXISTS FOR. A milestone changes a shipped,
@@ -45,11 +45,11 @@
  *
  * Runs with no network, no docker, no QEMU and no image:
  *
- *     bun run spec-pins          # from test/apid-api
+ *     bun run spec-pins          # from os/pkgs/mosd/tests/apid-api
  *     make os-apid-api-spec-pins # from the repository root, in the pinned bun
  */
 
-const REPO_ROOT = new URL("../../../", import.meta.url);
+const REPO_ROOT = new URL("../../../../../../", import.meta.url);
 const OPENAPI = new URL("os/pkgs/mosd/apid/openapi.json", REPO_ROOT);
 const HARNESS_ROOT = new URL("../", import.meta.url);
 
@@ -149,7 +149,7 @@ const PINS: readonly Pin[] = [
   { kind: "schema", file: READONLY, anchor: '!Object.hasOwn(errorObject, "path")', span: "line", schema: "ApiErrorDetail", mode: "optional", names: ["path"], what: "the envelope's dot-path, declared but not required" },
 ];
 
-// -- reporting, in the register run.sh and os/verify-image-v2.sh use ---------
+// -- reporting, in the register run.sh and the verification contract use ---------
 
 let passes = 0;
 let failures = 0;

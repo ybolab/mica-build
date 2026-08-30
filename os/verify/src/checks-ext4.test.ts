@@ -367,7 +367,7 @@ describe('ext4-fsck-clean', () => {
   test('A TRUNCATED FILESYSTEM PASSES, because e2fsck exits 0 -- reproduced', async () => {
     // The vacuous PASS in the code under test. e2fsck says the superblock or
     // the partition table is likely to be corrupt and exits 0;
-    // os/verify-image-v2.sh:2342 (deleted) discards both streams and reads the status.
+    // the verification contract discards both streams and reads the status.
     // A port that read the report would answer FAIL where the oracle answers
     // PASS, and the divergence would be the port's. Asserted as its own case so
     // that removing the reproduction has to remove the record of it too.
@@ -426,7 +426,7 @@ describe('ext4-factory-content', () => {
 
   test('A VACUOUS PASS, reproduced: debugfs exits 0 having opened nothing', async () => {
     // debugfs on a file that is not ext4 EXITS 0 with empty stdout and
-    // "Filesystem not open" on stderr; :2358's `|| true` drops the stderr and
+    // "Filesystem not open" on stderr; the former verifier's `|| true` drops the stderr and
     // an empty listing is the PASSING direction for META, STATE and DATA. So
     // the oracle concludes `factory: meta is empty at build` about a partition
     // that holds no filesystem. Reproduced, and recorded here rather than in a

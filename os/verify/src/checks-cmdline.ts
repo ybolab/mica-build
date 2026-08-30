@@ -3,14 +3,14 @@
 // Every assertion here is true of both boards -- the verity table exists and is
 // read-only, dm-mod.waitfor is present, the root hash matches the locally built
 // rootfs, the payload verifies, and the boot path names its slot -- and only the
-// source differs. The oracle says why at :2114: skipping these on a grub board
+// source differs. Skipping these checks on a grub board
 // would drop real coverage of verity, of the read-only flag and of rauc.slot= on
 // the board this project verifies first. So the extraction is board-aware and
 // the assertions are not.
 //
 // On U-Boot the command line is the per-slot verity env file out of the slot's
 // own FAT, which boot.scr sources: one file, one line. On GRUB it is composed
-// the way the bootloader composes it (:2129-2160) -- the ESP's grub.cfg holds
+// the way the bootloader composes it -- the ESP's grub.cfg holds
 // the board constants, each slot's PARTUUID and the fixed arguments, and the
 // slot's own boot partition holds the values that change with the build in a
 // `set MOS_*=` fragment. Composing it rather than asserting the halves
@@ -61,7 +61,7 @@ async function fatText(
 }
 
 /**
- * `board_cmdline SLOT` (:2126) -- the effective kernel command line for a slot.
+ * `board_cmdline SLOT` -- the effective kernel command line for a slot.
  *
  * Empty string when there is none, which is the oracle's `|| true` and its
  * `[ -n "${line}" ] || return 0`. Everything downstream tests for it.
@@ -105,7 +105,7 @@ interface VerityFields {
 }
 
 /**
- * The fields the oracle awks out of the table (:2171-2178).
+ * The fields the oracle awks out of the table.
  *
  *   rootfs,,,ro,0 <sectors> verity 1 <data> <hash> <dbs> <hbs> <blocks> <hash_start> <algo> <root> <salt>
  *
@@ -362,7 +362,7 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
       for (const slot of SLOTS) {
         // U-Boot assembles the line from boot.scr's own rootargs PLUS the
         // per-slot verity env, so EITHER may legitimately carry rauc.slot=;
-        // the oracle concatenates the two (:3256) rather than composing.
+        // the oracle concatenates the two rather than composing.
         const source = isUBoot(ctx.board)
           ? `${await bootScriptText(ctx)}\n${await verityEnvText(ctx, slot)}`
           : await boardCmdline(ctx, slot)
@@ -404,7 +404,7 @@ async function bootScriptText(ctx: ImageContext): Promise<string> {
   return Buffer.from(readBytes(dest, 0, statSync(dest).size)).toString('latin1')
 }
 
-// the ESP: static, in no slot group, and holding NOTHING per-slot (:1968-2006)
+// the ESP: static, in no slot group, and holding NOTHING per-slot
 
 const ESP_CHECKS: readonly CheckCase[] = [
   {
@@ -506,14 +506,14 @@ async function espListing(ctx: ImageContext): Promise<string[]> {
   return fatList(ctx.tools, espSlot(ctx))
 }
 
-// RAUC's slot devices versus the ESP (:2854-2872)
+// RAUC's slot devices versus the ESP
 
 function raucConf(root: string): string {
   const path = join(root, 'etc/rauc/system.conf')
   return existsSync(path) ? readFileSync(path, 'utf8') : ''
 }
 
-/** `device=` inside `[slot.<name>]`, as :2819's awk reads it. */
+/** `device=` inside `[slot.<name>]`, as the former verifier's awk reads it. */
 function raucSlotDevice(conf: string, slot: string): string {
   let inSection = false
   for (const line of conf.split('\n')) {

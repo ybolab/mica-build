@@ -4,14 +4,14 @@
 // Nothing here runs a check: it parses one verifier's output, takes the other's
 // results, and says by name, per check, agree / diverge / not ported.
 //
-// By name and not by count, following os/tests/ui-location-test.sh: "395 checks
+// By name and not by count, following the image fixture contract: "395 checks
 // both sides" is equally true of two runs that agreed on 395 and of two that
 // agreed on none because both were empty, and M3a's board-env oracle reported
 // agreement "on all 0 keys" for exactly that reason. A SKIP is a third verdict
 // that never equals a PASS, so pass-vs-skip is a named divergence rather than
 // noise in a total.
 //
-// Identity is assigned rather than parsed. os/verify-image-v2.sh (deleted) prints
+// Identity is assigned rather than parsed. The verification contract prints
 // `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>` and nothing else -- measured
 // on both boards' real images 2026-08-25, every one of 398 and 312 stdout lines
 // is a verdict line or the final RESULT line -- but the prose is not an
@@ -107,7 +107,7 @@ export function parseShellRun(stdout: string): ShellRun {
     throw new ParityInputError(
       `the verifier printed no "RESULT:" line. It prints one on every path that reaches the end, `
       + `so its absence means the run DIED mid-check -- and the conclusions it did print are a `
-      + `prefix of a run, not a run. os/verify-image-v2.sh:262 records that exact signature from a `
+      + `prefix of a run, not a run. The verification contract records that exact signature from a `
       + `SIGPIPE under \`set -o pipefail\`.`,
     )
   }

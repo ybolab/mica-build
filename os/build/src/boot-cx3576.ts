@@ -8,8 +8,8 @@
 // entire defence, and one only ever observed working is not evidence that it
 // still can. Pure, each is driven from the failing side against doctored text.
 //
-// The case rule, stated once here as os/mkimage-v2.sh (deleted) states it once there: GPT
-// tooling -- sgdisk, and therefore os/boards/cx3576/board.env -- writes GUIDs
+// The case rule is stated once here: GPT tooling -- sgdisk, and therefore
+// os/boards/cx3576/board.env -- writes GUIDs
 // uppercase, while udev and libblkid write the /dev/disk/by-partuuid/ names
 // lowercase, the form a kernel cmdline has to use. Both denote the same GUID,
 // so every identifier comparison folds case first: the rootfs producer emits
@@ -70,7 +70,7 @@ export function verityEnvBase(geometry: Geometry): string {
   if (a !== `${base}-a.env` || b !== `${base}-b.env`) {
     throw new Error(
       `BOOT_VERITY_ENV_A_NAME/BOOT_VERITY_ENV_B_NAME must be '${base}-a.env'/'${base}-b.env' to match `
-      + `what os/update/bundle.sh writes into a RAUC boot payload`,
+      + `what the bundle contract writes into a RAUC boot payload`,
     )
   }
   return base
@@ -162,7 +162,7 @@ export function checkPartitionNumbers(geometry: Geometry, bootCmd: string, path:
   }
 }
 
-/** Every boot.cmd guard, in the order os/mkimage-v2.sh (deleted) applies them. */
+/** Every boot.cmd guard, in the order the cx3576 assembly contract applies them. */
 export function checkBootCmd(geometry: Geometry, bootCmd: string, path: string): void {
   checkBootAttempts(geometry, bootCmd, path)
   checkBootCmdTokens(geometry, bootCmd, path)
@@ -196,13 +196,12 @@ export interface VerityEnv {
 }
 
 /**
- * The two verity tokens a slot's kernel cmdline carries, as the shell's two
- * `sed -n` substitutions yield them.
+ * The two verity tokens a slot's kernel cmdline carries, extracted one line at
+ * a time with last-match-wins behavior.
  *
- * Separate from the guards that read them, because two scripts read the same
- * two tokens out of the same two files and must agree about what they say:
- * os/mkimage-v2.sh's (deleted) mkverityenv() and os/update/bundle.sh's
- * write_verity_env(). They refuse differently -- the assembler gives
+ * Separate from the guards that read them, because the image assembler and
+ * bundle builder read the same two tokens from the same two files and must
+ * agree about what they say. They refuse differently -- the assembler gives
  * dm-mod.create= and dm-mod.waitfor= a sentence each, the bundle builder rolls
  * them into one and additionally requires the pinned salt -- so the refusals
  * stay two functions. The extraction is one, so a cmdline carrying two tables

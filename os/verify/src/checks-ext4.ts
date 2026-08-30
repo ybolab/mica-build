@@ -15,10 +15,10 @@
 // Three oracle conclusions are reproduced rather than repaired. `e2fsck -fn`
 // exits 0 on a truncated filesystem -- measured 2026-08-26, an 8192-block
 // filesystem in a 4096-block file prints "Either the superblock or the partition
-// table is likely to be corrupt!", runs all five passes and exits 0, and :2342's
+// table is likely to be corrupt!", runs all five passes and exits 0, and the former verifier's
 // `if e2fsck -fn "${img}" >/dev/null 2>&1` lets the status alone decide; see
 // `e2fsckClean` in image.ts. `debugfs -R "ls -p /"` exits 0 on a file that is
-// not ext4 with empty stdout and "Filesystem not open" on stderr, which :2358's
+// not ext4 with empty stdout and "Filesystem not open" on stderr, which the former verifier's
 // `|| true` swallows, and an empty listing is the passing direction for META,
 // STATE and DATA; `debugfsEntriesOrNone` reproduces it. `tune2fs -l` and
 // `dumpe2fs -h` are `|| true`, so a partition they cannot open reaches the
@@ -67,7 +67,7 @@ async function tierRange(
   ctx: ImageContext,
   layoutName: string,
 ): Promise<{ offset: number, length: number, startMib: number, sizeMib: number }> {
-  // `PART_START_MIB_${name}=$((row_start / SECTORS_PER_MIB))` (:1516), and then
+  // `PART_START_MIB_${name}=$((row_start / SECTORS_PER_MIB))`, and then
   // `dd bs=1M skip=... count=...`. Both units are MiB in the oracle, so both
   // are MiB here and the multiplication back to bytes happens once.
   const layout = await imageLayout(ctx)
@@ -79,7 +79,7 @@ async function tierRange(
 /**
  * The tier's bytes, named after the tier as the oracle's TMP file is.
  *
- * `${TMP}/${name}.img` at :2309, and the name is load-bearing here as well:
+ * `${TMP}/${name}.img`, and the name is load-bearing here as well:
  * every message this family prints leads with it, so an extract named after
  * the wrong tier would be a set of conclusions about the wrong partition.
  *
@@ -116,7 +116,7 @@ async function ext4SuperOrNone(ctx: ImageContext, file: string): Promise<Ext4Sup
 }
 
 /**
- * `debugfs -R "ls -p /" ... || true` filtered as :2358-2360 filters it.
+ * Runs `debugfs -R "ls -p /" ... || true` and filters its output.
  *
  * An empty answer is returned rather than refused, and that is the point: for
  * three of the four tiers an empty listing is the PASSING direction, so the
@@ -300,7 +300,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // What a partition should contain at build is per partition (:2352). META,
+    // What a partition should contain at build is per partition. META,
     // STATE and DATA ship empty; EPHEMERAL ships SEEDED, because /var is
     // written by every early systemd unit and a filesystem filled on first boot
     // races all of them.
@@ -343,7 +343,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // EPHEMERAL ships seeded, and the STAMP is what proves it (:2379-2397).
+    // EPHEMERAL ships seeded, and the STAMP is what proves it.
     //
     // The stamp is asserted rather than the tree because mos-seed-var's
     // ConditionPathExists keys on exactly this path: a seeded tree WITHOUT the
@@ -383,9 +383,9 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
  * Which tier is /var.
  *
  * The LAYOUT_PARTITIONS name, which is the same thing the oracle keys on:
- * `[ "${name}" = "ephemeral" ]` at :2371 compares against the display name it
+ * `[ "${name}" = "ephemeral" ]` compares against the display name it
  * was called with, and that name is the lowercased layout name at every call
- * site. `checks-fstab.ts:156` already binds `EPHEMERAL` to `/var` the same way.
+ * site. `checks-fstab.ts` already binds `EPHEMERAL` to `/var` the same way.
  *
  * NOT derived from a mountpoint key: neither board declares an
  * `EPHEMERAL_MOUNT`, so a derivation from one would resolve to `undefined` on
@@ -403,7 +403,7 @@ function isVarTier(_board: Board, layoutName: string): boolean {
 
 /**
  * The inode number out of `debugfs -R "stat PATH"`, which the oracle then seds
- * off the `Inode:` line (:2391).
+ * off the `Inode:` line.
  *
  * `undefined` when the path is not there, which is the oracle's empty string.
  */
@@ -441,7 +441,7 @@ async function tierListCount(ctx: ImageContext, file: string, dir: string): Prom
 /**
  * The kernel version the oracle interpolates into the orphan_file failure.
  *
- * Read out of the packed root's own /usr/lib/modules, which is where :2478
+ * Read out of the packed root's own /usr/lib/modules, which is where
  * reads it. It appears in ONE message and only in the failing direction, so a
  * root that cannot be unpacked answers `(unknown)` rather than killing a check
  * whose verdict does not depend on it.

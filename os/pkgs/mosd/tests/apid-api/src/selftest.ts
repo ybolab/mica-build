@@ -2,7 +2,7 @@
  * The proof that this suite can fail.
  *
  * A check only ever observed passing is not evidence here -- the shape
- * `os/verify-image-v2.sh`, `docs-verify-test` and `os-layout-lint-test`
+ * `the verification contract`, `docs-verify-test` and `os-layout-lint-test`
  * establish. Every assertion helper, the cookie jar, the redirect refusal, the
  * verbatim writer and the phase runner are driven against wrong inputs and each
  * must fail with its own message, with positive controls alongside because a

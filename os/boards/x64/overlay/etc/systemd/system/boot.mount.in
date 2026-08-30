@@ -10,7 +10,7 @@
 # The failure that would cause is not an error message: RAUC would be unable to
 # mark a slot good, the health gate would never succeed, and every update would
 # roll back -- the same shape as the missing rauc-service D-Bus files that
-# os/rootfs/Dockerfile.v2 records at the top of its package list.
+# os/rootfs/stages/10-base.Dockerfile records in its package rationale.
 
 # The ESP is singular. The firmware picks which ESP to boot and UEFI BootOrder
 # is firmware state, not disk state, so mos cannot make a second ESP

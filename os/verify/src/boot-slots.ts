@@ -5,7 +5,7 @@
 // offsets come from the layout" beside the first is drift waiting to happen,
 // which is the same reason the board predicates live in `board-scope.ts`.
 //
-// `check_boot_slot BOOT-A ... BOOT-B ...` at os/verify-image-v2.sh:1963-1964 (deleted) is
+// `check_boot_slot BOOT-A ... BOOT-B ...` at the verification contract is
 // unconditional on both boards: a grub board's ESP is a THIRD filesystem
 // checked separately, not one of these two. So the display name is
 // `BOOT-<letter>` on every board, and it is the instance every per-slot check
@@ -19,7 +19,7 @@ export interface BootSlot {
   readonly display: string
   /** The LAYOUT_PARTITIONS name: `BOOT_A`. */
   readonly layout: string
-  /** The lowercase trailing letter, which `@SLOT@` expands to (:1837). */
+  /** The lowercase trailing letter, which `@SLOT@` expands to. */
   readonly letter: string
   /** The uppercase letter, which the verity-env and cmdline families use. */
   readonly upper: string

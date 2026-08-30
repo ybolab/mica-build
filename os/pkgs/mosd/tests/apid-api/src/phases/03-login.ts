@@ -143,7 +143,7 @@ const phase: Phase = {
     // meets a guard that is still armed.
     //
     // The anchor is correct by the daemon's own contract, not by luck.
-    // os/pkgs/mosd/apid/src/auth.rs:118 `confirm_failure` re-arms the window after
+    // `confirm_failure` in os/pkgs/mosd/apid/src/auth.rs re-arms the window after
     // verification returns: "this only moves the window's start from admission
     // time to outcome time. Without it the verification's own duration would eat
     // into the wait -- argon2 costs a meaningful fraction of the one-second base

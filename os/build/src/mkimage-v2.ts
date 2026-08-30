@@ -1,5 +1,5 @@
-// os/mkimage-v2.sh (deleted), ported: the flashable cx3576 (Rockchip RK3576, eMMC
-// /dev/mmcblk0) A/B GPT disk image -- layout v2, eleven partitions.
+// Flashable cx3576 (Rockchip RK3576, eMMC /dev/mmcblk0) A/B GPT disk-image
+// assembler: layout v2, eleven partitions.
 //
 // The raw Rockchip loader area, a redundant U-Boot env pair, two FAT32 boot
 // slots, two raw squashfs+dm-verity rootfs slots and the meta/state/ephemeral/
@@ -207,9 +207,7 @@ export function mountsFor(inputs: AssemblyInputs, workDir: string): string[] {
 /**
  * Assemble the image.
  *
- * The order of the refusals below is os/mkimage-v2.sh's (deleted), and it is kept: a
- * reader comparing the two should be able to run the same broken input through
- * both and get the same sentence first.
+ * The refusal order is stable so the first actionable problem is deterministic.
  */
 export async function assembleCx3576(
   inputs: AssemblyInputs,

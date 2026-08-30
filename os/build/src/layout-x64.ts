@@ -15,18 +15,18 @@ import type { GptSpec } from './tools/sgdisk.ts'
 // Three differences from cx3576, each changing a number or a behaviour rather
 // than a spelling:
 //
-//   1. The headroom is applied in bytes, not in MiB. os/mkimage-x64.sh:117 is
+//   1. The headroom is applied in bytes, not in MiB. The x64 assembly contract is
 //        slot_mib=$(( (rootfs_bytes * PCT / 100 + MIB_BYTES - 1) / MIB_BYTES ))
 //      -- percentage first on the byte count, then the ceiling to MiB. cx3576's
 //      is `(payload_mib * pct + 99) / 100`, ceiling first. Those are not the
 //      same function: they agree whenever the payload is a whole MiB (which
-//      os/mkimage-v2.sh (deleted) refuses to proceed without and os/mkimage-x64.sh never
+//      the cx3576 assembly contract refuses to proceed without and the x64 assembly contract never
 //      checks) and diverge otherwise -- layout-x64.test.ts drives both
 //      spellings over the same payloads, agreeing on all 2048 whole-MiB ones
 //      and disagreeing on thousands of others.
-//   2. There is no pinned mode. os/mkimage-v2.sh (deleted) captures
+//   2. There is no pinned mode. The cx3576 assembly contract captures
 //      `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the board file so an
-//      environment pin selects the frozen-geometry mode; os/mkimage-x64.sh
+//      environment pin selects the frozen-geometry mode; the x64 assembly contract
 //      sources os/boards/x64/board.env at line 74 and reads
 //      MOS_ROOTFS_SLOT_MIB at line 119, by which point the board's 512 has
 //      overwritten anything the environment said. x64 has one mode, the floor,
@@ -51,7 +51,7 @@ export interface SlotDecision {
  * How big the rootfs slot is.
  *
  * `max(floor, alignUp(ceilToMib(payloadBytes * pct / 100), align))`, with every
- * division integer and in the order os/mkimage-x64.sh:117-121 does them. Written
+ * division integer and in the order the x64 assembly contract does them. Written
  * step by step rather than as one expression because each step truncates, and a
  * rearrangement that looks equivalent in algebra is not equivalent in integers.
  *
@@ -109,7 +109,7 @@ export interface DerivedLayout {
 /**
  * The chain from ROOTFS_A down to DATA, and the image length that follows.
  *
- * os/mkimage-x64.sh:123-128, one line at a time. Every start after rootfs-a is
+ * the x64 assembly contract, one line at a time. Every start after rootfs-a is
  * `previous start + previous size` in MiB, which is what makes DATA's start a
  * function of the slot size and therefore frozen for a flashed fleet.
  *
@@ -186,7 +186,7 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
 /**
  * The whole GPT, as one spec, in LAYOUT_PARTITIONS order.
  *
- * Order is read off the board, not written here -- os/mkimage-x64.sh:421-458
+ * Order is read off the board, not written here -- the x64 assembly contract
  * spells nine --new flags in a fixed sequence, a second copy of
  * LAYOUT_PARTITIONS that nothing checks. A partition added to the board file
  * and forgotten in the assembler is one sgdisk never writes.

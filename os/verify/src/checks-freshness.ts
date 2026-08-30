@@ -19,9 +19,9 @@
 // Rebuilt here as a CHECK, so it is a named result in the register's own output
 // and its absence would now show up as one.
 //
-// BOARD-DERIVED, which is the other half of the finding. the record a
-// defect in the original: the two inputs were written down as the literals
-// `_out/cx3576/rootfs-verity.img` and `os/podman/out-arm64/podman`, so an x64
+// BOARD-DERIVED, which is the other half of the finding. The original
+// implementation had a defect: its two inputs were written down as the literals
+// `_out/cx3576/rootfs-verity.img` and `os/pkgs/podman/out-arm64/podman`, so an x64
 // run's freshness was decided by arm64 artefacts -- it passed on a stale x64
 // image and refused a fresh one whenever the arm64 tree happened to be newer.
 // The milestone asked for the guard to be generalised. Both inputs below are

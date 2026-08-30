@@ -2,8 +2,8 @@
 # Boot the x64 image with apid reachable from outside it, and run the API suite
 # against the running daemon.
 #
-#   bash test/apid-api/run.sh
-#   bash test/apid-api/run.sh --dry-run
+#   bash os/pkgs/mosd/tests/apid-api/run.sh
+#   bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run
 #
 # This is the only check here that talks to apid over a real socket, on a
 # machine that came up through OVMF, GRUB and its own unit ordering, so a route
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 # The board layout is the board definition; the image's name is read from it
 # rather than repeated here, the same way src/qemu.ts reads it. `:?` on the
 # one key used turns a layout that stopped defining it into a sentence instead
@@ -119,7 +119,7 @@ case "${1:-}" in
 *) echo "usage: $0 [--dry-run]" >&2; exit 2 ;;
 esac
 
-# --- reporting, in the register os/verify-image-v2.sh uses ------------------
+# --- reporting, in the register the verification contract uses ------------------
 # One PASS/FAIL line per assertion and a final RESULT with dynamic totals. The
 # totals are counted, never written down: a hand-maintained constant stops being
 # true the first time somebody adds a check, and the obvious repair -- "no FAIL
@@ -201,7 +201,7 @@ address_on_network() {
 # the copy's ESP grub.cfg and runs QEMU in a container. It was a shell tool
 # under os/tools/ that this harness was the only caller of and was told not to
 # edit; it is TypeScript now, beside the suite that drives it, and the four
-# defects the record in it are negative fixtures in
+# defects recorded in the retired implementation are negative fixtures in
 # src/selftest.ts rather than a comment saying they were fixed.
 #
 # It needs bun AND a docker client in ONE place, and the pinned bun image
@@ -372,7 +372,7 @@ if [ ! -f "${SCRIPT_DIR}/src/main.ts" ]; then
     # that did not propagate looks like. Not fatal at this point -- the boot
     # half of the harness is still worth running and is still checkable without
     # the suite.
-    note "test/apid-api/src/main.ts does not exist yet; the suite step will FAIL loudly rather than be skipped quietly"
+    note "os/pkgs/mosd/tests/apid-api/src/main.ts does not exist yet; the suite step will FAIL loudly rather than be skipped quietly"
 fi
 
 # --- 2. discover the network by observation ---------------------------------
@@ -402,8 +402,7 @@ pass "docker network discovered by observation: ${NET} (this container is ${MY_I
 mkdir -p "${ART_DIR}"
 # The console is the only journal. mos keeps journald at Storage=volatile
 # because /var is the ephemeral partition, so a guest's log dies with the guest,
-# so no journal-reading tool can work post-mortem (the former
-# os/tools/qemu-journal.sh was removed for exactly that reason). Instead every
+# so no journal-reading tool can work post-mortem. Instead every
 # boot is captured to a file here,
 # MOS_QEMU_APPEND puts journald on the serial line, and apid's own
 # `APID_LISTENING` line becomes a readiness signal that can be waited on.
@@ -432,17 +431,17 @@ RUN_STAMP="${ART_DIR}/run-started"
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (src/qemu.ts --prepare-only, in ${PORT_IMAGE})"
-    note "would seed     test/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1"
+    note "would seed     os/pkgs/mosd/tests/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1"
     note "               (apid's start-up activates it; 04-readonly's traversal rows need it)"
     note "would boot     src/qemu.ts --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
     note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1 systemd.run=..."
-    note "would seed     test/apid-api/guest/m7-net-smoke.sh -> STATE:${SMOKE_IN_GUEST} (phase 05c)"
+    note "would seed     os/pkgs/mosd/tests/apid-api/guest/m7-net-smoke.sh -> STATE:${SMOKE_IN_GUEST} (phase 05c)"
     note "               MOS_QEMU_RUN_SECONDS=${RUN_SECONDS} MOS_QEMU_TIMEOUT=${QEMU_TIMEOUT}"
     note "would find     the container binding ${RUN_DIR_REAL} and read its address on ${NET}"
     note "would wait     up to ${READY_TIMEOUT}s for APID_LISTENING on the console AND for"
     note "               https://<guest>:${HTTPS_PORT}/healthz to answer 200 from inside ${BUN_IMAGE}"
-    note "would run      docker run --network ${NET} -v ${REPO_ROOT}:/w -v ${OUT_REAL}:/w/_out -w /w/test/apid-api ${BUN_IMAGE} bun run src/main.ts"
+    note "would run      docker run --network ${NET} -v ${REPO_ROOT}:/w -v ${OUT_REAL}:/w/_out -w /w/os/pkgs/mosd/tests/apid-api ${BUN_IMAGE} bun run src/main.ts"
     note "               APID_HOST=<guest> APID_HTTPS_PORT=${HTTPS_PORT} APID_HTTP_PORT=${HTTP_PORT}"
     if [ -n "${APID_NEGATIVE:-}" ]; then
         note "               APID_NEGATIVE=${APID_NEGATIVE} -- this run is EXPECTED TO BE RED"
@@ -548,7 +547,7 @@ pass "disk prepared at ${RUN_DIR}/disk.img"
 # modes -- is produced by the code under test rather than imitated by this
 # script. The fixture's contents are what 04-readonly's assertions compare
 # response bodies against, byte for byte; both sides read
-# test/apid-api/fixture/ui-bundle.
+# os/pkgs/mosd/tests/apid-api/fixture/ui-bundle.
 FIXTURE_DIR="${SCRIPT_DIR}/fixture/ui-bundle"
 seed_data_fixture() {
     local seed_image log
@@ -619,7 +618,7 @@ pass "UI-bundle fixture seeded into DATA at /srv/ui/.staging-1 ($(find "${FIXTUR
 # A failure here is fatal rather than a warning. Booting on without the script
 # would leave phase 05c reporting that the smoke never ran, which is true and
 # uninformative; the reason is known HERE.
-SMOKE_SRC="${REPO_ROOT}/test/apid-api/guest/m7-net-smoke.sh"
+SMOKE_SRC="${SCRIPT_DIR}/guest/m7-net-smoke.sh"
 if [ ! -f "${SMOKE_SRC}" ]; then
     fail "${SMOKE_SRC} not found; phase 05c has no guest script to seed"
     finish
@@ -828,14 +827,14 @@ run_suite() {
     suite_passthrough passthrough
     log="${ART_DIR}/suite-${label}.log"
     if [ ! -f "${SCRIPT_DIR}/src/main.ts" ]; then
-        fail "[${label}] the suite entry point test/apid-api/src/main.ts does not exist, so nothing was asserted about apid"
+        fail "[${label}] the suite entry point os/pkgs/mosd/tests/apid-api/src/main.ts does not exist, so nothing was asserted about apid"
         SUITE_RC=1
         return 0
     fi
     note "[${label}] running the suite against ${ip}:${HTTPS_PORT}${phases:+ (phases: ${phases})}"
     set +e
     docker run --rm --network "${NET}" \
-        -v "${REPO_ROOT}:/w" -v "${OUT_REAL}:/w/_out" -w /w/test/apid-api \
+        -v "${REPO_ROOT}:/w" -v "${OUT_REAL}:/w/_out" -w /w/os/pkgs/mosd/tests/apid-api \
         -e APID_HOST="${ip}" \
         -e APID_HTTPS_PORT="${HTTPS_PORT}" \
         -e APID_HTTP_PORT="${HTTP_PORT}" \

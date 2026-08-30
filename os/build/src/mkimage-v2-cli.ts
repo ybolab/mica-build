@@ -1,4 +1,4 @@
-// The host half of os/mkimage-v2.sh (deleted): where the inputs are, what the output is
+// The host half of the cx3576 assembly contract: where the inputs are, what the output is
 // called, and the -latest symlink.
 //
 // THE SEAM: epoch naming and the -latest symlink happen on the host side, in
@@ -21,9 +21,8 @@ import { REPO_ROOT } from './paths.ts'
 
 const USAGE = `usage: bash os/build/run.sh --mkimage-v2 [--out-dir DIR] [--board-dir DIR]
 
-Assembles the flashable cx3576 A/B GPT disk image -- the TypeScript port of
-os/mkimage-v2.sh. Inputs come from _out/${BOARD}/ and
-os/boards/${BOARD}/bsp/out/ exactly as they do there.
+Assembles the flashable cx3576 A/B GPT disk image. Inputs come from
+_out/${BOARD}/ and os/boards/${BOARD}/bsp/out/.
 
   --out-dir DIR    where the rootfs-side inputs are and the image is written
                    (default: _out/${BOARD})

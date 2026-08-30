@@ -1,6 +1,6 @@
 /**
  * Reporting in this repository's house format -- the same shape
- * `os/verify-image-v2.sh` prints: one `PASS:`/`FAIL:` line per assertion and a
+ * `the verification contract` prints: one `PASS:`/`FAIL:` line per assertion and a
  * final `RESULT: PASS (n/m checks)`.
  *
  * Two rules are load-bearing and are why this is a module rather than a pair

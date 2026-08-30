@@ -16,7 +16,7 @@ import { Toolbox, ToolError } from '../toolbox.ts'
 import { CX3576_ASSEMBLY } from '../toolsets.ts'
 import { bootScriptArgs, makeBootScript, readImageHeader } from './mkimage.ts'
 
-/** cx3576's own boot source -- the file os/mkimage-v2.sh (deleted) compiles. */
+/** cx3576's own boot source -- the file the cx3576 assembly contract compiles. */
 const BOOT_CMD = join(OS_DIR, 'boards', 'cx3576', 'boot.cmd')
 
 let tb: Toolbox
@@ -32,7 +32,7 @@ afterAll(async () => {
 }, OPEN_TIMEOUT_MS)
 
 describe('the argv shape', () => {
-  test('os/mkimage-v2.sh\'s shape, and no -A', () => {
+  test('the cx3576 assembly contract\'s shape, and no -A', () => {
     // A boot script is architecture-independent; an -A here would put a claim
     // in the header that U-Boot then checks.
     expect(bootScriptArgs({ input: 'boot.cmd', output: 'boot.scr', name: 'mos boot', sourceDateEpoch: '1577836800' }))

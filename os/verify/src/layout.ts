@@ -1,10 +1,10 @@
 // The partition table the board definition describes, walked the way
-// os/verify-image-v2.sh:1450-1516 (deleted) walks it.
+// the verification contract walks it.
 //
 // One half of every GPT geometry check; the other half is the table the image
 // actually carries, read by `readGpt`. The two are produced by different code
 // from different inputs and only then compared, the property the oracle's own
-// comment at :1450 insists on and the reason the hand-written chain it replaced
+// comment insists on and the reason the hand-written chain it replaced
 // (`rootfs_b_start_mib = ...; meta_start_mib = ...`) was wrong -- it restated
 // the arithmetic the assembler had already done, so a gap both agreed on passed.
 //
@@ -120,7 +120,7 @@ export function walkLayout(board: Board, slotSectors: number): LayoutWalk {
   if (names === undefined || names.length === 0) {
     throw new ToolOutputError(
       `${board.path} declares no LAYOUT_PARTITIONS; this walk walks the board definition and has `
-      + `nothing to walk. os/verify-image-v2.sh:1414 refuses the same state for the same reason.`,
+      + `nothing to walk. The verification contract refuses the same state for the same reason.`,
     )
   }
 

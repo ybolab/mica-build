@@ -118,13 +118,12 @@ mos/
 │   ├── build-env/ 每个组件构建所 FROM 的固定构建器镜像
 │   ├── pkgs/      本仓库编译成发布产物的源码：podman/、rauc/、rauc-sign/、
 │   │              以及 mosd/ Rust 工作区（mosd、apid、mos-mqttd、
-│   │              mos-mqtt-broker、mosd-settings）
+│   │              mos-mqtt-broker、mosd-settings）；工作区级黑盒测试统一放在 mosd/tests/
 │   ├── rootfs/    根文件系统：stages/ 下的分阶段 Dockerfile，加 build-v2.sh
 │   ├── tests/     针对已构建镜像的 shell 套件
 │   ├── tools/     QEMU 辅助脚本
 │   └── verify/    TypeScript：板卡模型，以及装配后镜像必须通过的检查
 ├── extensions/    预留给可选 sysext 层，目前不构建任何东西
-├── test/          apid API 套件，针对 QEMU 中已启动的镜像运行
 └── Makefile       顶层路由；`make help` 列出全部目标
 ```
 

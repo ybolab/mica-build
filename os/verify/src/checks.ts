@@ -1,19 +1,12 @@
 // The check register: one entry per image-contract check, carrying BOTH the
 // TypeScript that decides it and the shell conclusion it replaces.
 //
-// At M4a this register is EMPTY, on purpose: M4a builds the instrument,
-// M4b..M4d fill it in batches, M4e deletes os/verify-image-v2.sh once nothing
-// is left unclaimed. An empty register is not a neutral state and the harness
-// does not treat it as one -- every one of the oracle's conclusions comes out
-// `not-ported`, and the run's conclusion is INCOMPLETE.
-//
-// The matcher lives on the check rather than in a table of ids kept beside them,
-// for the reason ui-location-test.sh gives for its own register being one
-// structure rather than two: a port and its identity that live in different
-// places drift, and the drift is invisible -- a check whose matcher stopped
-// matching reports the same "no divergence" as a check that agrees. Here the two
-// cannot separate: a CheckCase with no `shell` matcher does not typecheck, and a
-// matcher with no check is not a CheckCase.
+// The matcher lives on the check rather than in a separate id table. A check
+// and its identity drift when maintained in two places, and that drift is
+// invisible: a matcher that stopped matching reports the same "no divergence"
+// as a check that agrees. Here the two cannot separate: a CheckCase with no
+// `shell` matcher does not typecheck, and a matcher with no check is not a
+// CheckCase.
 //
 // Each entry carries an `id`, a `shell` matcher (`{ pass: 'disk GUID is' }` for
 // an `eq_ci` that prints "X is Y" one way and "X is 'Z', expected Y" the other),
@@ -98,7 +91,7 @@ export interface ImageContext {
    *
    * The seam the LAYOUT-addressed families need. `extract` above resolves a
    * partition through the GPT, which is right for everything that reads a
-   * partition and wrong for the four ext4 tiers: os/verify-image-v2.sh:2309 (deleted)
+   * partition and wrong for the four ext4 tiers: the verification contract
    * `dd`s them at `PART_START_MIB_x`, the offset the board definition walks to,
    * and a check that read them through the GPT would agree with a partition
    * that had moved. `gpt-partition-start` is the check that says the two agree.

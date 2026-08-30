@@ -12,16 +12,16 @@
 // hazard in prose that names com.mos.mosd, so a reader that could not tell an
 // XML comment from a rule would report the warning as an instance of the thing
 // it warns about. So both of the oracle's readers are ported as readers:
-// `stripComments` is `dbus_policy_rules_only` (:661), an awk state machine over
+// `stripComments` is `dbus_policy_rules_only`, an awk state machine over
 // `<!--`/`-->` that spans lines and preserves line structure; `policyTags` is
-// `dbus_policy_tags` (:729), the same text reflowed to one XML tag per line,
+// `dbus_policy_tags`, the same text reflowed to one XML tag per line,
 // which is what makes a per-line scoped/member judgement sound; `policyFacts` is
-// the awk at :2989, rules collected per <policy> block, because a rule's block
+// the awk , rules collected per <policy> block, because a rule's block
 // decides who it applies to.
 //
 // The bus name is read, never written down. `com.mos.mosd` appears nowhere here
 // as the name being checked: the oracle reads it out of mosd.service's
-// `BusName=` (:2975) so that a policy for a name nothing owns fails rather than
+// `BusName=` so that a policy for a name nothing owns fails rather than
 // sails through. Restating it would put the constant back in two places.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -104,7 +104,7 @@ export function stripXmlComments(text: string): string {
 }
 
 /**
- * `dbus_policy_tags` (:729): the rules, reflowed to one XML tag per line.
+ * `dbus_policy_tags`: the rules, reflowed to one XML tag per line.
  *
  * `tr '\n' ' ' | sed 's|>|>\n|g'` then a trim and a whitespace collapse, then
  * `grep .` to drop what is left empty. The trailing newline `tr` produces
@@ -132,7 +132,7 @@ export interface PolicyFacts {
   readonly names: readonly string[]
 }
 
-/** `attrval` (:2990): the value of `key="..."`, or the empty string. */
+/** `attrval`: the value of `key="..."`, or the empty string. */
 function attrValue(tag: string, key: string): string {
   const at = tag.indexOf(`${key}="`)
   if (at === -1) return ''
@@ -142,7 +142,7 @@ function attrValue(tag: string, key: string): string {
 }
 
 /**
- * The awk at :2989, transcribed.
+ * The awk , transcribed.
  *
  * `doc` is built as `doc " " out` per line -- so lines are joined by a SPACE
  * and not by a newline, which is what lets a rule wrapped across three source
@@ -576,7 +576,7 @@ const EXT_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// bluez's policy -- os/verify-image-v2.sh:3183 (deleted). Board-conditional.
+// bluez's policy -- the verification contract. Board-conditional.
 
 const hasBluetooth = (board: Board): boolean => hasRadio(board, 'bluetooth')
 

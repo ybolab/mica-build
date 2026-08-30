@@ -148,7 +148,7 @@ interface FallbackRow {
  * The fallback and traversal contract, both columns, in the shape
  * `serve::respond` produces it with the harness's bundle active.
  *
- * run.sh seeds `test/apid-api/fixture/ui-bundle` into DATA at
+ * run.sh seeds `os/pkgs/mosd/tests/apid-api/fixture/ui-bundle` into DATA at
  * `/srv/ui/.staging-1` before the first boot and apid's start-up activates
  * it, so `active_root(..)` is `Some` and `asset_path::resolve()` -- the
  * function holding the dot-segment, residual-escape, NUL and
@@ -323,7 +323,7 @@ const phase: Phase = {
   assumes:
     "phase 03 left a VALID SESSION in the client's jar and the device out of setup mode, " +
     "so the gate admits these requests rather than redirecting them to /login or /setup; " +
-    "and that run.sh seeded test/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1 " +
+    "and that run.sh seeded os/pkgs/mosd/tests/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1 " +
     "before the first boot, so apid's start-up activated it and a custom UI bundle IS active. " +
     "The bundle is not incidental: with one active, `/` serves the bundle's index and the " +
     "fallback rows are decided by asset_path::resolve -- the function holding §4.4's traversal " +
@@ -576,7 +576,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
   const expectedDecoy = await fixtureText("etc/passwd");
   report.check(
     expectedIndex !== undefined && expectedAsset !== undefined && expectedDecoy !== undefined,
-    "the fixture at test/apid-api/fixture/ui-bundle is readable from inside the suite container",
+    "the fixture at os/pkgs/mosd/tests/apid-api/fixture/ui-bundle is readable from inside the suite container",
     [
       `expected: index.html, assets/app.js and etc/passwd under ${FIXTURE_ROOT.pathname}`,
       `actual:   ${[
@@ -596,7 +596,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
     expectedIndex !== undefined && root.body === expectedIndex,
     "GET / serves the ACTIVE BUNDLE's index.html byte for byte -- the seeded fixture was activated at start-up, so §4.4's guards are live for every row below",
     [
-      `expected: the exact content of test/apid-api/fixture/ui-bundle/index.html`,
+      `expected: the exact content of os/pkgs/mosd/tests/apid-api/fixture/ui-bundle/index.html`,
       `actual:   ${describeBody(root)}`,
       ``,
       `A Status pane here means NO bundle is active: either run.sh's DATA seeding`,
@@ -617,7 +617,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
     expectedAsset !== undefined && asset.body === expectedAsset,
     "GET /assets/app.js returns the fixture's asset byte for byte",
     [
-      `expected: the exact content of test/apid-api/fixture/ui-bundle/assets/app.js`,
+      `expected: the exact content of os/pkgs/mosd/tests/apid-api/fixture/ui-bundle/assets/app.js`,
       `actual:   ${describeBody(asset)}`,
     ].join("\n"),
   );
@@ -638,7 +638,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
     expectedDecoy !== undefined && decoy.body === expectedDecoy,
     "GET /etc/passwd returns the bundle's decoy byte for byte, not the appliance's passwd",
     [
-      `expected: the exact content of test/apid-api/fixture/ui-bundle/etc/passwd`,
+      `expected: the exact content of os/pkgs/mosd/tests/apid-api/fixture/ui-bundle/etc/passwd`,
       `actual:   ${describeBody(decoy)}`,
     ].join("\n"),
   );
@@ -682,7 +682,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
         expectedIndex !== undefined && html.body === expectedIndex,
         `GET ${row.target} with Accept: text/html serves the ACTIVE BUNDLE's index byte for byte -- §4.2 condition 5's SPA fallback, reached only because resolve() answered NotFound`,
         [
-          `expected: the exact content of test/apid-api/fixture/ui-bundle/index.html`,
+          `expected: the exact content of os/pkgs/mosd/tests/apid-api/fixture/ui-bundle/index.html`,
           `actual:   ${describeBody(html)}`,
         ].join("\n"),
       );

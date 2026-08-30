@@ -1,8 +1,8 @@
 // The x64 assembler, driven over fabricated inputs -- and every refusal driven
 // from the failing side.
 //
-// Fabricated like os/tests/mkimage-x64-selftest.sh's, and for its reason: a test
-// that read _out/x64/ could not run on a fresh clone, and producing those inputs
+// Fabricated rather than read from _out/x64/: the test must run on a fresh
+// clone, while producing those inputs
 // costs a whole rootfs build to exercise an assembler that does not care what is
 // inside the payload it places. The properties this assembler reads off its
 // inputs are their size, the KEY=value lines of one env file, and whether a
@@ -12,11 +12,10 @@
 // This file compares no bytes. It covers what a byte comparison cannot see: a
 // comparison is green for a good input, so an assembler that quietly dropped a
 // refusal produces identical bytes for every good input and passes it perfectly.
-// os/tests/mkimage-x64-selftest.sh says the same about itself, naming the ESP
-// cluster-count floor as exactly that kind of loss.
+// The ESP cluster-count floor is exactly that kind of loss.
 //
 // One measurement is here because it is a claim this port makes: `-a 2048` where
-// os/mkimage-x64.sh passes no alignment at all. That is the only spelling this
+// the x64 assembly contract passes no alignment at all. That is the only spelling this
 // port changed on the sgdisk call, and it is compared against a real sgdisk over
 // the real x64 geometry rather than argued in a comment.
 
@@ -50,9 +49,9 @@ import { readPartition, writeGpt, writeGptArgs, type GptSpec } from './tools/sgd
  * TOTAL clusters, computed from minfo's BPB -- because minfo does not print one.
  *
  * MEASURED, not assumed: `minfo -i` prints `free clusters=` in its Infosector
- * block and no total anywhere. That is precisely why os/mkimage-x64.sh:263 parses
- * FREE and why the position of the check is load-bearing -- the number the FAT
- * specification defines the type by is not a number the tool reports. This
+ * block and no total anywhere. That is precisely why the x64 assembly contract parses
+ * FREE and why the position of the check is load-bearing -- the FAT type is
+ * defined by a number the tool does not report. This
  * derives it the way the specification does, and is used ONLY to MEASURE the
  * relationship between the two; the shipped check still reads free, where the
  * shell reads it.
@@ -601,7 +600,7 @@ describe('nothing per-slot on the ESP', () => {
   })
 
   test('the names come from the BOARD, so a renamed one is still covered', () => {
-    // os/mkimage-x64.sh spells `vmlinuz initrd.img cmdline.cfg` as three
+    // the x64 assembly contract spells `vmlinuz initrd.img cmdline.cfg` as three
     // literals, which is a second copy of SLOT_KERNEL_NAME and friends. A board
     // that renamed one would have the stray check quietly stop covering it.
     const names = [
@@ -675,7 +674,7 @@ describe('the toolset and the mounts', () => {
     expect(X64_ASSEMBLY.tools).toContain('grub-mkstandalone')
   })
 
-  test('the package list is os/mkimage-x64.sh\'s, verbatim', () => {
+  test('the package list is the x64 assembly contract\'s, verbatim', () => {
     expect(X64_ASSEMBLY.packages.join(' '))
       .toBe('gdisk dosfstools mtools e2fsprogs grub-efi-amd64-bin grub-common')
     expect(X64_ASSEMBLY.imageKey).toBe('IMAGE_DEBIAN_TRIXIE')

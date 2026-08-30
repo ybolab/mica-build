@@ -8,7 +8,7 @@
 // the summary and both assemblers pass it; it is a parameter rather than a
 // default, because a silenced dd is harder to debug.
 //
-// Reading bytes back out of an image is not here: os/mkimage-v2.sh (deleted) checks the
+// Reading bytes back out of an image is not here: the cx3576 assembly contract checks the
 // loader magic with `dd ... | od -An -tx1 -N4`, the image is a file on the host
 // so a caller reads it with node:fs, and `docker exec` would route binary
 // through a text stream that corrupts at the first non-UTF-8 byte.
@@ -27,8 +27,8 @@ export interface DdSpec {
   /** `count=`, in blocks of blockSize. */
   readonly countBlocks?: bigint
   /**
-   * `conv=`. NOT defaulted, and not normalised across callers: os/mkimage-v2.sh (deleted)
-   * uses `notrunc,sparse` and os/mkimage-x64.sh uses `notrunc`. They agree on
+   * `conv=`. NOT defaulted, and not normalised across callers: the cx3576 assembly contract
+   * uses `notrunc,sparse` and the x64 assembly contract uses `notrunc`. They agree on
    * the bytes for a target that is already zero -- v2's comment says so -- but
    * which one a call passes is that call's decision, taken where the reason is.
    */

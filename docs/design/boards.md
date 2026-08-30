@@ -91,7 +91,7 @@ The boot path sets the floor. The root is a squashfs carrying its own dm-verity
 hash tree, described by one `dm-mod.create=` table on the kernel command line —
 "one boot contract, written once by os/rootfs/build-v2.sh, read by the kernel's
 dm-init on a board whose kernel has it and by this script on a board whose kernel
-does not" (`os/rootfs/initramfs/scripts/mos-verity:5-8`) — above a userland that
+does not" (`os/rootfs/initramfs/scripts/mos-verity`) — above a userland that
 is "Debian trixie + systemd" (`os/rootfs/stages/10-base.Dockerfile`). A board
 that builds its own kernel therefore has to carry the §4 assertion set built in —
 `=y`, never `=m`, because nothing can load a module before the root is there;

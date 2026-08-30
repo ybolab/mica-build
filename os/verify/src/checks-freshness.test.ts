@@ -236,7 +236,7 @@ describe('one board’s run is not decided by another board’s artefacts', () =
    * The tree the original defect needed: x64's own inputs old, cx3576's newer.
    *
    * The shell guard named `_out/cx3576/rootfs-verity.img` and
-   * `os/podman/out-arm64/podman` as literals, so this tree made an x64 run
+   * `os/pkgs/podman/out-arm64/podman` as literals, so this tree made an x64 run
    * refuse a fresh x64 image. Both directions are asserted, because a check that
    * simply never looked at arm64 would pass the first case for the wrong reason.
    */

@@ -6963,7 +6963,7 @@ async fn the_write_route_writes_the_four_scalar_settings() {
 /// *"A redacted field is **read-only through the API**: a `PUT` whose body
 /// contains `"<redacted>"` is rejected at 422 rather than written, because
 /// writing the sentinel would silently destroy the credential."*
-/// (`docs/design/api.md:1292-1295`) Without the refusal this test's `PUT`
+/// (`docs/design/api.md` §2.2) Without the refusal this test's `PUT`
 /// succeeds and `access.webAdmin.password_hash` becomes the literal string
 /// `<redacted>`, which no password verifies against and no operator can undo.
 #[tokio::test]

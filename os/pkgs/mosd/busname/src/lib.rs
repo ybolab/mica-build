@@ -100,7 +100,7 @@ pub struct BusName<'a> {
 /// grant governs it and the default `<deny own="*"/>` does not. That is
 /// measured, not reasoned — measured against dbus-daemon —
 /// `own_prefix` semantics (measured 2026-08-22)" against dbus-daemon 1.12.20,
-/// asserted by `mosd/hack/dbus-policy-test.sh` section 4, where uid 65534
+/// asserted by `os/pkgs/mosd/tests/dbus-policy-test.sh` section 4, where uid 65534
 /// requesting the bare name is OWNED. Calling it system-origin would let an
 /// unprivileged third party present itself to operators, the dashboard and the
 /// MQTT bridge as the system. A bare `None` would discard one of the two true
@@ -231,9 +231,8 @@ mod tests {
     ///
     /// `own_prefix="com.mos.ext"` matches the bare prefix itself, so an
     /// unprivileged uid (65534) requesting `com.mos.ext` is OWNED — measured
-    /// against dbus-daemon 1.12.20.md` §"Investigation —
-    /// `own_prefix` semantics (measured 2026-08-22)", asserted by
-    /// `mosd/hack/dbus-policy-test.sh` section 4.
+    /// against dbus-daemon 1.12.20 and asserted by
+    /// `os/pkgs/mosd/tests/dbus-policy-test.sh` section 4.
     #[test]
     fn the_bare_extension_namespace_is_never_system_origin() {
         let parsed = parse(EXTENSION_NAMESPACE).expect("com.mos.ext is a mos name");

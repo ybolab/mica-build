@@ -67,7 +67,7 @@ describe('the announce line says WHY, because it is the only thing that says whi
   test('never an empty subject', () => {
     // Driven by a real regression: once parity-cli decided the route up front
     // and passed it in, createToolRuntime stopped computing the missing list
-    // and announced "(no  on this host)".
+    // and announced "(no <empty tool list> on this host)".
     for (const reason of [routeReason(undefined, []), routeReason('container', []), routeReason('host', [])]) {
       expect(reason).not.toMatch(/^no\s*$|no\s+on this host/)
       expect(reason.length).toBeGreaterThan(3)
@@ -84,7 +84,7 @@ describe('the tool set and the image it comes from', () => {
   })
 
   // GONE WITH THE ORACLE, as this test itself said it would be: it read the
-  // `apk add` line out of os/verify-image-v2.sh (deleted) and required TOOL_PACKAGES to
+  // `apk add` line out of the verification contract and required TOOL_PACKAGES to
   // equal it, so that a parity divergence could never be a package difference.
   // There is no second tool list left to agree with -- TOOL_PACKAGES is now the
   // only statement of what the verifier installs, and a test that compared it

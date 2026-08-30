@@ -10,8 +10,8 @@
 // The shell transcripts below are the real thing, copied out of the runs
 // against the real cx3576 and x64 images on 2026-08-25, prose and all. A
 // transcript this file invented would test this file's idea of what the
-// verifier prints -- the same objection ui-location-test.sh raises to a
-// fixture fstab it authored itself.
+// verifier prints -- the same objection the image fixture contract raises to
+// an fstab fixture it authored itself.
 
 import { describe, expect, test } from 'bun:test'
 import {

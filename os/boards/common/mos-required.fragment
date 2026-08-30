@@ -14,7 +14,7 @@ CONFIG_SQUASHFS_ZSTD=y
 CONFIG_SQUASHFS_XATTR=y
 CONFIG_OVERLAY_FS=y
 
-# Inherited from the baseline the record as "machined-era options
+# Inherited from the baseline as "machined-era options
 # (harmless) + WireGuard", and retained deliberately: nothing in the shipping
 # image requires them. A missing hugetlbfs put the board in a reboot loop on
 # hardware (2026-08-17). SELinux is permissive: CONFIG_SECURITY_SELINUX_DEVELOP=y

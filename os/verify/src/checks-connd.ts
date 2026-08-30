@@ -1,9 +1,9 @@
 // Batch 4a: the connd contract, the Wi-Fi userland, and mosd's networkd namespace.
 //
-// Twenty-two conclusions on cx3576 and four on x64 -- the contract read
-// (:1030), the nineteen assertions it feeds (:4310-4432, all of them behind
+// Twenty-two conclusions on cx3576 and four on x64: one contract read,
+// nineteen assertions it feeds (all of them behind
 // `board_has_radio wifi`), and the two namespace conclusions that run on every
-// board (:1066, :4441).
+// board.
 //
 // Every path, prefix and unit name the Wi-Fi assertions compare against is read
 // out of `os/pkgs/mosd/mosd/src/reconciler/` rather than restated here, exactly as the
@@ -14,7 +14,7 @@
 // the device and nowhere else.
 //
 // The extractor itself rotted once, which is why there is no fallback. The
-// oracle records it (:994): the sweep marker was read with a regex over
+// oracle records it: the sweep marker was read with a regex over
 // `file_name.contains("...")`, network.rs was refactored to an anchored
 // `is_mos_managed()`, the regex stopped matching and the marker became "". The
 // collision test `case "${n}" in *"${MOS_SWEEP}"*)` then became `**` and matched
@@ -46,8 +46,8 @@ import { skipped, verdict } from './verdict.ts'
  *
  * `MOS_VERIFY_RECONCILER_DIR` exists so a test can point this at a MUTATED copy
  * and watch the read fail -- without it the rot recorded above could not be
- * driven, only waited for. The oracle honours the same variable (:1015) and
- * `os/tests/ui-location-test.sh` is its one caller.
+ * driven, only waited for. The oracle honours the same variable and
+ * `the image fixture contract` is its one caller.
  */
 export const RECONCILER_DIR: string = process.env['MOS_VERIFY_RECONCILER_DIR']
   ?? join(REPO_ROOT, 'os', 'pkgs', 'mosd', 'mosd', 'src', 'reconciler')
@@ -133,7 +133,7 @@ function mosdConfigName(dir: string, file: string): string {
 /**
  * The contract, or a record of having failed to read it.
  *
- * `read` is the oracle's own ten-way conjunction (:1053): every field non-empty
+ * `read` is the oracle's own ten-way conjunction: every field non-empty
  * AND the sweep suffix exactly `.network`. The suffix is compared rather than
  * merely required to be present, because a marker read out of a `starts_with`
  * whose `ends_with` had changed would describe a wider sweep than the code
@@ -218,7 +218,7 @@ function wifiRegularFile(id: string, path: string): CheckCase {
 }
 
 /**
- * `check_execstart` (:4325): the unit's command line and the reconciler's render
+ * `check_execstart`: the unit's command line and the reconciler's render
  * path are ONE contract.
  *
  * BOTH systemd instance specifiers are accepted -- `%i` escaped and `%I`

@@ -1,4 +1,4 @@
-// os/update/bundle.sh (deleted), ported: the signed RAUC update bundle.
+// Signed RAUC update-bundle builder.
 //
 // One bundle carries one image per slot class of the RAUC slot group --
 // `rootfs.img`, the raw squashfs+dm-verity slot image, and `boot.vfat`, the
@@ -26,7 +26,7 @@ import { makeBootScript } from './tools/mkimage.ts'
 import { mcopy, mkfsVfat } from './tools/mtools.ts'
 import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
 
-// What the port has to get right:
+// Reproducibility and payload invariants:
 //
 //   * The mcopy order. `Image rk3576-src.dtb boot.scr mos-verity-a.env
 //     mos-verity-b.env` is the order the shell hands them over and therefore
@@ -43,8 +43,8 @@ import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
 //     without them stamps the payload with the wall clock, the build
 //     container's uid map and a thread count.
 //
-// One refusal this port makes that the shell does not. bundle.sh reads the
-// boot-attempt credits through
+// One deliberate extra refusal protects against a vacuous pass. The earlier
+// implementation read the boot-attempt credits through
 //
 //     done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
 //
@@ -52,9 +52,9 @@ import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
 // stdout, the loop body never runs and the range guard passes by finding
 // nothing. requireBootAttempts refuses an empty read by name. It can only turn
 // a vacuous pass into a refusal, and today's os/boards/cx3576/boot.cmd declares
-// four credits, so it changes nothing about the bytes. os/mkimage-v2.sh's (deleted) copy
-// of the same guard is covered by accident -- checkBootCmdTokens runs next and
-// refuses a boot.cmd with no `rauc.slot=` in it -- while bundle.sh runs no such
+// four credits, so it changes nothing about the bytes. In the cx3576 assembler,
+// the same guard is covered by accident -- checkBootCmdTokens runs next and
+// refuses a boot.cmd with no `rauc.slot=` in it -- while the bundle path has no such
 // second guard, so it is the one path where the hole is reachable.
 
 /**
@@ -270,8 +270,8 @@ export interface BundleVerityEnvInputs {
  * some other build's root hash, would otherwise land in a signed bundle and
  * fail on hardware after the slot was already written.
  *
- * Two things differ from os/mkimage-v2.sh's (deleted) mkverityenv(), both the shell's and
- * both kept: an absent dm-mod.create= and an absent dm-mod.waitfor= share one
+ * Two details intentionally differ from the image assembler: an absent
+ * dm-mod.create= and an absent dm-mod.waitfor= share one
  * sentence here, and the salt is additionally required to appear in the table --
  * the assembler checks the salt only against the pin, not against the table it
  * is about to ship.
@@ -426,8 +426,8 @@ export function spliceBootImages(template: string, bootImages: string): string {
  * replacement is NOT literal in JavaScript -- `replaceAll` expands `$&`,
  * `` $` ``, `$'`, `$$` and `$n` inside it -- while a replacer function is never
  * scanned for those, so the value lands byte for byte whatever it contains.
- * `os/update/bundle.sh:289` (deleted) carries the same defect under a different
- * character, substituting with `sed`, where an `&` in the replacement expands
+ * The earlier implementation carried the same defect under a different
+ * character: substituting with `sed` lets an `&` in the replacement expand
  * to the whole match. Measured without the fix: `mos-a$&b` renders as
  * `compatible=mos-a@COMPATIBLE@b`, a manifest nobody wrote, which
  * `readBundleInfo`'s cross-check then refuses against the uncorrupted value it
@@ -712,9 +712,7 @@ export async function openBundleToolbox(options: {
 /**
  * Build and sign the bundle.
  *
- * The order of the refusals is os/update/bundle.sh's (deleted) and is kept: a reader
- * running the same broken input through both should get the same sentence
- * first.
+ * The refusal order is stable so the first actionable problem is deterministic.
  */
 export async function buildBundle(
   inputs: BundleInputs,

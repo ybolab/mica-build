@@ -487,7 +487,7 @@ working door.
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
 The v2 image is a **full-disk image carrying all eleven partitions**, and
-`os/mkimage-v2.sh` builds fresh ext4 filesystems for META, STATE and DATA into
+`os/build/src/mkimage-v2.ts` builds fresh ext4 filesystems for META, STATE and DATA into
 it (`mkext4` for each of `meta.img`, `state.img`, `data.img`). Flashing it over
 rockusb therefore replaces all three:
 

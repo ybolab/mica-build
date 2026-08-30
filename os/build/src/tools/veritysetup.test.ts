@@ -1,6 +1,6 @@
 // veritysetup, against the real cryptsetup, driven from the failing side.
 //
-// The shape is os/rootfs/Dockerfile.v2's: a squashfs-sized payload, the hash
+// The shape is os/rootfs/stages/90-pack.Dockerfile's: a squashfs-sized payload, the hash
 // tree APPENDED to the same file at --hash-offset, a pinned salt and a pinned
 // UUID, and the root hash read off stdout. `veritysetup verify` then walks the
 // tree in userspace -- no device-mapper, no losetup, no mount -- which is what
@@ -59,7 +59,7 @@ function spec(path: string) {
 }
 
 describe('the argv shape', () => {
-  test('the shape os/rootfs/Dockerfile.v2 uses, with the salt and uuid pinned', () => {
+  test('the shape os/rootfs/stages/90-pack.Dockerfile uses, with the salt and uuid pinned', () => {
     expect(formatArgs(spec('/out/rootfs-verity.img'))).toEqual([
       'veritysetup', 'format', '/out/rootfs-verity.img', '/out/rootfs-verity.img',
       '--hash=sha256', '--data-block-size=4096', '--hash-block-size=4096',
@@ -113,7 +113,7 @@ describe('against the real veritysetup', () => {
   test('a payload with ONE byte changed does not verify -- and that is a verdict, not a throw', async () => {
     // The distinction matters for the caller: a payload that fails to verify is
     // something the verifier REPORTS, and a veritysetup that could not run at
-    // all is an error. os/verify-image-v2.sh (deleted) reports the first as a fail line.
+    // all is an error. The verification contract reports the first as a fail line.
     const p = makePayload('t.img')
     const hash = await format(tb, spec(p))
     const fd = openSync(p, 'r+')

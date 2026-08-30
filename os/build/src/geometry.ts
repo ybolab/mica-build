@@ -9,8 +9,8 @@
 // correct: os/verify/src/lint.ts reports a contradiction, this refuses to use
 // one, because there is no honest single number to hand an assembler when the
 // file declares two. It stops short of the derived layout too -- the rootfs
-// slot size and the starts chained off it, differently in os/mkimage-v2.sh (deleted) and
-// os/mkimage-x64.sh -- because those depend on inputs that do not exist until
+// slot size and the starts chained off it, differently in the cx3576 assembly contract and
+// the x64 assembly contract -- because those depend on inputs that do not exist until
 // an assembly runs and sit under a byte-identity gate.
 
 import { boardEnvPath } from './paths.ts'
@@ -325,7 +325,7 @@ export function modelGeometry(board: Board): Geometry {
     partitions,
     disk: {
       guid: req('DISK_GUID', 'a GPT with an invented disk GUID is not reproducible'),
-      // Not required: os/mkimage-x64.sh passes no -a at all and lets sgdisk use
+      // Not required: the x64 assembly contract passes no -a at all and lets sgdisk use
       // its default, while cx3576 must pass 1 because its loader starts at
       // sector 64. Defaulting it here would silently give x64 an alignment its
       // shell never asked for.
@@ -341,7 +341,7 @@ export function modelGeometry(board: Board): Geometry {
       fakeTime: req('E2FSPROGS_FAKE_TIME', 'without it mke2fs stamps the current time into every superblock'),
       fileMtime,
       // `@1577836800` is the `touch -d` spelling; mkimage wants the bare
-      // number in SOURCE_DATE_EPOCH. os/mkimage-v2.sh (deleted) writes
+      // number in SOURCE_DATE_EPOCH. The cx3576 assembly contract writes
       // `SOURCE_DATE_EPOCH="${FILE_MTIME#@}"` at the call; deriving it once
       // here is the same derivation with one place to be wrong.
       sourceDateEpoch: fileMtime.startsWith('@') ? fileMtime.slice(1) : fileMtime,

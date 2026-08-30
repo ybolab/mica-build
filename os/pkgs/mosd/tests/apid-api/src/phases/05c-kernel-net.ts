@@ -15,7 +15,7 @@
  * journald on the serial line and captures the console. Teaching os/verify to
  * boot QEMU would be a second copy of all of that.
  *
- * THE GUEST SIDE IS NOT HERE. `test/apid-api/guest/m7-net-smoke.sh` runs inside
+ * THE GUEST SIDE IS NOT HERE. `os/pkgs/mosd/tests/apid-api/guest/m7-net-smoke.sh` runs inside
  * the guest, seeded onto STATE by `run.sh` and started from the kernel command
  * line; this phase only reads its conclusions back off the console. The split
  * is forced: there is no login, no ssh and no route into this guest, and the
@@ -137,7 +137,7 @@ const phase: Phase = {
     "On the booted image: VLAN, bridge and WireGuard devices, and the key store " +
     "read as the systemd-network user",
   assumes:
-    "the guest booted from a disk that run.sh seeded with test/apid-api/guest/m7-net-smoke.sh " +
+    "the guest booted from a disk that run.sh seeded with os/pkgs/mosd/tests/apid-api/guest/m7-net-smoke.sh " +
     "and a kernel command line that starts it; the smoke runs at boot and is independent of " +
     "every earlier phase's writes",
 
@@ -167,7 +167,7 @@ const phase: Phase = {
         "the M7 kernel-networking smoke ran on the guest",
         [
           `expected: console lines beginning "${PREFIX}" somewhere in this boot`,
-          "actual:   none. The guest never ran test/apid-api/guest/m7-net-smoke.sh, so NOTHING",
+          "actual:   none. The guest never ran os/pkgs/mosd/tests/apid-api/guest/m7-net-smoke.sh, so NOTHING",
           "          below has been observed -- neither passing nor failing. Check that run.sh",
           "          seeded the script onto STATE and that the kernel command line starts it.",
           ...log.describeWindow(marker),

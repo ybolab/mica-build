@@ -54,7 +54,7 @@ that it can never be mistaken for a `bun test` filter.
 With --verify FIRST, it runs the image verifier -- `make os-verify-<board>-v2`.
 It runs the os/verify check register against one assembled image and prints one
 PASS/FAIL/SKIP line per conclusion and a RESULT line, which is what
-os/verify-image-v2.sh printed before this package replaced it. Its remaining
+The predecessor shell verifier printed before this package replaced it. Its remaining
 arguments are the verifier's own; try --verify --help. Unlike the two above it
 needs DOCKER whatever else this host has -- it reads the image with the tools in
 IMAGE_ALPINE_3_21 -- and on a host with no bun it runs in a second pinned image,

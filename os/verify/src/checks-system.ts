@@ -1,18 +1,18 @@
 // Batch 4a, the remainder: the small families that read only the unpacked root.
 //
-// Twenty-six conclusions on cx3576 and twenty-five on x64, from ten places in
-// the oracle that share no subject except the tree they read:
+// Twenty-six conclusions on cx3576 and twenty-five on x64, grouped because
+// they share the same unpacked-root input:
 //
-//   systemd-networkd enabled          :2500      1 / 1
-//   the ELF architecture of mosd/apid :2517      2 / 2
-//   the bootloader environment tools  :2793,3317 5 / 4  (2 SKIPs on grub)
-//   the health gate's root-side pair  :3282,3299 2 / 2
-//   systemd-repart definitions        :3413      3 / 3
-//   the AuthorizedKeysFile drop-in    :3793      3 / 3
-//   the boot scripts' external commands :4155    1 / 1
-//   the image profile and its SSH default :4463  4 / 4
-//   ssh.service's KillMode / ExecReload    :4525  2 / 2
-//   libcrypt and the crypt(3) format      :4572  3 / 3
+//   systemd-networkd enabled                1 / 1
+//   the ELF architecture of mosd/apid       2 / 2
+//   the bootloader environment tools          5 / 4  (2 SKIPs on grub)
+//   the health gate's root-side pair          2 / 2
+//   systemd-repart definitions              3 / 3
+//   the AuthorizedKeysFile drop-in          3 / 3
+//   the boot scripts' external commands     1 / 1
+//   the image profile and its SSH default   4 / 4
+//   ssh.service's KillMode / ExecReload      2 / 2
+//   libcrypt and the crypt(3) format        3 / 3
 //
 // One module because every one is `packedRoot()` plus a read.
 //
@@ -24,12 +24,13 @@
 // to ... `mosd/` Rust sources" -- and nothing here writes to them.
 //
 // One defect is reproduced rather than fixed:
-// `fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"` (:3331).
+// `fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"`.
 // On a file that exists with no `^/dev/` line, `grep -c` prints `0` and exits 1,
 // so `|| echo 0` fires too and the variable becomes "0\n0" -- a raw newline in
 // the middle of a FAIL message, which `parseShellRun`'s self-consistency guard
 // would refuse. Neither shipped image reaches it; both have two device lines.
-// Reported for M4e.
+// The behavior is preserved for parity and documented here so a future cleanup
+// changes the check and its expectations together.
 
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'

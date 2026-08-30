@@ -4,8 +4,7 @@
 // that the message NAMES the construct. An exit code alone is satisfied by a
 // parser that rejects everything, which is why each refusal sits next to a
 // POSITIVE CONTROL -- the nearly-identical input that is legitimate, and must
-// still be accepted. The retired `os/verify/lint-test.sh` learned that the hard
-// way about the linter it tested; `src/lint.test.ts` keeps the discipline, and
+// still be accepted. `src/lint.test.ts` keeps the same discipline, and
 // so does this file, one layer underneath both.
 
 import { describe, expect, test } from 'bun:test'

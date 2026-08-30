@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-08-25
+> Updated: 2026-08-30
 
 ## Usage
 
@@ -15,8 +15,8 @@ Each plan is a single line linking to its detail file. All detailed information 
 | Marker | Meaning | Plan status heads |
 |--------|---------|-------------------|
 | `[ ]`  | Draft / Pending review | `draft` |
-| `[-]`  | Approved / Implementing | `approved`, `implementing`, `in progress`, `partially implemented` |
-| `[x]`  | Completed | `completed`, `completed by supersession` |
+| `[-]`  | Approved / Implementing | `implementing` |
+| `[x]`  | Completed | `completed` |
 | `[~]`  | Rejected / Abandoned | `rejected` |
 
 ### Rules
@@ -29,3 +29,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 
 ## Plans
 
+- [x] [**PLAN-030 Consolidate mosd workspace-level test harnesses**](PLAN-030.md) `2026-08-29`

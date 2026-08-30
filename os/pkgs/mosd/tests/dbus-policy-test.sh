@@ -2,7 +2,7 @@
 # Live-bus tests for the shipped D-Bus policies: os/pkgs/mosd/dist/com.mos.mosd.conf
 # (sections 0-3) and os/pkgs/mosd/dist/com.mos.ext.conf (section 5).
 #
-#   bash os/pkgs/mosd/hack/dbus-policy-test.sh
+#   bash os/pkgs/mosd/tests/dbus-policy-test.sh
 #
 # The policies claim com.mos.mosd is reachable only by root and that extensions
 # may own com.mos.ext.* and nothing else. Reading the XML back proves nothing

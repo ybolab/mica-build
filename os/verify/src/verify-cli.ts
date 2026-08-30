@@ -10,7 +10,7 @@
 //
 // The output format is a contract, not a presentation choice: one
 // `PASS:`/`FAIL:`/`SKIP:` line per conclusion and a final `RESULT:` line.
-// test/apid-api's own harness describes its output as "the shape os/verify
+// os/pkgs/mosd/tests/apid-api's own harness describes its output as "the shape os/verify
 // prints", and the register quotes `RESULT: PASS (n/n)` lines
 // as evidence, so changing how a verdict reads makes those records unreadable.
 //

@@ -23,9 +23,9 @@ export interface ImageLayout {
   readonly sectorsPerMib: number
   /** ROOTFS-A's size as the IMAGE's GPT reports it, or 0 when unusable. */
   readonly slotSectors: number
-  /** The same in MiB, or 0. `SLOT_MIB` at :1444. */
+  /** The same value in MiB, or 0 (`SLOT_MIB`). */
   readonly slotMib: number
-  /** `PART_START_MIB_<name>` (:1516) -- where the layout puts that row. */
+  /** `PART_START_MIB_<name>` -- where the layout puts that row. */
   startMib: (layoutName: string) => number
   /** That row's size in MiB, floored as the oracle's `bs=1M count=` is. */
   sizeMib: (layoutName: string) => number
@@ -46,7 +46,7 @@ export async function imageLayout(ctx: ImageContext): Promise<ImageLayout> {
   const partnum = Number(board.partition('ROOTFS_A')?.get('PARTNUM') ?? Number.NaN)
   const raw = gpt.partition(partnum)?.sizeSectors ?? 0
   // `SLOT_MIB=0; slot_sectors=0` unless the size is a positive whole number of
-  // MiB (:1442-1448). Zero is not a defensive default here -- it is the
+  // MiB. Zero is not a defensive default here -- it is the
   // oracle's own value, and the checks that use it test for it.
   const usable = raw > 0 && raw % sectorsPerMib === 0
   const slotSectors = usable ? raw : 0

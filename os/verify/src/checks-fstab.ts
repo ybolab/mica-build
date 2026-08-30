@@ -18,7 +18,7 @@
 // six `unfired` rows -- exit 1 for a run that behaved correctly. So this is a
 // single `many` check whose instance is the assertion's own clause, and the
 // early return is one firing rather than six absences.
-// os/tests/ui-location-test.sh names the same seven identities and asserts the
+// the image fixture contract names the same seven identities and asserts the
 // six absent in its case 7. The matcher is `custom UI root`, measured at exactly
 // six lines on each board and the only substring common to all seven messages --
 // five read `catches a custom UI root ...` and the sixth `catches content baked
@@ -291,7 +291,7 @@ export const FSTAB_CHECKS: readonly CheckCase[] = [
     id: UI_ID,
     cardinality: 'many',
     // The clause up to the colon IS the identity, and it is what
-    // os/tests/ui-location-test.sh keys its own register on.
+    // the image fixture contract keys its own register on.
     instance: /^(catches [^:]+):/,
     shell: { pass: 'custom UI root' },
     run: async (ctx): Promise<readonly CheckResult[]> => {

@@ -111,7 +111,7 @@ describe('the verity facts, read out of the env file', () => {
 })
 
 describe('the per-slot fragment', () => {
-  test('is byte-for-byte what os/mkimage-x64.sh prints', () => {
+  test('is byte-for-byte what the x64 assembly contract prints', () => {
     // The exact block this fragment must be, over these inputs.
     expect(cmdlineFacts(FACTS)).toBe(
       'set MOS_SECTORS=464928\n'
@@ -367,7 +367,7 @@ describe('the embedded GRUB', () => {
     expect(TEMPLATE).toContain('regexp --set=1:mos_disk')
   })
 
-  test('every module the shipped list names is one os/mkimage-x64.sh names', () => {
+  test('every module the shipped list names is one the x64 assembly contract names', () => {
     expect(GRUB_MODULES.join(' ')).toBe(
       'part_gpt fat search search_label configfile linux normal echo test loadenv regexp',
     )

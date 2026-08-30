@@ -91,7 +91,7 @@ describe('the argv shapes', () => {
       .toEqual(['rauc', '--conf=/etc/rauc/system.conf', 'info', '--output-format=json', '--keyring=/k.pem', 'b.raucb'])
   })
 
-  test('the mksquashfs arguments os/update/bundle.sh pins are carried verbatim', () => {
+  test('the mksquashfs arguments the bundle contract pins are carried verbatim', () => {
     // Without them rauc stamps the payload with the wall clock, the build
     // container's uid map and a thread count.
     const args = '-all-root -no-xattrs -noappend -processors 1 -mkfs-time 1577836800 -all-time 1577836800'
@@ -147,7 +147,7 @@ describe('against the real rauc', () => {
     expect(v).toMatch(/^rauc [0-9]+\.[0-9]+/)
   }, TOOL_TIMEOUT_MS)
 
-  test('info reads a real bundle back as JSON, with the fields bundle.sh checks', async () => {
+  test('info reads a real bundle back as JSON, with the fields the bundle builder checks', async () => {
     const parsed = await info(tb, { bundle: bundlePath, keyring })
     expect(parsed.compatible).toBe('mos-test')
     expect(parsed.version).toBe('0.0.0-test')
@@ -158,7 +158,7 @@ describe('against the real rauc', () => {
     // would read a bundle unverified without one. It does not: `rauc info`
     // exits 1 with "No keyring file or directory provided". That is the safer
     // behaviour and it is recorded here rather than in a comment, because M6d
-    // will thread a keyring through os/update/bundle.sh's (deleted) verify_bundle and
+    // will thread a keyring through the bundle contract's verify_bundle and
     // should not have to discover it by failure.
     let err: ToolError | undefined
     try { await info(tb, { bundle: bundlePath }) } catch (e) { err = e as ToolError }

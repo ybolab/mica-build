@@ -3,7 +3,7 @@
 // Failure signal: the exit status, plus one exception the shell already carries
 // -- `sgdisk --verify` prints problems and still exits 0, so verifyGpt requires
 // exit 0 AND the sentence ("Both failure shapes -- nonzero exit AND problem
-// text with exit 0 -- must reach the same friendly error", os/mkimage-v2.sh; deleted).
+// text with exit 0 -- must reach the same friendly error" in the cx3576 assembly contract.
 //
 // sgdisk also relocates silently: a requested start that is not a multiple of
 // the alignment is moved, with a success exit. Measured 2026-08-25,
@@ -28,8 +28,8 @@ export interface GptPartitionSpec {
 /**
  * One argv shape for both assemblers, because the difference was measured.
  *
- * os/mkimage-v2.sh (deleted) passes `--clear`, `-a 1` and `+NS` sizes in the order
- * new/change-name/typecode/partition-guid; os/mkimage-x64.sh passes no
+ * the cx3576 assembly contract passes `--clear`, `-a 1` and `+NS` sizes in the order
+ * new/change-name/typecode/partition-guid; the x64 assembly contract passes no
  * --clear, no -a, `+NM` sizes, in the order
  * new/typecode/partition-guid/change-name. Measured 2026-08-25 with sgdisk
  * 1.0.10 over the same two partitions: flag order, `+131072S` against `+64M`
@@ -43,7 +43,7 @@ export interface GptSpec {
   readonly diskGuid: string
   /**
    * `-a N`. Omitted leaves sgdisk's own default (2048), which is what
-   * os/mkimage-x64.sh does; cx3576 must pass 1 or its loader is relocated.
+   * the x64 assembly contract does; cx3576 must pass 1 or its loader is relocated.
    * Never defaulted here -- an alignment nobody asked for is how the loader
    * moved in the first place.
    */
@@ -121,7 +121,7 @@ export async function writeGpt(tb: Toolbox, image: string, spec: GptSpec): Promi
 /**
  * `sgdisk --verify`, with BOTH of its failure shapes reaching the same refusal.
  *
- * A nonzero exit, and problem text with exit 0. os/mkimage-v2.sh's (deleted) guard is the
+ * A nonzero exit, and problem text with exit 0. The cx3576 assembly contract's guard is the
  * source of that pairing; without the second half a table with overlapping
  * partitions passes.
  */
@@ -150,7 +150,7 @@ export interface GptPartitionInfo {
 /**
  * Read one partition back OUT of the table that was written.
  *
- * The point is stated in os/mkimage-v2.sh (deleted): "sgdisk is free to move a requested
+ * The point is stated in the cx3576 assembly contract: "sgdisk is free to move a requested
  * start sector, so asserting what we asked for proves nothing; this asserts
  * what is actually there."
  *

@@ -1,8 +1,8 @@
 // The assembler, driven over fabricated inputs -- and every refusal driven from
 // the failing side.
 //
-// Fabricated like os/tests/mkimage-v2-selftest.sh's, and for its reason: a test
-// that read _out/cx3576/ could not run on a fresh clone, and producing those
+// Fabricated rather than read from _out/cx3576/: the test must run on a fresh
+// clone, while producing those
 // inputs costs a ~40-minute emulated arm64 rootfs build to exercise an assembler
 // that does not care what is inside the payload it places. The four properties
 // this assembler reads off its inputs are their size, their first four bytes,

@@ -12,7 +12,7 @@
 // A verity slot's size is content-derived, so the layout does not declare it --
 // `walkLayout` takes it as a parameter and everything downstream of the slots
 // follows from it. It is read off the image here, once, exactly as
-// os/verify-image-v2.sh:1441 (deleted) reads it, and it is refused unless it is a
+// the verification contract reads it, and it is refused unless it is a
 // positive whole-MiB multiple. When it is refused the walk is fed 0, which is
 // what makes the size and image-size checks FAIL rather than compare a slot
 // against a size derived from itself.
@@ -131,7 +131,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
   //
   // Nothing else in the sentence is board-independent: the only tokens are
   // `exactly`, the count, and `partitions`, and the count is the one thing the
-  // oracle deliberately stopped writing down (:1408 -- `EXPECT_PARTS=11` is why
+  // verification deliberately stopped writing down (`EXPECT_PARTS=11` is why
   // `MOS_BOARD=x64` once died four checks in). Registering `exactly 11
   // partitions` per board would put that literal back, in the register, where a
   // board that changed its partition count would go `orphan` instead of red.

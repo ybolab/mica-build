@@ -82,7 +82,7 @@ describe('the board this file is about reads the way the file says', () => {
 describe('the slot is sized from the payload BYTE count', () => {
   test('the real input: 240123904 bytes -> 512 MiB, and the FLOOR is what said so', () => {
     // This is the size of the rootfs-verity.img the byte-identity gate ran
-    // against, and 512 is the number os/mkimage-x64.sh printed for it.
+    // against, and 512 is the number the x64 assembly contract printed for it.
     const d = decideSlot(g, 240123904n)
     expect(d.slotMib).toBe(512n)
     expect(d.floorApplied).toBe(true)
@@ -205,7 +205,7 @@ describe('the headroom is applied to BYTES, and that is a different function', (
 })
 
 describe('the x64 slot arithmetic, against a bash oracle', () => {
-  // The same `$(( ))` os/mkimage-x64.sh:117-121 does, driven by bash. The three
+  // The same `$(( ))` the x64 assembly contract does, driven by bash. The three
   // constants are passed as ARGUMENTS rather than by sourcing os/boards/x64/
   // board.env: an oracle that read the board file would be testing the parser
   // this comparison is supposed to be independent of.
@@ -287,7 +287,7 @@ describe('the chain from ROOTFS_A down to DATA', () => {
   })
 
   test('1938 MiB is what the shell printed for these inputs', () => {
-    // "assembled 1938 MiB, 512 MiB per rootfs slot" -- os/mkimage-x64.sh, over
+    // "assembled 1938 MiB, 512 MiB per rootfs slot" -- the x64 assembly contract, over
     // the same rootfs-verity.img the byte-identity gate used.
     expect(deriveLayout(g, decideSlot(g, 240123904n).slotMib).totalSizeMib).toBe(1938n)
   })
@@ -333,7 +333,7 @@ describe('the GPT is read off the board, not written out a second time', () => {
   const layout = deriveLayout(g, 512n)
 
   test('a partition added to the board file appears in the table', () => {
-    // The whole reason gptSpecFor walks LAYOUT_PARTITIONS: os/mkimage-x64.sh
+    // The whole reason gptSpecFor walks LAYOUT_PARTITIONS: the x64 assembly contract
     // spells nine --new flags in sequence, and a tenth partition added to the
     // board and forgotten in the script is one sgdisk never writes -- with
     // nothing to notice.
@@ -383,7 +383,7 @@ describe('the GPT is read off the board, not written out a second time', () => {
     }
   })
 
-  test('--clear is NOT passed, which is what os/mkimage-x64.sh does', () => {
+  test('--clear is NOT passed, which is what the x64 assembly contract does', () => {
     expect(writeGptArgs(gptSpecFor(g, layout), '/x.img')).not.toContain('--clear')
   })
 

@@ -191,7 +191,7 @@ bash os/verify/run.sh --verify --board x64 --image PATH
 
 `src/verify-cli.ts` runs the register against one assembled image and prints one
 `PASS:`/`FAIL:`/`SKIP:` line per conclusion and a `RESULT:` line. That format is
-a contract rather than a preference: `test/apid-api` describes its own output as
+a contract rather than a preference: `os/pkgs/mosd/tests/apid-api` describes its own output as
 that shape, and several `docs/task/` records quote `RESULT:` lines as evidence.
 
 It needs **docker** on a host without `sgdisk`/`mtools`/`debugfs`/`unsquashfs`/

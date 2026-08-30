@@ -5,9 +5,8 @@
 // find Image; a lost `rauc.slot=` makes every update roll back while the device
 // reports healthy; a boot-attempts value of 10 means ten to U-Boot and sixteen
 // to RAUC. None of them fail a build that does not check, so the check is the
-// entire defence -- and os/tests/mkimage-v2-selftest.sh's own header says why
-// that matters: "a refusal that has only ever been observed working is not
-// evidence that it still can".
+// entire defence: a refusal that has only ever been observed working is not
+// evidence that it still can.
 //
 // THE POSITIVE CONTROL IS BESIDE EVERY NEGATIVE. The tree's real boot.cmd and
 // the tree's real cmdline shape must PASS every function here. Without that, a
@@ -111,12 +110,12 @@ describe('the verity env filenames are one derivation, not three copies', () => 
 
   test('a slot name that is not <base>-<slot>.env is refused', () => {
     // The per-slot names, the pattern boot.scr builds at runtime and the pattern
-    // os/update/bundle.sh (deleted) writes must all be the same derivation; any of the
+    // the bundle contract writes must all be the same derivation; any of the
     // three drifting means an updated slot silently fails to boot.
     const m = mutatedBoard('BOOT_VERITY_ENV_A_NAME=mos-verity-slot-a.env')
     try {
       expect(() => verityEnvBase(loadGeometryFromPath(m.path)))
-        .toThrow(/must be 'mos-verity-a\.env'\/'mos-verity-b\.env' to match what os\/update\/bundle\.sh writes/)
+        .toThrow(/must be 'mos-verity-a\.env'\/'mos-verity-b\.env' to match what the bundle contract writes/)
     } finally { m.cleanup() }
   })
 

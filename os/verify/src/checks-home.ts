@@ -1,14 +1,13 @@
 // Batch 4a: the two persistent home directories, the `mos` account, and the
 // STATE binds that make "/var is discardable" true rather than aspirational.
 //
-// Fourteen conclusions on each board -- ten from /home and
-// /root (:3903-4154), four from the wipe-safety pairs and
-// `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
+// Fourteen conclusions on each board: ten from /home and /root, plus four from
+// the wipe-safety pairs and `check_ext_unit_dir`. One of the four is a SKIP on a board
 // with no Bluetooth controller.
 //
 // Every one of these reads the tier and not a string: `/srv` is nowhere here as
 // the DATA path. The oracle reads the DATA mountpoint out of the fstab row for
-// DATA_GUID (:3934) so that a bind pointed at /mnt/state fails on the tier
+// DATA_GUID so that a bind pointed at /mnt/state fails on the tier
 // rather than on a spelling -- STATE is 64 MiB of small precious identity and a
 // home directory is user data of unbounded size, so the two failures have
 // different repairs.

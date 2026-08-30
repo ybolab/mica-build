@@ -21,8 +21,8 @@
 #   bash os/tools/qemu-seed-state.sh ...         (writes into it)
 #   MOS_QEMU_REUSE_DISK=1 bun run src/qemu.ts --capture ...
 #
-# The engine is test/apid-api/src/qemu.ts and it runs in a container carrying
-# bun and a docker client; test/apid-api/run.sh is what invokes it, and calls
+# The engine is os/pkgs/mosd/tests/apid-api/src/qemu.ts and it runs in a container carrying
+# bun and a docker client; os/pkgs/mosd/tests/apid-api/run.sh is what invokes it, and calls
 # this script in between the two lines above.
 set -euo pipefail
 
@@ -33,7 +33,7 @@ OUT_DIR="${REPO_ROOT}/_out/x64"
 DISK="${OUT_DIR}/.qemu/disk.img"
 
 if [ ! -f "${DISK}" ]; then
-    echo "error: ${DISK} not found. Prepare the disk first -- test/apid-api/run.sh does that with test/apid-api/src/qemu.ts --prepare-only: this writes into the disk copy that step makes, not into the image itself." >&2
+    echo "error: ${DISK} not found. Prepare the disk first -- os/pkgs/mosd/tests/apid-api/run.sh does that with os/pkgs/mosd/tests/apid-api/src/qemu.ts --prepare-only: this writes into the disk copy that step makes, not into the image itself." >&2
     exit 1
 fi
 if [ "$#" -eq 0 ] || [ $(( $# % 2 )) -ne 0 ]; then

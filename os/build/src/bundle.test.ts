@@ -221,7 +221,7 @@ describe('the boot-attempts range guard, and the empty read that made it vacuous
   })
 
   test('THE EMPTY READ IS REFUSED, which is the shell\'s hole', () => {
-    // os/update/bundle.sh (deleted): `done < <(grep -oE ... | awk ...)`. With no match the
+    // the bundle contract: `done < <(grep -oE ... | awk ...)`. With no match the
     // loop body never runs and the guard passes having compared nothing --
     // before mkimage dies on the same path, which is how os-bundle-cx3576
     // stayed broken through two merges earlier in this campaign.
@@ -296,16 +296,15 @@ describe('a slot\'s mos-verity-<slot>.env, and the five cmdlines it refuses', ()
     }))).toContain(cx3576.require('ROOTFS_B_GUID').toLowerCase())
   })
 
-  test('no dm-mod.create= is refused -- and the shell rolls this into ONE sentence with waitfor', () => {
+  test('no dm-mod.create= is refused in ONE sentence shared with waitfor', () => {
     const broken = mutate(CMDLINE_A, /dm-mod\.create="[^"]*"/, 'root=/dev/mmcblk0p5')
     expect(() => bundleVerityEnvText(verityEnvArgs({ cmdline: broken })))
       .toThrow(/carries no dm-mod\.create=\/dm-mod\.waitfor= verity table for slot A/)
   })
 
-  test('no dm-mod.waitfor= is refused with the SAME sentence, which is bundle.sh\'s shape', () => {
-    // os/mkimage-v2.sh (deleted) gives the two their own sentences; os/update/bundle.sh
-    // does not. Transcribed rather than harmonised -- a reader running the same
-    // broken cmdline through both should get each script's own words.
+  test('no dm-mod.waitfor= is refused with the SAME sentence', () => {
+    // The cx3576 assembler gives the two failures their own sentences; the
+    // bundle builder deliberately reports the shared missing-table contract.
     const broken = mutate(CMDLINE_A, /dm-mod\.waitfor=[^ ]*/, 'rootwait')
     expect(() => bundleVerityEnvText(verityEnvArgs({ cmdline: broken })))
       .toThrow(/carries no dm-mod\.create=\/dm-mod\.waitfor= verity table for slot A/)
@@ -331,7 +330,7 @@ describe('a slot\'s mos-verity-<slot>.env, and the five cmdlines it refuses', ()
       .toThrow(/does not carry the root hash/)
   })
 
-  test('a table carrying the wrong SALT is refused -- the check os/mkimage-v2.sh does NOT have', () => {
+  test('a table carrying the wrong SALT is refused -- the check the cx3576 assembly contract does NOT have', () => {
     // The assembler compares the salt only against the pin. The bundle builder
     // additionally requires it to appear in the table it is about to SIGN.
     const broken = mutate(CMDLINE_A, ` ${SALT}"`, ` ${'e'.repeat(64)}"`)
@@ -339,7 +338,7 @@ describe('a slot\'s mos-verity-<slot>.env, and the five cmdlines it refuses', ()
       .toThrow(/does not carry the salt/)
   })
 
-  test('every identifier comparison folds CASE, as os/mkimage-v2.sh\'s lc() does', () => {
+  test('every identifier comparison folds CASE, as the cx3576 assembly contract\'s lc() does', () => {
     const upper = CMDLINE_A.replaceAll(cx3576.require('ROOTFS_A_GUID').toLowerCase(), cx3576.require('ROOTFS_A_GUID'))
     expect(upper).not.toBe(CMDLINE_A)
     expect(() => bundleVerityEnvText(verityEnvArgs({ cmdline: upper }))).not.toThrow()
@@ -414,7 +413,7 @@ describe('the manifest is spliced by LINE, then substituted', () => {
 
   // The $-expansion class, driven from the failing side.
   //
-  // os/update/bundle.sh:289 (deleted) substituted with `sed`, where an `&` in the
+  // the bundle contract substituted with `sed`, where an `&` in the
   // replacement expands to the whole match; BUNDLE_COMPATIBLE has no guard
   // against one (BUNDLE_VERSION does). The first version of this port fixed `&`
   // and reintroduced the SAME CLASS under `$`, because a string replacement in

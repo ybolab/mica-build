@@ -3,7 +3,7 @@
 // FAILURE SIGNAL. Its exit status -- and, for `format`, ONE MORE that the exit
 // status does not carry: the root hash is its ANSWER, printed on stdout, and a
 // run that produced no readable one has failed whatever it exited with.
-// os/rootfs/Dockerfile.v2 pipes it through awk and then asserts `test -n
+// os/rootfs/stages/90-pack.Dockerfile parses it and then asserts `test -n
 // "${root_hash}"`, and that assertion is the whole reason this wrapper parses
 // rather than returning text: an empty root hash propagates into a kernel
 // cmdline, and a device that cannot assemble /dev/dm-0 stops at "ALERT!
@@ -122,7 +122,7 @@ export interface VerityVerifySpec {
 /**
  * `veritysetup verify` -- walks the tree in USERSPACE.
  *
- * os/verify-image-v2.sh's (deleted) note is worth keeping attached to it: it "never
+ * the verification contract's note is worth keeping attached to it: it "never
  * creates a device-mapper target, never calls losetup and never mounts
  * anything, which is what makes this safe to run against the host."
  *

@@ -363,7 +363,7 @@ if [ "${MOS_BUILD_PLATFORM}" != "${HOST_PLATFORM}" ]; then
 
     # Which driver it turned out to be decides whether a localhost/ base goes
     # over as a tag or as a layout, so it is read off the builder rather than
-    # inferred from its name -- the same register os/pkgs/rauc/build.sh:95-102
+    # inferred from its name -- the same builder-driver check os/pkgs/rauc/build.sh
     # uses, and for the same reason: only the `docker` driver can resolve a tag
     # that exists solely in the local image store.
     builder_inspect="$(docker buildx inspect "mos-${PLATFORM_ARCH}" 2>/dev/null || true)"
@@ -430,7 +430,7 @@ done
 # Scratch for the two things this loop needs off-image: the record copied out of
 # each built image to be read back, and the OCI layouts a container builder is
 # handed in place of a localhost/ tag. A temporary directory
-# rather than a path in the tree, for the reason os/pkgs/rauc/build.sh:143-145
+# rather than a path in the tree, for the OCI-layout reason os/pkgs/rauc/build.sh
 # gives about its OCI layouts: these files are a copy of what the image already
 # holds, and a copy that outlived the build would be a second source of truth
 # about what a builder image asserts.

@@ -267,7 +267,7 @@ fi
 # /etc/buildkit/buildkitd.toml, so an http registry would also need an
 # insecure-registry configuration baked in at creation time. Both are creation
 # options the two `docker buildx create` call sites in this tree do not pass --
-# os/tests/quadlet-doc-test.sh:83-85 and os/build-env/build.sh -- so a registry
+# os/tests/quadlet-doc-test.sh and os/build-env/build.sh -- so a registry
 # would have to change every place a builder is made, and leave a long-lived
 # container holding state that images.env exists to keep in the tree. An OCI
 # layout needs no daemon, no port and no builder options.

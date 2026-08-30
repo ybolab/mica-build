@@ -68,7 +68,7 @@ describe('the argv shape, without a disk', () => {
     }, 'd.img')
     expect(argv).not.toContain('-a')
     expect(argv).not.toContain('--clear')
-    // os/mkimage-x64.sh passes neither, and this is what "not defaulted" means.
+    // the x64 assembly contract passes neither, and this is what "not defaulted" means.
     expect(argv).toEqual(['sgdisk', '--disk-guid=G', '--new=1:2048:+2048S', 'd.img'])
   })
 
@@ -203,7 +203,7 @@ describe('the argv normalisation is measured, not assumed', () => {
     return digest
   }
 
-  test('this wrapper agrees byte for byte with os/mkimage-x64.sh\'s flag order and +NM sizes', async () => {
+  test('this wrapper agrees byte for byte with the x64 assembly contract\'s flag order and +NM sizes', async () => {
     const ours = await build('order-ours.img', writeGptArgs({ diskGuid, partitions }, '').slice(0, -1))
     const x64Shape = await build('order-x64.img', [
       'sgdisk', `--disk-guid=${diskGuid}`,
@@ -217,7 +217,7 @@ describe('the argv normalisation is measured, not assumed', () => {
     expect(ours).toEqual(x64Shape)
   }, TOOL_TIMEOUT_MS)
 
-  test('and with os/mkimage-v2.sh\'s --clear plus -a 1, where every start is MiB-aligned', async () => {
+  test('and with the cx3576 assembly contract\'s --clear plus -a 1, where every start is MiB-aligned', async () => {
     const ours = await build('clear-ours.img', writeGptArgs({ diskGuid, partitions }, '').slice(0, -1))
     const v2Shape = await build('clear-v2.img', [
       'sgdisk', '--clear', '-a', '1', `--disk-guid=${diskGuid}`,
@@ -263,7 +263,7 @@ describe('every failure is reported, and none is swallowed', () => {
   })
 
   test('verifyGpt ALSO fails on problem text with exit 0, which is its other shape', async () => {
-    // os/mkimage-v2.sh (deleted): "Both failure shapes -- nonzero exit AND problem text
+    // the cx3576 assembly contract: "Both failure shapes -- nonzero exit AND problem text
     // with exit 0 -- must reach the same friendly error." The second shape is
     // the one an exit-status check misses, so it is produced for real: a valid
     // table, and then a disk shrunk underneath it. Overlapping partitions do

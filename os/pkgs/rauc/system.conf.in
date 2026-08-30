@@ -59,9 +59,8 @@ statusfile=@STATUSFILE@
 # the board's layout file -- a correctness constraint, not a style preference.
 # The numbers are named rather than interpolated here so that a board with no
 # attempt counter can decline to declare them at all. RAUC writes the counter
-# with "%x" and reads it back base 16
-# (rauc/src/bootloaders/uboot.c:213,152); U-Boot's `setexpr` is hexadecimal
-# (cmd/setexpr.c:119,439) but `test -gt` parses decimal (cmd/test.c:168-173).
+# with "%x" and reads it back base 16 in RAUC's U-Boot backend; U-Boot's
+# `setexpr` is hexadecimal but `test -gt` parses decimal.
 # The two radices agree only for single digits, so raising this to, say, 16
 # would decrement the counter correctly and compare it wrongly: rollback would
 # silently stop working. The renderer enforces the range from the layout; see

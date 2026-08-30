@@ -4,21 +4,21 @@
 - **priority**: P2
 - **owner**: (unclaimed)
 - **createdAt**: 2026-08-29
-- **plan**: PLAN-027 (M4 residue, filed from RFCT-224's decision record)
+- **plan**: PLAN-027 (historical M4 residue; the completed plan record was pruned)
 
-RFCT-224 settled the bus writability of platform switches for the class and
-wrote the rule into `docs/design/bus.md` §11.6: *a platform switch is read-only
+The completed M4 review settled the bus writability of platform switches for
+the class and wrote the rule into `docs/design/bus.md` §11.6: *a platform switch is read-only
 on the item tree unless a remote broker client may flip it.* `container` and
 `mqtt` were decided under it and stay out of `WRITABLE_SUBTREES`.
 
-`access.ssh` is the one LISTED entry that rule strains against, and RFCT-224
+`access.ssh` is the one LISTED entry that rule strains against, and that review
 named it rather than quietly excluding it. Its measurement stands as the
 evidence base for this task; nothing here needs re-auditing, only deciding.
 
 ## What was measured, and where
 
-`docs/task/RFCT-224.md` "Residue" records it: `access.ssh` is remotely writable
-today and it does grant a remote capability — `sshd`, `permitRootLogin`,
+The retained decision in `docs/design/bus.md` §11.6 records it: `access.ssh`
+is remotely writable today and it does grant a remote capability — `sshd`, `permitRootLogin`,
 `listenAddresses`. The same record's enumeration table marks it as the single
 row whose answer is deferred, against eight other roots that are consistent.
 
@@ -28,7 +28,7 @@ the MQTT bridge defaults to `Mode::ReadOnly`
 (`os/pkgs/mosd/mqttd/src/config.rs`), so a write requires an explicit operator
 opt-in. The exposure is therefore real but not open by default.
 
-RFCT-224 also established the frame this task inherits: `WRITABLE_SUBTREES` is
+The same review also established the frame this task inherits: `WRITABLE_SUBTREES` is
 NOT an access boundary — `SetSettings` writes any settings path without
 consulting it — so the list is precisely and only the REMOTE write surface.
 Whatever is in it is what a broker client may flip. That is what makes
@@ -49,7 +49,7 @@ say only that. Three shapes are open and choosing between them is the work:
 - **Remove it from the list.** The largest change, and it must account for what
   breaks — an operator who enables SSH over the bridge today.
 
-Whichever is taken, the projection must be pinned by a test the way RFCT-224
+Whichever is taken, the projection must be pinned by a test the way the M4 review
 pinned `container` and `mqtt`, and the sentinel method it used is the standard
 to meet: plant the change, watch named tests fail, revert, and record which
 tests failed.

@@ -1,4 +1,4 @@
-// The host half of os/mkimage-x64.sh: where the inputs are, what the output is
+// The host half of the x64 assembly contract: where the inputs are, what the output is
 // called, and the -latest symlink.
 //
 // The shell has no such seam -- it is one file from `stat -c%s` to `ln -sf` --
@@ -9,7 +9,7 @@
 // it does not.
 //
 // It deliberately does not derive its inputs from ${MOS_BOARD}:
-// os/mkimage-x64.sh hardcodes x64 in its layout path and its output directory
+// the x64 assembly contract hardcodes x64 in its layout path and its output directory
 // and reads MOS_BOARD for nothing, so a cx3576 left in the environment must not
 // name the wrong board to build. See ROOTFS_PRODUCER in src/mkimage-x64.ts.
 
@@ -21,9 +21,7 @@ import { REPO_ROOT } from './paths.ts'
 
 const USAGE = `usage: bash os/build/run.sh --mkimage-x64 [--out-dir DIR] [--grub-cfg FILE]
 
-Assembles the flashable x64 A/B GPT disk image -- the TypeScript port of
-os/mkimage-x64.sh. Inputs come from _out/${BOARD}/
-exactly as they do there.
+Assembles the flashable x64 A/B GPT disk image. Inputs come from _out/${BOARD}/.
 
   --out-dir DIR    where the rootfs-side inputs are and the image is written
                    (default: _out/${BOARD})
@@ -32,9 +30,9 @@ exactly as they do there.
 environment:
   MOS_BUILD_TOOLBOX    host|container -- force the route the tools run on
 
-MOS_ROOTFS_SLOT_MIB is NOT read. os/mkimage-x64.sh sources the board definition
-before it reads that key, so the board's value has already overwritten anything
-the environment said: x64 has one slot mode, the floor, and this has one too.
+MOS_ROOTFS_SLOT_MIB is NOT read from the process environment. The x64 board
+definition supplies its slot floor, so x64 has one slot mode rather than the
+cx3576 assembler's separate frozen-geometry mode.
 `
 
 export interface CliOptions {
@@ -91,7 +89,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (lstatSync(latest, { throwIfNoEntry: false }) !== undefined) unlinkSync(latest)
   symlinkSync(imgName, latest)
 
-  // The same three blocks os/mkimage-x64.sh prints, and the middle one is the
+  // The same three blocks the x64 assembly contract prints, and the middle one is the
   // reason: the fragment RAUC replaces on every install is the file whose
   // contents an operator most often needs to see, and it is the one file in the
   // image that no `ls` will show them.

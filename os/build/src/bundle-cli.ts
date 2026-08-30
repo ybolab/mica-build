@@ -1,4 +1,4 @@
-// The host half of os/update/bundle.sh (deleted): where the inputs are, which signing
+// The host half of the bundle contract: where the inputs are, which signing
 // material is used, what the output is called, and the -latest symlink.
 //
 // The seam is structural: epoch naming and the -latest symlink happen here,
@@ -37,9 +37,8 @@ export const DEFAULT_BOARD = 'cx3576'
 
 const USAGE = `usage: bash os/build/run.sh --bundle [VERSION] [--board B] [--out-dir DIR] [--board-dir DIR]
 
-Builds the signed RAUC update bundle -- the TypeScript port of
-os/update/bundle.sh. Inputs come from _out/<board>/
-and board/<board>/out/ exactly as they do there.
+Builds the signed RAUC update bundle. Inputs come from _out/<board>/ and
+os/boards/<board>/bsp/out/.
 
   VERSION          the bundle version string; also MOS_BUNDLE_VERSION
                    (default: 0.0.0-dev)

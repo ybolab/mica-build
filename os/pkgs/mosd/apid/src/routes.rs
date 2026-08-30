@@ -959,7 +959,7 @@ enum ScalarShape {
 /// An allowlist rather than a passthrough, and the reason is measured rather
 /// than stylistic. `Settings::set`'s documented contract is *"Missing
 /// intermediate map entries are created (e.g. setting `network.eth1.dhcp`
-/// creates `eth1`)"* (`os/pkgs/mosd/mosd-settings/src/model.rs:656-657`), so a
+/// creates `eth1`)"* (`Settings::set` in `os/pkgs/mosd/mosd-settings/src/model.rs`), so a
 /// `PUT` to a mistyped path handed straight through to mosd does not fail —
 /// it grows a new subtree, of whatever kind the schema defaults to, and the
 /// reconciler is the first thing to notice. That exact failure is reachable on
@@ -2009,7 +2009,7 @@ async fn stored_networks(state: &AppState) -> Result<Vec<WifiNetwork>, Box<Respo
 /// There is no apid-side validator to run first, and that is a measured
 /// statement rather than an omission. mosd's own write path is
 /// `Settings::set`, which validates by deserializing the candidate tree
-/// (`os/pkgs/mosd/mosd-settings/src/model.rs:666-680`) -- so the typed
+/// (`Settings::set` in `os/pkgs/mosd/mosd-settings/src/model.rs`) -- so the typed
 /// `WifiNetwork` this route deserializes into IS the validator mosd runs — plus
 /// `mosd_settings::validate_wifi_psk`, which M6 lifted out of the station
 /// reconciler's renderer so that the crate holding the model states its own
@@ -2237,9 +2237,9 @@ pub(crate) async fn api_v1_wifi_networks_remove(
 // addressing of its own, and no port may be claimed by two bridges -- so they
 // are properties of the whole tree and not of the entry being written. The
 // settings setter validates only that the tree still deserializes
-// (`os/pkgs/mosd/mosd-settings/src/model.rs:732-736`), and the reconciler that
+// (`Settings::set` in `os/pkgs/mosd/mosd-settings/src/model.rs`), and the reconciler that
 // does enforce them runs *after* the save with its verdict deliberately not
-// propagated to the caller (`os/pkgs/mosd/mosd/src/bus.rs:469-478`). A raw
+// propagated to the caller (`MosdService::write_setting` in `os/pkgs/mosd/mosd/src/bus.rs`). A raw
 // passthrough therefore answers 204 to a bridge naming a port that does not
 // exist and leaves the device's networking broken, with the only evidence in a
 // later state read. These routes run [`validate_entries`] over the candidate
@@ -3431,7 +3431,7 @@ fn valid_hostname(name: &str) -> bool {
 /// DHCP off with an empty address is an interface with **no** addressing, not
 /// an error. It used to be one, and it stopped being one when bridges became
 /// expressible: a bridge port *must* carry neither `dhcp` nor `static`
-/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:483-487`), and it must be a
+/// (`validate_network` in `os/pkgs/mosd/mosd/src/reconciler/network.rs`), and it must be a
 /// declared entry before a bridge may name it, so a pane that insisted on an
 /// address made a bridge unbuildable through the form. An address that is
 /// present and not a CIDR is still refused.
@@ -3532,7 +3532,7 @@ fn physical_iface_settings(dhcp: bool, address: &str, gateway: &str, dns: &str) 
 /// names: the form renders all four groups at once (see [`kind_fields`]), so a
 /// value left in another group's box must not reach the tree. That makes the
 /// reconciler's *"is kind X but carries a Y block"* rule
-/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:341-364`) unreachable from
+/// (`validate_network` in `os/pkgs/mosd/mosd/src/reconciler/network.rs`) unreachable from
 /// this path rather than merely checked on it.
 ///
 /// `peers` is passed in rather than read off the form: the save form carries no
@@ -3566,7 +3566,7 @@ fn iface_settings_from_form(
             }
             // Bounded by the type and by nothing else here. networkd's own
             // range is narrower, and the reconciler does not check it either
-            // (`os/pkgs/mosd/mosd/src/reconciler/network.rs:565-568` renders
+            // (`render_netdev` in `os/pkgs/mosd/mosd/src/reconciler/network.rs` renders
             // `Id=` from a `u16`), so a bound invented in this file would
             // refuse a tree the boundary accepts.
             let Ok(id) = form.vlan_id.trim().parse::<u16>() else {
@@ -3597,7 +3597,7 @@ fn iface_settings_from_form(
 /// True when `value` parses as an IP address with an optional `/prefix`.
 ///
 /// An echo of the reconciler's `is_ip_or_cidr`
-/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:272-288`), for the reason
+/// (`is_ip_or_cidr` in `os/pkgs/mosd/mosd/src/reconciler/network.rs`), for the reason
 /// `validate_static` states about the address field: apid checks on its write
 /// path so the operator gets a readable error, and the reconciler checks again
 /// because the settings file is writable without apid. Deliberately not
@@ -3621,7 +3621,7 @@ fn is_ip_or_cidr(value: &str) -> bool {
 /// True when `value` is the `host:port` a peer's `endpoint` has to be.
 ///
 /// The same echo, of `is_host_port`
-/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:377-397`).
+/// (`is_host_port` in `os/pkgs/mosd/mosd/src/reconciler/network.rs`).
 fn is_host_port(value: &str) -> bool {
     let Some((host, port)) = value.rsplit_once(':') else {
         return false;
@@ -3646,7 +3646,7 @@ const WIREGUARD_KEY_LEN: usize = 44;
 
 /// Whether `value` is the base64 X25519 key a peer's `publicKey` has to be.
 ///
-/// The echo of `wgkeys::is_key` (`os/pkgs/mosd/mosd/src/wgkeys.rs:288-291`),
+/// The echo of `wgkeys::is_key` (`os/pkgs/mosd/mosd/src/wgkeys.rs`),
 /// which decodes with the standard alphabet's *padded* spelling; the length
 /// test is what pins that, because [`mosd_settings::decode_base64`] also
 /// accepts the unpadded form and an echo that accepted more than the boundary
@@ -3690,7 +3690,7 @@ fn validate_peers(iface: &str, peers: &[WireguardPeer]) -> Result<(), String> {
 /// The reconciler's relational rules, echoed over the whole candidate subtree.
 ///
 /// Echoed and not forked. `validate_network`
-/// (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-505`) stays the boundary
+/// (`validate_network` in `os/pkgs/mosd/mosd/src/reconciler/network.rs`) stays the boundary
 /// — it runs on every apply, including the ones that never went through apid —
 /// and this runs first so the operator reads which field is wrong instead of a
 /// 502 from a failed bus call.

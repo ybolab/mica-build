@@ -367,16 +367,17 @@ is warranted.
 Today, **no provisioning path ships a production keyring**. The facts, all
 with the fix in place:
 
-- `os/rootfs/overlay-v2/etc/rauc/system.conf` names
-  `/etc/rauc/keyring.pem`, and the root filesystem deliberately does not
-  contain it.
+- `os/pkgs/rauc/system.conf.in` names `/etc/rauc/keyring.pem`;
+  `os/pkgs/rauc/render-config.sh` renders the generated
+  `os/rootfs/overlay-v2/etc/rauc/system.conf`, and the root filesystem
+  deliberately does not contain the keyring itself.
 - `os/rootfs/build-v2.sh` **refuses** to stage `etc/rauc/keyring.pem`, and
-  `os/verify-image-v2.sh` fails an image that carries one in the packed
+  `os/verify/src/checks-root.ts` fails an image that carries one in the packed
   root. Both are waivable only by `MOS_EXPECT_DEV_KEYRING=1`, which warns
   unmissably and exists for exactly one case: a local dev image installing
   locally signed bundles, on a bench, never shipped
-  (`os/pkgs/rauc/gen-dev-keys.sh`'s closing instructions). The ui-location
-  harness proves both directions of that gate.
+  (`os/pkgs/rauc/gen-dev-keys.sh`'s closing instructions).
+  `os/verify/src/checks-root.test.ts` proves both directions of that gate.
 - Therefore a production image, as buildable today, cannot install any
   bundle: RAUC has no keyring to verify against. The refusal is correct —
   it is what stopped the dev CA from riding along in prod images (the
@@ -462,8 +463,8 @@ rauc-sign verify --repo <repo> --root /trusted/root.json --datastore /var/lib/ra
 ```
 
 Then publish `<repo>` as static content (`os/pkgs/rauc-sign/README.md`'s layout). The
-offline "lockbox" bundle path is planned and not implemented
-(`update/lockbox/`); when it exists it consumes the same signed artifacts.
+offline "lockbox" workflow is planned and not implemented; when it exists it
+will consume the same signed artifacts.
 
 ## 4. What never happens
 

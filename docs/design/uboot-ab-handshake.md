@@ -13,7 +13,8 @@ bootloader backend, `/etc/fw_env.config` and the dm-verity boot path all agree.
 
 Evidence convention used throughout:
 
-- **[V]** verified in this environment, with the file and line it came from.
+- **[V]** verified in this environment, with the source file and relevant
+  symbol named.
   Paths starting `os/` are this repository (`board/` paths are dated: that tree moved under `os/boards/`); paths starting
   `u-boot/` are the upstream tree at tag `v2026.07`, cloned read-only into a
   scratch directory for this analysis; paths starting `linux/` are
@@ -99,7 +100,7 @@ So today:
 
 - **the environment is not persisted at all.** `CONFIG_ENV_IS_NOWHERE=y` is
   reached because `ENV_IS_DEFAULT` is `def_bool y` when no `ENV_IS_IN_*` is
-  selected, and it `select`s `ENV_IS_NOWHERE` (`u-boot/env/Kconfig:71-79`) [V].
+  selected, and it `select`s `ENV_IS_NOWHERE` (`u-boot/env/Kconfig`) [V].
 - there is **no redundant copy** (`CONFIG_ENV_REDUNDANT` not set).
 - `saveenv` cannot persist anything, so `BOOT_ORDER` / `BOOT_x_LEFT` cannot
   survive a reboot, and RAUC's `uboot` backend has nothing to talk to.
@@ -239,7 +240,7 @@ Known gaps / vendor-only pieces, i.e. what mainline does **not** give you:
    host tools then speak the 0x471/0x472 maskrom protocol the gadget does not
    implement.
 4. `CONFIG_CMD_SETEXPR` is explicitly disabled by the generic defconfig
-   (`configs/generic-rk3576_defconfig:24`) [V] — required by §5's `boot.cmd`.
+   (`configs/generic-rk3576_defconfig`) [V] — required by §5's `boot.cmd`.
 5. **The board DT is the *generic* RK3576 DT, not a CX3576-Z DT.** [U] Whether
    the generic DT drives this board's specific eMMC pinmux/voltage correctly is
    only provable on hardware; the current v1 image boots, which is evidence it
@@ -331,7 +332,7 @@ Notes, each with its evidence:
   when present (`u-boot/arch/arm/mach-rockchip/board.c`) [V], which
   lands on the same device.
 - `CONFIG_ENV_MMC_EMMC_HW_PARTITION=0` — "partition 0 … is the user area"
-  (`u-boot/env/Kconfig:748-757`) [V]. This is the symbol the brief calls
+  (`u-boot/env/Kconfig`) [V]. This is the symbol the brief calls
   `CONFIG_SYS_MMC_ENV_PART`.
 - The three "keep OFF" symbols matter. `env/mmc.c` resolves the env
   offset in priority order: a software partition name
@@ -345,7 +346,7 @@ Notes, each with its evidence:
   produces (§1.2) — 0x1f000 is 124 KiB and would overrun the 64 KiB partition
   and scribble into `uenv-b`.
 - `CONFIG_CMD_SETEXPR` is off in the generic defconfig
-  (`configs/generic-rk3576_defconfig:24`) [V] and must be turned back on.
+  (`configs/generic-rk3576_defconfig`) [V] and must be turned back on.
 
 ### 3.3 `/etc/fw_env.config` (shipped deliberately)
 
@@ -407,11 +408,11 @@ RAUC's side of this is fixed by its source, not by convention
 ### 4.1 Radix trap — the counter is hexadecimal
 
 RAUC **writes** the counter with `g_strdup_printf("%x", attempts)` and **reads**
-it with `g_ascii_strtoull(..., 16)` (`rauc/src/bootloaders/uboot.c, 152`)
+it with `g_ascii_strtoull(..., 16)` (`rauc/src/bootloaders/uboot.c`)
 [V] — i.e. bare hex, no `0x` prefix. On the U-Boot side:
 
 - `setexpr` parses arguments with `hextoul()` and stores results with
-  `env_set_hex()` (`u-boot/cmd/setexpr.c, 439`) [V] — also hex. **Matches.**
+  `env_set_hex()` (`u-boot/cmd/setexpr.c`) [V] — also hex. **Matches.**
 - `test -gt` parses with `simple_strtol(..., 0)` (`u-boot/cmd/test.c`)
   [V] — i.e. decimal unless `0x`-prefixed. **Does not match**, but the two
   agree for every value 0–9.
@@ -464,7 +465,7 @@ default environment / `bootcmd`, or by enabling upstream's
 `BOOT_ORDER` and `BOOT_<slot>_LEFT`, picks the first slot with credits,
 decrements, `env_save()`s, exports `distro_bootpart` / `distro_rootpart` /
 `raucargs`, then sources that slot's `boot.scr`
-(`u-boot/boot/bootmeth_rauc.c, 306-360, 393-445`) [V].
+(`u-boot/boot/bootmeth_rauc.c`, `bootmeth_rauc_read_bootflow`) [V].
 
 ### 5.2 Recommendation: (A), with (B) as a documented fallback
 
@@ -509,7 +510,7 @@ CONFIG_BOOTMETH_RAUC_RESET_ALL_ZERO_TRIES=y
 ```
 
 (`"3,5 4,6"` = slot A is boot p3 + root p5, slot B is boot p4 + root p6, in the
-`<boot>,<root>` pair syntax of `u-boot/boot/Kconfig:902-909` [V].) Note that
+`<boot>,<root>` pair syntax of `u-boot/boot/Kconfig` [V].) Note that
 this bootmeth reads the counter with `env_get_ulong(..., 10, ...)`
 (`bootmeth_rauc.c`) [V] — decimal — so §4.1's 1–9 range still applies.
 
@@ -529,7 +530,7 @@ are *not* baked in — they are imported from the chosen slot's boot partition
 (§7.3), so the script is byte-identical in both boot partitions.
 
 **This block is synced to the shipped `os/boards/cx3576/boot.cmd`**, which is
-what `os/mkimage-v2.sh` compiles into `boot.scr`. It now differs from the
+what `os/build/src/mkimage-v2.ts` compiles into `boot.scr`. It now differs from the
 version first published here in **two** places. Both were defects that made
 every update revert silently, and both are recorded in the shipped script's
 provenance header:
@@ -683,7 +684,7 @@ Per §1.3, extlinux is tried **before** `boot.scr` in both bootstd and
 
 Two acceptable ways to satisfy this, in order of preference:
 
-1. `os/mkimage-v2.sh` simply does not write `extlinux/extlinux.conf` into
+1. `os/build/src/mkimage-v2.ts` simply does not write `extlinux/extlinux.conf` into
    BOOT-A/BOOT-B. `boot.scr` replaces it. This is the recommendation.
 2. If a manual recovery entry is wanted, write it under a name the automatic
    scan does not look for (e.g. `extlinux/extlinux.conf.manual`) and document
@@ -717,7 +718,7 @@ is the layout-v2 fixed mtime (2020-01-01T00:00:00Z). `-C none` because the
 script is not compressed; `-T script` requires `CONFIG_LEGACY_IMAGE_FORMAT=y`
 in U-Boot, which is already set [V].
 
-**Owner of the assembly step: the image assembler** (`os/mkimage-v2.sh`). What it must do:
+**Owner of the assembly step: the image assembler** (`os/build/src/mkimage-v2.ts`). What it must do:
 
 1. Build `boot.scr` from the `boot.cmd` above with the exact invocation above,
    and write the **same** `boot.scr` to both BOOT-A and BOOT-B (FAT root, since
@@ -866,7 +867,7 @@ All four questions answered against the actual vendor kernel tree
 ### 7.1 `CONFIG_DM_INIT=y` is genuinely effective
 
 - `DM_INIT` is `bool` and `depends on BLK_DEV_DM=y`
-  (`linux/drivers/md/Kconfig:501-503`) [V] — it *cannot* be modular, and it
+  (`linux/drivers/md/Kconfig`) [V] — it *cannot* be modular, and it
   cannot be enabled unless device-mapper itself is built in. Both are asserted
   by `os/boards/common/mos-required.fragment` [V].
 - `dm_init_init()` is registered with `late_initcall()`
@@ -896,7 +897,7 @@ All four questions answered against the actual vendor kernel tree
   which GUID is named.
 - `dm-mod.waitfor=` **exists** on this tree: `static char *waitfor[DM_MAX_WAITFOR]`
   with `module_param_array(waitfor, charp, NULL, 0)`
-  (`linux/drivers/md/dm-init.c, 324`) [V], consumed by a
+  (`linux/drivers/md/dm-init.c`) [V], consumed by a
   `while (!dm_get_dev_t(waitfor[i])) msleep(5)` loop before any table is created
   (`dm-init.c`) [V].
 
@@ -911,12 +912,12 @@ All four questions answered against the actual vendor kernel tree
 ### 7.3 SHA-256 is built in, and the table shape
 
 - `DM_VERITY` `select`s `CRYPTO` and `CRYPTO_HASH` but **no specific digest**
-  (`linux/drivers/md/Kconfig:525-538`) [V] — "You'll need to activate the digests
+  (`linux/drivers/md/Kconfig`) [V] — "You'll need to activate the digests
   you're going to use in the cryptoapi configuration".
 - The board config already provides them built-in:
   `CONFIG_CRYPTO_SHA256=y` (`os/boards/cx3576/bsp/kernel/config/kernel-cx3576z.config`),
-  `CONFIG_CRYPTO_SHA256_ARM64=y` (`:7558`),
-  `CONFIG_CRYPTO_SHA2_ARM64_CE=y` (`:7559`) [V]. Nothing is modular.
+  `CONFIG_CRYPTO_SHA256_ARM64=y`,
+  `CONFIG_CRYPTO_SHA2_ARM64_CE=y` [V]. Nothing is modular.
   No fragment change is needed today; if a future board's defconfig lacks
   `CRYPTO_SHA256=y` the failure is at runtime, not build time, so it is worth
   adding to `mos-required.fragment` when that file is next touched — noted, not
@@ -1145,7 +1146,7 @@ Ordered by how badly each could sink the approach.
 > FAT partition on the first `saveenv` (v1's boot partition starts at 16 MiB,
 > exactly the copy-A offset), and the debug variant on a v2 image has no
 > persistent environment, so it boots, looks healthy, and silently never runs
-> the A/B handshake. `os/mkimage-v2.sh` asserts both directions.
+> the A/B handshake. `os/build/src/mkimage-v2.ts` asserts both directions.
 >
 > Items 4-8 were requirements on the build and are satisfied by that variant;
 > they remain listed as the contract it must keep satisfying. On-device A/B
@@ -1169,7 +1170,7 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
    should pin `bootmeth order script` (§5.4). Without this, extlinux wins and
    the handshake is silently bypassed in both bootstd and `distro_bootcmd` [V].
    **RESOLVED by `8b24f9d` (`bootmeth order script`) together with
-   `os/mkimage-v2.sh`, which writes no extlinux config into a v2 boot slot.**
+   `os/build/src/mkimage-v2.ts`, which writes no extlinux config into a v2 boot slot.**
 4. **Preserve the three existing customisations**: DDR `v1.12` + BL31 `v1.24`
    blob pins, the saradc `vdd-microvolts` DT append, and the rockusb loader-mode
    patch (§2). Without them, respectively: no boot, no recovery button, no
@@ -1198,7 +1199,7 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
 
 Dependencies this creates on other subtasks, for scheduling:
 
-- **the image assembler** (`os/mkimage-v2.sh`): generate and install `boot.scr` +
+- **the image assembler** (`os/build/src/mkimage-v2.ts`): generate and install `boot.scr` +
   per-slot `mos-verity-<slot>.env`, drop `extlinux.conf` from v2 boot slots,
   zero-fill p1/p2 (§5.5). **Delivered.**
 - **the rootfs work** (rootfs): add `libubootenv-tool` to the package allowlist, ship

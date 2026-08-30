@@ -11,7 +11,7 @@
 // exited 1 with "Configuring boot attempts is valid for uboot or barebox only",
 // taking the health gate and the status indicator with it.
 //
-// The predecessor, os/verify/lint.sh, `source`d each definition and read every
+// The predecessor shell linter `source`d each definition and read every
 // key as `${NAME_KEY:-}`, which cannot tell declared empty from not declared.
 // Four holes measured 2026-08-25: `ROOTFS_A_FS_UUID=""` passed as a forbidden
 // key on a forbidden role where the non-empty spelling was rejected, because
@@ -302,7 +302,7 @@ function lintStartUnits(r: Recorder, b: Board, p: Partition): void {
  * This is the check that would have caught the x64 layout before it reached a
  * device -- and the one hole 2 was in: `BOOT_ATTEMPTS_DEFAULT=""` on the grub
  * board passed the shell predecessor, because an empty value read as an absent
- * key. Measured against the real consumer: os/pkgs/rauc/render-config.sh:137
+ * key. Measured against the real consumer: os/pkgs/rauc/render-config.sh
  * also reads `${BOOT_ATTEMPTS_DEFAULT:-}` and so tolerates the empty spelling
  * today, which makes this a schema failure rather than a device failure. It is
  * still a failure: the key's presence is a claim about a capability grub does

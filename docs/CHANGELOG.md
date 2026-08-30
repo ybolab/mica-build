@@ -4,6 +4,26 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Mosd workspace tests consolidated and repository prose audited (2026-08-30)
+
+The repository-root `test/apid-api/` harness now lives at
+`os/pkgs/mosd/tests/apid-api/`, beside the D-Bus policy harness moved out of
+`os/pkgs/mosd/hack/`. Repository-root discovery, container workdirs, fixtures,
+Make targets, verification inputs, executable modes, and current documentation
+all follow the new ownership boundary. Cargo unit and integration tests remain
+crate-local, while `os/tests/` remains the home for OS-wide tests.
+
+The accompanying audit removed a committed conflict marker, unstable source
+line citations, stale references to deleted build and verification scripts,
+incorrect current paths, and incomplete prose in design documents and code
+comments. It also corrected a stale build-test expectation that still named the
+deleted bundle script. Validation passed the 48-case documentation index, the
+31-file shell pipefail scan, 689 build tests, 1,096 image-verification tests,
+47 APID self-checks, 38 API specification pins, 45 D-Bus policy checks, and the
+Rust workspace tests and clippy gates. The full QEMU APID run was not available
+because this checkout has no `_out/x64` image; dry-run resolution reached the
+new paths and stopped only at that missing prerequisite.
+
 ## Scratch root renamed to `tmp/` (2026-08-29)
 
 `runtime/` collided with a real runtime path twice over. A genuine `runtime/`

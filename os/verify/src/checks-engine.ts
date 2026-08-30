@@ -1,8 +1,8 @@
 // Batch 4a: the container engine, the package-manager purge, and the trust store.
 //
-// Fifteen conclusions on each board -- ten from `check_container_engine`
-// (:1191), four from `check_no_package_manager` (:1112) and one from
-// `check_ca_bundle` (:3498). Three families in one module because all three
+// Fifteen conclusions on each board: ten from `check_container_engine`, four
+// from `check_no_package_manager`, and one from
+// `check_ca_bundle`. Three families in one module because all three
 // are the same act read from three sides: what the pack stage put in the root,
 // what it took out, and what it GENERATED on the way through.
 //
@@ -29,7 +29,7 @@ import type { CheckCase, ImageContext } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { skipped, verdict } from './verdict.ts'
 
-// The oracle's own constants (:1173-1189), in its own order -- the message
+// The oracle's own constants, in its own order -- the message
 // prints them and a reordering here would diverge on message alone.
 const CONTAINER_STORAGE_CONF = '/etc/containers/storage.conf'
 const CONTAINER_BINARIES = [
@@ -104,7 +104,7 @@ function findUnder(
 
 // the container engine
 
-/** The oracle's early-return guard (:1196): NEITHER podman nor storage.conf. */
+/** The oracle's early-return guard: NEITHER podman nor storage.conf. */
 function noEngineAtAll(root: string): boolean {
   return !existsFollowingLinks(root, '/usr/bin/podman')
     && !existsFollowingLinks(root, CONTAINER_STORAGE_CONF)
@@ -133,7 +133,7 @@ function engineCheck(input: {
       const root = await packedRoot(ctx)
       if (noEngineAtAll(root)) {
         return [skipped(input.id,
-          `${input.id}: this image carries no container engine, so os/verify-image-v2.sh returns `
+          `${input.id}: this image carries no container engine, so the verification contract returns `
           + `before reaching this assertion and prints nothing for it`)]
       }
       return [await input.decide(root, ctx)]

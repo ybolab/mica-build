@@ -1,4 +1,4 @@
-# `test/apid-api` — the apid black-box HTTP suite
+# `os/pkgs/mosd/tests/apid-api` — the apid black-box HTTP suite
 
 A bun + TypeScript suite that talks to **apid** in a booted mos guest over the
 network, the way a browser would, and asserts on what comes back. It has **no
@@ -133,7 +133,8 @@ them, read out of the phase files' own bytes rather than imported, so both
 directions of drift go red. It exists because the phases below only run under a
 booted run: a milestone that moves a shipped status otherwise leaves every
 phase pinning the old one green until somebody boots the image.
-Its header states what is out of scope and why; the record the residue, which is most of this file's pins.
+Its header states what is out of scope and why; the full black-box suite covers
+the remaining runtime contracts, which are most of this file's pins.
 
 It runs on a host bun when there is one and in the bun pinned as `IMAGE_BUN_1`
 otherwise, and says which. `MOS_APID_CONTAINER=1` forces the pinned container.
@@ -143,7 +144,7 @@ bun is not required on the host — run it in a container, mounting the
 silently yields an empty directory):
 
 ```sh
-docker run --rm -v "$(git rev-parse --show-toplevel):/w" -w /w/test/apid-api \
+docker run --rm -v "$(git rev-parse --show-toplevel):/w" -w /w/os/pkgs/mosd/tests/apid-api \
   oven/bun:1 sh -c "bun install && bun run typecheck && bun run selftest"
 ```
 

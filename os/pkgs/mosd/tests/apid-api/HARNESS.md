@@ -1,10 +1,10 @@
 # The apid API harness
 
-`test/apid-api/run.sh` boots the x64 image in QEMU with apid's port forwarded,
+`os/pkgs/mosd/tests/apid-api/run.sh` boots the x64 image in QEMU with apid's port forwarded,
 finds the guest, waits for the daemon, and runs the bun suite against it.
 
     make os-apid-api-test              # the whole thing
-    bash test/apid-api/run.sh --dry-run   # preconditions + discovery, boots nothing
+    bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run   # preconditions + discovery, boots nothing
 
 It **builds nothing**. `_out/x64/x64-mos-v2-latest.img` is an input; if it is
 missing the run refuses and names the two commands that make it.
@@ -122,8 +122,7 @@ deliberately down, so a run that stops there never observes it come back.
 
 mos keeps journald at `Storage=volatile` because `/var` is the EPHEMERAL
 partition, so a guest's log dies with the guest — no post-mortem journal
-reader can work (the former `os/tools/qemu-journal.sh` was removed for exactly
-that reason).
+reader can work.
 
 Instead every boot is captured to a file under `_out/x64/apid-api/`, and
 `MOS_QEMU_APPEND=systemd.journald.forward_to_console=1` puts journald on the
@@ -188,7 +187,7 @@ against — `disk.img` cannot serve, the guest writes to it all boot) and
 result **verbatim** and carries the run's own totals. Console logs are never
 removed; the disk is, unless `MOS_APID_KEEP_DISK=1`.
 
-Reporting follows `os/verify-image-v2.sh`: one `PASS:`/`FAIL:` line per
+Reporting follows the `os/verify/run.sh` register: one `PASS:`/`FAIL:` line per
 assertion and a final `RESULT: PASS|FAIL (n/m checks)` with counted totals.
 **Zero checks is a failure** — a run that asserted nothing must not read as
 success.

@@ -2,15 +2,15 @@
 # The apid API suite's build-time check: every phase literal that is ALSO
 # stated in os/pkgs/mosd/apid/openapi.json, asserted to agree with it.
 #
-#   bash test/apid-api/spec-pins.sh
+#   bash os/pkgs/mosd/tests/apid-api/spec-pins.sh
 #   make os-apid-api-spec-pins
 #
-# NO NETWORK, NO QEMU, NO IMAGE. This is the half of `test/apid-api` that can
+# NO NETWORK, NO QEMU, NO IMAGE. This is the half of `os/pkgs/mosd/tests/apid-api` that can
 # be run on a checkout: it reads the phase files' own bytes and the committed
 # OpenAPI document and compares them. The other half -- run.sh -- needs a built
 # image and a nine-minute boot, which is exactly why the pins it carries could
-# go stale unnoticed. src/spec-pins.ts's header states what is
-# and is not in scope; the record the residue.
+# go stale unnoticed. src/spec-pins.ts's header states what is and is not in
+# scope; the full black-box suite covers the remaining runtime contracts.
 #
 # Same two routes as os/verify/run.sh, for the same reason: a developer with a
 # bun runs on it, and a host without one runs the bun this tree pins by digest
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 
 BUN=""
 ROUTE=host
@@ -57,7 +57,7 @@ if [ "${ROUTE}" = container ]; then
     echo "apid-api spec-pins: in ${BUN_IMAGE} (${WHY})"
     # No `bun install`: src/spec-pins.ts imports nothing from node_modules, so
     # the check runs on a checkout with no dependencies fetched and no network.
-    exec docker run --rm -v "${REPO_ROOT}:/w" -w /w/test/apid-api \
+    exec docker run --rm -v "${REPO_ROOT}:/w" -w /w/os/pkgs/mosd/tests/apid-api \
         "${BUN_IMAGE}" bun run src/spec-pins.ts
 fi
 

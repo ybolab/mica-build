@@ -121,7 +121,7 @@ describe('...and INERT, which is the load-bearing half', () => {
   })
 
   test('a DANGLING wants symlink still counts as enabled', async () => {
-    // The trap the oracle names at :816. A wants symlink points at an ABSOLUTE
+    // The trap: a wants symlink points at an ABSOLUTE
     // path under /usr/lib, which resolves to nothing whenever ROOT is an
     // unpacked tree rather than /. A check using `-e` alone follows the link,
     // calls it absent, and PASSES on exactly the image that failed it.
@@ -251,7 +251,7 @@ describe('the D-Bus grant', () => {
   })
 
   test('attributes WRAPPED across lines are read as one rule', async () => {
-    // Measured on the oracle's first run against the real file (:838-846): the
+    // Measured on the oracle's first run against the real file: the
     // shipped rules wrap, so a line-oriented search for send_member= on a rule
     // whose send_destination= is on the line above finds nothing and reports a
     // BLANKET grant that is not there. The fixture's first rule wraps on

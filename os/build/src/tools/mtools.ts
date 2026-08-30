@@ -6,8 +6,8 @@
 // and exits 0, so everything trusting that boot sector agrees. OVMF computes
 // the type as the specification says and refuses it -- "the ESP was simply
 // absent from the firmware's device list and the machine dropped to the UEFI
-// shell" (os/mkimage-x64.sh, which also records that asking minfo for the type
-// passed on that exact image). The check is therefore a cluster count,
+// shell. Asking minfo for the type passed on that exact image, so the check is
+// instead a cluster count,
 // readFatClusters, with an unreadable count refused rather than compared:
 // `[ "" -lt 65525 ]` is a shell error and `undefined < 65525` is false.
 //
@@ -30,7 +30,7 @@ export interface FatSpec {
    * pin it, because a slot's filesystem is that slot's: BOOT_A carries
    * C3576003 and BOOT_B C3576004, and an image whose volume id came out
    * different from the pinned one is a reproducibility failure only a byte
-   * comparison would see. os/update/bundle.sh (deleted) pins NEITHER label nor volume
+   * comparison would see. The bundle contract pins NEITHER label nor volume
    * id, and says why: "one image, two possible destinations" -- a bundle's
    * boot payload is installed into whichever boot slot is inactive, so it
    * cannot carry that slot's FAT identity. `--invariant` is what keeps the
@@ -135,7 +135,7 @@ export async function mcopy(tb: Toolbox, spec: McopySpec): Promise<ToolResult> {
 /**
  * `mmd` -- make a directory inside a FAT filesystem.
  *
- * os/mkimage-x64.sh measured that mmd plus per-file `mcopy -m` still moves
+ * Measurements show that mmd plus per-file `mcopy -m` still moves
  * bytes between builds, because mmd has no source to take a time from and
  * stamps the directory entry with the wall clock; it stages a TREE and copies
  * it with `mcopy -s -m` instead. This is here because the tool is in the
