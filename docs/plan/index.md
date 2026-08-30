@@ -33,4 +33,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-031 Separate MQTT application data from system management**](PLAN-031.md) `2026-08-30`
 - [x] [**PLAN-032 Decouple MQTT eligibility from D-Bus service names**](PLAN-032.md) `2026-08-30`
 - [x] [**PLAN-033 Close the six defects found in the MQTT decoupling review**](PLAN-033.md) `2026-08-30`
+- [~] [**PLAN-034 Simplify the rootfs packaging contract**](PLAN-034.md) `2026-08-30`
 - [-] [**PLAN-035 Build the cx3576 rootfs chain on a host without binfmt through buildkit**](PLAN-035.md) `2026-08-30`
+- [-] [**PLAN-036 Compose rootfs from independently built Debian packages**](PLAN-036.md) `2026-08-30`

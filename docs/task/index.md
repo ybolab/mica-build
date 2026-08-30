@@ -44,5 +44,6 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-267 Decouple MQTT eligibility from D-Bus service names**](RFCT-267.md) `P1`
 - [x] [**RFCT-268 Close the six defects found in the MQTT decoupling review**](RFCT-268.md) `P1`
 - [x] [**RFCT-269 Drop the retained-topic upgrade guidance for the removed system projection**](RFCT-269.md) `P3`
+- [-] [**RFCT-270 Deliver rootfs components as Debian packages**](RFCT-270.md) `P1`
 - [x] [**RFCT-271 Write the build guide: x64 and cx3576, cross-compile versus emulation**](RFCT-271.md) `P2`
 - [-] [**RFCT-272 Chain the rootfs stages through OCI layouts so cx3576 builds without host binfmt**](RFCT-272.md) `P1`
