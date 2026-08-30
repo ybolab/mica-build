@@ -1,0 +1,31 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: mos
+Comment: One copyright file for every package this producer family emits --
+ mosd, mos-apid, mos-mqttd and mos-mqtt-broker -- installed per package as
+ /usr/share/doc/<package>/copyright so that no two packages own one path.
+ .
+ The statically linked Rust dependencies of those binaries are not an open
+ set. os/pkgs/mosd/deny.toml is the authority: it allows Apache-2.0, MIT,
+ BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0 and Zlib, plus CC0-1.0 for
+ tiny-keccak on one named dependency chain and for nothing else. cargo-deny
+ enforces that list against the resolved graph, so a dependency under any
+ other licence fails before it can reach a package. Read that file rather
+ than this paragraph for the current set; this one restates it and can fall
+ behind it.
+
+Files: *
+Copyright: The mos project
+License: proprietary
+
+License: proprietary
+ All rights reserved.
+ .
+ The mos project has chosen no public licence for this software. The
+ repository carries no LICENSE or COPYING file and every crate in the
+ workspace is declared publish = false. These packages are built for internal
+ distribution onto mos appliances and grant no permission to redistribute or
+ modify them.
+ .
+ The absence of a licence here is a statement, not a placeholder. If the
+ project adopts one it is recorded at the repository root first, and this file
+ follows that decision rather than anticipating it.
