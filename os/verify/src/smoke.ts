@@ -10,7 +10,7 @@
 // commit, asserted against a recorded build fact and never against
 // `git rev-parse HEAD`; see `BuildCommitFact`.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { ARTIFACTS, pinCoverageFaults, unclaimedFaults, type Artifact } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
@@ -708,6 +708,129 @@ export function dockerExec(ref: string, timeoutMs: number = EXEC_TIMEOUT_MS): Ex
   return argv => capture(dockerArgv(ref, argv), timeoutMs)
 }
 
+// The buildkit executor. Same seam, same register, same judging: only the
+// thing that runs the binary changes. A docker-container builder bundles its
+// own emulators, so a host whose daemon cannot execute the factory root's
+// platform can still execute every artifact inside it -- each run is one
+// throwaway build whose RUN is the argv and whose output is the three files
+// `judge` reads. It is slower than `docker run` by the cost of a build per
+// artifact, which is why it is the fallback and not the default.
+
+export interface BuildkitExecOptions {
+  /** The factory root's reference, as the archive's index names it. */
+  readonly ref: string
+  /** The archive extracted as an OCI layout directory. */
+  readonly layout: string
+  /** A buildx builder that can execute `platform`. */
+  readonly builder: string
+  readonly platform: string
+  /** Where each run's Dockerfile and output go. Default: <repo>/tmp/. */
+  readonly scratch?: string
+  readonly timeoutMs?: number
+}
+
+/**
+ * A build imports the layout on its first run and executes under emulation on
+ * every run; the docker route's thirty seconds is not the right figure.
+ */
+export const BUILDKIT_EXEC_TIMEOUT_MS = 300_000
+
+function shellQuote(word: string): string {
+  return `'${word.replaceAll("'", `'\\''`)}'`
+}
+
+/**
+ * The throwaway Dockerfile: run the argv in the root, off the network, and
+ * carry its status, stdout and stderr out as three files. The RUN's own
+ * status is the `echo`'s, so a failing artifact is a file that says so and
+ * not a build that failed -- a build failure is reserved for the case the
+ * root cannot execute anything, which `preflight` reads as such.
+ */
+export function buildkitDockerfile(ref: string, argv: readonly string[]): string {
+  return [
+    `FROM ${ref} AS run`,
+    `RUN --network=none mkdir -p /mos-smoke && ( ${argv.map(shellQuote).join(' ')} ) >/mos-smoke/stdout 2>/mos-smoke/stderr; echo $? >/mos-smoke/status`,
+    'FROM scratch',
+    'COPY --from=run /mos-smoke/ /',
+    '',
+  ].join('\n')
+}
+
+export function buildkitArgv(opts: BuildkitExecOptions, dockerfileDir: string, outDir: string): string[] {
+  return [
+    'docker',
+    'buildx',
+    'build',
+    '--builder',
+    opts.builder,
+    '--platform',
+    opts.platform,
+    '--build-context',
+    `${opts.ref}=oci-layout://${opts.layout}`,
+    // Every run executes: a cached RUN would be a smoke test that ran once.
+    '--no-cache',
+    '--progress=plain',
+    '--output',
+    `type=local,dest=${outDir}`,
+    dockerfileDir,
+  ]
+}
+
+export function buildkitExec(
+  opts: BuildkitExecOptions,
+  run: (argv: readonly string[]) => Promise<ExecResult> = argv =>
+    capture(argv, opts.timeoutMs ?? BUILDKIT_EXEC_TIMEOUT_MS),
+): Exec {
+  const scratch = opts.scratch ?? join(REPO_ROOT, 'tmp')
+  return async argv => {
+    mkdirSync(scratch, { recursive: true })
+    const dir = mkdtempSync(join(scratch, 'smoke-buildkit-'))
+    try {
+      const dockerfileDir = join(dir, 'df')
+      const outDir = join(dir, 'out')
+      mkdirSync(dockerfileDir)
+      await Bun.write(join(dockerfileDir, 'Dockerfile'), buildkitDockerfile(opts.ref, argv))
+      const built = await run(buildkitArgv(opts, dockerfileDir, outDir))
+      const statusFile = join(outDir, 'status')
+      if (built.status !== 0 || !existsSync(statusFile)) {
+        // The convention `diagnose` reads: 255 with the stderr is "the
+        // executor could not run this at all", which for a build is the
+        // truth -- the root did not get as far as the argv.
+        return { status: 255, stdout: built.stdout, stderr: built.stderr }
+      }
+      const status = Number.parseInt(readFileSync(statusFile, 'utf8').trim(), 10)
+      return {
+        status: Number.isNaN(status) ? 255 : status,
+        stdout: readFileSync(join(outDir, 'stdout'), 'utf8'),
+        stderr: readFileSync(join(outDir, 'stderr'), 'utf8'),
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+}
+
+/** `mos-<arch>` -- the container builder os/rootfs/build-v2.sh and the package builds create for a cross build. */
+export function containerBuilderFor(platform: string): string {
+  return `mos-${platform.split('/')[1] ?? platform}`
+}
+
+async function builderExists(name: string): Promise<boolean> {
+  const r = await capture(['docker', 'buildx', 'inspect', name], EXEC_TIMEOUT_MS)
+  return r.status === 0
+}
+
+/** Extract the factory-root archive (an OCI tar) into a layout directory buildx can take as a context. */
+export async function extractLayout(archive: string, dir: string): Promise<string> {
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  const r = await capture(['tar', '-x', '-C', dir, '-f', archive], EXEC_TIMEOUT_MS)
+  if (r.status !== 0 || !existsSync(join(dir, 'index.json'))) {
+    throw new Error(`could not extract ${archive} into an OCI layout at ${dir}: ${r.stderr.trim() || `tar exited ${r.status}`}`)
+  }
+  return dir
+}
+
 export interface SmokeRunOptions {
   readonly board: string
   readonly artifacts?: readonly Artifact[]
@@ -745,6 +868,11 @@ export interface SmokeRunOptions {
   /** Skip `docker load`; the suite has no archive to load. */
   readonly load?: boolean
   readonly log?: (line: string) => void
+  /**
+   * The buildx builder to execute inside when the daemon cannot execute the
+   * platform. Default: `mos-<arch>` if such a builder exists.
+   */
+  readonly builder?: string
 }
 
 /**
@@ -825,7 +953,26 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
 
     if (opts.load !== false) await loadFactoryRoot(record)
     exec = dockerExec(record.ref)
-    await preflight(exec, record.platform)
+    try {
+      await preflight(exec, record.platform)
+    } catch (e) {
+      // The daemon cannot execute this platform. That is a fact about the
+      // host, not about the root, and a builder that bundles its emulator can
+      // still execute every artifact; the register and the judging are the
+      // same, only the executor moves. Anything other than the exec-format
+      // refusal is passed through: a root that cannot run /bin/true for
+      // another reason is a broken root, and a second executor would only
+      // report it twice.
+      const said = String((e as Error).message ?? e)
+      const builder = opts.builder ?? (await builderExists(containerBuilderFor(record.platform))
+        ? containerBuilderFor(record.platform)
+        : undefined)
+      if (!/exec format error/i.test(said) || builder === undefined) throw e
+      const layout = await extractLayout(record.archivePath, join(outDir(opts.board), 'factory-root.layout'))
+      log(`os/verify smoke: this host cannot execute ${record.platform}; executing inside buildkit on builder '${builder}' (${layout})`)
+      exec = buildkitExec({ ref: record.ref, layout, builder, platform: record.platform })
+      await preflight(exec, record.platform)
+    }
   }
 
   const results: SmokeResult[] = []

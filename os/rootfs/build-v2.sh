@@ -548,49 +548,45 @@ else
         UENV_SIZE_HEX "$(printf '0x%x' "$UENV_SIZE_BYTES")"
 fi
 
-# The builder is named, and it has to be a `docker` driver one. This is a
-# chain: os/rootfs/stages/ holds one Dockerfile per stage, and every stage
-# after the first opens `FROM ${MOS_STAGE_PREV}`, a local image tag the
-# previous stage was written to. Resolving that needs a builder whose driver
-# can read the docker image store, and only the `docker` driver can. Measured
-# on this host: a docker-container builder handed a tag that is in the store
-# answered "pull access denied, repository does not exist", about a registry,
-# for an image that is right there.
-
-# So the builder is chosen explicitly rather than inherited. `default` is the
-# docker driver on every docker installation; BUILDX_BUILDER still wins,
-# because a caller who names a builder has made a decision, and the driver
-# checks whatever it is handed and refuses by name. Empty means "whatever
-# docker considers current", which is what BUILDX_BUILDER sets.
-
-# The cost, stated rather than absorbed: what stood here created a
-# docker-container builder when the current one could not reach the target
-# platform -- its buildkit image bundles QEMU, so an amd64 host could build
-# cx3576's arm64 with no host binfmt at all, and
-# .github/workflows/privileged.yml relies on exactly that. That route cannot
-# carry a chain, so a cross build now needs host binfmt_misc, and this says so
-# with the command rather than failing later inside buildkit.
-BUILDER_ARGS=()
+# The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
+# register as os/pkgs/rauc/build.sh and os/pkgs/podman/build.sh, and the same
+# selection. BUILDX_BUILDER wins, because a caller who names a builder has made
+# a decision. With nothing named, `default` is the docker driver on every
+# docker installation, and it reaches linux/${MOS_ARCH} exactly when the host
+# has binfmt registered for it. When it does not, the `mos-${MOS_ARCH}`
+# docker-container builder is used, whose buildkit image bundles the
+# emulators and needs no host registration.
+#
+# What changed, and why it used to refuse here. The chain is one Dockerfile
+# per stage, each after the first `FROM ${MOS_STAGE_PREV}`; on the docker
+# driver that is a tag in the image store, which a docker-container builder
+# cannot read (measured: "pull access denied", about an image that is right
+# there). So for a while a cross build needed host binfmt and this script said
+# so with the `tonistiigi/binfmt` command. The driver now chains by OCI layout
+# on any builder that is not the docker driver -- each stage exported
+# `type=oci,tar=false` under _out/<board>/stages/ and handed to the next as a
+# named build context -- and os/build/src/stages-cli.ts decides which mode from
+# the builder's driver. Nothing here needs to know; it only has to name a
+# builder that can execute the platform.
 if [ -n "${BUILDX_BUILDER:-}" ]; then
-    echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER}); os/verify checks that it can chain"
+    echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER})"
+    BUILDER="${BUILDX_BUILDER}"
 else
-    BUILDER_ARGS=(--builder default)
     # `grep -c ... >/dev/null`, not `grep -q`: this file sets pipefail, and a
     # -q grep exits as soon as it matches, so the producer dies of SIGPIPE and
-    # the pipeline reports failure exactly when the platform IS present. The
-    # line this replaced used the -c form for the same reason;
-    # os/tests/shell-pipefail-lint.sh caught the regression.
-    if ! docker buildx inspect default 2>/dev/null | grep -c "${DOCKER_PLATFORM}" >/dev/null; then
-        echo "error: the 'default' buildx builder cannot reach ${DOCKER_PLATFORM}." >&2
-        echo "       Its platforms are: $(docker buildx inspect default 2>/dev/null | sed -n 's/^Platforms:[[:space:]]*//p')" >&2
-        echo "       Install ${MOS_ARCH} emulation on the host:" >&2
-        echo "         docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH}" >&2
-        echo "       A docker-container builder would bundle QEMU and would ALSO not work here: the" >&2
-        echo "       stage chain resolves FROM against the local image store, which that driver" >&2
-        echo "       cannot read. os/rootfs/stages/README.md records the measurement." >&2
-        exit 1
+    # the pipeline reports failure exactly when the platform IS present.
+    # os/tests/shell-pipefail-lint.sh caught the regression once already.
+    default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
+    if printf '%s\n' "${default_platforms}" | grep -c "${DOCKER_PLATFORM}" >/dev/null; then
+        BUILDER=default
+    else
+        BUILDER="mos-${MOS_ARCH}"
+        echo "note: the 'default' builder cannot reach ${DOCKER_PLATFORM} on this host; using the docker-container builder '${BUILDER}', which bundles its own emulator, and chaining the stages by OCI layout"
+        docker buildx inspect "${BUILDER}" >/dev/null 2>&1 ||
+            docker buildx create --name "${BUILDER}" --driver docker-container >/dev/null
     fi
 fi
+BUILDER_ARGS=(--builder "${BUILDER}")
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
@@ -674,8 +670,10 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --source-date-epoch "$SQUASHFS_TIME" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2
-        echo "hint: ${MOS_ARCH} emulation is missing on this host. Install it with:" >&2
-        echo "  docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH}" >&2
+        echo "hint: the builder '${BUILDER}' could not execute ${DOCKER_PLATFORM}. On the default builder that means" >&2
+        echo "      ${MOS_ARCH} emulation is not registered on this host (docker run --privileged --rm" >&2
+        echo "      tonistiigi/binfmt --install ${MOS_ARCH}); on a docker-container builder, that a stage's" >&2
+        echo "      base was resolved at the wrong architecture -- docs/design/build-harness.md section 5.1." >&2
     fi
     exit 1
 fi
@@ -805,9 +803,11 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # with the runner's own status, and a non-zero status here ends the build
 # before $OUT_DIR is handed on. It adds no dependency this script did not
 # already have: run.sh --smoke needs docker, which this script has needed since
-# the first buildx line, and it needs to execute the target platform, which for
-# cx3576 means the same host binfmt the refusal at the top of this script
-# already requires in order to build at all.
+# the first buildx line, and it needs to execute the target platform. When the
+# daemon cannot, the runner executes inside the builder named here -- the one
+# that just built the root, so it can execute what it built -- through one
+# throwaway build per artifact. Same register, same judging, and the runner
+# says which executor it used.
 echo
 echo "=== smoke: executing the self-built binaries inside the root just packed ==="
-MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/verify/run.sh" --smoke --board "$MOS_BOARD"
+MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/verify/run.sh" --smoke --board "$MOS_BOARD" --builder "${BUILDER}"

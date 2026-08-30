@@ -461,61 +461,64 @@ closing the root and packing it are one operation with one output, and nothing
 can ever be inserted between them. A stage boundary nothing can be inserted at
 costs a reader a hop and buys nothing.
 
-## The builder must resolve local tags — measured
+## Two ways to link the chain — measured
 
-The chain resolves `FROM ${MOS_STAGE_PREV}` against the **local docker image
-store**, so it must be built by a builder whose driver can read that store. The
-default `docker` driver can. A `docker-container` builder **cannot**, and does
-not say so usefully; driven on this host it reports
+The chain's `FROM ${MOS_STAGE_PREV}` is resolved one of two ways, and the
+driver picks by the builder's driver (`chainMode` in
+`os/build/src/stages-cli.ts`), before the first stage rather than mid-build.
+
+**Tag mode, on the `docker` driver.** Each stage is `-t <tag> --load`ed into
+the daemon's image store and the next stage's `FROM` finds it there. The
+`docker` driver executes a foreign architecture only through the host's
+`binfmt_misc`, so tag mode is what native builds take, and cross builds on a
+host that has registered the emulator.
+
+**Layout mode, on every other driver.** A `docker-container` builder has a
+content store of its own and cannot read a tag in the daemon's; handed one it
+reports
 
 ```
 ERROR: failed to solve: mos-probe:a: failed to resolve source metadata for
 docker.io/library/mos-probe:a: pull access denied, repository does not exist
 ```
 
-— a message about a registry, for an image that is right there. The driver
-therefore checks the builder's driver up front and refuses by name, because
-that error arriving forty minutes into a build, pointing at Docker Hub, is a
-diagnosis nobody makes quickly.
+— a message about a registry, for an image that is right there. What it can
+take is an OCI layout as a named build context, and what it can write is one.
+So each non-terminal stage is exported instead of tagged —
+`--output type=oci,dest=<dest>/stages/<tag>,tar=false,name=<tag>` — and the
+next stage is handed that directory under the very tag its `FROM` says:
+`--build-context <tag>=oci-layout://<dest>/stages/<tag>`. Nothing is loaded
+into the daemon, and `<dest>/stages/` is emptied before the chain starts so a
+layout an earlier run left cannot be linked as this run's. The builder's
+buildkit image bundles QEMU, which is how an amd64 host with no `binfmt_misc`
+builds the cx3576 root at all.
 
-This matters for **cross-architecture builds and no other case**. A host that
-can build the target natively, or that has `binfmt_misc`, is unaffected.
+Measured on 2026-08-30, on a host where `docker run --platform linux/arm64
+alpine uname -m` answers `exec /bin/uname: exec format error`: two arm64
+stages chained this way on `mos-arm64`, the second reading a file the first
+had written and printing `stage-b sees: aarch64 on aarch64`.
 
-**`build-v2.sh` does not fall back — it refuses.** Creating a
-`docker-container` builder when the current one cannot reach the target platform
-is the obvious move and it cannot carry a chain, so the script names the
-`default` builder and stops with the `binfmt` command in the message:
+Layout mode costs a copy per stage: each layout is written out by the client
+and read back by the builder, so a root's worth of layers crosses the docker
+socket once per link. buildkit deduplicates blobs by digest on import, so the
+cost is time and disk under `_out/<board>/stages/`, never correctness.
 
-```
-error: the 'default' buildx builder cannot reach linux/arm64.
-       Its platforms are: linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/amd64/v4
-       Install arm64 emulation on the host:
-         docker run --privileged --rm tonistiigi/binfmt --install arm64
-```
+`build-v2.sh` selects the builder the way `os/pkgs/rauc/build.sh` and
+`os/pkgs/podman/build.sh` do: `BUILDX_BUILDER` when named, otherwise `default`
+when it reaches the platform, otherwise `mos-<arch>`, created on first use.
+The smoke run at the end of the build takes the same builder and, when the
+daemon cannot execute the root, executes the register inside it — one
+throwaway build per artifact (`buildkitExec` in `os/verify/src/smoke.ts`).
+Same register, same judging; the runner names the executor it used.
 
 ### What that costs cx3576
 
-This is a known and accepted cost of per-stage Dockerfiles chained by local tag.
-It is recorded rather than solved, because the alternatives each give up
-something that arrangement exists to keep:
-
-- **cx3576 CI waits on runner binfmt.** It cannot build arm64 until the runner
-  provides `binfmt_misc`; there is no arrangement of builders on a host without
-  it that produces a cx3576 image. `.github/workflows/privileged.yml` states the
-  requirement in its preflight header and marks it as analysed rather than
-  observed: no arm64-capable runner has run it.
-- **No registry in the build path.** Holding the stage tags in a local registry
-  would let a `docker-container` builder resolve `FROM ${MOS_STAGE_PREV}`, and
-  it is deliberately not done. The chain resolves stages by **local tag**, and
-  keeping it that way is part of the arrangement: a registry in the build path
-  is a daemon to run, a lifetime to manage and a network dependency in a build
-  that has none.
-
-The consequence to expect, so nobody reads it as a break: on a host without
-binfmt, `MOS_BOARD=cx3576` staging runs to completion — firmware, hwinit and
-board facts are all selected and staged — and then stops at the builder check.
-That is the refusal above, and it is the designed behaviour, not a failure to
-diagnose.
+A cx3576 root builds on any host with docker and buildx. There is no registry
+in the build path — the layouts are files under `_out/`, need nothing running
+and are gone with `rm -rf _out` — and no host registration to make first.
+`.github/workflows/privileged.yml` does not need runner binfmt for the chain
+either; what it still owes is a run on a runner at all, which no arm64 image
+build has had.
 
 ## The shell, the arguments, and the bind mount
 

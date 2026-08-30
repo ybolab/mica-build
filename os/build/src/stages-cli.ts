@@ -13,7 +13,7 @@
 // caller unchanged, because a driver that recomputed them would be a second
 // answer to a question build-v2.sh answers.
 
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -71,7 +71,9 @@ function usage(): string {
     '  --dest DIR       where the terminal stage exports. Required unless --plan',
     '  --platform P     linux/amd64, linux/arm64. Default: the host architecture',
     '  --context DIR    the docker build context. Default: the repository root',
-    '  --builder NAME   buildx builder. Default: whichever is current',
+    '  --builder NAME   buildx builder. Default: whichever is current. Its driver decides',
+    '                   how stages chain: by tag on the docker driver, by OCI layout',
+    '                   under <dest>/stages on any other (see chainMode)',
     '  --arg KEY=VALUE  a build argument, repeatable. Each is passed only to the',
     '                   stages that DECLARE it; one no stage declares is refused',
     '  --without NAME   leave out the <number>-feature-NAME stage, repeatable.',
@@ -231,53 +233,50 @@ export function parseDriver(inspectOutput: string): string | undefined {
   return undefined
 }
 
+/** How the chain is linked, decided by the builder's driver. */
+export type ChainMode = 'tags' | 'layouts'
+
 /**
- * Whether a driver can resolve `FROM <local tag>`, and what to say when it
- * cannot.
+ * Which way this driver can chain, or undefined when the driver is unknown.
  *
- * Measured, not read. On this host, a docker-container builder handed a tag
+ * Measured, not read. On this host a docker-container builder handed a tag
  * that is in the local image store answered
  *
  *   ERROR: failed to solve: mos-probe:a: failed to resolve source metadata for
  *   docker.io/library/mos-probe:a: pull access denied, repository does not
  *   exist or may require authorization
  *
- * -- a message about Docker Hub, for an image that is right there, arriving
- * after however long the stage before it took; the same two files on the
- * default `docker` driver chain fine. So it is decided up front and refused by
- * name. It bites on one case: os/rootfs/build-v2.sh falls back to a
- * docker-container builder precisely when the current builder cannot reach the
- * target platform, an amd64 host building cx3576's arm64 with no binfmt_misc.
+ * -- a message about Docker Hub, for an image that is right there -- while
+ * the same two files on the default `docker` driver chain fine. Only the
+ * `docker` driver reads the daemon's image store, so only it chains by tag.
+ * Every other driver has a content store of its own, and those take an OCI
+ * layout as a named build context: handed the previous stage that way, the
+ * same docker-container builder chained two arm64 stages on a host with no
+ * binfmt (2026-08-30). That is layout mode, and it is what lets
+ * os/rootfs/build-v2.sh use the emulator buildkit bundles instead of one the
+ * host has to register.
  */
-export function driverCanChain(driver: string | undefined): boolean {
-  return driver === 'docker'
+export function chainMode(driver: string | undefined): ChainMode | undefined {
+  if (driver === undefined) return undefined
+  return driver === 'docker' ? 'tags' : 'layouts'
 }
+
+/** Where layout mode keeps the stage layouts: beside the artifacts, per board. */
+export const LAYOUT_DIR_NAME = 'stages'
 
 function refuseUnreadable(builder: string | undefined, detail: string): string {
   return [
     `error: cannot read which driver the buildx builder ${builder ? `'${builder}'` : '(current)'} uses.`,
     `       ${detail}`,
-    '       The chain needs a `docker` driver builder -- every stage after the first starts FROM',
-    '       the local image tag the previous one was written to -- so this is decided before the',
-    '       first stage rather than discovered mid-build.',
+    '       The driver decides how the chain is linked -- by tag in the image store on the',
+    '       `docker` driver, by OCI layout on any other -- so this is decided before the first',
+    '       stage rather than discovered mid-build.',
     '       If this is the pinned-bun container route: that image is given the docker CLI and the',
     '       daemon socket, but `docker buildx` is a CLI PLUGIN and the plugin directory is not',
     '       mounted, so buildx is absent there. Run --build-rootfs on a host with bun.',
   ].join('\n')
 }
 
-function refuseDriver(builder: string | undefined, driver: string): string {
-  return [
-    `error: the buildx builder ${builder ? `'${builder}'` : '(current)'} uses the '${driver}' driver, which cannot resolve a local image tag in FROM.`,
-    '       Every stage after the first starts FROM the tag the previous one was written to,',
-    '       and that tag is in the docker image store, not in a registry. This driver looks in',
-    '       the registry and reports "pull access denied ... repository does not exist" for an',
-    '       image that is present -- measured, not inferred.',
-    '       Use the default `docker` driver. A cross-architecture build needs host binfmt_misc',
-    '       for that (docker run --privileged --rm tonistiigi/binfmt --install <arch>), or a',
-    '       local registry to hold the stage tags. os/rootfs/stages/README.md records this.',
-  ].join('\n')
-}
 
 async function run(
   argv: string[],
@@ -376,6 +375,22 @@ export async function main(argv: readonly string[]): Promise<number> {
   console.log(`os/rootfs: ${builds.length} stages for ${opts.board} (${opts.platform})`)
   console.log(lines.join('\n'))
 
+  // The mode comes from the builder's driver, for the plan as well as the
+  // build: a plan that printed tag-mode commands for a builder that will chain
+  // by layout would describe a build that cannot happen.
+  const probe = await inspectDriver(opts.builder)
+  if (probe.kind === 'unreadable') {
+    console.error(refuseUnreadable(opts.builder, probe.detail))
+    return 1
+  }
+  const mode = chainMode(probe.name)!
+  const layoutDir = mode === 'layouts' ? join(opts.dest ?? '<dest>', LAYOUT_DIR_NAME) : undefined
+  console.log(
+    mode === 'tags'
+      ? `os/rootfs: chain mode tags on builder ${opts.builder ?? '(current)'} (${probe.name} driver): each stage is a tag in the image store`
+      : `os/rootfs: chain mode layouts on builder ${opts.builder ?? '(current)'} (${probe.name} driver): each stage is an OCI layout under ${layoutDir}`,
+  )
+
   if (opts.planOnly) {
     for (const b of builds) {
       console.log(
@@ -386,6 +401,7 @@ export async function main(argv: readonly string[]): Promise<number> {
           dest: opts.dest ?? '<dest>',
           terminalTarget: opts.terminalTarget,
           noCache: opts.noCache,
+          layoutDir,
         }).join(' ')}`,
       )
     }
@@ -400,6 +416,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       dest: opts.dest ?? '<dest>',
       sourceDateEpoch: opts.sourceDateEpoch ?? '0',
       ociTarget: opts.ociTarget,
+      layoutDir,
     })
     console.log(
       `\n# ${builds[builds.length - 1]!.name} -- the factory root as an OCI image`
@@ -409,21 +426,19 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0
   }
 
-  const probe = await inspectDriver(opts.builder)
-  if (probe.kind === 'unreadable') {
-    console.error(refuseUnreadable(opts.builder, probe.detail))
-    return 1
-  }
-  if (!driverCanChain(probe.name)) {
-    console.error(refuseDriver(opts.builder, probe.name))
-    return 1
-  }
-
   if (!existsSync(opts.context)) {
     console.error(
       `error: the build context ${opts.context} does not exist. Every stage is built against it and docker would report the miss once per stage`,
     )
     return 1
+  }
+
+  // Layout mode starts from an empty directory: a layout left by an earlier
+  // run of a stage this run does not rebuild would otherwise be chained as if
+  // it were this run's, with nothing to say so.
+  if (layoutDir) {
+    rmSync(layoutDir, { recursive: true, force: true })
+    mkdirSync(layoutDir, { recursive: true })
   }
 
   for (const b of builds) {
@@ -438,6 +453,7 @@ export async function main(argv: readonly string[]): Promise<number> {
           dest: opts.dest,
           terminalTarget: opts.terminalTarget,
           noCache: opts.noCache,
+          layoutDir,
         }),
       ],
       `stage ${b.name}`,
@@ -458,6 +474,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     dest: opts.dest!,
     sourceDateEpoch: opts.sourceDateEpoch!,
     ociTarget: opts.ociTarget,
+    layoutDir,
   })
   console.log(`\n=== os/rootfs ${terminal.name} -> ${opts.ociTarget} (OCI) ===`)
   await run([dockerBin(), ...oci.argv], `${terminal.name} ${opts.ociTarget} export`, oci.env)

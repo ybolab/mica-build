@@ -43,6 +43,7 @@ import {
   type ExecResult,
   type SmokeResult,
 } from './smoke.ts'
+import { buildkitArgv, buildkitDockerfile, buildkitExec } from './smoke.ts'
 
 let SCRATCH = ''
 beforeAll(() => {
@@ -1077,5 +1078,58 @@ describe('smokeRun over the real register', () => {
     // Positive control on the same counter: with the register intact it moves.
     await smokeRun({ board: 'x64', artifacts: ARTIFACTS, exec: counting })
     expect(calls).toBeGreaterThan(0)
+  })
+})
+
+// the buildkit executor: the same register, executed inside a builder that
+// bundles its own emulator
+
+describe('buildkitExec -- the register executed inside buildkit', () => {
+  const ref = 'localhost/mos-factory-root:cx3576'
+  const opts = { ref, layout: '/out/cx3576/factory-root.layout', builder: 'mos-arm64', platform: 'linux/arm64' }
+
+  test('the Dockerfile runs the argv off the network and carries status, stdout and stderr out', () => {
+    const text = buildkitDockerfile(ref, ['/usr/bin/crun', '--version'])
+    expect(text).toContain(`FROM ${ref}`)
+    expect(text).toContain('--network=none')
+    expect(text).toContain("'/usr/bin/crun' '--version'")
+    expect(text).toContain('FROM scratch')
+  })
+
+  test('the build names the builder, the platform and the layout as the build context of the ref', () => {
+    const argv = buildkitArgv(opts, '/scratch/df', '/scratch/out')
+    expect(argv.slice(0, 3)).toEqual(['docker', 'buildx', 'build'])
+    expect(argv[argv.indexOf('--builder') + 1]).toBe('mos-arm64')
+    expect(argv[argv.indexOf('--platform') + 1]).toBe('linux/arm64')
+    expect(argv[argv.indexOf('--build-context') + 1]).toBe(`${ref}=oci-layout:///out/cx3576/factory-root.layout`)
+    expect(argv).toContain('--no-cache')
+    expect(argv[argv.indexOf('--output') + 1]).toBe('type=local,dest=/scratch/out')
+    expect(argv[argv.length - 1]).toBe('/scratch/df')
+  })
+
+  test('the executor reads the three files back; a build that fails is an executor that cannot run', async () => {
+    const scratchDir = mkdtempSync(join(REPO_ROOT, 'tmp', 'smoke-buildkit-'))
+    try {
+      const exec = buildkitExec({ ...opts, scratch: scratchDir }, async (argv) => {
+        const out = argv[argv.indexOf('--output') + 1]!.replace('type=local,dest=', '')
+        mkdirSync(out, { recursive: true })
+        writeFileSync(join(out, 'status'), '0\n')
+        writeFileSync(join(out, 'stdout'), 'crun version 1.2\n')
+        writeFileSync(join(out, 'stderr'), '')
+        return { status: 0, stdout: '', stderr: '' }
+      })
+      expect(await exec(['/usr/bin/crun', '--version'])).toEqual({ status: 0, stdout: 'crun version 1.2\n', stderr: '' })
+
+      const failing = buildkitExec({ ...opts, scratch: scratchDir }, async () => ({
+        status: 1,
+        stdout: '',
+        stderr: 'ERROR: failed to solve: process "/bin/sh -c ..." did not complete: exec format error',
+      }))
+      const r = await failing(['/bin/true'])
+      expect(r.status).toBe(255)
+      expect(r.stderr).toContain('exec format error')
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true })
+    }
   })
 })

@@ -20,6 +20,7 @@
   - `bus.md` — management/application boundary, package-enrolled `com.mos.Item1` applications, D-Bus policy and MQTT grammar
   - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
   - `build-harness.md` — how this repository's checks are run: the pinned bun container, the Rust gate's container and PATH, scratch that is not `/tmp`, arm64 build-vs-execute, and the docs gates
+  - `build.md` — the build guide: what a board build produces, the x64 and cx3576 sequences, which cx3576 steps cross-compile, emulate inside buildkit or need host binfmt, and how to read the build's refusals
 - `plan/` — PMA plans (numbered, with status index)
 - `task/` — PMA task tracking
 - `zh/` — Chinese documentation, written against the current version

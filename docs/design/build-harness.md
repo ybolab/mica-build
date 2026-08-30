@@ -224,6 +224,15 @@ No arm64 in either. Settle it with a throwaway build instead.
     #5 0.244 aarch64
     #5 DONE 11.3s
 
+**buildx on `mos-arm64` chains stages through OCI layouts.** *Measured
+2026-08-30.* Two throwaway stages, the second `FROM ${MOS_STAGE_PREV}`, built
+`--platform linux/arm64` on `mos-arm64` with the first exported
+`--output type=oci,dest=<dir>,tar=false,name=mos-probe:a` and handed to the
+second as `--build-context mos-probe:a=oci-layout://<dir>`: the second stage
+read the first's file and wrote `stage-b sees: aarch64 on aarch64`. That is
+the mechanism `os/build/src/stages-cli.ts` calls layout mode, and it is why
+the cx3576 rootfs chain no longer needs the daemon to execute arm64.
+
 **The daemon does not.** The same image, run rather than built:
 
     $ docker run --rm --platform linux/arm64 mos-arm64-probe uname -m

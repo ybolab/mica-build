@@ -413,6 +413,16 @@ export function planChain(stages: readonly StageFile[], opts: ChainOptions): Sta
 }
 
 /**
+ * Where one stage's OCI layout is written in layout mode: under `layoutDir`,
+ * named for the tag the next stage's `FROM ${MOS_STAGE_PREV}` will say, with
+ * the two characters a directory name cannot carry replaced -- the same
+ * spelling os/build-env/from.sh --contexts= uses for the builder images.
+ */
+export function layoutOf(layoutDir: string, tag: string): string {
+  return join(layoutDir, tag.replaceAll(/[:/]/g, '-'))
+}
+
+/**
  * The argv for one stage's `docker buildx build`, everything after the
  * subcommand. Built here rather than in the CLI so the exact command line is a
  * value a test can read -- the flags that decide where the image goes are the
@@ -437,6 +447,20 @@ export function buildArgv(
      * takes every other build's cache with it.
      */
     readonly noCache?: boolean
+    /**
+     * Layout mode: chain the stages through OCI layouts under this directory
+     * instead of through tags in the daemon's image store.
+     *
+     * A builder whose driver has its own content store -- docker-container,
+     * remote -- cannot resolve `FROM <local tag>`, but it takes an OCI layout
+     * as a named build context, and it can write one. So in this mode every
+     * non-terminal stage exports `type=oci,tar=false` under its own tag's
+     * name, and the next stage is handed that directory under the very tag
+     * its FROM names. Nothing is loaded into the daemon. Measured on
+     * 2026-08-30: two arm64 stages chained this way on the mos-arm64 builder
+     * on a host with no binfmt, which is the case the mode exists for.
+     */
+    readonly layoutDir?: string
   },
 ): string[] {
   const argv = ['buildx', 'build']
@@ -444,6 +468,9 @@ export function buildArgv(
   if (opts.builder) argv.push('--builder', opts.builder)
   argv.push('--platform', opts.platform, '-f', build.path)
   if (build.prevTag) argv.push('--build-arg', `${PREV_ARG}=${build.prevTag}`)
+  if (build.prevTag && opts.layoutDir) {
+    argv.push('--build-context', `${build.prevTag}=oci-layout://${layoutOf(opts.layoutDir, build.prevTag)}`)
+  }
   for (const [k, v] of Object.entries(build.buildArgs)) argv.push('--build-arg', `${k}=${v}`)
   if (build.terminal) {
     if (!opts.dest) {
@@ -457,6 +484,11 @@ export function buildArgv(
     }
     argv.push('--target', opts.terminalTarget ?? DEFAULT_TERMINAL_TARGET)
     argv.push('--output', `type=local,dest=${opts.dest}`)
+  } else if (opts.layoutDir) {
+    // `tar=false` writes the layout as a directory, which is the one shape
+    // `oci-layout://` takes; `name=` stamps the tag into its index so the
+    // context is the image the next FROM names and not an anonymous manifest.
+    argv.push('--output', `type=oci,dest=${layoutOf(opts.layoutDir, build.tag)},tar=false,name=${build.tag}`)
   } else {
     // --load, and not merely -t. With the docker driver -t already loads; with
     // any other it does not, and the next stage's FROM would resolve a tag that
@@ -535,6 +567,8 @@ export function ociExport(
     readonly sourceDateEpoch: string
     readonly builder?: string
     readonly ociTarget?: string
+    /** Layout mode, as for buildArgv: the predecessor arrives as an OCI layout. */
+    readonly layoutDir?: string
   },
 ): OciExport {
   if (!build.terminal) {
@@ -560,6 +594,9 @@ export function ociExport(
   if (opts.builder) argv.push('--builder', opts.builder)
   argv.push('--platform', opts.platform, '-f', build.path)
   if (build.prevTag) argv.push('--build-arg', `${PREV_ARG}=${build.prevTag}`)
+  if (build.prevTag && opts.layoutDir) {
+    argv.push('--build-context', `${build.prevTag}=oci-layout://${layoutOf(opts.layoutDir, build.prevTag)}`)
+  }
   for (const [k, v] of Object.entries(build.buildArgs)) argv.push('--build-arg', `${k}=${v}`)
   argv.push('--target', target, '--provenance=false', '--sbom=false')
   argv.push('--output', `type=oci,dest=${archive},name=${ref},rewrite-timestamp=true`)

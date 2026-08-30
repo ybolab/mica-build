@@ -4,6 +4,23 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## cx3576 builds on a host without binfmt (2026-08-30)
+
+The rootfs stage driver links its chain one of two ways, decided by the
+builder's driver: by tag in the daemon's image store on the `docker` driver,
+as before, or by OCI layout on any other -- each stage exported
+`type=oci,tar=false` under `_out/<board>/stages/` and handed to the next as a
+named build context under the tag its `FROM` names. A `docker-container`
+builder bundles its own emulator, so `os/rootfs/build-v2.sh` now selects
+`mos-<arch>` when `default` cannot reach the platform, the way the RAUC and
+podman builds already did, instead of refusing with the host binfmt command.
+The smoke run that closes the build follows: when the daemon cannot execute
+the root, every register entry runs inside that builder through one throwaway
+build per artifact, with the same register and the same judging. With that,
+every cx3576 step -- builder images, U-Boot, kernel, RAUC, podman, mosd, the
+rootfs, the image, its verification and the bundle -- builds on an amd64 host
+with docker and buildx and nothing registered on it.
+
 ## MQTT bridge hardened against its application peers (2026-08-30)
 
 A review of the decoupled bridge found it still treating its D-Bus peers as

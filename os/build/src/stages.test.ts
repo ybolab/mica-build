@@ -32,7 +32,7 @@ import {
   unusedArgs,
   type StageFile,
 } from './stages.ts'
-import { parseArgs, parseDriver, driverCanChain, dockerBin } from './stages-cli.ts'
+import { parseArgs, parseDriver, chainMode, dockerBin } from './stages-cli.ts'
 import { BOARDS_DIR } from './paths.ts'
 
 // A scratch directory of stage files. Under the repository's own _out/ rather
@@ -728,14 +728,16 @@ describe('the driver refuses a builder that cannot chain', () => {
     }
   })
 
-  test('only the docker driver can resolve a local tag in FROM', () => {
+  test('the docker driver chains by tag; a driver with its own store chains by layout', () => {
     // Measured on 2026-08-25: a docker-container builder handed a tag that IS
     // in the local image store answered "pull access denied, repository does
-    // not exist" -- about Docker Hub, for an image that is right there.
-    expect(driverCanChain('docker')).toBe(true)
-    expect(driverCanChain('docker-container')).toBe(false)
-    expect(driverCanChain('remote')).toBe(false)
-    expect(driverCanChain(undefined)).toBe(false)
+    // not exist" -- about Docker Hub, for an image that is right there. And on
+    // 2026-08-30: the same builder, handed the previous stage as an OCI layout
+    // build context, chained two arm64 stages on a host with no binfmt.
+    expect(chainMode('docker')).toBe('tags')
+    expect(chainMode('docker-container')).toBe('layouts')
+    expect(chainMode('remote')).toBe('layouts')
+    expect(chainMode(undefined)).toBeUndefined()
   })
 })
 
@@ -993,5 +995,61 @@ describe('the chain this tree actually ships', () => {
     for (const a of ['BOARD_FIRMWARE_DIR', 'BOARD_HWINIT_DIR', 'BOARD_INIT_DIR', 'MODULES_TAR']) {
       expect(board.declaredArgs).toContain(a)
     }
+  })
+})
+
+describe('layout mode -- the chain on a builder that cannot read the image store', () => {
+  const dir = () =>
+    scratch({
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nRUN true\n`,
+      '20-install.Dockerfile': LINK,
+      '90-pack.Dockerfile': TERMINAL,
+    })
+  const opts = { context: '/repo', platform: 'linux/arm64', dest: '/out/cx3576', layoutDir: '/out/cx3576/stages' }
+  const plan = () => planChain(discoverStages(dir()), { board: 'cx3576', supplied: { TRIXIE: 'debian@sha256:aaa' } })
+
+  test('an intermediate stage exports an OCI layout named for its tag, and loads nothing', () => {
+    const argv = buildArgv(plan()[0]!, opts)
+    expect(argv[argv.indexOf('--output') + 1]).toBe(
+      'type=oci,dest=/out/cx3576/stages/mos-rootfs-stage-cx3576-10-base,tar=false,name=mos-rootfs-stage:cx3576-10-base',
+    )
+    expect(argv).not.toContain('--load')
+    expect(argv).not.toContain('-t')
+    expect(argv).not.toContain('--build-context')
+  })
+
+  test('a later stage takes its predecessor as an oci-layout build context, under the tag FROM names', () => {
+    const argv = buildArgv(plan()[1]!, opts)
+    expect(argv).toContain('--build-arg')
+    expect(argv[argv.indexOf('--build-arg') + 1]).toBe(`${PREV_ARG}=mos-rootfs-stage:cx3576-10-base`)
+    expect(argv[argv.indexOf('--build-context') + 1]).toBe(
+      'mos-rootfs-stage:cx3576-10-base=oci-layout:///out/cx3576/stages/mos-rootfs-stage-cx3576-10-base',
+    )
+    expect(argv[argv.indexOf('--output') + 1]).toBe(
+      'type=oci,dest=/out/cx3576/stages/mos-rootfs-stage-cx3576-20-install,tar=false,name=mos-rootfs-stage:cx3576-20-install',
+    )
+  })
+
+  test('the terminal stage still exports files, from the layout of its predecessor', () => {
+    const argv = buildArgv(plan()[2]!, opts)
+    expect(argv[argv.indexOf('--build-context') + 1]).toBe(
+      'mos-rootfs-stage:cx3576-20-install=oci-layout:///out/cx3576/stages/mos-rootfs-stage-cx3576-20-install',
+    )
+    expect(argv).toContain('type=local,dest=/out/cx3576')
+    expect(argv.filter((a) => a.startsWith('type=oci'))).toEqual([])
+  })
+
+  test('the factory-root export takes the same build context', () => {
+    const oci = ociExport(plan()[2]!, { ...opts, board: 'cx3576', sourceDateEpoch: '1700000000' })
+    expect(oci.argv[oci.argv.indexOf('--build-context') + 1]).toBe(
+      'mos-rootfs-stage:cx3576-20-install=oci-layout:///out/cx3576/stages/mos-rootfs-stage-cx3576-20-install',
+    )
+    expect(oci.argv.join(' ')).toContain('type=oci,dest=/out/cx3576/factory-root.oci,name=')
+  })
+
+  test('tag mode is what it was when no layout directory is given', () => {
+    const argv = buildArgv(plan()[1]!, { context: '/repo', platform: 'linux/arm64', dest: '/out/cx3576' })
+    expect(argv).not.toContain('--build-context')
+    expect(argv.slice(-4)).toEqual(['-t', 'mos-rootfs-stage:cx3576-20-install', '--load', '/repo'])
   })
 })

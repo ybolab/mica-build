@@ -27,23 +27,28 @@ the version it reports to equal the version pinned in this repository.
 
   --board NAME   which board's _out/<board>/factory-root.oci to smoke.
                  Defaults to MOS_BOARD, then to x64.
+  --builder NAME the buildx builder to execute inside when this host's daemon
+                 cannot execute the image's platform. Defaults to mos-<arch>
+                 when such a builder exists; with neither, the run refuses.
   --help         this.
 
 It refuses rather than skipping when the image is absent, when the register and
 the version pins disagree, and when this host cannot execute the image at all.
 `
 
-function parse(argv: readonly string[]): { board?: string; help: boolean } {
+function parse(argv: readonly string[]): { board?: string; builder?: string; help: boolean } {
   let board: string | undefined
+  let builder: string | undefined
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (arg === '--help' || arg === '-h') return { help: true }
-    if (arg === '--board') {
+    if (arg === '--board' || arg === '--builder') {
       const value = argv[i + 1]
       if (value === undefined || value.startsWith('-')) {
-        throw new Error(`--board needs a board name after it; got ${value === undefined ? 'nothing' : `'${value}'`}.`)
+        throw new Error(`${arg} needs a name after it; got ${value === undefined ? 'nothing' : `'${value}'`}.`)
       }
-      board = value
+      if (arg === '--board') board = value
+      else builder = value
       i += 1
       continue
     }
@@ -52,7 +57,7 @@ function parse(argv: readonly string[]): { board?: string; help: boolean } {
       + `something other than what was asked for.`,
     )
   }
-  return { board, help: false }
+  return { board, builder, help: false }
 }
 
 /** `PASS name  message`, at a width that keeps the messages aligned. */
@@ -84,7 +89,7 @@ export function wrap(text: string, width: number): string[] {
 }
 
 async function main(): Promise<number> {
-  let opts: { board?: string; help: boolean }
+  let opts: { board?: string; builder?: string; help: boolean }
   try {
     opts = parse(process.argv.slice(2))
   } catch (e) {
@@ -109,7 +114,7 @@ async function main(): Promise<number> {
 
   let run
   try {
-    run = await smokeRun({ board })
+    run = await smokeRun({ board, builder: opts.builder })
   } catch (e) {
     console.error(`error: ${(e as Error).message}`)
     return 1
