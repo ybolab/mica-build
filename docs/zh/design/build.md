@@ -241,12 +241,20 @@ sudo systemctl restart systemd-binfmt
 *2026-08-30 与 2026-08-31 在本机测得。* 第 3 节的 x64 序列按原样在一个 shell
 里跑通，主机为 amd64、docker 28、没有主机 binfmt。同一主机上
 `docker run --rm --platform linux/arm64 alpine:3.21 uname -m` 回答
-`exec /bin/uname: exec format error`。
+`exec /bin/uname: exec format error`。x64 镜像通过
+`bash os/verify/run.sh --verify --board x64` 292/292（22 项 skip，x64/grub），
+并构建了签名的 RAUC bundle。
 
 第 4 节的 cx3576 序列此后在同一台无 binfmt 的主机上端到端跑通，两天各一次，
 走的是 4.1 节的 layout 模式：rootfs 链在 `mos-arm64` builder 上构建、每级以
 OCI layout 交接；smoke 通过 buildkit 执行器运行打包根内的自建二进制，报告
 `11 pass, 1 executor-limited (crun), 0 fail`——crun 的 memfd 重执行是模拟器
 的已记录限制，作为独立判定而非通过上报；组装出的镜像通过
-`make os-verify-cx3576-v2` 394/394，并构建且回读验签了 RAUC bundle。全程无
+`make os-verify-cx3576-v2` 395/395，并构建且回读验签了 RAUC bundle。全程无
 tag 进入镜像存储，也未注册任何 binfmt。
+
+2026-08-31 之前那次报的 394 是还没有 `verity-hash-start-no-superblock`
+（见 `ro-root.md` 第 1 节）的检查表。两个数字都是绿的，但只有后一个说的是一个
+能启动的镜像：当天新增的这项检查读的是 `hash_start_block` 处到底是什么，而
+那些 394 绿过的镜像那里放的都是 verity 超级块。拿其中一个重跑，检查表会以
+FAIL 报出它读到的 magic。

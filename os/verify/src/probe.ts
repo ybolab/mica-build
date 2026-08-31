@@ -169,11 +169,20 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
       const hashStart = Number(env.get('VERITY_HASH_START_BLOCK') ?? Number.NaN)
       const hashBlock = Number(env.get('VERITY_HASH_BLOCK_SIZE') ?? Number.NaN)
       const file = await ctx.extract(label)
+      // The tree carries no superblock, so every parameter the walk needs comes
+      // out of this file. NaN for a key that is not there, which verityVerify
+      // refuses -- a defaulted block size would walk a different tree and report
+      // the difference as a payload that does not verify.
       const answer = await verityVerify(ctx.tools, {
         dataFile: file,
         hashFile: file,
         rootHash,
         hashOffset: hashStart * hashBlock,
+        hashAlgo: env.get('VERITY_HASH_ALGO') ?? '',
+        dataBlockSize: Number(env.get('VERITY_DATA_BLOCK_SIZE') ?? Number.NaN),
+        hashBlockSize: hashBlock,
+        dataBlocks: Number(env.get('VERITY_DATA_BLOCKS') ?? Number.NaN),
+        salt: env.get('VERITY_SALT') ?? '',
       })
       log(`   [veritysetup] ${label}: ${answer} against ${rootHash}`
         + ` (--hash-offset=${hashStart * hashBlock})`)

@@ -155,12 +155,15 @@ if [ -z "${BOARD_CMDLINE_ARGS:-}" ]; then
     exit 1
 fi
 
-# The verity superblock carries a UUID that veritysetup randomises by default,
-# which would make the image differ on every build. Pin it to the rootfs-a
-# partition GUID rather than inventing a new magic constant: it is already a
-# per-layout identifier from the layout env, and both slots hold the same
-# content so sharing one value across A and B is correct.
-VERITY_UUID=$(echo "$ROOTFS_A_GUID" | tr 'A-Z' 'a-z')
+# There is deliberately no VERITY_UUID here. The pack formats with
+# --no-superblock, because the cmdline this script writes below hands dm-init a
+# verity v1 table whose hash_start_block the kernel reads as the tree's top
+# level -- a superblock at that offset is what the kernel reports as a corrupt
+# metadata block. The UUID lived IN that superblock, so with the superblock gone
+# there is nothing left for a pinned UUID to pin, and veritysetup would take the
+# option and discard the value. Reproducibility is unaffected: the field that
+# used to be randomised no longer exists in the image at all.
+
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
 #
 # One instant, three consumers: this value is also what the driver is given as
@@ -692,7 +695,6 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         ${FEATURE_ARGS[@]+"${FEATURE_ARGS[@]}"} \
         --arg MOS_PROFILE="$MOS_PROFILE" \
         --arg VERITY_SALT="$VERITY_SALT" \
-        --arg VERITY_UUID="$VERITY_UUID" \
         --arg SQUASHFS_TIME="$SQUASHFS_TIME" \
         --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME" \
         --source-date-epoch "$SQUASHFS_TIME" 2>&1 | tee "$log"; then
