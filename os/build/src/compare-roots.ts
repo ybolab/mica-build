@@ -88,6 +88,26 @@ export interface Sanction {
   readonly classes: readonly DiffClass[]
   readonly status: SanctionStatus
   readonly reason: string
+  /**
+   * The EXACT difference this stanza allows, or undefined for a stanza that
+   * allows any difference in its classes.
+   *
+   * A sanction is otherwise a (pattern, class) pair, and that is too coarse for
+   * a `content` difference which is benign for a reason the pattern cannot
+   * express. Measured case: `/etc/passwd` differs between the two x64 roots
+   * only because two service accounts are created in the opposite order, which
+   * is an artefact of having two assembly paths and not a defect in either --
+   * but a bare `content` stanza over that path would equally cover an account
+   * VANISHING from the composed root, which is the failure the whole comparison
+   * exists to catch. With this set, the stanza covers the difference only when
+   * the two files differ in exactly this way and in no other, so an account
+   * disappearing, a third line moving, or a field changing inside a transposed
+   * line each produce a different canonical diff and each still FAIL.
+   *
+   * Held as the canonical diff text, newline-separated, without a trailing
+   * newline. `canonicalDiff` is what produces it and says what the form is.
+   */
+  readonly expectDiff?: string
   /** 1-based line of the stanza's heading, so a message can name it in an editor. */
   readonly line: number
 }
@@ -342,6 +362,9 @@ export function parseLedger(text: string, path: string): Sanction[] {
     )
   }
   const out: Sanction[] = []
+  // Filled by the block reader below and consumed by close(), keyed on the
+  // stanza's pattern because that is what close() has in hand.
+  const expectDiffs = new Map<string, string>()
   let current: { pattern: string, line: number, keys: Map<string, string> } | undefined
   const close = () => {
     if (current === undefined) return
@@ -370,6 +393,28 @@ export function parseLedger(text: string, path: string): Sanction[] {
     if (statusRaw !== 'active' && statusRaw !== 'pending') {
       throw new LedgerError(`${path}:${line}: stanza '${pattern}' has status '${statusRaw}'; it is 'active' or 'pending'`)
     }
+    // `expect-diff` narrows a sanction from "any content difference at this
+    // path" to one exact difference, so it is only meaningful where there are
+    // two files to compare. A stanza that carried it alongside `added` would be
+    // asking for the diff of a file against nothing, and the natural reading of
+    // that -- silently ignore it for the other classes -- is a stanza whose
+    // author believed they had narrowed something they had not.
+    const expectDiff = expectDiffs.get(pattern)
+    if (expectDiff !== undefined && !(classes.length === 1 && classes[0] === 'content')) {
+      throw new LedgerError(
+        `${path}:${line}: stanza '${pattern}' carries 'expect-diff:' and classes '${classes.join(', ')}'. `
+        + `An expected difference is the diff of two files, so it belongs to a stanza whose only class is `
+        + `'content'; on any other class there is nothing to diff and the narrowing would silently not apply.`,
+      )
+    }
+    if (expectDiff !== undefined && expectDiff === '') {
+      throw new LedgerError(
+        `${path}:${line}: stanza '${pattern}' opens 'expect-diff: |' and its block is empty. An empty `
+        + `expected diff matches only two byte-identical files, which are not a difference at all, so this `
+        + `stanza could never cover anything -- and the unused-sanction rule would report it as stale `
+        + `rather than as unwritten.`,
+      )
+    }
     if (out.some(s => s.pattern === pattern)) {
       throw new LedgerError(
         `${path}:${line}: '${pattern}' is sanctioned twice. Two stanzas for one pattern means one of them `
@@ -377,7 +422,7 @@ export function parseLedger(text: string, path: string): Sanction[] {
         + `then fire on a sanction that is doing no harm -- or not fire on one that is.`,
       )
     }
-    out.push({ pattern, classes: classes as DiffClass[], status: statusRaw, reason, line })
+    out.push({ pattern, classes: classes as DiffClass[], status: statusRaw, reason, expectDiff, line })
   }
   for (let i = start + 1; i < lines.length; i += 1) {
     const line = lines[i] ?? ''
@@ -392,18 +437,57 @@ export function parseLedger(text: string, path: string): Sanction[] {
       current = { pattern, line: i + 1, keys: new Map() }
       continue
     }
-    const m = /^- ([a-z]+):[ \t]*(.*)$/.exec(line)
+    const m = /^- ([a-z]+(?:-[a-z]+)*):[ \t]*(.*)$/.exec(line)
     if (m === null) continue
     const key = m[1] as string
     const value = (m[2] as string).trim()
     if (current === undefined) {
       throw new LedgerError(`${path}:${i + 1}: '- ${key}:' appears before any '### <pattern>' stanza heading`)
     }
+    // THE ONE MULTI-LINE VALUE. `- expect-diff: |` opens a block whose lines are
+    // indented by exactly four spaces and are taken VERBATIM, which is what lets
+    // a stanza carry a diff rather than a description of one. The block ends at
+    // the first line that is not so indented, and that line is re-read as an
+    // ordinary key, so `- reason:` may follow it.
+    if (key === 'expect-diff') {
+      if (value !== '|') {
+        throw new LedgerError(
+          `${path}:${i + 1}: stanza '${current.pattern}' writes 'expect-diff: ${value}'. It takes a block `
+          + `and only a block: 'expect-diff: |' followed by the diff, each line indented four spaces. One `
+          + `spelling, because a diff squeezed onto the key's own line could not hold two lines of it.`,
+        )
+      }
+      if (expectDiffs.has(current.pattern)) {
+        throw new LedgerError(`${path}:${i + 1}: stanza '${current.pattern}' repeats 'expect-diff:'`)
+      }
+      const body: string[] = []
+      let j = i + 1
+      for (; j < lines.length; j += 1) {
+        const raw = lines[j] as string
+        if (!raw.startsWith('    ')) break
+        body.push(raw.slice(4))
+      }
+      // Refused rather than tolerated: a mis-indented continuation line would
+      // end the block early, and the stanza would then hold a PREFIX of the
+      // diff it was meant to carry -- narrower than intended, matching nothing,
+      // and reported as a stale sanction rather than as a typo.
+      const next = lines[j]
+      if (next !== undefined && next.trim() !== '' && !next.startsWith('- ') && !next.startsWith('#')) {
+        throw new LedgerError(
+          `${path}:${j + 1}: stanza '${current.pattern}' has an 'expect-diff:' block followed by `
+          + `'${next}', which is neither another '- key:' line, a heading, nor a blank line. A line that `
+          + `is not indented four spaces ends the block, so this would silently truncate the expected diff.`,
+        )
+      }
+      expectDiffs.set(current.pattern, body.join('\n'))
+      i = j - 1
+      continue
+    }
     if (key !== 'classes' && key !== 'status' && key !== 'reason') {
       throw new LedgerError(
         `${path}:${i + 1}: stanza '${current.pattern}' carries the unknown key '${key}'. A key this parser `
         + `does not read is a condition the author believed they had written down. The keys are: `
-        + `classes, status, reason.`,
+        + `classes, status, reason, expect-diff.`,
       )
     }
     if (current.keys.has(key)) throw new LedgerError(`${path}:${i + 1}: stanza '${current.pattern}' repeats '${key}:'`)
@@ -419,6 +503,45 @@ export function sanctionMatches(s: Sanction, d: Difference): boolean {
   return new Bun.Glob(s.pattern).match(d.path)
 }
 
+/**
+ * The canonical form of "how these two text files differ", for `expect-diff`.
+ *
+ * POSITIONAL, line by line, and deliberately not an LCS diff. For each 1-based
+ * line number where the two sides are not byte-equal, one `-` row for A and one
+ * `+` row for B, in line order, with an absent line rendered as `(no line)`:
+ *
+ *   24 -mos-mqttd:x:970:970:...
+ *   24 +mos-mqtt-broker:x:969:969:...
+ *
+ * Why not `diff(1)` or a real alignment: an alignment algorithm is a second
+ * thing that can change under this check -- two versions of diff can describe
+ * one difference two ways, and then a stanza written against one of them
+ * silently stops matching. A positional comparison has exactly one answer for
+ * any pair of files, needs no external program (this module already refuses a
+ * host with no getcap; it should not also require a diff), and is strictly
+ * exact: any change to either file that the sanctioned one does not have
+ * produces different rows.
+ *
+ * It is not compact for large edits, and that is the right trade. The compact
+ * cases are the ones worth sanctioning -- a transposition touches two line
+ * numbers -- while an account vanishing shifts every following line and yields
+ * a large form that no stanza will match, which is the outcome that case needs.
+ */
+export function canonicalDiff(aText: string, bText: string): string {
+  const aLines = aText.split('\n')
+  const bLines = bText.split('\n')
+  const rows: string[] = []
+  const n = Math.max(aLines.length, bLines.length)
+  for (let i = 0; i < n; i += 1) {
+    const x = aLines[i]
+    const y = bLines[i]
+    if (x === y) continue
+    rows.push(`${i + 1} -${x ?? '(no line)'}`)
+    rows.push(`${i + 1} +${y ?? '(no line)'}`)
+  }
+  return rows.join('\n')
+}
+
 // --- the comparison itself -------------------------------------------------
 
 export interface CompareCounts {
@@ -432,6 +555,14 @@ export interface CompareCounts {
   readonly unsanctioned: number
 }
 
+/** A stanza whose expected diff no longer describes the difference at its path. */
+export interface DiffMismatch {
+  readonly path: string
+  readonly sanction: Sanction
+  readonly expected: string
+  readonly actual: string
+}
+
 export interface CompareResult {
   readonly a: string
   readonly b: string
@@ -441,6 +572,8 @@ export interface CompareResult {
   readonly unsanctioned: readonly Difference[]
   /** Active stanzas that matched nothing: stale sanctions, and a failure. */
   readonly unused: readonly Sanction[]
+  /** Narrowed stanzas whose expected diff did not match what the two roots hold. */
+  readonly diffMismatches: readonly DiffMismatch[]
   /** Pending stanzas that DID match: the difference they describe has arrived, and they must be promoted. */
   readonly livePending: readonly Sanction[]
   /** 0 when the ledger accounts for the tree exactly; 1 when it does not. Refusals throw instead. */
@@ -523,10 +656,47 @@ export function compareRoots(opts: CompareOptions): CompareResult {
   const differences = diffTrees(a.tree, b.tree)
   const matchedBy = new Map<Sanction, number>(sanctions.map(s => [s, 0]))
   const unsanctioned: Difference[] = []
+  const diffMismatches: DiffMismatch[] = []
+  // Read once per path, however many stanzas ask about it, and only for paths a
+  // stanza with an expected diff actually matches -- so a root of 9,000 files
+  // costs nothing unless something is being narrowed.
+  const canonicalCache = new Map<string, string>()
+  const canonicalFor = (path: string): string => {
+    const hit = canonicalCache.get(path)
+    if (hit !== undefined) return hit
+    const text = canonicalDiff(
+      readFileSync(join(realA, path.slice(1)), 'utf8'),
+      readFileSync(join(realB, path.slice(1)), 'utf8'),
+    )
+    canonicalCache.set(path, text)
+    return text
+  }
   for (const d of differences) {
     let covered = false
     for (const s of sanctions) {
       if (!sanctionMatches(s, d)) continue
+      // THE NARROWING. A stanza with an expected diff covers this difference
+      // only if the two files differ in exactly that way. It is NOT counted as
+      // matched when the diff disagrees: a stanza whose expected difference has
+      // stopped being the real one is a stanza describing something that is no
+      // longer there, which is what the unused-sanction rule exists to report.
+      if (s.expectDiff !== undefined) {
+        let actual: string
+        try {
+          actual = canonicalFor(d.path)
+        } catch (cause) {
+          throw new CompareRefusal(
+            `${opts.ledgerPath}:${s.line}: stanza '${s.pattern}' carries an expected diff for ${d.path}, `
+            + `and that path could not be read on both sides to compare against it: ${String(cause)}. `
+            + `A narrowed sanction that cannot read its own subject must not fall back to covering `
+            + `everything at that path.`,
+          )
+        }
+        if (actual !== s.expectDiff) {
+          diffMismatches.push({ path: d.path, sanction: s, expected: s.expectDiff, actual })
+          continue
+        }
+      }
       matchedBy.set(s, (matchedBy.get(s) ?? 0) + 1)
       // A pending stanza is a sanction that has been WRITTEN but is not yet in
       // force, so it is counted (its stanza is reported as live) and does not
@@ -555,6 +725,7 @@ export function compareRoots(opts: CompareOptions): CompareResult {
     sanctions,
     unsanctioned,
     unused,
+    diffMismatches,
     livePending,
     exitCode: unsanctioned.length === 0 && unused.length === 0 && livePending.length === 0 ? 0 : 1,
   }
@@ -589,6 +760,17 @@ export function formatReport(r: CompareResult): string {
   out.push('')
   for (const d of r.unsanctioned) {
     out.push(`UNSANCTIONED ${d.path} ${d.cls}: A=${d.a ?? '(absent)'} B=${d.b ?? '(absent)'}`)
+  }
+  for (const m of r.diffMismatches) {
+    const exp = m.expected.split('\n')
+    const act = m.actual.split('\n')
+    out.push(`EXPECTED DIFF MISMATCH ${r.ledgerPath}:${m.sanction.line} '${m.sanction.pattern}' at ${m.path}`)
+    out.push(`  the stanza expects ${exp.length} row(s):`)
+    for (const l of exp.slice(0, 12)) out.push(`    ${l}`)
+    out.push(`  the two roots hold ${act.length} row(s):`)
+    for (const l of act.slice(0, 12)) out.push(`    ${l}`)
+    if (act.length > 12) out.push(`    ... ${act.length - 12} more`)
+    out.push('  A narrowed stanza covers its path ONLY for the diff it names, so this is unsanctioned.')
   }
   for (const s of r.unused) {
     out.push(
