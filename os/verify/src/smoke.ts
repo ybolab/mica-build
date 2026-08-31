@@ -783,19 +783,25 @@ export const EXEC_TIMEOUT_MS = 30_000
 /**
  * What `docker load` gets, as a function of what it has to ingest.
  *
- * A constant is the wrong SHAPE for this budget, which is why raising the 30s
- * one would have been the same defect postponed: what a load costs is the bytes
- * it reads, and `factory-root.txt` already records how many that is. Measured on
- * this host (docker 29.7.2, containerd image store) against a 250,083,328-byte
- * OCI archive: 20.3s for content never ingested before and 4.3s once the layers
- * are already content-addressed -- 12.3 MB/s, on a QUIET host. The 30s constant
- * was 1.5x that best case, and the campaign that reads this runs three builds at
- * once; a sibling's load was killed at 30s with docker's `Loaded image:` line
- * already in its output. The same measurement repeated while two siblings were
- * building took 48.2s for the same 250 MB -- 5.2 MB/s, past the old constant, so
- * the failure it produced is not a rare coincidence of timing.
+ * A constant is the wrong SHAPE for this budget, and raising the 30s one would
+ * have been the same defect postponed: what a load costs is the bytes it reads,
+ * and `factory-root.txt` already records how many that is.
  *
- * 1 MB/s is the quiet-host measurement divided by twelve -- the order of
+ * The 30s was EXEC_TIMEOUT_MS, shared with `crun --version`. It killed a
+ * COMPLETED load of the 250 MB factory root twice in one day, both times with
+ * docker's own success line in the captured output --
+ *   `docker load -i .../factory-root.oci exited 137: Loaded image: localhost/mos-factory-root:x64`
+ * -- and each time it cost a full gate run: the builds did not fail, the
+ * watchdog did. What makes that number indefensible is not that it is small but
+ * what it was sized against: the archive it killed loads in 2.1s against a warm
+ * daemon, so 30s looks like 14x of headroom, and host load alone crosses it.
+ * Measured here on the same host (docker 29.7.2, containerd image store), the
+ * same 250,083,328 bytes: 4.3s warm, 20.3s cold and quiet, and 48.2s cold while
+ * two sibling rootfs builds ran -- past the fuse, on the load this repository
+ * normally carries. A fuse sized for a warm daemon turns host load into a red
+ * build that names nothing about the cause.
+ *
+ * 1 MB/s is the quiet-host cold measurement divided by twelve -- the order of
  * magnitude a loaded host actually costs -- and, being a rate, it SCALES: a root that grows
  * to 1 GB gets four times the budget instead of re-acquiring this defect on the
  * day it grows. The floor covers the part that is not bytes (daemon round
