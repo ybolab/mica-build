@@ -105,6 +105,7 @@ to know that one of its packages was filed under arm64.
 | `radios` | `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
 | `board-x64` (`os/boards/x64/deb`) | `mos-board-x64` | `amd64` |
+| `board-cx3576` -- lives at `os/boards/cx3576/deb`, run through its own `render.sh` | `mos-board-cx3576` | `arm64` |
 
 ### `profile`
 
