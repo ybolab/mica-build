@@ -18,6 +18,7 @@ BOARDS := cx3576 x64
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
 	os-debs os-deb-preflight os-deb-package-gate \
+	os-rootfs-manifest-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -50,6 +51,7 @@ help:
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
+	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -344,6 +346,15 @@ os-deb-package-gate:
 # pattern was found. The rationale is at the top of the script.
 os-shell-pipefail-lint:
 	bash os/tests/shell-pipefail-lint.sh
+
+# os/rootfs/packages/resolve.sh over every board, profile, radio set and feature
+# set this repository supports, plus the reverse direction: every package a
+# producer declares has to be reachable by SOME legal resolution. That half is
+# the one nothing else can see -- a package no manifest can name is simply never
+# installed, and every check downstream of composition runs over the set that
+# WAS. No docker and no pool: this reads manifests and runs producers.sh.
+os-rootfs-manifest-test:
+	bash os/tests/rootfs-manifest-test.sh
 
 # Structural check on docs/README.md. It exists because the index is the one
 # thing no other check can reach: a document that is never listed there is not

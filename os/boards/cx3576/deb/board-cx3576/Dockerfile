@@ -2,8 +2,7 @@
 # check=skip=InvalidDefaultArgInFrom
 # The cx3576 board producer: the `mos-board-cx3576` package.
 #
-#   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/cx3576/deb/board-cx3576 --arch arm64
+#   bash os/build-env/deb/build.sh --producer board-cx3576 --arch arm64
 #
 # The BOARD_DIR-selected BSP inputs and the rendered configuration arrive as the
 # `bin` context, staged on the host by this producer's PREPARE hook, render.sh.

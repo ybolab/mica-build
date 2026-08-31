@@ -88,6 +88,20 @@ ARG MOS_ARCH=arm64
 COPY os/rootfs/initramfs/ /tmp/initramfs/
 ARG MODULES_TAR
 COPY ${MODULES_TAR} /tmp/modules.tar
+
+# The one argument in this file that is not a board fact. update-initramfs runs
+# in the RUN below and nowhere else in the chain, and initramfs-tools reads
+# SOURCE_DATE_EPOCH from the ENVIRONMENT rather than from a flag -- an ARG is
+# how a value reaches a RUN's environment, so the declaration has to be here.
+# os/rootfs/build-v2.sh passes the same instant it pins the squashfs to; a
+# second epoch would be a second answer to when this root was made.
+#
+# No default. An unset epoch is not a broken build, it is a working one whose
+# initrd carries the build clock and the build host's inode numbers into the
+# verity-covered root, so the value has to come from the caller and the script
+# refuses an empty one. The driver refuses an --arg no stage declares, which
+# makes this line and the one in build-v2.sh fail together rather than apart.
+ARG SOURCE_DATE_EPOCH
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/kernel-and-initramfs.sh
 

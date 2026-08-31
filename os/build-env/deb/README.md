@@ -294,9 +294,15 @@ Required in the environment; `pack.sh` fails by name if it is unset. There is
 no "now" default, because one would make every archive irreproducible while
 every build stayed green.
 
-It is a **clamp**, not an assignment: a payload file newer than the epoch is
-moved back to it, one older keeps its own mtime. Ownership is normalised to
-`root:root` and the archive is built with `dpkg-deb --build --root-owner-group`.
+Every payload mtime is **set** to it, not clamped to it. A clamp -- the
+Reproducible Builds convention, and what `dpkg-deb` does on its own -- would
+leave a file older than the epoch carrying its own mtime, and in this repository
+that mtime is a *checkout* time: buildkit's `COPY` preserves the source file's
+mtime exactly, so a payload copied out of the working tree carries the moment
+that clone was made rather than anything about the commit. The ruling, what the
+alternative would have cost and which constraint forced it are written at the
+decision site in `pack.sh`. Ownership is normalised to `root:root` and the
+archive is built with `dpkg-deb --build --root-owner-group`.
 
 ### The control template
 

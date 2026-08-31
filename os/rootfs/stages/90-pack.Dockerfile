@@ -42,8 +42,33 @@
 ARG MOS_STAGE_PREV
 ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
-# Close the device root: inventory, log capture, purge, report.
+# Close the device root: pin the account dates, inventory, log capture, purge,
+# report.
 FROM ${MOS_STAGE_PREV} AS closed
+
+# The shadow last-change day, pinned for every account.
+
+# That field is not content anyone chose: it is the BUILD DATE, leaking into a
+# signed root through Debian's own maintainer scripts. useradd stamps today
+# into it, and the accounts the distribution's postinsts create --
+# systemd-network, messagebus, systemd-resolve, sshd -- therefore carry the day
+# the image was built. Pinning it to the same epoch the mos accounts already use
+# makes the field a function of the tree again.
+
+# It is quieter than the two surfaces beside it and worse for being quiet. The
+# value is a DAY, so two builds in one session agree and every same-session test
+# passes; only builds straddling midnight differ. A gate that compares two roots
+# would go red at random, months from now, for a reason nobody would connect to
+# a calendar.
+
+# Here rather than in stages/10-base beside account-mos.sh, because this has to
+# run after the LAST apt transaction that can create an account -- the kernel
+# install in stages/40-board is the last of them -- and the three mos accounts
+# are pinned where they are created because nothing creates them but us. Before
+# the purge below, which is what takes the package manager away; `chage` itself
+# ships (90-pack's purge notes list it among the setgid binaries that stay).
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/account-pin-shadow-dates.sh
 
 # Package inventory. Split from the size measurement below because the package
 # manager is removed in between: dpkg-query needs /var/lib/dpkg, and TOTAL_MB
