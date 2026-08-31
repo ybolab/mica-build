@@ -4,11 +4,11 @@
 # This is the producer's PREPARE hook, named in os/boards/cx3576/deb/board-cx3576/producer.env
 # and run by the driver -- it is not an entry point and does not build anything:
 #
-#   [BOARD_DIR=...] bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/cx3576/deb/board-cx3576 --arch arm64
+#   [BOARD_DIR=...] bash os/build-env/deb/build.sh \
+#       --producer board-cx3576 --arch arm64
 #
 # The driver empties ${MOS_DEB_STAGE}, exports the hook environment
-# os/rootfs/packages-src/README.md documents, runs this script on the HOST
+# os/build-env/deb/README.md documents, runs this script on the HOST
 # before any container is started, and then hands the directory to the build as
 # the `bin` context.
 #
@@ -58,7 +58,7 @@ LAYOUT_ENV="${BOARD_ROOT}/board.env"
 # the driver has no stage to fill.
 STAGE="${MOS_DEB_STAGE:-}"
 [ -n "${STAGE}" ] ||
-    die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/rootfs/packages-src/build-deb.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/${MOS_BOARD}/deb/board-${MOS_BOARD} --arch arm64"
+    die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/build-env/deb/build.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/build-env/deb/build.sh --producer board-${MOS_BOARD} --arch arm64"
 [ -d "${STAGE}" ] ||
     die "MOS_DEB_STAGE=${STAGE} is not a directory"
 
