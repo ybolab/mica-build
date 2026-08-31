@@ -163,11 +163,36 @@ were opened rather than assumed:
   binary entry table, which glibc fills with `{dev, ino, ctime, size}` per
   shared library.
 
-**Two builds of the same configuration would differ on those two paths too.**
-They are the stage chain failing to be reproducible in two places, not a
-composition difference, and the composed-vs-chain gate will report them however
-faithful the composition is. They are recorded here so that whoever writes their
-stanzas writes the real reason -- or fixes the producers instead.
+Both are the stage chain failing to be reproducible, not composition
+differences, and the composed-vs-chain gate will report them however faithful
+the composition is. They are recorded here so that whoever writes their stanzas
+writes the real reason -- or fixes the producers instead.
+
+**INFERRED, not yet measured**, and marked as such: that two builds of the SAME
+configuration would also differ on these two paths follows from what the bytes
+are -- host inode numbers and a wall clock cannot repeat -- but the pair
+measured above differ in configuration as well, so the inference is one step
+past this evidence. A same-configuration measurement is queued; this paragraph
+is corrected to a measurement or withdrawn when it lands.
+
+### Why the archive grew while its content shrank
+
+The reduced root's `factory-root.oci` is 250,955,776 bytes against the full
+root's 250,955,264 -- 512 larger, one tar block, for a tree with two accounts
+removed. Not "probably padding":
+
+- The archive holds ONE gzip layer blob. Its declared size is 250,948,072 (full)
+  against 250,948,264 (reduced): the COMPRESSED layer is **192 bytes larger**
+  over a tree that is **501 bytes smaller** uncompressed (`/etc/passwd` -140,
+  `/etc/passwd-` -116, `/etc/shadow-` -54, the factory shadow -54, `/etc/group`
+  -40, `/etc/gshadow` -34, `/etc/group-` -29, `/etc/gshadow-` -22, the initrd
+  -12, aux-cache unchanged). gzip's output size is not monotone in its input's.
+- The `.oci` is a tar, which rounds every member up to 512 bytes. 250,948,072
+  needs 490,133 blocks; 250,948,264 needs 490,134. Every other member -- the
+  manifest at 567, the config at 412, `index.json` at 465, `oci-layout` at 30 --
+  is byte-identical in size on both sides.
+
+One extra block, and that is the whole 512.
 
 The four outcomes, each run against those two roots:
 
@@ -199,6 +224,56 @@ path, which is not the difference this gate exists to judge. Shipping them would
 pre-sanction two service accounts vanishing from the composed root, and the two
 non-reproducible paths besides -- three decisions nobody has taken, granted in
 advance by a file whose whole purpose is that such decisions are written down.
+
+### The queued measurement, and the prediction written before it
+
+Two more x64 roots are being built to close two gaps this pair leaves. Both
+predictions below are committed BEFORE the comparator runs against them, so that
+a met prediction is worth what a met prediction is worth.
+
+**Gap 1: only one of nine difference classes has been exercised on real
+material.** All ten records above are `content`. The class the switch-over
+actually rests on is `added` -- PLAN-036's two sanctioned differences are both
+additions -- and it has been proven by fixtures only. Build C declines the
+container engine, which is a real path payload and was confirmed to be one by
+reading the assembled root rather than the stage's name: `/usr/bin/podman`,
+`/usr/bin/crun`, `/usr/libexec/podman/{conmon,quadlet,netavark,aardvark-dns}`,
+`/usr/lib/systemd/system-generators/podman-system-generator`,
+`/etc/containers/systemd` and `/usr/sbin/nft` are all present in the full root.
+
+*Prediction, full vs containers-declined:* a difference set containing
+`removed` records for that payload and for the files of the apt packages the
+stage installs (nftables, libjson-c5, libsubid5, libseccomp2, libcap2,
+libglib2.0-0t64), plus the two non-reproducible paths; and, with the two
+arguments SWAPPED, the identical path set reported as `added` instead. That
+swap is the orientation trap this file's seam note warns about, demonstrated on
+real material rather than asserted.
+
+**Gap 2: the same-configuration claim above is an inference.** Build D repeats
+the full build with no `MOS_ROOTFS_WITHOUT` at all. It cannot be a byte-repeat
+of build A, because the tree has moved on by two commits and
+`os/pkgs/mosd/hack/build-target.sh` embeds `<commit>` at compile time -- which
+is itself what makes the experiment work, since it re-runs the stages that
+generate both non-reproducible files.
+
+*Prediction, build A vs build D:* exactly four `content` records and nothing
+else --
+
+1. `/usr/bin/mosd` and 2. `/usr/bin/apid`, the only two paths in the whole
+   9,234-path root that carry the commit string (found by grepping build A's
+   root for `cf2a07049c96`; same length, so the sizes are unchanged),
+3. `/boot/initrd.img-6.12.107+deb13-amd64`, and
+4. `/usr/share/factory/var/cache/ldconfig/aux-cache`,
+
+with `/usr/bin/mos-mqttd` and `/usr/bin/mos-mqtt-broker` byte-IDENTICAL -- they
+do not read that variable -- and with no added or removed path and no mode, uid,
+gid, symlink or capability difference anywhere. If 3 and 4 appear while their
+unpacked contents stay byte-identical, the inference above becomes a
+measurement: the configuration is the same, so nothing but the rebuild itself
+can explain them. If anything else appears it is a third non-reproducible
+surface and goes to L2 before it goes here. If instead the set comes back EMPTY,
+build D was a cache replay and proves nothing -- which is what will be reported,
+rather than a green dressed up as agreement.
 
 ## What an x64-only comparison does not cover
 
