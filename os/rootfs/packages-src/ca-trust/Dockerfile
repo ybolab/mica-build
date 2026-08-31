@@ -203,8 +203,26 @@ RUN set -eu; \
 # nothing has to run after it is unpacked -- update-ca-certificates already ran,
 # in the generation stage, which is the whole reason its tooling is not here.
 # The control archive therefore holds `control` and `md5sums` and nothing else.
+#
+# LC_ALL=C.UTF-8, and it is not decoration. One Mozilla anchor is named
+# `NetLock_Arany_=Class_Gold=_Fotanusitvany` with four accented letters, and
+# pack.sh's final assertion -- that the packed path set equals the staged one --
+# reads the two sides with different tools: `find -printf '%P'`, which writes
+# raw bytes, against `tar -tf`, which quotes anything `iswprint` calls
+# unprintable in the current locale. Unset, the locale is C, every byte above
+# 0x7f is unprintable, and that one path comes back as
+# `F\305\221tan\303\272s\303\255tv\303\241ny` -- a diff of one line, on a
+# payload that is byte-for-byte correct. This producer is the first with a
+# non-ASCII filename, so it is the first to meet it.
+#
+# Set HERE rather than fixed in the packer because os/build-env/ is read-only to
+# this workstream. The durable fix is `tar --quoting-style=literal` in pack.sh,
+# which does not depend on a locale being installed at all; C.utf8 is in the
+# mos-build-deb image, and if it ever stops being there glibc falls back to C
+# and this build fails on that same diff rather than quietly shipping something
+# else.
 RUN set -eu; \
-    pack.sh --root /stage --control /in/control/mos-ca-trust.control \
+    LC_ALL=C.UTF-8 pack.sh --root /stage --control /in/control/mos-ca-trust.control \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
 # The export stage, the shape os/pkgs/mosd/deb/mosd/Dockerfile ends in:
