@@ -1,6 +1,7 @@
 # PLAN-035 Build the cx3576 rootfs chain on a host without binfmt through buildkit
 
-- **status**: implementing
+- **status**: completed
+- **completedAt**: 2026-08-31
 - **createdAt**: 2026-08-30 12:10
 - **approvedAt**: 2026-08-30 16:19
 - **relatedTask**: [RFCT-272](../task/RFCT-272.md)
@@ -145,3 +146,14 @@ per-stage split the README records the reasons for.
 ## Annotations
 
 - 2026-08-30 16:19: the user replied "start generating the cx3576 image", which approves this plan as the way to produce it on this host.
+
+## Completion
+
+Delivered across 502b572 (layout-mode chaining, builder selection, buildkit
+smoke executor, docs) and 65ea58f (the executor-limited smoke verdict for
+crun's memfd re-exec under the emulated executor -- option A as ruled).
+Proven end to end twice on this binfmt-less host: the cx3576 rootfs chain in
+layout mode, smoke `11 pass, 1 executor-limited (crun)`, image verify
+394/394, RAUC bundle built and read back (2026-08-30 and 2026-08-31; the
+second run also carried the netavark netfilter kernel fix). Section 7 of
+docs/design/build.md now records the measurement in both languages.

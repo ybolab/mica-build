@@ -1,6 +1,7 @@
 # RFCT-272 Chain the rootfs stages through OCI layouts so cx3576 builds without host binfmt
 
-- **status**: in_progress
+- **status**: done
+- **completedAt**: 2026-08-31
 - **priority**: P1
 - **owner**: roy/mqtt-review-fixes-20260830
 - **createdAt**: 2026-08-30 12:10
@@ -47,6 +48,11 @@ Chaining the rootfs stages through OCI layouts on the container builder.
 - **blocks**: (none)
 
 ## Notes
+
+Completed: every acceptance item ran on this binfmt-less host; the smoke
+register reports crun as `executor-limited` (its memfd re-exec is the
+emulator's limit), a verdict added at 65ea58f under PLAN-035's option A.
+
 
 Feasibility measured on 2026-08-30: a two-stage probe chained through
 `--output type=oci,tar=false` and `--build-context ...=oci-layout://` on

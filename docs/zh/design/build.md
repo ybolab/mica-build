@@ -238,10 +238,15 @@ sudo systemctl restart systemd-binfmt
 
 ## 7. 验证
 
-*2026-08-30 在本机测得。* 第 3 节的 x64 序列按原样在一个 shell 里跑通，主机为
-amd64、docker 28、没有主机 binfmt。同一主机上
+*2026-08-30 与 2026-08-31 在本机测得。* 第 3 节的 x64 序列按原样在一个 shell
+里跑通，主机为 amd64、docker 28、没有主机 binfmt。同一主机上
 `docker run --rm --platform linux/arm64 alpine:3.21 uname -m` 回答
-`exec /bin/uname: exec format error`，而从构建容器内部无法注册模拟器，所以
-cx3576 的 rootfs 链没有在这里跑；第 4 节中交叉编译和 buildkit 内模拟的各行
-取自脚本自身的 builder 选择逻辑，以及 `build-harness.md` 第 5 节记录的
-2026-08-28 buildkit 实测。
+`exec /bin/uname: exec format error`。
+
+第 4 节的 cx3576 序列此后在同一台无 binfmt 的主机上端到端跑通，两天各一次，
+走的是 4.1 节的 layout 模式：rootfs 链在 `mos-arm64` builder 上构建、每级以
+OCI layout 交接；smoke 通过 buildkit 执行器运行打包根内的自建二进制，报告
+`11 pass, 1 executor-limited (crun), 0 fail`——crun 的 memfd 重执行是模拟器
+的已记录限制，作为独立判定而非通过上报；组装出的镜像通过
+`make os-verify-cx3576-v2` 394/394，并构建且回读验签了 RAUC bundle。全程无
+tag 进入镜像存储，也未注册任何 binfmt。

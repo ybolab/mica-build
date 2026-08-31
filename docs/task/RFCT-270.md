@@ -2,7 +2,7 @@
 
 - **status**: in_progress
 - **priority**: P1
-- **owner**: codex/rootfs-deb-packaging-20260830
+- **owner**: roy/plan036-bkd-campaign-20260830
 - **createdAt**: 2026-08-30 11:54
 - **plan**: [PLAN-036](../plan/PLAN-036.md)
 
