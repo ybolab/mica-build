@@ -163,12 +163,12 @@ fi
 VERITY_UUID=$(echo "$ROOTFS_A_GUID" | tr 'A-Z' 'a-z')
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
 #
-# One instant, two consumers: this value is also what the driver is given as
+# One instant, three consumers: this value is also what the driver is given as
 # --source-date-epoch, which buildkit stamps into the OCI export of the packed
-# root. Deliberately the same number and not two pinned constants -- the
-# squashfs and the OCI image are two encodings of one tree, and a second epoch
-# would be a second answer to "when was this root made" that nothing would
-# reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
+# root, and what stages/40-board runs update-initramfs under. Deliberately the
+# same number and not three pinned constants -- the squashfs, the OCI image and
+# the initrd are three encodings of one tree, and a second epoch would be a
+# second answer to "when was this root made" that nothing would reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
@@ -694,6 +694,7 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --arg VERITY_SALT="$VERITY_SALT" \
         --arg VERITY_UUID="$VERITY_UUID" \
         --arg SQUASHFS_TIME="$SQUASHFS_TIME" \
+        --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME" \
         --source-date-epoch "$SQUASHFS_TIME" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2
