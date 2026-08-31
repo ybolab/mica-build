@@ -17,6 +17,7 @@ import {
   byteCompare,
   compareRoots,
   DIFF_CLASSES,
+  type Difference,
   diffTrees,
   type Entry,
   extractOciRoot,
@@ -25,6 +26,7 @@ import {
   parseLedger,
   readFileCaps,
   readTree,
+  sanctionMatches,
   type Tree,
 } from './compare-roots.ts'
 import { makeWorkDir, SRC_DIR } from './paths.ts'
@@ -601,20 +603,68 @@ describe('the shipped ledger is self-consistent under its own rules', () => {
     }
   })
 
-  test('every shipped stanza is pending, so the unused-sanction rule cannot fail it', () => {
-    // The composed path does not exist yet, so no shipped stanza can match
-    // anything. An `active` one here would fail rule 2 on every run until the
-    // composer lands -- which is the tension the header explains.
+  // THIS TEST REPLACED ONE WHOSE PREMISE EXPIRED, and the premise is worth
+  // recording because it was correct when it was written: "every shipped stanza
+  // is pending, so the unused-sanction rule cannot fail it" -- true while the
+  // composed path did not exist, because an `active` stanza could match nothing
+  // and rule 2 would fail every run. The composer landed, the two
+  // `/usr/share/doc` stanzas were promoted with a measurement behind them, and
+  // a run against two real roots reported 0 unused sanctions. So that guard has
+  // done its job and cannot be restated; what a unit test can still hold is
+  // rule 3, which arrived with the same measurement.
+  test('no shipped stanza sanctions the class `removed`', () => {
+    // Rule 3. A removed path is one the CHAIN ships and no package owns, so a
+    // stanza there records the composed image missing a file the device needs
+    // and calls it accounted for. The first instance found was a cx3576
+    // serial-console drop-in reaching the image through a wholesale overlay
+    // copy that no package reproduces -- the file that makes serial login work.
+    // os/tests/dual-build-gate.sh refuses on the same condition; this is the
+    // half that does not need two roots to run.
     const stanzas = parseLedger(readFileSync(DEFAULT_LEDGER, 'utf8'), DEFAULT_LEDGER)
-    expect(stanzas.filter(s => s.status === 'active')).toEqual([])
+    expect(stanzas.length).toBeGreaterThan(0)
+    expect(stanzas.filter(s => s.classes.includes('removed')).map(s => s.pattern)).toEqual([])
   })
 
-  test('and the proof-material mqtt sanctions are NOT shipped in it', () => {
-    // They describe two builds of the same path, which is not the difference
-    // this gate judges. Shipping them would sanction a payload's disappearance
-    // from the composed root in advance.
-    const text = readFileSync(DEFAULT_LEDGER, 'utf8')
-    const stanzaText = text.slice(text.indexOf('\n## Sanctions'))
-    expect(stanzaText).not.toContain('mqtt')
+  test('and no shipped stanza covers a proof-material path', () => {
+    // The intent of the test this replaces, with an instrument that can carry
+    // it. That one asserted the Sanctions section does not contain the
+    // substring "mqtt", which was a proxy for "the proof-material stanzas are
+    // not shipped" -- and a proxy that fails on a legitimate stanza about
+    // /usr/bin/mos-mqttd, which is a BINARY and not one of the eight account
+    // files the proof material covered.
+    //
+    // The claim itself is unchanged and is what matters: no shipped stanza may
+    // cover a path from the proof material, because those describe two builds
+    // of the SAME path -- an mqtt-declined root against a full one -- which is
+    // not the difference this gate judges. Shipping one would pre-sanction a
+    // payload's disappearance from the composed root. The three L1 named as
+    // never-sanctionable are in the list for the same reason.
+    //
+    // Matched with sanctionMatches, the comparator's own matcher, over every
+    // class: a pattern test written here would be a second implementation of
+    // the globbing and could disagree with the one that judges real runs.
+    const stanzas = parseLedger(readFileSync(DEFAULT_LEDGER, 'utf8'), DEFAULT_LEDGER)
+    expect(stanzas.length).toBeGreaterThan(0)
+    const proofMaterial = [
+      '/etc/passwd', '/etc/passwd-',
+      '/etc/group', '/etc/group-',
+      '/etc/gshadow', '/etc/gshadow-',
+      '/etc/shadow-', '/usr/share/factory/etc/shadow',
+      '/boot/initrd.img-6.12.107+deb13-amd64',
+      '/usr/share/factory/var/cache/ldconfig/aux-cache',
+    ]
+    const covered: string[] = []
+    for (const path of proofMaterial) {
+      for (const cls of DIFF_CLASSES) {
+        const d: Difference = { path, cls, a: 'x', b: 'y' }
+        for (const st of stanzas) {
+          if (sanctionMatches(st, d)) covered.push(`${st.pattern} (${cls}) covers ${path}`)
+        }
+      }
+    }
+    expect(covered).toEqual([])
+    // Counted, so that a run in which the loop above examined nothing cannot
+    // reach the same green as one in which it examined everything.
+    expect(proofMaterial.length * DIFF_CLASSES.length).toBe(90)
   })
 })

@@ -172,24 +172,36 @@ COPY --from=closed / /rootfs/
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-cjk-guard.sh
 
-# No sshd host key ships. openssh-server's postinst generates a set at
-# install time, and on a signed rootfs that is one private key the whole fleet
-# shares; it is also random, so it would make the verity root hash differ on
-# every cold build. mos-seed-state generates a per-device set into STATE
-# instead (see overlay-v2/usr/lib/mos/mos-seed-state).
+# What the ASSEMBLY left behind, removed here because no package can own it.
 #
-# HERE, in the finalizer, because it is a statement about the assembled root
+# Two things today. sshd host keys: openssh-server's postinst generates a set at
+# install time, and on a signed rootfs that is one private key the whole fleet
+# shares; it is also random, so it would move the verity root hash on every cold
+# build. mos-seed-state generates a per-device set into STATE instead.
+# /usr/sbin/policy-rc.d: the Debian docker image ships it so that a maintainer
+# script cannot start a daemon during a build, and on a device it is a file that
+# answers 101 to every invoke-rc.d for a reason that stopped applying when the
+# image was packed.
+#
+# HERE, in the finalizer, because each is a statement about the assembled root
 # rather than about any one package -- which is the ruling
-# os/rootfs/packages-src/system/Dockerfile already records
+# os/rootfs/packages-src/system/Dockerfile already records for the first
 # ("`rm -f /etc/ssh/ssh_host_*` -> a whole-image finalizer step, not a
-# package"). stages/10-base makes the same removal immediately after installing
-# openssh-server and keeps it, so on the chain path this finds nothing and is a
-# tripwire; on the composition path openssh-server arrives through mos-system's
-# Depends inside one apt transaction and this is the removal itself. Both paths
-# reach it through this one file, which is what lets the dual-build gate read a
-# difference as a composition difference.
+# package"), and which is forced for the second: policy-rc.d comes with the BASE
+# IMAGE, so there is no producer in this repository that could ship or withhold
+# it.
+#
+# The two paths arrive with different residue and the script prints both counts,
+# so neither number can be vacuous on both sides at once. stages/10-base removes
+# the host keys right after installing openssh-server and keeps doing so, so on
+# the chain path that count is 0 and this is a tripwire while the policy-rc.d
+# count is 1 and this is the removal; on the composition path openssh-server
+# arrives through mos-system's Depends inside one apt transaction so the key
+# count is real, and compose-install.sh has already removed the policy-rc.d it
+# wrote, so that count is 0. Both paths reach this through one file, which is
+# what lets the dual-build gate read a difference as a composition difference.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/pack-ssh-host-keys.sh
+    sh /mos-scripts/pack-strip-build-residue.sh
 
 # Tree surgery that cannot happen in the rootfs stage, either because buildkit
 # bind-mounts the file during RUN or because it would break dpkg.

@@ -97,8 +97,15 @@ audit="$(dpkg --audit 2>&1)" ||
 #    an installed package looks the same however it got there.
 #
 # The candidate set is every package the POOL declares, read out of the index.
-sed -n 's/^Package: //p' "${POOL}/Packages" | LC_ALL=C sort -u >/tmp/pool.names
-POOL_NAMES_N="$(grep -c . /tmp/pool.names)"
+#
+# Written under /mos-compose and NOT under /tmp. /tmp is image content until the
+# finalizer replaces it, and the first version of this wrote /tmp/pool.names and
+# left it there: the dual-build gate reported the file as an `added` path, which
+# is how a build-time scratch file shipping inside a signed root gets noticed.
+# /mos-compose is removed wholesale at the end of this script, and the assertion
+# down there is what keeps /tmp empty for the next one.
+sed -n 's/^Package: //p' "${POOL}/Packages" | LC_ALL=C sort -u >/mos-compose/pool.names
+POOL_NAMES_N="$(grep -c . /mos-compose/pool.names)"
 [ "${POOL_NAMES_N}" -gt 0 ] ||
     fail "no package name could be read out of ${POOL}/Packages, so the check below would compare the installed set against nothing and pass"
 
@@ -113,7 +120,7 @@ while IFS= read -r p; do
     *" ${p} "*) ;;
     *) extra="${extra} ${p}" ;;
     esac
-done </tmp/pool.names
+done </mos-compose/pool.names
 [ -z "${extra}" ] ||
     fail "APT installed local package(s) that no manifest named:${extra}. Every one of them arrived through a Depends of something that WAS named, so the image carries a component this build did not select and nothing downstream can tell that from a deliberate choice. Either name it in os/rootfs/packages/ or fix the dependency that pulled it"
 
@@ -196,3 +203,14 @@ rm -f /usr/sbin/policy-rc.d /etc/apt/sources.list.d/mos-local.list
 rm -rf /mos-compose /var/lib/apt/lists/* /var/cache/apt/archives
 [ ! -e /usr/sbin/policy-rc.d ] ||
     fail "policy-rc.d survived; the image would refuse every invoke-rc.d on the device"
+
+# /tmp is IMAGE CONTENT until the finalizer replaces it, so a scratch file left
+# here ships in the signed root. This is not hypothetical: the first composed
+# root carried /tmp/pool.names, and the dual-build gate reported it as an
+# `added` path. The count is printed rather than the check being silent,
+# because "nothing was left" and "nothing was looked at" are the same output
+# otherwise.
+tmp_left="$(find /tmp -mindepth 1 | wc -l)"
+[ "${tmp_left}" -eq 0 ] ||
+    fail "${tmp_left} path(s) are left under /tmp after composition: $(find /tmp -mindepth 1 | tr '\n' ' '). /tmp is image content here, so each one would ship inside the signed root"
+echo "compose: /tmp is empty; no build-time scratch ships in the root"

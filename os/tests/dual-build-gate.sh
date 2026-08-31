@@ -273,10 +273,19 @@ echo "gate: orientation -- /${MARKER} present in B (${DIR_B}), absent from A (${
 strip_timestamps() {
     sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} //' "$1"
 }
+# LC_ALL=C ON BOTH SIDES OF THE SORT/JOIN SEAM. `join` refuses input its own
+# collation says is unordered, and it and `sort` do not agree unless both are
+# told which collation to use: run 2 died on
+#   join: composed-versions.txt:92: is not sorted: mosd 0.1.0+git498eeb824cda-1
+# over mos-rauc, mos-system, mosd, nftables, openssh-client -- which IS sorted
+# in C, where `-` (0x2D) precedes `d` (0x64). The file was ordered one way and
+# read another, and the gate died on a collation bug rather than on a
+# difference set.
 installed_versions() {
     awk '$3 == "status" && $4 == "installed" { split($5, a, ":"); v[a[1]] = $6 }
          END { for (k in v) printf "%s\t%s\n", k, v[k] }' "$1" | LC_ALL=C sort
 }
+export LC_ALL=C
 strip_timestamps "${WORK}/chain-dpkg.log" >"${WORK}/chain-dpkg.stripped"
 strip_timestamps "${WORK}/composed-dpkg.log" >"${WORK}/composed-dpkg.stripped"
 diff -u "${WORK}/chain-dpkg.stripped" "${WORK}/composed-dpkg.stripped" >"${WORK}/dpkg.diff" || true
@@ -287,7 +296,7 @@ CHAIN_PKGS="$(grep -c . "${WORK}/chain-versions.txt" || true)"
 COMPOSED_PKGS="$(grep -c . "${WORK}/composed-versions.txt" || true)"
 [ "${CHAIN_PKGS}" -gt 0 ] && [ "${COMPOSED_PKGS}" -gt 0 ] ||
     refuse "one of the two dpkg.log files yielded no configured package at all (chain ${CHAIN_PKGS}, composed ${COMPOSED_PKGS}). The drift control would then compare an empty set with anything and report no drift."
-join -t "$(printf '\t')" "${WORK}/chain-versions.txt" "${WORK}/composed-versions.txt" >"${WORK}/common-versions.txt"
+LC_ALL=C join -t "$(printf '\t')" "${WORK}/chain-versions.txt" "${WORK}/composed-versions.txt" >"${WORK}/common-versions.txt"
 COMMON_PKGS="$(grep -c . "${WORK}/common-versions.txt" || true)"
 [ "${COMMON_PKGS}" -gt 0 ] ||
     refuse "the two builds configured no package in common, which cannot be true of two Debian roots -- the drift control is reading the wrong thing."
@@ -306,6 +315,15 @@ echo
 COMPARE_RC=0
 bash "${REPO_ROOT}/os/build/run.sh" --compare-roots "${DIR_A}" "${DIR_B}" 2>&1 |
     tee "${WORK}/compare.txt" || COMPARE_RC=$?
+
+# A REFUSAL IS HANDLED HERE, before anything reads compare.txt for counts.
+# Exit 2 from the comparator means no comparison was made, so the file below
+# holds a refusal message and not a report -- and every count taken over it
+# would come back zero, which prints as "no differences" and reads as agreement.
+# That is the exact vacuity this gate exists to catch, and it would have been
+# in the gate.
+[ "${COMPARE_RC}" -lt 2 ] ||
+    refuse "the comparator exited ${COMPARE_RC}: it refused, so ${WORK}/compare.txt holds a refusal and not a difference set. Its message is above."
 
 # What the comparator says it was handed, checked against what this script
 # meant. The on-disk control above proves the two roots are the two roots; this
@@ -362,6 +380,25 @@ for pattern in "${STANZAS[@]}"; do
     done
 done
 
+# --- `removed` MAY NEVER BE SANCTIONED, and the ledger is checked for it -------
+#
+# L1's rule: an unsanctioned `removed` path means a file the CHAIN ships and no
+# package owns, and the fix is to give it an owner, not a stanza. A stanza there
+# would write down "the composed image is missing a file the device needs" and
+# call it accounted for -- which is the one thing the switch-over exists to
+# prevent. The first instance found was a cx3576 serial-console drop-in that
+# reaches the image through the board overlay and through no package.
+#
+# So the rule is enforced here rather than left to a reader: any stanza that
+# lists `removed` among its classes is refused, whatever path it names. Written
+# as a check because a convention nobody can violate is worth more than one
+# everybody agrees with.
+mapfile -t REMOVED_STANZAS < <(awk '/^## Sanctions$/ { f = 1; next }
+                                    f && /^### / { sub(/^### */, ""); gsub(/`/, ""); pat = $0; next }
+                                    f && /^- *classes:/ && /removed/ { print pat }' "${LEDGER}")
+[ "${#REMOVED_STANZAS[@]}" -eq 0 ] ||
+    refuse "${LEDGER} sanctions the class 'removed' for: ${REMOVED_STANZAS[*]}. A removed path is a file the chain ships that no package owns, and the fix is an OWNER, not a stanza -- a sanction there records the composed image missing something the device needs and calls it accounted for."
+
 REGRESSIONS=()
 for path in "${FORBIDDEN[@]}"; do
     # Anchored on the space either side so that /etc/shadow- cannot be found
@@ -386,6 +423,36 @@ BOUNDARY_LINES="$(printf '%s\n' "${BOUNDARY}" | grep -c .)"
 [ "${BOUNDARY_LINES}" -ge 20 ] ||
     refuse "${LEDGER} has no '## What an x64-only comparison does not cover' section, or it is ${BOUNDARY_LINES} lines long. That clause is what keeps a verdict from being read as covering cx3576, and a gate that prints it from an empty read prints nothing while looking as though it printed it."
 
+# --- the difference set, enumerated in full -----------------------------------
+#
+# The comparator prints only what the ledger did NOT account for, which is the
+# right report for a gate and the wrong one for a reader deciding whether the
+# ledger is honest. So the classes are counted here over its own output, and the
+# `removed` set -- the one class that may never be sanctioned, and therefore the
+# one that always appears in full -- is listed path by path.
+#
+# Counted rather than described: "no chain-only paths" and "nobody looked" are
+# the same sentence without a number.
+UNSANCTIONED_N="$(grep -c '^UNSANCTIONED ' "${WORK}/compare.txt" || true)"
+echo
+echo "=== difference set, by class (over the ${UNSANCTIONED_N} unsanctioned record(s)) ==="
+if [ "${UNSANCTIONED_N}" -gt 0 ]; then
+    grep '^UNSANCTIONED ' "${WORK}/compare.txt" | awk '{ sub(/:$/, "", $3); print $3 }' |
+        LC_ALL=C sort | uniq -c | sed 's/^/  /'
+else
+    echo "  (none)"
+fi
+REMOVED_N="$(grep -c ' removed: ' "${WORK}/compare.txt" || true)"
+echo
+echo "=== the chain-only class: ${REMOVED_N} path(s) the chain ships that no package owns ==="
+echo "    Each needs an OWNER, never a stanza. A file reaching the image through a"
+echo "    wholesale copy the composer does not make is the defect this gate exists for."
+if [ "${REMOVED_N}" -gt 0 ]; then
+    grep ' removed: ' "${WORK}/compare.txt" | sed 's/^UNSANCTIONED /  /'
+else
+    echo "  (none -- every path the chain ships has a package that installs it)"
+fi
+
 echo
 echo "================================ BOUNDARY ================================="
 printf '%s\n' "${BOUNDARY}"
@@ -400,7 +467,8 @@ echo "B (candidate):     ${DIR_B}   -- the composer,    ${PATHS_B} paths"
 echo "finalizer:         one definition, 90-pack content ${HASH_A} on both sides"
 echo "pool:              ${POOL}, ${POOL_N} package(s)"
 echo "drift control:     ${COMMON_PKGS} package(s) common to both builds, ${DRIFT_N} at differing versions"
-echo "ledger:            ${LEDGER}, ${#STANZAS[@]} stanza(s), none covering a forbidden path"
+echo "ledger:            ${LEDGER}, ${#STANZAS[@]} stanza(s), none covering a forbidden path, none sanctioning 'removed'"
+echo "chain-only class:  ${REMOVED_N} path(s) -- the number that has to reach zero by giving each an owner"
 echo "boundary clause:   printed above, ${BOUNDARY_LINES} lines from the ledger"
 sed -n '/^differences found:/,/^  unsanctioned:/p' "${WORK}/compare.txt" | sed 's/^/comparator:        /'
 echo "work directory:    ${WORK}"
@@ -429,9 +497,11 @@ if [ "${DRIFT_N}" -gt 0 ]; then
     exit 1
 fi
 
+# Only 0 and 1 can reach here: a refusal was turned into an exit 2 of this
+# script the moment it happened, above, rather than being carried this far.
 case "${COMPARE_RC}" in
 0) echo "RESULT: PASS (every difference sanctioned, every active sanction used, no drift)" ;;
 1) echo "RESULT: FAIL (the ledger does not account for the result; the comparator named each above)" ;;
-*) refuse "the comparator exited ${COMPARE_RC}: it refused, so no comparison was made." ;;
+*) refuse "the comparator exited ${COMPARE_RC} and reached the verdict, which cannot happen: the refusal check above should have taken it." ;;
 esac
 exit "${COMPARE_RC}"

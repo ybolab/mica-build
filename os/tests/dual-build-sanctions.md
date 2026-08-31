@@ -83,7 +83,7 @@ empty `reason`, or a pattern already sanctioned above is refused by name with
 its line number. A key this parser does not read is a condition its author
 believed they had written down.
 
-## The two hard rules
+## The three hard rules
 
 1. **An unsanctioned difference fails the run**, naming the path and the class.
 2. **A sanction that matched nothing also fails the run**, naming the stanza and
@@ -91,6 +91,17 @@ believed they had written down.
    stops asking the question it was built for: the tree moves on, the stanza
    goes on sanctioning something that is no longer there, and the run stays
    green by comparing less than it used to.
+3. **The class `removed` may never be sanctioned, for any path.** A removed path
+   is one the CHAIN ships and no package owns, so a stanza there would write
+   down "the composed image is missing a file the device needs" and call it
+   accounted for -- which is exactly the failure the switch-over exists to
+   prevent. The fix is to give the path an OWNER. The first instance found was
+   `os/boards/cx3576/overlay/.../serial-getty@ttyFIQ0.service.d/local-line.conf`,
+   which reaches the image because `os/rootfs/scripts/overlay-install.sh` copies
+   the board overlay in wholesale and `mos-board-cx3576` installs only selected
+   subpaths of it -- and that one file is what makes serial console login work.
+   `os/tests/dual-build-gate.sh` refuses (exit 2) if any stanza below lists
+   `removed`, so this is a check rather than a convention.
 
 ## Pending stanzas, and the tension they resolve
 
@@ -424,6 +435,128 @@ itself, because `**` does not match zero path segments. The directory entry a
 package creates is a difference of its own, and the shipped list now carries a
 second pattern for it.
 
+## The first real dual-build measurement, and what it found
+
+Both roots built from ONE tree at commit `498eeb824cda`, x64, on one private
+docker-container builder, with the finalizer proved shared from the two builds'
+own records: `90-pack` at content hash `9472bc8b8de4ea23...` on **both** sides,
+9 chain stages against 2 composed. 9,233 paths on the chain side, 9,250 on the
+composed side, 0 capability-bearing files on either.
+
+**46 differences: 25 `added`, 12 `content`, 8 `removed`, 1 `symlink`.** Every one
+of them is enumerated below and each is either sanctioned in the list at the end
+of this file or named here with the producer that has to own it. Nothing is
+described as "as expected".
+
+Against that ledger the comparator reported **33 sanctioned, 13 unsanctioned, 0
+unused sanctions, 0 pending sanctions now live**. Two of the thirteen --
+`/usr/sbin/policy-rc.d` and `/tmp/pool.names` -- were then ELIMINATED in code
+rather than sanctioned, so a rebuild should report eleven: the `ssh.service`
+addition, the seven networkd-enablement records, `/run/crun`, and the two shadow
+paths. Each of the eleven is named below with the producer that has to own it.
+
+### Sanctioned, with the measurement behind each
+
+- **20 `added` under `/usr/share/doc/`**: ten package directories and ten
+  `copyright` files, one pair per local package -- `mos-apid`, `mos-board-x64`,
+  `mos-ca-trust`, `mos-mqtt-broker`, `mos-mqttd`, `mos-podman`,
+  `mos-profile-dev`, `mos-rauc`, `mos-system`, `mosd`. This is PLAN-036's first
+  sanctioned addition arriving exactly as written, and it is what promoted the
+  two `/usr/share/doc` stanzas from `pending` to `active`.
+- **3 `added` under `/usr/lib/mos/board/`**: the directory, the `x64`
+  subdirectory and `grub.cfg`. `mos-board-x64` ships the GRUB configuration as
+  image-assembly input with its placeholders intact; the chain has no
+  counterpart because the assembler reads `os/boards/x64/grub.cfg` out of the
+  tree instead.
+- **4 `content` in the self-built binaries** -- `/usr/bin/mosd`,
+  `/usr/bin/apid`, `/usr/bin/mos-mqttd`, `/usr/bin/mos-mqtt-broker`. Two
+  independent compilations of one source tree: the chain builds all four in one
+  cargo invocation through `os/pkgs/mosd/hack/build-target.sh` into `target/`,
+  while the composed root gets them from two producers through
+  `build-deb.sh`, each with its own `CARGO_TARGET_DIR`. `mosd` and `apid` carry
+  the SAME embedded commit `498eeb824cda` in both roots, checked with `strings`.
+
+### NOT sanctioned, and each needs an owner rather than a stanza
+
+- **`/etc/systemd/system/multi-user.target.wants/ssh.service`, class `added`.**
+  The composed image ships sshd ENABLED on a dev profile and the chain does not;
+  `os/verify` fails it, 290/291. On the chain path
+  `os/rootfs/scripts/network-and-ssh-units.sh:22` removes the link
+  openssh-server's postinst leaves behind, and asserts it is gone. `policy-rc.d`
+  stops a maintainer script STARTING a service during assembly and does nothing
+  about its `[Install]` symlink. The owner is
+  `os/rootfs/packages-src/system` (`mos-system`), whose own Dockerfile already
+  records the decision -- "There is deliberately NO
+  multi-user.target.wants/ssh.service" -- as an ABSENCE, which cannot survive
+  another package's postinst. It needs to be expressed actively.
+- **6 `removed` and 1 `symlink` around `systemd-networkd` enablement.** The
+  chain runs `systemctl enable systemd-networkd systemd-resolved`, which writes
+  the primary link plus the unit's `Alias=` and three `Also=` units:
+  `/etc/systemd/system/dbus-org.freedesktop.network1.service`,
+  `sockets.target.wants/systemd-networkd.socket`,
+  `network-online.target.wants/systemd-networkd-wait-online.service` and its
+  directory, and `sysinit.target.wants/systemd-network-generator.service`.
+  `mos-system` ships the primary link only, and spells its target
+  `/lib/systemd/system/...` where `systemctl enable` writes
+  `/usr/lib/systemd/system/...` -- which is the `symlink` record. Losing
+  `systemd-networkd-wait-online.service` is the one with behaviour behind it:
+  `network-online.target` then completes without waiting for a network. Owner:
+  `os/rootfs/packages-src/system`.
+- **`/run/crun`, class `removed`.** Build residue: the chain EXERCISES the
+  engine during assembly (`os/rootfs/scripts/podman-exercise.sh` runs `crun`),
+  and the composer does not. The composed root is the correct one here. Owner of
+  the decision: whoever owns `podman-exercise.sh`; it is not a path any package
+  should install.
+- **6 `content` in the account files** -- `/etc/passwd`, `/etc/passwd-`,
+  `/etc/group`, `/etc/group-`, `/etc/gshadow`, `/etc/gshadow-`. What they are is
+  measured, not inferred: `diff <(sort A) <(sort B)` is EMPTY for `/etc/passwd`
+  and for `/etc/group`, so every account and group exists on both sides with the
+  same uid and gid. Only the LINE ORDER differs, and only for two lines --
+  `mos-mqttd` and `mos-mqtt-broker` are created in the opposite order, because
+  the chain runs two account scripts in stage order and the composer gets dpkg's
+  configuration order.
+
+  They are benign and they are still NOT SANCTIONED, which is a decision and not
+  an omission. A sanction is a (pattern, class) pair, so a `content` stanza over
+  `/etc/passwd` covers every possible content difference at that path --
+  including an account VANISHING from the composed root. That is exactly what
+  the proof-material section above refuses to grant in advance, and
+  `os/build/src/compare-roots.test.ts` asserts that no shipped stanza covers
+  these paths. The ledger has no way to say "this content difference and not
+  that one", so the honest state is unsanctioned-and-explained. Eliminating it
+  would mean making the two account creations happen in one order on both
+  paths, which is a producer change.
+
+- **`/etc/shadow-` and `/usr/share/factory/etc/shadow`, class `content`.** These
+  are two of the three paths L1 ruled may not be sanctioned, and they appear --
+  but NOT as a regression in the fix. The composed side is the CORRECT one. The
+  chain writes `20696` (2026-08-31) into the last-change field of `messagebus`,
+  `sshd`, `systemd-network` and `systemd-resolve`; the composed root writes
+  `18262` (2020-01-01) for all four.
+
+  The mechanism was measured, not reasoned. `useradd` honours
+  `SOURCE_DATE_EPOCH` for that field: in the pinned trixie base, `useradd -r
+  probe` gives `20696` with the variable unset and `18262` with
+  `SOURCE_DATE_EPOCH=1577836800`, which is exactly `1577836800 / 86400`. The
+  composition declares `ARG SOURCE_DATE_EPOCH` so the whole apt transaction runs
+  under it; `stages/10-base` and `stages/20-install` do not declare it, so the
+  chain's postinsts see the wall clock. So the third non-reproducible surface
+  this file documented is fixed on the composed path and still open on the
+  chain, and the fix is to declare the argument in those two stage files.
+
+### Two differences that were ELIMINATED rather than sanctioned
+
+- **`/usr/sbin/policy-rc.d`, class `removed`.** Not ours and never was: the
+  Debian docker image ships it, the chain never removed it, and it was going
+  into the signed root where it answers 101 to every `invoke-rc.d`. No producer
+  could own it, so the finalizer does --
+  `os/rootfs/scripts/pack-strip-build-residue.sh`, which also carries the sshd
+  host keys. Both paths now reach one answer through one file.
+- **`/tmp/pool.names`, class `added`.** A scratch file the composer wrote and
+  did not remove, shipping inside the signed root. Fixed in
+  `compose-install.sh`, which now writes it under the removed `/mos-compose` and
+  asserts `/tmp` is empty before it finishes.
+
 ## What an x64-only comparison does not cover
 
 PLAN-036 section 6 runs this comparison on x64 only; cx3576 is then built and
@@ -494,11 +627,41 @@ fixed in place.
 
 ### /usr/share/doc/**
 - classes: added
-- status: pending
-- reason: PLAN-036 section 6 sanctions package documentation as an expected addition. The composed root installs real `.deb` packages, and each carries its own `/usr/share/doc/<package>/` payload -- the per-package Apache-2.0 copyright this campaign requires, at minimum. The stage chain installed those components by copying files into place and produced no such tree, so every path under it is an addition with no counterpart on side A. Pending until the composer exists; promote it to active in the same change that first produces the difference.
+- status: active
+- reason: PLAN-036 section 6 sanctions package documentation as an expected addition. Promoted from pending by the measurement at commit 498eeb824cda, which is what the pending state was waiting for: this pattern matched exactly TEN added files, one `copyright` per local package (mos-apid, mos-board-x64, mos-ca-trust, mos-mqtt-broker, mos-mqttd, mos-podman, mos-profile-dev, mos-rauc, mos-system, mosd). The chain installs those components by copying files into place and produces no such tree, so each has no counterpart on side A. The per-package Apache-2.0 copyright is a redistribution obligation this campaign requires, so these are payload rather than residue.
 
 ### /usr/share/doc/*
 - classes: added
-- status: pending
-- reason: The directory entry itself, which the pattern above does not cover -- `**` does not match zero path segments, so `/usr/share/doc/**` matches `/usr/share/doc/mos-system/copyright` and not `/usr/share/doc/mos-system`. Measured, not reasoned: a real run against two roots differing by the container engine reported eleven added paths under `/usr/share/doc/`, and the `**` stanza matched the files while leaving the five package directories unsanctioned. Same sanction, same reason as above; a separate stanza because one glob cannot express both.
+- status: active
+- reason: The directory entry itself, which the pattern above does not cover -- `**` does not match zero path segments, so `/usr/share/doc/**` matches `/usr/share/doc/mos-system/copyright` and not `/usr/share/doc/mos-system`. Promoted with the same measurement and matching exactly TEN added directories, one per local package, against the ten files above. Same sanction, same reason; a separate stanza because one glob cannot express both.
+
+### /usr/lib/mos/board
+- classes: added
+- status: active
+- reason: The board-configuration directory `mos-board-x64` ships. PLAN-036 section 3 assigns the GRUB configuration to the board package, and os/boards/x64/deb/board-x64/Dockerfile records why it lands under /usr/lib/mos/board/<board>/ with its @BOOT_A_PARTNUM@ and @ROOTFS_A_PARTUUID@ placeholders intact: it is image-ASSEMBLY input rendered by the finalizer onto the ESP, and a copy rendered inside the producer would be a second rendering of one file. The chain has no counterpart because the assembler reads os/boards/x64/grub.cfg out of the tree instead. This stanza is the directory alone; the pattern below is its contents.
+
+### /usr/lib/mos/board/**
+- classes: added
+- status: active
+- reason: The contents of the directory above -- measured as exactly two added paths, `/usr/lib/mos/board/x64` and `/usr/lib/mos/board/x64/grub.cfg`. Separate stanza for the reason the two `/usr/share/doc` patterns are separate: `**` matches one or more path segments and never zero, so it cannot also cover the directory it descends from.
+
+### /usr/bin/mosd
+- classes: content
+- status: active
+- reason: Two independent compilations of one source tree at one commit. The chain builds mosd, apid, mos-mqttd and mos-mqtt-broker in ONE cargo invocation through os/pkgs/mosd/hack/build-target.sh into target/; the composed root gets mosd and mos-apid from the mosd producer through build-deb.sh into target-deb/mosd/. rustc records the paths it is given, so the two binaries differ. Checked rather than assumed: both carry the embedded commit 498eeb824cda, found with `strings`, and the sizes differ by 4,504 bytes out of 8.7 MB.
+
+### /usr/bin/apid
+- classes: content
+- status: active
+- reason: The same two compilations as /usr/bin/mosd, from the same producer. Both binaries carry the embedded commit 498eeb824cda and the sizes differ by 1,360 bytes out of 12.0 MB.
+
+### /usr/bin/mos-mqttd
+- classes: content
+- status: active
+- reason: The same reason again, from the OTHER producer: the mqtt producer builds mos-mqttd and mos-mqtt-broker into target-deb/mqtt/, so the composed pair comes from a third cargo target directory. Neither binary reads MOS_BUILD_COMMIT, so neither carries a commit string to compare -- which the ledger already recorded when it measured them byte-identical across two chain builds. Sizes differ by 8 bytes out of 6.9 MB.
+
+### /usr/bin/mos-mqtt-broker
+- classes: content
+- status: active
+- reason: The same producer split as /usr/bin/mos-mqttd, and the one member of the four where the difference is LARGE rather than incidental: 7,616,416 bytes on the chain against 6,533,472 composed, 1.08 MB smaller. The chain compiles all four crates in one cargo invocation and the producers compile two at a time, so cargo's feature resolver unifies a different set of features across the shared dependency graph. Sanctioned as a consequence of the producer split PLAN-036 section 2 asks for, and recorded at this size because a future change in that number is a change in what the split does, not noise.
 
