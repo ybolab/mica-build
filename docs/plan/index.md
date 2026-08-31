@@ -37,3 +37,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [-] [**PLAN-036 Compose rootfs from independently built Debian packages**](PLAN-036.md) `2026-08-30`
 - [ ] [**PLAN-037 Build an embedded-first delivery documentation system**](PLAN-037.md) `2026-08-31`
 - [x] [**PLAN-038 Bound, scope and queue the settings-write path**](PLAN-038.md) `2026-08-31`
+- [ ] [**PLAN-039 Serve a built-in SPA and put management behind `/api`**](PLAN-039.md) `2026-08-31`
