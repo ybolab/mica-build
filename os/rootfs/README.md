@@ -492,7 +492,7 @@ What a developer actually gets on v2:
 - **Persistent access by SSH public key**, via the settings tree — the
   supported long-term path; every authorized key is a root key.
 
-## Determinism, and what still deviates
+## Determinism, and what it took to get there
 
 Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
 `rootfs-verity.img`. sshd host keys are **not** baked into the image — they
@@ -500,67 +500,60 @@ would be a private key shared by every device and would change the verity root
 hash on every cold build; `mos-seed-state` generates them per device on first
 boot instead.
 
-**A cold x64 build does not reproduce itself.** Seven cold builds of one
-unmodified tree gave seven different `rootfs-verity.img` sha256s —
-`1b3f5e50…`, `7aad6efd…`, `55cf38f3…` and `af841f4f…` among them. In every
-pairing the differing set is the same six of 9,241 entries:
+**A cold x64 build reproduces itself.** Two cold builds of one unmodified tree,
+at one commit, each on a `docker-container` builder created for it so that
+neither could replay the other's cache, produced the same `rootfs-verity.img` —
+`6ca98787…` on both sides — and the same `/boot/initrd.img`, `01e29d26…`.
+Measured 2026-08-31.
 
-| Entry | Why it moves |
-|---|---|
-| `/boot/initrd.img-*` | `update-initramfs` does not compress reproducibly. The 961 files *inside* are identical between runs; only the container's bytes differ (three runs gave 37190070, 37189886 and 37189690 bytes) |
-| `/usr/share/factory/var/cache/ldconfig/aux-cache` | build-time cache |
+This section used to say the opposite, and it was right to: seven cold builds
+of one tree gave seven different hashes. Three separate surfaces carried
+build-host state into the packed root. Each has been removed rather than
+tolerated, because a floating root is a floating dm-verity root hash, and
+`SQUASHFS_TIME` and `VERITY_SALT` are pinned precisely to stop that.
 
-Four further entries were in that set until later —
-`/usr/share/factory/var/log/dpkg.log`, `apt/history.log`, `apt/term.log` and
-`alternatives.log`, each differing only by a wall-clock stamp. They survived
-because the package-manager purge took `/var/lib/dpkg` and `/var/lib/apt` but
-not `/var/log`, and the pack stage then moved `/var` to
-`/usr/share/factory/var` whole. They are now removed by the purge, so the
-control set is **two of 9,241 entries rather than six**, and the seventh
-outside-the-tree entry below — `apt/eipp.log.xz`, which lives under
-`/var/log/apt` — cannot arrive at all. A control that admits fewer differences
-admits fewer real ones with them, so this is a strictly tighter comparison than
-the one it replaces.
+| Surface | What it carried | What was done |
+|---|---|---|
+| `/boot/initrd.img-*` | build-host inode numbers on 182 of 183 cpio entries, and the wall clock in 71 mtimes | `stages/40-board` declares `SOURCE_DATE_EPOCH`; `build-v2.sh` passes the same instant it pins the squashfs to. `initramfs-tools` then clamps every staged mtime to the epoch, passes `cpio --reproducible` so entry inodes are renumbered from 1, and compresses with `gzip -n` |
+| `/usr/share/factory/var/cache/ldconfig/aux-cache` | glibc's `{dev, ino, ctime, size}` for every shared library, as the BUILD host saw them | dropped in `pack-tree-surgery.sh`. A regenerable cache, already wrong for the device the moment it ships, and `ldconfig` rebuilds it anyway |
+| `/usr/share/factory/etc/shadow` and `/etc/shadow-` | the shadow last-change DAY for the accounts Debian's postinsts create: `systemd-network`, `messagebus`, `systemd-resolve`, `sshd` | `account-pin-shadow-dates.sh`, in `stages/90-pack`'s `closed` stage, pins every account to day 18262 — the same `2020-01-01` the three mos accounts already carried |
 
-Removing them from the *image* is what the purge did; removing them from the
-*build* would have been the mistake, because `dpkg.log` is the instrument two
-bullets down. `90-pack`'s `closed` stage captures the three log paths before
-the purge and the driver exports them to `_out/<board>/pkg-logs/`.
+The third is the one worth remembering, because of how it hid. The value is a
+**day**: two builds in one session agree, so it passed every test this tree
+had, and it would have failed a dual-build gate at random months later for a
+reason nobody would have connected to a calendar. It also needed the pin run
+**twice** — `/etc/shadow-` is the snapshot `chage` takes *before* it writes, so
+one pass leaves the backup holding the unpinned row of whichever account was
+pinned last. `pack-assert-shadow-chain.sh` reads the field back out of the
+packed tree across both files, prints the number of account rows it examined,
+and refuses a zero.
 
 **What this means for a byte-identity gate.** Changing the build necessarily
-invalidates the layer cache, so "byte-identical before and after" cannot be
-measured cache-hot — and measured cold it fails for the six reasons above
-whether or not anything changed. A gate that compares sha256 across a build
-change is measuring the clock. The gate that works: extract both images and
-`diff -r --no-dereference` the trees, then check that the differing set is no
-larger than the control's, where the control is two cold builds of the
-*unmodified* tree. `os/build/run.sh --build-rootfs --no-cache` exists so the
-subject side can be cold without pruning the daemon's cache out from under
-every other build on the machine.
+invalidates the layer cache, so a comparison across a change is cold on at
+least one side. That used to make sha256 useless here, because a cold pair
+differed whether or not anything had changed. It is usable now: a cold pair of
+an unmodified tree agrees, so a difference is a difference. Two cautions
+survive, and both are about the apparatus rather than the tree.
 
-### A seventh entry the six-entry control cannot see: the build date
+- **Both sides cold, or neither.** A cached layer and a cold rebuild can
+  install different package versions — the base image is pinned by digest, the
+  archive it installs from is live — so a warm-against-cold pair measures the
+  Debian mirror. Compare cold against cold, and show it: `dpkg.log` from
+  `_out/<board>/pkg-logs/` with its timestamps stripped is byte-identical over
+  all 694 operations when both sides took the same package set.
+- **When it does differ, attribute before concluding.** A whole-file sha256
+  cannot tell a working fix from a broken one. Unpack the cpio and charge each
+  difference to exactly one category — content first, then mtime, then inode —
+  because a fix that pins every mtime and leaves inode numbers floating still
+  fails a byte comparison and is not a failed fix.
 
-Two cold builds on **different days** differ in two entries beyond the six:
-
-| Entry | What differs |
-|---|---|
-| `/usr/share/factory/etc/shadow` | `systemd-network`, `messagebus`, `systemd-resolve` and `sshd` carry a last-change day number one higher on the later day — `20690` against `20691` |
-| `/etc/shadow-` | the same four, plus `mos`'s own pre-`chage` row, which the backup keeps |
-
-This is the exact failure `chage -d 2020-01-01` exists to prevent, and the
-comments on the three mos accounts say so outright: *"useradd stamps TODAY into
-it, which would make the packed rootfs — and therefore its dm-verity root hash
-— differ on every build day for no content reason at all."* The pinning covers
-the three accounts this build creates. It does not cover the accounts Debian's
-own package postinsts create, and it does not cover the `-` backup files, which
-snapshot the state **before** `chage` runs.
-
-So the packed root, and its verity root hash, depend on the calendar day.
-`/etc/shadow-` and `/etc/passwd-` are `useradd`'s pre-modification backups,
-unreadable and unwritable on a read-only verity root and read by nothing in the
-image, so removing them or pinning their dates is an image content change. A
-gate that must compare two builds runs them on the same day, or strips these
-two files.
+`os/build/run.sh --build-rootfs --no-cache` exists so the subject side can be
+cold without pruning the daemon's cache out from under every other build on the
+machine. A `docker-container` builder created for the run is emptier still, and
+buys a second thing: the driver then chains the stages by OCI layout under
+`_out/<board>/stages/` instead of through the daemon-global
+`mos-rootfs-stage:*` tags, which two concurrent worktrees would otherwise
+interleave on — producing a complete, plausible root blended from two trees.
 
 ### Running the gate
 
