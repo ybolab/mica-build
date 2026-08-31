@@ -1,7 +1,8 @@
 #!/bin/sh
 # Assert the rauc in this root links neither curl nor GnuTLS.
 #
-# Called from os/rootfs/stages/32-feature-rauc.Dockerfile, where the reasoning lives.
+# Called from os/pkgs/rauc/deb/rauc/Dockerfile, which packages the binary this
+# asserts about, where the reasoning lives.
 
 set -eu
 if ldd /usr/bin/rauc | grep -ciE 'curl|gnutls' >/dev/null; then

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Take the package-manager logs OUT of the tree, ahead of the purge that removes them.
 #
-# Called from os/rootfs/stages/90-pack.Dockerfile (closed stage), where the reasoning lives.
+# Called from os/rootfs/compose/90-pack.Dockerfile (closed stage), where the reasoning lives.
 
 set -eu
 [ -s /var/log/dpkg.log ] ||

@@ -1,0 +1,8 @@
+# Selected by a board that names `wifi` in BOARD_RADIOS.
+#
+# BOTH packages, because os/rootfs/scripts/radios-packages.sh installs
+# wpasupplicant AND hostapd for that one radio name: the board declares the
+# radio, not which of station and access-point mode it will be asked to run,
+# and mosd reconciles either at runtime.
+mos-wifi
+mos-wifi-ap
