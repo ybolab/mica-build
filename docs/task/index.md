@@ -46,5 +46,5 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-269 Drop the retained-topic upgrade guidance for the removed system projection**](RFCT-269.md) `P3`
 - [-] [**RFCT-270 Deliver rootfs components as Debian packages**](RFCT-270.md) `P1`
 - [x] [**RFCT-271 Write the build guide: x64 and cx3576, cross-compile versus emulation**](RFCT-271.md) `P2`
-- [-] [**RFCT-272 Chain the rootfs stages through OCI layouts so cx3576 builds without host binfmt**](RFCT-272.md) `P1`
+- [x] [**RFCT-272 Chain the rootfs stages through OCI layouts so cx3576 builds without host binfmt**](RFCT-272.md) `P1`
 - [-] [**RFCT-273 Design the embedded-first user delivery documentation set**](RFCT-273.md) `P1`

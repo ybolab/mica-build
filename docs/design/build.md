@@ -264,11 +264,18 @@ name.
 
 ## 7. Verification
 
-*Measured on this host on 2026-08-30.* The x64 sequence of section 3 was run
-as written, in one shell, on an amd64 host with docker 28 and no host binfmt.
-`docker run --rm --platform linux/arm64 alpine:3.21 uname -m` answered
-`exec /bin/uname: exec format error` on the same host, and registering
-emulation from inside the build container was not possible, so the cx3576
-rootfs chain was not run here; the cross-compiling and buildkit-emulated rows
-of section 4 are taken from the scripts' own builder selection and from the
-2026-08-28 buildkit measurement recorded in `build-harness.md` section 5.
+*Measured on this host on 2026-08-30 and 2026-08-31.* The x64 sequence of
+section 3 was run as written, in one shell, on an amd64 host with docker 28
+and no host binfmt. `docker run --rm --platform linux/arm64 alpine:3.21
+uname -m` answered `exec /bin/uname: exec format error` on the same host.
+
+The cx3576 sequence of section 4 has since been run end to end on the same
+binfmt-less host, twice on different days, through the layout mode of
+section 4.1: the rootfs chain built on the `mos-arm64` builder with every
+stage handed over as an OCI layout, the smoke run executed the packed root's
+binaries through the buildkit executor and reported
+`11 pass, 1 executor-limited (crun), 0 fail` — crun's memfd re-exec is the
+emulator's documented limit, reported as its own verdict rather than a pass —
+and the assembled image passed `make os-verify-cx3576-v2` at 394/394 with a
+signed RAUC bundle built and read back. No tag touched the image store and
+no binfmt was registered at any point.
