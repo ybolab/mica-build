@@ -376,8 +376,16 @@ spec pins and the feasible black-box suite preparation checks.
   are the separately passing checks listed above.
 - The apid real-process/D-Bus end-to-end test passed; the QEMU TypeScript
   typecheck and 47 self-tests passed; all 23 OpenAPI spec pins passed. A live
-  firmware-image QEMU boot was not run because this checkout did not provide a
-  freshly built image for the rewritten suite.
+  firmware-image QEMU run later passed all 112 harness checks against a fresh
+  x64 image. Its API phase submitted the container, MQTT and SSH switches in
+  parallel, observed three distinct task ids in `/api/v1/tasks`, waited for all
+  three to finish successfully, and read all three settings back as enabled.
+  The run used alternate host ports while another QEMU occupied the defaults,
+  proving the guests can run concurrently when their published ports differ.
+  The first boot attempt also exposed the pre-existing missing
+  `--no-superblock` option in x64's initramfs verity opener; PLAN-036's owner
+  fixed that independently in `ef2d56f8`, and the passing validation image
+  temporarily carried that exact fix without duplicating it in this plan.
 
 ## Risks
 

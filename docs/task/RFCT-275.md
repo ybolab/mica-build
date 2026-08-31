@@ -60,3 +60,5 @@ Separating the built-in SPA from the API-only management backend.
   authentication operation is under `/api`.
 
 - complete: Rust workspace, built-in SPA, OpenAPI, and offline QEMU contract gates passed.
+- verification: A fresh x64 QEMU image passed 112/112 harness checks, including
+  parallel container/MQTT/SSH enables and terminal task-list reconciliation.

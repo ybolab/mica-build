@@ -13,6 +13,19 @@ function parseObject(body: string): Record<string, JsonValue> | undefined {
   }
 }
 
+function parseObjectArray(body: string): Record<string, JsonValue>[] | undefined {
+  try {
+    const value = JSON.parse(body) as JsonValue;
+    if (!Array.isArray(value)) return undefined;
+    const rows = value.map((item) =>
+      typeof item === "object" && item !== null && !Array.isArray(item) ? item : undefined,
+    );
+    return rows.every((row) => row !== undefined) ? rows : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const phase: Phase = {
   id: "03-api-management",
   title: "all appliance reads and writes flow through the authenticated JSON API",
@@ -70,6 +83,67 @@ const phase: Phase = {
     if (typeof taskId === "string") {
       const task = await client.get(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
       report.expectStatus(task, 200, "GET /api/v1/tasks/{id} exposes the accepted write");
+    }
+
+    const parallelPaths = ["container.enabled", "mqtt.enabled", "access.ssh.enabled"] as const;
+    const parallelWrites = await Promise.all(
+      parallelPaths.map((path) =>
+        client.request("PUT", `/api/v1/settings/${path}`, {
+          body: "true",
+          contentType: "application/json",
+          headers: { "X-CSRF-Token": csrf },
+        }),
+      ),
+    );
+    const parallelTaskIds = new Map<string, string>();
+    for (const [index, response] of parallelWrites.entries()) {
+      const path = parallelPaths[index];
+      if (path === undefined) continue;
+      report.expectStatus(response, 202, `parallel enable of ${path} is accepted`);
+      const id = parseObject(response.body)?.["taskId"];
+      report.check(
+        typeof id === "string" && id.length > 0,
+        `parallel enable of ${path} returns a task id`,
+        `actual body: ${response.body}`,
+      );
+      if (typeof id === "string") parallelTaskIds.set(path, id);
+    }
+    report.check(
+      new Set(parallelTaskIds.values()).size === parallelPaths.length,
+      "parallel enables of independent settings create three distinct tasks",
+      `tasks: ${JSON.stringify(Object.fromEntries(parallelTaskIds))}`,
+    );
+
+    let terminalTasks: Record<string, JsonValue>[] | undefined;
+    await report.expectEventually(
+      "the task list retains every parallel enable through terminal state",
+      async () => {
+        const response = await client.get("/api/v1/tasks");
+        if (response.status !== 200) return false;
+        const tasks = parseObjectArray(response.body);
+        if (tasks === undefined) return false;
+        const byId = new Map(tasks.map((task) => [task["id"], task]));
+        const selected = [...parallelTaskIds.values()].map((id) => byId.get(id));
+        if (selected.some((task) => task === undefined || task["status"] !== "finished")) return false;
+        terminalTasks = selected as Record<string, JsonValue>[];
+        return true;
+      },
+      { timeoutMs: 120_000, intervalMs: 500 },
+    );
+
+    if (terminalTasks !== undefined) {
+      for (const task of terminalTasks) {
+        const path = task["dotPath"];
+        report.check(
+          typeof path === "string" && parallelTaskIds.get(path) === task["id"] && task["outcome"] === "succeeded",
+          `task list reports the parallel ${String(path)} enable as succeeded`,
+          `actual task: ${JSON.stringify(task)}`,
+        );
+      }
+    }
+    for (const path of parallelPaths) {
+      const setting = await client.get(`/api/v1/settings/${path}`);
+      report.expectJson(setting, true, `parallel enable of ${path} persists true`);
     }
 
     const bearerRead = await client.get("/api/v1/settings/hostname", {
