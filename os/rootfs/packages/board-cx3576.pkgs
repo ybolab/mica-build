@@ -1,0 +1,4 @@
+# The cx3576 board package: its kernel, device tree, firmware, rendered layout
+# files and radio board facts. arm64 only, and the reason a resolution names
+# exactly one board package.
+mos-board-cx3576

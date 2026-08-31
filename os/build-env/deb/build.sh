@@ -69,8 +69,39 @@ done
 # Discovery resolves the name, and refuses one it does not know by name.
 PRODUCER_REL="$(bash "${PRODUCERS_SH}" --dir-for "${PRODUCER}")"
 PRODUCER_DIR="${REPO_ROOT}/${PRODUCER_REL}"
+PRODUCER_ENV="${PRODUCER_DIR}/producer.env"
 
-# producer.env is plain KEY=value in the os/boards/*/board.env discipline.
+# THE SHAPE, CHECKED BEFORE THE FILE IS SOURCED. producer.env is plain
+# `KEY=value` in the os/boards/*/board.env discipline, and sourcing is what would
+# run a command substitution hidden in it: a description that can execute is not
+# a description, it is a build step nothing declared.
+#
+# WHAT THIS DOES NOT COVER, written down because a reader will otherwise assume
+# it does. producers.sh has already read every producer.env by the time this
+# runs -- that read is what resolved the name above. It makes that read in a
+# subshell so that a producer cannot change what discovery does with the
+# producers after it, and producers.sh is the single authority on the producer
+# SET, so the same refusal beside that read belongs to that file rather than to
+# a second search here. What is refused HERE is the source whose variables
+# become this build's arguments, contexts and pool writes.
+while IFS= read -r line; do
+    case "${line}" in
+    '' | '#'*) continue ;;
+    esac
+    case "${line}" in
+    *'$('* | *'`'*)
+        echo "error: ${PRODUCER_REL}/producer.env carries a command substitution: ${line}. This file DESCRIBES a producer and is sourced by this driver; logic in it runs at build time in whatever context the caller had" >&2
+        exit 1
+        ;;
+    esac
+    [[ "${line}" =~ ^[A-Z][A-Z0-9_]*= ]] || {
+        echo "error: ${PRODUCER_REL}/producer.env carries a line that is neither KEY=value nor a comment: ${line}. Plain assignments only -- see os/build-env/deb/README.md" >&2
+        exit 1
+    }
+done <"${PRODUCER_ENV}"
+
+# Cleared before the source, so that a variable already in this process's
+# environment cannot stand in for one the producer failed to declare.
 PACKAGES=""
 ARCHES=""
 BUILD_CONTEXTS=""
@@ -78,7 +109,7 @@ FROM_IMAGES=""
 BUILD_ARGS=""
 PREPARE=""
 # shellcheck disable=SC1091
-. "${PRODUCER_DIR}/producer.env"
+. "${PRODUCER_ENV}"
 
 # producers.sh has already refused an empty or malformed PACKAGES/ARCHES, so
 # this only has to decide whether THIS arch is one the producer builds. A
@@ -104,7 +135,7 @@ VERSION="$(bash "${VERSION_SH}")"
 #
 # A dirty tree keeps the same commit timestamp rather than taking `now`. The
 # version already says `.dirty`, so the archive is marked as one that no commit
-# reproduces; moving the clamp forward would only make two dirty builds of one
+# reproduces; moving it forward would only make two dirty builds of one
 # tree differ from each other as well, which is the property worth keeping.
 git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1 || {
     echo "error: ${REPO_ROOT} is not a git checkout. SOURCE_DATE_EPOCH is HEAD's timestamp and has no defensible value here without git; a fallback would make every archive irreproducible while every build stayed green" >&2
@@ -160,6 +191,17 @@ mkdir -p "${STAGE}"
 # to claim about what it just produced. It runs on the host, and what it leaves
 # in ${MOS_DEB_STAGE} arrives in the build as the `bin` context.
 if [ -n "${PREPARE}" ]; then
+    # A FILE NAME BESIDE THE producer.env THAT DECLARES IT, never a path. A
+    # producer that reached out of its own directory would be running a script
+    # it does not own, and the hook runs on the host with this session's
+    # privileges -- so the one place a producer may put executable code is the
+    # one place its own directory can hold.
+    case "${PREPARE}" in
+    */*)
+        echo "error: ${PRODUCER_REL}/producer.env names PREPARE=${PREPARE}, which is a path. A hook is a file name beside the producer.env that declares it" >&2
+        exit 1
+        ;;
+    esac
     hook="${PRODUCER_DIR}/${PREPARE}"
     [ -f "${hook}" ] || {
         echo "error: ${PRODUCER_REL}/producer.env names PREPARE=${PREPARE} and ${PRODUCER_REL}/${PREPARE} does not exist. The hook is the producer's own half of its build; a named one that is absent means the payload is never produced and the pack below would stage nothing" >&2
@@ -315,8 +357,12 @@ for entry in ${BUILD_CONTEXTS}; do
         echo "error: ${PRODUCER_REL}/producer.env declares BUILD_CONTEXTS entry '${entry}', which is not <context name>=<repository-relative path>" >&2
         exit 1
     }
-    [ -e "${REPO_ROOT}/${path}" ] || {
-        echo "error: ${PRODUCER_REL}/producer.env declares the build context '${name}=${path}' and ${path} does not exist. buildx would resolve a missing local context as a remote one and fail naming neither" >&2
+    # A DIRECTORY, not merely something that exists. `--build-context <n>=<path>`
+    # names a local context and buildkit walks it as a tree; handed a regular
+    # file, buildx reports it at the `COPY --from=<n>` that reads it, or as a
+    # context it could not resolve, rather than as the wrong kind of path it is.
+    [ -d "${REPO_ROOT}/${path}" ] || {
+        echo "error: ${PRODUCER_REL}/producer.env declares the build context '${name}=${path}', which is not a directory under ${REPO_ROOT}. buildx would resolve a missing local context as a remote one and fail naming neither" >&2
         exit 1
     }
     CTX_ARGS+=(--build-context "${name}=${REPO_ROOT}/${path}")
@@ -328,7 +374,17 @@ ARG_ARGS=(
     --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
 )
 for entry in ${BUILD_ARGS}; do
-    ARG_ARGS+=(--build-arg "${entry}")
+    # KEY=VALUE, never a bare KEY. `--build-arg KEY` is buildx's "take it from
+    # the environment" form, so a bare name here would hand the build whatever
+    # this session happened to hold -- or nothing at all -- and the archive would
+    # be a function of the caller's environment rather than of the tree.
+    case "${entry}" in
+    *=*) ARG_ARGS+=(--build-arg "${entry}") ;;
+    *)
+        echo "error: ${PRODUCER_REL}/producer.env declares BUILD_ARGS entry '${entry}', which is not KEY=VALUE" >&2
+        exit 1
+        ;;
+    esac
 done
 
 # This producer's own archives only, out of every pool it writes. The pool is
@@ -356,20 +412,44 @@ docker buildx build --builder "${BUILDER}" \
     "${OUT_ARGS[@]}" \
     "${PRODUCER_DIR}"
 
+# Everything this run put in the pools, so that a refusal below can take it back
+# out again.
+EXPORTED=()
+for pool_arch in "${POOL_ARCHES[@]}"; do
+    for p in ${PACKAGES}; do
+        EXPORTED+=("${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb")
+    done
+done
+
+# A REJECTED PACKAGE DOES NOT STAY IN THE POOL. Everything below this point runs
+# after `-o type=local` has already written the archives, so a refusal that only
+# exited non-zero would leave the artifact it just rejected on disk -- where
+# os/build-env/deb/repo.sh indexes every .deb it finds and a composer would
+# install it. The refusal would then live in a log while the package shipped,
+# which is worse than not checking at all: the log gets closed and the pool does
+# not.
+#
+# The whole run is withdrawn rather than the offending archive alone. These are
+# exported together, and a producer left half in the pool is exactly the
+# half-state that is hard to notice. Nothing is put back either, and there is
+# nothing to put back: the previous version of each of these packages was
+# deleted before the build, which is how this driver keeps repo.sh from indexing
+# two versions of one package. The pool ends with NO archive for this producer
+# and the next green build is what refills it.
+reject() {
+    rm -f "${EXPORTED[@]}"
+    echo "error: $* -- and the ${#EXPORTED[@]} archive(s) this run exported have been removed from the pool, because a package this driver refused must not be left where repo.sh would index it. There is now no archive for ${PACKAGES}; rebuild once the cause is fixed" >&2
+    exit 1
+}
+
 # What landed on disk, not what the build stage said it wrote. An export that
 # dropped a file, or a cache hit that served an older layer, is invisible to
 # pack.sh's own read-back and caught here.
 missing=""
-for pool_arch in "${POOL_ARCHES[@]}"; do
-    pool="${REPO_ROOT}/_out/debs/${pool_arch}/pool"
-    for p in ${PACKAGES}; do
-        [ -f "${pool}/${p}_${VERSION}_${DEB_ARCH}.deb" ] || missing="${missing} ${pool_arch}/${p}_${VERSION}_${DEB_ARCH}.deb"
-    done
+for deb in "${EXPORTED[@]}"; do
+    [ -f "${deb}" ] || missing="${missing} ${deb#"${REPO_ROOT}"/}"
 done
-if [ -n "${missing}" ]; then
-    echo "error: the export is missing:${missing} under ${REPO_ROOT}/_out/debs" >&2
-    exit 1
-fi
+[ -z "${missing}" ] || reject "the export is missing:${missing}"
 
 # The two exports of an `all` build are one archive by construction, and this is
 # the assertion of it: the composer resolves each pool on its own, so two pools
@@ -381,13 +461,18 @@ if [ "${#POOL_ARCHES[@]}" -gt 1 ]; then
         for pool_arch in "${POOL_ARCHES[@]:1}"; do
             a="${REPO_ROOT}/_out/debs/${first}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
             b="${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
-            cmp -s "${a}" "${b}" || {
-                echo "error: ${p} was exported to the ${first} and ${pool_arch} pools from ONE build and the two archives differ. An Architecture: all package is one archive that is a member of every pool" >&2
-                exit 1
-            }
+            cmp -s "${a}" "${b}" ||
+                reject "${p} was exported to the ${first} and ${pool_arch} pools from ONE build and the two archives differ. An Architecture: all package is one archive that is a member of every pool"
         done
     done
 fi
+
+# ENABLEMENT IS NOT COUNTED HERE, and the omission is a decision rather than a
+# gap: os/tests/deb-package-gate.sh reads the multi-user.target.wants symlinks
+# out of every archive of every producer and compares them with the same
+# producer.env field, over the whole pool. A second count in this driver would be
+# a second implementation of one rule, and two implementations of a rule agree
+# until one of them is edited.
 
 rm -rf "${STAGE}"
 for pool_arch in "${POOL_ARCHES[@]}"; do

@@ -2,8 +2,7 @@
 # check=skip=InvalidDefaultArgInFrom
 # The ca-trust producer: the `mos-ca-trust` package.
 #
-#   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/rootfs/packages-src/ca-trust --arch all
+#   bash os/build-env/deb/build.sh --producer ca-trust --arch all
 #
 # Two stages, because the payload is GENERATED and the packer cannot generate
 # it: `generate` installs ca-certificates into the pinned Debian base and lets
@@ -26,12 +25,66 @@ ARG MOS_IMAGE_DEBIAN_TRIXIE
 # already runs this whole build once, natively, at the host's architecture.
 FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS generate
 
+# WHAT THIS STAGE'S OUTPUT IS A FUNCTION OF -- PLAN-036 open decision (h),
+# recorded here and NOT taken here. ${MOS_IMAGE_DEBIAN_TRIXIE} is a digest, so
+# the base filesystem is bytes. The `apt-get install` the script below runs is
+# not: it resolves against live deb.debian.org, which carries one version per
+# package in a suite and re-points it on every point release. So this payload --
+# the bundle, the 150 anchors, the hash farm -- is a function of WHEN it was
+# built as well as of this tree. openssl, which ca-certificates depends on, was
+# seen moving inside this campaign.
+#
+# THAT IS THE SHAPE OF EVERY APT INSTALL IN THIS REPOSITORY and not a quirk of
+# this producer. os/build-env/images.env says the same thing about the builder
+# images at its own head -- "a digest pin covers the base image's filesystem,
+# NOT the apt archive the build installs from on top of it" -- and
+# stages/10-base and stages/20-install install from that same live archive. A
+# cold rebuild of any of them can legitimately resolve different versions and
+# produce files that differ for that reason alone.
+#
+# WHAT MAKES IT SHARPER HERE is what the payload IS: the set of certificate
+# authorities every device will believe. Nothing in this tree would catch a
+# change to WHICH anchors arrived. The assertions in the pack stage below count
+# certificates and refuse a truncated or dereferenced bundle; os/verify's
+# ca-bundle-generated check says so in its own words, "a count, not a pinned
+# set". Neither sees a substitution. Nor does the package gate: its two builds
+# are minutes apart and read one mirror state. And the version this package
+# carries comes from os/build-env/deb/version.sh, which is a function of the
+# commit -- so a moved mirror ships DIFFERENT BYTES UNDER THE SAME VERSION,
+# which is the least detectable form this can take.
+#
+# WHY IT IS NOT PINNED HERE, costed against this tree rather than in principle:
+#   - It cannot be done in this file alone. This stage RUNs the shared
+#     os/rootfs/scripts/ca-certificates-generate.sh, which stages/10-base's
+#     certs stage also runs. A pin written only here makes the package's store
+#     diverge from the chain's, and that is precisely the difference PLAN-036
+#     section 6's compare-roots gate reads: on the first point release past the
+#     pin it surfaces as ~150 unsanctioned content differences, in the gate
+#     built to judge the composition rather than the mirror.
+#   - A hard `ca-certificates=<version>` against deb.debian.org BREAKS the build
+#     the moment trixie supersedes that version, because the archive keeps only
+#     the current one. A durable pin means pointing apt at snapshot.debian.org,
+#     which is a change to how every stage in this repository fetches.
+#   - For a trust store the pin also trades one silent failure for another: a
+#     ca-certificates update is HOW a distrusted authority leaves the store, so
+#     a pin holds the fleet on a set until somebody remembers to bump it.
+#
+# THE RECOMMENDATION, escalated rather than taken: record the resolved
+# ca-certificates version and a digest over the sorted anchor set, and fail the
+# build when either moves. apt stays current -- a distrusted CA still leaves --
+# while the change becomes loud and deliberate instead of absorbed, and it is
+# the instrument every apt-installing stage here would want rather than one
+# bolted onto this producer. It belongs beside the shared script, which is
+# outside this directory.
+
 # The repository's own script, RUN rather than restated. os/rootfs/scripts is a
 # read-only source of truth and it arrives as the `scripts` build context
-# producer.env names; a copy of these five lines in this file would be a second
+# producer.env names; a copy of its body in this file would be a second
 # definition of "what is generated today", and the two would come apart at the
-# first edit to either. The script leaves /etc/ssl/certs/.mos-cert-count behind,
-# which the pack stage below reads and does not ship.
+# first edit to either. That is not a style preference here -- stages/10-base's
+# certs stage runs the same file, so the guard above lives in ONE place and both
+# stores are judged by it. The script leaves /etc/ssl/certs/.mos-cert-count
+# behind, which the pack stage below reads and does not ship.
 RUN --mount=type=bind,from=scripts,target=/mos-scripts \
     sh /mos-scripts/ca-certificates-generate.sh
 
@@ -199,78 +252,88 @@ RUN set -eu; \
         { echo "error: the composed copyright lost the harvested ca-certificates text" >&2; exit 1; }; \
     echo "ca-trust: copyright composed, $(wc -l </stage/usr/share/doc/mos-ca-trust/copyright) lines"
 
-# Every mtime this build WROTE, pinned to SOURCE_DATE_EPOCH. Last thing before
-# the pack, so that nothing staged above escapes it.
+# NO MTIME NORMALISATION HERE, and this is where a reader of this producer comes
+# looking for it. os/build-env/deb/pack.sh SETS every path in the packed tree to
+# SOURCE_DATE_EPOCH -- unconditionally, over the whole tree, as its written
+# ruling at that site records.
 #
-# pack.sh CLAMPS rather than sets -- a path older than the epoch keeps its own
-# mtime -- and that is right for a payload whose files came out of an upstream
-# archive with upstream dates on them. It is wrong for this one, because almost
-# nothing here came out of an archive: the bundle, /etc/ca-certificates.conf and
-# all 300 hash links are WRITTEN by update-ca-certificates in the generation
-# stage, and every directory is created by dpkg or by COPY. Their mtime is that
-# stage's wall clock, and BuildKit caches the stage, so it is the wall clock of
-# whenever the layer was FIRST built -- days ago on a developer's builder,
-# seconds ago on an empty-cache one. Whether the clamp then fires at all depends
-# on which side of HEAD's commit timestamp that clock happens to fall.
+# THIS ABSENCE DEPENDS ON PLAN-036 DECISION (e), which is what made pack.sh SET
+# rather than clamp. A reader who reverts (e) has to put a normalising step back
+# here, and the code should be what tells them so.
 #
-# That is the whole of PLAN-036's mos-ca-trust irreproducibility, and it is not
-# a theory: two builds of this producer at one SOURCE_DATE_EPOCH, differing only
-# in whether the generation layer was replayed from cache, produce data.tar.xz
-# of 143976 and 144004 bytes. Uncompressed the two tars are the same 757760
-# bytes with the same 463 entries in the same order, the same modes, the same
-# ownership and byte-identical contents; the cached one carries 06:01:11,
-# 06:01:12 and 06:01:13 on the payload where the fresh one carries the epoch.
-# 28 bytes of xz, and nothing a path-set or content assertion can see.
+# Under a CLAMP the discriminating case is not two cold builds -- those agree
+# either way. It is a WARM generate layer whose wall clock is OLDER than the
+# commit's SOURCE_DATE_EPOCH, against a cold one: a clamp leaves an older mtime
+# alone, so the warm side keeps the moment its layer was first built while the
+# cold side carries the epoch, and the two archives diverge. That is the defect
+# this producer was carrying, and the pair a two-empty-cache-builder proof
+# cannot see. Under SET the stale mtime is overwritten and the pair converges.
 #
-# The 150 anchors under /usr/share/ca-certificates are the exception and are
-# left alone: those ARE files from ca-certificates' own archive, carrying its
-# own 2025-04-19 date, which is a function of the package and not of this build.
-# Pinning them would be pack.sh's rejected policy -- rewriting a payload's
-# history -- applied by hand. Everything else, including the directories of that
-# tree, dpkg created here and so is pinned.
+# MEASURED, and the pair was built to straddle the epoch rather than to be
+# convenient. The warm builder's cached generation layer wrote its bundle at
+# 11:24:49; a commit was then made, putting SOURCE_DATE_EPOCH at 11:25:20, 31
+# seconds LATER; the cold builder generated afresh after that, newer than the
+# epoch on the other side. So a clamp had to leave the warm side at 11:24:49
+# while pulling the cold side back to 11:25:20. The two archives came out
+# byte-identical, and every payload entry in both carries 11:25:20.
 #
-# --no-dereference twice over: the 300 links must take their own mtime rather
-# than pass it to the target, and the hash farm points INTO
-# /usr/share/ca-certificates, so a dereferencing touch would stamp the very
-# anchors this exempts.
+# The fingerprint of SET being in force at all, from the same producer: all 463
+# payload entries carry the epoch and NONE carries ca-certificates' own
+# 2025-04-19 date -- under a clamp those anchors, being older than the epoch,
+# would have kept it.
 #
-# The assertion is what keeps this honest: a RUN inserted after this one that
-# writes into /stage would otherwise reintroduce an unpinned mtime silently, and
-# the failure would come back as an irreproducible archive rather than as a
-# named error here.
-RUN set -eu; \
-    find /stage \! \( -type f -path '/stage/usr/share/ca-certificates/*' \) -print0 | \
-        xargs -0 -r touch --no-dereference --date="@${SOURCE_DATE_EPOCH}"; \
-    stray="$(find /stage \! \( -type f -path '/stage/usr/share/ca-certificates/*' \) \
-        -printf '%T@ %p\n' | awk -v e="${SOURCE_DATE_EPOCH}" '$1 + 0 != e { print $2 }')"; \
-    [ -z "${stray}" ] || \
-        { echo "error: the staged tree still carries mtimes this build did not pin to SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}:" >&2; printf '%s\n' "${stray}" | head -n3 >&2; exit 1; }; \
-    echo "ca-trust: mtimes pinned to SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}, $(find /stage -type f -path '/stage/usr/share/ca-certificates/*' | wc -l) upstream anchors left at their own dates"
+# So a producer normalising its own stage is not belt-and-braces against (e)
+# being reverted. It is a second copy of a rule, and the copy that mattered
+# would be whichever ran last.
+#
+# WHY THAT RULING IS WHAT MAKES THIS PRODUCER REPRODUCIBLE. Almost nothing here
+# arrives with a date of its own: the bundle, /etc/ca-certificates.conf and all
+# 300 hash links are WRITTEN by update-ca-certificates in the generation stage,
+# so their mtime is that stage's wall clock -- and BuildKit caches the stage, so
+# it is the wall clock of whenever that layer was FIRST built, days ago on a
+# developer's builder and seconds ago on an empty-cache one. That was the whole
+# of PLAN-036's mos-ca-trust irreproducibility, and it was measured: two builds
+# at one SOURCE_DATE_EPOCH differing only in whether the generation layer was
+# replayed produced data.tar.xz of 143976 and 144004 bytes over uncompressed
+# tars that were byte-equal in every entry, mode, owner and content. 28 bytes of
+# xz, and nothing a path-set or content assertion can see. Setting closes it
+# without this file carrying a rule about it.
+#
+# THE 150 ANCHORS ARE SET TOO, and that is not an oversight to correct here.
+# They are the one part of this payload that does come out of ca-certificates'
+# own archive with a date worth something, and an exemption for them used to
+# stand at this point in the file. Under a set rather than a clamp an exemption
+# is unreachable: pack.sh stamps them last, after anything written here. The
+# archive is the evidence -- all 463 payload entries carry SOURCE_DATE_EPOCH,
+# the mozilla/*.crt anchors among them. Re-adding the exemption would put a rule
+# in this file that the packer overwrites a moment later, which reads as policy
+# and is a no-op.
 
 # No maintainer scripts and no enablement links: this package owns no unit and
 # nothing has to run after it is unpacked -- update-ca-certificates already ran,
 # in the generation stage, which is the whole reason its tooling is not here.
 # The control archive therefore holds `control` and `md5sums` and nothing else.
 #
-# LC_ALL=C.UTF-8, and it is not decoration. One Mozilla anchor is named
+# NO LOCALE IS SET FOR THE PACK, and this producer is the reason that is worth
+# a sentence. One Mozilla anchor is named
 # `NetLock_Arany_=Class_Gold=_Fotanusitvany` with four accented letters, and
 # pack.sh's final assertion -- that the packed path set equals the staged one --
 # reads the two sides with different tools: `find -printf '%P'`, which writes
-# raw bytes, against `tar -tf`, which quotes anything `iswprint` calls
-# unprintable in the current locale. Unset, the locale is C, every byte above
-# 0x7f is unprintable, and that one path comes back as
-# `F\305\221tan\303\272s\303\255tv\303\241ny` -- a diff of one line, on a
-# payload that is byte-for-byte correct. This producer is the first with a
-# non-ASCII filename, so it is the first to meet it.
+# raw bytes, against `tar -tf`. GNU tar C-escapes any byte `iswprint` calls
+# unprintable in the current locale, and the packing image installs no locale at
+# all, so under C that one path came back as
+# `F\305\221tan\303\272s\303\255tv\303\241ny`: a one-line diff refusing a
+# byte-correct archive, and this producer was the first payload with a non-ASCII
+# filename to meet it. An LC_ALL=C.UTF-8 in front of the pack stood here while
+# that was true.
 #
-# Set HERE rather than fixed in the packer because os/build-env/ is read-only to
-# this workstream. The durable fix is `tar --quoting-style=literal` in pack.sh,
-# which does not depend on a locale being installed at all; C.utf8 is in the
-# mos-build-deb image, and if it ever stops being there glibc falls back to C
-# and this build fails on that same diff rather than quietly shipping something
-# else.
+# pack.sh now passes `tar --quoting-style=literal`, which emits raw bytes and
+# depends on no installed locale, so the workaround is REMOVED rather than left
+# as a second answer to a question the packer already answers -- one that would
+# also hide the regression if that flag were ever dropped. This build is what
+# exercises it: no other producer ships a path outside ASCII.
 RUN set -eu; \
-    LC_ALL=C.UTF-8 pack.sh --root /stage --control /in/control/mos-ca-trust.control \
+    pack.sh --root /stage --control /in/control/mos-ca-trust.control \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
 # The export stage, the shape os/pkgs/mosd/deb/mosd/Dockerfile ends in:

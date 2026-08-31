@@ -55,6 +55,7 @@ substitution, safe to source and to parse.
 | `FROM_IMAGES` | no | `<build-arg name>=<images.env key>`, resolved by `os/build-env/from.sh`. The packer image is always supplied; `FROM_IMAGES` declares additional bases only |
 | `BUILD_ARGS` | no | extra `<name>=<value>` build arguments |
 | `PREPARE` | no | a script in the producer directory, run on the host before the build |
+| `PREFLIGHT` | no | `1` if that hook honours `MOS_DEB_PREFLIGHT=1`; see below |
 
 `ARCHES=all` means the package is architecture-independent. `all` may not be
 mixed with a specific architecture: an `all` package is already a member of
@@ -74,6 +75,67 @@ express, which is what lets one generic driver build all of them.
 `build.sh` always passes `packer` (this directory) as a build context, because
 `pack.sh` is the packaging contract and an edit to it must take effect without
 rebuilding the builder family.
+
+### `preflight.sh` -- every missing input at once
+
+`make os-debs` builds the discovered producers in sequence and each checks its
+own inputs when its turn comes, so a missing input surfaced **after** the
+producers ahead of it had been packed, named one file, and the next one was
+learned on the next attempt. `os/build-env/deb/preflight.sh` runs first -- it is
+a prerequisite of `os-debs` and the target `make os-deb-preflight` -- and
+reports all of them together: every `BUILD_CONTEXTS` path, every `PREPARE` hook
+file, every base image `FROM_IMAGES` and the packer resolve to, and whatever a
+producer's own hook checks. It prints what it examined and refuses to report
+success over a count of zero. It builds nothing and starts no container.
+
+A hook whose inputs no key can describe opts in with `PREFLIGHT="1"` and is then
+also run with `MOS_DEB_PREFLIGHT=1`, `MOS_DEB_ARCH` and the producer/repo
+variables, and **no** `MOS_DEB_STAGE`: there is nothing to stage into yet. Two
+producers do:
+
+- `board-cx3576` picks its BSP artefacts through `BOARD_DIR`, which is chosen at
+  run time and so cannot be a fixed path in `producer.env`.
+- `podman` reuses `os/pkgs/podman/out-<arch>`, and reports whether it exists, is
+  complete and carries a stamp matching `versions.env` -- see
+  `os/pkgs/podman/versions-stamp.sh`. An absent engine **warns**, because this
+  producer builds one; a complete engine compiled from a superseded
+  `versions.env` is **missing**, because the producer refuses it. Without the
+  warning, that three quarters of an hour arrived only when this producer's
+  turn came, started from inside a packaging hook.
+
+In that mode a hook prints **three** counts, on **both** paths --
+`preflight-examined:`, `preflight-missing:` and `preflight-warned:` -- and exits
+non-zero when the missing one is not zero.
+
+**Missing and warned are decided by what the RUN would do, not by how serious it
+looks.** Missing means nothing in the run produces it, so `make os-debs` gets no
+further than the producer that needs it and the pre-flight refuses. Warned means
+the producer makes it itself, at a cost: the run would succeed, it would just
+spend three quarters of an hour somewhere the operator did not expect. That is a
+visibility problem, and it is answered by saying so -- the warning names the cost
+and the command that pays it separately -- not by refusing. Refusing it would
+change what `os-debs` means, since a producer whose hook compiles its own input
+is how a pool comes to exist on a fresh host, and three of the five hooks here
+compile.
+
+All three counts are required and a zero is written rather than omitted: a hook
+that reports success without saying what it looked at is indistinguishable from
+one that looked at nothing; a failing hook with no missing count would have a
+report naming four files counted as one; and a hook with no warned count would
+make "this producer has nothing it can make for itself" and "this hook has not
+been taught the category" the same run. Only `examined` refuses a zero.
+
+The aggregate prints the warned total on its **own line**, never folded into the
+verdict: two numbers in one sentence is how a category that does not fail a run
+stops being visible.
+
+Opt-in per producer, not automatic: a hook that has not been taught the variable
+would do its full work instead. A pre-flight that compiles is not a pre-flight --
+and PLAN-036 section 4 already says composition does not compile a component.
+
+`os/tests/deb-preflight-test.sh` drives all of it: the aggregate over a
+baseline, `BOARD_DIR` in both directions, and each half of the count contract
+mutated until the run goes red.
 
 ### Adding one
 
@@ -266,9 +328,15 @@ Required in the environment; `pack.sh` fails by name if it is unset. There is
 no "now" default, because one would make every archive irreproducible while
 every build stayed green.
 
-It is a **clamp**, not an assignment: a payload file newer than the epoch is
-moved back to it, one older keeps its own mtime. Ownership is normalised to
-`root:root` and the archive is built with `dpkg-deb --build --root-owner-group`.
+Every payload mtime is **set** to it, not clamped to it. A clamp -- the
+Reproducible Builds convention, and what `dpkg-deb` does on its own -- would
+leave a file older than the epoch carrying its own mtime, and in this repository
+that mtime is a *checkout* time: buildkit's `COPY` preserves the source file's
+mtime exactly, so a payload copied out of the working tree carries the moment
+that clone was made rather than anything about the commit. The ruling, what the
+alternative would have cost and which constraint forced it are written at the
+decision site in `pack.sh`. Ownership is normalised to `root:root` and the
+archive is built with `dpkg-deb --build --root-owner-group`.
 
 ### The control template
 

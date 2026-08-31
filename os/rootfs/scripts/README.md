@@ -1,15 +1,22 @@
-# os/rootfs/scripts — the shell the stage files call
+# os/rootfs/scripts — the shell the Dockerfiles call
 
-Every `RUN` body in `../stages/*.Dockerfile` longer than one command is a file
-here. Each stage file reaches its own the same way:
+Every `RUN` body longer than one command is a file here. A caller reaches its
+own the same way:
 
 ```dockerfile
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/<name>.sh
 ```
 
-Every file below names its stage in its own header, and `../stages/README.md`
-says which stage holds what.
+Two kinds of caller, and every file below names its own in its header:
+
+- **the finalizer**, `../compose/90-pack.Dockerfile` — the `pack-*` files, the
+  package-manager capture and purge, and the shadow-date pin. These close and
+  pack the assembled root and are the bulk of this directory.
+- **a package producer** — `ca-certificates-generate.sh`, run by
+  `../packages-src/ca-trust`, and `rauc-assert-no-tls-stack.sh`, run by
+  `os/pkgs/rauc/deb/rauc`. A producer runs the repository's own file rather
+  than restating it, so the rule and the payload cannot come apart.
 
 ## Why a bind mount and not a `COPY`
 
@@ -33,21 +40,8 @@ under `/tmp` would be invisible.
 Docker puts every `ARG` that has a value into the `RUN`'s **environment**, so
 the shell reads them from there — and so does any child of that shell. Nothing
 is passed explicitly on the `RUN` line, because nothing needs to be: the script
-inherits `BOARD_RADIOS`, `MOS_ARCH`, `RAUC_BOOTLOADER` and the rest exactly as
-an inline body would see them.
-
-`WITH_CONTAINERS` and `WITH_MOSD` are not on that list. A declined feature is a
-stage file the driver does not build, so a script that runs at all was asked
-for; five scripts each testing one build argument, and a sixth testing another
-four times, is five chances to disagree. `../stages/README.md` has the
-mechanism.
-
-`firmware-install.sh` reads no `MOS_ARCH` either. The board stages what it
-carries, so the question the script asks is what is here rather than which
-board it is on — and `BOARD_FIRMWARE_FILES`, the same layout key the image
-verifier checks the image against, is what it asserts landed.
-`hwinit-install.sh` reads `MOS_BOARD` and **branches on none of it**: it names
-the board's own `os/boards/<board>/hwinit` in its diagnostics.
+inherits `BOARD_RADIOS`, `MOS_ARCH` and the rest exactly as an inline body
+would see them.
 
 The failing side matches too. An `ARG` declared with no value is *unset* in the
 environment, not empty, so a `set -u` on it fails inside the script with the
@@ -57,8 +51,8 @@ reads in its header.
 ## Which comments live here
 
 The prose that explains what the image *is* — which package is in the allowlist
-and why, which unit is deliberately not enabled — stays in the stage files,
-next to the `FROM`, `ARG` and `COPY` it describes.
+and why, which unit is deliberately not enabled — stays with the `FROM`, `ARG`
+and `COPY` it describes, or in the package producer that now owns the paths.
 
 The comments that explain lines of shell live here with their code, and here
 they are real comments. Inside a `RUN` body they are not: the Dockerfile parser
@@ -66,18 +60,18 @@ deletes a whole-line comment *before* it joins the continuations, so such a
 line never reaches the shell at all — which is why one can sit in the middle of
 a `&&` chain without breaking it.
 
-## What stays in the stage files
+## What stays in the Dockerfile
 
-- **Package lists.** A stage's package set *is* the image; reading it should not
+- **Package lists.** A build's package set *is* the image; reading it should not
   require opening a second file. `apt-get install` lines stay in the Dockerfile.
 - **Single-command `RUN`s.** `RUN rm -f /etc/ssh/ssh_host_*` gains nothing from
   a hop through a file.
 
 ## The seam is the `RUN` boundary
 
-One `RUN` is exactly one script — none merged, none split. The stage files
-choose those boundaries for reasons they document; the pack stage says outright
-that it is "in three steps so each can carry its own explanation and cache
+One `RUN` is exactly one script — none merged, none split. The callers choose
+those boundaries for reasons they document; the pack stage says outright that
+it is "in three steps so each can carry its own explanation and cache
 independently".
 
 ## These scripts are POSIX `sh`, and must stay that way

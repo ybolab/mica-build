@@ -2,8 +2,7 @@
 # check=skip=InvalidDefaultArgInFrom
 # The profile producer: the `mos-profile-dev` and `mos-profile-prod` packages.
 #
-#   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/rootfs/packages-src/profile --arch all
+#   bash os/build-env/deb/build.sh --producer profile --arch all
 #
 # This file only STAGES and PACKS. Nothing is compiled here and nothing is
 # copied out of another image: the payload is one generated text file per
