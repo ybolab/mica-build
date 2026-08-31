@@ -31,8 +31,8 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY copyright /in/copyright
-COPY radios/control/ /in/control/
+COPY --from=family copyright /in/copyright
+COPY control/ /in/control/
 
 # The unit bodies and the attach program, out of the tree that ships them
 # today, rather than re-entered here. They are copied and never edited: a

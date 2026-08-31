@@ -22,8 +22,8 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY copyright /in/copyright
-COPY profile/control/ /in/control/
+COPY --from=family copyright /in/copyright
+COPY control/ /in/control/
 
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH

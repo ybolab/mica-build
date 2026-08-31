@@ -403,6 +403,13 @@ for pool_arch in "${POOL_ARCHES[@]}"; do
     OUT_ARGS+=(-o "type=local,dest=${POOL}")
 done
 
+# The primary build context is the PRODUCER DIRECTORY, which is what README.md
+# says a producer is: a Dockerfile and a producer.env, plus the material that
+# belongs to that package alone. Handing over this directory instead would put
+# every sibling producer in each one's context, so a producer could COPY a
+# neighbour's control template and nothing would say it had. Whatever a producer
+# shares with its siblings -- the copyright file next to this script -- comes
+# back through a named BUILD_CONTEXTS entry, where the sharing is written down.
 echo "build-deb: packing ${PACKAGES} ${VERSION} for ${ARCH} on builder '${BUILDER}' (${BUILDER_DRIVER}), building at ${BUILD_ARCH}"
 docker buildx build --builder "${BUILDER}" \
     --platform "linux/${BUILD_ARCH}" \
@@ -417,7 +424,7 @@ docker buildx build --builder "${BUILDER}" \
     ${ARG_EXTRA[@]+"${ARG_EXTRA[@]}"} \
     -f "${DOCKERFILE}" \
     "${OUT_ARGS[@]}" \
-    "${HERE}"
+    "${PRODUCER_DIR}"
 
 # Everything this run put in the pools, so that a failed assertion below can
 # take it back out.

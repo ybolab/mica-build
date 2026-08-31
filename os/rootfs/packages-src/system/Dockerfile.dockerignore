@@ -1,12 +1,11 @@
-# The build context is os/rootfs/packages-src/, the producer family directory,
-# and this producer needs three things out of it: the shared copyright file,
-# its own control template and its own maintainer script. Everything else --
-# the driver, the README, and every sibling producer that lands beside it -- is
-# excluded, so an edit there does not invalidate this producer's context.
+# The build context is this producer's own directory, and two things are COPYed
+# out of it: its control template and its own maintainer script. The shared
+# copyright file lives one level up and arrives through the `family` named
+# context producer.env declares, so an edit to the driver, the README or a
+# sibling producer cannot invalidate this producer's context.
 #
 # The payload itself is not here. It arrives through the `overlay` build
 # context os/rootfs/packages-src/build-deb.sh resolves from producer.env.
 *
-!copyright
-!system/control/*.control
-!system/maintainer/**
+!control/*.control
+!maintainer/**

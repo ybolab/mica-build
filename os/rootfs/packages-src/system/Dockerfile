@@ -23,9 +23,9 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY copyright /in/copyright
-COPY system/control/ /in/control/
-COPY system/maintainer/ /in/maintainer/
+COPY --from=family copyright /in/copyright
+COPY control/ /in/control/
+COPY maintainer/ /in/maintainer/
 
 # The overlay tree, whole, from the `overlay` context producer.env declares.
 # The RUN below installs from it path by path and is the ONLY statement of what
