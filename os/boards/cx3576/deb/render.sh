@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# Stage the BSP-dependent inputs of mos-board-cx3576, then build the package.
+# Stage the BSP-dependent inputs of mos-board-cx3576 into ${MOS_DEB_STAGE}.
 #
-#   [BOARD_DIR=...] bash os/boards/cx3576/deb/render.sh
+# This is the producer's PREPARE hook, named in os/boards/cx3576/deb/producer.env
+# and run by the driver -- it is not an entry point and does not build anything:
 #
-#   -> _out/debs/arm64/pool/mos-board-cx3576_<version>_arm64.deb
+#   [BOARD_DIR=...] bash os/rootfs/packages-src/build-deb.sh \
+#       --producer-dir os/boards/cx3576/deb --arch arm64
 #
-# THIS IS THE PRODUCER'S ENTRY POINT, and os/rootfs/packages-src/build-deb.sh
-# is still the driver: this script does only the work that must happen on the
-# HOST, and then hands over.
+# The driver empties ${MOS_DEB_STAGE}, exports the hook environment
+# os/rootfs/packages-src/README.md documents, runs this script on the HOST
+# before any container is started, and then hands the directory to the build as
+# the `bin` context.
 #
-# Three things force a host-side step here, and the profile producer needed
-# none of them:
+# Three things force a host-side step here, and no other producer in the family
+# needed one:
 #
 #   - BOARD_DIR. os/rootfs/build-v2.sh takes prebuilt BSP artifacts from
 #     ${BOARD_DIR:-os/boards/<b>/bsp}, and this producer accepts the same
 #     override. A build context in producer.env is a fixed repository-relative
 #     path -- that file is plain KEY=value with no expansion, deliberately --
 #     so a directory chosen by an environment variable cannot be named there.
-#     The artifacts are copied into one fixed staging path instead, and THAT is
-#     what producer.env names.
 #   - The refusal. A missing BSP input must be reported BEFORE anything is
 #     built; inside the Dockerfile it would be reported after buildkit has
 #     already resolved the base, transferred the contexts and started a stage.
@@ -43,8 +44,17 @@ REPO_ROOT="$(cd "${BOARD_ROOT}/../../.." && pwd)"
 # The board is this producer's LOCATION, not a constant written down twice: the
 # directory that holds board.env is the same one that holds this script.
 MOS_BOARD="$(basename "${BOARD_ROOT}")"
-PRODUCER_REL="os/boards/${MOS_BOARD}/deb"
 LAYOUT_ENV="${BOARD_ROOT}/board.env"
+
+# The staging directory belongs to the driver: it creates it empty, hands it to
+# the build as `bin` and refuses a hook that leaves it that way. So this script
+# neither chooses the path nor clears it -- it only fills it, and a run outside
+# the driver has no stage to fill.
+STAGE="${MOS_DEB_STAGE:-}"
+[ -n "${STAGE}" ] ||
+    die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/rootfs/packages-src/build-deb.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/${MOS_BOARD}/deb --arch arm64"
+[ -d "${STAGE}" ] ||
+    die "MOS_DEB_STAGE=${STAGE} is not a directory"
 
 [ -f "${LAYOUT_ENV}" ] ||
     die "${LAYOUT_ENV} does not exist. Every value this producer renders or selects is read from it; there is no default for any of them"
@@ -123,18 +133,15 @@ done
 BOOT_CMD="${REPO_ROOT}/${BOOT_CMD_SOURCE}"
 [ -f "${BOOT_CMD}" ] || MISSING+=("error: ${LAYOUT_ENV} declares BOOT_CMD_SOURCE=${BOOT_CMD_SOURCE} and ${BOOT_CMD} does not exist.")
 
+# Before anything is written into the stage. The driver refuses a hook that
+# leaves ${MOS_DEB_STAGE} empty, so exiting here leaves the producer refused
+# with this message on the terminal and the build never reached.
 if [ "${#MISSING[@]}" -gt 0 ]; then
     printf '%s\n\n' "${MISSING[@]}" >&2
     echo "render.sh: refusing to build mos-board-cx3576: the BSP inputs above are missing (BOARD_DIR=${BOARD_DIR}). Nothing was staged and no container was started." >&2
     exit 1
 fi
 
-# One fixed path, because producer.env names it as a build context and that
-# file cannot expand a variable. Under tmp/, which is gitignored and is this
-# repository's declared bind-mount root -- os/rootfs/packages-src/build-deb.sh
-# puts its own OCI layouts beside it.
-STAGE="${REPO_ROOT}/tmp/mos-board-${MOS_BOARD}-deb"
-rm -rf "${STAGE}"
 mkdir -p "${STAGE}/etc/rauc" "${STAGE}/firmware" "${STAGE}/boot"
 
 # board.env travels with the staged inputs so the Dockerfile reads THE FILE
@@ -204,9 +211,3 @@ cp "${BOOT_CMD}" "${STAGE}/boot/${BOOT_CMD_SOURCE##*/}"
 chmod 0644 "${STAGE}"/firmware/* "${STAGE}"/boot/* "${STAGE}/modules.tar" "${STAGE}/board.env"
 
 echo "render.sh: staged BSP inputs from ${BOARD_DIR} into ${STAGE}"
-
-# MOS_ARCH, because the architecture a board's package is built for is a board
-# fact. producer.env declares the same value as its only ARCHES entry, and the
-# driver refuses any other.
-exec bash "${REPO_ROOT}/os/rootfs/packages-src/build-deb.sh" \
-    --producer-dir "${PRODUCER_REL}" --arch "${MOS_ARCH}"

@@ -2,10 +2,11 @@
 # check=skip=InvalidDefaultArgInFrom
 # The cx3576 board producer: the `mos-board-cx3576` package.
 #
-#   bash os/boards/cx3576/deb/render.sh
+#   bash os/rootfs/packages-src/build-deb.sh \
+#       --producer-dir os/boards/cx3576/deb --arch arm64
 #
-# That script is the entry point; it stages the BOARD_DIR-selected BSP inputs
-# and then runs os/rootfs/packages-src/build-deb.sh, which builds this file.
+# The BOARD_DIR-selected BSP inputs and the rendered configuration arrive as the
+# `bin` context, staged on the host by this producer's PREPARE hook, render.sh.
 #
 # This file only STAGES and PACKS. Nothing is compiled here: the kernel modules
 # and the boot inputs are the BSP's output, the firmware is a committed vendor
@@ -36,8 +37,8 @@ COPY --from=packer pack.sh /usr/local/bin/pack.sh
 # This board's own copyright and control template, from beside this Dockerfile.
 COPY --from=boarddeb copyright /in/copyright
 COPY --from=boarddeb control/ /in/control/
-# The BOARD_DIR-selected inputs and the rendered configuration, from render.sh.
-COPY --from=stage . /in/stage/
+# The BOARD_DIR-selected inputs and the rendered configuration, from PREPARE.
+COPY --from=bin . /in/stage/
 # Committed trees, at the paths the image build reads them from today.
 COPY --from=hwinit . /in/hwinit/
 COPY --from=boardinit . /in/board-init/
