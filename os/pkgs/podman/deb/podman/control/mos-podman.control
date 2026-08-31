@@ -1,0 +1,57 @@
+Package: mos-podman
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: mos build <mos@example.invalid>
+Section: admin
+Priority: optional
+Depends: mos-system, nftables, libsystemd0, ${shlibs:Depends}
+Description: mos container engine
+ The seven binaries os/pkgs/podman compiles from pinned upstream source --
+ podman and quadlet from containers/podman v5.8.6, crun 1.29.1, conmon v2.2.1,
+ netavark v2.1.0, aardvark-dns v2.1.0 and catatonit v0.2.1 -- with the Quadlet
+ system generator symlink, the /etc/containers configuration podman actually
+ reads, and the Quadlet unit directory the operator writes into.
+ .
+ The versions are this repository's decision and not the distribution's: trixie
+ ships podman 5.4.2, crun 1.21 and netavark 1.14, and os/pkgs/podman/versions.env
+ is the upgrade interface for all six.
+ .
+ THE ENGINE SHIPS INSTALLED AND INERT. This payload carries no
+ multi-user.target.wants symlink, because podman ships no service units at all:
+ upstream's live in contrib/ and are installed by `make install.systemd`, which
+ os/pkgs/podman does not run. The one unit here,
+ etc-containers-systemd.mount, is installed and deliberately not enabled --
+ statically enabling the bind would give anything able to write
+ /mnt/state/quadlet a root-capable container at the next reboot with no operator
+ decision in the path. mosd's ContainerReconciler enables and starts it from the
+ container.enabled setting, which is the runtime-scoped enablement every other
+ mos-driven unit uses.
+ .
+ THE THREE DEPENDENCIES BELOW ARE WRITTEN OUT BECAUSE dpkg-shlibdeps CANNOT SEE
+ THEM. Everything it can see -- libjson-c5 for crun, libsubid5 and libseccomp2
+ for podman, libcap2 for crun, libglib2.0-0t64 for conmon -- comes from
+ ${shlibs:Depends} over the payload's ELF and is not restated here.
+ .
+ nftables is reached by exec, not by linking. netavark 2.1.0 has three firewall
+ drivers (Firewalld, Nftables, Fwnone); the iptables driver was removed in 2.x,
+ nftables is the compile-time default, and netavark runs `nft` off PATH. Without
+ it the first `podman run` fails with "netavark: nftables error: unable to
+ execute nft", and no NEEDED-soname check can predict that.
+ .
+ libsystemd0 is reached by dlopen, not by linking. go-systemd's sdjournal opens
+ "libsystemd.so.0" by name at runtime, so podman's NEEDED entries do not mention
+ it and ldd cannot find it; containers.conf sets log_driver = "journald", so the
+ library's absence would lose container logs rather than fail loudly.
+ libsystemd0 is the trixie package shipping that soname.
+ .
+ mos-system is depended on UNVERSIONED and deliberately so. It owns the mounts
+ this package's configuration names: storage.conf puts the container graphroot
+ on /srv/containers/storage, which is the DATA partition mos-system's fstab
+ mounts, and etc-containers-systemd.mount binds /mnt/state/quadlet, which needs
+ mos-seed-state.service from the same package. Nothing here is pinned to a
+ mos-system built from this commit, so an exact-version dependency would assert
+ a coupling that does not exist.
+ .
+ There is no dependency on mosd, mos-apid, mos-mqttd or mos-mqtt-broker. The
+ engine is installed alongside them, not above them: it runs without any of them
+ present, and mosd's use of it is mosd's dependency and not this one's.
