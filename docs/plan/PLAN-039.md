@@ -1,8 +1,8 @@
 # PLAN-039 Serve a built-in SPA and put management behind `/api`
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-08-31
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-08-31 18:07 UTC
 - **relatedTask**: [RFCT-275](../task/RFCT-275.md)
 
 ## Context
