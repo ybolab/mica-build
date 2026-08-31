@@ -575,8 +575,11 @@ there is one.
   every step it reuses; in a cold run the only `CACHED` lines are the
   digest-pinned base-image resolves, and not one `RUN` is reused.
 - **Compare on two instruments.** `diff -r --no-dereference` over the extracted
-  trees for content, and `unsquashfs -lln` over all 9,241 entries for mode,
+  trees for content, and `unsquashfs -lln` over all 9,234 entries for mode,
   uid/gid and path with size and mtime excluded and re-sorted on that triple.
+  The count is the x64 figure and it moves whenever a file is added to or
+  dropped from the root, so re-derive it rather than trusting this line:
+  `unsquashfs -l rootfs-verity.img | wc -l`.
   Every mtime in both listings is the pinned `2020-01-01 00:00`. Content and
   metadata fail in different ways and either instrument alone reads green over
   the other's failure. Drive both from the failing side before believing them:
