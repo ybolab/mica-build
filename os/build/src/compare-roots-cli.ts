@@ -26,6 +26,12 @@ either sanctioned in writing or reported.
   DIR_B            the candidate root -- the path replacing it (the composer)
   --sanctions FILE the ledger (default: os/tests/dual-build-sanctions.md)
 
+PASS ABSOLUTE PATHS. run.sh runs bun with os/build/ as its working directory,
+so a relative argument is resolved against os/build/ and not against wherever
+the caller stood -- which surfaces as "does not exist" naming a path the caller
+can see. Every mode of run.sh behaves this way; this is the one that takes bare
+directories rather than a --out-dir with an absolute default.
+
 'added' means present in B and absent in A, so which argument is which decides
 what the ledger's stanzas mean. PLAN-036 sanctions ADDITIONS -- package
 documentation and the package composition record -- so the composed root is B.
