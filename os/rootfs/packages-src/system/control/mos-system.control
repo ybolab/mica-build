@@ -1,0 +1,42 @@
+Package: mos-system
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: mos build <mos@example.invalid>
+Section: admin
+Priority: optional
+Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, udev, dbus, kmod, openssh-server, iproute2, libubootenv-tool, curl, passwd
+Description: mos common system policy, state mounts and operator account
+ The board-independent half of a mos root filesystem: the seed and reconcile
+ tools under /usr/lib/mos, their units, the STATE and DATA bind mounts
+ (/var/lib/mos, /etc/ssh, /etc/hostname, /home, /root,
+ /usr/local/lib/systemd/system), the six board-independent repart.d position
+ holders, the /var fill-up policy, the image's default DHCP network and
+ journald's volatile storage policy.
+ .
+ It owns the /var/lib/mos mountpoint. That directory and var-lib-mos.mount are
+ two halves of one mechanism -- mosd.service declares
+ RequiresMountsFor=/var/lib/mos -- so mosd names this package in Depends
+ rather than shipping the directory itself.
+ .
+ The postinst creates the pinned mos operator account, uid and gid 1000, home
+ /home/mos, shell /bin/bash. The uid is written out rather than allocated
+ because /home/mos lives on the DATA partition and survives every A/B update,
+ so its owner is part of the on-disk contract. The account is granted no
+ supplementary groups and no sudo, and it is not a lesser privilege level:
+ sshd authorises root and mos from one key list.
+ .
+ Architecture: all, and the Depends above asks for no shlibs substitution.
+ Nothing in the payload is an ELF, so there is no shared-library dependency
+ for the packer to resolve -- asking would be an error rather than an empty
+ expansion. Every entry above is a relationship ELF metadata could not show
+ anyway: systemd-repart is a separate package on trixie and its absence is
+ silent -- DATA simply never grows; libubootenv-tool provides fw_printenv for
+ the machine-id oneshot; curl is what the health gate probes apid with, and
+ without it that probe SKIPs and the gate reports green over two of three
+ components; passwd provides the useradd, groupadd and chage the postinst
+ execs by name.
+ .
+ RAUC's runtime libraries are deliberately not here. glib, json-glib and
+ libfdisk are in the image for the self-built rauc alone and belong to
+ mos-rauc; they are installed by the base stage today only because the stage
+ chain had nowhere else to put them.
