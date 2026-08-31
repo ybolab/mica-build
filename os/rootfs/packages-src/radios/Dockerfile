@@ -3,8 +3,7 @@
 # The radios producer: the `mos-wifi`, `mos-wifi-ap` and `mos-bluetooth`
 # packages.
 #
-#   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/rootfs/packages-src/radios --arch all
+#   bash os/build-env/deb/build.sh --producer radios --arch all
 #
 # THREE packages and not one `mos-radio`, and not one combined Wi-Fi package.
 # A board picks station, access point and Bluetooth independently, so each is

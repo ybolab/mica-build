@@ -131,7 +131,6 @@ mos/
 │   ├── tests/     针对已构建镜像的 shell 套件
 │   ├── tools/     QEMU 辅助脚本
 │   └── verify/    TypeScript：板卡模型，以及装配后镜像必须通过的检查
-├── extensions/    预留给可选 sysext 层，目前不构建任何东西
 └── Makefile       顶层路由；`make help` 列出全部目标
 ```
 

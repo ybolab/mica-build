@@ -48,3 +48,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-271 Write the build guide: x64 and cx3576, cross-compile versus emulation**](RFCT-271.md) `P2`
 - [x] [**RFCT-272 Chain the rootfs stages through OCI layouts so cx3576 builds without host binfmt**](RFCT-272.md) `P1`
 - [-] [**RFCT-273 Design the embedded-first user delivery documentation set**](RFCT-273.md) `P1`
+- [-] [**RFCT-274 Bound, scope and queue the settings-write path so the UI stops hanging**](RFCT-274.md) `P1`

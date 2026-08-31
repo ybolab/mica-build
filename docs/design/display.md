@@ -23,9 +23,14 @@ kiosk session: cage (Wayland kiosk compositor) + WPE WebKit browser
 board graphics stack (BSP: kernel DRM + HDMI + GPU driver/firmware)
 ```
 
-- **`kiosk` system extension**: cage + WPE WebKit (+ mesa/GPU userland). Heavy
-  C stack, therefore an extension per image profile — headless deployments
-  simply omit it; base rootfs is untouched. Runs as a systemd unit, like every other
+- **`mos-gui` container**: cog (WPE WebKit) holding DRM/KMS directly through
+  GBM — no X, no Wayland, no compositor. The whole display layer (container
+  image, systemd/Quadlet orchestration, HDMI probing) lives in its own
+  repository, `bkhq/mos-gui` on git.ds.cc; the base image only runs it
+  through the podman/Quadlet machinery it already ships. Headless
+  deployments simply do not deploy the container. Its one interface to the
+  page is a URL. (Two earlier delivery ideas are retired: a sysext layer,
+  and host packages — the container needs no second mechanism.) Runs as a systemd unit, like every other
   service on the device.
 - WPE WebKit is the embedded-first choice (smaller than Chromium, upstream
   WPE/cage pairing is standard kiosk practice). Chromium `--kiosk` is the
@@ -46,7 +51,7 @@ kiosk:
   showWizardWhenUnprovisioned: true
 ```
 
-`DisplayConfig` → controller → `DisplayStatus` resource → kiosk extension
+`DisplayConfig` → controller → `DisplayStatus` resource → mos-gui container
 service start/stop/restart, no reboot. `url` allows a product build to point
 the screen at an application UI (served by an app container) instead of apid.
 
@@ -74,7 +79,8 @@ provide:
   (cx3576/RK3576: Mali via mainline panfrost, or the vendor blob driver as
   fallback — decided during board bring-up); `CONFIG_DRM_FBDEV_EMULATION`
   already asserted.
-- GPU firmware/userland into the kiosk extension (not base rootfs).
+- GPU userland (mesa) into the mos-gui container image; kernel DRM and GPU
+  firmware stay with the board (kernel + board package).
 - Output and default rotation, which are a comment in the board definition and
   not yet a key: "Display defaults, recorded rather than declared: the output is
   hdmi and the default rotation is 0"
@@ -96,7 +102,7 @@ provide:
 
 | Phase | Scope |
 |---|---|
-| 1 | kiosk extension (cage+WPE), DisplayConfig/controller, apid local wizard route, splash-to-kiosk handoff on cx3576 |
+| 1 | mos-gui container (cog/WPE), DisplayConfig/controller, apid local wizard route, splash-to-kiosk handoff on cx3576 |
 | 2 | touch input polish, rotation, blanking, crash-splash |
 | 3 | custom app `url` mode + per-app UI containers (ties into workload/secondary-ECU design) |
 

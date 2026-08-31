@@ -166,12 +166,12 @@ fi
 
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
 #
-# One instant, two consumers: this value is also what the driver is given as
+# One instant, three consumers: this value is also what the driver is given as
 # --source-date-epoch, which buildkit stamps into the OCI export of the packed
-# root. Deliberately the same number and not two pinned constants -- the
-# squashfs and the OCI image are two encodings of one tree, and a second epoch
-# would be a second answer to "when was this root made" that nothing would
-# reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
+# root, and what stages/40-board runs update-initramfs under. Deliberately the
+# same number and not three pinned constants -- the squashfs, the OCI image and
+# the initrd are three encodings of one tree, and a second epoch would be a
+# second answer to "when was this root made" that nothing would reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
@@ -229,6 +229,26 @@ rm -rf "$PODMAN_STAGE"
 mkdir -p "$PODMAN_STAGE"
 if ! declined containers; then
     PODMAN_OUT="$REPO_ROOT/os/pkgs/podman/out-$MOS_ARCH"
+    # WHICH versions.env THOSE BINARIES CAME FROM, asked BEFORE any of them is
+    # staged. The loop below is exactly the check os/pkgs/podman/build.sh's own
+    # comment says is not enough: "a stale out/ from the other architecture
+    # looks exactly like a fresh one to anything that only checks the files are
+    # present". Seven present, executable, right-architecture binaries compiled
+    # from a superseded pin pass every line of it -- and this is the IMAGE
+    # path, so without this the bump that is this project's whole upgrade
+    # interface could be made, committed and SHIPPED while the device kept
+    # running the engine from before it.
+    #
+    # The same refusal os/pkgs/podman/deb/podman/prepare.sh makes on its reuse
+    # path, out of the same script, so the packaging path and the image path
+    # cannot come to disagree about what a current engine is. It runs first so
+    # that a refused build has staged nothing.
+    #
+    # A directory that does not exist yet is left to the loop: "not built" is
+    # its message to give, with the command that builds it.
+    if [ -d "$PODMAN_OUT" ]; then
+        bash "$REPO_ROOT/os/pkgs/podman/versions-stamp.sh" --check "$PODMAN_OUT"
+    fi
     for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
         if [ ! -f "$PODMAN_OUT/$b" ]; then
             echo "error: $PODMAN_OUT/$b not found." >&2
@@ -696,6 +716,7 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --arg MOS_PROFILE="$MOS_PROFILE" \
         --arg VERITY_SALT="$VERITY_SALT" \
         --arg SQUASHFS_TIME="$SQUASHFS_TIME" \
+        --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME" \
         --source-date-epoch "$SQUASHFS_TIME" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2

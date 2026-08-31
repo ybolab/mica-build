@@ -400,8 +400,18 @@ export async function negativeRun(opts: {
 
   const record = readFactoryRoot(opts.board)
   log(`os/verify negative: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes)`)
-  await loadFactoryRoot(record)
-  await preflight(dockerExec(record.ref), record.platform)
+  // What the load RESOLVED, never `record.ref`. That tag is daemon-global and
+  // this campaign runs two and three worktrees at once: a sibling loading its
+  // own `:x64` between this load and the last case would make every mutation,
+  // every positive control and every verdict here a statement about somebody
+  // else's root -- and each case would still look like it held. It is the same
+  // change `smokeRun` took, for the same reason; see loadFactoryRoot.
+  const loaded = await loadFactoryRoot(record, capture, log)
+  log(
+    `os/verify negative: mutating image ${loaded.id}, identified by `
+    + `${loaded.source === 'content' ? `the digest ${record.archive} carries` : `the tag ${loaded.ref}`}`,
+  )
+  await preflight(dockerExec(loaded.id), record.platform)
   log(`os/verify negative: the unmutated root executes on this host -- the controls below can be green`)
 
   const build = readMosdBuildFact(opts.board)
@@ -417,12 +427,34 @@ export async function negativeRun(opts: {
   // root's mutated image left behind by another worktree on this host.
   const stamp = record.sha256.slice(0, 12)
 
+  // The mutations are `docker build`s, and buildkit's `FROM` resolves a NAME:
+  // measured on docker 29.7.2, `FROM sha256:<id>` is read as the repository
+  // `docker.io/library/sha256:<id>` and the build dies of `pull access denied`,
+  // and `FROM localhost/mos-factory-root@sha256:<id>` dies of `not found`. So
+  // the ID is pinned into a name this run makes from it. That name is derived
+  // from the archive's own sha256, so a sibling that writes it writes it for a
+  // byte-identical root; the daemon-global `:x64` it replaces is the one another
+  // worktree can re-point mid-run. Nothing removes it: it is a second name for a
+  // healthy image, it is re-pointed rather than accumulated, and a `docker image
+  // rm` of it could take the root out from under a sibling mid-build.
+  const base = `mos-smoke-negative:base-${stamp}`
+  const tagged = await capture(['docker', 'tag', loaded.id, base], EXEC_TIMEOUT_MS)
+  if (tagged.status !== 0) {
+    throw new Error(
+      `could not name ${loaded.id} as ${base} (docker tag exited ${tagged.status}: `
+      + `${tagged.stderr.trim() || tagged.stdout.trim()}), so the mutations below would have to be `
+      + `built FROM the daemon-global ${record.ref} -- a name another worktree on this host can `
+      + `re-point between now and the last case.`,
+    )
+  }
+  log(`os/verify negative: ${loaded.id} is named ${base} for this run; every mutation is built FROM that`)
+
   const outcomes: CaseOutcome[] = []
   for (const c of cases) {
     log('')
     log(`── ${c.name} ── ${c.clause}`)
     log(`   breaks ${c.artifact}; everything else in the root is untouched`)
-    const o = await runCase(c, record.ref, record.platform, opts.board, build, stamp)
+    const o = await runCase(c, base, record.platform, opts.board, build, stamp)
     for (const l of o.lines) log(`   ${l}`)
     log(`   ${o.held ? 'HELD' : 'DID NOT HOLD'}`)
     outcomes.push(o)
