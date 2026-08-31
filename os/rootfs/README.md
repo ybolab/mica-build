@@ -119,9 +119,10 @@ their scripts come from `os/boards/<board>/hwinit/` (six of each on cx3576; x64
 has no such directory and stages an empty one), and the board-specific facts
 they read — module names, sysfs paths, UART device, CAN defaults, MAC seed,
 gadget IDs — come from conf files staged from `BOARD_DIR/init/`, falling back to
-the in-repo `os/boards/<board>/bsp/init/`, into `/etc/mos/`. Both reach
-`stages/40-board` as staged directories (`BOARD_HWINIT_DIR`, `BOARD_INIT_DIR`)
-because a `COPY` cannot be gated on an `ARG`. Every unit is condition-gated on
+the in-repo `os/boards/<board>/bsp/init/`, into `/etc/mos/`. Both are package
+payload now: `mos-board-<board>` installs the programs, the units and the confs
+that `BOARD_HWINIT_CONFS` names, and refuses a fact no script reads or a script
+with no unit to run it. Every unit is condition-gated on
 its conf file and never blocks, delays, or fails the boot; WiFi association / BT
 pairing stay with connd. The units are enabled via `multi-user.target.wants`
 symlinks like mosd.
@@ -160,34 +161,47 @@ hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
 # Layout v2 — squashfs + dm-verity rootfs
 
-`build-v2.sh` / `stages/` / `scripts/` / `overlay-v2/` are the build. The
-design record is `docs/design/ro-root.md` — read it before changing anything
-here.
+`build-v2.sh` / `compose/` / `packages/` / `packages-src/` / `scripts/` /
+`overlay-v2/` are the build. The design record is `docs/design/ro-root.md` —
+read it before changing anything here.
 
-## The build is a chain: `stages/`
+## The build is a composition: `compose/`
 
-`stages/` holds one Dockerfile per stage — `10-base`, `20-install`, five
-`30-feature-*`, `40-board`, `90-pack` — built in numeric order, each `FROM` the
-local image tag the previous one was written to. `build-v2.sh` stages the
-context and computes every argument; sequencing is
-`os/build/run.sh --build-rootfs`.
+`compose/` holds two Dockerfiles, built in numeric order, the second `FROM` the
+local image tag the first was written to:
 
-**A feature is a file, so declining one is leaving the file out.** Stage
-selection is what the chain has in place of `WITH_*` build arguments:
-`--without containers` builds a chain with no `31-feature-containers` in it,
-and the driver refuses a name that matches no feature stage rather than
-silently building the full image. `WITH_CONTAINERS=0` and `WITH_MOSD=0` work —
-`build-v2.sh` turns them into that flag — and `_out/<board>/rootfs-stages.txt`
-records which features are declined, because an image built without a feature
-stage and an image whose feature stage does nothing look identical afterwards.
+- **`10-compose.Dockerfile`** — the whole device root in **one APT
+  transaction**, against the local package pool `make os-debs` builds under
+  `_out/debs/<arch>/`, on the digest-pinned Debian trixie base.
+- **`90-pack.Dockerfile`** — the finalizer: close the root, tree surgery,
+  whole-tree assertions, squashfs, dm-verity, and the two export surfaces.
 
-`stages/README.md` is the file to read first: what the chain is, which stage
-holds what, the order constraints that fix it, and the measurement that the
-builder must use the `docker` driver.
+`build-v2.sh` stages the context and computes every argument; sequencing is
+`os/build/run.sh --build-rootfs`, pointed here with `--stages-dir`.
+
+**What used to be a stage is a package now.** The floor, the read-only-root
+wiring, the four feature stages and the board are `mos-system`, `mos-ca-trust`,
+one of `mos-profile-{dev,prod}`, the three radio packages, `mos-podman`,
+`mos-rauc`, `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` and one
+`mos-board-<board>`. **What decides the order they are configured in is their
+own `Depends`, not a number in a filename**, and one apt transaction is atomic
+by construction — so there is nothing here for a stage boundary to sit between,
+and this directory holds two files rather than nine.
+
+**Declining a feature is naming fewer packages.** `MOS_ROOTFS_WITHOUT`, into
+which `build-v2.sh` folds the historical `WITH_CONTAINERS=0` and `WITH_MOSD=0`,
+reaches the image through `packages/resolve.sh`, which refuses a feature name
+that matches nothing rather than silently resolving the full set. The durable
+record of what an image is made of is `_out/<board>/rootfs-packages.txt`, one
+row per local package with its version, architecture, archive sha256 and owning
+producer — read out of the pool index, never from a list kept by hand.
+
+`packages/README.md` covers the manifests and the resolver;
+`packages-src/README.md` covers the four producers whose source lives here.
 
 ## Where the shell is: `scripts/`
 
-The stage files hold almost no shell. Every `RUN` body longer than one command
+Neither compose file holds much shell. Every `RUN` body longer than one command
 is a file in `scripts/`, reached by a bind mount that leaves nothing in the
 image:
 
@@ -196,15 +210,16 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/<name>.sh
 ```
 
-Build arguments arrive through the environment, so the scripts read
-`BOARD_RADIOS`, `MOS_ARCH`, `RAUC_BOOTLOADER` and the rest.
-`WITH_CONTAINERS` and `WITH_MOSD` are not among them: the decision they select
-is the presence of `31-feature-containers` and `33-feature-mosd` in the chain.
-The package lists and the single-command `RUN`s stay in the stage files: a
-stage's package set *is* the image, and a one-line `RUN` gains nothing from a
-hop. `ARG` is per stage and also per *file*, so an argument a stage's `RUN`s
-read must be declared in that stage's file — `BOARD_RADIOS` is declared twice
-for that reason.
+The bulk of the directory is the finalizer's: the `pack-*` files, the
+package-manager capture and purge, and the shadow-date pin. Two files are
+reached by a **package producer** instead — `ca-certificates-generate.sh` by
+`packages-src/ca-trust` and `rauc-assert-no-tls-stack.sh` by
+`os/pkgs/rauc/deb/rauc` — so that the producer runs this repository's own rule
+rather than restating it.
+
+Build arguments arrive through the environment, so the scripts read `MOS_ARCH`,
+`RAUC_BOOTLOADER` and the rest. `ARG` is per stage and also per *file*, so an
+argument a `RUN` reads must be declared in that file.
 
 `scripts/README.md` has the rest — why a mount and not a `COPY`, why these files
 must stay POSIX `sh`, and how to check that a change to one of them is the
@@ -213,23 +228,26 @@ refactor it claims to be.
 ## Build
 
 ```sh
+# the package pool comes first; the composer installs from it and builds no component:
+make os-debs
 # needs os/boards/cx3576/bsp/out/kernel/modules.tar (make -C os/boards/cx3576/bsp kernel),
 # or point BOARD_DIR at prebuilt BSP artifacts:
 BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-rootfs-cx3576-v2   # rootfs only
 BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-image-cx3576-v2    # rootfs + full v2 image
 ```
 
-On x86 hosts, arm64 emulation comes from binfmt
-(`docker run --privileged --rm tonistiigi/binfmt --install arm64`), and it is
-**required** for a cross build rather than optional.
+`make os-debs` runs the BSP-consuming producer too, so `BOARD_DIR` matters there
+as well; `make os-deb-preflight` names every missing producer input at once,
+before the first container starts.
 
-`build-v2.sh` selects the `default` (docker-driver) builder and refuses up
-front, with the `binfmt` command, if it cannot reach the target platform. There
-is no docker-container fallback, and the reason is measured: the chain resolves
-`FROM ${MOS_STAGE_PREV}` against the **local docker image store**, and a
-`docker-container` builder cannot read it — handed a tag that is present it
-answers `pull access denied, repository does not exist`, about a registry.
-`stages/README.md` records the measurement.
+Host binfmt is **not** required for a cross build. `build-v2.sh` selects the
+`default` (docker-driver) builder when it can reach the target platform and the
+`mos-<arch>` docker-container builder when it cannot, the way the RAUC and
+podman builds do. On the container builder the link between the two files is an
+OCI layout under `_out/<board>/stages/` rather than a tag in the daemon's image
+store, because a `docker-container` builder cannot read that store — handed a
+tag that is present it answers `pull access denied, repository does not exist`,
+about a registry. `docs/design/build.md` §4.1 records both modes.
 
 Outputs to `_out/<board>/`. The first four are consumed by the image assembler
 -- `os/build/src/mkimage-v2.ts` and `mkimage-x64.ts`, entered through
@@ -245,7 +263,8 @@ image.
 | `rootfs-report-v2.txt` | a reader | package list, installed size, setuid/setgid inventory, file capabilities |
 | `factory-root.oci` | smoke runner | the packed root as an OCI-layout archive; `docker load -i` it |
 | `factory-root.txt` | smoke runner | what that archive is: `ref`, `platform`, `target`, `archive`, `bytes`, `sha256`, `source-date-epoch`, TAB-separated |
-| `rootfs-stages.txt` | smoke runner | the stage chain as built, and a `# declined:` line naming the feature stages left out -- or saying in parentheses that none were |
+| `rootfs-stages.txt` | smoke runner | the Dockerfiles as built, in order, each with its content hash. It records which FILES ran, not what the image is made of |
+| `rootfs-packages.txt` | a reader | **what the image is made of**: one row per local package with its version, architecture, archive sha256 and owning producer directory, read out of the pool index. Written only after the build succeeded |
 | `mosd-build.txt` | smoke runner | **the commit `mosd` and `apid` in this root were built from** |
 
 ### `mosd-build.txt`, and why it is a copy
@@ -270,7 +289,7 @@ already handles -- it prints that nothing was asserted, and says so on its own
 first lines -- and stale is one nothing could catch.
 
 Every layout constant is read from `os/boards/cx3576/board.env`; none is duplicated
-in `build-v2.sh`, `stages/` or the overlay. The board console/storage
+in `build-v2.sh`, `compose/` or the overlay. The board console/storage
 cmdline fragment (`console=ttyFIQ0,… earlycon=… net.ifnames=0`) is a board fact
 too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build-v2.sh` when
 x64 became the second board to need a v2 image.
@@ -343,7 +362,7 @@ above and apply identically here) **plus**:
   line to revert if the size budget is ever revisited.
 
 Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
-root is a build-stage job (they are installed in `stages/90-pack.Dockerfile`'s
+root is a build-stage job (they are installed in `compose/90-pack.Dockerfile`'s
 pack stage only), and the kernel opens the verity device straight from `dm-mod.create=`
 with no userspace tool involved.
 
@@ -416,8 +435,9 @@ helpers.
 No board fact and no board name is restated in this layer. Module names, sysfs
 paths, UART device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs
 all live in `BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the
-units read them at runtime; `stages/40-board` names no board at all, which
-`os/build/src/stages.test.ts` asserts over every stage file.
+units read them at runtime. The board name appears in exactly one place, the
+board's own producer directory: `compose/10-compose.Dockerfile` names no board,
+it installs whichever `mos-board-<board>` the resolution selected.
 
 ## RAUC system.conf is rendered, not committed
 
@@ -436,9 +456,10 @@ the file is present.
 ## systemd-repart is a package of its own on trixie
 
 trixie splits `systemd-repart` into a package of its own where bookworm shipped
-it inside `systemd`, so it is not free with the init system.
-`os/rootfs/stages/10-base.Dockerfile` names it in the install list for that
-reason, and the image verifier (`os/verify/`) asserts the enablement symlink.
+it inside `systemd`, so it is not free with the init system. `mos-system` names
+it in `Depends` for that reason — the relationship no ELF metadata could show,
+and its absence is silent — and the image verifier (`os/verify/`) asserts the
+enablement symlink.
 The failure if it were missing announces nothing — the device boots and DATA
 simply never grows past the 64 MiB the assembler creates.
 
@@ -492,7 +513,7 @@ What a developer actually gets on v2:
 - **Persistent access by SSH public key**, via the settings tree — the
   supported long-term path; every authorized key is a root key.
 
-## Determinism, and what still deviates
+## Determinism, and what it took to get there
 
 Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
 `rootfs-verity.img`. sshd host keys are **not** baked into the image — they
@@ -500,67 +521,64 @@ would be a private key shared by every device and would change the verity root
 hash on every cold build; `mos-seed-state` generates them per device on first
 boot instead.
 
-**A cold x64 build does not reproduce itself.** Seven cold builds of one
-unmodified tree gave seven different `rootfs-verity.img` sha256s —
-`1b3f5e50…`, `7aad6efd…`, `55cf38f3…` and `af841f4f…` among them. In every
-pairing the differing set is the same six of 9,241 entries:
+**A cold x64 build reproduces itself.** Two cold builds of one unmodified tree,
+at one commit, each on a `docker-container` builder created for it so that
+neither could replay the other's cache, produced the same `rootfs-verity.img` —
+`6ca98787…` on both sides — and the same `/boot/initrd.img`, `01e29d26…`.
+Measured 2026-08-31.
 
-| Entry | Why it moves |
-|---|---|
-| `/boot/initrd.img-*` | `update-initramfs` does not compress reproducibly. The 961 files *inside* are identical between runs; only the container's bytes differ (three runs gave 37190070, 37189886 and 37189690 bytes) |
-| `/usr/share/factory/var/cache/ldconfig/aux-cache` | build-time cache |
+This section used to say the opposite, and it was right to: seven cold builds
+of one tree gave seven different hashes. Three separate surfaces carried
+build-host state into the packed root. Each has been removed rather than
+tolerated, because a floating root is a floating dm-verity root hash, and
+`SQUASHFS_TIME` and `VERITY_SALT` are pinned precisely to stop that.
 
-Four further entries were in that set until later —
-`/usr/share/factory/var/log/dpkg.log`, `apt/history.log`, `apt/term.log` and
-`alternatives.log`, each differing only by a wall-clock stamp. They survived
-because the package-manager purge took `/var/lib/dpkg` and `/var/lib/apt` but
-not `/var/log`, and the pack stage then moved `/var` to
-`/usr/share/factory/var` whole. They are now removed by the purge, so the
-control set is **two of 9,241 entries rather than six**, and the seventh
-outside-the-tree entry below — `apt/eipp.log.xz`, which lives under
-`/var/log/apt` — cannot arrive at all. A control that admits fewer differences
-admits fewer real ones with them, so this is a strictly tighter comparison than
-the one it replaces.
+| Surface | What it carried | What was done |
+|---|---|---|
+| `/boot/initrd.img-*` | build-host inode numbers on 182 of 183 cpio entries, and the wall clock in 71 mtimes | `compose/10-compose` declares `SOURCE_DATE_EPOCH`; `build-v2.sh` passes the same instant it pins the squashfs to. `initramfs-tools` then clamps every staged mtime to the epoch, passes `cpio --reproducible` so entry inodes are renumbered from 1, and compresses with `gzip -n`. The declaration has to be in that file rather than in a script's arguments: `update-initramfs` reads the variable from the ENVIRONMENT, and here it is the kernel package's own postinst that runs it |
+| `/usr/share/factory/var/cache/ldconfig/aux-cache` | glibc's `{dev, ino, ctime, size}` for every shared library, as the BUILD host saw them | dropped in `pack-tree-surgery.sh`. A regenerable cache, already wrong for the device the moment it ships, and `ldconfig` rebuilds it anyway |
+| `/usr/share/factory/etc/shadow` and `/etc/shadow-` | the shadow last-change DAY for the accounts Debian's postinsts create: `systemd-network`, `messagebus`, `systemd-resolve`, `sshd` | `account-pin-shadow-dates.sh`, in `compose/90-pack`'s `closed` stage, pins every account to day 18262 — the same `2020-01-01` the three mos accounts already carried. On the composed path `useradd` writes that day itself, because the whole apt transaction runs under `SOURCE_DATE_EPOCH`; the pin is what makes the field a function of the tree either way |
 
-Removing them from the *image* is what the purge did; removing them from the
-*build* would have been the mistake, because `dpkg.log` is the instrument two
-bullets down. `90-pack`'s `closed` stage captures the three log paths before
-the purge and the driver exports them to `_out/<board>/pkg-logs/`.
+The third is the one worth remembering, because of how it hid. The value is a
+**day**: two builds in one session agree, so it passed every test this tree
+had, and it would have failed a dual-build gate at random months later for a
+reason nobody would have connected to a calendar. It also needed the pin run
+**twice** — `/etc/shadow-` is the snapshot `chage` takes *before* it writes, so
+one pass leaves the backup holding the unpinned row of whichever account was
+pinned last. `pack-assert-shadow-chain.sh` reads the field back out of the
+packed tree across both files, prints the number of account rows it examined,
+and refuses a zero.
 
 **What this means for a byte-identity gate.** Changing the build necessarily
-invalidates the layer cache, so "byte-identical before and after" cannot be
-measured cache-hot — and measured cold it fails for the six reasons above
-whether or not anything changed. A gate that compares sha256 across a build
-change is measuring the clock. The gate that works: extract both images and
-`diff -r --no-dereference` the trees, then check that the differing set is no
-larger than the control's, where the control is two cold builds of the
-*unmodified* tree. `os/build/run.sh --build-rootfs --no-cache` exists so the
-subject side can be cold without pruning the daemon's cache out from under
-every other build on the machine.
+invalidates the layer cache, so a comparison across a change is cold on at
+least one side. That used to make sha256 useless here, because a cold pair
+differed whether or not anything had changed. It is usable now: a cold pair of
+an unmodified tree agrees, so a difference is a difference. Two cautions
+survive, and both are about the apparatus rather than the tree.
 
-### A seventh entry the six-entry control cannot see: the build date
+- **Both sides cold, or neither.** A cached layer and a cold rebuild can
+  install different package versions — the base image is pinned by digest, the
+  archive it installs from is live — so a warm-against-cold pair measures the
+  Debian mirror. Compare cold against cold, and show it: `dpkg.log` from
+  `_out/<board>/pkg-logs/` with its timestamps stripped is byte-identical, over
+  an operation count both sides print, when both sides took the same package
+  set. Re-derive that count from the logs of the run in front of you; it moves
+  with the package set.
+- **When it does differ, attribute before concluding.** A whole-file sha256
+  cannot tell a working fix from a broken one. Unpack the cpio and charge each
+  difference to exactly one category — content first, then mtime, then inode —
+  because a fix that pins every mtime and leaves inode numbers floating still
+  fails a byte comparison and is not a failed fix.
 
-Two cold builds on **different days** differ in two entries beyond the six:
-
-| Entry | What differs |
-|---|---|
-| `/usr/share/factory/etc/shadow` | `systemd-network`, `messagebus`, `systemd-resolve` and `sshd` carry a last-change day number one higher on the later day — `20690` against `20691` |
-| `/etc/shadow-` | the same four, plus `mos`'s own pre-`chage` row, which the backup keeps |
-
-This is the exact failure `chage -d 2020-01-01` exists to prevent, and the
-comments on the three mos accounts say so outright: *"useradd stamps TODAY into
-it, which would make the packed rootfs — and therefore its dm-verity root hash
-— differ on every build day for no content reason at all."* The pinning covers
-the three accounts this build creates. It does not cover the accounts Debian's
-own package postinsts create, and it does not cover the `-` backup files, which
-snapshot the state **before** `chage` runs.
-
-So the packed root, and its verity root hash, depend on the calendar day.
-`/etc/shadow-` and `/etc/passwd-` are `useradd`'s pre-modification backups,
-unreadable and unwritable on a read-only verity root and read by nothing in the
-image, so removing them or pinning their dates is an image content change. A
-gate that must compare two builds runs them on the same day, or strips these
-two files.
+`os/build/run.sh --build-rootfs --no-cache` exists so the subject side can be
+cold without pruning the daemon's cache out from under every other build on the
+machine. A `docker-container` builder created for the run is emptier still, and
+buys a second thing: the driver then links the two files by OCI layout under
+`_out/<board>/stages/` instead of through the daemon-global
+`mos-rootfs-stage:*` tags, which two concurrent worktrees would otherwise
+interleave on — producing a complete, plausible root blended from two trees.
+Give that builder a name unique to the run: the isolation is the name, and
+sweeping by it afterwards is the only way to see a removal that failed.
 
 ### Running the gate
 
@@ -582,29 +600,40 @@ there is one.
   every step it reuses; in a cold run the only `CACHED` lines are the
   digest-pinned base-image resolves, and not one `RUN` is reused.
 - **Compare on two instruments.** `diff -r --no-dereference` over the extracted
-  trees for content, and `unsquashfs -lln` over all 9,241 entries for mode,
+  trees for content, and `unsquashfs -lln` over **every** entry for mode,
   uid/gid and path with size and mtime excluded and re-sorted on that triple.
+  **Print the entry count beside the verdict and refuse a zero** — a listing
+  that failed to materialise compares clean against another empty one, and the
+  denominator is the only thing that separates "identical" from "nothing was
+  examined". Derive it from the run in front of you rather than from any number
+  written down here: `unsquashfs -l rootfs-verity.img | wc -l`. It moves
+  whenever a file enters or leaves the root, and it moved when the stage chain
+  was replaced by the composition.
   Every mtime in both listings is the pinned `2020-01-01 00:00`. Content and
   metadata fail in different ways and either instrument alone reads green over
   the other's failure. Drive both from the failing side before believing them:
   one mode bit, one gid and one renamed path each register, and an unmutated
   pair is 0.
 - **Check the apt order directly**, from `_out/<board>/pkg-logs/` on each side
-  rather than from the extracted root. `dpkg.log` with its timestamps stripped is
-  byte-identical over all 694 operations while the ordering the feature stages
-  are arranged to preserve is intact — the `apt` transactions run radios,
-  containers, `grub-editenv`, kernel. `alternatives.log` and `apt/history.log`
-  are identical once `update-alternatives`' own timestamp and
-  `Start-Date`/`End-Date` are removed. These are the same bytes the packed root
-  used to carry: `stages/90-pack` copies them out of `/var/log` before the purge
-  and the purge refuses to run if that copy is missing, so the check cannot be
-  silently lost to a later cleanup. Nothing in this repository runs this
-  comparison automatically — it is an instrument a person drives across two
-  builds, and there is no green run to inherit.
+  rather than from the extracted root. `dpkg.log` with its timestamps stripped
+  is byte-identical over every operation both sides logged — print that count
+  too — which is the check that the configuration order was the same on both
+  sides. Under composition that order is APT's own, derived from the packages'
+  `Depends`, so what this compares is whether one dependency graph produced one
+  sequence twice. `alternatives.log` and `apt/history.log` are identical once
+  `update-alternatives`' own timestamp and `Start-Date`/`End-Date` are removed.
+  These are the same bytes the packed root used to carry: `compose/90-pack`
+  copies them out of `/var/log` before the purge and the purge refuses to run
+  if that copy is missing, so the check cannot be silently lost to a later
+  cleanup. Nothing in this repository runs this comparison automatically — it
+  is an instrument a person drives across two builds, and there is no green run
+  to inherit.
 - **Expect the host-key echo in `apt/term.log`.** The RSA/ECDSA/ED25519
   fingerprints `openssh-server`'s postinst prints as it generates them differ on
   every build, three per side, and they appear in the control pairing as well.
-  The keys themselves are removed by `stages/10-base` and are not in the image.
+  The keys themselves are removed by `scripts/pack-strip-build-residue.sh`,
+  which counts what it removed and refuses to leave one behind, and are not in
+  the image.
 - **A seventh control entry could once arrive from outside the tree**, and
   since removed `/var/log/apt` from the packed root it no longer can.
   `/usr/share/factory/var/log/apt/eipp.log.xz` was apt's dump of the problem it

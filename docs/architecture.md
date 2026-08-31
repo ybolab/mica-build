@@ -146,8 +146,10 @@ with one shell (`docs/design/access.md`). Three ways in exist today:
 Disablement is layered, and two layers ship: the runtime switch, where
 `enabled: false` stops and disables `ssh.service`, and the build-time image
 profile — `dev` or `prod`, written into `/usr/lib` inside the verity root, so a
-production device cannot be edited into a development one
-(`os/rootfs/stages/10-base.Dockerfile`). The one-way META lockdown between them
+production device cannot be edited into a development one. The profile is a
+package — `mos-profile-dev` or `mos-profile-prod`, whose whole payload is that
+one immutable file (`os/rootfs/packages-src/profile`) — and they `Conflict` by
+name, so an image carries exactly one. The one-way META lockdown between them
 is designed, and marked not implemented (`docs/design/access.md` §5.2).
 
 ## 6. Repository map
@@ -166,17 +168,21 @@ mos/
 │   │              tooling, its own cargo workspace) and mosd/ — the Rust workspace:
 │   │              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings; workspace-level
 │   │              black-box harnesses are kept together under mosd/tests/
-│   ├── rootfs/    the root filesystem: stage Dockerfiles under stages/, plus build-v2.sh
+│   ├── rootfs/    the root filesystem: compose/ (the two composition Dockerfiles),
+│   │              packages/ (the manifests and the resolver), packages-src/ (the
+│   │              system, profile, radio and CA-trust producers), plus build-v2.sh
 │   ├── tests/     shell suites over the built image
 │   ├── tools/     three QEMU helper scripts
 │   └── verify/    TypeScript: the board model, and the checks an assembled image must pass
 └── Makefile       top-level routing; `make help` lists every target
 ```
 
-The rootfs is a chain of numbered Dockerfiles — base, install, one per optional
-feature, board, pack — each built `FROM` the tag the previous one wrote. The
-stage list is the directory, so adding a stage is adding a file
-(`os/rootfs/stages/README.md`).
+The rootfs is **composed**: one APT transaction installs a resolved set of mos
+`.deb` packages out of the local pool at `_out/debs/<arch>/` onto a
+digest-pinned Debian base, and one finalizer closes and packs the result
+(`os/rootfs/compose/`, two files). What is in an image is a package list, and
+what orders the configuration is `Depends` — adding a component is adding a
+producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 
 ## 7. Boards
 

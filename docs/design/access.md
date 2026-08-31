@@ -218,8 +218,12 @@ clear) and `os/pkgs/mosd/apid/src/routes.rs` (the operator-facing pane).
 **The default state of a device is: SSH off, root with no password, no keys.**
 Both image profiles. Neither profile seeds `access.ssh.enabled` true
 (`Profile::ssh_enabled_default` returns `false` for both), and neither image
-ships `ssh.service` enabled (`os/rootfs/scripts/network-and-ssh-units.sh` removes the
-`multi-user.target.wants` symlink and asserts it is gone). Getting in requires
+ships `ssh.service` enabled — `mos-system` ships
+`/usr/lib/systemd/system-preset/50-mos-ssh.preset` holding `disable
+ssh.service`, so `deb-systemd-helper` never writes the
+`multi-user.target.wants` symlink when openssh-server is configured, and the
+package's postinst asserts that outcome rather than arranging it
+(`os/rootfs/packages-src/system/Dockerfile`). Getting in requires
 an authenticated admin action through apid, over the network the appliance is
 already on.
 
@@ -369,7 +373,7 @@ resolves to `prod` too. The build rejects any `MOS_PROFILE` value that is not
 exactly `dev` or `prod` in lowercase.
 
 The `ROOT_PASSWORD` build arg is **v1-only** and is not selected by the profile
-on v2: `os/rootfs/build-v2.sh` and `os/rootfs/stages/` carry no such plumbing,
+on v2: `os/rootfs/build-v2.sh` and `os/rootfs/compose/` carry no such plumbing,
 because the v2 pack stage unconditionally fails any build whose factory shadow
 holds a usable hash — for every account and on both profiles — and both
 verifiers assert the same about the packed artifact. A baked v2 root credential
@@ -495,9 +499,11 @@ An operator who loses the webAdmin password **and** every authorized key has
 - **SSH** is off, and even enabled it would accept only a key that is not there.
 - **The serial console is present and reachable, and offers no way in.** Be
   precise about this: systemd's getty-generator **does** spawn
-  `serial-getty@ttyFIQ0` from the kernel `console=` parameter on both profiles
-  (`os/rootfs/stages/10-base.Dockerfile` records exactly this, and ships no getty unit of
-  its own). A login prompt appears. It has no account that will accept a
+  `serial-getty@ttyFIQ0` from the kernel `console=` parameter on both profiles.
+  No package ships a getty unit; `mos-board-cx3576` ships only a drop-in that
+  amends the generated one
+  (`os/boards/cx3576/overlay/etc/systemd/system/serial-getty@ttyFIQ0.service.d/local-line.conf`).
+  A login prompt appears. It has no account that will accept a
   credential — root is locked and every other account is locked by
   `mos-shadow-reconcile`.
 

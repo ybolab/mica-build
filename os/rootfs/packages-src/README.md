@@ -7,16 +7,16 @@ pair is the whole registration -- there is no case block in the driver naming
 the producers it knows:
 
 ```
-bash os/rootfs/packages-src/build-deb.sh --producer-dir <dir> --arch <amd64|arm64|all>
+bash os/build-env/deb/build.sh --producer <name> --arch <amd64|arm64|all>
   -> _out/debs/<arch>/pool/<package>_<version>_<arch>.deb
 ```
 
-`os/pkgs/mosd/hack/build-deb.sh` does keep such a register, and the difference
-is not stylistic: each of its producers owns a subset of one Cargo workspace,
-which is a fact about crates that only the driver can hold. The packages here
-carry content the stage chain already writes into the image, so what a producer
-needs to declare is its own payload -- and a file beside the Dockerfile can say
-that without anything else being edited.
+**There is ONE driver, and it is not here.** `os/build-env/deb/build.sh` builds
+every producer in the repository wherever it lives, and
+`os/build-env/deb/README.md` is the contract it implements. The producers in
+this directory once had a driver of their own; it was retired into that one and
+its refusals went with it. What follows is what is specific to THESE producers:
+what a producer declares, and what each of the four emits.
 
 The pool is **shared** with `os/pkgs/mosd`'s producers. A producer deletes only
 its own archives from it (`rm -f <package>_*.deb`), never the whole directory.
@@ -38,6 +38,7 @@ run a substitution hidden in it.
 | `FROM_IMAGES` | no | `<build-arg name>=<images.env key> ...` for further base images, resolved through `os/build-env/from.sh`. |
 | `BUILD_ARGS` | no | `KEY=VALUE ...`, passed verbatim as `--build-arg`. |
 | `PREPARE` | no | a script beside this file, run on the host before the build; what it stages becomes the `bin` context. |
+| `PREFLIGHT` | no | `1` if that hook honours `MOS_DEB_PREFLIGHT=1` and can report its inputs without producing them. See below. |
 
 `ARCHES` is required rather than defaulted because the wrong answer is silent.
 An `Architecture: all` payload built as `amd64` is a well-formed archive in
@@ -88,13 +89,13 @@ check they are opposites, because a package with no entry can acquire or lose a
 wants-symlink with every gate green. That refusal is the whole value of the
 field.
 
-The driver asserts the declared count against the archive it just wrote, with
-the same expression the package gate uses, reading `dpkg-deb --contents` in the
-packer container -- the host carries no dpkg, and the **host** architecture's
-image is used because listing an archive parses it rather than executing it. A
-producer whose declaration disagrees with its own output fails by name. A field
-that only a downstream gate reads is a field that drifts until that gate finally
-reads it.
+`os/tests/deb-package-gate.sh` asserts the declared count against the archives,
+per package and per producer, reading `dpkg-deb --contents` in the packer
+container -- the host carries no dpkg, and the **host** architecture's image is
+used because listing an archive parses it rather than executing it. A producer
+whose declaration disagrees with its own output fails by name. That count lives
+in the gate and NOT also in the driver: two implementations of one rule agree
+until one of them is edited.
 
 Enablement is always **files this package owns**: the exact wants-symlinks the
 image creates today, shipped in the payload. There is no preset mechanism and no
@@ -116,12 +117,12 @@ script it does not own. The driver runs it with seven variables exported:
 | Variable | Value |
 | --- | --- |
 | `MOS_DEB_REPO_ROOT` | the repository root |
-| `MOS_DEB_PRODUCER` | the producer's repository-relative directory |
+| `MOS_DEB_PRODUCER` | the producer's name, which is its directory's basename |
 | `MOS_DEB_PRODUCER_DIR` | that directory, absolute |
 | `MOS_DEB_ARCH` | the `--arch` this build was asked for |
 | `MOS_DEB_STAGE` | the directory to stage into, created empty |
 | `MOS_DEB_VERSION` | the version the archive will carry |
-| `SOURCE_DATE_EPOCH` | the commit timestamp the build clamps to |
+| `SOURCE_DATE_EPOCH` | the commit timestamp every payload mtime is set to |
 
 **What the hook leaves in `${MOS_DEB_STAGE}` arrives in the build as the `bin`
 context.** The driver creates that directory empty on every run -- so a file the
@@ -141,6 +142,46 @@ properties: its BSP artifacts are selected by `BOARD_DIR`, it invokes
 `os/pkgs/rauc/render-config.sh` rather than reimplementing it, and it refuses a
 missing BSP input before anything is built.
 
+## `PREFLIGHT`
+
+A hook's inputs are the ones no key above can name, so they are also the ones
+`os/build-env/deb/preflight.sh` cannot check for itself. `PREFLIGHT="1"` says
+the hook can be **asked** instead: run with `MOS_DEB_PREFLIGHT=1` it reports
+what is missing and produces nothing, so a missing input is listed beside every
+other producer's before `make os-debs` starts a container.
+
+It is opt-in per producer rather than automatic, because a hook that has not
+been taught the variable would do its full work: the podman hook compiles a
+container engine, three quarters of an hour of it under emulation for arm64. A
+pre-flight that compiles is not a pre-flight.
+
+In that mode the hook gets `MOS_DEB_REPO_ROOT`, `MOS_DEB_PRODUCER`,
+`MOS_DEB_PRODUCER_DIR`, `MOS_DEB_ARCH` and `MOS_DEB_PREFLIGHT=1`, and **no
+`MOS_DEB_STAGE`** -- there is nothing to stage into, and a hook that wrote
+anywhere in this mode would be writing before the operator had been told what is
+missing.
+
+It must print three counts on **both** paths, and exit non-zero when
+`preflight-missing` is not zero:
+
+| Line | Meaning |
+| --- | --- |
+| `preflight-examined: <n>` | what this hook looked at. Must be above zero. |
+| `preflight-missing: <n>` | of those, what **nothing in the run produces**. The run is refused. |
+| `preflight-warned: <n>` | of those, what **this producer makes itself**, at a cost the report names. The run continues. |
+
+The line between the two categories is what the run would DO about it, not how
+serious it looks. An absent container engine warns, because the podman hook
+builds one; an engine compiled from a superseded `versions.env` is missing,
+because the hook refuses it. Refusing the first would mean `make os-debs` could
+no longer build a pool on a fresh host, which is how a pool comes to exist.
+
+All three are required and a zero is written rather than omitted, for the same
+reason `ENABLEMENT` writes its zeros: an omission and a deliberate zero read the
+same to a person and opposite to a check. `preflight.sh` refuses a hook that
+breaks any of the three, and `os/tests/deb-preflight-test.sh` drives each
+refusal by mutating the hook until the run goes red.
+
 Every build also gets `--build-context packer=os/build-env/deb` and the
 `MOS_DEB_VERSION`, `MOS_DEB_ARCH` and `SOURCE_DATE_EPOCH` build arguments,
 without any producer asking. `pack.sh` is not baked into `mos-build-deb`; it
@@ -158,17 +199,18 @@ effect without rebuilding the builder family.
 revision: these packages have no upstream/downstream split, so it does not
 move.
 
-`0.1.0` is `MOS_ROOTFS_PKG_VERSION` at the top of `build-deb.sh`, written
-**once**. The mosd producers read their number out of the crate manifest that
-built the binary; nothing here is built from a manifest and there is no
-upstream release to read, so the constant lives in the driver -- and in one
-place only, because a second copy is a number that stops matching the first
-time one of them moves.
+`0.1.0` comes from `os/build-env/deb/version.sh`, which reads it out of the
+mosd workspace's crate manifests and is the ONE version the whole shared pool
+carries. Nothing here is built from a manifest and there is no upstream release
+to read, so these packages take the pool's number rather than declaring one --
+and it is written in exactly one place, because a second copy is a number that
+stops matching the first time one of them moves.
 
 `SOURCE_DATE_EPOCH` is `git log -1 --format=%ct`, resolved on the host and
 passed in as a build argument. `pack.sh` requires it and has no "now" default:
-one would make every archive irreproducible while every build stayed green. A
-dirty tree keeps the commit's timestamp -- the version already says `.dirty`,
+one would make every archive irreproducible while every build stayed green, and
+every payload mtime is **set** to it rather than clamped to it -- the ruling is
+at the decision site in `pack.sh`. A dirty tree keeps the commit's timestamp -- the version already says `.dirty`,
 and taking `now` would additionally make two dirty builds of one tree differ
 from each other.
 
@@ -204,8 +246,7 @@ to know that one of its packages was filed under arm64.
 Each package's entire payload is `/usr/lib/mos/profile.conf` mode 0444, holding
 `MOS_PROFILE=dev` or `MOS_PROFILE=prod`, plus its own
 `/usr/share/doc/<package>/copyright`. The path, the mode and the bytes are the
-ones `os/rootfs/scripts/profile-write.sh` writes today from
-`os/rootfs/stages/10-base.Dockerfile`, trailing newline included: mosd's
+ones the retired stage chain wrote, trailing newline included: mosd's
 comparison is case-sensitive and fails closed to `prod`, so a payload differing
 by a byte would disable SSH on a dev image with every gate green.
 
@@ -224,8 +265,8 @@ hold `control` and `md5sums` and nothing else.
 
 The TLS trust store as data: `/etc/ssl/certs/ca-certificates.crt`, the ~150
 individual anchors under `/usr/share/ca-certificates`, the ~300 hash symlinks
-that index them and `/etc/ca-certificates.conf` -- the three paths
-`os/rootfs/stages/10-base.Dockerfile` copies out of its `certs` stage today.
+that index them and `/etc/ca-certificates.conf` -- the three paths the retired
+stage chain copied out of its own `certs` stage.
 
 This is the one producer here whose payload is **generated rather than
 written**, so its Dockerfile has two stages. The first is `FROM` the pinned
@@ -249,12 +290,12 @@ that neither, nor `update-ca-certificates`, is anywhere in the payload.
 the lookup mechanism, and a dereferenced copy would both double the payload and
 leave `dpkg-deb --contents` describing something other than what is installed.
 The producer resolves every link against the staged root before packing, which
-is the assertion `os/rootfs/scripts/ca-certificates-verify.sh` makes today about
-the tree the `certs` stage hands over.
+is the assertion the retired chain's `ca-certificates-verify.sh` made about the
+tree its `certs` stage handed over.
 
 `.mos-cert-count` is read and dropped. It is a build-time token, written so the
-receiving stage can detect a `COPY` that truncated the bundle, and
-`ca-certificates-verify.sh` reads it and `rm -f`s it in the same breath -- it
+receiving stage can detect a `COPY` that truncated the bundle; it is read and
+`rm -f`ed in the same breath -- it
 has never been in a shipped root, and `os/verify`'s `ca-bundle-generated` check
 counts `BEGIN CERTIFICATE` lines directly rather than reading it. Here it is
 spent on the one copy it can still speak about and then deleted;

@@ -1,19 +1,20 @@
-// The rootfs stage chain, as data.
+// The rootfs assembly files, as data.
 //
-// os/rootfs/stages/ holds one Dockerfile per stage, built in numeric order,
-// each FROM the local image tag the previous one was written to. This module
-// turns that directory into a plan -- which file, which tag, which build
-// arguments, which one exports the artifact -- and refuses a directory that
-// cannot be a chain. It runs nothing: src/stages-cli.ts is the only file that
-// invokes docker, so everything decided here is a pure function tested without
-// a daemon, and docker is the only external program the chain runs.
+// os/rootfs/compose/ holds the numbered Dockerfiles that build the root, in
+// numeric order, each FROM the local image tag the previous one was written to:
+// 10-compose installs the resolved package set, 90-pack closes and packs it.
+// This module turns that directory into a plan -- which file, which tag, which
+// build arguments, which one exports the artifact -- and refuses a directory
+// that cannot be built in sequence. It runs nothing: src/stages-cli.ts is the
+// only file that invokes docker, so everything decided here is a pure function
+// tested without a daemon.
 //
-// The stage list is the directory. There is no list of stages anywhere else,
-// deliberately: a stage added to the tree but not to a list would silently
-// never run. os/build-env's frontend check and os/tests/shell-pipefail-lint.sh
-// derive their file sets the same way. Adding a stage is adding a file.
+// The file list is the directory. There is no list anywhere else, deliberately:
+// a file added to the tree but not to a list would silently never run.
+// os/build-env's frontend check and os/tests/shell-pipefail-lint.sh derive their
+// file sets the same way. Adding a step is adding a file.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { OS_DIR } from './paths.ts'
@@ -21,7 +22,7 @@ import { OS_DIR } from './paths.ts'
 // This lives in os/build because build orchestration does, and it duplicates
 // nothing: the board model stays the single copy in os/verify/src/board.ts.
 
-export const STAGES_DIR: string = join(OS_DIR, 'rootfs', 'stages')
+export const STAGES_DIR: string = join(OS_DIR, 'rootfs', 'compose')
 
 /** The argument every stage but the first declares, and the driver supplies. */
 export const PREV_ARG = 'MOS_STAGE_PREV'
@@ -35,6 +36,14 @@ export interface StageFile {
   readonly path: string
   /** Every ARG the file declares, except PREV_ARG, in first-seen order. */
   readonly declaredArgs: readonly string[]
+  /**
+   * Those of them declared with an EMPTY default -- `ARG X=`, `ARG X=""`.
+   *
+   * Kept apart from declaredArgs because the two kinds of default behave
+   * differently when nobody supplies a value, and only one of them is
+   * survivable. unsuppliedArgs says which and why.
+   */
+  readonly emptyDefaultArgs: readonly string[]
   /** Does it declare `ARG MOS_STAGE_PREV`? */
   readonly declaresPrev: boolean
   /** Does it open a stage `FROM ${MOS_STAGE_PREV}`? */
@@ -68,6 +77,11 @@ const STAGE_NAME = /^(\d+)-([A-Za-z0-9][A-Za-z0-9-]*)\.Dockerfile$/
 // case-insensitive on the instruction; a lowercase `arg` would be a real
 // declaration and invisible to a case-sensitive pattern.
 const ARG_LINE = /^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)/i
+// The default text of an `ARG NAME=...` line. A SECOND pattern rather than a
+// group added to the one above, so that a spelling this does not understand
+// still yields the name: an ARG that fell out of ARG_LINE would fall out of
+// declaredArgs too, and then be refused as a stray on the way in.
+const ARG_DEFAULT = /^\s*ARG\s+[A-Za-z_][A-Za-z0-9_]*=(.*)$/i
 // `FROM ${MOS_STAGE_PREV}`, optionally with `AS closed`. The brace form
 // only: `FROM $MOS_STAGE_PREV` also expands, but one spelling in one place is
 // the difference between a check and a guess about which spellings exist.
@@ -78,6 +92,21 @@ const FROM_PREV = new RegExp(`^\\s*FROM\\s+(?:--\\S+\\s+)*\\$\\{${PREV_ARG}\\}(?
 // pack target went unseen. It was caught by attributing the 34 scripts to their
 // stages with the same expression and getting `closed` for every pack-*.sh.
 const FROM_AS = /^\s*FROM\s+(?:--\S+\s+)*\S+(?:\s+AS\s+([A-Za-z0-9._-]+))?\s*$/i
+
+/**
+ * The default an `ARG NAME=...` line declares, with one layer of surrounding
+ * quotes taken off the way the Dockerfile parser takes it off: `ARG X=""`
+ * declares the empty string, not two quote characters. `undefined` for a line
+ * that declares no default at all.
+ */
+function argDefault(line: string): string | undefined {
+  const m = ARG_DEFAULT.exec(line)
+  if (!m) return undefined
+  const raw = m[1]!.trim()
+  const quoted = raw.length >= 2
+    && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")))
+  return quoted ? raw.slice(1, -1) : raw
+}
 
 /**
  * Read one stage file. Parsing only -- what makes a chain valid is auditChain.
@@ -94,6 +123,7 @@ export function readStageFile(path: string, text: string): StageFile {
     ])
   }
   const declaredArgs: string[] = []
+  const emptyDefaultArgs: string[] = []
   const targets: string[] = []
   let declaresPrev = false
   let fromsPrev = false
@@ -103,7 +133,14 @@ export function readStageFile(path: string, text: string): StageFile {
     if (arg) {
       const name = arg[1]!
       if (name === PREV_ARG) declaresPrev = true
-      else if (!declaredArgs.includes(name)) declaredArgs.push(name)
+      else {
+        if (!declaredArgs.includes(name)) declaredArgs.push(name)
+        // ANY declaration with an empty default is enough. A name declared
+        // twice, once bare and once `=""`, is unsupplied-safe in one stage and
+        // silently empty in the other, and the silent one is the one that
+        // decides what the build asserts.
+        if (argDefault(line) === '' && !emptyDefaultArgs.includes(name)) emptyDefaultArgs.push(name)
+      }
       continue
     }
     if (FROM_PREV.test(line)) fromsPrev = true
@@ -115,11 +152,47 @@ export function readStageFile(path: string, text: string): StageFile {
     name: `${m[1]}-${m[2]}`,
     path,
     declaredArgs,
+    emptyDefaultArgs,
     declaresPrev,
     fromsPrev,
     targets,
     sha256: new Bun.CryptoHasher('sha256').update(text).digest('hex'),
   }
+}
+
+/**
+ * A stage entry's path as DOCKER will have to open it.
+ *
+ * A symlink is how one file is shared by two directories, and it is how
+ * os/rootfs/compose reached the chain's 90-pack finalizer while both paths
+ * existed. NO ENTRY IN THIS REPOSITORY IS A SYMLINK TODAY: the chain is gone
+ * and the finalizer is a real file beside 10-compose. The resolution is kept
+ * because the reason it exists is a property of buildx rather than of that one
+ * arrangement, and it is exercised by its own test against a fixture.
+ *
+ * The path recorded here is handed to `docker buildx build -f`. That does NOT
+ * open the file locally: buildx transfers the dockerfile as a filtered
+ * mini-context of its own and the frontend opens it on the other side, so a
+ * symlink arrives as a symlink and its target, one directory up, is outside
+ * what was transferred. Measured on this host against buildx 0.32.2, on the
+ * docker-container AND the default docker driver alike:
+ *
+ *   #2 transferring dockerfile: 114B done
+ *   ERROR: failed to solve: failed to read dockerfile:
+ *          open probe.Dockerfile: no such file or directory
+ *
+ * 114 bytes is the tar entry for the LINK, not the 42 bytes of the file it
+ * names. Handing docker the resolved path is what makes sharing a stage file
+ * work; the same build with -f pointing at the target succeeds unchanged.
+ *
+ * Resolved only when the entry IS a symlink, so a regular stage file's path is
+ * the one the caller asked about -- a blanket realpath would also rewrite every
+ * fault message's path when the repository itself sits under a symlinked
+ * parent, which is a different thing from what this fixes.
+ */
+function stagePath(dir: string, entry: string): string {
+  const full = join(dir, entry)
+  return lstatSync(full).isSymbolicLink() ? realpathSync(full) : full
 }
 
 /** Read every stage file in a directory, in chain order. */
@@ -132,10 +205,13 @@ export function discoverStages(dir: string = STAGES_DIR): StageFile[] {
       { path: dir, message: `cannot be read, so the chain has no stages: ${String(cause)}` },
     ])
   }
+  // statSync and not lstatSync in the filter: it follows the link, so a symlink
+  // to a stage file is a stage file and a symlink to a directory is not.
   const stages = entries
     .filter((e) => e.endsWith('.Dockerfile'))
     .filter((e) => statSync(join(dir, e)).isFile())
-    .map((e) => readStageFile(join(dir, e), readFileSync(join(dir, e), 'utf8')))
+    .map((e) => stagePath(dir, e))
+    .map((p) => readStageFile(p, readFileSync(p, 'utf8')))
   stages.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   return stages
 }
@@ -386,6 +462,46 @@ export function unusedArgs(
     .sort()
 }
 
+/**
+ * An argument a stage declares with an empty default and nobody supplies.
+ *
+ * The converse of unusedArgs, and the direction nothing else can see. Measured
+ * on this daemon against buildkit, one Dockerfile, three ARGs, no --build-arg:
+ *
+ *   ARG NO_DEFAULT       -> ABSENT from the RUN environment. A script that
+ *                           reads it dies under `set -u` and the build stops.
+ *   ARG EMPTY_DEFAULT="" -> PRESENT and empty. Indistinguishable, to every
+ *                           reader, from a value somebody chose to be empty.
+ *   ARG REAL_DEFAULT=x   -> PRESENT as `x`, which is what the file says it is.
+ *
+ * Only the middle case is refused here. The first is already guarded loudly by
+ * `set -u`, and in the third the default IS the value -- os/rootfs/compose's
+ * VERITY_HASH_ALGO and the two verity block sizes are declared exactly that way
+ * and are deliberately never supplied.
+ *
+ * The middle case is not hypothetical. pack-assert-var-disposable.sh reads
+ * BOARD_RADIOS to decide whether /var/lib/bluetooth is precious state. Were
+ * os/rootfs/build-v2.sh to stop supplying it, `ARG BOARD_RADIOS=""` would
+ * apply, the script would read an empty radio list WITHOUT ERROR, and the
+ * disposability assertion would quietly stop requiring the bluetooth mount unit
+ * on a board that has one -- a check that keeps passing by examining less. No
+ * green result in this repository could show it: x64 legitimately composes
+ * BOARD_RADIOS="", so the symptom is invisible on the only board this host
+ * builds.
+ *
+ * SUPPLYING AN EMPTY STRING IS NOT THIS. `--arg BOARD_RADIOS=` is x64 saying it
+ * has no radios, and it is a decision that was made; this is about the value
+ * nobody was asked for.
+ */
+export function unsuppliedArgs(
+  stages: readonly StageFile[],
+  supplied: Readonly<Record<string, string>>,
+): string[] {
+  const missing = new Set<string>()
+  for (const s of stages) for (const a of s.emptyDefaultArgs) if (!(a in supplied)) missing.add(a)
+  return [...missing].sort()
+}
+
 export function planChain(stages: readonly StageFile[], opts: ChainOptions): StageBuild[] {
   const repo = opts.tagRepo ?? DEFAULT_TAG_REPO
   const target = opts.terminalTarget ?? DEFAULT_TERMINAL_TARGET
@@ -397,6 +513,15 @@ export function planChain(stages: readonly StageFile[], opts: ChainOptions): Sta
       {
         path: STAGES_DIR,
         message: `was handed ${stray.join(', ')}, which no stage declares. docker would accept each as an unused --build-arg and warn, and that warning scrolls past in a build this size -- so the value would simply not reach the image`,
+      },
+    ])
+  }
+  const missing = unsuppliedArgs(stages, opts.supplied)
+  if (missing.length > 0) {
+    throw new StageChainError([
+      {
+        path: STAGES_DIR,
+        message: `declares ${missing.join(', ')} with an EMPTY default and was handed no value. An ARG with no default at all is absent from the RUN environment, so a reader of it dies under \`set -u\`; an empty default reaches the build as an empty string instead, and every reader takes that for a value somebody chose. Supply it -- \`--arg NAME=\` is how a board says the answer is genuinely nothing -- or give the ARG a default that IS the value`,
       },
     ])
   }
@@ -626,7 +751,7 @@ export function ociRecord(fields: {
   readonly sourceDateEpoch: string
 }): string {
   return [
-    `# The ${fields.board} factory root, exported as an OCI image by os/rootfs/stages/90-pack.Dockerfile.`,
+    `# The ${fields.board} factory root, exported as an OCI image by os/rootfs/compose/90-pack.Dockerfile.`,
     '# The root the self-built binaries are executed in before the image ships them.',
     `# Load it with: docker load -i ${fields.archive}`,
     '#',

@@ -327,23 +327,23 @@ step earlier:
 Those two commands are the last two links of a longer chain, and the earlier
 links fail the same way — as an apparently broken harness. In order:
 
-1. **The packages.** `bash os/pkgs/rauc/build.sh` and `bash os/pkgs/podman/build.sh`
-   produce `_out/<board>/rauc` and `_out/<board>/podman`. The rootfs stages
-   consume those directories by name — `COPY ${RAUC_DIR}/ /tmp/rauc/`
-   (`os/rootfs/stages/32-feature-rauc.Dockerfile`) and
-   `COPY ${PODMAN_DIR}/ /tmp/podman/`
-   (`os/rootfs/stages/31-feature-containers.Dockerfile`) — and the build
-   passes each one only when the matching feature is in the chain, as
-   `--arg PODMAN_DIR="_out/$MOS_BOARD/podman"`
-   (`os/rootfs/build-v2.sh`) and
-   `--arg RAUC_DIR="_out/$MOS_BOARD/rauc"`
-   (`os/rootfs/build-v2.sh`).
-2. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build-v2.sh`.
-3. **The image.** `bash os/build/run.sh --mkimage-x64`, which writes the A/B disk
+1. **The components.** `bash os/pkgs/rauc/build.sh` and
+   `bash os/pkgs/podman/build.sh` produce `os/pkgs/rauc/out-<arch>/` and
+   `os/pkgs/podman/out-<arch>/`. Nothing in the rootfs build reads either
+   directory: the `rauc` and `podman` producers do, from their `PREPARE` hooks,
+   and pack the result as `mos-rauc` and `mos-podman`.
+2. **The package pool.** `make os-debs` builds every producer at every
+   architecture it declares and then indexes both pools. The rootfs build
+   installs out of `_out/debs/<arch>/` and compiles nothing, so this step is
+   where a missing or stale component becomes a refusal that names a target.
+3. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build-v2.sh`, which refuses a
+   pool that is absent, unindexed, or stamped at a version other than this
+   tree's.
+4. **The image.** `bash os/build/run.sh --mkimage-x64`, which writes the A/B disk
    image around the rootfs slot. Its name is read from the board definition,
    `IMAGE_LATEST_NAME=x64-mos-v2-latest.img` (`os/boards/x64/board.env`),
    rather than repeated in the harness.
-4. **The run.** `make os-apid-api-test`, or `bash os/pkgs/mosd/tests/apid-api/run.sh`.
+5. **The run.** `make os-apid-api-test`, or `bash os/pkgs/mosd/tests/apid-api/run.sh`.
    `bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` does the preconditions and the network
    discovery and boots nothing, which is how to check the harness in seconds.
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Diff the packed setuid/setgid inventory against the source tree it was made from.
 #
-# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
+# Called from os/rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -eu
 unsquashfs -lln /out/rootfs.squashfs \

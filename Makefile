@@ -17,7 +17,9 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
-	os-debs os-deb-package-gate \
+	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
+	os-install-closure-gate os-rootfs-manifest-test \
+	os-rootfs-x64-composed \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -47,8 +49,13 @@ help:
 	@echo "  os-netavark-kernel-test  assert the cx3576 kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash os/build-env/deb/producers.sh\` lists them (docker)"
+	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
+	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
+	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
+	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
+	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool (needs os-debs; docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -62,6 +69,10 @@ os:
 	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
 	@false
 
+# NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
+# target refuses until `make os-debs` has built it -- by name, rather than by
+# compiling a component on demand. That refusal is the composer's, not this
+# file's; see os/rootfs/build-v2.sh.
 os-rootfs-cx3576-v2:
 	bash os/rootfs/build-v2.sh
 
@@ -265,6 +276,18 @@ os-deb-%:
 	    bash os/build-env/deb/build.sh --producer '$*' --arch "$$arch"; \
 	done
 
+# EVERY MISSING INPUT AT ONCE, before anything is built. os-debs used to fail
+# partway: each producer checks its own inputs when its turn comes, so a
+# missing BSP artefact surfaced after the producers ahead of it had already
+# been packed, named one file, and the next one was learned on the next
+# attempt. The script says what it examined and refuses to report success over
+# a count of zero.
+#
+# EXPLICIT, so make prefers it over the `os-deb-%` pattern above --
+# `os-deb-package-gate` below is explicit for the same reason.
+os-deb-preflight:
+	bash os/build-env/deb/preflight.sh
+
 # THE WHOLE LOCAL POOL: every DISCOVERED producer at every architecture it
 # declares, then the index beside each pool. The composer resolves its package
 # set through _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}, so a build
@@ -290,7 +313,13 @@ os-deb-%:
 # `while`: `producer | while` reports the reader's status, so an empty
 # discovery -- the one failure this target most needs to see -- would be
 # swallowed and this would report success over no producers at all.
-os-debs:
+#
+# THE PRE-FLIGHT IS A PREREQUISITE, so it runs before the first container and
+# is also a target an operator can run alone. Every producer still refuses its
+# own missing inputs when its turn comes -- `make os-deb-<producer>` does not
+# come through here -- but that refusal arrives after the producers ahead of it
+# have been packed and names one file; this one names them all, first.
+os-debs: os-deb-preflight
 	@set -e; \
 	rows="$$(bash os/build-env/deb/producers.sh)"; \
 	printf '%s\n' "$$rows" | while read -r producer dir arches packages enablement; do \
@@ -318,6 +347,20 @@ os-debs:
 os-deb-package-gate:
 	bash os/tests/deb-package-gate.sh
 
+# The INSTALL-time half of PLAN-036 section 6, over the same pools: APT installs
+# the set os/rootfs/packages/resolve.sh yields into a clean pinned Debian base,
+# once per architecture, and again with `rauc` declined; the three radio packages
+# go into three separate roots; and the mos-profile provider experiment is run
+# and recorded verbatim.
+#
+# Separate from the gate above rather than folded into it, because they answer
+# different questions from different material: that one reads archives with
+# dpkg-deb and says so in its own header, and nothing it can see tells you
+# whether APT can satisfy the closure, whether a wants-symlink lands on a unit
+# somebody shipped, or what a binary reports when it is asked.
+os-install-closure-gate:
+	bash os/tests/install-closure-gate.sh
+
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
 # there: -q exits at the first match, the producer dies of SIGPIPE, and pipefail
@@ -325,6 +368,38 @@ os-deb-package-gate:
 # pattern was found. The rationale is at the top of the script.
 os-shell-pipefail-lint:
 	bash os/tests/shell-pipefail-lint.sh
+
+# os/rootfs/packages/resolve.sh over every board, profile, radio set and feature
+# set this repository supports, plus the reverse direction: every package a
+# producer declares has to be reachable by SOME legal resolution. That half is
+# the one nothing else can see -- a package no manifest can name is simply never
+# installed, and every check downstream of composition runs over the set that
+# WAS. No docker and no pool: this reads manifests and runs producers.sh.
+os-rootfs-manifest-test:
+	bash os/tests/rootfs-manifest-test.sh
+
+# THE x64 ROOT. os/rootfs/build-v2.sh installs the resolved package set out of
+# _out/debs/<arch> and refuses a missing or stale pool by naming `make os-debs`
+# rather than building one -- a composer that compiled a component on demand
+# would make a stale pool invisible.
+#
+# Kept as its own target rather than folded into os-rootfs-cx3576-v2's shape:
+# x64 is the board whose pool this host can build, so this is the composition
+# that runs here, and naming it says which one was run.
+os-rootfs-x64-composed:
+	MOS_BOARD=x64 bash os/rootfs/build-v2.sh
+
+# Negative and positive tests for the pre-flight above. Its value is a count and
+# a list, and both fail silently: a run that looked at nothing prints the same
+# shape of green line as one that looked at everything. So each case perturbs
+# ONE input and requires the reported numbers to move by exactly that much, and
+# each half of the hook count contract is mutated until the run goes red -- the
+# first spelling of that guard reported every input present having skipped a
+# producer entirely, and it was found by hand rather than by a check. No docker
+# and no pool: this runs the pre-flight, the two hooks that answer it, and the
+# podman versions stamp, against fixtures it builds and removes.
+os-deb-preflight-test:
+	bash os/tests/deb-preflight-test.sh
 
 # Structural check on docs/README.md. It exists because the index is the one
 # thing no other check can reach: a document that is never listed there is not

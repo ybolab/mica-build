@@ -1,7 +1,7 @@
 #!/bin/sh
 # Assert nothing precious is left on the disposable /var.
 #
-# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
+# Called from os/rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 # Build arguments read from the environment: BOARD_RADIOS.
 
 set -eu

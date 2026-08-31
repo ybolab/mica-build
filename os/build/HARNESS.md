@@ -25,7 +25,7 @@ Each mode is recognised only in first position, so none can be mistaken for a
 | mode | what it runs |
 |---|---|
 | *(none)* | the suite |
-| `--build-rootfs` | the `os/rootfs` stage chain — one Dockerfile per stage from `os/rootfs/stages/`, each `FROM` the local image tag the previous stage was written to. `os/rootfs/build-v2.sh` calls it with the build arguments it computed |
+| `--build-rootfs` | the numbered-Dockerfile driver, pointed at `os/rootfs/compose/` — `10-compose` then `90-pack`, the second `FROM` the local image tag the first was written to. `os/rootfs/build-v2.sh` calls it with the build arguments it computed |
 | `--mkimage-v2` | the cx3576 image assembler |
 | `--mkimage-x64` | the x64 image assembler |
 | `--bundle [--board NAME]` | the RAUC update bundle, built and signed |

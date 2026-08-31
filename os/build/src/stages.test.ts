@@ -1,15 +1,25 @@
-// The stage chain, driven from the failing side.
+// The rootfs assembly files, driven from the failing side.
 //
 // Every fault auditChain reports is produced here from a synthetic directory,
 // because a guard nobody has seen take is the shape of guard this campaign
-// keeps finding. The real os/rootfs/stages/ is then asserted against the shape
-// those faults describe -- so the tests fail if the chain breaks AND if the
-// checker stops being able to notice.
+// keeps finding. The real os/rootfs/compose/ is then asserted against the shape
+// those faults describe -- so the tests fail if the shipped assembly breaks AND
+// if the checker stops being able to notice.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import {
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import {
   auditChain,
@@ -30,10 +40,11 @@ import {
   StageChainError,
   STAGES_DIR,
   unusedArgs,
+  unsuppliedArgs,
   type StageFile,
 } from './stages.ts'
 import { parseArgs, parseDriver, chainMode, dockerBin } from './stages-cli.ts'
-import { BOARDS_DIR } from './paths.ts'
+import { BOARDS_DIR, REPO_ROOT } from './paths.ts'
 
 // A scratch directory of stage files. Under the repository's own _out/ rather
 // than /tmp: a bind mount of /tmp on this host propagates as an EMPTY directory
@@ -89,6 +100,28 @@ describe('readStageFile', () => {
     expect(s.declaredArgs).toEqual(['BOARD_RADIOS', 'WITH_MOSD'])
     expect(s.declaresPrev).toBe(true)
     expect(s.fromsPrev).toBe(true)
+  })
+
+  // The distinction the driver's unsupplied-arg refusal is built on, and the
+  // reason it is a distinction at all is measured rather than assumed: with no
+  // --build-arg, buildkit leaves `ARG X` OUT of the RUN environment (set -u
+  // catches it) and puts `ARG X=""` IN as an empty string (nothing catches it).
+  test('separates an empty default from a real one and from none', () => {
+    const s = readStageFile(
+      '/x/90-p.Dockerfile',
+      `FROM debian\nARG BARE\nARG EMPTY=""\nARG BLANK=\nARG SQUOTE=''\nARG REAL=sha256\nARG ZERO=0\n`,
+    )
+    expect(s.declaredArgs).toEqual(['BARE', 'EMPTY', 'BLANK', 'SQUOTE', 'REAL', 'ZERO'])
+    expect(s.emptyDefaultArgs).toEqual(['EMPTY', 'BLANK', 'SQUOTE'])
+  })
+
+  // `ARG X` then `ARG X=""` in one file: the second declaration is the one that
+  // decides what an unsupplied build reads, so the name is empty-defaulted even
+  // though the first sighting was not.
+  test('a name declared both bare and empty-defaulted counts as empty-defaulted', () => {
+    const s = readStageFile('/x/90-p.Dockerfile', `FROM debian\nARG X\nARG X=""\n`)
+    expect(s.declaredArgs).toEqual(['X'])
+    expect(s.emptyDefaultArgs).toEqual(['X'])
   })
 
   test('ignores an ARG that is only mentioned in a comment', () => {
@@ -222,6 +255,65 @@ describe('discoverStages', () => {
   test('refuses a directory that is not there', () => {
     expect(() => discoverStages(join(tmpdir(), 'mos-no-such-stage-dir'))).toThrow(StageChainError)
   })
+
+  // A stage file SHARED by two directories: one definition referred to twice,
+  // so that two builds cannot be reading a difference between two copies of it.
+  // No entry in the repository is a symlink today -- the finalizer is a real
+  // file in os/rootfs/compose -- so this fixture is the only thing that
+  // exercises the resolution, and it is why the resolution is still tested.
+  //
+  // The path is what `docker buildx build -f` is given, and buildx does not
+  // open it locally -- it transfers the dockerfile as a mini-context of its own
+  // and the frontend opens it on the other side, where a relative symlink
+  // pointing out of that context resolves to nothing. Measured against buildx
+  // 0.32.2 on both drivers:
+  //   #2 transferring dockerfile: 114B done
+  //   ERROR: failed to read dockerfile: open probe.Dockerfile: no such file
+  // So `path` has to be the TARGET, while the content and therefore the hash
+  // were already the target's -- readFileSync follows the link. Both halves are
+  // asserted, because the failure was in exactly the half that looked fine.
+  test('a symlinked stage file is reported at its target path, with the target content', () => {
+    const shared = scratch({ '90-pack.Dockerfile': TERMINAL })
+    const dir = scratch({ '10-base.Dockerfile': FIRST })
+    symlinkSync(join(shared, '90-pack.Dockerfile'), join(dir, '90-pack.Dockerfile'))
+
+    const stages = discoverStages(dir)
+    expect(stages.map((x) => x.name)).toEqual(['10-base', '90-pack'])
+    const pack = stages[1]!
+    // The target, not the link. The link is the path that fails at buildx.
+    expect(pack.path).toBe(realpathSync(join(shared, '90-pack.Dockerfile')))
+    expect(pack.path).not.toBe(join(dir, '90-pack.Dockerfile'))
+    expect(pack.sha256).toBe(
+      new Bun.CryptoHasher('sha256').update(TERMINAL).digest('hex'),
+    )
+    // And what the driver would actually spawn names the target too, which is
+    // the assertion the failing build would have gone red on: buildArgv puts
+    // this path after `-f`, and that is the argument buildx choked on.
+    const packBuild = planChain(stages, { board: 'x64', supplied: {} })[1]!
+    const argv = buildArgv(packBuild, { context: '/ctx', platform: 'linux/amd64', dest: '/dest' })
+    expect(argv).toContain(realpathSync(join(shared, '90-pack.Dockerfile')))
+    expect(argv).not.toContain(join(dir, '90-pack.Dockerfile'))
+  })
+
+  // The other half of the same claim, and it is the half that decides whether
+  // `stagePath` may be a blanket realpath. It may not: an ordinary stage file's
+  // path has to be the one the caller spelled, so that every fault message
+  // names the directory the reader passed in.
+  //
+  // The fixture is reached THROUGH A SYMLINKED PARENT, which is what makes this
+  // able to fail. Written against a plain directory it discriminates nothing --
+  // the realpath of a path with no link in it is that path -- and a blanket
+  // realpath passed it. That is not hypothetical: this test was written that
+  // way, mutated, and stayed green, which is how it got its symlink.
+  test('a regular stage file keeps the path it was discovered at, under a symlinked parent', () => {
+    const real = scratch({ '10-base.Dockerfile': FIRST, '90-pack.Dockerfile': TERMINAL })
+    const via = join(dirname(real), `${basename(real)}-via-link`)
+    symlinkSync(real, via)
+    expect(discoverStages(via).map((s) => s.path)).toEqual([
+      join(via, '10-base.Dockerfile'),
+      join(via, '90-pack.Dockerfile'),
+    ])
+  })
 })
 
 describe('planChain', () => {
@@ -279,11 +371,84 @@ describe('planChain', () => {
     expect(unusedArgs(s, { ...supplied, ZZZ: '1', AAA: '2' })).toEqual(['AAA', 'ZZZ'])
   })
 
+  // The gap this closes: a supplied argument no file declares was already
+  // refused (unusedArgs), and a file that READS an undeclared name already dies
+  // under `set -u`. An argument declared `=""` and never supplied was the
+  // remaining direction, and it is the silent one -- the build succeeds and
+  // asserts less than it says it does.
+  test('an empty-defaulted argument nobody supplies is refused', () => {
+    const d = scratch({
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nRUN true\n`,
+      '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG BOARD_RADIOS=""\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\nFROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`,
+    })
+    const stages = discoverStages(d)
+    expect(() => planChain(stages, { board: 'x64', supplied: { TRIXIE: 'debian@sha256:aaa' } }))
+      .toThrow(/BOARD_RADIOS with an EMPTY default/)
+
+    // And an EXPLICIT empty value is accepted, because that is x64 saying it
+    // has no radios rather than nobody having been asked. A guard that could
+    // not tell those apart would refuse every correct x64 build.
+    const ok = planChain(stages, {
+      board: 'x64',
+      supplied: { TRIXIE: 'debian@sha256:aaa', BOARD_RADIOS: '' },
+    })
+    expect(ok[1]!.buildArgs).toEqual({ BOARD_RADIOS: '' })
+  })
+
+  test('unsuppliedArgs names every empty-defaulted absentee, sorted and once', () => {
+    const d = scratch({
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nARG ZZZ=""\nARG KEPT=dev\n`,
+      '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG ZZZ=""\nARG AAA=""\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\nFROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`,
+    })
+    const stages = discoverStages(d)
+    expect(unsuppliedArgs(stages, { TRIXIE: 'x' })).toEqual(['AAA', 'ZZZ'])
+    expect(unsuppliedArgs(stages, { TRIXIE: 'x', AAA: '', ZZZ: 'wifi' })).toEqual([])
+    // KEPT=dev is a default that IS the value. Demanding it would make every
+    // Dockerfile constant an argument the caller has to restate.
+    expect(unsuppliedArgs(stages, { TRIXIE: 'x', AAA: '', ZZZ: '' })).not.toContain('KEPT')
+  })
+
   test('a broken chain is refused before any tag is computed', () => {
     const bad = scratch({ '10-base.Dockerfile': FIRST, '20-x.Dockerfile': FIRST })
     expect(() => planChain(discoverStages(bad), { board: 'x64', supplied: {} })).toThrow(
       StageChainError,
     )
+  })
+})
+
+// THE SHIPPED PAIR, and the only check in this file whose subject is the real
+// tree rather than a fixture. The refusal above proves the driver reacts; this
+// proves the two files that actually ship are on the right side of it, and it
+// goes red if os/rootfs/build-v2.sh drops one of the `--arg` lines that keep
+// them there -- which is the whole failure this guard exists for, and which no
+// fixture can notice.
+//
+// Both sides are counted and neither may be zero: a compose directory that
+// declared no empty default, or a build-v2.sh this could read no --arg out of,
+// would make the pairing pass by comparing nothing against nothing.
+describe('the shipped compose directory and its supplier', () => {
+  const BUILD_V2 = join(REPO_ROOT, 'os', 'rootfs', 'build-v2.sh')
+
+  /** The names build-v2.sh hands the driver, read out of the file itself. */
+  function suppliedByBuildV2(): string[] {
+    const text = readFileSync(BUILD_V2, 'utf8')
+    return [...text.matchAll(/^\s*--arg\s+([A-Za-z_][A-Za-z0-9_]*)=/gm)].map(m => m[1] as string)
+  }
+
+  test('every empty-defaulted ARG in os/rootfs/compose is supplied by build-v2.sh', () => {
+    const stages = discoverStages(STAGES_DIR)
+    expect(stages.length).toBeGreaterThan(0)
+    const declared = [...new Set(stages.flatMap(s => s.emptyDefaultArgs))].sort()
+    expect(declared.length).toBeGreaterThan(0)
+
+    const names = suppliedByBuildV2()
+    expect(names.length).toBeGreaterThan(0)
+
+    const supplied = Object.fromEntries(names.map(n => [n, '']))
+    expect(unsuppliedArgs(stages, supplied)).toEqual([])
+    // Named, so that an ARG gaining or losing an empty default is a decision
+    // somebody makes here rather than a set that silently changes size.
+    expect(declared).toEqual(['BOARD_RADIOS', 'RAUC_VERSION'])
   })
 })
 
@@ -845,16 +1010,21 @@ describe('parseArgs', () => {
   })
 })
 
-describe('the chain this tree actually ships', () => {
+describe('the assembly this tree actually ships', () => {
   const stages = discoverStages()
 
-  test('is a chain auditChain accepts', () => {
+  test('is a sequence auditChain accepts', () => {
     expect(auditChain(stages, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
   })
 
-  test('starts at 10-base and ends at 90-pack', () => {
-    expect(stages[0]!.name).toBe('10-base')
-    expect(stages[stages.length - 1]!.name).toBe('90-pack')
+  // The whole shape, asserted as one list rather than as two endpoint checks.
+  // The chain that used to be here had nine files and the interesting claim was
+  // where it started and stopped; the composition has two, and the interesting
+  // claim is that it is still exactly two -- a third file appearing in
+  // os/rootfs/compose is a stage boundary somebody reintroduced, which is the
+  // thing PLAN-036 section 4 removed.
+  test('is exactly 10-compose then 90-pack', () => {
+    expect(stages.map((s) => s.name)).toEqual(['10-compose', '90-pack'])
   })
 
   test('90-pack defines all four of its internal targets, in the order it explains them', () => {
@@ -875,82 +1045,51 @@ describe('the chain this tree actually ships', () => {
     expect(after).not.toContain('--from=closed')
   })
 
-  test('10-base defines the certs stage its trust anchors are COPIED from', () => {
-    expect(stages[0]!.targets).toEqual(['certs', 'rootfs'])
+  // The finalizer is a REAL FILE beside 10-compose, not a symlink out of the
+  // directory. It was a symlink to os/rootfs/stages/90-pack.Dockerfile while
+  // the chain existed, so that both paths ran one finalizer; the chain is gone
+  // and the file moved here with its content unchanged. A symlink reappearing
+  // would mean the definition had been split again.
+  test('the finalizer is a regular file in the directory that builds it', () => {
+    const dir = STAGES_DIR
+    const entry = join(dir, '90-pack.Dockerfile')
+    expect(lstatSync(entry).isSymbolicLink()).toBe(false)
+    expect(stages.find((s) => s.name === '90-pack')!.path).toBe(entry)
   })
 
-  test('every stage but the first is linked, and only the first names a distro image', () => {
+  test('every file but the first is linked, and only the first names a distro image', () => {
     stages.forEach((s, i) => {
       expect(s.declaresPrev).toBe(i > 0)
     })
     const withBase = stages.filter((s) =>
       s.declaredArgs.some((a) => a.startsWith('MOS_IMAGE_DEBIAN_')),
     )
-    // 10-base names trixie, 90-pack names bookworm, and nothing else names a
-    // base image at all -- a stage that does not name one cannot be built
+    // 10-compose names trixie, 90-pack names bookworm, and nothing else names a
+    // base image at all -- a file that does not name one cannot be built
     // against the wrong one.
-    expect(withBase.map((s) => s.name)).toEqual(['10-base', '90-pack'])
+    expect(withBase.map((s) => s.name)).toEqual(['10-compose', '90-pack'])
   })
 
-  test('the feature stages are the four declinable names, and they run before the board', () => {
-    // Asserted against the directory rather than against a list -- there is no
-    // list. `rauc` is a fifth feature stage with no caller-facing switch; its
-    // own header says why.
-    const features = stages.filter((s) => featureOf(s) !== undefined)
-    expect(features.map((s) => featureOf(s))).toEqual([
-      'radios',
-      'containers',
-      'rauc',
-      'mosd',
-      'mqtt',
-    ])
-    const board = stages.findIndex((s) => s.name === '40-board')
-    expect(board).toBeGreaterThan(stages.indexOf(features[features.length - 1]!))
-  })
-
-  test('no stage declares WITH_CONTAINERS or WITH_MOSD any more', () => {
-    // The WITH_* build args are replaced by stage selection. A stage that
-    // still declared one would be a second switch beside the one the driver
-    // operates, and the two could disagree.
+  test('no file declares WITH_CONTAINERS or WITH_MOSD any more', () => {
+    // The WITH_* build args were replaced by the RESOLUTION: a declined feature
+    // is a package the manifest does not name. One that reappeared here would
+    // be a second switch beside it, and the two could disagree.
     const stray = stages.flatMap((s) =>
       s.declaredArgs.filter((a) => a.startsWith('WITH_')).map((a) => `${s.name}:${a}`),
     )
     expect(stray).toEqual([])
   })
 
-  test('every feature stage in the shipped chain can actually be declined', () => {
-    // Driven, not assumed: dropping each one in turn leaves a directory that is
-    // still a chain. A feature stage the chain cannot survive without is a
-    // stage in name only, and this is what makes `--without` a mechanism rather
-    // than a flag.
-    for (const f of stages.filter((s) => featureOf(s) !== undefined)) {
-      const kept = selectStages(stages, [featureOf(f)!])
-      expect(kept.map((s) => s.name)).not.toContain(f.name)
-      expect(auditChain(kept, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
-    }
-  })
-
-  test('BOARD_RADIOS is declared in every file whose RUNs read it', () => {
-    // ARG is per stage and now also per FILE. A stage reading BOARD_RADIOS
-    // without declaring it gets the empty string, and under `set -u` in
-    // pack-assert-var-disposable.sh that is a check that silently reads "no
-    // radios" on a board that has them.
-    const declaring = stages.filter((s) => s.declaredArgs.includes('BOARD_RADIOS'))
-    expect(declaring.length).toBeGreaterThanOrEqual(2)
-  })
-
-  // `40-board` is parameterised by the board instead of naming one.
+  // Neither file is parameterised by the board; the board is a PACKAGE.
   //
-  // The board names come from the directory, os/boards/, for the same reason the
-  // stage list is: a board added to the tree but not to a list here would be a
-  // board this check cannot see, and it would pass for that reason alone.
+  // The board names come from the directory, os/boards/, for the same reason
+  // the file list is the directory: a board added to the tree but not to a list
+  // here would be a board this check cannot see, and it would pass for that
+  // reason alone.
   //
-  // COMMENTS ARE EXCLUDED ON PURPOSE. Several stages explain themselves by
-  // naming the board a thing was found on -- 10-base's "TRUE OF cx3576 AND
-  // FALSE OF x64", 30-feature-radios pointing at where a board's overlay keeps
-  // its radio mounts -- and prose that names a board is how the reasoning stays
-  // legible. What must not name one is an INSTRUCTION, because that is where a
-  // board name decides what the image carries.
+  // COMMENTS ARE EXCLUDED ON PURPOSE. Prose that names a board is how the
+  // reasoning stays legible. What must not name one is an INSTRUCTION, because
+  // that is where a board name decides what the image carries.
   const boardNames = readdirSync(BOARDS_DIR, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
@@ -966,7 +1105,7 @@ describe('the chain this tree actually ships', () => {
       boardNames.filter((b) => l.includes(b)).map((b) => `${b}: ${l.trim()}`),
     )
 
-  test('no stage INSTRUCTION names a board', () => {
+  test('no INSTRUCTION names a board', () => {
     expect(boardNames.length).toBeGreaterThanOrEqual(2)
     const offences = stages.flatMap((s) =>
       namesABoard(readFileSync(s.path, 'utf8')).map((o) => `${basename(s.path)} -- ${o}`),
@@ -985,20 +1124,19 @@ describe('the chain this tree actually ships', () => {
     expect(namesABoard(before)).toEqual(['cx3576: COPY os/boards/cx3576/hwinit/ /tmp/hwinit/'])
   })
 
-  test('40-board takes both of its board directories as arguments', () => {
-    // The shape M5d chose, and the one thing about it a reader cannot infer
-    // from the absence above: the firmware and the hwinit units arrive as
-    // STAGED DIRECTORIES, the way BOARD_INIT_DIR and MODULES_TAR already did,
-    // because a COPY cannot be gated on an ARG. A 40-board that stopped
-    // declaring one of these would have gone back to a fixed path.
-    const board = stages.find((s) => s.name === '40-board')!
-    for (const a of ['BOARD_FIRMWARE_DIR', 'BOARD_HWINIT_DIR', 'BOARD_INIT_DIR', 'MODULES_TAR']) {
-      expect(board.declaredArgs).toContain(a)
+  // What 10-compose is handed, and it is deliberately little: the resolution
+  // arrives as ONE file that resolve.sh wrote, so the Dockerfile makes no
+  // package selection of its own. A COMPOSE_DIR that stopped being declared
+  // would mean the selection had moved back into the Dockerfile.
+  test('10-compose takes the resolved set and the pool arch as arguments', () => {
+    const compose = stages.find((s) => s.name === '10-compose')!
+    for (const a of ['COMPOSE_DIR', 'MOS_ARCH', 'MOS_BOARD', 'SOURCE_DATE_EPOCH']) {
+      expect(compose.declaredArgs).toContain(a)
     }
   })
 })
 
-describe('layout mode -- the chain on a builder that cannot read the image store', () => {
+describe('layout mode -- sequencing on a builder that cannot read the image store', () => {
   const dir = () =>
     scratch({
       '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nRUN true\n`,

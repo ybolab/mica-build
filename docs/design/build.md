@@ -26,26 +26,153 @@ The image names are read from the board definition (`IMAGE_NAME_PREFIX`,
 `IMAGE_LATEST_NAME` in `os/boards/<board>/board.env`), never spelled in a
 script.
 
-Before the rootfs can be built, four compiled inputs must exist. None of them
-is built on demand; each has its own entry point and its own output directory,
-and the rootfs build names the one that is missing:
+Before the rootfs can be built, **one** input must exist: the local Debian
+package pool under `_out/debs/<arch>/`, which `make os-debs` builds and indexes.
+The rootfs build installs out of that pool and compiles nothing, so a pool that
+is absent, unindexed, indexed against different bytes, or stamped at another
+commit is a refusal naming `make os-debs` — not a build that quietly takes
+longer and then installs some other tree's packages.
+
+The compiled components are inputs to the **producers** that pack them, one
+step further out:
 
 | Input | Built by | Lands in |
 |---|---|---|
 | builder images `localhost/mos-build-{base,c,go,rust}:<arch>` | `os/build-env/build.sh` | the local docker image store |
-| RAUC | `os/pkgs/rauc/build.sh` | `os/pkgs/rauc/out-<arch>/` |
-| podman and its six companions | `os/pkgs/podman/build.sh` | `os/pkgs/podman/out-<arch>/` |
-| mosd, apid, mos-mqttd, mos-mqtt-broker | `os/pkgs/mosd/hack/build-target.sh` | `_out/<board>/mosd/` (the rootfs build runs this one itself) |
+| RAUC | `os/pkgs/rauc/build.sh`, driven by the `rauc` producer's `PREPARE` hook | `os/pkgs/rauc/out-<arch>/`, packed as `mos-rauc` |
+| podman and its six companions | `os/pkgs/podman/build.sh`, driven by the `podman` producer's hook | `os/pkgs/podman/out-<arch>/`, packed as `mos-podman` |
+| mosd, apid, mos-mqttd, mos-mqtt-broker | `os/pkgs/mosd/hack/build-deb.sh`, driven by the `mosd` and `mqtt` producers | `target-deb/<producer>/`, packed as `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` |
+
+A producer whose hook can build its own input does so rather than stopping, and
+that is a cost worth paying where it can be seen: `make os-deb-preflight` lists
+every missing input across every producer at once, before `os-debs` starts a
+container, and says which of them the run would build for itself.
 
 cx3576 additionally needs its BSP: the kernel (`Image`, `modules.tar`,
 `rk3576-src.dtb`) and the A/B U-Boot (`u-boot-rockchip.bin`), built by
-`os/boards/cx3576/bsp/Makefile` into `os/boards/cx3576/bsp/out/`. x64 has no
-BSP: UEFI firmware boots it and Debian's `linux-image-amd64` is installed by
-the rootfs chain.
+`os/boards/cx3576/bsp/Makefile` into `os/boards/cx3576/bsp/out/`; the
+`board-cx3576` producer stages them into `mos-board-cx3576`. x64 has no BSP:
+UEFI firmware boots it and Debian's `linux-image-amd64` arrives as a `Depends`
+of `mos-board-x64`.
 
 Output directories carry the architecture in their name (`out-amd64`,
 `out-arm64`, `:amd64`, `:arm64`) so the two boards' inputs coexist. A build
 for one board never overwrites the other's.
+
+### 1.1 The rootfs is composed, not chained
+
+The root is not a sequence of Dockerfiles mutating one image in a fixed order.
+It is **one APT transaction** onto a Debian base pinned by digest in
+`os/build-env/images.env`, followed by **one finalizer**. `os/rootfs/compose/`
+holds exactly those two files:
+
+| File | What it does |
+|---|---|
+| `10-compose.Dockerfile` | `FROM` the pinned trixie base at `$TARGETPLATFORM`; installs the resolved package set out of `_out/debs/<arch>/` in a single `apt` transaction. The pool is bind-mounted and the resolution is copied in; the Dockerfile makes no selection of its own |
+| `90-pack.Dockerfile` | closes the root (inventory, package-manager log capture, purge, build report), does the `/var`, machine-id, resolver and shadow tree surgery, runs the whole-tree assertions, builds the squashfs, appends the dm-verity tree, and exports both surfaces |
+
+What used to be a floor stage, a read-only-root wiring stage, four feature
+stages and a board stage is package metadata now: `mos-system`, `mos-ca-trust`,
+one of `mos-profile-{dev,prod}`, `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth`,
+`mos-podman`, `mos-rauc`, `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker`,
+and one `mos-board-<board>`. **What orders configuration is `Depends`, not a
+number in a filename** — and one apt transaction is atomic by construction, so
+there is nothing left for a stage boundary to sit between.
+
+`os/build/src/stages-cli.ts` still sequences the two files, unchanged: it
+discovers `<number>-<name>.Dockerfile` in the directory it is pointed at, builds
+them in numeric order, hands each the previous one's image, and exports the
+last one's `artifact` and `factory-root` targets. It knows nothing about which
+directory it was given, which is why composition needed no second driver.
+
+**Selection is a resolution.** `os/rootfs/packages/resolve.sh` takes the board,
+the profile, the radio set and the decline list as arguments and prints package
+names; `os/rootfs/build-v2.sh` decides all four and the resolver re-derives
+none of them. A declined feature is *fewer packages named* —
+`MOS_ROOTFS_WITHOUT`, into which `WITH_CONTAINERS=0` and `WITH_MOSD=0` fold —
+and a feature name that matches nothing is refused rather than silently
+producing the full image.
+
+**The explicit profile selection is the only thing keeping a dev image dev**,
+so the resolver **refuses a resolution that does not name exactly one profile
+package**. Neither failure is visible downstream: with none, mosd's
+case-sensitive `read_profile` fails closed and the image behaves as production
+with every gate green; with two, `mos-profile-dev` and `mos-profile-prod`
+`Conflict` by name and APT refuses the transaction. The count is taken over the
+*resolved set* rather than inferred from `--profile` having picked one manifest,
+because any manifest may name a profile package.
+
+**Enablement is package-owned symlink payload.** Nothing on this path calls
+`systemctl enable` — not the composer, not a script, not a maintainer script.
+Each package ships its own `multi-user.target.wants/` symlinks and declares how
+many in its `producer.env` `ENABLEMENT` field. The reasoning came out of the
+comparison that retired the chain and outlives it: *an unsanctioned `removed`
+means a file the chain shipped and no package owns, and the fix is an owner,
+not a stanza.* An absence — "there is deliberately no `ssh.service` link here" —
+cannot survive another package's postinst; only payload can.
+
+**Board drop-ins are a derived set, and the tracking is silent.** A board that
+must amend a *generic* unit records the amendment as overlay content, and
+`mos-board-<board>` ships every `*.d` drop-in directory under that board
+overlay's `etc/systemd/system/` rather than naming them one at a time — the
+same derivation rule as the repart definitions beside it, and the glob takes
+only drop-in directories, never the units themselves. Say the consequence
+plainly: **board payload tracks overlay `*.d` content silently.** Adding a
+drop-in to a board overlay ships it, with no edit anywhere else and no line in
+any diff announcing that a package grew.
+
+#### The keyring is the exception, and it is not the CA trust store
+
+Two seams a reader will conflate unless the text separates them. They were
+conflated once during this migration and corrected:
+
+| Seam | Owner | What it decides |
+|---|---|---|
+| `/etc/ssl/certs/ca-certificates.crt`, the anchors under `/usr/share/ca-certificates`, `/etc/ca-certificates.conf` | `mos-ca-trust` — **package payload** | the **TLS trust store**: which certificate authorities the device believes on an outbound connection |
+| `/etc/rauc/keyring.pem` | **not package-owned**; `os/rootfs/build-v2.sh` stages it from `ca/ca.cert.pem` | the **RAUC trust root**: whose signed update bundles this device will install |
+
+The keyring is per-build trust material no package may ever carry: a package is
+one artifact installed into many images, and the CA an operator put in the
+repository-root `ca/` is a decision about *this* build. So `build-v2.sh` copies
+it into the composition context itself, **refuses** one left at
+`os/rootfs/overlay-v2/etc/rauc/keyring.pem` — the overlay is copied wholesale
+into every image, so a file there is a trust root nobody chose — and warns when
+`ca/GENERATED` beside the material marks it development-grade.
+`MOS_EXPECT_DEV_KEYRING=1` forces the same verdict at verify time.
+
+#### Where the two paths differed, the composed one was right
+
+Not a tie the removal broke arbitrarily. Each of these was measured:
+
+- **Account last-change dates.** `10-compose` declares `ARG SOURCE_DATE_EPOCH`,
+  so the whole apt transaction runs under it and `useradd` writes `18262`
+  (2020-01-01) into the last-change field for `messagebus`, `sshd`,
+  `systemd-network` and `systemd-resolve` — in `/etc/shadow-` and
+  `/usr/share/factory/etc/shadow`. The chain's postinsts saw the wall clock and
+  wrote the build date into a signed root. Measured rather than reasoned: in the
+  pinned base, `useradd -r probe` yields `SOURCE_DATE_EPOCH / 86400` when the
+  variable is set and today's day-number when it is not.
+- **Dependency-scoped libraries.** Declining `rauc` removes a set of
+  **packages**, not a set of libraries: `mos-rauc` itself, plus the
+  `libjson-glib` packages only its `${shlibs:Depends}` pulls in —
+  `libjson-glib-1.0-0`, which in turn `Depends: libjson-glib-1.0-common`. The
+  chain installed those unconditionally. A library that arrives with its
+  consumer and leaves with it is the dependency system working, so this was
+  ruled *record, do not gate*. The condition riding on that ruling is that any
+  other component relying on those libraries declares its own dependency, and
+  the full root cannot check it — with `mos-rauc` installed every ELF resolves
+  whether or not its package said so. `os/tests/install-closure-gate.sh` builds
+  the rauc-declined root for exactly that reason, prints the package set the two
+  roots differ by on every run, and reports a run in which `mos-rauc` was the
+  only package to leave as an *empty search space* rather than quoting it as a
+  proof.
+- **Build residue.** `/run/crun` was in the chain's root because the chain
+  exercised the container engine during assembly. Nothing a signed root should
+  carry, and no package's to own.
+
+The written reasoning behind the removal — every difference judged rather than
+assumed, including the ones that were eliminated instead of sanctioned — is
+`os/tests/dual-build-sanctions.md`.
 
 ## 2. One-time setup
 
@@ -91,6 +218,10 @@ image, so a file there is a CA nobody chose, and `ca/` is the one sanctioned
 source. Since every image now ships a keyring, `make os-verify-<board>-v2` on a
 development image needs `MOS_EXPECT_DEV_KEYRING=1` to name it as a bench image.
 
+The keyring is the one path in a mos root that is **not** package payload, and
+it is a different seam from the TLS trust store `mos-ca-trust` ships — §1.1 has
+the two side by side.
+
 ## 3. x64, end to end
 
 Every step runs natively on an amd64 host. In order:
@@ -100,7 +231,8 @@ MOS_BUILD_PLATFORM=linux/amd64 bash os/build-env/build.sh
 bash os/pkgs/rauc/gen-dev-keys.sh   # optional: a build with no ca/ does this itself
 MOS_BOARD=x64 bash os/pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash os/pkgs/podman/build.sh
-MOS_BOARD=x64 bash os/rootfs/build-v2.sh
+make os-debs                                   # the package pool, then its index
+MOS_BOARD=x64 bash os/rootfs/build-v2.sh       # == make os-rootfs-x64-composed
 bash os/build/run.sh --mkimage-x64
 bash os/verify/run.sh --verify --board x64
 bash os/build/run.sh --bundle --board x64
@@ -111,6 +243,15 @@ bash os/build/run.sh --bundle --board x64
 x64 the environment variable is not optional. The rootfs build ends with a
 smoke run that executes the freshly built binaries inside the packed root;
 on x64 that is a native `docker run`, so nothing extra is needed.
+
+The two component builds above the pool are optional in the sense that the
+`rauc` and `podman` producers run them from their own `PREPARE` hooks if their
+output directories are empty — but podman's is roughly three quarters of an hour
+of compiling six upstream clones across four language toolchains, so running it
+first is how that cost is paid somewhere it can be seen rather than from inside
+a packaging hook. `make os-debs` must run **after** them and **before** the
+rootfs build: `build-v2.sh` refuses a pool whose one version is not this tree's,
+including the `.dirty` suffix an uncommitted change puts on either side.
 
 Boot the result with the QEMU harness under `os/pkgs/mosd/tests/apid-api/`,
 which takes `_out/x64/x64-mos-v2-latest.img` as its input and builds nothing.
@@ -136,8 +277,9 @@ exactly one of them:
 | kernel | `make cx3576-kernel` | cross-compile, same toolchain | no |
 | RAUC | `make os-rauc` (`MOS_BOARD=cx3576` is the default) | `default` builder if the host has binfmt, else `mos-arm64` with the builder images handed over as OCI layouts | no |
 | podman | `make podman` (`MOS_ARCH=arm64` is the default) | as RAUC; its source stage runs at the build platform on the amd64 base | no |
-| mosd family | run by the rootfs build via `os/pkgs/mosd/hack/build-aarch64.sh` | cross-compile: cargo target `aarch64-unknown-linux-gnu` in `mos-build-rust:amd64` | no |
-| rootfs chain | `bash os/rootfs/build-v2.sh` (`MOS_BOARD=cx3576` is the default) | `default` builder if the host has binfmt, else `mos-arm64` chaining the stages by OCI layout (section 4.1) | no |
+| mosd family | run by the `mosd` and `mqtt` producers via `os/pkgs/mosd/hack/build-deb.sh` | cross-compile: cargo target `aarch64-unknown-linux-gnu` in `mos-build-rust:amd64` | no |
+| the package pool | `make os-debs` | each producer's own route, above; the packing stages themselves are `Architecture`-tagged file copies | no |
+| rootfs composition | `bash os/rootfs/build-v2.sh` (`MOS_BOARD=cx3576` is the default) | `default` builder if the host has binfmt, else `mos-arm64` with the two files linked by OCI layout (section 4.1) | no |
 | smoke run | last step of the rootfs build | `docker run` if the daemon can execute arm64, else one throwaway build per artifact on `mos-arm64` | no |
 | disk image | `bash os/build/run.sh --mkimage-v2` | file assembly only | no |
 | image verification | `make os-verify-cx3576-v2` | reads files out of the image | no |
@@ -153,6 +295,7 @@ make cx3576-uboot cx3576-uboot-mos
 make cx3576-kernel
 make os-rauc
 make podman
+make os-debs
 bash os/rootfs/build-v2.sh
 bash os/build/run.sh --mkimage-v2
 make os-verify-cx3576-v2
@@ -163,34 +306,33 @@ make os-bundle-cx3576
 prebuilt BSP artifacts (a directory holding `out/kernel/` and
 `out/uboot-mos/`), so a kernel built once can serve many rootfs builds.
 
-### 4.1 How the rootfs chain reaches arm64 without the host
+### 4.1 How the rootfs composition reaches arm64 without the host
 
-The rootfs is not one Dockerfile but a chain: `os/rootfs/stages/` holds one
-file per stage, and every stage after the first opens `FROM ${MOS_STAGE_PREV}`.
-The stage driver (`os/build/src/stages-cli.ts`) links that chain one of two
+The composition is two Dockerfiles (§1.1), and the second opens
+`FROM ${MOS_STAGE_PREV}`. `os/build/src/stages-cli.ts` links them one of two
 ways, chosen by the builder's driver:
 
-- **tag mode** on the `docker` driver: each stage is a tag in the daemon's
-  image store, and the next `FROM` finds it there. That driver executes arm64
-  only through the host's `binfmt_misc`, so this is the native route and the
-  route on a host that has registered the emulator.
-- **layout mode** on a `docker-container` builder: each stage is exported as
-  an OCI layout under `_out/<board>/stages/` and handed to the next as a named
-  build context under the very tag its `FROM` names. Nothing touches the
-  daemon's image store, and the builder's bundled QEMU executes the arm64
-  steps.
+- **tag mode** on the `docker` driver: the first file's result is a tag in the
+  daemon's image store and the finalizer's `FROM` finds it there. That driver
+  executes arm64 only through the host's `binfmt_misc`, so this is the native
+  route and the route on a host that has registered the emulator.
+- **layout mode** on a `docker-container` builder: the result is exported as an
+  OCI layout under `_out/<board>/stages/` and handed on as a named build
+  context under the very tag the `FROM` names. Nothing touches the daemon's
+  image store, and the builder's bundled QEMU executes the arm64 steps.
 
 `build-v2.sh` picks the builder the way RAUC and podman do — `default` when it
 reaches the platform, else `mos-<arch>` — and the smoke run at the end, when
 the daemon cannot execute the root, executes every register entry inside that
 builder instead, one throwaway build per artifact, with the same register and
-the same judging. `os/rootfs/stages/README.md` records the measurement and the
-cost: one copy of the root's layers over the docker socket per stage.
+the same judging. Layout mode's cost is one copy of the root's layers over the
+docker socket per link, which composition reduced from eight links to one.
 
-Before layout mode existed the driver refused any builder but the `docker`
-one, so a cross build needed host binfmt; the stage split had removed the
-single-Dockerfile fallback to the container builder. Layout mode restores that
-capability without a registry in the build path.
+Both modes predate the composition and neither is specific to it: the driver
+is handed a directory of numbered Dockerfiles and knows nothing else about it.
+Before layout mode existed the driver refused any builder but the `docker` one,
+so a cross build needed host binfmt. Layout mode restores the container-builder
+route without putting a registry in the build path.
 
 ## 5. arm64 on an amd64 host: check by executing, never by inspecting
 
@@ -222,8 +364,9 @@ docker run --rm --platform linux/arm64 alpine:3.21 uname -m
 container-create call can time out, and `context canceled` reads like an arm64
 verdict when it is a busy daemon.
 
-**Registering emulation on the host** is optional: it makes the rootfs chain
-take tag mode on the `default` builder, which is faster than layout mode. Either
+**Registering emulation on the host** is optional: it makes the rootfs
+composition take tag mode on the `default` builder, which is faster than layout
+mode. Either
 of these, run **on the host**, not inside a container that merely mounts the
 docker socket — a registration made from inside a container has been observed
 to report success and change nothing the daemon can see:
@@ -251,18 +394,28 @@ which is why image verification and the bundle build run on any host.
 | Message | Meaning | Do |
 |---|---|---|
 | `LOCAL_MOS_BUILD_BASE resolves to localhost/mos-build-base:<arch>, which is not in the local docker image store` | the builder family for that architecture was never built, or was built under an older architecture-less tag | `MOS_BUILD_PLATFORM=linux/<arch> bash os/build-env/build.sh` |
-| `note: the 'default' builder cannot reach linux/arm64 on this host; using the docker-container builder 'mos-arm64'` | not an error: the rootfs chain is taking layout mode | nothing; register emulation on the host (section 5) only if you want the faster tag mode |
+| `note: the 'default' builder cannot reach linux/arm64 on this host; using the docker-container builder 'mos-arm64'` | not an error: the rootfs composition is taking layout mode | nothing; register emulation on the host (section 5) only if you want the faster tag mode |
 | `exec /bin/sh: exec format error` inside a build | either no emulator, **or** a single-architecture `localhost/` base under `--platform` (the tag has no index to select from, so buildkit serves what it holds and applies no emulator) | check the daemon (section 5); if it executes, the stage's base is the wrong architecture — `build-harness.md` section 5.1 |
 | `pull access denied ... localhost/...` from a `docker-container` builder | a local tag handed to a builder that cannot read the image store | use the `default` builder, or hand the image over as an OCI layout (`os/build-env/from.sh --contexts=`) |
 | `modules.tar not found` | the cx3576 kernel was not built, or `BOARD_DIR` points elsewhere | `make cx3576-kernel`, or set `BOARD_DIR` |
 | `os/pkgs/rauc/out-<arch>/rauc not found` / `os/pkgs/podman/out-<arch>/podman not found` | the component was built for the other architecture, or not at all | `MOS_BOARD=<board> make os-rauc`, `MOS_ARCH=<arch> make podman` |
-| `mqttd: the unit runs as 'mos-mqttd' and no such account` (from the verifier) | the `mqtt` feature stage was declined while its units shipped | build with the stage, or decline mosd too |
+| `_out/debs/<arch> does not exist` / `... holds no .deb at all` / `... carries no usable index` | there is no package pool for that architecture, or `repo.sh` never indexed it | `make os-debs` |
+| `the <arch> pool was built at version '...' and this tree is '...'` | the pool is another commit's, or one side carries `.dirty` from uncommitted changes | commit, then `make os-debs` again — composing would install another tree's packages into an image every later check would attribute to this one |
+| `the resolution names package(s) the <arch> pool does not contain` | a producer in the resolution was never built for that architecture; the message names the `make os-deb-<producer>` for each | run those, then `make os-debs` to re-index |
+| `mqttd: the unit runs as 'mos-mqttd' and no such account` (from the verifier) | the MQTT units are in the root without the account their package creates | look at the `mqtt` producer's account handling. Declining `mosd` while keeping `mqtt` is not this failure: `mos-mqttd` depends on `mosd`, so APT refuses that transaction by name |
 
 A build that stops with one of these has written nothing under
 `_out/<board>/` it will later trust: every consumer re-checks its inputs by
 name.
 
 ## 7. Verification
+
+**These runs predate the chain removal.** Both were made while the rootfs was
+still assembled by the nine-file stage chain, so what they establish is the
+arm64 routing of section 4 — the builder selection, layout mode and the
+buildkit smoke executor — and not the composition of §1.1. They are kept as the
+record of that routing; the composed path's own acceptance is PLAN-036's
+dual-build gate and the ledger it wrote, `os/tests/dual-build-sanctions.md`.
 
 *Measured on this host on 2026-08-30 and 2026-08-31.* The x64 sequence of
 section 3 was run as written, in one shell, on an amd64 host with docker 28

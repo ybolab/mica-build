@@ -1708,7 +1708,9 @@ any kind. This phase builds it. **[not implemented]** — none of it is
 scheduled.
 
 **Scope.**
-1. A static system user created in the rootfs (`os/rootfs/scripts/account-mos.sh`), a
+1. A static system user created by a package postinst, the way the `mos`
+   operator account already is
+   (`os/rootfs/packages-src/system/maintainer/mos-system/postinst`), a
    rewritten `os/pkgs/mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
    `CapabilityBoundingSet=`, and a sandboxing set checked against the one

@@ -8,7 +8,7 @@
 // a symbol that fragment names cannot be missing from a cx3576 image, because
 // there is no cx3576 image. x64 has no such build: the kernel is Debian's
 // `linux-image-6.12.101+deb13-amd64`, installed whole as a package
-// (`os/rootfs/stages/40-board.Dockerfile`), and **the Debian config is
+// (`mos-board-x64` Depends on it), and **the Debian config is
 // not in this repository**. Nothing in-tree proves what it sets. So the x64
 // half of the same guarantee has to be read off the built artefact, which is
 // what these two checks are.
@@ -16,7 +16,7 @@
 // `=y` OR `=m` here, unlike the fragment's `=y`-only floor. The reason is a
 // board fact rather than a relaxation: cx3576 boots dm-verity with no initramfs
 // and cannot load a module at all, while x64 ships `kmod`
-// (`os/rootfs/stages/10-base.Dockerfile`) and a full Debian module set, so
+// (`mos-system` Depends on it) and a full Debian module set, so
 // `=m` there is a symbol that is genuinely available. Which is also why the
 // second check exists: `=m` in a config file is a claim about a build, not
 // about this image, and a module whose `.ko` was never packed resolves to
