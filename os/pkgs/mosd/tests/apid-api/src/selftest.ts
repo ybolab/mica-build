@@ -297,7 +297,7 @@ try {
   const text = await client.http("/text");
   await requireRejected(
     "expectHeader rejects an absent header, naming the header",
-    (r) => void r.expectHeader(text, "location", "/login", "the route sends a Location"),
+    (r) => void r.expectHeader(text, "location", "/ui", "the route sends a Location"),
     ["location", "absent"],
   );
 

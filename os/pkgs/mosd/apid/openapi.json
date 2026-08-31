@@ -39,7 +39,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -49,7 +49,7 @@
             }
           },
           "403": {
-            "description": "The current password does not verify (`wrong_password`)",
+            "description": "The browser CSRF token is invalid (`csrf_invalid`), or the current password does not verify (`wrong_password`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -124,7 +124,17 @@
             "description": "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -159,7 +169,17 @@
             "description": "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -221,7 +241,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -314,7 +344,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -406,7 +446,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -448,7 +488,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -471,6 +511,65 @@
       }
     },
     "/api/v1/network": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Read declared network configuration together with current link state.",
+        "operationId": "api_v1_network_read",
+        "responses": {
+          "200": {
+            "description": "Configured interfaces and the current systemd-networkd observation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No API credential was supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The configured network map could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "mosd is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
       "put": {
         "tags": [
           "resources"
@@ -509,7 +608,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -615,7 +724,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -699,7 +818,17 @@
             "description": "The entry was removed; the reconciler has swept its units"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -805,7 +934,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -926,7 +1055,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1041,7 +1180,17 @@
             "description": "The peer was removed; the reconciler has re-rendered the tunnel without it"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1113,6 +1262,158 @@
         }
       }
     },
+    "/api/v1/session": {
+      "get": {
+        "tags": [
+          "session"
+        ],
+        "summary": "Report setup and browser authentication state without redirecting.",
+        "operationId": "api_v1_session_status",
+        "responses": {
+          "200": {
+            "description": "Setup and browser authentication state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatus"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The access settings could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "mosd is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "summary": "Authenticate a browser and create its HttpOnly session cookie.",
+        "operationId": "api_v1_session_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The browser session was created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The password is incorrect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device still requires first-run setup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body has the wrong shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Login attempts are temporarily throttled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "session"
+        ],
+        "summary": "Revoke the acting browser session.",
+        "operationId": "api_v1_session_delete",
+        "responses": {
+          "204": {
+            "description": "The browser session was revoked"
+          },
+          "401": {
+            "description": "No API credential was supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The browser CSRF token is absent or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/{path}": {
       "get": {
         "tags": [
@@ -1144,7 +1445,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1265,7 +1566,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1469,7 +1780,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1559,7 +1870,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1655,7 +1976,17 @@
             "description": "The key was removed; the reconciler has re-rendered the authorized-keys file without it"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1758,7 +2089,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1852,7 +2183,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`)",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1934,7 +2265,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`)",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2019,7 +2350,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2075,7 +2406,7 @@
           "tokens"
         ],
         "summary": "Mint an API token.",
-        "description": "Takes a **bearer token only** — a session cookie is not accepted. The\nsecret is returned once, in this response, and is not retrievable\nafterwards.\n\nTo obtain a first token, use the built-in pane at `POST /builtin/tokens`.",
+        "description": "Takes either a stored bearer token or an authenticated browser session. The\nsecret is returned once, in this response, and is not retrievable\nafterwards.\n\nA signed-in browser can mint the first additional token through this API.",
         "operationId": "api_v1_tokens_mint",
         "requestBody": {
           "content": {
@@ -2109,7 +2440,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2205,7 +2546,17 @@
             "description": "The token was revoked; it stops being accepted on the next request"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2277,6 +2628,98 @@
         }
       }
     },
+    "/api/v1/ui": {
+      "get": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Report whether `/` currently selects a custom UI bundle.",
+        "operationId": "api_v1_ui_status",
+        "responses": {
+          "200": {
+            "description": "The active UI selection and custom bundle health",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No API credential was supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The bundle store could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/active": {
+      "delete": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Deactivate the custom bundle so `/` selects the built-in UI.",
+        "operationId": "api_v1_ui_deactivate",
+        "responses": {
+          "200": {
+            "description": "The built-in UI is now selected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No API credential was supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The browser CSRF token is absent or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The custom UI pointer could not be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/wifi/client/networks": {
       "get": {
         "tags": [
@@ -2300,7 +2743,7 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2390,7 +2833,17 @@
             }
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2486,7 +2939,17 @@
             "description": "The network was forgotten; the station reconciler has re-rendered its configuration without it"
           },
           "401": {
-            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2553,8 +3016,7 @@
         "tags": [
           "discovery"
         ],
-        "summary": "List the API major versions this build serves, and which one to prefer.",
-        "description": "Unauthenticated. Answers 200 with the served set and the current version;\ncarries no hostname, device id or build string.",
+        "summary": "List the API major versions this build serves.",
         "operationId": "api_versions",
         "responses": {
           "200": {
@@ -2628,7 +3090,7 @@
       },
       "ApiErrorDetail": {
         "type": "object",
-        "description": "The envelope's payload.",
+        "description": "The API error envelope payload.",
         "required": [
           "code",
           "message",
@@ -2636,23 +3098,19 @@
         ],
         "properties": {
           "code": {
-            "type": "string",
-            "description": "Stable machine token, from an open set: a client that does not\nrecognise it must fall back to the HTTP status class (§2.1)."
+            "type": "string"
           },
           "message": {
-            "type": "string",
-            "description": "Human-readable, and not for matching on."
+            "type": "string"
           },
           "path": {
             "type": [
               "string",
               "null"
-            ],
-            "description": "The settings dot-path at fault, when the failure names one.\n\nOptional, and omitted rather than sent empty: an unmatched route and a\nfailed authentication name no dot-path, and a member present with a\nmeaningless value is worse than an absent one."
+            ]
           },
           "source": {
-            "type": "string",
-            "description": "The side the failure came from."
+            "type": "string"
           }
         }
       },
@@ -2692,7 +3150,7 @@
       },
       "ApiMeta": {
         "type": "object",
-        "description": "`GET /api/v1/meta` (§2.1's discovery table).",
+        "description": "`GET /api/v1/meta` response.",
         "required": [
           "api",
           "settingsSchemaVersion",
@@ -2700,17 +3158,14 @@
         ],
         "properties": {
           "api": {
-            "type": "string",
-            "description": "The API major version this route belongs to."
+            "type": "string"
           },
           "daemon": {
-            "type": "string",
-            "description": "The daemon answering."
+            "type": "string"
           },
           "settingsSchemaVersion": {
             "type": "integer",
             "format": "int32",
-            "description": "mosd's settings schema version: the shape of the tree on disk, which\nmoves independently of the API version and must never be conflated\nwith it.",
             "minimum": 0
           }
         }
@@ -2742,22 +3197,20 @@
       },
       "ApiVersions": {
         "type": "object",
-        "description": "`GET /api/versions` (§2.1's discovery table).",
+        "description": "`GET /api/versions` response.",
         "required": [
           "versions",
           "current"
         ],
         "properties": {
           "current": {
-            "type": "string",
-            "description": "The member to use with no preference. Always a member of `versions`."
+            "type": "string"
           },
           "versions": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "Every major version served. A client tests **membership** in this set;\na client that reads only `current` concludes that a device it can talk\nto is one it cannot."
+            }
           }
         }
       },
@@ -2840,6 +3293,47 @@
           "newPassword": {
             "type": "string",
             "description": "The replacement; at least 8 characters."
+          }
+        }
+      },
+      "CustomUiStatus": {
+        "type": "object",
+        "required": [
+          "generation",
+          "indexReadable"
+        ],
+        "properties": {
+          "compatible": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "digestMatches": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "indexReadable": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -2941,8 +3435,189 @@
           }
         }
       },
+      "NetworkOverview": {
+        "type": "object",
+        "required": [
+          "configured",
+          "configuredCount",
+          "observed"
+        ],
+        "properties": {
+          "configured": {
+            "description": "The declared settings map. This is desired configuration, not proof of\nlink health."
+          },
+          "configuredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed": {
+            "$ref": "#/components/schemas/ObservedNetwork",
+            "description": "The current view reported by systemd-networkd."
+          }
+        }
+      },
+      "ObservedInterface": {
+        "type": "object",
+        "properties": {
+          "addressState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "addresses": {
+            "type": "array",
+            "items": {}
+          },
+          "administrativeState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "carrierState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dns": {
+            "type": "array",
+            "items": {}
+          },
+          "driver": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hardwareAddress": {},
+          "index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "ipv4AddressState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ipv6AddressState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mtu": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "onlineState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operationalState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "routes": {
+            "type": "array",
+            "items": {}
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ObservedNetwork": {
+        "type": "object",
+        "required": [
+          "available",
+          "interfaceCount",
+          "interfaces"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "interfaceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "interfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObservedInterface"
+            }
+          }
+        }
+      },
       "ResourceValue": {
         "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value: a dot-path can name a subtree, an array or a scalar.\n\nSecrets are replaced by the string `\"<redacted>\"`, which a client can\nreceive anywhere inside the body. Every field named `psk`, `passwordHash`,\n`password_hash`, `hash` or `privateKey` carries the sentinel instead of its\nvalue, at any depth and inside arrays, and so does the whole body when the\ndot-path names one of those fields directly.\n\nThe sentinel is read-only: writing it back is refused at **422** rather\nthan stored, because storing it would destroy the credential."
+      },
+      "SessionLoginRequest": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionStatus": {
+        "type": "object",
+        "description": "The browser's current authentication state.",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "csrfToken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Returned only for an authenticated browser session."
+          },
+          "state": {
+            "type": "string",
+            "description": "`setup`, `unauthenticated`, or `authenticated`."
+          }
+        }
       },
       "SettingsWrite": {
         "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers.\n\nThe schema is wide because the dot-path decides what is acceptable. What\nis actually accepted is narrow: a JSON string for `hostname`, `true` or\n`false` for the three switches. Anything else is **422**."
@@ -2982,11 +3657,16 @@
       },
       "SetupToken": {
         "type": "object",
-        "description": "`POST /api/v1/setup` response body: the minted credential, and nothing else.",
+        "description": "`POST /api/v1/setup` response body.",
         "required": [
-          "token"
+          "token",
+          "csrfToken"
         ],
         "properties": {
+          "csrfToken": {
+            "type": "string",
+            "description": "CSRF token for the browser session created by setup."
+          },
           "token": {
             "type": "string",
             "description": "The whole token, `mos_<id>_<secret>`.\n\n**It appears here and nowhere else, ever**, exactly as the mint route's\ndoes: only the SHA-256 digest is stored. The id is not a separate\nmember because it is the token's own second segment, so a caller that\nholds this string can address it for a later `DELETE` without being\ntold it twice."
@@ -3106,6 +3786,28 @@
           "password": {
             "type": "string",
             "description": "The password to open the channel with: 8 to 72 bytes, and no NUL,\nnewline or carriage return."
+          }
+        }
+      },
+      "UiStatus": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "custom": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CustomUiStatus"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "description": "`builtIn` when no custom bundle is active, otherwise `custom`."
           }
         }
       },

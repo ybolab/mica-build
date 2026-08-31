@@ -10,14 +10,15 @@
 //! dispatch mechanism is worth more than a rule enforced by a check somebody
 //! can forget to write" (§4.1). [`root`] is `GET /`, §4.1's single declared
 //! exception: the active bundle's `index.html` when a bundle is active and its
-//! index is readable, and the built-in UI otherwise.
+//! index is readable, and a redirect to the reserved built-in `/ui` otherwise.
 //!
 //! [`fallback`] answers §4.2's five conditions in order — condition 1 is the
 //! mounting above and costs no code, 2 is the method check, 3 and 4 are
 //! [`offers_html`] and [`ends_in_a_route_segment`], 5 is whether
-//! [`serve_index`] produced anything. When it did not, the answer is the
-//! built-in UI: §6.1 classes 1, 2 and 4 are not errors and are not logged as
-//! any. §4.3 is applied rather than re-decided: [`super::mime::content_type`]
+//! [`serve_index`] produced anything. A custom-SPA fallback exists only while
+//! a readable custom index exists; without one the path is a 404 and the
+//! browser enters the built-in application through `/` or `/ui`. §4.3 is
+//! applied rather than re-decided: [`super::mime::content_type`]
 //! and [`super::mime::cache_class`] answer the headers, `nosniff` goes on every
 //! response this module builds, and every HTML document — bundle index, SPA
 //! fallback and built-in UI alike — is `no-store`.
@@ -29,12 +30,12 @@ use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::header::{ACCEPT, ALLOW, CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
-use axum::response::{Html, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 
 use super::mime::{self, CacheClass, NOSNIFF, X_CONTENT_TYPE_OPTIONS};
 use super::path::{self as asset_path};
 use crate::bundle::{Manifest, Store};
-use crate::routes::{AppState, home};
+use crate::routes::AppState;
 
 /// The one file §5.3 requires at a bundle root, and the document §4.2's
 /// fallback returns.
@@ -49,18 +50,14 @@ const MANIFEST: &str = "mos-ui.json";
 /// There is no `Accept` condition and no extension condition here. §4.2's five
 /// conditions govern the *fallback*; `/` is a declared route and §4.1 states
 /// its rule in two branches and no more: the active bundle's index when a
-/// bundle is active and its index is readable, the built-in UI otherwise.
-///
-/// The built-in UI reached here is today's `home` pane. §6.3's reserved prefix,
-/// where it becomes reachable *unconditionally*, does not exist yet and is not
-/// created here.
+/// bundle is active and its index is readable, a redirect to `/ui` otherwise.
 pub async fn root(State(state): State<AppState>) -> Response {
     match active_root(state.bundles())
         .as_deref()
         .and_then(serve_index)
     {
         Some(response) => response,
-        None => built_in(&state).await,
+        None => Redirect::to("/ui").into_response(),
     }
 }
 
@@ -99,12 +96,11 @@ async fn respond(state: &AppState, request_path: &str, accept: Option<&str>) -> 
     if !offers_html(accept) || !ends_in_a_route_segment(request_path) {
         return not_found();
     }
-    // Condition 5. Its failure is §6.1 class 1, 2 or 4 — the built-in UI, not
-    // a 404 and not a 500.
-    match root.as_deref().and_then(serve_index) {
-        Some(response) => response,
-        None => built_in(state).await,
-    }
+    // Condition 5. A custom route is meaningful only when a readable custom
+    // index exists; `/ui` is the separate, unconditional built-in SPA.
+    root.as_deref()
+        .and_then(serve_index)
+        .unwrap_or_else(not_found)
 }
 
 /// The resolved root of the active bundle, or `None` for §6.1 class 1.
@@ -113,7 +109,7 @@ async fn respond(state: &AppState, request_path: &str, accept: Option<&str>) -> 
 /// rather than canonicalising the link and serving wherever it points. The
 /// difference is what happens to a `current` repointed outside the store over
 /// a root shell: the link's target is never trusted as a root, so such a
-/// pointer reads as "no bundle" and the device serves the built-in UI.
+/// pointer reads as "no bundle" and the site root redirects to `/ui`.
 ///
 /// The root handed to [`asset_path::resolve`] is canonical, which §4.4
 /// requires of the caller: the assertion is made against the resolved bundle
@@ -130,7 +126,8 @@ fn active_root(store: &Store) -> Option<PathBuf> {
 ///
 /// Resolved through §4.4's rules like any other asset, so an `index.html` that
 /// is a symlink or a directory is not served — which is §6.1 class 2's
-/// "index is not a regular file", answered with the built-in UI by the caller.
+/// "index is not a regular file", answered by the site-root redirect or a
+/// custom-fallback 404, depending on which path was requested.
 fn serve_index(root: &Path) -> Option<Response> {
     let index = asset_path::resolve(INDEX, root).ok()?;
     serve_file(root, &index)
@@ -174,19 +171,6 @@ fn immutable_dir(root: &Path) -> Option<PathBuf> {
     let text = fs::read_to_string(root.join(MANIFEST)).ok()?;
     let manifest: Manifest = serde_json::from_str(&text).ok()?;
     Some(PathBuf::from(manifest.immutable_dir))
-}
-
-/// The built-in UI: §4.2 condition 5's answer and §6.1 classes 1-4's.
-///
-/// It reads nothing under the bundle store, which is what makes it an answer
-/// that no bundle state can affect (§6.3 candidate A's first property).
-async fn built_in(state: &AppState) -> Response {
-    let Html(markup) = home(State(state.clone())).await;
-    asset_response(
-        markup.into_bytes(),
-        Some(mime::content_type(Path::new(INDEX))),
-        CacheClass::NoStore,
-    )
 }
 
 /// §4.2 condition 3: the client asked for HTML.

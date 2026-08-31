@@ -24,20 +24,20 @@ defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
 (`os/pkgs/mosd/apid/src/config.rs`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
 (`os/pkgs/mosd/apid/src/config.rs`). No second protocol, no third port.
 
-**One gate in front of everything.** `app` is *"The HTTPS application router"*
-(`os/pkgs/mosd/apid/src/routes.rs`) and its outermost layer is the auth gate
-(`os/pkgs/mosd/apid/src/routes.rs`), which *"routes every request into setup mode,
-login, or through"* (`os/pkgs/mosd/apid/src/routes.rs`) on a session cookie minted
-at first-run setup or at login. `/healthz` and the declared API routes are the
-only exemptions; they *"answer for themselves"*
-(`os/pkgs/mosd/apid/src/routes.rs`).
+**The API is the gate.** `app` structurally reserves `/api`, `/ui`, `/healthz`
+and `/` before the custom-bundle fallback (`os/pkgs/mosd/apid/src/routes.rs`).
+The static SPA is always readable; appliance data is not. Each management API
+handler extracts either a stored bearer token or a signed browser session. A
+session-authenticated mutation additionally requires its random
+`X-CSRF-Token`. Setup and session discovery are the narrowly defined
+unauthenticated API operations; `/healthz` proves listener liveness only.
 
-**The JSON API under `/api` is read-only.** The router reserves the prefix and
-*"every other path under it 404s"* (`os/pkgs/mosd/apid/src/routes.rs`); every
-route inside is a GET — `get(api_v1_settings)` (`os/pkgs/mosd/apid/src/routes.rs`)
-and `get(api_v1_state)` (`os/pkgs/mosd/apid/src/routes.rs`), beside version
-discovery and metadata. `docs/design/api.md` section 1 records the whole of
-*"The surface as it exists today"* (`docs/design/api.md`).
+**The JSON API under `/api` is the complete management protocol.** It includes
+versioned settings/state reads, typed writes and collections, queued task
+records, setup/session lifecycle, UI selection, live network observation and
+system actions. Its generated contract is
+`os/pkgs/mosd/apid/openapi.json`. There are no HTML form mutation routes beside
+it.
 
 **apid owns no state; it is a client of mosd** over D-Bus — its one backend
 choice is *"Which message bus to reach"* (`os/pkgs/mosd/apid/src/config.rs`) mosd on,
@@ -108,8 +108,10 @@ endpoint equal to compromise of every device it reaches.
 
 ## 4. Security posture
 
-**Exposed today — [implemented].** apid on the LAN, behind section 1's session
-gate, is the entire inbound management surface.
+**Exposed today — [implemented].** apid on the LAN is the entire inbound
+management surface. `/ui` and custom UI assets are public static code on that
+origin; every appliance operation and datum is protected by the `/api`
+credential boundary described in section 1.
 
 **Not exposed today — [implemented], as an absence the build asserts.** No
 other inbound management port, no outbound management connection, and **no

@@ -3,11 +3,9 @@
  *
  * This suite runs against ONE boot. A TCG boot with no /dev/kvm on a quiet
  * machine reaches apid's APID_LISTENING line in 60-66s and both readiness
- * signals in 65-72s, and a full lifecycle run -- two boots, twelve phases,
- * 06-backoff's deliberately doubling login windows and an argon2 hash behind
- * every login -- takes about four minutes end to end. Per-test isolation would
- * multiply the boot across dozens of checks until it dominated everything the
- * suite measures, so the phases are ordered and hand state to each other.
+ * signals in 65-72s. Per-test isolation would multiply that boot across dozens
+ * of checks until it dominated everything the suite measures, so the phases
+ * are ordered and hand state to each other.
  * State coupling is accepted and then made visible, because the failure it
  * invites is reading a phase-4 red as a phase-4 bug when phase 3 is what broke.
  *
@@ -34,7 +32,7 @@ export interface PhaseContext {
 }
 
 export interface Phase {
-  /** Registry id, e.g. "04-readonly". Also what APID_PHASES selects on. */
+  /** Registry id, e.g. "04-network-observation". Also what APID_PHASES selects on. */
   readonly id: string;
   readonly title: string;
   /** REQUIRED and non-empty: what this phase assumes the previous ones left. */

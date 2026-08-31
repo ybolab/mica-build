@@ -109,12 +109,9 @@ export class Reporter {
     const phase = this.#current;
     this.#current = undefined;
     if (phase === undefined || phase.status === "fail") return;
-    // A phase that asserted NOTHING must not read as a pass. Measured
-    // 2026-08-24: 07b-postreboot ran, skipped all five of its checks because
-    // the handoff it needed was missing, and reported `PASS 07b-postreboot` in
-    // the result JSON -- the same "no failures means success" reading that
-    // `run.sh` already refuses at the whole-run level, reappearing one level
-    // down. `beginPhase` starts a phase optimistically at "pass" and only a
+    // A phase that asserted NOTHING must not read as a pass. This mirrors the
+    // whole-run zero-check guard: `beginPhase` starts a phase optimistically at
+    // "pass" and only a
     // FAIL moves it, so a phase with nothing but skips kept the optimism.
     if (!phase.checks.some((check) => check.status === "pass")) {
       phase.status = "skip";
@@ -312,10 +309,9 @@ export class Reporter {
   /**
    * Assert the attributes on one `Set-Cookie` line.
    *
-   * apid issues NO CSRF token, so `SameSite=Lax` on the session cookie is the
-   * entire cross-site defence and `HttpOnly` is the entire defence against a
-   * script reading the session. Losing either is silent -- every functional
-   * assertion in this suite still passes. Hence a dedicated check.
+   * `SameSite=Lax` and the API's CSRF token defend different request paths;
+   * `HttpOnly` prevents scripts from reading the session credential. Losing
+   * any cookie attribute is silent in functional checks, hence this helper.
    *
    * `required` entries are either a flag (`"HttpOnly"`) or `name=value`
    * (`"SameSite=Lax"`); names and values compare case-insensitively, as a

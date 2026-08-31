@@ -15,32 +15,18 @@ import { loadConfigOrExit } from "./config.ts";
 import { Reporter } from "./report.ts";
 import { runPhases, type Phase, type PhaseContext } from "./runner.ts";
 
-import transport from "./phases/01-transport.ts";
-import setup from "./phases/02-setup.ts";
-import login from "./phases/03-login.ts";
-import readOnly from "./phases/04-readonly.ts";
-import mutate from "./phases/05-mutate.ts";
-import wireguard from "./phases/05b-wireguard.ts";
+import spaBoundary from "./phases/01-spa-boundary.ts";
+import session from "./phases/02-session.ts";
+import apiManagement from "./phases/03-api-management.ts";
+import networkObservation from "./phases/04-network-observation.ts";
 import kernelNet from "./phases/05c-kernel-net.ts";
-import bearer from "./phases/05d-bearer.ts";
-import backoff from "./phases/06-backoff.ts";
-import reboot from "./phases/07-reboot.ts";
-import postReboot from "./phases/07b-postreboot.ts";
-import poweroff from "./phases/08-poweroff.ts";
 
 export const PHASES: readonly Phase[] = [
-  transport,
-  setup,
-  login,
-  readOnly,
-  mutate,
-  wireguard,
+  spaBoundary,
+  session,
+  apiManagement,
+  networkObservation,
   kernelNet,
-  bearer,
-  backoff,
-  reboot,
-  postReboot,
-  poweroff,
 ];
 
 async function main(): Promise<void> {

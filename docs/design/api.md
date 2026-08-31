@@ -1,15 +1,37 @@
 # apid: an API-first management daemon with replaceable UI
 
-> **Status:** proposal. This document proposes that the management daemon become
-> **API-first** — that every management operation be reachable over a documented
-> HTTP API, and that the human interface become one client of that API rather
-> than the only way in, so a site can replace it without forking the daemon.
-> The audience is whoever builds or replaces the mos management UI, and whoever
-> has to script the appliance without a browser. Section 1 is not a proposal at
-> all — it is the measured surface the rest must be derived from — and parts of
-> sections 2 and 3 have since stopped being proposals too: a first read-only
-> slice of the API is served, and the subsections that describe it are marked
-> **[implemented]** and measured rather than argued for.
+> **Current status (PLAN-039, 2026-08-31): implemented.** The management daemon
+> is API-first. Every appliance read, write, authentication operation and action
+> is under `/api`; `/healthz` is the listener-only operational exception. The
+> built-in UI is a React SPA embedded in `apid` and served at `/ui`. `/` serves
+> a valid active custom UI and otherwise redirects to `/ui`.
+>
+> The long proposal and measurement history below is retained because it records
+> the decisions that produced the API. Any older statement that the built-in UI
+> is server-rendered Maud, that `/builtin` is the recovery prefix, that a browser
+> cookie cannot authenticate the API, or that the API is read-only is
+> superseded by this current-contract note and by
+> `os/pkgs/mosd/apid/openapi.json`.
+
+## Current shipped contract — **[implemented]**
+
+- `/api` is the only management protocol. Errors are JSON envelopes and the
+  subtree owns its own 404/405 responses.
+- `GET`/`POST`/`DELETE /api/v1/session` provide setup discovery, password login
+  and logout. A signed session cookie authenticates API calls; a session-based
+  mutation also requires the per-session `X-CSRF-Token`. Stored bearer tokens
+  remain supported for automation and do not require CSRF.
+- `GET /api/v1/ui` reports custom UI status and
+  `DELETE /api/v1/ui/active` selects the built-in UI. `/ui` remains reachable
+  regardless of custom-bundle state and cannot be shadowed.
+- `GET /api/v1/network` combines configured intent with an on-demand,
+  normalized `systemd-networkd` observation obtained by mosd over D-Bus. It
+  reports the observed interface count and per-interface operational, carrier,
+  address-family, address, DNS and route details. Observation failure is
+  explicit and does not hide readable configuration.
+- The built-in SPA uses root-relative `/api/...` requests and stores no session
+  or bearer credential in browser storage. Its committed `ui/dist` output is
+  rebuilt and byte-compared in CI before Cargo embeds it.
 
 ## 0. How to read this document
 

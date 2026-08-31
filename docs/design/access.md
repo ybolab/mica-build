@@ -190,6 +190,24 @@ lockdown: false                # one-way; see §5
 
 ## 4. Authentication
 
+### Browser management sessions — **[implemented]**
+
+The browser UI is a static client of the same JSON management API as
+automation. `GET /api/v1/session` reports setup, unauthenticated or
+authenticated state. Password login at `POST /api/v1/session` creates an
+in-memory, HMAC-signed `HttpOnly; Secure; SameSite=Lax` session cookie and
+returns a random per-session CSRF token. The SPA keeps that CSRF value only in
+memory and sends it as `X-CSRF-Token` on `POST`, `PUT`, `PATCH` and `DELETE`.
+The unified API credential extractor rejects a missing or wrong proof with 403
+`csrf_invalid`; bearer-token automation is unaffected. Logout is
+`DELETE /api/v1/session` and revokes the server session before clearing the
+cookie. Setup establishes the same browser session while still returning the
+one-time bearer token to API-only clients.
+
+The browser session protects the HTTPS management API only. It is not an SSH
+credential, a fleet-enrollment credential or a substitute for the transient
+root password below.
+
 ### 4.1 Phase 1 as shipped — **[implemented]**
 
 Implemented by `os/pkgs/mosd/mosd/src/reconciler/sshd.rs` (keys),

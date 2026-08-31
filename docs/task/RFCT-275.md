@@ -1,6 +1,6 @@
 # RFCT-275 Make the built-in UI a pure SPA over the management API
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: codex/spa-api-boundary-20260831
 - **createdAt**: 2026-08-31 15:40
@@ -58,3 +58,5 @@ Separating the built-in SPA from the API-only management backend.
   it carries no appliance data or mutation. `/`, `/ui` and custom bundle
   paths are static selection/asset surfaces, and every management or
   authentication operation is under `/api`.
+
+- complete: Rust workspace, built-in SPA, OpenAPI, and offline QEMU contract gates passed.

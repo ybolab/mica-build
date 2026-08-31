@@ -29,7 +29,20 @@ type HmacSha256 = Hmac<Sha256>;
 /// permanent denial of management out of a transient bug.
 pub struct SessionStore {
     key: [u8; 32],
-    sessions: Mutex<HashMap<String, Instant>>,
+    sessions: Mutex<HashMap<String, StoredSession>>,
+}
+
+struct StoredSession {
+    expires_at: Instant,
+    csrf_token: String,
+}
+
+/// Credentials created for one authenticated browser session.
+pub struct CreatedSession {
+    /// The signed value stored in the HttpOnly cookie.
+    pub cookie: String,
+    /// The request token the SPA sends on state-changing API calls.
+    pub csrf_token: String,
 }
 
 impl SessionStore {
@@ -47,17 +60,29 @@ impl SessionStore {
         mac
     }
 
-    /// Create a session and return the signed cookie value.
-    pub fn create(&self) -> String {
+    /// Create a session and return its cookie and CSRF credentials.
+    pub fn create(&self) -> CreatedSession {
         let mut id_bytes = [0u8; 16];
         rand::rngs::OsRng.fill_bytes(&mut id_bytes);
         let id = hex_encode(&id_bytes);
+        let mut csrf_bytes = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut csrf_bytes);
+        let csrf_token = hex_encode(&csrf_bytes);
         let mac = hex_encode(&self.mac(&id).finalize().into_bytes());
         self.sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id.clone(), Instant::now() + SESSION_TTL);
-        format!("{id}.{mac}")
+            .insert(
+                id.clone(),
+                StoredSession {
+                    expires_at: Instant::now() + SESSION_TTL,
+                    csrf_token: csrf_token.clone(),
+                },
+            );
+        CreatedSession {
+            cookie: format!("{id}.{mac}"),
+            csrf_token,
+        }
     }
 
     /// Split a cookie value into its id, verifying the signature.
@@ -78,13 +103,41 @@ impl SessionStore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match sessions.get(&id) {
-            Some(expiry) if *expiry > Instant::now() => true,
+            Some(session) if session.expires_at > Instant::now() => true,
             Some(_) => {
                 sessions.remove(&id);
                 false
             }
             None => false,
         }
+    }
+
+    /// Return the CSRF token for a live, signed session cookie.
+    pub fn csrf_token(&self, value: &str) -> Option<String> {
+        let id = self.verify_signature(value)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match sessions.get(&id) {
+            Some(session) if session.expires_at > Instant::now() => {
+                Some(session.csrf_token.clone())
+            }
+            Some(_) => {
+                sessions.remove(&id);
+                None
+            }
+            None => None,
+        }
+    }
+
+    /// Verify a CSRF token without an early-exit string comparison.
+    pub fn verify_csrf(&self, value: &str, presented: &str) -> bool {
+        let Some(expected) = self.csrf_token(value) else {
+            return false;
+        };
+        let expected_mac = self.mac(&expected).finalize().into_bytes();
+        self.mac(presented).verify_slice(&expected_mac).is_ok()
     }
 
     /// Drop every session except the one named by `value`.
@@ -161,8 +214,11 @@ mod tests {
     #[test]
     fn roundtrip_and_tamper() {
         let store = SessionStore::new([1u8; 32]);
-        let value = store.create();
+        let session = store.create();
+        let value = session.cookie;
         assert!(store.verify(&value));
+        assert!(store.verify_csrf(&value, &session.csrf_token));
+        assert!(!store.verify_csrf(&value, "wrong"));
 
         let mut tampered = value.clone().into_bytes();
         let last = tampered.last_mut().unwrap();
@@ -176,8 +232,8 @@ mod tests {
     #[test]
     fn remove_all_except_keeps_only_the_named_session() {
         let store = SessionStore::new([1u8; 32]);
-        let kept = store.create();
-        let dropped = store.create();
+        let kept = store.create().cookie;
+        let dropped = store.create().cookie;
         store.remove_all_except(&kept);
         assert!(store.verify(&kept));
         assert!(!store.verify(&dropped));

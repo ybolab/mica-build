@@ -16,6 +16,7 @@ use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 
 use crate::apply_queue::{ApplyJob, ApplyQueue, TaskRecord};
+use crate::network_state::{NetworkState, UnavailableNetworkState};
 use crate::power::PowerControl;
 use crate::rauc::{self, RaucClient};
 use crate::reconciler::Reconciler;
@@ -96,6 +97,9 @@ pub struct MosdService {
     /// was never handed a rotation is one running against no STATE partition,
     /// and the honest answer there is that there is nowhere to put a key.
     wireguard: Arc<dyn WireguardRotate>,
+    /// Read-only live network observation. The default is unavailable so
+    /// tests and dry-run instances never inspect the host network.
+    network_state: Arc<dyn NetworkState>,
 }
 
 /// The rotation a daemon with no key store has: none.
@@ -139,6 +143,7 @@ impl MosdService {
             apply_queue: Arc::new(ApplyQueue::new()),
             registry: None,
             wireguard: Arc::new(NoRotation),
+            network_state: Arc::new(UnavailableNetworkState),
         }
     }
 
@@ -150,6 +155,13 @@ impl MosdService {
     #[must_use]
     pub fn with_wireguard(mut self, wireguard: Arc<dyn WireguardRotate>) -> Self {
         self.wireguard = wireguard;
+        self
+    }
+
+    /// Attach the production network observer.
+    #[must_use]
+    pub fn with_network_state(mut self, network_state: Arc<dyn NetworkState>) -> Self {
+        self.network_state = network_state;
         self
     }
 
@@ -807,6 +819,19 @@ impl MosdService {
         let value = json_path_get(&inner.state, path)
             .ok_or_else(|| SettingsFault::NotFound(format!("state path not found: `{path}`")))?;
         Ok(value.to_string())
+    }
+
+    /// JSON snapshot returned by systemd-networkd's live `Describe` method.
+    async fn get_network_state(&self) -> Result<String, SettingsFault> {
+        self.network_state
+            .describe()
+            .await
+            .map(|value| value.to_string())
+            .map_err(|err| {
+                SettingsFault::Fdo(fdo::Error::Failed(format!(
+                    "observe network state: {err:#}"
+                )))
+            })
     }
 
     /// Record a component health report in the live-state tree under

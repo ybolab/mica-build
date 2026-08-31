@@ -5,19 +5,14 @@
 //! reboot and power-off use dedicated system-management methods; APID never
 //! writes application item trees.
 
+use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use axum::Router;
-use axum::http::StatusCode;
-use serde_json::Value;
-
-use super::{SIGNING_KEY, configured_tree, login, post_form};
+use super::configured_tree;
 use crate::bus_client::BusSettings;
-use crate::routes::{AppState, app};
 use crate::settings_api::SettingsApi;
 
 /// The system-management interface location.
@@ -77,25 +72,6 @@ impl Recorder {
     fn calls(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
     }
-
-    /// Poll [`Self::calls`] until it holds at least `count` entries or a short
-    /// deadline passes, then return it.
-    ///
-    /// The routes fire power actions on a detached task so the HTTP response
-    /// can go out first, so nothing has reached the bus yet when the POST
-    /// returns. Returning whatever arrived by the deadline rather than
-    /// asserting here is what lets the caller's `assert_eq!` print the wrong
-    /// call it got instead of a timeout.
-    async fn settled(&self, count: usize) -> Vec<String> {
-        for _ in 0..500 {
-            let calls = self.calls();
-            if calls.len() >= count {
-                return calls;
-            }
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-        self.calls()
-    }
 }
 
 /// Subtree of `root` at dot-path `path`; `""` is the whole tree.
@@ -151,12 +127,6 @@ impl Fake {
             .await
             .expect("mosd proxy")
     }
-
-    /// The real router over a fresh client: a POST here travels the whole way.
-    async fn router(&self) -> Router {
-        let api: Arc<dyn SettingsApi> = Arc::new(self.client().await);
-        app(AppState::new(api, SIGNING_KEY))
-    }
 }
 
 /// Start a private session bus with a fake mosd on it. Panics when
@@ -207,44 +177,6 @@ async fn fake() -> Fake {
         _server: server,
         _bus: bus,
     }
-}
-
-#[tokio::test]
-async fn a_confirmed_reboot_post_calls_the_management_method() {
-    let fake = fake().await;
-    let router = fake.router().await;
-    let cookie = login(&router, PASSWORD).await;
-
-    let response = post_form(&router, "/power/reboot", "confirm=reboot", Some(&cookie)).await;
-
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    assert_eq!(
-        fake.recorder.settled(1).await,
-        vec!["method:Reboot".to_string()],
-        "the reboot POST must call the management method and write no item"
-    );
-}
-
-#[tokio::test]
-async fn a_confirmed_power_off_post_calls_the_management_method() {
-    let fake = fake().await;
-    let router = fake.router().await;
-    let cookie = login(&router, PASSWORD).await;
-
-    let response = post_form(
-        &router,
-        "/power/poweroff",
-        "confirm=poweroff",
-        Some(&cookie),
-    )
-    .await;
-
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    assert_eq!(
-        fake.recorder.settled(1).await,
-        vec!["method:PowerOff".to_string()],
-        "the power-off POST must call the management method and write no item"
-    );
 }
 
 /// Each API verb calls only its matching management method. Confusing these

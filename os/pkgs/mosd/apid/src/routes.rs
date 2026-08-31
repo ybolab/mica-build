@@ -1,27 +1,18 @@
-//! HTTP routes: auth gate middleware, the first-run setup wizard, login and
-//! logout flows, the status/network/hostname panes, the power pane, the SSH
-//! pane and §6.3's escape at the reserved `/builtin/` prefix. [`app`] is also
-//! where `docs/design/api.md` §4.1's precedence lives, as the shape of the
-//! router rather than as a check: declared routes, then the reserved `/api/`
-//! and `/builtin/` subtrees, then the asset router as the fallback.
+//! HTTP routing for the JSON management API and its two UI entry points.
 //!
-//! Every page below is a `maud` `html!` expansion over one `&str` stylesheet
-//! constant, which is §6.2's "the built-in UI is compiled into the binary"
-//! stated as a property of this file: no `include_str!`, no `include_bytes!`,
-//! no asset directory. §6.2 names dm-verity as the only protection on
-//! `/usr/bin/apid` — `apid.service` has no `ProtectSystem=` — so an artifact
-//! that is bytes in the binary is behind that protection and an artifact that
-//! is files on disk would not be.
+//! `/api/` owns every management read and mutation. `/ui` is the built-in SPA
+//! embedded in the binary. `/` serves a valid active custom bundle and
+//! otherwise redirects to `/ui`; custom assets are considered only by the
+//! final fallback, so neither UI can shadow the API or health endpoint.
 
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use axum::extract::{Form, FromRequestParts, OriginalUri, Path, Query, Request, State};
+use axum::extract::{FromRequestParts, OriginalUri, Path, Request, State};
 use axum::http::header::{CACHE_CONTROL, HOST, LOCATION, RETRY_AFTER, SET_COOKIE};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
-use axum::middleware::{self, Next};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Response};
 // `delete` and `put` are imported on their own lines rather than folded into
 // the routing import below, which is how they were added: apid had served no
 // write verb at all until these two arrived.
@@ -29,11 +20,9 @@ use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
-use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{
-    ApiToken, AuthorizedKey, BridgeConfig, IfaceKind, IfaceSettings, SettingsError, StaticConfig,
-    VlanConfig, WifiNetwork, WireguardConfig, WireguardPeer, parse_authorized_key,
-    quote_path_segment, validate_api_tokens, validate_authorized_keys,
+    ApiToken, AuthorizedKey, IfaceKind, IfaceSettings, SettingsError, WifiNetwork, WireguardPeer,
+    parse_authorized_key, quote_path_segment, validate_api_tokens, validate_authorized_keys,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -43,6 +32,7 @@ use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
 use crate::auth::{self, GuardStore};
+use crate::bundle::Installed;
 use crate::bundle::Store;
 use crate::redact;
 use crate::session::{self, SessionStore};
@@ -192,95 +182,20 @@ impl AppState {
 /// true.
 pub fn app(state: AppState) -> Router {
     Router::new()
-        // §4.1's single exception to rule 3: `/` is conditional — the active
-        // bundle's index when one is active and readable, the built-in UI
-        // otherwise. It stays conditional: §6.3 asks for exactly *one*
-        // unconditional path to the built-in UI, and the reserved prefix
-        // below is it.
         .route("/", get(serve::root))
-        // §6.3 candidate (A), the way in: a reserved prefix the asset router
-        // can never shadow. It is unshadowable for the same structural reason
-        // `/api/` is — axum matches declared routes before it consults a
-        // fallback — and for no other. Nothing under `assets/` checks for this
-        // prefix, and nothing may: §4.1 asks for a rule the dispatch mechanism
-        // enforces rather than one somebody can forget to write.
-        //
-        // The nest claims the whole subtree — `/builtin/index.html` and
-        // `/builtin/assets/app.js` included — which is what §6.3 means by
-        // burning a path prefix permanently; a prefix reserved for only some of
-        // its paths is not reserved. The two spellings split across the nest
-        // boundary, the same asymmetry `/api` has: the nest claims `/builtin`
-        // (the nested router sees `/`) and not `/builtin/`, so the
-        // trailing-slash spelling is declared outside it. Both must reach the
-        // pane, an operator recovering a device should not have to get the
-        // slash right, and the spelling the design document writes is the one
-        // with it.
         .nest(
-            BUILTIN,
+            "/ui",
             Router::new()
-                .route("/", get(builtin_home))
-                // POST only, matching the power and SSH mutations above: no GET
-                // handler exists, so no prefetch, crawler or mis-clicked link
-                // can deactivate a working custom UI.
-                .route(BUILTIN_DEACTIVATE_LEAF, post(builtin_deactivate))
-                // POST only, and this pair is the case where that is not a
-                // convention but a requirement: `SameSite=Lax` withholds the
-                // session cookie from a cross-site form POST and PERMITS it on
-                // a top-level cross-site GET navigation, so a GET mint would be
-                // a permanent-credential factory reachable from any link an
-                // operator clicks. No GET handler exists for either, and none
-                // may ever be added -- not as a convenience, not as a redirect
-                // target, not as a debugging affordance.
-                .route(BUILTIN_TOKENS_LEAF, post(builtin_tokens_mint))
-                .route(BUILTIN_TOKENS_REVOKE_LEAF, post(builtin_tokens_revoke))
-                .fallback(builtin_not_found),
+                .route("/", get(crate::assets::builtin::index))
+                .route("/assets/app.js", get(crate::assets::builtin::app_js))
+                .route("/assets/app.css", get(crate::assets::builtin::app_css))
+                .fallback(crate::assets::builtin::fallback),
         )
-        .route(BUILTIN_PATH, get(builtin_home))
-        .route("/setup", get(setup_form).post(setup_submit))
-        .route("/login", get(login_form).post(login_submit))
-        .route("/logout", post(logout))
-        .route("/password", get(password_form).post(password_submit))
-        .route("/network", get(network_form).post(network_submit))
-        // POST only, like the SSH key routes they mirror: no GET handler
-        // exists, so nothing that merely follows a link can add or drop a
-        // tunnel's far end.
-        .route("/network/peers/add", post(network_peer_add))
-        .route("/network/peers/remove", post(network_peer_remove))
-        .route("/hostname", get(hostname_form).post(hostname_submit))
-        .route("/power", get(power_form))
-        // POST only, deliberately: no GET handler exists for either action, so
-        // a browser prefetch, a crawler or a mis-clicked link cannot power the
-        // appliance off.
-        .route("/power/reboot", post(power_reboot))
-        .route("/power/poweroff", post(power_poweroff))
-        .route("/ssh", get(ssh_form))
-        // POST only, for the same reason as the power actions above: no GET
-        // handler exists for any of the four, so nothing that merely follows a
-        // link can enable SSH, set a root password, or change the key list.
-        .route("/ssh/enable", post(ssh_enable))
-        .route("/ssh/password", post(ssh_password))
-        .route("/ssh/keys/add", post(ssh_key_add))
-        .route("/ssh/keys/remove", post(ssh_key_remove))
-        .route("/containers", get(containers_form))
-        .route("/containers/enable", post(containers_enable))
-        .route("/mqtt", get(mqtt_form))
-        .route("/mqtt/enable", post(mqtt_enable))
+        .route("/ui/", get(crate::assets::builtin::index))
         .route("/healthz", get(healthz))
-        // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
-        // included. §2.1's two discovery routes are declared inside it and
-        // every other path under it 404s, so no bundle can occupy the prefix
-        // and no route under it can be reached by anything but a declaration
-        // here.
-        //
-        // The explicit `/api/` route is not redundant. `nest` claims `/api`,
-        // `/api/x` and `/api/x/y`, and not `/api/`; the difference is a
-        // request that begins `/api/` reaching the asset router, which is
-        // exactly what rule 1 forbids.
         .nest(API, api_router())
         .route("/api/", any(api_not_found))
-        // §4.1 rule 4.
         .fallback(serve::fallback)
-        .layer(middleware::from_fn_with_state(state.clone(), gate))
         .with_state(state)
 }
 
@@ -341,9 +256,11 @@ const V1_CHANGE_PASSWORD_PATH: &str = "/v1/actions/change-password";
 /// names a template parameter `{path}`, so the served path and the documented
 /// path cannot be the same string; `the_resource_path_spellings_agree` holds
 /// them to the prefix so they cannot drift apart.
+#[cfg(test)]
 const V1_SETTINGS_PREFIX: &str = "/v1/settings/";
 const V1_SETTINGS_ROUTE: &str = "/v1/settings/{*path}";
 const V1_SETTINGS_DOC: &str = "/v1/settings/{path}";
+#[cfg(test)]
 const V1_STATE_PREFIX: &str = "/v1/state/";
 const V1_STATE_ROUTE: &str = "/v1/state/{*path}";
 const V1_STATE_DOC: &str = "/v1/state/{path}";
@@ -362,15 +279,12 @@ const V1_STATE_DOC: &str = "/v1/state/{path}";
 /// action does: [`is_declared_api_route`] has to recognise the shape with no
 /// router to ask.
 const V1_TOKENS_PATH: &str = "/v1/tokens";
-const V1_TOKENS_PREFIX: &str = "/v1/tokens/";
 const V1_TOKEN_ROUTE: &str = "/v1/tokens/{id}";
 
 /// The dot-path the token collection lives at, which every envelope raised
 /// about it names.
 const API_TOKENS_PATH: &str = "access.apiTokens";
 
-const V1_WIREGUARD_PREFIX: &str = "/v1/actions/wireguard/";
-const V1_WIREGUARD_ROTATE_LEAF: &str = "/rotate-key";
 const V1_WIREGUARD_ROTATE_ROUTE: &str = "/v1/actions/wireguard/{iface}/rotate-key";
 
 /// M7's three verbs.
@@ -383,7 +297,6 @@ const V1_TRANSIENT_PASSWORD_PATH: &str = "/v1/actions/transient-root-password";
 
 /// Apply-task history and one task by id.
 const V1_TASKS_PATH: &str = "/v1/tasks";
-const V1_TASKS_PREFIX: &str = "/v1/tasks/";
 const V1_TASK_ROUTE: &str = "/v1/tasks/{id}";
 
 /// M8's one route.
@@ -395,16 +308,20 @@ const V1_TASK_ROUTE: &str = "/v1/tasks/{id}";
 /// the first-run operation, so it is named for that and nothing else.
 const V1_SETUP_PATH: &str = "/v1/setup";
 
+/// Browser authentication state. Unlike the old HTML login form, every
+/// operation stays inside the reserved JSON API surface.
+const V1_SESSION_PATH: &str = "/v1/session";
+const V1_UI_PATH: &str = "/v1/ui";
+const V1_UI_ACTIVE_PATH: &str = "/v1/ui/active";
+
 /// M5's two array collections and their item routes.
 ///
 /// Each collection needs its prefix separately for the reason the token
 /// collection does: [`is_declared_api_route`] has to recognise the item shape
 /// with no router to ask.
 const V1_SSH_KEYS_PATH: &str = "/v1/ssh/authorized-keys";
-const V1_SSH_KEYS_PREFIX: &str = "/v1/ssh/authorized-keys/";
 const V1_SSH_KEY_ROUTE: &str = "/v1/ssh/authorized-keys/{fingerprint}";
 const V1_WIFI_NETWORKS_PATH: &str = "/v1/wifi/client/networks";
-const V1_WIFI_NETWORKS_PREFIX: &str = "/v1/wifi/client/networks/";
 const V1_WIFI_NETWORK_ROUTE: &str = "/v1/wifi/client/networks/{ssid}";
 
 /// The dot-path the WiFi station's known-network list lives at, which every
@@ -421,7 +338,6 @@ const WIFI_NETWORKS_PATH: &str = "wifi.client.networks";
 /// [`is_declared_api_route`] has to recognise all three shapes under it with
 /// no router to ask.
 const V1_NETWORK_PATH: &str = "/v1/network";
-const V1_NETWORK_PREFIX: &str = "/v1/network/";
 const V1_NETWORK_IFACE_ROUTE: &str = "/v1/network/{iface}";
 const V1_NETWORK_PEERS_ROUTE: &str = "/v1/network/{iface}/peers";
 const V1_NETWORK_PEER_ROUTE: &str = "/v1/network/{iface}/peers/{publicKey}";
@@ -429,9 +345,6 @@ const V1_NETWORK_PEER_ROUTE: &str = "/v1/network/{iface}/peers/{publicKey}";
 /// The settings dot-path the interface map lives at, which every envelope
 /// raised about the whole map names.
 const NETWORK_SETTINGS_PATH: &str = "network";
-
-/// The segment that separates a tunnel from its peer collection.
-const PEERS_SEGMENT: &str = "peers";
 
 /// Each root's three spellings as one tuple, for the test that holds them
 /// together.
@@ -473,6 +386,14 @@ fn api_router() -> Router<AppState> {
     Router::new()
         .route(VERSIONS_PATH, get(api_versions))
         .route(V1_META_PATH, get(api_v1_meta))
+        .route(
+            V1_SESSION_PATH,
+            get(api_v1_session_status)
+                .post(api_v1_session_create)
+                .delete(api_v1_session_delete),
+        )
+        .route(V1_UI_PATH, get(api_v1_ui_status))
+        .route(V1_UI_ACTIVE_PATH, delete(api_v1_ui_deactivate))
         .route(V1_HEALTH_PATH, get(api_v1_health))
         .route(
             V1_SETTINGS_ROUTE,
@@ -482,19 +403,15 @@ fn api_router() -> Router<AppState> {
         .route(V1_TASKS_PATH, get(api_v1_tasks_list))
         .route(V1_TASK_ROUTE, get(api_v1_task))
         .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
-        // §3.2's token lifecycle. All three take a bearer token and nothing
-        // else; the browser's way in is `POST /builtin/tokens`.
+        // Token lifecycle. Automation and authenticated browser sessions use
+        // the same JSON routes. Session mutations also require CSRF.
         .route(
             V1_TOKENS_PATH,
             get(api_v1_tokens_list).post(api_v1_tokens_mint),
         )
         .route(V1_TOKEN_ROUTE, delete(api_v1_tokens_revoke))
-        // M5's two array collections. They took `ApiSession` when they
-        // shipped -- Amendment 1's bearer-only ruling was about the credential
-        // factory specifically, so a resource route added later took both
-        // credentials exactly as the shipped reads did. M9 withdrew the cookie
-        // from this whole surface, so they take `ApiBearer` with everything
-        // else now.
+        // Array resources share the same credential extractor as the rest of
+        // the management API.
         .route(
             V1_SSH_KEYS_PATH,
             get(api_v1_ssh_keys_list).post(api_v1_ssh_keys_add),
@@ -510,7 +427,10 @@ fn api_router() -> Router<AppState> {
         // name a declared entry, which no check confined to the entry being
         // written could see. `PUT /api/v1/settings/network...` is refused at
         // 409 by [`settings_write_refusal`] and names these routes.
-        .route(V1_NETWORK_PATH, put(api_v1_network_write))
+        .route(
+            V1_NETWORK_PATH,
+            get(api_v1_network_read).put(api_v1_network_write),
+        )
         .route(
             V1_NETWORK_IFACE_ROUTE,
             put(api_v1_network_iface_write).delete(api_v1_network_iface_remove),
@@ -524,33 +444,23 @@ fn api_router() -> Router<AppState> {
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
         .route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))
-        // M7's three verbs, `post` and nothing else for the same reason: the
-        // HTML router declares no `GET` for either power action or for any SSH
-        // mutation so a browser prefetch, a crawler or a mis-clicked link
-        // cannot power the appliance off, and the namespace is called `actions`
-        // so no reader expects a `GET` to work in it. The 405 below is what a
-        // `GET` on these three gets.
+        // Actions are POST-only so navigation and prefetch cannot trigger
+        // state changes.
         .route(V1_REBOOT_PATH, post(api_v1_reboot))
         .route(V1_POWEROFF_PATH, post(api_v1_poweroff))
         .route(
             V1_TRANSIENT_PASSWORD_PATH,
             post(api_v1_transient_root_password),
         )
-        // M8's one route, and the only handler under this prefix that takes
-        // no credential extractor. It is not an exception the gate makes: the
-        // gate lets every declared `/api/` route through and each answers for
-        // itself, so what makes this one unauthenticated is the absence of
-        // `ApiBearer` in its signature and nothing else. `post`
-        // only, for the reason the actions above are: there is no state here
-        // to `GET` and nothing that follows a link may configure a device.
+        // First-run setup is the only unauthenticated write and remains
+        // POST-only.
         .route(V1_SETUP_PATH, post(api_v1_setup))
         // §2.4's envelope on the methods those routes do not serve, declared
         // once for the subtree rather than route by route. It reaches exactly
         // the routes above — it rewrites the method-not-allowed fallback of
-        // every `MethodRouter` already registered on *this* router — so the
-        // twenty-six HTML paths and the asset router, both declared outside it,
-        // keep answering as they do. It must stay below the last `.route`: a
-        // route declared after it would not be reached.
+        // every `MethodRouter` already registered on *this* router. It must
+        // stay below the last `.route`: a route declared after it would not be
+        // reached.
         .method_not_allowed_fallback(api_method_not_allowed)
         .fallback(api_not_found)
 }
@@ -590,145 +500,7 @@ async fn api_method_not_allowed(method: Method, OriginalUri(uri): OriginalUri) -
     )
 }
 
-/// Whether `path` is one of the API routes that answers for itself.
-///
-/// The gate hands exactly these off. `/api/versions` is unauthenticated by
-/// design (§2.1) and `/api/v1/meta` answers §2.4's `not_authenticated`
-/// envelope rather than the gate's HTML redirect (§3.1). Every other path
-/// under the prefix is absent from this list and reaches the gate's own
-/// logic unchanged.
-fn is_declared_api_route(path: &str) -> bool {
-    path.strip_prefix(API).is_some_and(|leaf| {
-        leaf == VERSIONS_PATH
-            || leaf == V1_META_PATH
-            || leaf == V1_HEALTH_PATH
-            || leaf == V1_TASKS_PATH
-            || collection_item(leaf, V1_TASKS_PREFIX).is_some()
-            || leaf == V1_CHANGE_PASSWORD_PATH
-            || leaf == V1_TOKENS_PATH
-            || token_id(leaf).is_some()
-            || leaf == V1_SSH_KEYS_PATH
-            || leaf == V1_WIFI_NETWORKS_PATH
-            || collection_item(leaf, V1_SSH_KEYS_PREFIX).is_some()
-            || collection_item(leaf, V1_WIFI_NETWORKS_PREFIX).is_some()
-            || leaf == V1_NETWORK_PATH
-            || is_network_route(leaf)
-            || resource_dot_path(leaf).is_some()
-            || rotate_key_iface(leaf).is_some()
-            || leaf == V1_REBOOT_PATH
-            || leaf == V1_POWEROFF_PATH
-            || leaf == V1_TRANSIENT_PASSWORD_PATH
-            || leaf == V1_SETUP_PATH
-    })
-}
-
-/// Whether a leaf is one of M6's three network shapes under
-/// [`V1_NETWORK_PREFIX`].
-///
-/// One predicate for three routes, because they share a prefix and the gate
-/// has to release exactly what the router serves and nothing else. The two
-/// existing precedents are both applied here rather than a third rule being
-/// invented, and the difference between them is a position and not a
-/// preference:
-///
-/// - A **trailing** `{iface}` or `{publicKey}` must be non-empty, the rule
-///   [`collection_item`] states. `/api/v1/network/` is the collection path
-///   with a trailing slash, which this router does not serve and which must
-///   reach the reserved subtree's not-found rather than the item route.
-/// - A `{iface}` in the **middle** may be empty, the rule
-///   [`rotate_key_iface`] states: axum matches zero or more characters there,
-///   so `/api/v1/network//peers` really is a route, and refusing it here would
-///   answer an unauthenticated caller with a redirect where the route answers
-///   an envelope.
-///
-/// No segment may contain a `/` — split on `/` guarantees that — so a peer
-/// public key carrying one (its alphabet is standard base64) reaches these
-/// routes percent-encoded, exactly as an SSH fingerprint does.
-fn is_network_route(leaf: &str) -> bool {
-    let Some(rest) = leaf.strip_prefix(V1_NETWORK_PREFIX) else {
-        return false;
-    };
-    let segments: Vec<&str> = rest.split('/').collect();
-    match segments.as_slice() {
-        [iface] => !iface.is_empty(),
-        [_iface, tail] => *tail == PEERS_SEGMENT,
-        [_iface, tail, public_key] => *tail == PEERS_SEGMENT && !public_key.is_empty(),
-        _ => false,
-    }
-}
-
-/// The interface a leaf names, when the leaf is the rotate-key action.
-///
-/// The same obligation [`resource_dot_path`] carries: hand off exactly what
-/// the router serves, and nothing else. axum's `{iface}` matches one segment,
-/// so a name carrying a `/` is a path this predicate must not release — it
-/// would reach the subtree's 404 where an unauthenticated caller is supposed
-/// to be redirected.
-///
-/// An *empty* segment is released, unlike [`resource_dot_path`]'s empty
-/// dot-path. The difference is not a preference: `{*path}` matches at least one
-/// character and `{iface}` matches zero or more, so `.../wireguard//rotate-key`
-/// is a path this router really serves — with an interface name mosd then
-/// refuses as undeclared. Refusing it here instead would answer a redirect
-/// where the route answers an envelope.
-fn rotate_key_iface(leaf: &str) -> Option<&str> {
-    let iface = leaf
-        .strip_prefix(V1_WIREGUARD_PREFIX)?
-        .strip_suffix(V1_WIREGUARD_ROTATE_LEAF)?;
-    (!iface.contains('/')).then_some(iface)
-}
-
-/// The token id a leaf names, when the leaf is the collection's item route.
-///
-/// The same obligation [`resource_dot_path`] and [`rotate_key_iface`] carry:
-/// hand off exactly what the router serves, and nothing else. An id carrying a
-/// `/` is two segments and this route matches one, and an id that is empty is
-/// not this route either -- measured, not assumed: `/api/v1/tokens/` reaches
-/// the subtree's not-found handler, unlike `.../wireguard//rotate-key`, whose
-/// empty segment is interior rather than trailing. Releasing either would
-/// answer a 404 where an unauthenticated caller is supposed to be redirected.
-fn token_id(leaf: &str) -> Option<&str> {
-    let id = leaf.strip_prefix(V1_TOKENS_PREFIX)?;
-    (!id.is_empty() && !id.contains('/')).then_some(id)
-}
-
-/// The item identifier a leaf names, when the leaf is `prefix`'s item route.
-///
-/// The obligation [`token_id`] carries, for the two collections that share its
-/// shape: hand off exactly what the router serves and nothing else. An
-/// identifier carrying a `/` is two segments where these routes match one, and
-/// an empty one is the collection path with a trailing slash, which reaches the
-/// subtree's not-found handler rather than the item route.
-///
-/// A `/` inside a real identifier is not what that excludes. An SSH
-/// fingerprint's base64 alphabet really does contain `/`, and such a
-/// fingerprint reaches this route percent-encoded: `%2F` is three characters
-/// and not a separator until axum decodes the segment, which happens after the
-/// match. `a_fingerprint_carrying_a_slash_is_addressable_percent_encoded`
-/// measures that round trip rather than assuming it.
-fn collection_item<'a>(leaf: &'a str, prefix: &str) -> Option<&'a str> {
-    let id = leaf.strip_prefix(prefix)?;
-    (!id.is_empty() && !id.contains('/')).then_some(id)
-}
-
-/// The dot-path a leaf names, when the leaf is one of §2.2's two roots.
-///
-/// A root prefix with nothing after it names none. axum's `{*path}` wildcard
-/// matches at least one character, so `/api/v1/settings` and
-/// `/api/v1/settings/` reach the subtree's not-found handler, and this
-/// predicate must hand off exactly what the router serves: a path the gate
-/// releases to a route that does not exist would answer a 404 where an
-/// unauthenticated caller is redirected.
-fn resource_dot_path(leaf: &str) -> Option<&str> {
-    let dot_path = leaf
-        .strip_prefix(V1_SETTINGS_PREFIX)
-        .or_else(|| leaf.strip_prefix(V1_STATE_PREFIX))?;
-    (!dot_path.is_empty()).then_some(dot_path)
-}
-
-/// Every `/api/` response, in the one shape §4.3 gives them: JSON in both
-/// directions (§2.1), and `no-store` on every outcome rather than only on the
-/// failures.
+/// Every `/api/` response is JSON and is never cacheable.
 fn api_response(status: StatusCode, body: impl serde::Serialize) -> Response {
     (
         status,
@@ -744,32 +516,21 @@ pub(crate) struct ApiError {
     error: ApiErrorDetail,
 }
 
-/// The envelope's payload.
+/// The API error envelope payload.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct ApiErrorDetail {
-    /// Stable machine token, from an open set: a client that does not
-    /// recognise it must fall back to the HTTP status class (§2.1).
     code: &'static str,
-    /// Human-readable, and not for matching on.
     message: String,
-    /// The side the failure came from.
     source: &'static str,
-    /// The settings dot-path at fault, when the failure names one.
-    ///
-    /// Optional, and omitted rather than sent empty: an unmatched route and a
-    /// failed authentication name no dot-path, and a member present with a
-    /// meaningless value is worse than an absent one.
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
 }
 
 impl ApiError {
-    /// An envelope for a failure apid raised itself.
     fn apid(code: &'static str, message: String) -> Self {
         Self::new(code, message, "apid")
     }
 
-    /// An envelope for a failure mosd raised, carrying mosd's own message.
     fn mosd(code: &'static str, message: String) -> Self {
         Self::new(code, message, "mosd")
     }
@@ -785,45 +546,349 @@ impl ApiError {
         }
     }
 
-    /// The same envelope, naming the settings dot-path at fault.
     fn at(mut self, path: &str) -> Self {
         self.error.path = Some(path.to_string());
         self
     }
 }
 
-/// `GET /api/versions` (§2.1's discovery table).
+/// The browser's current authentication state.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionStatus {
+    /// `setup`, `unauthenticated`, or `authenticated`.
+    state: &'static str,
+    /// Returned only for an authenticated browser session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    csrf_token: Option<String>,
+}
+
+impl SessionStatus {
+    fn setup() -> Self {
+        Self {
+            state: "setup",
+            csrf_token: None,
+        }
+    }
+
+    fn unauthenticated() -> Self {
+        Self {
+            state: "unauthenticated",
+            csrf_token: None,
+        }
+    }
+
+    fn authenticated(csrf_token: String) -> Self {
+        Self {
+            state: "authenticated",
+            csrf_token: Some(csrf_token),
+        }
+    }
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub(crate) struct SessionLoginRequest {
+    password: String,
+}
+
+/// Report setup and browser authentication state without redirecting.
+#[utoipa::path(
+    get,
+    path = V1_SESSION_PATH,
+    context_path = API,
+    tag = "session",
+    responses(
+        (status = 200, description = "Setup and browser authentication state", body = SessionStatus),
+        (status = 500, description = "The access settings could not be read", body = ApiError),
+        (status = 503, description = "mosd is unavailable", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_session_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    let access = match access_settings(&state).await {
+        Ok(value) => value,
+        Err(err) => return bus_api_error(&err, Some("access")),
+    };
+    if password_hash(&access).is_none() {
+        return api_response(StatusCode::OK, SessionStatus::setup());
+    }
+    let status = session::cookie_from_headers(&headers)
+        .and_then(|cookie| state.sessions.csrf_token(&cookie))
+        .map_or_else(SessionStatus::unauthenticated, SessionStatus::authenticated);
+    api_response(StatusCode::OK, status)
+}
+
+/// Authenticate a browser and create its HttpOnly session cookie.
+#[utoipa::path(
+    post,
+    path = V1_SESSION_PATH,
+    context_path = API,
+    tag = "session",
+    request_body = SessionLoginRequest,
+    responses(
+        (status = 201, description = "The browser session was created", body = SessionStatus),
+        (status = 400, description = "The body is not JSON", body = ApiError),
+        (status = 401, description = "The password is incorrect", body = ApiError),
+        (status = 409, description = "The device still requires first-run setup", body = ApiError),
+        (status = 422, description = "The JSON body has the wrong shape", body = ApiError),
+        (status = 429, description = "Login attempts are temporarily throttled", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_session_create(
+    State(state): State<AppState>,
+    Source(source): Source,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let request: SessionLoginRequest = match json_body(body, None) {
+        Ok(request) => request,
+        Err(response) => return *response,
+    };
+    if !state.guard.begin_attempt() {
+        state.audit.record("login", "throttled", &source);
+        return api_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            ApiError::apid(
+                "login_throttled",
+                "too many failed logins; retry shortly".to_string(),
+            ),
+        );
+    }
+    let access = match state.api.get_settings("access").await {
+        Ok(value) => value,
+        Err(err) => return bus_api_error(&err, Some("access")),
+    };
+    let Some(hash) = password_hash(&access) else {
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "setup_required",
+                "complete first-run setup before signing in".to_string(),
+            ),
+        );
+    };
+    let hash = hash.to_string();
+    let password = request.password;
+    let verified = tokio::task::spawn_blocking(move || auth::verify_password(&hash, &password))
+        .await
+        .unwrap_or_else(|err| {
+            tracing::error!(error = %err, "password verification task failed");
+            false
+        });
+    if !verified {
+        state.guard.confirm_failure();
+        state.audit.record("login", "wrong-password", &source);
+        return api_response(
+            StatusCode::UNAUTHORIZED,
+            ApiError::apid(
+                "invalid_credentials",
+                "the password is incorrect".to_string(),
+            ),
+        );
+    }
+
+    state.guard.record_success();
+    state.audit.record("login", "success", &source);
+    let session = state.sessions.create();
+    (
+        StatusCode::CREATED,
+        [
+            (
+                CACHE_CONTROL,
+                CacheClass::NoStore.header_value().to_string(),
+            ),
+            (SET_COOKIE, session::session_cookie(&session.cookie)),
+        ],
+        Json(SessionStatus::authenticated(session.csrf_token)),
+    )
+        .into_response()
+}
+
+/// Revoke the acting browser session.
+#[utoipa::path(
+    delete,
+    path = V1_SESSION_PATH,
+    context_path = API,
+    tag = "session",
+    responses(
+        (status = 204, description = "The browser session was revoked"),
+        (status = 401, description = "No API credential was supplied", body = ApiError),
+        (status = 403, description = "The browser CSRF token is absent or invalid", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_session_delete(
+    State(state): State<AppState>,
+    Source(source): Source,
+    credential: ApiCredential,
+) -> Response {
+    if let ApiCredential::Session(cookie) = credential {
+        state.sessions.remove(&cookie);
+        state.audit.record("logout", "ok", &source);
+    }
+    (
+        StatusCode::NO_CONTENT,
+        [
+            (
+                CACHE_CONTROL,
+                CacheClass::NoStore.header_value().to_string(),
+            ),
+            (SET_COOKIE, session::clear_cookie()),
+        ],
+    )
+        .into_response()
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UiStatus {
+    /// `builtIn` when no custom bundle is active, otherwise `custom`.
+    mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom: Option<CustomUiStatus>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CustomUiStatus {
+    generation: u64,
+    index_readable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digest_matches: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compatible: Option<bool>,
+}
+
+fn ui_status(state: &AppState) -> anyhow::Result<UiStatus> {
+    Ok(match state.bundles().status()? {
+        Installed::BuiltIn => UiStatus {
+            mode: "builtIn",
+            custom: None,
+        },
+        Installed::Custom(ui) => {
+            let (name, version) = ui.manifest.map_or((None, None), |manifest| {
+                (Some(manifest.name), Some(manifest.version))
+            });
+            let (digest_matches, compatible) = ui.recorded.map_or((None, None), |recorded| {
+                let compatible = match recorded.compat {
+                    crate::bundle::CompatCheck::NotRun => None,
+                    crate::bundle::CompatCheck::Ran { compatible, .. } => Some(compatible),
+                };
+                (Some(recorded.digest_matches), compatible)
+            });
+            UiStatus {
+                mode: "custom",
+                custom: Some(CustomUiStatus {
+                    generation: ui.generation,
+                    index_readable: ui.index_readable,
+                    name,
+                    version,
+                    digest_matches,
+                    compatible,
+                }),
+            }
+        }
+    })
+}
+
+/// Report whether `/` currently selects a custom UI bundle.
+#[utoipa::path(
+    get,
+    path = V1_UI_PATH,
+    context_path = API,
+    tag = "ui",
+    responses(
+        (status = 200, description = "The active UI selection and custom bundle health", body = UiStatus),
+        (status = 401, description = "No API credential was supplied", body = ApiError),
+        (status = 500, description = "The bundle store could not be read", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_ui_status(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+) -> Response {
+    match ui_status(&state) {
+        Ok(status) => api_response(StatusCode::OK, status),
+        Err(err) => {
+            tracing::error!(error = %err, "reading custom UI status failed");
+            api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid(
+                    "ui_status_failed",
+                    "the custom UI status could not be read".to_string(),
+                ),
+            )
+        }
+    }
+}
+
+/// Deactivate the custom bundle so `/` selects the built-in UI.
+#[utoipa::path(
+    delete,
+    path = V1_UI_ACTIVE_PATH,
+    context_path = API,
+    tag = "ui",
+    responses(
+        (status = 200, description = "The built-in UI is now selected", body = UiStatus),
+        (status = 401, description = "No API credential was supplied", body = ApiError),
+        (status = 403, description = "The browser CSRF token is absent or invalid", body = ApiError),
+        (status = 500, description = "The custom UI pointer could not be removed", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_ui_deactivate(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+    Source(source): Source,
+) -> Response {
+    match state.bundles().deactivate() {
+        Ok(removed) => {
+            state.audit.record(
+                "custom-ui",
+                if removed { "deactivated" } else { "no-op" },
+                &source,
+            );
+            api_response(
+                StatusCode::OK,
+                UiStatus {
+                    mode: "builtIn",
+                    custom: None,
+                },
+            )
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "deactivating custom UI failed");
+            api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid(
+                    "ui_deactivation_failed",
+                    "the custom UI pointer could not be removed".to_string(),
+                ),
+            )
+        }
+    }
+}
+
+/// `GET /api/versions` response.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct ApiVersions {
-    /// Every major version served. A client tests **membership** in this set;
-    /// a client that reads only `current` concludes that a device it can talk
-    /// to is one it cannot.
     versions: Vec<&'static str>,
-    /// The member to use with no preference. Always a member of `versions`.
     current: &'static str,
 }
 
-/// `GET /api/v1/meta` (§2.1's discovery table).
+/// `GET /api/v1/meta` response.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiMeta {
-    /// The API major version this route belongs to.
     api: &'static str,
-    /// mosd's settings schema version: the shape of the tree on disk, which
-    /// moves independently of the API version and must never be conflated
-    /// with it.
     settings_schema_version: u32,
-    /// The daemon answering.
     daemon: &'static str,
 }
 
-// Unauthenticated deliberately: it must be answerable before the caller holds
-// a credential, and it carries nothing identifying because anyone who can
-// reach the listener can read it.
-/// List the API major versions this build serves, and which one to prefer.
-///
-/// Unauthenticated. Answers 200 with the served set and the current version;
-/// carries no hostname, device id or build string.
+/// List the API major versions this build serves.
 #[utoipa::path(
     get,
     path = VERSIONS_PATH,
@@ -856,11 +921,11 @@ pub(crate) async fn api_versions() -> Response {
     tag = "discovery",
     responses(
         (status = 200, description = "What this daemon is and which schema it speaks", body = ApiMeta),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
-pub(crate) async fn api_v1_meta(_bearer: ApiBearer) -> Response {
+pub(crate) async fn api_v1_meta(_credential: ApiCredential) -> Response {
     api_response(
         StatusCode::OK,
         ApiMeta {
@@ -922,11 +987,14 @@ pub(crate) struct ApiHealth {
     tag = "diagnostics",
     responses(
         (status = 200, description = "Whether this appliance is manageable. **200 in both states**: a dead mosd is reported as `mosd: \"unreachable\"` in the body, never as a status code", body = ApiHealth),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
-pub(crate) async fn api_v1_health(_bearer: ApiBearer, State(state): State<AppState>) -> Response {
+pub(crate) async fn api_v1_health(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+) -> Response {
     let (mosd, checked_at, detail) = match state.api.get_state(HEALTH_PROBE_PATH).await {
         // Any answer that is not the number of seconds mosd documents is
         // classified with the failures rather than reported as health. `ok`
@@ -994,7 +1062,7 @@ pub(crate) struct TaskAccepted {
     params(("path" = String, Path, description = "The settings dot-path, verbatim: `hostname`, `access.ssh`, `wifi.ap`")),
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 404, description = "The dot-path does not exist (`settings_not_found`)", body = ApiError),
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1004,7 +1072,7 @@ pub(crate) struct TaskAccepted {
     ),
 )]
 pub(crate) async fn api_v1_settings(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(path): Path<String>,
 ) -> Response {
@@ -1190,7 +1258,8 @@ pub(crate) struct SettingsWrite(Value);
     responses(
         (status = 202, description = "The value was persisted and its scoped reconciliation was queued", body = TaskAccepted),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "The dot-path names no root the settings schema has (`settings_not_found`)", body = ApiError),
         (status = 409, description = "A dot-path that exists and that this route does not write (`settings_read_only`)", body = ApiError),
         (status = 422, description = "The body carries the redaction sentinel, or is the wrong shape for this setting, or the dot-path is malformed (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
@@ -1201,7 +1270,7 @@ pub(crate) struct SettingsWrite(Value);
     ),
 )]
 pub(crate) async fn api_v1_settings_write(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(path): Path<String>,
     Source(source): Source,
@@ -1265,7 +1334,7 @@ pub(crate) async fn api_v1_settings_write(
     tag = "tasks",
     responses(
         (status = 200, description = "The bounded apply-task history, oldest first", body = Vec<TaskRecord>),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 500, description = "mosd returned an invalid task record or failed to answer (`mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
@@ -1273,7 +1342,7 @@ pub(crate) async fn api_v1_settings_write(
     ),
 )]
 pub(crate) async fn api_v1_tasks_list(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
 ) -> Response {
     match state.task_records().await {
@@ -1291,7 +1360,7 @@ pub(crate) async fn api_v1_tasks_list(
     params(("id" = String, Path, description = "The task id returned by a 202 response")),
     responses(
         (status = 200, description = "The latest known task record", body = TaskRecord),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 404, description = "No retained task has this id (`task_not_found`)", body = ApiError),
         (status = 500, description = "mosd returned an invalid task record or failed to answer (`mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -1300,7 +1369,7 @@ pub(crate) async fn api_v1_tasks_list(
     ),
 )]
 pub(crate) async fn api_v1_task(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Response {
@@ -1323,7 +1392,7 @@ pub(crate) async fn api_v1_task(
     params(("path" = String, Path, description = "The live-state dot-path, verbatim: `hostname`, `network`, `power`")),
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 404, description = "The dot-path does not resolve (`settings_not_found`)", body = ApiError),
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`); a dot-path that does not resolve is the 404 above", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1333,7 +1402,7 @@ pub(crate) async fn api_v1_task(
     ),
 )]
 pub(crate) async fn api_v1_state(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(path): Path<String>,
 ) -> Response {
@@ -1375,7 +1444,8 @@ pub(crate) struct WireguardRotation {
     params(("iface" = String, Path, description = "The `network` entry to rotate, which must be one of kind `wireguard`: `wg0`")),
     responses(
         (status = 200, description = "A new key was drawn; the body carries its public half", body = WireguardRotation),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "The name is not a declared `network` entry (`settings_not_found`); the URL names no interface to rotate", body = ApiError),
         (status = 422, description = "The entry exists and is not a WireGuard one (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1385,7 +1455,7 @@ pub(crate) struct WireguardRotation {
     ),
 )]
 pub(crate) async fn api_v1_wireguard_rotate(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(iface): Path<String>,
 ) -> Response {
@@ -1455,7 +1525,7 @@ pub(crate) struct MintedToken {
     tag = "tokens",
     responses(
         (status = 200, description = "The stored tokens: `id`, `name` and `created`, never the digest and never the plaintext", body = Vec<ApiTokenSummary>),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
@@ -1463,7 +1533,7 @@ pub(crate) struct MintedToken {
     ),
 )]
 pub(crate) async fn api_v1_tokens_list(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
 ) -> Response {
     match stored_tokens(&state).await {
@@ -1486,11 +1556,11 @@ pub(crate) async fn api_v1_tokens_list(
 // factory on the browser surface.
 /// Mint an API token.
 ///
-/// Takes a **bearer token only** — a session cookie is not accepted. The
+/// Takes either a stored bearer token or an authenticated browser session. The
 /// secret is returned once, in this response, and is not retrievable
 /// afterwards.
 ///
-/// To obtain a first token, use the built-in pane at `POST /builtin/tokens`.
+/// A signed-in browser can mint the first additional token through this API.
 #[utoipa::path(
     post,
     path = V1_TOKENS_PATH,
@@ -1500,7 +1570,8 @@ pub(crate) async fn api_v1_tokens_list(
     responses(
         (status = 201, description = "The token was created; the body carries the plaintext, which is not recoverable afterwards", body = MintedToken),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 409, description = "The device already holds the maximum number of tokens (`token_limit_reached`); revoke one first", body = ApiError),
         (status = 422, description = "The name is empty, over 256 bytes, or holds a control character (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), no free id was drawn (`mint_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1510,7 +1581,7 @@ pub(crate) async fn api_v1_tokens_list(
     ),
 )]
 pub(crate) async fn api_v1_tokens_mint(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     body: Result<Json<MintTokenRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -1589,7 +1660,8 @@ pub(crate) async fn api_v1_tokens_mint(
     params(("id" = String, Path, description = "The token id, as `POST /api/v1/tokens` returned it: 1 to 64 lowercase hex characters")),
     responses(
         (status = 204, description = "The token was revoked; it stops being accepted on the next request"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "No stored token carries that id (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
         (status = 422, description = "The id is not a token id at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1599,7 +1671,7 @@ pub(crate) async fn api_v1_tokens_mint(
     ),
 )]
 pub(crate) async fn api_v1_tokens_revoke(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Response {
@@ -1919,7 +1991,7 @@ async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), 
     tag = "resources",
     responses(
         (status = 200, description = "The stored keys, each with the fingerprint that is its `DELETE` path segment, and the notice every client of this collection is told", body = AuthorizedKeyList),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
@@ -1927,7 +1999,7 @@ async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), 
     ),
 )]
 pub(crate) async fn api_v1_ssh_keys_list(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
 ) -> Response {
     match api_stored_keys(&state).await {
@@ -1961,7 +2033,8 @@ pub(crate) async fn api_v1_ssh_keys_list(
     responses(
         (status = 201, description = "The key was authorized; the body carries it canonicalised, with its fingerprint and the notice", body = AddedAuthorizedKey),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 409, description = "A stored key already carries that public key (`key_exists`), or the device already holds the maximum number of keys (`key_limit_reached`); the collection's current state is what refuses the request, not the body", body = ApiError),
         (status = 422, description = "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1971,7 +2044,7 @@ pub(crate) async fn api_v1_ssh_keys_list(
     ),
 )]
 pub(crate) async fn api_v1_ssh_keys_add(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     body: Result<Json<AddAuthorizedKeyRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -2063,7 +2136,8 @@ pub(crate) async fn api_v1_ssh_keys_add(
     params(("fingerprint" = String, Path, description = "The key's fingerprint, as `GET /api/v1/ssh/authorized-keys` returns it: `SHA256:` and 43 base64 characters. Its alphabet contains `/`, so a fingerprint carrying one is percent-encoded")),
     responses(
         (status = 204, description = "The key was removed; the reconciler has re-rendered the authorized-keys file without it"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "No stored key has that fingerprint (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
         (status = 422, description = "The path segment is not a fingerprint at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2073,7 +2147,7 @@ pub(crate) async fn api_v1_ssh_keys_add(
     ),
 )]
 pub(crate) async fn api_v1_ssh_keys_remove(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(fingerprint): Path<String>,
 ) -> Response {
@@ -2168,7 +2242,7 @@ async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<()
     tag = "resources",
     responses(
         (status = 200, description = "The stored networks, in stored order, each `psk` replaced by `\"<redacted>\"`", body = Vec<WifiNetworkEntry>),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
@@ -2176,7 +2250,7 @@ async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<()
     ),
 )]
 pub(crate) async fn api_v1_wifi_networks_list(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
 ) -> Response {
     match stored_networks(&state).await {
@@ -2212,7 +2286,8 @@ pub(crate) async fn api_v1_wifi_networks_list(
     responses(
         (status = 201, description = "The network was stored; the body carries it back with its `psk` redacted", body = WifiNetworkEntry),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 409, description = "A stored network already carries that SSID (`ssid_exists`); the SSID is this collection's identity, so the entry is not replaced silently", body = ApiError),
         (status = 422, description = "The body carries the redaction sentinel, is not a network the settings model holds, or carries a `psk` outside IEEE 802.11i's 8..63 characters that is not a 64-digit hex PMK either (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2222,7 +2297,7 @@ pub(crate) async fn api_v1_wifi_networks_list(
     ),
 )]
 pub(crate) async fn api_v1_wifi_networks_add(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -2333,7 +2408,8 @@ pub(crate) async fn api_v1_wifi_networks_add(
     params(("ssid" = String, Path, description = "The network name, as `GET /api/v1/wifi/client/networks` returns it")),
     responses(
         (status = 204, description = "The network was forgotten; the station reconciler has re-rendered its configuration without it"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "No stored network carries that SSID (`settings_not_found`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -2342,7 +2418,7 @@ pub(crate) async fn api_v1_wifi_networks_add(
     ),
 )]
 pub(crate) async fn api_v1_wifi_networks_remove(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(ssid): Path<String>,
 ) -> Response {
@@ -2641,6 +2717,132 @@ fn json_body<T: serde::de::DeserializeOwned>(
     })
 }
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NetworkOverview {
+    /// The declared settings map. This is desired configuration, not proof of
+    /// link health.
+    configured: Value,
+    configured_count: usize,
+    /// The current view reported by systemd-networkd.
+    observed: ObservedNetwork,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ObservedNetwork {
+    available: bool,
+    interface_count: usize,
+    interfaces: Vec<ObservedInterface>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'static str>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ObservedInterface {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    index: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    r#type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    driver: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    administrative_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operational_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    carrier_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    address_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ipv4_address_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ipv6_address_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    online_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mtu: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hardware_address: Option<Value>,
+    #[serde(default)]
+    addresses: Vec<Value>,
+    #[serde(default)]
+    dns: Vec<Value>,
+    #[serde(default)]
+    routes: Vec<Value>,
+}
+
+/// Read declared network configuration together with current link state.
+#[utoipa::path(
+    get,
+    path = V1_NETWORK_PATH,
+    context_path = API,
+    tag = "resources",
+    responses(
+        (status = 200, description = "Configured interfaces and the current systemd-networkd observation", body = NetworkOverview),
+        (status = 401, description = "No API credential was supplied", body = ApiError),
+        (status = 500, description = "The configured network map could not be read", body = ApiError),
+        (status = 503, description = "mosd is unavailable", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_network_read(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+) -> Response {
+    let configured = match state.api.get_settings(NETWORK_SETTINGS_PATH).await {
+        Ok(value) => value,
+        Err(err) => return bus_api_error(&err, Some(NETWORK_SETTINGS_PATH)),
+    };
+    let configured_count = configured.as_object().map_or(0, serde_json::Map::len);
+    let observed = match state.api.get_network_state().await {
+        Ok(value) => {
+            let raw_interfaces = value
+                .get("interfaces")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let interfaces = raw_interfaces
+                .into_iter()
+                .filter_map(|interface| serde_json::from_value(interface).ok())
+                .collect::<Vec<ObservedInterface>>();
+            let interface_count = value
+                .get("interfaceCount")
+                .and_then(Value::as_u64)
+                .and_then(|count| usize::try_from(count).ok())
+                .unwrap_or(interfaces.len());
+            ObservedNetwork {
+                available: true,
+                interface_count,
+                interfaces,
+                error: None,
+            }
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "live network observation unavailable");
+            ObservedNetwork {
+                available: false,
+                interface_count: 0,
+                interfaces: Vec::new(),
+                error: Some("systemd-networkd state is currently unavailable"),
+            }
+        }
+    };
+    api_response(
+        StatusCode::OK,
+        NetworkOverview {
+            configured,
+            configured_count,
+            observed,
+        },
+    )
+}
+
 /// Replace the whole interface map, validated as one tree.
 ///
 /// The only way to make two interdependent entries legal in one step: adding a
@@ -2658,7 +2860,8 @@ fn json_body<T: serde::de::DeserializeOwned>(
     responses(
         (status = 204, description = "The map was replaced; the reconciler has re-rendered every unit from it"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 422, description = "The body is not a map of interfaces, a key is not an interface name, an entry declares a static address that is not IPv4 CIDR notation, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -2667,7 +2870,7 @@ fn json_body<T: serde::de::DeserializeOwned>(
     ),
 )]
 pub(crate) async fn api_v1_network_write(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -2726,7 +2929,8 @@ pub(crate) async fn api_v1_network_write(
     responses(
         (status = 204, description = "The entry was written; the reconciler has re-rendered its units"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 422, description = "The name is not an interface name, the body is not an interface, the entry declares a static address that is not IPv4 CIDR notation, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -2735,7 +2939,7 @@ pub(crate) async fn api_v1_network_write(
     ),
 )]
 pub(crate) async fn api_v1_network_iface_write(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(iface): Path<String>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -2791,7 +2995,8 @@ pub(crate) async fn api_v1_network_iface_write(
     params(("iface" = String, Path, description = "The declared interface to remove")),
     responses(
         (status = 204, description = "The entry was removed; the reconciler has swept its units"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "No `network` entry has that name (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
         (status = 422, description = "The name is not an interface name, or removing the entry breaks a relational rule -- a bridge still lists it as a port, a VLAN still names it as a parent (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2801,7 +3006,7 @@ pub(crate) async fn api_v1_network_iface_write(
     ),
 )]
 pub(crate) async fn api_v1_network_iface_remove(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(iface): Path<String>,
 ) -> Response {
@@ -2912,7 +3117,7 @@ async fn api_write_peers(
     params(("iface" = String, Path, description = "A declared `network` entry of kind `wireguard`")),
     responses(
         (status = 200, description = "The stored peers, in stored order, each with the public key that is its `DELETE` path segment", body = Vec<WireguardPeerEntry>),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
         (status = 404, description = "No `network` entry has that name (`settings_not_found`)", body = ApiError),
         (status = 422, description = "The name is not an interface name, or the entry is not a WireGuard one (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2922,7 +3127,7 @@ async fn api_write_peers(
     ),
 )]
 pub(crate) async fn api_v1_peers_list(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(iface): Path<String>,
 ) -> Response {
@@ -2959,7 +3164,8 @@ pub(crate) async fn api_v1_peers_list(
     responses(
         (status = 201, description = "The peer was added; the body carries it back", body = WireguardPeerEntry),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "No `network` entry has that name (`settings_not_found`); nothing is written", body = ApiError),
         (status = 409, description = "A stored peer already carries that public key (`peer_exists`); the key is this collection's identity, so the entry is not replaced silently", body = ApiError),
         (status = 422, description = "The name is not an interface name, the entry is not a WireGuard one, or the peer is one the reconciler would refuse -- a public key that is not 32 bytes of base64, an allowed IP that is not a CIDR, an endpoint that is not `host:port` (`validation_failed`)", body = ApiError),
@@ -2970,7 +3176,7 @@ pub(crate) async fn api_v1_peers_list(
     ),
 )]
 pub(crate) async fn api_v1_peers_add(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path(iface): Path<String>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -3033,7 +3239,8 @@ pub(crate) async fn api_v1_peers_add(
     ),
     responses(
         (status = 204, description = "The peer was removed; the reconciler has re-rendered the tunnel without it"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 404, description = "No `network` entry has that name, or no peer of it carries that key (`settings_not_found`)", body = ApiError),
         (status = 422, description = "The interface name is not one, the entry is not a WireGuard one, or the path segment is not a WireGuard public key at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -3043,7 +3250,7 @@ pub(crate) async fn api_v1_peers_add(
     ),
 )]
 pub(crate) async fn api_v1_peers_remove(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Path((iface, public_key)): Path<(String, String)>,
 ) -> Response {
@@ -3199,50 +3406,19 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
     )
 }
 
-/// Proof that the request carried a bearer API token, and the only credential
-/// extractor `/api/v1/` has.
+/// Authentication accepted by management API handlers.
 ///
-/// **The one extractor.** It began as the
-/// stricter of two: the dual-credential option was ruled, so `ApiSession`
-/// took a bearer *or* the browser session cookie every route naming it had
-/// already shipped accepting, while the token routes -- which had not shipped --
-/// took this one. That made §3.2's "only accepted credential" sentence false for
-/// a bounded, in-plan window. M9 is the named milestone Amendment 1 scheduled to
-/// close it: the cookie's acceptance is gone from `/api/v1/`, every route that
-/// named `ApiSession` names this instead, and the two types collapsed into one
-/// because after the cutover they proved the same thing. §3.2's dated note
-/// records the window.
-///
-/// The boundary Amendment 1 drew inside itself, and the reason it was not a
-/// contradiction of it: the amendment preserved the credentials of routes that
-/// **already shipped**, and the three token routes had not. §3.2 rejects a
-/// cookie-accepting mint by name, because it would put a permanent-credential
-/// factory inside the one surface §3.3 makes its strongest statement about, and
-/// there is no back-compatibility argument for a route that does not exist yet.
-///
-/// The bootstrap is a path rather than an exception, and the cutover did not
-/// touch it: an operator holding only a browser mints their first token at
-/// `POST /builtin/tokens` and revokes at `POST /builtin/tokens/revoke`, neither
-/// of which is an `/api/v1/` route, and both of which the gate guards with the
-/// session cookie exactly as before. Without them no first token could exist.
-///
-/// `POST /api/v1/setup` names no credential extractor at all and still does:
-/// M8 made it the device's one unauthenticated write and the cutover does not
-/// change that.
-///
-/// An extractor and not middleware, and not the gate: it runs for exactly the
-/// handlers that name it, so the reserved subtree's not-found handler and
-/// `/api/versions` are untouched by it and no path-prefix test decides who is
-/// guarded.
-///
-/// Its rejection is §2.4's envelope with a 401 and not the gate's redirect. A
-/// client that follows that redirect lands on `GET /login`, which answers 200
-/// with an HTML page, so a script reads the whole exchange as success (§3.1).
-/// A cookie presented here is that 401 and not a 303: a script gets something
-/// it can parse.
-pub(crate) struct ApiBearer;
+/// Automation uses a stored bearer token. The built-in and custom SPAs use a
+/// signed browser session; state-changing requests made with that session must
+/// also present its `X-CSRF-Token` value. Keeping the check in the extractor
+/// makes it impossible for a newly added authenticated mutation to forget the
+/// browser-side protection.
+pub(crate) enum ApiCredential {
+    Bearer,
+    Session(String),
+}
 
-impl FromRequestParts<AppState> for ApiBearer {
+impl FromRequestParts<AppState> for ApiCredential {
     type Rejection = Response;
 
     async fn from_request_parts(
@@ -3250,10 +3426,35 @@ impl FromRequestParts<AppState> for ApiBearer {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         if bearer_is_stored(state, &parts.headers).await {
-            return Ok(Self);
+            return Ok(Self::Bearer);
+        }
+        if let Some(cookie) = session::cookie_from_headers(&parts.headers)
+            && state.sessions.verify(&cookie)
+        {
+            let mutation = matches!(
+                parts.method,
+                Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+            );
+            if mutation {
+                let presented = parts
+                    .headers
+                    .get("x-csrf-token")
+                    .and_then(|value| value.to_str().ok());
+                if !presented.is_some_and(|token| state.sessions.verify_csrf(&cookie, token)) {
+                    return Err(api_response(
+                        StatusCode::FORBIDDEN,
+                        ApiError::apid(
+                            "csrf_invalid",
+                            "a browser session mutation requires its X-CSRF-Token value"
+                                .to_string(),
+                        ),
+                    ));
+                }
+            }
+            return Ok(Self::Session(cookie));
         }
         Err(not_authenticated(
-            "this route accepts a bearer API token only; a session cookie is not a credential here, and a browser mints its first token at POST /builtin/tokens",
+            "this route requires a stored bearer token or an authenticated browser session",
         ))
     }
 }
@@ -3343,268 +3544,9 @@ fn password_hash(access: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-/// 503 page for failed mosd calls, with `Retry-After` — the same status and
-/// header the API path answers for the same condition (`mosd_unreachable`):
-/// the failure is this server declining to serve, not a malformed answer from
-/// an upstream, so one outage reports one way on both surfaces.
-fn bus_error(err: &anyhow::Error) -> Response {
-    tracing::warn!(error = %err, "mosd call failed");
-    if err
-        .downcast_ref::<crate::bus_client::MosdCallTimeout>()
-        .is_some()
-    {
-        return (
-            StatusCode::GATEWAY_TIMEOUT,
-            page(
-                "Error",
-                html! { p { "The management operation was not confirmed in time and may still be running." } },
-            ),
-        )
-            .into_response();
-    }
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        [(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS))],
-        page(
-            "Error",
-            html! { p { "The management daemon is unavailable." } },
-        ),
-    )
-        .into_response()
-}
-
-/// Auth gate: routes every request into setup mode, login, or through.
-///
-/// - `/healthz` always passes.
-/// - The declared `/api/` routes always pass: they answer for themselves, in
-///   §2.4's envelope rather than in HTML.
-/// - The rest of the reserved `/api` subtree passes too, and for the same
-///   reason: the subtree's own not-found handler answers it in §2.4's
-///   envelope. No credential is consulted for either, so an undeclared path
-///   under the prefix is one 404 and not four different answers.
-/// - Setup mode (no admin password configured yet): only `/setup` passes,
-///   everything else redirects there.
-/// - Normal mode: `/login` and `/setup` pass (the setup handlers answer 409
-///   or bounce to `/login` themselves); everything else requires a valid
-///   session cookie or redirects to `/login`.
-async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Response {
-    let path = request.uri().path();
-    if path == "/healthz" || is_declared_api_route(path) {
-        return next.run(request).await;
-    }
-
-    // The rest of the reserved subtree is released too, so §4.1 rule 1's own
-    // not-found handler answers it in §2.4's envelope. Above, the release is
-    // *because a route answers*; here it is *because no route does*, and both
-    // are the one decision: a request addressed to the JSON surface gets a
-    // JSON answer. A redirect to `/login` is not an answer a client that asked
-    // for `/api/v1/nope` can read, and it is not made readable by the client
-    // having sent no credential.
-    //
-    // Nothing below this line is reached for these paths, which is the point:
-    // the gate never inspects a credential here, so no bearer, a bearer that
-    // is not stored, a bearer that is, a session cookie and nothing at all all
-    // get the same 404. Which credential a request happened to carry is not
-    // what decides the medium of the answer to it.
-    //
-    // The condition is exactly what the router claims -- `.nest(API, ...)`
-    // takes `/api` and everything under `/api/`, and the explicit
-    // `.route("/api/", ...)` beside it takes the one spelling `nest` does not
-    // -- and it is spelled from `API` so it cannot drift from the prefix they
-    // mount under. `/apibogus` is outside it and stays an HTML path.
-    //
-    // This subsumes the `is_declared_api_route` arm above: every declared leaf
-    // begins with `/`, so a path that predicate accepts is a path this one
-    // accepts. The arm is left standing rather than folded in because the
-    // predicate it guards is being rewritten elsewhere; deleting its only
-    // caller here would take the mechanism out from under that work.
-    if path
-        .strip_prefix(API)
-        .is_some_and(|leaf| leaf.is_empty() || leaf.starts_with('/'))
-    {
-        return next.run(request).await;
-    }
-
-    // The session check comes before the bus call, and the ordering is the
-    // point. It is sound because a live session already implies the device is
-    // out of setup mode: a session is minted in exactly two places —
-    // `login_submit`, only after `password_hash` returned `Some` and verified
-    // against it, and `setup_submit`, only after the `access.webAdmin` write
-    // that creates the hash has succeeded — and no route removes a hash, so
-    // "session verifies" cannot coexist with "no admin password is configured".
-    // An unset-password operation, if one is ever added, has to clear the
-    // session table in the same step or it invalidates this short-circuit.
-    //
-    // It buys two things. The gate is layered onto every route, so without it
-    // an authenticated page load costs one system-bus round trip per request --
-    // fine for one server-rendered pane, not fine once a custom UI bundle (§4)
-    // serves dozens of static assets per page, none of which need mosd. And a
-    // static asset still serves while mosd is down, which is the reasoning §6.1
-    // applies to a broken bundle: a failure in one part must not take the
-    // surface that reports it with it.
-    if session::cookie_from_headers(request.headers())
-        .is_some_and(|value| state.sessions.verify(&value))
-    {
-        return next.run(request).await;
-    }
-
-    // The unauthenticated path's read, served from the cache when — and only
-    // when — the SettingsChanged subscription is live (`access_cache`'s
-    // lockout rule).
-    let access = match access_settings(&state).await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
-    };
-    if password_hash(&access).is_none() {
-        if path == "/setup" {
-            return next.run(request).await;
-        }
-        return Redirect::to("/setup").into_response();
-    }
-    if path == "/login" || path == "/setup" {
-        return next.run(request).await;
-    }
-    // The session was already checked above, so reaching here means there
-    // isn't a valid one.
-    Redirect::to("/login").into_response()
-}
-
+/// Listener health used by the boot readiness gate.
 async fn healthz() -> &'static str {
     "ok"
-}
-
-/// Inline stylesheet shared by every page; no external assets.
-const STYLE: &str = "\
-body{font-family:system-ui,sans-serif;max-width:48rem;margin:2rem auto;padding:0 1rem;color:#222}\
-nav{display:flex;gap:1rem;align-items:center;border-bottom:1px solid #ccc;padding-bottom:.5rem;margin-bottom:1rem}\
-nav form{margin-left:auto}\
-fieldset{margin-bottom:1rem}\
-pre{background:#f4f4f4;padding:.5rem;overflow-x:auto}\
-.error{background:#fdd;border:1px solid #c00;padding:.5rem 1rem;margin-bottom:1rem}\
-.saved{background:#dfd;border:1px solid #080;padding:.5rem 1rem;margin-bottom:1rem}";
-
-/// Shared page shell; `nav` adds the pane navigation bar.
-fn shell(title: &str, nav: bool, refresh: Option<&str>, body: Markup) -> Html<String> {
-    let markup = html! {
-        (DOCTYPE)
-        html {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                @if let Some(refresh) = refresh {
-                    meta http-equiv="refresh" content=(refresh);
-                }
-                title { (title) " — mos" }
-                style { (PreEscaped(STYLE)) }
-            }
-            body {
-                @if nav {
-                    nav {
-                        a href="/" { "Status" }
-                        a href="/network" { "Network" }
-                        a href="/hostname" { "Hostname" }
-                        a href="/password" { "Password" }
-                        a href="/power" { "Power" }
-                        a href="/ssh" { "SSH" }
-                        a href="/containers" { "Containers" }
-                        a href="/mqtt" { "MQTT" }
-                        // §6.3's discoverability cost, closed where it is
-                        // actually paid: *"(A) only helps an operator who knows
-                        // the URL"*. A logged-in operator whose custom UI is
-                        // broken still reaches every declared pane, so the
-                        // prefix is one click from all of them.
-                        a href=(BUILTIN_PATH) { "Built-in UI" }
-                        form method="post" action="/logout" {
-                            button type="submit" { "Logout" }
-                        }
-                    }
-                }
-                h1 { (title) }
-                (body)
-            }
-        }
-    };
-    Html(markup.into_string())
-}
-
-/// Bare page without navigation (setup, login, error pages).
-fn page(title: &str, body: Markup) -> Html<String> {
-    shell(title, false, None, body)
-}
-
-/// Authenticated pane with the navigation bar.
-fn pane(title: &str, body: Markup) -> Html<String> {
-    shell(title, true, None, body)
-}
-
-/// A zero-JavaScript pane that asks the browser to refresh while an apply is
-/// still queued or running.
-fn refreshing_pane(title: &str, refresh: Option<&str>, body: Markup) -> Html<String> {
-    shell(title, true, refresh, body)
-}
-
-fn error_box(message: &str) -> Markup {
-    html! { div.error { (message) } }
-}
-
-fn saved_banner() -> Markup {
-    html! { div.saved { "Settings saved." } }
-}
-
-struct TaskPaneStatus {
-    banner: Markup,
-    refresh: Option<String>,
-}
-
-async fn task_pane_status(app: &AppState, task_id: &str, path: &str) -> TaskPaneStatus {
-    match app.task_record(task_id).await {
-        Ok(task) if !task.terminal() => TaskPaneStatus {
-            banner: html! {
-                div.saved {
-                    "Settings saved; applying now (task " code { (task.id) } ")."
-                }
-            },
-            refresh: Some(format!("1;url={path}?task={task_id}")),
-        },
-        Ok(task) if task.outcome.as_deref() == Some("succeeded") => TaskPaneStatus {
-            banner: html! {
-                div.saved {
-                    "Settings applied successfully (task " code { (task.id) } ")."
-                    @if task.folded_count > 0 {
-                        " " (task.folded_count) " later submission(s) were folded into this apply."
-                    }
-                }
-            },
-            refresh: None,
-        },
-        Ok(task) => TaskPaneStatus {
-            banner: error_box(
-                task.message
-                    .as_deref()
-                    .unwrap_or("The settings were saved, but applying them failed."),
-            ),
-            refresh: None,
-        },
-        Err(err) => TaskPaneStatus {
-            // A missing task after a daemon restart/history rollover is a
-            // terminal UI state: never leave a browser polling forever.
-            banner: error_box(&format!(
-                "Apply status is no longer available; the daemon may have restarted or its bounded history may have rolled over. {err:#}"
-            )),
-            refresh: None,
-        },
-    }
-}
-
-fn task_redirect(path: &str, task_id: &str) -> Response {
-    Redirect::to(&format!("{path}?task={task_id}")).into_response()
-}
-
-/// A legacy saved marker or the id of an asynchronous apply to display.
-#[derive(serde::Deserialize)]
-struct SavedQuery {
-    saved: Option<String>,
-    task: Option<String>,
 }
 
 // Validation
@@ -3718,132 +3660,6 @@ fn validate_static_address(dhcp: bool, address: &str) -> Result<(), &'static str
 /// a dot: a VLAN named `eth0.100` is `network."eth0.100"`, not three segments.
 fn iface_settings_path(iface: &str) -> String {
     format!("network.{}", quote_path_segment(iface))
-}
-
-/// A comma-separated form field as the list it spells, blanks dropped.
-///
-/// The idiom the `dns` field has always used, reused for bridge ports and a
-/// peer's allowed IPs rather than teaching the pane a second list notation.
-fn comma_list(value: &str) -> Vec<String> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-/// A text field as `Some(trimmed)`, or `None` when it is blank.
-fn optional_field(value: &str) -> Option<String> {
-    let value = value.trim();
-    (!value.is_empty()).then(|| value.to_string())
-}
-
-/// A numeric field as `Some(number)`, `None` when blank, and `Err` when it is
-/// neither.
-///
-/// An unparseable number is an error rather than a silent `None`: dropping a
-/// listen port the operator typed would leave a tunnel listening on a
-/// kernel-chosen port and say nothing about it.
-fn parse_optional_u16(value: &str) -> Result<Option<u16>, ()> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Ok(None);
-    }
-    value.parse::<u16>().map(Some).map_err(|_| ())
-}
-
-/// The addressing half of an entry: the static block, or none at all.
-fn addressing(dhcp: bool, address: &str, gateway: &str, dns: &str) -> Option<StaticConfig> {
-    if dhcp || address.is_empty() {
-        return None;
-    }
-    Some(StaticConfig {
-        address: address.to_string(),
-        gateway: optional_field(gateway),
-        dns: comma_list(dns),
-    })
-}
-
-/// A `physical` entry with the given addressing: what the setup wizard's one
-/// interface field makes, and the shape every v6 tree held.
-fn physical_iface_settings(dhcp: bool, address: &str, gateway: &str, dns: &str) -> IfaceSettings {
-    IfaceSettings {
-        kind: IfaceKind::Physical,
-        dhcp,
-        static_: addressing(dhcp, address, gateway, dns),
-        vlan: None,
-        bridge: None,
-        wireguard: None,
-    }
-}
-
-/// The entry a submitted network form describes, or the message to show.
-///
-/// Exactly one kind block is ever set, and it is the one the submitted `kind`
-/// names: the form renders all four groups at once (see [`kind_fields`]), so a
-/// value left in another group's box must not reach the tree. That makes the
-/// reconciler's *"is kind X but carries a Y block"* rule
-/// (`validate_network` in `os/pkgs/mosd/mosd/src/reconciler/network.rs`) unreachable from
-/// this path rather than merely checked on it.
-///
-/// `peers` is passed in rather than read off the form: the save form carries no
-/// peer fields, so a rewritten entry keeps the peer list the tree already
-/// holds. Dropping it would disconnect every far end because somebody changed a
-/// listen port.
-fn iface_settings_from_form(
-    form: &NetworkForm,
-    peers: Vec<WireguardPeer>,
-) -> Result<IfaceSettings, String> {
-    let kind_name_submitted = form.kind.trim();
-    let Some(kind) = parse_kind(kind_name_submitted) else {
-        return Err(format!(
-            "{kind_name_submitted:?} is not an interface kind; it must be physical, vlan, bridge or wireguard."
-        ));
-    };
-    let dhcp = form.dhcp.is_some();
-    let address = form.address.trim();
-    validate_iface(form.iface.trim(), dhcp, address)?;
-    let mut cfg = physical_iface_settings(dhcp, address, form.gateway.trim(), &form.dns);
-    cfg.kind = kind;
-    match kind {
-        IfaceKind::Physical => {}
-        IfaceKind::Vlan => {
-            let parent = form.vlan_parent.trim();
-            if parent.is_empty() {
-                return Err(
-                    "A VLAN needs a parent: the name of the declared interface it sits on."
-                        .to_string(),
-                );
-            }
-            // Bounded by the type and by nothing else here. networkd's own
-            // range is narrower, and the reconciler does not check it either
-            // (`render_netdev` in `os/pkgs/mosd/mosd/src/reconciler/network.rs` renders
-            // `Id=` from a `u16`), so a bound invented in this file would
-            // refuse a tree the boundary accepts.
-            let Ok(id) = form.vlan_id.trim().parse::<u16>() else {
-                return Err("A VLAN id must be a whole number from 0 to 65535.".to_string());
-            };
-            cfg.vlan = Some(VlanConfig {
-                parent: parent.to_string(),
-                id,
-            });
-        }
-        IfaceKind::Bridge => {
-            cfg.bridge = Some(BridgeConfig {
-                ports: comma_list(&form.bridge_ports),
-            });
-        }
-        IfaceKind::Wireguard => {
-            let Ok(listen_port) = parse_optional_u16(&form.listen_port) else {
-                return Err(
-                    "A WireGuard listen port must be a whole number from 0 to 65535.".to_string(),
-                );
-            };
-            cfg.wireguard = Some(WireguardConfig { listen_port, peers });
-        }
-    }
-    Ok(cfg)
 }
 
 /// True when `value` parses as an IP address with an optional `/prefix`.
@@ -3995,197 +3811,6 @@ fn validate_entries(entries: &NetworkEntries) -> Result<(), String> {
 
 // Setup wizard
 
-#[derive(serde::Deserialize)]
-struct SetupForm {
-    password: String,
-    confirm: String,
-    #[serde(default)]
-    hostname: String,
-    #[serde(default)]
-    iface: String,
-    dhcp: Option<String>,
-    #[serde(default)]
-    address: String,
-    #[serde(default)]
-    gateway: String,
-    #[serde(default)]
-    dns: String,
-}
-
-/// The dhcp/address/gateway/dns inputs shared by the network forms and the
-/// setup wizard.
-fn iface_fields(dhcp: bool, address: &str, gateway: &str, dns: &str) -> Markup {
-    html! {
-        p { label { input type="checkbox" name="dhcp" checked[dhcp]; " Use DHCP" } }
-        p { label { "Static address (CIDR)" } " "
-            input type="text" name="address" value=(address) placeholder="192.168.1.10/24"; }
-        p { label { "Gateway (optional)" } " "
-            input type="text" name="gateway" value=(gateway); }
-        p { label { "DNS servers (comma-separated, optional)" } " "
-            input type="text" name="dns" value=(dns); }
-    }
-}
-
-async fn setup_form(State(state): State<AppState>) -> Response {
-    let access = match state.api.get_settings("access").await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
-    };
-    if password_hash(&access).is_some() {
-        return Redirect::to("/login").into_response();
-    }
-    let hostname = match state.api.get_settings("hostname").await {
-        Ok(value) => value.as_str().unwrap_or_default().to_string(),
-        Err(err) => return bus_error(&err),
-    };
-    page(
-        "Welcome to mos",
-        html! {
-            p { "First-run setup: choose the admin password. Hostname and the initial network interface are optional." }
-            form method="post" action="/setup" {
-                fieldset {
-                    legend { "Admin password" }
-                    p { label { "Password (at least 8 characters)" } " "
-                        input type="password" name="password" required minlength="8"; }
-                    p { label { "Confirm password" } " "
-                        input type="password" name="confirm" required minlength="8"; }
-                }
-                fieldset {
-                    legend { "Hostname (optional)" }
-                    p { label { "Hostname" } " "
-                        input type="text" name="hostname" value=(hostname); }
-                }
-                fieldset {
-                    legend { "Initial network interface (optional)" }
-                    p { label { "Interface name (leave empty to skip)" } " "
-                        input type="text" name="iface" placeholder="eth0"; }
-                    (iface_fields(false, "", "", ""))
-                }
-                p { button type="submit" { "Save" } }
-            }
-        },
-    )
-    .into_response()
-}
-
-async fn setup_submit(
-    State(state): State<AppState>,
-    Source(source): Source,
-    Form(form): Form<SetupForm>,
-) -> Response {
-    let access = match state.api.get_settings("access").await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
-    };
-    if password_hash(&access).is_some() {
-        return (
-            StatusCode::CONFLICT,
-            page(
-                "Error",
-                html! { p { "The admin password is already set." } },
-            ),
-        )
-            .into_response();
-    }
-    if password_under_floor(&form.password) {
-        return (
-            StatusCode::BAD_REQUEST,
-            page(
-                "Error",
-                html! { p { "Password must be at least 8 characters." } },
-            ),
-        )
-            .into_response();
-    }
-    if form.password != form.confirm {
-        return (
-            StatusCode::BAD_REQUEST,
-            page("Error", html! { p { "Passwords do not match." } }),
-        )
-            .into_response();
-    }
-    // Validate the optional sections up front so nothing is written on error.
-    let hostname = form.hostname.trim();
-    if !hostname.is_empty() && !valid_hostname(hostname) {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            page("Error", html! { (error_box(HOSTNAME_RULES)) }),
-        )
-            .into_response();
-    }
-    let iface = form.iface.trim();
-    let dhcp = form.dhcp.is_some();
-    let address = form.address.trim();
-    if !iface.is_empty()
-        && let Err(message) = validate_iface(iface, dhcp, address)
-    {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            page("Error", html! { (error_box(message)) }),
-        )
-            .into_response();
-    }
-    // Off the async workers for the same reason login verification is:
-    // argon2id costs real CPU per call, by design.
-    let password = form.password.clone();
-    let hash = match tokio::task::spawn_blocking(move || auth::hash_password(&password))
-        .await
-        .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
-    {
-        Ok(hash) => hash,
-        Err(err) => {
-            tracing::error!(error = %err, "password hashing failed");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-    let value = serde_json::json!({ "password_hash": hash });
-    if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
-        return bus_error(&err);
-    }
-    // The device just left setup mode, and the gate must not keep believing
-    // otherwise from a cached pre-write snapshot: drop the cache now rather
-    // than waiting for the SettingsChanged round trip.
-    state.access_cache.invalidate();
-    // Recorded once the admin password exists, which is the moment the device
-    // leaves setup mode; the optional hostname/network writes below are
-    // ordinary settings edits, not access-control events.
-    state.audit.record("setup", "completed", &source);
-    if !hostname.is_empty() {
-        let current = match state.api.get_settings("hostname").await {
-            Ok(value) => value.as_str().unwrap_or_default().to_string(),
-            Err(err) => return bus_error(&err),
-        };
-        if hostname != current
-            && let Err(err) = state
-                .api
-                .set_settings("hostname", &Value::String(hostname.to_string()))
-                .await
-        {
-            return bus_error(&err);
-        }
-    }
-    if !iface.is_empty() {
-        // The wizard's one interface is always physical: it has no kind
-        // control, and a device being set up for the first time has no other
-        // entry for a VLAN parent or a bridge port to name.
-        let settings = physical_iface_settings(dhcp, address, form.gateway.trim(), &form.dns);
-        let value = serde_json::to_value(&settings).expect("interface settings serialize");
-        if let Err(err) = state
-            .api
-            .set_settings(&iface_settings_path(iface), &value)
-            .await
-        {
-            return bus_error(&err);
-        }
-    }
-    let cookie = state.sessions.create();
-    (
-        [(SET_COOKIE, session::session_cookie(&cookie))],
-        Redirect::to("/"),
-    )
-        .into_response()
-}
-
 /// `POST /api/v1/setup` request body.
 ///
 /// No `confirm` member, unlike the form the wizard posts: that field exists so
@@ -4216,8 +3841,9 @@ pub(crate) struct SetupRequest {
     network: Option<NetworkEntries>,
 }
 
-/// `POST /api/v1/setup` response body: the minted credential, and nothing else.
+/// `POST /api/v1/setup` response body.
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SetupToken {
     /// The whole token, `mos_<id>_<secret>`.
     ///
@@ -4227,6 +3853,8 @@ pub(crate) struct SetupToken {
     /// holds this string can address it for a later `DELETE` without being
     /// told it twice.
     token: String,
+    /// CSRF token for the browser session created by setup.
+    csrf_token: String,
 }
 
 /// The label the setup-minted token is listed under.
@@ -4473,136 +4101,27 @@ pub(crate) async fn api_v1_setup(
         // in setup mode.
         return *response;
     }
-    api_response(StatusCode::CREATED, SetupToken { token: minted.wire })
-}
-
-// Login / logout
-
-#[derive(serde::Deserialize)]
-struct LoginForm {
-    password: String,
-}
-
-/// The sign-in page.
-///
-/// It names §6.3's prefix, because it is the first built-in page an operator
-/// with a broken custom UI reaches: the gate bounces every unauthenticated
-/// request here, whatever the bundle is doing. The nav on every authenticated
-/// pane covers the other half. The mosd-unavailable page §6.3 cites is the
-/// wrong surface for this: it is reached only when a mosd call fails, which a
-/// broken bundle does not cause.
-async fn login_form() -> Html<String> {
-    page(
-        "Sign in",
-        html! {
-            form method="post" action="/login" {
-                p { label { "Admin password" } " "
-                    input type="password" name="password" required; }
-                p { button type="submit" { "Sign in" } }
-            }
-            p {
-                "If this appliance is showing a custom interface that does not work, "
-                "sign in and go to " a href=(BUILTIN_PATH) { (BUILTIN_PATH) }
-                " — the built-in interface is served there whatever state the custom \
-                 one is in, and it can switch back to it."
-            }
-        },
-    )
-}
-
-async fn login_submit(
-    State(state): State<AppState>,
-    Source(source): Source,
-    Form(form): Form<LoginForm>,
-) -> Response {
-    // Admission charges the attempt (see `LoginGuard::begin_attempt`): check
-    // and charge happen under one lock acquisition, so concurrent submissions
-    // cannot share one backoff window. An attempt that reaches neither branch
-    // below — a bus error, a device still in setup mode — stays charged,
-    // which errs closed and costs a legitimate operator one step on the curve
-    // at worst.
-    //
-    // The locks recover from poisoning rather than propagating it: a panic
-    // while holding this counter must not convert every later login into a
-    // panic of its own, which would be a permanent denial of management the
-    // backoff curve itself refuses to arm.
-    if !state.guard.begin_attempt() {
-        state.audit.record("login", "throttled", &source);
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            page(
-                "Error",
-                html! { p { "Too many failed logins; retry shortly." } },
-            ),
-        )
-            .into_response();
-    }
-    let access = match state.api.get_settings("access").await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
-    };
-    let Some(hash) = password_hash(&access) else {
-        return Redirect::to("/setup").into_response();
-    };
-    // argon2id is CPU-bound by design; run inline it would pin one async
-    // worker thread per attempt, and a burst of submissions could stall every
-    // other request the daemon is serving. A panic in the closure surfaces as
-    // a failed verification: closed, never open.
-    let hash = hash.to_string();
-    let password = form.password;
-    let verified = tokio::task::spawn_blocking(move || auth::verify_password(&hash, &password))
-        .await
-        .unwrap_or_else(|err| {
-            tracing::error!(error = %err, "password verification task failed");
-            false
-        });
-    if verified {
-        state.guard.record_success();
-        state.audit.record("login", "success", &source);
-        let cookie = state.sessions.create();
-        (
-            [(SET_COOKIE, session::session_cookie(&cookie))],
-            Redirect::to("/"),
-        )
-            .into_response()
-    } else {
-        // Counted at admission; this only restarts the earned window from the
-        // outcome, so the verification's duration does not eat into the wait.
-        state.guard.confirm_failure();
-        state.audit.record("login", "wrong-password", &source);
-        (
-            StatusCode::UNAUTHORIZED,
-            page("Sign in", html! { p { "Wrong password." } }),
-        )
-            .into_response()
-    }
-}
-
-async fn logout(
-    State(state): State<AppState>,
-    Source(source): Source,
-    headers: HeaderMap,
-) -> Response {
-    if let Some(value) = session::cookie_from_headers(&headers) {
-        state.sessions.remove(&value);
-        state.audit.record("logout", "ok", &source);
-    }
+    let session = state.sessions.create();
     (
-        [(SET_COOKIE, session::clear_cookie())],
-        Redirect::to("/login"),
+        StatusCode::CREATED,
+        [
+            (
+                CACHE_CONTROL,
+                CacheClass::NoStore.header_value().to_string(),
+            ),
+            (SET_COOKIE, session::session_cookie(&session.cookie)),
+        ],
+        Json(SetupToken {
+            token: minted.wire,
+            csrf_token: session.csrf_token,
+        }),
     )
         .into_response()
 }
 
-// Password change
+// Login / logout
 
-/// The change-password form fields.
-#[derive(serde::Deserialize)]
-struct PasswordForm {
-    current: String,
-    password: String,
-    confirm: String,
-}
+// Password change
 
 /// Why one password-change attempt failed, before either surface words it.
 ///
@@ -4696,88 +4215,6 @@ async fn change_password(
     Ok(())
 }
 
-/// The ratified sentence for this pane, verbatim.
-///
-/// Token revocation on a password change stays **out**, ratified there: it
-/// would destroy N credentials the operator cannot see at the moment they act,
-/// with no confirmation, no count and no undo, because a token is shown once at
-/// the mint and never again. The cost of keeping it is that *"I changed my
-/// password" is not a containment action*, and this is the whole obligation
-/// §3.2 states and never assigns to a milestone. Asserted byte for byte by
-/// `the_password_pane_carries_the_ratified_token_sentence`, because a
-/// paraphrase would quietly drop the containment advice that is the point of
-/// it.
-const PASSWORD_TOKEN_NOTICE: &str = "API tokens are not affected. Changing this password signs other browsers out, but every API token keeps working. If you are changing this password because you think someone else has access, revoke your API tokens as well, and check the SSH authorized keys — every one of them is a root key.";
-
-fn password_page(banner: Option<Markup>) -> Html<String> {
-    pane(
-        "Password",
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            p { "Changing the admin password signs every other session out. The session making the change stays signed in." }
-            p { (PASSWORD_TOKEN_NOTICE) }
-            form method="post" action="/password" {
-                fieldset {
-                    legend { "Change the admin password" }
-                    p { label { "Current password" } " "
-                        input type="password" name="current" required; }
-                    p { label { "New password (at least 8 characters)" } " "
-                        input type="password" name="password" required minlength="8"; }
-                    p { label { "Confirm new password" } " "
-                        input type="password" name="confirm" required minlength="8"; }
-                }
-                p { button type="submit" { "Change password" } }
-            }
-        },
-    )
-}
-
-async fn password_form(Query(query): Query<SavedQuery>) -> Html<String> {
-    password_page(query.saved.is_some().then(saved_banner))
-}
-
-async fn password_submit(
-    State(state): State<AppState>,
-    Source(source): Source,
-    headers: HeaderMap,
-    Form(form): Form<PasswordForm>,
-) -> Response {
-    if form.password != form.confirm {
-        return (
-            StatusCode::BAD_REQUEST,
-            password_page(Some(error_box("Passwords do not match."))),
-        )
-            .into_response();
-    }
-    let acting = session::cookie_from_headers(&headers);
-    match change_password(
-        &state,
-        &source,
-        acting.as_deref(),
-        &form.current,
-        &form.password,
-    )
-    .await
-    {
-        Ok(()) => Redirect::to("/password?saved=1").into_response(),
-        Err(PasswordChangeError::WrongCurrent) => (
-            StatusCode::UNAUTHORIZED,
-            password_page(Some(error_box("Wrong current password."))),
-        )
-            .into_response(),
-        Err(PasswordChangeError::TooShort) => (
-            StatusCode::BAD_REQUEST,
-            password_page(Some(error_box("Password must be at least 8 characters."))),
-        )
-            .into_response(),
-        Err(PasswordChangeError::Hashing(err)) => {
-            tracing::error!(error = %err, "password hashing failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-        Err(PasswordChangeError::Bus(err)) => bus_error(&err),
-    }
-}
-
 /// `POST /api/v1/actions/change-password` request body.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -4802,8 +4239,8 @@ pub(crate) struct ChangePasswordRequest {
     responses(
         (status = 204, description = "The password was changed; every session except the calling one was dropped"),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
-        (status = 403, description = "The current password does not verify (`wrong_password`)", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "The browser CSRF token is invalid (`csrf_invalid`), or the current password does not verify (`wrong_password`)", body = ApiError),
         (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
         (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -4812,7 +4249,7 @@ pub(crate) struct ChangePasswordRequest {
     ),
 )]
 pub(crate) async fn api_v1_change_password(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Source(source): Source,
     headers: HeaderMap,
@@ -4868,477 +4305,6 @@ pub(crate) async fn api_v1_change_password(
     }
 }
 
-// Status pane
-
-/// `"3d 4h 12m"`-style rendering, dropping leading zero units.
-fn humanize_uptime(secs: u64) -> String {
-    let days = secs / 86_400;
-    let hours = secs % 86_400 / 3_600;
-    let minutes = secs % 3_600 / 60;
-    if days > 0 {
-        format!("{days}d {hours}h {minutes}m")
-    } else if hours > 0 {
-        format!("{hours}h {minutes}m")
-    } else {
-        format!("{minutes}m")
-    }
-}
-
-fn pretty(value: &Value) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
-}
-
-/// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
-///
-/// It reads mosd and nothing under `/srv/ui`. That is
-/// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
-/// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
-/// wrong version — can affect them"* — and it is why §6.1's five classes do not
-/// need enumerating here: a handler that never consults the bundle store cannot
-/// branch on which class occurred.
-///
-/// Uptime comes through `get_state` like every other system fact — mosd
-/// serves it fresh at read time — and not from a `/proc` reader here, which
-/// would contradict the crate's own rule that mosd owns every system fact
-/// (`settings_api.rs`).
-async fn status_body(state: &AppState) -> Markup {
-    let hostname = state.api.get_settings("hostname").await;
-    let network = state.api.get_state("network").await;
-    let uptime = state
-        .api
-        .get_state("uptime")
-        .await
-        .ok()
-        .and_then(|value| value.as_u64());
-    html! {
-        h2 { "System" }
-        @match &hostname {
-            Ok(value) => { p { "Hostname: " b { (value.as_str().unwrap_or("(unknown)")) } } }
-            Err(err) => { (error_box(&format!("Hostname unavailable: {err}"))) }
-        }
-        @match uptime {
-            Some(secs) => { p { "Uptime: " (humanize_uptime(secs)) } }
-            None => { (error_box("Uptime unavailable.")) }
-        }
-        h2 { "Network state" }
-        @match &network {
-            Ok(Value::Object(map)) if map.is_empty() => { p { "No network state reported." } }
-            Ok(Value::Object(map)) => {
-                ul {
-                    @for (iface, details) in map {
-                        li {
-                            b { (iface) }
-                            pre { (pretty(details)) }
-                        }
-                    }
-                }
-            }
-            Ok(other) => { pre { (pretty(other)) } }
-            Err(err) => { (error_box(&format!("Network state unavailable: {err}"))) }
-        }
-    }
-}
-
-/// `GET /` fell through to the built-in UI (§4.2 condition 5, §6.1 classes
-/// 1-4), and this is the pane it renders.
-///
-/// Unchanged by §6.3's prefix, deliberately. `/` is conditional and stays
-/// conditional; the escape control belongs on the pane that is reachable
-/// *unconditionally*, which is [`builtin_home`] and not this one.
-pub(crate) async fn home(State(state): State<AppState>) -> Html<String> {
-    pane("Status", status_body(&state).await)
-}
-
-// §6.3's escape: the built-in UI at a reserved prefix, and the control that
-// deactivates a custom UI.
-
-/// §6.3 candidate (A)'s prefix, without its trailing slash.
-///
-/// §6.3 calls it `/builtin/` illustratively; this is the spelling fixed for the
-/// implementation, and it is the one the design document already uses, so the
-/// documented action — *go to `https://<device>/builtin/`* — needs no
-/// translation. It costs the prefix permanently: no bundle can serve anything
-/// at or under it, which §6.3 names as (A)'s price and accepts.
-const BUILTIN: &str = "/builtin";
-
-/// The prefix as it is written to an operator, and as it is linked.
-const BUILTIN_PATH: &str = "/builtin/";
-
-/// The deactivate route, as declared *inside* the nest.
-const BUILTIN_DEACTIVATE_LEAF: &str = "/deactivate";
-
-/// The deactivate route as a client sees it.
-const BUILTIN_DEACTIVATE: &str = "/builtin/deactivate";
-
-/// §3.2's bootstrap: the mint and its sibling revoke, as declared *inside* the
-/// nest and as a client sees them.
-///
-/// Under the reserved prefix and not beside it, because §3.2 puts them there:
-/// they are the built-in UI's own controls, they carry no JSON, and they are
-/// not part of the `v1` contract §2.1 versions.
-const BUILTIN_TOKENS_LEAF: &str = "/tokens";
-const BUILTIN_TOKENS: &str = "/builtin/tokens";
-const BUILTIN_TOKENS_REVOKE_LEAF: &str = "/tokens/revoke";
-const BUILTIN_TOKENS_REVOKE: &str = "/builtin/tokens/revoke";
-
-/// `GET /builtin` and `GET /builtin/` — the one unconditional path to the
-/// built-in UI.
-///
-/// This is today's status pane plus §6.3 candidate (B)'s control, and (A) and
-/// (B) together are what §6.3 chooses: (A) alone is *"a way in, not a way
-/// out"*, and (B) alone *"presupposes the access that may be broken"*. One
-/// documented action reaches this page whatever went wrong, and one click on it
-/// deactivates the bundle, so the operator never has to diagnose anything,
-/// which is the test §6.3 opens with.
-async fn builtin_home(State(state): State<AppState>) -> Html<String> {
-    builtin_page(&state, None).await
-}
-
-/// The built-in pane, with `banner` above the token section when a mint or a
-/// revoke has something to say about itself.
-async fn builtin_page(state: &AppState, banner: Option<Markup>) -> Html<String> {
-    let status = status_body(state).await;
-    let tokens = pane_tokens(state).await;
-    pane(
-        "Status",
-        html! {
-            (status)
-            (tokens_section(&tokens, banner))
-            (escape_section())
-        },
-    )
-}
-
-/// The stored token list for the pane, or the reason it could not be read.
-///
-/// A failed read degrades to a message and never to a failed page: §6.1's rule
-/// is that a failure in one part must not take the surface that reports it with
-/// it, and this pane is §6.3's escape.
-async fn pane_tokens(state: &AppState) -> Result<Vec<ApiToken>, String> {
-    let access = state
-        .api
-        .get_settings("access")
-        .await
-        .map_err(|err| format!("{err:#}"))?;
-    parse_tokens(&access).map_err(|err| err.to_string())
-}
-
-/// §8.1's capability (iii): the mint pane, and the revoke beside it.
-///
-/// The revoke is here rather than left to the API because §3.2 asks for the
-/// capability *in full*: an operator holding only a browser has to be able to
-/// revoke a leaked token without first holding another one.
-fn tokens_section(tokens: &Result<Vec<ApiToken>, String>, banner: Option<Markup>) -> Markup {
-    html! {
-        h2 { "API tokens" }
-        @if let Some(banner) = banner { (banner) }
-        p {
-            "A token authenticates a script against " code { "/api/v1/" } " with an "
-            code { "Authorization: Bearer" } " header. It is shown once, when it is \
-             created, and only its digest is kept — a token that is lost is \
-             replaced, never recovered. Tokens do not expire; revoking one is \
-             the whole of its lifecycle, and it stops working on the next \
-             request."
-        }
-        @match tokens {
-            Err(message) => { (error_box(&format!("The stored token list could not be read: {message}"))) }
-            Ok(tokens) if tokens.is_empty() => { p { "No API tokens are stored." } }
-            Ok(tokens) => {
-                ul {
-                    @for entry in tokens {
-                        li {
-                            b { (entry.name) } " — " code { (entry.id) }
-                            form method="post" action=(BUILTIN_TOKENS_REVOKE) {
-                                input type="hidden" name="id" value=(entry.id);
-                                button type="submit" { "Revoke" }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        @match tokens {
-            Ok(tokens) if tokens.len() >= mosd_settings::MAX_TOKENS => {
-                (error_box(&format!(
-                    "This device holds the maximum of {} API tokens. Revoke one before creating another.",
-                    mosd_settings::MAX_TOKENS
-                )))
-            }
-            _ => {
-                form method="post" action=(BUILTIN_TOKENS) {
-                    fieldset {
-                        legend { "Create an API token" }
-                        p { label { "Name" } " " input type="text" name="name" required; }
-                        p { button type="submit" { "Create token" } }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct TokenMintForm {
-    #[serde(default)]
-    name: String,
-}
-
-/// `POST /builtin/tokens` — §3.2's bootstrap, and the only mint a browser can
-/// reach.
-///
-/// The first token cannot be minted with a token, and the resolution is a path
-/// rather than an exception to `/api/v1/tokens`' bearer-only rule: this route
-/// is a form post under §6.3's reserved prefix, authenticated by the session
-/// cookie, answering with an HTML page that displays the plaintext once. It
-/// carries no JSON and it is not part of the `v1` contract, so a change to it
-/// is a change to the HTML surface, which §8.1 already establishes carries no
-/// version promise.
-///
-/// What this costs, named in §3.2 and true here: **no token can be created on a
-/// device whose built-in UI is broken.** That is the situation §6 exists for,
-/// and it makes the token lifecycle a dependent of §6's escape.
-async fn builtin_tokens_mint(
-    State(state): State<AppState>,
-    Form(form): Form<TokenMintForm>,
-) -> Response {
-    let tokens = match pane_tokens(&state).await {
-        Ok(tokens) => tokens,
-        Err(message) => return builtin_error(&state, &message).await,
-    };
-    if tokens.len() >= mosd_settings::MAX_TOKENS {
-        return builtin_error(
-            &state,
-            &format!(
-                "This device already holds the maximum of {} API tokens. Revoke one before creating another.",
-                mosd_settings::MAX_TOKENS
-            ),
-        )
-        .await;
-    }
-    let Some(minted) = token::mint(&tokens) else {
-        return builtin_error(&state, "No free token id was drawn; nothing was written.").await;
-    };
-    let mut tokens = tokens;
-    tokens.push(ApiToken {
-        id: minted.id.clone(),
-        name: form.name.clone(),
-        hash: minted.hash,
-        created: device_clock_seconds(),
-    });
-    // The API envelope this returns is discarded and the pane speaks for
-    // itself: a browser handed §2.4's JSON would render it as text.
-    if let Err(response) = write_tokens(&state, &tokens).await {
-        let status = response.status();
-        return builtin_error(&state, &token_write_message(status)).await;
-    }
-    minted_page(&form.name, &minted.id, &minted.wire).into_response()
-}
-
-#[derive(serde::Deserialize)]
-struct TokenRevokeForm {
-    #[serde(default)]
-    id: String,
-}
-
-/// `POST /builtin/tokens/revoke` — §8.1's capability (iii) in full.
-///
-/// An id matching nothing is **422** here and **404** on
-/// `DELETE /api/v1/tokens/{id}`, and the split is deliberate: this response
-/// body is a re-rendered pane, no
-/// consumer on this surface reads the status, and the condition really is the
-/// re-submit-the-form one — the list may have changed since the page was
-/// loaded. Its paired test is
-/// `the_builtin_revoke_pane_answers_422_where_the_api_answers_404`.
-async fn builtin_tokens_revoke(
-    State(state): State<AppState>,
-    Form(form): Form<TokenRevokeForm>,
-) -> Response {
-    let mut tokens = match pane_tokens(&state).await {
-        Ok(tokens) => tokens,
-        Err(message) => return builtin_error(&state, &message).await,
-    };
-    let Some(index) = tokens.iter().position(|entry| entry.id == form.id) else {
-        return builtin_error(
-            &state,
-            "No stored token carries that identifier. The list may have changed since this page was loaded; reload it and try again.",
-        )
-        .await;
-    };
-    let name = tokens.remove(index).name;
-    if let Err(response) = write_tokens(&state, &tokens).await {
-        let status = response.status();
-        return builtin_error(&state, &token_write_message(status)).await;
-    }
-    builtin_page(
-        &state,
-        Some(html! { div.saved { "The token " b { (name) } " has been revoked. It stops working on the next request." } }),
-    )
-    .await
-    .into_response()
-}
-
-/// What a failed token write is told to the operator, from the status the API
-/// path would have answered.
-///
-/// The pane cannot show §2.4's envelope, and it must not guess: the status is
-/// the one thing the shared write path already decided.
-fn token_write_message(status: StatusCode) -> String {
-    format!("The token list could not be written ({status}). Nothing was changed.")
-}
-
-/// The one page a plaintext token ever appears on.
-fn minted_page(name: &str, id: &str, wire: &str) -> Html<String> {
-    pane(
-        "API token",
-        html! {
-            div.saved { "The token " b { (name) } " has been created." }
-            p {
-                "This is the only time it is shown. Only its digest is stored, so if \
-                 this is lost the token has to be replaced rather than recovered."
-            }
-            p { "Identifier: " code { (id) } }
-            pre { (wire) }
-            p {
-                "Send it as " code { "Authorization: Bearer <token>" } " on "
-                code { "/api/v1/" } " requests."
-            }
-            p { a href=(BUILTIN_PATH) { "Back to the built-in interface" } }
-        },
-    )
-}
-
-/// Re-render the built-in pane with `message` in an error box, at 422.
-///
-/// The same shape `ssh_error` uses, and the same status, which is the HTML half
-/// of the split recorded on [`builtin_tokens_revoke`].
-async fn builtin_error(state: &AppState, message: &str) -> Response {
-    (
-        StatusCode::UNPROCESSABLE_ENTITY,
-        builtin_page(state, Some(error_box(message))).await,
-    )
-        .into_response()
-}
-
-/// Candidate (B), rendered unconditionally.
-///
-/// The control is not shown only when a bundle looks active. Deciding that
-/// would mean reading `/srv/ui` from the one handler whose value is that it
-/// never does, and an operator who found the button missing would be back to
-/// diagnosing why — which is exactly the failure §6.3's opening test names.
-/// A deactivate with nothing active is a no-op that says so.
-fn escape_section() -> Markup {
-    html! {
-        h2 { "Custom UI" }
-        p {
-            "This page is the appliance's built-in interface, compiled into "
-            code { "/usr/bin/apid" } " itself. It is served here whatever state a \
-             custom UI is in — none installed, half-written, unreadable, or \
-             rendering but unable to talk to this appliance."
-        }
-        form method="post" action=(BUILTIN_DEACTIVATE) {
-            fieldset {
-                legend { "Deactivate the custom UI" }
-                p {
-                    "This removes " code { "/srv/ui/current" } ", the pointer to the \
-                     active bundle. Afterwards " code { "/" } " serves this built-in \
-                     interface, and it keeps doing so across a reboot. The bundle's \
-                     files are left on disk, so it can be made active again later."
-                }
-                p { button type="submit" { "Deactivate the custom UI" } }
-            }
-        }
-    }
-}
-
-/// `POST /builtin/deactivate` — §5.3's *deactivate*, which §5.3 already calls
-/// *"the same operation as §6.3's escape, which is why it is specified here
-/// rather than invented there."*
-///
-/// [`Store::deactivate`] is called and nothing is reimplemented. Its `bool` is
-/// whether a pointer was there to remove; both values are the same success,
-/// because §6.3 requires an outcome that does not depend on what was wrong.
-async fn builtin_deactivate(State(state): State<AppState>, Source(source): Source) -> Response {
-    match state.bundles().deactivate() {
-        Ok(removed) => {
-            tracing::info!(removed, "custom UI deactivated from the built-in escape");
-            // "no-op" and "deactivated" are distinct on purpose: the trail
-            // should say whether a custom UI actually stopped being served.
-            state.audit.record(
-                "custom-ui",
-                if removed { "deactivated" } else { "no-op" },
-                &source,
-            );
-            pane(
-                "Custom UI",
-                html! {
-                    div.saved {
-                        @if removed {
-                            "The custom UI has been deactivated."
-                        } @else {
-                            "No custom UI was active. Nothing changed."
-                        }
-                    }
-                    p {
-                        "The appliance now serves this built-in interface at "
-                        code { "/" } ", and will keep doing so after a reboot."
-                    }
-                    p { a href="/" { "Go to the site root" } }
-                },
-            )
-            .into_response()
-        }
-        // The pointer is on DATA and this is a root process, so a failure here
-        // is a filesystem the daemon cannot write. The page names the shell
-        // equivalent rather than leaving the operator with nothing: §6.3 is
-        // explicit that a shell is the escape of last resort, and equally
-        // explicit that it is only available if it was arranged in advance.
-        Err(err) => {
-            tracing::error!(error = %err, "deactivating the custom UI failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                pane(
-                    "Custom UI",
-                    html! {
-                        (error_box("The pointer to the active custom UI could not be removed."))
-                        p {
-                            "Over a shell the same operation is "
-                            code { "rm /srv/ui/current" } "."
-                        }
-                    },
-                ),
-            )
-                .into_response()
-        }
-    }
-}
-
-/// The reserved prefix's own not-found handler.
-///
-/// The nest claims the whole subtree, so this is what answers
-/// `/builtin/index.html` and `/builtin/assets/app.js` — paths a bundle may
-/// really contain. Answering them from the binary rather than letting them fall
-/// through is the reservation: a prefix that is reserved for some of its paths
-/// is not reserved. It is HTML rather than §2.4's JSON envelope because this
-/// subtree is a user interface and not an API, and it names the escape, which
-/// is the whole reason the operator is here.
-async fn builtin_not_found(OriginalUri(uri): OriginalUri) -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        page(
-            "Not found",
-            html! {
-                p { "There is no built-in page at " code { (uri.path()) } "." }
-                p {
-                    "The built-in interface is at " a href=(BUILTIN_PATH) { (BUILTIN_PATH) }
-                    ". It is served by the appliance itself and is reachable whatever \
-                     state a custom UI is in."
-                }
-            },
-        ),
-    )
-        .into_response()
-}
-
 // Network pane
 
 /// The `network` settings subtree, as a map of typed entries.
@@ -5348,131 +4314,7 @@ async fn builtin_not_found(OriginalUri(uri): OriginalUri) -> Response {
 /// file misspells is a compile error rather than a blank input.
 type NetworkEntries = std::collections::BTreeMap<String, IfaceSettings>;
 
-/// The kinds the pane offers, in the order the `<select>` lists them.
-///
-/// `physical` first because it is the default and the only kind a v6 tree ever
-/// had; the three virtual kinds follow in the order the schema introduces them.
-const IFACE_KINDS: [IfaceKind; 4] = [
-    IfaceKind::Physical,
-    IfaceKind::Vlan,
-    IfaceKind::Bridge,
-    IfaceKind::Wireguard,
-];
-
-/// The spelling a kind has in the settings file and in the form.
-///
-/// The same four strings `mosd`'s reconciler uses, because they are what
-/// `IfaceKind`'s `rename_all = "lowercase"` serializes; a fifth spelling here
-/// would be a form that writes a kind mosd cannot read.
-fn kind_name(kind: IfaceKind) -> &'static str {
-    match kind {
-        IfaceKind::Physical => "physical",
-        IfaceKind::Vlan => "vlan",
-        IfaceKind::Bridge => "bridge",
-        IfaceKind::Wireguard => "wireguard",
-    }
-}
-
-/// The kind `name` spells, or `None` when it spells none of them.
-///
-/// An empty string is `physical`: the setup wizard's interface form carries no
-/// kind control at all, and an absent kind means the default everywhere else
-/// in the schema.
-fn parse_kind(name: &str) -> Option<IfaceKind> {
-    if name.is_empty() {
-        return Some(IfaceKind::Physical);
-    }
-    IFACE_KINDS
-        .into_iter()
-        .find(|kind| kind_name(*kind) == name)
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NetworkForm {
-    iface: String,
-    /// Absent from the setup wizard's form, which only ever makes a physical
-    /// interface; empty there and read as `physical`.
-    #[serde(default)]
-    kind: String,
-    dhcp: Option<String>,
-    #[serde(default)]
-    address: String,
-    #[serde(default)]
-    gateway: String,
-    #[serde(default)]
-    dns: String,
-    #[serde(default)]
-    vlan_parent: String,
-    #[serde(default)]
-    vlan_id: String,
-    #[serde(default)]
-    bridge_ports: String,
-    #[serde(default)]
-    listen_port: String,
-}
-
-/// One peer, as the add form submits it.
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PeerAddForm {
-    iface: String,
-    public_key: String,
-    #[serde(default)]
-    allowed_ips: String,
-    #[serde(default)]
-    endpoint: String,
-    #[serde(default)]
-    persistent_keepalive: String,
-}
-
-/// A peer named for removal.
-///
-/// By public key, the way the SSH pane removes by fingerprint: a peer's public
-/// key is a stable handle that is public by definition, so it can sit in a
-/// hidden field without putting anything secret on the page. An index would
-/// name a different peer the moment two browser tabs disagree about the list.
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PeerRemoveForm {
-    iface: String,
-    public_key: String,
-}
-
-/// Everything the network pane renders, gathered before any markup is built.
-struct NetworkView {
-    /// The entries that parsed, keyed by interface name.
-    entries: NetworkEntries,
-    /// Names present in the tree whose bodies did not parse. They are listed
-    /// so an operator can see that the pane is not showing everything, and
-    /// they get no form: a form rendered from a body this code could not read
-    /// would write back a guess.
-    unreadable: Vec<String>,
-    /// Live state published by mosd's network reconciler, absent when mosd has
-    /// published none yet.
-    state: Option<Value>,
-    /// Why the settings or the live state could not be read, if either failed.
-    problems: Vec<String>,
-}
-
-impl NetworkView {
-    /// The live-state object mosd published for `iface`.
-    fn live(&self, iface: &str) -> Option<&Value> {
-        self.state.as_ref()?.get(iface)
-    }
-
-    /// A string field of `iface`'s live-state object.
-    fn live_str(&self, iface: &str, field: &str) -> Option<&str> {
-        self.live(iface)?.get(field)?.as_str()
-    }
-}
-
-/// Split the `network` subtree into the entries that parse and the names that
-/// do not.
-///
-/// Per entry and not whole-subtree, because the two failure modes are
-/// different: one hand-edited body must not blank out every other interface's
-/// form. A body that does not parse is named and skipped.
+/// Parse readable entries from the configured network map.
 fn parse_network(network: &Value) -> (NetworkEntries, Vec<String>) {
     let empty = serde_json::Map::new();
     let mut entries = NetworkEntries::new();
@@ -5488,389 +4330,8 @@ fn parse_network(network: &Value) -> (NetworkEntries, Vec<String>) {
     (entries, unreadable)
 }
 
-/// Load the settings half and the live-state half of the pane.
-///
-/// A failure to read `network` is fatal to the pane (there is nothing to
-/// show); a failure to read the live state is not, because the stored
-/// configuration is still worth showing and mosd may simply not have
-/// reconciled yet. The same split `load_ssh_view` makes.
-async fn load_network_view(app: &AppState) -> anyhow::Result<NetworkView> {
-    let network = app.api.get_settings("network").await?;
-    let (entries, unreadable) = parse_network(&network);
-    let mut problems = Vec::new();
-    let state = match app.api.get_state("network").await {
-        Ok(value) => Some(value),
-        Err(err) => {
-            problems.push(format!("Live network state unavailable: {err}"));
-            None
-        }
-    };
-    Ok(NetworkView {
-        entries,
-        unreadable,
-        state,
-        problems,
-    })
-}
-
-/// The peers of `iface`, read for a handler that is about to rewrite them.
-///
-/// Read at submit time rather than carried through the form: a peer list in a
-/// hidden field is a list two tabs can fight over, and the peer routes rewrite
-/// exactly one interface's list.
-async fn stored_peers(app: &AppState, iface: &str) -> anyhow::Result<Vec<WireguardPeer>> {
-    let network = app.api.get_settings("network").await?;
-    let (entries, _) = parse_network(&network);
-    Ok(entries
-        .get(iface)
-        .and_then(|cfg| cfg.wireguard.as_ref())
-        .map(|wireguard| wireguard.peers.clone())
-        .unwrap_or_default())
-}
-
-/// Re-render the pane with `message` in an error box, at 422.
-async fn network_error(app: &AppState, message: &str) -> Response {
-    match load_network_view(app).await {
-        Ok(view) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            network_page(&view, Some(error_box(message))),
-        )
-            .into_response(),
-        Err(err) => bus_error(&err),
-    }
-}
-
-/// The dot-path of `iface`'s peer list, with the name quoted when it carries a
-/// dot: a tunnel named `wg.0` is `network."wg.0".wireguard.peers`.
 fn peers_settings_path(iface: &str) -> String {
     format!("{}.wireguard.peers", iface_settings_path(iface))
-}
-
-/// Display fields for one configured interface's form.
-struct IfaceDisplay {
-    dhcp: bool,
-    address: String,
-    gateway: String,
-    dns: String,
-}
-
-fn iface_display(cfg: &IfaceSettings) -> IfaceDisplay {
-    let static_ = cfg.static_.as_ref();
-    IfaceDisplay {
-        dhcp: cfg.dhcp,
-        address: static_.map(|s| s.address.clone()).unwrap_or_default(),
-        gateway: static_.and_then(|s| s.gateway.clone()).unwrap_or_default(),
-        dns: static_.map(|s| s.dns.join(", ")).unwrap_or_default(),
-    }
-}
-
-/// Render the typed inputs for every kind at once, with the current values
-/// filled in.
-///
-/// All four groups are always in the markup rather than hidden behind the
-/// selected kind, because this pane ships no JavaScript (§6.2 compiles the
-/// built-in UI into the binary as markup and one stylesheet) and a group that
-/// only appears after a reload cannot be filled in on the same visit. The
-/// handler reads only the group the submitted kind names, so a value left in
-/// another group's box is never written.
-fn kind_fields(kind: IfaceKind, cfg: Option<&IfaceSettings>) -> Markup {
-    let vlan = cfg.and_then(|cfg| cfg.vlan.as_ref());
-    let bridge = cfg.and_then(|cfg| cfg.bridge.as_ref());
-    let wireguard = cfg.and_then(|cfg| cfg.wireguard.as_ref());
-    html! {
-        p { label { "Kind" } " "
-            select name="kind" {
-                @for candidate in IFACE_KINDS {
-                    option value=(kind_name(candidate)) selected[candidate == kind] {
-                        (kind_name(candidate))
-                    }
-                }
-            }
-        }
-        p { label { "VLAN parent (kind vlan)" } " "
-            input type="text" name="vlanParent"
-                value=(vlan.map_or("", |vlan| vlan.parent.as_str())) placeholder="eth0"; }
-        p { label { "VLAN id (kind vlan)" } " "
-            input type="text" name="vlanId"
-                value=(vlan.map_or(String::new(), |vlan| vlan.id.to_string())) placeholder="100"; }
-        p { label { "Bridge ports (kind bridge, comma-separated)" } " "
-            input type="text" name="bridgePorts"
-                value=(bridge.map_or(String::new(), |bridge| bridge.ports.join(", "))) placeholder="eth1, eth2"; }
-        p { label { "WireGuard listen port (kind wireguard, optional)" } " "
-            input type="text" name="listenPort"
-                value=(wireguard.and_then(|wg| wg.listen_port).map_or(String::new(), |port| port.to_string()))
-                placeholder="51820"; }
-    }
-}
-
-/// The live-state facts mosd published for one interface.
-///
-/// `kind` and, for a tunnel, `publicKey`: the two fields M5 added to the
-/// per-interface state object. There is no private key here and no route that
-/// would produce one — the public half is what the far end needs and is public
-/// by definition.
-fn live_state_markup(view: &NetworkView, iface: &str) -> Markup {
-    html! {
-        @if let Some(live) = view.live(iface) {
-            p {
-                "Live: kind " b { (view.live_str(iface, "kind").unwrap_or("unknown")) }
-                @if let Some(file) = view.live_str(iface, "file") { ", unit " code { (file) } }
-                @if live.get("dhcp").and_then(Value::as_bool) == Some(true) { ", DHCP" }
-            }
-            @if let Some(public_key) = view.live_str(iface, "publicKey") {
-                p { "Public key: " code { (public_key) } }
-                p { "The private half is on this device in a file only systemd-networkd can read. It is never shown here, never in the API, and there is no route that returns one." }
-            }
-        } @else {
-            p { "Live: mosd has published no state for this interface yet." }
-        }
-    }
-}
-
-/// One tunnel's peer list, with a remove control per peer and an add form.
-fn peers_markup(iface: &str, wireguard: Option<&WireguardConfig>) -> Markup {
-    let peers = wireguard.map_or(&[][..], |wireguard| wireguard.peers.as_slice());
-    html! {
-        h3 { "Peers of " (iface) }
-        @if peers.is_empty() {
-            p { "No peers. A tunnel with no peers is a link that could never carry a packet, and the reconciler renders it but nothing reaches the far end." }
-        } @else {
-            ul {
-                @for peer in peers {
-                    li {
-                        code { (peer.public_key) }
-                        @if !peer.allowed_ips.is_empty() { " → " (peer.allowed_ips.join(", ")) }
-                        @if let Some(endpoint) = &peer.endpoint { " via " (endpoint) }
-                        @if let Some(keepalive) = peer.persistent_keepalive { " keepalive " (keepalive) "s" }
-                        form method="post" action="/network/peers/remove" {
-                            input type="hidden" name="iface" value=(iface);
-                            input type="hidden" name="publicKey" value=(peer.public_key);
-                            button type="submit" { "Remove" }
-                        }
-                    }
-                }
-            }
-        }
-        form method="post" action="/network/peers/add" {
-            fieldset {
-                legend { "Add a peer to " (iface) }
-                input type="hidden" name="iface" value=(iface);
-                p { label { "Public key (base64, 32 bytes)" } " "
-                    input type="text" name="publicKey" size="60" required; }
-                p { label { "Allowed IPs (comma-separated)" } " "
-                    input type="text" name="allowedIps" placeholder="10.8.0.0/24"; }
-                p { label { "Endpoint (optional, host:port)" } " "
-                    input type="text" name="endpoint" placeholder="vpn.example.net:51820"; }
-                p { label { "Persistent keepalive seconds (optional)" } " "
-                    input type="text" name="persistentKeepalive" placeholder="25"; }
-                p { button type="submit" { "Add peer" } }
-            }
-        }
-    }
-}
-
-fn network_page(view: &NetworkView, banner: Option<Markup>) -> Html<String> {
-    pane(
-        "Network",
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            @for problem in &view.problems { (error_box(problem)) }
-            @for name in &view.unreadable {
-                (error_box(&format!(
-                    "network.{name} holds a body this pane cannot read, so it is not shown and not editable here. Fix it in the settings file."
-                )))
-            }
-            @if view.entries.is_empty() { p { "No interfaces configured." } }
-            @for (name, cfg) in &view.entries {
-                form method="post" action="/network" {
-                    fieldset {
-                        legend { (name) }
-                        input type="hidden" name="iface" value=(name);
-                        @let display = iface_display(cfg);
-                        (iface_fields(display.dhcp, &display.address, &display.gateway, &display.dns))
-                        (kind_fields(cfg.kind, Some(cfg)))
-                        (live_state_markup(view, name))
-                        p { button type="submit" { "Save" } }
-                    }
-                }
-                @if cfg.kind == IfaceKind::Wireguard {
-                    (peers_markup(name, cfg.wireguard.as_ref()))
-                }
-            }
-            form method="post" action="/network" {
-                fieldset {
-                    legend { "Add interface" }
-                    p { label { "Interface name" } " "
-                        input type="text" name="iface" placeholder="eth0"; }
-                    (iface_fields(false, "", "", ""))
-                    (kind_fields(IfaceKind::Physical, None))
-                    p { button type="submit" { "Add" } }
-                }
-            }
-        },
-    )
-}
-
-async fn network_form(State(state): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
-    match load_network_view(&state).await {
-        Ok(view) => {
-            let banner = query.saved.is_some().then(saved_banner);
-            network_page(&view, banner).into_response()
-        }
-        Err(err) => bus_error(&err),
-    }
-}
-
-async fn network_submit(State(state): State<AppState>, Form(form): Form<NetworkForm>) -> Response {
-    let iface = form.iface.trim().to_string();
-    let view = match load_network_view(&state).await {
-        Ok(view) => view,
-        Err(err) => return bus_error(&err),
-    };
-    // The peers this form does not carry. A save that dropped them would
-    // silently disconnect every far end because the operator changed a listen
-    // port.
-    let peers = view
-        .entries
-        .get(&iface)
-        .and_then(|cfg| cfg.wireguard.as_ref())
-        .map(|wireguard| wireguard.peers.clone())
-        .unwrap_or_default();
-    let cfg = match iface_settings_from_form(&form, peers) {
-        Ok(cfg) => cfg,
-        Err(message) => return network_error(&state, &message).await,
-    };
-    // The candidate tree, not the one entry: every relational rule below is
-    // about two entries at once.
-    let mut candidate = view.entries.clone();
-    candidate.insert(iface.clone(), cfg.clone());
-    if let Err(message) = validate_entries(&candidate) {
-        return network_error(&state, &message).await;
-    }
-    // Infallible: `IfaceSettings` is a struct of scalars, strings and vectors
-    // with no map keys that could collide.
-    let value = serde_json::to_value(&cfg).expect("interface settings serialize");
-    if let Err(err) = state
-        .api
-        .set_settings(&iface_settings_path(&iface), &value)
-        .await
-    {
-        return bus_error(&err);
-    }
-    Redirect::to("/network?saved=1").into_response()
-}
-
-async fn network_peer_add(
-    State(state): State<AppState>,
-    Form(form): Form<PeerAddForm>,
-) -> Response {
-    let iface = form.iface.trim().to_string();
-    let peer = WireguardPeer {
-        public_key: form.public_key.trim().to_string(),
-        allowed_ips: comma_list(&form.allowed_ips),
-        endpoint: optional_field(&form.endpoint),
-        persistent_keepalive: match parse_optional_u16(&form.persistent_keepalive) {
-            Ok(value) => value,
-            Err(()) => {
-                return network_error(
-                    &state,
-                    "Persistent keepalive must be a whole number of seconds from 0 to 65535.",
-                )
-                .await;
-            }
-        },
-    };
-    let mut peers = match stored_peers(&state, &iface).await {
-        Ok(peers) => peers,
-        Err(err) => return bus_error(&err),
-    };
-    if peers
-        .iter()
-        .any(|other| other.public_key == peer.public_key)
-    {
-        return network_error(
-            &state,
-            "That public key is already a peer of this tunnel. Remove it first to change it.",
-        )
-        .await;
-    }
-    peers.push(peer);
-    write_peers(&state, &iface, &peers).await
-}
-
-async fn network_peer_remove(
-    State(state): State<AppState>,
-    Form(form): Form<PeerRemoveForm>,
-) -> Response {
-    let iface = form.iface.trim().to_string();
-    let public_key = form.public_key.trim();
-    let mut peers = match stored_peers(&state, &iface).await {
-        Ok(peers) => peers,
-        Err(err) => return bus_error(&err),
-    };
-    let before = peers.len();
-    peers.retain(|peer| peer.public_key != public_key);
-    if peers.len() == before {
-        return network_error(
-            &state,
-            "No peer of this tunnel has that public key; the list may have changed since the page was loaded.",
-        )
-        .await;
-    }
-    write_peers(&state, &iface, &peers).await
-}
-
-/// Validate and write a rewritten peer list.
-///
-/// The same shape `write_key_list` has for the SSH pane: the reconciler's own
-/// rule is echoed here for a readable error, and the write goes to the peer
-/// list's own dot-path rather than rewriting the whole entry.
-async fn write_peers(app: &AppState, iface: &str, peers: &[WireguardPeer]) -> Response {
-    if let Err(message) = validate_peers(iface, peers) {
-        return network_error(app, &message).await;
-    }
-    // Infallible: a peer is a struct of strings and integers.
-    let value = serde_json::to_value(peers).expect("wireguard peers serialize");
-    if let Err(err) = app
-        .api
-        .set_settings(&peers_settings_path(iface), &value)
-        .await
-    {
-        return bus_error(&err);
-    }
-    Redirect::to("/network?saved=1").into_response()
-}
-
-// Hostname pane
-
-#[derive(serde::Deserialize)]
-struct HostnameForm {
-    hostname: String,
-}
-
-fn hostname_page(current: &str, banner: Option<Markup>) -> Html<String> {
-    pane(
-        "Hostname",
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            form method="post" action="/hostname" {
-                p { label { "Hostname" } " "
-                    input type="text" name="hostname" value=(current) required; }
-                p { button type="submit" { "Save" } }
-            }
-        },
-    )
-}
-
-async fn hostname_form(State(state): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
-    match state.api.get_settings("hostname").await {
-        Ok(value) => {
-            let current = value.as_str().unwrap_or_default().to_string();
-            let banner = query.saved.is_some().then(saved_banner);
-            hostname_page(&current, banner).into_response()
-        }
-        Err(err) => bus_error(&err),
-    }
 }
 
 // Power pane
@@ -5883,114 +4344,13 @@ enum PowerAction {
 }
 
 impl PowerAction {
-    /// Path of the POST route performing this action.
-    fn path(self) -> &'static str {
-        match self {
-            Self::Reboot => "/power/reboot",
-            Self::PowerOff => "/power/poweroff",
-        }
-    }
-
-    /// Exact value the confirmation control must submit. The submit button
-    /// alone is not enough: the checkbox has to be ticked as well.
+    /// Stable action name used in the audit trail.
     fn confirm_token(self) -> &'static str {
         match self {
             Self::Reboot => "reboot",
             Self::PowerOff => "poweroff",
         }
     }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Reboot => "Reboot",
-            Self::PowerOff => "Power off",
-        }
-    }
-
-    /// Sentence shown next to the confirmation checkbox.
-    fn confirmation(self) -> &'static str {
-        match self {
-            Self::Reboot => "Yes, reboot this appliance now.",
-            Self::PowerOff => "Yes, power this appliance off now.",
-        }
-    }
-
-    /// Sentence shown on the acknowledgement page.
-    fn acknowledgement(self) -> &'static str {
-        match self {
-            Self::Reboot => {
-                "Reboot requested. The appliance is going down; this page will stop responding shortly."
-            }
-            Self::PowerOff => {
-                "Power-off requested. The appliance is shutting down and will need to be switched on by hand."
-            }
-        }
-    }
-}
-
-/// The confirmation form for one action.
-fn power_form_markup(action: PowerAction) -> Markup {
-    html! {
-        form method="post" action=(action.path()) {
-            fieldset {
-                legend { (action.label()) }
-                p { label {
-                    input type="checkbox" name="confirm" value=(action.confirm_token()) required;
-                    " " (action.confirmation())
-                } }
-                p { button type="submit" { (action.label()) } }
-            }
-        }
-    }
-}
-
-fn power_page(banner: Option<Markup>) -> Html<String> {
-    pane(
-        "Power",
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            p { "Rebooting is what activates a newly installed system slot. Both actions interrupt every service on this appliance." }
-            (power_form_markup(PowerAction::Reboot))
-            (power_form_markup(PowerAction::PowerOff))
-        },
-    )
-}
-
-async fn power_form() -> Html<String> {
-    power_page(None)
-}
-
-/// Confirmation checkbox, absent when unticked.
-#[derive(serde::Deserialize)]
-struct ConfirmForm {
-    #[serde(default)]
-    confirm: String,
-}
-
-/// Validate the confirmation, then hand the action to mosd on a detached task.
-///
-/// The response is built and returned without awaiting the D-Bus call: on a
-/// real appliance the machine may go down mid-call, and the operator should
-/// get a page rather than a dropped connection.
-fn power_submit(state: &AppState, action: PowerAction, confirm: &str, source: &str) -> Response {
-    if confirm != action.confirm_token() {
-        state
-            .audit
-            .record(action.confirm_token(), "unconfirmed", source);
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            power_page(Some(error_box(
-                "Tick the confirmation box before requesting a power action.",
-            ))),
-        )
-            .into_response();
-    }
-    dispatch_power_action(state, action, source);
-    (
-        StatusCode::ACCEPTED,
-        page(action.label(), html! { p { (action.acknowledgement()) } }),
-    )
-        .into_response()
 }
 
 /// Audit the request and hand the action to mosd on a detached task.
@@ -6020,22 +4380,6 @@ fn dispatch_power_action(state: &AppState, action: PowerAction, source: &str) {
             tracing::error!(action = action.confirm_token(), error = %err, "power action failed");
         }
     });
-}
-
-async fn power_reboot(
-    State(state): State<AppState>,
-    Source(source): Source,
-    Form(form): Form<ConfirmForm>,
-) -> Response {
-    power_submit(&state, PowerAction::Reboot, &form.confirm, &source)
-}
-
-async fn power_poweroff(
-    State(state): State<AppState>,
-    Source(source): Source,
-    Form(form): Form<ConfirmForm>,
-) -> Response {
-    power_submit(&state, PowerAction::PowerOff, &form.confirm, &source)
 }
 
 /// The 202 both power verbs answer, and the reason it is 202.
@@ -6078,12 +4422,13 @@ fn power_accepted(state: &AppState, action: PowerAction, source: &str) -> Respon
     tag = "actions",
     responses(
         (status = 202, description = "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_reboot(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Source(source): Source,
 ) -> Response {
@@ -6101,12 +4446,13 @@ pub(crate) async fn api_v1_reboot(
     tag = "actions",
     responses(
         (status = 202, description = "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_poweroff(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(state): State<AppState>,
     Source(source): Source,
 ) -> Response {
@@ -6114,28 +4460,6 @@ pub(crate) async fn api_v1_poweroff(
 }
 
 // Hostname submit
-
-async fn hostname_submit(
-    State(state): State<AppState>,
-    Form(form): Form<HostnameForm>,
-) -> Response {
-    let hostname = form.hostname.trim();
-    if !valid_hostname(hostname) {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            hostname_page(hostname, Some(error_box(HOSTNAME_RULES))),
-        )
-            .into_response();
-    }
-    if let Err(err) = state
-        .api
-        .set_settings("hostname", &Value::String(hostname.to_string()))
-        .await
-    {
-        return bus_error(&err);
-    }
-    Redirect::to("/hostname?saved=1").into_response()
-}
 
 // SSH pane
 
@@ -6150,10 +4474,6 @@ const SSH_KEYS_PATH: &str = "access.ssh.authorizedKeys";
 /// nothing manufactures exactly that misunderstanding. A test asserts the
 /// sentence renders, so a later refactor cannot quietly drop it.
 const ROOT_KEY_NOTICE: &str = "Every authorized key is a root key.";
-
-/// Exact value the transient-password confirmation control must submit, in the
-/// same shape as the power actions' `confirm_token`.
-const TRANSIENT_CONFIRM_TOKEN: &str = "set-transient-password";
 
 /// Shortest transient password accepted, in bytes; mosd's own floor.
 const MIN_TRANSIENT_PASSWORD_BYTES: usize = 8;
@@ -6212,683 +4532,6 @@ fn parse_key_list(ssh: &Value) -> anyhow::Result<Vec<AuthorizedKey>> {
     }
 }
 
-/// Everything the SSH pane renders, gathered before any markup is built.
-struct SshView {
-    /// `access.ssh.enabled` — what the operator asked for.
-    enabled: bool,
-    /// The stored key list; empty when it is absent or could not be read.
-    keys: Vec<AuthorizedKey>,
-    /// Live state published by mosd's sshd reconciler, absent when mosd has
-    /// published none yet.
-    state: Option<Value>,
-    /// Why the key list or the live state could not be read, if either failed.
-    problems: Vec<String>,
-}
-
-impl SshView {
-    /// A boolean published by the sshd reconciler, `None` when the state is
-    /// missing or carries something else at that key.
-    fn flag(&self, key: &str) -> Option<bool> {
-        self.state.as_ref()?.get(key)?.as_bool()
-    }
-}
-
-/// Load the settings half and the live-state half of the pane.
-///
-/// A failure to read `access.ssh` is fatal to the pane (there is nothing to
-/// show); a failure to read the live state is not, because the stored settings
-/// and the key list are still worth showing and mosd may simply not have
-/// reconciled yet.
-async fn load_ssh_view(app: &AppState) -> anyhow::Result<SshView> {
-    let ssh = app.api.get_settings("access.ssh").await?;
-    let enabled = ssh.get("enabled").and_then(Value::as_bool).unwrap_or(false);
-    let mut problems = Vec::new();
-    let keys = match parse_key_list(&ssh) {
-        Ok(keys) => keys,
-        Err(err) => {
-            problems.push(err.to_string());
-            Vec::new()
-        }
-    };
-    let state = match app.api.get_state("sshd").await {
-        Ok(value) => Some(value),
-        Err(err) => {
-            problems.push(format!("Live sshd state unavailable: {err}"));
-            None
-        }
-    };
-    Ok(SshView {
-        enabled,
-        keys,
-        state,
-        problems,
-    })
-}
-
-/// Read the stored key list for a handler that is about to rewrite it.
-async fn stored_keys(app: &AppState) -> anyhow::Result<Vec<AuthorizedKey>> {
-    parse_key_list(&app.api.get_settings("access.ssh").await?)
-}
-
-/// Validate and write a rewritten key list.
-async fn write_key_list(app: &AppState, keys: &[AuthorizedKey]) -> Response {
-    // The same validator mosd runs before rendering the file, so a list this
-    // pane accepts is a list the reconciler will accept too.
-    if let Err(err) = validate_authorized_keys(keys) {
-        return ssh_error(app, &key_error_message(&err)).await;
-    }
-    // Infallible: `AuthorizedKey` is a struct of strings with no map keys that
-    // could collide.
-    let value = serde_json::to_value(keys).expect("authorized keys serialize");
-    match app.api.set_settings(SSH_KEYS_PATH, &value).await {
-        Ok(task_id) => task_redirect("/ssh", &task_id),
-        Err(err) => bus_error(&err),
-    }
-}
-
-/// Re-render the pane with `message` in an error box, at 422.
-async fn ssh_error(app: &AppState, message: &str) -> Response {
-    match load_ssh_view(app).await {
-        Ok(view) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            ssh_page(&view, Some(error_box(message)), None),
-        )
-            .into_response(),
-        Err(err) => bus_error(&err),
-    }
-}
-
-/// A tri-state flag from the published state; `None` is "unknown", never a
-/// bare "no", because the two mean different things to an operator.
-fn state_flag(value: Option<bool>, yes: &'static str, no: &'static str) -> &'static str {
-    match value {
-        Some(true) => yes,
-        Some(false) => no,
-        None => "unknown",
-    }
-}
-
-/// The transient-password form, in the same confirmation shape as the power
-/// actions: a required checkbox whose value is the token the handler insists
-/// on, so the submit button alone cannot set a root password.
-fn transient_password_form() -> Markup {
-    html! {
-        form method="post" action="/ssh/password" {
-            fieldset {
-                legend { "Transient root password" }
-                p { "This password lasts until the next reboot. The next boot clears it, so it is a way in for one session, not a credential to keep; persistent access is by the authorized keys below." }
-                p { label { "Password (8 to 72 bytes)" } " "
-                    input type="password" name="password" required minlength="8" maxlength="72"; }
-                p { label {
-                    input type="checkbox" name="confirm" value=(TRANSIENT_CONFIRM_TOKEN) required;
-                    " Yes, allow password login as root until the next reboot."
-                } }
-                p { button type="submit" { "Set password" } }
-            }
-        }
-    }
-}
-
-/// One stored key, as fingerprint and comment only.
-fn key_entry_markup(entry: &AuthorizedKey) -> Markup {
-    html! {
-        li {
-            @match ssh_fingerprint(&entry.key) {
-                Some(fingerprint) => {
-                    code { (fingerprint) }
-                    @if let Some(comment) = &entry.comment { " " (comment) }
-                    form method="post" action="/ssh/keys/remove" {
-                        input type="hidden" name="identifier" value=(fingerprint);
-                        button type="submit" { "Remove" }
-                    }
-                }
-                // No fingerprint means the blob does not decode, which nothing
-                // that went through this pane can produce. Such an entry gets
-                // no Remove button rather than a button carrying the key text:
-                // the pane never puts key material on the page, and a settings
-                // file hand-edited into this state is edited back the same way.
-                None => {
-                    "(key with no readable fingerprint)"
-                    @if let Some(comment) = &entry.comment { " " (comment) }
-                }
-            }
-        }
-    }
-}
-
-fn ssh_page(view: &SshView, banner: Option<Markup>, refresh: Option<&str>) -> Html<String> {
-    let effective = view.flag("passwordAuthentication");
-    let requested = view.flag("passwordAuthenticationRequested");
-    let transient_active = view.flag("transientPasswordActive");
-    refreshing_pane(
-        "SSH",
-        refresh,
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            @for problem in &view.problems { (error_box(problem)) }
-            p { b { (ROOT_KEY_NOTICE) } " sshd is pointed at one shared key list for every account, so a key added below logs in as root — adding a colleague's key grants them root on this appliance, not an unprivileged shell." }
-
-            h2 { "Service" }
-            p { "SSH: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
-            p { "Password authentication: " b { (state_flag(effective, "yes", "no")) } }
-            @if requested == Some(true) && effective == Some(false) {
-                p { "Password authentication is switched on in settings but off in sshd: it stays off until a transient root password is set, because the root account ships with no password and offering an authentication method that cannot succeed helps nobody." }
-            }
-            p { "Transient root password: " b { (state_flag(transient_active, "active until the next reboot", "not set")) } }
-
-            form method="post" action="/ssh/enable" {
-                fieldset {
-                    legend { "Service" }
-                    p { label { input type="checkbox" name="enabled" checked[view.enabled]; " Enable SSH" } }
-                    p { button type="submit" { "Save" } }
-                }
-            }
-
-            (transient_password_form())
-
-            h2 { "Authorized keys" }
-            @if view.keys.is_empty() {
-                p { "No authorized keys. Nobody can log in by key until one is added." }
-            } @else {
-                ul {
-                    @for entry in &view.keys { (key_entry_markup(entry)) }
-                }
-            }
-            form method="post" action="/ssh/keys/add" {
-                fieldset {
-                    legend { "Add a key" }
-                    p { "One public key line, as " code { "ssh-keygen" } " prints it: " code { "<type> <base64> [comment]" } ". The comment is a label only; it does not restrict what the key can do." }
-                    p { input type="text" name="key" size="80" required; }
-                    p { button type="submit" { "Add key" } }
-                }
-            }
-        },
-    )
-}
-
-async fn ssh_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
-    match load_ssh_view(&app).await {
-        Ok(view) => {
-            let task = match query.task.as_deref() {
-                Some(task_id) => Some(task_pane_status(&app, task_id, "/ssh").await),
-                None => None,
-            };
-            let banner = task
-                .as_ref()
-                .map(|status| status.banner.clone())
-                .or_else(|| query.saved.is_some().then(saved_banner));
-            let refresh = task.as_ref().and_then(|status| status.refresh.as_deref());
-            ssh_page(&view, banner, refresh).into_response()
-        }
-        Err(err) => bus_error(&err),
-    }
-}
-
-/// The enable toggle; absent when unticked.
-#[derive(serde::Deserialize)]
-struct SshEnableForm {
-    enabled: Option<String>,
-}
-
-async fn ssh_enable(State(app): State<AppState>, Form(form): Form<SshEnableForm>) -> Response {
-    let enabled = form.enabled.is_some();
-    let task_id = match app
-        .api
-        .set_settings("access.ssh.enabled", &Value::Bool(enabled))
-        .await
-    {
-        Ok(task_id) => task_id,
-        Err(err) => return bus_error(&err),
-    };
-    task_redirect("/ssh", &task_id)
-}
-
-/// Everything the container pane renders, gathered before any markup is built.
-struct ContainerView {
-    /// `container.enabled` -- what the operator asked for.
-    enabled: bool,
-    /// Live state published by mosd's container reconciler, absent when mosd
-    /// has published none yet.
-    state: Option<Value>,
-    /// Why the settings or the live state could not be read, if either failed.
-    problems: Vec<String>,
-}
-
-impl ContainerView {
-    /// A string field of the published live state.
-    fn text(&self, key: &str) -> Option<&str> {
-        self.state.as_ref()?.get(key)?.as_str()
-    }
-
-    /// A list field of the published live state, as displayable strings.
-    fn list(&self, key: &str) -> Vec<String> {
-        self.state
-            .as_ref()
-            .and_then(|state| state.get(key))
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-}
-
-async fn load_container_view(app: &AppState) -> anyhow::Result<ContainerView> {
-    let container = app.api.get_settings("container").await?;
-    let enabled = container
-        .get("enabled")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let mut problems = Vec::new();
-    let state = match app.api.get_state("container").await {
-        Ok(value) => Some(value),
-        Err(err) => {
-            problems.push(format!("Live container state unavailable: {err}"));
-            None
-        }
-    };
-    Ok(ContainerView {
-        enabled,
-        state,
-        problems,
-    })
-}
-
-/// The consequence of switching this on, stated specifically.
-///
-/// The pane must say so *"not as a generic warning, but as the specific
-/// consequence"*. mos does not build rootless, so there is
-/// no user-namespace boundary between a container and the device: a container
-/// runs with root's capabilities. Saying "containers may be a security risk"
-/// would be true, useless, and would let an operator agree with it without
-/// learning anything.
-const CONTAINER_ROOT_NOTICE: &str = "Containers on this device run as root. Rootless mode is not built, so a container is not confined to an unprivileged user: anything that can write a .container file into the Quadlet directory can run code with root's capabilities on this appliance.";
-
-fn containers_page(view: &ContainerView, banner: Option<Markup>) -> Html<String> {
-    let files = view.list("quadletFiles");
-    let units = view.list("generatedUnits");
-    let stopped = view.list("stoppedUnits");
-    pane(
-        "Containers",
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            @for problem in &view.problems { (error_box(problem)) }
-            p { b { (CONTAINER_ROOT_NOTICE) } }
-
-            h2 { "Engine" }
-            p { "Containers: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
-            @if let Some(state) = view.text("quadletMountState") {
-                p { "Quadlet directory: " b { (state) } " (" code { "/etc/containers/systemd" } ")" }
-            }
-            p {
-                "mos does not orchestrate containers. It provides the engine and turns "
-                code { ".container" } " files into systemd units; what runs, in what order, and how "
-                "containers reach each other is described in " code { "docs/design/containers.md" } "."
-            }
-
-            form method="post" action="/containers/enable" {
-                fieldset {
-                    legend { "Engine" }
-                    p { label { input type="checkbox" name="enabled" checked[view.enabled]; " Enable containers" } }
-                    p { button type="submit" { "Save" } }
-                }
-            }
-
-            h2 { "Quadlet files" }
-            @if !view.enabled {
-                p {
-                    "Not listed while containers are disabled: the directory is not mounted, so what is "
-                    "on persistent storage is not what the generator would read. Enable the engine to see it."
-                }
-            } @else if files.is_empty() {
-                p { "No " code { ".container" } " files. Nothing to run." }
-            } @else {
-                ul { @for f in &files { li { code { (f) } } } }
-                @if units.is_empty() {
-                    p {
-                        b { "Files are present but no unit was generated." }
-                        " Quadlet parsed the directory and produced nothing, which usually means a "
-                        "syntax error in one of the files above. " code { "journalctl -u systemd-generator" }
-                        " on the device carries the parse error."
-                    }
-                }
-            }
-
-            @if !units.is_empty() {
-                h2 { "Generated units" }
-                ul { @for u in &units { li { code { (u) } } } }
-            }
-            @if !stopped.is_empty() {
-                h2 { "Stopped by the last change" }
-                ul { @for u in &stopped { li { code { (u) } } } }
-            }
-        },
-    )
-}
-
-async fn containers_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
-    match load_container_view(&app).await {
-        Ok(view) => {
-            let banner = query.saved.is_some().then(saved_banner);
-            containers_page(&view, banner).into_response()
-        }
-        Err(err) => bus_error(&err),
-    }
-}
-
-/// The enable toggle; absent when unticked.
-#[derive(serde::Deserialize)]
-struct ContainerEnableForm {
-    enabled: Option<String>,
-}
-
-async fn containers_enable(
-    State(app): State<AppState>,
-    Form(form): Form<ContainerEnableForm>,
-) -> Response {
-    let enabled = form.enabled.is_some();
-    if let Err(err) = app
-        .api
-        .set_settings("container.enabled", &Value::Bool(enabled))
-        .await
-    {
-        return bus_error(&err);
-    }
-    Redirect::to("/containers?saved=1").into_response()
-}
-
-// The MQTT pane
-
-/// The two units mosd's mqtt reconciler drives, named here because the pane
-/// selects their published state out of the `units` array by name.
-///
-/// These must match `BROKER_UNIT` and `BRIDGE_UNIT` in
-/// `mosd/mosd/src/reconciler/mqtt.rs`; the reconciler's
-/// `the_published_shape_is_the_contract_with_the_apid_pane` asserts both names
-/// appear in what it publishes.
-const MQTT_BROKER_UNIT: &str = "mos-mqtt-broker.service";
-const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
-
-/// Everything the MQTT pane renders, gathered before any markup is built.
-///
-/// The live state this reads is published by mosd's mqtt reconciler
-/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is nested, not flat:
-/// `listen.address`, `listen.port`, `auth.enabled`, and a `units` array of one
-/// object per unit the reconciler drives. The pane adapts to that shape rather
-/// than the reconciler flattening itself for the pane, because the live state
-/// mirrors the settings subtree it applied (`mqtt.listen.address` in settings,
-/// `listen.address` in state), because it is published as bus items where
-/// `/mqtt/listen/address` is the idiomatic path shape, and because `units` has
-/// to be an array: the reconciler drives two units and a flat `activeState`
-/// cannot say whose state it is. Every entry carries its own `unit`,
-/// `activeState` and `unitFileState`, so the broker is the entry named
-/// `mos-mqtt-broker.service` and the bridge the one named `mos-mqttd.service`,
-/// and neither needs a key of its own.
-///
-/// Every field is optional here: a key the reconciler has not published renders
-/// as "unknown" and never as a default, because a listen address on this page
-/// is a claim about what the broker is actually bound to. apid and mosd are
-/// separate crates talking over a bus, so no shared type holds the two ends
-/// together; what does is a pair of tests — the reconciler asserts its exact
-/// published key set and names this file as the consumer, and this crate's
-/// fixture is a verbatim copy of the reconciler's own expectation. Without that
-/// pair each side tests itself against a shape it invented, and both stay green
-/// while disagreeing.
-struct MqttView {
-    /// `mqtt.enabled` -- what the operator asked for.
-    enabled: bool,
-    /// Live state published by mosd's mqtt reconciler, absent when mosd has
-    /// published none yet.
-    state: Option<Value>,
-    /// Why the settings or the live state could not be read, if either failed.
-    problems: Vec<String>,
-}
-
-impl MqttView {
-    /// A value from the published live state, addressed by its path down the
-    /// nested tree: `["listen", "address"]` reads `listen.address`.
-    fn at(&self, path: &[&str]) -> Option<&Value> {
-        path.iter()
-            .try_fold(self.state.as_ref()?, |value, key| value.get(key))
-    }
-
-    /// A string field of the published live state.
-    fn text(&self, path: &[&str]) -> Option<&str> {
-        self.at(path)?.as_str()
-    }
-
-    /// A boolean field of the published live state.
-    fn flag(&self, path: &[&str]) -> Option<bool> {
-        self.at(path)?.as_bool()
-    }
-
-    /// The published listen port.
-    fn port(&self) -> Option<u64> {
-        self.at(&["listen", "port"])?.as_u64()
-    }
-
-    /// One entry of the published `units` array, selected by its `unit` field.
-    ///
-    /// By name, never by index. The array is ordered broker-then-bridge today
-    /// and nothing promises it stays that way; an index would still return a
-    /// unit on the day that order changed, and the page would report the
-    /// bridge's state under the broker's name with no test anywhere failing.
-    fn unit(&self, name: &str) -> Option<&Value> {
-        self.at(&["units"])?
-            .as_array()?
-            .iter()
-            .find(|unit| unit.get("unit").and_then(Value::as_str) == Some(name))
-    }
-
-    /// A field of one published unit; "unknown" when the reconciler has
-    /// published no such unit, or no such field on it.
-    fn unit_field(&self, name: &str, field: &str) -> &str {
-        self.unit(name)
-            .and_then(|unit| unit.get(field))
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-    }
-
-    /// Whether the broker unit is in systemd's `failed` state.
-    ///
-    /// This is how a listen address the broker cannot use reaches the
-    /// operator. Nothing rejects such a value -- not the reconciler, not this
-    /// pane -- because rejecting it would make the master switch depend on
-    /// `listen` being valid, and the two are separate settings. The
-    /// broker takes the value, fails to parse it and exits, and the only
-    /// evidence is the unit state. A pane that showed "enabled" and stopped
-    /// there would be reporting the operator's request back to them as though
-    /// it were an outcome.
-    fn broker_failed(&self) -> bool {
-        self.unit_field(MQTT_BROKER_UNIT, "activeState") == "failed"
-    }
-
-    /// The same for the bridge, which fails for its own reasons and has its
-    /// own journal.
-    fn bridge_failed(&self) -> bool {
-        self.unit_field(MQTT_BRIDGE_UNIT, "activeState") == "failed"
-    }
-
-    /// Whether the published listener would accept a connection from off this
-    /// device without asking for a password.
-    ///
-    /// The same rule the broker itself applies -- not loopback, and auth off
-    /// -- so the pane and the journal describe the same configuration the same
-    /// way. An address the pane cannot parse is not reported as off-host: the
-    /// broker fails to start on one it cannot parse, and guessing would put a
-    /// security claim on the page that nothing measured.
-    ///
-    /// This drives a warning and nothing else; refusing to save on it would
-    /// couple the switch to the listener. See [`MQTT_SEPARATE_CONFIG_NOTICE`].
-    fn off_host_unauthenticated(&self) -> bool {
-        let Some(address) = self
-            .text(&["listen", "address"])
-            .and_then(|address| address.parse::<IpAddr>().ok())
-        else {
-            return false;
-        };
-        !address.is_loopback() && self.flag(&["auth", "enabled"]) == Some(false)
-    }
-}
-
-async fn load_mqtt_view(app: &AppState) -> anyhow::Result<MqttView> {
-    let mqtt = app.api.get_settings("mqtt").await?;
-    let enabled = mqtt
-        .get("enabled")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let mut problems = Vec::new();
-    let state = match app.api.get_state("mqtt").await {
-        Ok(value) => Some(value),
-        Err(err) => {
-            problems.push(format!("Live MQTT state unavailable: {err}"));
-            None
-        }
-    };
-    Ok(MqttView {
-        enabled,
-        state,
-        problems,
-    })
-}
-
-/// The bridge's application-only scope. This belongs on the operator-facing
-/// pane because enabling the network service must not imply that system
-/// management settings become remote-control topics.
-const MQTT_SCOPE_NOTICE: &str = "The bridge carries only com.mos application item trees enrolled by exact service name. com.mos.mosd has no MQTT access. System management functions — including SSH, networking, credentials, containers, MQTT configuration, health, updates and power — remain available through APID and are never published or written through MQTT.";
-
-/// Why nothing on this page refuses to save.
-///
-/// The switch does not couple to the listener: it never refuses to enable
-/// MQTT because the bind is not loopback or authentication is off. The pane is
-/// where an operator would otherwise assume the switch checks them, so the
-/// pane is where it says that it does not.
-const MQTT_SEPARATE_CONFIG_NOTICE: &str = "The listen address, the port and authentication are configured separately from this switch, and this switch does not validate them. No combination of them makes it refuse to save, and none of them makes the broker refuse to start: a broker open to a trusted segment is a configuration an operator is allowed to choose, so mos warns about it rather than preventing it.";
-
-/// The exposure, stated as what it lets a stranger do.
-const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated connections from the network. It is bound off loopback with authentication disabled, so any host that can reach that address can publish and subscribe on this device without a password.";
-
-/// A failed broker, and where the reason is.
-///
-/// The pane cannot say why it failed -- it has a unit state and not the
-/// journal -- so it says where the reason is instead of guessing at one. The
-/// commonest cause is a listen address that is not an IP address, because the
-/// broker binds an interface and does not resolve names, but naming that as
-/// the cause here would be a diagnosis the pane has not made.
-const MQTT_BROKER_FAILED_NOTICE: &str = "The broker unit has failed: MQTT is switched on, but mos-mqtt-broker.service is not running and the bridge has nothing to connect to. Run journalctl -u mos-mqtt-broker on the device for the reason it exited.";
-
-/// The same for the other half of the switch, with its own journal.
-///
-/// The switch drives both units, so both can fail, and they fail for
-/// unrelated reasons -- the bridge's are about the cloud endpoint it dials and
-/// not about the listener. Folding the two into one notice would send an
-/// operator to the wrong journal half the time.
-const MQTT_BRIDGE_FAILED_NOTICE: &str = "The bridge unit has failed: MQTT is switched on, but mos-mqttd.service is not running, so nothing is being carried between this device and the cloud. Run journalctl -u mos-mqttd on the device for the reason it exited.";
-
-fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
-    let address = view.text(&["listen", "address"]).unwrap_or("unknown");
-    let port = view
-        .port()
-        .map_or_else(|| "unknown".to_string(), |port| port.to_string());
-    // Each unit's own state, pulled out of the `units` array by name -- see
-    // `MqttView::unit`.
-    let broker = view.unit_field(MQTT_BROKER_UNIT, "activeState");
-    let bridge = view.unit_field(MQTT_BRIDGE_UNIT, "activeState");
-    pane(
-        "MQTT",
-        html! {
-            @if let Some(banner) = banner { (banner) }
-            @for problem in &view.problems { (error_box(problem)) }
-            p { b { (MQTT_SCOPE_NOTICE) } }
-
-            h2 { "Switch" }
-            p { "MQTT: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
-            // What the switch was asked to do, and what came of it, are two
-            // different facts and the pane reports both: "enabled" above is
-            // the request, the unit states are the outcome. Both units,
-            // because the switch drives both -- a page carrying only the
-            // broker would leave an operator with MQTT "on", a healthy broker
-            // and no way to see that the bridge had died.
-            p {
-                "Broker unit: " b { (broker) }
-                " (" code { (MQTT_BROKER_UNIT) } ", unit file "
-                (view.unit_field(MQTT_BROKER_UNIT, "unitFileState")) ")"
-            }
-            p {
-                "Bridge unit: " b { (bridge) }
-                " (" code { (MQTT_BRIDGE_UNIT) } ", unit file "
-                (view.unit_field(MQTT_BRIDGE_UNIT, "unitFileState")) ")"
-            }
-            @if view.broker_failed() { (error_box(MQTT_BROKER_FAILED_NOTICE)) }
-            @if view.bridge_failed() { (error_box(MQTT_BRIDGE_FAILED_NOTICE)) }
-            p {
-                "One switch drives both halves: the broker (" code { (MQTT_BROKER_UNIT) }
-                ") and the bridge (" code { (MQTT_BRIDGE_UNIT) } "). Turning it off stops both, "
-                "and there is no setting that runs one without the other."
-            }
-
-            form method="post" action="/mqtt/enable" {
-                fieldset {
-                    legend { "Switch" }
-                    p { label { input type="checkbox" name="enabled" checked[view.enabled]; " Enable MQTT" } }
-                    p { button type="submit" { "Save" } }
-                }
-            }
-
-            h2 { "Listener" }
-            p { "Listen address: " b { (address) } }
-            p { "Listen port: " b { (port) } }
-            p { "Authentication: " b { (state_flag(view.flag(&["auth", "enabled"]), "enabled", "disabled")) } }
-            @if view.enabled && view.off_host_unauthenticated() {
-                (error_box(MQTT_OPEN_LISTENER_WARNING))
-            }
-            p { (MQTT_SEPARATE_CONFIG_NOTICE) }
-        },
-    )
-}
-
-async fn mqtt_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
-    match load_mqtt_view(&app).await {
-        Ok(view) => {
-            let banner = query.saved.is_some().then(saved_banner);
-            mqtt_page(&view, banner).into_response()
-        }
-        Err(err) => bus_error(&err),
-    }
-}
-
-/// The enable toggle; absent when unticked.
-#[derive(serde::Deserialize)]
-struct MqttEnableForm {
-    enabled: Option<String>,
-}
-
-async fn mqtt_enable(State(app): State<AppState>, Form(form): Form<MqttEnableForm>) -> Response {
-    let enabled = form.enabled.is_some();
-    // One path, and deliberately only one: the switch writes nothing about the
-    // listener or about authentication, so saving it can never rewrite a
-    // decision the operator made elsewhere.
-    if let Err(err) = app
-        .api
-        .set_settings("mqtt.enabled", &Value::Bool(enabled))
-        .await
-    {
-        return bus_error(&err);
-    }
-    Redirect::to("/mqtt?saved=1").into_response()
-}
-
-#[derive(serde::Deserialize)]
-struct SshPasswordForm {
-    #[serde(default)]
-    confirm: String,
-    #[serde(default)]
-    password: String,
-}
-
 /// Bounds and forbidden bytes for a transient password.
 ///
 /// No message echoes the password, and no branch here logs it: the only place
@@ -6908,35 +4551,6 @@ fn validate_transient_password(password: &str) -> Result<(), String> {
         return Err("Password must not contain a NUL, newline or carriage return.".to_string());
     }
     Ok(())
-}
-
-/// Set a transient root password.
-///
-/// The password is never written into the settings tree and never logged: it
-/// is read out of the form, checked, handed to mosd, and dropped.
-async fn ssh_password(
-    State(app): State<AppState>,
-    Source(source): Source,
-    Form(form): Form<SshPasswordForm>,
-) -> Response {
-    if form.confirm != TRANSIENT_CONFIRM_TOKEN {
-        return ssh_error(
-            &app,
-            "Tick the confirmation box before setting a transient root password.",
-        )
-        .await;
-    }
-    if let Err(message) = validate_transient_password(&form.password) {
-        return ssh_error(&app, &message).await;
-    }
-    let task_id = match app.api.set_transient_root_password(&form.password).await {
-        Ok(task_id) => task_id,
-        Err(err) => return bus_error(&err),
-    };
-    // The event carries who opened a password channel and from where — and
-    // deliberately nothing about the password itself.
-    app.audit.record("transient-password", "set", &source);
-    task_redirect("/ssh", &task_id)
 }
 
 /// `POST /api/v1/actions/transient-root-password` request body.
@@ -6970,7 +4584,8 @@ pub(crate) struct TransientRootPasswordRequest {
     responses(
         (status = 202, description = "The transient root password hash was written and its scoped apply was queued", body = TaskAccepted),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)", body = ApiError),
         (status = 422, description = "The password is shorter than 8 bytes, longer than 72, or contains a NUL, newline or carriage return (`validation_failed`); the message states the bound and never the password", body = ApiError),
         (status = 500, description = "mosd failed to set it (`mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -6979,7 +4594,7 @@ pub(crate) struct TransientRootPasswordRequest {
     ),
 )]
 pub(crate) async fn api_v1_transient_root_password(
-    _bearer: ApiBearer,
+    _credential: ApiCredential,
     State(app): State<AppState>,
     Source(source): Source,
     body: Result<Json<TransientRootPasswordRequest>, axum::extract::rejection::JsonRejection>,
@@ -7014,66 +4629,4 @@ pub(crate) async fn api_v1_transient_root_password(
     // deliberately nothing about the password itself.
     app.audit.record("transient-password", "set", &source);
     api_response(StatusCode::ACCEPTED, TaskAccepted { task_id })
-}
-
-#[derive(serde::Deserialize)]
-struct SshKeyAddForm {
-    #[serde(default)]
-    key: String,
-}
-
-async fn ssh_key_add(State(app): State<AppState>, Form(form): Form<SshKeyAddForm>) -> Response {
-    // Handed to the shared parser exactly as submitted. Nothing is trimmed:
-    // a leading or trailing space is one of the things that parser exists to
-    // reject, and trimming here would accept a line mosd would not.
-    let parsed = match parse_authorized_key(&form.key) {
-        Ok(parsed) => parsed,
-        Err(err) => return ssh_error(&app, &key_error_message(&err)).await,
-    };
-    let mut keys = match stored_keys(&app).await {
-        Ok(keys) => keys,
-        Err(err) => return ssh_error(&app, &err.to_string()).await,
-    };
-    keys.push(parsed);
-    write_key_list(&app, &keys).await
-}
-
-#[derive(serde::Deserialize)]
-struct SshKeyRemoveForm {
-    #[serde(default)]
-    identifier: String,
-}
-
-/// Remove one key, identified by fingerprint or by exact canonical key text.
-///
-/// Never by list index: an index is only meaningful against the list the
-/// operator was looking at, so a key added or removed by another session
-/// between the render and the submit would slide it onto a different key and
-/// delete something nobody asked to delete. A fingerprint names one key
-/// wherever it has moved to.
-///
-/// An identifier matching nothing is an error, not a silent success: "removed"
-/// when nothing was removed is how an operator ends up believing access was
-/// withdrawn while the key still grants root.
-async fn ssh_key_remove(
-    State(app): State<AppState>,
-    Form(form): Form<SshKeyRemoveForm>,
-) -> Response {
-    let mut keys = match stored_keys(&app).await {
-        Ok(keys) => keys,
-        Err(err) => return ssh_error(&app, &err.to_string()).await,
-    };
-    let found = keys.iter().position(|entry| {
-        entry.key == form.identifier
-            || ssh_fingerprint(&entry.key).as_deref() == Some(form.identifier.as_str())
-    });
-    let Some(index) = found else {
-        return ssh_error(
-            &app,
-            "No authorized key matches that fingerprint. The list may have changed since this page was loaded; reload it and try again.",
-        )
-        .await;
-    };
-    keys.remove(index);
-    write_key_list(&app, &keys).await
 }

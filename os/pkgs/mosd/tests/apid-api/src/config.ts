@@ -24,9 +24,9 @@ export interface Config {
   readonly httpPort: number;
   /** Path to the captured QEMU console log, if the caller captured one. */
   readonly consoleLog: string | undefined;
-  /** Admin password the suite sets during /setup and reuses at /login. */
+  /** Admin password the suite sets and reuses through the JSON session API. */
   readonly adminPassword: string;
-  /** Hostname the mutate phase renames the device to. */
+  /** Hostname the setup phase assigns and the management phase reads back. */
   readonly hostnameTarget: string;
   /** Phase ids to run, or undefined for "all of them, in registry order". */
   readonly phases: readonly string[] | undefined;

@@ -25,7 +25,7 @@ KEY_DIR="${STATE_DIR}/networkd-secrets"
 SECRETS_DIR="${STATE_DIR}/secrets"
 NET_USER=systemd-network
 
-# Names nothing else in this suite writes. 05b-wireguard owns `wg-e2e`; a
+# Names nothing else in this suite writes; a
 # collision would make one phase's teardown another phase's failure.
 VLAN_ID=4094
 BRIDGE_DEV=m7br0

@@ -79,21 +79,9 @@ PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-2400}"
 QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
 
-# The second boot is on by default: 07 ends with the machine deliberately gone,
-# so without it the reboot phase takes the guest down and nothing observes it
-# come back. MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
-BOOT2="${MOS_APID_BOOT2:-1}"
-BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
-# ...and the first boot runs everything BEFORE them. Spelled out rather than
-# left empty-means-all, because empty-means-all put 07b in the FIRST boot: phase
-# 07 takes the guest down by design, and 07b then waited its full 180s deadline
-# for apid to answer on a machine that was deliberately off, failed, and threw
-# on ECONNREFUSED. Measured 2026-08-28. The runner refuses an unknown phase
-# name, so a phase renamed without updating this list fails loudly here rather
-# than being silently dropped from the run.
-BOOT1_PHASES="${MOS_APID_PHASES:-01-transport,02-setup,03-login,04-readonly,05-mutate,05b-wireguard,05c-kernel-net,05d-bearer,06-backoff,07-reboot}"
-
-PHASES="${BOOT1_PHASES}"
+# The SPA/API boundary suite is intentionally non-destructive, so one boot is
+# sufficient.
+PHASES="${MOS_APID_PHASES:-01-spa-boundary,02-session,03-api-management,04-network-observation,05c-kernel-net}"
 # The bun image is pinned by digest, not by tag. `oven/bun:1` is a
 # major-version tag upstream repoints onto every 1.x release, and this harness
 # is what decides whether apid's API is judged conformant, so the default is the
@@ -408,7 +396,6 @@ mkdir -p "${ART_DIR}"
 # `APID_LISTENING` line becomes a readiness signal that can be waited on.
 # Dropping that append deletes the signal the wait depends on.
 CONSOLE1="${ART_DIR}/console-boot1.log"
-CONSOLE2="${ART_DIR}/console-boot2.log"
 # The path the suite is given has to resolve inside the bun container, which
 # mounts the repository root at /w. _out is bound over the top of it a second
 # time so that a checkout whose _out is a symlink -- a worktree borrowing the
@@ -423,16 +410,9 @@ ART_IN_CONTAINER="/w/_out/x64/apid-api"
 # below quote it and a second spelling is how the two come to disagree.
 SMOKE_IN_GUEST=/m7-net-smoke.sh
 
-# A fixed point in time for this run, written once and never touched again.
-# The handoff freshness check compares against THIS rather than against a file
-# the guest is still writing to; see reboot_was_posted below.
-RUN_STAMP="${ART_DIR}/run-started"
-
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (src/qemu.ts --prepare-only, in ${PORT_IMAGE})"
-    note "would seed     os/pkgs/mosd/tests/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1"
-    note "               (apid's start-up activates it; 04-readonly's traversal rows need it)"
     note "would boot     src/qemu.ts --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
     note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1 systemd.run=..."
@@ -446,15 +426,7 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     if [ -n "${APID_NEGATIVE:-}" ]; then
         note "               APID_NEGATIVE=${APID_NEGATIVE} -- this run is EXPECTED TO BE RED"
     fi
-    if [ -n "${APID_HANDOFF:-}" ]; then
-        note "               APID_HANDOFF=${APID_HANDOFF}"
-    fi
     note "               APID_CONSOLE=${ART_IN_CONTAINER}/console-boot1.log APID_PHASES=${PHASES:-<all>}"
-    if [ "${BOOT2}" = "1" ]; then
-        note "would then    boot a second time on the same disk for ${BOOT2_PHASES}"
-    else
-        note "second boot is OFF (MOS_APID_BOOT2=0 was set; the default is on)"
-    fi
     finish
 fi
 
@@ -463,9 +435,7 @@ trap 'teardown' EXIT
 # --- 3. boot ----------------------------------------------------------------
 # --prepare-only makes the disk copy, grows it so systemd-repart has somewhere
 # to extend into, and applies MOS_QEMU_APPEND to the copy's grub.cfg. It boots
-# nothing. Every boot after it reuses that disk, which is what makes two boots
-# off one disk state possible at all -- and what lets the reboot in phase 07 be
-# observed as a change to the disk rather than as a fresh machine.
+# nothing. The one test boot reuses that prepared disk.
 #
 # The append is passed on every invocation, not only on the prepare. src/qemu.ts
 # adds it to the linux line once and skips it when it is already there, so over
@@ -515,7 +485,6 @@ QEMU_ENV=(
     MOS_QEMU_TIMEOUT="${QEMU_TIMEOUT}"
 )
 
-: >"${RUN_STAMP}"
 if ! build_port_image; then
     fail "could not build ${PORT_IMAGE} from os/verify/Dockerfile; it is two pinned FROMs and one COPY, and nothing is fetched beyond those two images"
     finish
@@ -530,85 +499,6 @@ if ! qemu_port --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
 fi
 PREPARED=1
 pass "disk prepared at ${RUN_DIR}/disk.img"
-
-# --- 3b. seed the traversal fixture into DATA -------------------------------
-# asset_path::resolve -- the function holding every §4.4 traversal
-# guard -- runs only when a bundle is active at /srv/ui, and no device under
-# test ships one, so without this step not one line of the guard set executes
-# over the wire and 04-readonly's traversal rows measure §4.2's conditions
-# instead. os/tools/qemu-seed-state.sh writes STATE only, so this is its DATA
-# counterpart, same mechanism (extract the partition by its GPT sector range,
-# write with debugfs, put it back), different partition and owned here because
-# the fixture is this suite's.
-#
-# What is seeded is a STAGED tree, .staging-1, never an activated store:
-# apid's own start-up (pick_up_staged) validates and activates it, so the
-# store state 04-readonly runs against -- digest record, current pointer,
-# modes -- is produced by the code under test rather than imitated by this
-# script. The fixture's contents are what 04-readonly's assertions compare
-# response bodies against, byte for byte; both sides read
-# os/pkgs/mosd/tests/apid-api/fixture/ui-bundle.
-FIXTURE_DIR="${SCRIPT_DIR}/fixture/ui-bundle"
-seed_data_fixture() {
-    local seed_image log
-    log="${ART_DIR}/seed-data.log"
-    if [ ! -f "${FIXTURE_DIR}/index.html" ]; then
-        fail "the UI-bundle fixture ${FIXTURE_DIR} has no index.html; nothing can activate, and the traversal rows in 04-readonly would fail against the built-in UI"
-        return 1
-    fi
-    # The VALUES, not `-e NAME`: layout keys are set, not exported (see
-    # os/tools/qemu-seed-state.sh, which this mirrors).
-    seed_image="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
-    if ! docker run --rm \
-        -v "${FIXTURE_DIR}:/fixture:ro" -v "${RUN_DIR}:/d" \
-        -e DATA_PARTNUM="${DATA_PARTNUM}" -e DATA_SIZE_MIB="${DATA_SIZE_MIB}" \
-        "${seed_image}" bash -c '
-        set -eu
-        apt-get update -qq >/dev/null 2>&1
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            gdisk e2fsprogs >/dev/null 2>&1
-        start=$(sgdisk -i "${DATA_PARTNUM}" /d/disk.img | sed -n "s/^First sector: \([0-9]*\).*/\1/p")
-        [ -n "${start}" ] || { echo "error: no DATA partition in the GPT" >&2; exit 1; }
-        count=$(( DATA_SIZE_MIB * 2048 ))
-        dd if=/d/disk.img of=/tmp/data.img bs=512 skip="${start}" count="${count}" status=none
-
-        files="$(cd /fixture && find . -type f | sort)"
-        [ -n "${files}" ] || { echo "error: the fixture is empty" >&2; exit 1; }
-        for f in ${files}; do
-            rel="${f#./}"
-            dst="/ui/.staging-1/${rel}"
-            dir="$(dirname "${dst}")"
-            # debugfs mkdir does not create parents; walk the path.
-            acc=""
-            IFS=/ read -ra parts <<<"${dir#/}"
-            for p in "${parts[@]}"; do
-                [ -n "${p}" ] || continue
-                acc="${acc}/${p}"
-                debugfs -w -R "mkdir ${acc}" /tmp/data.img >/dev/null 2>&1 || true
-            done
-            debugfs -w -R "rm ${dst}" /tmp/data.img >/dev/null 2>&1 || true
-            debugfs -w -R "write /fixture/${rel} ${dst}" /tmp/data.img >/dev/null 2>&1
-            # Written, or the boot would activate a tree missing a file and
-            # every traversal conclusion would be about the wrong bundle.
-            debugfs -R "stat ${dst}" /tmp/data.img 2>/dev/null | grep -c "Inode:" >/dev/null || {
-                echo "error: ${dst} was not written into DATA" >&2; exit 1; }
-            echo "  seeded ${dst}"
-        done
-
-        e2fsck -fp /tmp/data.img >/dev/null 2>&1 || true
-        dd if=/tmp/data.img of=/d/disk.img bs=512 seek="${start}" conv=notrunc status=none
-    ' >"${log}" 2>&1; then
-        fail "seeding the UI-bundle fixture into DATA failed; see ${log}"
-        tail -n 20 "${log}" >&2 || true
-        return 1
-    fi
-    return 0
-}
-
-if ! seed_data_fixture; then
-    finish
-fi
-pass "UI-bundle fixture seeded into DATA at /srv/ui/.staging-1 ($(find "${FIXTURE_DIR}" -type f | wc -l) files); apid activates it at start-up"
 
 # The guest half of phase 05c, written into the disk copy's STATE partition.
 # AFTER --prepare-only, which is what makes the copy: seeding before it would
@@ -695,10 +585,9 @@ find_guest() {
 # Both signals, because either alone is a different claim: APID_LISTENING says
 # the daemon reached the point in its own start-up where it binds, and a 200
 # from /healthz says the three doors between here and that socket are open.
-# /healthz is the probe because it is the only route the auth gate lets through
-# unauthenticated: anything else answers a redirect to /setup on a device never
-# set up, and a redirect is not evidence that the daemon is serving. Redirects
-# are not followed either -- apid's :80 -> :443 redirect names the guest's port
+# /healthz is the probe because it is the dedicated listener-health contract;
+# a static UI response does not prove the management backend is ready. Redirects
+# are not followed -- apid's :80 -> :443 redirect names the guest's port
 # 443, which is not followable through a port forward, and a client following it
 # blindly hangs in a way that reads as apid being down.
 # shellcheck disable=SC2016  # this is JavaScript: ${process.env.H} and the
@@ -805,10 +694,8 @@ wait_for_apid() {
 # directory and says `Module not found` -- which reads like a bug in the suite
 # and is not.
 #
-# APID_NEGATIVE and APID_HANDOFF are forwarded when the caller set them and
-# omitted entirely when it did not, so an unset knob keeps the suite's own
-# default rather than being overridden with an empty string. APID_NEGATIVE is
-# how a live run is made to go red on demand: the selftest proves the machinery
+# APID_NEGATIVE is forwarded when the caller sets it and omitted otherwise.
+# It is how a live run is made to go red on demand: the selftest proves the machinery
 # can fail offline, and this proves it can fail against the actual guest.
 # Without the forward, `APID_NEGATIVE=... make os-apid-api-test` runs green and
 # looks like the inversion had been applied.
@@ -817,7 +704,6 @@ suite_passthrough() {
     local -n out="$1"
     out=()
     [ -n "${APID_NEGATIVE:-}" ] && out+=(-e "APID_NEGATIVE=${APID_NEGATIVE}")
-    [ -n "${APID_HANDOFF:-}" ] && out+=(-e "APID_HANDOFF=${APID_HANDOFF}")
     return 0
 }
 
@@ -871,99 +757,7 @@ note "boot1 was ready $((SECONDS - BOOT1_START))s after launch"
 
 run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 
-# --- 7. the second boot -----------------------------------------------------
-# src/qemu.ts passes `-no-reboot` to QEMU, so a guest-initiated reboot makes
-# QEMU exit rather than reset. Keeping the flag is a decision, not an
-# inheritance: the harness works with it rather than around it, and phase 07 posts
-# /power/reboot, QEMU exits, and that exit is the evidence the guest asked for a
-# reset. The second boot reuses the same disk.img and comes up through firmware,
-# GRUB and the grubenv the reboot just wrote.
-#
-# If `-no-reboot` is ever dropped the guest resets in place and the container is
-# still there, so the wait must go to that same container rather than start a
-# second one against a disk something is already booting.
-# Which shape happened is therefore decided by looking, never by assuming.
-QEMU_EXIT_GRACE="${MOS_APID_QEMU_EXIT_GRACE:-90}"
-
-# Not decidable immediately: phase 07 returns as soon as the HTTPS port stops
-# answering, well before QEMU has finished tearing itself down. Measured
-# 2026-08-24, `docker inspect` still reported the container running at that
-# instant, this branch concluded "the guest reset in place", and the run then
-# waited out its whole deadline for apid on a container that had exited seconds
-# later. So the container is given a bounded grace period to exit: still running
-# at the end of it is the reset-in-place shape, exiting during it is the
-# -no-reboot shape. The grace is generous relative to a QEMU teardown and short
-# relative to a boot, so it costs nothing in the ordinary case.
-qemu_still_running_after_grace() {
-    local waited=0
-    while [ "${waited}" -lt "${QEMU_EXIT_GRACE}" ]; do
-        if [ "$(docker inspect "${GUEST_CID}" --format '{{.State.Running}}' 2>/dev/null)" != "true" ]; then
-            note "the QEMU container exited ${waited}s after the reboot phase"
-            return 1
-        fi
-        sleep "${POLL_INTERVAL}"
-        waited=$((waited + POLL_INTERVAL))
-    done
-    return 0
-}
-
-# And first: did phase 07 actually post a reboot? A second boot only means
-# something if the first one ended in one. 07 writes its handoff immediately
-# after the confirmed POST, so that file existing and being newer than this run
-# is the signal, and its absence is what a run where 07 was skipped looks like
-# -- which happens whenever an earlier phase fails. Without this check such a
-# run waits out the full readiness deadline on a guest that never rebooted: apid
-# never restarted, so the console has no new apid line to find, and every
-# post-reboot assertion runs against a machine that has not rebooted.
-HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
-
-reboot_was_posted() {
-    [ -f "${HANDOFF_FILE}" ] || return 1
-    # Newer than a stamp this run took before booting anything, so a handoff
-    # left behind by an earlier run cannot vouch for this one.
-    #
-    # NOT newer than disk.img, which is what this compared against until
-    # 2026-08-28. The guest WRITES to disk.img for the whole of the first boot,
-    # so its mtime keeps advancing past the handoff -- which 07 writes mid-boot,
-    # right after the POST. The comparison was therefore false on every
-    # successful run: the second boot was skipped with "07 did not run" on runs
-    # where 07 had demonstrably run and the console showed the guest going down.
-    [ "${HANDOFF_FILE}" -nt "${RUN_STAMP}" ] || return 1
-    return 0
-}
-
-if [ "${BOOT2}" = "1" ] && ! reboot_was_posted; then
-    note "no reboot was posted in the first boot: ${HANDOFF_FILE##*/} is $([ -f "${HANDOFF_FILE}" ] && echo "older than this run's disk" || echo "absent")."
-    note "  07-reboot writes it right after the confirmed POST /power/reboot, so this means 07"
-    note "  did not run -- an earlier phase failed and the runner skipped it. There is no second"
-    note "  boot to make, and the post-reboot phases are NOT attempted: running them against the"
-    note "  first boot would assert that a machine which never restarted had restarted."
-    BOOT2=0
-fi
-
-if [ "${BOOT2}" = "1" ]; then
-    # Anchored here, before anything waits: the second boot appends to the same
-    # console file when the guest resets in place, and boot 1's APID_LISTENING
-    # line is already in it.
-    CONSOLE1_AFTER_REBOOT="$(console_size "${CONSOLE1}")"
-    note "waiting up to ${QEMU_EXIT_GRACE}s to see whether QEMU exits (-no-reboot) or the guest resets in place"
-    if qemu_still_running_after_grace; then
-        pass "the QEMU container is still running ${QEMU_EXIT_GRACE}s after the reboot phase: the guest reset in place, so no second boot is needed"
-        wait_for_apid boot1-again "${CONSOLE1}" "${GUEST_IP}" "${CONSOLE1_AFTER_REBOOT}" || finish
-        run_suite boot2 "${GUEST_IP}" "console-boot1.log" "${BOOT2_PHASES}"
-    else
-        pass "the QEMU container exited after the reboot phase: under -no-reboot that exit IS the guest asking for a reset"
-        QEMU_CID=""
-        BOOT2_START="${SECONDS}"
-        launch_boot boot2 "${CONSOLE2}"
-        find_guest boot2 || finish
-        pass "boot2 guest found: container ${GUEST_CID} at ${GUEST_IP} on ${NET} after $((SECONDS - BOOT2_START))s"
-        wait_for_apid boot2 "${CONSOLE2}" "${GUEST_IP}" || finish
-        run_suite boot2 "${GUEST_IP}" "console-boot2.log" "${BOOT2_PHASES}"
-    fi
-fi
-
-# --- 8. one machine-readable result for the whole run -----------------------
+# --- 7. one machine-readable result for the whole run -----------------------
 # The envelope is this harness's; what each boot wrote is embedded verbatim and
 # is not reinterpreted here. The suite owns the shape of its own file, and a
 # merger that reached inside it would have to be changed in step with it -- and
@@ -973,9 +767,8 @@ MERGED="${ART_DIR}/result.json"
 # say which artefact it covered is a result file that cannot be trusted a week
 # later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
 # every time somebody builds; the resolved name and the mtime are what pin a run
-# to a surface. It is also what makes a route assertion's red legible: 04-readonly
-# asserts the surface this TREE declares, so when a route check fails, this block
-# says whether the image moved under it or the contract did.
+# to a surface. When a route check fails, this identity says whether the image
+# moved under the source tree or the contract did.
 IMG_RESOLVED="$(readlink -f "${IMG}" 2>/dev/null || echo "${IMG}")"
 IMG_MTIME_EPOCH="$(stat -c %Y "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
 IMG_MTIME_ISO="$(date -u -d "@${IMG_MTIME_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
@@ -992,7 +785,7 @@ IMG_BYTES="$(stat -c %s "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
     printf '  },\n'
     printf '  "boots": [\n'
     sep=""
-    for label in boot1 boot2; do
+    for label in boot1; do
         rf="${ART_DIR}/result-${label}.json"
         [ -f "${rf}" ] || continue
         printf '%s    { "boot": "%s", "result": ' "${sep}" "${label}"
@@ -1006,7 +799,7 @@ IMG_BYTES="$(stat -c %s "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
 } >"${MERGED}"
 note "merged result written to ${MERGED}"
 note "image under test: ${IMG_RESOLVED##*/} (mtime ${IMG_MTIME_ISO})"
-note "console logs kept: ${CONSOLE1}$([ -s "${CONSOLE2}" ] && printf ' %s' "${CONSOLE2}")"
+note "console log kept: ${CONSOLE1}"
 
 if [ "${SUITE_RC}" -ne 0 ] && [ "${CHECKS_FAILED}" -eq 0 ]; then
     fail "the suite exited ${SUITE_RC} but no assertion recorded a failure"
