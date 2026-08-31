@@ -1,0 +1,37 @@
+Package: mos-rauc
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: mos build <mos@example.invalid>
+Section: admin
+Priority: optional
+Depends: default-dbus-system-bus | dbus-system-bus, mount, ${shlibs:Depends}
+Description: mos update client (RAUC)
+ The A/B update client: the RAUC binary built from upstream source with
+ -Dnetwork=false -Dstreaming=false, its systemd unit, the helper the D-Bus
+ service file Execs, the bus policy for de.pengutronix.rauc and the activation
+ file itself. All five are on the activation path -- Debian splits them across
+ two packages, and a rauc with no service files answers "the name
+ de.pengutronix.rauc was not provided by any .service files" while a health
+ gate reports green.
+ .
+ GLib, json-glib, OpenSSL, libfdisk and libc are what the binary LINKS, so
+ dpkg-shlibdeps writes them into Depends from the ELF itself, at the target
+ architecture, and none of them is named above: a hand-written soname package
+ is a version that stops matching the first time the builder image moves.
+ .
+ A D-Bus system bus is not visible to dpkg-shlibdeps, because rauc talks to the
+ bus through GDBus in libgio and links no libdbus-1 at all -- so the one
+ relationship that makes this package's own D-Bus activation file mean anything
+ has to be written out.
+ .
+ mount is not visible to it either. Every install mounts the bundle and then
+ unmounts it, and rauc does that by exec'ing the mount and umount PROGRAMS by
+ name rather than through libmount; the mount package is what provides both.
+ .
+ The unit ships DISABLED: no multi-user.target.wants symlink is in this
+ payload and nothing enables it. The daemon is reached through D-Bus
+ activation, which is what de.pengutronix.rauc.service is for.
+ .
+ The board's system.conf and bootloader configuration are deliberately not
+ here. Both are board facts and belong to the board package, which is also
+ where grub-editenv is installed, gated on the board's RAUC_BOOTLOADER.
