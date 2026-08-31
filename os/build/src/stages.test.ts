@@ -40,10 +40,11 @@ import {
   StageChainError,
   STAGES_DIR,
   unusedArgs,
+  unsuppliedArgs,
   type StageFile,
 } from './stages.ts'
 import { parseArgs, parseDriver, chainMode, dockerBin } from './stages-cli.ts'
-import { BOARDS_DIR } from './paths.ts'
+import { BOARDS_DIR, REPO_ROOT } from './paths.ts'
 
 // A scratch directory of stage files. Under the repository's own _out/ rather
 // than /tmp: a bind mount of /tmp on this host propagates as an EMPTY directory
@@ -99,6 +100,28 @@ describe('readStageFile', () => {
     expect(s.declaredArgs).toEqual(['BOARD_RADIOS', 'WITH_MOSD'])
     expect(s.declaresPrev).toBe(true)
     expect(s.fromsPrev).toBe(true)
+  })
+
+  // The distinction the driver's unsupplied-arg refusal is built on, and the
+  // reason it is a distinction at all is measured rather than assumed: with no
+  // --build-arg, buildkit leaves `ARG X` OUT of the RUN environment (set -u
+  // catches it) and puts `ARG X=""` IN as an empty string (nothing catches it).
+  test('separates an empty default from a real one and from none', () => {
+    const s = readStageFile(
+      '/x/90-p.Dockerfile',
+      `FROM debian\nARG BARE\nARG EMPTY=""\nARG BLANK=\nARG SQUOTE=''\nARG REAL=sha256\nARG ZERO=0\n`,
+    )
+    expect(s.declaredArgs).toEqual(['BARE', 'EMPTY', 'BLANK', 'SQUOTE', 'REAL', 'ZERO'])
+    expect(s.emptyDefaultArgs).toEqual(['EMPTY', 'BLANK', 'SQUOTE'])
+  })
+
+  // `ARG X` then `ARG X=""` in one file: the second declaration is the one that
+  // decides what an unsupplied build reads, so the name is empty-defaulted even
+  // though the first sighting was not.
+  test('a name declared both bare and empty-defaulted counts as empty-defaulted', () => {
+    const s = readStageFile('/x/90-p.Dockerfile', `FROM debian\nARG X\nARG X=""\n`)
+    expect(s.declaredArgs).toEqual(['X'])
+    expect(s.emptyDefaultArgs).toEqual(['X'])
   })
 
   test('ignores an ARG that is only mentioned in a comment', () => {
@@ -348,11 +371,84 @@ describe('planChain', () => {
     expect(unusedArgs(s, { ...supplied, ZZZ: '1', AAA: '2' })).toEqual(['AAA', 'ZZZ'])
   })
 
+  // The gap this closes: a supplied argument no file declares was already
+  // refused (unusedArgs), and a file that READS an undeclared name already dies
+  // under `set -u`. An argument declared `=""` and never supplied was the
+  // remaining direction, and it is the silent one -- the build succeeds and
+  // asserts less than it says it does.
+  test('an empty-defaulted argument nobody supplies is refused', () => {
+    const d = scratch({
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nRUN true\n`,
+      '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG BOARD_RADIOS=""\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\nFROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`,
+    })
+    const stages = discoverStages(d)
+    expect(() => planChain(stages, { board: 'x64', supplied: { TRIXIE: 'debian@sha256:aaa' } }))
+      .toThrow(/BOARD_RADIOS with an EMPTY default/)
+
+    // And an EXPLICIT empty value is accepted, because that is x64 saying it
+    // has no radios rather than nobody having been asked. A guard that could
+    // not tell those apart would refuse every correct x64 build.
+    const ok = planChain(stages, {
+      board: 'x64',
+      supplied: { TRIXIE: 'debian@sha256:aaa', BOARD_RADIOS: '' },
+    })
+    expect(ok[1]!.buildArgs).toEqual({ BOARD_RADIOS: '' })
+  })
+
+  test('unsuppliedArgs names every empty-defaulted absentee, sorted and once', () => {
+    const d = scratch({
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nARG ZZZ=""\nARG KEPT=dev\n`,
+      '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG ZZZ=""\nARG AAA=""\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\nFROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`,
+    })
+    const stages = discoverStages(d)
+    expect(unsuppliedArgs(stages, { TRIXIE: 'x' })).toEqual(['AAA', 'ZZZ'])
+    expect(unsuppliedArgs(stages, { TRIXIE: 'x', AAA: '', ZZZ: 'wifi' })).toEqual([])
+    // KEPT=dev is a default that IS the value. Demanding it would make every
+    // Dockerfile constant an argument the caller has to restate.
+    expect(unsuppliedArgs(stages, { TRIXIE: 'x', AAA: '', ZZZ: '' })).not.toContain('KEPT')
+  })
+
   test('a broken chain is refused before any tag is computed', () => {
     const bad = scratch({ '10-base.Dockerfile': FIRST, '20-x.Dockerfile': FIRST })
     expect(() => planChain(discoverStages(bad), { board: 'x64', supplied: {} })).toThrow(
       StageChainError,
     )
+  })
+})
+
+// THE SHIPPED PAIR, and the only check in this file whose subject is the real
+// tree rather than a fixture. The refusal above proves the driver reacts; this
+// proves the two files that actually ship are on the right side of it, and it
+// goes red if os/rootfs/build-v2.sh drops one of the `--arg` lines that keep
+// them there -- which is the whole failure this guard exists for, and which no
+// fixture can notice.
+//
+// Both sides are counted and neither may be zero: a compose directory that
+// declared no empty default, or a build-v2.sh this could read no --arg out of,
+// would make the pairing pass by comparing nothing against nothing.
+describe('the shipped compose directory and its supplier', () => {
+  const BUILD_V2 = join(REPO_ROOT, 'os', 'rootfs', 'build-v2.sh')
+
+  /** The names build-v2.sh hands the driver, read out of the file itself. */
+  function suppliedByBuildV2(): string[] {
+    const text = readFileSync(BUILD_V2, 'utf8')
+    return [...text.matchAll(/^\s*--arg\s+([A-Za-z_][A-Za-z0-9_]*)=/gm)].map(m => m[1] as string)
+  }
+
+  test('every empty-defaulted ARG in os/rootfs/compose is supplied by build-v2.sh', () => {
+    const stages = discoverStages(STAGES_DIR)
+    expect(stages.length).toBeGreaterThan(0)
+    const declared = [...new Set(stages.flatMap(s => s.emptyDefaultArgs))].sort()
+    expect(declared.length).toBeGreaterThan(0)
+
+    const names = suppliedByBuildV2()
+    expect(names.length).toBeGreaterThan(0)
+
+    const supplied = Object.fromEntries(names.map(n => [n, '']))
+    expect(unsuppliedArgs(stages, supplied)).toEqual([])
+    // Named, so that an ARG gaining or losing an empty default is a decision
+    // somebody makes here rather than a set that silently changes size.
+    expect(declared).toEqual(['BOARD_RADIOS', 'RAUC_VERSION'])
   })
 })
 

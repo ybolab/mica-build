@@ -1,5 +1,28 @@
 # Dual-build sanction ledger
 
+> **CLOSED RECORD -- THIS LEDGER IS NOT A LIVE INPUT TO ANY GATE.**
+>
+> The comparison it governed no longer runs and cannot: the rootfs stage chain
+> was removed (PLAN-036 sections 4-6, merged at ae3f0ce), the composer is the
+> only assembly path, and a difference set needs two. `os/tests/dual-build-gate.sh`
+> and its `make os-dual-build-gate` target were deleted rather than left in the
+> tree to exit at their own `refuse` before comparing anything -- an instrument
+> that can return no verdict, not even a failing one, is not an instrument.
+>
+> Everything below this block is kept EXACTLY as it was judged, unedited:
+> sixteen stanzas, eight of them narrowed to one exact diff, each with the
+> written reason the difference was accepted on. That reasoning is what the
+> removal was accepted on, so it is a record and not a leftover. Read the tenses
+> below as the tenses of the run that produced them -- "the gate refuses", "the
+> driver builds both paths" describe a comparison that was made, once, at one
+> commit.
+>
+> `os/build/src/compare-roots.ts` is NOT retired with it. It ships as
+> `bash os/build/run.sh --compare-roots`, a first-class mode for comparing any
+> two extracted root trees, and this file is only the default its `--sanctions`
+> flag points at. "No longer executes" and "should not exist" are different
+> claims, and only the first is being made here.
+
 PLAN-036 section 6 ends with a gate: before the rootfs stage chain is deleted,
 x64 is built through **both** paths -- the chain and the package composer -- and
 their unpacked trees are compared. "Expected additions are package documentation

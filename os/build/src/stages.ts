@@ -36,6 +36,14 @@ export interface StageFile {
   readonly path: string
   /** Every ARG the file declares, except PREV_ARG, in first-seen order. */
   readonly declaredArgs: readonly string[]
+  /**
+   * Those of them declared with an EMPTY default -- `ARG X=`, `ARG X=""`.
+   *
+   * Kept apart from declaredArgs because the two kinds of default behave
+   * differently when nobody supplies a value, and only one of them is
+   * survivable. unsuppliedArgs says which and why.
+   */
+  readonly emptyDefaultArgs: readonly string[]
   /** Does it declare `ARG MOS_STAGE_PREV`? */
   readonly declaresPrev: boolean
   /** Does it open a stage `FROM ${MOS_STAGE_PREV}`? */
@@ -69,6 +77,11 @@ const STAGE_NAME = /^(\d+)-([A-Za-z0-9][A-Za-z0-9-]*)\.Dockerfile$/
 // case-insensitive on the instruction; a lowercase `arg` would be a real
 // declaration and invisible to a case-sensitive pattern.
 const ARG_LINE = /^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)/i
+// The default text of an `ARG NAME=...` line. A SECOND pattern rather than a
+// group added to the one above, so that a spelling this does not understand
+// still yields the name: an ARG that fell out of ARG_LINE would fall out of
+// declaredArgs too, and then be refused as a stray on the way in.
+const ARG_DEFAULT = /^\s*ARG\s+[A-Za-z_][A-Za-z0-9_]*=(.*)$/i
 // `FROM ${MOS_STAGE_PREV}`, optionally with `AS closed`. The brace form
 // only: `FROM $MOS_STAGE_PREV` also expands, but one spelling in one place is
 // the difference between a check and a guess about which spellings exist.
@@ -79,6 +92,21 @@ const FROM_PREV = new RegExp(`^\\s*FROM\\s+(?:--\\S+\\s+)*\\$\\{${PREV_ARG}\\}(?
 // pack target went unseen. It was caught by attributing the 34 scripts to their
 // stages with the same expression and getting `closed` for every pack-*.sh.
 const FROM_AS = /^\s*FROM\s+(?:--\S+\s+)*\S+(?:\s+AS\s+([A-Za-z0-9._-]+))?\s*$/i
+
+/**
+ * The default an `ARG NAME=...` line declares, with one layer of surrounding
+ * quotes taken off the way the Dockerfile parser takes it off: `ARG X=""`
+ * declares the empty string, not two quote characters. `undefined` for a line
+ * that declares no default at all.
+ */
+function argDefault(line: string): string | undefined {
+  const m = ARG_DEFAULT.exec(line)
+  if (!m) return undefined
+  const raw = m[1]!.trim()
+  const quoted = raw.length >= 2
+    && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")))
+  return quoted ? raw.slice(1, -1) : raw
+}
 
 /**
  * Read one stage file. Parsing only -- what makes a chain valid is auditChain.
@@ -95,6 +123,7 @@ export function readStageFile(path: string, text: string): StageFile {
     ])
   }
   const declaredArgs: string[] = []
+  const emptyDefaultArgs: string[] = []
   const targets: string[] = []
   let declaresPrev = false
   let fromsPrev = false
@@ -104,7 +133,14 @@ export function readStageFile(path: string, text: string): StageFile {
     if (arg) {
       const name = arg[1]!
       if (name === PREV_ARG) declaresPrev = true
-      else if (!declaredArgs.includes(name)) declaredArgs.push(name)
+      else {
+        if (!declaredArgs.includes(name)) declaredArgs.push(name)
+        // ANY declaration with an empty default is enough. A name declared
+        // twice, once bare and once `=""`, is unsupplied-safe in one stage and
+        // silently empty in the other, and the silent one is the one that
+        // decides what the build asserts.
+        if (argDefault(line) === '' && !emptyDefaultArgs.includes(name)) emptyDefaultArgs.push(name)
+      }
       continue
     }
     if (FROM_PREV.test(line)) fromsPrev = true
@@ -116,6 +152,7 @@ export function readStageFile(path: string, text: string): StageFile {
     name: `${m[1]}-${m[2]}`,
     path,
     declaredArgs,
+    emptyDefaultArgs,
     declaresPrev,
     fromsPrev,
     targets,
@@ -425,6 +462,46 @@ export function unusedArgs(
     .sort()
 }
 
+/**
+ * An argument a stage declares with an empty default and nobody supplies.
+ *
+ * The converse of unusedArgs, and the direction nothing else can see. Measured
+ * on this daemon against buildkit, one Dockerfile, three ARGs, no --build-arg:
+ *
+ *   ARG NO_DEFAULT       -> ABSENT from the RUN environment. A script that
+ *                           reads it dies under `set -u` and the build stops.
+ *   ARG EMPTY_DEFAULT="" -> PRESENT and empty. Indistinguishable, to every
+ *                           reader, from a value somebody chose to be empty.
+ *   ARG REAL_DEFAULT=x   -> PRESENT as `x`, which is what the file says it is.
+ *
+ * Only the middle case is refused here. The first is already guarded loudly by
+ * `set -u`, and in the third the default IS the value -- os/rootfs/compose's
+ * VERITY_HASH_ALGO and the two verity block sizes are declared exactly that way
+ * and are deliberately never supplied.
+ *
+ * The middle case is not hypothetical. pack-assert-var-disposable.sh reads
+ * BOARD_RADIOS to decide whether /var/lib/bluetooth is precious state. Were
+ * os/rootfs/build-v2.sh to stop supplying it, `ARG BOARD_RADIOS=""` would
+ * apply, the script would read an empty radio list WITHOUT ERROR, and the
+ * disposability assertion would quietly stop requiring the bluetooth mount unit
+ * on a board that has one -- a check that keeps passing by examining less. No
+ * green result in this repository could show it: x64 legitimately composes
+ * BOARD_RADIOS="", so the symptom is invisible on the only board this host
+ * builds.
+ *
+ * SUPPLYING AN EMPTY STRING IS NOT THIS. `--arg BOARD_RADIOS=` is x64 saying it
+ * has no radios, and it is a decision that was made; this is about the value
+ * nobody was asked for.
+ */
+export function unsuppliedArgs(
+  stages: readonly StageFile[],
+  supplied: Readonly<Record<string, string>>,
+): string[] {
+  const missing = new Set<string>()
+  for (const s of stages) for (const a of s.emptyDefaultArgs) if (!(a in supplied)) missing.add(a)
+  return [...missing].sort()
+}
+
 export function planChain(stages: readonly StageFile[], opts: ChainOptions): StageBuild[] {
   const repo = opts.tagRepo ?? DEFAULT_TAG_REPO
   const target = opts.terminalTarget ?? DEFAULT_TERMINAL_TARGET
@@ -436,6 +513,15 @@ export function planChain(stages: readonly StageFile[], opts: ChainOptions): Sta
       {
         path: STAGES_DIR,
         message: `was handed ${stray.join(', ')}, which no stage declares. docker would accept each as an unused --build-arg and warn, and that warning scrolls past in a build this size -- so the value would simply not reach the image`,
+      },
+    ])
+  }
+  const missing = unsuppliedArgs(stages, opts.supplied)
+  if (missing.length > 0) {
+    throw new StageChainError([
+      {
+        path: STAGES_DIR,
+        message: `declares ${missing.join(', ')} with an EMPTY default and was handed no value. An ARG with no default at all is absent from the RUN environment, so a reader of it dies under \`set -u\`; an empty default reaches the build as an empty string instead, and every reader takes that for a value somebody chose. Supply it -- \`--arg NAME=\` is how a board says the answer is genuinely nothing -- or give the ARG a default that IS the value`,
       },
     ])
   }
