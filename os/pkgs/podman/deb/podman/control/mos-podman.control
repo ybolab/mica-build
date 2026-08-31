@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: mos-system, nftables, libsystemd0, ${shlibs:Depends}
+Depends: mos-system (= @VERSION@), nftables, libsystemd0, ${shlibs:Depends}
 Description: mos container engine
  The seven binaries os/pkgs/podman compiles from pinned upstream source --
  podman and quadlet from containers/podman v5.8.6, crun 1.29.1, conmon v2.2.1,
@@ -58,13 +58,24 @@ Description: mos container engine
  journald logging fails the quiet way. One duplicated name in this field is the
  price of that not happening silently.
  .
- mos-system is depended on UNVERSIONED and deliberately so. It owns the mounts
- this package's configuration names: storage.conf puts the container graphroot
- on /srv/containers/storage, which is the DATA partition mos-system's fstab
- mounts, and etc-containers-systemd.mount binds /mnt/state/quadlet, which needs
- mos-seed-state.service from the same package. Nothing here is pinned to a
- mos-system built from this commit, so an exact-version dependency would assert
- a coupling that does not exist.
+ mos-system is depended on at the EXACT POOL VERSION, and this entry CHANGED ITS
+ MIND. The dependency itself has not moved: mos-system owns the mounts this
+ package's configuration names -- storage.conf puts the container graphroot on
+ /srv/containers/storage, which is the DATA partition mos-system's fstab mounts,
+ and etc-containers-systemd.mount binds /mnt/state/quadlet, which needs
+ mos-seed-state.service from the same package. That is why this package depends
+ on it at all, and it is unchanged.
+ .
+ What changed is who builds mos-system. This entry was written UNVERSIONED
+ deliberately, and the reason held at the time: no producer emitted mos-system,
+ so the pool gate classified the reference EXTERNAL and only reported it, and
+ pinning a package this repository did not build would have asserted a coupling
+ that did not exist. That has been superseded -- os/rootfs/packages-src/system
+ now produces mos-system from THIS commit, so the gate classifies the reference
+ local-real and requires the exact pool version. The pool carries one version by
+ rule, so the pin costs nothing inside it and stops an archive from resolving
+ against a different pool generation; mos-apid already spells its mosd
+ dependency the same way.
  .
  There is no dependency on mosd, mos-apid, mos-mqttd or mos-mqtt-broker. The
  engine is installed alongside them, not above them: it runs without any of them

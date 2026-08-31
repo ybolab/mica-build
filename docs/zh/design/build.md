@@ -56,11 +56,28 @@ MOS_BUILD_PLATFORM=linux/arm64 bash os/build-env/build.sh   # 给 cx3576
 localhost/mos-build-base:amd64, which is not in the local docker image
 store`），而不是去一个叫 `localhost` 的 registry 拉取。
 
-**签名密钥。** `make os-devkeys` 在 `os/pkgs/rauc/.devkeys/`（已 gitignore）
-生成开发用 CA 和签名证书，bundle 步骤用它们签名。镜像*不会*信任这套密钥，
-除非把 keyring 复制到 `os/rootfs/overlay-v2/etc/rauc/keyring.pem` 并以
-`MOS_EXPECT_DEV_KEYRING=1` 构建 rootfs——只对需要安装本地签名更新包的台架
-设备这么做，任何要离开台架的东西都不要。
+**信任根：`ca/`。** 仓库根目录下的 `ca/` 是签名 CA 进入构建的唯一入口，已
+gitignore。`os/build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
+`ca/signer.key.pem` 签名；`os/rootfs/build-v2.sh` 把 `ca/ca.cert.pem` 放进镜像
+的 `/etc/rauc/keyring.pem`——镜像因此能安装同一批构建出来的 bundle。
+
+不需要先跑任何东西。构建发现 `ca/` 不存在、或四个文件缺了任何一个时，会在那里
+生成一套开发级信任根，打印一条醒目的通知，然后继续。`make os-devkeys` 是同一件
+事的手动入口，可以在构建前先做；`bash os/pkgs/rauc/gen-dev-keys.sh --force` 用
+于轮换，代价是所有已用旧密钥签名的 bundle 都会验签失败。
+
+生成器会在材料旁边留下 `ca/GENERATED`。这个标记让"生成的信任根"和"提供的生产
+材料"在此后每一次构建里都可区分，而不只是在生成它的那一次。
+`os/rootfs/build-v2.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为依据
+（`MOS_EXPECT_DEV_KEYRING=1` 可以强制同一条警告）。生产发布把真实材料放进
+`ca/`，并且不带这个标记。
+
+有两条规则没变。`CERT`/`KEY`/`KEYRING` 仍然优先于约定——三个都设置时不会生成
+任何东西，也不会读 `ca/` 里的任何文件。放在
+`os/rootfs/overlay-v2/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
+无条件拒绝：overlay 会被整份复制进每一个镜像，留在那里的文件就是一个没人选择过
+的 CA，而 `ca/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，对开发镜像跑
+`make os-verify-<board>-v2` 需要 `MOS_EXPECT_DEV_KEYRING=1` 来声明它是台架镜像。
 
 ## 3. x64 全流程
 
@@ -68,7 +85,7 @@ store`），而不是去一个叫 `localhost` 的 registry 拉取。
 
 ```sh
 MOS_BUILD_PLATFORM=linux/amd64 bash os/build-env/build.sh
-bash os/pkgs/rauc/gen-dev-keys.sh
+bash os/pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
 MOS_BOARD=x64 bash os/pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash os/pkgs/podman/build.sh
 MOS_BOARD=x64 bash os/rootfs/build-v2.sh
@@ -115,7 +132,7 @@ amd64 主机有三条路到达 arm64，下面每一步恰好用其中一条：
 
 ```sh
 MOS_BUILD_PLATFORM=linux/arm64 bash os/build-env/build.sh
-bash os/pkgs/rauc/gen-dev-keys.sh
+bash os/pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
 make cx3576-uboot cx3576-uboot-mos
 make cx3576-kernel
 make os-rauc

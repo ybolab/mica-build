@@ -74,30 +74,33 @@ statusfile=@STATUSFILE@
 bundle-formats=verity
 
 [keyring]
-# Bundle signatures are verified against this CMS keyring. It is not shipped by
-# this task and NOT in git: a development keyring would be a trusted signer on
-# every device. `make os-devkeys` writes os/pkgs/rauc/.devkeys/ca.cert.pem, which a
-# developer can drop in at os/rootfs/overlay-v2/etc/rauc/keyring.pem (that path
-# is gitignored). Production keyring provisioning is out of scope here; until
-# one is installed, `rauc install` on device fails closed.
+# Bundle signatures are verified against this CMS keyring. It is NOT in git and
+# it is not written by this template: os/rootfs/build-v2.sh stages it here from
+# the repository-root ca/ directory, the single seam by which a trust root
+# enters a build — the same ca/ os/build signs bundles with, which is what lets
+# an image install the releases it ships alongside. ca/ holds either production
+# material an operator put there or a development-grade root
+# os/pkgs/rauc/gen-dev-keys.sh generated when it found none; ca/GENERATED marks
+# the second kind, and the build warns loudly about it. A keyring found in
+# os/rootfs/overlay-v2/etc/rauc/ is REFUSED — the overlay is copied wholesale
+# into every image, so a file left there is a CA nobody chose.
 #
-# The provisioning path on a shipped device: what RAUC reads is
-# exactly the path= below, in the rendered /etc/rauc/system.conf — the image
-# verifier's rauc-keyring-path check asserts the rendered config names this
-# path, and packed-no-dev-keyring asserts the shipped root carries nothing
-# there. /etc is a read-only squashfs on device, so an owner cannot simply
-# write the file: a production keyring must arrive through a provisioning
-# channel and live on storage that survives an A/B update, reaching this path
-# the way /etc/ssh does — a STATE-backed seed plus bind mount
-# (os/rootfs/overlay-v2/usr/lib/mos/mos-seed-state). No such bind or channel
-# exists yet, deliberately: which channel delivers the file (STATE/META
-# provisioning file, factory step, first-boot enrolment) and who holds,
-# rotates and revokes the signing CA are open product decisions for the
+# What RAUC reads is exactly the path= below, in the rendered
+# /etc/rauc/system.conf — the image verifier's rauc-keyring-path check asserts
+# the rendered config names this path, and packed-keyring-from-ca asserts the
+# keyring baked into the read-only root is byte-equal to ca/ca.cert.pem rather
+# than one that arrived from anywhere else. /etc is a
+# read-only squashfs on device, so the keyring cannot be replaced in the field
+# by writing this path: ROTATION still needs a channel that survives an A/B
+# update, reaching this path the way /etc/ssh does — a STATE-backed seed plus
+# bind mount (os/rootfs/overlay-v2/usr/lib/mos/mos-seed-state). No such bind or
+# channel exists yet, deliberately: which channel delivers a replacement
+# (STATE/META provisioning file, factory step, first-boot enrolment) and who
+# holds, rotates and revokes the signing CA are open product decisions for the
 # device's owner — recorded in docs/design/release-signing.md section 2.3,
-# never defaulted here. Whether a keyring provisioned at this path is then
-# honoured end to end (rauc install verifying against it) is observable only
-# on a booted device; until one exists that last step stays documented, not
-# tested.
+# never defaulted here. Whether the keyring at this path is then honoured end
+# to end (rauc install verifying against it) is observable only on a booted
+# device; until one exists that last step stays documented, not tested.
 path=/etc/rauc/keyring.pem
 
 # Slot groups. One group per A/B side: the rootfs slot carries the bootname the

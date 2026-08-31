@@ -132,6 +132,7 @@ function fixture(world: World): { ctx: ImageContext, dispose: () => void } {
     tools: { route: 'host', announce: 'stub', run: (a, o) => runChecked(exec, a, o), dispose: async () => {} },
     workDir: dir,
     outDir,
+    caDir: join(dir, 'ca'),
     gpt: async () => ({
       image,
       sectorSize: board.sectorSize ?? 512,

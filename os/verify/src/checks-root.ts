@@ -357,7 +357,7 @@ const APID_BIN = '/usr/bin/apid'
 // string can be asserted equal to it. Two independent transcriptions of one
 // string keep each other honest; a shared constant would not.
 export const BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
-const DEV_KEYRING_PATH = '/etc/rauc/keyring.pem'
+const KEYRING_PATH = '/etc/rauc/keyring.pem'
 const PACKED_MOUNTPOINTS = [
   '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
   '/usr/local/lib/systemd/system', '/etc/containers/systemd',
@@ -590,35 +590,89 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
 
   {
     // A keyring inside the signed read-only root is a trusted signer on every
-    // device flashed with this image. Absence is the shipped state; rauc
-    // install fails closed until one is provisioned.
+    // device flashed with this image, so the question is not whether one is
+    // there -- os/rootfs/build-v2.sh stages one into every image now -- but
+    // WHERE it came from. The repository-root ca/ is the single seam by which a
+    // trust root enters a build, and a byte comparison against ca/ca.cert.pem
+    // is what ties the image to that seam: a keyring that arrived any other way
+    // (left in the overlay, copied in by a stage, edited afterwards) does not
+    // match and is refused. That refusal is the old check's real purpose, kept
+    // through the change of what the shipped state is.
     //
-    // The ENV escape is ported too, and deliberately: MOS_EXPECT_DEV_KEYRING=1
-    // turns the fail into a pass for a local development image. Leaving it out
-    // would make this port stricter than the oracle on exactly the images
-    // somebody sets it for.
-    id: 'packed-no-dev-keyring',
-    shell: { pass: 'catches a baked-in RAUC keyring' },
+    // The ENV escape survives with it. ca/GENERATED marks a trust root
+    // os/pkgs/rauc/gen-dev-keys.sh made, and an image trusting one is a bench
+    // image: it fails here exactly as before unless MOS_EXPECT_DEV_KEYRING=1
+    // names it. Production material carries no marker and needs no variable.
+    id: 'packed-keyring-from-ca',
+    shell: { pass: 'the shipped RAUC keyring came from ca/' },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const what = 'catches a baked-in RAUC keyring'
-      const present = entry(root, DEV_KEYRING_PATH) !== undefined
-      if (!present) {
-        return [verdict('packed-no-dev-keyring', true,
-          `${what}: the packed root ships no ${DEV_KEYRING_PATH} (absence is the shipped state; `
-          + `rauc install fails closed until a keyring is provisioned)`)]
+      const what = 'the shipped RAUC keyring came from ca/'
+      const caCert = fileBytes(join(ctx.caDir, 'ca.cert.pem'))
+      // A THROW and not a fail, like packedRoot's own vacuity guard: "this tree
+      // has no trust root to compare against" is a statement about the RUN.
+      // Answering `pass` would make every image green on a host that had never
+      // built one, which is the shape of green this suite exists to refuse.
+      if (caCert === undefined) {
+        throw new ToolOutputError(
+          `${ctx.caDir}/ca.cert.pem does not exist, so there is nothing to compare `
+          + `${KEYRING_PATH} against. That file is the trust root every image is built to trust; `
+          + `a build creates it (os/pkgs/rauc/gen-dev-keys.sh) before staging the keyring, so a `
+          + `tree without one has not built this image.`,
+        )
+      }
+      // lstat for presence and read for content, because they differ: a
+      // DANGLING symlink is a keyring path in the signed root and cannot be
+      // read, and the two facts get different sentences.
+      if (entry(root, KEYRING_PATH) === undefined) {
+        return [verdict('packed-keyring-from-ca', false,
+          `${what}: the packed root ships no ${KEYRING_PATH} at all. Every image stages one from `
+          + `ca/ca.cert.pem, so this image can verify no bundle and rauc install fails closed on it`)]
+      }
+      const shipped = fileBytes(join(root, KEYRING_PATH))
+      if (shipped === undefined || !shipped.equals(caCert)) {
+        return [verdict('packed-keyring-from-ca', false,
+          `${what}: ${KEYRING_PATH} in the packed root is not ${ctx.caDir}/ca.cert.pem `
+          + `(${shipped === undefined ? 'it cannot be read -- a dangling symlink counts as shipped' : 'the bytes differ'}). `
+          + `ca/ is the one place a trust root may enter a build; a keyring that arrived any other `
+          + `way is a trusted signer on every device flashed with this image and nobody chose it`)]
+      }
+      if (!existsSync(join(ctx.caDir, 'GENERATED'))) {
+        return [verdict('packed-keyring-from-ca', true,
+          `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem byte for byte, and that trust root `
+          + `carries no GENERATED marker, so it is production material placed there on purpose`)]
       }
       if (process.env['MOS_EXPECT_DEV_KEYRING'] === '1') {
-        return [verdict('packed-no-dev-keyring', true,
-          `${what}: ${DEV_KEYRING_PATH} is present but explicitly expected `
-          + `(MOS_EXPECT_DEV_KEYRING=1, development image — see the WARNING above)`)]
+        return [verdict('packed-keyring-from-ca', true,
+          `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem, which ${ctx.caDir}/GENERATED marks `
+          + `development-grade -- explicitly expected (MOS_EXPECT_DEV_KEYRING=1, development image `
+          + `— see the WARNING above)`)]
       }
-      return [verdict('packed-no-dev-keyring', false,
-        `${what}: the packed root ships ${DEV_KEYRING_PATH}. A keyring inside the signed read-only `
-        + `root is a trusted signer on every device flashed with this image`)]
+      return [verdict('packed-keyring-from-ca', false,
+        `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem, but ${ctx.caDir}/GENERATED marks that `
+        + `trust root DEVELOPMENT-GRADE. Every device flashed with this image would trust bundles `
+        + `signed by an unprotected key in a working tree. Put production material in ca/ without `
+        + `the marker, or set MOS_EXPECT_DEV_KEYRING=1 to name this a bench image`)]
     },
   },
 ]
+
+/**
+ * The bytes of a file, or undefined when there are none to read.
+ *
+ * Undefined covers absence AND a link with nothing at the other end, which is
+ * why the caller establishes presence separately: the two get different
+ * sentences, and a dangling `/etc/rauc/keyring.pem` is still a keyring path in
+ * the signed root.
+ */
+function fileBytes(path: string): Buffer | undefined {
+  try {
+    return readFileSync(path)
+  }
+  catch {
+    return undefined
+  }
+}
 
 /** `ls ROOT/usr/lib/modules`, in the oracle's spelling: entries, not versions. */
 function kernelModuleDirs(root: string): string[] {

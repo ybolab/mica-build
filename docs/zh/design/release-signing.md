@@ -30,8 +30,14 @@
   该检查接受「无 EKU」，却**拒绝**「有 codeSigning 而无 emailProtection」。
   要收紧就得同时改 `system.conf` 的 `[keyring] check-purpose=`，两者必须**同一个提交**。
 
-**缺口**：没有把新信任锚配备到现场设备的通道。在配备通道存在之前，
-这份 runbook 产出的 CA 其 keyring **没有通往现场设备的路**。
+**信任根入口**：仓库根目录的 `ca/` 是 CA 进入构建的唯一入口（已 gitignore）。
+把这份 runbook 产出的 CA 放进 `ca/` 再构建，`os/build` 就用它签 bundle，
+`os/rootfs/build-v2.sh` 把 `ca/ca.cert.pem` 放进镜像的 `/etc/rauc/keyring.pem`。
+`ca/` 为空时构建会自动生成一套开发级信任根并留下 `ca/GENERATED` 标记，
+构建据此发出醒目警告；生产材料不带这个标记。
+
+**缺口**：没有把新信任锚配备到**已部署**设备的通道。`/etc` 是只读 squashfs，
+轮换 keyring 目前只能靠重新刷写镜像。
 
 ## 3. 签名一次发布
 
