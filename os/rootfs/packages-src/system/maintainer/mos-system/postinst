@@ -21,10 +21,10 @@
 # /home/mos is created on DATA by mos-seed-home -- so the account is needed
 # when the units run and not when the files are unpacked.
 #
-# Nothing here calls systemctl. This package's enablement is the wants-symlinks
-# in its own payload; the one thing this script does to a unit is REMOVE another
-# package's enablement link, which no payload of this package could express --
-# see the ssh block below.
+# Nothing here calls systemctl, and nothing here enables or disables a unit.
+# This package's enablement is entirely payload: the wants-symlinks it ships and
+# the preset it ships. The one unit-related line below is an ASSERTION over what
+# that payload achieved, which arranges nothing -- see the ssh block.
 set -e
 
 case "$1" in
@@ -33,32 +33,48 @@ abort-upgrade | abort-remove | abort-deconfigure) exit 0 ;;
 *) echo "error: postinst called with unknown argument '$1'" >&2; exit 1 ;;
 esac
 
-# ssh.service is left DISABLED in the image, on both profiles: mosd seeds
-# `access.ssh.enabled` false for dev and prod alike and owns the lifecycle, so
-# an image that shipped sshd enabled would be listening from early boot until
-# mosd's first reconcile shut it down.
+# A PRESET PREVENTS; IT DOES NOT RETRACT. That one measured asymmetry decides
+# three things in this tree, and this block is the third of them.
 #
-# THIS IS WHY THAT DECISION IS A COMMAND AND NOT AN ABSENCE. openssh-server's
-# own postinst runs `deb-systemd-helper enable ssh.service`, which writes
-# /etc/systemd/system/multi-user.target.wants/ssh.service; policy-rc.d stops a
-# maintainer script STARTING a service and does nothing about the symlink. A
-# package that merely declines to ship that link therefore ships an image with
-# sshd enabled. mos-system Depends on openssh-server, so dpkg has configured it
-# before this script runs and the link is already there to remove.
+# ssh.service must be DISABLED in the finished root, on both profiles: mosd
+# seeds `access.ssh.enabled` false for dev and prod alike and owns the
+# lifecycle, so an image that shipped sshd enabled would be listening from early
+# boot until mosd's first reconcile shut it down.
 #
-# Only that ONE link. openssh's `Alias=sshd.service` link,
-# /etc/systemd/system/sshd.service, is left alone: it names a disabled unit,
-# harms nothing, and os/rootfs/scripts/network-and-ssh-units.sh leaves it in the
-# stage chain's root too, which is the root this package's must equal.
+# WHAT ARRANGES THAT IS PAYLOAD, NOT THIS SCRIPT: the preset this package ships
+# at /usr/lib/systemd/system-preset/50-mos-ssh.preset. openssh-server's own
+# postinst enables ssh.service through deb-systemd-helper, and deb-systemd-helper
+# reads that preset and writes no link. The Dockerfile records the measurement.
+# On the stage chain the ordering is the other way round -- 10-base installs
+# openssh-server before os/rootfs/scripts/network-and-ssh-units.sh runs -- so
+# that script still needs its `rm -f`, because the preset it writes lands after
+# the link already exists. Same sentence, other direction.
 #
-# The assertion is not ceremony. `rm -f` succeeds over a path it did not remove
-# -- a directory of that name, or a link openssh writes somewhere this line does
-# not look -- and a silently enabled sshd is exactly the failure that must not be
-# reported as a successful install.
+# DO NOT DELETE THE LINE BELOW AS "A MAINTAINER SCRIPT DOING ENABLEMENT". The
+# standing ruling forbids a script that ARRANGES enablement -- `systemctl
+# enable`, deb-systemd-helper, anything deciding at install time what a payload
+# should have declared. This creates no link, removes none, and its only effect
+# is to refuse. Three things make it right rather than merely allowed:
+#
+#   IT GUARDS A FAILURE THE PAYLOAD CANNOT COVER. A third ordering exists that
+#   neither the preset nor the chain's `rm` reaches: a caller that configured
+#   openssh-server in an EARLIER apt transaction already holds the link, and a
+#   preset cannot retract one that exists. That is an ordering this package does
+#   not control, so it is asserted rather than assumed.
+#
+#   A REFUSAL HERE IS A BUILD FAILURE, NOT A BROKEN DEVICE. These packages are
+#   installed at image build time; the running image has no apt and no dpkg at
+#   all. Turning "sshd enabled at boot" into a failed composition is strictly
+#   better than finding it in a dual-build comparison afterwards -- which is
+#   exactly how it was found this time.
+#
+#   IT PUTS THE CLAIM WHERE THE CLAIM NOW LIVES. The chain asserts this same
+#   fact in a build script; the decision moved into a package, so the assertion
+#   moved with it. A claim is machine-checkable at the point where it could
+#   break, or it is not checked at all.
 SSH_LINK=/etc/systemd/system/multi-user.target.wants/ssh.service
-rm -f "${SSH_LINK}"
 [ ! -e "${SSH_LINK}" ] ||
-    { echo "error: ${SSH_LINK} still exists after rm -f, so sshd would start at boot. mosd owns the ssh lifecycle and the image ships it disabled on both profiles" >&2; exit 1; }
+    { echo "error: ${SSH_LINK} exists, so sshd would start at boot. mos-system ships /usr/lib/systemd/system-preset/50-mos-ssh.preset to stop openssh-server's postinst writing it, which only works if that postinst runs after this package's payload is unpacked -- configure openssh-server in the same apt transaction as mos-system" >&2; exit 1; }
 echo "ssh.service left DISABLED in the image (both profiles; mosd owns the lifecycle)"
 
 NAME=mos
