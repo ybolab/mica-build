@@ -8,7 +8,7 @@ Comment: The copyright file of mos-board-x64, installed as
  shipping vendor content to record that content's own licence instead.
  .
  THIS FILE IS INCOMPLETE ON ITS OWN, deliberately. The GPL-3.0-or-later stanza
- at the end has no body here: os/boards/x64/deb/Dockerfile harvests
+ at the end has no body here: os/boards/x64/deb/board-x64/Dockerfile harvests
  /usr/share/doc/grub-common/copyright out of the very archive grub-editenv was
  extracted from and appends it there, indented one space with blank lines
  written as `.`, which is how this format carries verbatim text. Hand-writing

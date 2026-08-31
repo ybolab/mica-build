@@ -3,7 +3,7 @@
 # The cx3576 board producer: the `mos-board-cx3576` package.
 #
 #   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/cx3576/deb --arch arm64
+#       --producer-dir os/boards/cx3576/deb/board-cx3576 --arch arm64
 #
 # The BOARD_DIR-selected BSP inputs and the rendered configuration arrive as the
 # `bin` context, staged on the host by this producer's PREPARE hook, render.sh.
@@ -130,7 +130,7 @@ RUN set -eu; \
     declared=0; \
     for fw in ${BOARD_FIRMWARE_FILES}; do \
         src="/in/stage/firmware/${fw##*/}"; \
-        [ -f "${src}" ] || { echo "error: the board declares ${fw} and ${src} was not staged. os/boards/${LAYOUT_BOARD}/deb/render.sh stages exactly the declared set out of BOARD_DIR" >&2; exit 1; }; \
+        [ -f "${src}" ] || { echo "error: the board declares ${fw} and ${src} was not staged. os/boards/${LAYOUT_BOARD}/deb/board-${LAYOUT_BOARD}/render.sh stages exactly the declared set out of BOARD_DIR" >&2; exit 1; }; \
         install -D -m 0644 "${src}" "${ROOT}${fw}"; \
         declared=$((declared + 1)); \
     done; \

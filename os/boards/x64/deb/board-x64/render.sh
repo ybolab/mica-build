@@ -9,7 +9,7 @@
 #   <src-root>/os/pkgs/rauc/render-config.sh
 #     -> <out-dir>/fstab, <out-dir>/boot.mount, <out-dir>/system.conf
 #
-# Runs INSIDE the producer's packing stage, from os/boards/x64/deb/Dockerfile,
+# Runs INSIDE the producer's packing stage, from os/boards/x64/deb/board-x64/Dockerfile,
 # not on the host. The rendered files are generated artifacts: rendering them
 # on the host would either write them into the worktree -- where a committed
 # rendering drifts from its template, which is the reason
@@ -52,7 +52,7 @@ mkdir -p "${OUT}"
 # `$((...))` arithmetic and one `${MOS_VAR_MIB}` alias, so a line-wise parser
 # would read those verbatim and a hand-copied GUID would be a second copy that
 # can disagree with it.
-# shellcheck source=../board.env
+# shellcheck source=../../board.env
 . "${BOARD_ENV}"
 
 # Named rather than left to `set -u`, which would report the shell's own

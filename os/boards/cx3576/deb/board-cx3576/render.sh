@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Stage the BSP-dependent inputs of mos-board-cx3576 into ${MOS_DEB_STAGE}.
 #
-# This is the producer's PREPARE hook, named in os/boards/cx3576/deb/producer.env
+# This is the producer's PREPARE hook, named in os/boards/cx3576/deb/board-cx3576/producer.env
 # and run by the driver -- it is not an entry point and does not build anything:
 #
 #   [BOARD_DIR=...] bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/cx3576/deb --arch arm64
+#       --producer-dir os/boards/cx3576/deb/board-cx3576 --arch arm64
 #
 # The driver empties ${MOS_DEB_STAGE}, exports the hook environment
 # os/rootfs/packages-src/README.md documents, runs this script on the HOST
@@ -39,10 +39,16 @@ die() {
 }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOARD_ROOT="$(cd "${HERE}/.." && pwd)"
+# TWO hops to the board, not one. A producer's NAME is its directory's
+# basename -- that is what `make os-deb-<name>` selects on and what refuses a
+# duplicate -- so this producer is os/boards/<board>/deb/board-<board>/ and not
+# os/boards/<board>/deb/, whose basename `deb` both boards would have claimed.
+# The board directory is therefore the grandparent: deb/ in between holds the
+# board's producers and nothing else.
+BOARD_ROOT="$(cd "${HERE}/../.." && pwd)"
 REPO_ROOT="$(cd "${BOARD_ROOT}/../../.." && pwd)"
 # The board is this producer's LOCATION, not a constant written down twice: the
-# directory that holds board.env is the same one that holds this script.
+# directory that holds board.env is the one this script is nested under.
 MOS_BOARD="$(basename "${BOARD_ROOT}")"
 LAYOUT_ENV="${BOARD_ROOT}/board.env"
 
@@ -52,13 +58,13 @@ LAYOUT_ENV="${BOARD_ROOT}/board.env"
 # the driver has no stage to fill.
 STAGE="${MOS_DEB_STAGE:-}"
 [ -n "${STAGE}" ] ||
-    die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/rootfs/packages-src/build-deb.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/${MOS_BOARD}/deb --arch arm64"
+    die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/rootfs/packages-src/build-deb.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/${MOS_BOARD}/deb/board-${MOS_BOARD} --arch arm64"
 [ -d "${STAGE}" ] ||
     die "MOS_DEB_STAGE=${STAGE} is not a directory"
 
 [ -f "${LAYOUT_ENV}" ] ||
     die "${LAYOUT_ENV} does not exist. Every value this producer renders or selects is read from it; there is no default for any of them"
-# shellcheck source=../board.env
+# shellcheck source=../../board.env
 . "${LAYOUT_ENV}"
 
 # The same override os/rootfs/build-v2.sh accepts, spelled the same way.

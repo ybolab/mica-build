@@ -299,14 +299,14 @@ os-deb-radios:
 # artifact is reported by name, with the `make -C os/boards/cx3576/bsp ...`
 # that produces it.
 os-deb-board-cx3576:
-	bash os/boards/cx3576/deb/render.sh
+	bash os/boards/cx3576/deb/board-cx3576/render.sh
 
 # The x64 board package: the configuration rendered from board.env, the verity
 # initramfs payload, grub-editenv and the GRUB configuration the image
 # assembler writes onto the ESP. amd64 and not `all`, because grub-editenv is
 # an amd64 ELF and the board it configures is the x86_64 one.
 os-deb-board-x64:
-	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/x64/deb --arch amd64
+	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/x64/deb/board-x64 --arch amd64
 
 # THE WHOLE LOCAL POOL: every producer for both architectures, then the index
 # beside each pool. The composer resolves its package set through

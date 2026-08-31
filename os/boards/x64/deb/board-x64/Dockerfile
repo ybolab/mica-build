@@ -3,7 +3,7 @@
 # The board-x64 producer: the `mos-board-x64` package.
 #
 #   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/x64/deb --arch amd64
+#       --producer-dir os/boards/x64/deb/board-x64 --arch amd64
 #
 # Everything the image carries because it is the x64 board: the configuration
 # rendered from os/boards/x64/board.env, the dm-verity initramfs payload,
@@ -68,7 +68,7 @@ RUN set -eu; \
     [ -s /harvest/grub-common.copyright ] || \
         { echo "error: grub-common ships no /usr/share/doc/grub-common/copyright to harvest, so the GPL-3 record for the binary above would have to be written by hand -- which is a claim about the file rather than the file's own licence" >&2; exit 1; }; \
     grep -c '^License: GPL-3' /harvest/grub-common.copyright >/dev/null || \
-        { echo "error: the harvested grub-common copyright declares no GPL-3 licence; os/boards/x64/deb/copyright records grub-editenv as GPL-3-or-later and that record must match what Debian ships" >&2; exit 1; }
+        { echo "error: the harvested grub-common copyright declares no GPL-3 licence; os/boards/x64/deb/board-x64/copyright records grub-editenv as GPL-3-or-later and that record must match what Debian ships" >&2; exit 1; }
 
 FROM ${MOS_BUILD_DEB} AS pack
 
@@ -78,8 +78,8 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY --from=board deb/copyright deb/render.sh /in/
-COPY --from=board deb/control/ /in/control/
+COPY --from=board deb/board-x64/copyright deb/board-x64/render.sh /in/
+COPY --from=board deb/board-x64/control/ /in/control/
 COPY --from=board grub.cfg /in/grub.cfg
 COPY --from=initramfs hooks/mos-verity /in/initramfs/hooks/mos-verity
 COPY --from=initramfs scripts/mos-verity /in/initramfs/scripts/mos-verity
