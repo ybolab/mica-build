@@ -1,0 +1,13 @@
+# The build context is os/rootfs/packages-src/, the producer family directory,
+# and this producer needs two things out of it: the shared copyright file and
+# its own control templates. Everything else -- the driver, the README, and
+# every sibling producer that lands beside it -- is excluded, so an edit there
+# does not invalidate this producer's context.
+#
+# The unit bodies and the HCI-attach program are NOT here. They arrive through
+# the `radio-units` and `radio-hwinit` build contexts producer.env names, which
+# point at the tree the stage chain ships them from, so that this producer
+# cannot become a second copy of files that must stay byte-identical.
+*
+!copyright
+!radios/control/*.control
