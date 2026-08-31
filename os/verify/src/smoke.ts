@@ -777,8 +777,87 @@ export async function capture(argv: readonly string[], timeoutMs: number): Promi
   }
 }
 
-/** How long any one invocation may take. `--version` is milliseconds; this is a fuse. */
-export const EXEC_TIMEOUT_MS = 30_000
+/**
+ * What one invocation gets, split by the two different things that spend it.
+ *
+ * A `docker run` of an artifact is two jobs in one wait: the daemon has to
+ * START a container, and then the program has to RUN. They fail for unrelated
+ * reasons -- a wedged daemon is a statement about the host, a program that
+ * never answers is a statement about the binary -- and until now they shared
+ * one 30s number and one message, so a build could only be told `/bin/true
+ * exited 137` and left to decode a signal into a cause.
+ *
+ * The 30s was indefensible for the same reason the load budget's was, and NOT
+ * because it was small: it was sized against an idle host. Measured here
+ * (docker 29.7.2, containerd image store, 8 cores) on the shipped x64 factory
+ * root, `docker run --rm --network none <root> /bin/true` -- the preflight's
+ * exact argv, and a program that cannot be slow for any reason of its own --
+ *
+ *   quiet host, 10 runs         330, 330, 582, 666, 652, 608, 630, 646, 666, 718 ms
+ *   3 concurrent docker builds  8582, 1603, 857, 942, 1185, 1010, 967, 667,
+ *   + 16 spinners, 12 runs      675, 646, 680, 588 ms
+ *
+ * -- so a start costs ~0.65s on a quiet host and the FIRST start after the
+ * daemon gets busy costs 8.6s, 13x the quiet median and 26x the quiet best. The
+ * distribution's tail is not proportional to its middle: it is a queue behind
+ * whatever else the daemon is committing, and the campaign has the measurement
+ * that matters at the far end -- a `/bin/true` killed at 30s while two sibling
+ * rootfs builds ran. A number chosen as a multiple of the idle case is a number
+ * that tail crosses, whatever multiple is chosen.
+ *
+ * So the budget is sized against the two jobs separately, and the part that
+ * cannot be predicted is MEASURED rather than guessed. `preflight` already runs
+ * `/bin/true` before anything is concluded; that run is a measurement of what a
+ * container start costs on this host under the load it has right now, and
+ * `execTimeoutMs` sizes every later invocation from it. On a quiet host the
+ * floor wins and the answer is a flat 150s; on a host where a start really did
+ * cost 8.6s the multiplier wins and the artifacts get 167s. That is the same
+ * argument LOAD_TIMEOUT_BYTES_PER_MS makes with bytes: a budget that answers
+ * the same on an idle host and a swamped one is the constant again under
+ * another name.
+ */
+export const EXEC_STARTUP_BUDGET_MS = 120_000
+/**
+ * What the program itself may take once it is running.
+ *
+ * This is the old 30s, and it keeps that value for the one job it can actually
+ * be sized against: every `--version` in the register answers in milliseconds,
+ * and the failure it guards is a program that does not answer at all -- `apid
+ * --version` starts an HTTPS server and never returns, measured rc=124 against
+ * 25s. A binary that has not printed a version line in 30s of running is not
+ * going to.
+ */
+export const EXEC_PROGRAM_BUDGET_MS = 30_000
+/**
+ * How much slower than its own measurement a start is allowed to get.
+ *
+ * 16, from the spread this host actually showed between a quiet start (0.65s
+ * median) and the first start after the daemon got busy (8.6s): 13x. The
+ * measurement is taken seconds before the artifacts run, so the risk it does
+ * not cover is load ARRIVING in between; a multiple just above the worst spread
+ * measured is what covers that without turning the fuse into an afternoon.
+ */
+export const EXEC_STARTUP_SLACK = 16
+
+/**
+ * The budget for one invocation, given what a container start just cost.
+ *
+ * `startupMs` is `preflight`'s own elapsed time. The floor is what a run that
+ * measured nothing gets, and it is also what a quiet host gets: a start that
+ * cost 0.65s does not justify shrinking the fuse to 10s, because the next start
+ * is queued behind whatever the daemon does next.
+ */
+export function execTimeoutMs(startupMs: number): number {
+  return Math.max(EXEC_STARTUP_BUDGET_MS, Math.ceil(startupMs * EXEC_STARTUP_SLACK)) + EXEC_PROGRAM_BUDGET_MS
+}
+
+/**
+ * The fuse for a call nobody measured a start for: `tar`, `docker image
+ * inspect`, `docker buildx inspect`. Both parts, because such a call is a
+ * daemon round trip plus work of its own -- `extractLayout` untars 250 MB under
+ * it.
+ */
+export const EXEC_TIMEOUT_MS = EXEC_STARTUP_BUDGET_MS + EXEC_PROGRAM_BUDGET_MS
 
 /**
  * What `docker load` gets, as a function of what it has to ingest.
@@ -1035,10 +1114,37 @@ export async function loadFactoryRoot(
  * against a pulled upstream arm64v8/busybox, so the measurement is about the host
  * and not our export. Refusing here, naming the platform and the remedy, is the
  * same shape as `os-verify-cx3576-v2` refusing on a tree with no image.
+ *
+ * It also MEASURES, and that is why it hands back a number. `/bin/true` returns
+ * immediately, so its elapsed time is what starting a container costs on this
+ * host right now -- see `execTimeoutMs`, which sizes every later invocation from
+ * it. The measurement is free: this run happens either way.
  */
-export async function preflight(exec: Exec, platform: string): Promise<void> {
+export async function preflight(exec: Exec, platform: string): Promise<number> {
+  const startedAt = Date.now()
   const r = await exec(['/bin/true'])
-  if (r.status === 0) return
+  const elapsedMs = Date.now() - startedAt
+  if (r.status === 0) return elapsedMs
+  // A budget that ran out HERE is the one failure this control can attribute
+  // without guessing: `/bin/true` cannot be slow for a reason of its own, so
+  // nothing was spent running it and all of it was spent starting the
+  // container. That is a question about this host's daemon and not about the
+  // root, and it must not be reported as `/bin/true exited 137` -- a status
+  // that reads as the program's own answer and sends the reader to decode a
+  // signal number. It cost this campaign a green chain build, killed at 30s
+  // while two sibling builds ran.
+  if (r.timedOutAfterMs !== undefined) {
+    throw new Error(
+      `the factory root's container did not START within ${r.timedOutAfterMs} ms, so nothing was executed.\n`
+      + `       The watchdog killed it; the status beside it is that SIGKILL and not /bin/true's answer.\n`
+      + `       ${r.stderr.trim() || r.stdout.trim() || '(it said nothing)'}\n`
+      + `       /bin/true returns immediately, so none of that budget was the program running: it was\n`
+      + `       spent starting the container. Measured on this daemon, a start costs ~0.65s quiet and\n`
+      + `       8.6s while three builds run, so a budget of this size means the daemon is not making\n`
+      + `       progress -- look at what else is running on the host before re-running. This is NOT\n`
+      + `       evidence that the root or any artifact in it is broken.`,
+    )
+  }
   const formatError = /exec format error/i.test(r.stderr + r.stdout)
   throw new Error(
     `the factory root cannot execute anything on this host: /bin/true exited ${r.status}.\n`
@@ -1080,11 +1186,23 @@ export function dockerArgv(ref: string, argv: readonly string[]): string[] {
   ]
 }
 
-/** The real seam: one container per invocation, inside the loaded factory root. */
-export function dockerExec(ref: string, timeoutMs: number = EXEC_TIMEOUT_MS): RoutedExec {
+/**
+ * The real seam: one container per invocation, inside the loaded factory root.
+ *
+ * `run` is a parameter for the same reason `loadFactoryRoot`'s is: the budget
+ * an invocation is given is a decision, and a decision that only exists inside
+ * a closure nothing can observe is one no test can watch survive an edit. The
+ * default is the fuse for a run that measured no start; `smokeRun` passes
+ * `execTimeoutMs(preflight's measurement)`.
+ */
+export function dockerExec(
+  ref: string,
+  timeoutMs: number = EXEC_TIMEOUT_MS,
+  run: (argv: readonly string[], timeoutMs: number) => Promise<ExecResult> = capture,
+): RoutedExec {
   // Tagged `native`: this runs on the host's own kernel, so a non-zero exit is
   // the binary's answer and nothing here is emulated. See `RoutedExec`.
-  return Object.assign((argv: readonly string[]) => capture(dockerArgv(ref, argv), timeoutMs), { route: 'native' as const })
+  return Object.assign((argv: readonly string[]) => run(dockerArgv(ref, argv), timeoutMs), { route: 'native' as const })
 }
 
 // The buildkit executor. Same seam, same register, same judging: only the
@@ -1110,7 +1228,8 @@ export interface BuildkitExecOptions {
 
 /**
  * A build imports the layout on its first run and executes under emulation on
- * every run; the docker route's thirty seconds is not the right figure.
+ * every run; the docker route's budget is not the right figure, and no
+ * measurement of a container start on this host predicts what qemu-user costs.
  */
 export const BUILDKIT_EXEC_TIMEOUT_MS = 300_000
 
@@ -1358,9 +1477,20 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
         + `${loaded.source === 'content' ? `the digest ${record.archive} carries` : `the tag ${loaded.ref}`}`,
       )
     }
-    exec = dockerExec(image)
+    // The control gets the START budget, because starting a container is the
+    // only thing `/bin/true` can spend one on, and what it costs is then what
+    // sizes every artifact's. A run that had to guess would get the floor; this
+    // one measured the host it is about to judge on. See execTimeoutMs.
+    const control = dockerExec(image, EXEC_STARTUP_BUDGET_MS)
     try {
-      await preflight(exec, record.platform)
+      const startupMs = await preflight(control, record.platform)
+      const budget = execTimeoutMs(startupMs)
+      log(
+        `os/verify smoke: a container start measured ${startupMs} ms on this host, so each invocation `
+        + `gets ${budget} ms (${EXEC_STARTUP_BUDGET_MS} ms of start or ${EXEC_STARTUP_SLACK}x the `
+        + `measurement, whichever is larger, plus ${EXEC_PROGRAM_BUDGET_MS} ms for the program)`,
+      )
+      exec = dockerExec(image, budget)
     } catch (e) {
       // The daemon cannot execute this platform. That is a fact about the
       // host, not about the root, and a builder that bundles its emulator can

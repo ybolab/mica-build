@@ -36,3 +36,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-035 Build the cx3576 rootfs chain on a host without binfmt through buildkit**](PLAN-035.md) `2026-08-30`
 - [-] [**PLAN-036 Compose rootfs from independently built Debian packages**](PLAN-036.md) `2026-08-30`
 - [ ] [**PLAN-037 Build an embedded-first delivery documentation system**](PLAN-037.md) `2026-08-31`
+- [-] [**PLAN-038 Bound, scope and queue the settings-write path**](PLAN-038.md) `2026-08-31`
