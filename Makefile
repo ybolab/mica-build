@@ -17,7 +17,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
-	os-debs os-deb-preflight os-deb-package-gate \
+	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
 	os-rootfs-manifest-test \
 	docs-verify docs-verify-test build-env
 
@@ -49,6 +49,7 @@ help:
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash os/build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
+	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
@@ -355,6 +356,18 @@ os-shell-pipefail-lint:
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
 	bash os/tests/rootfs-manifest-test.sh
+
+# Negative and positive tests for the pre-flight above. Its value is a count and
+# a list, and both fail silently: a run that looked at nothing prints the same
+# shape of green line as one that looked at everything. So each case perturbs
+# ONE input and requires the reported numbers to move by exactly that much, and
+# each half of the hook count contract is mutated until the run goes red -- the
+# first spelling of that guard reported every input present having skipped a
+# producer entirely, and it was found by hand rather than by a check. No docker
+# and no pool: this runs the pre-flight, the two hooks that answer it, and the
+# podman versions stamp, against fixtures it builds and removes.
+os-deb-preflight-test:
+	bash os/tests/deb-preflight-test.sh
 
 # Structural check on docs/README.md. It exists because the index is the one
 # thing no other check can reach: a document that is never listed there is not
