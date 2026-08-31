@@ -231,7 +231,15 @@ not_root="$(dpkg-deb --contents "${DEB}" | awk '$2 != "root/root" { print $2 " "
 [ -z "${not_root}" ] ||
     die "${DEB} carries paths that are not root/root, so the installed root would inherit a build user: ${not_root}"
 
-dpkg-deb --fsys-tarfile "${DEB}" | tar -tf - | sed -e 's|^\./||' -e 's|/$||' -e '/^$/d' |
+# --quoting-style=literal, and it is load-bearing. GNU tar C-escapes any
+# non-printable or non-ASCII byte when it lists under the C locale, while
+# `find -printf '%P\n'` below emits the raw bytes. Without it the two lists are
+# in different encodings, so a payload path like Mozilla's
+# `NetLock_Arany_=Class_Gold=_Fotanusitvany` anchor -- accented -- produces a
+# spurious diff, and this assertion refuses a correct archive while naming the
+# PAYLOAD as wrong. `literal` depends on no installed locale, which matters
+# because this runs in an image that has none.
+dpkg-deb --fsys-tarfile "${DEB}" | tar --quoting-style=literal -tf - | sed -e 's|^\./||' -e 's|/$||' -e '/^$/d' |
     LC_ALL=C sort >"${WORK}/payload.paths"
 (cd "${ROOT}" && find . -mindepth 1 -printf '%P\n') | LC_ALL=C sort >"${WORK}/staged.paths"
 if ! diff -u "${WORK}/staged.paths" "${WORK}/payload.paths" >"${WORK}/paths.diff"; then
