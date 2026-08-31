@@ -55,7 +55,7 @@ help:
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
-	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool instead of the stage chain (needs os-debs; docker)"
+	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool (needs os-debs; docker)"
 	@echo "  os-dual-build-gate  build x64 through BOTH paths at one commit and compare the two roots against the sanction ledger (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
@@ -70,6 +70,10 @@ os:
 	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
 	@false
 
+# NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
+# target refuses until `make os-debs` has built it -- by name, rather than by
+# compiling a component on demand. That refusal is the composer's, not this
+# file's; see os/rootfs/build-v2.sh.
 os-rootfs-cx3576-v2:
 	bash os/rootfs/build-v2.sh
 
@@ -375,24 +379,26 @@ os-shell-pipefail-lint:
 os-rootfs-manifest-test:
 	bash os/tests/rootfs-manifest-test.sh
 
-# THE COMPOSED ROOT: the same board, the same finalizer, a different assembler.
-# MOS_ROOTFS_MODE=composed makes os/rootfs/build-v2.sh install the resolved
-# package set out of _out/debs/<arch> instead of sequencing
-# os/rootfs/stages/*.Dockerfile, and it refuses a missing or stale pool by
-# naming `make os-debs` rather than building one -- a composer that compiled a
-# component on demand would make a stale pool invisible.
+# THE x64 ROOT. os/rootfs/build-v2.sh installs the resolved package set out of
+# _out/debs/<arch> and refuses a missing or stale pool by naming `make os-debs`
+# rather than building one -- a composer that compiled a component on demand
+# would make a stale pool invisible.
 #
-# x64 ONLY, and that is PLAN-036's order rather than a limitation of the mode:
-# build-v2.sh's composed path names no board and resolve.sh carries a cx3576
-# manifest, but the cx3576 composition is a separate step with its own
-# verification, so there is no cx3576 target here to run before it exists.
+# Kept as its own target rather than folded into os-rootfs-cx3576-v2's shape:
+# x64 is the board whose pool this host can build, so this is the composition
+# that runs here, and naming it says which one was run.
 os-rootfs-x64-composed:
-	MOS_BOARD=x64 MOS_ROOTFS_MODE=composed bash os/rootfs/build-v2.sh
+	MOS_BOARD=x64 bash os/rootfs/build-v2.sh
 
 # PLAN-036 section 6's last paragraph: x64 built through the chain AND through
 # the composer at ONE commit, both factory roots extracted, and every difference
 # between them either sanctioned in os/tests/dual-build-sanctions.md with a
 # written reason or reported.
+#
+# THE CHAIN IS GONE, so this cannot run: it needs two assembly paths and there
+# is one. Left in place rather than deleted -- deleting the instrument that
+# accepted the removal is a separate decision, and the sanctions ledger beside
+# it is a written record of sixteen judged differences.
 #
 # TWO COLD BUILDS. It creates its own docker-container buildx builder and
 # removes it afterwards, because mos-rootfs-stage:<board>-<stage> are

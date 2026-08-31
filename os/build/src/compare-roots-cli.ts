@@ -42,7 +42,7 @@ capabilities. NOT mtime -- src/compare-roots.ts says why at the site.
 
   --extract-oci ARCHIVE DIR
                    unpack a factory-root.oci (the OCI-layout tar that
-                   os/rootfs/stages/90-pack.Dockerfile's 'factory-root' target
+                   os/rootfs/compose/90-pack.Dockerfile's 'factory-root' target
                    exports, written to _out/<board>/) into DIR, as a root tree
                    this can compare. DIR must not already hold anything.
 

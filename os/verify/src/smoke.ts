@@ -645,7 +645,7 @@ export function readFactoryRoot(
     throw new Error(
       `${board}: ${existsSync(record) ? archive : record} does not exist.\n`
       + `       The smoke run executes the self-built binaries INSIDE the packed root, and that root\n`
-      + `       is exported by os/rootfs/stages/90-pack.Dockerfile's \`factory-root\` target. Build it\n`
+      + `       is exported by os/rootfs/compose/90-pack.Dockerfile's \`factory-root\` target. Build it\n`
       + `       with: MOS_BOARD=${board} bash os/rootfs/build-v2.sh\n`
       + `       This refuses rather than skipping: a skip reports the same green as a pass, and an\n`
       + `       image that ships its binaries unexecuted is exactly what this check exists to end.`,
