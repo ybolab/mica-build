@@ -73,9 +73,45 @@ ARG SOURCE_DATE_EPOCH
 # ENABLEMENT IS PACKAGE-OWNED FILES: the wants-symlinks below are payload, in
 # the exact set and with the exact targets overlay-install.sh and
 # network-and-ssh-units.sh create. No preset, and no `systemctl enable` in a
-# maintainer script. There is deliberately NO multi-user.target.wants/ssh.service
-# -- mosd owns that lifecycle and the image leaves sshd disabled on both
-# profiles -- and no local-fs.target.wants/etc-containers-systemd.mount, which
+# maintainer script.
+#
+# EVERY LINK `systemctl enable` WOULD WRITE, NOT ONLY THE PRIMARY ONE. A unit's
+# [Install] section can carry `Alias=` and `Also=`, and each of those is another
+# link in the root. systemd-networkd.service carries both -- `Alias=` one name
+# and `Also=` three further units, each with a WantedBy of its own -- so the
+# five links below are what enabling that one unit means. Missing the `Also=`
+# for systemd-networkd-wait-online.service is not cosmetic: without its link in
+# network-online.target.wants, network-online.target completes WITHOUT WAITING
+# FOR A NETWORK and everything ordered after it starts early. The other unit
+# with an `Alias=` is systemd-resolved.service; its own package's postinst
+# enables it, so its alias and its sysinit link are already in the root and are
+# not this package's to own.
+#
+# TWO TARGET PREFIXES, DELIBERATELY, and they are not interchangeable as
+# DECLARATIONS even though merged-/usr resolves them to one file. Each link
+# spells what the authority that creates it on the stage chain spells:
+# `systemctl enable systemd-networkd` writes /usr/lib, and so does everything it
+# pulls in through `Also=` and `Alias=`; systemd-resolved's multi-user link has
+# no [Install] behind it at all -- it is the explicit `ln -s /lib/...` fallback
+# in network-and-ssh-units.sh -- and so stays /lib, as does fstrim.timer, which
+# overlay-install.sh writes the same way.
+#
+# ssh.service is DISABLED ACTIVELY, by the postinst, and not by leaving a link
+# out. An absence cannot survive another package's postinst: openssh-server's
+# writes multi-user.target.wants/ssh.service through deb-systemd-helper, and
+# policy-rc.d stops a maintainer script STARTING a service without touching the
+# symlink. mos-system Depends on openssh-server, so dpkg configures that package
+# first and this one's postinst is the next thing that runs.
+#
+# A preset under /usr/lib/systemd/system-preset was measured against the same
+# clean root and IS honoured -- deb-systemd-helper 1.69~deb13u1 reads it, and
+# apt unpacks it before openssh-server is configured -- but it also suppresses
+# openssh's `Alias=sshd.service` link, /etc/systemd/system/sshd.service, which
+# the stage chain's root HAS because network-and-ssh-units.sh removes the
+# multi-user link and nothing else. It would trade one wrong path for another
+# and add a preset file the chain has no counterpart for.
+#
+# There is likewise no local-fs.target.wants/etc-containers-systemd.mount, which
 # overlay-install.sh spells out at length is left unlinked so that Quadlet
 # cannot generate root-capable units from STATE with no operator decision.
 #
@@ -130,7 +166,10 @@ RUN set -eu; \
         "${R}/var/lib/mos" \
         "${R}/etc/systemd/system/local-fs.target.wants" \
         "${R}/etc/systemd/system/timers.target.wants" \
-        "${R}/etc/systemd/system/multi-user.target.wants"; \
+        "${R}/etc/systemd/system/multi-user.target.wants" \
+        "${R}/etc/systemd/system/sockets.target.wants" \
+        "${R}/etc/systemd/system/network-online.target.wants" \
+        "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
              mos-seed-root.service var-lib-mos.mount etc-ssh.mount etc-hostname.mount \
@@ -145,10 +184,18 @@ RUN set -eu; \
         cp -a "/in/overlay/etc/systemd/system/multi-user.target.wants/${u}" \
             "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
     done; \
-    for u in systemd-networkd.service systemd-resolved.service; do \
-        ln -s "/lib/systemd/system/${u}" \
-            "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
-    done; \
+    ln -s /usr/lib/systemd/system/systemd-networkd.service \
+        "${R}/etc/systemd/system/multi-user.target.wants/systemd-networkd.service"; \
+    ln -s /lib/systemd/system/systemd-resolved.service \
+        "${R}/etc/systemd/system/multi-user.target.wants/systemd-resolved.service"; \
+    ln -s /usr/lib/systemd/system/systemd-networkd.service \
+        "${R}/etc/systemd/system/dbus-org.freedesktop.network1.service"; \
+    ln -s /usr/lib/systemd/system/systemd-networkd.socket \
+        "${R}/etc/systemd/system/sockets.target.wants/systemd-networkd.socket"; \
+    ln -s /usr/lib/systemd/system/systemd-networkd-wait-online.service \
+        "${R}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"; \
+    ln -s /usr/lib/systemd/system/systemd-network-generator.service \
+        "${R}/etc/systemd/system/sysinit.target.wants/systemd-network-generator.service"; \
     ln -s /lib/systemd/system/fstrim.timer \
         "${R}/etc/systemd/system/timers.target.wants/fstrim.timer"; \
     install -D -m 0644 /in/copyright "${R}/usr/share/doc/mos-system/copyright"; \
