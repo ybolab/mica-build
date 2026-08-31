@@ -82,30 +82,53 @@ restore_all() {
     done
     MOVED=()
 }
+# Section E is the one case that touches a real build directory. The stamp it
+# overwrites is DERIVABLE, so the restore re-computes it rather than replaying a
+# saved copy: correct even if this test is killed between E1 and E2, which is
+# the window in which a real os/pkgs/podman/out-amd64 would otherwise be left
+# carrying a digest that refuses every later image build.
+E_ACTIVE=0
+E_CREATED=0
+PODMAN_REAL=""
 cleanup() {
     restore_all
     [ ! -f "${TMP}/render.sh.orig" ] || cp "${TMP}/render.sh.orig" "${RENDER}"
+    if [ "${E_ACTIVE}" = 1 ]; then
+        if [ "${E_CREATED}" = 1 ]; then
+            rm -rf "${PODMAN_REAL}"
+        else
+            bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
+        fi
+    fi
     rm -rf "${TMP}"
 }
-trap cleanup EXIT
+# INT and TERM as well as EXIT. Several cases move a tracked file or a real
+# build directory aside for the length of one run, and bash does not run an
+# EXIT trap for an untrapped terminating signal -- so without these a
+# Ctrl-C in the wrong second leaves the tree with a file missing.
+trap cleanup EXIT INT TERM
 
-# The two numbers every case reads, taken out of the pre-flight's own summary
+# The three numbers every case reads, taken out of the pre-flight's own summary
 # rather than recomputed here: the summary IS the thing under test, so a test
 # that counted the reports itself would pass over a summary that had stopped
 # agreeing with them.
 #
-#   preflight: N inputs present across ...
+#   preflight: P of N examined inputs are present across ...
 #   preflight: M of N examined inputs are missing across ...
+#   preflight: a further W of N are absent and will be BUILT BY THE RUN ITSELF ...
 PF_RC=0
 PF_EXAMINED=""
 PF_MISSING=""
+PF_WARNED=""
 PF_OUT=""
 run_preflight() {
     PF_RC=0
     PF_OUT="$(BOARD_DIR="${BSP_FIXTURE}" bash "${PREFLIGHT}" "$@" 2>&1)" || PF_RC=$?
-    PF_EXAMINED="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: \([0-9]*\) inputs present.*/\1/p;s/^preflight: [0-9]* of \([0-9]*\) examined.*/\1/p' | tail -1)"
-    PF_MISSING="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: \([0-9]*\) of [0-9]* examined.*/\1/p' | tail -1)"
+    PF_EXAMINED="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: [0-9]* of \([0-9]*\) examined.*/\1/p' | tail -1)"
+    PF_MISSING="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: \([0-9]*\) of [0-9]* examined inputs are missing.*/\1/p' | tail -1)"
+    PF_WARNED="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: a further \([0-9]*\) of [0-9]* are absent.*/\1/p' | tail -1)"
     [ -n "${PF_MISSING}" ] || PF_MISSING=0
+    [ -n "${PF_WARNED}" ] || PF_WARNED=0
 }
 
 echo "== A. BOARD_DIR: still the escape, in both directions =="
@@ -147,6 +170,7 @@ echo "== B. the aggregate: counts, and every missing input in ONE run =="
 run_preflight
 BASE_EXAMINED="${PF_EXAMINED}"
 BASE_MISSING="${PF_MISSING}"
+BASE_WARNED="${PF_WARNED}"
 BASE_RC="${PF_RC}"
 [ -n "${BASE_EXAMINED}" ] || { echo "error: the pre-flight printed no summary line to take a baseline from:" >&2; printf '%s\n' "${PF_OUT}" >&2; exit 1; }
 echo "note: baseline is ${BASE_MISSING} missing of ${BASE_EXAMINED} examined (exit ${BASE_RC})"
@@ -184,10 +208,11 @@ fi
 
 restore_all
 run_preflight
-if [ "${PF_RC}" = "${BASE_RC}" ] && [ "${PF_MISSING}" = "${BASE_MISSING}" ] && [ "${PF_EXAMINED}" = "${BASE_EXAMINED}" ]; then
-    pass "B3 restoring all three returns the run to the baseline (${BASE_MISSING} of ${BASE_EXAMINED})"
+if [ "${PF_RC}" = "${BASE_RC}" ] && [ "${PF_MISSING}" = "${BASE_MISSING}" ] &&
+    [ "${PF_WARNED}" = "${BASE_WARNED}" ] && [ "${PF_EXAMINED}" = "${BASE_EXAMINED}" ]; then
+    pass "B3 restoring all three returns the run to the baseline (${BASE_MISSING} missing, ${BASE_WARNED} warned, of ${BASE_EXAMINED})"
 else
-    fail "B3 after restoring, expected exit ${BASE_RC} and ${BASE_MISSING} of ${BASE_EXAMINED}; got exit ${PF_RC}, ${PF_MISSING} of ${PF_EXAMINED}"
+    fail "B3 after restoring, expected exit ${BASE_RC}, ${BASE_MISSING} missing and ${BASE_WARNED} warned of ${BASE_EXAMINED}; got exit ${PF_RC}, ${PF_MISSING} missing and ${PF_WARNED} warned of ${PF_EXAMINED}"
 fi
 
 echo "== C. the hook count contract, driven by mutating the hook =="
@@ -226,6 +251,18 @@ if [ "${C_RC}" -ne 0 ] && says "${C_OUT}" "did not print a usable preflight-miss
     pass "C3 a FAILING hook that omits its missing count is refused"
 else
     fail "C3 expected the missing-count refusal on the failing path; got exit ${C_RC}: ${C_OUT}"
+fi
+cp "${TMP}/render.sh.orig" "${RENDER}"
+
+# The THIRD count. Without it, "this producer has nothing it can make for
+# itself" and "this hook has not been taught the category" are the same run --
+# and the second silently drops a producer's warnings out of the total.
+sed -i '/^    echo "preflight-warned: 0"$/d' "${RENDER}"
+run_preflight --producer board-cx3576
+if [ "${PF_RC}" -ne 0 ] && says "${PF_OUT}" "did not print a usable preflight-warned count"; then
+    pass "C4 a hook that omits its warned count is refused"
+else
+    fail "C4 expected the warned-count refusal; got exit ${PF_RC}: ${PF_OUT}"
 fi
 cp "${TMP}/render.sh.orig" "${RENDER}"
 rm -f "${TMP}/render.sh.orig"
@@ -354,33 +391,147 @@ bash "${FIXP}/versions-stamp.sh" --stamp "${OUTDIR}"
 
 # PRE-FLIGHT MODE, and the thing it must not do. No MOS_DEB_STAGE is passed,
 # because the driver has not made one: no build has started.
-D_RC=0
-D_OUT="$(MOS_DEB_PREFLIGHT=1 MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" \
-    MOS_DEB_PRODUCER=podman bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
-d_ex="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-examined: //p')"
-d_mi="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-missing: //p')"
-if [ "${D_RC}" -eq 0 ] && [ "${d_ex}" = "$((${#BINARIES[@]} + 1))" ] && [ "${d_mi}" = 0 ] &&
+D_EX=""
+D_MI=""
+D_WA=""
+run_podman_preflight() {
+    D_RC=0
+    D_OUT="$(MOS_DEB_PREFLIGHT=1 MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" \
+        MOS_DEB_PRODUCER=podman bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
+    D_EX="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-examined: //p')"
+    D_MI="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-missing: //p')"
+    D_WA="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-warned: //p')"
+}
+EXPECT_EX="$((${#BINARIES[@]} + 1))"
+
+run_podman_preflight
+if [ "${D_RC}" -eq 0 ] && [ "${D_EX}" = "${EXPECT_EX}" ] && [ "${D_MI}" = 0 ] && [ "${D_WA}" = 0 ] &&
     ! says "${D_OUT}" "TRIPWIRE"; then
-    pass "D7 the podman hook answers the pre-flight over ${d_ex} inputs without compiling"
+    pass "D7 the podman hook answers the pre-flight over ${D_EX} inputs without compiling"
 else
-    fail "D7 expected exit 0, examined $((${#BINARIES[@]} + 1)), missing 0 and no compile; got exit ${D_RC}, examined '${d_ex}', missing '${d_mi}': ${D_OUT}"
+    fail "D7 expected exit 0, examined ${EXPECT_EX}, missing 0, warned 0 and no compile; got exit ${D_RC}, examined '${D_EX}', missing '${D_MI}', warned '${D_WA}': ${D_OUT}"
 fi
 
-# The forty-five minute case. A missing binary in pre-flight mode is REPORTED,
-# not built -- if that ever regresses the tripwire says so in a second instead
-# of the run taking three quarters of an hour.
+# THE FORTY-FIVE MINUTE CASE, and it is a WARNING rather than a refusal. This
+# producer builds its own binaries, so an absent one does not stop the run --
+# it costs three quarters of an hour somewhere the operator did not expect, and
+# saying so in advance is the whole point. Refusing instead would mean `make
+# os-debs` could no longer build a pool on a fresh host, which its own help
+# line promises it can.
+#
+# What the case still requires: exit 0, the cost and the command named, the
+# count in the WARNED column and not the missing one, and no compile.
 rm -f "${OUTDIR}/crun"
-D_RC=0
-D_OUT="$(MOS_DEB_PREFLIGHT=1 MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" \
-    MOS_DEB_PRODUCER=podman bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
-d_ex="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-examined: //p')"
-d_mi="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-missing: //p')"
-if [ "${D_RC}" -ne 0 ] && [ "${d_ex}" = "$((${#BINARIES[@]} + 1))" ] && [ "${d_mi}" = 1 ] &&
-    says "${D_OUT}" "make podman" && ! says "${D_OUT}" "TRIPWIRE"; then
-    pass "D8 a missing binary is REPORTED by the pre-flight, with the command that makes it, and not compiled"
+run_podman_preflight
+if [ "${D_RC}" -eq 0 ] && [ "${D_EX}" = "${EXPECT_EX}" ] && [ "${D_MI}" = 0 ] && [ "${D_WA}" = 1 ] &&
+    says "${D_OUT}" "warning:" && says "${D_OUT}" "make podman" &&
+    says "${D_OUT}" "three quarters of an hour" && ! says "${D_OUT}" "TRIPWIRE"; then
+    pass "D8 an absent binary WARNS with the cost and the command, does not refuse, and does not compile"
 else
-    fail "D8 expected exit!=0, examined $((${#BINARIES[@]} + 1)), missing 1 and no compile; got exit ${D_RC}, examined '${d_ex}', missing '${d_mi}': ${D_OUT}"
+    fail "D8 expected exit 0, examined ${EXPECT_EX}, missing 0, warned 1, the cost named and no compile; got exit ${D_RC}, examined '${D_EX}', missing '${D_MI}', warned '${D_WA}': ${D_OUT}"
 fi
+
+# THE LINE BETWEEN THE TWO CATEGORIES. Complete but STALE is the case nothing
+# in the run can fix -- prepare.sh refuses it -- so it must land in the missing
+# column and turn the run red, while the case above stays a warning. Without
+# this the two categories could be one, with every case above still passing.
+cp "${HOST_ELF}" "${OUTDIR}/crun"
+sed -i 's/^CRUN_VERSION=.*/CRUN_VERSION=1.99.9/' "${FIXP}/versions.env"
+run_podman_preflight
+if [ "${D_RC}" -ne 0 ] && [ "${D_EX}" = "${EXPECT_EX}" ] && [ "${D_MI}" = 1 ] && [ "${D_WA}" = 0 ] &&
+    says "${D_OUT}" "was built from a different os/pkgs/podman/versions.env" &&
+    ! says "${D_OUT}" "TRIPWIRE"; then
+    pass "D9 a complete but STALE directory is MISSING, not warned: the run goes red and nothing compiles"
+else
+    fail "D9 expected exit!=0, examined ${EXPECT_EX}, missing 1, warned 0 and no compile; got exit ${D_RC}, examined '${D_EX}', missing '${D_MI}', warned '${D_WA}': ${D_OUT}"
+fi
+sed -i 's/^CRUN_VERSION=.*/CRUN_VERSION=1.29.1/' "${FIXP}/versions.env"
+
+echo "== E. the IMAGE path: os/rootfs/build-v2.sh refuses a stale engine too =="
+
+# The other half of the stamp: os/rootfs/build-v2.sh reuses out-<arch> and used
+# to check only that the seven binaries exist -- precisely the case
+# os/pkgs/podman/build.sh's comment describes. The packaging path was guarded
+# and the image path was not, which is the worse of the two to leave open,
+# because it ships.
+#
+# Driven against the REAL os/pkgs/podman/out-amd64 because build-v2.sh derives
+# that path from its own location and takes no override. Only VERSIONS.env is
+# touched, and it is restored by RE-DERIVING it rather than by keeping a copy:
+# the stamp is a function of versions.env, so the restore is correct even if
+# the test is killed between the two runs. A directory this test had to create
+# is removed again; one that was already there is left exactly as it was.
+PODMAN_REAL="${REPO_ROOT}/os/pkgs/podman/out-amd64"
+if [ ! -d "${PODMAN_REAL}" ]; then
+    mkdir -p "${PODMAN_REAL}"
+    for b in "${BINARIES[@]}"; do cp "${HOST_ELF}" "${PODMAN_REAL}/${b}"; done
+    E_CREATED=1
+fi
+E_ACTIVE=1
+bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
+
+# A docker that refuses, so the green run stops as soon as it reaches the image
+# build instead of starting one. Reaching it at all is the assertion: it is
+# past the staging block by definition.
+mkdir -p "${TMP}/nodocker"
+printf '#!/bin/sh\necho "STOPHERE: docker was invoked" >&2\nexit 97\n' >"${TMP}/nodocker/docker"
+chmod +x "${TMP}/nodocker/docker"
+build_v2() {
+    E_RC=0
+    rm -rf "${REPO_ROOT}/_out/x64/podman"
+    E_OUT="$(PATH="${TMP}/nodocker:${PATH}" MOS_BOARD=x64 WITH_MOSD=0 MOS_ROOTFS_WITHOUT="rauc" \
+        timeout 300 bash "${REPO_ROOT}/os/rootfs/build-v2.sh" 2>&1)" || E_RC=$?
+    E_STAGED=0
+    for b in "${BINARIES[@]}"; do
+        [ ! -f "${REPO_ROOT}/_out/x64/podman/${b}" ] || E_STAGED=$((E_STAGED + 1))
+    done
+}
+
+printf 'PODMAN_VERSIONS_SHA256=%064d\n' 0 >"${PODMAN_REAL}/VERSIONS.env"
+build_v2
+if [ "${E_RC}" -ne 0 ] && [ "${E_STAGED}" -eq 0 ] &&
+    says "${E_OUT}" "was built from a different os/pkgs/podman/versions.env" &&
+    ! says "${E_OUT}" "STOPHERE"; then
+    pass "E1 the image build refuses a stale engine BY NAME, having staged nothing and reached no docker build"
+else
+    fail "E1 expected a refusal naming the stale stamp with 0 staged and no docker; got exit ${E_RC}, staged ${E_STAGED}: $(printf '%s\n' "${E_OUT}" | tail -3)"
+fi
+
+# THE GREEN DIRECTION, which is the one that matters: without it the guard
+# could be a bare `exit 1` and E1 would still pass.
+bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
+build_v2
+if [ "${E_STAGED}" -eq "${#BINARIES[@]}" ] && says "${E_OUT}" "STOPHERE" &&
+    ! says "${E_OUT}" "was built from a different os/pkgs/podman/versions.env"; then
+    pass "E2 re-stamping lets the SAME directory be staged: ${E_STAGED} binaries, and the run reaches the image build"
+else
+    fail "E2 expected ${#BINARIES[@]} staged, no stamp refusal and the run to reach docker; got exit ${E_RC}, staged ${E_STAGED}: $(printf '%s\n' "${E_OUT}" | tail -3)"
+fi
+
+echo "== F. a warning-only run is GREEN, and says what it will cost =="
+
+# THE ABSOLUTE CASE, and the only one here that is not a delta. Everything in
+# section B compares against a baseline, so a pre-flight that failed on
+# warnings would move the baseline with it and every one of those cases would
+# still pass. This one fixes the state instead of measuring it: BOTH podman
+# output directories are moved aside, so the count is 7 binaries x 2
+# architectures on every host, whatever was built here.
+#
+# What it asserts is the ruling: an input the run makes for itself does not
+# fail the run, is counted in its own column, and the cost is on the terminal
+# before anything starts.
+for d in "${REPO_ROOT}/os/pkgs/podman/out-amd64" "${REPO_ROOT}/os/pkgs/podman/out-arm64"; do
+    [ ! -d "${d}" ] || hide "${d}"
+done
+run_preflight
+if [ "${PF_RC}" -eq 0 ] && [ "${PF_WARNED}" = "$((${#BINARIES[@]} * 2))" ] &&
+    [ "${PF_MISSING}" = "${BASE_MISSING}" ] &&
+    says "${PF_OUT}" "BUILT BY THE RUN ITSELF" && says "${PF_OUT}" "three quarters of an hour"; then
+    pass "F1 ${PF_WARNED} producible inputs warn, are counted apart from the ${PF_MISSING} missing, and do NOT fail the run"
+else
+    fail "F1 expected exit 0 with $((${#BINARIES[@]} * 2)) warned and ${BASE_MISSING} missing; got exit ${PF_RC}, warned ${PF_WARNED}, missing ${PF_MISSING}"
+fi
+restore_all
 
 echo
 if [ "${FAIL_N}" -eq 0 ]; then

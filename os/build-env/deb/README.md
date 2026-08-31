@@ -97,17 +97,37 @@ producers do:
   run time and so cannot be a fixed path in `producer.env`.
 - `podman` reuses `os/pkgs/podman/out-<arch>`, and reports whether it exists, is
   complete and carries a stamp matching `versions.env` -- see
-  `os/pkgs/podman/versions-stamp.sh`. Absent, that answer arrived only when this
-  producer's turn came, as three quarters of an hour of emulated compiling
-  started from inside a packaging hook.
+  `os/pkgs/podman/versions-stamp.sh`. An absent engine **warns**, because this
+  producer builds one; a complete engine compiled from a superseded
+  `versions.env` is **missing**, because the producer refuses it. Without the
+  warning, that three quarters of an hour arrived only when this producer's
+  turn came, started from inside a packaging hook.
 
-In that mode a hook prints both `preflight-examined: <count>` and
-`preflight-missing: <count>`, on **both** paths, and exits non-zero when the
-second is not zero. Both counts are required: a hook that reports success
-without saying what it looked at is indistinguishable from one that looked at
-nothing, and a failing hook that reported no count would have a report naming
-four missing files counted as one. An absent count and a zero `examined` are
-refused in the same words.
+In that mode a hook prints **three** counts, on **both** paths --
+`preflight-examined:`, `preflight-missing:` and `preflight-warned:` -- and exits
+non-zero when the missing one is not zero.
+
+**Missing and warned are decided by what the RUN would do, not by how serious it
+looks.** Missing means nothing in the run produces it, so `make os-debs` gets no
+further than the producer that needs it and the pre-flight refuses. Warned means
+the producer makes it itself, at a cost: the run would succeed, it would just
+spend three quarters of an hour somewhere the operator did not expect. That is a
+visibility problem, and it is answered by saying so -- the warning names the cost
+and the command that pays it separately -- not by refusing. Refusing it would
+change what `os-debs` means, since a producer whose hook compiles its own input
+is how a pool comes to exist on a fresh host, and three of the five hooks here
+compile.
+
+All three counts are required and a zero is written rather than omitted: a hook
+that reports success without saying what it looked at is indistinguishable from
+one that looked at nothing; a failing hook with no missing count would have a
+report naming four files counted as one; and a hook with no warned count would
+make "this producer has nothing it can make for itself" and "this hook has not
+been taught the category" the same run. Only `examined` refuses a zero.
+
+The aggregate prints the warned total on its **own line**, never folded into the
+verdict: two numbers in one sentence is how a category that does not fail a run
+stops being visible.
 
 Opt-in per producer, not automatic: a hook that has not been taught the variable
 would do its full work instead. A pre-flight that compiles is not a pre-flight --
