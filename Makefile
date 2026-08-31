@@ -19,7 +19,7 @@ BOARDS := cx3576 x64
 	os-layout-lint os-verify-test os-build-test \
 	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
 	os-install-closure-gate os-rootfs-manifest-test \
-	os-rootfs-x64-composed os-dual-build-gate \
+	os-rootfs-x64-composed \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -56,7 +56,6 @@ help:
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
 	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool (needs os-debs; docker)"
-	@echo "  os-dual-build-gate  build x64 through BOTH paths at one commit and compare the two roots against the sanction ledger (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -389,26 +388,6 @@ os-rootfs-manifest-test:
 # that runs here, and naming it says which one was run.
 os-rootfs-x64-composed:
 	MOS_BOARD=x64 bash os/rootfs/build-v2.sh
-
-# PLAN-036 section 6's last paragraph: x64 built through the chain AND through
-# the composer at ONE commit, both factory roots extracted, and every difference
-# between them either sanctioned in os/tests/dual-build-sanctions.md with a
-# written reason or reported.
-#
-# THE CHAIN IS GONE, so this cannot run: it needs two assembly paths and there
-# is one. Left in place rather than deleted -- deleting the instrument that
-# accepted the removal is a separate decision, and the sanctions ledger beside
-# it is a written record of sixteen judged differences.
-#
-# TWO COLD BUILDS. It creates its own docker-container buildx builder and
-# removes it afterwards, because mos-rootfs-stage:<board>-<stage> are
-# daemon-global tags that two worktrees building x64 at once blend into a
-# plausible, wrong root -- and this target's entire output is a difference set
-# between two roots. It needs the pool `make os-debs` builds and refuses
-# without it, at its own exit code 2: a run in which the second root was never
-# made is not a run in which the two roots agreed.
-os-dual-build-gate:
-	bash os/tests/dual-build-gate.sh
 
 # Negative and positive tests for the pre-flight above. Its value is a count and
 # a list, and both fail silently: a run that looked at nothing prints the same

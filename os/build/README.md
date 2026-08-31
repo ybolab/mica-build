@@ -413,7 +413,8 @@ bash os/build/run.sh --bundle               # build and SIGN the update bundle
 bash os/build/run.sh --bundle 1.2.3         # ... at a version
 bash os/build/run.sh --bundle --help
 
-bash os/build/run.sh --build-rootfs --board x64 --plan       # decide the order and the tags
+bash os/build/run.sh --build-rootfs --board x64 --plan \
+    --arg BOARD_RADIOS= --arg RAUC_VERSION=1.14   # decide the order and the tags
 ```
 
 `make os-image-cx3576-v2` and `make os-bundle-cx3576` are the top-level routes
