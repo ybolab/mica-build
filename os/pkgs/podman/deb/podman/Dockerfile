@@ -23,6 +23,34 @@ ARG MOS_BUILD_DEB
 
 FROM ${MOS_BUILD_DEB} AS pack
 
+# THE RUNTIME LIBRARIES THE PAYLOAD LINKS AGAINST, present so dpkg-shlibdeps can
+# resolve them. This is not the package's dependency list being written down: it
+# is the opposite. dpkg-shlibdeps answers "what does this ELF need" by looking at
+# the libraries INSTALLED NEXT TO IT, in this container -- os/build-env/deb/README.md
+# says so and it is why pack.sh refuses an architecture mismatch -- and
+# mos-build-deb carries dpkg-dev and no runtime. Without these, packing dies with
+# `cannot find library libjson-c.so.5 needed by .../usr/bin/crun` and the package
+# is never produced. The mosd producers never meet this because their Rust
+# binaries need only libc, which every base carries.
+#
+# THE LIST IS os/rootfs/stages/31-feature-containers.Dockerfile'S, read from there
+# rather than re-derived, and each entry's reasoning lives there: libjson-c5
+# (crun 1.29.1 requires json-c, not yajl), libsubid5 and libseccomp2 (podman),
+# libcap2 (crun), libglib2.0-0t64 (conmon). What follows from installing them is
+# that shlibdeps EMITS them into Depends itself, with the version floors it
+# derives from each library's symbols file -- floors no hand-written list could
+# state and keep current. None of them is written into the control template.
+#
+# It runs at the TARGET architecture, like everything else in this stage, so the
+# arm64 pack resolves arm64 sonames against arm64 libraries. The apt lists are a
+# cache mount and `apt-get update` runs inside it every time, so the architecture
+# of the lists is always this container's.
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-deb-podman,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-deb-podman,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        libjson-c5 libsubid5 libseccomp2 libcap2 libglib2.0-0t64
+
 # pack.sh comes over as a named context rather than out of the image. It is the
 # packaging CONTRACT, shared by every producer, and os/build-env/deb/README.md
 # requires this shape: an edit to the packer then takes effect without
