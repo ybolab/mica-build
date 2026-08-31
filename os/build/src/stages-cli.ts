@@ -1,4 +1,4 @@
-// Build the os/rootfs stage chain, one Dockerfile at a time.
+// Build the os/rootfs assembly, one Dockerfile at a time.
 //
 //   bash os/build/run.sh --build-rootfs --board x64 --dest _out/x64 \
 //        --platform linux/amd64 --arg KEY=VALUE ...
@@ -60,7 +60,7 @@ function usage(): string {
     '                            [--platform linux/ARCH] [--context DIR]',
     '                            [--builder NAME] [--arg KEY=VALUE]...',
     '',
-    'Builds os/rootfs/stages/*.Dockerfile in numeric order, each FROM the local',
+    'Builds os/rootfs/compose/*.Dockerfile in numeric order, each FROM the local',
     'image tag the previous one was written to. The last stage exports its',
     `\`${DEFAULT_TERMINAL_TARGET}\` target into --dest, and then its`,
     `\`${DEFAULT_OCI_TARGET}\` target as an OCI archive beside it -- the packed`,
@@ -353,7 +353,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     })
   } catch (e) {
     if (e instanceof StageChainError) {
-      console.error('error: os/rootfs/stages is not a chain that can be built:')
+      console.error(`error: ${opts.stagesDir} cannot be built in sequence:`)
       for (const f of e.faults) console.error(`  ${f.path}\n    ${f.message}`)
       return 1
     }
@@ -387,8 +387,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   const layoutDir = mode === 'layouts' ? join(opts.dest ?? '<dest>', LAYOUT_DIR_NAME) : undefined
   console.log(
     mode === 'tags'
-      ? `os/rootfs: chain mode tags on builder ${opts.builder ?? '(current)'} (${probe.name} driver): each stage is a tag in the image store`
-      : `os/rootfs: chain mode layouts on builder ${opts.builder ?? '(current)'} (${probe.name} driver): each stage is an OCI layout under ${layoutDir}`,
+      ? `os/rootfs: tag mode on builder ${opts.builder ?? '(current)'} (${probe.name} driver): each stage is a tag in the image store`
+      : `os/rootfs: layout mode on builder ${opts.builder ?? '(current)'} (${probe.name} driver): each stage is an OCI layout under ${layoutDir}`,
   )
 
   if (opts.planOnly) {

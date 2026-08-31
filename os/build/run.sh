@@ -50,9 +50,9 @@ Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
 example). Every step must pass; nothing here skips.
 
-With --build-rootfs FIRST, it builds the os/rootfs stage chain instead of the
-suite -- one Dockerfile per stage from os/rootfs/stages/, each FROM the local
-image tag the previous one was written to. os/rootfs/build-v2.sh calls it with
+With --build-rootfs FIRST, it assembles the rootfs instead of running the
+suite -- the numbered Dockerfiles in os/rootfs/compose/, in order, each FROM the
+local image tag the previous one was written to. os/rootfs/build-v2.sh calls it with
 the build arguments it computed; try --build-rootfs --help. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
@@ -363,7 +363,7 @@ run_bun run typecheck
 # docker runs. src/stages.test.ts drives both from the failing side.
 #
 if [ "${MODE}" = build-rootfs ]; then
-    echo "os/build: os/rootfs stage chain"
+    echo "os/build: os/rootfs assembly"
     rc=0
     run_bun run src/stages-cli.ts "$@" || rc=$?
     exit "${rc}"

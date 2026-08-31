@@ -2,8 +2,7 @@
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
 # Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
-#        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."]
-#        [MOS_ROOTFS_MODE=chain|composed] bash os/rootfs/build-v2.sh
+#        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."] bash os/rootfs/build-v2.sh
 
 # There is deliberately no ROOT_PASSWORD here. A v2 rootfs is a signed,
 # byte-identical squashfs and the pack stage fails any build whose factory
@@ -24,24 +23,23 @@
 # The rest are records rather than assembler inputs:
 #   rootfs-report-v2.txt: package list + installed size
 #   pkg-logs/: dpkg.log, alternatives.log and apt/, taken out of /var/log by
-#     stages/90-pack before the package-manager purge removes them. They are
+#     the finalizer before the package-manager purge removes them. They are
 #     NOT in the image -- the purge takes them -- and they are kept because
-#     dpkg.log with its timestamps stripped is what the stage-order comparison
-#     in os/rootfs/README.md reads on each side.
+#     dpkg.log with its timestamps stripped is the record of what APT
+#     configured, in the order it configured it.
 #   factory-root.oci: the packed root as an OCI image, in OCI-layout tar form.
 #     NOT consumed by the assembler -- this is what the smoke runner executes
 #     the self-built binaries in, so "it linked" and "it runs" stop being the
 #     same claim. `docker load -i` it.
 #   factory-root.txt: what that archive is -- ref, platform, size, sha256
 #   rootfs-stages.txt: the Dockerfiles as built, in order, each with its content
-#     hash and a `# declined:` line. Both modes write it, over their own
-#     directory, and the 90-pack row carries the SAME hash on both -- which is
-#     what os/tests/dual-build-gate.sh reads to prove the two paths ran one
-#     finalizer rather than two copies of it.
-#   rootfs-packages.txt: COMPOSED MODE ONLY -- the local packages installed,
-#     with the version, architecture, archive sha256 and owning producer
-#     directory of each, read out of the pool index. PLAN-036 section 4's
-#     durable composition record, which replaces rootfs-stages.txt in that role.
+#     hash and a `# declined:` line. Written by the driver over whatever
+#     directory it was pointed at; it records which files ran, not what the
+#     image is made of.
+#   rootfs-packages.txt: the local packages installed, with the version,
+#     architecture, archive sha256 and owning producer directory of each, read
+#     out of the pool index. PLAN-036 section 4's durable composition record,
+#     and the one that says what this image is made of.
 #   mosd-build.txt: the commit mosd and apid in this root were built from,
 #     copied from _out/mosd-build.txt. NOT copied into the image. Removed when
 #     mosd is declined; see below.
@@ -61,13 +59,9 @@ MOS_BOARD=${MOS_BOARD:-cx3576}
 case "$MOS_BOARD" in
 cx3576)
     MOS_ARCH=arm64
-    RUST_TARGET=aarch64-unknown-linux-gnu
-    ELF_ARCH=aarch64
     ;;
 x64)
     MOS_ARCH=amd64
-    RUST_TARGET=x86_64-unknown-linux-gnu
-    ELF_ARCH=x86-64
     ;;
 *)
     echo "error: MOS_BOARD is '$MOS_BOARD'; known boards are cx3576 and x64" >&2
@@ -85,7 +79,7 @@ WITH_MOSD=${WITH_MOSD:-1}
 case "$WITH_MOSD" in
 0 | 1) ;;
 *)
-    echo "error: WITH_MOSD is '$WITH_MOSD'; it must be exactly 0 or 1. It selects whether stages/33-feature-mosd is in the chain, and anything else here would be read as 'not 1' and silently build an image with no management daemon" >&2
+    echo "error: WITH_MOSD is '$WITH_MOSD'; it must be exactly 0 or 1. It selects whether the mosd packages are in the resolved set, and anything else here would be read as 'not 1' and silently build an image with no management daemon" >&2
     exit 1
     ;;
 esac
@@ -111,7 +105,7 @@ WITH_CONTAINERS=${WITH_CONTAINERS:-1}
 case "$WITH_CONTAINERS" in
 0 | 1) ;;
 *)
-    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether stages/31-feature-containers is in the chain, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
+    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether mos-podman is in the resolved set, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
     exit 1
     ;;
 esac
@@ -119,13 +113,13 @@ esac
 # two historical spellings and they fold into it here, so there is one answer
 # to "is this feature in the image" and every consumer below asks the same
 # question. MOS_ROOTFS_WITHOUT is the general form -- a space-separated list of
-# feature names -- and it is what makes the three stages with no WITH_* history
-# (radios, rauc, mqtt) reachable from the shipping path at all.
+# feature names -- and it is what makes the three features with no WITH_*
+# history (radios, rauc, mqtt) reachable from the shipping path at all.
 
-# A name nothing matches is not validated here, deliberately: the driver holds
-# the list of feature stages (it reads the directory) and refuses an unknown
-# one by name, with the features that do exist. A second copy of that list in
-# this file is the second table this repository keeps deleting.
+# A name nothing matches is not validated here, deliberately: the resolver
+# holds the list of feature names (it reads os/rootfs/packages/) and refuses an
+# unknown one by name, with the features that do exist. A second copy of that
+# list in this file is the second table this repository keeps deleting.
 MOS_ROOTFS_WITHOUT=${MOS_ROOTFS_WITHOUT:-}
 WITHOUT_FEATURES=" ${MOS_ROOTFS_WITHOUT} "
 [ "$WITH_CONTAINERS" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}containers "
@@ -144,34 +138,20 @@ fi
 # ssh.service enabled, so the profile currently changes nothing that is seeded.
 MOS_PROFILE=${MOS_PROFILE:-dev}
 
-# WHICH OF THE TWO ROOT-ASSEMBLY PATHS THIS BUILD TAKES.
+# HOW THE ROOT IS ASSEMBLED, and there is one answer.
 #
-#   chain     os/rootfs/stages/*.Dockerfile: nine stage files, each mutating
-#             the previous image in a fixed numeric order, with this script
-#             staging every repository-built component into the build context
-#             as loose files first.
-#   composed  os/rootfs/compose/*.Dockerfile: one apt transaction against the
-#             local package pool `make os-debs` builds, with APT deriving the
-#             configuration order from `Depends`. PLAN-036 section 4.
+# os/rootfs/compose/*.Dockerfile: one apt transaction against the local package
+# pool `make os-debs` builds, with APT deriving the configuration order from
+# `Depends`, and then the finalizer -- 90-pack.Dockerfile beside it, which
+# closes the root, does the tree surgery, runs the assertions, builds the
+# squashfs, appends the verity tree and writes both export surfaces.
+# PLAN-036 sections 4 and 5.
 #
-# Both end in the SAME finalizer: os/rootfs/compose/90-pack.Dockerfile is a
-# symlink to os/rootfs/stages/90-pack.Dockerfile, so closing the root, the
-# tree surgery, the assertions, the squashfs, the verity and both export
-# surfaces have one definition. That is what makes os/tests/dual-build-gate.sh
-# able to read a difference between the two roots as a difference in the
-# COMPOSITION; two finalizers would make every one of its findings ambiguous.
-#
-# Default `chain`, because the chain is still the shipping path: removing it is
-# a later, separately gated task and this repository has to build a ROM at
-# every commit.
-MOS_ROOTFS_MODE=${MOS_ROOTFS_MODE:-chain}
-case "$MOS_ROOTFS_MODE" in
-chain | composed) ;;
-*)
-    echo "error: MOS_ROOTFS_MODE is '$MOS_ROOTFS_MODE'; it must be exactly 'chain' or 'composed'. It selects which directory of Dockerfiles assembles the root, and anything else here would be read as 'not composed' and silently build the path the caller did not ask for" >&2
-    exit 1
-    ;;
-esac
+# The numbered stage chain this replaced is gone (PLAN-036 section 5, last
+# paragraph): the floor, the read-only-root wiring, the four feature stages and
+# the board were Dockerfile numbers standing in for package metadata, and they
+# are Debian packages now. What is left is not a chain of nine files with an
+# order to defend -- it is one transaction and one finalizer.
 
 if [ ! -f "$LAYOUT_ENV" ]; then
     echo "error: $LAYOUT_ENV not found" >&2
@@ -206,275 +186,34 @@ fi
 #
 # One instant, three consumers: this value is also what the driver is given as
 # --source-date-epoch, which buildkit stamps into the OCI export of the packed
-# root, and what stages/40-board runs update-initramfs under. Deliberately the
-# same number and not three pinned constants -- the squashfs, the OCI image and
+# root, and what 10-compose declares so that the kernel package's postinst runs
+# update-initramfs under it. Deliberately the same number and not three pinned
+# constants -- the squashfs, the OCI image and
 # the initrd are three encodings of one tree, and a second epoch would be a
 # second answer to "when was this root made" that nothing would reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
 
-# Removed for the same reason the stage directory is emptied: a mosd-build.txt
-# left by a previous WITH_MOSD=1 build would describe binaries this image does
-# not carry, and the smoke runner would then assert a commit against an artifact
-# that is not there. Absent is a state it already handles; stale is one nothing
-# could catch.
-#
-# UNCONDITIONAL, and outside the chain block below, because the composed path
-# writes none. The mosd and mos-apid binaries in a composed root are compiled by
-# os/pkgs/mosd/hack/build-deb.sh, which embeds the same commit and does NOT
-# write _out/mosd-build.txt -- so on that path the smoke runner takes its
-# printed-only branch and says on its own first lines that the commit was not
-# asserted. That is a real gap and it is visible; what it must not become is a
-# stale record from an earlier chain build being asserted against binaries that
-# came out of a package.
+# REMOVED ON EVERY BUILD, and nothing on this path writes it back. The mosd and
+# mos-apid binaries in a composed root are compiled by
+# os/pkgs/mosd/hack/build-deb.sh, which embeds the commit and does NOT write
+# _out/mosd-build.txt -- so the smoke runner takes its printed-only branch and
+# says on its own first lines that the commit was not asserted. That is a real
+# gap and it is visible; what it must not become is a stale record left by an
+# older build being asserted against binaries that came out of a package.
 rm -f "$OUT_DIR/mosd-build.txt"
-
-# EVERYTHING FROM HERE TO THE OVERLAY IS THE CHAIN'S BUILD CONTEXT, and the
-# composed path stages none of it. Each of these directories exists because a
-# stage file COPYs loose files that a package now owns: modules.tar and the
-# firmware, hwinit and board-init trees belong to mos-board-<board>, the rauc
-# and podman drops to mos-rauc and mos-podman, the mosd drop to mosd, mos-apid,
-# mos-mqttd and mos-mqtt-broker. Under composition they arrive as .deb payloads
-# out of the pool, so staging them again would be a second copy of the same
-# bytes -- and the mosd branch below would also CROSS-COMPILE, which a composer
-# must never do: it installs what `make os-debs` built and refuses a pool that
-# is not there.
-if [ "$MOS_ROOTFS_MODE" = "chain" ]; then
-if [ "$MOS_ARCH" = "amd64" ]; then
-    # No vendor tree on this target: the Dockerfile installs Debian's
-    # linux-image-amd64, which brings kernel, initramfs and modules together.
-    # An empty tar is staged anyway because a COPY cannot be made conditional,
-    # and a context file that is simply absent fails the build with a message
-    # about the COPY rather than about the board.
-    tar -cf "$OUT_DIR/modules.tar" -T /dev/null
-else
-    MODULES_TAR="$BOARD_DIR/out/kernel/modules.tar"
-    if [ ! -f "$MODULES_TAR" ]; then
-        echo "error: $MODULES_TAR not found." >&2
-        echo "Build it with 'make -C os/boards/$MOS_BOARD/bsp kernel' or point BOARD_DIR at" >&2
-        echo "prebuilt BSP artifacts, e.g. BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp" >&2
-        exit 1
-    fi
-    cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
-fi
-
-# The container engine, built from source by os/pkgs/podman, staged like
-# modules.tar and mosd. The directory is created either way and left empty when
-# the engine is declined -- nothing COPYs it then, because
-# stages/31-feature-containers is not in the chain, and the mkdir is here so a
-# stale directory from a previous WITH_CONTAINERS=1 build cannot be picked up
-# by the next one. It is NOT built on demand: `make podman` compiles four
-# Go/Rust/C trees and takes tens of minutes, so it is a separate target and the
-# absence of its output is an error carrying the command to run.
-
-# RAUC, built from upstream source by os/pkgs/rauc/build.sh. Staged like
-# podman and like mosd: the Dockerfile COPYs a directory under _out, never a
-# path outside the build context.
-RAUC_STAGE="$OUT_DIR/rauc"
-rm -rf "$RAUC_STAGE"
-mkdir -p "$RAUC_STAGE"
-if declined rauc; then
-    echo "note: rauc declined; building rootfs without stages/32-feature-rauc"
-else
-RAUC_OUT="$REPO_ROOT/os/pkgs/rauc/out-$MOS_ARCH"
-for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service NEEDED.txt RAUC_VERSION.env; do
-    if [ ! -f "$RAUC_OUT/$f" ]; then
-        echo "error: $RAUC_OUT/$f not found." >&2
-        echo "RAUC is built from source now, not installed from Debian (os/pkgs/rauc/versions.env says why)." >&2
-        echo "Build it with 'MOS_BOARD=$MOS_BOARD make os-rauc'." >&2
-        exit 1
-    fi
-    cp "$RAUC_OUT/$f" "$RAUC_STAGE/$f"
-done
-echo "rauc: staged $(sed -n 's/^RAUC_VERSION=//p' "$RAUC_STAGE/RAUC_VERSION.env") for $MOS_ARCH"
-fi
-
-PODMAN_STAGE="$OUT_DIR/podman"
-rm -rf "$PODMAN_STAGE"
-mkdir -p "$PODMAN_STAGE"
-if ! declined containers; then
-    PODMAN_OUT="$REPO_ROOT/os/pkgs/podman/out-$MOS_ARCH"
-    # WHICH versions.env THOSE BINARIES CAME FROM, asked BEFORE any of them is
-    # staged. The loop below is exactly the check os/pkgs/podman/build.sh's own
-    # comment says is not enough: "a stale out/ from the other architecture
-    # looks exactly like a fresh one to anything that only checks the files are
-    # present". Seven present, executable, right-architecture binaries compiled
-    # from a superseded pin pass every line of it -- and this is the IMAGE
-    # path, so without this the bump that is this project's whole upgrade
-    # interface could be made, committed and SHIPPED while the device kept
-    # running the engine from before it.
-    #
-    # The same refusal os/pkgs/podman/deb/podman/prepare.sh makes on its reuse
-    # path, out of the same script, so the packaging path and the image path
-    # cannot come to disagree about what a current engine is. It runs first so
-    # that a refused build has staged nothing.
-    #
-    # A directory that does not exist yet is left to the loop: "not built" is
-    # its message to give, with the command that builds it.
-    if [ -d "$PODMAN_OUT" ]; then
-        bash "$REPO_ROOT/os/pkgs/podman/versions-stamp.sh" --check "$PODMAN_OUT"
-    fi
-    for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
-        if [ ! -f "$PODMAN_OUT/$b" ]; then
-            echo "error: $PODMAN_OUT/$b not found." >&2
-            echo "stages/31-feature-containers is in the chain, which asks for a container engine, and none has been built." >&2
-            echo "Build it with 'MOS_ARCH=$MOS_ARCH make podman', or set WITH_CONTAINERS=0 for a board that declines the engine." >&2
-            exit 1
-        fi
-        cp "$PODMAN_OUT/$b" "$PODMAN_STAGE/$b"
-    done
-    # `[ -f x ] && cp` would be the last command of the if-branch, and under
-    # `set -e` a false test there exits the whole script with 0 -- a rootfs
-    # build that stops silently after staging seven binaries.
-    if [ -f "$PODMAN_OUT/SHA256SUMS" ]; then
-        cp "$PODMAN_OUT/SHA256SUMS" "$PODMAN_STAGE/SHA256SUMS"
-    fi
-fi
-
-# mosd: cross-build and stage into the context like modules.tar. The staged
-# directory is created either way and is left EMPTY when mosd is declined --
-# stages/33-feature-mosd is then not in the chain and nothing COPYs it. The
-# rm -rf is what keeps a previous WITH_MOSD=1 build's binaries from being
-# copied into an image that asked for none.
-MOSD_STAGE="$OUT_DIR/mosd"
-rm -rf "$MOSD_STAGE"
-mkdir -p "$MOSD_STAGE"
-if ! declined mosd; then
-    bash "$REPO_ROOT/os/pkgs/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
-    # The commit that build embedded in mosd and apid, carried into this board's
-    # output directory beside the factory root the two binaries end up in.
-    # The smoke runner asserts what they REPORT against what was
-    # EMBEDDED, and the alternative -- `git rev-parse HEAD` at run time -- would
-    # pass on any freshly built tree while asserting nothing about whether the
-    # embedding works at all. Copied rather than re-derived, so the value the
-    # runner compares against is the one the compiler was actually handed.
-    cp "$REPO_ROOT/_out/mosd-build.txt" "$OUT_DIR/mosd-build.txt"
-    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
-    cp "$REPO_ROOT/os/pkgs/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
-    cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
-    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
-    cp "$REPO_ROOT/os/pkgs/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
-    # The MQTT bridge. Its unit lives in the crate rather than
-    # os/pkgs/mosd/dist because the crate is where it is maintained. It has no
-    # mosd D-Bus grant; MQTT-enabled applications ship exact policies.
-    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqttd" \
-        "$MOSD_STAGE/mos-mqttd"
-    cp "$REPO_ROOT/os/pkgs/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
-    # The broker the bridge above connects to. No D-Bus grant to
-    # stage beside it: it is not a bus client, it only listens on TCP. Its
-    # config is not staged either -- mosd renders /run/mos/mqtt-broker.toml at
-    # runtime, because a file baked into an immutable root would be the same
-    # listen address on every device flashed with this image.
-    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqtt-broker" \
-        "$MOSD_STAGE/mos-mqtt-broker"
-    cp "$REPO_ROOT/os/pkgs/mosd/broker/dist/mos-mqtt-broker.service" \
-        "$MOSD_STAGE/mos-mqtt-broker.service"
-else
-    echo "note: mosd declined; building rootfs without stages/33-feature-mosd"
-fi
-
-# The board's own content, staged so that stages/40-board names no board.
-#
-# A COPY cannot be gated on an ARG, so a board's content reaches
-# stages/40-board as a directory this script fills from the board's own trees,
-# empty when the board declares nothing. The three below and modules.tar above
-# are the whole set, and they are together so that adding a board means filling
-# directories rather than editing a Dockerfile.
-
-# Radio firmware, filtered to what the board declares.
-#
-# NOT the whole BSP drop. os/boards/<b>/bsp/rootfs/firmware is the vendor tarball --
-# 32 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
-# silicon revisions -- and only the confirmed runtime set may enter a signed
-# root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
-# was: the verification suite has asserted the image against it since x64
-# arrived. Read here rather than copied, so the build and the verifier cannot
-# disagree about which firmware the board carries.
-#
-# The declared paths are INSTALLED paths (/usr/lib/firmware/...), because that
-# is what the verifier needs them to be. This takes the basename and requires
-# the BSP to have it: a declared file the drop does not contain is a build
-# error naming both, rather than a device whose driver finds no firmware.
-FW_STAGE="$OUT_DIR/firmware"
-rm -rf "$FW_STAGE"
-mkdir -p "$FW_STAGE"
-for fw in ${BOARD_FIRMWARE_FILES}; do
-    case "$fw" in
-    /usr/lib/firmware/*) ;;
-    *)
-        echo "error: $LAYOUT_ENV declares BOARD_FIRMWARE_FILES entry '$fw', which is not under /usr/lib/firmware/. The entries are INSTALLED paths -- the verification suite checks the image for each one, and stages/40-board's installer asserts the same paths after the move" >&2
-        exit 1
-        ;;
-    esac
-    fw_src="$BOARD_DIR/rootfs/firmware/${fw##*/}"
-    if [ ! -f "$fw_src" ]; then
-        echo "error: $LAYOUT_ENV declares $fw and $fw_src does not exist." >&2
-        echo "Firmware is a BSP artefact like modules.tar; point BOARD_DIR at a tree that has it," >&2
-        echo "e.g. BOARD_DIR=/srv/ai/mos/os/boards/$MOS_BOARD/bsp" >&2
-        exit 1
-    fi
-    cp "$fw_src" "$FW_STAGE/${fw##*/}"
-done
-if [ -n "${BOARD_FIRMWARE_FILES}" ]; then
-    echo "firmware: staged $(find "$FW_STAGE" -type f | wc -l | tr -d ' ') file(s) from $BOARD_DIR/rootfs/firmware"
-else
-    echo "note: $MOS_BOARD declares BOARD_FIRMWARE_FILES empty; staging no radio firmware"
-fi
-
-# The hwinit oneshots and their units, from THIS board's directory.
-#
-# os/boards/<b>/hwinit, not os/boards/cx3576/hwinit. The mechanism in
-# stages/40-board is board-agnostic and always was; what was filed under one
-# board was the CONTENT, because cx3576 was the only board declaring a fact for
-# any of it to read. x64 carried all six scripts, ran none, and the image
-# verifier reported hwinit-bt's `rfkill unblock` as a dependency on a binary
-# that board has no reason to install.
-#
-# A board with no hwinit/ stages an empty directory -- the same statement
-# BOARD_INIT_DIR below has always been allowed to make. It is not silent: a
-# board that declares a fact and stages no script for it fails in
-# hwinit-install.sh, by name.
-HWINIT_STAGE="$OUT_DIR/hwinit"
-rm -rf "$HWINIT_STAGE"
-mkdir -p "$HWINIT_STAGE"
-if [ -d "$REPO_ROOT/os/boards/$MOS_BOARD/hwinit" ]; then
-    cp -a "$REPO_ROOT/os/boards/$MOS_BOARD/hwinit/." "$HWINIT_STAGE/"
-fi
-
-# Board hardware-init facts (the confs the hwinit units consume), staged like
-# mosd so the Dockerfile COPY always has a directory (may be empty).
-INIT_STAGE="$OUT_DIR/init"
-rm -rf "$INIT_STAGE"
-mkdir -p "$INIT_STAGE"
-# The fallback is to THIS board's in-repo init, not to cx3576's. It said
-# cx3576 while cx3576 was the only board, and an x64 build would then have
-# silently taken bt.conf, can.conf, gadget.conf and otg.conf -- hardware facts
-# for a radio, a CAN bus and a USB gadget controller that a QEMU machine does
-# not have. Nothing downstream would have objected: the Dockerfile copies
-# whatever is staged into /etc/mos, and the hwinit units read what is there.
-#
-# A board with no init/ at all stages an empty directory, which the Dockerfile
-# documents as supported ("BOARD_INIT_DIR may be an empty dir").
-if [ -d "$BOARD_DIR/init" ]; then
-    cp -a "$BOARD_DIR/init/." "$INIT_STAGE/"
-elif [ -d "$REPO_ROOT/os/boards/$MOS_BOARD/bsp/init" ]; then
-    cp -a "$REPO_ROOT/os/boards/$MOS_BOARD/bsp/init/." "$INIT_STAGE/"
-fi
-fi # end of the chain-only build context
 
 # Read-only root wiring. The overlay tree is copied into the build context with
 # its *.in templates rendered from the layout env, so the shipped image carries
 # no placeholder and the Dockerfile carries no layout constant.
 #
-# STAGED ON BOTH PATHS, and consumed differently. The chain COPYs this
-# directory in stages/20-install. The composed path does not -- mos-system and
+# THE COMPOSITION DOES NOT INSTALL FROM THIS TREE -- mos-system and
 # mos-board-<board> carry these bytes as package payload, rendered inside their
-# own producers from the same board.env -- and it stages the tree anyway for
-# two things that are not package content: the repart-definition count checked
-# against the layout below, which would otherwise be checked on one path only,
-# and the RAUC keyring, which is per-build trust material that no package may
-# ever carry.
+# own producers from the same board.env. It is staged anyway for two things
+# that are not package content: the repart-definition count checked against the
+# layout below, and the RAUC keyring, which is per-build trust material that no
+# package may ever carry.
 # PARTUUID values are lowercased: udev derives /dev/disk/by-partuuid/ symlinks
 # from libblkid, which formats GUIDs in lowercase, and systemd's fstab-generator
 # resolves PARTUUID= through those symlinks without normalising case.
@@ -668,7 +407,7 @@ else
         UENV_SIZE_HEX "$(printf '0x%x' "$UENV_SIZE_BYTES")"
 fi
 
-# --- the composed path's inputs: the package pool, the resolution, the context -
+# --- the composition's inputs: the package pool, the resolution, the context ---
 #
 # The composer INSTALLS; it never compiles. Everything below either reads the
 # pool `make os-debs` wrote or asks os/rootfs/packages/resolve.sh which packages
@@ -679,146 +418,143 @@ fi
 COMPOSE_STAGE="$OUT_DIR/compose"
 PACKAGES_RECORD="$OUT_DIR/rootfs-packages.txt"
 rm -rf "$COMPOSE_STAGE"
-# Removed for the reason mosd-build.txt is: a record left by a previous
-# composed build would describe the package set of an image this run did not
-# produce, and a chain build writes none -- so present-and-stale would be
-# indistinguishable from present-and-current for anything reading it.
+# Removed for the reason mosd-build.txt is: a record left by a previous build
+# would describe the package set of an image this run did not produce, and a
+# run that dies before the record is written would leave it looking current.
 rm -f "$PACKAGES_RECORD"
 POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
 COMPOSE_RAUC_VERSION=""
-if [ "$MOS_ROOTFS_MODE" = "composed" ]; then
-    pool_refusal() {
-        echo "error: $1" >&2
-        echo "       The rootfs composer installs from _out/debs/<arch>; it does not build a package." >&2
-        echo "       Build the pool and its index with: make os-debs" >&2
-        exit 1
-    }
-    [ -d "$POOL_DIR" ] ||
-        pool_refusal "$POOL_DIR does not exist, so there is no $MOS_ARCH package pool to compose from."
-    for f in Packages SHA256SUMS manifest.txt; do
-        [ -s "$POOL_DIR/$f" ] ||
-            pool_refusal "$POOL_DIR/$f is missing or empty, so the pool carries no usable index. APT takes an empty Packages file without complaint, so this would install none of this repository's own packages and report success."
+pool_refusal() {
+    echo "error: $1" >&2
+    echo "       The rootfs composer installs from _out/debs/<arch>; it does not build a package." >&2
+    echo "       Build the pool and its index with: make os-debs" >&2
+    exit 1
+}
+[ -d "$POOL_DIR" ] ||
+    pool_refusal "$POOL_DIR does not exist, so there is no $MOS_ARCH package pool to compose from."
+for f in Packages SHA256SUMS manifest.txt; do
+    [ -s "$POOL_DIR/$f" ] ||
+        pool_refusal "$POOL_DIR/$f is missing or empty, so the pool carries no usable index. APT takes an empty Packages file without complaint, so this would install none of this repository's own packages and report success."
+done
+[ -d "$POOL_DIR/pool" ] ||
+    pool_refusal "$POOL_DIR/pool does not exist, so the index beside it describes archives that are not there."
+pool_debs=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' | wc -l)
+[ "$pool_debs" -gt 0 ] ||
+    pool_refusal "$POOL_DIR/pool holds no .deb at all."
+
+# STALE, sense 1: the index does not describe the archives beside it.
+# os/build-env/deb/repo.sh writes SHA256SUMS over exactly the pool it
+# indexed, so a mismatch means an archive was rebuilt or removed afterwards
+# and the Packages APT would read describes a different set of bytes.
+( cd "$POOL_DIR" && sha256sum --quiet -c SHA256SUMS ) >/dev/null 2>&1 ||
+    pool_refusal "$POOL_DIR/SHA256SUMS does not verify against the archives beside it, so the index and the pool have come apart."
+indexed=$(grep -c '^' "$POOL_DIR/SHA256SUMS")
+[ "$indexed" -eq "$pool_debs" ] ||
+    pool_refusal "$POOL_DIR/pool holds $pool_debs archive(s) and SHA256SUMS lists $indexed. sha256sum -c only checks the listed ones, so an archive the index has never seen would be installable and unrecorded."
+
+# STALE, sense 2: an archive is newer than the index over it. `find -newer`
+# rather than a timestamp comparison, because that is the question --
+# is there any archive repo.sh has not seen.
+newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DIR/manifest.txt" -printf '%f ')
+[ -z "$newer" ] ||
+    pool_refusal "these archives are newer than $POOL_DIR/manifest.txt, so the pool was rebuilt without being re-indexed: $newer"
+
+# STALE, sense 3: the pool was not built from THIS tree. The archives carry
+# one version across every producer by rule -- os/build-env/deb/version.sh
+# is the single answer and os/tests/deb-package-gate.sh asserts it over the
+# built pool -- and the inter-package relations are exact
+# (`mos-board-x64 Depends: mos-system (= <version>)`), so a pool holding two
+# versions is one APT cannot resolve. A pool holding ONE version that is not
+# this tree's is worse than that: it resolves, it installs, and it composes
+# an image out of some other commit's packages while every check downstream
+# reports on the tree in front of it.
+pool_versions=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sort -u | tr '\n' ' ')
+pool_version=${pool_versions% }
+case "$pool_version" in
+*' '*)
+    pool_refusal "$POOL_DIR/manifest.txt carries more than one package version: $pool_version. The pool holds one version across every producer by rule, and the packages' own relations are exact, so APT cannot resolve this set."
+    ;;
+esac
+tree_version=$(bash "$REPO_ROOT/os/build-env/deb/version.sh")
+[ "$pool_version" = "$tree_version" ] ||
+    pool_refusal "the $MOS_ARCH pool was built at version '$pool_version' and this tree is '$tree_version'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
+echo "pool: $POOL_DIR, $pool_debs archive(s) at $pool_version"
+
+# WHAT TO INSTALL. resolve.sh takes every input as an ARGUMENT and
+# deliberately re-derives nothing: which board file was read, which
+# environment variable beats which file, and how the historical WITH_*
+# spellings fold into one decline list are all decided above, in this
+# script, and a second copy of that logic in the resolver would be the
+# second table this repository keeps deleting. `echo` unquoted is what
+# turns " containers mosd " into "containers mosd", which is the spelling
+# its --without takes.
+# shellcheck disable=SC2116,SC2086 # deliberate: collapse the padded list.
+WITHOUT_ARG=$(echo $WITHOUT_FEATURES)
+RESOLVED=$(bash "$REPO_ROOT/os/rootfs/packages/resolve.sh" \
+    --board "$MOS_BOARD" \
+    --profile "$MOS_PROFILE" \
+    --radios "$BOARD_RADIOS" \
+    --without "$WITHOUT_ARG")
+resolved_n=$(printf '%s\n' "$RESOLVED" | { grep -c . || true; })
+[ "$resolved_n" -gt 0 ] ||
+    { echo "error: os/rootfs/packages/resolve.sh printed no package and exited 0" >&2; exit 1; }
+
+# Every resolved package has to BE in the pool, refused here rather than
+# inside the composition: APT would report "unable to locate package",
+# which names the package and not the producer that was never built.
+# `grep -c ... >/dev/null` and never `grep -q`: this file sets pipefail, and
+# a -q reader exits at the first match, so the producer on its left dies of
+# SIGPIPE and the pipeline reports failure exactly when the package IS
+# present. os/tests/shell-pipefail-lint.sh polices the same trap.
+pool_names=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f1)
+missing_pkgs=""
+for p in $RESOLVED; do
+    printf '%s\n' "$pool_names" | grep -cx -- "$p" >/dev/null ||
+        missing_pkgs="$missing_pkgs $p"
+done
+if [ -n "$missing_pkgs" ]; then
+    echo "error: the resolution names package(s) the $MOS_ARCH pool does not contain:$missing_pkgs" >&2
+    for p in $missing_pkgs; do
+        producer=$(bash "$REPO_ROOT/os/build-env/deb/producers.sh" |
+            awk -v pkg="$p" '{ n = split($4, a, ","); for (i = 1; i <= n; i++) if (a[i] == pkg) print $1 }')
+        if [ -n "$producer" ]; then
+            echo "       $p is emitted by the '$producer' producer: make os-deb-$producer" >&2
+        else
+            echo "       $p is emitted by NO producer in this repository, which os/rootfs/packages/resolve.sh should already have refused" >&2
+        fi
     done
-    [ -d "$POOL_DIR/pool" ] ||
-        pool_refusal "$POOL_DIR/pool does not exist, so the index beside it describes archives that are not there."
-    pool_debs=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' | wc -l)
-    [ "$pool_debs" -gt 0 ] ||
-        pool_refusal "$POOL_DIR/pool holds no .deb at all."
-
-    # STALE, sense 1: the index does not describe the archives beside it.
-    # os/build-env/deb/repo.sh writes SHA256SUMS over exactly the pool it
-    # indexed, so a mismatch means an archive was rebuilt or removed afterwards
-    # and the Packages APT would read describes a different set of bytes.
-    ( cd "$POOL_DIR" && sha256sum --quiet -c SHA256SUMS ) >/dev/null 2>&1 ||
-        pool_refusal "$POOL_DIR/SHA256SUMS does not verify against the archives beside it, so the index and the pool have come apart."
-    indexed=$(grep -c '^' "$POOL_DIR/SHA256SUMS")
-    [ "$indexed" -eq "$pool_debs" ] ||
-        pool_refusal "$POOL_DIR/pool holds $pool_debs archive(s) and SHA256SUMS lists $indexed. sha256sum -c only checks the listed ones, so an archive the index has never seen would be installable and unrecorded."
-
-    # STALE, sense 2: an archive is newer than the index over it. `find -newer`
-    # rather than a timestamp comparison, because that is the question --
-    # is there any archive repo.sh has not seen.
-    newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DIR/manifest.txt" -printf '%f ')
-    [ -z "$newer" ] ||
-        pool_refusal "these archives are newer than $POOL_DIR/manifest.txt, so the pool was rebuilt without being re-indexed: $newer"
-
-    # STALE, sense 3: the pool was not built from THIS tree. The archives carry
-    # one version across every producer by rule -- os/build-env/deb/version.sh
-    # is the single answer and os/tests/deb-package-gate.sh asserts it over the
-    # built pool -- and the inter-package relations are exact
-    # (`mos-board-x64 Depends: mos-system (= <version>)`), so a pool holding two
-    # versions is one APT cannot resolve. A pool holding ONE version that is not
-    # this tree's is worse than that: it resolves, it installs, and it composes
-    # an image out of some other commit's packages while every check downstream
-    # reports on the tree in front of it.
-    pool_versions=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sort -u | tr '\n' ' ')
-    pool_version=${pool_versions% }
-    case "$pool_version" in
-    *' '*)
-        pool_refusal "$POOL_DIR/manifest.txt carries more than one package version: $pool_version. The pool holds one version across every producer by rule, and the packages' own relations are exact, so APT cannot resolve this set."
-        ;;
-    esac
-    tree_version=$(bash "$REPO_ROOT/os/build-env/deb/version.sh")
-    [ "$pool_version" = "$tree_version" ] ||
-        pool_refusal "the $MOS_ARCH pool was built at version '$pool_version' and this tree is '$tree_version'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
-    echo "pool: $POOL_DIR, $pool_debs archive(s) at $pool_version"
-
-    # WHAT TO INSTALL. resolve.sh takes every input as an ARGUMENT and
-    # deliberately re-derives nothing: which board file was read, which
-    # environment variable beats which file, and how the historical WITH_*
-    # spellings fold into one decline list are all decided above, in this
-    # script, and a second copy of that logic in the resolver would be the
-    # second table this repository keeps deleting. `echo` unquoted is what
-    # turns " containers mosd " into "containers mosd", which is the spelling
-    # its --without takes.
-    # shellcheck disable=SC2116,SC2086 # deliberate: collapse the padded list.
-    WITHOUT_ARG=$(echo $WITHOUT_FEATURES)
-    RESOLVED=$(bash "$REPO_ROOT/os/rootfs/packages/resolve.sh" \
-        --board "$MOS_BOARD" \
-        --profile "$MOS_PROFILE" \
-        --radios "$BOARD_RADIOS" \
-        --without "$WITHOUT_ARG")
-    resolved_n=$(printf '%s\n' "$RESOLVED" | { grep -c . || true; })
-    [ "$resolved_n" -gt 0 ] ||
-        { echo "error: os/rootfs/packages/resolve.sh printed no package and exited 0" >&2; exit 1; }
-
-    # Every resolved package has to BE in the pool, refused here rather than
-    # inside the composition: APT would report "unable to locate package",
-    # which names the package and not the producer that was never built.
-    # `grep -c ... >/dev/null` and never `grep -q`: this file sets pipefail, and
-    # a -q reader exits at the first match, so the producer on its left dies of
-    # SIGPIPE and the pipeline reports failure exactly when the package IS
-    # present. os/tests/shell-pipefail-lint.sh polices the same trap.
-    pool_names=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f1)
-    missing_pkgs=""
-    for p in $RESOLVED; do
-        printf '%s\n' "$pool_names" | grep -cx -- "$p" >/dev/null ||
-            missing_pkgs="$missing_pkgs $p"
-    done
-    if [ -n "$missing_pkgs" ]; then
-        echo "error: the resolution names package(s) the $MOS_ARCH pool does not contain:$missing_pkgs" >&2
-        for p in $missing_pkgs; do
-            producer=$(bash "$REPO_ROOT/os/build-env/deb/producers.sh" |
-                awk -v pkg="$p" '{ n = split($4, a, ","); for (i = 1; i <= n; i++) if (a[i] == pkg) print $1 }')
-            if [ -n "$producer" ]; then
-                echo "       $p is emitted by the '$producer' producer: make os-deb-$producer" >&2
-            else
-                echo "       $p is emitted by NO producer in this repository, which os/rootfs/packages/resolve.sh should already have refused" >&2
-            fi
-        done
-        exit 1
-    fi
-
-    # package=directory for every package any producer emits, as one
-    # `;`-separated string the record writer below reads. Built from
-    # producers.sh, which discovers producers from the tree, so a producer that
-    # moves takes its row with it; the alternative is a table in this file that
-    # is right until somebody renames a directory.
-    PRODUCER_DIRS=$(bash "$REPO_ROOT/os/build-env/deb/producers.sh" |
-        awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s=%s;", a[i], $2 }')
-    [ -n "$PRODUCER_DIRS" ] ||
-        { echo "error: os/build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
-
-    # The RAUC upstream version, for the finalizer's build report. The pin in
-    # os/pkgs/rauc/versions.env is the same value os/verify's smoke register
-    # requires the rauc binary in the image to REPORT, so this is not a second
-    # source of truth for it -- it is the one the smoke run checks the binary
-    # against. On the chain path the same number travels with the binary in
-    # out-<arch>/RAUC_VERSION.env, which the composer must not read: that
-    # directory is the SOURCE build's output and the composer installs from the
-    # pool.
-    if ! declined rauc; then
-        COMPOSE_RAUC_VERSION=$(sed -n 's/^RAUC_VERSION=//p' "$REPO_ROOT/os/pkgs/rauc/versions.env" | tail -n1)
-        [ -n "$COMPOSE_RAUC_VERSION" ] ||
-            { echo "error: os/pkgs/rauc/versions.env declares no RAUC_VERSION. The finalizer records it in rootfs-report-v2.txt and os/build/src/bundle.ts refuses to build a bundle whose rauc differs from it; an empty value makes that comparison pass by finding nothing" >&2; exit 1; }
-    fi
-
-    mkdir -p "$COMPOSE_STAGE"
-    printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
-    cp "$OVERLAY_STAGE/etc/rauc/keyring.pem" "$COMPOSE_STAGE/keyring.pem"
-    echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, declined:${MOS_ROOTFS_WITHOUT:- (none)}"
-    sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
+    exit 1
 fi
+
+# package=directory for every package any producer emits, as one
+# `;`-separated string the record writer below reads. Built from
+# producers.sh, which discovers producers from the tree, so a producer that
+# moves takes its row with it; the alternative is a table in this file that
+# is right until somebody renames a directory.
+PRODUCER_DIRS=$(bash "$REPO_ROOT/os/build-env/deb/producers.sh" |
+    awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s=%s;", a[i], $2 }')
+[ -n "$PRODUCER_DIRS" ] ||
+    { echo "error: os/build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
+
+# The RAUC upstream version, for the finalizer's build report. The pin in
+# os/pkgs/rauc/versions.env is the same value os/verify's smoke register
+# requires the rauc binary in the image to REPORT, so this is not a second
+# source of truth for it -- it is the one the smoke run checks the binary
+# against. On the chain path the same number travels with the binary in
+# out-<arch>/RAUC_VERSION.env, which the composer must not read: that
+# directory is the SOURCE build's output and the composer installs from the
+# pool.
+if ! declined rauc; then
+    COMPOSE_RAUC_VERSION=$(sed -n 's/^RAUC_VERSION=//p' "$REPO_ROOT/os/pkgs/rauc/versions.env" | tail -n1)
+    [ -n "$COMPOSE_RAUC_VERSION" ] ||
+        { echo "error: os/pkgs/rauc/versions.env declares no RAUC_VERSION. The finalizer records it in rootfs-report-v2.txt and os/build/src/bundle.ts refuses to build a bundle whose rauc differs from it; an empty value makes that comparison pass by finding nothing" >&2; exit 1; }
+fi
+
+mkdir -p "$COMPOSE_STAGE"
+printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
+cp "$OVERLAY_STAGE/etc/rauc/keyring.pem" "$COMPOSE_STAGE/keyring.pem"
+echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, declined:${MOS_ROOTFS_WITHOUT:- (none)}"
+sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
 # register as os/pkgs/rauc/build.sh and os/pkgs/podman/build.sh, and the same
@@ -829,17 +565,17 @@ fi
 # docker-container builder is used, whose buildkit image bundles the
 # emulators and needs no host registration.
 #
-# What changed, and why it used to refuse here. The chain is one Dockerfile
-# per stage, each after the first `FROM ${MOS_STAGE_PREV}`; on the docker
-# driver that is a tag in the image store, which a docker-container builder
-# cannot read (measured: "pull access denied", about an image that is right
-# there). So for a while a cross build needed host binfmt and this script said
-# so with the `tonistiigi/binfmt` command. The driver now chains by OCI layout
-# on any builder that is not the docker driver -- each stage exported
-# `type=oci,tar=false` under _out/<board>/stages/ and handed to the next as a
-# named build context -- and os/build/src/stages-cli.ts decides which mode from
-# the builder's driver. Nothing here needs to know; it only has to name a
-# builder that can execute the platform.
+# What changed, and why it used to refuse here. The finalizer opens `FROM
+# ${MOS_STAGE_PREV}` -- the composition's image; on the docker driver that is a
+# tag in the image store, which a docker-container builder cannot read
+# (measured: "pull access denied", about an image that is right there). So for a
+# while a cross build needed host binfmt and this script said so with the
+# `tonistiigi/binfmt` command. The driver now hands one file's output to the
+# next by OCI layout on any builder that is not the docker driver -- exported
+# `type=oci,tar=false` under _out/<board>/stages/ and taken as a named build
+# context -- and os/build/src/stages-cli.ts decides which mode from the
+# builder's driver. Nothing here needs to know; it only has to name a builder
+# that can execute the platform.
 if [ -n "${BUILDX_BUILDER:-}" ]; then
     echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER})"
     BUILDER="${BUILDX_BUILDER}"
@@ -853,7 +589,7 @@ else
         BUILDER=default
     else
         BUILDER="mos-${MOS_ARCH}"
-        echo "note: the 'default' builder cannot reach ${DOCKER_PLATFORM} on this host; using the docker-container builder '${BUILDER}', which bundles its own emulator, and chaining the stages by OCI layout"
+        echo "note: the 'default' builder cannot reach ${DOCKER_PLATFORM} on this host; using the docker-container builder '${BUILDER}', which bundles its own emulator, and passing the composition to the finalizer by OCI layout"
         docker buildx inspect "${BUILDER}" >/dev/null 2>&1 ||
             docker buildx create --name "${BUILDER}" --driver docker-container >/dev/null
     fi
@@ -888,28 +624,25 @@ for a in "${FROM_ARGS[@]}"; do
     case "$a" in --build-arg) DRIVER_FROM_ARGS+=(--arg) ;; *) DRIVER_FROM_ARGS+=("$a") ;; esac
 done
 
-# Stage selection, which is what replaced the WITH_* build arguments.
-# WITH_CONTAINERS and WITH_MOSD are the caller's spelling -- the environment
-# variable, and os/boards/<name>/bsp/containers.env. A 0 names a stage the driver does
-# NOT build, rather than travelling into the build as a `--build-arg` that five
-# separate RUNs and scripts each have to test. One decision instead of five
-# copies of one.
-
-# The staged directory's argument goes with the stage, and the driver enforces
-# that rather than trusting this list: an --arg no stage declares is refused
-# (os/build/src/stages.ts, unusedArgs), because docker only warns about an
-# unused --build-arg and a warning scrolls past in a build this size. So
-# PODMAN_DIR is passed exactly when 31-feature-containers is in the chain and
-# MOSD_DIR exactly when 33-feature-mosd is, and getting that wrong is a refusal
-# with the argument's name in it rather than a value that quietly does nothing.
-# What both paths hand the driver: the board, the platform, the context, the
-# output directory, the two pinned base images and the values the shared
-# finalizer reads. Everything after it is what the two paths do NOT share.
+# What the driver is handed: the board, the platform, the context, the output
+# directory, the two pinned base images, the values the composition reads and
+# the values the finalizer reads.
+#
+# The driver ENFORCES this list rather than trusting it: an --arg no file
+# declares is refused (os/build/src/stages.ts, unusedArgs), because docker only
+# warns about an unused --build-arg and a warning scrolls past in a build this
+# size. So a stray argument is a refusal with its own name in it rather than a
+# value that quietly does nothing.
 #
 # VERITY_UUID is deliberately absent, for the reason stated further up: the pack
 # formats with --no-superblock and the UUID lived in that superblock. It is not
-# merely unused -- the driver REFUSES an --arg no stage declares, so passing it
-# would fail both modes by name rather than being ignored.
+# merely unused -- passing it would fail the build by name.
+#
+# No --without either, and that is not an omission: the decline list reaches the
+# image through the RESOLUTION, which names fewer packages. resolve.sh refuses a
+# feature name nothing matches, with the features that exist -- so
+# `MOS_ROOTFS_WITHOUT=contaners` is still a refusal and not a full image
+# reported as a reduced one.
 DRIVER_ARGS=(
     --board "$MOS_BOARD"
     --platform "$DOCKER_PLATFORM"
@@ -924,69 +657,20 @@ DRIVER_ARGS=(
     --arg SQUASHFS_TIME="$SQUASHFS_TIME"
     --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME"
     --source-date-epoch "$SQUASHFS_TIME"
+    --stages-dir "$REPO_ROOT/os/rootfs/compose"
+    --arg COMPOSE_DIR="_out/$MOS_BOARD/compose"
+    --arg RAUC_VERSION="$COMPOSE_RAUC_VERSION"
 )
 
-if [ "$MOS_ROOTFS_MODE" = "composed" ]; then
-    # THE COMPOSITION: the same driver, a different directory. --stages-dir is
-    # the only thing that changes, because os/rootfs/compose holds exactly what
-    # the driver requires of a chain -- a first file that declares no
-    # MOS_STAGE_PREV, a last file that declares it, opens FROM it and defines
-    # both export targets -- and its last file IS os/rootfs/stages/90-pack,
-    # through a symlink. So there is no second driver, no second finalizer and
-    # no second set of export rules to keep in step.
-    #
-    # No --without here, and that is not an omission: the decline list reaches
-    # this path through the RESOLUTION, which names fewer packages, rather than
-    # through a stage that is not built. resolve.sh refuses a feature name
-    # nothing matches, with the features that exist, exactly as the driver does
-    # for the chain -- so `MOS_ROOTFS_WITHOUT=contaners` is still a refusal and
-    # not a full image reported as a reduced one.
-    DRIVER_ARGS+=(
-        --stages-dir "$REPO_ROOT/os/rootfs/compose"
-        --arg COMPOSE_DIR="_out/$MOS_BOARD/compose"
-        --arg RAUC_VERSION="$COMPOSE_RAUC_VERSION"
-    )
-else
-    # Stage selection, which is what replaced the WITH_* build arguments.
-    # WITH_CONTAINERS and WITH_MOSD are the caller's spelling -- the
-    # environment variable, and os/boards/<name>/bsp/containers.env. A 0 names a
-    # stage the driver does NOT build, rather than travelling into the build as
-    # a `--build-arg` that five separate RUNs and scripts each have to test. One
-    # decision instead of five copies of one.
-    #
-    # The staged directory's argument goes with the stage, and the driver
-    # enforces that rather than trusting this list: an --arg no stage declares
-    # is refused (os/build/src/stages.ts, unusedArgs), because docker only warns
-    # about an unused --build-arg and a warning scrolls past in a build this
-    # size. So PODMAN_DIR is passed exactly when 31-feature-containers is in the
-    # chain and MOSD_DIR exactly when 33-feature-mosd is, and getting that wrong
-    # is a refusal with the argument's name in it rather than a value that
-    # quietly does nothing.
-    for f in $WITHOUT_FEATURES; do DRIVER_ARGS+=(--without "$f"); done
-    declined containers || DRIVER_ARGS+=(--arg PODMAN_DIR="_out/$MOS_BOARD/podman")
-    declined mosd || DRIVER_ARGS+=(--arg MOSD_DIR="_out/$MOS_BOARD/mosd")
-    declined rauc || DRIVER_ARGS+=(--arg RAUC_DIR="_out/$MOS_BOARD/rauc")
-    DRIVER_ARGS+=(
-        --arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER"
-        --arg MODULES_TAR="_out/$MOS_BOARD/modules.tar"
-        --arg BOARD_FIRMWARE_DIR="_out/$MOS_BOARD/firmware"
-        --arg BOARD_FIRMWARE_FILES="$BOARD_FIRMWARE_FILES"
-        --arg BOARD_HWINIT_DIR="_out/$MOS_BOARD/hwinit"
-        --arg BOARD_INIT_DIR="_out/$MOS_BOARD/init"
-        --arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2"
-        --arg MOS_PROFILE="$MOS_PROFILE"
-    )
-fi
-
-# ONE DOCKERFILE PER STAGE, not one build. os/build/run.sh --build-rootfs
-# sequences the *.Dockerfile files in --stages-dir in numeric order, tagging
-# each and handing it to the next; everything above this line -- the staged
-# context or the resolved package set, the layout checks, the verity parameters
-# -- is unchanged and is still this script's job. The driver decides only the
-# order, the tags and which argument reaches which file, and it refuses an
-# argument no stage declares rather than letting docker warn about it. See
-# os/rootfs/stages/README.md.
-echo "rootfs: assembling $MOS_BOARD in $MOS_ROOTFS_MODE mode"
+# TWO DOCKERFILES, not one build. os/build/run.sh --build-rootfs sequences the
+# *.Dockerfile files in --stages-dir in numeric order, handing each one's image
+# to the next: 10-compose installs the resolved package set, and 90-pack closes
+# and packs what it produced. Everything above this line -- the resolved package
+# set, the layout checks, the verity parameters -- is this script's job. The
+# driver decides only the order, the tags and which argument reaches which file,
+# and it refuses an argument no file declares rather than letting docker warn
+# about it.
+echo "rootfs: composing $MOS_BOARD"
 if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         "${DRIVER_ARGS[@]}" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
@@ -1018,38 +702,36 @@ fi
 # _out/<board>/, outside the packed root, which is where rootfs-stages.txt has
 # always lived; inside the image it would be a second copy of facts dpkg's own
 # database already carries at the point the finalizer purges it.
-if [ "$MOS_ROOTFS_MODE" = "composed" ]; then
-    {
-        echo "# The local packages composed into the $MOS_BOARD root, one per line."
-        echo "# Read out of $POOL_DIR/manifest.txt (which os/build-env/deb/repo.sh"
-        echo "# generated from the archives themselves) and out of"
-        echo "# os/build-env/deb/producers.sh; never from a list kept by hand."
-        echo "#"
-        printf '#board\t%s\n' "$MOS_BOARD"
-        printf '#profile\t%s\n' "$MOS_PROFILE"
-        printf '#declined\t%s\n' "${MOS_ROOTFS_WITHOUT:-(none)}"
-        printf '#pool\t_out/debs/%s at %s\n' "$MOS_ARCH" "$pool_version"
-        printf '#package\tversion\tarchitecture\tsha256\tsource\n'
-        for p in $RESOLVED; do
-            awk -F'\t' -v pkg="$p" -v prods="$PRODUCER_DIRS" '
-                $1 == pkg {
-                    n = split(prods, rows, ";")
-                    dir = "(no producer declares it)"
-                    for (i = 1; i <= n; i++) {
-                        split(rows[i], kv, "=")
-                        if (kv[1] == pkg) dir = kv[2]
-                    }
-                    printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $5, dir
-                }' "$POOL_DIR/manifest.txt"
-        done
-    } > "$PACKAGES_RECORD"
-    recorded=$(grep -vc '^#' "$PACKAGES_RECORD" || true)
-    [ "$recorded" -eq "$resolved_n" ] ||
-        { echo "error: $PACKAGES_RECORD records $recorded package(s) and $resolved_n were resolved and installed. The record is read out of the pool index by name, so a short one means a name the index does not carry -- and a composition record that silently omits a package is worse than none" >&2; exit 1; }
-    echo
-    echo "=== rootfs-packages.txt ($recorded package(s)) ==="
-    cat "$PACKAGES_RECORD"
-fi
+{
+    echo "# The local packages composed into the $MOS_BOARD root, one per line."
+    echo "# Read out of $POOL_DIR/manifest.txt (which os/build-env/deb/repo.sh"
+    echo "# generated from the archives themselves) and out of"
+    echo "# os/build-env/deb/producers.sh; never from a list kept by hand."
+    echo "#"
+    printf '#board\t%s\n' "$MOS_BOARD"
+    printf '#profile\t%s\n' "$MOS_PROFILE"
+    printf '#declined\t%s\n' "${MOS_ROOTFS_WITHOUT:-(none)}"
+    printf '#pool\t_out/debs/%s at %s\n' "$MOS_ARCH" "$pool_version"
+    printf '#package\tversion\tarchitecture\tsha256\tsource\n'
+    for p in $RESOLVED; do
+        awk -F'\t' -v pkg="$p" -v prods="$PRODUCER_DIRS" '
+            $1 == pkg {
+                n = split(prods, rows, ";")
+                dir = "(no producer declares it)"
+                for (i = 1; i <= n; i++) {
+                    split(rows[i], kv, "=")
+                    if (kv[1] == pkg) dir = kv[2]
+                }
+                printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $5, dir
+            }' "$POOL_DIR/manifest.txt"
+    done
+} > "$PACKAGES_RECORD"
+recorded=$(grep -vc '^#' "$PACKAGES_RECORD" || true)
+[ "$recorded" -eq "$resolved_n" ] ||
+    { echo "error: $PACKAGES_RECORD records $recorded package(s) and $resolved_n were resolved and installed. The record is read out of the pool index by name, so a short one means a name the index does not carry -- and a composition record that silently omits a package is worse than none" >&2; exit 1; }
+echo
+echo "=== rootfs-packages.txt ($recorded package(s)) ==="
+cat "$PACKAGES_RECORD"
 
 VERITY_ENV="$OUT_DIR/rootfs-verity.env"
 IMG="$OUT_DIR/rootfs-verity.img"

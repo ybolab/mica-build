@@ -1,7 +1,7 @@
 #!/bin/sh
 # Assert the whole shadow chain, including that no account carries a usable hash.
 #
-# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
+# Called from os/rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -eu
 link="$(readlink /rootfs/etc/shadow || true)"

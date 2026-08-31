@@ -2,11 +2,9 @@
 # Install ca-certificates, refuse a trust store that moved since it was
 # recorded, and record how many certificates the bundle holds.
 #
-# Called from os/rootfs/stages/10-base.Dockerfile (certs stage), where the
-# reasoning lives, and from the generate stage of
-# os/rootfs/packages-src/ca-trust. Both call sites run THIS file rather than
-# restating it, which is what keeps the chain's store and the package's store
-# one definition -- and what makes the guard below cover them both.
+# Called from the generate stage of os/rootfs/packages-src/ca-trust, which runs
+# THIS file rather than restating it, so the store the package ships and the
+# rule the guard below enforces have one definition.
 
 set -eu
 apt-get update

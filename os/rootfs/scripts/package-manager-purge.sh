@@ -1,7 +1,7 @@
 #!/bin/sh
 # Remove package management from the packed root, and prove what survived.
 #
-# Called from os/rootfs/stages/90-pack.Dockerfile (closed stage), where the reasoning lives.
+# Called from os/rootfs/compose/90-pack.Dockerfile (closed stage), where the reasoning lives.
 
 set -eu
 # The logs go too, and they are the one part of this that has a prerequisite:

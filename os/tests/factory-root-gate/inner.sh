@@ -3,7 +3,7 @@
 #
 #   bash inner.sh <out-dir> <work-dir>
 #
-# os/rootfs/stages/90-pack.Dockerfile packs `pack`'s /rootfs into a squashfs and
+# os/rootfs/compose/90-pack.Dockerfile packs `pack`'s /rootfs into a squashfs and
 # exports the same /rootfs as an OCI image. The smoke run executes binaries in
 # the second and the device ships the first, so if the two are not one tree the
 # smoke run is a check on something adjacent to the artifact.

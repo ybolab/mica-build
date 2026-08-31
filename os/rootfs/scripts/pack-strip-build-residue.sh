@@ -1,7 +1,7 @@
 #!/bin/sh
 # Remove what the ASSEMBLY left in the root, and prove none of it survived.
 #
-# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
+# Called from os/rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 #
 # Three members so far, and they are the same kind of thing: something that
 # exists because this root was built by a package manager inside a container,
@@ -12,12 +12,11 @@
 # the finalizer's, and it is the ruling
 # os/rootfs/packages-src/system/Dockerfile already records for the first.
 #
-# EACH COUNT IS PRINTED. The two assembly paths reach this file with different
-# residue -- the chain removes its own host keys in stages/10-base and never
-# writes a policy-rc.d, the composer writes a policy-rc.d and removes it and
-# never removes the host keys openssh-server's postinst generates -- so on each
-# path one of these numbers is a real removal and the other is a tripwire. A
-# silent step could be vacuous on both and read the same.
+# EACH COUNT IS PRINTED. The composition writes a policy-rc.d and removes it
+# again, and never removes the host keys openssh-server's postinst generates --
+# so one of these numbers is a real removal and the other is a tripwire, and
+# which is which is not the same on every root this file is asked to close. A
+# silent step could be vacuous and read exactly like a working one.
 
 set -eu
 
@@ -50,11 +49,10 @@ rm -f /rootfs/usr/sbin/policy-rc.d
     { echo "error: /usr/sbin/policy-rc.d is still in the packed root. It answers 101 to every invoke-rc.d, so a device carrying it refuses to start any service through that path" >&2; exit 1; }
 
 # 3. The container engine's runtime state, left by EXERCISING it during
-# assembly. os/rootfs/scripts/podman-exercise.sh runs a container in
-# stages/31-feature-containers, and crun creates its state directory at
-# /run/crun doing so; the composer never runs one, so the composed root does not
-# have it. The dual-build gate is what found it -- /run/crun was reported as a
-# path present on one side only.
+# assembly: running a container makes crun create its state directory at
+# /run/crun. The composition never runs one, so this is a tripwire on the root
+# it closes today rather than a removal. Kept because the removal is cheap and
+# the state is unmistakably build residue if it ever appears.
 #
 # /run IS A TMPFS AT RUNTIME, so nothing under it in the image is ever read.
 # That argues for emptying the directory wholesale, and this deliberately does
