@@ -410,7 +410,6 @@ MISSING=""
 UNITS_N=0
 WANTS_N=0
 WANTS_BAD=""
-PAYLOAD_WANTS=" "
 ALL_PATHS=/tmp/all-paths.txt
 collect_payload_paths "${ALL_PATHS}" ${PKGS}
 while IFS= read -r path; do
@@ -428,7 +427,6 @@ while IFS= read -r path; do
     case "${path}" in
     */systemd/system/*.wants/*)
         WANTS_N=$((WANTS_N + 1))
-        PAYLOAD_WANTS="${PAYLOAD_WANTS}${path} "
         # The link has to land on a unit FILE, and the resolution happens in the
         # INSTALLED root: no archive can say whether the unit its wants-link
         # names was shipped by anybody at all. A dangling one is a service
@@ -472,6 +470,25 @@ fi
 # governs mos producers, and what an upstream Debian maintainer script does with
 # its own unit is a fact for the composer workstream to rule on rather than one
 # this gate should decide by going red.
+# The classification is PAYLOAD versus NOT, asked of dpkg about the LINK itself
+# -- not about the unit it points at. A .wants symlink that some package's file
+# list claims was shipped, whoever shipped it: systemd's own
+# sockets.target.wants links are payload exactly as mos's multi-user.target.wants
+# links are. One that NO package's file list claims was written by a maintainer
+# script, and that is the whole category. Classifying by the TARGET's owner
+# instead would put all seventy of Debian's vendor-shipped links in the finding
+# and bury the one that matters.
+#
+# One pass over every installed package's file list rather than a `dpkg -S` per
+# link: a hundred forks under the emulated executor is minutes, and this answers
+# the same question once.
+OWNED_WANTS=/tmp/owned-wants.txt
+dpkg-query -Wf='${binary:Package}\n' 2>/dev/null | xargs -r dpkg -L 2>/dev/null |
+    grep -F '.wants/' | LC_ALL=C sort -u >"${OWNED_WANTS}" || true
+OWNED_WANTS_N="$(grep -c . "${OWNED_WANTS}" || true)"
+[ "${OWNED_WANTS_N}" -gt 0 ] ||
+    fail "no installed package's file list names a single .wants path, so the classification below would call every symlink in the root undeclared"
+
 ROOT_WANTS_N=0
 UNDECLARED_N=0
 for d in /etc/systemd/system/*.wants /usr/lib/systemd/system/*.wants; do
@@ -479,18 +496,18 @@ for d in /etc/systemd/system/*.wants /usr/lib/systemd/system/*.wants; do
     for link in "${d}"/*; do
         { [ -e "${link}" ] || [ -L "${link}" ]; } || continue
         ROOT_WANTS_N=$((ROOT_WANTS_N + 1))
-        case "${PAYLOAD_WANTS}" in *" ${link} "*) continue ;; esac
+        grep -Fxc -- "${link}" "${OWNED_WANTS}" >/dev/null && continue
         UNDECLARED_N=$((UNDECLARED_N + 1))
         target="$(readlink "${link}" 2>/dev/null || echo '(not a symlink)')"
         owner="$(dpkg -S "$(readlink -f "${link}" 2>/dev/null)" 2>/dev/null | cut -d: -f1 | head -n1)"
-        echo "UNDECLARED-ENABLEMENT: ${link} -> ${target}, enabled by ${owner:-a package that does not own the target} rather than by any mos package's payload"
+        echo "UNDECLARED-ENABLEMENT: ${link} -> ${target}, in no package's file list; the unit it enables belongs to ${owner:-no package at all}, so a maintainer script wrote this link"
     done
 done
-echo "install-closure: ${ROOT_WANTS_N} .wants symlink(s) present in the installed root, ${WANTS_N} of them mos payload, ${UNDECLARED_N} put there by something other than payload"
+echo "install-closure: ${ROOT_WANTS_N} .wants symlink(s) present in the installed root, ${OWNED_WANTS_N} claimed by some package's file list (${WANTS_N} of them mos payload), ${UNDECLARED_N} written by a maintainer script"
 if [ "${ROOT_WANTS_N}" -eq 0 ]; then
     fail "the installed root holds NO .wants symlink at all, so this enumeration examined nothing -- not even the base system's"
 elif [ "${UNDECLARED_N}" -eq 0 ]; then
-    pass "every one of the ${ROOT_WANTS_N} .wants symlinks in the root is package payload; nothing enabled a unit outside it"
+    pass "every one of the ${ROOT_WANTS_N} .wants symlinks in the root is some package's payload; no maintainer script enabled a unit"
 fi
 
 # --- the accounts the units name
@@ -981,7 +998,7 @@ for arch in "${ARCHES[@]}"; do
     fi
 
     log="${WORK}/build-${arch}.log"
-    echo "install-closure-gate: building six ${arch} roots on builder '${builder}' (emulated=${emulated}); the build log is ${log}"
+    echo "install-closure-gate: building ${#REPORTS[@]} ${arch} roots on builder '${builder}' (emulated=${emulated}); the build log is ${log}"
     build_status=0
     docker buildx build --builder "${builder}" \
         "${BASE_ARGS[@]}" \
@@ -1006,8 +1023,16 @@ for arch in "${ARCHES[@]}"; do
         # A report that stops mid-sentence reads as a pass to anything counting
         # FAIL lines. The terminator is what tells "it finished and found
         # nothing wrong" apart from "it was killed".
-        grep -qxF "${TERMINATORS[${i}]}" "${r}" || {
-            fail "${arch}: ${REPORTS[${i}]} does not end in '${TERMINATORS[${i}]}', so it was truncated and its silence is not a pass"
+        #
+        # `tail` and not `grep`, for two reasons. The marker begins with `--`,
+        # which grep parses as the end of its own options and then reports as an
+        # unrecognised one -- a check that fails whatever the file contains is
+        # as uninformative as one that always passes, and it never looks at the
+        # transcript at all. And the marker has to be the LAST line: found
+        # anywhere, it would pass for a report that was cut off after it, which
+        # is the case this exists to catch.
+        [ "$(tail -n 1 "${r}")" = "${TERMINATORS[${i}]}" ] || {
+            fail "${arch}: ${REPORTS[${i}]} does not END in '${TERMINATORS[${i}]}' (its last line is '$(tail -n 1 "${r}")'), so it was truncated and its silence is not a pass"
             continue
         }
         ROOTS_N=$((ROOTS_N + 1))
