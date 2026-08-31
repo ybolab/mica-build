@@ -114,6 +114,8 @@ ARCHES=""
 BUILD_CONTEXTS=""
 FROM_IMAGES=""
 BUILD_ARGS=""
+ENABLEMENT=""
+PREPARE=""
 # shellcheck source=/dev/null
 . "${PRODUCER_ENV}"
 
@@ -126,6 +128,54 @@ for a in ${ARCHES}; do
     amd64 | arm64 | all) ;;
     *) die "${PRODUCER_ENV} declares ARCHES=\"${ARCHES}\", which names '${a}'; only amd64, arm64 and all exist here" ;;
     esac
+done
+
+# ENABLEMENT: how many multi-user.target.wants symlinks each package's payload
+# carries, one entry per package with no package left out. It is REQUIRED and a
+# zero is WRITTEN rather than omitted, because those two are the same sentence
+# to a reader and opposite sentences to a check: an omitted package is one
+# whose enablement nothing asserts, so it can acquire or lose a wants-symlink
+# with every gate green. The declared count is asserted at the end of this
+# script against the archive this run wrote -- a field that only some
+# downstream gate reads is a field that drifts until that gate finally reads it.
+[ -n "${ENABLEMENT}" ] ||
+    die "${PRODUCER_ENV} declares no ENABLEMENT. Every producer states, per package, how many /etc/systemd/system/multi-user.target.wants symlinks its payload carries; a package that starts nothing writes the zero (e.g. ENABLEMENT=\"${PACKAGES%% *}=0\"). Defaulting it would leave the common case unwritten and therefore unchecked"
+
+enablement_for() {
+    local want="$1" e
+    for e in ${ENABLEMENT}; do
+        [ "${e%%=*}" = "${want}" ] || continue
+        printf '%s\n' "${e#*=}"
+        return 0
+    done
+    return 1
+}
+
+for e in ${ENABLEMENT}; do
+    e_pkg="${e%%=*}"
+    e_n="${e#*=}"
+    if [ "${e_pkg}" = "${e}" ] || [ -z "${e_pkg}" ] || [ -z "${e_n}" ]; then
+        die "${PRODUCER_ENV} names '${e}' in ENABLEMENT, which is not <package>=<count>"
+    fi
+    case "${e_n}" in
+    *[!0-9]*) die "${PRODUCER_ENV} names '${e}' in ENABLEMENT, whose count '${e_n}' is not a decimal number" ;;
+    esac
+    e_declared=0
+    for p in ${PACKAGES}; do
+        [ "${p}" != "${e_pkg}" ] || e_declared=1
+    done
+    [ "${e_declared}" = 1 ] ||
+        die "${PRODUCER_ENV} names '${e_pkg}' in ENABLEMENT and PACKAGES=\"${PACKAGES}\" does not emit it. No archive would ever exist for that entry to be checked against, so it would sit there reading like an assertion and asserting nothing"
+    e_seen=0
+    for e2 in ${ENABLEMENT}; do
+        [ "${e2%%=*}" != "${e_pkg}" ] || e_seen=$((e_seen + 1))
+    done
+    [ "${e_seen}" = 1 ] ||
+        die "${PRODUCER_ENV} names '${e_pkg}' ${e_seen} times in ENABLEMENT. Two counts for one package is one count that is never checked, because the first match wins"
+done
+for p in ${PACKAGES}; do
+    enablement_for "${p}" >/dev/null ||
+        die "${PRODUCER_ENV} emits '${p}' and its ENABLEMENT=\"${ENABLEMENT}\" says nothing about it. Every package carries a count, including the zero of a package that starts nothing"
 done
 
 # The refusal that makes ARCHES worth declaring. A producer whose payload is
@@ -187,6 +237,52 @@ all) POOL_ARCHES=(amd64 arm64) ;;
 *) POOL_ARCHES=("${ARCH}") ;;
 esac
 
+# PREPARE: the one step a producer may run on the HOST, before the build.
+#
+# It exists for the inputs a build context cannot name. BUILD_CONTEXTS entries
+# are fixed repository-relative paths -- producer.env is plain KEY=value with no
+# expansion, deliberately -- so a producer whose inputs are selected by an
+# environment variable, or produced by a script that must run where the
+# repository is, has nowhere to put them. The hook stages them instead, and what
+# it leaves in ${MOS_DEB_STAGE} arrives in the build as the `bin` context.
+#
+# It runs HERE, above the builder selection, because that is the last point at
+# which nothing has been started: `docker buildx create`/`inspect` bootstraps a
+# buildkit container and from.sh --contexts writes OCI layouts. A hook whose
+# job is to refuse a missing input must be able to say "nothing was staged and
+# no container was started" and have it be true.
+BIN_CTX=()
+if [ -n "${PREPARE}" ]; then
+    case "${PREPARE}" in
+    */*) die "${PRODUCER_ENV} names PREPARE=\"${PREPARE}\", which is a path. A hook is a file name beside the producer.env that declares it: a producer that reached out of its own directory would be running a script it does not own" ;;
+    esac
+    HOOK="${PRODUCER_DIR}/${PREPARE}"
+    [ -f "${HOOK}" ] ||
+        die "${PRODUCER_ENV} names PREPARE=\"${PREPARE}\" and ${HOOK} does not exist"
+    # Emptied rather than added to, so that a hook which stops staging a file
+    # cannot be covered by the previous run's copy of it. Under tmp/, this
+    # repository's declared bind-mount root, beside the OCI layouts below.
+    PRODUCER_SLUG="${PRODUCER_REL//\//-}"
+    STAGE_DIR="${REPO_ROOT}/tmp/deb-stage-${PRODUCER_SLUG}-${ARCH}"
+    rm -rf "${STAGE_DIR}"
+    mkdir -p "${STAGE_DIR}"
+    # Everything the hook is allowed to know, and nothing it has to re-derive.
+    # MOS_DEB_VERSION and SOURCE_DATE_EPOCH are the same two values the build
+    # gets below, so a hook that writes a version or a timestamp into what it
+    # stages writes the archive's own.
+    MOS_DEB_REPO_ROOT="${REPO_ROOT}" \
+        MOS_DEB_PRODUCER="${PRODUCER_REL}" \
+        MOS_DEB_PRODUCER_DIR="${PRODUCER_DIR}" \
+        MOS_DEB_ARCH="${ARCH}" \
+        MOS_DEB_STAGE="${STAGE_DIR}" \
+        MOS_DEB_VERSION="${VERSION}" \
+        SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" \
+        bash "${HOOK}"
+    [ -n "$(ls -A "${STAGE_DIR}")" ] ||
+        die "the PREPARE hook ${PREPARE} of ${PRODUCER_REL} exited 0 and left ${STAGE_DIR} empty. That directory IS the 'bin' build context, so the build would reach its first COPY --from=bin against nothing and either fail there or -- worse -- pack a payload with the hook's material silently missing"
+    BIN_CTX=(--build-context "bin=${STAGE_DIR}")
+fi
+
 # Builder selection, the same register os/pkgs/mosd/hack/build-deb.sh and
 # os/pkgs/rauc/build.sh keep and for the same reasons: BUILDX_BUILDER wins
 # because a caller who named a builder made a decision; with nothing named,
@@ -227,20 +323,29 @@ mapfile -t FROM_ARGS < <(bash "${FROM_SH}" --arch="${BUILD_ARCH}" MOS_BUILD_DEB=
 [ "${#FROM_ARGS[@]}" -eq 2 ] ||
     die "os/build-env/from.sh did not yield localhost/mos-build-deb:${BUILD_ARCH} (see its message above); it is built by \`make build-env\`"
 
-# Any further base the producer names. The token IS the build argument its
-# Dockerfile declares, and the images.env key is that name without the `MOS_`
-# prefix -- the pairing os/build-env/from.sh's own call sites already write out
-# (`MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404`). Only IMAGE_ keys: a LOCAL_ base
-# is one this repository builds, and the only one a producer here stands on is
-# the packer, which this driver passes itself.
-for name in ${FROM_IMAGES}; do
-    case "${name}" in
-    MOS_IMAGE_*) ;;
-    *) die "${PRODUCER_ENV} names '${name}' in FROM_IMAGES. An entry there is the build argument the producer's Dockerfile declares, and it is MOS_ plus an IMAGE_ key from os/build-env/images.env; the packer base is passed by this driver and is not named here" ;;
-    esac
-    mapfile -t extra_from < <(bash "${FROM_SH}" --arch="${BUILD_ARCH}" "${name}=${name#MOS_}")
+# Any further base the producer names, as `<build-arg name>=<images.env key>`
+# -- the pairing os/build-env/from.sh's own call sites already write out in
+# full (`MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404`), and the shape this entry is
+# handed to it in unchanged.
+#
+# The pair is WRITTEN rather than derived from a naming rule. A driver that
+# built the key by stripping a prefix would make the Dockerfile's ARG name a
+# consequence of arithmetic in this file, so a reader of either half would have
+# to come here to learn what feeds the other -- which is the reason from.sh's
+# header gives for taking the pair at every one of its call sites.
+#
+# from.sh is the dispatcher for what a key may be: it refuses anything that is
+# neither an IMAGE_ nor a LOCAL_ key, and names the key it refused. There is no
+# second copy of that policy here.
+for entry in ${FROM_IMAGES}; do
+    argname="${entry%%=*}"
+    key="${entry#*=}"
+    if [ "${argname}" = "${entry}" ] || [ -z "${argname}" ] || [ -z "${key}" ]; then
+        die "${PRODUCER_ENV} names '${entry}' in FROM_IMAGES, which is not <build-arg name>=<images.env key> -- e.g. MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE. The left half is the ARG the producer's Dockerfile declares and the right half is the key os/build-env/images.env pins"
+    fi
+    mapfile -t extra_from < <(bash "${FROM_SH}" --arch="${BUILD_ARCH}" "${entry}")
     [ "${#extra_from[@]}" -eq 2 ] ||
-        die "os/build-env/from.sh did not resolve ${name#MOS_} for ${name} (see its message above)"
+        die "os/build-env/from.sh did not resolve ${key} for ${argname} (see its message above)"
     FROM_ARGS+=("${extra_from[@]}")
 done
 
@@ -304,6 +409,7 @@ docker buildx build --builder "${BUILDER}" \
     "${FROM_ARGS[@]}" \
     ${CTX_ARGS[@]+"${CTX_ARGS[@]}"} \
     --build-context "packer=${REPO_ROOT}/os/build-env/deb" \
+    ${BIN_CTX[@]+"${BIN_CTX[@]}"} \
     ${CTX_EXTRA[@]+"${CTX_EXTRA[@]}"} \
     --build-arg "MOS_DEB_VERSION=${VERSION}" \
     --build-arg "MOS_DEB_ARCH=${ARCH}" \
@@ -324,6 +430,39 @@ for pool_arch in "${POOL_ARCHES[@]}"; do
     done
 done
 [ -z "${missing}" ] || die "the export is missing:${missing}"
+
+# ENABLEMENT, asserted out of the archive that was just written.
+#
+# Read in a container for the reason os/build-env/deb/repo.sh gives for the
+# same read: the host carries no dpkg by contract here, and the packer image
+# does. The HOST architecture's image, not --arch's -- `dpkg-deb --contents`
+# parses an archive rather than executing it, and this host has no binfmt
+# registration, so an arm64 image would die with `exec format error` before it
+# listed the arm64 package it had just produced.
+mapfile -t READBACK_FROM < <(bash "${FROM_SH}" --arch="${HOST_ARCH}" MOS_BUILD_DEB=LOCAL_MOS_BUILD_DEB)
+[ "${#READBACK_FROM[@]}" -eq 2 ] ||
+    die "os/build-env/from.sh did not yield localhost/mos-build-deb:${HOST_ARCH} to read the built archives back with (see its message above); it is built by \`make build-env\`"
+READBACK_IMAGE="${READBACK_FROM[1]#MOS_BUILD_DEB=}"
+
+# One pool is enough. An `all` build exports the same stage into both, so the
+# second listing would be the first one again.
+READBACK_POOL="${REPO_ROOT}/_out/debs/${POOL_ARCHES[0]}/pool"
+for p in ${PACKAGES}; do
+    want="$(enablement_for "${p}")"
+    listing="$(docker run --rm \
+        --label ai-agent=true \
+        -v "${READBACK_POOL}:/pool:ro" \
+        -w /pool \
+        "${READBACK_IMAGE}" dpkg-deb --contents "${p}_${VERSION}_${ARCH}.deb")"
+    # The counting rule, and it is narrow on purpose. `$1 ~ /^l/` counts
+    # SYMLINKS only: a regular file with the same name starts nothing, so it is
+    # not enablement. One directory only: a link under local-fs.target.wants or
+    # timers.target.wants is real payload, and it is the byte-for-byte payload
+    # checks that speak about those, not this number.
+    got="$(awk '$1 ~ /^l/ && $6 ~ /^\.\/etc\/systemd\/system\/multi-user\.target\.wants\// { n++ } END { print n + 0 }' <<<"${listing}")"
+    [ "${got}" = "${want}" ] ||
+        die "${p} declares ENABLEMENT ${p}=${want} in ${PRODUCER_ENV} and the archive just built carries ${got} multi-user.target.wants symlink(s). Either the payload gained or lost a unit's enablement, or the declaration was never true; both are the drift this field exists to name, so neither is absorbed here"
+done
 
 for pool_arch in "${POOL_ARCHES[@]}"; do
     for p in ${PACKAGES}; do

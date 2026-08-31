@@ -33,21 +33,113 @@ run a substitution hidden in it.
 | --- | --- | --- |
 | `PACKAGES` | yes | space-separated package names. The export is asserted against this list. |
 | `ARCHES` | yes | space-separated subset of `amd64 arm64 all`. An `--arch` outside it is refused by name. |
+| `ENABLEMENT` | yes | `package=count ...`, one entry per package. Asserted against the built archive. |
 | `BUILD_CONTEXTS` | no | `name=repository-relative-path ...`, passed as `--build-context`. |
-| `FROM_IMAGES` | no | build-argument names for further base images, resolved through `os/build-env/from.sh`. |
+| `FROM_IMAGES` | no | `<build-arg name>=<images.env key> ...` for further base images, resolved through `os/build-env/from.sh`. |
 | `BUILD_ARGS` | no | `KEY=VALUE ...`, passed verbatim as `--build-arg`. |
+| `PREPARE` | no | a script beside this file, run on the host before the build; what it stages becomes the `bin` context. |
 
 `ARCHES` is required rather than defaulted because the wrong answer is silent.
 An `Architecture: all` payload built as `amd64` is a well-formed archive in
 every field except the one that decides which images may install it, and
 nothing downstream would report it.
 
-An entry in `FROM_IMAGES` is the build argument the producer's Dockerfile
-declares, and the `images.env` key is that name without its `MOS_` prefix --
-the pairing `os/build-env/from.sh`'s other call sites write out in full
-(`MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404`). Only `IMAGE_` keys: a `LOCAL_`
-base is one this repository builds, and the only one a producer here stands on
-is the packer, which the driver passes itself.
+An entry in `FROM_IMAGES` is a **pair**: the build argument the producer's
+Dockerfile declares, then the `images.env` key that pins it, exactly as
+`os/build-env/from.sh`'s other call sites write it and handed to that script
+unchanged.
+
+```
+FROM_IMAGES="MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE"
+```
+
+Both halves are written out rather than one being derived from the other by
+stripping a prefix. A derivation would make the Dockerfile's `ARG` name a
+consequence of arithmetic in the driver, so a reader of either half would have
+to go there to learn what feeds the other -- which is the reason `from.sh`'s own
+header gives for taking the pair at every one of its call sites. A bare name is
+refused by name. Which keys are legal is `from.sh`'s decision and is not
+restated here: it takes an `IMAGE_` or a `LOCAL_` key and names anything else.
+
+## `ENABLEMENT`
+
+How many symlinks under `/etc/systemd/system/multi-user.target.wants/` each
+package's payload carries, one entry per package:
+
+```
+ENABLEMENT="mos-wifi=0 mos-wifi-ap=0 mos-bluetooth=1"
+```
+
+The counting rule is narrow, and both halves of it matter:
+
+- **Symlinks only.** A regular file with the right name under that directory
+  starts nothing, so it is not enablement.
+- **That one directory.** A link under `local-fs.target.wants` or
+  `timers.target.wants` is not counted. `mos-system` ships eleven of the first
+  and one of the second and declares `mos-system=5`; `mos-wifi`, `mos-wifi-ap`
+  and `mos-board-x64` each ship one `local-fs` link and declare `0`. Those links
+  are ordinary payload, and it is the byte-for-byte payload checks that speak
+  about them.
+
+**A zero is written, never omitted.** The field is required for every package a
+producer emits, and a missing package is a hard failure by name. To a reader
+"enables nothing" and "nobody counted" look the same in an absent field; to a
+check they are opposites, because a package with no entry can acquire or lose a
+wants-symlink with every gate green. That refusal is the whole value of the
+field.
+
+The driver asserts the declared count against the archive it just wrote, with
+the same expression the package gate uses, reading `dpkg-deb --contents` in the
+packer container -- the host carries no dpkg, and the **host** architecture's
+image is used because listing an archive parses it rather than executing it. A
+producer whose declaration disagrees with its own output fails by name. A field
+that only a downstream gate reads is a field that drifts until that gate finally
+reads it.
+
+Enablement is always **files this package owns**: the exact wants-symlinks the
+image creates today, shipped in the payload. There is no preset mechanism and no
+`postinst systemctl enable` -- the root is sealed read-only before the device
+ever boots.
+
+## `PREPARE`
+
+The one step a producer may run on the **host**, before the build. It exists for
+inputs that a build context cannot name: `BUILD_CONTEXTS` entries are fixed
+repository-relative paths, because `producer.env` never expands a variable, so a
+producer whose inputs are selected at run time or produced by a script that must
+run where the repository is has nowhere to put them.
+
+The value is a file name beside the `producer.env` that declares it -- a path is
+refused, since a producer reaching out of its own directory would be running a
+script it does not own. The driver runs it with seven variables exported:
+
+| Variable | Value |
+| --- | --- |
+| `MOS_DEB_REPO_ROOT` | the repository root |
+| `MOS_DEB_PRODUCER` | the producer's repository-relative directory |
+| `MOS_DEB_PRODUCER_DIR` | that directory, absolute |
+| `MOS_DEB_ARCH` | the `--arch` this build was asked for |
+| `MOS_DEB_STAGE` | the directory to stage into, created empty |
+| `MOS_DEB_VERSION` | the version the archive will carry |
+| `SOURCE_DATE_EPOCH` | the commit timestamp the build clamps to |
+
+**What the hook leaves in `${MOS_DEB_STAGE}` arrives in the build as the `bin`
+context.** The driver creates that directory empty on every run -- so a file the
+hook stops staging cannot be covered by the previous run's copy of it -- and
+**refuses by name a hook that leaves it empty**: an empty `bin` would reach the
+first `COPY --from=bin` against nothing and either fail there or, worse, pack a
+payload with the hook's material silently missing.
+
+It runs above the builder selection, which is the last point at which nothing
+has started: `docker buildx create`/`inspect` bootstraps a buildkit container
+and `from.sh --contexts` writes OCI layouts. That ordering is what lets a hook
+whose job is to refuse a missing input say "nothing was staged and no container
+was started" and have it be true.
+
+`board-cx3576` is the only producer here that uses it, and needs all three
+properties: its BSP artifacts are selected by `BOARD_DIR`, it invokes
+`os/pkgs/rauc/render-config.sh` rather than reimplementing it, and it refuses a
+missing BSP input before anything is built.
 
 Every build also gets `--build-context packer=os/build-env/deb` and the
 `MOS_DEB_VERSION`, `MOS_DEB_ARCH` and `SOURCE_DATE_EPOCH` build arguments,
@@ -105,7 +197,7 @@ to know that one of its packages was filed under arm64.
 | `radios` | `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
 | `board-x64` (`os/boards/x64/deb`) | `mos-board-x64` | `amd64` |
-| `board-cx3576` -- lives at `os/boards/cx3576/deb`, run through its own `render.sh` | `mos-board-cx3576` | `arm64` |
+| `board-cx3576` (`os/boards/cx3576/deb`) -- stages its BSP inputs through `PREPARE` | `mos-board-cx3576` | `arm64` |
 
 ### `profile`
 
