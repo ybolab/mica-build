@@ -45,6 +45,13 @@ esac
 # at /usr/lib/systemd/system-preset/50-mos-ssh.preset. openssh-server's own
 # postinst enables ssh.service through deb-systemd-helper, and deb-systemd-helper
 # reads that preset and writes no link. The Dockerfile records the measurement.
+#
+# A PRESET IS NOT A WORKAROUND HERE, IT IS ONE OF THE TWO SANCTIONED FORMS.
+# docs/plan/PLAN-036.md, Risks: "enablement is represented by owned symlinks or
+# explicit image presets." A measurement only shows that a mechanism WORKS -- a
+# postinst that removed the link would work too, which is why the measurement
+# alone cannot stop someone swapping this for one. The plan names the two forms,
+# and a maintainer script removing another package's link is neither of them.
 # On the stage chain the ordering is the other way round -- 10-base installs
 # openssh-server before os/rootfs/scripts/network-and-ssh-units.sh runs -- so
 # that script still needs its `rm -f`, because the preset it writes lands after
@@ -62,11 +69,13 @@ esac
 #   preset cannot retract one that exists. That is an ordering this package does
 #   not control, so it is asserted rather than assumed.
 #
-#   A REFUSAL HERE IS A BUILD FAILURE, NOT A BROKEN DEVICE. These packages are
-#   installed at image build time; the running image has no apt and no dpkg at
-#   all. Turning "sshd enabled at boot" into a failed composition is strictly
-#   better than finding it in a dual-build comparison afterwards -- which is
-#   exactly how it was found this time.
+#   A REFUSAL HERE IS A BUILD FAILURE, NOT A BROKEN DEVICE, and the plan says so
+#   rather than this being an inference about when packages are installed.
+#   PLAN-036.md, Risks: "The running image still removes APT/dpkg. These `.deb`
+#   files are build and composition artifacts, not an on-device update
+#   mechanism." So refusing turns "sshd enabled at boot" into a failed
+#   composition -- strictly better than finding it in a dual-build comparison
+#   afterwards, which is exactly how it was found this time.
 #
 #   IT PUTS THE CLAIM WHERE THE CLAIM NOW LIVES. The chain asserts this same
 #   fact in a build script; the decision moved into a package, so the assertion
