@@ -7,7 +7,7 @@
 // Every guard here is reachable without breaking the tree. The three that read
 // the filesystem -- the board definition, the signing material, the required
 // inputs -- take their `exists` as a parameter for that reason: a guard that can
-// only fire when os/pkgs/rauc/.devkeys has been deleted is a guard nobody has
+// only fire when the repository-root ca/ has been deleted is a guard nobody has
 // run.
 
 import { describe, expect, test } from 'bun:test'
@@ -19,6 +19,7 @@ import {
   compatibleFrom,
   DEFAULT_BOARD,
   hostArchFor,
+  needsGeneratedTrustRoot,
   parseArgs,
   requireBoardEnv,
   requireCompatible,
@@ -136,7 +137,7 @@ describe('the compatible string, read out of the rendered system.conf', () => {
 // G25, G26: the signing material.
 
 describe('CERT/KEY/KEYRING are resolved and checked before anything runs', () => {
-  test('POSITIVE CONTROL: with no environment, the three devkey paths are the defaults', () => {
+  test('POSITIVE CONTROL: with no environment, the three ca/ paths are the defaults', () => {
     const m = resolveSigningMaterial({}, KEYDIR, only(CERT, KEY, KEYRING))
     expect(m).toEqual({ cert: CERT, key: KEY, keyring: KEYRING })
   })
@@ -158,7 +159,7 @@ describe('CERT/KEY/KEYRING are resolved and checked before anything runs', () =>
     expect(m).toEqual({ cert: CERT, key: KEY, keyring: '/hsm/ca.pem' })
   })
 
-  test('EACH of the three, missing from the DEVKEY directory, says `make os-devkeys`', () => {
+  test('EACH of the three, missing from the ca/ directory, says `make os-devkeys`', () => {
     for (const absent of [CERT, KEY, KEYRING]) {
       const present = [CERT, KEY, KEYRING].filter(p => p !== absent)
       let message = ''
@@ -188,6 +189,43 @@ describe('CERT/KEY/KEYRING are resolved and checked before anything runs', () =>
     } catch (e) { message = (e as Error).message }
     expect(message).toContain('/keys-backup/c.pem')
     expect(message).toContain('supplied from the environment')
+  })
+})
+
+// The auto-generation seam: WHETHER the build offers to make a trust root, not
+// whether it made one. The generator itself decides absence -- it is the only
+// reader of ca/ that knows which four files it writes -- so what is decided
+// here is the one thing the caller knows and it does not: that the caller
+// supplied all three paths and wants nothing invented.
+
+describe('a missing ca/ makes the build generate one, unless the caller named its own', () => {
+  test('nothing in the environment: the convention applies, so generate', () => {
+    expect(needsGeneratedTrustRoot({})).toBe(true)
+  })
+
+  test('all three supplied: explicit material BEATS the convention, so generate nothing', () => {
+    // Generating here would write an unprotected CA into the tree of a release
+    // build that named an HSM's material -- and leave ca/GENERATED behind to
+    // mark every later image development-grade.
+    expect(needsGeneratedTrustRoot({ CERT: '/hsm/c.pem', KEY: '/hsm/k.pem', KEYRING: '/hsm/ca.pem' })).toBe(false)
+  })
+
+  test('EACH of the three left unset: the rest still come from ca/, so generate', () => {
+    const full = { CERT: '/hsm/c.pem', KEY: '/hsm/k.pem', KEYRING: '/hsm/ca.pem' }
+    for (const unset of ['CERT', 'KEY', 'KEYRING'] as const) {
+      const env: Record<string, string | undefined> = { ...full }
+      delete env[unset]
+      expect(needsGeneratedTrustRoot(env)).toBe(true)
+    }
+  })
+
+  test('an EMPTY value counts as supplied, because resolveSigningMaterial counts it', () => {
+    // `CERT= bash os/build/run.sh --bundle` reaches process.env as the empty
+    // string and resolveSigningMaterial's `??` takes it as the caller's answer.
+    // The two must agree on what "supplied" means or they disagree about which
+    // files come from ca/; the refusal that follows names the empty path, which
+    // is the caller's mistake and not a missing trust root.
+    expect(needsGeneratedTrustRoot({ CERT: '', KEY: '/hsm/k.pem', KEYRING: '/hsm/ca.pem' })).toBe(false)
   })
 })
 

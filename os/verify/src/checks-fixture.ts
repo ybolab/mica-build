@@ -152,6 +152,10 @@ export function imageFixture(request: FixtureRequest): Fixture {
     tools,
     workDir: dir,
     outDir: dir,
+    // No check that reads the table reads the trust root; the path is inside
+    // the fixture so that one reaching for it finds an empty directory rather
+    // than the host's real ca/.
+    caDir: join(dir, 'ca'),
     gpt: async () => gpt,
     partition: async (nameOrNumber: string | number) => {
       const found = typeof nameOrNumber === 'number'
@@ -336,6 +340,11 @@ function seedHealthyRoot(root: string, board: Board): void {
   // --- apid, carrying the escape page's markup ---
   file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}... trailer\n`)
 
+  // --- the RAUC keyring, byte-equal to the trust root the fixture's ca/ holds ---
+  // Present, and that is the shipped state now: os/rootfs/build-v2.sh stages
+  // ca/ca.cert.pem here in every image, so an absent keyring is the mutation.
+  file('/etc/rauc/keyring.pem', FIXTURE_CA_CERT)
+
   seedDbus(root, file)
   seedEngine(root, board, file)
   seedHomes(root, board, file)
@@ -348,9 +357,10 @@ function seedHealthyRoot(root: string, board: Board): void {
   // final contents rather than be overwritten by them.
   seedSystem(root, board, file)
 
-  // Nothing at /builtin, nothing at /etc/rauc/keyring.pem, nothing under
-  // /srv/ui: absence is the shipped state for all three, and seeding any of
-  // them would make the fixture red before a test had mutated anything.
+  // Nothing at /builtin and nothing under /srv/ui: absence is the shipped state
+  // for both, and seeding either would make the fixture red before a test had
+  // mutated anything. /etc/rauc/keyring.pem is the opposite case and is seeded
+  // above -- every image stages one from ca/, so its ABSENCE is the mutation.
 }
 
 // M4f: the D-Bus policies
@@ -1010,12 +1020,32 @@ function enable(root: string, unit: string, target = 'multi-user.target.wants'):
   symlinkSync(`/usr/lib/systemd/system/${unit}`, join(dir, unit))
 }
 
+/**
+ * The trust root's CA certificate, as the fixture spells it.
+ *
+ * Not a real certificate: `packed-keyring-from-ca` compares BYTES, which is
+ * what ties an image's keyring to the one place a trust root may enter a build.
+ * Nothing in that comparison parses PEM, so a real certificate here would
+ * assert nothing extra and would date.
+ */
+export const FIXTURE_CA_CERT = '-----BEGIN CERTIFICATE-----\nfixture trust root\n-----END CERTIFICATE-----\n'
+
 /** A context over a synthetic packed root. Everything that reads the IMAGE throws. */
 export function packedRootFixture(board: Board): RootFixture {
   const dir = mkdtempSync(join(tmpdir(), 'mos-root-fixture-'))
   const root = join(dir, 'root')
   mkdirSync(root, { recursive: true })
   seedHealthyRoot(root, board)
+
+  // The fixture's own ca/, so the suite never reads the real one: whether THIS
+  // host has built an image, and whether its trust root happens to be a
+  // generated one, must not decide a verdict. PRODUCTION-shaped by default --
+  // material present, no GENERATED marker -- because that is the released state
+  // the healthy fixture stands for; a test that wants the development branch
+  // writes the marker itself.
+  const caDir = join(dir, 'ca')
+  mkdirSync(caDir, { recursive: true })
+  writeFileSync(join(caDir, 'ca.cert.pem'), FIXTURE_CA_CERT)
 
   const refuse = (what: string): never => {
     throw new ToolOutputError(`the packed-root fixture has no ${what}; this check reads more than the tree.`)
@@ -1027,6 +1057,7 @@ export function packedRootFixture(board: Board): RootFixture {
     tools: NO_TOOLS,
     workDir: dir,
     outDir: dir,
+    caDir,
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slots'),

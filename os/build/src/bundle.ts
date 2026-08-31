@@ -82,8 +82,18 @@ export const MANIFEST_IN: string = join(OS_DIR, 'pkgs', 'rauc', 'manifest.raucm.
 /** The system.conf the image actually ships -- rendered, not committed. */
 export const SYSTEM_CONF: string = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'rauc', 'system.conf')
 
-/** os/pkgs/rauc/.devkeys -- the development signing material, gitignored. */
-export const DEVKEY_DIR: string = join(OS_DIR, 'pkgs', 'rauc', '.devkeys')
+/**
+ * The repository-root ca/ -- the one place a trust root enters a build.
+ *
+ * Gitignored, and holding either production material an operator put there or
+ * a development-grade one os/pkgs/rauc/gen-dev-keys.sh generated. Which of the
+ * two it is is not guessed from the bytes: the generator leaves ca/GENERATED
+ * beside them and that marker is what every later reader keys off.
+ */
+export const CA_DIR: string = join(REPO_ROOT, 'ca')
+
+/** os/pkgs/rauc/gen-dev-keys.sh, which owns what CA_DIR contains. */
+export const GEN_TRUST_ROOT_SH: string = join(OS_DIR, 'pkgs', 'rauc', 'gen-dev-keys.sh')
 
 /** os/pkgs/rauc/render-config.sh, which owns the shipped slot configuration. */
 export const RENDER_CONFIG_SH: string = join(OS_DIR, 'pkgs', 'rauc', 'render-config.sh')

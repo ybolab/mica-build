@@ -33,7 +33,7 @@ help:
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
 	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
-	@echo "  os-devkeys          generate the gitignored development signing material"
+	@echo "  os-devkeys          populate the gitignored repo-root ca/ with a development trust root"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
@@ -143,6 +143,10 @@ os-factory-root-gate:
 os-bundle-cx3576:
 	bash os/build/run.sh --bundle
 
+# The MANUAL entry to the repo-root ca/, which is where every build takes its
+# trust root from. Running it is optional: a build that finds ca/ empty
+# generates the same material itself and says so loudly. This target exists for
+# doing it on purpose, ahead of a build, and for `--force` rotation.
 os-devkeys:
 	bash os/pkgs/rauc/gen-dev-keys.sh
 

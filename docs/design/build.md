@@ -64,12 +64,32 @@ family missing refuses by name (`LOCAL_MOS_BUILD_BASE resolves to
 localhost/mos-build-base:amd64, which is not in the local docker image store`)
 rather than pulling from a registry called `localhost`.
 
-**Signing keys.** `make os-devkeys` writes a development CA and signer under
-`os/pkgs/rauc/.devkeys/` (gitignored). The bundle step signs with them. The
-image does *not* trust them unless the keyring is copied to
-`os/rootfs/overlay-v2/etc/rauc/keyring.pem` and the rootfs is built with
-`MOS_EXPECT_DEV_KEYRING=1` — do that for a bench device that must install
-locally signed bundles, and for nothing that leaves the bench.
+**The trust root: `ca/`.** The repository-root `ca/` directory is the one place
+a signing CA enters a build, and it is gitignored. `os/build/run.sh --bundle`
+signs with `ca/signer.cert.pem` and `ca/signer.key.pem`; `os/rootfs/build-v2.sh`
+stages `ca/ca.cert.pem` into the image at `/etc/rauc/keyring.pem`, which is what
+lets an image install the bundles built beside it.
+
+Nothing has to be run first. A build that finds `ca/` absent — or missing any of
+the four files — generates a development-grade trust root there, prints a loud
+notice, and carries on. `make os-devkeys` does the same on purpose, ahead of a
+build; `bash os/pkgs/rauc/gen-dev-keys.sh --force` rotates it, at the cost of
+every bundle already signed with the old key.
+
+The generator leaves `ca/GENERATED` beside the material, and that marker is what
+distinguishes a generated root from provided production material on every later
+build, not only on the one that made it. `os/rootfs/build-v2.sh` keys its "this
+image trusts a DEVELOPMENT RAUC keyring" warning off it (`MOS_EXPECT_DEV_KEYRING=1`
+forces the same warning). A production release puts real material in `ca/` and
+does not carry the marker.
+
+Two rules do not change. `CERT`/`KEY`/`KEYRING` still beat the convention for
+the bundle step — with all three set, nothing is generated and nothing in `ca/`
+is read. And a keyring left at `os/rootfs/overlay-v2/etc/rauc/keyring.pem` is
+still refused, now unconditionally: the overlay is copied wholesale into every
+image, so a file there is a CA nobody chose, and `ca/` is the one sanctioned
+source. Since every image now ships a keyring, `make os-verify-<board>-v2` on a
+development image needs `MOS_EXPECT_DEV_KEYRING=1` to name it as a bench image.
 
 ## 3. x64, end to end
 
@@ -77,7 +97,7 @@ Every step runs natively on an amd64 host. In order:
 
 ```sh
 MOS_BUILD_PLATFORM=linux/amd64 bash os/build-env/build.sh
-bash os/pkgs/rauc/gen-dev-keys.sh
+bash os/pkgs/rauc/gen-dev-keys.sh   # optional: a build with no ca/ does this itself
 MOS_BOARD=x64 bash os/pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash os/pkgs/podman/build.sh
 MOS_BOARD=x64 bash os/rootfs/build-v2.sh
@@ -128,7 +148,7 @@ at all. In order:
 
 ```sh
 MOS_BUILD_PLATFORM=linux/arm64 bash os/build-env/build.sh
-bash os/pkgs/rauc/gen-dev-keys.sh
+bash os/pkgs/rauc/gen-dev-keys.sh   # optional: a build with no ca/ does this itself
 make cx3576-uboot cx3576-uboot-mos
 make cx3576-kernel
 make os-rauc
