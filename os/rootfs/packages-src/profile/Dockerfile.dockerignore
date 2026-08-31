@@ -1,0 +1,11 @@
+# The build context is os/rootfs/packages-src/, the producer family directory,
+# and this producer needs two things out of it: the shared copyright file and
+# its own control templates. Everything else -- the driver, the README, and
+# every sibling producer that lands beside it -- is excluded, so an edit there
+# does not invalidate this producer's context.
+#
+# There is no `bin` or `dist` context here. This producer's whole payload is
+# generated inside the packing stage from the two profile values.
+*
+!copyright
+!profile/control/*.control

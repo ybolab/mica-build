@@ -18,6 +18,8 @@ BOARDS := cx3576 x64
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
 	os-deb-mosd os-deb-mqtt os-debs os-deb-package-gate \
+	os-deb-profile os-deb-system os-deb-ca-trust os-deb-radios \
+	os-deb-board-cx3576 os-deb-board-x64 \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -47,6 +49,12 @@ help:
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-mosd         build the mosd and mos-apid Debian packages for amd64 and arm64 (docker)"
 	@echo "  os-deb-mqtt         build the mos-mqttd and mos-mqtt-broker Debian packages for amd64 and arm64 (docker)"
+	@echo "  os-deb-profile      build the mos-profile-dev and mos-profile-prod Debian packages (docker)"
+	@echo "  os-deb-system       build the mos-system Debian package (docker)"
+	@echo "  os-deb-ca-trust     build the mos-ca-trust Debian package (docker)"
+	@echo "  os-deb-radios       build the mos-wifi, mos-wifi-ap and mos-bluetooth Debian packages (docker)"
+	@echo "  os-deb-board-cx3576 build the mos-board-cx3576 Debian package from a built BSP (docker)"
+	@echo "  os-deb-board-x64    build the mos-board-x64 Debian package (docker)"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
@@ -248,6 +256,57 @@ os-deb-mosd:
 os-deb-mqtt:
 	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch amd64
 	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
+
+# The root filesystem's own producers, one target each. They take content the
+# stage chain writes into the image today and pack it, changing nothing about
+# what os/rootfs/ still installs; every one of them goes through the single
+# driver, which reads the producer's `producer.env` for what it emits and for
+# which architectures.
+#
+# ONE invocation and not one per architecture: the four below declare
+# ARCHES="all". An `all` payload has no ELF, so the driver packs it natively
+# once and exports the identical archive into both _out/debs/<arch>/pool/
+# directories itself -- a second `--arch` here would rebuild the same bytes.
+
+# The image profile marker, as the two alternative packages an image chooses
+# between: mos-profile-dev and mos-profile-prod.
+os-deb-profile:
+	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/profile --arch all
+
+# The common system policy every mos image carries whatever board it is for:
+# state mounts, seed and reconcile tools, units and the operator account.
+os-deb-system:
+	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/system --arch all
+
+# The TLS trust bundle and its individual anchors, generated from the pinned
+# Debian base by the repository's own ca-certificates-generate.sh.
+os-deb-ca-trust:
+	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/ca-trust --arch all
+
+# The radio userland, as three disjoint packages -- mos-wifi, mos-wifi-ap and
+# mos-bluetooth -- because a board chooses those three independently.
+os-deb-radios:
+	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/radios --arch all
+
+# The cx3576 board package: its kernel modules, firmware, boot inputs and
+# rendered configuration.
+#
+# render.sh AND NOT the driver, which this producer refuses by name. The
+# payload comes from ${BOARD_DIR:-os/boards/cx3576/bsp}, a directory chosen at
+# run time, and producer.env is plain KEY=value with no expansion -- so the
+# host-side script stages those artifacts into the fixed path producer.env
+# names and then execs the driver. It does NOT build the BSP: a missing
+# artifact is reported by name, with the `make -C os/boards/cx3576/bsp ...`
+# that produces it.
+os-deb-board-cx3576:
+	bash os/boards/cx3576/deb/render.sh
+
+# The x64 board package: the configuration rendered from board.env, the verity
+# initramfs payload, grub-editenv and the GRUB configuration the image
+# assembler writes onto the ESP. amd64 and not `all`, because grub-editenv is
+# an amd64 ELF and the board it configures is the x86_64 one.
+os-deb-board-x64:
+	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/x64/deb --arch amd64
 
 # THE WHOLE LOCAL POOL: every producer for both architectures, then the index
 # beside each pool. The composer resolves its package set through
