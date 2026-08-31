@@ -30,8 +30,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "${HERE}/.." && pwd)"
 REPO_ROOT="$(cd "${WORKSPACE}/../../.." && pwd)"
 FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
+VERSION_SH="${REPO_ROOT}/os/build-env/deb/version.sh"
 DEB_DIR="${WORKSPACE}/deb"
-for p in "${WORKSPACE}/Cargo.toml" "${FROM_SH}" "${DEB_DIR}"; do
+for p in "${WORKSPACE}/Cargo.toml" "${FROM_SH}" "${VERSION_SH}" "${DEB_DIR}"; do
     [ -e "${p}" ] || {
         echo "error: ${p} does not exist. os/pkgs/mosd/hack/build-deb.sh derives the workspace as its own directory's parent and the repository as three levels above that; if this file moved, that arithmetic moved with it" >&2
         exit 1
@@ -130,32 +131,6 @@ arm64)
     ;;
 esac
 
-# The version, from the crate manifest and the commit, in that order and in one
-# place. `0.1.0` is not written here: the four crates carry it, and a second
-# copy would be a number that stops matching the binaries the first time one
-# moves.
-#
-# Read from the manifest of the producer's FIRST binary, found by the crate
-# name rather than by the directory it sits in -- `mos-mqttd` lives in
-# `mqttd/`, so a path composed from the name would miss it. All four crates
-# carry the same version today; the day they diverge, this producer's own
-# crate is the one whose number belongs on its packages.
-CRATE_MANIFEST=""
-for m in "${WORKSPACE}"/*/Cargo.toml; do
-    got="$(sed -n '/^\[package\]/,/^\[/ s/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${m}" | head -n1)"
-    [ "${got}" = "${BINARIES[0]}" ] || continue
-    CRATE_MANIFEST="${m}"
-    break
-done
-[ -n "${CRATE_MANIFEST}" ] || {
-    echo "error: no crate under ${WORKSPACE} declares the package name '${BINARIES[0]}', which the '${PRODUCER}' producer says it builds. The register in this script and the workspace have come apart" >&2
-    exit 1
-}
-CRATE_VERSION="$(sed -n '/^\[package\]/,/^\[/ s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${CRATE_MANIFEST}" | head -n1)"
-[ -n "${CRATE_VERSION}" ] || {
-    echo "error: no version could be read out of ${CRATE_MANIFEST}, so the package version would be built around an empty string. That manifest is where the number lives; this script does not carry a fallback" >&2
-    exit 1
-}
 git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1 || {
     echo "error: ${REPO_ROOT} is not a git checkout. The package version is 0.1.0+git<commit>-1 and SOURCE_DATE_EPOCH is that commit's timestamp; neither has a defensible value here without git, and a fallback would make every archive irreproducible while every build stayed green" >&2
     exit 1
@@ -163,7 +138,15 @@ git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1 || {
 COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD)"
 DIRTY=""
 [ -z "$(git -C "${REPO_ROOT}" status --porcelain)" ] || DIRTY=".dirty"
-VERSION="${CRATE_VERSION}+git${COMMIT}${DIRTY}-1"
+# The version, from os/build-env/deb/version.sh, which is the ONE
+# implementation of the rule for every producer in this repository. The pool
+# these archives land in carries a single version across all of it, and it is
+# shared with producers that have no crate manifest to read a number out of.
+VERSION="$(bash "${VERSION_SH}")"
+[ -n "${VERSION}" ] || {
+    echo "error: ${VERSION_SH} printed no version (see its message above); the archives would be named around an empty string" >&2
+    exit 1
+}
 
 # SOURCE_DATE_EPOCH is the commit's timestamp, resolved on the HOST: the
 # container sees this worktree through a bind mount whose .git is a file

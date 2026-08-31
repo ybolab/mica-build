@@ -1,6 +1,6 @@
 # `mos-build-deb` -- the Debian package substrate
 
-Three things live here, and together they are the contract every package
+Five things live here, and together they are the contract every package
 producer in this repository is written against:
 
 | File | Runs | Produces |
@@ -8,12 +8,121 @@ producer in this repository is written against:
 | `Dockerfile` | `make build-env` | `localhost/mos-build-deb:<arch>` |
 | `pack.sh` | inside that image, at the **target** architecture | one `.deb` |
 | `repo.sh` | on the host | `Packages`, `SHA256SUMS`, `manifest.txt` |
+| `producers.sh` | on the host | the producer set, discovered from the tree |
+| `version.sh` | on the host | the one version the whole pool carries |
 
 The image carries `dpkg-dev` and no compiler. What a package contains is
 produced by the pinned language builders (`mos-build-c`, `mos-build-go`,
 `mos-build-rust`); this image only wraps an already-staged tree. It records
 what it resolved in `/etc/mos-build/deb.env`, which is how a producer answers
 "what packaged this".
+
+## The producer convention
+
+A **producer** is one directory. Everything that knows about producers --
+`make os-debs`, `make os-deb-<producer>` and `os/tests/deb-package-gate.sh` --
+discovers them from the tree, so adding one is adding files and editing nothing:
+
+```
+os/pkgs/<component>/deb/<producer>/
+  Dockerfile                     stage the payload, then one pack.sh run per package
+  control/<package>.control      one per package the producer emits
+  enablement                     one `<package> <count>` line per package
+os/pkgs/<component>/hack/build-deb.sh
+                                 the driver, run as
+                                 --producer <producer> --arch <amd64|arm64>
+```
+
+| Read off | By |
+| --- | --- |
+| `<component>`, `<producer>` | the path |
+| the package names | the `Package:` field of each `control/*.control` |
+| the driver | `os/pkgs/<component>/hack/build-deb.sh` |
+
+Discovery is `os/pkgs/*/deb/*/`, and every directory it finds must hold at
+least one `control/*.control` and have a driver. Both are refused **by name**:
+a producer directory with no control template declares no package, so it would
+build nothing, contribute nothing to the expected package set and be absent
+from every check -- invisible rather than refused. That is also why discovery
+enumerates producer *directories* and not `control/*.control` files directly.
+
+Adding a producer therefore takes no edit to the `Makefile` and none to the
+gate. `make os-deb-<producer>` is a pattern rule resolved against
+`producers.sh`; `make os-debs` loops over it; the gate reads the same list.
+
+### `enablement` -- what the archive cannot tell you
+
+The gate checks that each package ships exactly the
+`/etc/systemd/system/multi-user.target.wants` symlinks it is supposed to. That
+expectation cannot come from the archive, because the symlink **is** the fact
+under test -- deriving it from the payload would assert that whatever shipped is
+what was meant. So each producer states it, beside its control templates:
+
+```text
+# os/pkgs/mosd/deb/mosd/enablement
+mosd 1
+mos-apid 1
+```
+
+One line per package the producer emits, `<package> <count>`; `#` starts a
+comment. Every package needs a line, and a package that ships no link writes
+`0` rather than being left out -- an omission and a deliberate zero look
+identical, and only one of them is a decision. A producer with no `enablement`
+file at all is a hard failure naming the producer, not a silently empty
+expectation.
+
+## `producers.sh`
+
+```
+bash os/build-env/deb/producers.sh
+  mosd mosd os/pkgs/mosd/hack/build-deb.sh
+  mosd mqtt os/pkgs/mosd/hack/build-deb.sh
+
+bash os/build-env/deb/producers.sh --driver-for mqtt
+  os/pkgs/mosd/hack/build-deb.sh
+```
+
+Three space-separated fields, sorted: `<component> <producer> <driver>`, the
+driver repository-relative. `--driver-for` resolves one producer name, refusing
+an unknown one and an ambiguous one -- two components may each hold a producer
+of one name, and `make os-deb-<that name>` cannot say which was meant.
+
+**This is the only place the layout is written down.** The Makefile and the gate
+both read it and neither globs for itself: two implementations of the glob would
+let `make os-debs` and the gate disagree about what exists, and the one that had
+not been taught about a producer would report green over it.
+
+An empty discovery is a **hard failure**, the way an empty pool is one for
+`repo.sh`. `make os-debs` over no producers builds nothing and reports success;
+the gate over no producers asserts nothing and reports success. Both green,
+both having done nothing.
+
+## `version.sh`
+
+```
+bash os/build-env/deb/version.sh
+  0.1.0+git9671c7cf2d4d-1          a clean tree
+  0.1.0+git9671c7cf2d4d.dirty-1    a tree with uncommitted changes
+```
+
+One version across the whole pool, in one implementation. The producers that
+share that pool have nothing else in common -- the mosd ones are Rust and carry
+crate manifests, others are neither and carry none -- so a rule each producer
+implemented for itself would be a rule they agree on until one of them is
+edited. `os/pkgs/mosd/hack/build-deb.sh` calls this script rather than composing
+the string itself.
+
+The number comes from the mosd workspace's crate manifests, which is where it
+already lived: `0.1.0` is written in the crates and must not be written a second
+time. They must all **agree**; a workspace declaring two versions has no single
+answer to give a pool that carries one, and the script names both crates rather
+than picking. `<commit>` is `git rev-parse --short=12 HEAD`, `.dirty` marks a
+tree no commit reproduces, and the `-1` is the Debian revision, which does not
+move because these packages have no upstream/downstream split.
+
+`SOURCE_DATE_EPOCH` is **not** here; it stays with each driver, which resolves it
+as that commit's timestamp on the host. See the section below for why `pack.sh`
+has no default for it.
 
 ## `pack.sh`
 

@@ -4,14 +4,15 @@
 #   bash os/tests/deb-package-gate.sh
 #
 #   reads   _out/debs/<arch>/pool/*.deb          (built by `make os-debs`)
-#   asserts the seven facts listed below, per architecture
+#   asserts the facts listed below, per architecture
 #
 # Every fact is read OUT OF an archive with `dpkg-deb`, never from a list kept
 # here: a gate that compares the pool against a table in its own file reports
 # on the table. The only things written down are the EXPECTATIONS, and even
-# those are derived from the tree where they can be -- the package names come
-# out of os/pkgs/mosd/deb/*/control/*.control rather than from four strings
-# below, so a producer that gains or loses a package is covered without this
+# those are derived from the tree where they can be -- the producers come out of
+# os/build-env/deb/producers.sh and the package names out of their
+# <producer>/control/*.control, so a producer that gains or loses a package, and
+# a repository that gains or loses a producer, are both covered without this
 # file being edited.
 #
 # WHAT IS CHECKED
@@ -23,29 +24,36 @@
 #      cleanly, and no control template in this tree has one.
 #   b  Package, Version, Architecture and the Depends closure. Each archive
 #      declares the architecture of the pool it sits in; the pool's package set
-#      is the producers' set; one version spans the whole pool; every LOCAL
-#      dependency is pinned to that exact version and is present in the pool.
-#      Everything else is EXTERNAL and is reported, not judged: `mos-system`
-#      and `passwd` are external and expected.
+#      is the discovered producers' set; one version spans the whole pool; every
+#      LOCAL dependency is pinned to that exact version and is present in the
+#      pool. Everything else is EXTERNAL and is reported, not judged:
+#      `mos-system` and `passwd` are external and expected.
 #   c  two builds under one SOURCE_DATE_EPOCH are byte-identical. See the long
 #      comment on the cache below -- this is the check that most easily passes
 #      without having run anything.
 #   d  every package ships a non-empty /usr/share/doc/<package>/copyright.
-#   e  the mosd producer's packages ship exactly one multi-user.target.wants
-#      symlink each and the mqtt producer's ship none. mosd renders the MQTT
-#      configuration and starts both units from `mqtt.enabled`, so a link in
-#      either MQTT payload would start a broker nobody asked for; this is the
-#      check a later "helpful" enablement has to get past.
+#   e  each package ships exactly as many multi-user.target.wants symlinks as
+#      its producer DECLARES in os/pkgs/<component>/deb/<producer>/enablement.
+#      The symlink is the fact under test, so it cannot also be the source of
+#      the expectation; a producer that declares nothing is refused by name
+#      rather than defaulted to zero, and a package that ships no link says so
+#      explicitly. This is the check a later "helpful" enablement has to get
+#      past.
 #   f  no package carries DEBIAN/conffiles. The root is an immutable dm-verity
 #      squashfs, so a conffile promises a three-way merge that cannot happen.
 #   g  every maintainer script that exists parses as POSIX sh. Nothing else in
 #      the tree covers them: os/tests/shell-pipefail-lint.sh scans files that
 #      enable pipefail, and these are #!/bin/sh and do not.
+#   h  the pool and the producer set account for each other, BOTH DIRECTIONS.
+#      Every discovered producer contributed archives, and every archive maps
+#      back to a discovered control template. A producer `make os-debs` silently
+#      skipped, and an archive left behind by a producer that was deleted, each
+#      fail by name -- naming the PRODUCER, which is the thing to go and look at.
 #
-# NOT CHECKED HERE, deliberately: installing the four packages into a clean root
-# with APT -- mosd depends on `mos-system`, which the composer workstream owns
-# and this pool does not contain, so the install would fail for a reason that is
-# not a defect.
+# NOT CHECKED HERE, deliberately: installing the packages into a clean root with
+# APT -- mosd depends on `mos-system`, which the composer workstream owns and
+# this pool does not contain, so the install would fail for a reason that is not
+# a defect.
 #
 # The host carries no dpkg, so the reading happens inside
 # localhost/mos-build-deb -- the same arrangement os/build-env/deb/repo.sh uses,
@@ -55,10 +63,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 REPO_ROOT="$(pwd)"
 FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
-BUILD_DEB="${REPO_ROOT}/os/pkgs/mosd/hack/build-deb.sh"
-DEB_DIR="${REPO_ROOT}/os/pkgs/mosd/deb"
+PRODUCERS_SH="${REPO_ROOT}/os/build-env/deb/producers.sh"
 DIST="${REPO_ROOT}/_out/debs"
-for p in "${FROM_SH}" "${BUILD_DEB}" "${DEB_DIR}"; do
+for p in "${FROM_SH}" "${PRODUCERS_SH}"; do
     [ -e "${p}" ] || {
         echo "error: ${p} does not exist. This gate derives the repository as two levels above itself; if this file moved, that arithmetic moved with it" >&2
         exit 1
@@ -67,6 +74,20 @@ done
 
 command -v docker >/dev/null 2>&1 || {
     echo "error: docker is required and not on PATH. dpkg-deb runs inside localhost/mos-build-deb rather than on the host, and the reproducibility check drives a real package build" >&2
+    exit 1
+}
+
+# THE PRODUCER SET, discovered rather than named here. producers.sh is the one
+# implementation of what a producer is and where it lives; this gate and
+# `make os-debs` read the same answer, so a producer cannot be built by one and
+# unknown to the other. It refuses an empty discovery by name, which is what
+# stops this whole file from checking nothing and reporting green.
+#
+# CAPTURED, never piped into a reader: `producers.sh | while` would report the
+# reader's status and swallow exactly that refusal.
+mapfile -t ROWS < <(bash "${PRODUCERS_SH}")
+[ "${#ROWS[@]}" -gt 0 ] || {
+    echo "error: os/build-env/deb/producers.sh named no producer (see its message above). Every expectation below is derived from that set, and over an empty one they all hold" >&2
     exit 1
 }
 
@@ -104,17 +125,38 @@ WORK="${REPO_ROOT}/tmp/deb-package-gate"
 rm -rf "${WORK}"
 mkdir -p "${WORK}"
 
-# ------------------------------------------------------ a, b, d, e, f, g
+# The producers' own declarations, staged into one tree the container is handed.
+# Staged rather than mounting os/pkgs wholesale, for the reason
+# os/build-env/deb/repo.sh mounts _out/debs/<arch> and nothing above it: this
+# reads control templates and enablement declarations and has no business seeing
+# every package's sources. The shape is fixed --
+# <component>/<producer>/{control/<package>.control,enablement} -- so the
+# container walks a known depth instead of re-deriving the layout.
+TMPL="${WORK}/tmpl"
+for row in "${ROWS[@]}"; do
+    read -r component producer _driver <<<"${row}"
+    src="${REPO_ROOT}/os/pkgs/${component}/deb/${producer}"
+    dst="${TMPL}/${component}/${producer}"
+    mkdir -p "${dst}"
+    cp -R "${src}/control" "${dst}/control"
+    # Copied only when it exists: its ABSENCE is a fact the container reports,
+    # by name and per producer. Failing here instead would move that message out
+    # of the gate's own PASS/FAIL accounting.
+    [ ! -f "${src}/enablement" ] || cp "${src}/enablement" "${dst}/enablement"
+done
+
+# ------------------------------------------------------ a, b, d, e, f, g, h
 #
-# One container reading both pools. The control templates come in beside them
-# so the expected package set is the producers' own statement of it.
+# One container reading both pools. The producers' declarations come in beside
+# them so every expectation is the producers' own statement of it.
 
 STATIC_LOG="${WORK}/static.log"
 static_status=0
 docker run --rm -i \
     --label ai-agent=true \
     -v "${DIST}:/dist:ro" \
-    -v "${DEB_DIR}:/tmpl:ro" \
+    -v "${TMPL}:/tmpl:ro" \
+    -e "PRODUCER_N=${#ROWS[@]}" \
     --entrypoint /bin/bash \
     "${IMAGE}" -s "${ARCHES[@]}" 2>&1 <<'INNER' | tee "${STATIC_LOG}" || static_status=1
 set -euo pipefail
@@ -126,41 +168,98 @@ fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
 
 ARCHES=("$@")
 
-# The package set, out of the producers' control templates: /tmpl is
-# os/pkgs/mosd/deb, and every <producer>/control/<package>.control in it is one
-# package this repository builds. Read from the Package: field and not from the
-# filename, because the filename is a convention and the field is the fact.
-mapfile -t TEMPLATES < <(find /tmpl -mindepth 3 -maxdepth 3 -type f -name '*.control' | LC_ALL=C sort)
-[ "${#TEMPLATES[@]}" -gt 0 ] || {
-    echo "error: no <producer>/control/*.control under /tmpl, so this gate has no expected package set and every check below would pass by comparing nothing" >&2
+# The producers, off the staged tree: /tmpl/<component>/<producer>. The count is
+# checked against what os/build-env/deb/producers.sh discovered on the host, so
+# a staging step that silently dropped one cannot quietly shrink every
+# expectation below.
+mapfile -t PRODUCER_DIRS < <(find /tmpl -mindepth 2 -maxdepth 2 -type d | LC_ALL=C sort)
+[ "${#PRODUCER_DIRS[@]}" -eq "${PRODUCER_N}" ] || {
+    echo "error: ${#PRODUCER_DIRS[@]} producer(s) reached this container, but os/build-env/deb/producers.sh discovered ${PRODUCER_N}. Every expectation below is derived per producer, so a dropped one is a set of checks that silently do not happen" >&2
     exit 1
 }
 
 LOCAL_NAMES=()
 declare -A WANTS_EXPECTED=()
-for t in "${TEMPLATES[@]}"; do
-    name="$(awk '/^Package:/ { sub(/^Package:[[:space:]]*/, ""); print; exit }' "${t}")"
-    [ -n "${name}" ] || {
-        echo "error: ${t} declares no Package:, so the package it describes has no name to check the pool against" >&2
+declare -A PKG_PRODUCER=()
+declare -A PRODUCER_PACKAGES=()
+for d in "${PRODUCER_DIRS[@]}"; do
+    rel="${d#/tmpl/}"
+    producer="${rel}"
+
+    # The package set, out of the producer's own control templates. Read from
+    # the Package: field and not from the filename, because the filename is a
+    # convention and the field is the fact.
+    mapfile -t templates < <(find "${d}/control" -mindepth 1 -maxdepth 1 -type f -name '*.control' | LC_ALL=C sort)
+    [ "${#templates[@]}" -gt 0 ] || {
+        echo "error: the producer ${producer} declares no control/*.control, so it contributes nothing to the expected package set and every check over its packages would pass by comparing nothing" >&2
         exit 1
     }
-    rel="${t#/tmpl/}"
-    producer="${rel%%/*}"
-    # THE ENABLEMENT ASYMMETRY, per producer. mosd and mos-apid each own the
-    # multi-user.target.wants symlink that starts them; the MQTT packages own
-    # none, because mosd renders their configuration into /run and starts them
-    # from the mqtt settings subtree. A producer with no entry here is refused
-    # rather than defaulted, since defaulting to zero would let a new package
-    # ship a unit nothing ever starts and still report green.
-    case "${producer}" in
-    mosd) WANTS_EXPECTED["${name}"]=1 ;;
-    mqtt) WANTS_EXPECTED["${name}"]=0 ;;
-    *)
-        echo "error: '${producer}' is a producer this gate has no enablement expectation for. Decide whether its packages start themselves and register the answer in os/tests/deb-package-gate.sh" >&2
+
+    # THE ENABLEMENT DECLARATION. The multi-user.target.wants symlink IS the
+    # fact check e tests, so the expectation cannot be derived from the archive
+    # -- that would assert that whatever shipped is what was meant. Each
+    # producer states it in the tree instead, and a producer that states nothing
+    # is refused BY NAME rather than defaulted to zero: defaulting would let a
+    # new package ship a unit nothing ever starts, or ship one that starts
+    # itself, and still report green.
+    [ -f "${d}/enablement" ] || {
+        echo "error: the producer ${producer} ships no enablement declaration. Create os/pkgs/${producer}/enablement with one '<package> <count>' line per package it emits, stating how many /etc/systemd/system/multi-user.target.wants symlinks that package ships -- '0' for a package that must not start itself. There is no default: a missing file and a deliberate zero look identical, and only one of them is a decision. See os/build-env/deb/README.md" >&2
         exit 1
-        ;;
-    esac
-    LOCAL_NAMES+=("${name}")
+    }
+    declare -A declared=()
+    while read -r pkg count rest; do
+        case "${pkg}" in '' | '#'*) continue ;; esac
+        [ -z "${rest}" ] || {
+            echo "error: os/pkgs/${producer}/enablement line '${pkg} ${count} ${rest}' carries more than a package and a count. The shape is '<package> <count>'" >&2
+            exit 1
+        }
+        case "${count}" in
+        '' | *[!0-9]*)
+            echo "error: os/pkgs/${producer}/enablement declares '${pkg} ${count}', whose count is not a non-negative integer. It is the NUMBER of multi-user.target.wants symlinks that package ships" >&2
+            exit 1
+            ;;
+        esac
+        declared["${pkg}"]="${count}"
+    done <"${d}/enablement"
+
+    packages=""
+    for t in "${templates[@]}"; do
+        name="$(awk '/^Package:/ { sub(/^Package:[[:space:]]*/, ""); print; exit }' "${t}")"
+        [ -n "${name}" ] || {
+            echo "error: ${t} declares no Package:, so the package it describes has no name to check the pool against" >&2
+            exit 1
+        }
+        # One package, one producer. Two producers emitting one name would
+        # collide in the shared pool, and 'which producer owns this archive'
+        # -- the question check h answers -- would have two answers.
+        [ -z "${PKG_PRODUCER[${name}]:-}" ] || {
+            echo "error: the package '${name}' is declared by two producers, ${PKG_PRODUCER[${name}]} and ${producer}. They write into one shared pool under one filename, so whichever builds second silently replaces the other" >&2
+            exit 1
+        }
+        [ -n "${declared[${name}]:-}" ] || {
+            echo "error: the producer ${producer} emits '${name}' and its enablement declaration does not mention it. Add a '${name} <count>' line to os/pkgs/${producer}/enablement; a package left out of that file has no stated enablement, and inferring one from what it happens to ship is what this gate exists to not do" >&2
+            exit 1
+        }
+        WANTS_EXPECTED["${name}"]="${declared[${name}]}"
+        PKG_PRODUCER["${name}"]="${producer}"
+        LOCAL_NAMES+=("${name}")
+        packages="${packages}${name} "
+    done
+    PRODUCER_PACKAGES["${producer}"]="${packages}"
+
+    # The other direction of the same file: a line naming a package this
+    # producer does not emit is a declaration about nothing -- most likely a
+    # package that was renamed on one side only.
+    for pkg in "${!declared[@]}"; do
+        case " ${packages}" in
+        *" ${pkg} "*) ;;
+        *)
+            echo "error: os/pkgs/${producer}/enablement declares '${pkg}', which that producer does not emit. It emits: ${packages% }" >&2
+            exit 1
+            ;;
+        esac
+    done
+    unset declared
 done
 EXPECTED_SET="$(printf '%s\n' "${LOCAL_NAMES[@]}" | LC_ALL=C sort | tr '\n' ' ')"
 
@@ -198,13 +297,55 @@ for arch in "${ARCHES[@]}"; do
     if [ "${got_set}" = "${EXPECTED_SET}" ]; then
         pass "${arch}: the pool holds exactly the packages the producers declare (${got_set% })"
     else
-        fail "${arch}: the pool holds [${got_set% }], but os/pkgs/mosd/deb/*/control/ declares [${EXPECTED_SET% }]. A missing package is one the composer cannot install; an extra one is an archive no producer owns"
+        fail "${arch}: the pool holds [${got_set% }], but os/pkgs/*/deb/*/control/ declares [${EXPECTED_SET% }]. A missing package is one the composer cannot install; an extra one is an archive no producer owns"
     fi
 
-    # One version across the pool. The four packages are built from one
-    # workspace commit and three of them pin the fourth exactly, so a pool
-    # holding two versions is a half-rebuilt one -- and the exact-version
-    # dependency below has no single value to be checked against.
+    # h -- THE VACUITY GUARD, both directions, per producer.
+    #
+    # The set comparison above already fails on either of these; what it cannot
+    # say is WHICH PRODUCER to go and look at, and with ten producers in the
+    # tree that is the whole cost of the diagnosis. It also compares two sets
+    # that are both derived, so it stays silent about a producer whose archives
+    # are absent from the pool AND whose packages are absent from the expected
+    # set -- which is what a producer discovered but never run looks like from
+    # here.
+    for producer in "${!PRODUCER_PACKAGES[@]}"; do
+        want_pkgs="${PRODUCER_PACKAGES[${producer}]}"
+        found_n=0
+        missing=""
+        for pkg in ${want_pkgs}; do
+            in_pool=0
+            for g in "${got_names[@]}"; do
+                [ "${pkg}" != "${g}" ] || in_pool=1
+            done
+            if [ "${in_pool}" = 1 ]; then
+                found_n=$((found_n + 1))
+            else
+                missing="${missing} ${pkg}"
+            fi
+        done
+        if [ "${found_n}" = 0 ]; then
+            fail "${arch}: the producer ${producer} contributed NO archive to ${pool}, though it declares [${want_pkgs% }]. \`make os-debs\` runs every discovered producer; this one built nothing, or its output went somewhere else"
+        elif [ -n "${missing}" ]; then
+            fail "${arch}: the producer ${producer} contributed only part of what it declares -- missing:${missing}. A producer emits its whole package set or the pool is a half-built one"
+        else
+            pass "${arch}: the producer ${producer} contributed all of [${want_pkgs% }]"
+        fi
+    done
+    orphan=""
+    for g in "${got_names[@]}"; do
+        [ -n "${PKG_PRODUCER[${g}]:-}" ] || orphan="${orphan} ${g}"
+    done
+    if [ -z "${orphan}" ]; then
+        pass "${arch}: every archive in the pool maps back to a discovered producer's control template"
+    else
+        fail "${arch}: ${pool} holds archive(s) no discovered producer declares:${orphan}. Most likely a producer was deleted or renamed and its output was left behind; repo.sh indexes it and the composer would install it"
+    fi
+
+    # One version across the pool. The packages are built from one commit and
+    # the local ones pin each other exactly, so a pool holding two versions is a
+    # half-rebuilt one -- and the exact-version dependency below has no single
+    # value to be checked against.
     pool_version="$(printf '%s\n' "${pool_versions[@]}" | LC_ALL=C sort -u | tr '\n' ' ')"
     if [ "$(printf '%s\n' "${pool_versions[@]}" | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
         pass "${arch}: one version across the pool (${pool_version% })"
@@ -267,7 +408,7 @@ for arch in "${ARCHES[@]}"; do
                     pass "${name} ${arch}: depends on ${dep_name} at the exact version (= ${VERSION})"
                     ;;
                 *)
-                    fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is not the exact version (= ${VERSION}) this pool was built at. These are built from one workspace commit across interfaces that carry no compatibility promise"
+                    fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is not the exact version (= ${VERSION}) this pool was built at. These are built from one commit across interfaces that carry no compatibility promise"
                     ;;
                 esac
                 in_pool=0
@@ -278,12 +419,17 @@ for arch in "${ARCHES[@]}"; do
                     fail "${name} ${arch}: depends on the local package ${dep_name}, which is not in ${pool}. The closure over our own packages has to be satisfiable from the pool itself"
             done
         done
-        # mosd is the base of the local closure: it owns the D-Bus surface the
-        # other three speak, and each of them is built from the same commit.
-        if [ "${name}" != mosd ]; then
+        # mosd is the base of the local closure WITHIN THE mosd COMPONENT: it
+        # owns the D-Bus surface the other packages of that workspace speak, and
+        # each of them is built from the same commit. Scoped to the component
+        # rather than to the pool, because that is the scope the claim was ever
+        # true at -- a rauc or podman package has no reason to speak mosd's
+        # interface, and asserting it over them would be asserting something
+        # nobody believes. Every package of os/pkgs/mosd/ is still covered.
+        if [ "${PKG_PRODUCER[${name}]%%/*}" = mosd ] && [ "${name}" != mosd ]; then
             case "${local_deps}" in
             *" mosd "*) pass "${name} ${arch}: pins mosd" ;;
-            *) fail "${name} ${arch}: declares no dependency on mosd. Every package here but mosd itself is built from mosd's commit and speaks its interface" ;;
+            *) fail "${name} ${arch}: declares no dependency on mosd. Every package of the mosd workspace but mosd itself is built from mosd's commit and speaks its interface" ;;
             esac
         fi
 
@@ -326,16 +472,17 @@ for arch in "${ARCHES[@]}"; do
         fi
 
         # e -- the enablement links, counted as SYMLINKS and not as paths: a
-        # regular file with the right name would not start anything.
+        # regular file with the right name would not start anything. The
+        # expectation is the producer's declaration, read above.
         links="$(awk '$1 ~ /^l/ && $6 ~ /^\.\/etc\/systemd\/system\/multi-user\.target\.wants\// { print $6 }' <<<"${listing}" | LC_ALL=C sort | tr '\n' ' ')"
         link_n="$(awk '$1 ~ /^l/ && $6 ~ /^\.\/etc\/systemd\/system\/multi-user\.target\.wants\// { n++ } END { print n + 0 }' <<<"${listing}")"
         want="${WANTS_EXPECTED[${name}]:-}"
         if [ -z "${want}" ]; then
             fail "${name} ${arch}: no producer declares it, so this gate has no enablement expectation for it"
         elif [ "${link_n}" = "${want}" ]; then
-            pass "${name} ${arch}: ${link_n} multi-user.target.wants symlink(s), as its producer requires${links:+ (${links% })}"
+            pass "${name} ${arch}: ${link_n} multi-user.target.wants symlink(s), as os/pkgs/${PKG_PRODUCER[${name}]}/enablement declares${links:+ (${links% })}"
         else
-            fail "${name} ${arch}: ships ${link_n} multi-user.target.wants symlink(s)${links:+ (${links% })}, but its producer requires ${want}. mosd owns the MQTT lifecycle and starts those units from the mqtt settings subtree; a link in an MQTT payload starts a broker nobody asked for"
+            fail "${name} ${arch}: ships ${link_n} multi-user.target.wants symlink(s)${links:+ (${links% })}, but os/pkgs/${PKG_PRODUCER[${name}]}/enablement declares ${want}. Either the payload gained a link nothing asked for, or the declaration is behind the package"
         fi
 
         # f and g -- the control archive.
@@ -393,15 +540,15 @@ fi
 # TWO BUILDS UNDER ONE SOURCE_DATE_EPOCH, BYTE-IDENTICAL.
 #
 # DEFEATING THE CACHE IS THE ENTIRE DIFFICULTY. The producers are built through
-# buildx, and a second run of os/pkgs/mosd/hack/build-deb.sh normally replays
-# the cached packing layer and re-exports the same bytes it exported the first
-# time. That proves the EXPORT is deterministic and says nothing about pack.sh:
-# it would report identical archives even if pack.sh stamped `date` into every
-# control file.
+# buildx, and a second run of a producer's driver normally replays the cached
+# packing layer and re-exports the same bytes it exported the first time. That
+# proves the EXPORT is deterministic and says nothing about pack.sh: it would
+# report identical archives even if pack.sh stamped `date` into every control
+# file.
 #
 # So the second build runs on a buildx builder CREATED HERE, moments ago, whose
 # cache is empty by construction -- there is no earlier result in it to replay.
-# build-deb.sh honours BUILDX_BUILDER, so this needs no flag it does not have.
+# The drivers honour BUILDX_BUILDER, so this needs no flag they do not have.
 #
 # HOW A READER CAN TELL IT IS STILL DEFEATED, later, without trusting this
 # comment: pack.sh prints one line per archive it writes, and a layer served
@@ -410,16 +557,30 @@ fi
 # every package compared. If a future change lets the cache back in, that line
 # disappears and this check fails -- it does not quietly become a comparison of
 # an archive with itself.
-REBUILD_PRODUCER=mosd
-mapfile -t REBUILD_PACKAGES < <(
-    for t in "${DEB_DIR}/${REBUILD_PRODUCER}"/control/*.control; do
-        awk '/^Package:/ { sub(/^Package:[[:space:]]*/, ""); print; exit }' "${t}"
-    done | LC_ALL=C sort
-)
-[ "${#REBUILD_PACKAGES[@]}" -gt 0 ] || {
-    echo "error: ${DEB_DIR}/${REBUILD_PRODUCER}/control/ declares no package, so the rebuild below would compare nothing" >&2
-    exit 1
-}
+#
+# WHICH producer, per architecture: the discovered set is sorted, and each
+# architecture takes a different row of it. One producer rebuilt twice would
+# leave every other producer's packing path unexercised by this check, and the
+# two architectures agreeing on which one to skip is the least useful pair of
+# runs available. With a single producer discovered the two necessarily
+# coincide; there is nothing else to choose.
+for i in "${!ARCHES[@]}"; do
+    arch="${ARCHES[${i}]}"
+    read -r component producer driver <<<"${ROWS[$((i % ${#ROWS[@]}))]}"
+
+    mapfile -t rebuild_packages < <(
+        for t in "${REPO_ROOT}/os/pkgs/${component}/deb/${producer}"/control/*.control; do
+            awk '/^Package:/ { sub(/^Package:[[:space:]]*/, ""); print; exit }' "${t}"
+        done | LC_ALL=C sort
+    )
+    [ "${#rebuild_packages[@]}" -gt 0 ] || {
+        echo "error: os/pkgs/${component}/deb/${producer}/control/ declares no package, so the rebuild for ${arch} would compare nothing" >&2
+        exit 1
+    }
+    eval "REBUILD_PACKAGES_${arch}=(\"\${rebuild_packages[@]}\")"
+    eval "REBUILD_PRODUCER_${arch}='${producer}'"
+    eval "REBUILD_DRIVER_${arch}='${driver}'"
+done
 
 REPRO_PASS=0
 REPRO_FAIL=0
@@ -433,11 +594,15 @@ cleanup_builders() {
 trap cleanup_builders EXIT
 
 for arch in "${ARCHES[@]}"; do
+    eval "producer=\"\${REBUILD_PRODUCER_${arch}}\""
+    eval "driver=\"\${REBUILD_DRIVER_${arch}}\""
+    eval "packages=(\"\${REBUILD_PACKAGES_${arch}[@]}\")"
+
     pool="${DIST}/${arch}/pool"
     before="${WORK}/before/${arch}"
     mkdir -p "${before}"
     names=()
-    for p in "${REBUILD_PACKAGES[@]}"; do
+    for p in "${packages[@]}"; do
         mapfile -t found < <(find "${pool}" -maxdepth 1 -type f -name "${p}_*_${arch}.deb" -printf '%f\n')
         [ "${#found[@]}" -eq 1 ] || {
             echo "error: ${pool} holds ${#found[@]} archives matching ${p}_*_${arch}.deb; the reproducibility check needs exactly the one the rebuild will replace" >&2
@@ -452,13 +617,13 @@ for arch in "${ARCHES[@]}"; do
     GATE_BUILDERS+=("${builder}")
 
     log="${WORK}/rebuild-${arch}.log"
-    echo "deb-package-gate: rebuilding the ${REBUILD_PRODUCER} producer for ${arch} on the empty-cache builder '${builder}'"
+    echo "deb-package-gate: rebuilding the ${producer} producer for ${arch} on the empty-cache builder '${builder}'"
     rebuild_status=0
     BUILDX_BUILDER="${builder}" BUILDKIT_PROGRESS=plain \
-        bash "${BUILD_DEB}" --producer "${REBUILD_PRODUCER}" --arch "${arch}" >"${log}" 2>&1 || rebuild_status=1
+        bash "${REPO_ROOT}/${driver}" --producer "${producer}" --arch "${arch}" >"${log}" 2>&1 || rebuild_status=1
     if [ "${rebuild_status}" != 0 ]; then
         REPRO_FAIL=$((REPRO_FAIL + 1))
-        echo "FAIL: ${arch}: the second build of the ${REBUILD_PRODUCER} producer did not complete; its output is in ${log}"
+        echo "FAIL: ${arch}: the second build of the ${producer} producer did not complete; its output is in ${log}"
         tail -n 20 "${log}"
         continue
     fi
