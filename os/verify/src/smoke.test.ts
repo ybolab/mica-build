@@ -22,9 +22,20 @@ import { REPO_ROOT } from './paths.ts'
 import { readPin, type Pin } from './smoke-pins.ts'
 import { ARTIFACTS, type Artifact } from './smoke-register.ts'
 import {
+  archiveImageDigests,
+  blobMember,
+  capture,
   conclude,
   checkArtifact,
+  diagnose,
   dockerArgv,
+  loadFactoryRoot,
+  loadTimeoutMs,
+  parseArchiveIndex,
+  parseArchiveManifest,
+  EXEC_TIMEOUT_MS,
+  LOAD_TIMEOUT_BYTES_PER_MS,
+  LOAD_TIMEOUT_FLOOR_MS,
   factoryRootPaths,
   firstLine,
   judge,
@@ -1362,5 +1373,319 @@ describe('buildkitExec -- the register executed inside buildkit', () => {
     } finally {
       rmSync(scratchDir, { recursive: true, force: true })
     }
+  })
+})
+
+
+// Loading the root: a watchdog that must not fail a load which has already done
+// its work, and a tag no other worktree on this host can re-point underneath
+// this run.
+//
+// Both were observed during this campaign, on this host, and neither is
+// hypothetical: a sibling's gate log carries
+// `docker load ... exited 137: Loaded image: localhost/mos-factory-root:x64` --
+// a SIGKILL reported beside docker's own success line -- and two worktrees'
+// `mos-rootfs-stage:x64-*` tags have already interleaved into a plausible,
+// cross-contaminated comparison.
+//
+// Everything below drives `loadFactoryRoot` through its one seam, so the daemon,
+// the archive and the kill are all chosen by the test. The fixtures are not
+// invented: INDEX_JSON and MANIFEST_JSON are verbatim from a 250,083,328-byte
+// OCI archive exported by `docker buildx build --output type=oci` on this host
+// on 2026-08-31, and OUR_ID is what `docker image inspect --format {{.Id}}`
+// answered for it -- the MANIFEST digest, which is what docker 29.7.2's
+// containerd image store answers with.
+
+const ARCHIVE_PATH = '/out/x64/factory-root.oci'
+const REF = 'localhost/mos-factory-root:x64'
+
+const RECORD = {
+  ref: REF,
+  platform: 'linux/amd64',
+  archive: 'factory-root.oci',
+  sha256: '80d473b8d3c0290d1c8aacbce9725c39703ddbf073819b287ea5a5eb83a8d10e',
+  bytes: 250_083_328,
+  archivePath: ARCHIVE_PATH,
+} as const
+
+const MANIFEST_DIGEST = 'sha256:85156a1e0da976ac4f42c2f81c33152837f3b464d65c3c54a1e672eed1b54187'
+const CONFIG_DIGEST = 'sha256:abc62c0e06f5d8105212a31b76f852a739c6f721b1dc6aeb27ed5c68e5b47845'
+const OUR_ID = MANIFEST_DIGEST
+/** A real second image on this host -- what a sibling's load would point `:x64` at. */
+const SOMEONE_ELSE = 'sha256:47b582b490e687b644e3296ee6f1b527993c9f4c553de43c81b65e2ce407c97b'
+
+const INDEX_JSON = `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":`
+  + `[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"${MANIFEST_DIGEST}","size":482,`
+  + `"annotations":{"io.containerd.image.name":"${REF}","org.opencontainers.image.ref.name":"x64"},`
+  + `"platform":{"architecture":"amd64","os":"linux"}}]}`
+
+const MANIFEST_JSON = `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json",`
+  + `"config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"${CONFIG_DIGEST}","size":446},`
+  + `"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip",`
+  + `"digest":"sha256:f782443cfb4c76a2da2da883e08f1479e3bd19e315e7dfcb0f29ff2123a4e982","size":250076484}]}`
+
+const MEMBERS: Readonly<Record<string, string>> = {
+  'index.json': INDEX_JSON,
+  [`blobs/sha256/${MANIFEST_DIGEST.slice('sha256:'.length)}`]: MANIFEST_JSON,
+}
+
+const LOADED_OK: ExecResult = { status: 0, stdout: `Loaded image: ${REF}\n`, stderr: '' }
+
+interface FakeCall {
+  readonly argv: readonly string[]
+  readonly timeoutMs: number
+}
+
+/**
+ * A daemon, a tar and a kill, fabricated at the one seam the loader spends
+ * everything through.
+ *
+ * `images` is keyed by every reference that resolves, which is how a re-pointed
+ * tag is expressed here: the tag answers one id and the archive's own digest
+ * answers another. `calls` is kept because some of these cases are about what
+ * was NOT asked -- a loader that consults the tag has not stopped trusting it,
+ * however right its answer happens to be on a quiet host.
+ */
+function fakeDaemon(opts: {
+  readonly load: ExecResult
+  readonly images?: Readonly<Record<string, string>>
+  readonly members?: Readonly<Record<string, string>>
+}): {
+  run: (argv: readonly string[], timeoutMs: number) => Promise<ExecResult>
+  calls: FakeCall[]
+} {
+  const calls: FakeCall[] = []
+  const run = async (argv: readonly string[], timeoutMs: number): Promise<ExecResult> => {
+    calls.push({ argv, timeoutMs })
+    const last = argv[argv.length - 1]!
+    if (argv[0] === 'docker' && argv[1] === 'load') return opts.load
+    if (argv[0] === 'tar') {
+      const text = opts.members?.[last]
+      return text === undefined
+        ? { status: 2, stdout: '', stderr: `tar: ${last}: Not found in archive\n` }
+        : { status: 0, stdout: text, stderr: '' }
+    }
+    if (argv[0] === 'docker' && argv[1] === 'image' && argv[2] === 'inspect') {
+      const id = opts.images?.[last]
+      return id === undefined
+        ? { status: 1, stdout: '', stderr: `Error response from daemon: No such image: ${last}\n` }
+        : { status: 0, stdout: `${id}\n`, stderr: '' }
+    }
+    throw new Error(`the fake daemon was asked something it does not model: ${argv.join(' ')}`)
+  }
+  return { run, calls }
+}
+
+const askedAbout = (calls: readonly FakeCall[], reference: string): boolean =>
+  calls.some(c => c.argv[1] === 'image' && c.argv.includes(reference))
+
+describe('capture -- a budget that fires names itself', () => {
+  test('a command that outlives its budget comes back saying which budget killed it', async () => {
+    const r = await capture(['sleep', '5'], 120)
+    // 137 is 128+9, and on its own it is indistinguishable from a program that
+    // chose to exit 137. The field beside it is the whole fix: the reader is
+    // told the runner ended this, and after how long.
+    expect(r.status).not.toBe(0)
+    expect(r.timedOutAfterMs).toBe(120)
+    expect(diagnose(r)).toMatch(/watchdog killed it after 120 ms/)
+    expect(diagnose(r)).not.toBe('the program ran and refused')
+  })
+
+  test('a command that finishes inside its budget is not called a timeout', async () => {
+    // The control for the case above. The timer and the exit can land in the
+    // same tick, and a run that succeeded must not acquire a timeout because of
+    // it -- that would be the same false alarm from the other side.
+    const r = await capture(['true'], 30_000)
+    expect(r.status).toBe(0)
+    expect(r.timedOutAfterMs).toBeUndefined()
+    expect(diagnose(r)).not.toMatch(/watchdog/)
+  })
+})
+
+describe('the load budget is a rate, which is what keeps it from being a bigger constant', () => {
+  test('the part that is about the archive scales with the archive', () => {
+    const shipped = loadTimeoutMs(RECORD.bytes)
+    expect(shipped).toBe(LOAD_TIMEOUT_FLOOR_MS + Math.ceil(RECORD.bytes / LOAD_TIMEOUT_BYTES_PER_MS))
+    // Measured on this host: this archive loads in 20.3s cold and 4.3s with the
+    // layers already present, and the 30s constant this replaced killed it
+    // under three concurrent builds. Whatever the floor and the rate are later
+    // edited to, doubling the archive has to double the part that is about the
+    // archive -- a budget that answers the same for 250 MB and for 1 GB is that
+    // constant again under another name.
+    expect(shipped).toBeGreaterThan(EXEC_TIMEOUT_MS)
+    const twice = loadTimeoutMs(2 * RECORD.bytes) - LOAD_TIMEOUT_FLOOR_MS
+    expect(Math.abs(twice - 2 * (shipped - LOAD_TIMEOUT_FLOOR_MS))).toBeLessThanOrEqual(1)
+  })
+
+  test('the load is given that budget and the questions beside it the ordinary fuse', async () => {
+    const { run, calls } = fakeDaemon({ load: LOADED_OK, images: { [MANIFEST_DIGEST]: OUR_ID }, members: MEMBERS })
+    await loadFactoryRoot(RECORD, run)
+    const load = calls.filter(c => c.argv[1] === 'load')
+    expect(load).toHaveLength(1)
+    expect(load[0]!.timeoutMs).toBe(loadTimeoutMs(RECORD.bytes))
+    const beside = calls.filter(c => c.argv[1] !== 'load')
+    expect(beside.length).toBeGreaterThan(0)
+    expect(beside.every(c => c.timeoutMs === EXEC_TIMEOUT_MS)).toBe(true)
+  })
+})
+
+describe('a `docker load` the watchdog killed is not a load that failed', () => {
+  // The observed event, verbatim: a kill whose captured output is docker's own
+  // success line. Before this, the loader read the 137 and threw, and seven
+  // minutes of a sibling's build went with it.
+  const KILLED_BUT_DONE: ExecResult = {
+    status: 137,
+    stdout: `Loaded image: ${REF}\n`,
+    stderr: '',
+    timedOutAfterMs: 30_000,
+  }
+
+  test('the daemon holds the image the archive describes, so the run continues with it', async () => {
+    const { run } = fakeDaemon({ load: KILLED_BUT_DONE, images: { [MANIFEST_DIGEST]: OUR_ID }, members: MEMBERS })
+    const loaded = await loadFactoryRoot(RECORD, run)
+    expect(loaded.id).toBe(OUR_ID)
+    expect(loaded.source).toBe('content')
+  })
+
+  test('what is asked of the daemon after a kill is the ARCHIVE`s digest, never the tag', async () => {
+    // A stale `:x64` another worktree loaded an hour ago answers "is something
+    // loaded?" exactly as well as this build's root does, so after a kill the
+    // tag is not evidence -- and the refusal below is the right answer even
+    // though the daemon does hold an image under that name.
+    const { run, calls } = fakeDaemon({ load: KILLED_BUT_DONE, images: { [REF]: SOMEONE_ELSE }, members: MEMBERS })
+    await expect(loadFactoryRoot(RECORD, run)).rejects.toThrow(/watchdog killed/)
+    expect(askedAbout(calls, REF)).toBe(false)
+    expect(askedAbout(calls, MANIFEST_DIGEST)).toBe(true)
+  })
+
+  test('when the load really did not happen, the refusal names the watchdog and its budget', async () => {
+    const { run } = fakeDaemon({ load: { ...KILLED_BUT_DONE, stdout: '' }, members: MEMBERS })
+    let said = 'it did not refuse at all'
+    try {
+      await loadFactoryRoot(RECORD, run)
+    } catch (e) {
+      said = (e as Error).message
+    }
+    expect(said).toMatch(/the watchdog killed `docker load/)
+    expect(said).toMatch(/after 30000 ms/)
+    expect(said).toMatch(/250083328-byte archive/)
+    // The message this replaces made the reader decode a signal number.
+    expect(said).not.toMatch(/exited 137/)
+  })
+
+  test('a load that failed on its own still reports its own status and what it said', async () => {
+    // The control: nothing here softens a real failure into a continuation.
+    const { run } = fakeDaemon({
+      load: { status: 1, stdout: '', stderr: 'open /out/x64/factory-root.oci: no such file or directory\n' },
+    })
+    await expect(loadFactoryRoot(RECORD, run)).rejects.toThrow(/exited 1: open \/out\/x64/)
+  })
+})
+
+describe('the run addresses the image it loaded, not the tag it loaded it under', () => {
+  test('a tag re-pointed by a sibling between the load and the run cannot change what runs', async () => {
+    // The race, expressed: this load exited 0, and by the time anything is
+    // resolved the daemon-global tag already names another worktree's root.
+    const { run, calls } = fakeDaemon({
+      load: LOADED_OK,
+      images: { [REF]: SOMEONE_ELSE, [MANIFEST_DIGEST]: OUR_ID },
+      members: MEMBERS,
+    })
+    const loaded = await loadFactoryRoot(RECORD, run)
+    expect(loaded.id).toBe(OUR_ID)
+    expect(loaded.id).not.toBe(SOMEONE_ELSE)
+    expect(loaded.source).toBe('content')
+    expect(askedAbout(calls, REF)).toBe(false)
+  })
+
+  test('the classic image store calls the image by its CONFIG digest, and that is asked too', async () => {
+    // Measured here: docker 29.7.2's containerd store answers {{.Id}} with the
+    // manifest digest, and `docker image inspect <config digest>` answers
+    // `No such image`. The classic store is the other way round. A loader that
+    // knew only one of them would fall back to the tag on every host with the
+    // other, which is the defect this exists to close.
+    const classicId = 'sha256:37a4fbb3e1642b6ec6fc321f0ba5ea7c347ea0f581902895e60f566d5de2ae8d'
+    const { run, calls } = fakeDaemon({ load: LOADED_OK, images: { [CONFIG_DIGEST]: classicId }, members: MEMBERS })
+    const loaded = await loadFactoryRoot(RECORD, run)
+    expect(loaded).toEqual({ ref: REF, id: classicId, source: 'content' })
+    expect(askedAbout(calls, REF)).toBe(false)
+  })
+
+  test('a daemon that answers to neither digest falls back to the tag AND says which it did', async () => {
+    // Never worse than what it replaced: an image store that names images a
+    // third way must not turn every smoke run on that host into a refusal about
+    // the runner. What it must not do is stay quiet about it, because
+    // "resolved by content" and "resolved through a global tag" are different
+    // statements about how much the verdicts after it can be trusted.
+    const lines: string[] = []
+    const { run } = fakeDaemon({ load: LOADED_OK, images: { [REF]: SOMEONE_ELSE }, members: MEMBERS })
+    const loaded = await loadFactoryRoot(RECORD, run, l => lines.push(l))
+    expect(loaded).toEqual({ ref: REF, id: SOMEONE_ELSE, source: 'tag' })
+    expect(lines.join('\n')).toMatch(/through the TAG/)
+  })
+
+  test('an archive that will not say what it carries is a loud fallback, not a refusal', async () => {
+    const lines: string[] = []
+    const { run } = fakeDaemon({ load: LOADED_OK, images: { [REF]: OUR_ID } })
+    const loaded = await loadFactoryRoot(RECORD, run, l => lines.push(l))
+    expect(loaded.source).toBe('tag')
+    expect(lines.join('\n')).toMatch(/does not say which image it carries/)
+  })
+
+  test('a load that exited 0 and left nothing behind at all is a refusal', async () => {
+    const { run } = fakeDaemon({ load: LOADED_OK, members: MEMBERS })
+    await expect(loadFactoryRoot(RECORD, run)).rejects.toThrow(/had no image at localhost\/mos-factory-root:x64/)
+  })
+})
+
+describe('what the archive says it carries, read out of the archive and not out of the daemon', () => {
+  test('the index names the image for this platform and the manifest names its config', async () => {
+    const { run } = fakeDaemon({ load: LOADED_OK, members: MEMBERS })
+    expect(await archiveImageDigests(RECORD, run)).toEqual([MANIFEST_DIGEST, CONFIG_DIGEST])
+  })
+
+  test('an index with two images for one platform refuses rather than picking one', () => {
+    // os/build/src/stages.ts exports with --provenance=false --sbom=false, so
+    // the shipped archive carries exactly one manifest. If that ever changes,
+    // this must not choose between them, and the count is in the message so a
+    // reader knows what it was looking at.
+    const two = INDEX_JSON.replace(
+      `"platform":{"architecture":"amd64","os":"linux"}}]}`,
+      `"platform":{"architecture":"amd64","os":"linux"}},`
+      + `{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"${SOMEONE_ELSE}","size":482,`
+      + `"platform":{"architecture":"amd64","os":"linux"}}]}`,
+    )
+    expect(two).not.toBe(INDEX_JSON)
+    expect(() => parseArchiveIndex(two, 'linux/amd64', '/x/index.json'))
+      .toThrow(/2 manifest\(s\), 2 of them images and 2 of those for linux\/amd64/)
+  })
+
+  test('an image for another platform is not this record`s image', () => {
+    expect(() => parseArchiveIndex(INDEX_JSON, 'linux/arm64', '/x/index.json'))
+      .toThrow(/0 of those for linux\/arm64/)
+  })
+
+  test('the variant is not part of the comparison', () => {
+    // `linux/arm64/v8` in an index and `linux/arm64` in the record are the same
+    // platform; refusing that pair would send every arm64 board back to the tag.
+    const arm = INDEX_JSON.replace('"architecture":"amd64"', '"architecture":"arm64","variant":"v8"')
+    expect(arm).not.toBe(INDEX_JSON)
+    expect(parseArchiveIndex(arm, 'linux/arm64', '/x/index.json')).toBe(MANIFEST_DIGEST)
+  })
+
+  test('a digest maps onto the member an OCI layout tar carries it as', () => {
+    expect(blobMember(MANIFEST_DIGEST)).toBe(`blobs/sha256/${MANIFEST_DIGEST.slice('sha256:'.length)}`)
+    expect(() => blobMember('85156a1e0da9')).toThrow(/<algorithm>:<hex>/)
+  })
+
+  test('a manifest with no config digest says so rather than resolving to nothing', () => {
+    expect(() => parseArchiveManifest('{"schemaVersion":2}', '/x/manifest'))
+      .toThrow(/names no config digest/)
+    expect(parseArchiveManifest(MANIFEST_JSON, '/x/manifest')).toBe(CONFIG_DIGEST)
+  })
+
+  test('an archive tar cannot read is reported as the tar failure it was', async () => {
+    const { run } = fakeDaemon({ load: LOADED_OK })
+    await expect(archiveImageDigests(RECORD, run)).rejects.toThrow(/tar could not read index\.json/)
   })
 })
