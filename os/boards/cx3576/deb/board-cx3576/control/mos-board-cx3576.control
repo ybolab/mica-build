@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: mos-system, iproute2, kmod, mawk | awk
+Depends: mos-system (= @VERSION@), iproute2, kmod, mawk | awk
 Description: mos board support -- CX3576-Z (Rockchip RK3576)
  Everything one cx3576 root filesystem carries that another board's does not:
  /etc/fstab, /etc/fw_env.config and /etc/rauc/system.conf rendered from
