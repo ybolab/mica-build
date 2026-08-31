@@ -17,9 +17,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
-	os-deb-mosd os-deb-mqtt os-debs os-deb-package-gate \
-	os-deb-profile os-deb-system os-deb-ca-trust os-deb-radios \
-	os-deb-board-cx3576 os-deb-board-x64 \
+	os-debs os-deb-package-gate \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -47,14 +45,7 @@ help:
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
-	@echo "  os-deb-mosd         build the mosd and mos-apid Debian packages for amd64 and arm64 (docker)"
-	@echo "  os-deb-mqtt         build the mos-mqttd and mos-mqtt-broker Debian packages for amd64 and arm64 (docker)"
-	@echo "  os-deb-profile      build the mos-profile-dev and mos-profile-prod Debian packages (docker)"
-	@echo "  os-deb-system       build the mos-system Debian package (docker)"
-	@echo "  os-deb-ca-trust     build the mos-ca-trust Debian package (docker)"
-	@echo "  os-deb-radios       build the mos-wifi, mos-wifi-ap and mos-bluetooth Debian packages (docker)"
-	@echo "  os-deb-board-cx3576 build the mos-board-cx3576 Debian package from a built BSP (docker)"
-	@echo "  os-deb-board-x64    build the mos-board-x64 Debian package (docker)"
+	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash os/build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
@@ -233,99 +224,80 @@ os-build-test:
 os-rauc:
 	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/pkgs/rauc/build.sh
 
-# The mosd/apid package producer: compiles ONLY mosd and apid and emits the
-# `mosd` and `mos-apid` archives into _out/debs/<arch>/pool/. Both
-# architectures, because the two are what os/build-env/images.env pins a Rust
-# std and a mos-build-deb for, and a target that built one would leave the
-# other's pool holding the previous commit's packages.
+# ONE PRODUCER, every architecture it declares, resolved against discovery.
+# This is a PATTERN rule and not a list: `make os-deb-mosd`, `make os-deb-mqtt`
+# and `make os-deb-<anything os/build-env/deb/producers.sh finds>` all route
+# here. A producer added to the tree gets its target with no edit to this file
+# -- which is the point, because the workstreams adding the next producers have
+# been told to escalate rather than edit here, and that only works if there is
+# nothing here for them to edit.
 #
-# It changes nothing about what the rootfs chain installs; os/rootfs/ still
-# ships these binaries as loose files until a later workstream switches it.
-os-deb-mosd:
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
-
-# The MQTT package producer: compiles ONLY mos-mqttd and mos-mqtt-broker and
-# emits those two archives into _out/debs/<arch>/pool/, beside the mosd
-# producer's. Both architectures, for the reason above.
+# The architectures come from the producer's own producer.env, not from a pair
+# written here: seven of the packages this repository is growing are
+# architecture-independent and build once as `all`, and a rule that ran every
+# producer at amd64 and arm64 would build those twice and file two archives
+# under one name.
 #
-# Unlike mosd and mos-apid, neither of these packages ships an enablement
-# symlink: mosd renders their configuration and starts them from the mqtt
-# settings subtree, so an installed unit that started itself would be a broker
-# nobody asked for. It changes nothing about what the rootfs chain installs.
-os-deb-mqtt:
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch amd64
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
-
-# The root filesystem's own producers, one target each. They take content the
-# stage chain writes into the image today and pack it, changing nothing about
-# what os/rootfs/ still installs; every one of them goes through the single
-# driver, which reads the producer's `producer.env` for what it emits and for
-# which architectures.
+# producers.sh resolves the stem and refuses an unknown one by name; this recipe
+# does not second-guess it, so there is one message for "no such producer" and
+# one implementation of what a producer is.
 #
-# ONE invocation and not one per architecture: the four below declare
-# ARCHES="all". An `all` payload has no ELF, so the driver packs it natively
-# once and exports the identical archive into both _out/debs/<arch>/pool/
-# directories itself -- a second `--arch` here would rebuild the same bytes.
+# NOT LISTED IN .PHONY: .PHONY does not accept patterns, so an `os-deb-%` entry
+# there would match nothing and silently declare nothing -- the same reason the
+# <board>-% delegations at the top of this file are unlisted. Shadowing needs a
+# FILE named os-deb-<producer> in the repository root, whose entries are
+# Makefile, README.md, LICENSE, docs/, extensions/ and os/; nothing there can
+# match, and a stray one would show as a visible "Nothing to be done" rather
+# than a wrong build. `os-deb-package-gate` below is an explicit target and is
+# therefore not caught by this pattern: make prefers an explicit rule over a
+# pattern rule that also matches.
+os-deb-%:
+	@set -e; \
+	bash os/build-env/deb/producers.sh --dir-for '$*' >/dev/null; \
+	arches="$$(bash os/build-env/deb/producers.sh | awk -v p='$*' '$$1 == p { print $$3 }' | tr ',' ' ')"; \
+	for arch in $$arches; do \
+	    echo "bash os/build-env/deb/build.sh --producer $* --arch $$arch"; \
+	    bash os/build-env/deb/build.sh --producer '$*' --arch "$$arch"; \
+	done
 
-# The image profile marker, as the two alternative packages an image chooses
-# between: mos-profile-dev and mos-profile-prod.
-os-deb-profile:
-	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/profile --arch all
-
-# The common system policy every mos image carries whatever board it is for:
-# state mounts, seed and reconcile tools, units and the operator account.
-os-deb-system:
-	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/system --arch all
-
-# The TLS trust bundle and its individual anchors, generated from the pinned
-# Debian base by the repository's own ca-certificates-generate.sh.
-os-deb-ca-trust:
-	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/ca-trust --arch all
-
-# The radio userland, as three disjoint packages -- mos-wifi, mos-wifi-ap and
-# mos-bluetooth -- because a board chooses those three independently.
-os-deb-radios:
-	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/rootfs/packages-src/radios --arch all
-
-# The cx3576 board package: its kernel modules, firmware, boot inputs and
-# rendered configuration.
+# THE WHOLE LOCAL POOL: every DISCOVERED producer at every architecture it
+# declares, then the index beside each pool. The composer resolves its package
+# set through _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}, so a build
+# that stopped before repo.sh would leave a pool APT cannot see into.
 #
-# render.sh AND NOT the driver, which this producer refuses by name. The
-# payload comes from ${BOARD_DIR:-os/boards/cx3576/bsp}, a directory chosen at
-# run time, and producer.env is plain KEY=value with no expansion -- so the
-# host-side script stages those artifacts into the fixed path producer.env
-# names and then execs the driver. It does NOT build the BSP: a missing
-# artifact is reported by name, with the `make -C os/boards/cx3576/bsp ...`
-# that produces it.
-os-deb-board-cx3576:
-	bash os/boards/cx3576/deb/board-cx3576/render.sh
-
-# The x64 board package: the configuration rendered from board.env, the verity
-# initramfs payload, grub-editenv and the GRUB configuration the image
-# assembler writes onto the ESP. amd64 and not `all`, because grub-editenv is
-# an amd64 ELF and the board it configures is the x86_64 one.
-os-deb-board-x64:
-	bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/x64/deb/board-x64 --arch amd64
-
-# THE WHOLE LOCAL POOL: every producer for both architectures, then the index
-# beside each pool. The composer resolves its package set through
-# _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}, so a build that stopped
-# before repo.sh would leave a pool APT cannot see into.
+# No producer is named here. The set comes from os/build-env/deb/producers.sh,
+# which refuses an empty discovery by name -- without that, this target would
+# loop over nothing, run repo.sh over a stale pool and report success.
 #
-# SEQUENTIAL, and these are recipe lines rather than prerequisites for exactly
-# that reason. Both producers write into ONE shared pool directory and each
-# clears its own previous archives out of it with `rm -f <package>_*.deb`; under
-# `make -j` two prerequisite targets would run that unlink and that export
-# against the same directory at once, and repo.sh would index whatever survived.
-# Recipe lines in one target are always run in order, whatever -j says.
+# Both pools are indexed whatever the producers declared, because an
+# Architecture: all producer writes one archive into both and neither pool is
+# ever "the one nothing touched".
+#
+# SEQUENTIAL, and this is a shell loop in ONE recipe rather than a prerequisite
+# per producer for exactly that reason. Every producer writes into shared pool
+# directories and each clears its own previous archives out of them with
+# `rm -f <package>_*.deb`; under `make -j` two prerequisite targets would run
+# that unlink and that export against the same directory at once, and repo.sh
+# would index whatever survived. Recipe lines, and a loop within one, are always
+# run in order whatever -j says.
+#
+# producers.sh is CAPTURED before it is read, never piped straight into the
+# `while`: `producer | while` reports the reader's status, so an empty
+# discovery -- the one failure this target most needs to see -- would be
+# swallowed and this would report success over no producers at all.
 os-debs:
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch amd64
-	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
-	bash os/build-env/deb/repo.sh --arch amd64
-	bash os/build-env/deb/repo.sh --arch arm64
+	@set -e; \
+	rows="$$(bash os/build-env/deb/producers.sh)"; \
+	printf '%s\n' "$$rows" | while read -r producer dir arches packages enablement; do \
+	    for arch in $$(printf '%s' "$$arches" | tr ',' ' '); do \
+	        echo "bash os/build-env/deb/build.sh --producer $$producer --arch $$arch  ($$dir)"; \
+	        bash os/build-env/deb/build.sh --producer "$$producer" --arch "$$arch"; \
+	    done; \
+	done; \
+	for arch in amd64 arm64; do \
+	    echo "bash os/build-env/deb/repo.sh --arch $$arch"; \
+	    bash os/build-env/deb/repo.sh --arch "$$arch"; \
+	done
 
 # The package-level gates of PLAN-036 section 6, over the pool os-debs built:
 # unique file ownership with no Replaces escape, the fields and the Depends

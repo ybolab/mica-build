@@ -2,10 +2,12 @@
 # check=skip=InvalidDefaultArgInFrom
 # The mosd producer: the `mosd` and `mos-apid` packages.
 #
-#   bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch <amd64|arm64>
+#   make os-deb-mosd   ->  os/build-env/deb/build.sh --producer mosd --arch <amd64|arm64>
 #
 # This file only STAGES and PACKS. The binaries were cross-compiled on an amd64
-# Rust builder by the driver above and arrive through the `bin` context; this
+# Rust builder by this producer's PREPARE hook and arrive through the `bin`
+# context; the shared copyright file arrives through `family`, because the build
+# context is this producer's own directory. This
 # stage runs at the TARGET architecture because dpkg-shlibdeps resolves an
 # ELF's dependencies against the libraries of the container it runs in, and
 # os/build-env/deb/pack.sh refuses the mismatch by name.
@@ -23,8 +25,8 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY copyright /in/copyright
-COPY mosd/control/ /in/control/
+COPY --from=family copyright /in/copyright
+COPY control/ /in/control/
 COPY --from=dist mosd.service apid.service com.mos.mosd.conf /in/dist/
 COPY --from=bin mosd apid /in/bin/
 
