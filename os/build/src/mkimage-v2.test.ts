@@ -122,10 +122,13 @@ beforeAll(async () => {
   await tb.must(['find', dir, '-exec', 'touch', '-h', '-d', g.ext4.fileMtime, '{}', '+'])
 }, OPEN_TIMEOUT_MS)
 
+// Teardown drives real tools too -- a toolbox close, then unlinking a work tree
+// holding the 300 MiB filler and a ~1.3 GiB assembled image -- so it gets the
+// same ceiling the tests do rather than bun's 5 s default.
 afterAll(async () => {
   await tb?.close()
   if (dir !== undefined) rmSync(dir, { recursive: true, force: true })
-})
+}, TOOL_TIMEOUT_MS)
 
 /** Assemble with the shared toolbox, swapping in whatever the case is about. */
 async function assemble(
