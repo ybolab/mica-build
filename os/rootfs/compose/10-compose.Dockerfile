@@ -9,14 +9,11 @@
 # construction -- so this directory holds two files and not nine.
 #
 # THE FINALIZER IS NOT COPIED HERE. 90-pack.Dockerfile beside this file is a
-# SYMLINK to ../stages/90-pack.Dockerfile, so the chain and the composition
-# reach one definition of the close-and-pack half. That is load-bearing rather
-# than tidy: os/tests/dual-build-gate.sh compares a chain-built root against a
-# composed one, and if the two paths ran different finalizer code every
-# difference it reported would be ambiguous between "the composition differs"
-# and "the finalizer differs". The stage driver records each file's content
-# hash in _out/<board>/rootfs-stages.txt, so the two builds' manifests carry
-# the SAME hash for 90-pack and the gate asserts that they do.
+# REGULAR FILE and the only definition of the close-and-pack half. It was a
+# symlink to the chain's copy while the chain existed, so that the gate
+# comparing the two roots could not confuse "the composition differs" with
+# "the finalizer differs"; with one assembly path there is one file, and
+# os/build/src/stages.test.ts asserts the symlink has not come back.
 #
 # The driver is os/build/src/stages-cli.ts, unchanged: it discovers
 # <number>-<name>.Dockerfile in the directory it is pointed at, builds them in
@@ -26,18 +23,18 @@
 # needs no second driver.
 
 # This stage's base, injected from os/build-env/images.env by
-# os/build-env/from.sh exactly as stages/10-base's is, and pinned for the same
-# reason: a bare `debian:trixie-slim` is a tag upstream repoints, so the answer
-# to "which Debian is in this device image" would be the date of the build.
+# os/build-env/from.sh, and pinned by digest: a bare `debian:trixie-slim` is a
+# tag upstream repoints, so the answer to "which Debian is in this device
+# image" would be the date of the build.
 # No default -- without a value docker refuses before anything runs, and with
 # one it would build green against an image nobody chose.
 ARG MOS_IMAGE_DEBIAN_TRIXIE
 
 FROM --platform=$TARGETPLATFORM ${MOS_IMAGE_DEBIAN_TRIXIE} AS composed
 
-# $TARGETPLATFORM and not a pinned linux/arm64, for stages/10-base's reason: a
-# pin overrides whatever --platform the caller passed, so an amd64 build would
-# silently produce an arm64 root and fail at first exec.
+# $TARGETPLATFORM and not a pinned linux/arm64: a pin overrides whatever
+# --platform the caller passed, so an amd64 build would silently produce an
+# arm64 root and fail at first exec.
 
 # What the composer is handed, and it is deliberately little. Every fact about
 # WHICH packages -- board, profile, radios, declined features -- was resolved by
@@ -48,21 +45,19 @@ ARG MOS_ARCH
 ARG MOS_BOARD
 
 # The upstream RAUC version, for /rootfs-report.rauc -- the one file the
-# finalizer's build report reads that no package payload carries.
-# os/rootfs/scripts/rauc-install.sh writes it in the chain from the
-# RAUC_VERSION.env the source build stages beside the binary; mos-rauc packages
-# the binary and not that file, so on this path the value comes from
-# os/pkgs/rauc/versions.env, which is the same pin os/verify's smoke register
-# requires the binary in the image to REPORT. Empty is refused when mos-rauc is
-# in the resolution.
+# finalizer's build report reads that no package payload carries. mos-rauc
+# packages the binary and not the RAUC_VERSION.env the source build writes
+# beside it, so the value comes from os/pkgs/rauc/versions.env, which is the
+# same pin os/verify's smoke register requires the binary in the image to
+# REPORT. Empty is refused when mos-rauc is in the resolution.
 ARG RAUC_VERSION=""
 
 # update-initramfs reads this from the ENVIRONMENT, not from a flag, and an
 # unset one is not a broken build -- it is a working one whose initrd carries
 # the build clock and this host's inode numbers into the verity-covered root.
-# stages/40-board declares it for the same RUN in the chain; here it is
-# linux-image-amd64's own postinst that runs update-initramfs, so the value has
-# to be in this stage's environment rather than in a script's arguments.
+# It is linux-image-amd64's own postinst that runs update-initramfs here, so
+# the value has to be in this stage's environment rather than in a script's
+# arguments.
 ARG SOURCE_DATE_EPOCH
 
 # The host-staged half of the context: the resolved package list and the RAUC

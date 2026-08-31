@@ -246,8 +246,7 @@ to know that one of its packages was filed under arm64.
 Each package's entire payload is `/usr/lib/mos/profile.conf` mode 0444, holding
 `MOS_PROFILE=dev` or `MOS_PROFILE=prod`, plus its own
 `/usr/share/doc/<package>/copyright`. The path, the mode and the bytes are the
-ones `os/rootfs/scripts/profile-write.sh` writes today from
-`os/rootfs/stages/10-base.Dockerfile`, trailing newline included: mosd's
+ones the retired stage chain wrote, trailing newline included: mosd's
 comparison is case-sensitive and fails closed to `prod`, so a payload differing
 by a byte would disable SSH on a dev image with every gate green.
 
@@ -266,8 +265,8 @@ hold `control` and `md5sums` and nothing else.
 
 The TLS trust store as data: `/etc/ssl/certs/ca-certificates.crt`, the ~150
 individual anchors under `/usr/share/ca-certificates`, the ~300 hash symlinks
-that index them and `/etc/ca-certificates.conf` -- the three paths
-`os/rootfs/stages/10-base.Dockerfile` copies out of its `certs` stage today.
+that index them and `/etc/ca-certificates.conf` -- the three paths the retired
+stage chain copied out of its own `certs` stage.
 
 This is the one producer here whose payload is **generated rather than
 written**, so its Dockerfile has two stages. The first is `FROM` the pinned
@@ -291,12 +290,12 @@ that neither, nor `update-ca-certificates`, is anywhere in the payload.
 the lookup mechanism, and a dereferenced copy would both double the payload and
 leave `dpkg-deb --contents` describing something other than what is installed.
 The producer resolves every link against the staged root before packing, which
-is the assertion `os/rootfs/scripts/ca-certificates-verify.sh` makes today about
-the tree the `certs` stage hands over.
+is the assertion the retired chain's `ca-certificates-verify.sh` made about the
+tree its `certs` stage handed over.
 
 `.mos-cert-count` is read and dropped. It is a build-time token, written so the
-receiving stage can detect a `COPY` that truncated the bundle, and
-`ca-certificates-verify.sh` reads it and `rm -f`s it in the same breath -- it
+receiving stage can detect a `COPY` that truncated the bundle; it is read and
+`rm -f`ed in the same breath -- it
 has never been in a shipped root, and `os/verify`'s `ca-bundle-generated` check
 counts `BEGIN CERTIFICATE` lines directly rather than reading it. Here it is
 spent on the one copy it can still speak about and then deleted;

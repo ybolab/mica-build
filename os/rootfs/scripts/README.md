@@ -25,10 +25,13 @@ duration of its `RUN` and leaves nothing behind — neither the files nor the
 `/mos-scripts` directory. That is measured, not assumed: x64 built with and
 without the mount gives the same `rootfs-verity.img` sha256 cache-hot.
 
-Cache-hot is the only way that measurement can be made. A **cold** x64 build
-does not reproduce itself at all — two cold builds of one untouched tree give
-`1b3f5e50…` and `7aad6efd…` — so the gate for a change here is the content diff
-recorded in `../README.md`, never a hash.
+Cache-hot was the only way that measurement could be made when it was taken: a
+**cold** x64 build did not reproduce itself at all — two cold builds of one
+untouched tree gave `1b3f5e50…` and `7aad6efd…`. Three surfaces carrying
+build-host state have since been removed and a cold x64 pair now agrees, which
+`../README.md`, "Determinism, and what it took to get there", records with the
+measurement. The gate for a change here is still the content diff recorded
+there, because a hash cannot attribute a difference.
 
 `/mos-scripts` is at the top level rather than under `/tmp` on purpose. If the
 mount ever did leak, a stray directory at `/` is something `ls /` on the packed

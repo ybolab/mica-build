@@ -42,14 +42,14 @@ Boards with an upstream-supported boot chain (`os/boards/x64`, UEFI) have no
 `bsp/` at all — board.env, grub.cfg, an overlay, and nothing that compiles a
 bootloader: "a UEFI machine's firmware provides the boot chain, so nothing here
 compiles a bootloader, and the kernel is a stock distro one"
-(`os/boards/x64/board.env`) — Debian's `linux-image-amd64`, installed by
-the rootfs stage chain.
+(`os/boards/x64/board.env`) — Debian's `linux-image-amd64`, which reaches the
+image as a `Depends` of the `mos-board-x64` package.
 
 ## 3. Artifact interface into the OS image
 
 | Artifact | Producer | Consumer |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `os/boards/<name>/bsp/kernel` | `os/rootfs/build-v2.sh` stages `MODULES_TAR`; `os/rootfs/stages/40-board.Dockerfile` extracts it into `/usr/lib/modules`; `os/build/src/mkimage-v2.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`os/build/src/mkimage-v2.ts`) |
+| `Image` + `modules.tar` + `*.dtb` | `os/boards/<name>/bsp/kernel` | `os/boards/<name>/deb/board-<name>/render.sh` stages them and the board package unpacks `modules.tar` into `/usr/lib/modules`, refusing an unpack that yields no module; `os/build/src/mkimage-v2.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`os/build/src/mkimage-v2.ts`) |
 | bootloader binary | `os/boards/<name>/bsp/uboot` | `os/build/src/mkimage-v2.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A v2 image must carry the uboot-mos variant" (`os/build/src/mkimage-v2.ts`) |
 | `board.env` | `os/boards/<name>/` | every consumer: both assemblers, the rootfs driver, RAUC's config renderer, os/verify. Read as data, never sourced — "Nothing here ever hands the file to a shell" (`os/verify/src/board-env.ts`) |
 | firmware blobs | `os/boards/<name>/bsp/rootfs/firmware` | `os/rootfs/build-v2.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`os/rootfs/build-v2.sh`) |
@@ -92,7 +92,9 @@ hash tree, described by one `dm-mod.create=` table on the kernel command line �
 "one boot contract, written once by os/rootfs/build-v2.sh, read by the kernel's
 dm-init on a board whose kernel has it and by this script on a board whose kernel
 does not" (`os/rootfs/initramfs/scripts/mos-verity`) — above a userland that
-is "Debian trixie + systemd" (`os/rootfs/stages/10-base.Dockerfile`). A board
+is "Debian trixie + systemd" — the digest-pinned base
+`os/rootfs/compose/10-compose.Dockerfile` installs onto, with systemd arriving
+as `mos-system`'s `Depends`. A board
 that builds its own kernel therefore has to carry the §4 assertion set built in —
 `=y`, never `=m`, because nothing can load a module before the root is there;
 x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
@@ -117,9 +119,10 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
    and ships a `grub.cfg` for the ESP instead.
 4. Smoke path first — a stock or vendor image — to validate hardware bring-up
    before the full image is worth building.
-5. Rootfs from the stage chain (`os/rootfs/stages/`, ordered by
+5. Rootfs composed from the package pool (`os/rootfs/compose/`, sequenced by
    `os/build/src/stages-cli.ts`, which "decides the order and the tags"
-   (`os/build/src/stages-cli.ts`)), image assembled by
+   (`os/build/src/stages-cli.ts`)); the board's own content ships as
+   `mos-board-<name>`. Image assembled by
    `bash os/build/run.sh --mkimage-v2` or `--mkimage-x64`, green against
    `bash os/verify/run.sh --verify --board <name>`, then apid liveness on
    hardware — `/healthz`, which proves only that the apid process is listening,

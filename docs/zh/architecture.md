@@ -127,15 +127,19 @@ mos/
 │   ├── pkgs/      本仓库编译成发布产物的源码：podman/、rauc/、rauc-sign/、
 │   │              以及 mosd/ Rust 工作区（mosd、apid、mos-mqttd、
 │   │              mos-mqtt-broker、mosd-settings）；工作区级黑盒测试统一放在 mosd/tests/
-│   ├── rootfs/    根文件系统：stages/ 下的分阶段 Dockerfile，加 build-v2.sh
+│   ├── rootfs/    根文件系统：compose/（两个组合 Dockerfile）、packages/（清单与解析器）、
+│   │              packages-src/（system、profile、射频、CA 信任库四个 producer），加 build-v2.sh
 │   ├── tests/     针对已构建镜像的 shell 套件
 │   ├── tools/     QEMU 辅助脚本
 │   └── verify/    TypeScript：板卡模型，以及装配后镜像必须通过的检查
 └── Makefile       顶层路由；`make help` 列出全部目标
 ```
 
-根文件系统是一串编号的 Dockerfile——base、install、每个可选特性一个、board、pack——
-每一个都 `FROM` 上一个写出的 tag。**阶段列表就是那个目录**，所以新增一个阶段就是新增一个文件。
+根文件系统是**组合**出来的：一次 APT 事务把解析出来的一组 mos `.deb` 包从本地包仓库
+`_out/debs/<arch>/` 装到一个按 digest 固定的 Debian 基底上，再由一个收尾器封根并打包
+（`os/rootfs/compose/`，两个文件）。**镜像里有什么就是一份包清单**，而决定配置顺序的是
+`Depends`——新增一个组件是新增一个 producer，不是新增一个阶段。完整模型见
+`docs/design/build.md` 1.1 节。
 
 ## 7. 板卡
 

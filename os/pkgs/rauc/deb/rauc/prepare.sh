@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The mos-rauc producer's PREPARE hook: build RAUC from the pinned upstream
-# source for one architecture and leave the five files
-# os/rootfs/scripts/rauc-install.sh installs in MOS_DEB_STAGE, for
-# os/build-env/deb/build.sh to hand to the packing Dockerfile as `bin`.
+# source for one architecture and leave its five activation files in
+# MOS_DEB_STAGE, for os/build-env/deb/build.sh to hand to the packing
+# Dockerfile as `bin`.
 #
 # THE COMPILE LIVES IN os/pkgs/rauc/, not here. os/pkgs/rauc/Dockerfile builds
 # RAUC with -Dnetwork=false -Dstreaming=false and os/pkgs/rauc/versions.env is
@@ -42,13 +42,14 @@ MOS_BOARD="${BOARD}" bash "${RAUC_DIR}/build.sh"
 # would put all three in the payload, and each would then be a path this package
 # owns on the device for no reason anyone could name.
 #
-# The list and the ORDER are os/rootfs/scripts/rauc-install.sh's. That script is
-# what today's image runs, so it is the contract this package reproduces.
+# The list and the ORDER came from the retired rootfs install script this
+# package replaced; they are the contract, and mos-rauc is now the only thing
+# that puts these five files in an image.
 STAGED=0
 for f in rauc rauc-service.sh rauc.service de.pengutronix.rauc.conf de.pengutronix.rauc.service; do
     src="${RAUC_DIR}/out-${MOS_DEB_ARCH}/${f}"
     [ -f "${src}" ] || {
-        echo "error: os/pkgs/rauc/build.sh reported success and left no ${f} in os/pkgs/rauc/out-${MOS_DEB_ARCH}/. That file is on the activation path -- os/rootfs/stages/32-feature-rauc.Dockerfile installs all five -- and a package missing one holds a rauc that answers 'the name de.pengutronix.rauc was not provided by any .service files'" >&2
+        echo "error: os/pkgs/rauc/build.sh reported success and left no ${f} in os/pkgs/rauc/out-${MOS_DEB_ARCH}/. That file is on the activation path -- mos-rauc ships all five -- and a package missing one holds a rauc that answers 'the name de.pengutronix.rauc was not provided by any .service files'" >&2
         exit 1
     }
     cp "${src}" "${MOS_DEB_STAGE}/${f}"

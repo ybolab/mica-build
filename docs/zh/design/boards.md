@@ -38,13 +38,13 @@ os/boards/<name>/
 
 启动链由上游支持的板卡（`os/boards/x64`，UEFI）**根本没有 `bsp/`**：只有 board.env、
 grub.cfg 和一个 overlay，没有任何编译引导程序的东西——UEFI 机器的固件就提供了启动链，
-内核直接用 Debian 的 `linux-image-amd64`。
+内核直接用 Debian 的 `linux-image-amd64`，它作为 `mos-board-x64` 的 `Depends` 进入镜像。
 
 ## 3. 进入镜像的产物接口
 
 | 产物 | 生产者 | 消费者 |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `bsp/kernel` | 根文件系统构建暂存 `MODULES_TAR`，board 阶段解到 `/usr/lib/modules`；镜像装配器把 `Image` 和 dtb 写进每个 boot 槽位，**两者都必须有** |
+| `Image` + `modules.tar` + `*.dtb` | `bsp/kernel` | 板卡 producer 的 `render.sh` 把它们 staged 进 `mos-board-<name>`，包把 `modules.tar` 解到 `/usr/lib/modules`；镜像装配器把 `Image` 和 dtb 写进每个 boot 槽位，**两者都必须有** |
 | 引导程序二进制 | `bsp/uboot` | 镜像装配器在板卡的 `UBOOT_SEEK_SECTOR` 处裸写；**拒绝 v1 调试 blob**——v2 镜像必须带 uboot-mos 变体 |
 | `board.env` | `os/boards/<name>/` | 所有消费者：两个装配器、根文件系统驱动、RAUC 配置渲染器、os/verify。**当作数据读取，绝不 source**——没有任何环节把这个文件交给 shell |
 | 固件 blob | `bsp/rootfs/firmware` | 只暂存 `BOARD_FIRMWARE_FILES` 点名的那些，因为**只有确认在运行时用到的集合才可以进入签名根** |
@@ -93,7 +93,8 @@ RAUC BOOT_ORDER 握手脚本，以及一条救援路径（cx3576：恢复键 →
 3. **U-Boot**：第 5 节的配置；烧录验证启动密钥。UEFI 板卡这些全都不需要，
    改为为 ESP 提供一份 `grub.cfg`。
 4. **先走冒烟路径**——用现成或厂商镜像——把硬件带起来验证过，再去做完整镜像。
-5. 根文件系统走分阶段链构建，镜像用 `bash os/build/run.sh --mkimage-v2`（或 `--mkimage-x64`）装配，
+5. 根文件系统从包仓库组合出来（`os/rootfs/compose/`），板卡自己的内容作为
+   `mos-board-<name>` 交付；镜像用 `bash os/build/run.sh --mkimage-v2`（或 `--mkimage-x64`）装配，
    对 `bash os/verify/run.sh --verify --board <name>` 跑绿，然后在硬件上验 apid 存活。
    注意 `/healthz` **只证明 apid 进程在监听**，不证明 mosd 或板上任何其他服务是健康的。
 6. **断电试验台跑过之后**，这块板才能被称为受支持。

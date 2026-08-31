@@ -125,9 +125,7 @@ other, and that is the property worth keeping.
 A package that ships a unit ships the `multi-user.target.wants` symlink that
 starts it, as a **file in its payload**. `mosd` owns
 `/etc/systemd/system/multi-user.target.wants/mosd.service` and `mos-apid` owns
-`apid.service`, matching link for link what
-`os/rootfs/scripts/mosd-install.sh` creates in the image the stage chain
-builds. Installing the package is what makes the daemon run.
+`apid.service`. Installing the package is what makes the daemon run.
 
 No maintainer script is involved and nothing calls `systemctl enable` --
 both control archives hold `control` and `md5sums` and nothing else. A unit
@@ -151,14 +149,13 @@ root; neither postinst calls it.
 ## Maintainer scripts
 
 `mos-mqttd` and `mos-mqtt-broker` each carry a `postinst` that creates their
-pinned service account (uid/gid 970 and 969), moved out of
-`os/rootfs/scripts/account-mos-mqtt*.sh` into the package that owns the
-account. `postinst` and not `preinst`, because no path in either payload is
-owned by those accounts: they are needed when the unit starts, not when the
-files are unpacked.
+pinned service account (uid/gid 970 and 969). The account moved here out of the
+retired rootfs account scripts, into the package that owns it. `postinst` and
+not `preinst`, because no path in either payload is owned by those accounts:
+they are needed when the unit starts, not when the files are unpacked.
 
-The rootfs scripts hard-fail when the uid already exists, which is right for a
-once-per-build script and wrong for a maintainer script -- a postinst runs
+Those rootfs scripts hard-failed when the uid already existed, which is right
+for a once-per-build script and wrong for a maintainer script -- a postinst runs
 again on every upgrade and reinstall. The packaged form accepts an existing
 account that is exactly the pin and still fails, by name, on one held by
 anybody else. `useradd`, `groupadd` and `chage` come from `passwd`, which both
@@ -170,8 +167,8 @@ by name.
 `mosd.service` declares `RequiresMountsFor=/var/lib/mos`, and that path is the
 STATE bind-mount target: `var-lib-mos.mount` and the `/var/lib/mos` mountpoint
 directory are two halves of one mechanism, so one package owns both. That
-package is `mos-system`, built by the rootfs-composition workstream, and `mosd`
-names it in `Depends` rather than shipping the directory itself.
+package is `mos-system` (`os/rootfs/packages-src/system`), and `mosd` names it
+in `Depends` rather than shipping the directory itself.
 
 The dependency is UNVERSIONED -- `mos-system` is not built from this
 workspace's commit and pins nothing to it -- and it is declared once. `mos-apid`

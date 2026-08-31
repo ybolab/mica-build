@@ -2875,8 +2875,8 @@ target: it is the one persistent tier already reachable without a unit.
 
 Two facts the image already guarantees and that this depends on:
 
-- The `/srv` mountpoint exists in the read-only root
-  (`os/rootfs/scripts/overlay-install.sh`), and the verifier asserts
+- The `/srv` mountpoint exists in the read-only root — `mos-system` ships it
+  (`os/rootfs/packages-src/system/Dockerfile`) — and the verifier asserts
   *"every fstab/bind mountpoint exists in the read-only root"*
   (`os/verify/src/checks-root.ts`).
 - DATA is the only partition `systemd-repart` grows and the only one carrying
@@ -3279,11 +3279,12 @@ stylesheet is a `&str` constant emitted into the page head
 `include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
 and no non-Rust file in the crate other than its manifest.
 
-**How it gets there.** `os/rootfs/build-v2.sh` copies the cross-built
-`apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
-installs the binary as `/usr/bin/apid` mode `0755`, `os/rootfs/scripts/mosd-install.sh` installs the unit,
-and the same installer enables it by symlink and **asserts the symlink
-exists**. The
+**How it gets there.** The `mosd` producer builds `apid` and packs it as the
+`mos-apid` package: `/usr/bin/apid` mode `0755`,
+`/usr/lib/systemd/system/apid.service`, and the
+`multi-user.target.wants/apid.service` symlink **as payload** rather than as a
+`systemctl enable` anything runs (`os/pkgs/mosd/deb/mosd/Dockerfile`). The
+composition installs that package out of the pool, and the
 binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
 squashfs and covers with the dm-verity hash tree
 (`docs/design/ro-root.md`).
@@ -3458,8 +3459,9 @@ file, or of a design document, and each is cited as such.
 
 The marker refers to the split itself, which exists: two units
 (`os/pkgs/mosd/dist/mosd.service` → `/usr/bin/mosd`, `os/pkgs/mosd/dist/apid.service` →
-`/usr/bin/apid`), two binaries installed separately by the image
-(`os/rootfs/scripts/mosd-install.sh`), ordered `After=network.target
+`/usr/bin/apid`), two binaries delivered as two separate packages — `mosd` and
+`mos-apid` from one producer (`os/pkgs/mosd/deb/mosd/Dockerfile`) — ordered
+`After=network.target
 mosd.service` (`os/pkgs/mosd/dist/apid.service`). What this subsection adds is the
 argument, not a mechanism.
 
@@ -3807,7 +3809,8 @@ to move.
 built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — the built-in UI is compiled into the `apid` binary —
 and identifies how it gets inside the verity squashfs
-(`os/rootfs/build-v2.sh`, `os/rootfs/scripts/mosd-install.sh`). No second
+(`os/pkgs/mosd/deb/mosd/Dockerfile` packs it as `mos-apid`;
+`os/rootfs/build-v2.sh` composes and packs the root). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.
