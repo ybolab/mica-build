@@ -419,17 +419,43 @@ docker buildx build --builder "${BUILDER}" \
     "${OUT_ARGS[@]}" \
     "${HERE}"
 
+# Everything this run put in the pools, so that a failed assertion below can
+# take it back out.
+EXPORTED=()
+for pool_arch in "${POOL_ARCHES[@]}"; do
+    for p in ${PACKAGES}; do
+        EXPORTED+=("${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${ARCH}.deb")
+    done
+done
+
+# A REJECTED PACKAGE DOES NOT STAY IN THE POOL. Everything below this point
+# runs after `-o type=local` has already written the archives, so a refusal
+# that only exited non-zero would leave the artifact it just rejected on disk,
+# where os/build-env/deb/repo.sh indexes every .deb it finds and a composer
+# would install it. The refusal would then live in a log while the package
+# shipped -- which is worse than not checking, because the log gets closed and
+# the pool does not.
+#
+# The whole run is withdrawn, not just the offending package: these archives
+# are exported together and a producer left half in the pool is exactly the
+# half-state that is hard to notice. Nothing is put back either, and there is
+# nothing to put back -- the previous version of each of these packages was
+# deleted before the build, which is how this driver keeps repo.sh from
+# indexing two versions of one package. So the pool ends with NO archive for
+# this producer, and the next green build is what refills it.
+reject() {
+    rm -f "${EXPORTED[@]}"
+    die "$* -- and the ${#EXPORTED[@]} archive(s) this run exported have been removed from the pool, because a package this driver refused must not be left where repo.sh would index it. There is now no archive for ${PACKAGES}; rebuild once the cause is fixed"
+}
+
 # What landed on disk, not what the build stage said it wrote. An export that
 # dropped a file, or a cache hit that served an older layer, is invisible to
 # pack.sh's own read-back and caught here.
 missing=""
-for pool_arch in "${POOL_ARCHES[@]}"; do
-    for p in ${PACKAGES}; do
-        deb="${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${ARCH}.deb"
-        [ -f "${deb}" ] || missing="${missing} ${deb}"
-    done
+for deb in "${EXPORTED[@]}"; do
+    [ -f "${deb}" ] || missing="${missing} ${deb}"
 done
-[ -z "${missing}" ] || die "the export is missing:${missing}"
+[ -z "${missing}" ] || reject "the export is missing:${missing}"
 
 # ENABLEMENT, asserted out of the archive that was just written.
 #
@@ -446,14 +472,36 @@ READBACK_IMAGE="${READBACK_FROM[1]#MOS_BUILD_DEB=}"
 
 # One pool is enough. An `all` build exports the same stage into both, so the
 # second listing would be the first one again.
+#
+# ONE container for the whole producer, not one per package. Measured on this
+# host with the daemon otherwise idle: `docker run` of the packer costs 7-41
+# seconds, against 4 milliseconds for the listing itself, so the container --
+# not the work -- is the price. A per-package run put that price on every
+# package; this pays it once and lists them all inside.
 READBACK_POOL="${REPO_ROOT}/_out/debs/${POOL_ARCHES[0]}/pool"
+listings="$(docker run --rm \
+    --label ai-agent=true \
+    -v "${READBACK_POOL}:/pool:ro" \
+    -w /pool \
+    -e "MOS_DEB_PACKAGES=${PACKAGES}" \
+    -e "MOS_DEB_SUFFIX=_${VERSION}_${ARCH}.deb" \
+    --entrypoint /bin/bash \
+    "${READBACK_IMAGE}" -c '
+        set -eu
+        for p in ${MOS_DEB_PACKAGES}; do
+            echo "=== ${p}"
+            dpkg-deb --contents "${p}${MOS_DEB_SUFFIX}"
+        done')"
+
+# The counting stays HERE rather than in the container, so that the expression
+# below is the package gate's own, character for character, in a file a reader
+# can diff against it. The container's only job is to turn archives into
+# listings.
 for p in ${PACKAGES}; do
     want="$(enablement_for "${p}")"
-    listing="$(docker run --rm \
-        --label ai-agent=true \
-        -v "${READBACK_POOL}:/pool:ro" \
-        -w /pool \
-        "${READBACK_IMAGE}" dpkg-deb --contents "${p}_${VERSION}_${ARCH}.deb")"
+    listing="$(awk -v want="=== ${p}" '$0 == want { on = 1; next } /^=== / { on = 0 } on' <<<"${listings}")"
+    [ -n "${listing}" ] ||
+        reject "the read-back of ${p}_${VERSION}_${ARCH}.deb produced no listing, so its ENABLEMENT was about to be checked against nothing"
     # The counting rule, and it is narrow on purpose. `$1 ~ /^l/` counts
     # SYMLINKS only: a regular file with the same name starts nothing, so it is
     # not enablement. One directory only: a link under local-fs.target.wants or
@@ -461,7 +509,7 @@ for p in ${PACKAGES}; do
     # checks that speak about those, not this number.
     got="$(awk '$1 ~ /^l/ && $6 ~ /^\.\/etc\/systemd\/system\/multi-user\.target\.wants\// { n++ } END { print n + 0 }' <<<"${listing}")"
     [ "${got}" = "${want}" ] ||
-        die "${p} declares ENABLEMENT ${p}=${want} in ${PRODUCER_ENV} and the archive just built carries ${got} multi-user.target.wants symlink(s). Either the payload gained or lost a unit's enablement, or the declaration was never true; both are the drift this field exists to name, so neither is absorbed here"
+        reject "${p} declares ENABLEMENT ${p}=${want} in ${PRODUCER_ENV} and the archive just built carries ${got} multi-user.target.wants symlink(s). Either the payload gained or lost a unit's enablement, or the declaration was never true; both are the drift this field exists to name, so neither is absorbed here"
 done
 
 for pool_arch in "${POOL_ARCHES[@]}"; do
