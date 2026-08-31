@@ -281,7 +281,6 @@ RUN { echo; \
 # Pack, in three steps so each can carry its own explanation and cache
 # independently: squash, assert, then hash.
 ARG VERITY_SALT
-ARG VERITY_UUID
 ARG SQUASHFS_TIME
 ARG VERITY_HASH_ALGO=sha256
 ARG VERITY_DATA_BLOCK_SIZE=4096
@@ -316,12 +315,27 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-privileged.sh
 
-# Step 3 -- dm-verity. veritysetup gets the pinned salt and a pinned UUID: both
-# default to random values, and the UUID lands in the verity superblock at the
-# hash offset, so leaving it unset alone would make the image differ on every
-# run. The hash tree is appended to the squashfs in the same file via
-# --hash-offset, and the result is padded to a whole MiB because the image
-# assembler dd's it into the slot at a MiB boundary.
+# Step 3 -- dm-verity. veritysetup gets the pinned salt, whose default is
+# random, and --no-superblock, and the two are one decision: without a
+# superblock there is no UUID field left to randomise, so the salt is the only
+# remaining source of variation and the pack stays reproducible with one pin
+# instead of two.
+#
+# --no-superblock is not an optimisation. This image is assembled by dm-init off
+# `dm-mod.create=` (os/rootfs/build-v2.sh's write_cmdline), and a verity v1
+# table has no superblock concept: the kernel reads the block at
+# hash_start_block as the tree's TOP LEVEL. A superblock sits exactly there and
+# pushes the tree one hash block down, so every boot fails with
+# "device-mapper: verity: metadata block <n> is corrupted" -- deterministically,
+# on both boards, since x64's GRUB builds the same table. It went unseen because
+# `veritysetup verify` reads the superblock back by the same convention that
+# wrote it, so the gate and the artifact agreed with each other and both
+# disagreed with the kernel; os/verify's `verity-hash-start-no-superblock` is
+# the check that asks the kernel's question instead.
+#
+# The hash tree is appended to the squashfs in the same file via --hash-offset,
+# and the result is padded to a whole MiB because the image assembler dd's it
+# into the slot at a MiB boundary.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-verity.sh
 

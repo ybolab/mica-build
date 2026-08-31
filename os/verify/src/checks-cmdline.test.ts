@@ -114,6 +114,37 @@ function squashfsPayload(over: { magic?: string, comp?: number, ext4?: boolean }
   return buf
 }
 
+/**
+ * One data block plus the block the cmdline's hash_start_block names.
+ *
+ * `superblock: true` is an image packed the way `veritysetup format` packs one
+ * WITHOUT --no-superblock: the metadata sits at the hash offset and the tree
+ * begins a block later. Everything else here is a tree top level, which is a
+ * hash and looks like nothing in particular.
+ */
+function payloadAtHashStart(over: { superblock: boolean }): Buffer {
+  const buf = Buffer.alloc(8192)
+  squashfsPayload().copy(buf, 0)
+  Buffer.from(over.superblock ? 'verity\0\0' : '\x98\x4f\xe2\x2a\x84\xdb\xe6\x34', 'latin1')
+    .copy(buf, 4096)
+  return buf
+}
+
+/** The two boot paths, retold with hash_start_block = 1 so a fixture can hold it. */
+function cxFatHashStart1(): Record<string, string | undefined> {
+  const guidA = (cx3576.partition('ROOTFS_A')?.guid ?? '').toLowerCase()
+  return cxFat({
+    [`${offsetOf(cx3576, 'BOOT_A')}::mos-verity-a.env`]:
+      mutate(verityEnv(guidA, CX_HASH), '4096 4096 23758 23758', '4096 4096 1 1'),
+  })
+}
+function x64FatHashStart1(): Record<string, string | undefined> {
+  return x64Fat({
+    [`${offsetOf(x64, 'BOOT_A')}::cmdline.cfg`]:
+      mutate(cmdlineFrag(X64_HASH), 'set MOS_HASH_START_BLOCK=58116', 'set MOS_HASH_START_BLOCK=1'),
+  })
+}
+
 interface World {
   readonly board: Board
   /** Files in each FAT, keyed `<offset>::<path>`. */
@@ -355,6 +386,21 @@ describe('verity-payload-verifies', () => {
     expect(r.message).toContain('could not read a dm-mod.create= verity table out of BOOT-A')
   })
 
+  test('a data block size that is not a number is also an unreadable table', async () => {
+    // The guard widened with --no-superblock: the walk now takes the block
+    // sizes, the data-block count and the algorithm from the TABLE too, because
+    // there is no superblock left to read them out of. A field that does not
+    // parse would otherwise reach veritysetup as a default and walk a different
+    // tree, which reads as a payload that does not verify.
+    const guidA = (cx3576.partition('ROOTFS_A')?.guid ?? '').toLowerCase()
+    const bad = mutate(verityEnv(guidA, CX_HASH), '4096 4096 23758 23758', 'xxxx 4096 23758 23758')
+    const r = one(await drive('verity-payload-verifies', cxWorld({
+      fat: cxFat({ [`${offsetOf(cx3576, 'BOOT_A')}::mos-verity-a.env`]: bad }),
+    })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('could not read a dm-mod.create= verity table')
+  })
+
   test('a hash_start_block that is not a number makes the offset 0, and that is a FAIL', async () => {
     // Reproduced behavior: a non-numeric field leaves hash_offset at 0, and 0
     // is the sentinel the branch above tests for -- so a malformed table is
@@ -366,6 +412,54 @@ describe('verity-payload-verifies', () => {
     })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('could not read a dm-mod.create= verity table')
+  })
+})
+
+describe('verity-hash-start-no-superblock', () => {
+  // The check that would have caught the defect all of the above missed: every
+  // other assertion here was green on an image no board could boot, because
+  // veritysetup wrote a superblock at hash_start_block and veritysetup read it
+  // back, while dm-init reads that block as the hash tree's top level.
+
+  test('RED on a payload formatted the OLD way, quoting the magic it found', async () => {
+    for (const [board, fat] of [[cx3576, cxFatHashStart1()], [x64, x64FatHashStart1()]] as const) {
+      const world = board === cx3576
+        ? cxWorld({ fat, payload: payloadAtHashStart({ superblock: true }) })
+        : x64World({ fat, payload: payloadAtHashStart({ superblock: true }) })
+      const r = one(await drive('verity-hash-start-no-superblock', world))
+      expect(r.verdict).toBe('fail')
+      expect(r.message).toContain('points at a verity SUPERBLOCK')
+      // The magic itself, not a paraphrase of it: `verity\0\0` in hex.
+      expect(r.message).toContain('7665726974790000')
+      expect(r.message).toContain('--no-superblock')
+    }
+  })
+
+  test('green once the same offset holds hash tree instead', async () => {
+    for (const [board, fat] of [[cx3576, cxFatHashStart1()], [x64, x64FatHashStart1()]] as const) {
+      const world = board === cx3576
+        ? cxWorld({ fat, payload: payloadAtHashStart({ superblock: false }) })
+        : x64World({ fat, payload: payloadAtHashStart({ superblock: false }) })
+      const r = one(await drive('verity-hash-start-no-superblock', world))
+      expect(r.verdict).toBe('pass')
+      expect(r.message).toContain('points at hash tree')
+    }
+  })
+
+  test('RED, and NOT a byte comparison, when there is no table to read', async () => {
+    const fat = cxFat({ [`${offsetOf(cx3576, 'BOOT_A')}::mos-verity-a.env`]: 'nothing useful here\n' })
+    const r = one(await drive('verity-hash-start-no-superblock', cxWorld({ fat })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('could not read a dm-mod.create= verity table out of BOOT-A')
+  })
+
+  test('RED when the payload ends before the offset the cmdline names', async () => {
+    // The shipped table's hash_start_block against a one-block payload. A read
+    // past the end would come back short and compare against nothing, which is
+    // the shape "no superblock found" takes when there is no payload either.
+    const r = one(await drive('verity-hash-start-no-superblock', cxWorld()))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('ends before the hash_start_block')
   })
 })
 
