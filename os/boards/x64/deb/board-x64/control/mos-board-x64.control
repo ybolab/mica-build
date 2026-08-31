@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: mos-system, linux-image-amd64, initramfs-tools, cryptsetup-bin, ${shlibs:Depends}
+Depends: mos-system (= @VERSION@), linux-image-amd64, initramfs-tools, cryptsetup-bin, ${shlibs:Depends}
 Description: mos board support -- x64 (QEMU/UEFI, layout v2)
  Everything the image carries because it is the x64 board: /etc/fstab and the
  ESP mount unit rendered from os/boards/x64/board.env, the RAUC system

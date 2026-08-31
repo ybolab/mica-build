@@ -51,8 +51,8 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY copyright /in/copyright
-COPY ca-trust/control/ /in/control/
+COPY --from=family copyright /in/copyright
+COPY control/ /in/control/
 COPY --from=generate /harvest/ca-certificates.copyright /in/ca-certificates.copyright
 
 # The three paths stages/10-base copies out of its certs stage, and no others.

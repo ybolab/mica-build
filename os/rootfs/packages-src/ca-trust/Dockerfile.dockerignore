@@ -1,12 +1,11 @@
-# The build context is os/rootfs/packages-src/, the producer family directory,
-# and this producer needs two things out of it: the shared copyright file and
-# its own control template. Everything else -- the driver, the README, and every
-# sibling producer that lands beside it -- is excluded, so an edit there does
-# not invalidate this producer's context.
+# The build context is this producer's own directory, and only its control
+# template is COPYed out of it. The shared copyright file lives one level up and
+# arrives through the `family` named context producer.env declares, so an edit
+# to the driver, the README or a sibling producer cannot invalidate this
+# producer's context.
 #
 # The anchors themselves are not here and are not a context. They are GENERATED
 # by the first stage of the Dockerfile, from the pinned Debian base, which is
 # what keeps this repository from carrying 150 certificates it did not issue.
 *
-!copyright
-!ca-trust/control/*.control
+!control/*.control
