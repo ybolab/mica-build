@@ -11,6 +11,58 @@ set -eu
 # instrument would read as a clean image and cost the claim silently.
 [ -s /rootfs-report.pkglogs/dpkg.log ] ||
     { echo "error: the package-manager logs were not captured before this purge; /rootfs-report.pkglogs/dpkg.log is missing or empty. Removing /var/log/dpkg.log without capturing it first destroys the instrument the stage-order claim is measured with -- os/rootfs/README.md, 'Check the apt order directly' -- and nothing downstream can tell that from a build that never needed it" >&2; exit 1; }
+# THE ENABLEMENT OF THE MACHINERY THIS PURGE REMOVES, found by asking dpkg who
+# OWNS each unit rather than by matching its name.
+#
+# apt ships apt-daily.timer and apt-daily-upgrade.timer, dpkg ships
+# dpkg-db-backup.timer, and each ships the wants-symlink that enables it -- into
+# /etc/systemd/system/timers.target.wants, the level that overrides vendor
+# defaults. On a root whose package manager is about to be deleted they fire
+# daily and fail daily, and nothing else in the image is wrong enough to notice.
+#
+# THIS RUNS FIRST because it is the only step here that needs the dpkg database,
+# and the `rm -rf` below deletes it. That ordering is the whole reason this
+# check lives in this file rather than in the finalizer's residue stripper,
+# which runs in the pack stage over a tree with no /var/lib/dpkg left.
+#
+# BY OWNERSHIP AND NOT BY NAME, and that is the point of the change. The old
+# spelling removed nine literal paths and then asserted `find -name 'apt-daily*'
+# -o -name 'dpkg-db-backup*'` found nothing -- so a fourth timer, shipped by apt
+# or dpkg under any other name, survived the removal AND the assertion. The
+# membership test is a set of PACKAGE names, which is the granularity the purge
+# is actually about: it removes apt's and dpkg's binaries, so it removes what
+# apt and dpkg enabled, whatever those units are called.
+#
+# The by-name assertion is KEPT, below, as the check on this mechanism rather
+# than as the mechanism. If this sweep stops working, that assertion is what
+# says so, and it can only say so because it no longer does the removing.
+PURGED_PACKAGES="apt dpkg"
+owned_by_purged() {
+    _owner="$(dpkg-query -S "$1" 2>/dev/null | sed 's/:.*//')" || return 1
+    [ -n "${_owner}" ] || return 1
+    for _p in $(printf '%s' "${_owner}" | tr ',' ' '); do
+        for _q in ${PURGED_PACKAGES}; do
+            [ "${_p}" != "${_q}" ] || return 0
+        done
+    done
+    return 1
+}
+purged_units=0
+purged_names=""
+for _path in /etc/systemd/system/*.target.wants/*              /etc/systemd/system/*.timer /etc/systemd/system/*.service              /usr/lib/systemd/system/*.timer /usr/lib/systemd/system/*.service; do
+    { [ -e "${_path}" ] || [ -L "${_path}" ]; } || continue
+    owned_by_purged "${_path}" || continue
+    rm -f "${_path}"
+    purged_units=$((purged_units + 1))
+    purged_names="${purged_names} ${_path}"
+done
+# A zero is not proof of a clean root, it is the shape this sweep takes when it
+# is reading the wrong thing -- every image this repository builds installs apt
+# and dpkg, and both ship enabled timers.
+[ "${purged_units}" -gt 0 ] ||
+    { echo "error: no unit under /etc/systemd/system or /usr/lib/systemd/system is owned by ${PURGED_PACKAGES}, so this swept nothing. Both packages ship enabled timers in every image this repository builds; a zero here means dpkg-query answered nothing -- a database already removed, or a path spelling it does not recognise -- and the assertion below would then be checking a removal that never happened" >&2; exit 1; }
+echo "purge: ${purged_units} unit(s) owned by ${PURGED_PACKAGES} removed with their enablement:${purged_names}"
+
 rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \
        /var/log/apt \
        /etc/apt /etc/dpkg /usr/lib/apt /usr/lib/dpkg /usr/share/debconf \
@@ -36,16 +88,12 @@ rm -f /var/log/dpkg.log /var/log/alternatives.log \
       /usr/bin/linux-update-symlinks /usr/bin/linux-version \
       /usr/sbin/update-initramfs \
       /usr/sbin/veritysetup /usr/sbin/cryptsetup /usr/sbin/integritysetup \
-      /etc/initramfs-tools/hooks/mos-verity \
-      /usr/lib/systemd/system/apt-daily.timer \
-      /usr/lib/systemd/system/apt-daily.service \
-      /usr/lib/systemd/system/apt-daily-upgrade.timer \
-      /usr/lib/systemd/system/apt-daily-upgrade.service \
-      /usr/lib/systemd/system/dpkg-db-backup.timer \
-      /usr/lib/systemd/system/dpkg-db-backup.service \
-      /etc/systemd/system/timers.target.wants/apt-daily.timer \
-      /etc/systemd/system/timers.target.wants/apt-daily-upgrade.timer \
-      /etc/systemd/system/timers.target.wants/dpkg-db-backup.timer
+      /etc/initramfs-tools/hooks/mos-verity
+# The by-name check on the ownership sweep above. It names the three units this
+# tree has actually seen, so it is narrower than the sweep on purpose: the sweep
+# is the general statement and this is the instance that would notice the sweep
+# breaking. It no longer removes anything -- that would make it the cure and the
+# test at once, and a check that fixes what it is checking cannot fail.
 left="$(find /etc/systemd /usr/lib/systemd -name 'apt-daily*' -o -name 'dpkg-db-backup*' 2>/dev/null | tr '\n' ' ')"
 [ -z "${left}" ] ||
     { echo "error: package-management timers survived the purge: ${left}. They are enabled, they fire daily, and every one of them fails on an image with no apt and no dpkg -- which is noise in the journal shaped exactly like a real fault" >&2; exit 1; }
