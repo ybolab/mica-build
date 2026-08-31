@@ -121,7 +121,7 @@ script it does not own. The driver runs it with seven variables exported:
 | `MOS_DEB_ARCH` | the `--arch` this build was asked for |
 | `MOS_DEB_STAGE` | the directory to stage into, created empty |
 | `MOS_DEB_VERSION` | the version the archive will carry |
-| `SOURCE_DATE_EPOCH` | the commit timestamp the build clamps to |
+| `SOURCE_DATE_EPOCH` | the commit timestamp every payload mtime is set to |
 
 **What the hook leaves in `${MOS_DEB_STAGE}` arrives in the build as the `bin`
 context.** The driver creates that directory empty on every run -- so a file the
@@ -167,8 +167,9 @@ stops matching the first time one of them moves.
 
 `SOURCE_DATE_EPOCH` is `git log -1 --format=%ct`, resolved on the host and
 passed in as a build argument. `pack.sh` requires it and has no "now" default:
-one would make every archive irreproducible while every build stayed green. A
-dirty tree keeps the commit's timestamp -- the version already says `.dirty`,
+one would make every archive irreproducible while every build stayed green, and
+every payload mtime is **set** to it rather than clamped to it -- the ruling is
+at the decision site in `pack.sh`. A dirty tree keeps the commit's timestamp -- the version already says `.dirty`,
 and taking `now` would additionally make two dirty builds of one tree differ
 from each other.
 
