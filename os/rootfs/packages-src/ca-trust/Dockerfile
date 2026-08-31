@@ -199,6 +199,54 @@ RUN set -eu; \
         { echo "error: the composed copyright lost the harvested ca-certificates text" >&2; exit 1; }; \
     echo "ca-trust: copyright composed, $(wc -l </stage/usr/share/doc/mos-ca-trust/copyright) lines"
 
+# Every mtime this build WROTE, pinned to SOURCE_DATE_EPOCH. Last thing before
+# the pack, so that nothing staged above escapes it.
+#
+# pack.sh CLAMPS rather than sets -- a path older than the epoch keeps its own
+# mtime -- and that is right for a payload whose files came out of an upstream
+# archive with upstream dates on them. It is wrong for this one, because almost
+# nothing here came out of an archive: the bundle, /etc/ca-certificates.conf and
+# all 300 hash links are WRITTEN by update-ca-certificates in the generation
+# stage, and every directory is created by dpkg or by COPY. Their mtime is that
+# stage's wall clock, and BuildKit caches the stage, so it is the wall clock of
+# whenever the layer was FIRST built -- days ago on a developer's builder,
+# seconds ago on an empty-cache one. Whether the clamp then fires at all depends
+# on which side of HEAD's commit timestamp that clock happens to fall.
+#
+# That is the whole of PLAN-036's mos-ca-trust irreproducibility, and it is not
+# a theory: two builds of this producer at one SOURCE_DATE_EPOCH, differing only
+# in whether the generation layer was replayed from cache, produce data.tar.xz
+# of 143976 and 144004 bytes. Uncompressed the two tars are the same 757760
+# bytes with the same 463 entries in the same order, the same modes, the same
+# ownership and byte-identical contents; the cached one carries 06:01:11,
+# 06:01:12 and 06:01:13 on the payload where the fresh one carries the epoch.
+# 28 bytes of xz, and nothing a path-set or content assertion can see.
+#
+# The 150 anchors under /usr/share/ca-certificates are the exception and are
+# left alone: those ARE files from ca-certificates' own archive, carrying its
+# own 2025-04-19 date, which is a function of the package and not of this build.
+# Pinning them would be pack.sh's rejected policy -- rewriting a payload's
+# history -- applied by hand. Everything else, including the directories of that
+# tree, dpkg created here and so is pinned.
+#
+# --no-dereference twice over: the 300 links must take their own mtime rather
+# than pass it to the target, and the hash farm points INTO
+# /usr/share/ca-certificates, so a dereferencing touch would stamp the very
+# anchors this exempts.
+#
+# The assertion is what keeps this honest: a RUN inserted after this one that
+# writes into /stage would otherwise reintroduce an unpinned mtime silently, and
+# the failure would come back as an irreproducible archive rather than as a
+# named error here.
+RUN set -eu; \
+    find /stage \! \( -type f -path '/stage/usr/share/ca-certificates/*' \) -print0 | \
+        xargs -0 -r touch --no-dereference --date="@${SOURCE_DATE_EPOCH}"; \
+    stray="$(find /stage \! \( -type f -path '/stage/usr/share/ca-certificates/*' \) \
+        -printf '%T@ %p\n' | awk -v e="${SOURCE_DATE_EPOCH}" '$1 + 0 != e { print $2 }')"; \
+    [ -z "${stray}" ] || \
+        { echo "error: the staged tree still carries mtimes this build did not pin to SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}:" >&2; printf '%s\n' "${stray}" | head -n3 >&2; exit 1; }; \
+    echo "ca-trust: mtimes pinned to SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}, $(find /stage -type f -path '/stage/usr/share/ca-certificates/*' | wc -l) upstream anchors left at their own dates"
+
 # No maintainer scripts and no enablement links: this package owns no unit and
 # nothing has to run after it is unpacked -- update-ca-certificates already ran,
 # in the generation stage, which is the whole reason its tooling is not here.
