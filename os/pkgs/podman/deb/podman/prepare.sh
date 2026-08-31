@@ -15,24 +15,50 @@
 # one is used as it stands -- the same directory, and the same reuse,
 # os/rootfs/build-v2.sh stages into an image. It is rebuilt only when a binary
 # is missing from it. The directory carries the architecture in its name, so the
-# other architecture's output cannot be mistaken for this one's.
+# other architecture's output cannot be mistaken for this one's -- and since
+# os/pkgs/podman/versions-stamp.sh exists, a directory compiled from a
+# superseded versions.env cannot be mistaken for a current one either, which is
+# the half of that sentence the naming never covered.
+#
+# PRE-FLIGHT MODE. Run with MOS_DEB_PREFLIGHT=1 by os/build-env/deb/preflight.sh
+# and declared with PREFLIGHT="1" in this producer's producer.env, this hook
+# reports whether out-<arch> is there, complete and stamped -- and BUILDS
+# NOTHING. That opt-in is what makes it safe: the pre-flight runs before any
+# producer starts, and a hook that had not been taught the variable would start
+# three quarters of an hour of emulated compiling instead of answering a
+# question. It is also the most expensive late discovery this repository has,
+# which is why this hook is the second to learn the mode.
 set -euo pipefail
 
-for v in MOS_DEB_REPO_ROOT MOS_DEB_ARCH MOS_DEB_STAGE MOS_DEB_PRODUCER; do
+PREFLIGHT="${MOS_DEB_PREFLIGHT:-0}"
+
+# MOS_DEB_STAGE is required to STAGE, and there is nothing to stage in
+# pre-flight mode: the driver has not created a stage, because no build has
+# started. Every other variable is required either way.
+for v in MOS_DEB_REPO_ROOT MOS_DEB_ARCH MOS_DEB_PRODUCER; do
     [ -n "${!v:-}" ] || {
         echo "error: ${v} is not set. This script is os/pkgs/podman/deb/podman/producer.env's PREPARE hook and is run by os/build-env/deb/build.sh, which sets it; it is not a standalone command" >&2
         exit 1
     }
 done
+[ "${PREFLIGHT}" != 0 ] || [ -n "${MOS_DEB_STAGE:-}" ] || {
+    echo "error: MOS_DEB_STAGE is not set. This script is os/pkgs/podman/deb/podman/producer.env's PREPARE hook and is run by os/build-env/deb/build.sh, which sets it; it is not a standalone command" >&2
+    exit 1
+}
 
 REPO_ROOT="${MOS_DEB_REPO_ROOT}"
 ARCH="${MOS_DEB_ARCH}"
-STAGE="${MOS_DEB_STAGE}"
+STAGE="${MOS_DEB_STAGE:-}"
 BUILD_SH="${REPO_ROOT}/os/pkgs/podman/build.sh"
+VERSIONS_STAMP_SH="${REPO_ROOT}/os/pkgs/podman/versions-stamp.sh"
 OUT="${REPO_ROOT}/os/pkgs/podman/out-${ARCH}"
 
 [ -f "${BUILD_SH}" ] || {
     echo "error: ${BUILD_SH} does not exist; it is what compiles the binaries this producer packages" >&2
+    exit 1
+}
+[ -f "${VERSIONS_STAMP_SH}" ] || {
+    echo "error: ${VERSIONS_STAMP_SH} does not exist; it is what records which versions.env out-<arch> was compiled from and what refuses a directory compiled from another one" >&2
     exit 1
 }
 
@@ -53,6 +79,62 @@ missing=""
 for b in "${BINARIES[@]}"; do
     [ -f "${OUT}/${b}" ] || missing="${missing} ${b}"
 done
+
+# ------------------------------------------------------------- pre-flight
+#
+# Everything this hook can answer without compiling: the seven binaries, and
+# the stamp that says which versions.env they came from. Both counts are
+# printed on BOTH paths, which is the contract os/build-env/deb/preflight.sh
+# refuses a hook for breaking -- a hook that reported success without saying
+# what it looked at is indistinguishable from one that looked at nothing, and a
+# failing hook that reported no count would have its whole report counted as
+# one missing input.
+if [ "${PREFLIGHT}" != 0 ]; then
+    # Seven binaries plus one stamp. The stamp is EXAMINED even when the
+    # binaries are absent: "not built" and "built from a superseded
+    # versions.env" are different sentences and the operator needs whichever
+    # one is true, not the first one that happens to be reached.
+    examined=$((${#BINARIES[@]} + 1))
+    n_missing=0
+    reports=()
+    # ONE report for the binaries, naming all of them, rather than one per
+    # file. Seven absent binaries have one cause and one command between them,
+    # and seven copies of that sentence is a wall the real second cause -- a
+    # stale stamp -- would be lost in. The COUNT still moves by seven: the
+    # report shape and the number are separate on purpose, which is why the
+    # contract carries the number rather than leaving it to be inferred.
+    if [ -n "${missing}" ]; then
+        for b in ${missing}; do n_missing=$((n_missing + 1)); done
+        reports+=("error: ${OUT} is missing ${n_missing} of its ${#BINARIES[@]} binaries:${missing}.
+The container engine has not been built for ${ARCH}. Build it with
+'MOS_ARCH=${ARCH} make podman' -- six upstream clones across four language
+toolchains, and roughly three quarters of an hour for arm64 under emulation.")
+    fi
+    # The stamp is examined even when the binaries are absent, because "not
+    # built" and "built from a superseded versions.env" are different sentences
+    # and the operator needs whichever is true -- except when the directory
+    # itself is not there, where --check would report the absence the binaries
+    # have already reported.
+    if [ -d "${OUT}" ]; then
+        stamp_out=""
+        stamp_rc=0
+        stamp_out="$(bash "${VERSIONS_STAMP_SH}" --check "${OUT}" 2>&1)" || stamp_rc=$?
+        [ "${stamp_rc}" -eq 0 ] || {
+            reports+=("${stamp_out}")
+            n_missing=$((n_missing + 1))
+        }
+    fi
+    [ "${#reports[@]}" -eq 0 ] || printf '%s\n\n' "${reports[@]}" >&2
+    echo "preflight-examined: ${examined}"
+    echo "preflight-missing: ${n_missing}"
+    if [ "${n_missing}" -gt 0 ]; then
+        echo "prepare.sh: refusing to build mos-podman: ${n_missing} of ${examined} examined inputs under ${OUT} are missing or stale. Nothing was built and no container was started." >&2
+        exit 1
+    fi
+    echo "prepare.sh: pre-flight found all ${examined} inputs of mos-podman present and stamped for ${ARCH} (${OUT})"
+    exit 0
+fi
+
 if [ -n "${missing}" ]; then
     echo "prepare: ${OUT} is missing${missing}; building the engine for ${ARCH}"
     MOS_ARCH="${ARCH}" bash "${BUILD_SH}"
@@ -65,6 +147,20 @@ if [ -n "${missing}" ]; then
 else
     echo "prepare: reusing the existing ${OUT}"
 fi
+
+# WHICH versions.env THESE CAME FROM, checked on the REUSE path too and not
+# only after a build -- the same reason the architecture check below is, and
+# the same failure shape. A complete out-<arch> compiled from a superseded
+# versions.env is seven binaries that are present, executable and the right
+# architecture, and every check that stops there passes over them.
+#
+# REFUSED rather than rebuilt, unlike the missing-binary path above. A version
+# bump is an act: versions.env is this project's upgrade interface, and the
+# command that carries it out is `make podman`. Silently starting three
+# quarters of an hour of emulated compiling from inside a packaging hook is the
+# late, expensive surprise the pre-flight above exists to end, so it is not
+# what a stale stamp should trigger.
+bash "${VERSIONS_STAMP_SH}" --check "${OUT}"
 
 # The architecture, checked on the REUSE path too and not only after a build.
 # out-<arch> is a directory in the worktree that nothing here created, and
@@ -81,6 +177,17 @@ for b in "${BINARIES[@]}"; do
     esac
 done
 
+# Re-asserted immediately before the copy, and not only where the environment
+# is read. ${STAGE} is optional in this script now -- pre-flight mode has no
+# stage -- so an empty one reaching here would make every destination below
+# `/${b}`, and seven container-engine binaries would be written into the root
+# of whatever filesystem this ran on. Measured, by a mutation that skipped the
+# pre-flight branch: it wrote /podman, /quadlet, /crun, /conmon, /netavark,
+# /aardvark-dns and /catatonit, and reported success.
+[ -n "${STAGE}" ] || {
+    echo "error: MOS_DEB_STAGE is empty at the point of staging. The seven destinations would each be an absolute path at the filesystem root" >&2
+    exit 1
+}
 for b in "${BINARIES[@]}"; do
     cp "${OUT}/${b}" "${STAGE}/${b}"
 done

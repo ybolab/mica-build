@@ -17,7 +17,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
-	os-debs os-deb-package-gate \
+	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
 	os-rootfs-manifest-test \
 	docs-verify docs-verify-test build-env
 
@@ -48,6 +48,8 @@ help:
 	@echo "  os-netavark-kernel-test  assert the cx3576 kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash os/build-env/deb/producers.sh\` lists them (docker)"
+	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
+	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
@@ -267,6 +269,18 @@ os-deb-%:
 	    bash os/build-env/deb/build.sh --producer '$*' --arch "$$arch"; \
 	done
 
+# EVERY MISSING INPUT AT ONCE, before anything is built. os-debs used to fail
+# partway: each producer checks its own inputs when its turn comes, so a
+# missing BSP artefact surfaced after the producers ahead of it had already
+# been packed, named one file, and the next one was learned on the next
+# attempt. The script says what it examined and refuses to report success over
+# a count of zero.
+#
+# EXPLICIT, so make prefers it over the `os-deb-%` pattern above --
+# `os-deb-package-gate` below is explicit for the same reason.
+os-deb-preflight:
+	bash os/build-env/deb/preflight.sh
+
 # THE WHOLE LOCAL POOL: every DISCOVERED producer at every architecture it
 # declares, then the index beside each pool. The composer resolves its package
 # set through _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}, so a build
@@ -292,7 +306,13 @@ os-deb-%:
 # `while`: `producer | while` reports the reader's status, so an empty
 # discovery -- the one failure this target most needs to see -- would be
 # swallowed and this would report success over no producers at all.
-os-debs:
+#
+# THE PRE-FLIGHT IS A PREREQUISITE, so it runs before the first container and
+# is also a target an operator can run alone. Every producer still refuses its
+# own missing inputs when its turn comes -- `make os-deb-<producer>` does not
+# come through here -- but that refusal arrives after the producers ahead of it
+# have been packed and names one file; this one names them all, first.
+os-debs: os-deb-preflight
 	@set -e; \
 	rows="$$(bash os/build-env/deb/producers.sh)"; \
 	printf '%s\n' "$$rows" | while read -r producer dir arches packages enablement; do \
@@ -336,6 +356,18 @@ os-shell-pipefail-lint:
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
 	bash os/tests/rootfs-manifest-test.sh
+
+# Negative and positive tests for the pre-flight above. Its value is a count and
+# a list, and both fail silently: a run that looked at nothing prints the same
+# shape of green line as one that looked at everything. So each case perturbs
+# ONE input and requires the reported numbers to move by exactly that much, and
+# each half of the hook count contract is mutated until the run goes red -- the
+# first spelling of that guard reported every input present having skipped a
+# producer entirely, and it was found by hand rather than by a check. No docker
+# and no pool: this runs the pre-flight, the two hooks that answer it, and the
+# podman versions stamp, against fixtures it builds and removes.
+os-deb-preflight-test:
+	bash os/tests/deb-preflight-test.sh
 
 # Structural check on docs/README.md. It exists because the index is the one
 # thing no other check can reach: a document that is never listed there is not

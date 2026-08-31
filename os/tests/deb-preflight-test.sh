@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+# Negative and positive tests for os/build-env/deb/preflight.sh and for the two
+# producer hooks that answer it.
+#
+#   bash os/tests/deb-preflight-test.sh
+#
+# WHY THIS FILE EXISTS. The pre-flight's whole value is a count and a list, and
+# both fail SILENTLY: a check that looked at nothing prints the same shape of
+# green line as one that looked at everything, and a report naming four missing
+# files can be counted as one without anything saying so. The first spelling of
+# the hook-count guard had exactly that bug -- it tested the two counts
+# concatenated, so an absent `preflight-examined` beside a `preflight-missing: 0`
+# read as the number 0, passed, and the run reported every input present having
+# skipped a producer entirely. It was found by mutating the hook by hand.
+# Section C is that mutation, checked in, because hand-driven evidence does not
+# survive the next edit.
+#
+# NOTHING HERE ASSERTS AN ABSOLUTE GREEN. Whether this host has BSP artefacts or
+# a compiled container engine is a property of the host, not of the tree, so a
+# test that demanded either would report the host. Section A builds a BSP
+# fixture out of the paths the code itself asks for and every later case is a
+# delta on a baseline measured against it.
+#
+# NOTHING REAL IS CLOBBERED. The podman cases run the real prepare.sh against a
+# FIXTURE repository root -- MOS_DEB_REPO_ROOT is the seam os/build-env/deb/build.sh
+# itself sets -- so an out-<arch> holding three quarters of an hour of emulated
+# compiling is never read, moved or deleted. The cases that must move a tracked
+# file restore it in an EXIT trap.
+set -euo pipefail
+
+cd "$(dirname "$0")/../.."
+REPO_ROOT="$PWD"
+PREFLIGHT="${REPO_ROOT}/os/build-env/deb/preflight.sh"
+RENDER="${REPO_ROOT}/os/boards/cx3576/deb/board-cx3576/render.sh"
+STAMP_SH="${REPO_ROOT}/os/pkgs/podman/versions-stamp.sh"
+PODMAN_PREPARE="${REPO_ROOT}/os/pkgs/podman/deb/podman/prepare.sh"
+for f in "${PREFLIGHT}" "${RENDER}" "${STAMP_SH}" "${PODMAN_PREPARE}"; do
+    [ -f "${f}" ] || { echo "error: ${f} does not exist; this test asserts over it" >&2; exit 1; }
+done
+
+PASS_N=0
+FAIL_N=0
+pass() {
+    PASS_N=$((PASS_N + 1))
+    echo "PASS: $1"
+}
+fail() {
+    FAIL_N=$((FAIL_N + 1))
+    echo "FAIL: $1"
+}
+
+# `case` and not `grep -q` on the right of a pipe: os/tests/shell-pipefail-lint.sh
+# exists for that inversion and this file sets pipefail.
+says() {
+    case "$1" in *"$2"*) return 0 ;; esac
+    return 1
+}
+
+# Under the worktree, never /tmp: this host cannot bind-mount /tmp into a
+# container, and every scratch path in this repository lives here for that
+# reason even when the case using it starts none.
+TMP="${REPO_ROOT}/tmp/deb-preflight-test.$$"
+rm -rf "${TMP}"
+mkdir -p "${TMP}"
+
+# What has been moved out of the tree, so the trap puts it back whatever
+# happens. A test that leaves a tracked file moved aside is worse than one that
+# fails.
+MOVED=()
+hide() {
+    local path="$1" keep
+    keep="${TMP}/hidden.$(printf '%s' "${path#"${REPO_ROOT}/"}" | tr / _)"
+    mv "${path}" "${keep}"
+    MOVED+=("${keep}|${path}")
+}
+restore_all() {
+    local entry
+    for entry in ${MOVED[@]+"${MOVED[@]}"}; do
+        [ -e "${entry%%|*}" ] || continue
+        rm -rf "${entry#*|}"
+        mv "${entry%%|*}" "${entry#*|}"
+    done
+    MOVED=()
+}
+cleanup() {
+    restore_all
+    [ ! -f "${TMP}/render.sh.orig" ] || cp "${TMP}/render.sh.orig" "${RENDER}"
+    rm -rf "${TMP}"
+}
+trap cleanup EXIT
+
+# The two numbers every case reads, taken out of the pre-flight's own summary
+# rather than recomputed here: the summary IS the thing under test, so a test
+# that counted the reports itself would pass over a summary that had stopped
+# agreeing with them.
+#
+#   preflight: N inputs present across ...
+#   preflight: M of N examined inputs are missing across ...
+PF_RC=0
+PF_EXAMINED=""
+PF_MISSING=""
+PF_OUT=""
+run_preflight() {
+    PF_RC=0
+    PF_OUT="$(BOARD_DIR="${BSP_FIXTURE}" bash "${PREFLIGHT}" "$@" 2>&1)" || PF_RC=$?
+    PF_EXAMINED="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: \([0-9]*\) inputs present.*/\1/p;s/^preflight: [0-9]* of \([0-9]*\) examined.*/\1/p' | tail -1)"
+    PF_MISSING="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: \([0-9]*\) of [0-9]* examined.*/\1/p' | tail -1)"
+    [ -n "${PF_MISSING}" ] || PF_MISSING=0
+}
+
+echo "== A. BOARD_DIR: still the escape, in both directions =="
+
+# An empty BOARD_DIR. The escape is threaded through to the hook, so every BSP
+# refusal must NAME this directory -- which is deterministic on every host,
+# whatever the real os/boards/cx3576/bsp/out holds.
+BSP_FIXTURE="${TMP}/bsp"
+mkdir -p "${BSP_FIXTURE}"
+run_preflight --producer board-cx3576
+# The paths it asked for, read out of its own report -- NOT a list written
+# here. A second list of the BSP inputs in this file is one that stops matching
+# board.env the day the board declares another, and stops matching silently, by
+# testing yesterday's set.
+mapfile -t WANTED < <(printf '%s\n' "${PF_OUT}" |
+    sed -n "s|^error: \(${BSP_FIXTURE}/[^ ]*\) not found.*|\1|p;s|^error: .* and \(${BSP_FIXTURE}/[^ ]*\) does not exist.*|\1|p")
+if [ "${PF_RC}" -ne 0 ] && [ "${#WANTED[@]}" -gt 1 ]; then
+    pass "A1 BOARD_DIR is honoured: ${#WANTED[@]} inputs are demanded under the directory it names, in one run"
+else
+    fail "A1 expected exit!=0 and more than one input demanded under BOARD_DIR; got exit ${PF_RC}, ${#WANTED[@]} paths"
+fi
+
+# The same directory, filled with exactly the paths the code just asked for.
+# Built from the report, so it cannot be a fixture for some other set of inputs
+# than the one the hook actually checks.
+for p in ${WANTED[@]+"${WANTED[@]}"}; do
+    mkdir -p "$(dirname "${p}")"
+    : >"${p}"
+done
+run_preflight --producer board-cx3576
+if [ "${PF_RC}" -eq 0 ] && [ -n "${PF_EXAMINED}" ] && [ "${PF_EXAMINED}" -gt "${#WANTED[@]}" ]; then
+    pass "A2 the same BOARD_DIR, filled with what it asked for, is green over ${PF_EXAMINED} inputs"
+else
+    fail "A2 expected exit 0 and more than ${#WANTED[@]} inputs examined; got exit ${PF_RC}, examined '${PF_EXAMINED}'"
+fi
+
+echo "== B. the aggregate: counts, and every missing input in ONE run =="
+
+run_preflight
+BASE_EXAMINED="${PF_EXAMINED}"
+BASE_MISSING="${PF_MISSING}"
+BASE_RC="${PF_RC}"
+[ -n "${BASE_EXAMINED}" ] || { echo "error: the pre-flight printed no summary line to take a baseline from:" >&2; printf '%s\n' "${PF_OUT}" >&2; exit 1; }
+echo "note: baseline is ${BASE_MISSING} missing of ${BASE_EXAMINED} examined (exit ${BASE_RC})"
+
+# THE ANTI-VACUITY CASE. Everything below is a delta on this number, so a zero
+# here would make every one of them true by having examined nothing.
+if [ "${BASE_EXAMINED}" -gt 0 ]; then
+    pass "B1 the pre-flight examines ${BASE_EXAMINED} inputs and prints the count"
+else
+    fail "B1 the pre-flight examined 0 inputs; every case below would pass by checking nothing"
+fi
+
+# THREE PRODUCERS, THREE CATEGORIES, ONE RUN -- a PREPARE hook file, a build
+# context and a BSP artefact. This is the behaviour the pre-flight replaces:
+# the old failure named one file, after the producers ahead of it had been
+# packed, and the next one was learned on the next attempt.
+#
+# Each is declared by exactly ONE producer, so the delta is exactly three. A
+# path two producers name would move the count by two and the arithmetic below
+# would be testing this file's bookkeeping rather than the pre-flight's.
+ARTEFACT="${WANTED[0]}"
+hide "${REPO_ROOT}/os/pkgs/rauc/deb/rauc/prepare.sh"
+hide "${REPO_ROOT}/os/rootfs/initramfs"
+hide "${ARTEFACT}"
+run_preflight
+if [ "${PF_RC}" -ne 0 ] &&
+    [ "${PF_MISSING}" = "$((BASE_MISSING + 3))" ] &&
+    says "${PF_OUT}" "os/pkgs/rauc/deb/rauc/prepare.sh does not exist" &&
+    says "${PF_OUT}" "os/rootfs/initramfs does not exist" &&
+    says "${PF_OUT}" "${ARTEFACT}"; then
+    pass "B2 three missing inputs across three producers, three categories, all named in ONE run (${BASE_MISSING} -> ${PF_MISSING})"
+else
+    fail "B2 expected exit!=0 and $((BASE_MISSING + 3)) missing naming all three; got exit ${PF_RC}, missing ${PF_MISSING}"
+fi
+
+restore_all
+run_preflight
+if [ "${PF_RC}" = "${BASE_RC}" ] && [ "${PF_MISSING}" = "${BASE_MISSING}" ] && [ "${PF_EXAMINED}" = "${BASE_EXAMINED}" ]; then
+    pass "B3 restoring all three returns the run to the baseline (${BASE_MISSING} of ${BASE_EXAMINED})"
+else
+    fail "B3 after restoring, expected exit ${BASE_RC} and ${BASE_MISSING} of ${BASE_EXAMINED}; got exit ${PF_RC}, ${PF_MISSING} of ${PF_EXAMINED}"
+fi
+
+echo "== C. the hook count contract, driven by mutating the hook =="
+
+cp "${RENDER}" "${TMP}/render.sh.orig"
+
+# C1 is the bug this file was written for: a hook that stops saying what it
+# examined must not be able to report everything present.
+sed -i '/^    echo "preflight-examined: ${EXAMINED}"$/d' "${RENDER}"
+run_preflight --producer board-cx3576
+if [ "${PF_RC}" -ne 0 ] && says "${PF_OUT}" "did not print a usable preflight-examined count"; then
+    pass "C1 a hook that reports success without an examined count is refused"
+else
+    fail "C1 expected the missing-count refusal; got exit ${PF_RC}: ${PF_OUT}"
+fi
+cp "${TMP}/render.sh.orig" "${RENDER}"
+
+# A zero is refused with the same words as an absent count: a hook that
+# examined nothing has nothing to say about whether its producer can be built.
+sed -i 's/^    echo "preflight-examined: ${EXAMINED}"$/    echo "preflight-examined: 0"/' "${RENDER}"
+run_preflight --producer board-cx3576
+if [ "${PF_RC}" -ne 0 ] && says "${PF_OUT}" "did not print a usable preflight-examined count"; then
+    pass "C2 a hook that reports an examined count of zero is refused"
+else
+    fail "C2 expected the zero-count refusal; got exit ${PF_RC}: ${PF_OUT}"
+fi
+cp "${TMP}/render.sh.orig" "${RENDER}"
+
+# The failing side. Without the missing count, one producer's whole report is
+# counted as a single missing input however many files it names -- so this is
+# driven against a BOARD_DIR with nothing in it, where the hook does fail.
+sed -i '/^        echo "preflight-missing: ${#MISSING\[@\]}" >&2$/d' "${RENDER}"
+C_RC=0
+C_OUT="$(BOARD_DIR="${TMP}/bsp-nothing" bash "${PREFLIGHT}" --producer board-cx3576 2>&1)" || C_RC=$?
+if [ "${C_RC}" -ne 0 ] && says "${C_OUT}" "did not print a usable preflight-missing count"; then
+    pass "C3 a FAILING hook that omits its missing count is refused"
+else
+    fail "C3 expected the missing-count refusal on the failing path; got exit ${C_RC}: ${C_OUT}"
+fi
+cp "${TMP}/render.sh.orig" "${RENDER}"
+rm -f "${TMP}/render.sh.orig"
+
+echo "== D. the podman versions stamp, and a pre-flight that must not compile =="
+
+# A real host ELF, because prepare.sh checks the architecture of what it
+# stages: the fixture satisfies that check honestly rather than by the check
+# being weakened for the test. Resolved by PATH and not by `command -v true`,
+# which answers `true` -- the shell builtin -- and never a file.
+case "$(uname -m)" in
+x86_64) FIX_ARCH=amd64 FIX_ELF=x86-64 ;;
+aarch64 | arm64) FIX_ARCH=arm64 FIX_ELF=aarch64 ;;
+*) FIX_ARCH="" FIX_ELF="" ;;
+esac
+HOST_ELF=""
+if [ -n "${FIX_ELF}" ]; then
+    for c in /bin/true /usr/bin/true /bin/ls /usr/bin/ls /bin/cat /usr/bin/cat; do
+        [ -f "${c}" ] || continue
+        case "$(file -b "${c}" 2>/dev/null)" in
+        *"ELF 64-bit"*"${FIX_ELF}"*) HOST_ELF="${c}"; break ;;
+        esac
+    done
+fi
+[ -n "${HOST_ELF}" ] || {
+    echo "error: no ${FIX_ELF} ELF was found among the standard binaries on this host, so section D has nothing to build its fixture out-${FIX_ARCH} from. Skipping it would leave the stamp guard untested, which is the state that guard exists to end" >&2
+    exit 1
+}
+
+# A FIXTURE repository root. MOS_DEB_REPO_ROOT is the seam the driver itself
+# sets, so the real prepare.sh runs unmodified against a tree this test owns.
+FIX="${TMP}/fixture"
+FIXP="${FIX}/os/pkgs/podman"
+OUTDIR="${FIXP}/out-${FIX_ARCH}"
+mkdir -p "${FIXP}/deb/podman" "${OUTDIR}"
+cp "${REPO_ROOT}/os/pkgs/podman/versions.env" "${FIXP}/versions.env"
+cp "${STAMP_SH}" "${FIXP}/versions-stamp.sh"
+# THE TRIPWIRE. prepare.sh runs this when it decides to compile, and in
+# pre-flight mode it must never decide that. A placeholder that fails loudly
+# turns "the pre-flight compiled" from a forty-five minute wait into a red line.
+cat >"${FIXP}/build.sh" <<'TRIPWIRE'
+#!/usr/bin/env bash
+echo "TRIPWIRE: the container engine build was invoked" >&2
+exit 99
+TRIPWIRE
+BINARIES=(podman quadlet crun conmon netavark aardvark-dns catatonit)
+for b in "${BINARIES[@]}"; do cp "${HOST_ELF}" "${OUTDIR}/${b}"; done
+
+D_RC=0
+D_OUT="$(bash "${FIXP}/versions-stamp.sh" --digest 2>&1)" || D_RC=$?
+case "${D_OUT}" in
+*[!0-9a-f]* | "") D_RC=1 ;;
+*) [ "${#D_OUT}" -eq 64 ] || D_RC=1 ;;
+esac
+if [ "${D_RC}" -eq 0 ]; then
+    pass "D1 --digest yields a sha256 over the normalised versions.env"
+else
+    fail "D1 expected a 64-hex digest; got '${D_OUT}'"
+fi
+
+bash "${FIXP}/versions-stamp.sh" --stamp "${OUTDIR}"
+D_RC=0
+D_OUT="$(bash "${FIXP}/versions-stamp.sh" --check "${OUTDIR}" 2>&1)" || D_RC=$?
+if [ "${D_RC}" -eq 0 ]; then
+    pass "D2 a directory stamped from the current versions.env passes --check"
+else
+    fail "D2 expected --check to pass on a freshly stamped directory; got exit ${D_RC}: ${D_OUT}"
+fi
+
+# THE DEFECT THE STAMP CLOSES, stated as os/pkgs/podman/build.sh states it: a
+# stale out/ looks exactly like a fresh one to anything that only checks the
+# files are present. Every file below is still present, executable and the
+# right architecture; only the pin it was compiled from has moved.
+sed -i 's/^CRUN_VERSION=.*/CRUN_VERSION=1.99.9/' "${FIXP}/versions.env"
+D_RC=0
+D_OUT="$(bash "${FIXP}/versions-stamp.sh" --check "${OUTDIR}" 2>&1)" || D_RC=$?
+if [ "${D_RC}" -ne 0 ] &&
+    says "${D_OUT}" "was built from a different os/pkgs/podman/versions.env" &&
+    says "${D_OUT}" "stamped:" && says "${D_OUT}" "current:"; then
+    pass "D3 a version bump makes the stamped directory refuse BY NAME, with both digests"
+else
+    fail "D3 expected the stale-stamp refusal naming both digests; got exit ${D_RC}: ${D_OUT}"
+fi
+
+# prepare.sh's REUSE path, through the same mismatch. That is the path which
+# packaged the previous engine silently before the stamp existed.
+mkdir -p "${TMP}/stage-d"
+D_RC=0
+D_OUT="$(MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" MOS_DEB_PRODUCER=podman \
+    MOS_DEB_STAGE="${TMP}/stage-d" bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
+if [ "${D_RC}" -ne 0 ] &&
+    says "${D_OUT}" "was built from a different os/pkgs/podman/versions.env" &&
+    ! says "${D_OUT}" "TRIPWIRE"; then
+    pass "D4 prepare.sh refuses to reuse a stale out-${FIX_ARCH}, and does not compile instead"
+else
+    fail "D4 expected prepare.sh to refuse the stale directory without compiling; got exit ${D_RC}: ${D_OUT}"
+fi
+
+# Restore the pin and the same reuse succeeds -- the guard is a claim about
+# STALENESS, not a refusal of reuse. Without this direction the guard could be
+# a bare `exit 1` and every case above would still pass.
+sed -i 's/^CRUN_VERSION=.*/CRUN_VERSION=1.29.1/' "${FIXP}/versions.env"
+rm -rf "${TMP}/stage-d"
+mkdir -p "${TMP}/stage-d"
+D_RC=0
+D_OUT="$(MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" MOS_DEB_PRODUCER=podman \
+    MOS_DEB_STAGE="${TMP}/stage-d" bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
+staged="$(find "${TMP}/stage-d" -type f | wc -l)"
+if [ "${D_RC}" -eq 0 ] && [ "${staged}" = "${#BINARIES[@]}" ] && ! says "${D_OUT}" "TRIPWIRE"; then
+    pass "D5 restoring the pin lets the same directory be reused, staging ${staged} binaries"
+else
+    fail "D5 expected reuse to succeed and stage ${#BINARIES[@]}; got exit ${D_RC}, staged ${staged}: ${D_OUT}"
+fi
+
+# An UNSTAMPED directory: what every out-<arch> on every host looked like
+# before this guard, and the state in which it must not be trusted.
+rm -f "${OUTDIR}/VERSIONS.env"
+D_RC=0
+D_OUT="$(bash "${FIXP}/versions-stamp.sh" --check "${OUTDIR}" 2>&1)" || D_RC=$?
+if [ "${D_RC}" -ne 0 ] && says "${D_OUT}" "carries no VERSIONS.env"; then
+    pass "D6 an unstamped directory is refused rather than trusted"
+else
+    fail "D6 expected the unstamped refusal; got exit ${D_RC}: ${D_OUT}"
+fi
+bash "${FIXP}/versions-stamp.sh" --stamp "${OUTDIR}"
+
+# PRE-FLIGHT MODE, and the thing it must not do. No MOS_DEB_STAGE is passed,
+# because the driver has not made one: no build has started.
+D_RC=0
+D_OUT="$(MOS_DEB_PREFLIGHT=1 MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" \
+    MOS_DEB_PRODUCER=podman bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
+d_ex="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-examined: //p')"
+d_mi="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-missing: //p')"
+if [ "${D_RC}" -eq 0 ] && [ "${d_ex}" = "$((${#BINARIES[@]} + 1))" ] && [ "${d_mi}" = 0 ] &&
+    ! says "${D_OUT}" "TRIPWIRE"; then
+    pass "D7 the podman hook answers the pre-flight over ${d_ex} inputs without compiling"
+else
+    fail "D7 expected exit 0, examined $((${#BINARIES[@]} + 1)), missing 0 and no compile; got exit ${D_RC}, examined '${d_ex}', missing '${d_mi}': ${D_OUT}"
+fi
+
+# The forty-five minute case. A missing binary in pre-flight mode is REPORTED,
+# not built -- if that ever regresses the tripwire says so in a second instead
+# of the run taking three quarters of an hour.
+rm -f "${OUTDIR}/crun"
+D_RC=0
+D_OUT="$(MOS_DEB_PREFLIGHT=1 MOS_DEB_REPO_ROOT="${FIX}" MOS_DEB_ARCH="${FIX_ARCH}" \
+    MOS_DEB_PRODUCER=podman bash "${PODMAN_PREPARE}" 2>&1)" || D_RC=$?
+d_ex="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-examined: //p')"
+d_mi="$(printf '%s\n' "${D_OUT}" | sed -n 's/^preflight-missing: //p')"
+if [ "${D_RC}" -ne 0 ] && [ "${d_ex}" = "$((${#BINARIES[@]} + 1))" ] && [ "${d_mi}" = 1 ] &&
+    says "${D_OUT}" "make podman" && ! says "${D_OUT}" "TRIPWIRE"; then
+    pass "D8 a missing binary is REPORTED by the pre-flight, with the command that makes it, and not compiled"
+else
+    fail "D8 expected exit!=0, examined $((${#BINARIES[@]} + 1)), missing 1 and no compile; got exit ${D_RC}, examined '${d_ex}', missing '${d_mi}': ${D_OUT}"
+fi
+
+echo
+if [ "${FAIL_N}" -eq 0 ]; then
+    echo "RESULT: PASS (${PASS_N}/${PASS_N} checks passed)"
+else
+    echo "RESULT: FAIL (${FAIL_N} failed, ${PASS_N} passed)"
+    exit 1
+fi
