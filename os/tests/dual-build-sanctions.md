@@ -114,6 +114,26 @@ switching a rule off:
 So the state of every stanza is asserted on every run in both directions, and
 "not yet" is a claim the gate checks rather than a place to put things.
 
+### The composition record is not a difference, and its stanza is gone
+
+This file used to carry a third pending stanza, `/etc/mos/rootfs-packages.txt`,
+as a placeholder for "the in-image copy the composer may also stage". The
+composer has landed and it stages no such copy, so the stanza has been
+**deleted** rather than corrected to a real path.
+
+The reason is the one its own text gave: PLAN-036 section 4 writes the record to
+`_out/<board>/rootfs-packages.txt`, which is outside both compared trees, and
+that is the right place for it. It is the durable BUILD record and it replaces
+`rootfs-stages.txt`, which has always lived there too -- neither is image
+content. Inside the root it would be a second copy of facts dpkg's own database
+already carries at the moment the finalizer purges it, and it would be one more
+path to sanction for no gain.
+
+A pending stanza that can never match is not harmless, even though rule 2
+exempts it from failing the run: it reads as a decision that is still open when
+the decision has in fact been taken. Deleting it is how the decision gets
+recorded.
+
 ## Evidence that this instrument works
 
 Four outcomes, driven against two REAL x64 roots -- not fixtures. Both were
@@ -482,7 +502,3 @@ fixed in place.
 - status: pending
 - reason: The directory entry itself, which the pattern above does not cover -- `**` does not match zero path segments, so `/usr/share/doc/**` matches `/usr/share/doc/mos-system/copyright` and not `/usr/share/doc/mos-system`. Measured, not reasoned: a real run against two roots differing by the container engine reported eleven added paths under `/usr/share/doc/`, and the `**` stanza matched the files while leaving the five package directories unsanctioned. Same sanction, same reason as above; a separate stanza because one glob cannot express both.
 
-### /etc/mos/rootfs-packages.txt
-- classes: added
-- status: pending
-- reason: PLAN-036 section 6's second sanctioned addition, the package composition record. Section 4 writes it to `_out/<board>/rootfs-packages.txt`, which is OUTSIDE both compared trees, so as specified today this difference cannot appear at all and the pattern here is a placeholder for the in-image copy the composer may also stage. The composer L3 owns correcting the pattern to the path it actually writes -- or deleting this stanza, if the record never enters the image. It is safe to be wrong while pending, because a pending stanza sanctions nothing: the worst a wrong pattern here can do is fail to match, which is its expected state.

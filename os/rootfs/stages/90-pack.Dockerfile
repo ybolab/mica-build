@@ -172,6 +172,25 @@ COPY --from=closed / /rootfs/
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-cjk-guard.sh
 
+# No sshd host key ships. openssh-server's postinst generates a set at
+# install time, and on a signed rootfs that is one private key the whole fleet
+# shares; it is also random, so it would make the verity root hash differ on
+# every cold build. mos-seed-state generates a per-device set into STATE
+# instead (see overlay-v2/usr/lib/mos/mos-seed-state).
+#
+# HERE, in the finalizer, because it is a statement about the assembled root
+# rather than about any one package -- which is the ruling
+# os/rootfs/packages-src/system/Dockerfile already records
+# ("`rm -f /etc/ssh/ssh_host_*` -> a whole-image finalizer step, not a
+# package"). stages/10-base makes the same removal immediately after installing
+# openssh-server and keeps it, so on the chain path this finds nothing and is a
+# tripwire; on the composition path openssh-server arrives through mos-system's
+# Depends inside one apt transaction and this is the removal itself. Both paths
+# reach it through this one file, which is what lets the dual-build gate read a
+# difference as a composition difference.
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-ssh-host-keys.sh
+
 # Tree surgery that cannot happen in the rootfs stage, either because buildkit
 # bind-mounts the file during RUN or because it would break dpkg.
 #  - /etc/resolv.conf -> /run, the only writable place with / read-only.
