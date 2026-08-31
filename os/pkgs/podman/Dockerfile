@@ -187,12 +187,34 @@ COPY --from=src /src/conmon /src/conmon
 COPY --from=src /src/catatonit /src/catatonit
 RUN mkdir -p /out
 
+# crun WITH systemd support, which is the difference between this binary
+# working on the device and failing every container it is asked to start:
+#
+#   Error: OCI runtime error: crun: systemd not supported: Operation not supported
+#
+# This image is a systemd system and rootful podman's cgroup manager defaults
+# to `systemd` (containers.conf.5, [engine] cgroup_manager: "systemd" is the
+# default on systemd hosts), so crun is asked for a transient scope on the
+# session bus at every `podman run`. A crun configured --disable-systemd
+# compiles that path out and refuses at the moment a container starts.
+#
+# Nothing here reported it. The smoke tests exercise podman inside buildkit
+# sandboxes where no systemd is running and podman falls back to the cgroupfs
+# manager, so the systemd-cgroup path only exists on a booted device -- the
+# same shape as the conmon journald finding below, found the same way.
+#
+# The dependency is free: libsystemd-dev is already installed in this stage
+# for conmon, and crun's configure probes libsystemd with pkg-config and
+# silently compiles the feature out when it is absent -- so the link check
+# below is what makes the absence an error rather than a device-only surprise.
 RUN --mount=type=cache,target=/ccache,id=ccache-c \
     set -eu; cd /src/crun; \
     ./autogen.sh; \
-    ./configure --disable-systemd; \
+    ./configure; \
     make -j"$(nproc)"; \
-    install -m0755 crun /out/crun
+    install -m0755 crun /out/crun; \
+    ldd /out/crun | grep -q libsystemd || \
+        { echo "error: crun linked no libsystemd. configure probes it with pkg-config and disables systemd support silently when it is missing; this binary would fail every podman run on the device with 'systemd not supported'" >&2; exit 1; }
 
 # libsystemd-dev above is what gives conmon journald support, and its absence
 # is not a build error: conmon's Makefile probes for libsystemd with
