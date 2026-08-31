@@ -47,21 +47,57 @@ owned_by_purged() {
     done
     return 1
 }
+
+# PASS 1, THE ENABLEMENT LINKS, and ownership is asked of THE UNIT THE LINK
+# POINTS AT rather than of the link.
+#
+# This is not a refinement, it is the whole mechanism: NO PACKAGE OWNS A .wants
+# LINK. Measured in a clean trixie root -- all four links under
+# timers.target.wants answer "no package owns this path", while every unit they
+# point at answers apt, apt, dpkg and util-linux. deb-systemd-helper writes
+# those links from a maintainer script, so they are in no file list at all.
+#
+# The first version of this asked dpkg about the LINK, found nothing, skipped
+# every one of them, and the by-name assertion below caught it on the first real
+# build -- both paths, identically, because this file is the shared finalizer.
+# A sibling had measured the same fact from the other side (asking who owns the
+# LINK is how maintainer-script enablement is IDENTIFIED); the two uses are
+# opposite and the sentences describing them are nearly the same.
+#
+# Before pass 2, because that one removes the units these links resolve through.
+purged_links=0
+purged_link_names=""
+for _link in /etc/systemd/system/*.target.wants/*; do
+    { [ -e "${_link}" ] || [ -L "${_link}" ]; } || continue
+    _unit="$(readlink -f "${_link}" 2>/dev/null)" || continue
+    [ -n "${_unit}" ] || continue
+    owned_by_purged "${_unit}" || continue
+    rm -f "${_link}"
+    purged_links=$((purged_links + 1))
+    purged_link_names="${purged_link_names} ${_link}"
+done
+
+# PASS 2, the unit files, which ARE in their packages' file lists.
 purged_units=0
-purged_names=""
-for _path in /etc/systemd/system/*.target.wants/*              /etc/systemd/system/*.timer /etc/systemd/system/*.service              /usr/lib/systemd/system/*.timer /usr/lib/systemd/system/*.service; do
+for _path in /usr/lib/systemd/system/*.timer /usr/lib/systemd/system/*.service \
+             /etc/systemd/system/*.timer /etc/systemd/system/*.service; do
     { [ -e "${_path}" ] || [ -L "${_path}" ]; } || continue
     owned_by_purged "${_path}" || continue
     rm -f "${_path}"
     purged_units=$((purged_units + 1))
-    purged_names="${purged_names} ${_path}"
 done
-# A zero is not proof of a clean root, it is the shape this sweep takes when it
-# is reading the wrong thing -- every image this repository builds installs apt
-# and dpkg, and both ship enabled timers.
+
+# TWO COUNTERS AND TWO GUARDS, because the first version had one guard and it
+# passed for the wrong reason: it counted UNITS, the same loop removed units
+# successfully, and the step's actual subject -- the enablement -- was skipped
+# entirely while the number looked healthy. A non-vacuity counter has to count
+# the thing the step exists to do.
+[ "${purged_links}" -gt 0 ] ||
+    { echo "error: no enablement link under /etc/systemd/system/*.target.wants resolves to a unit owned by ${PURGED_PACKAGES}, so this removed no enablement at all. apt enables apt-daily.timer and apt-daily-upgrade.timer and dpkg enables dpkg-db-backup.timer in every image this repository builds; a zero here means the ownership test is reading the wrong path -- the LINK rather than its target is how it read wrong the first time" >&2; exit 1; }
 [ "${purged_units}" -gt 0 ] ||
-    { echo "error: no unit under /etc/systemd/system or /usr/lib/systemd/system is owned by ${PURGED_PACKAGES}, so this swept nothing. Both packages ship enabled timers in every image this repository builds; a zero here means dpkg-query answered nothing -- a database already removed, or a path spelling it does not recognise -- and the assertion below would then be checking a removal that never happened" >&2; exit 1; }
-echo "purge: ${purged_units} unit(s) owned by ${PURGED_PACKAGES} removed with their enablement:${purged_names}"
+    { echo "error: no unit file under /usr/lib/systemd/system or /etc/systemd/system is owned by ${PURGED_PACKAGES}, so this removed no unit. Both packages ship timers and services in every image here; a zero means dpkg-query answered nothing -- a database already removed, or a path spelling it does not recognise" >&2; exit 1; }
+echo "purge: ${purged_links} enablement link(s) removed:${purged_link_names}"
+echo "purge: ${purged_units} unit file(s) owned by ${PURGED_PACKAGES} removed with them"
 
 rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \
        /var/log/apt \
