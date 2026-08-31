@@ -79,10 +79,12 @@ FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS generate
 
 # The repository's own script, RUN rather than restated. os/rootfs/scripts is a
 # read-only source of truth and it arrives as the `scripts` build context
-# producer.env names; a copy of these five lines in this file would be a second
+# producer.env names; a copy of its body in this file would be a second
 # definition of "what is generated today", and the two would come apart at the
-# first edit to either. The script leaves /etc/ssl/certs/.mos-cert-count behind,
-# which the pack stage below reads and does not ship.
+# first edit to either. That is not a style preference here -- stages/10-base's
+# certs stage runs the same file, so the guard above lives in ONE place and both
+# stores are judged by it. The script leaves /etc/ssl/certs/.mos-cert-count
+# behind, which the pack stage below reads and does not ship.
 RUN --mount=type=bind,from=scripts,target=/mos-scripts \
     sh /mos-scripts/ca-certificates-generate.sh
 
