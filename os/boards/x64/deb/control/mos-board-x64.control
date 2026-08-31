@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: mos-system, linux-image-amd64, initramfs-tools, cryptsetup-bin, libdevmapper1.02.1, ${shlibs:Depends}
+Depends: mos-system, linux-image-amd64, initramfs-tools, cryptsetup-bin, ${shlibs:Depends}
 Description: mos board support -- x64 (QEMU/UEFI, layout v2)
  Everything the image carries because it is the x64 board: /etc/fstab and the
  ESP mount unit rendered from os/boards/x64/board.env, the RAUC system
@@ -20,5 +20,5 @@ Description: mos board support -- x64 (QEMU/UEFI, layout v2)
  initramfs-tools and cryptsetup-bin are named because ELF metadata cannot show
  them: the hook is read by update-initramfs and copies veritysetup into the
  initrd by name, and neither relationship is visible to dpkg-shlibdeps.
- libdevmapper1.02.1 is grub-editenv's, the one library os/rootfs/scripts/grub-editenv-install.sh
- installs before taking that binary out of grub-common.
+ grub-editenv's libdevmapper is not named here: it is an ELF dependency, so
+ ${shlibs:Depends} derives it, and with the version dpkg-shlibdeps reads.
