@@ -255,9 +255,30 @@ RUN set -eu; \
 # NO MTIME NORMALISATION HERE, and this is where a reader of this producer comes
 # looking for it. os/build-env/deb/pack.sh SETS every path in the packed tree to
 # SOURCE_DATE_EPOCH -- unconditionally, over the whole tree, as its written
-# ruling at that site records. A producer that normalised its own stage as well
-# would be a second copy of that rule, and the copy that mattered would be
-# whichever ran last.
+# ruling at that site records.
+#
+# THIS ABSENCE DEPENDS ON PLAN-036 DECISION (e), which is what made pack.sh SET
+# rather than clamp. A reader who reverts (e) has to put a normalising step back
+# here, and the code should be what tells them so.
+#
+# Under a CLAMP the discriminating case is not two cold builds -- those agree
+# either way. It is a WARM generate layer whose wall clock is OLDER than the
+# commit's SOURCE_DATE_EPOCH, against a cold one: a clamp leaves an older mtime
+# alone, so the warm side keeps the moment its layer was first built while the
+# cold side carries the epoch, and the two archives diverge. That is the defect
+# this producer was carrying, and the pair a two-empty-cache-builder proof
+# cannot see. Under SET the stale mtime is overwritten and the pair converges.
+#
+# MEASURED, both directions. The convergence: one warm builder and one cold
+# builder, built after a commit that put SOURCE_DATE_EPOCH ahead of the warm
+# layer's clock, produce byte-identical archives. The fingerprint of SET being
+# in force at all: every one of the 463 payload entries carries the epoch and
+# none carries ca-certificates' own 2025-04-19 date -- under a clamp those
+# anchors, being OLDER than the epoch, would have kept it.
+#
+# So a producer normalising its own stage is not belt-and-braces against (e)
+# being reverted. It is a second copy of a rule, and the copy that mattered
+# would be whichever ran last.
 #
 # WHY THAT RULING IS WHAT MAKES THIS PRODUCER REPRODUCIBLE. Almost nothing here
 # arrives with a date of its own: the bundle, /etc/ca-certificates.conf and all
