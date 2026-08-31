@@ -101,6 +101,7 @@ to know that one of its packages was filed under arm64.
 | Producer | Emits | Architecture |
 | --- | --- | --- |
 | `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
+| `system` | `mos-system` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
 
 ### `profile`
