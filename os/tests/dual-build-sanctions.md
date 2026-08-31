@@ -275,6 +275,37 @@ surface and goes to L2 before it goes here. If instead the set comes back EMPTY,
 build D was a cache replay and proves nothing -- which is what will be reported,
 rather than a green dressed up as agreement.
 
+#### Addendum: the builder changed after those predictions were committed
+
+The two predictions above were written against builds that would run on the
+`default` docker-driver builder, chaining stages through the daemon-global
+`mos-rootfs-stage:x64-*` tags. Those tags are shared by every worktree on the
+host, so the builds now run on a private docker-container builder instead,
+where `os/build/src/stages-cli.ts` chains by OCI layout under `_out/<board>/
+stages/` -- worktree-local, and unable to collide with a sibling.
+
+That is the right change and it has a consequence the predictions did not
+account for: a fresh builder has an empty cache, so build D is a COLD rebuild of
+all nine stages rather than a re-run of 33 through 90 over a warm one. Two
+things follow, and they are recorded here rather than quietly absorbed:
+
+- It removes the risk the predictions were most exposed to. A cold build cannot
+  be a cache replay, so an empty difference set from D would now mean something
+  is wrong with the experiment rather than that the cache answered it.
+- It admits a confound they did not have. `stages/10-base` and `20-install` run
+  `apt-get update && apt-get install` against the live Debian archive -- the
+  BASE IMAGE is digest-pinned, the package versions are not -- so a cold
+  rebuild can legitimately install different package versions than build A did,
+  and any file that differs for that reason is package drift rather than a
+  non-reproducible surface. They are told apart by ownership: the four
+  predicted paths are two self-built binaries and two files generated at build
+  time, while drift would show up as Debian-owned paths under
+  `/usr/lib/x86_64-linux-gnu/`, `/usr/share/doc/` and the like, most likely with
+  added and removed paths beside the content changes.
+
+The predictions are NOT edited to cover this. They stand as committed, and if
+the measured set is wider, what widened it is named here in advance.
+
 ## What an x64-only comparison does not cover
 
 PLAN-036 section 6 runs this comparison on x64 only; cx3576 is then built and
