@@ -96,27 +96,20 @@ ARG SOURCE_DATE_EPOCH
 # in network-and-ssh-units.sh -- and so stays /lib, as does fstrim.timer, which
 # overlay-install.sh writes the same way.
 #
-# ssh.service IS DISABLED BY A FILE, 50-mos-ssh.preset, and not by leaving a
-# link out. An absence cannot survive another package's postinst: openssh-server's
+# ssh.service is DISABLED ACTIVELY, by the postinst, and not by leaving a link
+# out. An absence cannot survive another package's postinst: openssh-server's
 # writes multi-user.target.wants/ssh.service through deb-systemd-helper, and
 # policy-rc.d stops a maintainer script STARTING a service without touching the
-# symlink. A preset is the payload form of that decision -- it is a file this
-# package owns, dpkg installs it, and nothing runs a command to arrange it.
+# symlink. mos-system Depends on openssh-server, so dpkg configures that package
+# first and this one's postinst is the next thing that runs.
 #
-# MEASURED, NOT ASSUMED, because the mechanism turns on an ordering nobody had
-# checked. In a clean debian trixie root, a package that Depends on
-# openssh-server and ships this preset gets NO multi-user.target.wants/ssh.service:
-# deb-systemd-helper 1.69~deb13u1 reads /usr/lib/systemd/system-preset, and apt
-# unpacks this package's data before it configures openssh-server. The postinst
-# asserts that outcome; it does not produce it.
-#
-# THE ALIAS LINK IS PAYLOAD FOR THE SAME REASON. The preset suppresses every
-# link openssh's [Install] implies, including its `Alias=sshd.service` --
-# /etc/systemd/system/sshd.service -- which the stage chain's root HAS, because
-# network-and-ssh-units.sh removes the multi-user link and nothing else. A path
-# the chain produces and no package owns is the shape this packaging work exists
-# to close, so this package owns it: same name, same target, now declared
-# instead of left behind by another package's helper.
+# A preset under /usr/lib/systemd/system-preset was measured against the same
+# clean root and IS honoured -- deb-systemd-helper 1.69~deb13u1 reads it, and
+# apt unpacks it before openssh-server is configured -- but it also suppresses
+# openssh's `Alias=sshd.service` link, /etc/systemd/system/sshd.service, which
+# the stage chain's root HAS because network-and-ssh-units.sh removes the
+# multi-user link and nothing else. It would trade one wrong path for another
+# and add a preset file the chain has no counterpart for.
 #
 # There is likewise no local-fs.target.wants/etc-containers-systemd.mount, which
 # overlay-install.sh spells out at length is left unlinked so that Quadlet
@@ -168,10 +161,6 @@ RUN set -eu; \
     printf '%s\n' '[Journal]' 'Storage=volatile' \
         >"${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
     chmod 0644 "${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
-    install -d -m 0755 "${R}/usr/lib/systemd/system-preset"; \
-    printf '%s\n' 'disable ssh.service' \
-        >"${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
-    chmod 0644 "${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
     install -d -m 0755 "${R}/srv" "${R}/mnt/state" "${R}/mnt/meta" "${R}/home" \
         "${R}/usr/local/lib/systemd" "${R}/usr/local/lib/systemd/system" \
         "${R}/var/lib/mos" \
@@ -207,8 +196,6 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"; \
     ln -s /usr/lib/systemd/system/systemd-network-generator.service \
         "${R}/etc/systemd/system/sysinit.target.wants/systemd-network-generator.service"; \
-    ln -s /usr/lib/systemd/system/ssh.service \
-        "${R}/etc/systemd/system/sshd.service"; \
     ln -s /lib/systemd/system/fstrim.timer \
         "${R}/etc/systemd/system/timers.target.wants/fstrim.timer"; \
     install -D -m 0644 /in/copyright "${R}/usr/share/doc/mos-system/copyright"; \
