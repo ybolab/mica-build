@@ -38,6 +38,7 @@ run a substitution hidden in it.
 | `FROM_IMAGES` | no | `<build-arg name>=<images.env key> ...` for further base images, resolved through `os/build-env/from.sh`. |
 | `BUILD_ARGS` | no | `KEY=VALUE ...`, passed verbatim as `--build-arg`. |
 | `PREPARE` | no | a script beside this file, run on the host before the build; what it stages becomes the `bin` context. |
+| `PREFLIGHT` | no | `1` if that hook honours `MOS_DEB_PREFLIGHT=1` and can report its inputs without producing them. See below. |
 
 `ARCHES` is required rather than defaulted because the wrong answer is silent.
 An `Architecture: all` payload built as `amd64` is a well-formed archive in
@@ -140,6 +141,46 @@ was started" and have it be true.
 properties: its BSP artifacts are selected by `BOARD_DIR`, it invokes
 `os/pkgs/rauc/render-config.sh` rather than reimplementing it, and it refuses a
 missing BSP input before anything is built.
+
+## `PREFLIGHT`
+
+A hook's inputs are the ones no key above can name, so they are also the ones
+`os/build-env/deb/preflight.sh` cannot check for itself. `PREFLIGHT="1"` says
+the hook can be **asked** instead: run with `MOS_DEB_PREFLIGHT=1` it reports
+what is missing and produces nothing, so a missing input is listed beside every
+other producer's before `make os-debs` starts a container.
+
+It is opt-in per producer rather than automatic, because a hook that has not
+been taught the variable would do its full work: the podman hook compiles a
+container engine, three quarters of an hour of it under emulation for arm64. A
+pre-flight that compiles is not a pre-flight.
+
+In that mode the hook gets `MOS_DEB_REPO_ROOT`, `MOS_DEB_PRODUCER`,
+`MOS_DEB_PRODUCER_DIR`, `MOS_DEB_ARCH` and `MOS_DEB_PREFLIGHT=1`, and **no
+`MOS_DEB_STAGE`** -- there is nothing to stage into, and a hook that wrote
+anywhere in this mode would be writing before the operator had been told what is
+missing.
+
+It must print three counts on **both** paths, and exit non-zero when
+`preflight-missing` is not zero:
+
+| Line | Meaning |
+| --- | --- |
+| `preflight-examined: <n>` | what this hook looked at. Must be above zero. |
+| `preflight-missing: <n>` | of those, what **nothing in the run produces**. The run is refused. |
+| `preflight-warned: <n>` | of those, what **this producer makes itself**, at a cost the report names. The run continues. |
+
+The line between the two categories is what the run would DO about it, not how
+serious it looks. An absent container engine warns, because the podman hook
+builds one; an engine compiled from a superseded `versions.env` is missing,
+because the hook refuses it. Refusing the first would mean `make os-debs` could
+no longer build a pool on a fresh host, which is how a pool comes to exist.
+
+All three are required and a zero is written rather than omitted, for the same
+reason `ENABLEMENT` writes its zeros: an omission and a deliberate zero read the
+same to a person and opposite to a check. `preflight.sh` refuses a hook that
+breaks any of the three, and `os/tests/deb-preflight-test.sh` drives each
+refusal by mutating the hook until the run goes red.
 
 Every build also gets `--build-context packer=os/build-env/deb` and the
 `MOS_DEB_VERSION`, `MOS_DEB_ARCH` and `SOURCE_DATE_EPOCH` build arguments,

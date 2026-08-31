@@ -34,6 +34,10 @@ import {
   parseArchiveIndex,
   parseArchiveManifest,
   EXEC_TIMEOUT_MS,
+  EXEC_PROGRAM_BUDGET_MS,
+  EXEC_STARTUP_BUDGET_MS,
+  EXEC_STARTUP_SLACK,
+  execTimeoutMs,
   LOAD_TIMEOUT_BYTES_PER_MS,
   LOAD_TIMEOUT_FLOOR_MS,
   factoryRootPaths,
@@ -1040,6 +1044,44 @@ describe('preflight -- the positive control that runs before any conclusion', ()
     await expect(preflight(exec, 'linux/amd64')).rejects.toThrow(/cannot execute anything on this host/)
     await expect(preflight(exec, 'linux/amd64')).rejects.not.toThrow(/tonistiigi/)
   })
+
+  test('a start the watchdog killed is reported as a timeout, not as `/bin/true exited 137`', async () => {
+    // Through the REAL watchdog, the real clock and a real subprocess: only the
+    // argv is redirected, because /bin/true is the one command that cannot be
+    // made slow. This is the event that failed a green chain build -- a
+    // `/bin/true` SIGKILLed at 30s while two sibling builds ran, reported as the
+    // program's own exit status.
+    const slowStart: Exec = () => capture(['sleep', '5'], 150)
+    let said = 'it did not refuse at all'
+    try {
+      await preflight(slowStart, 'linux/amd64')
+    } catch (e) {
+      said = (e as Error).message
+    }
+    expect(said).toMatch(/did not START within 150 ms/)
+    expect(said).toMatch(/spent starting the container/)
+    // The message this replaces made the reader decode a signal number, and
+    // sent them looking at the root: the status is 137 and it says nothing here.
+    expect(said).not.toMatch(/exited 137/)
+    expect(said).not.toMatch(/cannot execute anything on this host/)
+  })
+
+  test('a 137 the watchdog did NOT cause is still read as the root refusing', async () => {
+    // The same false alarm from the other side. `timedOutAfterMs` decides, never
+    // the status, so a root whose /bin/true really answers 137 is not excused as
+    // a slow host -- which is what a check on the number alone would do.
+    const exec: Exec = async () => ({ status: 137, stdout: '', stderr: 'something else killed it' })
+    await expect(preflight(exec, 'linux/amd64')).rejects.toThrow(/cannot execute anything on this host/)
+    await expect(preflight(exec, 'linux/amd64')).rejects.not.toThrow(/did not START within/)
+  })
+
+  test('the start it measured is what it hands back, and that is what sizes the artifacts', async () => {
+    const started: Exec = () => capture(['sleep', '0.3'], EXEC_TIMEOUT_MS)
+    const startupMs = await preflight(started, 'linux/amd64')
+    expect(startupMs).toBeGreaterThanOrEqual(250)
+    // A start this quick does not shrink the fuse; see execTimeoutMs.
+    expect(execTimeoutMs(startupMs)).toBe(EXEC_TIMEOUT_MS)
+  })
 })
 
 // the argv the seam actually builds
@@ -1505,6 +1547,76 @@ describe('capture -- a budget that fires names itself', () => {
     expect(r.status).toBe(0)
     expect(r.timedOutAfterMs).toBeUndefined()
     expect(diagnose(r)).not.toMatch(/watchdog/)
+  })
+})
+
+describe('the exec budget is sized against a measured start, not against an idle host', () => {
+  // The constant this replaced, and the event that condemned it: a chain rootfs
+  // build that had just been green went red with
+  //   the factory root cannot execute anything on this host: /bin/true exited 137
+  // while two sibling builds ran on this host. 137 is 128+9, and `/bin/true`
+  // cannot be slow for any reason of its own -- so all 30s of it was spent
+  // STARTING a container, and the number was sized against a host that was
+  // starting them in 0.65s.
+  const KILLED_BIN_TRUE_MS = 30_000
+
+  test('the fuse a run that measured nothing gets is bigger than the one that killed /bin/true', () => {
+    expect(EXEC_TIMEOUT_MS).toBeGreaterThan(KILLED_BIN_TRUE_MS)
+    // Two halves, separately defensible, or the sum is the old constant with a
+    // bigger number written on it. The half that has to absorb host load is the
+    // START, and the program half is the one 30s was always right for: every
+    // `--version` in the register answers in milliseconds.
+    expect(EXEC_TIMEOUT_MS).toBe(EXEC_STARTUP_BUDGET_MS + EXEC_PROGRAM_BUDGET_MS)
+    expect(EXEC_STARTUP_BUDGET_MS).toBeGreaterThan(KILLED_BIN_TRUE_MS)
+  })
+
+  test('a slow measured start buys more room, and a quick one does not shrink the fuse', () => {
+    // Measured on this host (docker 29.7.2): 0.65s median with the daemon quiet,
+    // 8.6s for the first start after three builds started. The quiet number must
+    // not shrink the fuse -- the next start is queued behind whatever the daemon
+    // does next -- and the loaded one must widen it. A budget that answered the
+    // same to both is the constant again with a measurement printed beside it.
+    expect(execTimeoutMs(650)).toBe(EXEC_TIMEOUT_MS)
+    expect(execTimeoutMs(8_600)).toBeGreaterThan(execTimeoutMs(650))
+    expect(execTimeoutMs(8_600)).toBe(8_600 * EXEC_STARTUP_SLACK + EXEC_PROGRAM_BUDGET_MS)
+    // And it keeps scaling: a host twice as slow gets twice the start half,
+    // which is what the load budget's own test asserts of its archive half.
+    const startHalf = (ms: number): number => execTimeoutMs(ms) - EXEC_PROGRAM_BUDGET_MS
+    expect(startHalf(17_200)).toBe(2 * startHalf(8_600))
+  })
+
+  test('every invocation of the real seam is given that budget and not one of its own', async () => {
+    const calls: { argv: readonly string[]; timeoutMs: number }[] = []
+    const run = async (argv: readonly string[], timeoutMs: number): Promise<ExecResult> => {
+      calls.push({ argv, timeoutMs })
+      return { status: 0, stdout: '', stderr: '' }
+    }
+    const argv = ['/usr/bin/crun', '--version']
+    await dockerExec(REF, undefined, run)(argv)
+    await dockerExec(REF, execTimeoutMs(8_600), run)(argv)
+    expect(calls).toHaveLength(2)
+    expect(calls[0]!.argv).toEqual(dockerArgv(REF, argv))
+    // The default is the composed fuse. A `dockerExec` that kept a number of its
+    // own would make everything above a statement about an unused constant.
+    expect(calls[0]!.timeoutMs).toBe(EXEC_TIMEOUT_MS)
+    expect(calls[1]!.timeoutMs).toBe(execTimeoutMs(8_600))
+  })
+
+  test('a command that outlives a smaller budget survives the shipped one', async () => {
+    // The direction that matters: without it, "report every exec as a timeout"
+    // satisfies every other test here. Real subprocess, real watchdog, real
+    // clock. It is scaled -- `sleep 0.5` against 100 ms is what a 31s
+    // `--version` is against the 30s that killed one -- because the honest
+    // full-size version sleeps for 31s on every gate run. The size of the
+    // shipped budget is asserted above; this is the part that says the budget
+    // is a budget and not a verdict.
+    const killed = await capture(['sleep', '0.5'], 100)
+    expect(killed.status).not.toBe(0)
+    expect(killed.timedOutAfterMs).toBe(100)
+    const survived = await capture(['sleep', '0.5'], EXEC_TIMEOUT_MS)
+    expect(survived.status).toBe(0)
+    expect(survived.timedOutAfterMs).toBeUndefined()
+    expect(diagnose(survived)).not.toMatch(/watchdog/)
   })
 })
 

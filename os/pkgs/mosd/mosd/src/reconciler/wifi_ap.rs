@@ -198,7 +198,7 @@ impl WifiApReconciler<Systemd, Networkd> {
                     .map(Path::to_path_buf)
             })
             .unwrap_or_else(|| PathBuf::from(identity::DEFAULT_STATE_DIR));
-        Self::new(config_dir, network_dir, state_dir, Systemd, Networkd)
+        Self::new(config_dir, network_dir, state_dir, Systemd::new(), Networkd)
     }
 }
 

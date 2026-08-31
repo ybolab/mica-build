@@ -4,6 +4,7 @@
 //! trees may use direct `com.mos.<class>[.<suffix>]` service names, but enter
 //! MQTT only through exact package-owned enrollment and policy.
 
+use std::future::Future;
 use std::future::poll_fn;
 use std::pin::pin;
 use std::sync::Arc;
@@ -16,6 +17,43 @@ use zbus::export::futures_core::Stream;
 use crate::access_cache::{self, AccessCache};
 use crate::config::BusKind;
 use crate::settings_api::SettingsApi;
+
+/// Upper bound for one connection attempt or method call to mosd.
+///
+/// Five seconds is deliberately a fault-containment bound rather than normal
+/// flow control: queued writes return promptly, while reads and actions get a
+/// finite answer when the bus or daemon wedges.
+const MOSD_CALL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// A call crossed [`MOSD_CALL_TIMEOUT`].
+///
+/// Kept as a concrete error inside `anyhow` so the HTTP boundary can separate
+/// "the outcome was not confirmed" (504) from "the daemon was unreachable"
+/// (503). In particular, dropping the future does not cancel work already
+/// accepted by mosd.
+#[derive(Debug)]
+pub(crate) struct MosdCallTimeout {
+    operation: &'static str,
+    timeout: Duration,
+}
+
+impl std::fmt::Display for MosdCallTimeout {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} did not answer within {:?}; the operation may still be running",
+            self.operation, self.timeout
+        )
+    }
+}
+
+impl std::error::Error for MosdCallTimeout {}
+
+impl MosdCallTimeout {
+    pub(crate) fn new(operation: &'static str, timeout: Duration) -> Self {
+        Self { operation, timeout }
+    }
+}
 
 #[zbus::proxy(
     interface = "com.mos.mosd1",
@@ -116,15 +154,29 @@ impl BusSettings {
 
     /// Return the cached proxy, connecting first when necessary.
     async fn proxy(&self) -> anyhow::Result<MosdProxy<'static>> {
-        let mut cached = self.proxy.lock().await;
-        if let Some(proxy) = cached.as_ref() {
+        if let Some(proxy) = self.proxy.lock().await.as_ref() {
             return Ok(proxy.clone());
         }
-        let connection = match self.bus {
-            BusKind::System => zbus::Connection::system().await,
-            BusKind::Session => zbus::Connection::session().await,
-        }?;
-        let proxy = MosdProxy::new(&connection).await?;
+
+        // Never hold the cache lock while dialling. Two first requests may
+        // build two connections; the second one to publish simply drops its
+        // duplicate, which is cheaper and safer than queueing every request
+        // behind a stuck connect.
+        let connect = async {
+            let connection = match self.bus {
+                BusKind::System => zbus::Connection::system().await,
+                BusKind::Session => zbus::Connection::session().await,
+            }?;
+            anyhow::Ok(MosdProxy::new(&connection).await?)
+        };
+        let proxy = tokio::time::timeout(MOSD_CALL_TIMEOUT, connect)
+            .await
+            .map_err(|_| MosdCallTimeout::new("connect to mosd", MOSD_CALL_TIMEOUT))??;
+
+        let mut cached = self.proxy.lock().await;
+        if let Some(existing) = cached.as_ref() {
+            return Ok(existing.clone());
+        }
         *cached = Some(proxy.clone());
         Ok(proxy)
     }
@@ -132,6 +184,25 @@ impl BusSettings {
     /// Drop the cached proxy after a failed call.
     async fn reset(&self) {
         *self.proxy.lock().await = None;
+    }
+
+    /// Run one proxy call under the shared bound and invalidate the cached
+    /// proxy after either an error or an elapsed bound.
+    async fn call<T, F>(&self, operation: &'static str, call: F) -> anyhow::Result<T>
+    where
+        F: Future<Output = zbus::Result<T>>,
+    {
+        match tokio::time::timeout(MOSD_CALL_TIMEOUT, call).await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(err)) => {
+                self.reset().await;
+                Err(err.into())
+            }
+            Err(_) => {
+                self.reset().await;
+                Err(MosdCallTimeout::new(operation, MOSD_CALL_TIMEOUT).into())
+            }
+        }
     }
 }
 
@@ -155,71 +226,42 @@ impl BusSettings {
 impl SettingsApi for BusSettings {
     async fn get_settings(&self, path: &str) -> anyhow::Result<Value> {
         let proxy = self.proxy().await?;
-        match proxy.get_settings(path).await {
-            Ok(json) => Ok(serde_json::from_str(&json)?),
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        let json = self.call("GetSettings", proxy.get_settings(path)).await?;
+        Ok(serde_json::from_str(&json)?)
     }
 
     async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()> {
         let proxy = self.proxy().await?;
-        match proxy.set_settings(path, &value.to_string()).await {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        self.call("SetSettings", proxy.set_settings(path, &value.to_string()))
+            .await
     }
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {
         let proxy = self.proxy().await?;
-        match proxy.get_state(path).await {
-            Ok(json) => Ok(serde_json::from_str(&json)?),
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        let json = self.call("GetState", proxy.get_state(path)).await?;
+        Ok(serde_json::from_str(&json)?)
     }
 
     async fn reboot(&self) -> anyhow::Result<()> {
         let proxy = self.proxy().await?;
-        match proxy.reboot().await {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        self.call("Reboot", proxy.reboot()).await
     }
 
     async fn power_off(&self) -> anyhow::Result<()> {
         let proxy = self.proxy().await?;
-        match proxy.power_off().await {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        self.call("PowerOff", proxy.power_off()).await
     }
 
     async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
         let proxy = self.proxy().await?;
-        match proxy.set_transient_root_password(password).await {
-            Ok(()) => Ok(()),
-            // The error is returned as mosd raised it. mosd's own contract is
-            // that no message it raises here carries the password, and nothing
-            // is added to it on the way back.
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        // The error is returned as mosd raised it. mosd's own contract is
+        // that no message it raises here carries the password, and nothing
+        // is added to it on the way back.
+        self.call(
+            "SetTransientRootPassword",
+            proxy.set_transient_root_password(password),
+        )
+        .await
     }
 
     /// The answer is mosd's, verbatim: the base64 public half of the key it
@@ -227,12 +269,7 @@ impl SettingsApi for BusSettings {
     /// proxy that would fetch one.
     async fn rotate_wireguard_key(&self, iface: &str) -> anyhow::Result<String> {
         let proxy = self.proxy().await?;
-        match proxy.rotate_wireguard_key(iface).await {
-            Ok(public_key) => Ok(public_key),
-            Err(err) => {
-                self.reset().await;
-                Err(err.into())
-            }
-        }
+        self.call("RotateWireguardKey", proxy.rotate_wireguard_key(iface))
+            .await
     }
 }

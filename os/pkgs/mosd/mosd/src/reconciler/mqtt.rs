@@ -100,7 +100,7 @@ impl MqttReconciler<Systemd> {
         let config_path = std::env::var(CONFIG_PATH_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_CONFIG_PATH));
-        let mut reconciler = Self::new(config_path, Systemd);
+        let mut reconciler = Self::new(config_path, Systemd::new());
         // The broker-config override exists for tests and diagnostics, but the
         // systemd unit intentionally names one fixed identity path. Never let
         // an unrelated broker path move this security boundary.

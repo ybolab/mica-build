@@ -170,7 +170,6 @@ mos/
 │   ├── tests/     shell suites over the built image
 │   ├── tools/     three QEMU helper scripts
 │   └── verify/    TypeScript: the board model, and the checks an assembled image must pass
-├── extensions/    reserved for optional sysext layers; nothing is built from it
 └── Makefile       top-level routing; `make help` lists every target
 ```
 

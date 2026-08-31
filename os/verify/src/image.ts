@@ -665,6 +665,12 @@ export interface VerityRequest {
   readonly hashFile: string
   readonly rootHash: string
   readonly hashOffset: number
+  /** The five values the superblock used to carry, which the CALLER must now supply. */
+  readonly hashAlgo: string
+  readonly dataBlockSize: number
+  readonly hashBlockSize: number
+  readonly dataBlocks: number
+  readonly salt: string
 }
 
 /**
@@ -674,30 +680,70 @@ export interface VerityRequest {
  * anything -- which is what makes it safe against a host, and it is the reason
  * the oracle chose it.
  *
- * Both answers exit 1 and only one of them is an answer. Measured:
- * "Verification of root hash failed." is exit 1 and the failing DIRECTION of the
- * check; "Device X is not a valid VERITY device." is exit 1 and the tool getting
- * nowhere. Mapping status 1 to `mismatch` would report a corrupt payload for a
- * mis-computed hash offset, and mis-computed offsets are the likeliest defect in
- * a port re-deriving them from a board definition.
+ * `--no-superblock`, and every parameter spelled out, because this has to be the
+ * KERNEL's read. dm-init assembles the device from the `dm-mod.create=` table,
+ * whose verity v1 target has no superblock concept at all: it takes the algo,
+ * the block sizes, the data-block count and the salt from the table and reads
+ * hash_start_block as the tree's top level. Left to its own convention
+ * veritysetup finds a superblock, takes those five values back out of it, and
+ * starts the tree one hash block later -- so it can verify a payload the kernel
+ * then refuses, which is exactly the pair of agreeing-but-wrong statements that
+ * made every v2 image fail to boot while this check passed.
+ *
+ * Three exit statuses and only two of them are answers. Measured against
+ * cryptsetup 2.7.5: "Verification of root hash failed." is exit 1 and the
+ * failing direction; "Verification of data area failed." is exit 2 and the same
+ * direction reached one level lower -- it is what a tree at the wrong offset
+ * produces, so an image built the old way must reach a FAIL and not a throw;
+ * "Device X is not a valid VERITY device." is exit 1 and the tool getting
+ * nowhere. Mapping status alone to `mismatch` would report a corrupt payload for
+ * a wrong offset or an unreadable file.
  */
 export async function verityVerify(rt: ToolRuntime, req: VerityRequest): Promise<VerityVerdict> {
-  requireWholeNumbers({ 'the verity hash offset': req.hashOffset })
+  requireWholeNumbers({
+    'the verity hash offset': req.hashOffset,
+    'the verity data block size': req.dataBlockSize,
+    'the verity hash block size': req.hashBlockSize,
+    'the verity data block count': req.dataBlocks,
+  })
   if (!/^[0-9a-fA-F]{32,128}$/.test(req.rootHash)) {
     throw new ToolOutputError(
       `'${req.rootHash}' is not a root hash. veritysetup would refuse it, at exit 1, in the same `
       + `breath it uses to say a payload does not verify.`,
     )
   }
+  // Refused here rather than passed through: with --no-superblock these are the
+  // only source of the values, so an empty one is silently a DIFFERENT tree and
+  // the mismatch would read as a statement about the payload.
+  for (const [name, value] of [['hash algorithm', req.hashAlgo], ['salt', req.salt]] as const) {
+    if (value.trim() === '') {
+      throw new ToolOutputError(
+        `verityVerify was given an empty ${name}. With --no-superblock there is nothing to fall `
+        + `back to, so the walk would hash a different tree and report the difference as a payload `
+        + `that does not verify.`,
+      )
+    }
+  }
+  const argv = [
+    'veritysetup', 'verify', req.dataFile, req.hashFile, req.rootHash,
+    `--hash-offset=${req.hashOffset}`,
+    '--no-superblock',
+    `--hash=${req.hashAlgo}`,
+    `--data-block-size=${req.dataBlockSize}`,
+    `--hash-block-size=${req.hashBlockSize}`,
+    `--data-blocks=${req.dataBlocks}`,
+    `--salt=${req.salt}`,
+  ]
   const r = await rt.run(
-    ['veritysetup', 'verify', req.dataFile, req.hashFile, req.rootHash, `--hash-offset=${req.hashOffset}`],
-    { context: `verifying ${req.dataFile} against ${req.rootHash}`, allow: [1] },
+    argv,
+    { context: `verifying ${req.dataFile} against ${req.rootHash}`, allow: [1, 2] },
   )
   if (r.code === 0) return 'verified'
   const said = `${r.stdout}${r.stderr}`
   if (/Verification of root hash failed/.test(said)) return 'mismatch'
+  if (r.code === 2 && /Verification of data area failed/.test(said)) return 'mismatch'
   throw new ToolOutputError(
-    `veritysetup verify exited 1 for a reason that is NOT a hash mismatch:\n`
+    `veritysetup verify exited ${r.code} for a reason that is NOT a hash mismatch:\n`
     + `    ${said.trim().split('\n').join('\n    ') || '(no output)'}\n`
     + `  data=${req.dataFile} hash=${req.hashFile} --hash-offset=${req.hashOffset}\n`
     + `  Reporting this as "mismatch" would blame the image for a wrong offset or an unreadable file.`,

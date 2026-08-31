@@ -223,7 +223,7 @@ impl ContainerReconciler<Systemd> {
         let generator_dir = std::env::var(GENERATOR_DIR_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_GENERATOR_DIR));
-        Self::new(quadlet_dir, generator_dir, Systemd)
+        Self::new(quadlet_dir, generator_dir, Systemd::new())
     }
 }
 

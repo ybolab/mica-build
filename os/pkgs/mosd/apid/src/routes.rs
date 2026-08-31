@@ -2957,38 +2957,48 @@ fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
 /// power verb and a transient root password write no setting at all, so there
 /// is no dot-path at fault to report. Every route that does name one passes
 /// `Some`, and the classification above is shared rather than copied.
-fn bus_api_error(err: &anyhow::Error, path: Option<&str>) -> Response {
+pub(crate) fn bus_api_error(err: &anyhow::Error, path: Option<&str>) -> Response {
     tracing::warn!(error = %err, path = path.unwrap_or_default(), "mosd call failed");
-    let (status, error) = match err.downcast_ref::<zbus::Error>() {
-        Some(zbus::Error::MethodError(name, message, _)) => {
-            // An fdo error with no message is still a classification; the name
-            // is the most specific thing left to say.
-            let message = message.clone().unwrap_or_else(|| name.to_string());
-            match name.as_str() {
-                MOSD_NOT_FOUND => (
-                    StatusCode::NOT_FOUND,
-                    ApiError::mosd("settings_not_found", message),
-                ),
-                MOSD_READ_ONLY => (
-                    StatusCode::CONFLICT,
-                    ApiError::mosd("settings_read_only", message),
-                ),
-                FDO_INVALID_ARGS => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    ApiError::mosd("settings_rejected", message),
-                ),
-                FDO_IO_ERROR => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ApiError::mosd("settings_io", message),
-                ),
-                FDO_FAILED => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ApiError::mosd("mosd_failed", message),
-                ),
-                _ => mosd_unreachable(err),
+    let (status, error) = if err
+        .downcast_ref::<crate::bus_client::MosdCallTimeout>()
+        .is_some()
+    {
+        (
+            StatusCode::GATEWAY_TIMEOUT,
+            ApiError::apid("mosd_timeout", format!("{err:#}")),
+        )
+    } else {
+        match err.downcast_ref::<zbus::Error>() {
+            Some(zbus::Error::MethodError(name, message, _)) => {
+                // An fdo error with no message is still a classification; the name
+                // is the most specific thing left to say.
+                let message = message.clone().unwrap_or_else(|| name.to_string());
+                match name.as_str() {
+                    MOSD_NOT_FOUND => (
+                        StatusCode::NOT_FOUND,
+                        ApiError::mosd("settings_not_found", message),
+                    ),
+                    MOSD_READ_ONLY => (
+                        StatusCode::CONFLICT,
+                        ApiError::mosd("settings_read_only", message),
+                    ),
+                    FDO_INVALID_ARGS => (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        ApiError::mosd("settings_rejected", message),
+                    ),
+                    FDO_IO_ERROR => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ApiError::mosd("settings_io", message),
+                    ),
+                    FDO_FAILED => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ApiError::mosd("mosd_failed", message),
+                    ),
+                    _ => mosd_unreachable(err),
+                }
             }
+            _ => mosd_unreachable(err),
         }
-        _ => mosd_unreachable(err),
     };
     // Omitted rather than nulled or emptied when there is none: the member
     // carries `skip_serializing_if`, so an action's envelope simply has no
@@ -3169,6 +3179,19 @@ fn password_hash(access: &Value) -> Option<&str> {
 /// an upstream, so one outage reports one way on both surfaces.
 fn bus_error(err: &anyhow::Error) -> Response {
     tracing::warn!(error = %err, "mosd call failed");
+    if err
+        .downcast_ref::<crate::bus_client::MosdCallTimeout>()
+        .is_some()
+    {
+        return (
+            StatusCode::GATEWAY_TIMEOUT,
+            page(
+                "Error",
+                html! { p { "The management operation was not confirmed in time and may still be running." } },
+            ),
+        )
+            .into_response();
+    }
     (
         StatusCode::SERVICE_UNAVAILABLE,
         [(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS))],

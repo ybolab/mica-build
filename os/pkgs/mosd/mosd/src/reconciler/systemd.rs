@@ -14,6 +14,8 @@
 //! the current boot.
 
 use anyhow::Result;
+use std::time::Duration;
+use tokio::sync::OnceCell;
 
 /// systemd's well-known bus name.
 const MANAGER_DESTINATION: &str = "org.freedesktop.systemd1";
@@ -28,6 +30,8 @@ const PROPERTIES_INTERFACE: &str = "org.freedesktop.DBus.Properties";
 /// Job mode for start/stop/restart/reload: queue the job, displacing
 /// conflicting ones.
 const JOB_MODE: &str = "replace";
+/// Upper bound for connecting to systemd or waiting for one D-Bus reply.
+const SYSTEMD_CALL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Controls the runtime state of a systemd unit by name.
 ///
@@ -160,27 +164,60 @@ pub fn is_enabled(state: &str) -> bool {
 /// Production [`UnitControl`] calling `org.freedesktop.systemd1` on the system
 /// bus.
 ///
-/// The bus connection is created lazily inside each call, so constructing this
-/// executor never touches the host.
-pub struct Systemd;
+/// The bus connection is created lazily on first use and then retained for the
+/// executor's lifetime, so constructing this executor never touches the host
+/// and one reconcile does not repeat the full bus authentication handshake for
+/// every unit operation.
+pub struct Systemd {
+    connection: OnceCell<zbus::Connection>,
+}
 
 impl Systemd {
+    /// A disconnected executor. The first call establishes its one connection.
+    pub fn new() -> Self {
+        Self {
+            connection: OnceCell::new(),
+        }
+    }
+
+    async fn connection(&self) -> Result<&zbus::Connection> {
+        Ok(self
+            .connection
+            .get_or_try_init(zbus::Connection::system)
+            .await?)
+    }
+
     /// Call `method` on systemd's manager object with `body`.
     async fn manager_call<B>(&self, method: &str, body: &B) -> Result<zbus::Message>
     where
         B: zbus::export::serde::ser::Serialize + zbus::zvariant::DynamicType,
     {
-        let connection = zbus::Connection::system().await?;
-        let reply = connection
-            .call_method(
-                Some(MANAGER_DESTINATION),
-                MANAGER_PATH,
-                Some(MANAGER_INTERFACE),
-                method,
-                body,
-            )
-            .await?;
-        Ok(reply)
+        let call = async {
+            let connection = self.connection().await?;
+            let reply = connection
+                .call_method(
+                    Some(MANAGER_DESTINATION),
+                    MANAGER_PATH,
+                    Some(MANAGER_INTERFACE),
+                    method,
+                    body,
+                )
+                .await?;
+            anyhow::Ok(reply)
+        };
+        tokio::time::timeout(SYSTEMD_CALL_TIMEOUT, call)
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "systemd manager method {method} did not answer within {SYSTEMD_CALL_TIMEOUT:?}"
+                )
+            })?
+    }
+}
+
+impl Default for Systemd {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -193,16 +230,26 @@ impl UnitControl for Systemd {
         let reply = self.manager_call("LoadUnit", &(unit,)).await?;
         let unit_path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize()?;
 
-        let connection = zbus::Connection::system().await?;
-        let reply = connection
-            .call_method(
-                Some(MANAGER_DESTINATION),
-                &unit_path,
-                Some(PROPERTIES_INTERFACE),
-                "Get",
-                &(UNIT_INTERFACE, "ActiveState"),
-            )
-            .await?;
+        let call = async {
+            self.connection()
+                .await?
+                .call_method(
+                    Some(MANAGER_DESTINATION),
+                    &unit_path,
+                    Some(PROPERTIES_INTERFACE),
+                    "Get",
+                    &(UNIT_INTERFACE, "ActiveState"),
+                )
+                .await
+                .map_err(anyhow::Error::from)
+        };
+        let reply = tokio::time::timeout(SYSTEMD_CALL_TIMEOUT, call)
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "systemd ActiveState for {unit} did not answer within {SYSTEMD_CALL_TIMEOUT:?}"
+                )
+            })??;
         let value: zbus::zvariant::OwnedValue = reply.body().deserialize()?;
         Ok(String::try_from(value)?)
     }

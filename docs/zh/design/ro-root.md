@@ -10,7 +10,7 @@
 +---------------------------+ 0
 | squashfs (zstd -19)       |  SQUASHFS_BYTES，4096 的整数倍
 +---------------------------+ SQUASHFS_BYTES == 哈希偏移
-| dm-verity 哈希树           |  超级块 + 哈希块
+| dm-verity 哈希树           |  只有哈希树本身——没有 verity 超级块
 +---------------------------+
 | 零填充                     |  补齐到下一个整 MiB
 +---------------------------+ IMAGE_BYTES
@@ -19,8 +19,16 @@
 **哈希树与它所覆盖的数据在同一个文件里。** 一个文件意味着：一个待签名的产物、
 一次裸 `dd` 写入槽位、一个槽位一个 RAUC 镜像。尾部填充的存在是因为装配器按 MiB 边界写入。
 
+打包时使用 `veritysetup --no-superblock`：这样哈希偏移处就是哈希树的**顶层**，而不是描述树的
+元数据。第 2 节的 `dm-mod.create=` 是 verity v1 target，根本没有超级块这个概念——内核把
+`<HASH_START_BLOCK>` 处的块直接当作树的顶层读。带超级块打包会把 8 字节的 `verity\0\0` 正好
+放在那里，并把整棵树往后推一个哈希块，于是两块板（两种 bootloader 拼出同一张表）都会以
+`device-mapper: verity: metadata block <n> is corrupted` 启动失败。`veritysetup verify` 看不见
+这个问题，因为它按写入时的同一套约定把超级块读回来；os/verify 的
+`verity-hash-start-no-superblock` 检查读的是字节本身。
+
 重建 verity target 所需的参数写在旁边的 `.env` 文件里（`VERITY_ROOT_HASH`、`VERITY_SALT`、
-`VERITY_UUID`、块大小、块数等）。
+块大小、块数等）。其中**没有** `VERITY_UUID`：UUID 是超级块的字段，而这个镜像没有超级块。
 
 ### 确定性
 
@@ -31,6 +39,7 @@
 | mksquashfs 线程数 | `-processors 1`——多线程打包不是字节可复现的 |
 | 超级块与 inode 时间戳 | `-mkfs-time` / `-all-time` 设为固定值（2020-01-01T00:00:00Z） |
 | 文件属主 | **不强制**。它来自固定的基础镜像与固定的包集合，并由断言把关 |
+| verity 超级块 UUID | 不需要钉——`--no-superblock` 之后这个字段根本不存在，也就无从随机 |
 
 ## 2. 决策：只用命令行的 `dm-mod.create=`，不要 initramfs
 

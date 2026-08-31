@@ -102,7 +102,21 @@ interface VerityFields {
   readonly rootHash: string
   readonly salt: string
   readonly hashOffset: number
+  readonly hashAlgo: string
+  readonly dataBlockSize: number
+  readonly hashBlockSize: number
+  readonly dataBlocks: number
 }
+
+/**
+ * `VERITY_SIGNATURE` out of cryptsetup's lib/verity/verity.c -- the eight bytes
+ * a verity superblock starts with.
+ *
+ * There is no superblock in a `dm-mod.create=` table, so finding this AT
+ * hash_start_block is finding metadata where the kernel expects the tree's top
+ * level. See `verity-hash-start-no-superblock` below.
+ */
+const VERITY_SUPERBLOCK_MAGIC = 'verity\0\0'
 
 /**
  * The fields the oracle awks out of the table.
@@ -116,18 +130,32 @@ interface VerityFields {
  */
 function verityFields(cmdline: string): VerityFields {
   const table = verityTable(cmdline)
-  if (table === '') return { table, rootHash: '', salt: '', hashOffset: 0 }
+  const none = {
+    table, rootHash: '', salt: '', hashOffset: 0,
+    hashAlgo: '', dataBlockSize: 0, hashBlockSize: 0, dataBlocks: 0,
+  }
+  if (table === '') return none
   const f = table.trim().split(/\s+/)
-  const hashBlockSize = f[7] ?? ''
-  const hashStartBlock = f[9] ?? ''
-  const offset = /^\d+$/.test(hashStartBlock) && /^\d+$/.test(hashBlockSize)
-    ? Number(hashStartBlock) * Number(hashBlockSize)
-    : 0
+  // Indexed from the FRONT for the five the target itself takes -- data block
+  // size, hash block size, data-block count, hash_start_block, algorithm -- and
+  // from the back for the hash and the salt, which is the split the oracle made.
+  const num = (at: number): number => (/^\d+$/.test(f[at] ?? '') ? Number(f[at]) : 0)
+  const dataBlockSize = num(6)
+  const hashBlockSize = num(7)
+  const dataBlocks = num(8)
+  const hashStartBlock = num(9)
   return {
     table,
     rootHash: f[f.length - 2] ?? '',
     salt: f[f.length - 1] ?? '',
-    hashOffset: offset,
+    // 0 is the sentinel every caller tests for: `num` maps an unparseable field
+    // to it, and hash_start_block is never legitimately 0 -- the tree follows
+    // the data it covers.
+    hashOffset: hashStartBlock * hashBlockSize,
+    hashAlgo: f[10] ?? '',
+    dataBlockSize,
+    hashBlockSize,
+    dataBlocks,
   }
 }
 
@@ -176,8 +204,13 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const id = 'verity-payload-verifies'
-      const { rootHash, hashOffset } = await slotAFields(ctx)
-      if (rootHash === '' || hashOffset === 0) {
+      const t = await slotAFields(ctx)
+      // Every field the walk needs comes from the TABLE, and a table missing any
+      // one of them is unreadable rather than half-read: with --no-superblock
+      // there is nothing on the media to fall back to, so a defaulted field
+      // would silently describe a different tree.
+      if (t.rootHash === '' || t.hashOffset === 0 || t.hashAlgo === '' || t.salt === ''
+        || t.dataBlockSize === 0 || t.hashBlockSize === 0 || t.dataBlocks === 0) {
         return [verdict(id, false,
           `could not read a dm-mod.create= verity table out of BOOT-A, so the ROOTFS-A payload `
           + `cannot be verified`)]
@@ -186,13 +219,71 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
       const answer = await verityVerify(ctx.tools, {
         dataFile: file,
         hashFile: file,
-        rootHash,
-        hashOffset,
+        rootHash: t.rootHash,
+        hashOffset: t.hashOffset,
+        hashAlgo: t.hashAlgo,
+        dataBlockSize: t.dataBlockSize,
+        hashBlockSize: t.hashBlockSize,
+        dataBlocks: t.dataBlocks,
+        salt: t.salt,
       })
       return [verdict(id, answer === 'verified',
         answer === 'verified'
-          ? `ROOTFS-A payload verifies against the root hash in BOOT-A's cmdline (${rootHash})`
-          : `ROOTFS-A payload FAILED dm-verity verification against BOOT-A's root hash ${rootHash}`)]
+          ? `ROOTFS-A payload verifies against the root hash in BOOT-A's cmdline (${t.rootHash})`
+          : `ROOTFS-A payload FAILED dm-verity verification against BOOT-A's root hash ${t.rootHash}`)]
+    },
+  },
+
+  {
+    // The guard the family above did not have, and the reason no v2 image ever
+    // booted: `veritysetup format` without --no-superblock writes a verity
+    // SUPERBLOCK at --hash-offset and starts the tree one hash block later,
+    // while `dm-mod.create=`'s verity v1 target has no superblock concept and
+    // reads the block at hash_start_block as the tree's top level. Every boot
+    // then died on "device-mapper: verity: metadata block <n> is corrupted".
+    //
+    // `verity-payload-verifies` could not see it: veritysetup wrote the
+    // superblock and veritysetup read it back, so the gate and the artifact
+    // agreed with each other and both disagreed with the kernel. This check
+    // asks the one question neither of them asked -- what is AT the offset the
+    // cmdline names -- and it is deliberately a byte comparison rather than a
+    // second call to the tool that has the convention.
+    id: 'verity-hash-start-no-superblock',
+    shell: {
+      pass: 'hash_start_block points at hash tree',
+      fail: [
+        'hash_start_block points at a verity SUPERBLOCK',
+        'could not read a dm-mod.create= verity table out of BOOT-A',
+        'ends before the hash_start_block',
+      ],
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const id = 'verity-hash-start-no-superblock'
+      const { hashOffset } = await slotAFields(ctx)
+      if (hashOffset === 0) {
+        return [verdict(id, false,
+          `could not read a dm-mod.create= verity table out of BOOT-A, so there is no `
+          + `hash_start_block to look at`)]
+      }
+      const { file } = await rootfsA(ctx)
+      const need = VERITY_SUPERBLOCK_MAGIC.length
+      if (statSync(file).size < hashOffset + need) {
+        return [verdict(id, false,
+          `the ROOTFS-A payload ends before the hash_start_block byte ${hashOffset} the cmdline `
+          + `names, so the kernel would read the hash tree off the end of the slot`)]
+      }
+      const head = Buffer.from(readBytes(file, hashOffset, need))
+      const ok = head.toString('latin1') !== VERITY_SUPERBLOCK_MAGIC
+      return [verdict(id, ok,
+        ok
+          ? `hash_start_block points at hash tree, not at metadata about it: byte ${hashOffset} `
+            + `starts ${head.toString('hex')}, not the verity superblock magic `
+            + `${Buffer.from(VERITY_SUPERBLOCK_MAGIC, 'latin1').toString('hex')}`
+          : `hash_start_block points at a verity SUPERBLOCK: byte ${hashOffset} starts `
+            + `${head.toString('hex')} ('verity\\0\\0'). dm-init's verity v1 target has no `
+            + `superblock concept -- it reads this block as the tree's top level -- so the kernel `
+            + `would refuse the root with "device-mapper: verity: metadata block ... is corrupted" `
+            + `and the device would not boot. Format with veritysetup --no-superblock`)]
     },
   },
 

@@ -267,7 +267,9 @@ name.
 *Measured on this host on 2026-08-30 and 2026-08-31.* The x64 sequence of
 section 3 was run as written, in one shell, on an amd64 host with docker 28
 and no host binfmt. `docker run --rm --platform linux/arm64 alpine:3.21
-uname -m` answered `exec /bin/uname: exec format error` on the same host.
+uname -m` answered `exec /bin/uname: exec format error` on the same host. The
+x64 image passed `bash os/verify/run.sh --verify --board x64` at 292/292
+(22 skipped, x64/grub) with a signed RAUC bundle built.
 
 The cx3576 sequence of section 4 has since been run end to end on the same
 binfmt-less host, twice on different days, through the layout mode of
@@ -276,6 +278,13 @@ stage handed over as an OCI layout, the smoke run executed the packed root's
 binaries through the buildkit executor and reported
 `11 pass, 1 executor-limited (crun), 0 fail` — crun's memfd re-exec is the
 emulator's documented limit, reported as its own verdict rather than a pass —
-and the assembled image passed `make os-verify-cx3576-v2` at 394/394 with a
+and the assembled image passed `make os-verify-cx3576-v2` at 395/395 with a
 signed RAUC bundle built and read back. No tag touched the image store and
 no binfmt was registered at any point.
+
+The 394 that run reported before 2026-08-31 was the register without
+`verity-hash-start-no-superblock` (§1 of `ro-root.md`). Both counts were green
+and only the later one was about an image that boots: the check added that day
+is the one that reads what sits AT `hash_start_block`, and the images the 394
+runs passed all carried a verity superblock there. Re-run against one of them,
+the register reports it as a FAIL quoting the magic it found.

@@ -20,7 +20,6 @@ mos/
 │                    compiled components: podman, RAUC, the mosd Rust workspace (mosd,
 │                    apid and the MQTT broker; its workspace-level tests live under
 │                    os/pkgs/mosd/tests/), and TUF release signing
-├── extensions/      the optional-layer slot; see extensions/README.md
 └── Makefile         top-level routing; run `make help` for the full target list
 ```
 

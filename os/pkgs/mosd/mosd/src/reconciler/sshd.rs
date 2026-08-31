@@ -135,7 +135,7 @@ impl SshdReconciler<Systemd> {
             drop_in,
             authorized_keys_dir,
             transient::production_shadow_path(),
-            Systemd,
+            Systemd::new(),
         )
     }
 }

@@ -75,6 +75,20 @@ RUN set -eu; \
         install -m 0644 "${c}" "${ROOT}/etc/repart.d/$(basename "${c}")"; \
     done; \
     \
+    # Systemd drop-ins from the board overlay, wholesale. A board that must \
+    # amend a GENERIC unit for its own hardware -- ttyFIQ0's carrier-less \
+    # serial console needs agetty told --local-line -- records the amendment \
+    # as overlay content, and the package ships every such directory rather \
+    # than naming them: same derivation rule as the repart set above, and the \
+    # glob takes only drop-in directories, never the units themselves. \
+    for d in /in/board-overlay/etc/systemd/system/*.d; do \
+        [ -d "${d}" ] || continue; \
+        install -d -m 0755 "${ROOT}/etc/systemd/system/$(basename "${d}")"; \
+        for f in "${d}"/*; do \
+            install -m 0644 "${f}" "${ROOT}/etc/systemd/system/$(basename "${d}")/$(basename "${f}")"; \
+        done; \
+    done; \
+    \
     # Hardware init, and THE SPLIT. Every fact in BOARD_HWINIT_CONFS ships as \
     # /etc/mos/<n>.conf, bt.conf included: the UART, the protocol and the \
     # firmware node of the Bluetooth part are facts about this BOARD. The \
@@ -142,6 +156,29 @@ RUN set -eu; \
     # control template asks for no ${shlibs:Depends}, which is what keeps \
     # pack.sh's ELF scan from running at all. A module's dependencies are \
     # other modules and a kernel version, and neither is a shared library. \
+    # \
+    # THE /ksrc SYMLINKS ARE KEPT, and this is the ruling. modules_install \
+    # writes `build` and `source` beside each release's modules pointing at \
+    # the kernel source tree it compiled in, which in \
+    # os/boards/cx3576/bsp/kernel/Dockerfile is /ksrc -- a path inside that \
+    # builder that no image ships. Both therefore dangle on the device. \
+    # \
+    # WHAT DECIDED IT: byte-identity. The cp -a below is character for \
+    # character what os/rootfs/scripts/kernel-and-initramfs.sh does today, so \
+    # the payload this package composes is the payload the stage chain \
+    # installs. PLAN-036's switch-over has to account for every difference \
+    # between those two roots; a difference invented HERE is one the dual-build \
+    # gate would have to be taught to expect for no gain, and it would move the \
+    # deb gate's payload-path count -- a figure that is watched, where an \
+    # unexplained move is indistinguishable from a check that stopped looking. \
+    # \
+    # AGAINST, and it is a real argument: a dangling symlink in a signed \
+    # read-only root is a claim about a tree that is not there. It is inert -- \
+    # nothing on the device builds out-of-tree modules, and depmod reads the \
+    # modules.dep in the tarball rather than these -- and if it should go, it \
+    # should go where it is CREATED, in the BSP kernel build, rather than be \
+    # post-processed out here by a packaging step that would then stop \
+    # shipping what the vendor build produced. \
     mkdir -p /tmp/mods; \
     tar -xf /in/stage/modules.tar -C /tmp/mods; \
     cp -a /tmp/mods/lib/modules/. "${ROOT}/usr/lib/modules/"; \

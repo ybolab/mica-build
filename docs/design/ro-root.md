@@ -16,7 +16,7 @@ design this implements), `os/boards/cx3576/board.env` (every layout constant),
 +---------------------------+ 0
 | squashfs (zstd -19)       |  SQUASHFS_BYTES, a multiple of 4096
 +---------------------------+ SQUASHFS_BYTES == hash offset
-| dm-verity hash tree       |  superblock + 107 hash blocks
+| dm-verity hash tree       |  the tree ALONE -- no verity superblock
 +---------------------------+
 | zero padding              |  up to the next whole MiB
 +---------------------------+ IMAGE_BYTES
@@ -27,11 +27,26 @@ The hash tree lives in the same file as the data it covers, at
 `dd` into a slot, and one RAUC image per slot. The trailing pad exists because
 `os/build/src/mkimage-v2.ts` writes the file into the slot at a MiB boundary.
 
+The pack formats with `veritysetup --no-superblock`, which is what makes
+`SQUASHFS_BYTES == hash offset == VERITY_HASH_START_BLOCK * 4096` the address of
+the tree's **top level** rather than of metadata describing it. §2's
+`dm-mod.create=` table is a verity v1 target and has no superblock concept: the
+kernel reads the block at `<HASH_START_BLOCK>` as the top level and nothing
+tells it to skip one. Formatting with a superblock instead put eight bytes of
+`verity\0\0` exactly there and pushed the tree one hash block down, and every
+board -- both bootloaders compose the same table -- failed to boot with
+`device-mapper: verity: metadata block <n> is corrupted`. `veritysetup verify`
+did not see it, because it reads the superblock back by the same convention that
+wrote it; os/verify's `verity-hash-start-no-superblock` is the check that reads
+the bytes instead.
+
 The parameters needed to reconstruct the verity target are written next to it in
 `_out/cx3576/rootfs-verity.env`, as strict `KEY=value` lines: `VERITY_ROOT_HASH`,
-`VERITY_SALT`, `VERITY_UUID`, `VERITY_HASH_ALGO`, `VERITY_DATA_BLOCK_SIZE`,
+`VERITY_SALT`, `VERITY_HASH_ALGO`, `VERITY_DATA_BLOCK_SIZE`,
 `VERITY_HASH_BLOCK_SIZE`, `VERITY_DATA_BLOCKS`, `VERITY_HASH_START_BLOCK`,
-`VERITY_DATA_SECTORS`, `SQUASHFS_BYTES`, `IMAGE_BYTES`.
+`VERITY_DATA_SECTORS`, `SQUASHFS_BYTES`, `IMAGE_BYTES`. There is no
+`VERITY_UUID`: the UUID was a superblock field and this image has no
+superblock.
 
 ### Determinism
 
@@ -46,11 +61,15 @@ of its content. Every source of variation is pinned:
 | leftover state from a previous run | `-noappend` |
 | NFS export table | `-no-exports` (unused, and it embeds inode ordering) |
 | verity salt | `--salt=$VERITY_SALT` from the layout env; the default is random |
-| verity superblock UUID | `--uuid=$VERITY_UUID`; the default is random, and it lands in the first hash block |
+| verity superblock UUID | not pinned — `--no-superblock` means the field does not exist to be randomised |
 
-The verity UUID is not a separate magic constant: `build-v2.sh` derives it from
-`ROOTFS_A_GUID` (lowercased). Both slots hold identical content, so one value
-for A and B is correct.
+The UUID used to be pinned to `ROOTFS_A_GUID` because `veritysetup` randomises
+it and it landed in the first hash block. `--no-superblock` removes the block it
+lived in, so the pin went with it: one fewer source of variation rather than one
+more pin. The root hash is unaffected either way — it is a function of the data
+and the salt. Measured 2026-08-31, formatting one cx3576 squashfs (98512896 B)
+both ways: `fd7a9757…3f30556053c881` either way, and the same held for that
+day's x64 payload.
 
 sshd host keys are deliberately **not** baked into the image. The openssh-server
 postinst generates a set at build time; keeping them would put the same private

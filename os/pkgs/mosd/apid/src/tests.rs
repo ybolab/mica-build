@@ -64,6 +64,31 @@ async fn body_string(response: Response<axum::body::Body>) -> String {
     String::from_utf8(bytes.to_vec()).unwrap()
 }
 
+/// A bounded call is not an ordinary connectivity failure: mosd may still be
+/// applying a write after apid gives the request back, so the response must
+/// say "not confirmed" (504) rather than "unreachable" (503).
+#[tokio::test]
+async fn a_mosd_call_timeout_has_its_own_api_classification() {
+    let err = anyhow::Error::new(crate::bus_client::MosdCallTimeout::new(
+        "SetSettings",
+        std::time::Duration::from_secs(5),
+    ));
+
+    let response = crate::routes::bus_api_error(&err, Some("hostname"));
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    assert!(response.headers().get(RETRY_AFTER).is_none());
+    let body: serde_json::Value =
+        serde_json::from_str(&body_string(response).await).expect("JSON envelope");
+    assert_eq!(body["error"]["code"], "mosd_timeout");
+    assert_eq!(body["error"]["path"], "hostname");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("may still be running")),
+        "the timeout must not claim the operation failed: {body}"
+    );
+}
+
 async fn send(router: &Router, request: Request<Body>) -> Response<axum::body::Body> {
     router.clone().oneshot(request).await.unwrap()
 }

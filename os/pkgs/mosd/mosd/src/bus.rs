@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use mosd_settings::{Settings, SettingsError, Store, json_path_get};
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
@@ -74,7 +74,11 @@ pub struct MosdService {
     shadow_path: PathBuf,
     /// `Arc` so the install background task can record its outcome into the
     /// live-state tree after the bus call that spawned it has returned.
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<RwLock<Inner>>,
+    /// Serializes every settings reconcile and the secret/key mutations whose
+    /// read-modify-write cycles must not interleave. Data readers never take
+    /// this lock.
+    apply_lock: Arc<Mutex<()>>,
     /// The service registry the scan task fills ([`crate::scan`]), shared so
     /// that `ForgetService` drops an entry from the same table the scan
     /// publishes from — one table, so the bus surface and the live-state tree
@@ -127,7 +131,8 @@ impl MosdService {
             rauc: Arc::new(rauc::DryRunRauc),
             installing: Arc::new(AtomicBool::new(false)),
             shadow_path,
-            inner: Arc::new(Mutex::new(Inner { settings, state })),
+            inner: Arc::new(RwLock::new(Inner { settings, state })),
+            apply_lock: Arc::new(Mutex::new(())),
             registry: None,
             wireguard: Arc::new(NoRotation),
         }
@@ -176,7 +181,7 @@ impl MosdService {
     /// that `instance_collision`, which is a property of the whole table
     /// rather than of one entry, is never observable half-applied.
     pub async fn publish_services(&self, services: Value) {
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         if let Some(root) = inner.state.as_object_mut() {
             root.insert(crate::scan::STATE_KEY.to_string(), services);
         }
@@ -186,7 +191,7 @@ impl MosdService {
     /// Clones of settings and live state for unit-test assertions.
     #[cfg(test)]
     pub async fn trees(&self) -> (Value, Value) {
-        let inner = self.inner.lock().await;
+        let inner = self.inner.read().await;
         let settings = inner.settings.get("").unwrap_or(Value::Null);
         (settings, inner.state.clone())
     }
@@ -206,7 +211,7 @@ impl MosdService {
         if let Some(warning) = update_warning {
             entry.insert("update_warning".into(), Value::String(warning));
         }
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         if let Some(root) = inner.state.as_object_mut() {
             root.insert("power".to_string(), Value::Object(entry));
         }
@@ -315,7 +320,7 @@ impl MosdService {
             "bundle": bundle.to_string_lossy(),
             "requested_by": sender,
         });
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         rauc::update_entry(&mut inner.state).insert("install".into(), started);
         drop(inner);
 
@@ -348,7 +353,7 @@ impl MosdService {
             // the recorded slots show what the install just changed. Best
             // effort: the install outcome above is recorded either way.
             let refreshed = rauc::query(rauc_client.as_ref()).await.ok();
-            let mut inner = inner.lock().await;
+            let mut inner = inner.write().await;
             let entry = rauc::update_entry(&mut inner.state);
             entry.insert("install".into(), outcome);
             if let Some(refreshed) = &refreshed {
@@ -376,7 +381,7 @@ impl MosdService {
         let query = rauc::query(self.rauc.as_ref())
             .await
             .map_err(|err| fdo::Error::Failed(format!("query rauc: {err:#}")))?;
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         let entry = rauc::update_entry(&mut inner.state);
         query.merge_into(entry);
         let rendered = Value::Object(entry.clone()).to_string();
@@ -405,7 +410,7 @@ impl MosdService {
             .mark(state, slot)
             .await
             .map_err(|err| fdo::Error::Failed(format!("rauc mark: {err:#}")))?;
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         rauc::update_entry(&mut inner.state).insert(
             "last_mark".into(),
             serde_json::json!({
@@ -432,32 +437,39 @@ impl MosdService {
     /// Whatever [`Settings::set`](mosd_settings::Settings::set) or
     /// [`Store::save`] rejected the write with.
     pub async fn write_setting(&self, path: &str, value: Value) -> Result<(), SettingsError> {
-        let mut inner = self.inner.lock().await;
-        let mut candidate = inner.settings.clone();
-        candidate.set(path, value)?;
-        self.store.save(&candidate)?;
-        inner.settings = candidate;
-        let settings = inner.settings.clone();
+        let _apply = self.apply_lock.lock().await;
+        {
+            let mut inner = self.inner.write().await;
+            let mut candidate = inner.settings.clone();
+            candidate.set(path, value)?;
+            self.store.save(&candidate)?;
+            inner.settings = candidate;
+        }
+        self.apply_subtree(path).await;
+        Ok(())
+    }
+
+    /// Apply exactly the reconcilers whose declared subtree overlaps `path`.
+    ///
+    /// The caller holds [`Self::apply_lock`]. Settings are cloned under a read
+    /// lock and each live-state result is recorded under a short write lock;
+    /// no data lock is held while a reconciler waits on another process.
+    async fn apply_subtree(&self, path: &str) {
+        let settings = self.inner.read().await.settings.clone();
         for reconciler in &self.reconcilers {
             if paths_overlap(path, reconciler.subtree()) {
                 let result = reconciler.apply(&settings).await;
+                let mut inner = self.inner.write().await;
                 record(&mut inner.state, reconciler.name(), result);
             }
         }
-        drop(inner);
-        Ok(())
     }
 
     /// Run every reconciler against the current settings, recording each
     /// result in the live-state tree. Errors are recorded, never propagated.
     pub async fn apply_all(&self) {
-        let mut inner = self.inner.lock().await;
-        let settings = inner.settings.clone();
-        for reconciler in &self.reconcilers {
-            let result = reconciler.apply(&settings).await;
-            record(&mut inner.state, reconciler.name(), result);
-        }
-        drop(inner);
+        let _apply = self.apply_lock.lock().await;
+        self.apply_subtree("").await;
     }
 }
 
@@ -575,7 +587,7 @@ fn transient_to_fdo(err: anyhow::Error) -> fdo::Error {
 impl MosdService {
     /// JSON-encoded settings value at dot-path `path` (`""` = whole tree).
     async fn get_settings(&self, path: &str) -> Result<String, SettingsFault> {
-        let inner = self.inner.lock().await;
+        let inner = self.inner.read().await;
         let value = inner.settings.get(path).map_err(to_bus_error)?;
         Ok(value.to_string())
     }
@@ -625,7 +637,7 @@ impl MosdService {
             })?;
             return Ok(Value::from(secs).to_string());
         }
-        let inner = self.inner.lock().await;
+        let inner = self.inner.read().await;
         if path.is_empty() {
             let mut root = inner.state.clone();
             if let (Some(secs), Some(map)) = (read_uptime_seconds(), root.as_object_mut()) {
@@ -675,7 +687,7 @@ impl MosdService {
                  status <= {MAX_STATUS_LEN}, detail <= {MAX_DETAIL_LEN} bytes"
             )));
         }
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         if let Some(root) = inner.state.as_object_mut() {
             let health = root
                 .entry("health")
@@ -810,17 +822,16 @@ impl MosdService {
         // method takes. Blocking: the bcrypt hash inside costs hundreds of
         // milliseconds of CPU, which must not stall the bus dispatcher, so the
         // whole write runs off the async scheduler while the guard is held.
+        let _apply = self.apply_lock.lock().await;
         let shadow_path = self.shadow_path.clone();
         let password = password.to_string();
-        let inner = self.inner.lock().await;
         tokio::task::spawn_blocking(move || {
             transient::set_transient_root_password(&shadow_path, &password)
         })
         .await
         .map_err(|err| fdo::Error::Failed(format!("transient password task: {err}")))?
         .map_err(transient_to_fdo)?;
-        drop(inner);
-        self.apply_all().await;
+        self.apply_subtree("access.ssh").await;
         Ok(())
     }
 
@@ -841,8 +852,9 @@ impl MosdService {
         // rotations of one interface would each write a key and each delete
         // the device, and the public key one of them returned would be the
         // half of a private key the other had already replaced.
-        let inner = self.inner.lock().await;
-        match inner.settings.network.get(iface) {
+        let _apply = self.apply_lock.lock().await;
+        let settings = self.inner.read().await.settings.clone();
+        match settings.network.get(iface) {
             Some(cfg) if cfg.kind == mosd_settings::IfaceKind::Wireguard => {}
             // The entry exists and its kind is wrong: a bad argument, and the
             // 422 apid already answers for one.
@@ -876,8 +888,7 @@ impl MosdService {
             .map_err(|err| {
                 SettingsFault::Fdo(fdo::Error::Failed(format!("rotate wireguard key: {err:#}")))
             })?;
-        drop(inner);
-        self.apply_all().await;
+        self.apply_subtree("network").await;
         Ok(public_key)
     }
 
@@ -899,6 +910,61 @@ mod tests {
     use super::{MosdService, paths_overlap};
     use crate::power::MockPower;
     use crate::rauc::{MockRauc, SlotStatus};
+
+    struct RecordingReconciler {
+        name: &'static str,
+        subtree: &'static str,
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    struct BlockingReconciler {
+        name: &'static str,
+        subtree: &'static str,
+        started: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::reconciler::Reconciler for BlockingReconciler {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn subtree(&self) -> &'static str {
+            self.subtree
+        }
+
+        async fn apply(
+            &self,
+            _settings: &mosd_settings::Settings,
+        ) -> anyhow::Result<serde_json::Value> {
+            self.started.notify_one();
+            self.release.notified().await;
+            Ok(serde_json::json!({"applied": true}))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::reconciler::Reconciler for RecordingReconciler {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn subtree(&self) -> &'static str {
+            self.subtree
+        }
+
+        async fn apply(
+            &self,
+            _settings: &mosd_settings::Settings,
+        ) -> anyhow::Result<serde_json::Value> {
+            self.calls
+                .lock()
+                .expect("recording reconciler call log")
+                .push(self.name.to_string());
+            Ok(serde_json::json!({"applied": true}))
+        }
+    }
 
     /// Three accounts, nine fields each — the shape of a Debian `/etc/shadow`.
     const SHADOW: &str = "root:!:19000:0:99999:7:::\n\
@@ -935,6 +1001,190 @@ mod tests {
     fn service_with_mock() -> (MosdService, Arc<Mutex<Vec<String>>>, tempfile::TempDir) {
         let (service, calls, _rauc_calls, dir) = service_with_rauc(MockRauc::default());
         (service, calls, dir)
+    }
+
+    /// A service with one reconciler for each subtree that makes an accidental
+    /// `apply_all` visible in the call log.
+    fn service_with_recording_reconcilers() -> (MosdService, CallLog, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shadow_path = dir.path().join("shadow");
+        std::fs::write(&shadow_path, SHADOW).expect("seed shadow");
+        let mut settings = mosd_settings::Settings::default();
+        settings.network.insert(
+            "wg0".to_string(),
+            mosd_settings::IfaceSettings {
+                kind: mosd_settings::IfaceKind::Wireguard,
+                wireguard: Some(mosd_settings::WireguardConfig::default()),
+                ..mosd_settings::IfaceSettings::default()
+            },
+        );
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let reconciler = |name, subtree| {
+            Box::new(RecordingReconciler {
+                name,
+                subtree,
+                calls: Arc::clone(&calls),
+            }) as Box<dyn crate::reconciler::Reconciler>
+        };
+        let service = MosdService::new(
+            mosd_settings::Store::new(dir.path().join("settings.toml")),
+            settings,
+            vec![
+                reconciler("sshd", "access.ssh"),
+                reconciler("network", "network"),
+                reconciler("container", "container"),
+            ],
+            Box::new(MockPower {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            shadow_path,
+            serde_json::json!({}),
+        )
+        .with_wireguard(Arc::new(crate::reconciler::network::KeyRotation::new(
+            crate::wgkeys::Keystore::under(dir.path(), None),
+            crate::reconciler::network::NoDelete,
+        )));
+        (service, calls, dir)
+    }
+
+    #[tokio::test]
+    async fn a_transient_password_reapplies_only_the_ssh_subtree() {
+        let (service, calls, _dir) = service_with_recording_reconcilers();
+
+        service
+            .set_transient_root_password("correct horse battery")
+            .await
+            .expect("set transient password");
+
+        assert_eq!(
+            *calls.lock().expect("call log"),
+            vec!["sshd".to_string()],
+            "password activation must not reload networkd or container generators"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_wireguard_rotation_reapplies_only_the_network_subtree() {
+        let (service, calls, _dir) = service_with_recording_reconcilers();
+
+        service
+            .rotate_wireguard_key("wg0")
+            .await
+            .expect("rotate wireguard key");
+
+        assert_eq!(
+            *calls.lock().expect("call log"),
+            vec!["network".to_string()],
+            "key rotation must not touch sshd or container generators"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_reads_answer_while_a_reconcile_is_running() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let service = Arc::new(MosdService::new(
+            mosd_settings::Store::new(dir.path().join("settings.toml")),
+            mosd_settings::Settings::default(),
+            vec![Box::new(BlockingReconciler {
+                name: "hostname",
+                subtree: "hostname",
+                started: Arc::clone(&started),
+                release: Arc::clone(&release),
+            })],
+            Box::new(MockPower {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            dir.path().join("shadow"),
+            serde_json::json!({}),
+        ));
+
+        let writer = {
+            let service = Arc::clone(&service);
+            tokio::spawn(async move {
+                service
+                    .write_setting("hostname", serde_json::json!("bounded-read"))
+                    .await
+            })
+        };
+        started.notified().await;
+        let read =
+            tokio::time::timeout(Duration::from_millis(100), service.get_settings("hostname"))
+                .await;
+        release.notify_one();
+        writer.await.expect("writer task").expect("settings write");
+
+        assert_eq!(
+            read.expect("a settings read must not wait for reconcile")
+                .expect("settings read"),
+            "\"bounded-read\""
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_transient_password_writes_stay_serialized_by_the_apply_lock() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shadow_path = dir.path().join("shadow");
+        std::fs::write(&shadow_path, SHADOW).expect("seed shadow");
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let service = Arc::new(MosdService::new(
+            mosd_settings::Store::new(dir.path().join("settings.toml")),
+            mosd_settings::Settings::default(),
+            vec![Box::new(BlockingReconciler {
+                name: "sshd",
+                subtree: "access.ssh",
+                started: Arc::clone(&started),
+                release: Arc::clone(&release),
+            })],
+            Box::new(MockPower {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            shadow_path.clone(),
+            serde_json::json!({}),
+        ));
+
+        let first_password = "first correct horse";
+        let second_password = "second battery staple";
+        let first = {
+            let service = Arc::clone(&service);
+            tokio::spawn(async move { service.set_transient_root_password(first_password).await })
+        };
+        started.notified().await;
+
+        let second = {
+            let service = Arc::clone(&service);
+            tokio::spawn(async move { service.set_transient_root_password(second_password).await })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let root_hash = std::fs::read_to_string(&shadow_path)
+            .expect("shadow after first write")
+            .lines()
+            .next()
+            .and_then(|line| line.split(':').nth(1))
+            .expect("root hash")
+            .to_string();
+        assert!(bcrypt::verify(first_password, &root_hash).expect("verify first hash"));
+        assert!(
+            !bcrypt::verify(second_password, &root_hash).expect("reject second hash"),
+            "the second writer reached the shadow file before the first apply finished"
+        );
+
+        release.notify_one();
+        first.await.expect("first task").expect("first write");
+        started.notified().await;
+        release.notify_one();
+        second.await.expect("second task").expect("second write");
+
+        let root_hash = std::fs::read_to_string(&shadow_path)
+            .expect("shadow after second write")
+            .lines()
+            .next()
+            .and_then(|line| line.split(':').nth(1))
+            .expect("root hash")
+            .to_string();
+        assert!(bcrypt::verify(second_password, &root_hash).expect("verify second hash"));
     }
 
     /// A/B pair with `booted` running from `rootfs.0`; `boot_status` per slot.

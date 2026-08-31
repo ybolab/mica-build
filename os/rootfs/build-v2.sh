@@ -193,12 +193,15 @@ if [ -z "${BOARD_CMDLINE_ARGS:-}" ]; then
     exit 1
 fi
 
-# The verity superblock carries a UUID that veritysetup randomises by default,
-# which would make the image differ on every build. Pin it to the rootfs-a
-# partition GUID rather than inventing a new magic constant: it is already a
-# per-layout identifier from the layout env, and both slots hold the same
-# content so sharing one value across A and B is correct.
-VERITY_UUID=$(echo "$ROOTFS_A_GUID" | tr 'A-Z' 'a-z')
+# There is deliberately no VERITY_UUID here. The pack formats with
+# --no-superblock, because the cmdline this script writes below hands dm-init a
+# verity v1 table whose hash_start_block the kernel reads as the tree's top
+# level -- a superblock at that offset is what the kernel reports as a corrupt
+# metadata block. The UUID lived IN that superblock, so with the superblock gone
+# there is nothing left for a pinned UUID to pin, and veritysetup would take the
+# option and discard the value. Reproducibility is unaffected: the field that
+# used to be randomised no longer exists in the image at all.
+
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
 #
 # One instant, three consumers: this value is also what the driver is given as
@@ -292,6 +295,26 @@ rm -rf "$PODMAN_STAGE"
 mkdir -p "$PODMAN_STAGE"
 if ! declined containers; then
     PODMAN_OUT="$REPO_ROOT/os/pkgs/podman/out-$MOS_ARCH"
+    # WHICH versions.env THOSE BINARIES CAME FROM, asked BEFORE any of them is
+    # staged. The loop below is exactly the check os/pkgs/podman/build.sh's own
+    # comment says is not enough: "a stale out/ from the other architecture
+    # looks exactly like a fresh one to anything that only checks the files are
+    # present". Seven present, executable, right-architecture binaries compiled
+    # from a superseded pin pass every line of it -- and this is the IMAGE
+    # path, so without this the bump that is this project's whole upgrade
+    # interface could be made, committed and SHIPPED while the device kept
+    # running the engine from before it.
+    #
+    # The same refusal os/pkgs/podman/deb/podman/prepare.sh makes on its reuse
+    # path, out of the same script, so the packaging path and the image path
+    # cannot come to disagree about what a current engine is. It runs first so
+    # that a refused build has staged nothing.
+    #
+    # A directory that does not exist yet is left to the loop: "not built" is
+    # its message to give, with the command that builds it.
+    if [ -d "$PODMAN_OUT" ]; then
+        bash "$REPO_ROOT/os/pkgs/podman/versions-stamp.sh" --check "$PODMAN_OUT"
+    fi
     for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
         if [ ! -f "$PODMAN_OUT/$b" ]; then
             echo "error: $PODMAN_OUT/$b not found." >&2
@@ -880,8 +903,13 @@ done
 # MOSD_DIR exactly when 33-feature-mosd is, and getting that wrong is a refusal
 # with the argument's name in it rather than a value that quietly does nothing.
 # What both paths hand the driver: the board, the platform, the context, the
-# output directory, the two pinned base images and the four values the shared
+# output directory, the two pinned base images and the values the shared
 # finalizer reads. Everything after it is what the two paths do NOT share.
+#
+# VERITY_UUID is deliberately absent, for the reason stated further up: the pack
+# formats with --no-superblock and the UUID lived in that superblock. It is not
+# merely unused -- the driver REFUSES an --arg no stage declares, so passing it
+# would fail both modes by name rather than being ignored.
 DRIVER_ARGS=(
     --board "$MOS_BOARD"
     --platform "$DOCKER_PLATFORM"
@@ -893,7 +921,6 @@ DRIVER_ARGS=(
     --arg BOARD_RADIOS="$BOARD_RADIOS"
     --arg MOS_BOARD="$MOS_BOARD"
     --arg VERITY_SALT="$VERITY_SALT"
-    --arg VERITY_UUID="$VERITY_UUID"
     --arg SQUASHFS_TIME="$SQUASHFS_TIME"
     --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME"
     --source-date-epoch "$SQUASHFS_TIME"

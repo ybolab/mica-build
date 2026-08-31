@@ -495,15 +495,56 @@ describe('unsquashfs, which exits 0 having extracted nothing', () => {
 
 describe('veritysetup, where exit 1 means two different things', () => {
   const HASH = '776ffaf3c23c995829e39e443ef46e0b2ea5dd40d8a0ba9aa8849dfb9335f49f'
-  const req = { dataFile: '/r.img', hashFile: '/r.img', rootHash: HASH, hashOffset: 97312768 }
+  const SALT = '0000000000000000000000000000000000000000000000000000000000000001'
+  const req = {
+    dataFile: '/r.img',
+    hashFile: '/r.img',
+    rootHash: HASH,
+    hashOffset: 97312768,
+    hashAlgo: 'sha256',
+    dataBlockSize: 4096,
+    hashBlockSize: 4096,
+    dataBlocks: 23758,
+    salt: SALT,
+  }
 
   test('exit 0 is verified', async () => {
     expect(await verityVerify(stub([['veritysetup', { code: 0 }]]), req)).toBe('verified')
   })
 
+  test('the walk is the KERNEL\'s: --no-superblock and every parameter spelled out', async () => {
+    // The pair this whole family got wrong. Left to its own convention
+    // veritysetup reads a superblock at --hash-offset and starts the tree one
+    // hash block later, which is not where `dm-mod.create=` tells the kernel it
+    // is -- so a payload could verify here and be refused at boot.
+    let seen = ''
+    const spy = stub([['veritysetup', { code: 0 }]])
+    const wrapped: ToolRuntime = { ...spy, run: async (argv, o) => { seen = argv.join(' '); return spy.run(argv, o) } }
+    await verityVerify(wrapped, req)
+    expect(seen).toContain('--no-superblock')
+    expect(seen).toContain('--hash-offset=97312768')
+    expect(seen).toContain('--hash=sha256')
+    expect(seen).toContain('--data-block-size=4096')
+    expect(seen).toContain('--hash-block-size=4096')
+    expect(seen).toContain('--data-blocks=23758')
+    expect(seen).toContain(`--salt=${SALT}`)
+  })
+
   test('"Verification of root hash failed." is the failing DIRECTION, and an answer', async () => {
     const mismatch = stub([['veritysetup', { code: 1, stderr: 'Verification of root hash failed.\n' }]])
     expect(await verityVerify(mismatch, req)).toBe('mismatch')
+  })
+
+  test('exit 2, "Verification of data area failed.", is the same direction one level lower', async () => {
+    // What a tree at the WRONG OFFSET produces -- measured against cryptsetup
+    // 2.7.5 by verifying a superblock-formatted image with --no-superblock,
+    // which is exactly the pre-fix v2 image. Left unmapped it throws, and a
+    // throw is not a verdict about the image, so the one artifact this check
+    // exists to reject would come out as a harness error instead of a FAIL.
+    const areaFailed = stub([['veritysetup', {
+      code: 2, stderr: 'Verification failed at position 0.\nVerification of data area failed.\n',
+    }]])
+    expect(await verityVerify(areaFailed, req)).toBe('mismatch')
   })
 
   test('"not a valid VERITY device" is the SAME exit status and is NOT an answer', async () => {
@@ -522,6 +563,18 @@ describe('veritysetup, where exit 1 means two different things', () => {
   test('a NaN hash offset is refused, rather than becoming --hash-offset=NaN', async () => {
     const any = stub([['veritysetup', { code: 0 }]])
     await expect(verityVerify(any, { ...req, hashOffset: Number.NaN })).rejects.toThrow(/whole number of bytes/)
+  })
+
+  test('a NaN block size is refused too -- it is what a missing env key becomes', async () => {
+    const any = stub([['veritysetup', { code: 0 }]])
+    await expect(verityVerify(any, { ...req, dataBlockSize: Number.NaN }))
+      .rejects.toThrow(/whole number of bytes/)
+  })
+
+  test('an empty salt or hash algorithm is refused: there is no superblock to fall back to', async () => {
+    const any = stub([['veritysetup', { code: 0 }]])
+    await expect(verityVerify(any, { ...req, salt: '' })).rejects.toThrow(/empty salt/)
+    await expect(verityVerify(any, { ...req, hashAlgo: '' })).rejects.toThrow(/empty hash algorithm/)
   })
 })
 
