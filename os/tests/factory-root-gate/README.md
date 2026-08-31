@@ -51,9 +51,11 @@ difference between the two trees rather than between two versions of
 
 9,240 entries on both sides; identical on mode/uid/gid/path, on content under
 `diff -r --no-dereference`, on file capabilities (0 on both), and on all six
-hardlinks. All five comparisons driven from the failing side. The full record,
-including the reproducibility measurements this harness does *not* cover, is in
-`os/rootfs/stages/README.md`.
+hardlinks. All five comparisons driven from the failing side. That count was
+measured against the stage-chain root and moves whenever a file enters or
+leaves the root, so re-derive it rather than trusting this line. The full
+record, including the reproducibility measurements this harness does *not*
+cover, is `os/rootfs/README.md`, "Determinism, and what it took to get there".
 
 ## cx3576 is unmeasured
 

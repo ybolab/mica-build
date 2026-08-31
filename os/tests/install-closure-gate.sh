@@ -29,8 +29,8 @@
 #      version.
 #
 #   2  THE SAME MANIFEST WITH `rauc` DECLINED, and the same ldd sweep over it.
-#      os/rootfs/stages/10-base installs libglib2.0-0t64, libjson-glib-1.0-0 and
-#      libfdisk1 unconditionally; on the composed path those arrive only through
+#      The retired stage chain installed libglib2.0-0t64, libjson-glib-1.0-0 and
+#      libfdisk1 unconditionally; on the composed path they arrive only through
 #      mos-rauc's `${shlibs:Depends}`, so a rauc-declined composed image does not
 #      have them. That was ruled RECORD, DO NOT GATE -- the composed world is the
 #      more correct one, since a library arriving with its consumer and leaving
@@ -614,9 +614,9 @@ cat >"${IN}/assert-declined.sh" <<'DECLINED'
 #!/bin/bash
 # The SAME manifest with `rauc` declined, and the same ldd sweep over it.
 #
-# WHY THIS ROOT EXISTS, separately from the full one. os/rootfs/stages/10-base
-# installs libglib2.0-0t64, libjson-glib-1.0-0 and libfdisk1 unconditionally,
-# while on the composed path those arrive only through mos-rauc's
+# WHY THIS ROOT EXISTS, separately from the full one. The retired stage chain
+# installed libglib2.0-0t64, libjson-glib-1.0-0 and libfdisk1 unconditionally,
+# while on the composed path they arrive only through mos-rauc's
 # `${shlibs:Depends}` -- so a rauc-declined composed image does not have them.
 # That was ruled RECORD, DO NOT GATE, on the ground that the composed world is
 # the more correct one: a library that arrives with its consumer and leaves with

@@ -1,6 +1,7 @@
 # PLAN-036 Compose rootfs from independently built Debian packages
 
-- **status**: implementing
+- **status**: completed
+- **completedAt**: 2026-08-31
 - **createdAt**: 2026-08-30 16:28
 - **approvedAt**: 2026-08-30 18:40
 - **relatedTask**: [RFCT-270](../task/RFCT-270.md)

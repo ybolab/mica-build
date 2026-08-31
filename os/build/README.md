@@ -413,20 +413,26 @@ bash os/build/run.sh --bundle               # build and SIGN the update bundle
 bash os/build/run.sh --bundle 1.2.3         # ... at a version
 bash os/build/run.sh --bundle --help
 
-bash os/build/run.sh --build-rootfs --board x64 --plan       # decide the chain
-bash os/build/run.sh --build-rootfs --board x64 --plan --without containers
+bash os/build/run.sh --build-rootfs --board x64 --plan       # decide the order and the tags
 ```
 
 `make os-image-cx3576-v2` and `make os-bundle-cx3576` are the top-level routes
 into `--mkimage-v2` and `--bundle`.
 
-`--build-rootfs` is the os/rootfs stage-chain driver (`src/stages.ts` decides,
-`src/stages-cli.ts` runs). `--without NAME` is **stage selection**: it leaves the
-`<n>-feature-NAME` stage out of the chain, refuses a name no feature stage
-matches rather than silently building the full image, and refuses to decline a
-stage that is not a feature. `os/rootfs/stages/README.md` has the whole
-mechanism; the caller-facing route is `os/rootfs/build-v2.sh`, which turns
-`WITH_CONTAINERS=0`, `WITH_MOSD=0` and `MOS_ROOTFS_WITHOUT` into these flags.
+`--build-rootfs` is the numbered-Dockerfile driver (`src/stages.ts` decides,
+`src/stages-cli.ts` runs). It takes the directory to build through
+`--stages-dir` and knows nothing else about it; `os/rootfs/build-v2.sh` points
+it at `os/rootfs/compose/`, which holds `10-compose` and `90-pack`.
+
+`--without NAME` is **stage selection** — it leaves an `<n>-feature-NAME` file
+out, refuses a name no feature file matches rather than silently building the
+full image, and refuses to decline a file that is not a feature. **Nothing
+passes it today.** The composition directory contains no feature files at all,
+so a decline reaches the image through the *resolution* instead, as fewer
+package names: `os/rootfs/build-v2.sh` folds `WITH_CONTAINERS=0`, `WITH_MOSD=0`
+and `MOS_ROOTFS_WITHOUT` into one list and hands it to
+`os/rootfs/packages/resolve.sh`, which refuses an unmatched feature name for the
+same reason this flag did.
 
 `--mkimage-v2`, `--mkimage-x64` and `--bundle` are **modes**, each recognised
 only in first position: anywhere else one would be forwarded to `bun test`,
@@ -499,7 +505,7 @@ src/mkimage-x64.ts         the x64 assembler
 src/mkimage-x64-cli.ts     its host half
 src/bundle.ts              the signed RAUC update bundle, both bootloaders
 src/bundle-cli.ts          its host half: the signing material, the epoch name, -latest
-src/stages.ts              os/rootfs/stages/ -> a chain: order, tags, args, and what is declined
+src/stages.ts              a directory of numbered Dockerfiles -> order, tags, args, and what is declined
 src/stages-cli.ts          the only file here that runs docker buildx
 src/**/*.test.ts           the suite; every refusal has a positive control beside it
 ```

@@ -19,10 +19,13 @@ make podman          # → os/pkgs/podman/out-$MOS_ARCH/
 | `aardvark-dns` | container-to-container name resolution |
 | `catatonit` | container init, for `--init` |
 
-`os/rootfs/stages/31-feature-containers.Dockerfile` copies the set into the
-rootfs through `PODMAN_DIR`, which `os/rootfs/build-v2.sh` stages from here.
-The rootfs build does not compile them: it fails naming the missing binary and
-the `MOS_ARCH=<arch> make podman` that produces it.
+The `podman` producer (`deb/podman/`) takes the set from here and packs it as
+`mos-podman`; the rootfs composition installs that package out of
+`_out/debs/<arch>/` and never sees this directory. The producer's `PREPARE`
+hook will build the seven binaries itself if they are absent, which is roughly
+three quarters of an hour inside a packaging hook -- `make os-deb-preflight`
+says so before `os-debs` starts, and `MOS_ARCH=<arch> make podman` is how to
+pay that cost where it can be seen.
 
 ## Bumping a version
 

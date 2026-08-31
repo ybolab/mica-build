@@ -33,13 +33,13 @@ The features are the `feature-*.pkgs` basenames plus **`radios`**, which has no
 manifest of its own: the radio packages are per-radio and `--radios` selects
 them, so `radios` is the switch deciding whether that family is consulted at
 all. It is the same thing `MOS_ROOTFS_WITHOUT=radios` means to
-`os/rootfs/build-v2.sh`, which drops `stages/30-feature-radios` whatever the
-board declares.
+`os/rootfs/build-v2.sh`, which drops the radio packages whatever the board
+declares.
 
-`radio-wifi.pkgs` names both `mos-wifi` and `mos-wifi-ap` because
-`os/rootfs/scripts/radios-packages.sh` installs `wpasupplicant` **and**
-`hostapd` for the single radio name `wifi`: a board declares that it has the
-radio, not which of station and access-point mode it will be asked to run.
+`radio-wifi.pkgs` names both `mos-wifi` and `mos-wifi-ap` because the single
+radio name `wifi` has always meant `wpasupplicant` **and** `hostapd`: a board
+declares that it has the radio, not which of station and access-point mode it
+will be asked to run.
 
 ## The resolver
 
