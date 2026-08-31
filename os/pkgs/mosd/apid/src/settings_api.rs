@@ -5,6 +5,8 @@
 
 use serde_json::Value;
 
+use crate::task_registry::TaskRecord;
+
 /// The mosd operations apid needs, JSON in and out.
 ///
 /// The power actions are here rather than executed locally because mosd owns
@@ -18,7 +20,7 @@ pub trait SettingsApi: Send + Sync {
     /// task id.
     async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<String>;
     /// Task record by id.
-    async fn get_task(&self, id: &str) -> anyhow::Result<Value> {
+    async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
         anyhow::bail!("task lookup is unavailable: `{id}`")
     }
     /// Live-state subtree at dot-path `path` (`""` = whole tree).
@@ -65,7 +67,7 @@ pub struct FakeSettings {
     /// whether the call happened and how often.
     transient_password_calls: std::sync::Mutex<usize>,
     next_task: std::sync::atomic::AtomicU64,
-    tasks: std::sync::Mutex<std::collections::BTreeMap<String, Value>>,
+    tasks: std::sync::Mutex<std::collections::BTreeMap<String, TaskRecord>>,
 }
 
 #[cfg(test)]
@@ -92,18 +94,19 @@ impl FakeSettings {
         let id = format!("fake-task-{sequence}");
         self.tasks.lock().unwrap().insert(
             id.clone(),
-            serde_json::json!({
-                "id": id,
-                "operation": operation,
-                "dotPath": path,
-                "source": "test",
-                "status": "finished",
-                "enqueuedAt": "2026-08-31T00:00:00.000Z",
-                "startedAt": "2026-08-31T00:00:00.000Z",
-                "finishedAt": "2026-08-31T00:00:00.000Z",
-                "outcome": "succeeded",
-                "foldedCount": 0
-            }),
+            TaskRecord {
+                id: id.clone(),
+                operation: operation.to_string(),
+                dot_path: path.to_string(),
+                source: "test".to_string(),
+                status: "finished".to_string(),
+                enqueued_at: "2026-08-31T00:00:00.000Z".to_string(),
+                started_at: Some("2026-08-31T00:00:00.000Z".to_string()),
+                finished_at: Some("2026-08-31T00:00:00.000Z".to_string()),
+                outcome: Some("succeeded".to_string()),
+                message: None,
+                folded_count: 0,
+            },
         );
         id
     }
@@ -218,7 +221,7 @@ impl SettingsApi for FakeSettings {
         Ok(self.completed_task("settings-write", path))
     }
 
-    async fn get_task(&self, id: &str) -> anyhow::Result<Value> {
+    async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
         self.tasks
             .lock()
             .unwrap()

@@ -47,6 +47,7 @@ use crate::bundle::Store;
 use crate::redact;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
+use crate::task_registry::{TaskRecord, TaskRegistry};
 use crate::token;
 
 /// Shared handler state.
@@ -61,6 +62,9 @@ pub struct AppState {
     /// `SettingsChanged` watcher (`bus_client::watch_settings_changed`) and
     /// by the two handlers that write under `access` themselves.
     access_cache: Arc<AccessCache>,
+    /// Notification-fed apply-task mirror. It serves only while its
+    /// `TaskChanged` subscription is live.
+    task_registry: Arc<TaskRegistry>,
 }
 
 impl AppState {
@@ -82,6 +86,7 @@ impl AppState {
             audit: Arc::new(Audit::journal_only()),
             bundles: Arc::new(Store::at_default()),
             access_cache: Arc::new(AccessCache::new()),
+            task_registry: Arc::new(TaskRegistry::new()),
         }
     }
 
@@ -90,6 +95,23 @@ impl AppState {
     /// subscription state by hand.
     pub(crate) fn access_cache(&self) -> &Arc<AccessCache> {
         &self.access_cache
+    }
+
+    pub(crate) fn task_registry(&self) -> &Arc<TaskRegistry> {
+        &self.task_registry
+    }
+
+    /// One task from the live registry, or a bounded direct bus read while the
+    /// subscription is unavailable. The generation check prevents that read
+    /// from overwriting a signal that arrived while it was in flight.
+    async fn task_record(&self, id: &str) -> anyhow::Result<TaskRecord> {
+        if let Some(task) = self.task_registry.get(id) {
+            return Ok(task);
+        }
+        let generation = self.task_registry.generation();
+        let task = self.api.get_task(id).await?;
+        self.task_registry.fill(generation, task.clone());
+        Ok(task)
     }
 
     /// Root the backoff counter and the audit ring in `state_dir`

@@ -22,6 +22,7 @@ use zbus::object_server::SignalEmitter;
 use crate::access_cache::AccessCache;
 use crate::bus_client::{self, BusSettings};
 use crate::settings_api::SettingsApi;
+use crate::task_registry::TaskRegistry;
 
 /// Kills the wrapped child on drop, including on panic.
 struct ChildGuard(Child);
@@ -79,6 +80,19 @@ impl FakeMosd {
         Self::settings_changed(&emitter, path, value_json)
             .await
             .map_err(|err| zbus::fdo::Error::Failed(format!("emit SettingsChanged: {err}")))?;
+        let task = serde_json::json!({
+            "id": "fake-task-1",
+            "operation": "settings-write",
+            "dotPath": path,
+            "source": ":1.9",
+            "status": "running",
+            "enqueuedAt": "2026-08-31T00:00:00.000Z",
+            "startedAt": "2026-08-31T00:00:01.000Z",
+            "foldedCount": 0
+        });
+        Self::task_changed(&emitter, &task.to_string())
+            .await
+            .map_err(|err| zbus::fdo::Error::Failed(format!("emit TaskChanged: {err}")))?;
         Ok("fake-task-1".to_string())
     }
 
@@ -88,6 +102,9 @@ impl FakeMosd {
         path: &str,
         value_json: &str,
     ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn task_changed(emitter: &SignalEmitter<'_>, task_json: &str) -> zbus::Result<()>;
 }
 
 /// Poll `predicate` until it holds or a ~2 s deadline passes, then report it.
@@ -155,9 +172,22 @@ async fn the_settings_changed_subscription_feeds_the_access_cache() {
             cache.lapsed();
         }
     });
+    let registry = Arc::new(TaskRegistry::new());
+    let task_watcher = tokio::spawn({
+        let registry = registry.clone();
+        let connection = watcher_connection.clone();
+        async move {
+            let _ = bus_client::watch_task_connection(&connection, &registry).await;
+            registry.lapsed();
+        }
+    });
     assert!(
         settles(|| cache.is_synchronised()).await,
         "the subscription never went live"
+    );
+    assert!(
+        settles(|| registry.is_synchronised()).await,
+        "the task subscription never went live"
     );
 
     // Fill the way the gate does: generation before the read, through the
@@ -183,6 +213,10 @@ async fn the_settings_changed_subscription_feeds_the_access_cache() {
         settles(|| cache.get().is_none()).await,
         "the access change never invalidated the cache"
     );
+    assert!(
+        settles(|| registry.get("fake-task-1").is_some()).await,
+        "TaskChanged never reached the registry"
+    );
 
     // A change elsewhere leaves a refilled cache standing: the filter is by
     // dot segments, not by 'any signal at all'.
@@ -206,5 +240,13 @@ async fn the_settings_changed_subscription_feeds_the_access_cache() {
         "the stream's end was never observed as a lapse"
     );
     assert_eq!(cache.get(), None, "nothing may be served across a lapse");
+    assert_eq!(
+        registry.get("fake-task-1"),
+        None,
+        "a stale running task must not be served across a lapse"
+    );
     watcher.await.expect("the watcher task must exit cleanly");
+    task_watcher
+        .await
+        .expect("the task watcher must exit cleanly");
 }
