@@ -148,9 +148,30 @@ case "$(control_field Depends "${WORK}/control")" in
 
     # A literal replacement, so nothing in ${SHLIBS} is read as a regular
     # expression or as a sed replacement escape.
+    #
+    # Scoped to the Depends FIELD, which is what README.md says and is not the
+    # same as scoped to lines that start with `Depends:`. A control field runs
+    # from its own `Name:` line to the next line that does not begin with a
+    # space or tab, so a wrapped Depends carries the token on a continuation
+    # line; a per-line scope would leave that one unexpanded and ship a literal
+    # `${shlibs:Depends}` in a real dependency list. Everywhere else the token
+    # is prose -- three templates in this tree explain themselves by naming it
+    # -- and prose is shipped as written. Substituting it there put a dependency
+    # list inside a Description sentence in a released package.
+    #
+    # The field extent is control_field's, character for character: that
+    # function is what decided a moment ago that this template asks for the
+    # token at all, and a scope that ended the field one line earlier than the
+    # predicate that opened it is the same shape of bug as the one above.
     awk -v rep="${SHLIBS}" '
         BEGIN { tok = "${shlibs:Depends}" }
-        { while ((i = index($0, tok)) > 0) $0 = substr($0, 1, i - 1) rep substr($0, i + length(tok)) }
+        /^[^ \t]/ {
+            i = index($0, ":")
+            in_depends = (i > 0 && substr($0, 1, i - 1) == "Depends")
+        }
+        in_depends {
+            while ((i = index($0, tok)) > 0) $0 = substr($0, 1, i - 1) rep substr($0, i + length(tok))
+        }
         { print }
     ' "${WORK}/control" >"${WORK}/control.subst"
     mv "${WORK}/control.subst" "${WORK}/control"
@@ -231,7 +252,15 @@ not_root="$(dpkg-deb --contents "${DEB}" | awk '$2 != "root/root" { print $2 " "
 [ -z "${not_root}" ] ||
     die "${DEB} carries paths that are not root/root, so the installed root would inherit a build user: ${not_root}"
 
-dpkg-deb --fsys-tarfile "${DEB}" | tar -tf - | sed -e 's|^\./||' -e 's|/$||' -e '/^$/d' |
+# --quoting-style=literal, and it is load-bearing. GNU tar C-escapes any
+# non-printable or non-ASCII byte when it lists under the C locale, while
+# `find -printf '%P\n'` below emits the raw bytes. Without it the two lists are
+# in different encodings, so a payload path like Mozilla's
+# `NetLock_Arany_=Class_Gold=_Fotanusitvany` anchor -- accented -- produces a
+# spurious diff, and this assertion refuses a correct archive while naming the
+# PAYLOAD as wrong. `literal` depends on no installed locale, which matters
+# because this runs in an image that has none.
+dpkg-deb --fsys-tarfile "${DEB}" | tar --quoting-style=literal -tf - | sed -e 's|^\./||' -e 's|/$||' -e '/^$/d' |
     LC_ALL=C sort >"${WORK}/payload.paths"
 (cd "${ROOT}" && find . -mindepth 1 -printf '%P\n') | LC_ALL=C sort >"${WORK}/staged.paths"
 if ! diff -u "${WORK}/staged.paths" "${WORK}/payload.paths" >"${WORK}/paths.diff"; then
