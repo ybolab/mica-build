@@ -1,0 +1,11 @@
+# The build context is os/rootfs/packages-src/ -- the driver builds from its
+# own directory -- and this producer uses NOTHING out of it. The control
+# template and this board's own copyright come over as the `boarddeb` context,
+# because they live beside this Dockerfile and not in the producer family
+# directory; the shared os/rootfs/packages-src/copyright is deliberately not
+# used here, since this payload carries vendor firmware and GPL-2.0 kernel
+# modules that it has to record on their own terms.
+#
+# Excluding everything also means an edit to the driver, the README or a
+# sibling producer does not invalidate this producer's context.
+*
