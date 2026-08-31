@@ -154,9 +154,19 @@ fi
 
 # The Dockerfile's src stage COPYs this, not versions.env itself, so that
 # editing a comment in versions.env does not invalidate every compile stage
-# below it. Comments and blank lines out, nothing else touched.
-sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' \
-    "${HERE}/versions.env" >"${HERE}/versions.lock"
+# below it.
+#
+# The stripping is os/pkgs/podman/versions-stamp.sh's and no longer this
+# script's: that file also computes the digest the export is stamped with at
+# the bottom of this script, and a build that normalised versions.env one way
+# and stamped it another would record a number describing an input it had not
+# used.
+VERSIONS_STAMP_SH="${HERE}/versions-stamp.sh"
+[ -f "${VERSIONS_STAMP_SH}" ] || {
+    echo "error: ${VERSIONS_STAMP_SH} does not exist; it is what derives versions.lock and what stamps the export with the digest of it" >&2
+    exit 1
+}
+bash "${VERSIONS_STAMP_SH}" --lock >"${HERE}/versions.lock"
 if [ ! -s "${HERE}/versions.lock" ]; then
     echo "error: versions.lock came out empty from versions.env; the src stage would clone nothing and the failure would surface as a missing binary" >&2
     exit 1
@@ -270,6 +280,23 @@ done
     echo "error: the build reported success but these binaries are not in ${OUT}:${missing}" >&2
     exit 1
 }
+
+# WHAT THESE BINARIES WERE COMPILED FROM, recorded beside them. Everything
+# above this line checks that the files are present, executable and the right
+# architecture -- and the comment at the top of this script has always said
+# what that leaves open: "a stale out/ from the other architecture looks
+# exactly like a fresh one to anything that only checks the files are
+# present". Reuse is the normal path (prepare.sh reuses a complete directory,
+# build-v2.sh stages one as it stands), so without this the version bump that
+# is this project's whole upgrade interface can be made, committed and shipped
+# while the device keeps running the engine from before it.
+#
+# Written on the HOST rather than exported from the Dockerfile, and safe there
+# for one reason: versions.lock is the src stage's COPY, so it is part of the
+# cache key of every stage below it. A build that served cached layers served
+# them for THIS lock; a changed lock invalidates the whole chain. So the digest
+# this script computes cannot describe an input the build did not use.
+bash "${VERSIONS_STAMP_SH}" --stamp "${OUT}"
 
 echo
 echo "=== ${OUT} ==="

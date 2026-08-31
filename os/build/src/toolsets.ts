@@ -127,7 +127,7 @@ export const X64_ASSEMBLY: Toolset = {
  * dm-verity, for the callers that format or verify a hash tree.
  *
  * Its own toolset rather than a package added to an assembler's: neither
- * assembler runs veritysetup. os/rootfs/stages/90-pack.Dockerfile formats the hash tree
+ * assembler runs veritysetup. os/rootfs/compose/90-pack.Dockerfile formats the hash tree
  * (M5's territory) and the os/verify suite verifies it (M4's), and the
  * assemblers only dd the finished image into a slot. Adding cryptsetup to
  * CX3576_ASSEMBLY to make one fewer toolset would put a package into the

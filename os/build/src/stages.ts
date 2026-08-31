@@ -1,19 +1,20 @@
-// The rootfs stage chain, as data.
+// The rootfs assembly files, as data.
 //
-// os/rootfs/stages/ holds one Dockerfile per stage, built in numeric order,
-// each FROM the local image tag the previous one was written to. This module
-// turns that directory into a plan -- which file, which tag, which build
-// arguments, which one exports the artifact -- and refuses a directory that
-// cannot be a chain. It runs nothing: src/stages-cli.ts is the only file that
-// invokes docker, so everything decided here is a pure function tested without
-// a daemon, and docker is the only external program the chain runs.
+// os/rootfs/compose/ holds the numbered Dockerfiles that build the root, in
+// numeric order, each FROM the local image tag the previous one was written to:
+// 10-compose installs the resolved package set, 90-pack closes and packs it.
+// This module turns that directory into a plan -- which file, which tag, which
+// build arguments, which one exports the artifact -- and refuses a directory
+// that cannot be built in sequence. It runs nothing: src/stages-cli.ts is the
+// only file that invokes docker, so everything decided here is a pure function
+// tested without a daemon.
 //
-// The stage list is the directory. There is no list of stages anywhere else,
-// deliberately: a stage added to the tree but not to a list would silently
-// never run. os/build-env's frontend check and os/tests/shell-pipefail-lint.sh
-// derive their file sets the same way. Adding a stage is adding a file.
+// The file list is the directory. There is no list anywhere else, deliberately:
+// a file added to the tree but not to a list would silently never run.
+// os/build-env's frontend check and os/tests/shell-pipefail-lint.sh derive their
+// file sets the same way. Adding a step is adding a file.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { OS_DIR } from './paths.ts'
@@ -21,7 +22,7 @@ import { OS_DIR } from './paths.ts'
 // This lives in os/build because build orchestration does, and it duplicates
 // nothing: the board model stays the single copy in os/verify/src/board.ts.
 
-export const STAGES_DIR: string = join(OS_DIR, 'rootfs', 'stages')
+export const STAGES_DIR: string = join(OS_DIR, 'rootfs', 'compose')
 
 /** The argument every stage but the first declares, and the driver supplies. */
 export const PREV_ARG = 'MOS_STAGE_PREV'
@@ -122,6 +123,41 @@ export function readStageFile(path: string, text: string): StageFile {
   }
 }
 
+/**
+ * A stage entry's path as DOCKER will have to open it.
+ *
+ * A symlink is how one file is shared by two directories, and it is how
+ * os/rootfs/compose reached the chain's 90-pack finalizer while both paths
+ * existed. NO ENTRY IN THIS REPOSITORY IS A SYMLINK TODAY: the chain is gone
+ * and the finalizer is a real file beside 10-compose. The resolution is kept
+ * because the reason it exists is a property of buildx rather than of that one
+ * arrangement, and it is exercised by its own test against a fixture.
+ *
+ * The path recorded here is handed to `docker buildx build -f`. That does NOT
+ * open the file locally: buildx transfers the dockerfile as a filtered
+ * mini-context of its own and the frontend opens it on the other side, so a
+ * symlink arrives as a symlink and its target, one directory up, is outside
+ * what was transferred. Measured on this host against buildx 0.32.2, on the
+ * docker-container AND the default docker driver alike:
+ *
+ *   #2 transferring dockerfile: 114B done
+ *   ERROR: failed to solve: failed to read dockerfile:
+ *          open probe.Dockerfile: no such file or directory
+ *
+ * 114 bytes is the tar entry for the LINK, not the 42 bytes of the file it
+ * names. Handing docker the resolved path is what makes sharing a stage file
+ * work; the same build with -f pointing at the target succeeds unchanged.
+ *
+ * Resolved only when the entry IS a symlink, so a regular stage file's path is
+ * the one the caller asked about -- a blanket realpath would also rewrite every
+ * fault message's path when the repository itself sits under a symlinked
+ * parent, which is a different thing from what this fixes.
+ */
+function stagePath(dir: string, entry: string): string {
+  const full = join(dir, entry)
+  return lstatSync(full).isSymbolicLink() ? realpathSync(full) : full
+}
+
 /** Read every stage file in a directory, in chain order. */
 export function discoverStages(dir: string = STAGES_DIR): StageFile[] {
   let entries: string[]
@@ -132,10 +168,13 @@ export function discoverStages(dir: string = STAGES_DIR): StageFile[] {
       { path: dir, message: `cannot be read, so the chain has no stages: ${String(cause)}` },
     ])
   }
+  // statSync and not lstatSync in the filter: it follows the link, so a symlink
+  // to a stage file is a stage file and a symlink to a directory is not.
   const stages = entries
     .filter((e) => e.endsWith('.Dockerfile'))
     .filter((e) => statSync(join(dir, e)).isFile())
-    .map((e) => readStageFile(join(dir, e), readFileSync(join(dir, e), 'utf8')))
+    .map((e) => stagePath(dir, e))
+    .map((p) => readStageFile(p, readFileSync(p, 'utf8')))
   stages.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   return stages
 }
@@ -626,7 +665,7 @@ export function ociRecord(fields: {
   readonly sourceDateEpoch: string
 }): string {
   return [
-    `# The ${fields.board} factory root, exported as an OCI image by os/rootfs/stages/90-pack.Dockerfile.`,
+    `# The ${fields.board} factory root, exported as an OCI image by os/rootfs/compose/90-pack.Dockerfile.`,
     '# The root the self-built binaries are executed in before the image ships them.',
     `# Load it with: docker load -i ${fields.archive}`,
     '#',

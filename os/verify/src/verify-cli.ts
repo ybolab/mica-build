@@ -22,13 +22,14 @@
 // printed when its counters died in a subshell, and it is invariant under a run
 // in which nothing executed, so an empty run is turned red here by count.
 
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { loadBoard, type Board } from './board.ts'
 import { CHECKS, createImageContext, runChecks } from './checks.ts'
 import { BOARDS_DIR, boardEnvPath, REPO_ROOT } from './paths.ts'
 import { probeImage } from './probe.ts'
 import { chooseRoute, createToolRuntime, missingHostTools, type ToolRuntime } from './tools.ts'
+import { prepareWorkDir } from './workspace.ts'
 
 interface Options {
   board: string
@@ -47,7 +48,8 @@ function usage(): string {
     '  --board NAME   which board this image is. Defaults to $MOS_BOARD.',
     '  --image PATH   the image to verify. Defaults to',
     '                 _out/<board>/<IMAGE_LATEST_NAME> -- the path make os-image-* writes',
-    '  --work PATH    where extracted partitions are cached (default _out/verify/<board>)',
+    '  --work PATH    where the image is extracted. Emptied at the start of every run;',
+    '                 default _out/verify/<board>',
     '  --probe        also drive every image helper and print what it read',
     '',
     'exit: 0 every check passed  1 a check failed, threw, or nothing ran',
@@ -160,8 +162,10 @@ async function main(): Promise<number> {
   // an image and another route for the rest.
   const route = chooseRoute(process.env['MOS_VERIFY_TOOLS'], await missingHostTools())
 
-  const workDir = join(options.workRoot, board.name)
-  mkdirSync(workDir, { recursive: true })
+  // EMPTIED, not reused: a workspace left by an earlier run holds files named
+  // after the slot rather than after the image, and a reader that finds one
+  // there skips the extraction. See workspace.ts for what that reported.
+  const workDir = prepareWorkDir(options.workRoot, board.name)
   // Identity mounts, and _out/ rather than /tmp -- see tools.ts. The image and
   // the repository are handed to the tools from OUTSIDE, and a bind mount of
   // /tmp on this host succeeds and delivers an empty directory.
