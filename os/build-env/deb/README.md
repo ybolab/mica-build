@@ -55,6 +55,7 @@ substitution, safe to source and to parse.
 | `FROM_IMAGES` | no | `<build-arg name>=<images.env key>`, resolved by `os/build-env/from.sh`. The packer image is always supplied; `FROM_IMAGES` declares additional bases only |
 | `BUILD_ARGS` | no | extra `<name>=<value>` build arguments |
 | `PREPARE` | no | a script in the producer directory, run on the host before the build |
+| `PREFLIGHT` | no | `1` if that hook honours `MOS_DEB_PREFLIGHT=1`; see below |
 
 `ARCHES=all` means the package is architecture-independent. `all` may not be
 mixed with a specific architecture: an `all` package is already a member of
@@ -74,6 +75,33 @@ express, which is what lets one generic driver build all of them.
 `build.sh` always passes `packer` (this directory) as a build context, because
 `pack.sh` is the packaging contract and an edit to it must take effect without
 rebuilding the builder family.
+
+### `preflight.sh` -- every missing input at once
+
+`make os-debs` builds the discovered producers in sequence and each checks its
+own inputs when its turn comes, so a missing input surfaced **after** the
+producers ahead of it had been packed, named one file, and the next one was
+learned on the next attempt. `os/build-env/deb/preflight.sh` runs first -- it is
+a prerequisite of `os-debs` and the target `make os-deb-preflight` -- and
+reports all of them together: every `BUILD_CONTEXTS` path, every `PREPARE` hook
+file, every base image `FROM_IMAGES` and the packer resolve to, and whatever a
+producer's own hook checks. It prints what it examined and refuses to report
+success over a count of zero. It builds nothing and starts no container.
+
+A hook that no key can describe -- `os/boards/cx3576/deb/board-cx3576/render.sh`
+picks its BSP artefacts through `BOARD_DIR`, which is chosen at run time and so
+cannot be a fixed path in `producer.env` -- opts in with `PREFLIGHT="1"`. It is
+then also run with `MOS_DEB_PREFLIGHT=1`, `MOS_DEB_ARCH` and the producer/repo
+variables, and **no** `MOS_DEB_STAGE`: there is nothing to stage into yet. In
+that mode a hook must either exit non-zero having printed every missing input,
+or exit zero having printed `preflight-examined: <count>`. The count is
+required, because a hook that reports success without saying what it looked at
+is indistinguishable from one that looked at nothing.
+
+Opt-in per producer, not automatic: a hook that has not been taught the variable
+would do its full work instead, and the podman hook compiles a container engine.
+A pre-flight that compiles is not a pre-flight -- and PLAN-036 section 4 already
+says composition does not compile a component.
 
 ### Adding one
 
