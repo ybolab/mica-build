@@ -127,7 +127,27 @@ if ! command -v veritysetup >/dev/null 2>&1; then
     panic "mos-verity: veritysetup is not in this initramfs. Nothing has been verified and nothing is wrong with the image; the initrd is missing a binary the mos-verity hook was supposed to copy in."
 fi
 
+# --no-superblock is the DEVICE side of the convention 7bc518d changed, and it
+# was the side that commit missed. 7bc518d moved the format to --no-superblock
+# and updated two of the three consumers of that convention: the writer,
+# os/rootfs/scripts/pack-verity.sh, and the reader, os/verify's walk. This
+# line is the third, and the only one that runs on the device. Since that
+# commit the hash tree begins exactly at --hash-offset, where the superblock
+# used to be, so an open without the flag reads tree bytes as a superblock and
+# answers "Device <dev> is not a valid VERITY device" -- an image that is
+# perfectly intact, refused.
+#
+# THIS FILE IS THE X64 BOOT PATH, which is why the miss was fatal there rather
+# than cosmetic: Debian's kernel is modular, dm-init is a module, and the
+# dm-mod.create= cmdline is ignored with "dm_mod: unknown parameter 'create'
+# ignored", so nothing else assembles the root. cx3576 boots the same images
+# because its vendor kernel has dm-init built in and takes that cmdline, which
+# is why a bench device stayed green while every x64 image was unbootable.
+#
+# Whoever changes the verity format next: the consumers are the writer, the
+# verifier and this call. Enumerate them, not the files you remember.
 veritysetup open "${data}" mos-root "${hash}" "${root_hash}" \
+    --no-superblock \
     --hash-offset="$((hash_start * hash_bs))" \
     --data-block-size="${data_bs}" \
     --hash-block-size="${hash_bs}" \

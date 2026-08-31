@@ -457,3 +457,25 @@ been merged yet", which is a different question and one that keeps moving.
 Two false claims in this campaign would have been caught before they were sent
 by reconciling `git status --porcelain` against the list of files the report
 claimed to have changed — in the same terminal output as the claim.
+
+**Enumerate the consumers of a changed convention, not the files you remember.**
+7bc518d moved the dm-verity format to `--no-superblock`. That convention has
+exactly three consumers: the writer, `os/rootfs/scripts/pack-verity.sh`; the
+verifier, `verityVerify` in `os/verify/src/image.ts` together with the
+`verity-hash-start-no-superblock` check the same commit added; and the
+device-side opener, `os/rootfs/initramfs/scripts/mos-verity`, whose
+`veritysetup open` is what actually assembles the root at boot. The spec
+enumerated the files it knew and updated the first two. The third was never
+listed — and the commit even flagged the *unused*
+`os/build/src/tools/veritysetup.ts` wrapper as a future trap, so the inert
+consumer got attention while the load-bearing one did not. The result was an
+image that is intact and refuses itself: the tree now begins exactly at the
+hash offset, so an open without the flag reads tree bytes as a superblock and
+answers `Device /dev/vda4 is not a valid VERITY device`. Nothing static could
+see it. `os/verify` walks the tree with the corrected convention and passes;
+the package gates pass; the composer is innocent. It surfaced on the first
+QEMU boot of a composed x64 image, and only there, because on cx3576 the
+vendor kernel has dm-init built in and boots from `dm-mod.create=` while
+Debian's modular kernel ignores that cmdline — so the bench board stayed green
+and the initramfs script was the whole x64 boot path. Enumerating the callers
+of the changed convention would have listed all three in one grep.
