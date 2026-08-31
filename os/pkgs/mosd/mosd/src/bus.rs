@@ -952,7 +952,7 @@ impl MosdService {
         self.request_mark(sender_of(&header), state, slot).await
     }
 
-    /// Set a TRANSIENT root password, then re-apply every reconciler.
+    /// Set a TRANSIENT root password, then re-apply the SSH subtree.
     ///
     /// Exported as `SetTransientRootPassword`. The password lives until the
     /// next boot, when `mos-shadow-reconcile` clears the root hash it wrote;

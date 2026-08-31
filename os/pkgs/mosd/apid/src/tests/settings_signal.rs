@@ -177,7 +177,7 @@ async fn the_settings_changed_subscription_feeds_the_access_cache() {
         let registry = registry.clone();
         let connection = watcher_connection.clone();
         async move {
-            let _ = bus_client::watch_task_connection(&connection, &registry).await;
+            let _ = bus_client::watch_task_connection(&connection, &registry, None).await;
             registry.lapsed();
         }
     });

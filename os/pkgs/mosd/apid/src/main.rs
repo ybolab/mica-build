@@ -171,6 +171,7 @@ async fn serve() -> anyhow::Result<()> {
     tokio::spawn(bus_client::watch_tasks(
         config.bus,
         state.task_registry().clone(),
+        state.audit().clone(),
     ));
 
     let https_listener = std::net::TcpListener::bind(&config.https_addr)

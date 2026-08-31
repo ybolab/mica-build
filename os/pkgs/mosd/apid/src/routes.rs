@@ -46,7 +46,7 @@ use crate::auth::{self, GuardStore};
 use crate::bundle::Store;
 use crate::redact;
 use crate::session::{self, SessionStore};
-use crate::settings_api::SettingsApi;
+use crate::settings_api::{InvalidTaskPayload, SettingsApi};
 use crate::task_registry::{TaskRecord, TaskRegistry};
 use crate::token;
 
@@ -108,10 +108,45 @@ impl AppState {
         if let Some(task) = self.task_registry.get(id) {
             return Ok(task);
         }
+        let stale = self.task_registry.stale(id);
         let generation = self.task_registry.generation();
-        let task = self.api.get_task(id).await?;
+        let task = match self.api.get_task(id).await {
+            Ok(task) => task,
+            Err(err) if is_task_not_found(&err) && stale.is_some() => {
+                let mut task = stale.expect("matched Some above");
+                if !task.terminal() {
+                    task.status = "finished".to_string();
+                    task.finished_at = Some(
+                        chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    );
+                    task.outcome = Some("interrupted".to_string());
+                    task.message = Some(
+                        "mosd restarted or rolled over its bounded task history before this apply's terminal signal was retained; startup reconciliation converges persisted settings"
+                            .to_string(),
+                    );
+                }
+                task
+            }
+            Err(err) => return Err(err),
+        };
         self.task_registry.fill(generation, task.clone());
         Ok(task)
+    }
+
+    /// The bounded task history from the live signal mirror, or from mosd's
+    /// live-state snapshot while the subscription is unavailable.
+    async fn task_records(&self) -> anyhow::Result<Vec<TaskRecord>> {
+        if let Some(tasks) = self.task_registry.list() {
+            return Ok(tasks);
+        }
+        let generation = self.task_registry.generation();
+        let state = self.api.get_state("").await?;
+        let tasks = match state.get("tasks") {
+            Some(tasks) => serde_json::from_value(tasks.clone()).map_err(InvalidTaskPayload)?,
+            None => Vec::new(),
+        };
+        self.task_registry.fill_list(generation, tasks.clone());
+        Ok(self.task_registry.list().unwrap_or(tasks))
     }
 
     /// Root the backoff counter and the audit ring in `state_dir`
@@ -346,6 +381,11 @@ const V1_REBOOT_PATH: &str = "/v1/actions/reboot";
 const V1_POWEROFF_PATH: &str = "/v1/actions/poweroff";
 const V1_TRANSIENT_PASSWORD_PATH: &str = "/v1/actions/transient-root-password";
 
+/// Apply-task history and one task by id.
+const V1_TASKS_PATH: &str = "/v1/tasks";
+const V1_TASKS_PREFIX: &str = "/v1/tasks/";
+const V1_TASK_ROUTE: &str = "/v1/tasks/{id}";
+
 /// M8's one route.
 ///
 /// Not under `/v1/actions/`, and the reason is the reason section 2.3 item
@@ -439,6 +479,8 @@ fn api_router() -> Router<AppState> {
             get(api_v1_settings).put(api_v1_settings_write),
         )
         .route(V1_STATE_ROUTE, get(api_v1_state))
+        .route(V1_TASKS_PATH, get(api_v1_tasks_list))
+        .route(V1_TASK_ROUTE, get(api_v1_task))
         .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
         // §3.2's token lifecycle. All three take a bearer token and nothing
         // else; the browser's way in is `POST /builtin/tokens`.
@@ -560,6 +602,8 @@ fn is_declared_api_route(path: &str) -> bool {
         leaf == VERSIONS_PATH
             || leaf == V1_META_PATH
             || leaf == V1_HEALTH_PATH
+            || leaf == V1_TASKS_PATH
+            || collection_item(leaf, V1_TASKS_PREFIX).is_some()
             || leaf == V1_CHANGE_PASSWORD_PATH
             || leaf == V1_TOKENS_PATH
             || token_id(leaf).is_some()
@@ -929,6 +973,14 @@ pub(crate) async fn api_v1_health(_bearer: ApiBearer, State(state): State<AppSta
 #[serde(transparent)]
 pub(crate) struct ResourceValue(Value);
 
+/// A persisted settings write whose reconciliation continues asynchronously.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TaskAccepted {
+    /// Poll this id at `GET /api/v1/tasks/{id}`.
+    task_id: String,
+}
+
 /// Read the settings tree at a dot-path.
 ///
 /// The dot-path is the resource identifier. Secrets are redacted in the
@@ -947,6 +999,7 @@ pub(crate) struct ResourceValue(Value);
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1119,15 +1172,14 @@ fn settings_write_refusal(path: &str) -> Response {
 #[serde(transparent)]
 pub(crate) struct SettingsWrite(Value);
 
-// No body on success on purpose: echoing the written value invites a client
-// to trust the echo over its own GET.
+// The success body names the queued apply only; it never echoes the setting,
+// which would invite a client to trust the echo over its own GET.
 /// Write one scalar setting by dot-path.
 ///
 /// Accepts four paths and no others: `hostname`, `access.ssh.enabled`,
 /// `container.enabled` and `mqtt.enabled`. Any other path is refused.
 ///
-/// Answers **204** with no body on success. Takes a bearer token or a session
-/// cookie.
+/// Answers **202** with the queued task id on success. Takes a bearer token.
 #[utoipa::path(
     put,
     path = V1_SETTINGS_DOC,
@@ -1136,7 +1188,7 @@ pub(crate) struct SettingsWrite(Value);
     params(("path" = String, Path, description = "The settings dot-path to write: `hostname`, `access.ssh.enabled`, `container.enabled` or `mqtt.enabled`")),
     request_body = SettingsWrite,
     responses(
-        (status = 204, description = "The value was written: mosd has persisted it and re-applied the reconcilers whose subtree overlaps the path"),
+        (status = 202, description = "The value was persisted and its scoped reconciliation was queued", body = TaskAccepted),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "The dot-path names no root the settings schema has (`settings_not_found`)", body = ApiError),
@@ -1144,6 +1196,7 @@ pub(crate) struct SettingsWrite(Value);
         (status = 422, description = "The body carries the redaction sentinel, or is the wrong shape for this setting, or the dot-path is malformed (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1151,6 +1204,7 @@ pub(crate) async fn api_v1_settings_write(
     _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(path): Path<String>,
+    Source(source): Source,
     body: Result<Json<SettingsWrite>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let Json(SettingsWrite(value)) = match body {
@@ -1189,20 +1243,71 @@ pub(crate) async fn api_v1_settings_write(
             ApiError::apid("validation_failed", message).at(&path),
         );
     }
-    if let Err(err) = state.api.set_settings(&path, &value).await {
-        return bus_api_error(&err, Some(&path));
-    }
+    let task_id = match state.api.set_settings(&path, &value).await {
+        Ok(task_id) => task_id,
+        Err(err) => return bus_api_error(&err, Some(&path)),
+    };
+    state.audit.record("settings-write", "accepted", &source);
     // No `access_cache` invalidation, and that is not an omission: mosd emits
     // `SettingsChanged` for the path it wrote and the subscription drops the
     // cache for anything under `access`, which is exactly what the `access.ssh`
     // form path already relies on. The token routes invalidate by hand because
     // a revocation must bite on the very next request; nothing here is a
     // credential.
-    (
-        StatusCode::NO_CONTENT,
-        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
-    )
-        .into_response()
+    api_response(StatusCode::ACCEPTED, TaskAccepted { task_id })
+}
+
+/// List mosd's bounded apply-task history, oldest first.
+#[utoipa::path(
+    get,
+    path = V1_TASKS_PATH,
+    context_path = API,
+    tag = "tasks",
+    responses(
+        (status = 200, description = "The bounded apply-task history, oldest first", body = Vec<TaskRecord>),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`)", body = ApiError),
+        (status = 500, description = "mosd returned an invalid task record or failed to answer (`mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_tasks_list(
+    _bearer: ApiBearer,
+    State(state): State<AppState>,
+) -> Response {
+    match state.task_records().await {
+        Ok(tasks) => api_response(StatusCode::OK, tasks),
+        Err(err) => bus_api_error(&err, None),
+    }
+}
+
+/// Read one apply task by the id returned with a settings or transient-password write.
+#[utoipa::path(
+    get,
+    path = V1_TASK_ROUTE,
+    context_path = API,
+    tag = "tasks",
+    params(("id" = String, Path, description = "The task id returned by a 202 response")),
+    responses(
+        (status = 200, description = "The latest known task record", body = TaskRecord),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`)", body = ApiError),
+        (status = 404, description = "No retained task has this id (`task_not_found`)", body = ApiError),
+        (status = 500, description = "mosd returned an invalid task record or failed to answer (`mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_task(
+    _bearer: ApiBearer,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    match state.task_record(&id).await {
+        Ok(task) => api_response(StatusCode::OK, task),
+        Err(err) => task_api_error(&err, &id),
+    }
 }
 
 /// Read the live-state tree at a dot-path.
@@ -1223,6 +1328,7 @@ pub(crate) async fn api_v1_settings_write(
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`); a dot-path that does not resolve is the 404 above", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1274,6 +1380,7 @@ pub(crate) struct WireguardRotation {
         (status = 422, description = "The entry exists and is not a WireGuard one (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1351,6 +1458,7 @@ pub(crate) struct MintedToken {
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1397,6 +1505,7 @@ pub(crate) async fn api_v1_tokens_list(
         (status = 422, description = "The name is empty, over 256 bytes, or holds a control character (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), no free id was drawn (`mint_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1485,6 +1594,7 @@ pub(crate) async fn api_v1_tokens_mint(
         (status = 422, description = "The id is not a token id at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1812,6 +1922,7 @@ async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), 
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1855,6 +1966,7 @@ pub(crate) async fn api_v1_ssh_keys_list(
         (status = 422, description = "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -1956,6 +2068,7 @@ pub(crate) async fn api_v1_ssh_keys_add(
         (status = 422, description = "The path segment is not a fingerprint at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2058,6 +2171,7 @@ async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<()
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2103,6 +2217,7 @@ pub(crate) async fn api_v1_wifi_networks_list(
         (status = 422, description = "The body carries the redaction sentinel, is not a network the settings model holds, or carries a `psk` outside IEEE 802.11i's 8..63 characters that is not a 64-digit hex PMK either (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2222,6 +2337,7 @@ pub(crate) async fn api_v1_wifi_networks_add(
         (status = 404, description = "No stored network carries that SSID (`settings_not_found`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2546,6 +2662,7 @@ fn json_body<T: serde::de::DeserializeOwned>(
         (status = 422, description = "The body is not a map of interfaces, a key is not an interface name, an entry declares a static address that is not IPv4 CIDR notation, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2613,6 +2730,7 @@ pub(crate) async fn api_v1_network_write(
         (status = 422, description = "The name is not an interface name, the body is not an interface, the entry declares a static address that is not IPv4 CIDR notation, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2678,6 +2796,7 @@ pub(crate) async fn api_v1_network_iface_write(
         (status = 422, description = "The name is not an interface name, or removing the entry breaks a relational rule -- a bridge still lists it as a port, a VLAN still names it as a parent (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2798,6 +2917,7 @@ async fn api_write_peers(
         (status = 422, description = "The name is not an interface name, or the entry is not a WireGuard one (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2845,6 +2965,7 @@ pub(crate) async fn api_v1_peers_list(
         (status = 422, description = "The name is not an interface name, the entry is not a WireGuard one, or the peer is one the reconciler would refuse -- a public key that is not 32 bytes of base64, an allowed IP that is not a CIDR, an endpoint that is not `host:port` (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2917,6 +3038,7 @@ pub(crate) async fn api_v1_peers_add(
         (status = 422, description = "The interface name is not one, the entry is not a WireGuard one, or the path segment is not a WireGuard public key at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -2981,7 +3103,12 @@ fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
 /// `Some`, and the classification above is shared rather than copied.
 pub(crate) fn bus_api_error(err: &anyhow::Error, path: Option<&str>) -> Response {
     tracing::warn!(error = %err, path = path.unwrap_or_default(), "mosd call failed");
-    let (status, error) = if err
+    let (status, error) = if err.downcast_ref::<InvalidTaskPayload>().is_some() {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::mosd("mosd_failed", format!("{err:#}")),
+        )
+    } else if err
         .downcast_ref::<crate::bus_client::MosdCallTimeout>()
         .is_some()
     {
@@ -3039,6 +3166,27 @@ pub(crate) fn bus_api_error(err: &anyhow::Error, path: Option<&str>) -> Response
             .insert(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS));
     }
     response
+}
+
+/// Task lookup has the same transport classifications as other mosd calls,
+/// but its missing item is not a missing settings path.
+fn task_api_error(err: &anyhow::Error, id: &str) -> Response {
+    if is_task_not_found(err) {
+        return api_response(
+            StatusCode::NOT_FOUND,
+            ApiError::mosd("task_not_found", format!("task not found: `{id}`")),
+        );
+    }
+    bus_api_error(err, None)
+}
+
+fn is_task_not_found(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<crate::settings_api::TaskNotFound>()
+        .is_some()
+        || matches!(
+            err.downcast_ref::<zbus::Error>(),
+            Some(zbus::Error::MethodError(name, _, _)) if name.as_str() == MOSD_NOT_FOUND
+        )
 }
 
 /// §2.4's last row, which is exhaustive over everything the three above do not
@@ -3336,13 +3484,16 @@ pre{background:#f4f4f4;padding:.5rem;overflow-x:auto}\
 .saved{background:#dfd;border:1px solid #080;padding:.5rem 1rem;margin-bottom:1rem}";
 
 /// Shared page shell; `nav` adds the pane navigation bar.
-fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
+fn shell(title: &str, nav: bool, refresh: Option<&str>, body: Markup) -> Html<String> {
     let markup = html! {
         (DOCTYPE)
         html {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
+                @if let Some(refresh) = refresh {
+                    meta http-equiv="refresh" content=(refresh);
+                }
                 title { (title) " — mos" }
                 style { (PreEscaped(STYLE)) }
             }
@@ -3378,12 +3529,18 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
 
 /// Bare page without navigation (setup, login, error pages).
 fn page(title: &str, body: Markup) -> Html<String> {
-    shell(title, false, body)
+    shell(title, false, None, body)
 }
 
 /// Authenticated pane with the navigation bar.
 fn pane(title: &str, body: Markup) -> Html<String> {
-    shell(title, true, body)
+    shell(title, true, None, body)
+}
+
+/// A zero-JavaScript pane that asks the browser to refresh while an apply is
+/// still queued or running.
+fn refreshing_pane(title: &str, refresh: Option<&str>, body: Markup) -> Html<String> {
+    shell(title, true, refresh, body)
 }
 
 fn error_box(message: &str) -> Markup {
@@ -3394,10 +3551,60 @@ fn saved_banner() -> Markup {
     html! { div.saved { "Settings saved." } }
 }
 
-/// `?saved=1` marker appended after a successful pane submit.
+struct TaskPaneStatus {
+    banner: Markup,
+    refresh: Option<String>,
+}
+
+async fn task_pane_status(app: &AppState, task_id: &str, path: &str) -> TaskPaneStatus {
+    match app.task_record(task_id).await {
+        Ok(task) if !task.terminal() => TaskPaneStatus {
+            banner: html! {
+                div.saved {
+                    "Settings saved; applying now (task " code { (task.id) } ")."
+                }
+            },
+            refresh: Some(format!("1;url={path}?task={task_id}")),
+        },
+        Ok(task) if task.outcome.as_deref() == Some("succeeded") => TaskPaneStatus {
+            banner: html! {
+                div.saved {
+                    "Settings applied successfully (task " code { (task.id) } ")."
+                    @if task.folded_count > 0 {
+                        " " (task.folded_count) " later submission(s) were folded into this apply."
+                    }
+                }
+            },
+            refresh: None,
+        },
+        Ok(task) => TaskPaneStatus {
+            banner: error_box(
+                task.message
+                    .as_deref()
+                    .unwrap_or("The settings were saved, but applying them failed."),
+            ),
+            refresh: None,
+        },
+        Err(err) => TaskPaneStatus {
+            // A missing task after a daemon restart/history rollover is a
+            // terminal UI state: never leave a browser polling forever.
+            banner: error_box(&format!(
+                "Apply status is no longer available; the daemon may have restarted or its bounded history may have rolled over. {err:#}"
+            )),
+            refresh: None,
+        },
+    }
+}
+
+fn task_redirect(path: &str, task_id: &str) -> Response {
+    Redirect::to(&format!("{path}?task={task_id}")).into_response()
+}
+
+/// A legacy saved marker or the id of an asynchronous apply to display.
 #[derive(serde::Deserialize)]
 struct SavedQuery {
     saved: Option<String>,
+    task: Option<String>,
 }
 
 // Validation
@@ -4060,6 +4267,7 @@ const SETUP_TOKEN_NAME: &str = "first-run setup";
         (status = 422, description = "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, a static address is not IPv4 CIDR notation, or a relational rule refuses the resulting map -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them", body = ApiError),
         (status = 500, description = "Hashing the password failed (`hash_failed`), the stored token list could not be read (`settings_invalid`), no free token id was drawn (`mint_failed`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -4599,6 +4807,7 @@ pub(crate) struct ChangePasswordRequest {
         (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
         (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -6071,10 +6280,10 @@ async fn write_key_list(app: &AppState, keys: &[AuthorizedKey]) -> Response {
     // Infallible: `AuthorizedKey` is a struct of strings with no map keys that
     // could collide.
     let value = serde_json::to_value(keys).expect("authorized keys serialize");
-    if let Err(err) = app.api.set_settings(SSH_KEYS_PATH, &value).await {
-        return bus_error(&err);
+    match app.api.set_settings(SSH_KEYS_PATH, &value).await {
+        Ok(task_id) => task_redirect("/ssh", &task_id),
+        Err(err) => bus_error(&err),
     }
-    Redirect::to("/ssh?saved=1").into_response()
 }
 
 /// Re-render the pane with `message` in an error box, at 422.
@@ -6082,7 +6291,7 @@ async fn ssh_error(app: &AppState, message: &str) -> Response {
     match load_ssh_view(app).await {
         Ok(view) => (
             StatusCode::UNPROCESSABLE_ENTITY,
-            ssh_page(&view, Some(error_box(message))),
+            ssh_page(&view, Some(error_box(message)), None),
         )
             .into_response(),
         Err(err) => bus_error(&err),
@@ -6147,12 +6356,13 @@ fn key_entry_markup(entry: &AuthorizedKey) -> Markup {
     }
 }
 
-fn ssh_page(view: &SshView, banner: Option<Markup>) -> Html<String> {
+fn ssh_page(view: &SshView, banner: Option<Markup>, refresh: Option<&str>) -> Html<String> {
     let effective = view.flag("passwordAuthentication");
     let requested = view.flag("passwordAuthenticationRequested");
     let transient_active = view.flag("transientPasswordActive");
-    pane(
+    refreshing_pane(
         "SSH",
+        refresh,
         html! {
             @if let Some(banner) = banner { (banner) }
             @for problem in &view.problems { (error_box(problem)) }
@@ -6199,8 +6409,16 @@ fn ssh_page(view: &SshView, banner: Option<Markup>) -> Html<String> {
 async fn ssh_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
     match load_ssh_view(&app).await {
         Ok(view) => {
-            let banner = query.saved.is_some().then(saved_banner);
-            ssh_page(&view, banner).into_response()
+            let task = match query.task.as_deref() {
+                Some(task_id) => Some(task_pane_status(&app, task_id, "/ssh").await),
+                None => None,
+            };
+            let banner = task
+                .as_ref()
+                .map(|status| status.banner.clone())
+                .or_else(|| query.saved.is_some().then(saved_banner));
+            let refresh = task.as_ref().and_then(|status| status.refresh.as_deref());
+            ssh_page(&view, banner, refresh).into_response()
         }
         Err(err) => bus_error(&err),
     }
@@ -6214,14 +6432,15 @@ struct SshEnableForm {
 
 async fn ssh_enable(State(app): State<AppState>, Form(form): Form<SshEnableForm>) -> Response {
     let enabled = form.enabled.is_some();
-    if let Err(err) = app
+    let task_id = match app
         .api
         .set_settings("access.ssh.enabled", &Value::Bool(enabled))
         .await
     {
-        return bus_error(&err);
-    }
-    Redirect::to("/ssh?saved=1").into_response()
+        Ok(task_id) => task_id,
+        Err(err) => return bus_error(&err),
+    };
+    task_redirect("/ssh", &task_id)
 }
 
 /// Everything the container pane renders, gathered before any markup is built.
@@ -6710,13 +6929,14 @@ async fn ssh_password(
     if let Err(message) = validate_transient_password(&form.password) {
         return ssh_error(&app, &message).await;
     }
-    if let Err(err) = app.api.set_transient_root_password(&form.password).await {
-        return bus_error(&err);
-    }
+    let task_id = match app.api.set_transient_root_password(&form.password).await {
+        Ok(task_id) => task_id,
+        Err(err) => return bus_error(&err),
+    };
     // The event carries who opened a password channel and from where — and
     // deliberately nothing about the password itself.
     app.audit.record("transient-password", "set", &source);
-    Redirect::to("/ssh?saved=1").into_response()
+    task_redirect("/ssh", &task_id)
 }
 
 /// `POST /api/v1/actions/transient-root-password` request body.
@@ -6740,7 +6960,7 @@ pub(crate) struct TransientRootPasswordRequest {
 /// the next reboot. A **422** states which bound was broken and never repeats
 /// the password back.
 ///
-/// Answers **204** once the password is actually set.
+/// Answers **202** once the password hash is written and its scoped apply is queued.
 #[utoipa::path(
     post,
     path = V1_TRANSIENT_PASSWORD_PATH,
@@ -6748,12 +6968,13 @@ pub(crate) struct TransientRootPasswordRequest {
     tag = "actions",
     request_body = TransientRootPasswordRequest,
     responses(
-        (status = 204, description = "The transient root password is set; it lasts until the next reboot and is written into no setting"),
+        (status = 202, description = "The transient root password hash was written and its scoped apply was queued", body = TaskAccepted),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
         (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 422, description = "The password is shorter than 8 bytes, longer than 72, or contains a NUL, newline or carriage return (`validation_failed`); the message states the bound and never the password", body = ApiError),
         (status = 500, description = "mosd failed to set it (`mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -6781,19 +7002,18 @@ pub(crate) async fn api_v1_transient_root_password(
             ApiError::apid("validation_failed", message),
         );
     }
-    if let Err(err) = app.api.set_transient_root_password(&request.password).await {
-        // No dot-path: this writes no setting, so §2.4's optional member is
-        // absent rather than naming something that was not at fault.
-        return bus_api_error(&err, None);
-    }
+    let task_id = match app.api.set_transient_root_password(&request.password).await {
+        Ok(task_id) => task_id,
+        Err(err) => {
+            // No dot-path: this writes no setting, so §2.4's optional member is
+            // absent rather than naming something that was not at fault.
+            return bus_api_error(&err, None);
+        }
+    };
     // The event carries who opened a password channel and from where — and
     // deliberately nothing about the password itself.
     app.audit.record("transient-password", "set", &source);
-    (
-        StatusCode::NO_CONTENT,
-        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
-    )
-        .into_response()
+    api_response(StatusCode::ACCEPTED, TaskAccepted { task_id })
 }
 
 #[derive(serde::Deserialize)]

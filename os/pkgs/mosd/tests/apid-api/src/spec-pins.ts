@@ -101,6 +101,7 @@ const KEY = "/api/v1/ssh/authorized-keys/{fingerprint}";
 const TOKENS = "/api/v1/tokens";
 const TOKEN = "/api/v1/tokens/{id}";
 const ROTATE = "/api/v1/actions/wireguard/{iface}/rotate-key";
+const TASK = "/api/v1/tasks/{id}";
 const VERSIONS = "/api/versions";
 
 const PINS: readonly Pin[] = [
@@ -109,6 +110,7 @@ const PINS: readonly Pin[] = [
   { kind: "status", file: BEARER, anchor: "the flag this phase writes reads back before it is touched", method: "get", path: SETTINGS, what: "the pre-write settings read" },
   { kind: "status", file: BEARER, anchor: "a settings WRITE over the bearer", method: "put", path: SETTINGS, what: "the bearer settings write" },
   { kind: "status", file: BEARER, anchor: "so this phase leaves the device as it found it", method: "put", path: SETTINGS, what: "the settings restore" },
+  { kind: "status", file: BEARER, anchor: "GET /api/v1/tasks/{id} is readable over the bearer", method: "get", path: TASK, what: "the accepted write's task lookup" },
   { kind: "status", file: BEARER, anchor: "a collection LISTING over the bearer", method: "get", path: KEYS, what: "the authorized-keys listing" },
   { kind: "status", file: BEARER, anchor: "a collection POST over the bearer", method: "post", path: KEYS, what: "the authorized-keys add" },
   { kind: "status", file: BEARER, anchor: "a collection DELETE over the bearer", method: "delete", path: KEY, what: "the authorized-keys delete" },
@@ -141,6 +143,7 @@ const PINS: readonly Pin[] = [
   { kind: "schema", file: BEARER, anchor: '!rotate.body.includes("privateKey")', span: "line", schema: "WireguardRotation", mode: "absent", names: ["privateKey"], what: "no private half in the rotation body" },
   { kind: "schema", file: BEARER, anchor: 'row["id"] === first.id && row["name"] === BOOTSTRAP_NAME', span: "line", schema: "ApiTokenSummary", mode: "required", names: ["id", "name"], what: "the token summary's members" },
   { kind: "schema", file: BEARER, anchor: 'const token = isRecord(minted) ? minted["token"] : undefined;', span: "line", schema: "MintedToken", mode: "required", names: ["token"], what: "the mint's plaintext member" },
+  { kind: "schema", file: BEARER, anchor: 'const taskId = isRecord(body) ? body["taskId"] : undefined;', span: "line", schema: "TaskAccepted", mode: "required", names: ["taskId"], what: "the settings write's task id" },
   { kind: "schema", file: BEARER, anchor: 'const id = isRecord(minted) ? minted["id"] : undefined;', span: "line", schema: "MintedToken", mode: "required", names: ["id"], what: "the mint's id member" },
   { kind: "schema", file: BEARER, anchor: 'typeof detail["message"] === "string"', span: "line", schema: "ApiErrorDetail", mode: "required", names: ["message"], what: "the envelope's human message" },
   { kind: "schema", file: READONLY, anchor: 'const error = (parsed as Record<string, unknown>)["error"];', span: "line", schema: "ApiError", mode: "required", names: ["error"], what: "the envelope's one member" },

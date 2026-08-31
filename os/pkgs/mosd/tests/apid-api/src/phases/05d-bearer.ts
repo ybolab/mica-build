@@ -75,6 +75,8 @@ const ROTATE_PATH = `/api/v1/actions/wireguard/${TUNNEL}/rotate-key`;
 const SSH_KEYS_PATH = "/api/v1/ssh/authorized-keys";
 const TOKENS_PATH = "/api/v1/tokens";
 const SETTINGS_PREFIX = "/api/v1/settings/";
+const TASKS_PREFIX = "/api/v1/tasks/";
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** How much of an unexpected body to quote in a failure detail. */
 const SNIPPET = 240;
@@ -121,6 +123,42 @@ function json(response: HttpResponse): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Wait for the task id in a 202 response to reach a successful terminal record. */
+async function awaitApply(
+  ctx: PhaseContext,
+  bearer: Client,
+  token: string,
+  accepted: HttpResponse,
+  what: string,
+): Promise<boolean> {
+  const body = json(accepted);
+  const taskId = isRecord(body) ? body["taskId"] : undefined;
+  if (typeof taskId !== "string" || taskId === "") {
+    return ctx.report.fail(`${what} returns a taskId`, `actual: ${snippet(accepted.body)}`);
+  }
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const response = await bearer.get(`${TASKS_PREFIX}${encodeURIComponent(taskId)}`, {
+      headers: bearerHeaders(token),
+    });
+    if (!ctx.report.expectStatus(
+      response,
+      200,
+      `${what}: GET /api/v1/tasks/{id} is readable over the bearer`,
+    )) return false;
+    const task = json(response);
+    if (isRecord(task) && task["status"] === "finished") {
+      return ctx.report.check(
+        task["outcome"] === "succeeded",
+        `${what}: the apply task reaches succeeded`,
+        `actual: ${snippet(response.body)}`,
+      );
+    }
+    await sleep(250);
+  }
+  return ctx.report.fail(`${what}: the apply task reaches a terminal outcome`, "deadline: 30s");
 }
 
 // 1. The bootstrap mint -- the one cookie request in this phase
@@ -250,11 +288,12 @@ async function settingsWrite(ctx: PhaseContext, bearer: Client, token: string): 
     body: JSON.stringify(flipped),
     contentType: "application/json",
   });
-  report.expectStatus(
+  if (!report.expectStatus(
     write,
-    204,
-    `a settings WRITE over the bearer: PUT /api/v1/settings/${FLAG_PATH} ${flipped} is 204`,
-  );
+    202,
+    `a settings WRITE over the bearer: PUT /api/v1/settings/${FLAG_PATH} ${flipped} is 202`,
+  )) return;
+  if (!await awaitApply(ctx, bearer, token, write, "the bearer settings write")) return;
 
   const after = await bearer.get(path, { headers: bearerHeaders(token) });
   report.expectJson(
@@ -270,11 +309,12 @@ async function settingsWrite(ctx: PhaseContext, bearer: Client, token: string): 
     body: JSON.stringify(original),
     contentType: "application/json",
   });
-  report.expectStatus(
+  if (!report.expectStatus(
     restore,
-    204,
+    202,
     `${FLAG_PATH} is restored to ${original}, so this phase leaves the device as it found it`,
-  );
+  )) return;
+  await awaitApply(ctx, bearer, token, restore, "the settings restore");
 }
 
 async function collection(ctx: PhaseContext, bearer: Client, token: string): Promise<void> {

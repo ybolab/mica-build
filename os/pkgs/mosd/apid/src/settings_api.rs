@@ -7,6 +7,34 @@ use serde_json::Value;
 
 use crate::task_registry::TaskRecord;
 
+#[derive(Debug)]
+pub struct TaskNotFound(pub String);
+
+impl std::fmt::Display for TaskNotFound {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "task not found: `{}`", self.0)
+    }
+}
+
+impl std::error::Error for TaskNotFound {}
+
+/// mosd answered a task read, but the payload did not match the public task
+/// record. This is a daemon-side 500, distinct from a transport outage.
+#[derive(Debug)]
+pub struct InvalidTaskPayload(pub serde_json::Error);
+
+impl std::fmt::Display for InvalidTaskPayload {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid task payload from mosd: {}", self.0)
+    }
+}
+
+impl std::error::Error for InvalidTaskPayload {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 /// The mosd operations apid needs, JSON in and out.
 ///
 /// The power actions are here rather than executed locally because mosd owns
@@ -21,7 +49,7 @@ pub trait SettingsApi: Send + Sync {
     async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<String>;
     /// Task record by id.
     async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
-        anyhow::bail!("task lookup is unavailable: `{id}`")
+        Err(TaskNotFound(id.to_string()).into())
     }
     /// Live-state subtree at dot-path `path` (`""` = whole tree).
     async fn get_state(&self, path: &str) -> anyhow::Result<Value>;
@@ -227,11 +255,36 @@ impl SettingsApi for FakeSettings {
             .unwrap()
             .get(id)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("task not found: `{id}`"))
+            .ok_or_else(|| TaskNotFound(id.to_string()).into())
     }
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {
-        fake_get(&self.state.lock().unwrap(), path)
+        if path == "tasks" {
+            return serde_json::to_value(
+                self.tasks
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(Into::into);
+        }
+        let mut state = fake_get(&self.state.lock().unwrap(), path)?;
+        if path.is_empty() {
+            let tasks = serde_json::to_value(
+                self.tasks
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )?;
+            if let Some(root) = state.as_object_mut() {
+                root.insert("tasks".to_string(), tasks);
+            }
+        }
+        Ok(state)
     }
 
     async fn reboot(&self) -> anyhow::Result<()> {

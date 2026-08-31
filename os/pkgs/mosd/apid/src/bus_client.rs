@@ -15,8 +15,9 @@ use tokio::sync::Mutex;
 use zbus::export::futures_core::Stream;
 
 use crate::access_cache::{self, AccessCache};
+use crate::audit::Audit;
 use crate::config::BusKind;
-use crate::settings_api::SettingsApi;
+use crate::settings_api::{InvalidTaskPayload, SettingsApi};
 use crate::task_registry::{TaskRecord, TaskRegistry};
 
 /// Upper bound for one connection attempt or method call to mosd.
@@ -119,14 +120,14 @@ pub async fn watch_settings_changed(bus: BusKind, cache: Arc<AccessCache>) {
 /// Keep the task registry synchronised from mosd's `TaskChanged` stream.
 /// A lapse immediately disables memory reads; callers fall back to `GetTask`
 /// until a fresh subscription is established.
-pub async fn watch_tasks(bus: BusKind, registry: Arc<TaskRegistry>) {
+pub async fn watch_tasks(bus: BusKind, registry: Arc<TaskRegistry>, audit: Arc<Audit>) {
     loop {
         let result = async {
             let connection = match bus {
                 BusKind::System => zbus::Connection::system().await,
                 BusKind::Session => zbus::Connection::session().await,
             }?;
-            watch_task_connection(&connection, &registry).await
+            watch_task_connection(&connection, &registry, Some(&audit)).await
         }
         .await;
         if let Err(err) = result {
@@ -164,6 +165,7 @@ pub(crate) async fn watch_connection(
 pub(crate) async fn watch_task_connection(
     connection: &zbus::Connection,
     registry: &TaskRegistry,
+    audit: Option<&Audit>,
 ) -> anyhow::Result<()> {
     let proxy = MosdProxy::new(connection).await?;
     let stream = proxy.receive_task_changed().await?;
@@ -172,7 +174,16 @@ pub(crate) async fn watch_task_connection(
     while let Some(signal) = poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
         let args = signal.args()?;
         let task: TaskRecord = serde_json::from_str(args.task_json())?;
-        registry.update(task);
+        registry.update(task.clone());
+        if task.terminal()
+            && let Some(audit) = audit
+        {
+            audit.record(
+                "apply-task",
+                task.outcome.as_deref().unwrap_or("unknown"),
+                &task.source,
+            );
+        }
     }
     anyhow::bail!("the TaskChanged stream ended")
 }
@@ -282,7 +293,7 @@ impl SettingsApi for BusSettings {
     async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
         let proxy = self.proxy().await?;
         let json = self.call("GetTask", proxy.get_task(id)).await?;
-        Ok(serde_json::from_str(&json)?)
+        serde_json::from_str(&json).map_err(|err| InvalidTaskPayload(err).into())
     }
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {

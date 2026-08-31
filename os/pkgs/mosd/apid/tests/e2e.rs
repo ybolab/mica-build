@@ -336,8 +336,8 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     assert_eq!(error["error"]["code"], "not_authenticated");
 
     // the write route, against a live mosd on a real bus: a bare
-    // JSON string at `hostname` answers 204 and the value is in mosd's own
-    // settings tree afterwards. Read back through `GetSettings` rather than
+    // JSON string at `hostname` answers 202 with an apply task id and the
+    // value is in mosd's own settings tree afterwards. Read back through `GetSettings` rather than
     // through `GetState`, for the reason the form-path assertion above reads
     // back the same way: `state.hostname` is published by the hostname
     // reconciler, which writes `/etc/hostname` and calls hostnamed, and
@@ -349,8 +349,26 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
         .body("\"e2e-host3\"")
         .send()
         .await?;
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert!(response.text().await?.is_empty());
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let accepted: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+    let task_id = accepted["taskId"].as_str().context("202 taskId")?;
+    let mut terminal = None;
+    for _ in 0..100 {
+        let response = admin
+            .get(format!("{https_base}/api/v1/tasks/{task_id}"))
+            .bearer_auth(&token)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let task: serde_json::Value = serde_json::from_str(&response.text().await?)?;
+        if task["status"] == "finished" {
+            terminal = Some(task);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let terminal = terminal.context("the hostname apply task did not finish")?;
+    assert_eq!(terminal["outcome"], "succeeded");
     assert_eq!(proxy.get_settings("hostname").await?, "\"e2e-host3\"");
 
     // The refusal list is apid's and is answered before the bus: a dot-path
