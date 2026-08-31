@@ -114,6 +114,34 @@ describe('the register names exactly the artifacts in scope', () => {
   // mos-mqttd and mos-mqtt-broker are built by the same script from the same
   // workspace and were NOT named, so they do not embed a commit -- and if a
   // later change gives them one, this test is where that has to be argued for.
+  // The executor-limited signature, locked to one entry for the reason
+  // EXPECTED_UNCLAIMED is locked: a category that can grow on its own is a gate
+  // that can stop asking on its own. It is declared on the entry rather than as
+  // a pattern the runner matches every artifact against, so a second member is
+  // a visible edit to this file and to this test.
+  test('exactly one artifact declares an executor limitation, and it is crun', () => {
+    const declaring = ARTIFACTS.filter(a => a.executorLimit !== undefined)
+    expect(declaring.map(a => a.name)).toEqual(['crun'])
+
+    // The signature itself, transcribed from the run that measured it: crun
+    // 1.29.1 under the buildkit/qemu-user executor while building the cx3576
+    // root on 2026-08-30. os/rootfs/scripts/podman-exercise.sh matches the same
+    // sentence at the stage level ("version withheld under emulation"), which
+    // is the precedent this entry follows.
+    expect(declaring[0]!.executorLimit).toEqual({
+      status: 1,
+      stderrIncludes: 'Failed to re-execute libcrun via memory file descriptor',
+      why: declaring[0]!.executorLimit!.why,
+    })
+    // The reason is printed on the row, so it has to say something.
+    expect(declaring[0]!.executorLimit!.why).toContain('memory file descriptor')
+
+    // The vacuity control: eleven entries declare nothing, and an entry that
+    // declares nothing can never be executor-limited whatever it prints.
+    expect(ARTIFACTS.filter(a => a.executorLimit === undefined).length).toBe(ARTIFACTS.length - 1)
+    expect(ARTIFACTS.length).toBe(SCOPE_ARTIFACTS.length)
+  })
+
   test('exactly the two files the amendment named embed a build commit', () => {
     const embedding = ARTIFACTS.filter(a => a.embedsBuildCommit === true).map(a => a.name)
     expect(embedding.sort()).toEqual(['apid', 'mosd'])

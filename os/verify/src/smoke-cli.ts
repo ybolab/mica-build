@@ -60,10 +60,20 @@ function parse(argv: readonly string[]): { board?: string; builder?: string; hel
   return { board, builder, help: false }
 }
 
+/** The tag column's width: the longest verdict spelling, so no row reflows the table. */
+const TAG_WIDTH = 'EXECUTOR-LIMITED'.length
+
 /** `PASS name  message`, at a width that keeps the messages aligned. */
 export function formatResult(r: SmokeResult): string {
-  const tag = r.verdict === 'pass' ? 'PASS' : r.verdict === 'fail' ? 'FAIL' : 'UNCLAIMED'
-  return `${tag.padEnd(9)} ${r.name.padEnd(16)} ${r.path.padEnd(34)} ${r.message}`
+  // Spelled out rather than shortened. `LIMITED` alone would read as a property
+  // of the artifact; the row has to say whose limit it was, and the message
+  // beside it names the executor and the reason.
+  const tag = r.verdict === 'pass'
+    ? 'PASS'
+    : r.verdict === 'fail'
+      ? 'FAIL'
+      : r.verdict === 'executor-limited' ? 'EXECUTOR-LIMITED' : 'UNCLAIMED'
+  return `${tag.padEnd(TAG_WIDTH)} ${r.name.padEnd(16)} ${r.path.padEnd(34)} ${r.message}`
 }
 
 /**

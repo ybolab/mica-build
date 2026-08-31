@@ -4,15 +4,17 @@
 // identity, not behaviour; the QEMU boot tests and the ldd/NEEDED checks keep
 // functional coverage. Everything below takes an `Exec`, so the suite reaches
 // every verdict from the failing side with fabricated output and no image,
-// daemon or build. The verdicts are pass, fail and `unclaimed` -- a conclusion
+// daemon or build. The verdicts are pass, fail, `unclaimed` -- a conclusion
 // nobody reached, kept for the next artifact this tree builds and cannot yet
-// ask, and exercised in smoke.test.ts. mosd and apid also report their build
+// ask -- and `executor-limited`, the one case where a non-zero exit is a
+// statement about the emulated executor rather than about the artifact; both
+// are exercised in smoke.test.ts. mosd and apid also report their build
 // commit, asserted against a recorded build fact and never against
 // `git rev-parse HEAD`; see `BuildCommitFact`.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { ARTIFACTS, pinCoverageFaults, unclaimedFaults, type Artifact } from './smoke-register.ts'
+import { ARTIFACTS, pinCoverageFaults, unclaimedFaults, type Artifact, type ExecutorLimit } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
 import { REPO_ROOT } from './paths.ts'
 
@@ -33,7 +35,42 @@ export interface ExecResult {
  */
 export type Exec = (argv: readonly string[]) => Promise<ExecResult>
 
-export type Verdict = 'pass' | 'fail' | 'unclaimed'
+export type Verdict = 'pass' | 'fail' | 'unclaimed' | 'executor-limited'
+
+/**
+ * Which executor ran the argv.
+ *
+ * `native` is `docker run` on this host's daemon; `buildkit` is the fallback
+ * `smokeRun` falls back to when the daemon cannot execute the image's platform,
+ * where every instruction runs under qemu-user inside the builder. The two are
+ * not interchangeable -- a program that needs a syscall the emulator does not
+ * implement fails on one and not on the other -- so the route is carried into
+ * `judge`, which is the only place allowed to soften a verdict because of it.
+ */
+export type ExecRoute = 'native' | 'buildkit'
+
+/**
+ * An `Exec` that says which executor it is.
+ *
+ * The route travels ON the executor rather than beside it. A parallel variable
+ * -- "we switched to buildkit, so also set route" -- is two statements of one
+ * fact that agree until one of them is edited, and the one that would be edited
+ * is the one no test can reach without an arm64 host. Tagging the function makes
+ * the two inseparable: `buildkitExec` cannot be handed to the runner without its
+ * route, and a suite that fabricates an executor can tag it the same way.
+ */
+export type RoutedExec = Exec & { readonly route?: ExecRoute }
+
+/**
+ * Which executor this is, defaulting to the strict reading.
+ *
+ * An untagged function is `native`: a caller that hands the runner a bare
+ * `Exec` gets the route under which every non-zero exit is a failure, so the
+ * softer reading is never something a caller can fall into by omission.
+ */
+export function execRoute(exec: Exec): ExecRoute {
+  return (exec as RoutedExec).route ?? 'native'
+}
 
 export interface SmokeResult {
   readonly name: string
@@ -213,6 +250,38 @@ export function diagnose(outcome: ExecResult): string {
 }
 
 /**
+ * Whether this failure is the one the entry declared the EXECUTOR cannot avoid.
+ *
+ * Three conjuncts, all required, and each of them is what keeps this from
+ * becoming a way for a red run to go green:
+ *
+ *   route     Only the emulated buildkit fallback. The native route runs the
+ *             binary on this host's kernel, where nothing is being emulated and
+ *             a non-zero exit is the artifact's own answer; softening it there
+ *             would delete the check on the only host that can really run it.
+ *   declared  Only an entry that carries an `executorLimit`. There is no global
+ *             pattern: an entry that declares nothing can never reach this
+ *             verdict, so the category cannot spread to a binary nobody
+ *             measured, and adding a member is an edit to the register.
+ *   exact     The status AND the stderr, both. `includes` on stderr and not on
+ *             `stdout + stderr`, because the signature was measured on stderr
+ *             and a binary that PRINTS that sentence on stdout while failing
+ *             some other way is a different event.
+ *
+ * Exported so the suite can drive each conjunct from the failing side.
+ */
+export function executorLimitMatch(
+  artifact: Artifact,
+  outcome: ExecResult,
+  route: ExecRoute,
+): ExecutorLimit | undefined {
+  const limit = artifact.executorLimit
+  if (limit === undefined || route !== 'buildkit') return undefined
+  if (outcome.status !== limit.status) return undefined
+  return outcome.stderr.includes(limit.stderrIncludes) ? limit : undefined
+}
+
+/**
  * Decide one artifact from what its invocation actually did.
  *
  * Pure, so every branch is reachable from the suite with a fabricated
@@ -220,8 +289,20 @@ export function diagnose(outcome: ExecResult): string {
  *
  * `build` is the recorded build fact ([`BuildCommitFact`]), consulted only for
  * an artifact whose register entry says it embeds a commit.
+ *
+ * `route` is which executor produced `outcome`, and it defaults to `native` --
+ * the strict reading. It is consulted for one thing only: an entry that declared
+ * an `executorLimit` and hit it exactly, under emulation, is `executor-limited`
+ * rather than `fail`. See `executorLimitMatch` for why all three conjuncts are
+ * required.
  */
-export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?: BuildCommitFact): SmokeResult {
+export function judge(
+  artifact: Artifact,
+  pin: Pin,
+  outcome: ExecResult,
+  build?: BuildCommitFact,
+  route: ExecRoute = 'native',
+): SmokeResult {
   const { name, path, contract } = artifact
   const base = { name, path } as const
 
@@ -238,6 +319,20 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
   }
 
   if (outcome.status !== 0) {
+    const limit = executorLimitMatch(artifact, outcome, route)
+    if (limit !== undefined) {
+      return {
+        ...base,
+        kind: contract.kind,
+        verdict: 'executor-limited',
+        message:
+          `EXECUTED under the ${route} executor and exited ${outcome.status} the one way this `
+          + `register entry declares this executor cannot avoid: ${limit.why}. `
+          + `stderr=${JSON.stringify(firstLine(outcome.stderr))}. `
+          + `Nothing was asserted about the version, and this is NOT a pass: on the native route the `
+          + `same outcome is a FAIL, and any other status or stderr is a FAIL here too.`,
+      }
+    }
     return {
       ...base,
       kind: contract.kind,
@@ -315,7 +410,12 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
 }
 
 /** Run one artifact, or decline to. */
-export async function checkArtifact(artifact: Artifact, exec: Exec, build?: BuildCommitFact): Promise<SmokeResult> {
+export async function checkArtifact(
+  artifact: Artifact,
+  exec: Exec,
+  build?: BuildCommitFact,
+  route: ExecRoute = 'native',
+): Promise<SmokeResult> {
   const pin = artifact.pin()
   if (artifact.contract.kind === 'unclaimed') {
     // Not invoked, and that is a decision rather than an omission. mosd's only
@@ -323,15 +423,22 @@ export async function checkArtifact(artifact: Artifact, exec: Exec, build?: Buil
     // produce a `fail` would trade a clear "nobody asked" for a 25-second hang
     // and a mutated /var, and would report the artifact as broken when what is
     // missing is the question.
-    return judge(artifact, pin, { status: 0, stdout: '', stderr: '' }, build)
+    return judge(artifact, pin, { status: 0, stdout: '', stderr: '' }, build, route)
   }
-  return judge(artifact, pin, await exec([artifact.path, ...artifact.contract.argv]), build)
+  return judge(artifact, pin, await exec([artifact.path, ...artifact.contract.argv]), build, route)
 }
 
 export interface Conclusion {
   readonly conclusion: 'PASS' | 'FAIL' | 'INCOMPLETE'
   readonly exitCode: number
-  readonly counts: { readonly pass: number; readonly fail: number; readonly unclaimed: number; readonly total: number }
+  readonly counts: {
+    readonly pass: number
+    readonly fail: number
+    readonly unclaimed: number
+    /** Decided, exit 0, and NOT a pass -- see `executorLimitMatch`. Printed even when zero. */
+    readonly executorLimited: number
+    readonly total: number
+  }
   readonly line: string
 }
 
@@ -350,8 +457,21 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     pass: results.filter(r => r.verdict === 'pass').length,
     fail: results.filter(r => r.verdict === 'fail').length,
     unclaimed: results.filter(r => r.verdict === 'unclaimed').length,
+    executorLimited: results.filter(r => r.verdict === 'executor-limited').length,
     total: results.length,
   }
+
+  // One spelling of the counts for all three conclusions, built once. Until the
+  // executor-limited verdict arrived the three lines carried three copies of the
+  // same four numbers with the FAIL and INCOMPLETE ones hard-coding `0 fail`
+  // where they knew it; a fifth number added to two of three copies is exactly
+  // how a reader ends up translating between two summaries. Every number is
+  // printed on every line, zero as zero: an unstated count is a count a reader
+  // assumes, and `1 executor-limited` on a green line is the whole point of the
+  // verdict -- a run that softened one conclusion must say how many.
+  const summary =
+    `${counts.pass} pass, ${counts.executorLimited} executor-limited, ${counts.fail} fail, `
+    + `${counts.unclaimed} unclaimed, of ${counts.total}`
 
   // The names, not just the number: "2 unclaimed" is a count a reader stops
   // seeing, and "mosd, apid" is something they can act on. This run's steady
@@ -359,6 +479,10 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
   // in the table above it.
   const named = (verdict: Verdict): string =>
     results.filter(r => r.verdict === verdict).map(r => r.name).join(', ')
+  // The same argument the UNCLAIMED clause makes, for the same reason: the
+  // count says how much was softened, the names say what. Absent when there is
+  // nothing to name, so a clean run does not carry an empty clause.
+  const limited = counts.executorLimited > 0 ? ` EXECUTOR-LIMITED: ${named('executor-limited')}.` : ''
   if (expected <= 0 || counts.total !== expected) {
     return {
       conclusion: 'FAIL',
@@ -376,9 +500,10 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
       exitCode: 1,
       counts,
       line:
-        `RESULT: FAIL (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
+        `RESULT: FAIL (${summary}). `
         + `FAILED: ${named('fail')}.`
-        + (counts.unclaimed > 0 ? ` UNCLAIMED: ${named('unclaimed')}.` : ''),
+        + (counts.unclaimed > 0 ? ` UNCLAIMED: ${named('unclaimed')}.` : '')
+        + limited,
     }
   }
   if (counts.unclaimed > 0) {
@@ -387,7 +512,7 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
       exitCode: 1,
       counts,
       line:
-        `RESULT: INCOMPLETE (${counts.pass} pass, 0 fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
+        `RESULT: INCOMPLETE (${summary}).${limited} `
         + `UNCLAIMED: ${named('unclaimed')}. `
         + `Nothing failed and not everything was asked. An unclaimed artifact is not a pass and is `
         + `not a skip: the smoke contract requires a reported version from every one of them, and this run `
@@ -398,11 +523,12 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     conclusion: 'PASS',
     exitCode: 0,
     counts,
-    // The same four numbers FAIL and INCOMPLETE print, in the same order. One
-    // format for one summary: a second spelling on the green line would make a
-    // reader translate between it and the red one, and `0 unclaimed` is exactly
-    // the number that would go unstated on the line that matters most.
-    line: `RESULT: PASS (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total})`,
+    // The same numbers FAIL and INCOMPLETE print, in the same order, from the
+    // same string: a second spelling on the green line would make a reader
+    // translate between it and the red one, and `0 unclaimed` and
+    // `0 executor-limited` are exactly the numbers that would go unstated on the
+    // line that matters most.
+    line: `RESULT: PASS (${summary})${limited}`,
   }
 }
 
@@ -704,8 +830,10 @@ export function dockerArgv(ref: string, argv: readonly string[]): string[] {
 }
 
 /** The real seam: one container per invocation, inside the loaded factory root. */
-export function dockerExec(ref: string, timeoutMs: number = EXEC_TIMEOUT_MS): Exec {
-  return argv => capture(dockerArgv(ref, argv), timeoutMs)
+export function dockerExec(ref: string, timeoutMs: number = EXEC_TIMEOUT_MS): RoutedExec {
+  // Tagged `native`: this runs on the host's own kernel, so a non-zero exit is
+  // the binary's answer and nothing here is emulated. See `RoutedExec`.
+  return Object.assign((argv: readonly string[]) => capture(dockerArgv(ref, argv), timeoutMs), { route: 'native' as const })
 }
 
 // The buildkit executor. Same seam, same register, same judging: only the
@@ -780,9 +908,12 @@ export function buildkitExec(
   opts: BuildkitExecOptions,
   run: (argv: readonly string[]) => Promise<ExecResult> = argv =>
     capture(argv, opts.timeoutMs ?? BUILDKIT_EXEC_TIMEOUT_MS),
-): Exec {
+): RoutedExec {
   const scratch = opts.scratch ?? join(REPO_ROOT, 'tmp')
-  return async argv => {
+  // Tagged `buildkit`: every instruction inside this builder runs under
+  // qemu-user, which is the fact `judge` needs to read an artifact's declared
+  // executor limitation. See `RoutedExec`.
+  return Object.assign(async (argv: readonly string[]) => {
     mkdirSync(scratch, { recursive: true })
     const dir = mkdtempSync(join(scratch, 'smoke-buildkit-'))
     try {
@@ -807,7 +938,7 @@ export function buildkitExec(
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  }
+  }, { route: 'buildkit' as const })
 }
 
 /** `mos-<arch>` -- the container builder os/rootfs/build-v2.sh and the package builds create for a cross build. */
@@ -873,6 +1004,18 @@ export interface SmokeRunOptions {
    * platform. Default: `mos-<arch>` if such a builder exists.
    */
   readonly builder?: string
+  /**
+   * Which executor a supplied `exec` stands for, when it carries no tag.
+   *
+   * Only meaningful together with `exec`, and only for a bare function: the
+   * executors this file builds are `RoutedExec`s that say what they are, and
+   * the runner reads the route off the one it chose. It exists so the suite can
+   * reach the emulated route's verdicts from a fabricated outcome, without an
+   * arm64 host, an image or a builder -- the same argument `exec` itself makes.
+   * Omitted, an untagged executor is `native`, the strict reading, so a caller
+   * cannot get the softer one by forgetting to say anything.
+   */
+  readonly route?: ExecRoute
 }
 
 /**
@@ -975,7 +1118,11 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     }
   }
 
+  // Read off the executor that was actually chosen, not tracked alongside the
+  // choice. `opts.route` is only for a fabricated executor that carries no tag.
+  const route = opts.route ?? execRoute(exec)
+
   const results: SmokeResult[] = []
-  for (const artifact of artifacts) results.push(await checkArtifact(artifact, exec, build))
+  for (const artifact of artifacts) results.push(await checkArtifact(artifact, exec, build, route))
   return { results, conclusion: conclude(results, artifacts.length) }
 }

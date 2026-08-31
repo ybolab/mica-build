@@ -36,6 +36,8 @@ import {
   reportsCommit,
   smokeRun,
   declinedFeatures,
+  dockerExec,
+  execRoute,
   versionTokens,
   MOSD_BUILD_RECORD_NAME,
   type BuildCommitFact,
@@ -566,6 +568,95 @@ describe('judge -- the exec-only and unclaimed contracts', () => {
   })
 })
 
+// ─── the executor-limited verdict: whose limitation was it? ────────────────
+
+/**
+ * The signature, read off the SHIPPED entry rather than retyped.
+ *
+ * Retyping it here would make every case below pass against a register that had
+ * stopped declaring it -- the fabricated artifact would carry the sentence and
+ * the shipped one would not, and the run that matters is the shipped one.
+ * smoke-register.test.ts locks the value itself; this reads it.
+ */
+const CRUN_LIMIT = ARTIFACTS.find(a => a.name === 'crun')!.executorLimit!
+const MEMFD = CRUN_LIMIT.stderrIncludes
+
+describe('judge -- executor-limited, and the three conjuncts that gate it', () => {
+  // What the emulated executor actually produced, measured 2026-08-30 while
+  // building the cx3576 root on a host with no arm64 binfmt: exit 1, nothing on
+  // stdout, one sentence on stderr. crun re-executes libcrun through a memory
+  // file descriptor -- its CVE-2024-21626 mitigation -- before it parses argv,
+  // and qemu-user cannot service that fexecve, so `--version` is never reached.
+  const limited: Artifact = {
+    ...versionArtifact('crun', '/usr/bin/crun', () => pin('1.29.1')),
+    executorLimit: CRUN_LIMIT,
+  }
+  const observed: ExecResult = { status: 1, stdout: '', stderr: `${MEMFD}\n` }
+
+  test('the declared signature on the buildkit route is executor-limited, and the row names the route and the reason', () => {
+    const r = judge(limited, pin('1.29.1'), observed, undefined, 'buildkit')
+    expect(r.verdict).toBe('executor-limited')
+    // The route, because a reader of one row has to be able to tell which
+    // executor the sentence is about.
+    expect(r.message).toContain('buildkit')
+    expect(r.message).toContain(CRUN_LIMIT.why)
+    expect(r.message).toContain(MEMFD)
+    // And it says out loud that it is not a pass.
+    expect(r.message).toContain('NOT a pass')
+  })
+
+  // Conjunct (a): the route. The native route runs the binary on this host's
+  // own kernel, where nothing is emulated -- softening it there would delete
+  // the check on the only host that can really run it.
+  test('the SAME signature on the native route is a FAIL, exactly as before', () => {
+    const r = judge(limited, pin('1.29.1'), observed, undefined, 'native')
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('exited 1, expected 0')
+    expect(r.message).toContain('the program ran and refused')
+  })
+
+  test('and the default route is the strict one, so a caller that says nothing gets the FAIL', () => {
+    expect(judge(limited, pin('1.29.1'), observed).verdict).toBe('fail')
+  })
+
+  // Conjunct (b): the entry declares it. There is no global pattern, so the
+  // category cannot spread to a binary nobody measured.
+  test('an entry that declares NO signature can never be executor-limited, whatever it printed', () => {
+    const undeclared = versionArtifact('crun', '/usr/bin/crun', () => pin('1.29.1'))
+    expect(undeclared.executorLimit).toBeUndefined()
+    const r = judge(undeclared, pin('1.29.1'), observed, undefined, 'buildkit')
+    expect(r.verdict).toBe('fail')
+  })
+
+  // Conjunct (c): the observed failure matches the declared one exactly, in
+  // both halves.
+  test('a different stderr under the same route is a FAIL -- the signature must MATCH', () => {
+    const other: ExecResult = { status: 1, stdout: '', stderr: 'crun: cannot open config file\n' }
+    expect(judge(limited, pin('1.29.1'), other, undefined, 'buildkit').verdict).toBe('fail')
+  })
+
+  test('the declared sentence with a DIFFERENT status is a FAIL too', () => {
+    expect(judge(limited, pin('1.29.1'), { ...observed, status: 2 }, undefined, 'buildkit').verdict).toBe('fail')
+  })
+
+  test('the sentence on STDOUT is not the signature: it was measured on stderr', () => {
+    // A binary that prints the emulator's sentence on stdout while failing some
+    // other way is a different event, and a match over `stdout + stderr` -- the
+    // shape `diagnose` uses, deliberately, for a different question -- would
+    // file it under this verdict.
+    const wrongStream: ExecResult = { status: 1, stdout: `${MEMFD}\n`, stderr: '' }
+    expect(judge(limited, pin('1.29.1'), wrongStream, undefined, 'buildkit').verdict).toBe('fail')
+  })
+
+  // The positive controls. A declared limitation excuses exactly one failure
+  // and changes nothing else: an entry that ANSWERS under emulation is judged
+  // on its version like any other.
+  test('exit 0 under the emulated route is still judged on the version, not excused', () => {
+    expect(judge(limited, pin('1.29.1'), ok('crun version 1.29.1'), undefined, 'buildkit').verdict).toBe('pass')
+    expect(judge(limited, pin('1.29.1'), ok('crun version 1.29.10'), undefined, 'buildkit').verdict).toBe('fail')
+  })
+})
+
 // ─── catatonit: the normalisation, driven from the failing side ─────────────
 
 describe('catatonit -- two normalisations, and a loose includes() would pass on anything', () => {
@@ -690,11 +781,13 @@ describe('conclude', () => {
     const c = conclude([r('pass'), r('pass')], 2)
     expect(c.conclusion).toBe('PASS')
     expect(c.exitCode).toBe(0)
-    // The same four numbers the other two conclusions print, in the same order.
+    // The same five numbers the other two conclusions print, in the same order.
     // Until M7d this line read `(2/2 artifacts executed, version identity
     // asserted)` -- a second format for one summary, which left `0 unclaimed`
-    // unstated on the only line most readers look at.
-    expect(c.line).toBe('RESULT: PASS (2 pass, 0 fail, 0 unclaimed, of 2)')
+    // unstated on the only line most readers look at. `0 executor-limited` is
+    // there for the same reason: a reader has to be able to tell a run that
+    // softened nothing from one that softened something, on the green line.
+    expect(c.line).toBe('RESULT: PASS (2 pass, 0 executor-limited, 0 fail, 0 unclaimed, of 2)')
   })
 
   test('one fail outranks everything else', () => {
@@ -721,14 +814,56 @@ describe('conclude', () => {
     // Asserted on the INCOMPLETE line and on the FAIL line, because they are two
     // separate format strings and a mutation could reach either.
     expect(conclude([r('pass'), r('unclaimed')], 2).line)
-      .toContain('RESULT: INCOMPLETE (1 pass, 0 fail, 1 unclaimed, of 2)')
+      .toContain('RESULT: INCOMPLETE (1 pass, 0 executor-limited, 0 fail, 1 unclaimed, of 2)')
     expect(conclude([r('pass'), r('fail'), r('unclaimed')], 3).line)
-      .toContain('RESULT: FAIL (1 pass, 1 fail, 1 unclaimed, of 3)')
+      .toContain('RESULT: FAIL (1 pass, 0 executor-limited, 1 fail, 1 unclaimed, of 3)')
     // And the positive control: with nothing unclaimed the same three numbers
     // are what they always were, so the case above is about the category and
     // not about the arithmetic.
     expect(conclude([r('pass'), r('fail')], 2).line)
-      .toContain('RESULT: FAIL (1 pass, 1 fail, 0 unclaimed, of 2)')
+      .toContain('RESULT: FAIL (1 pass, 0 executor-limited, 1 fail, 0 unclaimed, of 2)')
+  })
+
+  test('an executor-limited verdict is counted on its own, and the run still PASSES', () => {
+    const c = conclude([r('pass'), r('executor-limited')], 2)
+    expect(c.conclusion).toBe('PASS')
+    expect(c.exitCode).toBe(0)
+    // Not folded into `pass`: a reader has to be able to see how many
+    // conclusions were softened, and a count that hides inside the pass count
+    // is a guard whose removal changes nothing.
+    expect(c.counts.executorLimited).toBe(1)
+    expect(c.counts.pass).toBe(1)
+    expect(c.line).toBe('RESULT: PASS (1 pass, 1 executor-limited, 0 fail, 0 unclaimed, of 2) EXECUTOR-LIMITED: x.')
+  })
+
+  test('the count is on EVERY result line, and zero is printed as zero', () => {
+    // The line that matters most is the green one, so it is asserted first.
+    expect(conclude([r('pass'), r('pass')], 2).line).toContain('0 executor-limited')
+    expect(conclude([r('pass'), r('fail')], 2).line).toContain('0 executor-limited')
+    expect(conclude([r('pass'), r('unclaimed')], 2).line).toContain('0 executor-limited')
+    // ...and a run with nothing to name carries no EXECUTOR-LIMITED clause at
+    // all, so the clause means something when it is there.
+    expect(conclude([r('pass'), r('pass')], 2).line).not.toContain('EXECUTOR-LIMITED:')
+  })
+
+  test('the RESULT line NAMES what was limited, not only how many', () => {
+    const results: SmokeResult[] = [
+      { name: 'crun', path: '/usr/bin/crun', kind: 'version', verdict: 'executor-limited', message: '' },
+      { name: 'rauc', path: '/usr/bin/rauc', kind: 'version', verdict: 'pass', message: '' },
+    ]
+    expect(conclude(results, 2).line).toContain('EXECUTOR-LIMITED: crun.')
+  })
+
+  test('a fail outranks an executor-limited verdict, and the red line carries both', () => {
+    const results: SmokeResult[] = [
+      { name: 'crun', path: '/usr/bin/crun', kind: 'version', verdict: 'executor-limited', message: '' },
+      { name: 'podman', path: '/usr/bin/podman', kind: 'version', verdict: 'fail', message: '' },
+    ]
+    const c = conclude(results, 2)
+    expect(c.conclusion).toBe('FAIL')
+    expect(c.exitCode).toBe(1)
+    expect(c.line).toContain('FAILED: podman.')
+    expect(c.line).toContain('EXECUTOR-LIMITED: crun.')
   })
 
   // The vacuity guards. `RESULT: PASS (6/6)` is invariant under a run that
@@ -1061,6 +1196,93 @@ describe('smokeRun over the real register', () => {
     expect(c.line).toContain('UNCLAIMED: mosd')
   })
 
+  // The whole run, in the shape the cx3576 build produces: eleven artifacts
+  // answer under emulation and crun cannot reach its own --version handler.
+  // The exec is the same in both halves and only the ROUTE moves, which is the
+  // whole claim -- the verdict is about the executor, so it must flip with the
+  // executor and with nothing else.
+  test('crun hitting its declared limit under the emulated route is ONE executor-limited verdict, and the run PASSES', async () => {
+    const emulated: Exec = async argv =>
+      argv[0] === '/usr/bin/crun'
+        ? { status: 1, stdout: '', stderr: `${MEMFD}\n` }
+        : honest(argv)
+
+    const run = await smokeRun({ board: 'x64', exec: emulated, route: 'buildkit' })
+    expect(run.conclusion.conclusion).toBe('PASS')
+    expect(run.conclusion.exitCode).toBe(0)
+    expect(run.conclusion.counts.executorLimited).toBe(1)
+    expect(run.conclusion.counts.pass).toBe(11)
+    expect(run.conclusion.counts.fail).toBe(0)
+    expect(run.conclusion.line).toContain(
+      'RESULT: PASS (11 pass, 1 executor-limited, 0 fail, 0 unclaimed, of 12)',
+    )
+    expect(run.conclusion.line).toContain('EXECUTOR-LIMITED: crun.')
+    const crun = run.results.find(x => x.name === 'crun')!
+    expect(crun.verdict).toBe('executor-limited')
+    // Exactly one: the other eleven are untouched by the category.
+    expect(run.results.filter(x => x.verdict === 'executor-limited').map(x => x.name)).toEqual(['crun'])
+
+    // The same failure on the native route, where nothing is emulated, is the
+    // red it has always been -- and it takes the whole run with it.
+    const native = await smokeRun({ board: 'x64', exec: emulated })
+    expect(native.conclusion.conclusion).toBe('FAIL')
+    expect(native.conclusion.exitCode).toBe(1)
+    expect(native.conclusion.counts.executorLimited).toBe(0)
+    expect(native.conclusion.line).toContain('FAILED: crun.')
+  })
+
+  // The route is READ OFF the executor, not passed alongside it. This drives
+  // the real `buildkitExec` -- the same function `smokeRun` falls back to on a
+  // host that cannot execute the image -- with a fabricated `docker buildx`
+  // invocation underneath, and passes NO route option: if the runner stopped
+  // deriving the route from the executor it chose, or if `buildkitExec` stopped
+  // saying what it is, crun's row goes back to FAIL here.
+  test('the emulated route is derived from the executor itself, with no route option in sight', async () => {
+    const scratchDir = mkdtempSync(join(REPO_ROOT, 'tmp', 'smoke-buildkit-'))
+    try {
+      const exec = buildkitExec(
+        { ref: 'r', layout: '/l', builder: 'mos-arm64', platform: 'linux/arm64', scratch: scratchDir },
+        async argv => {
+          // What the build would have written out: the three files `judge` reads.
+          const out = argv[argv.indexOf('--output') + 1]!.replace('type=local,dest=', '')
+          const df = readFileSync(join(argv[argv.length - 1]!, 'Dockerfile'), 'utf8')
+          const path = /RUN --network=none mkdir -p \/mos-smoke && \( '([^']+)'/.exec(df)![1]!
+          const artifact = ARTIFACTS.find(a => a.path === path)
+          mkdirSync(out, { recursive: true })
+          const limited = path === '/usr/bin/crun'
+          writeFileSync(join(out, 'status'), limited ? '1\n' : '0\n')
+          writeFileSync(join(out, 'stdout'), limited ? '' : `${artifact!.name} ${artifact!.pin().expected}\n`)
+          writeFileSync(join(out, 'stderr'), limited ? `${MEMFD}\n` : '')
+          return { status: 0, stdout: '', stderr: '' }
+        },
+      )
+      expect(execRoute(exec)).toBe('buildkit')
+
+      const run = await smokeRun({ board: 'x64', exec })
+      expect(run.results.find(x => x.name === 'crun')!.verdict).toBe('executor-limited')
+      expect(run.conclusion.line).toContain(
+        'RESULT: PASS (11 pass, 1 executor-limited, 0 fail, 0 unclaimed, of 12)',
+      )
+      expect(run.conclusion.exitCode).toBe(0)
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true })
+    }
+  })
+
+  // The category does not leak sideways: the route is not a licence for the
+  // OTHER eleven entries to fail quietly under emulation.
+  test('a different artifact failing under the emulated route is still a FAIL', async () => {
+    const emulated: Exec = async argv =>
+      argv[0] === '/usr/bin/podman'
+        ? { status: 1, stdout: '', stderr: `${MEMFD}\n` }
+        : honest(argv)
+
+    const run = await smokeRun({ board: 'x64', exec: emulated, route: 'buildkit' })
+    expect(run.conclusion.conclusion).toBe('FAIL')
+    expect(run.conclusion.counts.executorLimited).toBe(0)
+    expect(run.results.find(x => x.name === 'podman')!.verdict).toBe('fail')
+  })
+
   test('a register that disagrees with the pin files executes NOTHING', async () => {
     let calls = 0
     const counting: Exec = async argv => {
@@ -1105,6 +1327,15 @@ describe('buildkitExec -- the register executed inside buildkit', () => {
     expect(argv).toContain('--no-cache')
     expect(argv[argv.indexOf('--output') + 1]).toBe('type=local,dest=/scratch/out')
     expect(argv[argv.length - 1]).toBe('/scratch/df')
+  })
+
+  test('the two executors say which they are, and an untagged function is the strict one', () => {
+    // The route is not inferable from anything the runner sees at judging time
+    // -- the outcome of an emulated run looks exactly like a native one -- so
+    // each executor carries it, and anything else is read as `native`.
+    expect(execRoute(buildkitExec(opts, async () => ({ status: 0, stdout: '', stderr: '' })))).toBe('buildkit')
+    expect(execRoute(dockerExec(ref))).toBe('native')
+    expect(execRoute(async () => ({ status: 0, stdout: '', stderr: '' }))).toBe('native')
   })
 
   test('the executor reads the three files back; a build that fails is an executor that cannot run', async () => {

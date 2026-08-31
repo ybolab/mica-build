@@ -240,7 +240,7 @@ its tests. Every `*_VERSION` in every `versions.env` must be claimed by some
 artifact; a new self-built binary that arrives with a pin and no register entry
 refuses the run instead of quietly not being executed.
 
-### Three verdicts, because two would be a lie
+### Four verdicts, because two would be a lie
 
 An artifact that is neither a pass nor a fail is **unclaimed**: not invoked at
 all. A run carrying one concludes `INCOMPLETE` and exits non-zero, and the names
@@ -255,6 +255,24 @@ name costs three edits in one diff. Nothing infers the category at runtime: a
 binary that *loses* its `--version` is a **FAIL**, not a new member. Both
 directions are refused, including the good one, so a name that becomes claimed
 and is left behind in the constant fails too.
+
+The fourth is **executor-limited**, and it answers a different question: not
+*was this artifact asked* but *whose limitation was the failure*. `crun` 1.29.1
+re-executes libcrun through a memory file descriptor — its CVE-2024-21626
+mitigation — before it parses a single argument, and `qemu-user` cannot service
+that `fexecve`; under the emulated buildkit executor it therefore exits 1
+without ever reaching its own `--version` handler, while the same binary in the
+same root answers normally on a host that executes it natively.
+
+Three conjuncts gate it, and all three are required. The **route** must be the
+emulated buildkit fallback — on the native route this failure is a `FAIL`, as it
+always was. The **register entry** must declare the signature; there is no
+global pattern, so an entry that declares nothing can never reach this verdict.
+And the observed failure must **match that signature exactly**, in the status
+and in the stderr. A run carrying one concludes `PASS` and exits 0, and the
+`RESULT:` line carries the count and the names — `1 executor-limited` beside
+`0 fail` — so a run that softened a conclusion cannot look like one that
+softened nothing.
 
 ### The commit half of the version contract
 

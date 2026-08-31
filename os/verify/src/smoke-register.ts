@@ -36,6 +36,25 @@ export type Contract =
   | { readonly kind: 'exec'; readonly argv: readonly string[] }
   | { readonly kind: 'unclaimed'; readonly why: string }
 
+/**
+ * A failure that is the EXECUTOR'S limit rather than the artifact's.
+ *
+ * Declared per entry, never as a global pattern, and consulted only on the
+ * emulated buildkit route: an entry that declares nothing can never be
+ * executor-limited, so the category cannot spread to a binary nobody measured.
+ * The runner requires the observed status AND the observed stderr to match what
+ * is written here before it will report anything other than a FAIL, which is
+ * what keeps this from becoming "a non-zero exit we have learned to tolerate".
+ */
+export interface ExecutorLimit {
+  /** The exit status the executor's limit produces. Any other status is a FAIL. */
+  readonly status: number
+  /** A substring of stderr that identifies it. Matched against stderr only -- see `judge`. */
+  readonly stderrIncludes: string
+  /** Why this is the executor's limit and not the artifact's. Printed on the row. */
+  readonly why: string
+}
+
 export interface Artifact {
   /** The binary's name, as Scope spells it. */
   readonly name: string
@@ -67,6 +86,13 @@ export interface Artifact {
    * scope amendment named two files, not four.
    */
   readonly embedsBuildCommit?: boolean
+  /**
+   * The one failure of this artifact that is a statement about the executor.
+   *
+   * Absent for eleven of the twelve, and absent means the entry can only pass
+   * or fail. See [`ExecutorLimit`] and `judge`.
+   */
+  readonly executorLimit?: ExecutorLimit
 }
 
 /** The container engine's shared pin file, named once per entry rather than per line. */
@@ -152,6 +178,27 @@ export const ARTIFACTS: readonly Artifact[] = [
     path: '/usr/bin/crun',
     pin: podman('CRUN_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
+    // crun 1.29.1's mitigation for CVE-2024-21626 re-executes libcrun out of a
+    // memory file descriptor (memfd_create + fexecve) before it will parse a
+    // single argument, `--version` included. qemu-user cannot service that
+    // fexecve, so under the emulated buildkit executor crun exits 1 having
+    // printed this on stderr and nothing on stdout -- measured 2026-08-30 while
+    // building the cx3576 root. It is the emulator that cannot run the
+    // re-exec, not crun that is broken: the same binary in the same root
+    // reports `crun version 1.29.1` on a host whose kernel executes it
+    // natively, and os/rootfs/scripts/podman-exercise.sh already records the
+    // same signature at the stage level ("version withheld under emulation").
+    // Declared here so the exemption is one entry, one status and one sentence
+    // rather than a pattern every artifact is measured against; on the native
+    // route this entry stays strict and this failure is a FAIL.
+    executorLimit: {
+      status: 1,
+      stderrIncludes: 'Failed to re-execute libcrun via memory file descriptor',
+      why:
+        'crun re-executes libcrun through a memory file descriptor (its CVE-2024-21626 mitigation) '
+        + 'before parsing argv, and qemu-user cannot service that fexecve -- so under emulation it '
+        + 'cannot reach its own --version handler. The emulator\'s limit, not the binary\'s',
+    },
   },
   {
     name: 'conmon',
