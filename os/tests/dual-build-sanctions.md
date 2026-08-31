@@ -645,6 +645,80 @@ fixed in place.
 - status: active
 - reason: The contents of the directory above -- measured as exactly two added paths, `/usr/lib/mos/board/x64` and `/usr/lib/mos/board/x64/grub.cfg`. Separate stanza for the reason the two `/usr/share/doc` patterns are separate: `**` matches one or more path segments and never zero, so it cannot also cover the directory it descends from.
 
+### /etc/passwd
+- classes: content
+- status: active
+- expect-diff: |
+    24 -mos-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
+    24 +mos-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
+    25 -mos-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
+    25 +mos-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /etc/passwd-
+- classes: content
+- status: active
+- expect-diff: |
+    24 -mos-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
+    24 +mos-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This is the -backup, which glibc's account tools write as a snapshot of the file BEFORE their last write, so it holds one write less than its live counterpart and the transposition shows as a single replaced line rather than as a pair. Same cause, same two accounts. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /etc/group
+- classes: content
+- status: active
+- expect-diff: |
+    50 -mos-mqttd:x:970:
+    50 +mos-mqtt-broker:x:969:
+    51 -mos-mqtt-broker:x:969:
+    51 +mos-mqttd:x:970:
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /etc/group-
+- classes: content
+- status: active
+- expect-diff: |
+    50 -mos-mqttd:x:970:
+    50 +mos-mqtt-broker:x:969:
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This is the -backup, which glibc's account tools write as a snapshot of the file BEFORE their last write, so it holds one write less than its live counterpart and the transposition shows as a single replaced line rather than as a pair. Same cause, same two accounts. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /etc/gshadow
+- classes: content
+- status: active
+- expect-diff: |
+    50 -mos-mqttd:!::
+    50 +mos-mqtt-broker:!::
+    51 -mos-mqtt-broker:!::
+    51 +mos-mqttd:!::
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. os/rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /etc/gshadow-
+- classes: content
+- status: active
+- expect-diff: |
+    50 -mos-mqttd:!::
+    50 +mos-mqtt-broker:!::
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. os/rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /etc/shadow-
+- classes: content
+- status: active
+- expect-diff: |
+    24 -mos-mqttd:!:18262::::::
+    24 +mos-mqtt-broker:!:18262::::::
+    25 -mos-mqtt-broker:!:18262::::::
+    25 +mos-mqttd:!:18262::::::
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. os/rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
+### /usr/share/factory/etc/shadow
+- classes: content
+- status: active
+- expect-diff: |
+    24 -mos-mqttd:!:18262::::::
+    24 +mos-mqtt-broker:!:18262::::::
+    25 -mos-mqtt-broker:!:18262::::::
+    25 +mos-mqttd:!:18262::::::
+- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs os/rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. os/rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+
 ### /usr/bin/mosd
 - classes: content
 - status: active

@@ -53,6 +53,38 @@ WANT_N="$(grep -c . "${LIST}")"
     fail "${LIST} names no package"
 echo "compose: ${MOS_BOARD} (${MOS_ARCH}), ${WANT_N} resolved package(s) against a pool of ${POOL_N}"
 
+# EXACTLY ONE PROFILE PACKAGE, asserted where the set is handed to apt.
+#
+# os/rootfs/packages/resolve.sh already counts this over the resolution it
+# prints, and os/tests/rootfs-manifest-test.sh drives both the two-package and
+# the zero-package refusals, so the guarantee is structural upstream of here.
+# This is NOT a second implementation of that rule: it is the check that the set
+# which ARRIVED still has the property at the moment it is used. Anything
+# between the resolver and this line -- the staging step, an edited
+# packages.txt, a future caller that builds the list another way -- is the seam
+# a boundary assertion exists to catch.
+#
+# What it costs to be wrong is asymmetric, which is why it is worth a line.
+# Measured: with NO profile provider available APT refuses by name and installs
+# nothing, but with BOTH available it picks one SILENTLY and exits 0 -- and it
+# picked mos-profile-PROD. mosd fails closed to prod when the file is absent, so
+# the zero case and the two-package case both end at an image that behaves as
+# production while every check downstream reports green. The composer explicitly
+# naming one profile is the only thing that keeps a dev image dev.
+profile_n=0
+profile_names=""
+for p in ${WANT}; do
+    case "${p}" in
+    mos-profile-*)
+        profile_n=$((profile_n + 1))
+        profile_names="${profile_names} ${p}"
+        ;;
+    esac
+done
+[ "${profile_n}" -eq 1 ] ||
+    fail "the set handed to apt names ${profile_n} profile package(s):${profile_names:- (none)}. Exactly one belongs in an image. With none, APT installs no profile file and mosd FAILS CLOSED to prod -- a dev build with SSH off and every check green; with two, they Conflict and APT picks one silently, and it was measured picking prod. os/rootfs/packages/resolve.sh refuses both cases over the resolution it prints, so reaching this means something between it and here changed the set"
+echo "compose: exactly one profile package in the set handed to apt:${profile_names}"
+
 # No maintainer script may start a service while the root is being assembled.
 # invoke-rc.d and deb-systemd-invoke both consult this file and both treat 101
 # as "do not run"; without it, a package whose postinst starts its unit would

@@ -367,16 +367,36 @@ mapfile -t FORBIDDEN < <(printf '%s\n' "${FORBIDDEN[@]}" | LC_ALL=C sort -u)
 # is prose, including a `### /usr/share/doc/**` inside the format example and
 # several `### ` prose headings, and reading those as patterns would count
 # sanctions this ledger does not grant.
+#
+# Each stanza is emitted with whether it is NARROWED -- whether it carries an
+# `expect-diff:` block naming the one difference it allows -- because that is
+# what decides whether it may cover a forbidden path.
 mapfile -t STANZAS < <(awk '/^## Sanctions$/ { f = 1; next }
-                            f && /^### / { sub(/^### */, ""); gsub(/`/, ""); print }' "${LEDGER}")
+                            f && /^### / {
+                                if (pat != "") print pat "\t" (narrowed ? "narrowed" : "bare")
+                                pat = $0; sub(/^### */, "", pat); gsub(/`/, "", pat); narrowed = 0; next
+                            }
+                            f && /^- expect-diff:/ { narrowed = 1 }
+                            END { if (pat != "") print pat "\t" (narrowed ? "narrowed" : "bare") }' "${LEDGER}")
 [ "${#STANZAS[@]}" -gt 0 ] ||
     refuse "${LEDGER} carries no '### <pattern>' stanza under its '## Sanctions' heading; the check for a forbidden sanction would have nothing to read."
-for pattern in "${STANZAS[@]}"; do
+NARROWED_N=0
+for row in "${STANZAS[@]}"; do
+    pattern="${row%%	*}"
+    kind="${row##*	}"
+    [ "${kind}" != "narrowed" ] || NARROWED_N=$((NARROWED_N + 1))
     for path in "${FORBIDDEN[@]}"; do
         # shellcheck disable=SC2053 # deliberate: $pattern is a glob, not a literal.
-        if [[ ${path} == ${pattern} ]]; then
-            refuse "${LEDGER} carries a stanza '${pattern}', which covers ${path}. L1's ruling is that these three paths may not be sanctioned: two are fixed and one is being fixed, so a stanza over them would hide the regression rather than record a decision."
-        fi
+        [[ ${path} == ${pattern} ]] || continue
+        # A BARE stanza over one of these paths is refused, and a NARROWED one
+        # is not. L1's ruling was that they may not be sanctioned, and the
+        # reason was that a stanza over them would hide a regression -- which is
+        # true of a stanza that allows ANY content difference at the path and
+        # false of one that allows exactly one named diff. The narrowed form
+        # subsumes the rule instead of weakening it: the initrd's or the shadow
+        # date's return changes the diff, and the stanza then covers nothing.
+        [ "${kind}" = "bare" ] &&
+            refuse "${LEDGER} carries a stanza '${pattern}' with no 'expect-diff:' block, and it covers ${path}. L1 ruled these paths unsanctionable because a stanza over them hides a regression; a stanza that names the exact difference it allows does not, so narrow it rather than deleting it."
     done
 done
 
@@ -467,7 +487,7 @@ echo "B (candidate):     ${DIR_B}   -- the composer,    ${PATHS_B} paths"
 echo "finalizer:         one definition, 90-pack content ${HASH_A} on both sides"
 echo "pool:              ${POOL}, ${POOL_N} package(s)"
 echo "drift control:     ${COMMON_PKGS} package(s) common to both builds, ${DRIFT_N} at differing versions"
-echo "ledger:            ${LEDGER}, ${#STANZAS[@]} stanza(s), none covering a forbidden path, none sanctioning 'removed'"
+echo "ledger:            ${LEDGER}, ${#STANZAS[@]} stanza(s), ${NARROWED_N} narrowed by an expected diff, none sanctioning 'removed', none covering a watched path bare"
 echo "chain-only class:  ${REMOVED_N} path(s) -- the number that has to reach zero by giving each an owner"
 echo "boundary clause:   printed above, ${BOUNDARY_LINES} lines from the ledger"
 sed -n '/^differences found:/,/^  unsanctioned:/p' "${WORK}/compare.txt" | sed 's/^/comparator:        /'
@@ -475,13 +495,15 @@ echo "work directory:    ${WORK}"
 
 if [ "${#REGRESSIONS[@]}" -gt 0 ]; then
     echo
-    echo "REGRESSION: the difference set names path(s) L1 ruled may not be sanctioned:" >&2
+    echo "UNACCOUNTED AT A WATCHED PATH: the UNSANCTIONED set names path(s) L1 watches:" >&2
     printf '  %s\n' "${REGRESSIONS[@]}" >&2
-    echo "  The initrd is built under SOURCE_DATE_EPOCH and the ldconfig aux-cache is deleted by" >&2
-    echo "  the finalizer's tree surgery; the shadow last-change field is being fixed separately." >&2
-    echo "  Each of these appearing here is that fix having come undone, and it goes to L1 rather" >&2
-    echo "  than into the ledger." >&2
-    echo "RESULT: FAIL (regression in a fix, ${#REGRESSIONS[@]} path(s))"
+    echo "  These are the paths whose non-reproducibility was fixed -- the initrd under" >&2
+    echo "  SOURCE_DATE_EPOCH, the ldconfig aux-cache deleted by the finalizer's tree surgery, the" >&2
+    echo "  shadow last-change day pinned by account-pin-shadow-dates.sh. Appearing UNSANCTIONED" >&2
+    echo "  means either one of those fixes came undone or the path acquired a difference its" >&2
+    echo "  narrowed stanza does not name; the comparator's EXPECTED DIFF MISMATCH lines above say" >&2
+    echo "  which, and neither is answered by widening a stanza." >&2
+    echo "RESULT: FAIL (${#REGRESSIONS[@]} watched path(s) unaccounted for)"
     exit 1
 fi
 
