@@ -306,6 +306,104 @@ things follow, and they are recorded here rather than quietly absorbed:
 The predictions are NOT edited to cover this. They stand as committed, and if
 the measured set is wider, what widened it is named here in advance.
 
+### What the two queued builds measured
+
+Build D (the full build again, commit 23037394a539) and build C
+(`MOS_ROOTFS_WITHOUT=containers`, same commit) ran on a private
+docker-container builder, so both chained by OCI layout under this worktree's
+own `_out/x64/stages/` and wrote no daemon-global tag. Build D was cold: 142
+`DONE` against 28 `CACHED`, and 379 apt progress lines. Build C exits 1, which
+is the smoke runner refusing a feature-declined root rather than a failure --
+the archive is written before the refusal.
+
+**The predicted drift did not happen, and the prediction that did fail was mine
+about the drift, not the one committed at 38743fc.** Build D's log shows
+`Unpacking libssl3t64 (3.5.7-1~deb13u2) over (3.5.6-1~deb13u2)`, and from that
+line alone this file previously expected openssl-owned paths in the difference
+set. Measured against the roots: `/usr/lib/x86_64-linux-gnu/libcrypto.so.3` and
+`libssl.so.3` are BYTE-IDENTICAL in both. The `over (3.5.6)` is relative to the
+digest-pinned base image, and both builds upgraded to the same 3.5.7. A build
+log said what a root did not.
+
+**Build A vs build D: six content records, and the four predicted are among
+them.** `/usr/bin/mosd` and `/usr/bin/apid` carry the embedded commit, as
+predicted. `/boot/initrd.img-6.12.107+deb13-amd64` and
+`/usr/share/factory/var/cache/ldconfig/aux-cache` differ, as predicted. Nothing
+is added or removed and no mode, uid, gid, symlink or capability differs.
+
+That comparison is the one the inference above needed, and it now settles it
+for the initramfs. mosd and apid are not IN the initramfs, and the package
+versions are identical, so its inputs were the same on both builds. Per cpio
+entry: 183 entries, identical names, **zero entries whose content differs**, 182
+differing in inode number and 71 in mtime, with the maximum mtime 2,615 seconds
+apart -- the 43 minutes between the two builds. The aux-cache likewise: header
+identical, all 128 library-path strings identical with an empty set difference
+in both directions, only the binary `{dev, ino, ctime, size}` table moving. So
+for these two paths the claim is no longer an inference: **the content is
+identical and only the build's own metadata moves.**
+
+**A THIRD non-reproducible surface, which nothing predicted.** The other two
+records are `/usr/share/factory/etc/shadow` and `/etc/shadow-`, and they are a
+different mechanism from the first two -- not an inode number but a DATE:
+
+```
+-  systemd-network:!*:20691:::::1:      20691 = 2026-08-26
++  systemd-network:!*:20696:::::1:      20696 = 2026-08-31
+```
+
+`messagebus`, `systemd-resolve` and `sshd` move with it. These are accounts
+created by Debian package postinst scripts, and the shadow last-change field is
+the day the account was made. The mos-owned accounts do NOT move -- `mos`,
+`mos-mqttd` and `mos-mqtt-broker` all read 18262 (2020-01-01) in both builds,
+because `os/rootfs/scripts/account-*.sh` pins them with `chage -d`. The
+distribution's accounts get no such treatment.
+
+This one is worse than the other two for a gate, because it is quiet. It is a
+DAY, so two builds on the same day agree and only builds on different days
+differ: it passes every same-session test and fails whenever the two paths of
+the dual-build gate happen to straddle midnight. No stanza is written for it
+here, for the same reason none is written for the other two.
+
+**Build D vs build C: the addition and removal dimension, on real material for
+the first time.** 9,234 paths against 9,199, and 38 differences: **35 `removed`
+and 3 `content`**. The removals are the container engine and what only it pulls
+in -- `/usr/bin/podman`, `/usr/bin/crun`, the five binaries under
+`/usr/libexec/podman/` and that directory itself,
+`/usr/lib/systemd/system-generators/podman-system-generator`, `/run/crun`,
+`/usr/sbin/nft`, `/etc/nftables.conf`, `/usr/lib/systemd/system/nftables.service`,
+its `deb-systemd-helper-enabled` record, the nftables/nftnl/jansson/subid
+shared libraries with both their soname and real-name links, and eleven paths
+under `/usr/share/doc/`. The three content records are the two non-reproducible
+paths above plus `/etc/ld.so.cache`, which differs because the library set
+really did change -- a consequence of the configuration, not a surface.
+
+**The orientation trap, demonstrated rather than asserted.** Swapping the two
+arguments gives the IDENTICAL 38-path set with 35 records reported as `added`
+instead of `removed`, the 3 content records unchanged. A gate driver that got
+the order backwards would not fail loudly; it would report a plausible set with
+every class inverted, and a ledger written for one order would go green against
+the other only by accident.
+
+**The shipped `pending` stanza fired on real material.** Run in the composed
+orientation, the difference set contains real added `/usr/share/doc/<package>/`
+paths -- copyright files among them, which is exactly what PLAN-036 sanctions
+in principle. The run reported:
+
+```
+PENDING SANCTION NOW LIVE .../dual-build-sanctions.md:377 '/usr/share/doc/**'
+  (added) matches a real difference; promote it to 'status: active'
+```
+
+while still counting those paths as unsanctioned. That is both directions of
+the pending rule, on real paths rather than on a fixture.
+
+It also exposed a gap in that stanza, which is why it is written down here and
+fixed below: `/usr/share/doc/**` matched
+`/usr/share/doc/libjansson4/copyright` but NOT `/usr/share/doc/libjansson4`
+itself, because `**` does not match zero path segments. The directory entry a
+package creates is a difference of its own, and the shipped list now carries a
+second pattern for it.
+
 ## What an x64-only comparison does not cover
 
 PLAN-036 section 6 runs this comparison on x64 only; cx3576 is then built and
@@ -378,6 +476,11 @@ fixed in place.
 - classes: added
 - status: pending
 - reason: PLAN-036 section 6 sanctions package documentation as an expected addition. The composed root installs real `.deb` packages, and each carries its own `/usr/share/doc/<package>/` payload -- the per-package Apache-2.0 copyright this campaign requires, at minimum. The stage chain installed those components by copying files into place and produced no such tree, so every path under it is an addition with no counterpart on side A. Pending until the composer exists; promote it to active in the same change that first produces the difference.
+
+### /usr/share/doc/*
+- classes: added
+- status: pending
+- reason: The directory entry itself, which the pattern above does not cover -- `**` does not match zero path segments, so `/usr/share/doc/**` matches `/usr/share/doc/mos-system/copyright` and not `/usr/share/doc/mos-system`. Measured, not reasoned: a real run against two roots differing by the container engine reported eleven added paths under `/usr/share/doc/`, and the `**` stanza matched the files while leaving the five package directories unsanctioned. Same sanction, same reason as above; a separate stanza because one glob cannot express both.
 
 ### /etc/mos/rootfs-packages.txt
 - classes: added
