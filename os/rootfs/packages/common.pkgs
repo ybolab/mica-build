@@ -1,0 +1,6 @@
+# The packages every mos image carries, whatever board it is built for and
+# whatever the build declines. Nothing here is selectable: a root with no
+# mos-system has no state mounts, no seed and reconcile tools and no operator
+# account, and a root with no mos-ca-trust cannot verify a TLS peer.
+mos-system
+mos-ca-trust

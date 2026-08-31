@@ -7,9 +7,18 @@
 // checker stops being able to notice.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import {
   auditChain,
@@ -221,6 +230,64 @@ describe('discoverStages', () => {
 
   test('refuses a directory that is not there', () => {
     expect(() => discoverStages(join(tmpdir(), 'mos-no-such-stage-dir'))).toThrow(StageChainError)
+  })
+
+  // A stage file SHARED by two chains, which is how the composed root in
+  // os/rootfs/compose reaches os/rootfs/stages/90-pack.Dockerfile: one
+  // definition of the finalizer, referred to twice, so that a dual-build
+  // comparison cannot be reading a difference between two copies of it.
+  //
+  // The path is what `docker buildx build -f` is given, and buildx does not
+  // open it locally -- it transfers the dockerfile as a mini-context of its own
+  // and the frontend opens it on the other side, where a relative symlink
+  // pointing out of that context resolves to nothing. Measured against buildx
+  // 0.32.2 on both drivers:
+  //   #2 transferring dockerfile: 114B done
+  //   ERROR: failed to read dockerfile: open probe.Dockerfile: no such file
+  // So `path` has to be the TARGET, while the content and therefore the hash
+  // were already the target's -- readFileSync follows the link. Both halves are
+  // asserted, because the failure was in exactly the half that looked fine.
+  test('a symlinked stage file is reported at its target path, with the target content', () => {
+    const shared = scratch({ '90-pack.Dockerfile': TERMINAL })
+    const dir = scratch({ '10-base.Dockerfile': FIRST })
+    symlinkSync(join(shared, '90-pack.Dockerfile'), join(dir, '90-pack.Dockerfile'))
+
+    const stages = discoverStages(dir)
+    expect(stages.map((x) => x.name)).toEqual(['10-base', '90-pack'])
+    const pack = stages[1]!
+    // The target, not the link. The link is the path that fails at buildx.
+    expect(pack.path).toBe(realpathSync(join(shared, '90-pack.Dockerfile')))
+    expect(pack.path).not.toBe(join(dir, '90-pack.Dockerfile'))
+    expect(pack.sha256).toBe(
+      new Bun.CryptoHasher('sha256').update(TERMINAL).digest('hex'),
+    )
+    // And what the driver would actually spawn names the target too, which is
+    // the assertion the failing build would have gone red on: buildArgv puts
+    // this path after `-f`, and that is the argument buildx choked on.
+    const packBuild = planChain(stages, { board: 'x64', supplied: {} })[1]!
+    const argv = buildArgv(packBuild, { context: '/ctx', platform: 'linux/amd64', dest: '/dest' })
+    expect(argv).toContain(realpathSync(join(shared, '90-pack.Dockerfile')))
+    expect(argv).not.toContain(join(dir, '90-pack.Dockerfile'))
+  })
+
+  // The other half of the same claim, and it is the half that decides whether
+  // `stagePath` may be a blanket realpath. It may not: an ordinary stage file's
+  // path has to be the one the caller spelled, so that every fault message
+  // names the directory the reader passed in.
+  //
+  // The fixture is reached THROUGH A SYMLINKED PARENT, which is what makes this
+  // able to fail. Written against a plain directory it discriminates nothing --
+  // the realpath of a path with no link in it is that path -- and a blanket
+  // realpath passed it. That is not hypothetical: this test was written that
+  // way, mutated, and stayed green, which is how it got its symlink.
+  test('a regular stage file keeps the path it was discovered at, under a symlinked parent', () => {
+    const real = scratch({ '10-base.Dockerfile': FIRST, '90-pack.Dockerfile': TERMINAL })
+    const via = join(dirname(real), `${basename(real)}-via-link`)
+    symlinkSync(real, via)
+    expect(discoverStages(via).map((s) => s.path)).toEqual([
+      join(via, '10-base.Dockerfile'),
+      join(via, '90-pack.Dockerfile'),
+    ])
   })
 })
 

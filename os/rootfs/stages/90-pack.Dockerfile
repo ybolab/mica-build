@@ -42,8 +42,33 @@
 ARG MOS_STAGE_PREV
 ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
-# Close the device root: inventory, log capture, purge, report.
+# Close the device root: pin the account dates, inventory, log capture, purge,
+# report.
 FROM ${MOS_STAGE_PREV} AS closed
+
+# The shadow last-change day, pinned for every account.
+
+# That field is not content anyone chose: it is the BUILD DATE, leaking into a
+# signed root through Debian's own maintainer scripts. useradd stamps today
+# into it, and the accounts the distribution's postinsts create --
+# systemd-network, messagebus, systemd-resolve, sshd -- therefore carry the day
+# the image was built. Pinning it to the same epoch the mos accounts already use
+# makes the field a function of the tree again.
+
+# It is quieter than the two surfaces beside it and worse for being quiet. The
+# value is a DAY, so two builds in one session agree and every same-session test
+# passes; only builds straddling midnight differ. A gate that compares two roots
+# would go red at random, months from now, for a reason nobody would connect to
+# a calendar.
+
+# Here rather than in stages/10-base beside account-mos.sh, because this has to
+# run after the LAST apt transaction that can create an account -- the kernel
+# install in stages/40-board is the last of them -- and the three mos accounts
+# are pinned where they are created because nothing creates them but us. Before
+# the purge below, which is what takes the package manager away; `chage` itself
+# ships (90-pack's purge notes list it among the setgid binaries that stay).
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/account-pin-shadow-dates.sh
 
 # Package inventory. Split from the size measurement below because the package
 # manager is removed in between: dpkg-query needs /var/lib/dpkg, and TOTAL_MB
@@ -171,6 +196,37 @@ COPY --from=closed / /rootfs/
 # vendor packages ship translations and are none of our business.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-cjk-guard.sh
+
+# What the ASSEMBLY left behind, removed here because no package can own it.
+#
+# Two things today. sshd host keys: openssh-server's postinst generates a set at
+# install time, and on a signed rootfs that is one private key the whole fleet
+# shares; it is also random, so it would move the verity root hash on every cold
+# build. mos-seed-state generates a per-device set into STATE instead.
+# /usr/sbin/policy-rc.d: the Debian docker image ships it so that a maintainer
+# script cannot start a daemon during a build, and on a device it is a file that
+# answers 101 to every invoke-rc.d for a reason that stopped applying when the
+# image was packed.
+#
+# HERE, in the finalizer, because each is a statement about the assembled root
+# rather than about any one package -- which is the ruling
+# os/rootfs/packages-src/system/Dockerfile already records for the first
+# ("`rm -f /etc/ssh/ssh_host_*` -> a whole-image finalizer step, not a
+# package"), and which is forced for the second: policy-rc.d comes with the BASE
+# IMAGE, so there is no producer in this repository that could ship or withhold
+# it.
+#
+# The two paths arrive with different residue and the script prints both counts,
+# so neither number can be vacuous on both sides at once. stages/10-base removes
+# the host keys right after installing openssh-server and keeps doing so, so on
+# the chain path that count is 0 and this is a tripwire while the policy-rc.d
+# count is 1 and this is the removal; on the composition path openssh-server
+# arrives through mos-system's Depends inside one apt transaction so the key
+# count is real, and compose-install.sh has already removed the policy-rc.d it
+# wrote, so that count is 0. Both paths reach this through one file, which is
+# what lets the dual-build gate read a difference as a composition difference.
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-strip-build-residue.sh
 
 # Tree surgery that cannot happen in the rootfs stage, either because buildkit
 # bind-mounts the file during RUN or because it would break dpkg.
