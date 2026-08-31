@@ -52,7 +52,7 @@ substitution, safe to source and to parse.
 | `ARCHES` | yes | `amd64`, `arm64`, or `all` -- see below |
 | `ENABLEMENT` | yes | `<package>=<count>` per package; see below |
 | `BUILD_CONTEXTS` | no | `<name>=<repo-relative path>`, passed as `--build-context` |
-| `FROM_IMAGES` | no | `<build-arg name>=<images.env key>`, resolved by `os/build-env/from.sh` |
+| `FROM_IMAGES` | no | `<build-arg name>=<images.env key>`, resolved by `os/build-env/from.sh`. The packer image is always supplied; `FROM_IMAGES` declares additional bases only |
 | `BUILD_ARGS` | no | extra `<name>=<value>` build arguments |
 | `PREPARE` | no | a script in the producer directory, run on the host before the build |
 
@@ -175,6 +175,18 @@ Such a build runs at the **host** architecture and needs no emulation -- there i
 no ELF in the payload for `dpkg-shlibdeps` to resolve -- and it requires a
 `docker-container` builder, because the `docker` driver accepts only one output
 per build.
+
+**A complete pool has a prerequisite that is not in the tree: the cx3576 board
+producer's BSP inputs.** `board-cx3576` stages a kernel, a device tree, the
+kernel modules and U-Boot out of `os/boards/cx3576/bsp/out/`, which is
+gitignored, so a fresh worktree does not have them and its `PREPARE` hook
+refuses by name -- naming `make -C os/boards/cx3576/bsp <target>`, or pointing
+`BOARD_DIR` at a bsp tree that already carries them. The part worth knowing
+before you meet it is the consequence for the aggregate rather than for that one
+producer: `make os-debs` walks the producers in the order `producers.sh` prints
+them and stops at the first that fails, and `board-cx3576` sorts first. So
+without those inputs the aggregate builds **nothing at all** -- the pool comes
+out empty rather than short one package, and no other producer is reached.
 
 ## `version.sh`
 

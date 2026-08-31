@@ -239,9 +239,32 @@ fi
 # an `all` producer is the host's -- there is no ELF in the payload to resolve
 # against a foreign architecture's libraries.
 IMAGE_ARCH="${BUILD_PLATFORM}"
+
+# The packer image is passed UNBIDDEN, for the same reason and in the same way
+# that pack.sh itself is: a producer packs inside mos-build-deb BY
+# CONSTRUCTION -- that is what a producer is -- so the one base every producer
+# shares is this driver's to supply, not a line each producer.env has to
+# remember. A forgotten one does not read as a forgotten declaration either; it
+# arrives from buildx as `base name (${MOS_BUILD_DEB}) should not be blank`,
+# which names neither the producer nor this file. FROM_IMAGES keeps its real
+# job: the ADDITIONAL, non-universal bases, which is what
+# MOS_IMAGE_DEBIAN_TRIXIE is.
+#
+# A producer that declares the packer anyway is tolerated: its entry REPLACES
+# the one below rather than being appended after it, so the build argument is
+# resolved once either way and the two spellings of the same producer are the
+# same build.
+FROM_ENTRIES=("MOS_BUILD_DEB=LOCAL_MOS_BUILD_DEB")
+for entry in ${FROM_IMAGES}; do
+    case "${entry}" in
+    MOS_BUILD_DEB=*) FROM_ENTRIES[0]="${entry}" ;;
+    *) FROM_ENTRIES+=("${entry}") ;;
+    esac
+done
+
 FROM_ARGS=()
 OCI_DIRS=()
-for entry in ${FROM_IMAGES}; do
+for entry in "${FROM_ENTRIES[@]}"; do
     argname="${entry%%=*}"
     key="${entry#*=}"
     [ -n "${argname}" ] && [ -n "${key}" ] && [ "${argname}" != "${entry}" ] || {
