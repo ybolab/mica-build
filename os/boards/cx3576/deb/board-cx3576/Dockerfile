@@ -76,6 +76,20 @@ RUN set -eu; \
         install -m 0644 "${c}" "${ROOT}/etc/repart.d/$(basename "${c}")"; \
     done; \
     \
+    # Systemd drop-ins from the board overlay, wholesale. A board that must \
+    # amend a GENERIC unit for its own hardware -- ttyFIQ0's carrier-less \
+    # serial console needs agetty told --local-line -- records the amendment \
+    # as overlay content, and the package ships every such directory rather \
+    # than naming them: same derivation rule as the repart set above, and the \
+    # glob takes only drop-in directories, never the units themselves. \
+    for d in /in/board-overlay/etc/systemd/system/*.d; do \
+        [ -d "${d}" ] || continue; \
+        install -d -m 0755 "${ROOT}/etc/systemd/system/$(basename "${d}")"; \
+        for f in "${d}"/*; do \
+            install -m 0644 "${f}" "${ROOT}/etc/systemd/system/$(basename "${d}")/$(basename "${f}")"; \
+        done; \
+    done; \
+    \
     # Hardware init, and THE SPLIT. Every fact in BOARD_HWINIT_CONFS ships as \
     # /etc/mos/<n>.conf, bt.conf included: the UART, the protocol and the \
     # firmware node of the Bluetooth part are facts about this BOARD. The \
