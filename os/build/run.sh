@@ -44,6 +44,7 @@ usage: bash os/build/run.sh [--help] [bun-test-args...]
        bash os/build/run.sh --mkimage-v2 [assembler-args...]
        bash os/build/run.sh --mkimage-x64 [assembler-args...]
        bash os/build/run.sh --bundle [bundle-args...]
+       bash os/build/run.sh --compare-roots [comparator-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -72,6 +73,12 @@ same first-position rule; try --bundle --help. Unlike the two assemblers this
 one takes a board, because its two branches differ only in what a boot slot
 holds, and that is a board fact.
 
+With --compare-roots FIRST, it compares two extracted root trees against the
+written sanction ledger in os/tests/dual-build-sanctions.md -- PLAN-036 section
+6's dual-build gate. Same shape, same first-position rule; try --compare-roots
+--help. It builds nothing: the roots are handed to it, and the driver that
+produces them lands with the composer.
+
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
 has it and in the container pinned for that toolset otherwise, which on a host
@@ -93,9 +100,9 @@ USAGE
 # else entirely. A request to build a rootfs, or to assemble an image, answered
 # by a passing test suite.
 #
-# Four modes rather than one, and they stay four: they arrived from different
-# milestones (M5b, M6b, M6c and M6d) and share only the preamble above and
-# run_bun below. Nothing about any of them is a version of another -- in
+# Five modes rather than one, and they stay five: they arrived from different
+# milestones (M5b, M6b, M6c, M6d and PLAN-036) and share only the preamble above
+# and run_bun below. Nothing about any of them is a version of another -- in
 # particular --mkimage-x64 is an ARM of this dispatch and not a `--board` flag
 # on --mkimage-v2, for the reason the usage text gives.
 MODE=suite
@@ -105,6 +112,7 @@ case "${1:-}" in
 --mkimage-v2) MODE=mkimage-v2; shift ;;
 --mkimage-x64) MODE=mkimage-x64; shift ;;
 --bundle) MODE=bundle; shift ;;
+--compare-roots) MODE=compare-roots; shift ;;
 esac
 for arg in "$@"; do
     case "${arg}" in --build-rootfs) ;; *) continue ;; esac
@@ -135,6 +143,15 @@ for arg in "$@"; do
     echo "error: --bundle has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
     echo "       a green suite in answer to a request to build a signed update bundle." >&2
+    exit 1
+done
+
+for arg in "$@"; do
+    case "${arg}" in --compare-roots) ;; *) continue ;; esac
+    echo "error: --compare-roots has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
+    echo "       a green suite in answer to a request to compare two roots -- and this one is a" >&2
+    echo "       GATE, so a green it did not earn is the whole failure it exists to prevent." >&2
     exit 1
 done
 
@@ -399,6 +416,21 @@ if [ "${MODE}" = bundle ]; then
     echo "os/build: building the RAUC update bundle"
     rc=0
     run_bun run src/bundle-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# The dual-build comparator.
+# No vacuity guard here either, and this is the mode that needs one least: the
+# comparator's own refusals are the guard. A side that is missing, empty or
+# under its path floor, and the two sides being one directory, each exit 2 --
+# distinct from the 1 that means "compared, and the ledger did not account for
+# it" -- so a run that examined nothing cannot reach the same status as a run
+# that agreed. It needs neither docker nor buildx; it needs getcap, and says so
+# by name when there is none.
+if [ "${MODE}" = compare-roots ]; then
+    echo "os/build: comparing two extracted roots"
+    rc=0
+    run_bun run src/compare-roots-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 

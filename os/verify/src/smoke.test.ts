@@ -1238,6 +1238,10 @@ describe('smokeRun over the real register', () => {
   // deriving the route from the executor it chose, or if `buildkitExec` stopped
   // saying what it is, crun's row goes back to FAIL here.
   test('the emulated route is derived from the executor itself, with no route option in sight', async () => {
+    // `tmp/` is gitignored, so a fresh worktree does not have it, and mkdtemp does not
+    // create the parent it is handed: without this the case dies on ENOENT before it
+    // asserts anything, which reads as a failure of the executor it is about.
+    mkdirSync(join(REPO_ROOT, 'tmp'), { recursive: true })
     const scratchDir = mkdtempSync(join(REPO_ROOT, 'tmp', 'smoke-buildkit-'))
     try {
       const exec = buildkitExec(
@@ -1339,6 +1343,8 @@ describe('buildkitExec -- the register executed inside buildkit', () => {
   })
 
   test('the executor reads the three files back; a build that fails is an executor that cannot run', async () => {
+    // `tmp/` may not exist yet -- see the case above.
+    mkdirSync(join(REPO_ROOT, 'tmp'), { recursive: true })
     const scratchDir = mkdtempSync(join(REPO_ROOT, 'tmp', 'smoke-buildkit-'))
     try {
       const exec = buildkitExec({ ...opts, scratch: scratchDir }, async (argv) => {

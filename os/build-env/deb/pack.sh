@@ -46,7 +46,7 @@ done
 # check in PLAN-036 section 6 -- pack twice, require identical bytes -- would be
 # the only thing that ever noticed.
 [ -n "${SOURCE_DATE_EPOCH:-}" ] ||
-    die "SOURCE_DATE_EPOCH is unset. This packer clamps every mtime to it and hands it to dpkg-deb; there is no 'now' default, because a silent one makes every package irreproducible while looking green"
+    die "SOURCE_DATE_EPOCH is unset. This packer sets every payload mtime to it and hands it to dpkg-deb; there is no 'now' default, because a silent one makes every package irreproducible while looking green"
 case "${SOURCE_DATE_EPOCH}" in
 '' | *[!0-9]*) die "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} is not a whole number of seconds since the epoch" ;;
 esac
@@ -220,11 +220,42 @@ if [ -n "${SCRIPTS}" ]; then
 fi
 
 # Normalisation, last, so that everything written above is covered by it.
-# CLAMPED and not set: a file older than SOURCE_DATE_EPOCH keeps its own mtime,
-# which is what makes the epoch a ceiling on the build rather than a rewrite of
-# the payload's history.
+#
+# THE MTIME RULING (PLAN-036 open decision (e)): every payload mtime is SET to
+# SOURCE_DATE_EPOCH, not CLAMPED to it. `find` selects the whole tree, and the
+# `-newermt` filter that used to stand here -- which is what made this a clamp --
+# is deliberately gone.
+#
+# WHAT THE ALTERNATIVE WOULD HAVE COST. Clamping is the Reproducible Builds
+# convention, and it is dpkg-deb's own handling of SOURCE_DATE_EPOCH: a file
+# NEWER than the epoch is pulled back to it and one OLDER keeps its own mtime.
+# That is the right rule where the older mtime carries information -- an upstream
+# release tarball whose file dates are part of what was released. Nothing
+# packaged here is that. Every byte in a payload of this repository is either
+# written during the build, and therefore newer than the epoch, or copied out of
+# the working tree by buildkit -- and buildkit's COPY preserves the source mtime
+# exactly, so what such a file carries is the moment THAT CLONE was checked out.
+# `git checkout` stamps now; any commit made afterwards puts SOURCE_DATE_EPOCH
+# ahead of every file in the tree, and under a clamp all of them then keep a
+# number that says when this worktree happened to be created. The case in the
+# tree today is os/rootfs/packages-src/system, whose Dockerfile `cp -a`s two
+# enablement symlinks out of the `overlay` context: clamped, mos-system carries
+# two mtimes that no second checkout of the same commit reproduces.
+#
+# WHICH CONSTRAINT FORCED IT: cross-run stability, and not the package gate. The
+# gate's reproducibility check builds a producer twice on a buildx builder
+# created moments earlier with an empty cache and requires byte-equal archives --
+# and it passes under EITHER policy, because both of its runs read one working
+# tree whose mtimes did not move between them. So the gate could not have decided
+# this, and setting does not weaken it: it removes an input the archive was a
+# function of and adds none.
+#
+# WHAT SETTING COSTS is the paragraph above read backwards: a payload that does
+# carry a meaningful older timestamp has it flattened, and there is nowhere in
+# producer.env for a producer to ask that one be kept. That is the honest shape
+# of the trade, and the reason this is a written ruling rather than a default.
 chown -Rh root:root "${PKG_DIR}"
-find "${PKG_DIR}" -newermt "@${SOURCE_DATE_EPOCH}" -print0 |
+find "${PKG_DIR}" -print0 |
     xargs -0 -r touch --no-dereference --date="@${SOURCE_DATE_EPOCH}"
 
 DEB="${OUT}/${PACKAGE}_${VERSION}_${ARCH}.deb"
