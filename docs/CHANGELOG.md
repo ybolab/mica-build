@@ -4,6 +4,18 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Settings writes are bounded, scoped and queued (2026-08-31)
+
+apid-to-mosd and mosd-to-systemd waits now have five-second bounds, while
+mosd keeps settings/live-state reads separate from its serialized apply lock
+and reconciles only overlapping subtrees. Persisted settings writes enter one
+bounded, coalescing queue whose task records are mirrored into apid by
+`TaskChanged`; the settings and transient-password APIs return 202 plus a task
+id, and bearer clients can read the bounded task collection or one record.
+The zero-JavaScript SSH pane redirects to that task and meta-refreshes only
+until success, failure, interruption, or confirmed history loss, and no
+plaintext password can enter the queue.
+
 ## cx3576 builds on a host without binfmt (2026-08-30)
 
 The rootfs stage driver links its chain one of two ways, decided by the
