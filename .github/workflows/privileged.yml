@@ -297,11 +297,14 @@ jobs:
       - name: make os-smoke-negative-test
         run: MOS_BOARD=cx3576 make os-smoke-negative-test
 
-      # Development signing material for the bundle build. Dev keys,
-      # deliberately: this lane proves the pipeline, and production signing is
-      # an offline ceremony (docs/design/release-signing.md), never a CI step.
-      # gen-dev-keys.sh is a no-op when keys exist, so a runner that retains
-      # its workspace does not regenerate.
+      # The repo-root ca/ trust root for the bundle build and the image's
+      # keyring. Dev material, deliberately: this lane proves the pipeline, and
+      # production signing is an offline ceremony
+      # (docs/design/release-signing.md), never a CI step. Run explicitly
+      # rather than left to the build's own auto-generation, so that a failure
+      # to produce it is attributed to this step; gen-dev-keys.sh is a no-op
+      # when ca/ is complete, so a runner that retains its workspace does not
+      # regenerate.
       - name: make os-devkeys
         run: make os-devkeys
 

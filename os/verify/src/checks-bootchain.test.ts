@@ -243,6 +243,9 @@ function fixture(world: World): { ctx: ImageContext, dispose: () => void } {
     tools: tools(world, offsets),
     workDir: dir,
     outDir: dir,
+    // No check these fixtures drive reads the trust root; a path under the
+    // fixture directory keeps the context whole without pointing at the host's ca/.
+    caDir: join(dir, 'ca'),
     gpt: async () => gpt,
     partition: async () => refuse('partition lookup'),
     fatSlot: async () => refuse('GPT-derived FAT slot -- these checks take the offset from the layout'),

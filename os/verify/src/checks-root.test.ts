@@ -18,10 +18,10 @@
 // hand-written wreck would go red for reasons the real failure does not have.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
-import { FIXTURE_BUILTIN_MARKUP, packedRootFixture, type RootFixture } from './checks-fixture.ts'
+import { FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, packedRootFixture, type RootFixture } from './checks-fixture.ts'
 import { BUILTIN_MARKUP, ROOT_CHECKS } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import { boardEnvPath } from './paths.ts'
@@ -657,36 +657,19 @@ describe('the built-in escape, as an on-image fact', () => {
   })
 })
 
-describe('the development keyring, which must not be baked in', () => {
-  test('a keyring IS shipped', async () => {
-    // A keyring inside the signed read-only root is a trusted signer on every
-    // device flashed with this image.
-    const fx = await mutated('packed-no-dev-keyring', root =>
-      writeFileSync(join(root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\n'))
-    try {
-      expect(await verdictOf(fx, 'packed-no-dev-keyring')).toBe('fail')
-      expect(await messageOf(fx, 'packed-no-dev-keyring')).toContain('the packed root ships')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
+describe('the shipped keyring, which must be the one from ca/', () => {
+  // The fixture is PRODUCTION-shaped: its ca/ holds the material and no
+  // GENERATED marker, and the packed root ships a byte-equal copy. That is the
+  // released state -- an image trusting the CA its bundles are signed with --
+  // so it is the baseline every mutation below departs from.
 
-  test('MOS_EXPECT_DEV_KEYRING=1 waves it through, exactly as the oracle does', async () => {
-    // The escape is PORTED and not dropped. Leaving it out would make this port
-    // stricter than the oracle on precisely the images somebody sets it for --
-    // a divergence introduced by the port, which is the thing a port may not do.
+  test('POSITIVE CONTROL: production material, matching bytes, and NO env var: pass', async () => {
     const fx = packedRootFixture(cx3576)
     const before = process.env['MOS_EXPECT_DEV_KEYRING']
     try {
-      writeFileSync(join(fx.root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\n')
-      expect(await verdictOf(fx, 'packed-no-dev-keyring')).toBe('fail')
-      process.env['MOS_EXPECT_DEV_KEYRING'] = '1'
-      expect(await verdictOf(fx, 'packed-no-dev-keyring')).toBe('pass')
-      expect(await messageOf(fx, 'packed-no-dev-keyring')).toContain('explicitly expected')
-      // ...and only the exact value 1, not any truthy string.
-      process.env['MOS_EXPECT_DEV_KEYRING'] = 'yes'
-      expect(await verdictOf(fx, 'packed-no-dev-keyring')).toBe('fail')
+      delete process.env['MOS_EXPECT_DEV_KEYRING']
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('no GENERATED marker')
     }
     finally {
       if (before === undefined) delete process.env['MOS_EXPECT_DEV_KEYRING']
@@ -695,13 +678,134 @@ describe('the development keyring, which must not be baked in', () => {
     }
   })
 
-  test('a DANGLING keyring symlink still counts as shipped', async () => {
-    // `[ ! -e ] && [ ! -L ]`: absence has to fail both. A link with nothing at
-    // the other end is still a keyring path in the signed root.
-    const fx = await mutated('packed-no-dev-keyring', root =>
-      symlinkSync('/nowhere/keyring.pem', join(root, 'etc/rauc/keyring.pem')))
+  test('a keyring whose BYTES are not ca/ca.cert.pem is refused', async () => {
+    // The shape this catches: a CA that reached the image some other way -- left
+    // in the overlay, written by a stage, edited after the build. It is still a
+    // trusted signer on every device flashed with the image, and nobody chose it.
+    const fx = await mutated('packed-keyring-from-ca', root =>
+      writeFileSync(join(root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\nsomebody else\n'))
     try {
-      expect(await verdictOf(fx, 'packed-no-dev-keyring')).toBe('fail')
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('the bytes differ')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a keyring that is not shipped AT ALL is refused', async () => {
+    // The direction that inverted: absence used to be the shipped state. Every
+    // image stages one from ca/ now, so an image without one verifies nothing
+    // and `rauc install` fails closed on it forever.
+    const fx = await mutated('packed-keyring-from-ca', root =>
+      rmSync(join(root, 'etc/rauc/keyring.pem')))
+    try {
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('ships no /etc/rauc/keyring.pem at all')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a DANGLING keyring symlink is shipped-but-unreadable, and gets its own sentence', async () => {
+    // A link with nothing at the other end is still a keyring path in the
+    // signed root, so it is not the absence case; it also cannot be compared,
+    // so it is not the byte case. The two facts get different sentences because
+    // the fixes differ.
+    const fx = await mutated('packed-keyring-from-ca', (root) => {
+      rmSync(join(root, 'etc/rauc/keyring.pem'))
+      symlinkSync('/nowhere/keyring.pem', join(root, 'etc/rauc/keyring.pem'))
+    })
+    try {
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('dangling symlink')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('ca/GENERATED makes the SAME bytes a development keyring, waived only by MOS_EXPECT_DEV_KEYRING=1', async () => {
+    // Nothing about the image changes here -- the keyring is byte-identical to
+    // the production case above. What changes is the marker beside the trust
+    // root, which is the whole point of dropping one: it says the CA whose
+    // bundles this image will install has an unprotected key in a working tree,
+    // and it keeps saying it on every later build.
+    //
+    // The escape is PORTED and not dropped: leaving it out would make this
+    // stricter than the oracle on precisely the images somebody sets it for.
+    const fx = packedRootFixture(cx3576)
+    const before = process.env['MOS_EXPECT_DEV_KEYRING']
+    try {
+      delete process.env['MOS_EXPECT_DEV_KEYRING']
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
+
+      writeFileSync(join(fx.ctx.caDir, 'GENERATED'), 'auto-generated development trust root\n')
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('DEVELOPMENT-GRADE')
+
+      process.env['MOS_EXPECT_DEV_KEYRING'] = '1'
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('explicitly expected')
+
+      // ...and only the exact value 1, not any truthy string.
+      process.env['MOS_EXPECT_DEV_KEYRING'] = 'yes'
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+    }
+    finally {
+      if (before === undefined) delete process.env['MOS_EXPECT_DEV_KEYRING']
+      else process.env['MOS_EXPECT_DEV_KEYRING'] = before
+      fx.dispose()
+    }
+  })
+
+  test('the waiver does NOT rescue a keyring that came from somewhere else', async () => {
+    // MOS_EXPECT_DEV_KEYRING says "I expect this image to trust a development
+    // CA". It does not say "I expect this image to trust anything at all", and
+    // an escape that covered the byte mismatch too would waive the one property
+    // this check exists for.
+    const fx = packedRootFixture(cx3576)
+    const before = process.env['MOS_EXPECT_DEV_KEYRING']
+    try {
+      writeFileSync(join(fx.ctx.caDir, 'GENERATED'), 'auto-generated development trust root\n')
+      writeFileSync(join(fx.root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\nsomebody else\n')
+      process.env['MOS_EXPECT_DEV_KEYRING'] = '1'
+      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('the bytes differ')
+    }
+    finally {
+      if (before === undefined) delete process.env['MOS_EXPECT_DEV_KEYRING']
+      else process.env['MOS_EXPECT_DEV_KEYRING'] = before
+      fx.dispose()
+    }
+  })
+
+  test('a tree with NO ca/ca.cert.pem is REFUSED, not answered', async () => {
+    // The vacuity trap on the other input. With nothing to compare against, a
+    // `pass` would be green about an image nobody checked -- on every host that
+    // has not built one. It is a THROW because "this tree has no trust root" is
+    // a statement about the RUN, not about the image.
+    const fx = packedRootFixture(cx3576)
+    try {
+      rmSync(join(fx.ctx.caDir, 'ca.cert.pem'))
+      await expect(checkNamed('packed-keyring-from-ca').run(fx.ctx))
+        .rejects.toThrow(/nothing to compare/)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the fixture root and the fixture ca/ carry the SAME bytes', async () => {
+    // The baseline is a pass because two files agree, so the test suite asserts
+    // they do rather than trusting the seeder. A fixture that seeded two
+    // different strings would make every case above red for a reason none of
+    // them is about.
+    const fx = packedRootFixture(cx3576)
+    try {
+      expect(readFileSync(join(fx.root, 'etc/rauc/keyring.pem'), 'utf8')).toBe(FIXTURE_CA_CERT)
+      expect(readFileSync(join(fx.ctx.caDir, 'ca.cert.pem'), 'utf8')).toBe(FIXTURE_CA_CERT)
     }
     finally {
       fx.dispose()
@@ -728,7 +832,7 @@ describe('the vacuity traps', () => {
       }
       await expect(checkNamed('packed-builtin-no-on-disk-half').run(fx.ctx))
         .rejects.toThrow(/is empty/)
-      await expect(checkNamed('packed-no-dev-keyring').run(fx.ctx))
+      await expect(checkNamed('packed-keyring-from-ca').run(fx.ctx))
         .rejects.toThrow(/is empty/)
       await expect(checkNamed('packed-mountpoints-exist').run(fx.ctx))
         .rejects.toThrow(/is empty/)

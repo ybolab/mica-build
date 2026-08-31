@@ -362,26 +362,34 @@ verifies until the CA itself is replaced, which is the §2.3 gap again. Record
 the incident; ship the fleet-wide mitigation through the update itself if one
 is warranted.
 
-### 2.3 How the keyring reaches devices — **[not implemented]**, the honest gap
+### 2.3 How the keyring reaches devices — at build time; **rotation** is the remaining gap
 
-Today, **no provisioning path ships a production keyring**. The facts, all
-with the fix in place:
+The keyring reaches a device **in the image**, from one place. The facts:
 
 - `os/pkgs/rauc/system.conf.in` names `/etc/rauc/keyring.pem`;
   `os/pkgs/rauc/render-config.sh` renders the generated
-  `os/rootfs/overlay-v2/etc/rauc/system.conf`, and the root filesystem
-  deliberately does not contain the keyring itself.
-- `os/rootfs/build-v2.sh` **refuses** to stage `etc/rauc/keyring.pem`, and
-  `os/verify/src/checks-root.ts` fails an image that carries one in the packed
-  root. Both are waivable only by `MOS_EXPECT_DEV_KEYRING=1`, which warns
-  unmissably and exists for exactly one case: a local dev image installing
-  locally signed bundles, on a bench, never shipped
-  (`os/pkgs/rauc/gen-dev-keys.sh`'s closing instructions).
+  `os/rootfs/overlay-v2/etc/rauc/system.conf`.
+- The repository-root `ca/` directory is the single seam by which a CA enters a
+  build: `os/build` signs bundles with `ca/signer.{cert,key}.pem` and
+  `os/rootfs/build-v2.sh` stages `ca/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
+  the CA this runbook produces in `ca/`, build, and the image trusts it. `ca/`
+  is gitignored, so the material is never in the history.
+- A build that finds `ca/` empty **generates a development-grade root** there,
+  says so unmissably, and continues; the generator leaves `ca/GENERATED` beside
+  it, and that marker is what keeps such a root recognisable on every later
+  build. `os/rootfs/build-v2.sh` warns off the marker. Production material is
+  placed in `ca/` without it.
+- The overlay is **not** a source: `os/rootfs/build-v2.sh` refuses an
+  `etc/rauc/keyring.pem` found there, unconditionally, because the overlay is
+  copied wholesale into every image and a file left in it is a CA nobody chose.
+  `os/verify/src/checks-root.ts` still fails an image carrying a baked-in
+  keyring unless `MOS_EXPECT_DEV_KEYRING=1` names it a bench image, and
   `os/verify/src/checks-root.test.ts` proves both directions of that gate.
-- Therefore a production image, as buildable today, cannot install any
-  bundle: RAUC has no keyring to verify against. The refusal is correct —
-  it is what stopped the dev CA from riding along in prod images (the
-  a P1 finding) — but the affirmative half is missing.
+- **The gap that remains is rotation, not provisioning.** `/etc` is a read-only
+  squashfs, so replacing the keyring on a deployed device means shipping a new
+  image or a channel that survives an A/B update — a STATE-backed seed plus bind
+  mount, the way `/etc/ssh` is handled. No such channel exists yet, and §1.4's
+  reissue horizon depends on it.
 
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
@@ -400,13 +408,14 @@ land:
   both directions: `rauc-keyring-path`
   (`os/verify/src/checks-rauc.ts`) asserts the rendered config names
   exactly `/etc/rauc/keyring.pem` (`os/pkgs/rauc/system.conf.in`), and
-  `packed-no-dev-keyring` (`os/verify/src/checks-root.ts`) asserts the
-  shipped root carries nothing at that path. So a keyring provisioned at
-  the documented path is, by the shipped configuration, what RAUC reads.
-  Whether a provisioned keyring is honoured end to end — `rauc install`
-  accepting a production-signed bundle on hardware — is observable only on
-  a booted device with a provisioned keyring; that last step stays
-  documented, not tested, until one exists.
+  `packed-keyring-from-ca` (`os/verify/src/checks-root.ts`) asserts the
+  shipped root carries at that path a BYTE-EQUAL copy of `ca/ca.cert.pem` —
+  and refuses one that carries anything else, or a development-grade root
+  (`ca/GENERATED`) without `MOS_EXPECT_DEV_KEYRING=1`. So the keyring RAUC
+  reads is, by the shipped configuration, the CA the build was pointed at.
+  Whether it is honoured end to end — `rauc install` accepting a
+  production-signed bundle on hardware — is observable only on a booted
+  device; that last step stays documented, not tested.
 - **How it survives updates.** `/etc` is the read-only dm-verity squashfs,
   replaced whole by every A/B update, so the keyring cannot simply be
   written in place and must not be baked in (§4). A provisioned keyring
@@ -481,9 +490,11 @@ deadline will one day propose:
   held production material would make every person and plugin with runner
   access a signer. The privileged lane's deep job says this in its own
   comments.
-- **No dev CA on a shipped device.** `MOS_EXPECT_DEV_KEYRING=1` is a bench
-  waiver, not a build option; the build and the verifier both fail closed
-  without it, and nothing that leaves a desk is built with it.
+- **No dev CA on a shipped device.** A generated trust root carries
+  `ca/GENERATED`, so the build says loudly which images trust one and the
+  verifier fails such an image closed unless `MOS_EXPECT_DEV_KEYRING=1` names it
+  a bench image. That variable is a bench waiver, not a build option, and
+  nothing that leaves a desk is built with it.
 - **No expiry decided ad hoc.** The horizons in §1.4 and §2.1 are the
   policy; a `sign` invocation that invents a different horizon is a change
   to this document first.
