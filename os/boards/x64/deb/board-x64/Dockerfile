@@ -5,10 +5,10 @@
 #   bash os/build-env/deb/build.sh --producer board-x64 --arch amd64
 #
 # Everything the image carries because it is the x64 board: the configuration
-# rendered from os/boards/x64/board.env, the dm-verity initramfs payload,
-# grub-editenv, and the GRUB configuration the image assembler writes onto the
-# ESP. It is the content os/rootfs/stages/40-board.Dockerfile installs today
-# for MOS_ARCH=amd64, plus the board half of what stages/20-install writes.
+# rendered from os/boards/x64/board.env, the dm-verity initramfs payload and
+# grub-editenv. It is the content os/rootfs/stages/40-board.Dockerfile installs
+# today for MOS_ARCH=amd64, plus the board half of what stages/20-install
+# writes.
 #
 # NOTHING IS COMPILED HERE. There is no BSP behind this board: a UEFI machine's
 # firmware provides the boot chain and the kernel is Debian's own, which is why
@@ -79,7 +79,6 @@ COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
 COPY --from=board deb/board-x64/copyright deb/board-x64/render.sh /in/
 COPY --from=board deb/board-x64/control/ /in/control/
-COPY --from=board grub.cfg /in/grub.cfg
 COPY --from=initramfs hooks/mos-verity /in/initramfs/hooks/mos-verity
 COPY --from=initramfs scripts/mos-verity /in/initramfs/scripts/mos-verity
 COPY --from=grub /usr/bin/grub-editenv /in/grub-editenv
@@ -130,10 +129,20 @@ ARG SOURCE_DATE_EPOCH
 # file describing storage that does not exist is readable, plausible and wrong.
 # render.sh does not render it and os/rootfs/build-v2.sh deletes it on amd64.
 #
-# The GRUB configuration is IMAGE-ASSEMBLY input, not a runtime file, so it
-# lands under /usr/lib/mos/board/x64/ with its @BOOT_A_PARTNUM@ and
-# @ROOTFS_A_PARTUUID@ placeholders intact: the finalizer renders it onto the
-# ESP, and a copy rendered here would be a second rendering of one file.
+# NO GRUB CONFIGURATION IN THE PAYLOAD. This package once staged
+# os/boards/x64/grub.cfg at /usr/lib/mos/board/x64/grub.cfg, placeholders
+# intact, on the reasoning that image-assembly input travels with the board.
+# Nothing ever read it: os/build/src/mkimage-x64.ts renders the ESP copy from
+# the TREE path, os/boards/x64/grub.cfg, which is where the assembler runs and
+# where the file is version-controlled. The packaged copy was therefore an
+# unrendered template with @BOOT_A_PARTNUM@ and @ROOTFS_A_PARTUUID@ still in it,
+# sitting in a signed read-only dm-verity root -- a configuration file that
+# describes a boot no machine performs, indistinguishable at a glance from one
+# that does. It is a build-host input, so the build host is where it lives.
+# cx3576's /usr/lib/mos/board/<board>/ is not the same case and is not being
+# argued against here: the finalizer exports that board's kernel, DTB, U-Boot
+# image and boot.cmd OUT OF THE INSTALLED PACKAGE, so those bytes have a
+# reader. Here there was none.
 #
 # The copyright is this board's own and is COMPLETED here: the harvested
 # /usr/share/doc/grub-common/copyright is appended as the body of the file's
@@ -156,7 +165,6 @@ RUN set -eu; \
     install -D -m 0755 /in/initramfs/scripts/mos-verity \
         /stage/etc/initramfs-tools/scripts/local-top/mos-verity; \
     install -D -m 0755 /in/grub-editenv /stage/usr/bin/grub-editenv; \
-    install -D -m 0644 /in/grub.cfg /stage/usr/lib/mos/board/x64/grub.cfg; \
     doc=/stage/usr/share/doc/mos-board-x64/copyright; \
     install -D -m 0644 /in/copyright "${doc}"; \
     sed -e 's/^[[:space:]]*$/./' -e 's/^/ /' /in/grub-common.copyright >>"${doc}"; \

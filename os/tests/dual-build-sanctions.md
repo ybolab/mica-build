@@ -22,6 +22,19 @@
 > two extracted root trees, and this file is only the default its `--sanctions`
 > flag points at. "No longer executes" and "should not exist" are different
 > claims, and only the first is being made here.
+>
+> **Addendum, 2026-08-31 -- the two `/usr/lib/mos/board` stanzas now describe
+> content that no longer exists.** `mos-board-x64` has stopped shipping
+> `/usr/lib/mos/board/x64/grub.cfg`, and with it the only file under that
+> directory, so the package now adds neither the directory nor its contents.
+> The reason is the one the stanzas themselves state without drawing the
+> conclusion: "the assembler reads `os/boards/x64/grub.cfg` out of the tree
+> instead." Nothing read the packaged copy, which left an unrendered template
+> -- `@BOOT_A_PARTNUM@`, `@ROOTFS_A_PARTUUID@` -- in a signed read-only root.
+> Both stanzas stand as written: they record what was measured and sanctioned
+> at commit 498eeb824cda, and a rerun of that comparison at that commit would
+> still produce those three `added` paths. This note is here so a reader does
+> not take them for a description of the package today.
 
 PLAN-036 section 6 ends with a gate: before the rootfs stage chain is deleted,
 x64 is built through **both** paths -- the chain and the package composer -- and
