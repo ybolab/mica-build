@@ -269,12 +269,18 @@ RUN set -eu; \
 # this producer was carrying, and the pair a two-empty-cache-builder proof
 # cannot see. Under SET the stale mtime is overwritten and the pair converges.
 #
-# MEASURED, both directions. The convergence: one warm builder and one cold
-# builder, built after a commit that put SOURCE_DATE_EPOCH ahead of the warm
-# layer's clock, produce byte-identical archives. The fingerprint of SET being
-# in force at all: every one of the 463 payload entries carries the epoch and
-# none carries ca-certificates' own 2025-04-19 date -- under a clamp those
-# anchors, being OLDER than the epoch, would have kept it.
+# MEASURED, and the pair was built to straddle the epoch rather than to be
+# convenient. The warm builder's cached generation layer wrote its bundle at
+# 11:24:49; a commit was then made, putting SOURCE_DATE_EPOCH at 11:25:20, 31
+# seconds LATER; the cold builder generated afresh after that, newer than the
+# epoch on the other side. So a clamp had to leave the warm side at 11:24:49
+# while pulling the cold side back to 11:25:20. The two archives came out
+# byte-identical, and every payload entry in both carries 11:25:20.
+#
+# The fingerprint of SET being in force at all, from the same producer: all 463
+# payload entries carry the epoch and NONE carries ca-certificates' own
+# 2025-04-19 date -- under a clamp those anchors, being older than the epoch,
+# would have kept it.
 #
 # So a producer normalising its own stage is not belt-and-braces against (e)
 # being reverted. It is a second copy of a rule, and the copy that mattered
