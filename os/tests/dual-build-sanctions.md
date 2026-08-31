@@ -557,6 +557,47 @@ paths. Each of the eleven is named below with the producer that has to own it.
   `compose-install.sh`, which now writes it under the removed `/mos-compose` and
   asserts `/tmp` is empty before it finishes.
 
+### The four own-binary stanzas, and the road not taken
+
+`/usr/bin/mosd`, `/usr/bin/apid`, `/usr/bin/mos-mqttd` and
+`/usr/bin/mos-mqtt-broker` are sanctioned as plain `content` stanzas rather than
+narrowed ones, and this section is why -- written for a reader who does not know
+this campaign and is deciding whether the plain form was laziness.
+
+**The two paths compile the same source.** Both roots at commit `5c470e98acaa`
+carry that commit embedded in `mosd` and `apid`, checked with `strings` on the
+two extracted trees; `mos-mqttd` and `mos-mqtt-broker` read no build-commit
+variable and carry none, which is itself a recorded fact rather than an absence
+nobody looked at. There is no version skew here and no second source tree: the
+chain compiles the four crates in ONE cargo invocation through
+`os/pkgs/mosd/hack/build-target.sh` into `target/`, and the composer's packages
+compile them two at a time through `build-deb.sh` into `target-deb/<producer>/`.
+
+**What differs is the compilation environment, not the program.** rustc records
+the paths it is handed, so a different `CARGO_TARGET_DIR` alone produces
+different bytes. `mos-mqtt-broker` differs by about a megabyte for a second
+reason of the same kind: the chain compiles four crates together and the
+producers compile two, so cargo's feature resolver unifies a different set of
+features across the shared dependency graph.
+
+**The class evaporates when one path exists.** These four differences are
+artefacts of building the same source twice in two harnesses. They are not a
+property of the image, they cannot appear once the chain is gone, and there is
+nothing here for a future reader to fix.
+
+**The road not taken, and why.** These could be made byte-identical: rustc's
+`--remap-path-prefix` for the recorded paths, and unifying the crate set so the
+feature resolution matches -- a producer restructure, since the split into
+`mosd` and `mqtt` producers is the thing that changes it. That is real work, and
+it would be spent making two build harnesses agree byte-for-byte for the benefit
+of one comparison that retires with the chain it exists to retire. A narrowed
+`expect-diff` stanza is the same trade in a smaller package: it would pin the
+current bytes and go stale on the next commit that touches either crate, which
+is a stanza rewritten on every unrelated change and therefore a stanza nobody
+reads. So the plain form is the deliberate choice, and the measured sizes below
+are what a reader compares against if they ever want to know whether the
+difference changed shape.
+
 ## What an x64-only comparison does not cover
 
 PLAN-036 section 6 runs this comparison on x64 only; cx3576 is then built and
@@ -722,20 +763,20 @@ fixed in place.
 ### /usr/bin/mosd
 - classes: content
 - status: active
-- reason: Two independent compilations of one source tree at one commit. The chain builds mosd, apid, mos-mqttd and mos-mqtt-broker in ONE cargo invocation through os/pkgs/mosd/hack/build-target.sh into target/; the composed root gets mosd and mos-apid from the mosd producer through build-deb.sh into target-deb/mosd/. rustc records the paths it is given, so the two binaries differ. Checked rather than assumed: both carry the embedded commit 498eeb824cda, found with `strings`, and the sizes differ by 4,504 bytes out of 8.7 MB.
+- reason: The management daemon, compiled twice: by the chain through os/pkgs/mosd/hack/build-target.sh into target/, and for the composer by the mosd producer through build-deb.sh into target-deb/mosd/. Measured at commit 5c470e98acaa: BOTH roots carry that commit embedded, found with `strings`, and the sizes are 8,887,880 bytes on the chain against 8,892,200 composed -- a delta of 4,320 in 8.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
 ### /usr/bin/apid
 - classes: content
 - status: active
-- reason: The same two compilations as /usr/bin/mosd, from the same producer. Both binaries carry the embedded commit 498eeb824cda and the sizes differ by 1,360 bytes out of 12.0 MB.
+- reason: The HTTP API daemon, from the same producer and the same pair of cargo invocations as /usr/bin/mosd. Measured at commit 5c470e98acaa: both roots carry that commit embedded, and the sizes are 12,386,744 bytes on the chain against 12,388,272 composed -- a delta of 1,528 in 12.4 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
 ### /usr/bin/mos-mqttd
 - classes: content
 - status: active
-- reason: The same reason again, from the OTHER producer: the mqtt producer builds mos-mqttd and mos-mqtt-broker into target-deb/mqtt/, so the composed pair comes from a third cargo target directory. Neither binary reads MOS_BUILD_COMMIT, so neither carries a commit string to compare -- which the ledger already recorded when it measured them byte-identical across two chain builds. Sizes differ by 8 bytes out of 6.9 MB.
+- reason: The MQTT bridge, from the OTHER producer: the mqtt producer compiles it and mos-mqtt-broker into target-deb/mqtt/, so the composed pair comes from a third cargo target directory. It reads no build-commit variable, so neither copy carries a commit string to compare -- recorded rather than left as an absence nobody checked. Measured at commit 5c470e98acaa: 6,944,720 bytes on the chain against 6,944,712 composed, a delta of 8 bytes in 6.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
 ### /usr/bin/mos-mqtt-broker
 - classes: content
 - status: active
-- reason: The same producer split as /usr/bin/mos-mqttd, and the one member of the four where the difference is LARGE rather than incidental: 7,616,416 bytes on the chain against 6,533,472 composed, 1.08 MB smaller. The chain compiles all four crates in one cargo invocation and the producers compile two at a time, so cargo's feature resolver unifies a different set of features across the shared dependency graph. Sanctioned as a consequence of the producer split PLAN-036 section 2 asks for, and recorded at this size because a future change in that number is a change in what the split does, not noise.
+- reason: The broker, from the mqtt producer, and the one of the four where the difference is LARGE rather than incidental: 7,616,416 bytes on the chain against 6,533,472 composed, 1.03 MB smaller. The extra mechanism is cargo's feature resolver -- the chain compiles four crates in one invocation and the producers compile two, so a different set of features is unified across the shared dependency graph. That is a consequence of the producer split PLAN-036 section 2 asks for, not of the composition. It reads no build-commit variable, like mos-mqttd. The size is recorded so that a future change in it is legible as a change in what the split does. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
