@@ -9,16 +9,19 @@ templates and its own archives, and it emits nothing outside that set:
 | `mosd` | `mosd`, `apid` | `mosd`, `mos-apid` |
 | `mqtt` | `mos-mqttd`, `mos-mqtt-broker` | `mos-mqttd`, `mos-mqtt-broker` |
 
-One driver runs them all:
+Both are built by the repository's one generic driver, which discovers them:
 
 ```
-bash os/pkgs/mosd/hack/build-deb.sh --producer <name> --arch <amd64|arm64>
+make os-deb-mosd
+  -> bash os/build-env/deb/build.sh --producer mosd --arch <amd64|arm64>
   -> _out/debs/<arch>/pool/<package>_<version>_<arch>.deb
 ```
 
-`make os-deb-mosd` and `make os-deb-mqtt` run one producer each for both
-architectures. `bash os/build-env/deb/repo.sh --arch <arch>` then indexes the
-pool, which is shared: a producer deletes only its own archives from it.
+A producer is a directory holding a `producer.env` and a `Dockerfile`;
+`os/build-env/deb/README.md` is that convention, and `make os-debs` builds every
+producer discovered anywhere in the tree. `bash os/build-env/deb/repo.sh --arch
+<arch>` then indexes the pool, which is shared: a producer deletes only its own
+archives from it.
 
 ## Why the split
 
@@ -35,23 +38,33 @@ four-binary build satisfy the assertion with binaries nobody asked for.
 
 ## Adding a producer
 
-1. A case in `build-deb.sh`'s producer register naming the binaries it owns
-   and the packages it emits. The set it must NOT produce is the complement of
-   `ALL_BINARIES` and is computed, so it cannot fall behind.
-2. `os/pkgs/mosd/deb/<producer>/Dockerfile` -- stage the payload, then one
-   `pack.sh` run per package. It runs at the TARGET architecture; see the two
-   routes below.
-3. `os/pkgs/mosd/deb/<producer>/control/<package>.control` per package, against
-   the field rules in `os/build-env/deb/README.md`.
-4. A `make` target beside `os-deb-mosd`.
+Create `os/pkgs/mosd/deb/<producer>/` holding `producer.env`, a `Dockerfile`,
+`control/<package>.control` per package, and a `prepare.sh` naming the crates it
+compiles. Nothing else: there is no register to add a case to, and no `make`
+target to write -- `make os-deb-<producer>` is a pattern rule resolved against
+`os/build-env/deb/producers.sh`, and `make os-debs` loops over the same list.
+The `producer.env` keys are documented in `os/build-env/deb/README.md`.
 
-The unit files reach the Dockerfile through the `DIST_CONTEXTS` the register
-names, because they are not all in one directory: `mosd.service` and
-`apid.service` are in `dist/`, while `mos-mqttd.service` and
+### Why `hack/build-deb.sh` still exists
+
+It SURVIVED the move to the generic driver as this workspace's `PREPARE` hook
+implementation, and as nothing else: it cross-compiles a named crate set and
+then asserts that the producer boundary held, which is a claim about a `cargo`
+build that no key in `producer.env` could describe. It no longer knows what a
+package is, what a pool is, what version anything carries or how to run buildx;
+`os/build-env/deb/build.sh` owns all of that for every producer in the
+repository. Each producer reaches it through its own `prepare.sh`, which is
+where the crate list lives.
+
+The unit files reach the Dockerfile through the `BUILD_CONTEXTS` each
+`producer.env` names, because they are not all in one directory: `mosd.service`
+and `apid.service` are in `dist/`, while `mos-mqttd.service` and
 `mos-mqtt-broker.service` sit beside their own crates in `mqttd/dist/` and
-`broker/dist/`. The `mqtt` producer therefore takes two contexts,
+`broker/dist/`. The `mqtt` producer therefore takes two of them,
 `mqttd-dist` and `broker-dist`, rather than one pointed at their only common
-parent -- which is the workspace root, cargo target trees and all.
+parent -- which is the workspace root, cargo target trees and all. The shared
+`copyright` arrives the same way, as `family`, because the build context is now
+each producer's own directory.
 
 `copyright` is shared by every package of every producer here and is written
 once, in this directory. It is installed per package as
@@ -87,10 +100,13 @@ packer take effect without rebuilding the builder family.
 <crate version>+git<commit>.dirty-1    when the tree is not clean
 ```
 
-`<crate version>` is read from the manifest of the producer's first binary --
-never written in this tree twice -- and `<commit>` is `git rev-parse
---short=12 HEAD`. The `-1` is the Debian revision; these packages have no
-upstream/downstream split, so it does not move.
+Computed by `os/build-env/deb/version.sh`, which is the one implementation of
+this rule for every producer in the repository -- including the ones that are
+not Rust and have no manifest to read a number out of. `<crate version>` comes
+from this workspace's crate manifests, which must all agree, and is never
+written in this tree twice; `<commit>` is `git rev-parse --short=12 HEAD`. The
+`-1` is the Debian revision; these packages have no upstream/downstream split,
+so it does not move.
 
 ## `SOURCE_DATE_EPOCH`
 

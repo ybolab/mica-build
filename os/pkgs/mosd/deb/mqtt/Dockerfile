@@ -2,11 +2,11 @@
 # check=skip=InvalidDefaultArgInFrom
 # The MQTT producer: the `mos-mqttd` and `mos-mqtt-broker` packages.
 #
-#   bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch <amd64|arm64>
+#   make os-deb-mqtt   ->  os/build-env/deb/build.sh --producer mqtt --arch <amd64|arm64>
 #
 # The shape is os/pkgs/mosd/deb/mosd/Dockerfile's: this file only STAGES and
-# PACKS, the binaries were cross-compiled on an amd64 Rust builder by the driver
-# above and arrive through the `bin` context, and this stage runs at the TARGET
+# PACKS, the binaries were cross-compiled on an amd64 Rust builder by this
+# producer's PREPARE hook and arrive through the `bin` context, and this stage runs at the TARGET
 # architecture because dpkg-shlibdeps resolves an ELF's dependencies against the
 # libraries of the container it runs in.
 #
@@ -28,9 +28,9 @@ FROM ${MOS_BUILD_DEB} AS pack
 # rebuilding the whole builder family.
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 
-COPY copyright /in/copyright
-COPY mqtt/control/ /in/control/
-COPY mqtt/maintainer/ /in/maintainer/
+COPY --from=family copyright /in/copyright
+COPY control/ /in/control/
+COPY maintainer/ /in/maintainer/
 COPY --from=mqttd-dist mos-mqttd.service /in/dist/
 COPY --from=broker-dist mos-mqtt-broker.service /in/dist/
 COPY --from=bin mos-mqttd mos-mqtt-broker /in/bin/
