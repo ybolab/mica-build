@@ -4,6 +4,25 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The rootfs is composed from Debian packages (2026-08-31)
+
+The nine-file rootfs stage chain is gone. A root is now one APT transaction
+against a local package pool -- `_out/debs/<arch>/`, built and indexed by
+`make os-debs` -- on a digest-pinned Debian base, followed by one finalizer
+that closes and packs it. What used to be a floor stage, a read-only-root
+wiring stage, four feature stages and a board stage is package metadata:
+fifteen packages from ten producers discovered from the tree, with
+configuration order coming from their own `Depends` rather than from a number
+in a filename. Declining a feature is naming fewer packages, through a resolver
+that refuses a set not naming exactly one profile package. Enablement is
+package-owned symlink payload; nothing anywhere calls `systemctl enable`. The
+RAUC keyring stays the one path that is not package payload, staged per build
+from `ca/`, and it is a different seam from the TLS trust store `mos-ca-trust`
+ships. The switch-over was accepted on a gate that built x64 through both paths
+at one commit and judged every difference between the two roots -- 35
+differences, 35 sanctioned, 0 unsanctioned -- whose reasoning is kept as a
+closed record in `os/tests/dual-build-sanctions.md`.
+
 ## Settings writes are bounded, scoped and queued (2026-08-31)
 
 apid-to-mosd and mosd-to-systemd waits now have five-second bounds, while

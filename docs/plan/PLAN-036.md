@@ -354,3 +354,106 @@ package database and filesystem that produced the package.
   per board, including staged boot inputs. Implementation is paused until
   RFCT-272 is completed and committed to avoid conflicting edits.
 - 2026-08-30 18:40: approved by the user ("do") and handed to a BKD three-tier campaign run from the L1 session issue 6rjx4wrt; four L2 workstreams (substrate+mosd/MQTT producers, RAUC+podman producers, system/profile/CA/radio/board packages, composer+finalizer+switch-over) with L1-ordered merges. RFCT-272 is committed (502b572), which satisfies the coordination gate above.
+
+## Completion
+
+Delivered by a BKD three-tier campaign (`l1-6rjx4wrt-20260830184027`) across
+four L2 workstreams, merged in L1-ordered sequence: the package substrate and
+the mosd/MQTT producers; the RAUC and podman producers; the system, profile,
+CA-trust, radio and board packages; and the composer, the shared finalizer and
+the switch-over.
+
+**What the tree looks like now.** `os/rootfs/compose/` holds two Dockerfiles —
+one APT transaction against `_out/debs/<arch>/` on a digest-pinned Debian base,
+then the finalizer that closes and packs the root. Ten producers, discovered
+from the tree by `os/build-env/deb/producers.sh`, emit fifteen packages;
+`os/rootfs/packages/resolve.sh` turns a board, a profile, a radio set and a
+decline list into the set APT is asked for. Configuration order is `Depends`.
+`_out/<board>/rootfs-packages.txt` is the durable record of what an image is
+made of. `docs/design/build.md` §1.1 and its zh twin describe the model;
+`os/rootfs/README.md` describes the directory.
+
+**The acceptance instrument was section 6's dual-build gate**: x64 built through
+the chain and through the composer at one commit, on one private
+docker-container builder, both factory roots extracted, every difference either
+sanctioned in `os/tests/dual-build-sanctions.md` with a written reason or
+reported. Its final verdict at the merged head was **35 differences, 35
+sanctioned, 0 unsanctioned** (`cf2c3922`), and the difference set was proven
+identical to the previous run **against a negative control**: `crun`'s bytes
+changed between the two runs while the difference set did not, so the constancy
+was a fact about the two paths rather than about a build that had not moved.
+
+The gate and its `make os-dual-build-gate` target were then deleted with the
+chain — a comparison of two assembly paths cannot run when there is one. The
+ledger was kept and relabelled a **closed record**: it is the written reasoning
+the removal was accepted on, and "no longer executes" and "should not exist"
+are different claims. `os/build/src/compare-roots.ts` is not retired with it; it
+ships as `bash os/build/run.sh --compare-roots` for any two extracted trees.
+
+**What the x64-only comparison did not cover** is stated in that ledger's own
+section and stands: architecture-dependent dependency closure, the cx3576
+kernel/module path, and the whole cx3576 board payload. The composed cx3576
+image's own verify and smoke runs are what cover it, on a host that can execute
+arm64.
+
+## Process lessons
+
+Written for an engineer who was not here. Each is a mechanism, not a slogan.
+
+**A matching number is not confirmation.** A measurement that agrees with a
+prediction confirms nothing until the other route to that number is checked.
+Concretely: a run reporting 36 differences / 35 sanctioned / 1 unsanctioned,
+with one fix applied, was predicted to become 36/36/0 — and the honest answer
+was 35/35/0. An *elimination* removes a difference from the set; it does not
+convert it into a sanctioned one. Both spellings produce "0 unsanctioned", so
+the verdict alone could not distinguish a fix that owned the file from a
+sanction that excused it. The denominator could.
+
+**An emptiness check over an empty search space passes forever.** A comparison
+whose two inputs failed to materialise printed IDENTICAL over two empty files
+and exited 0. Nothing about that output was wrong; the question it answered was
+not the one being asked. What caught it was the denominator printed beside the
+answer — paths on each side, entries examined, files compared. Print the count
+and refuse a zero, everywhere a check can be satisfied by finding nothing.
+
+**Dissolution-by-reading has a limit.** Settling a question by reading the code
+works only while both sides provably traverse **one** code path. The moment a
+second mechanism exists — a second builder driver, a second install route, a
+second producer — reading stops being conclusive, because the reading covers
+one of them and the failure will come from the other. At that point the
+question needs an execution, not an argument.
+
+**A constancy that survives a perturbation is evidence; one that might merely
+reflect stillness is not.** "The difference set was the same in both runs" is
+worth nothing if nothing between the runs could have changed it. Hence the
+negative control: perturb something the instrument should see, confirm it
+moves, and only then read the thing that did not move as a result.
+
+**"I only added comments" is a claim about a parsed file.** A prose edit to the
+sanction ledger added a `### ` heading — the token that opens a stanza — one
+heading level away from making the acceptance instrument refuse to parse its own
+ledger. Whether an edit is inert depends on who reads the file, not on whether
+the edit was English. Run the parser.
+
+**A pool cannot survive a merge commit, even one that changes no file.**
+`os/build-env/deb/version.sh` stamps `<version>+git<commit>[.dirty]-1` from
+HEAD, and `os/rootfs/build-v2.sh` refuses a pool whose version is not this
+tree's. So a merge that touched nothing still invalidates the pool built before
+it, and the refusal is correct: the packages were built from a different commit
+than the one every downstream check would attribute the image to.
+
+**"Every agent container carries `--label ai-agent=true`" is unsatisfiable for
+buildx builders.** A builder is not started with `docker run`, so the label
+convention cannot reach it and a label-filtered sweep is structurally blind to
+the residue. The workable convention is a builder **name** unique to the
+subtask, swept by name, with the residue **count** reported. And a teardown
+written `... >/dev/null 2>&1 || true` cannot report its own failure, so it is
+not evidence of cleanliness — a failed `docker buildx rm` leaves its state
+volume behind and says nothing.
+
+**Ask the file, not the history.** Verifying a change by grepping for its
+content beats reasoning about commit ancestry: `--contains` answers "has this
+been merged yet", which is a different question and one that keeps moving.
+Two false claims in this campaign would have been caught before they were sent
+by reconciling `git status --porcelain` against the list of files the report
+claimed to have changed — in the same terminal output as the claim.

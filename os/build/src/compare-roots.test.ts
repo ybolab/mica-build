@@ -753,8 +753,8 @@ describe('the shipped ledger is self-consistent under its own rules', () => {
     // and calls it accounted for. The first instance found was a cx3576
     // serial-console drop-in reaching the image through a wholesale overlay
     // copy that no package reproduces -- the file that makes serial login work.
-    // os/tests/dual-build-gate.sh refuses on the same condition; this is the
-    // half that does not need two roots to run.
+    // The retired dual-build gate refused on the same condition; this is the
+    // half that does not need two roots to run, and the half that outlived it.
     const stanzas = parseLedger(readFileSync(DEFAULT_LEDGER, 'utf8'), DEFAULT_LEDGER)
     expect(stanzas.length).toBeGreaterThan(0)
     expect(stanzas.filter(s => s.classes.includes('removed')).map(s => s.pattern)).toEqual([])
