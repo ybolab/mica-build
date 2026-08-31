@@ -1,0 +1,3 @@
+# The x64 board package: Debian's amd64 kernel and initramfs plus the rendered
+# layout files for the QEMU target.
+mos-board-x64

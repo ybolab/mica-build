@@ -4,11 +4,11 @@
 # This is the producer's PREPARE hook, named in os/boards/cx3576/deb/board-cx3576/producer.env
 # and run by the driver -- it is not an entry point and does not build anything:
 #
-#   [BOARD_DIR=...] bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/cx3576/deb/board-cx3576 --arch arm64
+#   [BOARD_DIR=...] bash os/build-env/deb/build.sh \
+#       --producer board-cx3576 --arch arm64
 #
 # The driver empties ${MOS_DEB_STAGE}, exports the hook environment
-# os/rootfs/packages-src/README.md documents, runs this script on the HOST
+# os/build-env/deb/README.md documents, runs this script on the HOST
 # before any container is started, and then hands the directory to the build as
 # the `bin` context.
 #
@@ -56,11 +56,17 @@ LAYOUT_ENV="${BOARD_ROOT}/board.env"
 # the build as `bin` and refuses a hook that leaves it that way. So this script
 # neither chooses the path nor clears it -- it only fills it, and a run outside
 # the driver has no stage to fill.
+#
+# In PRE-FLIGHT MODE there is no stage and none is required: the mode exists to
+# report what is missing before anything is built, so a hook that demanded
+# somewhere to write would be demanding a build have started.
 STAGE="${MOS_DEB_STAGE:-}"
-[ -n "${STAGE}" ] ||
-    die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/rootfs/packages-src/build-deb.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/rootfs/packages-src/build-deb.sh --producer-dir os/boards/${MOS_BOARD}/deb/board-${MOS_BOARD} --arch arm64"
-[ -d "${STAGE}" ] ||
-    die "MOS_DEB_STAGE=${STAGE} is not a directory"
+if [ "${MOS_DEB_PREFLIGHT:-0}" = 0 ]; then
+    [ -n "${STAGE}" ] ||
+        die "MOS_DEB_STAGE is unset. This is a PREPARE hook: os/build-env/deb/build.sh exports the directory to stage into and passes it to the build as the 'bin' context. Run the producer through the driver -- bash os/build-env/deb/build.sh --producer board-${MOS_BOARD} --arch arm64"
+    [ -d "${STAGE}" ] ||
+        die "MOS_DEB_STAGE=${STAGE} is not a directory"
+fi
 
 [ -f "${LAYOUT_ENV}" ] ||
     die "${LAYOUT_ENV} does not exist. Every value this producer renders or selects is read from it; there is no default for any of them"
@@ -86,9 +92,18 @@ bsp_target_for() {
 # Every missing input is collected and reported TOGETHER. Reporting the first
 # one alone sends a reader through two ten-minute builds to learn that the
 # second was missing as well.
+#
+# EXAMINED is what was looked at, missing or not, and it is what this hook
+# reports to os/build-env/deb/preflight.sh under the pre-flight contract at the
+# bottom of this block. A run that found nothing missing because it looked at
+# nothing -- a board.env that stopped declaring boot inputs, firmware or a
+# U-Boot variant -- prints the same "all present" as a complete one, and the
+# count is the only thing that tells the two apart.
 MISSING=()
+EXAMINED=0
 require_bsp() {
     local path="$1" out_subdir="$2"
+    EXAMINED=$((EXAMINED + 1))
     [ ! -f "${path}" ] || return 0
     local target
     target="$(bsp_target_for "${out_subdir}")"
@@ -131,12 +146,14 @@ for fw in ${BOARD_FIRMWARE_FILES}; do
     *) die "${LAYOUT_ENV} declares BOARD_FIRMWARE_FILES entry '${fw}', which is not under /usr/lib/firmware/. The entries are INSTALLED paths -- the package stages each one at the path it declares, and the verification suite checks the image for the same" ;;
     esac
     fw_src="${BOARD_DIR}/rootfs/firmware/${fw##*/}"
+    EXAMINED=$((EXAMINED + 1))
     [ -f "${fw_src}" ] || MISSING+=("error: ${LAYOUT_ENV} declares ${fw} and ${fw_src} does not exist.
 Firmware is a BSP artefact like modules.tar; point BOARD_DIR at a tree that has it,
 e.g. BOARD_DIR=/srv/ai/mos/os/boards/${MOS_BOARD}/bsp")
 done
 
 BOOT_CMD="${REPO_ROOT}/${BOOT_CMD_SOURCE}"
+EXAMINED=$((EXAMINED + 1))
 [ -f "${BOOT_CMD}" ] || MISSING+=("error: ${LAYOUT_ENV} declares BOOT_CMD_SOURCE=${BOOT_CMD_SOURCE} and ${BOOT_CMD} does not exist.")
 
 # Before anything is written into the stage. The driver refuses a hook that
@@ -144,8 +161,46 @@ BOOT_CMD="${REPO_ROOT}/${BOOT_CMD_SOURCE}"
 # with this message on the terminal and the build never reached.
 if [ "${#MISSING[@]}" -gt 0 ]; then
     printf '%s\n\n' "${MISSING[@]}" >&2
-    echo "render.sh: refusing to build mos-board-cx3576: the BSP inputs above are missing (BOARD_DIR=${BOARD_DIR}). Nothing was staged and no container was started." >&2
+    echo "render.sh: refusing to build mos-board-cx3576: ${#MISSING[@]} of ${EXAMINED} examined BSP inputs are missing (BOARD_DIR=${BOARD_DIR}). Nothing was staged and no container was started." >&2
+    # The pre-flight contract on the FAILING side, which is the side whose
+    # numbers get read: os/build-env/deb/preflight.sh adds them into its own
+    # totals, and without them one producer's four missing files would arrive
+    # there as one report and be counted once.
+    #
+    # preflight-warned is ZERO HERE AND ON THE OTHER PATH, and writing the zero
+    # is the point. A BSP artefact is a kernel or a U-Boot compile: nothing in
+    # `make os-debs` produces one, so every input this hook examines is either
+    # present or missing and none of them is a cost the run could absorb. That
+    # is a fact about this producer, and an omitted count would say instead
+    # that this hook has not been taught the category.
+    if [ "${MOS_DEB_PREFLIGHT:-0}" != 0 ]; then
+        echo "preflight-examined: ${EXAMINED}" >&2
+        echo "preflight-missing: ${#MISSING[@]}" >&2
+        echo "preflight-warned: 0" >&2
+    fi
     exit 1
+fi
+
+# THE PRE-FLIGHT CONTRACT. os/build-env/deb/preflight.sh runs this hook with
+# MOS_DEB_PREFLIGHT=1 before `make os-debs` starts anything, so that a missing
+# BSP artefact is reported beside every other producer's missing input instead
+# of after the producers ahead of this one have already been packed.
+#
+# It stops HERE rather than repeating the checks in that script, and that is
+# the point of the mode: which files this board needs is a function of
+# board.env and of BOARD_DIR, both of which are read above. A second list of
+# them somewhere else would be the copy that stayed green the day the board
+# declared another one.
+#
+# The counts are the contract's other half; preflight.sh refuses a hook that
+# claims success without them. Nothing is missing on this path, and nothing is
+# ever warned by this hook -- see the refusal above for why.
+if [ "${MOS_DEB_PREFLIGHT:-0}" != 0 ]; then
+    echo "preflight-examined: ${EXAMINED}"
+    echo "preflight-missing: 0"
+    echo "preflight-warned: 0"
+    echo "render.sh: pre-flight found all ${EXAMINED} BSP inputs of mos-board-cx3576 present (BOARD_DIR=${BOARD_DIR})"
+    exit 0
 fi
 
 mkdir -p "${STAGE}/etc/rauc" "${STAGE}/firmware" "${STAGE}/boot"

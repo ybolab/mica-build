@@ -2,8 +2,7 @@
 # check=skip=InvalidDefaultArgInFrom
 # The system producer: the `mos-system` package.
 #
-#   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/rootfs/packages-src/system --arch all
+#   bash os/build-env/deb/build.sh --producer system --arch all
 #
 # This file only STAGES and PACKS. Nothing is compiled here: the payload is the
 # board-independent part of os/rootfs/overlay-v2 plus two files the stage chain

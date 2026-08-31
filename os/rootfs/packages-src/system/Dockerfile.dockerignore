@@ -5,7 +5,7 @@
 # sibling producer cannot invalidate this producer's context.
 #
 # The payload itself is not here. It arrives through the `overlay` build
-# context os/rootfs/packages-src/build-deb.sh resolves from producer.env.
+# context os/build-env/deb/build.sh resolves from producer.env.
 *
 !control/*.control
 !maintainer/**
