@@ -787,14 +787,16 @@ export const EXEC_TIMEOUT_MS = 30_000
  * one would have been the same defect postponed: what a load costs is the bytes
  * it reads, and `factory-root.txt` already records how many that is. Measured on
  * this host (docker 29.7.2, containerd image store) against a 250,083,328-byte
- * OCI archive: 20.3s the first time, 4.3s once the layers are already
- * content-addressed -- 12.3 MB/s, on an idle host. The 30s constant was 1.5x
- * that idle cost, and the campaign that reads this runs three builds at once; a
- * sibling's load was killed at 30s with docker's `Loaded image:` line already in
- * its output.
+ * OCI archive: 20.3s for content never ingested before and 4.3s once the layers
+ * are already content-addressed -- 12.3 MB/s, on a QUIET host. The 30s constant
+ * was 1.5x that best case, and the campaign that reads this runs three builds at
+ * once; a sibling's load was killed at 30s with docker's `Loaded image:` line
+ * already in its output. The same measurement repeated while two siblings were
+ * building took 48.2s for the same 250 MB -- 5.2 MB/s, past the old constant, so
+ * the failure it produced is not a rare coincidence of timing.
  *
- * 1 MB/s is that measurement divided by twelve -- the order of magnitude a
- * loaded host actually costs -- and, being a rate, it SCALES: a root that grows
+ * 1 MB/s is the quiet-host measurement divided by twelve -- the order of
+ * magnitude a loaded host actually costs -- and, being a rate, it SCALES: a root that grows
  * to 1 GB gets four times the budget instead of re-acquiring this defect on the
  * day it grows. The floor covers the part that is not bytes (daemon round
  * trips, an archive small enough that the rate alone would give it
