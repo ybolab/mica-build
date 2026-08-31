@@ -13,7 +13,7 @@
 // never run. os/build-env's frontend check and os/tests/shell-pipefail-lint.sh
 // derive their file sets the same way. Adding a stage is adding a file.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { OS_DIR } from './paths.ts'
@@ -122,6 +122,37 @@ export function readStageFile(path: string, text: string): StageFile {
   }
 }
 
+/**
+ * A stage entry's path as DOCKER will have to open it.
+ *
+ * A symlink is how one stage file is shared by two chains -- the composed root
+ * in os/rootfs/compose reaches os/rootfs/stages/90-pack.Dockerfile that way, so
+ * that both paths run one finalizer rather than two copies of it -- and the
+ * path recorded here is handed to `docker buildx build -f`. That does NOT open
+ * the file locally: buildx transfers the dockerfile as a filtered mini-context
+ * of its own and the frontend opens it on the other side, so a symlink arrives
+ * as a symlink and its target, one directory up, is outside what was
+ * transferred. Measured on this host against buildx 0.32.2, on the
+ * docker-container AND the default docker driver alike:
+ *
+ *   #2 transferring dockerfile: 114B done
+ *   ERROR: failed to solve: failed to read dockerfile:
+ *          open probe.Dockerfile: no such file or directory
+ *
+ * 114 bytes is the tar entry for the LINK, not the 42 bytes of the file it
+ * names. Handing docker the resolved path is what makes sharing a stage file
+ * work; the same build with -f pointing at the target succeeds unchanged.
+ *
+ * Resolved only when the entry IS a symlink, so a regular stage file's path is
+ * the one the caller asked about -- a blanket realpath would also rewrite every
+ * fault message's path when the repository itself sits under a symlinked
+ * parent, which is a different thing from what this fixes.
+ */
+function stagePath(dir: string, entry: string): string {
+  const full = join(dir, entry)
+  return lstatSync(full).isSymbolicLink() ? realpathSync(full) : full
+}
+
 /** Read every stage file in a directory, in chain order. */
 export function discoverStages(dir: string = STAGES_DIR): StageFile[] {
   let entries: string[]
@@ -132,10 +163,13 @@ export function discoverStages(dir: string = STAGES_DIR): StageFile[] {
       { path: dir, message: `cannot be read, so the chain has no stages: ${String(cause)}` },
     ])
   }
+  // statSync and not lstatSync in the filter: it follows the link, so a symlink
+  // to a stage file is a stage file and a symlink to a directory is not.
   const stages = entries
     .filter((e) => e.endsWith('.Dockerfile'))
     .filter((e) => statSync(join(dir, e)).isFile())
-    .map((e) => readStageFile(join(dir, e), readFileSync(join(dir, e), 'utf8')))
+    .map((e) => stagePath(dir, e))
+    .map((p) => readStageFile(p, readFileSync(p, 'utf8')))
   stages.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   return stages
 }
