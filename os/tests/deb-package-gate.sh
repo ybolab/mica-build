@@ -282,6 +282,21 @@ done
 ARCHIVES_N=0
 PATHS_N=0
 SCRIPTS_N=0
+# The two counts that make a VACUOUS PASS VISIBLE. Both of the checks they
+# belong to -- the cross-pool byte-identity comparison of the `Architecture:
+# all` archives at (i), and the local-virtual dependency resolution at (i) --
+# are of the form "every X holds", and over an empty X they pass having examined
+# nothing. Neither can be turned into a failure: a pool with no `all` archive
+# and no virtual dependency is a legitimate pool, and this repository has been
+# one. So the number of things each actually looked at is REPORTED instead, on
+# the RESULT line beside the other totals, and a zero is printed as a zero.
+#
+# Both are incremented AT the comparing/resolving step and nowhere else, never
+# from what a producer.env declares: a count derived from the declaration would
+# read non-zero while the check ran over nothing, which is the exact failure
+# these exist to close.
+ALL_COMPARED_N=0
+VIRTUAL_RESOLVED_N=0
 VERSIONS=()
 EXTERNALS=()
 VIRTUALS=()
@@ -453,6 +468,7 @@ for arch in "${ARCHES[@]}"; do
                     # calling it external would stop checking it at all.
                     if [ -n "${PROVIDED_BY[${dep_name}]:-}" ]; then
                         VIRTUALS+=("${dep_name}")
+                        VIRTUAL_RESOLVED_N=$((VIRTUAL_RESOLVED_N + 1))
                         pass "${name} ${arch}: depends on the local virtual ${dep_name}, provided in this pool by ${PROVIDED_BY[${dep_name}]% }"
                     else
                         EXTERNALS+=("${dep_name}")
@@ -584,6 +600,11 @@ for pkg in ${ALL_PKGS}; do
     for arch in "${ARCHES[@]}"; do
         s="${ALL_SHA[${pkg}|${arch}]:-}"
         [ -n "${s}" ] || continue
+        # One archive entered the comparison. Counted here, per copy, because
+        # this is the line that reads the bytes being compared -- an `all`
+        # package present in one pool only contributes one, and a package whose
+        # copies never reach this loop contributes none.
+        ALL_COMPARED_N=$((ALL_COMPARED_N + 1))
         where="${where}${arch}=${s:0:16} "
         case " ${seen} " in
         *" ${s} "*) ;;
@@ -609,10 +630,10 @@ fi
 
 echo "note: local virtual dependencies satisfied by a Provides in the pool: $(printf '%s\n' ${VIRTUALS[@]+"${VIRTUALS[@]}"} | LC_ALL=C sort -u | tr '\n' ' ')"
 echo "note: external dependencies resolved by the composer, not by this pool: $(printf '%s\n' ${EXTERNALS[@]+"${EXTERNALS[@]}"} | LC_ALL=C sort -u | tr '\n' ' ')"
-echo "GATE-COUNTS ${PASS_N} ${FAIL_N} ${ARCHIVES_N} ${PATHS_N} ${SCRIPTS_N}"
+echo "GATE-COUNTS ${PASS_N} ${FAIL_N} ${ARCHIVES_N} ${PATHS_N} ${SCRIPTS_N} ${ALL_COMPARED_N} ${VIRTUAL_RESOLVED_N}"
 INNER
 
-read -r STATIC_PASS STATIC_FAIL ARCHIVES_N PATHS_N SCRIPTS_N < <(sed -n 's/^GATE-COUNTS //p' "${STATIC_LOG}") || true
+read -r STATIC_PASS STATIC_FAIL ARCHIVES_N PATHS_N SCRIPTS_N ALL_COMPARED_N VIRTUAL_RESOLVED_N < <(sed -n 's/^GATE-COUNTS //p' "${STATIC_LOG}") || true
 [ -n "${STATIC_PASS:-}" ] || {
     echo "error: the container run produced no GATE-COUNTS line, so nothing above it was actually asserted; its output is in ${STATIC_LOG}" >&2
     exit 1
@@ -623,7 +644,7 @@ if [ "${static_status}" != 0 ] || [ "${STATIC_FAIL}" != 0 ]; then
     # above have just called malformed -- and worse, it OVERWRITES them, which
     # would erase the evidence of whatever went wrong. Stop here instead.
     echo "note: the reproducibility check was not run; fix the failures above first"
-    echo "RESULT: FAIL ($((STATIC_PASS))/$((STATIC_PASS + STATIC_FAIL)) checks passed, ${ARCHIVES_N} archives, ${PATHS_N} payload paths, ${SCRIPTS_N} maintainer scripts)"
+    echo "RESULT: FAIL ($((STATIC_PASS))/$((STATIC_PASS + STATIC_FAIL)) checks passed, ${ARCHIVES_N} archives, ${PATHS_N} payload paths, ${SCRIPTS_N} maintainer scripts, ${ALL_COMPARED_N} all-architecture archives compared, ${VIRTUAL_RESOLVED_N} local-virtual dependencies resolved)"
     exit 1
 fi
 
@@ -752,5 +773,5 @@ done
 
 PASS_N=$((STATIC_PASS + REPRO_PASS))
 FAIL_N=$((STATIC_FAIL + REPRO_FAIL))
-echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) ($((PASS_N))/$((PASS_N + FAIL_N)) checks passed, ${ARCHIVES_N} archives, ${PATHS_N} payload paths, ${SCRIPTS_N} maintainer scripts, ${COMPARED_N} rebuilt archives compared)"
+echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) ($((PASS_N))/$((PASS_N + FAIL_N)) checks passed, ${ARCHIVES_N} archives, ${PATHS_N} payload paths, ${SCRIPTS_N} maintainer scripts, ${COMPARED_N} rebuilt archives compared, ${ALL_COMPARED_N} all-architecture archives compared, ${VIRTUAL_RESOLVED_N} local-virtual dependencies resolved)"
 [ "${FAIL_N}" -eq 0 ]
