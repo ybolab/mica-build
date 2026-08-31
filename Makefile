@@ -12,7 +12,7 @@ BOARDS := cx3576 x64
 .PHONY: help os os-rootfs-cx3576-v2 \
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
-	podman-pins podman-pins-test \
+	podman-pins podman-pins-test os-netavark-kernel-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
@@ -44,6 +44,7 @@ help:
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
+	@echo "  os-netavark-kernel-test  assert the cx3576 kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash os/build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
@@ -370,6 +371,16 @@ podman-pins:
 # pinned" and "never actually compared" produce the same green.
 podman-pins-test:
 	bash os/tests/podman-pins-test.sh
+
+# The kernel side of the same engine. netavark writes nftables rules -- masquerade,
+# dnat, `fib daddr type local` -- into one inet table, and a board kernel built
+# without the symbols behind any of them fails EVERY bridge network at container
+# start, with nothing in this tree having noticed. cx3576 shipped exactly that
+# gap: NFT_FIB_IPV4/IPV6 unset and NFT_FIB_INET absent. The list is derived from
+# netavark source at the tag versions.env pins, and each entry cites the line
+# that needs it. Offline, bash only.
+os-netavark-kernel-test:
+	bash os/tests/netavark-kernel-config-test.sh
 
 # The builder image every component build stands on, built from a base pinned by
 # DIGEST in os/build-env/images.env rather than by a tag upstream repoints

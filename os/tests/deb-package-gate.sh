@@ -19,10 +19,14 @@
 #   a  unique file ownership across the local packages of ONE pool. No
 #      non-directory path is in two archives of that pool; directories are
 #      shared on purpose (/usr, /usr/bin, the wants directory) and are not
-#      flagged. `Replaces` is refused outright -- it is the field that would
-#      make an overlap install cleanly, and no control template in this tree has
-#      one. `Provides` and `Conflicts` are NOT refused: they are different
-#      fields with legitimate uses, and one of them is checked at (i).
+#      flagged. ONE exemption, reported by name whenever it fires: a path may
+#      be in exactly TWO archives when those two packages declare MUTUAL,
+#      UNVERSIONED `Conflicts` with each other -- no root can hold both, so
+#      there is no root in which the path is claimed twice. `Replaces` is
+#      refused outright -- it is the field that would make an overlap install
+#      cleanly, and no control template in this tree has one. `Provides` and
+#      `Conflicts` are NOT refused: they are different fields with legitimate
+#      uses, and one of them is checked at (i).
 #   b  Package, Version, Architecture and the Depends closure. Each archive
 #      declares the architecture of the pool it sits in OR `all`; the pool's
 #      package set is what the producers building for that pool declare; one
@@ -182,6 +186,14 @@ PASS_N=0
 FAIL_N=0
 pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $1"; }
 fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
+
+# a -- the ownership exemption's whole test: do $1 and $2 EACH name the other in
+# an unversioned Conflicts. CONFLICTS_WITH is built per pool out of the archives
+# themselves, below, and holds unversioned entries only.
+mutually_conflicting() {
+    case " ${CONFLICTS_WITH[$1]:-} " in *" $2 "*) ;; *) return 1 ;; esac
+    case " ${CONFLICTS_WITH[$2]:-} " in *" $1 "*) ;; *) return 1 ;; esac
+}
 
 ARCHES=("$@")
 
@@ -413,8 +425,32 @@ for arch in "${ARCHES[@]}"; do
         done
     done
 
+    # a -- what each archive of this pool declares in Conflicts, as a set of
+    # names. UNVERSIONED ENTRIES ONLY: `foo (<< 2)` does not conflict with foo
+    # at 2, so it leaves a version pair co-installable and cannot license a
+    # shared path. A versioned entry is dropped here rather than recorded, so
+    # the exemption below cannot see it at all.
+    declare -A CONFLICTS_WITH=()
+    for d in "${debs[@]}"; do
+        conf="$(dpkg-deb --field "${pool}/${d}" Conflicts)"
+        pname="$(dpkg-deb --field "${pool}/${d}" Package)"
+        IFS=',' read -ra centries <<<"${conf}"
+        for ce in ${centries[@]+"${centries[@]}"}; do
+            read -r cname crest <<<"${ce}"
+            [ -z "${crest}" ] || continue
+            case "${cname}" in *'('*) continue ;; esac
+            [ -n "${cname}" ] || continue
+            CONFLICTS_WITH["${pname}"]="${CONFLICTS_WITH[${pname}]:-}${cname} "
+        done
+    done
+
     unset owner
     declare -A owner=()
+    # The SECOND owner of an exempted path, so "exactly two" is enforced rather
+    # than assumed: once a path is shared by a conflicting pair, a third
+    # claimant has nothing to be exempt against and fails like any other.
+    unset shared
+    declare -A shared=()
     for d in "${debs[@]}"; do
         deb="${pool}/${d}"
         name="$(dpkg-deb --field "${deb}" Package)"
@@ -442,7 +478,11 @@ for arch in "${ARCHES[@]}"; do
         # its only use here would be to let two packages own one path. Provides
         # and Conflicts are deliberately NOT refused: they are how one package
         # stands in for a virtual name and how two alternatives exclude each
-        # other, and neither lets two packages own one file.
+        # other. The two fields are not interchangeable here: Replaces is the
+        # field that would let an overlap INSTALL cleanly, and Conflicts is the
+        # field that guarantees it never has to -- which is why the ownership
+        # check below exempts a mutually conflicting pair and this still refuses
+        # every Replaces.
         if [ -z "${replaces}" ]; then
             pass "${name} ${arch}: declares no Replaces"
         else
@@ -520,7 +560,41 @@ for arch in "${ARCHES[@]}"; do
         # against the other members of the pool it is sitting in, and the map is
         # reset per pool -- the same archive appearing in both pools is one
         # package in two pools, not two packages claiming one path.
+        #
+        # THE ONE EXEMPTION. The question this check asks is "is this path in
+        # two archives of one pool"; the question worth asking is "is this path
+        # claimed by two packages that could be CO-INSTALLED". They differ for
+        # exactly one shape: a pair that declares Conflicts with each other can
+        # never both be unpacked into one root, so there is no root in which the
+        # path is owned twice and nothing for dpkg to resolve. mos-profile-dev
+        # and mos-profile-prod are that pair, and their shared
+        # /usr/lib/mos/profile.conf is the intended design, not a collision.
+        #
+        # Two deliberate NARROWINGS, both stricter than Debian requires. A later
+        # reader must not relax either of them into looseness:
+        #
+        #   MUTUAL. A one-way `Conflicts` already prevents co-installation, so
+        #   requiring both directions is stricter than it needs to be. Chosen
+        #   anyway: the only pair this tree ships declares it both ways, and a
+        #   future one-way pair failing loudly and forcing someone to look is
+        #   better than this gate quietly reasoning about which direction of an
+        #   asymmetric declaration it was handed. The strictness costs nothing
+        #   today and buys a review of the case nobody has thought about yet.
+        #
+        #   UNVERSIONED. `Conflicts: foo (<< 2)` does not prevent co-installing
+        #   foo at 2, so a versioned entry leaves a root in which both packages
+        #   exist and the path IS owned twice. Only an unversioned entry carries
+        #   the guarantee the exemption rests on, so CONFLICTS_WITH above holds
+        #   nothing else.
+        #
+        # AND EXACTLY TWO: `shared` records the second owner, so a third
+        # claimant fails -- three packages cannot be pairwise excluded by two
+        # declarations, and the exemption is not a licence for a free-for-all.
+        #
+        # An exemption that fires silently is one nobody can audit, so every
+        # share is PRINTED with the pair and the path it was granted for.
         dup=""
+        exempt=""
         while read -r mode _own _size _date _time path _rest; do
             [ -n "${mode}" ] || continue
             case "${mode}" in
@@ -531,13 +605,23 @@ for arch in "${ARCHES[@]}"; do
             [ -n "${path}" ] || continue
             PATHS_N=$((PATHS_N + 1))
             if [ -n "${owner[${path}]:-}" ]; then
-                dup="${dup} /${path} (also in ${owner[${path}]})"
+                other="${owner[${path}]}"
+                if [ -n "${shared[${path}]:-}" ]; then
+                    dup="${dup} /${path} (also in ${other} and ${shared[${path}]})"
+                elif mutually_conflicting "${name}" "${other}"; then
+                    shared["${path}"]="${name}"
+                    exempt="${exempt} /${path} (with ${other})"
+                else
+                    dup="${dup} /${path} (also in ${other})"
+                fi
             else
                 owner["${path}"]="${name}"
             fi
         done <<<"${listing}"
+        [ -z "${exempt}" ] ||
+            pass "${name} ${arch}: EXEMPT shared path(s), each claimed by exactly two packages that declare mutual unversioned Conflicts and can never be co-installed:${exempt}"
         if [ -z "${dup}" ]; then
-            pass "${name} ${arch}: owns no non-directory path another package in the pool owns"
+            pass "${name} ${arch}: owns no non-directory path another package in the pool owns${exempt:+, beyond the exempted share(s) above}"
         else
             fail "${name} ${arch}: ships path(s) another package already owns:${dup}. Two packages owning one file means whichever unpacks second wins, and there is no Replaces here to make that defined"
         fi
@@ -585,6 +669,7 @@ for arch in "${ARCHES[@]}"; do
         done
     done
     unset PROVIDED_BY
+    unset CONFLICTS_WITH
 done
 
 # i -- THE SAME BYTES IN EVERY POOL, for each Architecture: all package.

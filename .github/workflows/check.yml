@@ -312,6 +312,14 @@ jobs:
       - name: The STATE /etc/shadow reconciler
         run: make os-shadow-test
 
+      # Belongs in THIS job and not in os-verify: it reads three committed files
+      # with bash and git, and needs neither bun nor docker. It is also the only
+      # gate here that says anything about a board kernel -- `make cx3576-kernel`
+      # is not run on any runner, so without this step the symbols netavark
+      # programs rules against are checked by a hardware build or not at all.
+      - name: The cx3576 kernel config carries what netavark needs
+        run: make os-netavark-kernel-test
+
       - name: What this workflow does not cover
         if: always()
         run: |
