@@ -23,6 +23,19 @@ export interface ExecResult {
   readonly status: number
   readonly stdout: string
   readonly stderr: string
+  /**
+   * The budget, when the budget is what ended it.
+   *
+   * A process the watchdog kills answers 137 -- 128 plus SIGKILL's 9 -- and that
+   * number is indistinguishable from a program that chose to exit 137, so every
+   * message built from the status alone makes its reader decode a signal to
+   * learn that the RUNNER ended this and not the program. It cost this campaign
+   * a build: `docker load ... exited 137: Loaded image: localhost/mos-factory-root:x64`
+   * is a kill reported beside docker's own success line, and the run was failed.
+   * Carrying the budget out beside the status is what lets a message say `the
+   * watchdog killed it after N ms` in words.
+   */
+  readonly timedOutAfterMs?: number
 }
 
 /**
@@ -218,6 +231,14 @@ export interface BuildCommitFact {
  * a real container against a real mutated root.
  */
 export function diagnose(outcome: ExecResult): string {
+  // First, because a killed process's status is not its answer. `--version` is
+  // milliseconds and the budget is a fuse, so reaching it says the host or the
+  // binary stopped making progress; either way the number beside it is SIGKILL's
+  // and naming it as one is what keeps the next reader from decoding 137.
+  if (outcome.timedOutAfterMs !== undefined) {
+    return `the watchdog killed it after ${outcome.timedOutAfterMs} ms -- this status is the SIGKILL `
+      + 'the runner sent when its budget ran out, not the program\'s own answer'
+  }
   // 127 is ambiguous and is split by text, not left to the status: ld.so exits
   // 127 after printing `error while loading shared libraries`, and docker exits
   // 127 when the path is not there at all. The fallback names both possibilities
@@ -734,13 +755,22 @@ export async function capture(argv: readonly string[], timeoutMs: number): Promi
   // smoke run that hangs instead of concluding. The shipped register does not
   // invoke apid, but a register entry added later could, and a harness whose
   // worst case is "forever" cannot be put in front of a build.
-  const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs)
+  let watchdogFired = false
+  const timer = setTimeout(() => {
+    watchdogFired = true
+    proc.kill('SIGKILL')
+  }, timeoutMs)
   try {
     const [stdout, stderr, status] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
       proc.exited,
     ])
+    // Recorded only when the kill is what decided the status. The timer and the
+    // process can land in the same tick, and a program that had already exited 0
+    // when the signal arrived did its work -- calling that a timeout would be the
+    // same false alarm this field exists to end, from the other side.
+    if (watchdogFired && status !== 0) return { status, stdout, stderr, timedOutAfterMs: timeoutMs }
     return { status, stdout, stderr }
   } finally {
     clearTimeout(timer)
@@ -751,7 +781,149 @@ export async function capture(argv: readonly string[], timeoutMs: number): Promi
 export const EXEC_TIMEOUT_MS = 30_000
 
 /**
- * Load the archive, every run, and hand back the ref it loaded.
+ * What `docker load` gets, as a function of what it has to ingest.
+ *
+ * A constant is the wrong SHAPE for this budget, and raising the 30s one would
+ * have been the same defect postponed: what a load costs is the bytes it reads,
+ * and `factory-root.txt` already records how many that is.
+ *
+ * The 30s was EXEC_TIMEOUT_MS, shared with `crun --version`. It killed a
+ * COMPLETED load of the 250 MB factory root twice in one day, both times with
+ * docker's own success line in the captured output --
+ *   `docker load -i .../factory-root.oci exited 137: Loaded image: localhost/mos-factory-root:x64`
+ * -- and each time it cost a full gate run: the builds did not fail, the
+ * watchdog did. What makes that number indefensible is not that it is small but
+ * what it was sized against: the archive it killed loads in 2.1s against a warm
+ * daemon, so 30s looks like 14x of headroom, and host load alone crosses it.
+ * Measured here on the same host (docker 29.7.2, containerd image store), the
+ * same 250,083,328 bytes: 4.3s warm, 20.3s cold and quiet, and 48.2s cold while
+ * two sibling rootfs builds ran -- past the fuse, on the load this repository
+ * normally carries. A fuse sized for a warm daemon turns host load into a red
+ * build that names nothing about the cause.
+ *
+ * 1 MB/s is the quiet-host cold measurement divided by twelve -- the order of
+ * magnitude a loaded host actually costs -- and, being a rate, it SCALES: a root that grows
+ * to 1 GB gets four times the budget instead of re-acquiring this defect on the
+ * day it grows. The floor covers the part that is not bytes (daemon round
+ * trips, an archive small enough that the rate alone would give it
+ * milliseconds). For the shipped 250 MB root the two come to ~310s, the same
+ * order as BUILDKIT_EXEC_TIMEOUT_MS: a fuse against `forever`, not a deadline
+ * anyone is expected to meet.
+ */
+export const LOAD_TIMEOUT_FLOOR_MS = 60_000
+/** One millisecond of budget per this many bytes of archive -- 1 MB/s. */
+export const LOAD_TIMEOUT_BYTES_PER_MS = 1_000
+
+export function loadTimeoutMs(bytes: number): number {
+  return LOAD_TIMEOUT_FLOOR_MS + Math.ceil(bytes / LOAD_TIMEOUT_BYTES_PER_MS)
+}
+
+const OCI_MANIFEST_MEDIA_TYPE = 'application/vnd.oci.image.manifest.v1+json'
+
+/** `linux/arm64/v8` and `linux/arm64` are one platform for this comparison. */
+function platformKey(platform: string): string {
+  return platform.split('/').slice(0, 2).join('/')
+}
+
+/**
+ * The manifest digest the archive's own index names for this platform.
+ *
+ * Counted rather than searched: the message says how many manifests the index
+ * carries, how many of those are images and how many of THOSE are for the
+ * platform the record claims, because "found one" and "found the only one"
+ * differ exactly when a producer starts attaching attestations. os/build/src/stages.ts
+ * exports with `--provenance=false --sbom=false`, so today that count is 1.
+ */
+export function parseArchiveIndex(text: string, platform: string, path: string): string {
+  const index = JSON.parse(text) as {
+    manifests?: readonly { mediaType?: string; digest?: string; platform?: { os?: string; architecture?: string } }[]
+  }
+  const manifests = index.manifests ?? []
+  const images = manifests.filter(m => m.mediaType === OCI_MANIFEST_MEDIA_TYPE)
+  const wanted = images.filter(m =>
+    m.platform === undefined || platformKey(`${m.platform.os}/${m.platform.architecture}`) === platformKey(platform))
+  const digest = wanted.length === 1 ? wanted[0]!.digest : undefined
+  if (digest === undefined || digest === '') {
+    throw new Error(
+      `${path} lists ${manifests.length} manifest(s), ${images.length} of them images and ${wanted.length} `
+      + `of those for ${platform}; exactly one is needed to say which image this archive IS.`,
+    )
+  }
+  return digest
+}
+
+/** The config digest the manifest names -- the other thing a daemon may call the image. */
+export function parseArchiveManifest(text: string, path: string): string {
+  const manifest = JSON.parse(text) as { config?: { digest?: string } }
+  const digest = manifest.config?.digest
+  if (digest === undefined || digest === '') {
+    throw new Error(`${path} names no config digest, so the archive does not say what image it carries.`)
+  }
+  return digest
+}
+
+/** `sha256:abc...` -> `blobs/sha256/abc...`, the member an OCI layout tar carries it as. */
+export function blobMember(digest: string): string {
+  const sep = digest.indexOf(':')
+  if (sep <= 0 || sep === digest.length - 1) {
+    throw new Error(`'${digest}' is not an <algorithm>:<hex> digest, so no blob in the archive answers to it.`)
+  }
+  return `blobs/${digest.slice(0, sep)}/${digest.slice(sep + 1)}`
+}
+
+/**
+ * The digests a daemon may know this archive's image by, read out of the
+ * ARCHIVE and not out of the daemon.
+ *
+ * Two of them, because the two image stores disagree about what an image ID is:
+ * with the containerd store (docker 29's default, measured here) `docker image
+ * inspect --format {{.Id}}` answers the MANIFEST digest, and with the classic
+ * store it answers the CONFIG digest. Both are computed from bytes this
+ * worktree wrote, so neither can be made to name another worktree's root by a
+ * tag moving underneath this run.
+ *
+ * It costs nothing next to the load it follows: tar seeks a regular file rather
+ * than reading it, measured at 4 ms to pull index.json out of the end of a
+ * 250 MB archive.
+ */
+export async function archiveImageDigests(
+  record: FactoryRootRecord & { readonly archivePath: string },
+  run: (argv: readonly string[], timeoutMs: number) => Promise<ExecResult> = capture,
+): Promise<readonly string[]> {
+  const member = async (name: string): Promise<string> => {
+    const r = await run(['tar', '-xOf', record.archivePath, name], EXEC_TIMEOUT_MS)
+    if (r.status !== 0) {
+      throw new Error(`tar could not read ${name} out of ${record.archivePath}: exited ${r.status} ${r.stderr.trim()}`)
+    }
+    return r.stdout
+  }
+  const manifest = parseArchiveIndex(await member('index.json'), record.platform, `${record.archivePath}:index.json`)
+  const config = parseArchiveManifest(await member(blobMember(manifest)), `${record.archivePath}:${manifest}`)
+  return [manifest, config]
+}
+
+/** The image the run will address, and what that identity was taken from. */
+export interface LoadedFactoryRoot {
+  /** The name the archive carries. For messages; nothing is addressed by it. */
+  readonly ref: string
+  /** The image ID every `docker run` of this smoke run uses. */
+  readonly id: string
+  /** `content`: the daemon was asked for the archive's own digest. `tag`: it was not able to answer that. */
+  readonly source: 'content' | 'tag'
+}
+
+/** The daemon's ID for a reference, or undefined if it holds no such image. */
+async function inspectId(
+  reference: string,
+  run: (argv: readonly string[], timeoutMs: number) => Promise<ExecResult>,
+): Promise<string | undefined> {
+  const r = await run(['docker', 'image', 'inspect', '--format', '{{.Id}}', reference], EXEC_TIMEOUT_MS)
+  const id = r.stdout.trim()
+  return r.status === 0 && id !== '' ? id : undefined
+}
+
+/**
+ * Load the archive, every run, and hand back the IMAGE -- not the tag.
  *
  * Load rather than trust a tag. A tag is daemon state: it says what is currently
  * loaded, and `localhost/mos-factory-root:x64` may name a root some other
@@ -759,17 +931,96 @@ export const EXEC_TIMEOUT_MS = 30_000
  * same seam from the other side -- "a stale or absent archive would be handed to
  * the smoke runner as this build's root". Loading is idempotent and costs ~2s on
  * the real 250 MB export because the layers are already content-addressed.
+ *
+ * Loading is not enough, though, and that is the second thing this does. The tag
+ * stays daemon-global for as long as the run lasts, and this campaign has two
+ * and three worktrees loading `:x64` at once; a sibling's load between this
+ * function and the first `docker run` would hand the register somebody else's
+ * root and produce a full page of verdicts about it. So the return value is the
+ * daemon's ID for the digest the ARCHIVE names, and every later invocation
+ * addresses that: an ID is content, and a tag moving cannot follow it.
+ *
+ * The fallback to the tag exists so this is never WORSE than what it replaced.
+ * The two known image stores are covered by the two digests, and a store that
+ * names images a third way would otherwise turn every smoke run on that host
+ * into a refusal about the runner. It says which of the two happened, because
+ * "resolved by content" and "resolved through a global tag" are different
+ * statements about how much this run's verdicts can be trusted.
+ *
+ * `run` takes the budget per call: the load's is a function of the archive
+ * (`loadTimeoutMs`), and the inspects beside it are the ordinary fuse.
  */
 export async function loadFactoryRoot(
   record: FactoryRootRecord & { readonly archivePath: string },
-  run: (argv: readonly string[]) => Promise<ExecResult> = argv => capture(argv, EXEC_TIMEOUT_MS),
-): Promise<void> {
-  const r = await run(['docker', 'load', '-i', record.archivePath])
-  if (r.status !== 0) {
+  run: (argv: readonly string[], timeoutMs: number) => Promise<ExecResult> = capture,
+  log: (line: string) => void = () => {},
+): Promise<LoadedFactoryRoot> {
+  const loaded = await run(['docker', 'load', '-i', record.archivePath], loadTimeoutMs(record.bytes))
+
+  // A load that failed on its own says so and stops here, unchanged. A load the
+  // WATCHDOG ended is a different claim -- it says the runner ran out of
+  // patience, which is not evidence that the work was not done -- and is
+  // answered below by asking the daemon what it holds.
+  if (loaded.status !== 0 && loaded.timedOutAfterMs === undefined) {
     throw new Error(
-      `docker load -i ${record.archivePath} exited ${r.status}: ${r.stderr.trim() || r.stdout.trim()}`,
+      `docker load -i ${record.archivePath} exited ${loaded.status}: ${loaded.stderr.trim() || loaded.stdout.trim()}`,
     )
   }
+
+  let digests: readonly string[] = []
+  try {
+    digests = await archiveImageDigests(record, run)
+  } catch (e) {
+    log(
+      `os/verify smoke: ${record.archive} does not say which image it carries `
+      + `(${String((e as Error).message ?? e)})`,
+    )
+  }
+  let id: string | undefined
+  for (const digest of digests) {
+    id = await inspectId(digest, run)
+    if (id !== undefined) break
+  }
+
+  if (loaded.timedOutAfterMs !== undefined) {
+    // The killed-but-done case, which is the one that failed a healthy build.
+    // What matters is not whether the process lived to exit 0 but whether the
+    // daemon holds the image the archive describes, and that is a question about
+    // content: the digest came out of this worktree's own file. Answered from
+    // the tag it would be worthless -- a stale `:x64` from an hour ago answers
+    // it just as well.
+    if (id !== undefined) {
+      log(
+        `os/verify smoke: the watchdog killed \`docker load -i ${record.archivePath}\` after `
+        + `${loaded.timedOutAfterMs} ms, and the daemon nevertheless holds ${id}, the image this `
+        + `archive describes by digest. The kill decided nothing; continuing with that image.`,
+      )
+      return { ref: record.ref, id, source: 'content' }
+    }
+    throw new Error(
+      `the watchdog killed \`docker load -i ${record.archivePath}\` after ${loaded.timedOutAfterMs} ms, `
+      + `and the daemon does not hold the image the archive describes, so there is nothing to execute.\n`
+      + `       It said: ${loaded.stderr.trim() || loaded.stdout.trim() || '(nothing)'}\n`
+      + `       The budget is ${LOAD_TIMEOUT_FLOOR_MS} ms plus one per ${LOAD_TIMEOUT_BYTES_PER_MS} bytes `
+      + `of the recorded ${record.bytes}-byte archive, so a load that exceeds it is not a big archive but `
+      + `a stalled one: look at the host before re-running.`,
+    )
+  }
+
+  if (id !== undefined) return { ref: record.ref, id, source: 'content' }
+
+  const tagged = await inspectId(record.ref, run)
+  if (tagged === undefined) {
+    throw new Error(
+      `docker load -i ${record.archivePath} exited 0 and the daemon then had no image at ${record.ref}, `
+      + `nor at either digest the archive names (${digests.join(', ') || 'none could be read'}).`,
+    )
+  }
+  log(
+    `os/verify smoke: ${record.ref} resolved through the TAG to ${tagged}; this daemon answers to `
+    + `neither digest the archive names, so this run cannot prove the image is the one it loaded.`,
+  )
+  return { ref: record.ref, id: tagged, source: 'tag' }
 }
 
 /**
@@ -1094,8 +1345,20 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
         : `os/verify smoke: build commit ${build.commit}, from ${build.source}`,
     )
 
-    if (opts.load !== false) await loadFactoryRoot(record)
-    exec = dockerExec(record.ref)
+    // The image, by ID, for every invocation from here on. `record.ref` names
+    // it only in messages: the tag is daemon-global and another worktree on this
+    // host loading its own `:x64` mid-run would otherwise re-point what these
+    // containers execute. See loadFactoryRoot.
+    let image = record.ref
+    if (opts.load !== false) {
+      const loaded = await loadFactoryRoot(record, capture, log)
+      image = loaded.id
+      log(
+        `os/verify smoke: executing image ${loaded.id}, identified by `
+        + `${loaded.source === 'content' ? `the digest ${record.archive} carries` : `the tag ${loaded.ref}`}`,
+      )
+    }
+    exec = dockerExec(image)
     try {
       await preflight(exec, record.platform)
     } catch (e) {
