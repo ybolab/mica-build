@@ -101,6 +101,7 @@ to know that one of its packages was filed under arm64.
 | Producer | Emits | Architecture |
 | --- | --- | --- |
 | `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
+| `board-cx3576` -- lives at `os/boards/cx3576/deb`, run through its own `render.sh` | `mos-board-cx3576` | `arm64` |
 
 ### `profile`
 
