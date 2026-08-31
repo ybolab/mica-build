@@ -176,6 +176,18 @@ no ELF in the payload for `dpkg-shlibdeps` to resolve -- and it requires a
 `docker-container` builder, because the `docker` driver accepts only one output
 per build.
 
+**A complete pool has a prerequisite that is not in the tree: the cx3576 board
+producer's BSP inputs.** `board-cx3576` stages a kernel, a device tree, the
+kernel modules and U-Boot out of `os/boards/cx3576/bsp/out/`, which is
+gitignored, so a fresh worktree does not have them and its `PREPARE` hook
+refuses by name -- naming `make -C os/boards/cx3576/bsp <target>`, or pointing
+`BOARD_DIR` at a bsp tree that already carries them. The part worth knowing
+before you meet it is the consequence for the aggregate rather than for that one
+producer: `make os-debs` walks the producers in the order `producers.sh` prints
+them and stops at the first that fails, and `board-cx3576` sorts first. So
+without those inputs the aggregate builds **nothing at all** -- the pool comes
+out empty rather than short one package, and no other producer is reached.
+
 ## `version.sh`
 
 ```
