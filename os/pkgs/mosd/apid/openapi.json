@@ -97,6 +97,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -177,7 +187,7 @@
           "actions"
         ],
         "summary": "Set a transient root password.",
-        "description": "The password must be 8 to 72 bytes and contain no NUL, newline or carriage\nreturn. 72 is bcrypt's limit — a longer password would be silently\ntruncated, so it is refused instead.\n\nThe password is written into no setting, is never logged, and lasts until\nthe next reboot. A **422** states which bound was broken and never repeats\nthe password back.\n\nAnswers **204** once the password is actually set.",
+        "description": "The password must be 8 to 72 bytes and contain no NUL, newline or carriage\nreturn. 72 is bcrypt's limit — a longer password would be silently\ntruncated, so it is refused instead.\n\nThe password is written into no setting, is never logged, and lasts until\nthe next reboot. A **422** states which bound was broken and never repeats\nthe password back.\n\nAnswers **202** once the password hash is written and its scoped apply is queued.",
         "operationId": "api_v1_transient_root_password",
         "requestBody": {
           "content": {
@@ -190,8 +200,15 @@
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "The transient root password is set; it lasts until the next reboot and is written into no setting"
+          "202": {
+            "description": "The transient root password hash was written and its scoped apply was queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
           },
           "400": {
             "description": "The body is not JSON, or not this shape (`request_invalid`)",
@@ -245,6 +262,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -338,6 +365,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -520,6 +557,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -616,6 +663,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       },
@@ -693,6 +750,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -789,6 +856,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -917,6 +994,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -1005,6 +1092,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -1105,6 +1202,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       },
@@ -1113,7 +1220,7 @@
           "resources"
         ],
         "summary": "Write one scalar setting by dot-path.",
-        "description": "Accepts four paths and no others: `hostname`, `access.ssh.enabled`,\n`container.enabled` and `mqtt.enabled`. Any other path is refused.\n\nAnswers **204** with no body on success. Takes a bearer token or a session\ncookie.",
+        "description": "Accepts four paths and no others: `hostname`, `access.ssh.enabled`,\n`container.enabled` and `mqtt.enabled`. Any other path is refused.\n\nAnswers **202** with the queued task id on success. Takes a bearer token.",
         "operationId": "api_v1_settings_write",
         "parameters": [
           {
@@ -1137,8 +1244,15 @@
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "The value was written: mosd has persisted it and re-applied the reconcilers whose subtree overlaps the path"
+          "202": {
+            "description": "The value was persisted and its scoped reconciliation was queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
           },
           "400": {
             "description": "The body is not JSON (`request_invalid`)",
@@ -1212,6 +1326,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -1311,6 +1435,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -1366,6 +1500,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -1473,6 +1617,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -1552,6 +1706,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -1652,6 +1816,182 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List mosd's bounded apply-task history, oldest first.",
+        "operationId": "api_v1_tasks_list",
+        "responses": {
+          "200": {
+            "description": "The bounded apply-task history, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskRecord"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd returned an invalid task record or failed to answer (`mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Read one apply task by the id returned with a settings or transient-password write.",
+        "operationId": "api_v1_task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The task id returned by a 202 response",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The latest known task record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No retained task has this id (`task_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd returned an invalid task record or failed to answer (`mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -1710,6 +2050,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -1817,6 +2167,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -1903,6 +2263,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -1961,6 +2331,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -2068,6 +2448,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -2137,6 +2527,16 @@
           },
           "503": {
             "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
             "content": {
               "application/json": {
                 "schema": {
@@ -2618,6 +3018,81 @@
               "null"
             ],
             "description": "Default gateway address; absent for a link with no route of its own."
+          }
+        }
+      },
+      "TaskAccepted": {
+        "type": "object",
+        "description": "A persisted settings write whose reconciliation continues asynchronously.",
+        "required": [
+          "taskId"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "Poll this id at `GET /api/v1/tasks/{id}`."
+          }
+        }
+      },
+      "TaskRecord": {
+        "type": "object",
+        "description": "One queued apply lifecycle, shared by the D-Bus client and HTTP surface.",
+        "required": [
+          "id",
+          "operation",
+          "dotPath",
+          "source",
+          "status",
+          "enqueuedAt",
+          "foldedCount"
+        ],
+        "properties": {
+          "dotPath": {
+            "type": "string"
+          },
+          "enqueuedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "foldedCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
           }
         }
       },

@@ -53,6 +53,12 @@
 
 **当前阶段 —— [已实现]。** 持久访问靠 SSH 公钥；root 口令是**临时**的，由 mosd 在运行时设置。
 
+请求边界先完成 bcrypt 与 shadow/marker 写入，再把一个 `access.ssh` 应用任务放入队列；
+队列里从不出现明文口令。apid 返回 202 + task id，HTML 表单则跳转到
+`/ssh?task=<id>`。服务端渲染页面在 queued/running 时用 meta refresh 刷新，并在
+succeeded、failed、interrupted 或有界历史已经找不到该 id 时停止；不引入 JavaScript，
+也不再让一次口令提交把浏览器留在无上界的空白等待中。
+
 **已废止的模型。** 早期的"每设备口令"模型曾把口令写进 `/etc/shadow`，但**系统从未把这个口令
 暴露给运维**——所以那条路径当时就已不可用。当前设计只是让它**诚实地**不可用，
 而不是关掉了一扇本来能用的门。

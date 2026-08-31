@@ -220,9 +220,9 @@ written and the daemon's rename carried it — and the match that reads it is
 (`os/pkgs/mosd/apid/src/config.rs`).
 
 **Every method apid calls today is on one management proxy.** The
-`com.mos.mosd1` trait (`os/pkgs/mosd/apid/src/bus_client.rs`) declares seven
-methods and one signal: settings read/write, live-state read, transient root
-password, WireGuard rotation, reboot, and power-off. APID declares no
+`com.mos.mosd1` trait (`os/pkgs/mosd/apid/src/bus_client.rs`) declares eight
+methods and two signals: settings read/write, task lookup, live-state read,
+transient root password, WireGuard rotation, reboot, and power-off. APID declares no
 `com.mos.Item1` proxy. Application item trees may use direct
 `com.mos.<class>[.<suffix>]` names, but MQTT admits them only through exact
 package-owned enrollment; they are not a system-control surface.
@@ -237,6 +237,7 @@ because M4-M9 gave each of them a JSON surface rather than a second code path
 |---|---|---|---|
 | `fn get_settings` | `fn get_settings` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | the gate's unauthenticated path and every bearer check (`fn access_settings`, `os/pkgs/mosd/apid/src/routes.rs`), the `/`, `/builtin`, `/setup`, `/login`, `/password`, `/network`, `/hostname`, `/ssh`, `/containers` and `/mqtt` handlers, and the settings read route, `resource_response(state.api.get_settings(&path).await, &path)` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn set_settings` | `fn set_settings` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn set_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | `/setup`, `/password`, `/network`, `/network/peers/*`, `/hostname`, `/ssh/enable`, `/ssh/keys/*`, `/containers/enable`, `/mqtt/enable`, `/builtin/tokens*`, and every `/api/v1/` write — twenty call sites in `os/pkgs/mosd/apid/src/routes.rs` |
+| `fn get_task` | `fn get_task` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_task` (`os/pkgs/mosd/mosd/src/bus.rs`) | direct fallback for `GET /api/v1/tasks/{id}` when the `TaskChanged` subscription is not provably live or has no record for that id |
 | `fn get_state` | `fn get_state` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | five literal live-state paths: `get_state("network")` (`os/pkgs/mosd/apid/src/routes.rs`), `.get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs`), `get_state("sshd")` (`os/pkgs/mosd/apid/src/routes.rs`), `get_state("container")` (`os/pkgs/mosd/apid/src/routes.rs`) and `get_state("mqtt")` (`os/pkgs/mosd/apid/src/routes.rs`), plus the health probe `get_state(HEALTH_PROBE_PATH)` (`os/pkgs/mosd/apid/src/routes.rs`) and the passthrough `get_state(&path)` (`os/pkgs/mosd/apid/src/routes.rs`), which serves any dot-path a client asks for |
 | `fn reboot` | `fn reboot` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn reboot` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /power/reboot` and `POST /api/v1/actions/reboot`, both through `PowerAction::Reboot => api.reboot().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `fn power_off` | `fn power_off` (`os/pkgs/mosd/apid/src/bus_client.rs`) | `async fn power_off` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST /power/poweroff` and `POST /api/v1/actions/poweroff`, both through `PowerAction::PowerOff => api.power_off().await,` (`os/pkgs/mosd/apid/src/routes.rs`) |
@@ -250,7 +251,7 @@ uses one interface and one object path; power is now expressed by the dedicated
 management methods rather than an item write.
 
 **What apid does not call, and cannot receive.** `com.mos.mosd1` now serves
-twelve methods, and apid's proxy declares seven. The five it does not declare
+thirteen methods, and apid's proxy declares eight. The five it does not declare
 are `ReportHealth`, `ForgetService`, `InstallUpdate`, `GetUpdateState`, and
 `MarkUpdate`. `ReportHealth` belongs to the boot health gate; the registry and
 update members have their own system clients. mqttd is not one of them and has
@@ -258,7 +259,8 @@ no policy access to this interface. APID calls
 `Reboot` and `PowerOff` directly, so its D-Bus boundary matches its role as the
 system-management API.
 
-mosd emits `SettingsChanged`, and apid subscribes to it.
+mosd emits `SettingsChanged` and `TaskChanged`, and apid subscribes to each on
+its own dedicated connection.
 `SettingsChanged(path, value_json)` fires after every successful settings write
 (`os/pkgs/mosd/mosd/src/bus.rs`), and the proxy declares the matching
 `#[zbus(signal)]` member (`os/pkgs/mosd/apid/src/bus_client.rs`): a dedicated
@@ -270,6 +272,14 @@ settings change, and its consumer is internal — no change-stream API is served
 (§8.3 item 2). mosd exports no `ItemsChanged` signal or Item1 façade; those
 members are application-owned under exact enrolled `com.mos.*` names and APID
 does not subscribe to them.
+
+`TaskChanged(task_json)` is emitted for queued, running and finished
+transitions. It feeds `TaskRegistry`, which serves memory only while the signal
+subscription is live and otherwise falls back to `GetTask`. A lapsed running
+record is never served as current; if a direct lookup after resubscription
+confirms that mosd no longer retains it, apid exposes it as terminal
+`interrupted`, so the zero-JavaScript UI cannot refresh forever after a mosd
+restart.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
 (`os/pkgs/mosd/apid/src/settings_api.rs`), not on zbus, which is what lets the
@@ -572,7 +582,20 @@ list back through `async fn write_key_list` (`os/pkgs/mosd/apid/src/routes.rs`).
 collection route M5-M6 added does the same read-modify-write, for the same
 reason.
 
-**Which reconcilers a write re-runs.** `SetSettings` re-applies every reconciler
+**Persistence and application are separate lifecycles.** `SetSettings`
+validates and atomically persists the candidate, enqueues a scoped apply, and
+returns its task id; it does not wait for reconciliation. One worker serializes
+apply execution behind a dedicated apply lock while settings and live-state
+reads use the separate data `RwLock`. Pending work is folded by dot-path subtree
+subsumption, so two rapid identical submissions share one reconcile and the
+surviving record increments `foldedCount`. The bounded record is available at
+`GET /api/v1/tasks/{id}` and in `GET /api/v1/tasks`; it carries the operation,
+dot-path, source, timestamps, terminal outcome and fold count. Consequently
+`PUT /api/v1/settings/{path}` and the transient-root-password action answer
+**202** with `{ "taskId": "..." }`: return means persisted and queued, never
+"already applied".
+
+**Which reconcilers the queued worker re-runs.** A `SetSettings` task applies every reconciler
 whose subtree overlaps the written path —
 `if paths_overlap(path, reconciler.subtree()) {`
 (`os/pkgs/mosd/mosd/src/bus.rs`) — where overlap is segment-wise prefix in either
@@ -605,7 +628,7 @@ than assume it equals the settings key.
 `state: Value,` (`os/pkgs/mosd/mosd/src/bus.rs`) — and `GetState` returns the
 subtree at a dot-path or, when the dot-path resolves to nothing, `NotFound`
 (`os/pkgs/mosd/mosd/src/bus.rs`) — the name was fdo `InvalidArgs` until
-An earlier defect is why apid used to re-read it on the state route. Four kinds of thing write into it, and that
+An earlier defect is why apid used to re-read it on the state route. Five kinds of thing write into it, and that
 set is the entire read surface an API can expose:
 
 1. **One key per reconciler**, named by `name()` above, holding that
@@ -631,6 +654,9 @@ set is the entire read surface an API can expose:
    (`os/pkgs/mosd/mosd/src/main.rs`), in which case no reconcilers are
    registered at all (`os/pkgs/mosd/mosd/src/main.rs`) and the power control is
    a stub (`os/pkgs/mosd/mosd/src/main.rs`).
+5. **`tasks`** — mosd's bounded apply history, updated on every queued, running
+   and finished transition and also readable one record at a time through
+   `GetTask`.
 
 Of that surface, apid's HTML panes read **five** literal paths today —
 `network`, `uptime`, `sshd`, `container` and `mqtt` (section 1.3); `uptime` is
@@ -1168,13 +1194,14 @@ Nothing here invents a model alongside mosd's; where
 the settings tree and a sensible REST resource genuinely disagree, the
 disagreement is named and the choice is costed.
 
-**Three roots, because mosd has three things and not one.**
+**Four roots, because execution records are not settings, state, or actions.**
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
 | `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) and `set_settings` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs`), survives reboot and A/B update (`docs/design/access.md`) |
-| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs`), in memory, written only from inside mosd by the four writers section 1.5 names |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs`), in memory, written only from inside mosd by the five writers section 1.5 names |
 | `/api/v1/actions/<verb>` | dedicated `Reboot`, `PowerOff`, and `SetTransientRootPassword` methods on `com.mos.mosd1` (`os/pkgs/mosd/mosd/src/bus.rs`) | `POST` only | not state at all — see §2.3 |
+| `/api/v1/tasks`, `/api/v1/tasks/<id>` | mosd's bounded apply queue, mirrored by apid from `TaskChanged` with `GetTask` fallback | `GET` only | an execution lifecycle for a persisted write; queued/running is not yet applied, finished carries the outcome |
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `os/pkgs/mosd/mosd/src/bus.rs`),
@@ -1321,6 +1348,7 @@ destroy the credential.
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`os/pkgs/mosd/mosd-settings/src/model.rs`) | only the `debug` image ships the shell at all (`os/pkgs/mosd/mosd-settings/src/model.rs`) |
 | Power | `POST /api/v1/actions/reboot`, `.../poweroff` | dedicated `Reboot` / `PowerOff` methods on `com.mos.mosd1` | actions — see §2.3 |
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`os/pkgs/mosd/mosd/src/bus.rs`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
+| Apply tasks | `GET /api/v1/tasks`, `GET /api/v1/tasks/{id}` | mosd's bounded in-memory apply queue and apid's signal-fed registry | `queued`/`running` are non-terminal; `finished` carries `succeeded`, `failed`, or the apid-inferred `interrupted` after restart/history loss |
 | Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`os/pkgs/mosd/mosd/src/bus.rs`) | recorded *before* the action, so it survives the machine going down |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | the `health` subtree, one key per component (`os/pkgs/mosd/mosd/src/bus.rs`) | the two are different questions — see §2.4 |
 | Dry-run marker | `GET /api/v1/state/dry_run` | set from `std::env::var("MOSD_DRY_RUN")` (`os/pkgs/mosd/mosd/src/main.rs`) and inserted at `os/pkgs/mosd/mosd/src/main.rs` | in that mode no reconcilers are registered at all (`os/pkgs/mosd/mosd/src/main.rs`), so every other state key is absent |
@@ -1363,7 +1391,7 @@ API surface was four `GET` paths, so every "API equivalent" column named a
 route that did not exist.
 
 That is no longer the state of the tree. `os/pkgs/mosd/apid/openapi.json`
-specifies 21 paths, including the settings write, the action verbs and the
+specifies 23 paths, including the settings write, task reads, the action verbs and the
 collection routes the inventory anticipated. It is generated from the code and
 gated in CI, so it answers "which operations exist" without a second copy to
 keep in step.
@@ -1485,6 +1513,8 @@ answering this section's envelope.
 | `settings_io` | **yes**, 500 | `ApiError::mosd("settings_io", message)` (`os/pkgs/mosd/apid/src/routes.rs`), on `FDO_IO_ERROR` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `mosd_failed` | **yes**, 500 | `ApiError::mosd("mosd_failed", message)` (`os/pkgs/mosd/apid/src/routes.rs`), on `FDO_FAILED` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `mosd_unreachable` | **yes**, 503 with `Retry-After` | `ApiError::apid("mosd_unreachable", format!("{err:#}"))` (`os/pkgs/mosd/apid/src/routes.rs`), exhaustive over everything the five names above do not match — `_ => mosd_unreachable(err),` (`os/pkgs/mosd/apid/src/routes.rs`) and again at `os/pkgs/mosd/apid/src/routes.rs` |
+| `mosd_timeout` | **yes**, 504 without `Retry-After` | a five-second bounded connection or method call elapsed; the message states that a write may still be running |
+| `task_not_found` | **yes**, 404 | `GET /api/v1/tasks/{id}` names no retained task and apid has no pre-lapse record from which to infer an interrupted terminal outcome |
 | `ssid_exists` | **yes**, 409 | `"ssid_exists",` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `key_exists` | **yes**, 409 | `"key_exists",` (`os/pkgs/mosd/apid/src/routes.rs`) |
 | `peer_exists` | **yes**, 409 | `"peer_exists",` (`os/pkgs/mosd/apid/src/routes.rs`) |
@@ -1550,6 +1580,8 @@ Content-Type: application/json
 | `settings_io` | 500 | mosd | mosd answered `IOError` (`os/pkgs/mosd/mosd/src/bus.rs`) |
 | `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs`) |
 | `mosd_unreachable` | **503** | apid | the call could not be made at all |
+| `mosd_timeout` | **504** | apid | the bounded mosd call elapsed; the operation may still be running |
+| `task_not_found` | 404 | mosd | no retained task has that id |
 | `ssid_exists` | 409 | apid | a stored WiFi network already carries the posted SSID |
 | `key_exists` | 409 | apid | a stored authorized key already carries the posted public key, compared on the canonical key text so a relabel is not a new key |
 | `peer_exists` | 409 | apid | a stored WireGuard peer of that tunnel already carries the posted public key |
@@ -1659,6 +1691,9 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    failure — is closed: `bus_error` answers **503 with `Retry-After` too**
    (`os/pkgs/mosd/apid/src/routes.rs`), so one appliance reports one
    outage one way on both surfaces.
+   A call that connected but crossed the five-second bound is different:
+   `mosd_timeout`, **504**, with no `Retry-After`; its message explicitly says
+   that a mutating operation may still be running.
 3. **mosd down entirely, distinguished from "everything is fine".** This is the
    case that must not be got wrong, because apid surviving a dead mosd is an
    existing design property, stated in the crate: *"mosd not being up yet

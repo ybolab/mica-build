@@ -375,9 +375,11 @@ changed.
 | Member | Kind |
 |---|---|
 | `GetSettings` / `SetSettings` | method |
+| `GetTask` | method |
 | `GetState` | method |
 | `ReportHealth` | method |
 | `SettingsChanged` | signal |
+| `TaskChanged` | signal |
 | `Reboot` | method |
 | `PowerOff` | method |
 | `SetTransientRootPassword` | method |
@@ -393,6 +395,16 @@ application data. `mos-mqttd` has zero policy access to `com.mos.mosd`; APID
 runs as root and reaches the interface through the root-only local policy. mosd
 renders the bridge's already-provisioned topic identity to the one-purpose
 `/run/mos/mqttd-device.env` runtime file before starting it.
+
+`SetSettings` now ends at persistence plus enqueue and returns a task id. A
+single worker owns reconcile execution; pending jobs fold by segment-wise
+subtree subsumption, and a bounded task history is mirrored under live-state
+`tasks`, exposed by `GetTask`, and pushed through `TaskChanged` on every state
+transition. Settings/live-state data uses an `RwLock`; a separate apply mutex
+preserves serialization for reconciliation, transient shadow writes and
+WireGuard key rotation without blocking reads. Transient-password work queues
+only `access.ssh`, and WireGuard rotation applies only `network`; neither
+re-applies the whole tree.
 
 `Reboot` and `PowerOff` forward to `Reboot` / `PowerOff` on
 `org.freedesktop.systemd1.Manager`. They are **not reconcilers** and do not live

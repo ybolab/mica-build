@@ -1,8 +1,9 @@
 # PLAN-038 Bound, scope and queue the settings-write path
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-08-31 12:27
 - **approvedAt**: 2026-08-31 13:57 UTC
+- **completedAt**: 2026-08-31 15:32 UTC
 - **relatedTask**: [RFCT-274](../task/RFCT-274.md)
 
 ## Context
@@ -459,3 +460,11 @@ record.
 - 2026-08-31 13:57 — The user approved implementation ("开始实现"). The
   conflict survey was repeated at `792d206`; the worktree is clean and no
   off-main commit touches the implementation paths owned by this plan.
+- 2026-08-31 15:32 — All four stages landed as separate commits: bounded
+  apid/systemd calls (`ed54640`), scoped action reconciliation (`e783257`),
+  split data/apply locks (`417dc1e`), the mosd queue (`e3405a5`), the apid
+  registry (`2dd67f8`), and the HTTP/UI/OpenAPI surface (`483cb17`). Final
+  verification passed Clippy with warnings denied, all 694 apid/mosd Nextest
+  cases, the real HTTPS/D-Bus e2e, TypeScript typechecking, all 40 spec pins,
+  and all 51 documentation-index checks. The two binary crates expose no
+  library target, so Cargo reported no applicable doctests.
