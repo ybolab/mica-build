@@ -18,6 +18,12 @@ Description: mos common system policy, state mounts and operator account
  RequiresMountsFor=/var/lib/mos -- so mosd names this package in Depends
  rather than shipping the directory itself.
  .
+ It ships the preset that keeps sshd disabled on both profiles, because mosd
+ owns that lifecycle: openssh-server's own postinst would otherwise enable
+ ssh.service, and openssh-server is in Depends above partly so that dpkg unpacks
+ this preset before it is configured. The postinst asserts that outcome; it does
+ not arrange it.
+ .
  The postinst creates the pinned mos operator account, uid and gid 1000, home
  /home/mos, shell /bin/bash. The uid is written out rather than allocated
  because /home/mos lives on the DATA partition and survives every A/B update,

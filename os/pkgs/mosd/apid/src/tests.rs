@@ -27,7 +27,8 @@ use crate::assets::serve;
 use crate::auth;
 use crate::bundle::Store;
 use crate::routes::{AppState, app};
-use crate::settings_api::{FakeSettings, SettingsApi};
+use crate::settings_api::{FakeSettings, InvalidTaskPayload, SettingsApi};
+use crate::task_registry::TaskRecord;
 
 const SIGNING_KEY: [u8; 32] = [7u8; 32];
 
@@ -87,6 +88,23 @@ async fn a_mosd_call_timeout_has_its_own_api_classification() {
             .is_some_and(|message| message.contains("may still be running")),
         "the timeout must not claim the operation failed: {body}"
     );
+}
+
+/// A task payload that reached apid but does not match the bus contract is a
+/// daemon failure, not a connectivity outage, and must match OpenAPI's 500.
+#[tokio::test]
+async fn an_invalid_task_payload_is_a_mosd_failure() {
+    let parse_error =
+        serde_json::from_str::<TaskRecord>("{}").expect_err("an empty object is not a task record");
+    let err = anyhow::Error::new(InvalidTaskPayload(parse_error));
+
+    let response = crate::routes::bus_api_error(&err, None);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.headers().get(RETRY_AFTER).is_none());
+    let body: serde_json::Value =
+        serde_json::from_str(&body_string(response).await).expect("JSON envelope");
+    assert_eq!(body["error"]["code"], "mosd_failed");
+    assert_eq!(body["error"]["source"], "mosd");
 }
 
 async fn send(router: &Router, request: Request<Body>) -> Response<axum::body::Body> {
@@ -1073,7 +1091,7 @@ async fn ssh_enable_writes_the_flag_in_both_directions() {
 
     let response = post_form(&router, "/ssh/enable", "enabled=on", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&response), "/ssh?saved=1");
+    assert_eq!(location(&response), "/ssh?task=fake-task-1");
     assert_eq!(
         fake.get_settings("access.ssh.enabled").await.unwrap(),
         json!(true)
@@ -1091,6 +1109,76 @@ async fn ssh_enable_writes_the_flag_in_both_directions() {
 
     let saved = get(&router, "/ssh?saved=1", Some(&cookie)).await;
     assert!(body_string(saved).await.contains("Settings saved."));
+}
+
+#[tokio::test]
+async fn ssh_task_page_refreshes_only_until_the_apply_is_terminal() {
+    let fake = Arc::new(FakeSettings::new(ssh_tree(json!([]))));
+    let state = AppState::new(fake, SIGNING_KEY);
+    let registry = state.task_registry().clone();
+    registry.subscribed();
+    let mut task = TaskRecord {
+        id: "task-running".to_string(),
+        operation: "settings-write".to_string(),
+        dot_path: "access.ssh.enabled".to_string(),
+        source: ":1.9".to_string(),
+        status: "running".to_string(),
+        enqueued_at: "2026-08-31T00:00:00.000Z".to_string(),
+        started_at: Some("2026-08-31T00:00:01.000Z".to_string()),
+        finished_at: None,
+        outcome: None,
+        message: None,
+        folded_count: 1,
+    };
+    registry.update(task.clone());
+    let router = app(state);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/ssh?task=task-running", Some(&cookie)).await).await;
+    assert!(body.contains("http-equiv=\"refresh\""), "{body}");
+    assert!(body.contains("Settings saved; applying now"), "{body}");
+
+    task.status = "finished".to_string();
+    task.finished_at = Some("2026-08-31T00:00:02.000Z".to_string());
+    task.outcome = Some("succeeded".to_string());
+    registry.update(task);
+    let body = body_string(get(&router, "/ssh?task=task-running", Some(&cookie)).await).await;
+    assert!(!body.contains("http-equiv=\"refresh\""), "{body}");
+    assert!(body.contains("Settings applied successfully"), "{body}");
+    assert!(body.contains("later submission(s) were folded"), "{body}");
+}
+
+#[tokio::test]
+async fn a_running_task_missing_after_resubscribe_becomes_interrupted() {
+    let (tree, token) = with_token(ssh_tree(json!([])));
+    let fake = Arc::new(FakeSettings::new(tree));
+    let state = AppState::new(fake, SIGNING_KEY);
+    let registry = state.task_registry().clone();
+    registry.subscribed();
+    registry.update(TaskRecord {
+        id: "task-before-restart".to_string(),
+        operation: "settings-write".to_string(),
+        dot_path: "access.ssh.enabled".to_string(),
+        source: ":1.9".to_string(),
+        status: "running".to_string(),
+        enqueued_at: "2026-08-31T00:00:00.000Z".to_string(),
+        started_at: Some("2026-08-31T00:00:01.000Z".to_string()),
+        finished_at: None,
+        outcome: None,
+        message: None,
+        folded_count: 0,
+    });
+    registry.lapsed();
+    registry.subscribed();
+    assert_eq!(registry.get("task-before-restart"), None);
+
+    let router = app(state);
+    let response = bearer(&router, "GET", "/api/v1/tasks/task-before-restart", &token).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let task = body_json(response).await;
+    assert_eq!(task["status"], "finished", "{task}");
+    assert_eq!(task["outcome"], "interrupted", "{task}");
+    assert!(task["finishedAt"].as_str().is_some(), "{task}");
 }
 
 #[tokio::test]
@@ -1175,7 +1263,7 @@ async fn transient_password_reaches_mosd_and_never_the_settings_tree() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&response), "/ssh?saved=1");
+    assert_eq!(location(&response), "/ssh?task=fake-task-1");
     assert_eq!(fake.transient_password_calls(), 1);
 
     // Nothing at all was written into the settings tree...
@@ -1295,7 +1383,7 @@ async fn key_add_stores_the_parsed_key_with_its_comment_split_out() {
     let cookie = login(&router, "hunter2secret").await;
     let response = add_key(&router, REAL_ED25519_LINE, &cookie).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&response), "/ssh?saved=1");
+    assert_eq!(location(&response), "/ssh?task=fake-task-1");
     assert_eq!(fake.set_paths(), vec!["access.ssh.authorizedKeys"]);
     // The comment lives in its own field, so the same key pasted under two
     // labels is one key rather than two.
@@ -1404,7 +1492,7 @@ async fn key_remove_takes_a_fingerprint_or_the_exact_key_text() {
         )
         .await;
         assert_eq!(response.status(), StatusCode::SEE_OTHER, "{identifier}");
-        assert_eq!(location(&response), "/ssh?saved=1");
+        assert_eq!(location(&response), "/ssh?task=fake-task-1");
         // The named key went and the other two stayed, in order. An index
         // would have been ambiguous about which of the three this was.
         assert_eq!(
@@ -4227,7 +4315,11 @@ impl SettingsApi for FailingSettings {
     /// The settings root stopped being read-only, and this
     /// fixture answers the write the same way it answers a read: §2.4's
     /// classification is exactly what the write route has to inherit.
-    async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
+    async fn set_settings(
+        &self,
+        _path: &str,
+        _value: &serde_json::Value,
+    ) -> anyhow::Result<String> {
         Err(self.error())
     }
 
@@ -4249,7 +4341,7 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
-    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<String> {
         Err(self.error())
     }
 
@@ -6942,9 +7034,8 @@ fn writable_tree(password: &str) -> serde_json::Value {
 /// The four dot-paths admitted, each written and
 /// each read back through the route that answers for it.
 ///
-/// 204 and an empty body: the value the caller sent is the value that was
-/// written, so there is nothing for a response body to add that a `GET` does
-/// not already say.
+/// 202 and a task id: persistence has completed, while reconciliation is a
+/// separately observable lifecycle.
 #[tokio::test]
 async fn the_write_route_writes_the_four_scalar_settings() {
     let (tree, token) = with_token(writable_tree("hunter2secret"));
@@ -6958,9 +7049,17 @@ async fn the_write_route_writes_the_four_scalar_settings() {
     ] {
         let url = format!("/api/v1/settings/{path}");
         let response = bearer_json(&router, "PUT", &url, &token, body).await;
-        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
+        assert_eq!(response.status(), StatusCode::ACCEPTED, "{path}");
         assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
-        assert_eq!(body_string(response).await, "", "{path} answers no body");
+        let accepted = body_json(response).await;
+        let task_id = accepted["taskId"].as_str().expect("a task id");
+
+        let task = bearer(&router, "GET", &format!("/api/v1/tasks/{task_id}"), &token).await;
+        assert_eq!(task.status(), StatusCode::OK, "{path}");
+        let task = body_json(task).await;
+        assert_eq!(task["dotPath"], path, "{task}");
+        assert_eq!(task["status"], "finished", "{task}");
+        assert_eq!(task["outcome"], "succeeded", "{task}");
 
         let read = bearer(&router, "GET", &url, &token).await;
         assert_eq!(read.status(), StatusCode::OK, "{path}");
@@ -6981,6 +7080,14 @@ async fn the_write_route_writes_the_four_scalar_settings() {
         ],
         "one bus write per request, at the dot-path the URL named"
     );
+
+    let tasks = bearer(&router, "GET", "/api/v1/tasks", &token).await;
+    assert_eq!(tasks.status(), StatusCode::OK);
+    assert_eq!(body_json(tasks).await.as_array().unwrap().len(), 4);
+
+    let missing = bearer(&router, "GET", "/api/v1/tasks/not-retained", &token).await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(missing).await["code"], "task_not_found");
 }
 
 /// §2.2's round trip, driven exactly as the client that motivates the rule
@@ -7336,7 +7443,7 @@ async fn the_write_route_takes_a_bearer_refuses_the_cookie_and_refuses_neither_s
         r#""from-bearer""#,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
     assert!(fake.set_paths().contains(&"hostname".to_string()));
 
     // M9: the cookie that minted the token above is not itself a
@@ -7425,7 +7532,7 @@ fn the_openapi_document_covers_the_settings_write() {
 
     let write = &document["paths"]["/api/v1/settings/{path}"]["put"];
     for status in [
-        "204", "400", "401", "404", "405", "409", "422", "500", "503",
+        "202", "400", "401", "404", "405", "409", "422", "500", "503", "504",
     ] {
         assert!(
             write["responses"][status].is_object(),
@@ -7443,6 +7550,13 @@ fn the_openapi_document_covers_the_settings_write() {
         document["paths"]["/api/v1/settings/{path}"]["get"]["responses"]["200"].is_object(),
         "{document}"
     );
+
+    let tasks = &document["paths"]["/api/v1/tasks"]["get"];
+    assert!(tasks["responses"]["200"].is_object(), "{tasks}");
+    let task = &document["paths"]["/api/v1/tasks/{id}"]["get"];
+    for status in ["200", "401", "404", "405", "500", "503", "504"] {
+        assert!(task["responses"][status].is_object(), "{status}: {task}");
+    }
 }
 
 // The two array collections that already
@@ -9743,7 +9857,7 @@ async fn the_action_routes_require_no_confirmation_token() {
         )
         .await
         .status(),
-        StatusCode::NO_CONTENT
+        StatusCode::ACCEPTED
     );
     assert_eq!(fake.transient_password_calls(), 1);
 
@@ -9779,9 +9893,10 @@ async fn the_transient_password_route_sets_it_and_writes_no_setting() {
         &json!({ "password": PASSWORD }).to_string(),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
     assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
-    assert_eq!(body_string(response).await, "");
+    let accepted = body_json(response).await;
+    assert!(accepted["taskId"].as_str().is_some(), "{accepted}");
     assert_eq!(fake.transient_password_calls(), 1);
 
     assert!(
@@ -9831,7 +9946,7 @@ async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
         .await;
         let context = format!("{} bytes", password.len());
         if accepted {
-            assert_eq!(response.status(), StatusCode::NO_CONTENT, "{context}");
+            assert_eq!(response.status(), StatusCode::ACCEPTED, "{context}");
             assert_eq!(fake.transient_password_calls(), before + 1, "{context}");
         } else {
             assert_eq!(
@@ -9971,7 +10086,7 @@ async fn the_action_routes_take_a_bearer_token() {
         r#"{"password":"hunter2secret"}"#,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
     assert_eq!(fake.transient_password_calls(), 1);
 
     let response = bearer(&router, "POST", REBOOT_PATH, &token).await;
@@ -10055,7 +10170,7 @@ fn the_openapi_document_covers_the_three_actions() {
         (POWEROFF_PATH, ["202", "401", "405"].as_slice()),
         (
             TRANSIENT_PATH,
-            ["204", "400", "401", "422", "500", "503", "405"].as_slice(),
+            ["202", "400", "401", "405", "422", "500", "503", "504"].as_slice(),
         ),
     ] {
         let route = &document["paths"][path];
@@ -10109,7 +10224,7 @@ impl SettingsApi for RefusesOnePath {
         self.inner.get_settings(path).await
     }
 
-    async fn set_settings(&self, path: &str, value: &serde_json::Value) -> anyhow::Result<()> {
+    async fn set_settings(&self, path: &str, value: &serde_json::Value) -> anyhow::Result<String> {
         if path == self.refused {
             return Err(method_error("org.freedesktop.DBus.Error.IOError", MOSD_MESSAGE).into());
         }
@@ -10128,7 +10243,7 @@ impl SettingsApi for RefusesOnePath {
         self.inner.power_off().await
     }
 
-    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<String> {
         self.inner.set_transient_root_password(password).await
     }
 

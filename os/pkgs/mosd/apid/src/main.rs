@@ -40,6 +40,7 @@ mod routes;
 mod session;
 mod settings_api;
 mod startup;
+mod task_registry;
 #[cfg(test)]
 mod tests;
 mod tls;
@@ -166,6 +167,11 @@ async fn serve() -> anyhow::Result<()> {
     tokio::spawn(bus_client::watch_settings_changed(
         config.bus,
         state.access_cache().clone(),
+    ));
+    tokio::spawn(bus_client::watch_tasks(
+        config.bus,
+        state.task_registry().clone(),
+        state.audit().clone(),
     ));
 
     let https_listener = std::net::TcpListener::bind(&config.https_addr)

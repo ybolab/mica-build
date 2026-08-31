@@ -1,6 +1,6 @@
 # RFCT-274 Bound, scope and queue the settings-write path so the UI stops hanging
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: claude/apid-apply-queue-20260831
 - **createdAt**: 2026-08-31 12:27
@@ -76,3 +76,5 @@ Bounding, scoping and queueing the settings-write path.
   in scope, `SetSettings` has exactly one caller outside mosd (apid), and the
   coordination commitments toward PLAN-036 and PLAN-037 are recorded in
   PLAN-038 *Conflicts and coordination*.
+
+- complete: Focused and relevant suites passed.

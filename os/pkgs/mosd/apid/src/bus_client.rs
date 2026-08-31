@@ -15,8 +15,10 @@ use tokio::sync::Mutex;
 use zbus::export::futures_core::Stream;
 
 use crate::access_cache::{self, AccessCache};
+use crate::audit::Audit;
 use crate::config::BusKind;
-use crate::settings_api::SettingsApi;
+use crate::settings_api::{InvalidTaskPayload, SettingsApi};
+use crate::task_registry::{TaskRecord, TaskRegistry};
 
 /// Upper bound for one connection attempt or method call to mosd.
 ///
@@ -62,9 +64,10 @@ impl MosdCallTimeout {
 )]
 trait Mosd {
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
-    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<String>;
+    fn get_task(&self, id: &str) -> zbus::Result<String>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
-    fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
+    fn set_transient_root_password(&self, password: &str) -> zbus::Result<String>;
     fn rotate_wireguard_key(&self, iface: &str) -> zbus::Result<String>;
     fn reboot(&self) -> zbus::Result<()>;
     fn power_off(&self) -> zbus::Result<()>;
@@ -75,6 +78,9 @@ trait Mosd {
     /// mosd sound at all.
     #[zbus(signal)]
     fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    /// Emitted on every apply-task lifecycle transition.
+    #[zbus(signal)]
+    fn task_changed(&self, task_json: &str) -> zbus::Result<()>;
 }
 
 /// How long to wait after a lapsed `SettingsChanged` subscription before
@@ -111,6 +117,27 @@ pub async fn watch_settings_changed(bus: BusKind, cache: Arc<AccessCache>) {
     }
 }
 
+/// Keep the task registry synchronised from mosd's `TaskChanged` stream.
+/// A lapse immediately disables memory reads; callers fall back to `GetTask`
+/// until a fresh subscription is established.
+pub async fn watch_tasks(bus: BusKind, registry: Arc<TaskRegistry>, audit: Arc<Audit>) {
+    loop {
+        let result = async {
+            let connection = match bus {
+                BusKind::System => zbus::Connection::system().await,
+                BusKind::Session => zbus::Connection::session().await,
+            }?;
+            watch_task_connection(&connection, &registry, Some(&audit)).await
+        }
+        .await;
+        if let Err(err) = result {
+            tracing::warn!(error = %err, "TaskChanged subscription lapsed");
+        }
+        registry.lapsed();
+        tokio::time::sleep(RESUBSCRIBE_DELAY).await;
+    }
+}
+
 /// Pump one `SettingsChanged` subscription on `connection` until the stream
 /// ends, invalidating `cache` on every change that can touch `access`.
 ///
@@ -132,6 +159,33 @@ pub(crate) async fn watch_connection(
         }
     }
     anyhow::bail!("the SettingsChanged stream ended")
+}
+
+/// Pump one `TaskChanged` subscription until it ends.
+pub(crate) async fn watch_task_connection(
+    connection: &zbus::Connection,
+    registry: &TaskRegistry,
+    audit: Option<&Audit>,
+) -> anyhow::Result<()> {
+    let proxy = MosdProxy::new(connection).await?;
+    let stream = proxy.receive_task_changed().await?;
+    registry.subscribed();
+    let mut stream = pin!(stream);
+    while let Some(signal) = poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+        let args = signal.args()?;
+        let task: TaskRecord = serde_json::from_str(args.task_json())?;
+        registry.update(task.clone());
+        if task.terminal()
+            && let Some(audit) = audit
+        {
+            audit.record(
+                "apply-task",
+                task.outcome.as_deref().unwrap_or("unknown"),
+                &task.source,
+            );
+        }
+    }
+    anyhow::bail!("the TaskChanged stream ended")
 }
 
 /// Lazily-connected mosd client. The proxy is built on first use and cached;
@@ -230,10 +284,16 @@ impl SettingsApi for BusSettings {
         Ok(serde_json::from_str(&json)?)
     }
 
-    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()> {
+    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<String> {
         let proxy = self.proxy().await?;
         self.call("SetSettings", proxy.set_settings(path, &value.to_string()))
             .await
+    }
+
+    async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
+        let proxy = self.proxy().await?;
+        let json = self.call("GetTask", proxy.get_task(id)).await?;
+        serde_json::from_str(&json).map_err(|err| InvalidTaskPayload(err).into())
     }
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {
@@ -252,7 +312,7 @@ impl SettingsApi for BusSettings {
         self.call("PowerOff", proxy.power_off()).await
     }
 
-    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<String> {
         let proxy = self.proxy().await?;
         // The error is returned as mosd raised it. mosd's own contract is
         // that no message it raises here carries the password, and nothing

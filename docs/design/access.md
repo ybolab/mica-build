@@ -235,6 +235,13 @@ compares root's current hash against the marker. **If they are equal it rewrites
 the field to a locked marker and deletes the marker file, so the password
 vanishes.** If they disagree it leaves the shadow file alone.
 
+The request boundary hashes and writes the shadow entry before enqueueing; the
+queue contains only an `access.ssh` apply task and never the plaintext
+password. apid answers 202 with the task id (or redirects the form to
+`/ssh?task=<id>`). The server-rendered pane uses a meta refresh while the task
+is queued/running and stops on succeeded, failed, interrupted, or a missing
+bounded-history record—no JavaScript and no unbounded blank request.
+
 **Why a marker rather than "lock root on every boot".** Any root hash mosd did
 not write — one set by hand over the serial console, or by a future
 provisioning path — never equals a marker. Locking unconditionally would be

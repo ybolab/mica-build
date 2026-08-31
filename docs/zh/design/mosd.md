@@ -98,8 +98,10 @@ VLAN 的 netdev 带 `Kind=vlan` 和 `[VLAN] Id=`，桥带 `Kind=bridge`，
 | 成员 | 类型 |
 |---|---|
 | `GetSettings` / `SetSettings` | 方法 |
+| `GetTask` | 方法 |
 | `GetState` | 方法 |
 | `SettingsChanged` | 信号 |
+| `TaskChanged` | 信号 |
 | `ReportHealth` | 方法 |
 | `Reboot` / `PowerOff` | 方法 |
 | `SetTransientRootPassword` | 方法 |
@@ -111,6 +113,12 @@ mosd 刻意不再导出 `com.mos.Item1` 门面。系统设置、实时状态和�
 不属于 MQTT 应用数据。`mos-mqttd` 对 `com.mos.mosd` 没有任何策略权限；APID 以
 root 身份通过仅限 root 的本地策略访问它。mosd 在启动桥接器前，把已经配网的 topic 标识写入
 专用的 `/run/mos/mqttd-device.env` 运行时文件。
+
+`SetSettings` 现在在“持久化并入队”后返回任务 id。一个 worker 串行执行协调；等待中的任务按
+dot-path 子树包含关系折叠。有界历史同时发布在实时状态的 `tasks`、`GetTask` 和每次状态迁移都
+触发的 `TaskChanged` 中。设置与实时状态由 `RwLock` 保护，另一个 apply mutex 保留协调、
+临时 shadow 写入和 WireGuard 密钥轮换所需的串行性，却不再阻塞读取。临时口令只排入
+`access.ssh`，WireGuard 轮换只应用 `network`，两者都不再重跑整棵树。
 
 ## 7. 边界
 

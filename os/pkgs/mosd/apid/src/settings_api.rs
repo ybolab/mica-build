@@ -5,6 +5,36 @@
 
 use serde_json::Value;
 
+use crate::task_registry::TaskRecord;
+
+#[derive(Debug)]
+pub struct TaskNotFound(pub String);
+
+impl std::fmt::Display for TaskNotFound {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "task not found: `{}`", self.0)
+    }
+}
+
+impl std::error::Error for TaskNotFound {}
+
+/// mosd answered a task read, but the payload did not match the public task
+/// record. This is a daemon-side 500, distinct from a transport outage.
+#[derive(Debug)]
+pub struct InvalidTaskPayload(pub serde_json::Error);
+
+impl std::fmt::Display for InvalidTaskPayload {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid task payload from mosd: {}", self.0)
+    }
+}
+
+impl std::error::Error for InvalidTaskPayload {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 /// The mosd operations apid needs, JSON in and out.
 ///
 /// The power actions are here rather than executed locally because mosd owns
@@ -14,8 +44,13 @@ use serde_json::Value;
 pub trait SettingsApi: Send + Sync {
     /// Settings subtree at dot-path `path` (`""` = whole tree).
     async fn get_settings(&self, path: &str) -> anyhow::Result<Value>;
-    /// Write `value` at dot-path `path`.
-    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()>;
+    /// Persist `value` at dot-path `path`, enqueue its apply and return the
+    /// task id.
+    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<String>;
+    /// Task record by id.
+    async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
+        Err(TaskNotFound(id.to_string()).into())
+    }
     /// Live-state subtree at dot-path `path` (`""` = whole tree).
     async fn get_state(&self, path: &str) -> anyhow::Result<Value>;
     /// Ask mosd to reboot the appliance.
@@ -27,7 +62,7 @@ pub trait SettingsApi: Send + Sync {
     /// Deliberately not a `set_settings` call: a password that reached the
     /// settings tree would be persisted, re-applied on the next boot and
     /// readable by anything that can call `GetSettings`.
-    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()>;
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<String>;
     /// Draw a new WireGuard private key for `iface` and return its new base64
     /// public key.
     ///
@@ -59,6 +94,8 @@ pub struct FakeSettings {
     /// leaks it somewhere else; there is nothing to assert about here except
     /// whether the call happened and how often.
     transient_password_calls: std::sync::Mutex<usize>,
+    next_task: std::sync::atomic::AtomicU64,
+    tasks: std::sync::Mutex<std::collections::BTreeMap<String, TaskRecord>>,
 }
 
 #[cfg(test)]
@@ -72,7 +109,34 @@ impl FakeSettings {
             power_log: std::sync::Mutex::new(Vec::new()),
             transient_password_calls: std::sync::Mutex::new(0),
             rotations: std::sync::Mutex::new(Vec::new()),
+            next_task: std::sync::atomic::AtomicU64::new(0),
+            tasks: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
+    }
+
+    fn completed_task(&self, operation: &str, path: &str) -> String {
+        let sequence = self
+            .next_task
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let id = format!("fake-task-{sequence}");
+        self.tasks.lock().unwrap().insert(
+            id.clone(),
+            TaskRecord {
+                id: id.clone(),
+                operation: operation.to_string(),
+                dot_path: path.to_string(),
+                source: "test".to_string(),
+                status: "finished".to_string(),
+                enqueued_at: "2026-08-31T00:00:00.000Z".to_string(),
+                started_at: Some("2026-08-31T00:00:00.000Z".to_string()),
+                finished_at: Some("2026-08-31T00:00:00.000Z".to_string()),
+                outcome: Some("succeeded".to_string()),
+                message: None,
+                folded_count: 0,
+            },
+        );
+        id
     }
 
     /// How many `get_settings` calls asked for exactly `path`; what the
@@ -166,7 +230,7 @@ impl SettingsApi for FakeSettings {
         fake_get(&self.tree.lock().unwrap(), path)
     }
 
-    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()> {
+    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<String> {
         self.set_log.lock().unwrap().push(path.to_string());
         let mut segments = fake_segments(path)?;
         let last = segments.pop().expect("a path has at least one segment");
@@ -182,11 +246,45 @@ impl SettingsApi for FakeSettings {
         node.as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("not an object at `{last}`"))?
             .insert(last, value.clone());
-        Ok(())
+        Ok(self.completed_task("settings-write", path))
+    }
+
+    async fn get_task(&self, id: &str) -> anyhow::Result<TaskRecord> {
+        self.tasks
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| TaskNotFound(id.to_string()).into())
     }
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {
-        fake_get(&self.state.lock().unwrap(), path)
+        if path == "tasks" {
+            return serde_json::to_value(
+                self.tasks
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(Into::into);
+        }
+        let mut state = fake_get(&self.state.lock().unwrap(), path)?;
+        if path.is_empty() {
+            let tasks = serde_json::to_value(
+                self.tasks
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )?;
+            if let Some(root) = state.as_object_mut() {
+                root.insert("tasks".to_string(), tasks);
+            }
+        }
+        Ok(state)
     }
 
     async fn reboot(&self) -> anyhow::Result<()> {
@@ -199,10 +297,10 @@ impl SettingsApi for FakeSettings {
         Ok(())
     }
 
-    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<String> {
         // The password is dropped here on purpose; see the field's comment.
         *self.transient_password_calls.lock().unwrap() += 1;
-        Ok(())
+        Ok(self.completed_task("transient-password", "access.ssh"))
     }
 
     async fn rotate_wireguard_key(&self, iface: &str) -> anyhow::Result<String> {
