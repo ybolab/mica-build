@@ -17,6 +17,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
+	os-deb-mosd os-deb-mqtt os-debs os-deb-package-gate \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -43,7 +44,11 @@ help:
 	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}:<arch>"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
+	@echo "  os-deb-mosd         build the mosd and mos-apid Debian packages for amd64 and arm64 (docker)"
+	@echo "  os-deb-mqtt         build the mos-mqttd and mos-mqtt-broker Debian packages for amd64 and arm64 (docker)"
+	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
+	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
@@ -219,6 +224,63 @@ os-build-test:
 # of which the image already carries.
 os-rauc:
 	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/pkgs/rauc/build.sh
+
+# The mosd/apid package producer: compiles ONLY mosd and apid and emits the
+# `mosd` and `mos-apid` archives into _out/debs/<arch>/pool/. Both
+# architectures, because the two are what os/build-env/images.env pins a Rust
+# std and a mos-build-deb for, and a target that built one would leave the
+# other's pool holding the previous commit's packages.
+#
+# It changes nothing about what the rootfs chain installs; os/rootfs/ still
+# ships these binaries as loose files until a later workstream switches it.
+os-deb-mosd:
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
+
+# The MQTT package producer: compiles ONLY mos-mqttd and mos-mqtt-broker and
+# emits those two archives into _out/debs/<arch>/pool/, beside the mosd
+# producer's. Both architectures, for the reason above.
+#
+# Unlike mosd and mos-apid, neither of these packages ships an enablement
+# symlink: mosd renders their configuration and starts them from the mqtt
+# settings subtree, so an installed unit that started itself would be a broker
+# nobody asked for. It changes nothing about what the rootfs chain installs.
+os-deb-mqtt:
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch amd64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
+
+# THE WHOLE LOCAL POOL: every producer for both architectures, then the index
+# beside each pool. The composer resolves its package set through
+# _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}, so a build that stopped
+# before repo.sh would leave a pool APT cannot see into.
+#
+# SEQUENTIAL, and these are recipe lines rather than prerequisites for exactly
+# that reason. Both producers write into ONE shared pool directory and each
+# clears its own previous archives out of it with `rm -f <package>_*.deb`; under
+# `make -j` two prerequisite targets would run that unlink and that export
+# against the same directory at once, and repo.sh would index whatever survived.
+# Recipe lines in one target are always run in order, whatever -j says.
+os-debs:
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch amd64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mosd --arch arm64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch amd64
+	bash os/pkgs/mosd/hack/build-deb.sh --producer mqtt --arch arm64
+	bash os/build-env/deb/repo.sh --arch amd64
+	bash os/build-env/deb/repo.sh --arch arm64
+
+# The package-level gates of PLAN-036 section 6, over the pool os-debs built:
+# unique file ownership with no Replaces escape, the fields and the Depends
+# closure read back out of each archive, a non-empty copyright per package, the
+# enablement asymmetry between the mosd and MQTT packages, no conffiles, and
+# `sh -n` over every maintainer script.
+#
+# It also REBUILDS one producer for each architecture on a buildx builder it
+# creates for the purpose, and requires the archives to come back byte-identical.
+# The empty cache is the point: a second build on the normal builder replays the
+# cached packing layer and re-exports the same bytes, which proves the export is
+# deterministic and nothing about pack.sh.
+os-deb-package-gate:
+	bash os/tests/deb-package-gate.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer

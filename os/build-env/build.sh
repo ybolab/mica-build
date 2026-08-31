@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the pinned mos builder images out of os/build-env/images.env.
 #
-#   make build-env  -> localhost/mos-build-{base,c,go,rust}:<arch>
+#   make build-env  -> localhost/mos-build-{base,c,deb,go,rust}:<arch>
 #   bash os/build-env/build.sh  does the same thing
 #   MOS_BUILD_PLATFORM=linux/arm64 ...  builds for another architecture
 #
@@ -43,7 +43,7 @@ command -v docker >/dev/null 2>&1 || {
 # row mentions another's keys -- that is what keeps one image's pin bump out of
 # another image's cache key.
 
-# Order is semantic, not cosmetic. c, go and rust are built FROM
+# Order is semantic, not cosmetic. c, deb, go and rust are built FROM
 # LOCAL_MOS_BUILD_BASE, the tag the `base` row produces earlier in this same
 # run, so a row whose FROM is a localhost/mos-build-* tag must come after the
 # row that produces it, or it silently builds on whatever a previous run left
@@ -53,6 +53,7 @@ command -v docker >/dev/null 2>&1 || {
 IMAGES=(
     "base:BASE_:IMAGE_DEBIAN_TRIXIE"
     "c:C_:LOCAL_MOS_BUILD_BASE"
+    "deb:DEB_:LOCAL_MOS_BUILD_BASE"
     "go:GO_:LOCAL_MOS_BUILD_BASE"
     "rust:RUST_:LOCAL_MOS_BUILD_BASE"
 )
@@ -330,7 +331,7 @@ check_dockerfile_frontends
 # The `default` builder is named explicitly for a native build, and that is the
 # one place this differs from os/pkgs/podman/build.sh and os/rootfs/build-v2.sh,
 # which pass no --builder at all and inherit whatever `docker buildx use` last
-# selected. This family cannot inherit it: three of the four images are FROM
+# selected. This family cannot inherit it: four of the five images are FROM
 # localhost/mos-build-base, a tag that exists only in the local docker image
 # store, and only the `docker` driver can resolve one. A docker-container
 # builder has its own content store and treats `localhost/...` as a registry
