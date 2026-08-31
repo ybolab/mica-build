@@ -102,6 +102,7 @@ to know that one of its packages was filed under arm64.
 | --- | --- | --- |
 | `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
 | `system` | `mos-system` | `all` |
+| `radios` | `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
 
 ### `profile`
