@@ -251,7 +251,7 @@ os-rauc:
 # there would match nothing and silently declare nothing -- the same reason the
 # <board>-% delegations at the top of this file are unlisted. Shadowing needs a
 # FILE named os-deb-<producer> in the repository root, whose entries are
-# Makefile, README.md, LICENSE, docs/, extensions/ and os/; nothing there can
+# Makefile, README.md, LICENSE, docs/ and os/; nothing there can
 # match, and a stray one would show as a visible "Nothing to be done" rather
 # than a wrong build. `os-deb-package-gate` below is an explicit target and is
 # therefore not caught by this pattern: make prefers an explicit rule over a

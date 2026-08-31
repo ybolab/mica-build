@@ -22,8 +22,10 @@ kiosk 会话：cage（Wayland kiosk 合成器）+ WPE WebKit 浏览器
 板级图形栈（BSP：内核 DRM + HDMI + GPU 驱动/固件）
 ```
 
-- **`kiosk` 系统扩展**：cage + WPE WebKit（含 mesa/GPU 用户态）。这是一大坨 C 栈，
-  所以做成按镜像 profile 划分的扩展——无头部署直接不装，基础根文件系统不受影响。
+- **`kiosk` 包组**：cage + WPE WebKit（含 mesa/GPU 用户态）。这是一大坨 C 栈，
+  所以做成按镜像 profile 选装的可选包——无头 profile 直接不列出它们，基础包集
+  不受影响。（早先的 sysext 扩展层方案已废弃：Debian 包组装用一套机制就给出了
+  同样的按 profile 可选性。）
   和设备上其他服务一样，作为 systemd unit 运行。
 - 选 WPE WebKit 是因为它面向嵌入式（比 Chromium 小，WPE/cage 的上游配对是 kiosk 的标准做法）。
   若缺某个必需的 Web 特性，回退方案是 Chromium `--kiosk`。
@@ -42,7 +44,7 @@ kiosk:
   showWizardWhenUnprovisioned: true
 ```
 
-`DisplayConfig` → 控制器 → `DisplayStatus` 资源 → kiosk 扩展服务的启停/重启，**无需重启系统**。
+`DisplayConfig` → 控制器 → `DisplayStatus` 资源 → kiosk 服务的启停/重启，**无需重启系统**。
 `url` 让产品构建可以把屏幕指向某个应用界面（由应用容器提供），而不是 apid。
 
 ## 4. 启动观感与 tty 策略
@@ -64,7 +66,7 @@ kiosk:
 - **内核**：SoC 显示管线与 HDMI 编码器的 DRM/KMS `=y`；GPU 驱动
   （cx3576/RK3576：走主线 panfrost 的 Mali，或以厂商 blob 驱动兜底——在板卡带起阶段决定）；
   `CONFIG_DRM_FBDEV_EMULATION` 已在断言集中。
-- GPU 固件/用户态放进 **kiosk 扩展**，不进基础根文件系统。
+- GPU 固件/用户态放进 **kiosk 包**，不进基础包集。
 - 输出口与默认旋转角。目前这两项只是板卡定义里的一条注释而非配置键
   （记录为：输出是 hdmi，默认旋转为 0）。因此 DisplayConfig 目前**没有**来自板卡的默认值，
   等有了配置键才会有。
@@ -81,7 +83,7 @@ kiosk:
 
 | 阶段 | 范围 |
 |---|---|
-| 1 | kiosk 扩展（cage+WPE）、DisplayConfig 与控制器、apid 本地向导路由、cx3576 上 splash 到 kiosk 的交接 |
+| 1 | kiosk 包（cage+WPE）、DisplayConfig 与控制器、apid 本地向导路由、cx3576 上 splash 到 kiosk 的交接 |
 | 2 | 触摸输入打磨、旋转、息屏、崩溃画面 |
 | 3 | 自定义应用 `url` 模式 + 按应用划分的界面容器（与工作负载/副 ECU 设计相衔接） |
 
