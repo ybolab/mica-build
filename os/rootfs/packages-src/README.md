@@ -104,6 +104,7 @@ to know that one of its packages was filed under arm64.
 | `system` | `mos-system` | `all` |
 | `radios` | `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
+| `board-x64` (`os/boards/x64/deb`) | `mos-board-x64` | `amd64` |
 
 ### `profile`
 
