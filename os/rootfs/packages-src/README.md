@@ -101,6 +101,7 @@ to know that one of its packages was filed under arm64.
 | Producer | Emits | Architecture |
 | --- | --- | --- |
 | `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
+| `board-x64` (`os/boards/x64/deb`) | `mos-board-x64` | `amd64` |
 
 ### `profile`
 
