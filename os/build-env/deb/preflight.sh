@@ -88,15 +88,37 @@ CTX_N=0
 HOOK_N=0
 IMAGE_N=0
 ARTEFACT_N=0
-MISSING=()
+REPORTS=()
 MISSING_N=0
-# One missing input is one report AND one count. They are separate because a
-# producer's own hook reports several inputs in one block and contributes its
-# own count for them; a summary that counted blocks would say `1 missing` over
-# a report that had just named four files.
+WARNED_N=0
+# One reported input is one BLOCK and one COUNT, and the two are separate
+# because a producer's own hook reports several inputs in one block and
+# contributes its own count for them: a summary that counted blocks would say
+# `1 missing` over a report that had just named four files.
 note_missing() {
-    MISSING+=("$1")
+    REPORTS+=("$1")
     MISSING_N=$((MISSING_N + 1))
+}
+
+# THE TWO CATEGORIES, and the line between them is what the RUN would do about
+# it, not how serious it looks.
+#
+#   MISSING  -- nothing in the run produces it. `make os-debs` gets no further
+#               than the producer that needs it, so the run is refused here.
+#   WARNED   -- the producer that needs it makes it itself, at a cost. The run
+#               would succeed; it would just spend three quarters of an hour
+#               somewhere the operator did not expect. That is a VISIBILITY
+#               problem and it is answered by saying so, not by refusing.
+#
+# Refusing the second category would change what `make os-debs` MEANS -- its
+# help line says it builds every Debian package, and a producer whose hook
+# compiles its own input is how a pool comes to exist on a fresh host. Three of
+# the five hooks here compile, so refusing on the fourth would also be
+# arbitrary from the operator's side, and an arbitrary refusal is one people
+# learn to route around.
+note_warning() {
+    REPORTS+=("$1")
+    WARNED_N=$((WARNED_N + 1))
 }
 # Base images are declared per producer and shared between them; the pair
 # (key, architecture) is checked once so that one absent builder family is one
@@ -206,13 +228,17 @@ the packing step copies, so without it the build stages nothing."
     # MOS_DEB_PREFLIGHT=1, and deliberately NO MOS_DEB_STAGE -- there is
     # nothing to stage into, and a hook that wrote anywhere in this mode would
     # be writing before the operator had been told what is missing. It prints
-    # every input it found missing, then `preflight-examined: <count>` and
-    # `preflight-missing: <count>`, and exits non-zero if the second is not
-    # zero. BOTH counts are required and required on BOTH paths: a hook that
-    # reported success without saying what it looked at is indistinguishable
-    # from one that looked at nothing, and a failing hook that reported no
-    # count would arrive here as one report and be counted as one missing file
-    # however many it had just listed.
+    # what it found, then THREE counts -- `preflight-examined:`,
+    # `preflight-missing:` and `preflight-warned:` -- and exits non-zero if and
+    # only if the missing one is not zero.
+    #
+    # ALL THREE ARE REQUIRED, ON BOTH PATHS, and a zero is WRITTEN rather than
+    # omitted. A hook that reported success without saying what it looked at is
+    # indistinguishable from one that looked at nothing; a failing hook that
+    # reported no missing count would arrive here as one report and be counted
+    # as one file however many it had just listed; and a hook with no warning
+    # count would make "this producer has nothing it can produce for itself"
+    # and "this hook has not been taught the category" the same run.
     if [ -n "${preflight}" ] && [ "${preflight}" != 0 ]; then
         [ -n "${prepare}" ] || {
             echo "error: ${dir}/producer.env declares PREFLIGHT=${preflight} and no PREPARE. The pre-flight mode is a mode OF the PREPARE hook; there is no other script here to run in it" >&2
@@ -235,29 +261,44 @@ the packing step copies, so without it the build stages nothing."
             )" || rc=$?
             n="$(printf '%s\n' "${out}" | sed -n 's/^preflight-examined: //p' | tail -1)"
             m="$(printf '%s\n' "${out}" | sed -n 's/^preflight-missing: //p' | tail -1)"
+            w="$(printf '%s\n' "${out}" | sed -n 's/^preflight-warned: //p' | tail -1)"
             # Each count checked ON ITS OWN, and an empty one is a failure
-            # rather than a zero. Testing the two concatenated is wrong in the
-            # one direction that matters: a hook that printed no examined count
-            # and a missing count of 0 gives "0", which passes as a number and
-            # adds nothing to the total -- a hook that checked nothing,
-            # reported as a pre-flight that found everything present.
-            # A zero is refused with the same words as an absent count, for the
-            # reason the total below is: a hook that examined nothing has
-            # nothing to say about whether its producer can be built.
+            # rather than a zero. Testing them concatenated is wrong in the one
+            # direction that matters: a hook that printed no examined count and
+            # a missing count of 0 gives "0", which passes as a number and adds
+            # nothing to the total -- a hook that checked nothing, reported as a
+            # pre-flight that found everything present.
+            #
+            # Only `examined` refuses a zero, and the asymmetry is deliberate: a
+            # hook that examined nothing has nothing to say about its producer,
+            # while zero missing and zero warned are the ordinary answer of a
+            # producer whose inputs are all there.
             bad=""
             case "${n}" in '' | *[!0-9]* | 0) bad="preflight-examined" ;; esac
             case "${m}" in '' | *[!0-9]*) bad="${bad:+${bad} and }preflight-missing" ;; esac
+            case "${w}" in '' | *[!0-9]*) bad="${bad:+${bad} and }preflight-warned" ;; esac
             [ -z "${bad}" ] || {
-                echo "error: ${dir}/${prepare} ran in pre-flight mode for ${arch} and did not print a usable ${bad} count. A hook says what it looked at with 'preflight-examined: <count>' and how much of it was absent with 'preflight-missing: <count>', both on every path and the first one above zero. Without them a hook that checked nothing reads exactly like one that checked everything, and a report naming four missing files is counted as one:" >&2
+                echo "error: ${dir}/${prepare} ran in pre-flight mode for ${arch} and did not print a usable ${bad} count. A hook says what it looked at with 'preflight-examined: <count>', how much of it nothing in the run can make with 'preflight-missing: <count>', and how much the producer will make for itself with 'preflight-warned: <count>' -- all three on every path, and the first above zero. Without them a hook that checked nothing reads exactly like one that checked everything, and a report naming four files is counted as one:" >&2
                 printf '%s\n' "${out}" >&2
                 exit 1
             }
             ARTEFACT_N=$((ARTEFACT_N + n))
-            [ "${rc}" -eq 0 ] || {
-                # The two contract lines are for this script, not for the
-                # operator; the report above them is what names the files.
-                MISSING+=("$(printf '%s\n' "${out}" | grep -v '^preflight-\(examined\|missing\): ' || true)")
+            if [ "${m}" -gt 0 ] || [ "${w}" -gt 0 ]; then
+                # The contract lines are for this script, not for the operator;
+                # the report above them is what names the files, and it carries
+                # its own error:/warning: prefixes.
+                REPORTS+=("$(printf '%s\n' "${out}" | grep -v '^preflight-\(examined\|missing\|warned\): ' || true)")
                 MISSING_N=$((MISSING_N + m))
+                WARNED_N=$((WARNED_N + w))
+            fi
+            # A hook that exited non-zero having reported nothing missing is a
+            # hook that failed for some other reason -- an unreadable board.env,
+            # a renamed template -- and that reason must not be swallowed as a
+            # clean run.
+            [ "${rc}" -eq 0 ] || [ "${m}" -gt 0 ] || {
+                echo "error: ${dir}/${prepare} exited ${rc} in pre-flight mode for ${arch} while reporting nothing missing. A hook refuses by counting what it cannot find; a non-zero exit with a zero missing count is a failure of the hook itself:" >&2
+                printf '%s\n' "${out}" >&2
+                exit 1
             }
         done
     fi
@@ -276,10 +317,19 @@ BREAKDOWN="${CTX_N} build context(s), ${HOOK_N} PREPARE hook(s), ${IMAGE_N} base
     exit 1
 }
 
-if [ "${MISSING_N}" -gt 0 ]; then
-    printf '%s\n\n' "${MISSING[@]}" >&2
-    echo "preflight: ${MISSING_N} of ${EXAMINED} examined inputs are missing across ${PRODUCERS} producer(s): ${BREAKDOWN}. Every one of them is listed above -- nothing was built and no container was started." >&2
-    exit 1
-fi
+[ "${#REPORTS[@]}" -eq 0 ] || printf '%s\n\n' "${REPORTS[@]}" >&2
 
-echo "preflight: ${EXAMINED} inputs present across ${PRODUCERS} producer(s): ${BREAKDOWN}"
+# THE VERDICT IS ONE LINE, and the warning count is its OWN line rather than
+# folded into it. Two numbers in one sentence is how a category that does not
+# fail a run stops being visible: it gets read as part of the total, and then
+# as noise.
+PRESENT_N=$((EXAMINED - MISSING_N - WARNED_N))
+if [ "${MISSING_N}" -gt 0 ]; then
+    echo "preflight: ${MISSING_N} of ${EXAMINED} examined inputs are missing across ${PRODUCERS} producer(s): ${BREAKDOWN}. Every one of them is listed above -- nothing was built and no container was started." >&2
+else
+    echo "preflight: ${PRESENT_N} of ${EXAMINED} examined inputs are present across ${PRODUCERS} producer(s): ${BREAKDOWN}"
+fi
+if [ "${WARNED_N}" -gt 0 ]; then
+    echo "preflight: a further ${WARNED_N} of ${EXAMINED} are absent and will be BUILT BY THE RUN ITSELF, at the cost named in the warnings above. Making them first is how that cost is paid where it can be seen; it is not a prerequisite." >&2
+fi
+[ "${MISSING_N}" -eq 0 ] || exit 1

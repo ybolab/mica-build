@@ -163,12 +163,20 @@ if [ "${#MISSING[@]}" -gt 0 ]; then
     printf '%s\n\n' "${MISSING[@]}" >&2
     echo "render.sh: refusing to build mos-board-cx3576: ${#MISSING[@]} of ${EXAMINED} examined BSP inputs are missing (BOARD_DIR=${BOARD_DIR}). Nothing was staged and no container was started." >&2
     # The pre-flight contract on the FAILING side, which is the side whose
-    # numbers get read: os/build-env/deb/preflight.sh adds both into its own
+    # numbers get read: os/build-env/deb/preflight.sh adds them into its own
     # totals, and without them one producer's four missing files would arrive
     # there as one report and be counted once.
+    #
+    # preflight-warned is ZERO HERE AND ON THE OTHER PATH, and writing the zero
+    # is the point. A BSP artefact is a kernel or a U-Boot compile: nothing in
+    # `make os-debs` produces one, so every input this hook examines is either
+    # present or missing and none of them is a cost the run could absorb. That
+    # is a fact about this producer, and an omitted count would say instead
+    # that this hook has not been taught the category.
     if [ "${MOS_DEB_PREFLIGHT:-0}" != 0 ]; then
         echo "preflight-examined: ${EXAMINED}" >&2
         echo "preflight-missing: ${#MISSING[@]}" >&2
+        echo "preflight-warned: 0" >&2
     fi
     exit 1
 fi
@@ -184,12 +192,13 @@ fi
 # them somewhere else would be the copy that stayed green the day the board
 # declared another one.
 #
-# The count is the contract's other half; preflight.sh refuses a hook that
-# claims success without it. Nothing is missing on this path, so the
-# preflight-missing line the refusal above prints is a zero here.
+# The counts are the contract's other half; preflight.sh refuses a hook that
+# claims success without them. Nothing is missing on this path, and nothing is
+# ever warned by this hook -- see the refusal above for why.
 if [ "${MOS_DEB_PREFLIGHT:-0}" != 0 ]; then
     echo "preflight-examined: ${EXAMINED}"
     echo "preflight-missing: 0"
+    echo "preflight-warned: 0"
     echo "render.sh: pre-flight found all ${EXAMINED} BSP inputs of mos-board-cx3576 present (BOARD_DIR=${BOARD_DIR})"
     exit 0
 fi

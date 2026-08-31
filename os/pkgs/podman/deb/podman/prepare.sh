@@ -83,19 +83,33 @@ done
 # ------------------------------------------------------------- pre-flight
 #
 # Everything this hook can answer without compiling: the seven binaries, and
-# the stamp that says which versions.env they came from. Both counts are
+# the stamp that says which versions.env they came from. All three counts are
 # printed on BOTH paths, which is the contract os/build-env/deb/preflight.sh
-# refuses a hook for breaking -- a hook that reported success without saying
-# what it looked at is indistinguishable from one that looked at nothing, and a
-# failing hook that reported no count would have its whole report counted as
-# one missing input.
+# refuses a hook for breaking.
+#
+# THE TWO CATEGORIES ARE DECIDED BY WHAT THE NORMAL PATH BELOW WOULD DO, and
+# this block mirrors it rather than making its own judgement:
+#
+#   binaries absent  -> the normal path BUILDS them. So this is a WARNING: the
+#                       run succeeds, it just spends three quarters of an hour
+#                       somewhere the operator did not expect, and saying so in
+#                       advance is the whole point. Refusing instead would mean
+#                       `make os-debs` could no longer build a pool on a fresh
+#                       host -- which its own help line promises -- and would
+#                       be arbitrary besides, since the mosd, mqtt and rauc
+#                       hooks compile from their hooks too.
+#   stamp stale      -> the normal path REFUSES. So this is MISSING.
+#
+# THE STAMP IS ONLY CHECKED WHEN THE BINARIES ARE COMPLETE, for the same
+# reason: a build rewrites the stamp, so a stale one under an incomplete
+# directory is a fact that the run itself is about to erase. Reporting it would
+# be reporting a state that cannot survive the next five minutes.
 if [ "${PREFLIGHT}" != 0 ]; then
-    # Seven binaries plus one stamp. The stamp is EXAMINED even when the
-    # binaries are absent: "not built" and "built from a superseded
-    # versions.env" are different sentences and the operator needs whichever
-    # one is true, not the first one that happens to be reached.
+    # Seven binaries plus one stamp, examined either way -- the stamp is part
+    # of what this producer needs whether or not this run finds it wanting.
     examined=$((${#BINARIES[@]} + 1))
     n_missing=0
+    n_warned=0
     reports=()
     # ONE report for the binaries, naming all of them, rather than one per
     # file. Seven absent binaries have one cause and one command between them,
@@ -104,18 +118,13 @@ if [ "${PREFLIGHT}" != 0 ]; then
     # report shape and the number are separate on purpose, which is why the
     # contract carries the number rather than leaving it to be inferred.
     if [ -n "${missing}" ]; then
-        for b in ${missing}; do n_missing=$((n_missing + 1)); done
-        reports+=("error: ${OUT} is missing ${n_missing} of its ${#BINARIES[@]} binaries:${missing}.
-The container engine has not been built for ${ARCH}. Build it with
-'MOS_ARCH=${ARCH} make podman' -- six upstream clones across four language
-toolchains, and roughly three quarters of an hour for arm64 under emulation.")
-    fi
-    # The stamp is examined even when the binaries are absent, because "not
-    # built" and "built from a superseded versions.env" are different sentences
-    # and the operator needs whichever is true -- except when the directory
-    # itself is not there, where --check would report the absence the binaries
-    # have already reported.
-    if [ -d "${OUT}" ]; then
+        for b in ${missing}; do n_warned=$((n_warned + 1)); done
+        reports+=("warning: ${OUT} is missing ${n_warned} of its ${#BINARIES[@]} binaries:${missing}.
+This producer builds them itself, so the run will not stop -- it will spend
+roughly three quarters of an hour compiling six upstream clones across four
+language toolchains, under emulation for arm64, from inside a packaging hook.
+Run 'MOS_ARCH=${ARCH} make podman' first to pay that cost where it can be seen.")
+    else
         stamp_out=""
         stamp_rc=0
         stamp_out="$(bash "${VERSIONS_STAMP_SH}" --check "${OUT}" 2>&1)" || stamp_rc=$?
@@ -127,9 +136,14 @@ toolchains, and roughly three quarters of an hour for arm64 under emulation.")
     [ "${#reports[@]}" -eq 0 ] || printf '%s\n\n' "${reports[@]}" >&2
     echo "preflight-examined: ${examined}"
     echo "preflight-missing: ${n_missing}"
+    echo "preflight-warned: ${n_warned}"
     if [ "${n_missing}" -gt 0 ]; then
-        echo "prepare.sh: refusing to build mos-podman: ${n_missing} of ${examined} examined inputs under ${OUT} are missing or stale. Nothing was built and no container was started." >&2
+        echo "prepare.sh: refusing to build mos-podman: ${OUT} holds all ${#BINARIES[@]} binaries and they were compiled from a versions.env this tree no longer has. Nothing was built and no container was started." >&2
         exit 1
+    fi
+    if [ "${n_warned}" -gt 0 ]; then
+        echo "prepare.sh: mos-podman will build ${n_warned} of its ${examined} inputs during the run (${OUT})" >&2
+        exit 0
     fi
     echo "prepare.sh: pre-flight found all ${examined} inputs of mos-podman present and stamped for ${ARCH} (${OUT})"
     exit 0

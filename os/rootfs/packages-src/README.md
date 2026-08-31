@@ -159,13 +159,28 @@ In that mode the hook gets `MOS_DEB_REPO_ROOT`, `MOS_DEB_PRODUCER`,
 `MOS_DEB_PRODUCER_DIR`, `MOS_DEB_ARCH` and `MOS_DEB_PREFLIGHT=1`, and **no
 `MOS_DEB_STAGE`** -- there is nothing to stage into, and a hook that wrote
 anywhere in this mode would be writing before the operator had been told what is
-missing. It must print both `preflight-examined: <count>` and
-`preflight-missing: <count>` on **both** paths, and exit non-zero when the
-second is not zero. Both counts are required: a hook that reports success
-without saying what it looked at is indistinguishable from one that looked at
-nothing, and a failing hook that reported no count would have a report naming
-four missing files counted as one. `preflight.sh` refuses a hook that breaks
-either half, and `os/tests/deb-preflight-test.sh` drives that refusal.
+missing.
+
+It must print three counts on **both** paths, and exit non-zero when
+`preflight-missing` is not zero:
+
+| Line | Meaning |
+| --- | --- |
+| `preflight-examined: <n>` | what this hook looked at. Must be above zero. |
+| `preflight-missing: <n>` | of those, what **nothing in the run produces**. The run is refused. |
+| `preflight-warned: <n>` | of those, what **this producer makes itself**, at a cost the report names. The run continues. |
+
+The line between the two categories is what the run would DO about it, not how
+serious it looks. An absent container engine warns, because the podman hook
+builds one; an engine compiled from a superseded `versions.env` is missing,
+because the hook refuses it. Refusing the first would mean `make os-debs` could
+no longer build a pool on a fresh host, which is how a pool comes to exist.
+
+All three are required and a zero is written rather than omitted, for the same
+reason `ENABLEMENT` writes its zeros: an omission and a deliberate zero read the
+same to a person and opposite to a check. `preflight.sh` refuses a hook that
+breaks any of the three, and `os/tests/deb-preflight-test.sh` drives each
+refusal by mutating the hook until the run goes red.
 
 Every build also gets `--build-context packer=os/build-env/deb` and the
 `MOS_DEB_VERSION`, `MOS_DEB_ARCH` and `SOURCE_DATE_EPOCH` build arguments,
