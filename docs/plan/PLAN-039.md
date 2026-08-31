@@ -1,8 +1,9 @@
 # PLAN-039 Serve a built-in SPA and put management behind `/api`
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-08-31
 - **approvedAt**: 2026-08-31 18:07 UTC
+- **completedAt**: 2026-08-31 20:17 UTC
 - **relatedTask**: [RFCT-275](../task/RFCT-275.md)
 
 ## Context
@@ -333,6 +334,58 @@ After approval:
 Each commit runs the relevant focused tests. The final acceptance run includes
 the frontend gate, `os/pkgs/mosd/hack/check.sh`, OpenAPI regeneration/diff,
 spec pins and the feasible black-box suite preparation checks.
+
+## Implementation
+
+- `apid` now serves a verity-covered React SPA at `/ui`; `/` serves a valid
+  active custom bundle and otherwise redirects to `/ui`. Custom assets cannot
+  shadow `/ui` or `/api`.
+- Setup, login, logout, UI selection and all appliance reads, writes and
+  actions use JSON routes under `/api`. Browser sessions carry a per-session
+  CSRF token, while bearer-token clients keep their existing semantics. The
+  legacy server-rendered pages, form mutations and `maud` dependency were
+  removed.
+- mosd observes systemd-networkd through `Manager.Describe` and exposes a
+  normalized snapshot over D-Bus. `GET /api/v1/network` keeps configured and
+  observed state separate, including explicit observation availability; the
+  SPA forms the configured/observed union for display. This preserves the
+  established configured-map API shape while retaining both missing-link
+  cases described in Stage C.
+- The network screen shows the observed interface count, configured count,
+  operational/carrier/address states, addresses and configured kind. The
+  remaining console panes use the same API client and poll accepted settings
+  tasks to terminal state.
+- The QEMU contract suite was reduced to one non-destructive boot and rewritten
+  around the SPA/API boundary, browser session/CSRF behavior, management
+  mutations and observed network state. Rust temporary-directory tests cover
+  custom-bundle selection and reserved prefixes without an injected fixture.
+
+## Verification
+
+- `os/pkgs/mosd/apid/ui/run.sh`: ESLint, TypeScript, 4 Vitest tests,
+  deterministic production build comparison passed.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings` passed.
+- `cargo nextest run --workspace --locked`: 718 tests passed.
+- `cargo test --doc --workspace --locked` passed.
+- `cargo deny check licenses bans advisories` passed with only the repository's
+  existing unmatched-allowance and duplicate-version warnings.
+- `cargo fmt -p apid -p mosd -- --check` passed. The aggregate
+  `hack/check.sh` remains blocked at its first step by committed formatting
+  differences in `mqttd/src/runtime.rs` and `mqttd/tests/protocol.rs`, which
+  are outside this plan and unchanged in this working diff; its later commands
+  are the separately passing checks listed above.
+- The apid real-process/D-Bus end-to-end test passed; the QEMU TypeScript
+  typecheck and 47 self-tests passed; all 23 OpenAPI spec pins passed. A live
+  firmware-image QEMU run later passed all 112 harness checks against a fresh
+  x64 image. Its API phase submitted the container, MQTT and SSH switches in
+  parallel, observed three distinct task ids in `/api/v1/tasks`, waited for all
+  three to finish successfully, and read all three settings back as enabled.
+  The run used alternate host ports while another QEMU occupied the defaults,
+  proving the guests can run concurrently when their published ports differ.
+  The first boot attempt also exposed the pre-existing missing
+  `--no-superblock` option in x64's initramfs verity opener; PLAN-036's owner
+  fixed that independently in `ef2d56f8`, and the passing validation image
+  temporarily carried that exact fix without duplicating it in this plan.
 
 ## Risks
 

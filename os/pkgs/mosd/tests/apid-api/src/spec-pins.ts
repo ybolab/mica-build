@@ -34,8 +34,8 @@
  * false green.
  *
  * WHAT IS NOT HERE. Every pin whose agreement cannot be asserted against a
- * committed artefact: the HTML pane surface (`/login`, `/setup`, `/power/*`,
- * `/healthz` -- `openapi.json` documents `/api/` and nothing else), the error
+ * committed artefact: the static SPA surface (`/`, `/ui`, `/healthz` --
+ * `openapi.json` documents `/api/` and nothing else), the error
  * `code` VALUES (`ApiErrorDetail.code` is declared an open set with no enum, so
  * no artefact states which code a given route and status answers), response
  * HEADERS (`openapi.json` carries no `headers` member anywhere -- measured:
@@ -91,65 +91,48 @@ interface SchemaPin {
 
 type Pin = StatusPin | MediaPin | SchemaPin;
 
-const BEARER = "src/phases/05d-bearer.ts";
-const WIREGUARD = "src/phases/05b-wireguard.ts";
-const READONLY = "src/phases/04-readonly.ts";
+const BOUNDARY = "src/phases/01-spa-boundary.ts";
+const SESSION = "src/phases/02-session.ts";
+const MANAGEMENT = "src/phases/03-api-management.ts";
+const NETWORK_PHASE = "src/phases/04-network-observation.ts";
 
+const SESSION_PATH = "/api/v1/session";
+const SETUP = "/api/v1/setup";
 const SETTINGS = "/api/v1/settings/{path}";
-const KEYS = "/api/v1/ssh/authorized-keys";
-const KEY = "/api/v1/ssh/authorized-keys/{fingerprint}";
-const TOKENS = "/api/v1/tokens";
-const TOKEN = "/api/v1/tokens/{id}";
-const ROTATE = "/api/v1/actions/wireguard/{iface}/rotate-key";
+const NETWORK = "/api/v1/network";
+const UI = "/api/v1/ui";
 const TASK = "/api/v1/tasks/{id}";
 const VERSIONS = "/api/versions";
 
 const PINS: readonly Pin[] = [
   // -- statuses: `paths.<path>.<method>.responses.<status>` must exist --------
-  { kind: "status", file: BEARER, anchor: "a settings READ over the bearer", method: "get", path: SETTINGS, what: "the bearer settings read" },
-  { kind: "status", file: BEARER, anchor: "the flag this phase writes reads back before it is touched", method: "get", path: SETTINGS, what: "the pre-write settings read" },
-  { kind: "status", file: BEARER, anchor: "a settings WRITE over the bearer", method: "put", path: SETTINGS, what: "the bearer settings write" },
-  { kind: "status", file: BEARER, anchor: "so this phase leaves the device as it found it", method: "put", path: SETTINGS, what: "the settings restore" },
-  { kind: "status", file: BEARER, anchor: "GET /api/v1/tasks/{id} is readable over the bearer", method: "get", path: TASK, what: "the accepted write's task lookup" },
-  { kind: "status", file: BEARER, anchor: "a collection LISTING over the bearer", method: "get", path: KEYS, what: "the authorized-keys listing" },
-  { kind: "status", file: BEARER, anchor: "a collection POST over the bearer", method: "post", path: KEYS, what: "the authorized-keys add" },
-  { kind: "status", file: BEARER, anchor: "a collection DELETE over the bearer", method: "delete", path: KEY, what: "the authorized-keys delete" },
-  { kind: "status", file: BEARER, anchor: "an ACTION over the bearer", method: "post", path: ROTATE, what: "the rotate action over the bearer" },
-  { kind: "status", file: BEARER, anchor: "GET /api/v1/tokens over the bearer is", method: "get", path: TOKENS, what: "the token listing" },
-  { kind: "status", file: BEARER, anchor: "with the first token as credential mints a second", method: "post", path: TOKENS, what: "the second mint" },
-  { kind: "status", file: BEARER, anchor: "revokes the first token, addressed by id", method: "delete", path: TOKEN, what: "the first revocation" },
-  { kind: "status", file: BEARER, anchor: "the revoked token is refused on the very NEXT request", method: "get", path: SETTINGS, what: "the revoked token's refusal" },
-  { kind: "status", file: BEARER, anchor: "the second token still drives the API in the same breath", method: "get", path: SETTINGS, what: "the surviving token" },
-  { kind: "status", file: BEARER, anchor: "a request carrying NO credential is", method: "get", path: SETTINGS, what: "the no-credential refusal" },
-  { kind: "status", file: BEARER, anchor: "a bearer token this device does not hold is", method: "get", path: SETTINGS, what: "the unknown-token refusal" },
-  { kind: "status", file: BEARER, anchor: "the second token revokes itself, leaving the device", method: "delete", path: TOKEN, what: "the self-revocation" },
-  { kind: "status", file: BEARER, anchor: "a token that revoked itself is refused on its own next request", method: "get", path: TOKENS, what: "the self-revoked token's refusal" },
-  { kind: "status", file: WIREGUARD, anchor: "an UNAUTHENTICATED rotate answers", method: "post", path: ROTATE, what: "the unauthenticated rotate" },
-  { kind: "status", file: WIREGUARD, anchor: "rotating an interface that is not a declared network entry at all is", method: "post", path: ROTATE, what: "the undeclared-interface rotate" },
-  { kind: "status", file: WIREGUARD, anchor: "${ROTATE_PATH} answers", method: "post", path: ROTATE, what: "the rotation itself" },
-  { kind: "status", file: WIREGUARD, anchor: "GET on the rotate route is", method: "post", path: ROTATE, what: "the rotate route's method guard" },
-  { kind: "status", file: READONLY, anchor: "an UNAUTHENTICATED GET /api/versions answers", method: "get", path: VERSIONS, what: "the discovery route" },
+  { kind: "status", file: BOUNDARY, anchor: "an unauthenticated GET /api/versions answers", method: "get", path: VERSIONS, what: "the discovery route" },
+  { kind: "status", file: BOUNDARY, anchor: "GET /api/v1/session exposes bootstrap state", method: "get", path: SESSION_PATH, what: "the unauthenticated session bootstrap" },
+  { kind: "status", file: SESSION, anchor: "POST /api/v1/setup rejects a password", method: "post", path: SETUP, what: "setup validation" },
+  { kind: "status", file: SESSION, anchor: "POST /api/v1/setup configures the device", method: "post", path: SETUP, what: "first-run setup" },
+  { kind: "status", file: SESSION, anchor: "DELETE /api/v1/session without CSRF", method: "delete", path: SESSION_PATH, what: "logout CSRF refusal" },
+  { kind: "status", file: SESSION, anchor: "DELETE /api/v1/session with CSRF", method: "delete", path: SESSION_PATH, what: "logout" },
+  { kind: "status", file: SESSION, anchor: "POST /api/v1/session logs in", method: "post", path: SESSION_PATH, what: "JSON login" },
+  { kind: "status", file: MANAGEMENT, anchor: "GET /api/v1/ui reports UI selection", method: "get", path: UI, what: "UI status" },
+  { kind: "status", file: MANAGEMENT, anchor: "GET /api/v1/settings/hostname reads", method: "get", path: SETTINGS, what: "session settings read" },
+  { kind: "status", file: MANAGEMENT, anchor: "cookie-authenticated settings PUT without CSRF", method: "put", path: SETTINGS, what: "settings CSRF refusal" },
+  { kind: "status", file: MANAGEMENT, anchor: "same settings PUT with CSRF", method: "put", path: SETTINGS, what: "settings write" },
+  { kind: "status", file: MANAGEMENT, anchor: "GET /api/v1/tasks/{id} exposes", method: "get", path: TASK, what: "task lookup" },
+  { kind: "status", file: MANAGEMENT, anchor: "setup bearer reads the same management API", method: "get", path: SETTINGS, what: "bearer settings read" },
+  { kind: "status", file: MANAGEMENT, anchor: "API management read with no credential", method: "get", path: UI, what: "anonymous management refusal" },
+  { kind: "status", file: NETWORK_PHASE, anchor: "GET /api/v1/network returns configured", method: "get", path: NETWORK, what: "network overview" },
 
   // -- media types: the response declares `content.<media>` ------------------
-  { kind: "media", file: READONLY, anchor: "the unauthenticated /api/versions answer is typed", method: "get", path: VERSIONS, status: "200", what: "the discovery route's media type" },
-  { kind: "media", file: WIREGUARD, anchor: "the unauthenticated rotate is typed", method: "post", path: ROTATE, status: "401", what: "the unauthenticated rotate's media type" },
-  { kind: "media", file: BEARER, anchor: "the 401 is JSON, so a client that parses the envelope", method: "get", path: SETTINGS, status: "401", what: "the no-credential refusal's media type" },
+  { kind: "media", file: BOUNDARY, anchor: "the unauthenticated /api/versions answer is typed", method: "get", path: VERSIONS, status: "200", what: "the discovery route's media type" },
 
   // -- response members: `components.schemas.<name>` -------------------------
-  { kind: "schema", file: BEARER, anchor: "the listing is an object carrying", span: "call", schema: "AuthorizedKeyList", mode: "required", names: ["keys", "notice"], what: "the authorized-keys listing's members" },
-  { kind: "schema", file: BEARER, anchor: 'isRecord(added["key"]) ? added["key"]["fingerprint"]', span: "line", schema: "AddedAuthorizedKey", mode: "required", names: ["key"], what: "the add response's `key`" },
-  { kind: "schema", file: BEARER, anchor: 'isRecord(added["key"]) ? added["key"]["fingerprint"]', span: "line", schema: "AuthorizedKeyEntry", mode: "present", names: ["fingerprint"], what: "the entry's `fingerprint`" },
-  { kind: "schema", file: WIREGUARD, anchor: 'members[0] === "publicKey"', span: "line", schema: "WireguardRotation", mode: "exact", names: ["publicKey"], what: "the rotation body, which is publicKey AND NOTHING ELSE" },
-  { kind: "schema", file: BEARER, anchor: '!rotate.body.includes("privateKey")', span: "line", schema: "WireguardRotation", mode: "absent", names: ["privateKey"], what: "no private half in the rotation body" },
-  { kind: "schema", file: BEARER, anchor: 'row["id"] === first.id && row["name"] === BOOTSTRAP_NAME', span: "line", schema: "ApiTokenSummary", mode: "required", names: ["id", "name"], what: "the token summary's members" },
-  { kind: "schema", file: BEARER, anchor: 'const token = isRecord(minted) ? minted["token"] : undefined;', span: "line", schema: "MintedToken", mode: "required", names: ["token"], what: "the mint's plaintext member" },
-  { kind: "schema", file: BEARER, anchor: 'const taskId = isRecord(body) ? body["taskId"] : undefined;', span: "line", schema: "TaskAccepted", mode: "required", names: ["taskId"], what: "the settings write's task id" },
-  { kind: "schema", file: BEARER, anchor: 'const id = isRecord(minted) ? minted["id"] : undefined;', span: "line", schema: "MintedToken", mode: "required", names: ["id"], what: "the mint's id member" },
-  { kind: "schema", file: BEARER, anchor: 'typeof detail["message"] === "string"', span: "line", schema: "ApiErrorDetail", mode: "required", names: ["message"], what: "the envelope's human message" },
-  { kind: "schema", file: READONLY, anchor: 'const error = (parsed as Record<string, unknown>)["error"];', span: "line", schema: "ApiError", mode: "required", names: ["error"], what: "the envelope's one member" },
-  { kind: "schema", file: READONLY, anchor: 'errorObject?.["code"] === "not_found"', span: "line", schema: "ApiErrorDetail", mode: "required", names: ["code"], what: "the envelope's machine token" },
-  { kind: "schema", file: READONLY, anchor: 'errorObject?.["source"] === "apid"', span: "line", schema: "ApiErrorDetail", mode: "required", names: ["source"], what: "the envelope's source" },
-  { kind: "schema", file: READONLY, anchor: '!Object.hasOwn(errorObject, "path")', span: "line", schema: "ApiErrorDetail", mode: "optional", names: ["path"], what: "the envelope's dot-path, declared but not required" },
+  { kind: "schema", file: SESSION, anchor: 'const token = setupBody?.["token"]', span: "line", schema: "SetupToken", mode: "required", names: ["token"], what: "setup's bearer token" },
+  { kind: "schema", file: SESSION, anchor: 'const csrfToken = setupBody?.["csrfToken"]', span: "line", schema: "SetupToken", mode: "required", names: ["csrfToken"], what: "setup's browser CSRF token" },
+  { kind: "schema", file: SESSION, anchor: "login returns authenticated state", span: "call", schema: "SessionStatus", mode: "required", names: ["state"], what: "session state" },
+  { kind: "schema", file: SESSION, anchor: 'const loginCsrf = loginBody?.["csrfToken"]', span: "line", schema: "SessionStatus", mode: "optional", names: ["csrfToken"], what: "authenticated session CSRF token" },
+  { kind: "schema", file: MANAGEMENT, anchor: 'const taskId = acceptedBody?.["taskId"]', span: "line", schema: "TaskAccepted", mode: "required", names: ["taskId"], what: "accepted write task id" },
+  { kind: "schema", file: NETWORK_PHASE, anchor: "NetworkOverview carries", span: "call", schema: "NetworkOverview", mode: "required", names: ["configured", "configuredCount", "observed"], what: "network overview members" },
+  { kind: "schema", file: NETWORK_PHASE, anchor: "observed network has a positive", span: "call", schema: "ObservedNetwork", mode: "required", names: ["interfaceCount", "interfaces"], what: "observed interface inventory" },
 ];
 
 // -- reporting, in the register run.sh and the verification contract use ---------

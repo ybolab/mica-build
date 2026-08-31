@@ -437,6 +437,9 @@ jobs:
       - name: The apid phase pins agree with the committed OpenAPI document
         run: make os-apid-api-spec-pins
 
+      - name: The built-in apid SPA and committed production assets agree
+        run: bash os/pkgs/mosd/apid/ui/run.sh
+
       - name: What this job does not cover
         if: always()
         run: |

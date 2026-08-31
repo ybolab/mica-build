@@ -51,6 +51,12 @@
 
 ## 4. 认证
 
+**浏览器管理会话 —— [已实现]。** 内建 SPA 和自定义 SPA 都是 `/api` 的客户端。
+`GET /api/v1/session` 查询状态，`POST` 用管理员口令登录并建立
+`HttpOnly; Secure; SameSite=Lax` 会话，`DELETE` 撤销会话。登录返回的随机 CSRF 值只保存在
+页面内存中；凡用 cookie 发起写操作，都必须把它放进 `X-CSRF-Token`，否则统一返回
+403 `csrf_invalid`。程序化 bearer token 不受这条 CSRF 规则影响。
+
 **当前阶段 —— [已实现]。** 持久访问靠 SSH 公钥；root 口令是**临时**的，由 mosd 在运行时设置。
 
 请求边界先完成 bcrypt 与 shadow/marker 写入，再把一个 `access.ssh` 应用任务放入队列；

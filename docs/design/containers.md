@@ -43,8 +43,9 @@ so container enablement has no MQTT read or write path. `mqtt.enabled` is kept
 on the same management side for the same reason: a system lifecycle switch is
 not application data.
 
-Turn it on from the `/containers` pane in the built-in UI, or through the API
-route the pane itself uses, which takes a bearer token and no other credential:
+Turn it on from the Services page in the built-in SPA at `/ui`, or through the
+same API route. Automation uses a bearer token; a signed-in browser session is
+also accepted and its mutations carry the session's CSRF header:
 
 ```
 curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \

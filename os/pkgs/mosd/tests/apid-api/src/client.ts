@@ -7,7 +7,7 @@
  * follows redirects, manages cookies invisibly and normalises request targets.
  * Those three behaviours are exactly what this suite exists to observe: the
  * :80 -> :443 redirect must be asserted and never followed, the session
- * cookie's attributes ARE the cross-site defence (there is no CSRF token), and
+ * cookie attributes and the API's explicit CSRF header are security contracts, and
  * a traversal probe that the client rewrites before it leaves the process is a
  * test of the client, not of apid.
  */

@@ -502,7 +502,7 @@ async function main(): Promise<void> {
       `note: on the docker host that is https://127.0.0.1:${httpsPort}; from another container it ` +
         `is the QEMU container's own address on a shared network (see MOS_QEMU_NETWORK)`,
     );
-    note("note: the guest ships no admin password until something completes /setup, which is why the host publish is loopback-only");
+    note("note: the guest ships no admin password until something completes /api/v1/setup, which is why the host publish is loopback-only");
   }
   dockerArgs.push("-e", `HOSTFWD=${hostfwd}`);
   dockerArgs.push(qemuImage, "bash", "-c", INSTALL_AND_RUN);

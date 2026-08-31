@@ -1,6 +1,14 @@
 # The mos dashboard: landing screen and information architecture
 
-> **Status:** proposal, for whoever builds the mos management UI. It covers the
+> **Current status (PLAN-039, 2026-08-31): first SPA implementation shipped.**
+> The built-in dashboard is a React/Vite SPA at `/ui`, using TanStack Router and
+> Query over `/api`. Its overview and network pages poll bounded snapshots; the
+> network page shows the observed interface count, configured kind/addressing,
+> operational and carrier state, address state and addresses. The detailed
+> inventory and later-phase product ideas below remain a proposal beyond that
+> implemented slice.
+>
+> This document was originally a proposal for whoever builds the mos management UI. It covers the
 > landing dashboard, the information architecture behind it, the live-update
 > posture that supports them, and a phased delivery order.
 >
@@ -12,9 +20,8 @@
 > **Status markers** below follow `docs/design/access.md` §0 — `[implemented]`,
 > `[partial]`, `[not implemented]`, and `[decided]` for a settled question.
 
-This document proposes turning the mos management UI from a set of forms into a
-dashboard. It proposes no code, no route handlers, no markup, and no rendering
-or live-update technology. Where a proposal only works under some technology
+PLAN-039 turned the management UI from server forms into the first dashboard
+SPA. The remaining sections continue to propose later capabilities. Where a proposal only works under some technology
 choice, that is said in one line and the choice is left to section 5.
 
 **Evidence base.** Three research documents, already produced and merged on the

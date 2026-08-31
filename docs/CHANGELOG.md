@@ -23,6 +23,20 @@ at one commit and judged every difference between the two roots -- 35
 differences, 35 sanctioned, 0 unsanctioned -- whose reasoning is kept as a
 closed record in `os/tests/dual-build-sanctions.md`.
 
+## Built-in UI is a pure SPA over the management API (2026-08-31)
+
+apid now embeds a React/Vite application at `/ui`; `/` serves a valid active
+custom bundle and otherwise redirects to that built-in UI. All server-rendered
+Maud pages and non-API form mutations, including `/containers/enable`, were
+removed. Setup, login and logout have JSON session routes, API handlers accept
+either a stored bearer token or a signed browser session, and session mutations
+require a per-session CSRF header. Custom UI status/deactivation is likewise an
+API resource. mosd now obtains an on-demand normalized network snapshot from
+systemd-networkd, and the network API/SPA report the observed interface count,
+configured intent and each link's operational, carrier, address-family and
+address details. The committed frontend assets are rebuilt and byte-compared
+in CI before Cargo embeds them.
+
 ## Settings writes are bounded, scoped and queued (2026-08-31)
 
 apid-to-mosd and mosd-to-systemd waits now have five-second bounds, while

@@ -18,29 +18,17 @@ machine. That is a measurement of one host on one day, not a property of the
 image: a contended host is materially slower, which is why the harness's
 readiness deadline stays at 900 s and is not trimmed to fit these numbers.
 
-**A boot per test is still not viable on that figure**, and the reason was never
-the boot alone. A full lifecycle run is **two** boots, twelve phases,
-`06-backoff`'s deliberately doubling login windows and an argon2 hash behind
-every login — about **four minutes** end to end, measured the same way. Against
-that, per-test isolation would multiply the boot across dozens of checks until
-it dominated everything the suite actually measures, and under load TCG varies
-by multiples rather than by seconds. So the suite runs against **one** boot per
-invocation and the phases hand state to each other in a fixed order:
+**A boot per test is still not viable on that figure.** The suite therefore
+runs against one factory-fresh boot and hands credentials and state between
+ordered phases. The current suite follows the shipped SPA/API boundary:
 
 | id | what it covers |
 |----|----------------|
-| `01-transport` | the certificate, the `:80 → :443` redirect, verbatim request targets |
-| `02-setup` | setup mode, the gate, the first admin password |
-| `03-login` | the session cookie's attributes, the gate after setup, `/logout` |
-| `04-readonly` | every GET route, `/healthz`, the `/api` 404 envelope |
-| `05-mutate` | hostname, network, ssh, containers |
-| `05b-wireguard` | the M6 surface: typed pane forms per kind, the live `kind`/`publicKey` readers, the rotate-key action |
-| `05c-kernel-net` | On a live guest: the kernel creating the three link kinds, and the key store readable by the account that reads it |
-| `05d-bearer` | the bearer credential end to end: the bootstrap mint, then read, write, collection, action and the token lifecycle over `Authorization: Bearer` alone, and 401 with no credential |
-| `06-backoff` | the login guard: global, doubling, persistent |
-| `07-reboot` | `POST`-only, the confirm token, taking the machine down |
-| `07b-postreboot` | what survived the power cycle, and what correctly did not |
-| `08-poweroff` | `POST`-only, the confirm token, the guest going down |
+| `01-spa-boundary` | `/` → `/ui`, embedded SPA assets, API JSON errors, and retired form routes |
+| `02-session` | JSON setup/login/logout, the session cookie, and CSRF enforcement |
+| `03-api-management` | cookie and bearer API reads, a CSRF-protected write/task, and inert legacy paths |
+| `04-network-observation` | configured intent plus current interface count, details and states |
+| `05c-kernel-net` | the live kernel creating VLAN, bridge and WireGuard links, plus key-store permissions |
 
 State coupling between phases is **accepted**, and then made structural. Every
 phase declares an `assumes` string saying what it expects the previous phase to
@@ -79,18 +67,11 @@ here looks exactly like apid being down.
 | `APID_HTTPS_PORT` | no | `18443` | published port reaching the guest's `:443` |
 | `APID_HTTP_PORT` | no | `18080` | published port reaching the guest's `:80` |
 | `APID_CONSOLE` | no | — | path to the captured QEMU console log |
-| `APID_ADMIN_PASSWORD` | no | `mos-e2e-admin-pw` | password set at `/setup` |
-| `APID_HOSTNAME_TARGET` | no | `mos-e2e-renamed` | hostname `05-mutate` renames to |
+| `APID_ADMIN_PASSWORD` | no | `mos-e2e-admin-pw` | password sent to `/api/v1/setup` and `/api/v1/session` |
+| `APID_HOSTNAME_TARGET` | no | `mos-e2e-renamed` | hostname sent to `/api/v1/setup` and read back through `/api` |
 | `APID_PHASES` | no | all | comma-separated phase ids; a partial run says so, loudly |
 | `APID_RESULT_JSON` | no | — | path for the machine-readable result |
 | `APID_NEGATIVE` | no | — | invert the first matching check, to prove a run can go red |
-| `APID_HANDOFF` | no | `<result dir>/handoff-07-reboot.json` | where `07-reboot` leaves what `07b-postreboot` reads |
-
-`APID_HANDOFF` matters only across the two boots: they are two separate `bun`
-processes, so 07 writes what 07b needs as JSON and 07b reads it. The default
-sits beside `APID_RESULT_JSON`, which outlives both boots and is mounted at the
-same path in both invocations. A missing handoff makes 07b **skip** with that
-reason rather than invent one.
 
 ## Running
 
@@ -128,9 +109,10 @@ bash spec-pins.sh          # or: make os-apid-api-spec-pins, from the repo root
 ```
 
 `src/spec-pins.ts` asserts that every literal a phase pins which
-`os/pkgs/mosd/apid/openapi.json` ALSO states agrees with the document — 38 of
-them, read out of the phase files' own bytes rather than imported, so both
-directions of drift go red. It exists because the phases below only run under a
+`os/pkgs/mosd/apid/openapi.json` ALSO states agrees with the document. It covers
+the session, setup, settings, UI and observed-network contracts, reading the
+phase files' own bytes rather than importing them, so both directions of drift
+go red. It exists because the phases below only run under a
 booted run: a milestone that moves a shipped status otherwise leaves every
 phase pinning the old one green until somebody boots the image.
 Its header states what is out of scope and why; the full black-box suite covers

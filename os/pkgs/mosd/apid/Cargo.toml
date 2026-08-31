@@ -16,7 +16,6 @@ axum = { workspace = true }
 axum-server = { workspace = true }
 chrono = { workspace = true }
 hmac = { workspace = true }
-maud = { workspace = true }
 mosd-settings = { path = "../mosd-settings" }
 rand = { workspace = true }
 rcgen = { workspace = true }

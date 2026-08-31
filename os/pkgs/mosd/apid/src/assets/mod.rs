@@ -13,6 +13,7 @@
 //! [`mime::CacheClass::NoStore`], applied by the reservation in
 //! `crate::routes`.
 
+pub mod builtin;
 pub mod mime;
 pub mod path;
 pub mod serve;

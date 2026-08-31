@@ -53,6 +53,10 @@ pub trait SettingsApi: Send + Sync {
     }
     /// Live-state subtree at dot-path `path` (`""` = whole tree).
     async fn get_state(&self, path: &str) -> anyhow::Result<Value>;
+    /// Live interface details observed by systemd-networkd.
+    async fn get_network_state(&self) -> anyhow::Result<Value> {
+        self.get_state("network").await
+    }
     /// Ask mosd to reboot the appliance.
     async fn reboot(&self) -> anyhow::Result<()>;
     /// Ask mosd to power the appliance off.
@@ -137,17 +141,6 @@ impl FakeSettings {
             },
         );
         id
-    }
-
-    /// How many `get_settings` calls asked for exactly `path`; what the
-    /// access-cache tests count to tell a cache hit from a bus read.
-    pub fn settings_reads(&self, path: &str) -> usize {
-        self.get_log
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|read| read.as_str() == path)
-            .count()
     }
 
     /// Rotations requested, as `(iface, public key answered)`, in call order.
