@@ -1,0 +1,3 @@
+# The production image marker. See profile-dev.pkgs; the two are alternative
+# renderings of one immutable file.
+mos-profile-prod
