@@ -18,7 +18,7 @@ BOARDS := cx3576 x64
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
 	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
-	os-rootfs-manifest-test \
+	os-install-closure-gate os-rootfs-manifest-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -52,6 +52,7 @@ help:
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
+	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
@@ -339,6 +340,20 @@ os-debs: os-deb-preflight
 # deterministic and nothing about pack.sh.
 os-deb-package-gate:
 	bash os/tests/deb-package-gate.sh
+
+# The INSTALL-time half of PLAN-036 section 6, over the same pools: APT installs
+# the set os/rootfs/packages/resolve.sh yields into a clean pinned Debian base,
+# once per architecture, and again with `rauc` declined; the three radio packages
+# go into three separate roots; and the mos-profile provider experiment is run
+# and recorded verbatim.
+#
+# Separate from the gate above rather than folded into it, because they answer
+# different questions from different material: that one reads archives with
+# dpkg-deb and says so in its own header, and nothing it can see tells you
+# whether APT can satisfy the closure, whether a wants-symlink lands on a unit
+# somebody shipped, or what a binary reports when it is asked.
+os-install-closure-gate:
+	bash os/tests/install-closure-gate.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
