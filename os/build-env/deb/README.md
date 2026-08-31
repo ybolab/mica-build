@@ -52,7 +52,7 @@ substitution, safe to source and to parse.
 | `ARCHES` | yes | `amd64`, `arm64`, or `all` -- see below |
 | `ENABLEMENT` | yes | `<package>=<count>` per package; see below |
 | `BUILD_CONTEXTS` | no | `<name>=<repo-relative path>`, passed as `--build-context` |
-| `FROM_IMAGES` | no | `<build-arg name>=<images.env key>`, resolved by `os/build-env/from.sh` |
+| `FROM_IMAGES` | no | `<build-arg name>=<images.env key>`, resolved by `os/build-env/from.sh`. The packer image is always supplied; `FROM_IMAGES` declares additional bases only |
 | `BUILD_ARGS` | no | extra `<name>=<value>` build arguments |
 | `PREPARE` | no | a script in the producer directory, run on the host before the build |
 
