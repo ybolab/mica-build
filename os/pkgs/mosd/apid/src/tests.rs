@@ -4227,7 +4227,11 @@ impl SettingsApi for FailingSettings {
     /// The settings root stopped being read-only, and this
     /// fixture answers the write the same way it answers a read: §2.4's
     /// classification is exactly what the write route has to inherit.
-    async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
+    async fn set_settings(
+        &self,
+        _path: &str,
+        _value: &serde_json::Value,
+    ) -> anyhow::Result<String> {
         Err(self.error())
     }
 
@@ -4249,7 +4253,7 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
-    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<String> {
         Err(self.error())
     }
 
@@ -10109,7 +10113,7 @@ impl SettingsApi for RefusesOnePath {
         self.inner.get_settings(path).await
     }
 
-    async fn set_settings(&self, path: &str, value: &serde_json::Value) -> anyhow::Result<()> {
+    async fn set_settings(&self, path: &str, value: &serde_json::Value) -> anyhow::Result<String> {
         if path == self.refused {
             return Err(method_error("org.freedesktop.DBus.Error.IOError", MOSD_MESSAGE).into());
         }
@@ -10128,7 +10132,7 @@ impl SettingsApi for RefusesOnePath {
         self.inner.power_off().await
     }
 
-    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<String> {
         self.inner.set_transient_root_password(password).await
     }
 

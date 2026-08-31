@@ -91,17 +91,20 @@ fn error_name(err: &zbus::Error) -> &str {
 )]
 trait Mosd {
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
-    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<String>;
+    fn get_task(&self, id: &str) -> zbus::Result<String>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
     fn report_health(&self, component: &str, status: &str, detail: &str) -> zbus::Result<()>;
     fn reboot(&self) -> zbus::Result<()>;
     fn power_off(&self) -> zbus::Result<()>;
-    fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
+    fn set_transient_root_password(&self, password: &str) -> zbus::Result<String>;
     fn install_update(&self, bundle_path: &str) -> zbus::Result<()>;
     fn get_update_state(&self) -> zbus::Result<String>;
     fn mark_update(&self, state: &str, slot: &str) -> zbus::Result<(String, String)>;
     #[zbus(signal)]
     fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn task_changed(&self, task_json: &str) -> zbus::Result<()>;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -160,7 +163,8 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     assert_eq!(defaults["schema_version"], mosd_settings::SCHEMA_VERSION);
 
     let mut changed = proxy.receive_settings_changed().await?;
-    proxy.set_settings("hostname", "\"unit-test-host\"").await?;
+    let mut task_changed = proxy.receive_task_changed().await?;
+    let task_id = proxy.set_settings("hostname", "\"unit-test-host\"").await?;
 
     let signal = tokio::time::timeout(Duration::from_secs(10), async {
         let mut changed = pin!(&mut changed);
@@ -171,6 +175,31 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     let args = signal.args()?;
     assert_eq!(args.path(), &"hostname");
     assert_eq!(args.value_json(), &"\"unit-test-host\"");
+
+    let task_signal = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut task_changed = pin!(&mut task_changed);
+        poll_fn(|cx| task_changed.as_mut().poll_next(cx)).await
+    })
+    .await?
+    .expect("TaskChanged stream ended");
+    let task: serde_json::Value = serde_json::from_str(task_signal.args()?.task_json())?;
+    assert_eq!(task["id"], task_id);
+    assert_eq!(task["operation"], "settings-write");
+    assert_eq!(task["dotPath"], "hostname");
+    assert_eq!(task["status"], "queued");
+
+    let finished = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let task: serde_json::Value = serde_json::from_str(&proxy.get_task(&task_id).await?)?;
+            if task["status"] == "finished" {
+                break anyhow::Ok(task);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    assert_eq!(finished["outcome"], "succeeded");
+    assert_eq!(finished["foldedCount"], 0);
 
     let hostname = proxy.get_settings("hostname").await?;
     assert_eq!(hostname, "\"unit-test-host\"");
@@ -276,13 +305,17 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
         .find("</method>")
         .expect("the method element must close")];
     assert_eq!(
-        body.matches("<arg").count(),
+        body.matches("direction=\"in\"").count(),
         1,
-        "SetTransientRootPassword takes exactly one argument, got:\n{body}"
+        "SetTransientRootPassword takes exactly one input, got:\n{body}"
     );
     assert!(
         body.contains("type=\"s\"") && body.contains("direction=\"in\""),
         "its one argument must be an `in` string, got:\n{body}"
+    );
+    assert!(
+        body.contains("direction=\"out\""),
+        "the returned task id must be an out argument, got:\n{body}"
     );
     assert!(
         !xml.contains("set_transient_root_password"),
@@ -290,7 +323,7 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     );
 
     // Then the behaviour, over the bus, against the daemon's own shadow file.
-    proxy
+    let password_task = proxy
         .set_transient_root_password("correct horse battery")
         .await?;
     let after = std::fs::read_to_string(&shadow_path)?;
@@ -313,6 +346,14 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
         SHADOW.lines().skip(1).collect::<Vec<_>>(),
         "every other account must survive byte-for-byte"
     );
+    let task_json = proxy.get_task(&password_task).await?;
+    assert!(
+        !task_json.contains("correct horse battery"),
+        "plaintext password entered the task record: {task_json}"
+    );
+    let task: serde_json::Value = serde_json::from_str(&task_json)?;
+    assert_eq!(task["operation"], "transient-password");
+    assert_eq!(task["dotPath"], "access.ssh");
 
     // A rejected password is an error, changes nothing, and does not echo the
     // password back to the caller.

@@ -62,9 +62,10 @@ impl MosdCallTimeout {
 )]
 trait Mosd {
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
-    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<String>;
+    fn get_task(&self, id: &str) -> zbus::Result<String>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
-    fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
+    fn set_transient_root_password(&self, password: &str) -> zbus::Result<String>;
     fn rotate_wireguard_key(&self, iface: &str) -> zbus::Result<String>;
     fn reboot(&self) -> zbus::Result<()>;
     fn power_off(&self) -> zbus::Result<()>;
@@ -230,10 +231,16 @@ impl SettingsApi for BusSettings {
         Ok(serde_json::from_str(&json)?)
     }
 
-    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()> {
+    async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<String> {
         let proxy = self.proxy().await?;
         self.call("SetSettings", proxy.set_settings(path, &value.to_string()))
             .await
+    }
+
+    async fn get_task(&self, id: &str) -> anyhow::Result<Value> {
+        let proxy = self.proxy().await?;
+        let json = self.call("GetTask", proxy.get_task(id)).await?;
+        Ok(serde_json::from_str(&json)?)
     }
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {
@@ -252,7 +259,7 @@ impl SettingsApi for BusSettings {
         self.call("PowerOff", proxy.power_off()).await
     }
 
-    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<String> {
         let proxy = self.proxy().await?;
         // The error is returned as mosd raised it. mosd's own contract is
         // that no message it raises here carries the password, and nothing

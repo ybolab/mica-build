@@ -15,6 +15,7 @@ use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 
+use crate::apply_queue::{ApplyJob, ApplyQueue, TaskRecord};
 use crate::power::PowerControl;
 use crate::rauc::{self, RaucClient};
 use crate::reconciler::Reconciler;
@@ -59,7 +60,7 @@ struct Inner {
 /// file a transient root password is written into.
 pub struct MosdService {
     store: Store,
-    reconcilers: Vec<Box<dyn Reconciler>>,
+    reconcilers: Arc<Vec<Box<dyn Reconciler>>>,
     power: Box<dyn PowerControl>,
     /// The update installer (RAUC) client. `Arc` rather than `Box` because a
     /// running install outlives the bus call that started it: the background
@@ -79,6 +80,8 @@ pub struct MosdService {
     /// read-modify-write cycles must not interleave. Data readers never take
     /// this lock.
     apply_lock: Arc<Mutex<()>>,
+    /// Work queue and bounded lifecycle history for settings applies.
+    apply_queue: Arc<ApplyQueue>,
     /// The service registry the scan task fills ([`crate::scan`]), shared so
     /// that `ForgetService` drops an entry from the same table the scan
     /// publishes from — one table, so the bus surface and the live-state tree
@@ -126,13 +129,14 @@ impl MosdService {
     ) -> Self {
         Self {
             store,
-            reconcilers,
+            reconcilers: Arc::new(reconcilers),
             power,
             rauc: Arc::new(rauc::DryRunRauc),
             installing: Arc::new(AtomicBool::new(false)),
             shadow_path,
             inner: Arc::new(RwLock::new(Inner { settings, state })),
             apply_lock: Arc::new(Mutex::new(())),
+            apply_queue: Arc::new(ApplyQueue::new()),
             registry: None,
             wireguard: Arc::new(NoRotation),
         }
@@ -425,26 +429,29 @@ impl MosdService {
         Ok((slot_name, message))
     }
 
-    /// Write `value` at settings dot-path `path`: validate it against the
-    /// typed tree, persist it atomically, then re-apply every reconciler whose
-    /// subtree overlaps `path` and record each result in the live-state tree.
-    ///
-    /// The one settings-write path inside the daemon. On any error nothing is
-    /// stored, nothing is persisted and no reconciler runs.
+    /// Validate and atomically persist `value` without waiting for a
+    /// reconcile. The D-Bus method enqueues the apply after this returns.
     ///
     /// # Errors
     ///
     /// Whatever [`Settings::set`](mosd_settings::Settings::set) or
     /// [`Store::save`] rejected the write with.
+    async fn persist_setting(&self, path: &str, value: Value) -> Result<(), SettingsError> {
+        let mut inner = self.inner.write().await;
+        let mut candidate = inner.settings.clone();
+        candidate.set(path, value)?;
+        self.store.save(&candidate)?;
+        inner.settings = candidate;
+        Ok(())
+    }
+
+    /// Synchronous test hook for assertions whose subject is lock behaviour,
+    /// not the queue. Production settings writes call [`Self::persist_setting`]
+    /// and [`Self::enqueue_apply`] from `SetSettings`.
+    #[cfg(test)]
     pub async fn write_setting(&self, path: &str, value: Value) -> Result<(), SettingsError> {
         let _apply = self.apply_lock.lock().await;
-        {
-            let mut inner = self.inner.write().await;
-            let mut candidate = inner.settings.clone();
-            candidate.set(path, value)?;
-            self.store.save(&candidate)?;
-            inner.settings = candidate;
-        }
+        self.persist_setting(path, value).await?;
         self.apply_subtree(path).await;
         Ok(())
     }
@@ -454,15 +461,8 @@ impl MosdService {
     /// The caller holds [`Self::apply_lock`]. Settings are cloned under a read
     /// lock and each live-state result is recorded under a short write lock;
     /// no data lock is held while a reconciler waits on another process.
-    async fn apply_subtree(&self, path: &str) {
-        let settings = self.inner.read().await.settings.clone();
-        for reconciler in &self.reconcilers {
-            if paths_overlap(path, reconciler.subtree()) {
-                let result = reconciler.apply(&settings).await;
-                let mut inner = self.inner.write().await;
-                record(&mut inner.state, reconciler.name(), result);
-            }
-        }
+    async fn apply_subtree(&self, path: &str) -> Vec<String> {
+        reconcile_subtree(&self.reconcilers, &self.inner, path).await
     }
 
     /// Run every reconciler against the current settings, recording each
@@ -471,21 +471,158 @@ impl MosdService {
         let _apply = self.apply_lock.lock().await;
         self.apply_subtree("").await;
     }
+
+    /// Queue one reconcile, publish its current record and ensure the one
+    /// worker exists. The caller emits `SettingsChanged` separately because
+    /// that signal describes persistence, while this lifecycle describes
+    /// application.
+    async fn enqueue_apply(
+        &self,
+        emitter: &SignalEmitter<'_>,
+        operation: &str,
+        dot_path: &str,
+        source: &str,
+    ) -> TaskRecord {
+        self.apply_queue.remember_emitter(emitter);
+        self.ensure_apply_worker();
+        let enqueued = self.apply_queue.enqueue(operation, dot_path, source).await;
+        publish_task_transition(&self.apply_queue, &self.inner, &enqueued.record).await;
+        if enqueued.created {
+            self.apply_queue.wake();
+        }
+        enqueued.record
+    }
+
+    fn ensure_apply_worker(&self) {
+        if !self.apply_queue.claim_worker() {
+            return;
+        }
+        tokio::spawn(run_apply_worker(
+            Arc::clone(&self.apply_queue),
+            Arc::clone(&self.inner),
+            Arc::clone(&self.apply_lock),
+            Arc::clone(&self.reconcilers),
+        ));
+    }
+
+    /// Direct form retained only for unit tests whose subject is scoping or
+    /// serialization. The production D-Bus member queues the apply and is
+    /// exercised over a real bus by `mosd/tests/bus.rs`.
+    #[cfg(test)]
+    async fn set_transient_root_password(&self, password: &str) -> fdo::Result<()> {
+        let _apply = self.apply_lock.lock().await;
+        let shadow_path = self.shadow_path.clone();
+        let password = password.to_string();
+        tokio::task::spawn_blocking(move || {
+            transient::set_transient_root_password(&shadow_path, &password)
+        })
+        .await
+        .map_err(|err| fdo::Error::Failed(format!("transient password task: {err}")))?
+        .map_err(transient_to_fdo)?;
+        self.apply_subtree("access.ssh").await;
+        Ok(())
+    }
+}
+
+/// Apply `path` against one immutable settings snapshot, recording each
+/// reconciler result under a short data write lock. Returns failure messages
+/// for the task outcome; one failing reconciler does not stop the rest.
+async fn reconcile_subtree(
+    reconcilers: &[Box<dyn Reconciler>],
+    inner: &RwLock<Inner>,
+    path: &str,
+) -> Vec<String> {
+    let settings = inner.read().await.settings.clone();
+    let mut failures = Vec::new();
+    for reconciler in reconcilers {
+        if paths_overlap(path, reconciler.subtree()) {
+            let result = reconciler.apply(&settings).await;
+            let mut inner = inner.write().await;
+            if let Some(failure) = record(&mut inner.state, reconciler.name(), result) {
+                failures.push(failure);
+            }
+        }
+    }
+    failures
+}
+
+async fn run_apply_worker(
+    queue: Arc<ApplyQueue>,
+    inner: Arc<RwLock<Inner>>,
+    apply_lock: Arc<Mutex<()>>,
+    reconcilers: Arc<Vec<Box<dyn Reconciler>>>,
+) {
+    loop {
+        let ApplyJob { id, dot_path } = queue.next().await;
+        let Some(started) = queue.start(&id).await else {
+            tracing::error!(task_id = id, "queued apply has no task record");
+            continue;
+        };
+        publish_task_transition(&queue, &inner, &started).await;
+
+        let failures = {
+            let _apply = apply_lock.lock().await;
+            reconcile_subtree(&reconcilers, &inner, &dot_path).await
+        };
+        let (outcome, message) = if failures.is_empty() {
+            ("succeeded", None)
+        } else {
+            ("failed", Some(failures.join("; ")))
+        };
+        if let Some(finished) = queue.finish(&id, outcome, message).await {
+            publish_task_transition(&queue, &inner, &finished).await;
+        }
+    }
+}
+
+/// Keep the live-state `tasks` list and `TaskChanged` signal on the same
+/// record. Signal failure is logged; subscribers then lapse and fall back to
+/// `GetTask`, whose source of truth is the queue itself.
+async fn publish_task_transition(queue: &ApplyQueue, inner: &RwLock<Inner>, record: &TaskRecord) {
+    let snapshot = queue.snapshot().await;
+    let tasks = serde_json::to_value(snapshot).unwrap_or_else(|err| {
+        tracing::error!(error = %err, "serialize apply task history");
+        Value::Array(Vec::new())
+    });
+    let mut data = inner.write().await;
+    if let Some(root) = data.state.as_object_mut() {
+        root.insert("tasks".to_string(), tasks);
+    }
+    drop(data);
+
+    let Some(emitter) = queue.emitter() else {
+        return;
+    };
+    let json = match serde_json::to_string(record) {
+        Ok(json) => json,
+        Err(err) => {
+            tracing::error!(error = %err, task_id = record.id, "serialize task transition");
+            return;
+        }
+    };
+    if let Err(err) = MosdService::task_changed(&emitter, &json).await {
+        tracing::warn!(error = %err, task_id = record.id, "emit TaskChanged failed");
+    }
 }
 
 /// Store a reconciler `result` in the live-state tree under `name`; a failure
 /// is logged and recorded as `{"error": "..."}`.
-fn record(state: &mut Value, name: &str, result: anyhow::Result<Value>) {
-    let entry = match result {
-        Ok(value) => value,
+fn record(state: &mut Value, name: &str, result: anyhow::Result<Value>) -> Option<String> {
+    let (entry, failure) = match result {
+        Ok(value) => (value, None),
         Err(err) => {
             tracing::error!(reconciler = name, error = %err, "reconciler apply failed");
-            serde_json::json!({ "error": err.to_string() })
+            let message = format!("{name}: {err}");
+            (
+                serde_json::json!({ "error": err.to_string() }),
+                Some(message),
+            )
         }
     };
     if let Some(map) = state.as_object_mut() {
         map.insert(name.to_string(), entry);
     }
+    failure
 }
 
 /// Unique bus name of the caller, or `"(unknown)"` on an unnamed message.
@@ -592,21 +729,21 @@ impl MosdService {
         Ok(value.to_string())
     }
 
-    /// Parse `value_json`, write it at `path`, persist atomically, re-apply
-    /// the reconcilers whose subtree overlaps `path`, then emit
-    /// [`SettingsChanged`](Self::settings_changed).
+    /// Parse `value_json`, persist it atomically, enqueue the overlapping
+    /// reconcile, and return its task id.
     async fn set_settings(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        #[zbus(header)] header: Header<'_>,
         path: &str,
         value_json: &str,
-    ) -> Result<(), SettingsFault> {
+    ) -> Result<String, SettingsFault> {
         let value: Value = serde_json::from_str(value_json).map_err(|err| {
             SettingsFault::Fdo(fdo::Error::InvalidArgs(format!(
                 "invalid JSON value: {err}"
             )))
         })?;
-        self.write_setting(path, value)
+        self.persist_setting(path, value)
             .await
             .map_err(to_bus_error)?;
         Self::settings_changed(&emitter, path, value_json)
@@ -614,7 +751,22 @@ impl MosdService {
             .map_err(|err| {
                 SettingsFault::Fdo(fdo::Error::Failed(format!("emit SettingsChanged: {err}")))
             })?;
-        Ok(())
+        let task = self
+            .enqueue_apply(&emitter, "settings-write", path, sender_of(&header))
+            .await;
+        Ok(task.id)
+    }
+
+    /// JSON-encoded task record for `id`.
+    async fn get_task(&self, id: &str) -> Result<String, SettingsFault> {
+        let task = self
+            .apply_queue
+            .get(id)
+            .await
+            .ok_or_else(|| SettingsFault::NotFound(format!("task not found: `{id}`")))?;
+        serde_json::to_string(&task).map_err(|err| {
+            SettingsFault::Fdo(fdo::Error::Failed(format!("serialize task {id}: {err}")))
+        })
     }
 
     /// JSON-encoded live-state subtree at dot-path `path` (`""` = whole tree).
@@ -814,7 +966,13 @@ impl MosdService {
     ///
     /// The reconcilers are re-run afterwards so the sshd drop-in re-renders
     /// against a device that now has a password to offer, and sshd picks it up.
-    async fn set_transient_root_password(&self, password: &str) -> fdo::Result<()> {
+    #[zbus(name = "SetTransientRootPassword")]
+    async fn enqueue_transient_root_password(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        #[zbus(header)] header: Header<'_>,
+        password: &str,
+    ) -> fdo::Result<String> {
         // Two concerns share this shape. Serialization: zbus dispatches `&self`
         // methods concurrently, and two unserialized writers would interleave
         // read-modify-write cycles on one shadow file through one fixed temp
@@ -831,8 +989,15 @@ impl MosdService {
         .await
         .map_err(|err| fdo::Error::Failed(format!("transient password task: {err}")))?
         .map_err(transient_to_fdo)?;
-        self.apply_subtree("access.ssh").await;
-        Ok(())
+        let task = self
+            .enqueue_apply(
+                &emitter,
+                "transient-password",
+                "access.ssh",
+                sender_of(&header),
+            )
+            .await;
+        Ok(task.id)
     }
 
     /// Draw a new private key for the WireGuard interface `iface` and return
@@ -900,6 +1065,11 @@ impl MosdService {
         path: &str,
         value_json: &str,
     ) -> zbus::Result<()>;
+
+    /// Emitted whenever an apply task is queued, starts or finishes. The body
+    /// is one JSON-encoded [`TaskRecord`].
+    #[zbus(signal)]
+    async fn task_changed(emitter: &SignalEmitter<'_>, task_json: &str) -> zbus::Result<()>;
 }
 
 #[cfg(test)]
@@ -907,7 +1077,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use super::{MosdService, paths_overlap};
+    use super::{Inner, MosdService, paths_overlap, run_apply_worker};
     use crate::power::MockPower;
     use crate::rauc::{MockRauc, SlotStatus};
 
@@ -1076,6 +1246,53 @@ mod tests {
             *calls.lock().expect("call log"),
             vec!["network".to_string()],
             "key rotation must not touch sshd or container generators"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_identical_queued_writes_run_one_reconcile() {
+        let queue = Arc::new(crate::apply_queue::ApplyQueue::new());
+        let first = queue.enqueue("settings-write", "hostname", ":1.7").await;
+        let second = queue.enqueue("settings-write", "hostname", ":1.8").await;
+        assert_eq!(first.record.id, second.record.id);
+        assert_eq!(second.record.folded_count, 1);
+
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let reconcilers: Arc<Vec<Box<dyn crate::reconciler::Reconciler>>> =
+            Arc::new(vec![Box::new(RecordingReconciler {
+                name: "hostname",
+                subtree: "hostname",
+                calls: Arc::clone(&calls),
+            })]);
+        let inner = Arc::new(tokio::sync::RwLock::new(Inner {
+            settings: mosd_settings::Settings::default(),
+            state: serde_json::json!({}),
+        }));
+        let worker = tokio::spawn(run_apply_worker(
+            Arc::clone(&queue),
+            Arc::clone(&inner),
+            Arc::new(tokio::sync::Mutex::new(())),
+            reconcilers,
+        ));
+        queue.wake();
+
+        let finished = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let task = queue.get(&first.record.id).await.expect("task record");
+                if task.terminal() {
+                    break task;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("task finishes");
+        worker.abort();
+
+        assert_eq!(finished.outcome.as_deref(), Some("succeeded"));
+        assert_eq!(
+            *calls.lock().expect("call log"),
+            vec!["hostname".to_string()]
         );
     }
 

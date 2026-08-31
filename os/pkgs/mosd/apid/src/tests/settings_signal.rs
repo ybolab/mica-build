@@ -75,10 +75,11 @@ impl FakeMosd {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         path: &str,
         value_json: &str,
-    ) -> zbus::fdo::Result<()> {
+    ) -> zbus::fdo::Result<String> {
         Self::settings_changed(&emitter, path, value_json)
             .await
-            .map_err(|err| zbus::fdo::Error::Failed(format!("emit SettingsChanged: {err}")))
+            .map_err(|err| zbus::fdo::Error::Failed(format!("emit SettingsChanged: {err}")))?;
+        Ok("fake-task-1".to_string())
     }
 
     #[zbus(signal)]

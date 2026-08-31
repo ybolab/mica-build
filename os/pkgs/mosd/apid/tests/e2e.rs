@@ -86,7 +86,7 @@ fn find_mosd() -> anyhow::Result<PathBuf> {
 )]
 trait Mosd {
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
-    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<String>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
 }
 

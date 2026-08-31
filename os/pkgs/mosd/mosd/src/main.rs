@@ -28,6 +28,7 @@
 
 #![forbid(unsafe_code)]
 
+mod apply_queue;
 mod bus;
 mod fswrite;
 mod identity;
