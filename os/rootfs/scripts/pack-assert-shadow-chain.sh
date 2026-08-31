@@ -70,4 +70,33 @@ for dep in mosd.service ssh.service; do
 done
 test -f /rootfs/usr/lib/systemd/system/ssh.service ||
     { echo "error: mos-shadow-reconcile.service orders Before=ssh.service but that unit is not in the image; systemd drops such an ordering silently" >&2; exit 1; }
+# The last-change day, read back out of the PACKED TREE rather than trusted from
+# the step that set it. It is the day the account was created, so an unpinned
+# one is the build date sitting inside the verity-covered root; the pin is
+# account-pin-shadow-dates.sh in the `closed` stage.
+#
+# BOTH files, because both ship and they are not the same file: the factory copy
+# is what mos-shadow-reconcile derives /etc/shadow from, while /etc/shadow- is
+# useradd's pre-modification backup, which keeps its own rows and lagged the pin
+# by one pass until the pin was made to run twice.
+#
+# The count is printed and a zero is refused. "No account carries a build date"
+# over a file this loop never managed to read is true of every root that has
+# ever existed, and this check exists precisely because the failure it looks for
+# is invisible until two builds straddle midnight.
+PINNED_DAY=18262
+examined=0
+for f in "${fac}" /rootfs/etc/shadow-; do
+    [ -f "${f}" ] ||
+        { echo "error: ${f} is not in the packed tree, so the last-change assertion below would skip it. Both shadow files ship and both carry the field; if one has been removed on purpose, this check has to be told" >&2; exit 1; }
+    rows="$(awk -F: '$1 != ""' "${f}" | wc -l)"
+    moving="$(awk -F: -v want="${PINNED_DAY}" '$1 != "" && $3 != want { printf " %s=%s", $1, $3 }' "${f}")"
+    [ -z "${moving}" ] ||
+        { echo "error: ${f} carries a shadow last-change day other than ${PINNED_DAY}:${moving}. That field is the DAY the account was made -- the build date, reaching a signed root through a maintainer script -- so two builds on different days produce different roots and a different dm-verity root hash" >&2; exit 1; }
+    examined=$((examined + rows))
+done
+[ "${examined}" -gt 0 ] ||
+    { echo "error: the last-change assertion examined ${examined} accounts. A check over an empty set passes forever" >&2; exit 1; }
+
 echo "shadow: symlink -> STATE, factory copy 0640 0:${sg}, root locked, reconcile unit enabled and ordered"
+echo "shadow: last-change day ${PINNED_DAY} on all ${examined} account rows across the factory copy and /etc/shadow-"

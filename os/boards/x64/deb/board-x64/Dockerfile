@@ -2,8 +2,7 @@
 # check=skip=InvalidDefaultArgInFrom
 # The board-x64 producer: the `mos-board-x64` package.
 #
-#   bash os/rootfs/packages-src/build-deb.sh \
-#       --producer-dir os/boards/x64/deb/board-x64 --arch amd64
+#   bash os/build-env/deb/build.sh --producer board-x64 --arch amd64
 #
 # Everything the image carries because it is the x64 board: the configuration
 # rendered from os/boards/x64/board.env, the dm-verity initramfs payload,

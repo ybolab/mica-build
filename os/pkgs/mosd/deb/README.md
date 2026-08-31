@@ -111,7 +111,7 @@ so it does not move.
 ## `SOURCE_DATE_EPOCH`
 
 Derived on the host as `git log -1 --format=%ct` and passed into the packaging
-stage as a build argument. `pack.sh` requires it, clamps every payload mtime to
+stage as a build argument. `pack.sh` requires it, sets every payload mtime to
 it and hands it to `dpkg-deb`; it has no "now" default, because one would make
 every archive irreproducible while every build stayed green.
 

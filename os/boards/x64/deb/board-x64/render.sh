@@ -14,7 +14,7 @@
 # on the host would either write them into the worktree -- where a committed
 # rendering drifts from its template, which is the reason
 # os/pkgs/rauc/render-config.sh's output is gitignored -- or make the package
-# depend on a host step `bash os/rootfs/packages-src/build-deb.sh` does not
+# depend on a host step `bash os/build-env/deb/build.sh` does not
 # run. <src-root> is therefore a reconstruction of the repository layout inside
 # the build, and not a checkout.
 #
