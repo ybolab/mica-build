@@ -200,6 +200,15 @@ than picking. `<commit>` is `git rev-parse --short=12 HEAD`, `.dirty` marks a
 tree no commit reproduces, and the `-1` is the Debian revision, which does not
 move because these packages have no upstream/downstream split.
 
+**`make os-debs` is not safe against a tree that changes while it runs.** The
+version is read per producer -- `build.sh` calls this script once for each --
+and it is read from `git status --porcelain` as well as from HEAD, so a merge, a
+commit and an ordinary uncommitted edit all move it equally. Change the tree
+mid-run and the producers built before the change carry one version while those
+built after carry another, each correct at the moment it was written. What fails
+is the gate's one-version rule, and it fails naming the PACKAGES -- so the
+symptom points at the pool while the cause is that the tree moved underneath it.
+
 `SOURCE_DATE_EPOCH` is **not** here; it stays with `build.sh`, which resolves it
 as HEAD's timestamp on the host. See below for why `pack.sh` has no default for
 it.
