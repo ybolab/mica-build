@@ -1,8 +1,8 @@
 # PLAN-038 Bound, scope and queue the settings-write path
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-08-31 12:27
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-08-31 13:57 UTC
 - **relatedTask**: [RFCT-274](../task/RFCT-274.md)
 
 ## Context
@@ -456,3 +456,6 @@ record.
   conflict survey was run at `9acd48f` and its commitments are recorded in
   *Conflicts and coordination*; it is evidence about a moment and is to be
   re-run before implementing.
+- 2026-08-31 13:57 — The user approved implementation ("开始实现"). The
+  conflict survey was repeated at `792d206`; the worktree is clean and no
+  off-main commit touches the implementation paths owned by this plan.

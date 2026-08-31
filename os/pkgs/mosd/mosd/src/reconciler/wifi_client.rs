@@ -129,7 +129,7 @@ impl WifiClientReconciler<Systemd, Networkd> {
         let network_dir = std::env::var(NETWORK_DIR_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_NETWORK_DIR));
-        Self::new(config_dir, network_dir, Systemd, Networkd)
+        Self::new(config_dir, network_dir, Systemd::new(), Networkd)
     }
 }
 
