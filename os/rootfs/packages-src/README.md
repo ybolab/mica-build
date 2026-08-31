@@ -101,6 +101,7 @@ to know that one of its packages was filed under arm64.
 | Producer | Emits | Architecture |
 | --- | --- | --- |
 | `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
+| `ca-trust` | `mos-ca-trust` | `all` |
 
 ### `profile`
 
@@ -123,6 +124,51 @@ makes an error rather than an empty expansion.
 No units, no enablement symlinks, no maintainer scripts: both control archives
 hold `control` and `md5sums` and nothing else.
 
+### `ca-trust`
+
+The TLS trust store as data: `/etc/ssl/certs/ca-certificates.crt`, the ~150
+individual anchors under `/usr/share/ca-certificates`, the ~300 hash symlinks
+that index them and `/etc/ca-certificates.conf` -- the three paths
+`os/rootfs/stages/10-base.Dockerfile` copies out of its `certs` stage today.
+
+This is the one producer here whose payload is **generated rather than
+written**, so its Dockerfile has two stages. The first is `FROM` the pinned
+Debian trixie base -- named in `FROM_IMAGES` and resolved through
+`os/build-env/from.sh`, never a floating tag, because that tag would decide
+which certificate authorities the fleet believes -- and runs
+`os/rootfs/scripts/ca-certificates-generate.sh` itself, arriving as the
+`scripts` build context. Running the repository's own script rather than
+restating its five lines is what keeps "what is generated today" from having
+two definitions. The second stage copies the result into the staged root and
+packs it.
+
+`ca-certificates` is *not* what the image installs, and that is the point. It
+`Depends` on `openssl` -- 2.5 MB of CLI nothing on the device uses, since
+apid's TLS is rustls -- and it ships `/usr/bin/c_rehash`, a Perl script the
+package-manager purge's dangling-interpreter check rejects once perl is gone.
+The store is wanted; the package that builds it is not. The producer asserts
+that neither, nor `update-ca-certificates`, is anywhere in the payload.
+
+`COPY` does not dereference, so the hash farm arrives **as symlinks**. They are
+the lookup mechanism, and a dereferenced copy would both double the payload and
+leave `dpkg-deb --contents` describing something other than what is installed.
+The producer resolves every link against the staged root before packing, which
+is the assertion `os/rootfs/scripts/ca-certificates-verify.sh` makes today about
+the tree the `certs` stage hands over.
+
+`.mos-cert-count` is read and dropped. It is a build-time token, written so the
+receiving stage can detect a `COPY` that truncated the bundle, and
+`ca-certificates-verify.sh` reads it and `rm -f`s it in the same breath -- it
+has never been in a shipped root, and `os/verify`'s `ca-bundle-generated` check
+counts `BEGIN CERTIFICATE` lines directly rather than reading it. Here it is
+spent on the one copy it can still speak about and then deleted;
+`DEBIAN/md5sums` is a stronger statement about arrival than a count.
+
+`/etc/ca-certificates.conf` is ordinary payload and not a conffile, for the
+reason no package here declares one: the root is an immutable dm-verity
+squashfs, and a `conffiles` entry would promise dpkg a merge that cannot
+happen. No `Depends`, no maintainer scripts, no enablement links.
+
 ## `copyright`
 
 One file, shared by every producer in this directory and installed per package
@@ -132,4 +178,12 @@ referencing Debian's `common-licenses`, because the mos image does not ship that
 directory and the reference would dangle on the device.
 
 A producer packaging Debian-sourced or vendor content does not use this file. It
-records that content's own licence honestly instead.
+records that content's own licence honestly instead. `ca-trust` is the case
+where both are true at once: the anchors are Debian's and the doc directory is
+this repository's, so it lifts the `License: Apache-2.0` stanza out of this
+file, scopes it to `/usr/share/doc/mos-ca-trust/*`, and appends
+`/usr/share/doc/ca-certificates/copyright` verbatim, harvested in the
+generation stage from the package that shipped the certificates. ~150 anchors
+under GPL-2+ and MPL-2.0 are not something this repository can restate
+correctly, and a hand-written summary of them would be wrong in a way nobody
+would notice until it mattered.
