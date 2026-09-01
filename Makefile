@@ -413,6 +413,7 @@ docs-verify:
 	bash docs/verify-index.sh
 	bash docs/verify-links.sh
 	bash docs/verify-status.sh
+	bash docs/zh/verify-coverage.sh
 	bash docs/bsp/verify-board.sh
 
 # Negative tests for the target above. Each assertion is driven against an
@@ -425,6 +426,7 @@ docs-verify-test:
 	bash docs/verify-index-test.sh
 	bash docs/verify-links-test.sh
 	bash docs/verify-status-test.sh
+	bash docs/zh/verify-coverage-test.sh
 	bash docs/bsp/verify-board-test.sh
 
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
