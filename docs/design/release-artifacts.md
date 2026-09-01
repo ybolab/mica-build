@@ -98,31 +98,66 @@ that says "see the other file" is not an inventory. The operational channel
 for honouring the source offer (who answers, at what address) is product
 documentation, **[proposed]** here.
 
-## 4. The board-evidence seam — **[implemented]** as a shape; content **[proposed]**
+## 4. The board evidence — **[implemented]**, semantics included
 
 The gate consumes a per-board evidence file, default
-`boards/<board>/evidence.json` (`--evidence` overrides; the dev fixture used
-by the tests lives in a temp directory, deliberately — no evidence file is
-committed for any board, so today the gate **refuses to publish any board**,
-which is the honest state until qualification produces evidence):
+`boards/<board>/evidence.json` (`--evidence` overrides). This file is the
+**per-board/revision claim record**: what boot-assurance level the board
+claims, what repo-verifiable evidence backs it, and what its physical/debug
+posture honestly is. One is committed for each board — `boards/cx3576/
+evidence.json` and `boards/x64/evidence.json`, both claiming **I1** today —
+and its semantics live in exactly two places: the validator
+(`checkBoardEvidence`, `build/src/release-manifest.ts`) and the I1–I4 ladder
+it enforces (`docs/design/security-model.md` §5). Schema (v2, held as an
+equality like the manifest's):
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "board": "cx3576",
+  "revision": "all",
   "bootAssurance": "I1",
-  "qualification": "one sentence stating what qualified this board, by whom"
+  "qualification": "what qualified this board, and what is honestly pending",
+  "evidenceRefs": [
+    { "class": "verity-root", "ref": "make os-verify-cx3576 (check verity-payload-verifies)" }
+  ],
+  "physicalBoundaries": {
+    "jtag": "one honest sentence",
+    "serialConsole": "one honest sentence",
+    "recoveryPath": "one honest sentence"
+  }
 }
 ```
 
-What is enforced here (`checkBoardEvidence`) is presence and shape only: the
-file names the board it is about, asserts one boot-assurance level, and
-states a qualification. What a level like `I1` **means**, what proof backs
-it, and the checks that hold a claim against that proof are the evidence
-producer's contract — **[proposed]**, owned by the board-qualification work,
-and deliberately not restated in this reader so it cannot become a second,
-staler copy. The manifest's `bootAssurance` field is populated from this
-file at assembly, and the gate re-reads the file and refuses a divergence.
+- `revision` is the board revision the record covers; `"all"` when one
+  record covers every revision.
+- Each `evidenceRefs` entry names an evidence **class** (closed set:
+  `verity-root`, `ab-fallback`, `update-negative`, `vendor-boot-capability`,
+  `signature-negative`) and a **repo-verifiable reference** — a Makefile
+  target, a `tests/` suite, a `verify/` check name, or a `docs/design`
+  section — so a claim is auditable by running or reading what it cites.
+- `physicalBoundaries` states the debug/recovery posture per port
+  (`docs/design/manufacturing.md` §6).
+
+**Enforced level floor** (`LEVEL_REQUIRED_CLASSES`): any level needs a
+non-empty `evidenceRefs` and a full `physicalBoundaries`; **I1** requires a
+`verity-root` ref; **I2** additionally `ab-fallback` and `update-negative`;
+**I3/I4** additionally `vendor-boot-capability` and `signature-negative`. A
+claimed level missing a required class is a refusal naming that class. The
+floor is **necessary, not sufficient** — the ladder's full qualification bar
+(on-board runs, dated evidence) lives in the qualification prose and the
+board record.
+
+**Unsupported-claim wording**: the strings `secure boot` and `tamper-proof`
+— matched case-insensitively, with the two words joined or separated by one
+space, hyphen or underscore — are refused anywhere in `qualification`,
+`evidenceRefs[].ref` or the `physicalBoundaries` statements unless the file
+claims an evidenced I3/I4. The matcher does **no negation analysis**: "no
+secure boot" is refused too; reword instead.
+
+The manifest's `bootAssurance` field is populated from this file at
+assembly, and the gate re-reads the file, re-applies all of the above, and
+refuses a divergence.
 
 ## 5. The publication gate — **[implemented]**
 

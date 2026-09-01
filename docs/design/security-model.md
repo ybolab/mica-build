@@ -124,8 +124,9 @@ routinely ship binary-only early stages, and the project's position is
 best-effort trusted boot with the evidence level stated per board rather than
 a universal promise. No mos release material may describe any current board
 as having secure boot; a claim above a board's evidenced ladder level (§5)
-must fail release publication — that gate is **[proposed]** and belongs to
-the release manifest work, with the policy stated in
+must fail release publication — that gate is **[implemented]**
+(`checkBoardEvidence`, `build/src/release-manifest.ts`; rules in
+`docs/design/release-artifacts.md` §4), with the policy stated in
 `docs/design/security-lifecycle.md` §2.
 
 ## 5. The I1–I4 boot-assurance ladder

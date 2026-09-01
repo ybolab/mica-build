@@ -65,7 +65,21 @@ printf 'fixture disk image bytes\n' >"${IN}/cx3576-mos-90001.img"
 printf 'fixture bundle bytes\n' >"${IN}/mos-cx3576-90001.raucb"
 printf '#package\tversion\tarchitecture\nlibc6\t2.41-12\tarm64\nmos-system\t0.1.0+git0123456789ab-1\tarm64\nmosd\t0.1.0+git0123456789ab-1\tarm64\n' >"${IN}/manifest.tsv"
 printf '# fixture release\n\ntest material; nothing shipped.\n' >"${IN}/NOTES.md"
-printf '{"schemaVersion":1,"board":"cx3576","bootAssurance":"I1","qualification":"dev-fixture: test material, no hardware evidence"}\n' >"${IN}/evidence.json"
+cat >"${IN}/evidence.json" <<'EOF'
+{
+  "schemaVersion": 2,
+  "board": "cx3576",
+  "revision": "all",
+  "bootAssurance": "I1",
+  "qualification": "dev-fixture: test material, no hardware evidence",
+  "evidenceRefs": [{"class": "verity-root", "ref": "dev-fixture: verify/run.sh --verify"}],
+  "physicalBoundaries": {
+    "jtag": "dev-fixture: open on the bench",
+    "serialConsole": "dev-fixture: login prompt only",
+    "recoveryPath": "dev-fixture: rockusb open to physical access"
+  }
+}
+EOF
 
 RELEASE="${SCRATCH}/release"
 assemble_log="${SCRATCH}/assemble.log"
@@ -236,9 +250,34 @@ expect_gate_refusal "a channel outside the enum, edited into the manifest" \
     "nightly" "${IN}/evidence.json" \
     edit_channel
 
-printf '{"schemaVersion":1,"board":"cx3576","bootAssurance":"I9","qualification":"dev-fixture: diverged after assembly"}\n' >"${IN}/evidence-diverged.json"
+# The diverged file must itself be a VALID I2 claim (every I2 class present),
+# or the evidence-semantics refusal would fire before the divergence guard.
+cat >"${IN}/evidence-diverged.json" <<'EOF'
+{
+  "schemaVersion": 2,
+  "board": "cx3576",
+  "revision": "all",
+  "bootAssurance": "I2",
+  "qualification": "dev-fixture: diverged after assembly",
+  "evidenceRefs": [
+    {"class": "verity-root", "ref": "dev-fixture: verity suite"},
+    {"class": "ab-fallback", "ref": "dev-fixture: handshake suite"},
+    {"class": "update-negative", "ref": "dev-fixture: tampered-bundle suite"}
+  ],
+  "physicalBoundaries": {
+    "jtag": "dev-fixture: open on the bench",
+    "serialConsole": "dev-fixture: login prompt only",
+    "recoveryPath": "dev-fixture: rockusb open to physical access"
+  }
+}
+EOF
 expect_gate_refusal "evidence that diverged from the manifest after assembly" \
-    "asserts boot-assurance 'I9'" "${IN}/evidence-diverged.json" \
+    "asserts boot-assurance 'I2'" "${IN}/evidence-diverged.json" \
+    true
+
+sed 's/"bootAssurance": "I1"/"bootAssurance": "I2"/' "${IN}/evidence.json" >"${IN}/evidence-inflated.json"
+expect_gate_refusal "a claim inflated past its evidence classes" \
+    "no evidenceRefs entry of class 'ab-fallback'" "${IN}/evidence-inflated.json" \
     true
 
 REFUSAL_N="${#REFUSAL_LABELS[@]}"

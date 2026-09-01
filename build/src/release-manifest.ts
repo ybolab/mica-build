@@ -14,9 +14,11 @@
 // the files as staged, the package list comes out of the image's own
 // /usr/share/mos/manifest.tsv (the only record of what an image is made of --
 // the finalizer purges dpkg's database), the source identity comes from git,
-// and the boot-assurance level comes from a board-evidence file this module
-// only checks the shape of. A sibling effort populates real evidence; the
-// seam here is checkBoardEvidence and nothing more.
+// and the boot-assurance level comes from the committed per-board evidence
+// file (boards/<board>/evidence.json). checkBoardEvidence holds that file's
+// semantics -- the I1-I4 ladder's per-level evidence floor and the
+// unsupported-claim wording refusal -- against the ladder defined in
+// docs/design/security-model.md §5.
 //
 // The refusal order in the gate is stable so the first actionable problem is
 // deterministic, the same rule buildBundle states for itself.
@@ -79,10 +81,67 @@ export interface ReleaseManifest {
   readonly artifacts: readonly ReleaseArtifact[]
 }
 
+/** The evidence schema this tree commits, held as an equality like the manifest's. */
+export const EVIDENCE_SCHEMA_VERSION = 2
+
+/** The I1-I4 boot-assurance ladder (docs/design/security-model.md §5). */
+export const BOOT_ASSURANCE_LEVELS = ['I1', 'I2', 'I3', 'I4'] as const
+export type BootAssuranceLevel = (typeof BOOT_ASSURANCE_LEVELS)[number]
+
+/**
+ * Every class an evidence ref may carry. Each ref pairs one of these with a
+ * repo-verifiable reference -- a Makefile target, a tests/ suite, a verify/
+ * check name, or a docs/design section -- so a claim is auditable by running
+ * or reading what it cites. The set is closed: a misspelt class must not
+ * silently satisfy nothing.
+ */
+export const EVIDENCE_CLASSES = [
+  'verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative',
+] as const
+export type EvidenceClass = (typeof EVIDENCE_CLASSES)[number]
+
+/**
+ * The machine-enforced evidence FLOOR per claimed level -- necessary, not
+ * sufficient; the ladder's full qualification bar (on-board runs, dated
+ * evidence) lives in the qualification prose and the board record. Additive
+ * like the ladder itself: each level's set contains the one below.
+ */
+export const LEVEL_REQUIRED_CLASSES: Readonly<Record<BootAssuranceLevel, readonly EvidenceClass[]>> = {
+  I1: ['verity-root'],
+  I2: ['verity-root', 'ab-fallback', 'update-negative'],
+  I3: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
+  I4: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
+}
+
+/**
+ * The unsupported-claim wording: "secure boot" and "tamper-proof" in any
+ * case, joined, spaced, underscored or hyphenated. Deliberately DUMB -- no
+ * negation analysis, so even "no secure boot" trips it below I3/I4; honest
+ * prose rewords instead (docs/design/release-artifacts.md §4 states the
+ * exact rule, docs/design/security-model.md §0 bans the words from prose).
+ */
+const UNSUPPORTED_CLAIM_WORDING = /secure[\s_-]?boot|tamper[\s_-]?proof/i
+
+export interface EvidenceRef {
+  readonly class: EvidenceClass
+  readonly ref: string
+}
+
+/** The physical/debug posture, one honest sentence per port. */
+export interface PhysicalBoundaries {
+  readonly jtag: string
+  readonly serialConsole: string
+  readonly recoveryPath: string
+}
+
 export interface BoardEvidence {
   readonly board: string
-  readonly bootAssurance: string
+  /** The board revision this record covers; "all" when one record covers every revision. */
+  readonly revision: string
+  readonly bootAssurance: BootAssuranceLevel
   readonly qualification: string
+  readonly evidenceRefs: readonly EvidenceRef[]
+  readonly physicalBoundaries: PhysicalBoundaries
 }
 
 /** sha256 of a file's bytes, hex. The caller has already named the file. */
@@ -230,21 +289,26 @@ export function checkReleaseManifest(value: unknown, path: string): ReleaseManif
 }
 
 /**
- * The board-evidence file: the seam, checked for presence and shape only.
+ * The board-evidence file: the per-board/revision claim record, held against
+ * the I1-I4 ladder's semantics -- this validator and security-model.md §5 are
+ * together the ONE place those semantics live.
  *
- * What a level like "I1" MEANS, and what proof backs it, is the evidence
- * producer's contract -- deliberately not restated here, so that when real
- * evidence lands this reader does not have a second, staler copy of its
- * semantics. What IS held: the file names the board it is about (evidence for
- * the wrong board is the mix-up this field exists to catch), asserts one
- * boot-assurance level, and states a qualification.
+ * Beyond shape, three things are enforced: every claimed level is backed by
+ * its LEVEL_REQUIRED_CLASSES floor (a missing class is a refusal naming it),
+ * the physical/debug posture is stated per port, and unsupported-claim
+ * wording ("secure boot"/"tamper-proof") is refused anywhere in the file's
+ * prose unless the claim is an evidenced I3/I4 -- the class floor for which
+ * has, by that point in this function, already been enforced.
  */
 export function checkBoardEvidence(value: unknown, path: string, board: string): BoardEvidence {
   if (!isRecord(value)) {
     throw new Error(`${path} is not a JSON object`)
   }
-  if (value.schemaVersion !== 1) {
-    throw new Error(`${path} carries evidence schemaVersion ${JSON.stringify(value.schemaVersion)}; this reader holds 1`)
+  if (value.schemaVersion !== EVIDENCE_SCHEMA_VERSION) {
+    throw new Error(
+      `${path} carries evidence schemaVersion ${JSON.stringify(value.schemaVersion)}; this reader `
+      + `holds ${EVIDENCE_SCHEMA_VERSION}`,
+    )
   }
   const evBoard = requireString(value.board, 'evidence board name', path)
   if (evBoard !== board) {
@@ -253,9 +317,83 @@ export function checkBoardEvidence(value: unknown, path: string, board: string):
       + `evidence is per board and the wrong board's proves nothing here`,
     )
   }
-  const bootAssurance = requireString(value.bootAssurance, 'bootAssurance level', path)
+  const revision = requireString(value.revision, 'board revision ("all" when one record covers every revision)', path)
+  const bootAssurance = value.bootAssurance
+  if (typeof bootAssurance !== 'string' || !(BOOT_ASSURANCE_LEVELS as readonly string[]).includes(bootAssurance)) {
+    throw new Error(
+      `${path} claims boot-assurance ${JSON.stringify(bootAssurance)}, not one of `
+      + `${BOOT_ASSURANCE_LEVELS.join('/')} (the ladder in docs/design/security-model.md §5)`,
+    )
+  }
+  const level = bootAssurance as BootAssuranceLevel
   const qualification = requireString(value.qualification, 'qualification statement', path)
-  return { board: evBoard, bootAssurance, qualification }
+
+  const refsRaw = value.evidenceRefs
+  if (!Array.isArray(refsRaw) || refsRaw.length === 0) {
+    throw new Error(
+      `${path} lists no evidenceRefs; a boot-assurance claim with nothing behind it is exactly `
+      + `what this file exists to refuse`,
+    )
+  }
+  const evidenceRefs: EvidenceRef[] = []
+  for (const r of refsRaw) {
+    if (!isRecord(r)) {
+      throw new Error(`${path} carries an evidenceRefs entry that is not an object`)
+    }
+    const cls = r.class
+    if (typeof cls !== 'string' || !(EVIDENCE_CLASSES as readonly string[]).includes(cls)) {
+      throw new Error(
+        `${path} carries an evidenceRefs entry of class ${JSON.stringify(cls)}, not one of `
+        + `${EVIDENCE_CLASSES.join('/')}; a class outside the set satisfies no level and hides a typo`,
+      )
+    }
+    const ref = requireString(r.ref, `repo-verifiable reference on its '${cls}' evidence entry`, path)
+    evidenceRefs.push({ class: cls as EvidenceClass, ref })
+  }
+
+  const pbRaw = value.physicalBoundaries
+  if (!isRecord(pbRaw)) {
+    throw new Error(
+      `${path} carries no physicalBoundaries block; the jtag/serialConsole/recoveryPath posture `
+      + `is part of the claim (docs/design/manufacturing.md §6)`,
+    )
+  }
+  const jtag = requireString(pbRaw.jtag, 'physicalBoundaries.jtag statement', path)
+  const serialConsole = requireString(pbRaw.serialConsole, 'physicalBoundaries.serialConsole statement', path)
+  const recoveryPath = requireString(pbRaw.recoveryPath, 'physicalBoundaries.recoveryPath statement', path)
+
+  const present = new Set(evidenceRefs.map(r => r.class))
+  for (const cls of LEVEL_REQUIRED_CLASSES[level]) {
+    if (!present.has(cls)) {
+      throw new Error(
+        `${path} claims boot-assurance ${level} with no evidenceRefs entry of class '${cls}'; `
+        + `${level} requires every class of [${LEVEL_REQUIRED_CLASSES[level].join(', ')}], and a `
+        + `claim above its evidence fails publication`,
+      )
+    }
+  }
+
+  if (level !== 'I3' && level !== 'I4') {
+    const texts = [qualification, ...evidenceRefs.map(r => r.ref), jtag, serialConsole, recoveryPath]
+    const hit = texts.find(t => UNSUPPORTED_CLAIM_WORDING.test(t))
+    if (hit !== undefined) {
+      const word = (UNSUPPORTED_CLAIM_WORDING.exec(hit) as RegExpExecArray)[0]
+      throw new Error(
+        `${path} says ${JSON.stringify(word)} while claiming boot-assurance ${level}; that wording `
+        + `is refused below an evidenced I3/I4 claim, even in a negation -- reword the statement `
+        + `(matching rule: docs/design/release-artifacts.md §4)`,
+      )
+    }
+  }
+
+  return {
+    board: evBoard,
+    revision,
+    bootAssurance: level,
+    qualification,
+    evidenceRefs,
+    physicalBoundaries: { jtag, serialConsole, recoveryPath },
+  }
 }
 
 // The SBOM inputs: /usr/share/mos/manifest.tsv, the image's own bill of

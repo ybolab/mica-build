@@ -19,8 +19,12 @@ import { makeWorkDir } from './paths.ts'
 import {
   ARTIFACT_ROLES,
   assembleRelease,
+  BOOT_ASSURANCE_LEVELS,
   builderImagesFrom,
   checkBoardEvidence,
+  EVIDENCE_CLASSES,
+  EVIDENCE_SCHEMA_VERSION,
+  LEVEL_REQUIRED_CLASSES,
   checkReleaseManifest,
   fileSha256,
   gateReleaseDir,
@@ -45,10 +49,24 @@ const TSV = '#package\tversion\tarchitecture\n'
   + 'mosd\t0.1.0+git0123456789ab-1\tarm64\n'
 
 const EVIDENCE = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   board: 'cx3576',
+  revision: 'all',
   bootAssurance: 'I1',
   qualification: 'dev-fixture: test material, no hardware evidence',
+  evidenceRefs: [
+    { class: 'verity-root', ref: 'dev-fixture: verify/run.sh --verify' },
+  ],
+  physicalBoundaries: {
+    jtag: 'dev-fixture: open on the bench',
+    serialConsole: 'dev-fixture: login prompt only',
+    recoveryPath: 'dev-fixture: rockusb open to physical access',
+  },
+}
+
+/** A ref of every class, so any level's floor can be assembled by slicing. */
+function refsOf(classes: readonly string[]): { class: string, ref: string }[] {
+  return classes.map(c => ({ class: c, ref: `dev-fixture: ${c} suite` }))
 }
 
 const WORK = makeWorkDir('release-test')
@@ -215,11 +233,13 @@ describe('checkReleaseManifest holds the schema, field by field', () => {
 
 // The board-evidence seam.
 
-describe('checkBoardEvidence holds presence and shape, and nothing more', () => {
-  test('POSITIVE CONTROL: the dev fixture shape is accepted', () => {
+describe('checkBoardEvidence holds shape: the v2 claim record, field by field', () => {
+  test('POSITIVE CONTROL: the dev fixture is accepted and returned typed', () => {
     const e = checkBoardEvidence(EVIDENCE, '/b/evidence.json', 'cx3576')
     expect(e.bootAssurance).toBe('I1')
-    expect(e.qualification).toContain('dev-fixture')
+    expect(e.revision).toBe('all')
+    expect(e.evidenceRefs).toEqual([{ class: 'verity-root', ref: 'dev-fixture: verify/run.sh --verify' }])
+    expect(e.physicalBoundaries.recoveryPath).toContain('rockusb')
   })
 
   test('evidence for the WRONG board is refused: it proves nothing here', () => {
@@ -227,15 +247,146 @@ describe('checkBoardEvidence holds presence and shape, and nothing more', () => 
       .toThrow(/evidence for board 'cx3576' and this release is for 'x64'/)
   })
 
-  test('a missing schemaVersion, level or qualification each get their own sentence', () => {
-    expect(() => checkBoardEvidence({ ...EVIDENCE, schemaVersion: 2 }, '/e', 'cx3576'))
-      .toThrow(/evidence schemaVersion 2/)
-    expect(() => checkBoardEvidence({ ...EVIDENCE, bootAssurance: '' }, '/e', 'cx3576'))
-      .toThrow(/carries no bootAssurance level/)
-    expect(() => checkBoardEvidence({ ...EVIDENCE, qualification: undefined }, '/e', 'cx3576'))
-      .toThrow(/carries no qualification statement/)
-    expect(() => checkBoardEvidence([], '/e', 'cx3576')).toThrow(/is not a JSON object/)
+  const cases: [string, (e: Record<string, unknown>) => unknown, RegExp][] = [
+    ['not an object', () => [], /is not a JSON object/],
+    ['the RETIRED v1 schema: the reader holds an equality', e => ({ ...e, schemaVersion: 1 }),
+      /evidence schemaVersion 1; this reader holds 2/],
+    ['a future schema', e => ({ ...e, schemaVersion: 3 }), /evidence schemaVersion 3/],
+    ['no revision', e => ({ ...e, revision: undefined }), /carries no board revision/],
+    ['a level outside the ladder', e => ({ ...e, bootAssurance: 'I9' }),
+      /claims boot-assurance "I9", not one of I1\/I2\/I3\/I4/],
+    ['an empty level', e => ({ ...e, bootAssurance: '' }), /not one of I1\/I2\/I3\/I4/],
+    ['no qualification', e => ({ ...e, qualification: undefined }), /carries no qualification statement/],
+    ['evidenceRefs absent', e => ({ ...e, evidenceRefs: undefined }), /lists no evidenceRefs/],
+    ['evidenceRefs empty', e => ({ ...e, evidenceRefs: [] }), /lists no evidenceRefs/],
+    ['a ref entry that is not an object', e => ({ ...e, evidenceRefs: ['verity-root'] }),
+      /evidenceRefs entry that is not an object/],
+    ['a class outside the set', e => ({ ...e, evidenceRefs: [{ class: 'verityroot', ref: 'x' }] }),
+      /class "verityroot", not one of verity-root\/ab-fallback\/update-negative\/vendor-boot-capability\/signature-negative/],
+    ['a ref with no reference', e => ({ ...e, evidenceRefs: [{ class: 'verity-root', ref: '' }] }),
+      /carries no repo-verifiable reference on its 'verity-root' evidence entry/],
+    ['no physicalBoundaries block', e => ({ ...e, physicalBoundaries: undefined }),
+      /carries no physicalBoundaries block/],
+    ['an empty jtag statement', e => ({ ...e, physicalBoundaries: { ...EVIDENCE.physicalBoundaries, jtag: '' } }),
+      /carries no physicalBoundaries\.jtag statement/],
+    ['a missing serialConsole statement',
+      e => ({ ...e, physicalBoundaries: { jtag: 'x', recoveryPath: 'x' } }),
+      /carries no physicalBoundaries\.serialConsole statement/],
+    ['a missing recoveryPath statement',
+      e => ({ ...e, physicalBoundaries: { jtag: 'x', serialConsole: 'x' } }),
+      /carries no physicalBoundaries\.recoveryPath statement/],
+  ]
+  for (const [label, mutate, want] of cases) {
+    test(`refused: ${label}`, () => {
+      expect(() => checkBoardEvidence(mutate({ ...EVIDENCE }), '/e', 'cx3576')).toThrow(want)
+    })
+  }
+})
+
+describe('checkBoardEvidence holds the ladder: each level, its class floor', () => {
+  test('the enforced sets are the shipped ones: the matrix below drives THIS map', () => {
+    // The per-level matrix reads LEVEL_REQUIRED_CLASSES, so a weakened map
+    // would weaken the matrix with it; pinning the map literally here is
+    // what makes the matrix evidence rather than a tautology.
+    expect(BOOT_ASSURANCE_LEVELS).toEqual(['I1', 'I2', 'I3', 'I4'])
+    expect(EVIDENCE_SCHEMA_VERSION).toBe(2)
+    expect(LEVEL_REQUIRED_CLASSES).toEqual({
+      I1: ['verity-root'],
+      I2: ['verity-root', 'ab-fallback', 'update-negative'],
+      I3: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
+      I4: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
+    })
+    for (const level of BOOT_ASSURANCE_LEVELS) {
+      for (const c of LEVEL_REQUIRED_CLASSES[level]) expect(EVIDENCE_CLASSES).toContain(c)
+    }
   })
+
+  for (const level of BOOT_ASSURANCE_LEVELS) {
+    const required = LEVEL_REQUIRED_CLASSES[level]
+
+    test(`POSITIVE CONTROL: ${level} with every required class is accepted`, () => {
+      const e = { ...EVIDENCE, bootAssurance: level, evidenceRefs: refsOf(required) }
+      expect(checkBoardEvidence(e, '/e', 'cx3576').bootAssurance).toBe(level)
+    })
+
+    for (const dropped of required) {
+      test(`${level} without a '${dropped}' ref is a refusal NAMING the class`, () => {
+        const e = {
+          ...EVIDENCE,
+          bootAssurance: level,
+          evidenceRefs: refsOf(required.filter(c => c !== dropped)),
+        }
+        // The I1/verity-root case empties the list; refill with an unrelated
+        // present class so the emptiness guard is not the one that fires.
+        if (e.evidenceRefs.length === 0) e.evidenceRefs = refsOf(['signature-negative'])
+        expect(() => checkBoardEvidence(e, '/e', 'cx3576'))
+          .toThrow(new RegExp(`claims boot-assurance ${level} with no evidenceRefs entry of class '${dropped}'`))
+      })
+    }
+  }
+})
+
+describe('checkBoardEvidence refuses unsupported-claim wording below I3/I4', () => {
+  const spellings = ['secure boot', 'Secure-Boot', 'secureboot', 'SECURE_BOOT', 'tamper-proof', 'tamper proof', 'Tamperproof']
+  for (const word of spellings) {
+    test(`"${word}" in the qualification of an I1 claim is refused, quoting the match`, () => {
+      const e = { ...EVIDENCE, qualification: `this device has ${word}, honestly` }
+      expect(() => checkBoardEvidence(e, '/e', 'cx3576'))
+        .toThrow(/while claiming boot-assurance I1; that wording is refused below an evidenced I3\/I4 claim/)
+    })
+  }
+
+  test('the scan covers ref strings and every physicalBoundaries statement, not just qualification', () => {
+    const inRef = { ...EVIDENCE, evidenceRefs: [{ class: 'verity-root', ref: 'the secure boot suite' }] }
+    expect(() => checkBoardEvidence(inRef, '/e', 'cx3576')).toThrow(/"secure boot" while claiming/)
+    const inJtag = { ...EVIDENCE, physicalBoundaries: { ...EVIDENCE.physicalBoundaries, jtag: 'tamper-proof header' } }
+    expect(() => checkBoardEvidence(inJtag, '/e', 'cx3576')).toThrow(/"tamper-proof" while claiming/)
+  })
+
+  test('a NEGATION is refused too: the matcher is deliberately dumb', () => {
+    const e = { ...EVIDENCE, qualification: 'no secure boot is claimed for this board' }
+    expect(() => checkBoardEvidence(e, '/e', 'cx3576')).toThrow(/even in a negation/)
+  })
+
+  test('POSITIVE CONTROL: near-miss wording ("tampered-bundle") passes at I1', () => {
+    const e = { ...EVIDENCE, qualification: 'I2 is pending the tampered-bundle and rollback suites' }
+    expect(checkBoardEvidence(e, '/e', 'cx3576').bootAssurance).toBe('I1')
+  })
+
+  test('POSITIVE CONTROL: at an evidenced I4 the wording is permitted', () => {
+    const e = {
+      ...EVIDENCE,
+      bootAssurance: 'I4',
+      evidenceRefs: refsOf(LEVEL_REQUIRED_CLASSES.I4),
+      qualification: 'hardware-rooted secure boot, evidenced by every cited class on this revision',
+    }
+    expect(checkBoardEvidence(e, '/e', 'cx3576').bootAssurance).toBe('I4')
+  })
+
+  test('an I3 claim carrying the wording but MISSING a class is still the class refusal', () => {
+    // The wording allowance must not open before the floor is enforced.
+    const e = {
+      ...EVIDENCE,
+      bootAssurance: 'I3',
+      evidenceRefs: refsOf(LEVEL_REQUIRED_CLASSES.I3.filter(c => c !== 'signature-negative')),
+      qualification: 'secure boot',
+    }
+    expect(() => checkBoardEvidence(e, '/e', 'cx3576'))
+      .toThrow(/claims boot-assurance I3 with no evidenceRefs entry of class 'signature-negative'/)
+  })
+})
+
+describe('the COMMITTED board evidence is valid and honest to this tree', () => {
+  for (const board of ['cx3576', 'x64']) {
+    test(`boards/${board}/evidence.json passes its own validator at schema ${EVIDENCE_SCHEMA_VERSION}`, () => {
+      const path = join(import.meta.dir, '..', '..', 'boards', board, 'evidence.json')
+      const e = checkBoardEvidence(JSON.parse(readFileSync(path, 'utf8')), path, board)
+      // No negative-update suite exists in this tree, so no board may claim
+      // I2 or above; cx3576 additionally must never claim I3/I4 while
+      // CONFIG_FIT_SIGNATURE is configured nowhere (docs/design/boards.md §8).
+      expect(e.bootAssurance).toBe('I1')
+    })
+  }
 })
 
 // The SBOM inputs and derivations.
@@ -380,6 +531,15 @@ describe('assembleRelease writes a directory the gate passes, from measured fact
     writeFileSync(inputs.evidencePath, JSON.stringify({ ...EVIDENCE, board: 'x64' }))
     expect(() => assembleRelease(inputs)).toThrow(/evidence for board 'x64'/)
   })
+
+  test('a claim above its evidence classes is refused at assembly, naming the missing class', () => {
+    const inputs = fixture()
+    writeFileSync(inputs.evidencePath, JSON.stringify(
+      { ...EVIDENCE, bootAssurance: 'I3', evidenceRefs: refsOf(LEVEL_REQUIRED_CLASSES.I2) },
+    ))
+    expect(() => assembleRelease(inputs))
+      .toThrow(/claims boot-assurance I3 with no evidenceRefs entry of class 'vendor-boot-capability'/)
+  })
 })
 
 // The publication gate, mutation by mutation.
@@ -443,9 +603,26 @@ describe('the gate refuses each gap by name, proven RED against an assembled fix
 
   test('evidence that DIVERGED from the manifest after assembly is refused', () => {
     const { dir, evidence } = assembled()
-    writeFileSync(evidence, JSON.stringify({ ...EVIDENCE, bootAssurance: 'I9' }))
+    // The diverged file must itself be a VALID claim, or the semantics
+    // refusal would fire before the divergence guard under test.
+    writeFileSync(evidence, JSON.stringify(
+      { ...EVIDENCE, bootAssurance: 'I2', evidenceRefs: refsOf(LEVEL_REQUIRED_CLASSES.I2) },
+    ))
     expect(() => gateReleaseDir(dir, evidence))
-      .toThrow(/asserts boot-assurance 'I9' and manifest\.json records 'I1'/)
+      .toThrow(/asserts boot-assurance 'I2' and manifest\.json records 'I1'/)
+  })
+
+  test('evidence whose CLAIM INFLATED past its classes after assembly is refused at the gate', () => {
+    const { dir, evidence } = assembled()
+    writeFileSync(evidence, JSON.stringify({ ...EVIDENCE, bootAssurance: 'I2' }))
+    expect(() => gateReleaseDir(dir, evidence))
+      .toThrow(/claims boot-assurance I2 with no evidenceRefs entry of class 'ab-fallback'/)
+  })
+
+  test('forbidden wording INJECTED into the evidence after assembly is refused at the gate', () => {
+    const { dir, evidence } = assembled()
+    writeFileSync(evidence, JSON.stringify({ ...EVIDENCE, qualification: 'verified secure boot' }))
+    expect(() => gateReleaseDir(dir, evidence)).toThrow(/"secure boot" while claiming boot-assurance I1/)
   })
 
   test('a channel edited in the manifest is caught by the schema re-validation', () => {
