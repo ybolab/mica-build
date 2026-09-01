@@ -76,9 +76,11 @@ impl Fixture {
             &repo,
             &keys_dir,
             &bundle,
-            None,
             VERITY_ROOT_HASH,
-            Some("1.0.0"),
+            repo::AddOptions {
+                release_version: Some("1.0.0"),
+                ..Default::default()
+            },
             valid_expirations(),
         )
         .await

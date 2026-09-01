@@ -6,30 +6,34 @@ halves of the TUF trust model because they share one metadata format:
 - the **release side** (`rauc-sign`, phase 1): runs on a build host, never on a
   device, and its output is static content — a directory that any HTTP server
   or object store can serve unchanged;
-- the **device side** (`rauc-verify`, phase 2, first half): verifies a
+- the **device side**: `rauc-verify` (phase 2, first half) verifies a
   LOCAL copy of that directory from a pinned trusted root, with persistent
-  rollback protection. It exists and is exercised offline by the test suite;
-  nothing ships it to a device yet (see the provisioning section below).
+  rollback protection, and `rauc-update` (phase 2, second half) adds the
+  transport on top of the same walk — compatibility selection from signed
+  release metadata, resumable download into a bounded reserve directory, and
+  the offline "lockbox" import. Both exist and are exercised offline by the
+  test suite; nothing ships them to a device yet (see the provisioning
+  section below).
 
 ## Contents
 
-Two binaries, both from cargo's auto-discovery — there is no `[[bin]]` section,
+Three binaries, all from cargo's auto-discovery — there is no `[[bin]]` section,
 so each binary's name is the thing that declares it:
 
 - `rauc-sign` — the TUF signing tool (phase 1). Creates and
-  maintains the static TUF repository that pins RAUC bundles. Named by the
-  package, with `src/main.rs`.
+  maintains the static TUF repository that pins RAUC bundles, the release
+  manifest beside them (`add --manifest`), and produces offline lockboxes
+  (`lockbox`). Named by the package, with `src/main.rs`.
 - `rauc-verify` — the device-side metadata and target verifier
   (phase 2 first half). Walks the metadata from a pinned root and
   prints a verified local target path for an installer to consume. Named by
   its own filename, `src/bin/rauc-verify.rs`.
+- `rauc-update` — the device-side update client (phase 2 second half):
+  `sync`/`check`/`fetch`/`import`, the section below. Named by its own
+  filename, `src/bin/rauc-update.rs`.
 
-Two neighbours that are deliberately not here:
-
-- an offline update bundle builder (the USB/SD "lockbox" carrying the same
-  bundle plus full metadata) is planned and unwritten;
-- delta needs no tooling: RAUC adaptive updates work against the plain bundle
-  over HTTP range requests.
+One neighbour that is deliberately not here: delta needs no tooling — RAUC
+adaptive updates work against the plain bundle over HTTP range requests.
 
 ## Phase-1 scope of `rauc-sign`
 
@@ -42,7 +46,9 @@ Explicitly out of scope for the whole crate, still:
 - the Uptane director/image repository split — this is a single image
   repository;
 - delegated targets roles and hardware-backed key stores;
-- transport: nothing here fetches metadata over a network, on either side;
+- transport on the **release** side: `rauc-sign` writes a directory; how it
+  is served is the hosting decision `release-artifacts.md` records as open.
+  (Device-side transport is now partly in scope: `rauc-update`, below.)
 - mosd's install orchestration (RAUC install/confirm) — named as roadmap by
 - RAUC's own CMS bundle signature, which is a separate key hierarchy applied
   by `rauc bundle` at build time.
@@ -119,9 +125,83 @@ rauc-verify --repo <dir> --root <pinned root.json> --state <state.json> \
 # <dir>/targets/<sha256>.update-1.0.0.raucb
 ```
 
-What the second half of phase 2 still owes: transport (fetching the repository
-onto the device), the mosd orchestration that calls this verifier and RAUC,
-and the provisioning below.
+What phase 2 still owes after `rauc-update` (below): the mosd orchestration
+that drives this client and RAUC, and the provisioning below.
+
+## Phase 2, second half: the update client
+
+`rauc-update` is the transport and policy layer over the same verified walk —
+it obtains a `Repository` only through the `client` module, so there is no
+path from it to a bundle whose metadata and bytes were not verified first,
+and no flag skips any of that. Four subcommands, same scriptable contract
+(exit 0 = it happened; one-line stderr reason otherwise):
+
+- `sync --url <base> --repo <dir>` mirrors the repository's **metadata** over
+  plain HTTP into a local directory: the `<n>.root.json` chain, then
+  timestamp → snapshot → targets by the version numbers the fetched documents
+  name. The mirror is unverified input to the verified walk, never a
+  substitute for it; every file is capped at 1 MiB, so a hostile mirror
+  cannot buffer-exhaust the device before verification runs. A deployment
+  can equally rsync the repository and skip `sync` entirely.
+- `check --repo <dir> --root <pinned> --state <state>` verifies from the
+  pinned root (advancing the same persistent rollback state `rauc-verify`
+  keeps), then selects the newest target compatible with this device: board,
+  profile, channel (`--channel`, default `stable`), manifest schema floor
+  (equality with 1, the same rule the release gate holds), and version
+  strictly newer than the running one. Every rejected candidate is printed
+  with its reason; `none` exits 2 so a poll loop can tell "up to date" from
+  "broken". A downgrade needs `--allow-downgrade` and is logged.
+  The compatibility facts come from the **signed** custom block `rauc-sign
+  add --manifest` stamps on the bundle target — no unsigned side channel.
+- `fetch ... --url <base> --reserve-dir <dir> --max-bytes <n>` downloads the
+  selected bundle with HTTP range requests: a `.part` file resumes where it
+  left off, the completed size may never exceed the byte budget together
+  with what the reserve directory already holds, a download the filesystem
+  visibly cannot hold is refused up front, and the file loses its `.part`
+  suffix only when sha256 and length agree with the signed metadata — a
+  mismatch deletes the partial. The last stdout line is the verified local
+  path.
+- `import --lockbox <dir> ...` is the offline path: the same selection and
+  verification over a mounted lockbox directory, then the same budgeted
+  staging into the reserve.
+
+Device identity (board/profile/running version) comes from
+`/usr/share/mos/release-identity.env` (`BOARD=`/`PROFILE=`/`VERSION=` lines)
+or explicit `--board`/`--profile`/`--current-version` flags. **Nothing in the
+image pipeline writes that file yet** — shipping it is the image side's half
+of this contract.
+
+The **reserve directory is a contract, not a mechanism**: who provisions it,
+on which partition, and how many bytes `--max-bytes` may promise is a
+storage-policy decision owned outside this crate. The client holds its side —
+never exceed the budget, refuse what the filesystem cannot hold, never leave
+an unverified file under a final name.
+
+HTTP is deliberately minimal: plain `http` only, `GET` only, no TLS, no
+redirects, no chunked bodies, every operation timeout-bounded. Integrity and
+authenticity come from the metadata walk (TUF's threat model assumes a
+hostile mirror); what plain HTTP does not provide is confidentiality — a
+deployment that needs it terminates TLS at a local proxy or syncs the
+repository out of band. Growing a TLS stack here is a deliberate-dependency
+decision recorded as **[not taken]**, not an oversight.
+
+With `--install` the staged path is handed to `rauc install`. mosd's D-Bus
+`InstallUpdate` is the orchestrated route (progress lands in mosd's live
+state); calling it needs a bus client this crate deliberately does not carry,
+so the operator command for that route is documented in
+`docs/design/release-signing.md` instead.
+
+## The offline lockbox
+
+`rauc-sign lockbox --repo <repo> --out <dir> [--target NAME]...` produces the
+USB/SD "lockbox": the complete `metadata/` set plus the named targets' files
+(all targets when none is named; a named bundle brings its pinned manifest
+along). The output is itself a repository directory, which is the point —
+`rauc-update import` and `rauc-verify` walk it exactly as an online mirror,
+pinned root, rollback state and all. The metadata is carried verbatim (the
+signing keys are not present and not wanted), so a partial lockbox still
+lists every published target; `import` verifies exactly the target it
+selects, and `rauc-sign verify` passes only on a full lockbox.
 
 ## Trust anchor provisioning
 
@@ -153,9 +233,12 @@ to be made deliberately, not defaulted. Candidate paths, none implemented:
   come from somewhere (factory default or physical ceremony), and the import
   path is an attack surface that must enforce the chain rule strictly.
 
-Until one of these is chosen and built, `rauc-verify` is a tool a test
-(or a person with a shell) points at a directory — that is the whole truth of
-its deployment status.
+Until one of these is chosen and built, `rauc-verify` and `rauc-update` are
+tools a test (or a person with a shell) points at a directory — that is the
+whole truth of their deployment status. The same honesty applies to the
+device identity file `rauc-update` defaults to
+(`/usr/share/mos/release-identity.env`): defined here, shipped by nothing
+yet.
 
 ## Repository layout produced
 
@@ -210,12 +293,16 @@ cargo run -p rauc-sign -- init \
   --snapshot-expires 2026-11-01T00:00:00Z \
   --timestamp-expires 2026-09-01T00:00:00Z
 
-# publish a release bundle (online keys only)
+# publish a release bundle (online keys only). --manifest pins the release
+# manifest.json as its own target beside the bundle and stamps the signed
+# board/profile/channel/version selection block the device client reads;
+# it is refused if the manifest does not pin the bundle being published.
 cargo run -p rauc-sign -- add \
   --repo _out/tuf \
   --target _out/cx3576/update-1.0.0.raucb \
   --verity-root-hash <64 hex chars from the RAUC bundle> \
   --release-version 1.0.0 \
+  --manifest _out/cx3576/release/manifest.json \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ...
 
 # refresh timestamp/snapshot before they expire (online keys only)
@@ -245,6 +332,25 @@ cargo run -p rauc-sign -- verify --repo _out/tuf --root <trusted root.json> [--d
 cargo run -p rauc-sign --bin rauc-verify -- \
   --repo _out/tuf --root <pinned root.json> --state _out/uptane-state.json \
   [--target update-1.0.0.raucb]
+
+# produce an offline lockbox (no keys involved; static file copies)
+cargo run -p rauc-sign -- lockbox --repo _out/tuf --out /media/usb/lockbox \
+  [--target update-1.0.0.raucb]
+
+# device-side update client: mirror metadata, select, download, import
+cargo run -p rauc-sign --bin rauc-update -- sync \
+  --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
+cargo run -p rauc-sign --bin rauc-update -- check \
+  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  [--identity /usr/share/mos/release-identity.env | --board cx3576 --profile prod --current-version 1.0.0] \
+  [--channel stable] [--allow-downgrade]
+cargo run -p rauc-sign --bin rauc-update -- fetch \
+  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --url http://mirror.example/tuf \
+  --reserve-dir /data/update --max-bytes 500000000 [--install]
+cargo run -p rauc-sign --bin rauc-update -- import \
+  --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
+  --reserve-dir /data/update --max-bytes 500000000 [--install]
 ```
 
 All expiration instants are explicit RFC 3339 arguments. Nothing derives an
@@ -268,7 +374,19 @@ Same five checks in the same order, against this workspace's own `Cargo.lock`
 and `deny.toml`. `.github/workflows/check.yml` runs both scripts, and the
 second one is the only thing on that job that checks this code.
 
-The device-side client is tested against the same in-repo fixture the signer
+The update client has its own suite (`tests/update.rs`), against the same
+fixture plus a loopback static HTTP server with range support: manifest
+publication and the signed selection block, selection across every
+compatibility axis (board, profile, channel, schema floor, version — each
+rejection with a discriminating reason), downgrade admission only under the
+explicit flag, resumable download (fresh, resumed with a real range request,
+idempotent re-fetch), the byte budget (too-small budget, budget already
+spent), digest refusal with partial deletion (corrupted partial, tampered
+bundle), metadata sync including the per-file cap, and the lockbox round
+trip (full lockbox verifies whole; partial lockbox imports its selected
+target; tampered lockbox refused).
+
+The device-side verifier is tested against the same in-repo fixture the signer
 tests use (`pkgs/rauc-sign/tests/`): the honest publish sequence verifies, and
 a published rollback, a tampered target, a tampered-metadata edit, expired
 metadata (timestamp and root alike), an unmet root threshold, a complete
