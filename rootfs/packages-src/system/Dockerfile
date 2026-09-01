@@ -146,7 +146,8 @@ RUN set -eu; \
     done; \
     for f in mos-apply-hostname.service mos-seed-home.service mos-seed-root.service \
              mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
-             var-lib-mos.mount etc-hostname.mount etc-ssh.mount home.mount root.mount \
+             var-lib-mos.mount var-lib-systemd-timesync.mount etc-hostname.mount \
+             etc-ssh.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount; do \
         install -D -m 0644 "/in/overlay/etc/systemd/system/${f}" \
             "${R}/etc/systemd/system/${f}"; \
@@ -188,7 +189,8 @@ RUN set -eu; \
         "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
-             mos-seed-root.service var-lib-mos.mount etc-ssh.mount etc-hostname.mount \
+             mos-seed-root.service var-lib-mos.mount var-lib-systemd-timesync.mount \
+             etc-ssh.mount etc-hostname.mount \
              home.mount root.mount usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
         ln -s "/etc/systemd/system/${u}" \
