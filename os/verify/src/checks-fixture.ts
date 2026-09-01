@@ -231,7 +231,7 @@ const FSTAB_IN = join(OS_DIR, 'rootfs', 'overlay', 'etc', 'fstab.in')
  * construction -- the check would find what the fixture was built from, and an
  * edit to that one constant would move both sides at once and stay green.
  */
-const ORACLE_BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
+const ORACLE_BUILTIN_MARKUP = '<script type="module" crossorigin src="/ui/assets/app.js"></script>'
 
 /** For the drift assertion in checks-root.test.ts; see above. */
 export const FIXTURE_BUILTIN_MARKUP = ORACLE_BUILTIN_MARKUP
@@ -337,7 +337,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   mkdirSync(join(root, '/etc'), { recursive: true })
   symlinkSync('../run/systemd/resolve/stub-resolv.conf', join(root, '/etc/resolv.conf'))
 
-  // --- apid, carrying the escape page's markup ---
+  // --- apid, carrying the built-in UI's embedded index markup ---
   file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}... trailer\n`)
 
   // --- the RAUC keyring, byte-equal to the trust root the fixture's ca/ holds ---

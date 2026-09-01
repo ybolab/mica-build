@@ -348,15 +348,15 @@ function enabledCheck(c: EnabledCase): CheckCase {
 
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
-// A fragment of the escape page as rendered, verbatim. Markup and
-// not a bare route constant: "/builtin/deactivate" alone would still be in the
-// binary after the pages moved out to an on-disk asset tree, which is the one
-// change this catches.
+// A fragment of the built-in UI's index.html as apid embeds it, verbatim.
+// Markup and not a bare route constant: "/ui/assets/app.js" alone would still
+// be in the binary -- the asset route registers that path -- after index.html
+// moved out to an on-disk asset tree, which is the one change this catches.
 //
 // EXPORTED so that checks-fixture.ts's independent transcription of the same
 // string can be asserted equal to it. Two independent transcriptions of one
 // string keep each other honest; a shared constant would not.
-export const BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
+export const BUILTIN_MARKUP = '<script type="module" crossorigin src="/ui/assets/app.js"></script>'
 const KEYRING_PATH = '/etc/rauc/keyring.pem'
 const PACKED_MOUNTPOINTS = [
   '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
@@ -551,15 +551,16 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
           ? `${what}: the packed read-only root ships nothing at or under ${BUILTIN_PREFIX}, so `
             + `section 6.2's compiled-in page is the whole of it`
           : `${what}: the packed read-only root ships ${shipped}. Section 6.2 guarantees the `
-            + `built-in UI is maud expansions inside ${APID_BIN} and nothing else`,
+            + `built-in UI is compiled into ${APID_BIN} and nothing else`,
       )]
     },
   },
 
   {
-    // The image-side reading of "no include_str!, no include_bytes!, no asset
-    // directory": it asserts the OUTCOME -- the rendered markup is IN the
-    // binary -- rather than enumerating the mechanisms by which it might not be.
+    // The image-side reading of "the built-in UI ships inside the binary": it
+    // asserts the OUTCOME -- the embedded index markup is IN the binary --
+    // rather than naming the mechanism (today an include_bytes! of ui/dist)
+    // by which it got there or might stop being there.
     id: 'packed-builtin-in-binary',
     shell: { pass: 'catches a built-in escape that is no longer inside the binary' },
     run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -580,9 +581,9 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
         'packed-builtin-in-binary',
         found,
         found
-          ? `${what}: the ${APID_BIN} packed in this image carries the escape page's own rendered `
-            + `markup (${BUILTIN_MARKUP}), so section 6.3's one documented action needs nothing off the disk`
-          : `${what}: the ${APID_BIN} packed in this image does NOT carry the escape page's rendered `
+          ? `${what}: the ${APID_BIN} packed in this image carries the built-in UI's own index `
+            + `markup (${BUILTIN_MARKUP}), so section 6.3's escape needs nothing off the disk`
+          : `${what}: the ${APID_BIN} packed in this image does NOT carry the built-in UI's index `
             + `markup (${BUILTIN_MARKUP})`,
       )]
     },
