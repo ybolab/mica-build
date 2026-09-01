@@ -1,6 +1,6 @@
 # PLAN-044 Add RTC, NTP and timezone management
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-01 13:18
 - **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-280](../task/RFCT-280.md)
@@ -67,3 +67,39 @@ Out of scope: PTP, NTS, user-configurable polling periods or an NTP pause switch
 - 2026-08-31: Synchronization policy was fixed at adaptive 32-2048 second
   polling, 30-second retry and 60-second saved-clock intervals.
 - 2026-09-01: Split from PLAN-037 as a software plus board-validation unit.
+
+## Completion (2026-09-01)
+
+- **Base service** (RFCT-280a): `systemd-timesyncd` installed via
+  `mos-system` Depends, enabled statically in `sysinit.target.wants`, pinned
+  policy shipped in `/etc/systemd/timesyncd.conf.d/50-mos.conf`; held by the
+  `verify` checks `packed-timesyncd-installed/-enabled/-policy` and
+  `packed-localtime-utc`.
+- **Settings** (schema v9): exactly `time.ntp.servers` and `time.timezone`,
+  validated by `mosd_settings::validate_ntp_servers` /
+  `validate_timezone_name` (deterministic tzdata-name grammar; existence
+  checked at reconcile time), enforced through `Settings::set` itself.
+  Migration `MigrateV8ToV9` stamps only; `down` discards the subtree.
+- **Reconciler**: `reconciler/time.rs` renders the server list to
+  `/run/systemd/timesyncd.conf.d/60-mos-servers.conf` (restart on change) and
+  the timezone to `/run/mos/timezone`. `/etc/localtime` is deliberately never
+  touched — a bind over a symlink into zoneinfo would shadow the UTC zone
+  itself; see docs/design/time.md §2.
+- **Clock floor**: `/mnt/state/timesync` (seeded, `systemd-timesync`-owned)
+  bound onto `/var/lib/systemd/timesync` by `var-lib-systemd-timesync.mount`,
+  ordered before timesyncd; boot ordering RTC → saved floor → network time →
+  TLS/TUF documented in docs/design/time.md §3.
+- **Status**: `GetTimeStatus` on the bus, `GET /api/v1/time/status` over
+  HTTPS: `synchronized` / `synchronizing` / `offline-degraded` /
+  `invalid-source` (+ `unknown` when timesyncd is unobservable), with
+  step-versus-slew correction evidence at timesyncd's own 0.4 s boundary.
+  Read-only; nothing can pause retries.
+- **API/UI**: the settings write route admits the two new dot-paths (typed
+  shapes, 422 with the owning crate's sentence); the built-in UI gains a Time
+  page (servers, timezone, live status) and the OpenAPI document the new
+  route.
+- **NOT done here — board validation**: cx3576 RTC hardware backup-power
+  validation (driver enablement evidence, oscillator/backup behaviour) is
+  hardware-dependent, was NOT performed in this change, and is escalated by
+  the coordinating workstream. The INT item above stays open until a bench
+  measurement exists; nothing in this record claims it.
