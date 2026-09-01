@@ -42,6 +42,32 @@ const phase: Phase = {
     const ui = await client.get("/api/v1/ui");
     report.expectStatus(ui, 200, "GET /api/v1/ui reports UI selection through the API");
     report.expectJson(ui, { mode: "builtIn" }, "the factory image reports the built-in UI active", { subset: true });
+    const uiStatus = parseObject(ui.body);
+    report.check(
+      uiStatus !== undefined && !("availableCustom" in uiStatus),
+      "the factory UiStatus has no optional availableCustom candidate",
+      `actual body: ${ui.body}`,
+    );
+
+    const uiWithoutCsrf = await client.request("PUT", "/api/v1/ui/active");
+    report.expectStatus(uiWithoutCsrf, 403, "PUT /api/v1/ui/active without CSRF is refused");
+    report.expectJson(
+      uiWithoutCsrf,
+      { error: { code: "csrf_invalid", source: "apid" } },
+      "the custom UI selector uses the common CSRF envelope",
+      { subset: true },
+    );
+
+    const unavailableUi = await client.request("PUT", "/api/v1/ui/active", {
+      headers: { "X-CSRF-Token": csrf },
+    });
+    report.expectStatus(unavailableUi, 409, "PUT /api/v1/ui/active reports no retained custom UI");
+    report.expectJson(
+      unavailableUi,
+      { error: { code: "custom_ui_unavailable", source: "apid" } },
+      "the absent custom UI has a named conflict response",
+      { subset: true },
+    );
 
     const hostname = await client.get("/api/v1/settings/hostname");
     report.expectStatus(hostname, 200, "GET /api/v1/settings/hostname reads through the browser session");

@@ -441,8 +441,9 @@ password being set (the event, never the password), the two power actions
 (`requested`, `unconfirmed` — recorded **before** dispatch for the same
 reason the sync exists), and the custom UI changing hands: `activated` when
 start-up picks up a staged bundle (source `local` — the trigger is a
-directory on disk, not a network peer) and `deactivated`/`no-op` from the
-§6.3 escape. The source address on request-driven events comes from axum's
+directory on disk, not a network peer), plus request-driven UI selection
+(`activated`, `deactivated`, or `no-op`). The source address on request-driven
+events comes from axum's
 `ConnectInfo` (installed in `main.rs`); a missing connection degrades to
 `unknown` rather than to a failed request, so audit wiring can never be what
 makes a login fail.

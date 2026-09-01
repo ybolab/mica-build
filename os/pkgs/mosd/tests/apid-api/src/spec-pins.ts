@@ -101,6 +101,7 @@ const SETUP = "/api/v1/setup";
 const SETTINGS = "/api/v1/settings/{path}";
 const NETWORK = "/api/v1/network";
 const UI = "/api/v1/ui";
+const UI_ACTIVE = "/api/v1/ui/active";
 const TASK = "/api/v1/tasks/{id}";
 const VERSIONS = "/api/versions";
 
@@ -114,6 +115,8 @@ const PINS: readonly Pin[] = [
   { kind: "status", file: SESSION, anchor: "DELETE /api/v1/session with CSRF", method: "delete", path: SESSION_PATH, what: "logout" },
   { kind: "status", file: SESSION, anchor: "POST /api/v1/session logs in", method: "post", path: SESSION_PATH, what: "JSON login" },
   { kind: "status", file: MANAGEMENT, anchor: "GET /api/v1/ui reports UI selection", method: "get", path: UI, what: "UI status" },
+  { kind: "status", file: MANAGEMENT, anchor: "PUT /api/v1/ui/active without CSRF", method: "put", path: UI_ACTIVE, what: "custom UI selector CSRF refusal" },
+  { kind: "status", file: MANAGEMENT, anchor: "PUT /api/v1/ui/active reports no retained custom UI", method: "put", path: UI_ACTIVE, what: "unavailable retained custom UI" },
   { kind: "status", file: MANAGEMENT, anchor: "GET /api/v1/settings/hostname reads", method: "get", path: SETTINGS, what: "session settings read" },
   { kind: "status", file: MANAGEMENT, anchor: "cookie-authenticated settings PUT without CSRF", method: "put", path: SETTINGS, what: "settings CSRF refusal" },
   { kind: "status", file: MANAGEMENT, anchor: "same settings PUT with CSRF", method: "put", path: SETTINGS, what: "settings write" },
@@ -131,6 +134,7 @@ const PINS: readonly Pin[] = [
   { kind: "schema", file: SESSION, anchor: "login returns authenticated state", span: "call", schema: "SessionStatus", mode: "required", names: ["state"], what: "session state" },
   { kind: "schema", file: SESSION, anchor: 'const loginCsrf = loginBody?.["csrfToken"]', span: "line", schema: "SessionStatus", mode: "optional", names: ["csrfToken"], what: "authenticated session CSRF token" },
   { kind: "schema", file: MANAGEMENT, anchor: 'const taskId = acceptedBody?.["taskId"]', span: "line", schema: "TaskAccepted", mode: "required", names: ["taskId"], what: "accepted write task id" },
+  { kind: "schema", file: MANAGEMENT, anchor: "factory UiStatus has no optional availableCustom candidate", span: "call", schema: "UiStatus", mode: "optional", names: ["availableCustom"], what: "retained custom UI candidate" },
   { kind: "schema", file: NETWORK_PHASE, anchor: "NetworkOverview carries", span: "call", schema: "NetworkOverview", mode: "required", names: ["configured", "configuredCount", "observed"], what: "network overview members" },
   { kind: "schema", file: NETWORK_PHASE, anchor: "observed network has a positive", span: "call", schema: "ObservedNetwork", mode: "required", names: ["interfaceCount", "interfaces"], what: "observed interface inventory" },
 ];

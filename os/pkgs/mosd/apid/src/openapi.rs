@@ -29,6 +29,7 @@ use utoipa::OpenApi;
         crate::routes::api_v1_session_create,
         crate::routes::api_v1_session_delete,
         crate::routes::api_v1_ui_status,
+        crate::routes::api_v1_ui_activate,
         crate::routes::api_v1_ui_deactivate,
         crate::routes::api_v1_meta,
         crate::routes::api_v1_health,

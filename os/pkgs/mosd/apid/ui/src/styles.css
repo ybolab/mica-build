@@ -121,6 +121,10 @@ code { border-radius: .3rem; background: var(--muted); padding: .08rem .32rem; f
 .service-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; background: var(--muted); }
 .service-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
 .service-state > span:last-child { color: var(--muted-foreground); font-size: 11px; }
+.ui-selector { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); padding: 13px 14px; }
+.ui-selector > div { display: grid; gap: 4px; }
+.ui-selector strong { font-size: 13px; }
+.ui-selector small { color: var(--muted-foreground); font-size: 11px; line-height: 1.45; }
 .collection-row { justify-content: space-between; }
 .inline-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
 .reveal-panel { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 18px; border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--success) 7%, var(--surface)); padding: 14px; }

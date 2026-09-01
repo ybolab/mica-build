@@ -63,12 +63,24 @@ export interface NetworkOverview {
 
 export interface UiStatus {
   mode: 'builtIn' | 'custom'
-  custom?: {
-    generation: number
-    indexReadable: boolean
-    name?: string
-    version?: string
-    digestMatches?: boolean
-    compatible?: boolean
+  custom?: CustomUiDetails
+  availableCustom?: CustomUiDetails & {
+    usable: boolean
+    unavailableReason?:
+      | 'missingActivationRecord'
+      | 'unsafeTree'
+      | 'indexUnavailable'
+      | 'manifestInvalid'
+      | 'digestMismatch'
+      | 'incompatible'
   }
+}
+
+export interface CustomUiDetails {
+  generation: number
+  indexReadable: boolean
+  name?: string
+  version?: string
+  digestMatches?: boolean
+  compatible?: boolean
 }

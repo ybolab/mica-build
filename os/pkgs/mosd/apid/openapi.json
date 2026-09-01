@@ -2670,6 +2670,65 @@
       }
     },
     "/api/v1/ui/active": {
+      "put": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Select the newest retained custom bundle that still passes every safety\nand compatibility check.",
+        "operationId": "api_v1_ui_activate",
+        "responses": {
+          "200": {
+            "description": "A validated retained custom UI is now selected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No API credential was supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The browser CSRF token is absent or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No retained custom UI passes validation (`custom_ui_unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The custom UI pointer could not be updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "ui"
@@ -3262,6 +3321,61 @@
           }
         }
       },
+      "AvailableCustomUiStatus": {
+        "type": "object",
+        "required": [
+          "generation",
+          "indexReadable",
+          "usable"
+        ],
+        "properties": {
+          "compatible": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "digestMatches": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "indexReadable": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unavailableReason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CustomUiUnavailableReason"
+              }
+            ]
+          },
+          "usable": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "BridgeParameters": {
         "type": "object",
         "description": "The parameters of a software bridge.",
@@ -3336,6 +3450,17 @@
             ]
           }
         }
+      },
+      "CustomUiUnavailableReason": {
+        "type": "string",
+        "enum": [
+          "missingActivationRecord",
+          "unsafeTree",
+          "indexUnavailable",
+          "manifestInvalid",
+          "digestMismatch",
+          "incompatible"
+        ]
       },
       "MintTokenRequest": {
         "type": "object",
@@ -3795,6 +3920,17 @@
           "mode"
         ],
         "properties": {
+          "availableCustom": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AvailableCustomUiStatus",
+                "description": "The newest usable retained generation, or the newest unusable one with\na reason when no generation passes validation."
+              }
+            ]
+          },
           "custom": {
             "oneOf": [
               {

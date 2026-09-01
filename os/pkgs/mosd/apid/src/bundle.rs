@@ -273,6 +273,57 @@ pub struct CustomUi {
     pub recorded: Option<RecordedState>,
 }
 
+/// Why an installed custom UI cannot currently be selected.
+///
+/// These are deliberately stable, path-free states suitable for an API
+/// response. Detailed I/O failures stay in apid's logs rather than exposing
+/// filesystem layout to a browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidateUnavailable {
+    /// The installed tree has no valid activation record.
+    MissingActivationRecord,
+    /// The tree contains an irregular entry or could not be walked safely.
+    UnsafeTree,
+    /// The root `index.html` is missing, irregular or unreadable.
+    IndexUnavailable,
+    /// The optional manifest is present but cannot be read or parsed.
+    ManifestInvalid,
+    /// The installed tree no longer matches its activation digest.
+    DigestMismatch,
+    /// The manifest does not support an API version served by this apid.
+    Incompatible,
+}
+
+/// One retained generation inspected against the API versions served now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomCandidate {
+    /// The installed generation.
+    pub generation: u64,
+    /// Name and version from a valid manifest, when one exists.
+    pub manifest: Option<ManifestSummary>,
+    /// Whether the root `index.html` is a readable regular file.
+    pub index_readable: bool,
+    /// Whether the current tree matches the activation record, when one was
+    /// available and the tree could be hashed.
+    pub digest_matches: Option<bool>,
+    /// Whether the manifest intersects the currently served API set. `None`
+    /// means the bundle has no manifest and is therefore unchecked.
+    pub compatible: Option<bool>,
+    /// True only when the generation can safely be selected now.
+    pub usable: bool,
+    /// The first failed safety check, absent when [`Self::usable`] is true.
+    pub unavailable_reason: Option<CandidateUnavailable>,
+}
+
+/// The result of selecting a retained custom UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selection {
+    /// The fully revalidated candidate selected by the operation.
+    pub candidate: CustomCandidate,
+    /// False when `current` already pointed at this generation.
+    pub changed: bool,
+}
+
 /// The answer to "what is installed right now?" (§5.3).
 // §5.3 status read: complete and tested, no route exposes it yet (§8.2).
 #[allow(dead_code)]
@@ -429,6 +480,156 @@ impl Store {
     /// Generations with an installed tree, ascending.
     pub fn generations(&self) -> anyhow::Result<Vec<u64>> {
         numbered_children(&self.bundles_dir())
+    }
+
+    /// Inspect retained generations and return the newest usable candidate.
+    ///
+    /// If no generation is usable, the newest installed generation is still
+    /// returned with a named reason so the recovery UI can explain why its
+    /// custom choice is disabled. A missing store is `Ok(None)` and this read
+    /// never creates or repairs anything.
+    pub fn available_custom(&self, served: &[&str]) -> anyhow::Result<Option<CustomCandidate>> {
+        let mut newest_unusable = None;
+        for generation in self.generations()?.into_iter().rev() {
+            let candidate = self.inspect_generation(generation, served)?;
+            if candidate.usable {
+                return Ok(Some(candidate));
+            }
+            if newest_unusable.is_none() {
+                newest_unusable = Some(candidate);
+            }
+        }
+        Ok(newest_unusable)
+    }
+
+    /// Revalidate and select the newest usable retained generation.
+    ///
+    /// The server chooses the generation; callers cannot provide a path or a
+    /// generation number. `Ok(None)` means installed trees are absent or all
+    /// failed a safety check and leaves `current` untouched.
+    pub fn select_available_custom(&self, served: &[&str]) -> anyhow::Result<Option<Selection>> {
+        let Some(candidate) = self.available_custom(served)? else {
+            return Ok(None);
+        };
+        if !candidate.usable {
+            return Ok(None);
+        }
+        let changed = !self.current_points_at(candidate.generation)?;
+        if changed {
+            self.point_current_at(candidate.generation)?;
+        }
+        Ok(Some(Selection { candidate, changed }))
+    }
+
+    fn current_points_at(&self, generation: u64) -> anyhow::Result<bool> {
+        let link = self.current_link();
+        match fs::read_link(&link) {
+            Ok(target) => {
+                let expected = format!("bundles/{generation}");
+                Ok(target.as_os_str() == std::ffi::OsStr::new(&expected))
+            }
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::InvalidInput
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(err) => Err(anyhow::Error::new(err))
+                .with_context(|| format!("read link {}", link.display())),
+        }
+    }
+
+    fn inspect_generation(
+        &self,
+        generation: u64,
+        served: &[&str],
+    ) -> anyhow::Result<CustomCandidate> {
+        let dir = self.bundle_dir(generation);
+        let index = dir.join(INDEX_NAME);
+        let index_readable = fs::symlink_metadata(&index).is_ok_and(|meta| meta.is_file())
+            && File::open(&index).is_ok();
+        let unavailable = |reason| CustomCandidate {
+            generation,
+            manifest: None,
+            index_readable,
+            digest_matches: None,
+            compatible: None,
+            usable: false,
+            unavailable_reason: Some(reason),
+        };
+
+        let entries = match validate_tree(&dir) {
+            Ok(entries) => entries,
+            Err(err) => {
+                let reason = match err.downcast_ref::<Rejection>() {
+                    Some(
+                        Rejection::MissingIndex
+                        | Rejection::IndexNotRegularFile
+                        | Rejection::IndexUnreadable(_),
+                    ) => CandidateUnavailable::IndexUnavailable,
+                    _ => CandidateUnavailable::UnsafeTree,
+                };
+                return Ok(unavailable(reason));
+            }
+        };
+        let manifest = match read_manifest(&dir) {
+            Ok(manifest) => manifest,
+            Err(_) => return Ok(unavailable(CandidateUnavailable::ManifestInvalid)),
+        };
+        let manifest_summary = manifest.as_ref().map(|manifest| ManifestSummary {
+            name: manifest.name.clone(),
+            version: manifest.version.clone(),
+        });
+        let Some(record) = self.read_record(generation)? else {
+            let mut candidate = unavailable(CandidateUnavailable::MissingActivationRecord);
+            candidate.manifest = manifest_summary;
+            return Ok(candidate);
+        };
+        let digest_matches =
+            digest_tree(&dir, &entries).is_ok_and(|digest| digest == record.digest);
+        if !digest_matches {
+            return Ok(CustomCandidate {
+                generation,
+                manifest: manifest_summary,
+                index_readable,
+                digest_matches: Some(false),
+                compatible: None,
+                usable: false,
+                unavailable_reason: Some(CandidateUnavailable::DigestMismatch),
+            });
+        }
+        let compatible = match check_compat(manifest.as_ref(), served) {
+            Ok(CompatCheck::NotRun) => None,
+            Ok(CompatCheck::Ran { compatible, .. }) => Some(compatible),
+            Err(err)
+                if matches!(
+                    err.downcast_ref::<Rejection>(),
+                    Some(Rejection::Incompatible { .. })
+                ) =>
+            {
+                return Ok(CustomCandidate {
+                    generation,
+                    manifest: manifest_summary,
+                    index_readable,
+                    digest_matches: Some(true),
+                    compatible: Some(false),
+                    usable: false,
+                    unavailable_reason: Some(CandidateUnavailable::Incompatible),
+                });
+            }
+            Err(err) => return Err(err),
+        };
+        Ok(CustomCandidate {
+            generation,
+            manifest: manifest_summary,
+            index_readable,
+            digest_matches: Some(true),
+            compatible,
+            usable: true,
+            unavailable_reason: None,
+        })
     }
 
     /// Generations with a staged tree waiting to be activated, ascending.
@@ -1345,6 +1546,139 @@ mod tests {
         assert!(!store.current_link().exists());
         // Idempotent: deactivating twice is not an error.
         assert!(!store.deactivate().expect("deactivate again"));
+    }
+
+    #[test]
+    fn a_deactivated_bundle_is_reported_and_selected_only_after_revalidation() {
+        let (_dir, store) = store();
+        let staging = stage_valid(&store, 1);
+        write_manifest(&staging, &["v1"]);
+        store.activate(1, &SERVED).expect("activate");
+        store.deactivate().expect("deactivate");
+
+        let candidate = store
+            .available_custom(&SERVED)
+            .expect("inspect retained bundles")
+            .expect("a retained bundle");
+        assert_eq!(candidate.generation, 1);
+        assert!(candidate.usable);
+        assert_eq!(candidate.unavailable_reason, None);
+        assert_eq!(candidate.digest_matches, Some(true));
+        assert_eq!(candidate.compatible, Some(true));
+
+        let selected = store
+            .select_available_custom(&SERVED)
+            .expect("select retained bundle")
+            .expect("a usable retained bundle");
+        assert!(selected.changed);
+        assert_eq!(selected.candidate, candidate);
+        assert_eq!(custom(&store.status().expect("status")).generation, 1);
+
+        let selected_again = store
+            .select_available_custom(&SERVED)
+            .expect("select retained bundle again")
+            .expect("the active bundle remains usable");
+        assert!(!selected_again.changed);
+    }
+
+    #[test]
+    fn a_corrupt_retained_bundle_is_visible_but_cannot_be_selected() {
+        let (_dir, store) = store();
+        stage_valid(&store, 1);
+        store.activate(1, &SERVED).expect("activate");
+        store.deactivate().expect("deactivate");
+        fs::write(store.bundle_dir(1).join("assets/app.js"), b"changed")
+            .expect("corrupt retained bundle");
+
+        let candidate = store
+            .available_custom(&SERVED)
+            .expect("inspect retained bundles")
+            .expect("the unusable bundle remains visible");
+        assert!(!candidate.usable);
+        assert_eq!(
+            candidate.unavailable_reason,
+            Some(CandidateUnavailable::DigestMismatch)
+        );
+        assert_eq!(candidate.digest_matches, Some(false));
+        assert!(
+            store
+                .select_available_custom(&SERVED)
+                .expect("selection is a state, not an error")
+                .is_none()
+        );
+        assert_eq!(store.active_generation().expect("read current"), None);
+    }
+
+    #[test]
+    fn a_retained_bundle_is_rechecked_against_the_current_served_api_set() {
+        let (_dir, store) = store();
+        let staging = stage_valid(&store, 1);
+        write_manifest(&staging, &["v1"]);
+        store.activate(1, &SERVED).expect("activate");
+        store.deactivate().expect("deactivate");
+
+        let candidate = store
+            .available_custom(&["v9"])
+            .expect("inspect against the new served set")
+            .expect("the incompatible bundle remains visible");
+        assert!(!candidate.usable);
+        assert_eq!(candidate.digest_matches, Some(true));
+        assert_eq!(candidate.compatible, Some(false));
+        assert_eq!(
+            candidate.unavailable_reason,
+            Some(CandidateUnavailable::Incompatible)
+        );
+        assert!(
+            store
+                .select_available_custom(&["v9"])
+                .expect("selection is a state, not an error")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn selection_skips_a_newer_unusable_generation() {
+        let (_dir, store) = store();
+        stage_valid(&store, 1);
+        store.activate(1, &SERVED).expect("activate generation 1");
+        stage_valid(&store, 2);
+        store.activate(2, &SERVED).expect("activate generation 2");
+        store.deactivate().expect("deactivate");
+        fs::write(store.bundle_dir(2).join(INDEX_NAME), b"changed")
+            .expect("corrupt newest generation");
+
+        let candidate = store
+            .available_custom(&SERVED)
+            .expect("inspect retained bundles")
+            .expect("generation 1 is still usable");
+        assert_eq!(candidate.generation, 1);
+        assert!(candidate.usable);
+        let selected = store
+            .select_available_custom(&SERVED)
+            .expect("select retained bundle")
+            .expect("generation 1 is selectable");
+        assert_eq!(selected.candidate.generation, 1);
+    }
+
+    #[test]
+    fn selection_repairs_a_pointer_that_only_looks_like_the_generation() {
+        let (dir, store) = store();
+        stage_valid(&store, 1);
+        store.activate(1, &SERVED).expect("activate");
+        store.deactivate().expect("deactivate");
+        let unmanaged = dir.path().join("unmanaged/1");
+        fs::create_dir_all(&unmanaged).expect("create unmanaged tree");
+        symlink(&unmanaged, store.current_link()).expect("plant unmanaged current pointer");
+
+        let selected = store
+            .select_available_custom(&SERVED)
+            .expect("select retained bundle")
+            .expect("the managed bundle is usable");
+        assert!(selected.changed);
+        assert_eq!(
+            fs::read_link(store.current_link()).expect("read repaired pointer"),
+            PathBuf::from("bundles/1")
+        );
     }
 
     /// §5.3: deactivate is reversible — that is what keeping two generations

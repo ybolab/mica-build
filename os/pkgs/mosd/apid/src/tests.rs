@@ -631,6 +631,8 @@ async fn ui_selection_is_managed_only_through_the_csrf_protected_api() {
         serde_json::from_str(&body_string(status).await).expect("UI status JSON");
     assert_eq!(status["mode"], "custom");
     assert_eq!(status["custom"]["generation"], 1);
+    assert_eq!(status["availableCustom"]["generation"], 1);
+    assert_eq!(status["availableCustom"]["usable"], true);
 
     let refused = json_request(
         &router,
@@ -653,10 +655,168 @@ async fn ui_selection_is_managed_only_through_the_csrf_protected_api() {
     )
     .await;
     assert_eq!(accepted.status(), StatusCode::OK);
+    let accepted: serde_json::Value =
+        serde_json::from_str(&body_string(accepted).await).expect("UI status JSON");
+    assert_eq!(accepted["mode"], "builtIn");
+    assert_eq!(accepted["availableCustom"]["generation"], 1);
+    assert_eq!(accepted["availableCustom"]["usable"], true);
     assert_eq!(
         get(&router, "/", None).await.status(),
         StatusCode::SEE_OTHER
     );
+
+    let refused = json_request(
+        &router,
+        "PUT",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+
+    let accepted = json_request(
+        &router,
+        "PUT",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        Some(csrf),
+    )
+    .await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    let accepted: serde_json::Value =
+        serde_json::from_str(&body_string(accepted).await).expect("UI status JSON");
+    assert_eq!(accepted["mode"], "custom");
+    assert_eq!(accepted["custom"]["generation"], 1);
+    let root = get(&router, "/", None).await;
+    assert_eq!(root.status(), StatusCode::OK);
+    assert!(body_string(root).await.contains("custom-root"));
+}
+
+#[tokio::test]
+async fn the_ui_api_refuses_a_corrupt_retained_bundle_without_changing_root() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let login = json_request(
+        &router,
+        "POST",
+        "/api/v1/session",
+        json!({ "password": "hunter2secret" }),
+        None,
+        None,
+    )
+    .await;
+    let cookie = session_cookie_value(&login);
+    let body: serde_json::Value =
+        serde_json::from_str(&body_string(login).await).expect("session JSON");
+    let csrf = body["csrfToken"].as_str().unwrap();
+
+    let deactivated = json_request(
+        &router,
+        "DELETE",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        Some(csrf),
+    )
+    .await;
+    assert_eq!(deactivated.status(), StatusCode::OK);
+    std::fs::write(
+        Store::new(bundle.path()).bundle_dir(1).join("index.html"),
+        "changed",
+    )
+    .expect("corrupt retained bundle");
+
+    let status = get(&router, "/api/v1/ui", Some(&cookie)).await;
+    assert_eq!(status.status(), StatusCode::OK);
+    let status: serde_json::Value =
+        serde_json::from_str(&body_string(status).await).expect("UI status JSON");
+    assert_eq!(status["availableCustom"]["usable"], false);
+    assert_eq!(
+        status["availableCustom"]["unavailableReason"],
+        "digestMismatch"
+    );
+
+    let refused = json_request(
+        &router,
+        "PUT",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        Some(csrf),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    let refused: serde_json::Value =
+        serde_json::from_str(&body_string(refused).await).expect("API error JSON");
+    assert_eq!(refused["error"]["code"], "custom_ui_unavailable");
+    assert_eq!(
+        get(&router, "/", None).await.status(),
+        StatusCode::SEE_OTHER
+    );
+}
+
+#[tokio::test]
+async fn ui_selection_records_deactivation_activation_and_no_op() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let audit_dir = TempDir::new().unwrap();
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let router = app(AppState::new(fake, SIGNING_KEY)
+        .with_persistence(audit_dir.path())
+        .with_bundle_root(bundle.path()));
+    let login = json_request(
+        &router,
+        "POST",
+        "/api/v1/session",
+        json!({ "password": "hunter2secret" }),
+        None,
+        None,
+    )
+    .await;
+    let cookie = session_cookie_value(&login);
+    let body: serde_json::Value =
+        serde_json::from_str(&body_string(login).await).expect("session JSON");
+    let csrf = body["csrfToken"].as_str().unwrap();
+
+    let response = json_request(
+        &router,
+        "DELETE",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        Some(csrf),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK, "DELETE");
+
+    let first = json_request(
+        &router,
+        "PUT",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        Some(csrf),
+    );
+    let second = json_request(
+        &router,
+        "PUT",
+        "/api/v1/ui/active",
+        serde_json::Value::Null,
+        Some(&cookie),
+        Some(csrf),
+    );
+    let (first, second) = tokio::join!(first, second);
+    assert_eq!(first.status(), StatusCode::OK, "first parallel PUT");
+    assert_eq!(second.status(), StatusCode::OK, "second parallel PUT");
+
+    let outcomes: Vec<String> = audit_lines(audit_dir.path())
+        .into_iter()
+        .filter(|line| line["event"] == "custom-ui")
+        .map(|line| line["outcome"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(outcomes, ["deactivated", "activated", "no-op"]);
 }
 
 #[tokio::test]
@@ -1084,7 +1244,22 @@ fn the_openapi_document_covers_browser_ui_and_live_network_routes() {
         );
     }
     assert!(document["paths"]["/api/v1/ui"]["get"].is_object());
+    assert!(document["paths"]["/api/v1/ui/active"]["put"].is_object());
     assert!(document["paths"]["/api/v1/ui/active"]["delete"].is_object());
+    assert!(
+        document["components"]["schemas"]["UiStatus"]["properties"]["availableCustom"].is_object()
+    );
+    assert_eq!(
+        document["components"]["schemas"]["CustomUiUnavailableReason"]["enum"],
+        json!([
+            "missingActivationRecord",
+            "unsafeTree",
+            "indexUnavailable",
+            "manifestInvalid",
+            "digestMismatch",
+            "incompatible",
+        ])
+    );
 
     let network = &document["paths"]["/api/v1/network"];
     assert!(

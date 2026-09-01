@@ -32,8 +32,7 @@ use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
 use crate::auth::{self, GuardStore};
-use crate::bundle::Installed;
-use crate::bundle::Store;
+use crate::bundle::{CandidateUnavailable, CustomCandidate, Installed, Store};
 use crate::redact;
 use crate::session::{self, SessionStore};
 use crate::settings_api::{InvalidTaskPayload, SettingsApi};
@@ -48,6 +47,9 @@ pub struct AppState {
     guard: Arc<GuardStore>,
     audit: Arc<Audit>,
     bundles: Arc<Store>,
+    /// Serialises custom-UI pointer mutations so concurrent API requests are
+    /// deterministic and cannot contend for the atomic replacement link.
+    ui_selection: Arc<tokio::sync::Mutex<()>>,
     /// The gate's cache of the `access` subtree, kept honest by the
     /// `SettingsChanged` watcher (`bus_client::watch_settings_changed`) and
     /// by the two handlers that write under `access` themselves.
@@ -75,6 +77,7 @@ impl AppState {
             guard: Arc::new(GuardStore::ephemeral()),
             audit: Arc::new(Audit::journal_only()),
             bundles: Arc::new(Store::at_default()),
+            ui_selection: Arc::new(tokio::sync::Mutex::new(())),
             access_cache: Arc::new(AccessCache::new()),
             task_registry: Arc::new(TaskRegistry::new()),
         }
@@ -393,7 +396,10 @@ fn api_router() -> Router<AppState> {
                 .delete(api_v1_session_delete),
         )
         .route(V1_UI_PATH, get(api_v1_ui_status))
-        .route(V1_UI_ACTIVE_PATH, delete(api_v1_ui_deactivate))
+        .route(
+            V1_UI_ACTIVE_PATH,
+            put(api_v1_ui_activate).delete(api_v1_ui_deactivate),
+        )
         .route(V1_HEALTH_PATH, get(api_v1_health))
         .route(
             V1_SETTINGS_ROUTE,
@@ -746,6 +752,10 @@ pub(crate) struct UiStatus {
     mode: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     custom: Option<CustomUiStatus>,
+    /// The newest usable retained generation, or the newest unusable one with
+    /// a reason when no generation passes validation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    available_custom: Option<AvailableCustomUiStatus>,
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
@@ -763,11 +773,75 @@ pub(crate) struct CustomUiStatus {
     compatible: Option<bool>,
 }
 
-fn ui_status(state: &AppState) -> anyhow::Result<UiStatus> {
-    Ok(match state.bundles().status()? {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AvailableCustomUiStatus {
+    generation: u64,
+    index_readable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digest_matches: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compatible: Option<bool>,
+    usable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unavailable_reason: Option<CustomUiUnavailableReason>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum CustomUiUnavailableReason {
+    MissingActivationRecord,
+    UnsafeTree,
+    IndexUnavailable,
+    ManifestInvalid,
+    DigestMismatch,
+    Incompatible,
+}
+
+impl From<CandidateUnavailable> for CustomUiUnavailableReason {
+    fn from(reason: CandidateUnavailable) -> Self {
+        match reason {
+            CandidateUnavailable::MissingActivationRecord => Self::MissingActivationRecord,
+            CandidateUnavailable::UnsafeTree => Self::UnsafeTree,
+            CandidateUnavailable::IndexUnavailable => Self::IndexUnavailable,
+            CandidateUnavailable::ManifestInvalid => Self::ManifestInvalid,
+            CandidateUnavailable::DigestMismatch => Self::DigestMismatch,
+            CandidateUnavailable::Incompatible => Self::Incompatible,
+        }
+    }
+}
+
+impl From<CustomCandidate> for AvailableCustomUiStatus {
+    fn from(candidate: CustomCandidate) -> Self {
+        let (name, version) = candidate.manifest.map_or((None, None), |manifest| {
+            (Some(manifest.name), Some(manifest.version))
+        });
+        Self {
+            generation: candidate.generation,
+            index_readable: candidate.index_readable,
+            name,
+            version,
+            digest_matches: candidate.digest_matches,
+            compatible: candidate.compatible,
+            usable: candidate.usable,
+            unavailable_reason: candidate.unavailable_reason.map(Into::into),
+        }
+    }
+}
+
+fn ui_status(store: &Store) -> anyhow::Result<UiStatus> {
+    let available_custom = store
+        .available_custom(&SERVED_VERSIONS)?
+        .map(AvailableCustomUiStatus::from);
+    Ok(match store.status()? {
         Installed::BuiltIn => UiStatus {
             mode: "builtIn",
             custom: None,
+            available_custom,
         },
         Installed::Custom(ui) => {
             let (name, version) = ui.manifest.map_or((None, None), |manifest| {
@@ -790,9 +864,18 @@ fn ui_status(state: &AppState) -> anyhow::Result<UiStatus> {
                     digest_matches,
                     compatible,
                 }),
+                available_custom,
             }
         }
     })
+}
+
+async fn load_ui_status(state: &AppState) -> anyhow::Result<UiStatus> {
+    let bundles = Arc::clone(&state.bundles);
+    match tokio::task::spawn_blocking(move || ui_status(&bundles)).await {
+        Ok(status) => status,
+        Err(err) => Err(anyhow::Error::new(err)),
+    }
 }
 
 /// Report whether `/` currently selects a custom UI bundle.
@@ -811,7 +894,7 @@ pub(crate) async fn api_v1_ui_status(
     _credential: ApiCredential,
     State(state): State<AppState>,
 ) -> Response {
-    match ui_status(&state) {
+    match load_ui_status(&state).await {
         Ok(status) => api_response(StatusCode::OK, status),
         Err(err) => {
             tracing::error!(error = %err, "reading custom UI status failed");
@@ -820,6 +903,73 @@ pub(crate) async fn api_v1_ui_status(
                 ApiError::apid(
                     "ui_status_failed",
                     "the custom UI status could not be read".to_string(),
+                ),
+            )
+        }
+    }
+}
+
+/// Select the newest retained custom bundle that still passes every safety
+/// and compatibility check.
+#[utoipa::path(
+    put,
+    path = V1_UI_ACTIVE_PATH,
+    context_path = API,
+    tag = "ui",
+    responses(
+        (status = 200, description = "A validated retained custom UI is now selected", body = UiStatus),
+        (status = 401, description = "No API credential was supplied", body = ApiError),
+        (status = 403, description = "The browser CSRF token is absent or invalid", body = ApiError),
+        (status = 409, description = "No retained custom UI passes validation (`custom_ui_unavailable`)", body = ApiError),
+        (status = 500, description = "The custom UI pointer could not be updated", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_ui_activate(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+    Source(source): Source,
+) -> Response {
+    let _selection_guard = state.ui_selection.lock().await;
+    let bundles = Arc::clone(&state.bundles);
+    let selection = match tokio::task::spawn_blocking(move || {
+        bundles.select_available_custom(&SERVED_VERSIONS)
+    })
+    .await
+    {
+        Ok(selection) => selection,
+        Err(err) => Err(anyhow::Error::new(err)),
+    };
+    match selection {
+        Ok(Some(selection)) => {
+            state.audit.record(
+                "custom-ui",
+                if selection.changed {
+                    "activated"
+                } else {
+                    "no-op"
+                },
+                &source,
+            );
+            match load_ui_status(&state).await {
+                Ok(status) => api_response(StatusCode::OK, status),
+                Err(err) => ui_status_error(&err),
+            }
+        }
+        Ok(None) => api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "custom_ui_unavailable",
+                "no retained custom UI passes the current safety and API compatibility checks"
+                    .to_string(),
+            ),
+        ),
+        Err(err) => {
+            tracing::error!(error = %err, "activating retained custom UI failed");
+            api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid(
+                    "ui_activation_failed",
+                    "the custom UI pointer could not be updated".to_string(),
                 ),
             )
         }
@@ -844,20 +994,23 @@ pub(crate) async fn api_v1_ui_deactivate(
     State(state): State<AppState>,
     Source(source): Source,
 ) -> Response {
-    match state.bundles().deactivate() {
+    let _selection_guard = state.ui_selection.lock().await;
+    let bundles = Arc::clone(&state.bundles);
+    let deactivated = match tokio::task::spawn_blocking(move || bundles.deactivate()).await {
+        Ok(deactivated) => deactivated,
+        Err(err) => Err(anyhow::Error::new(err)),
+    };
+    match deactivated {
         Ok(removed) => {
             state.audit.record(
                 "custom-ui",
                 if removed { "deactivated" } else { "no-op" },
                 &source,
             );
-            api_response(
-                StatusCode::OK,
-                UiStatus {
-                    mode: "builtIn",
-                    custom: None,
-                },
-            )
+            match load_ui_status(&state).await {
+                Ok(status) => api_response(StatusCode::OK, status),
+                Err(err) => ui_status_error(&err),
+            }
         }
         Err(err) => {
             tracing::error!(error = %err, "deactivating custom UI failed");
@@ -870,6 +1023,17 @@ pub(crate) async fn api_v1_ui_deactivate(
             )
         }
     }
+}
+
+fn ui_status_error(err: &anyhow::Error) -> Response {
+    tracing::error!(error = %err, "reading custom UI status failed");
+    api_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        ApiError::apid(
+            "ui_status_failed",
+            "the custom UI status could not be read".to_string(),
+        ),
+    )
 }
 
 /// `GET /api/versions` response.

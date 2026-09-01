@@ -1,13 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MonitorCog, Power, RefreshCcw, RotateCcw } from 'lucide-react'
+import { ExternalLink, MonitorCog, Power, RefreshCcw } from 'lucide-react'
 import { api, errorMessage, json } from '@/lib/api'
 import type { TaskAccepted, UiStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/field'
 import { Status } from '@/components/ui/status'
+import { Switch } from '@/components/ui/switch'
 import { TaskProgress } from '@/components/task-progress'
 
 function SystemPage() {
@@ -42,23 +43,68 @@ function HostnamePanel() {
   )
 }
 
-function UiPanel() {
+export function UiPanel() {
   const queryClient = useQueryClient()
   const status = useQuery({ queryKey: ['ui-status'], queryFn: () => api<UiStatus>('/api/v1/ui') })
+  const activate = useMutation({
+    mutationFn: () => api<UiStatus>('/api/v1/ui/active', { method: 'PUT' }),
+    onSuccess: (value) => queryClient.setQueryData(['ui-status'], value),
+  })
   const deactivate = useMutation({
     mutationFn: () => api<UiStatus>('/api/v1/ui/active', { method: 'DELETE' }),
     onSuccess: (value) => queryClient.setQueryData(['ui-status'], value),
   })
-  const custom = status.data?.custom
+  const active = status.data?.mode === 'custom'
+  const candidate = status.data?.availableCustom
+  const custom = status.data?.custom ?? candidate
+  const mutationPending = activate.isPending || deactivate.isPending
+  const mutationError = activate.error ?? deactivate.error
+  const selectorDisabled = status.isPending || status.isError || mutationPending || (!active && !candidate?.usable)
+  const select = (checked: boolean) => {
+    if (checked) activate.mutate()
+    else deactivate.mutate()
+  }
   return (
     <Card>
       <CardHeader title="User interface" description="The built-in SPA always remains available at /ui." action={<MonitorCog className="size-5 text-muted-foreground" />} />
-      <div className="service-state"><Status ok={status.data?.mode === 'builtIn'}>{status.data?.mode === 'custom' ? 'custom UI active' : 'built-in UI active'}</Status></div>
-      {custom ? <dl className="details"><div><dt>Bundle</dt><dd>{custom.name ?? `generation ${custom.generation}`} {custom.version}</dd></div><div><dt>Index</dt><dd>{custom.indexReadable ? 'readable' : 'unreadable'}</dd></div><div><dt>Digest</dt><dd>{custom.digestMatches === false ? 'changed' : 'verified'}</dd></div></dl> : null}
-      {status.data?.mode === 'custom' ? <Button variant="secondary" onClick={() => deactivate.mutate()} disabled={deactivate.isPending}><RotateCcw className="size-4" /> Use built-in UI at root</Button> : null}
-      {deactivate.error ? <p className="callout error" role="alert">{errorMessage(deactivate.error)}</p> : null}
+      <div className="service-state"><Status ok={!status.isError}>{status.isPending ? 'checking UI selection' : active ? 'custom UI active at /' : 'built-in UI active at /'}</Status></div>
+      <div className="ui-selector">
+        <div><strong>Use custom UI at root</strong><small>The recovery console at <code>/ui</code> does not change.</small></div>
+        <Switch
+          aria-label="Use custom UI at root"
+          checked={active}
+          disabled={selectorDisabled}
+          onCheckedChange={select}
+        />
+      </div>
+      {!status.isPending && !candidate ? <p className="callout warning" role="status">No retained custom UI is installed.</p> : null}
+      {candidate && !candidate.usable ? <p className="callout warning" role="status">The retained custom UI cannot be selected: {unavailableMessage(candidate.unavailableReason)}.</p> : null}
+      {custom ? <dl className="details"><div><dt>Bundle</dt><dd>{custom.name ?? `generation ${custom.generation}`} {custom.version}</dd></div><div><dt>Index</dt><dd>{custom.indexReadable ? 'readable' : 'unreadable'}</dd></div><div><dt>Digest</dt><dd>{digestMessage(custom.digestMatches)}</dd></div></dl> : null}
+      {active ? <a className="text-link" href="/">Open custom UI at root <ExternalLink className="size-4" /></a> : null}
+      {status.error ? <p className="callout error" role="alert">{errorMessage(status.error)}</p> : null}
+      {mutationError ? <p className="callout error" role="alert">{errorMessage(mutationError)}</p> : null}
     </Card>
   )
+}
+
+function digestMessage(matches: boolean | undefined) {
+  if (matches === true) return 'verified'
+  if (matches === false) return 'changed'
+  return 'not verified'
+}
+
+function unavailableMessage(
+  reason: NonNullable<UiStatus['availableCustom']>['unavailableReason'],
+) {
+  switch (reason) {
+    case 'missingActivationRecord': return 'its activation record is missing'
+    case 'unsafeTree': return 'its files no longer form a safe bundle tree'
+    case 'indexUnavailable': return 'index.html is missing or unreadable'
+    case 'manifestInvalid': return 'its manifest is invalid'
+    case 'digestMismatch': return 'its files changed after activation'
+    case 'incompatible': return 'it does not support this API version'
+    default: return 'it did not pass validation'
+  }
 }
 
 function PowerPanel() {

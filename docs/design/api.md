@@ -1,6 +1,6 @@
 # apid: an API-first management daemon with replaceable UI
 
-> **Current status (PLAN-039, 2026-08-31): implemented.** The management daemon
+> **Current status (PLAN-039 and PLAN-040, 2026-09-01): implemented.** The management daemon
 > is API-first. Every appliance read, write, authentication operation and action
 > is under `/api`; `/healthz` is the listener-only operational exception. The
 > built-in UI is a React SPA embedded in `apid` and served at `/ui`. `/` serves
@@ -21,9 +21,11 @@
   and logout. A signed session cookie authenticates API calls; a session-based
   mutation also requires the per-session `X-CSRF-Token`. Stored bearer tokens
   remain supported for automation and do not require CSRF.
-- `GET /api/v1/ui` reports custom UI status and
-  `DELETE /api/v1/ui/active` selects the built-in UI. `/ui` remains reachable
-  regardless of custom-bundle state and cannot be shadowed.
+- `GET /api/v1/ui` reports the active selection separately from an optional
+  validated retained custom candidate. `PUT /api/v1/ui/active` rechecks and
+  selects the newest usable retained generation; `DELETE` selects the built-in
+  UI without deleting installed files. `/ui` remains reachable regardless of
+  custom-bundle state and cannot be shadowed.
 - `GET /api/v1/network` combines configured intent with an on-demand,
   normalized `systemd-networkd` observation obtained by mosd over D-Bus. It
   reports the observed interface count and per-interface operational, carrier,

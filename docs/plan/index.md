@@ -38,3 +38,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-037 Build an embedded-first delivery documentation system**](PLAN-037.md) `2026-08-31`
 - [x] [**PLAN-038 Bound, scope and queue the settings-write path**](PLAN-038.md) `2026-08-31`
 - [x] [**PLAN-039 Serve a built-in SPA and put management behind `/api`**](PLAN-039.md) `2026-08-31`
+- [x] [**PLAN-040 Select a retained custom UI from the built-in SPA**](PLAN-040.md) `2026-09-01`

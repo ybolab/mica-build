@@ -50,3 +50,4 @@ one lock and rejects a transition when their current states do not match.
 - [-] [**RFCT-273 Design the embedded-first user delivery documentation set**](RFCT-273.md) `P1`
 - [x] [**RFCT-274 Bound, scope and queue the settings-write path so the UI stops hanging**](RFCT-274.md) `P1`
 - [x] [**RFCT-275 Make the built-in UI a pure SPA over the management API**](RFCT-275.md) `P1`
+- [x] [**RFCT-276 Add a recoverable built-in/custom UI selector**](RFCT-276.md) `P1`
