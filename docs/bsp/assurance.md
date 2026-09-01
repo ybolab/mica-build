@@ -3,9 +3,15 @@
 The assurance ladder is how mos reports what a board's boot path actually
 verifies — four additive levels, each naming a concrete mechanism, so a
 per-board claim is a checkable statement instead of the phrase "secure
-boot". Each board's evidenced level lives in its dossier's Assurance level
-section ([board-template.md](board-template.md)); this page defines the
-levels and ties them to the design records that implement or propose them.
+boot". The canonical definition of the I1–I4 ladder lives in
+`docs/design/security-model.md` (trust workstream); this page presents the
+ladder for qualification purposes — what a dossier may claim and with what
+evidence — and does not redefine it. Each board's evidenced level lives in
+its dossier's Assurance level section
+([board-template.md](board-template.md)), tied to the design records that
+implement or propose each level.
+
+TODO(trust/security-model): cite docs/design/security-model.md as the canonical I1-I4 definition after the trust branch merges
 
 **Additive** means each level presumes the ones below it. **Honest** means a
 level is claimed only with the mechanism in place on that board and the
