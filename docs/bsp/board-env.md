@@ -188,7 +188,7 @@ catch.
   (`X="${Y}"`) when the same number is one fact seen from two sides.
 - A new key needs a reader. The lint and the board package refuse facts
   nothing reads, and this reference must gain the key's row in the same
-  change (a later change gates `docs/bsp/` mechanically; until then this page
-  is reviewed by eye).
+  change. Only the first half is mechanical: the lint reads `board.env`, not
+  this page, so the key's row here is held by review.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+> status: shipped — evidence: `make os-layout-lint`

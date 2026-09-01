@@ -22,14 +22,17 @@ The tier vocabulary, aligned with the board qualification plan:
   below the support floor.
 
 The tier definitions, the qualification matrix and the intake rubric are
-being formalized; today's boards hold their status by the evidence in this
-repository, not by a completed dossier. The tier detail lives with the BSP
-documentation at [../bsp/support-tiers.md](../bsp/support-tiers.md) and
-[../bsp/qualification.md](../bsp/qualification.md).
+published with the BSP documentation: the tiers in
+[../bsp/support-tiers.md](../bsp/support-tiers.md), the matrix and its row
+grammar in [../bsp/qualification.md](../bsp/qualification.md), the vendor
+rubric in [../bsp/intake.md](../bsp/intake.md). The vocabulary existing is not
+a board having earned a tier: no board is mos-qualified today, because the one
+dossier on file carries all twelve qualification rows as `not tested`, so
+today's boards hold their standing by the evidence in this repository rather
+than by a completed dossier.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
-
-TODO(PLAN-050): revisit after this plan merges
+> status: shipped — evidence: `docs/bsp/support-tiers.md`, `docs/bsp/qualification.md`, `docs/bsp/intake.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
 
 ## 2. Current hardware standing
 

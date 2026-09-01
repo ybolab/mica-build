@@ -19,12 +19,13 @@ evidence named — and that a chain running through a binary-only stage says
 so ([intake.md](intake.md) section 5): an opaque stage caps auditability
 regardless of configuration.
 
-Policy, from the plan that defines the ladder: **I1 is the common target for
-every board; I2 gates authenticated updates; I3 and I4 are board-specific
-best effort** — they depend on vendor silicon capability and are never
-promised universally.
+Policy for what a dossier may claim: **I1 is the common target for every
+board; I2 gates authenticated updates; I3 and I4 are board-specific best
+effort** — they depend on vendor silicon capability and are never promised
+universally. The ladder is qualification vocabulary; which level a board has
+reached is stated, with evidence, in that board's dossier.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+> status: shipped — evidence: `docs/bsp/board-template.md`
 
 ## I1 — verity-protected root
 

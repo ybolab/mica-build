@@ -125,12 +125,13 @@ coverage table carrying, for every page in this set: the source page, the
 source version it was translated from, and a status that is one of `current`,
 `lagging` or `not-translated`. On any conflict the English page wins.
 
-This contract states the rule only; the Chinese user tree and the check that
-holds the coverage table honest are implemented by a later task.
+The Chinese set exists under `docs/zh/`, and the check that holds the coverage
+table honest is `docs/zh/verify-coverage.sh`, run by `make docs-verify`: it
+asserts the table against both trees in both directions, and requires a
+`current` page to carry the same status lines, in the same order, as its
+English source.
 
-> status: proposed — evidence: `docs/plan/PLAN-042.md`
-
-TODO(PLAN-042): revisit after this plan merges
+> status: shipped — evidence: `docs/zh/README.md`, `docs/zh/verify-coverage.sh`
 
 ## 6. Style rules
 

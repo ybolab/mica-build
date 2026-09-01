@@ -31,7 +31,12 @@
 #   - every English page in the gated trees has EXACTLY one row: none means
 #     an untracked page, two mean two claims that will drift apart;
 #   - every file under docs/zh/user/ has a `current` row -- the direction that
-#     catches a translation whose row was left behind at `not-translated`.
+#     catches a translation whose row was left behind at `not-translated`;
+#   - every `current` row's zh page carries the same `> status:` lines, in the
+#     same order, as its English source. The truth-status line is normative
+#     (doc-contract.md section 3) and the English page is authoritative
+#     (section 5), so a status that drifted in translation is a mistranslated
+#     claim about the product, which prose review is worst at catching.
 #
 # And one meta-assertion: a table with ZERO rows fails. A check over an empty
 # set reports green without having checked anything, and the bijection's other
@@ -149,7 +154,29 @@ for f in docs/zh/user/*.md; do
     fi
 done
 
-# --- 4. the vacuity floor ---------------------------------------------------
+# --- 4. every `current` row: zh status lines equal the English page's --------
+# `current` claims the translation is up to date with its source. Prose may be
+# rewritten for a Chinese reader; the status lines may not, because they are
+# the page's claims about the product and English wins on any conflict. The
+# comparison is the ordered list, so a reordered pair is a finding too: the
+# lines are read against the sections they sit under.
+status_lines() { grep -E '^> status:' "$1" || true; }
+
+while IFS=$'\t' read -r path _version status; do
+    [ "$status" = current ] || continue
+    src=$(source_path "$path")
+    zh=$(zh_path "$path")
+    # Both absences are already reported by their own clauses above; repeating
+    # them here would turn one defect into two findings.
+    { [ -e "$src" ] && [ -e "$zh" ]; } || continue
+    if diff <(status_lines "$src") <(status_lines "$zh") >/dev/null; then
+        ok
+    else
+        fail "$zh carries different '> status:' lines than its source $src; the English page is authoritative"
+    fi
+done < <(coverage_rows)
+
+# --- 5. the vacuity floor ---------------------------------------------------
 rows=$(coverage_rows | grep -c '' || true)
 if [ "$rows" -eq 0 ]; then
     fail "$TABLE carries zero coverage rows; every assertion above would pass by finding nothing"

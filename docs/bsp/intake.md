@@ -78,7 +78,12 @@ the following are recorded:
    best-effort at most, and I3/I4 claims must name the opaque stage they
    depend on.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+Each row lands where it can be checked: the digest and the opaque stages in
+the dossier's Artifact digests and Known limitations sections, the tested
+behavior as dated qualification rows. The rubric is the contract for accepting
+such an input; it says nothing about whether any board has satisfied it.
+
+> status: shipped — evidence: `docs/bsp/board-template.md`, `docs/bsp/qualification.md`
 
 Rejecting a binary-only input is the default when any row above cannot be
 filled. Source availability is not required — many embedded products cannot

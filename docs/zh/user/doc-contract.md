@@ -108,11 +108,12 @@ merges` 形式的标记标出该节，以便计划落地时清扫并重新标注
 记录：源页面、翻译所依据的源版本、以及取值为 `current`、`lagging` 或
 `not-translated` 之一的状态。任何冲突以英文页面为准。
 
-本契约只陈述规则；中文用户树和保持覆盖表诚实的检查由后续任务实现。
+中文文档集位于 `docs/zh/` 之下，保持覆盖表诚实的检查是
+`docs/zh/verify-coverage.sh`，由 `make docs-verify` 运行：它在两个方向上
+对照两棵树核对这张表，并要求 `current` 的页面携带与其英文源页面相同、
+且顺序相同的 status 行。
 
-> status: proposed — evidence: `docs/plan/PLAN-042.md`
-
-TODO(PLAN-042): revisit after this plan merges
+> status: shipped — evidence: `docs/zh/README.md`, `docs/zh/verify-coverage.sh`
 
 ## 6. 风格规则
 

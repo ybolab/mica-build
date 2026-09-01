@@ -41,9 +41,14 @@ Support ownership follows the board support taxonomy on the
   behaviour route to the board's owner named in its evidence dossier.
 - For **unsupported** hardware, no support claim exists.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+The taxonomy and its ownership split are defined; which tier a board holds is
+a separate question its dossier answers. No board holds the mos-qualified tier
+today — the one dossier on file carries every qualification row as
+`not tested` — so the first bullet describes the ownership that tier would
+carry, not a board the site can point at.
 
-TODO(PLAN-050): revisit after this plan merges
+> status: shipped — evidence: `docs/bsp/support-tiers.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
 
 ### Lifecycle and support windows
 

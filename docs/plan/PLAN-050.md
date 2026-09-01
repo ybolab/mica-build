@@ -97,9 +97,15 @@ of `pass`, `fail`, `N/A` or `not tested` — with a `pass` required to carry an
 ISO date, so "never implicitly green" is enforced rather than requested. It
 reports 42 assertions at this head. Its negative-test sibling is nine cases,
 including the two vacuity floors that matter here: a template yielding zero
-required headings, and a dossier with zero qualification rows. A `TODO(PLAN-050)`
-sweep across the user and website pages is left to the owner of each section,
-because the sections rest on the evidence below.
+required headings, and a dossier with zero qualification rows. The
+`TODO(PLAN-050)` sweep across the user, website and BSP pages is done, section
+by section: what this plan delivered — the tier vocabulary, the intake rubric,
+the qualification process, the dossier template and its validator — is
+`shipped` against the page or check that carries it, and every claim resting on
+the evidence below is `board-dependent` against `docs/bsp/cx3576-example.md`,
+whose twelve rows read `not tested`. No status line under `docs/user/`,
+`docs/website/`, `docs/bsp/` or `docs/zh/` cites this record any more, so
+deleting it when it closes breaks no claim.
 
 **What remains open, and why it cannot be closed from a desk:**
 

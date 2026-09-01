@@ -5,7 +5,12 @@ boots. mos normally supplies the contract and the guidance while the
 integrating customer selects and integrates the board, so the tiers exist to
 keep three different situations from blurring into one word "supported".
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+The definitions below are the vocabulary. Whether a board has reached a tier
+is answered by that board's dossier, and no board is mos-qualified today: the
+one dossier on file carries every qualification row as `not tested`.
+
+> status: shipped — evidence: `docs/bsp/qualification.md`, `docs/bsp/board-template.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
 
 ## The tiers
 

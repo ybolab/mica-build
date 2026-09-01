@@ -7,11 +7,12 @@ supported or in-progress board has exactly one dossier;
 [cx3576-example.md](cx3576-example.md) is the filled instance for cx3576.
 
 **Validation.** A dossier MUST carry the thirteen H2 headings below, spelled
-exactly and in this order, with no H2 heading outside this list. A validator
-(added by a later change) asserts the heading list mechanically; the required
-fields under each heading are asserted by review until then.
+exactly and in this order, with no H2 heading outside this list.
+`docs/bsp/verify-board.sh`, run by `make docs-verify`, asserts that heading
+list and the qualification-row grammar mechanically; the required fields under
+each heading are asserted by review.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+> status: shipped — evidence: `docs/bsp/verify-board.sh`
 
 The section list:
 
