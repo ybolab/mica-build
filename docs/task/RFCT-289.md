@@ -1,6 +1,6 @@
 # RFCT-289 Define security and manufacturing lifecycle
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01

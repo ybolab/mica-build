@@ -64,6 +64,13 @@ enum Command {
         /// Optional release version recorded in the target's custom block.
         #[arg(long)]
         release_version: Option<String>,
+        /// Release manifest.json to pin as its own target beside the bundle,
+        /// stamping board/profile/channel/version selection metadata on the
+        /// bundle target so the device-side client (`rauc-update check`)
+        /// needs no unsigned side channel. Refused if the manifest does not
+        /// pin the bundle being published.
+        #[arg(long)]
+        manifest: Option<PathBuf>,
         #[command(flatten)]
         expires: ExpiryArgs,
     },
@@ -98,6 +105,26 @@ enum Command {
         #[arg(long, value_parser = parse_time)]
         root_expires: DateTime<Utc>,
     },
+    /// Replace the ONLINE role keys (targets, snapshot, timestamp): publish
+    /// the next root version binding fresh keys and re-sign the online
+    /// metadata with them, revoking the outgoing keys. The recovery for a
+    /// compromised or retiring release host; an offline ceremony -- needs the
+    /// root key and the incoming online keys, and the trust anchor does not
+    /// change hands.
+    RotateOnline {
+        #[command(flatten)]
+        common: Common,
+        /// Directory holding the freshly generated `targets.pk8`,
+        /// `snapshot.pk8` and `timestamp.pk8` that take over the online roles.
+        /// `--keys-dir` holds the (unchanged) root key.
+        #[arg(long)]
+        new_keys_dir: PathBuf,
+        /// New `root.json` expiration, RFC 3339.
+        #[arg(long, value_parser = parse_time)]
+        root_expires: DateTime<Utc>,
+        #[command(flatten)]
+        expires: ExpiryArgs,
+    },
     /// Re-sign root at its annual expiry with the SAME key: a new version and a
     /// new expiration, no change of trust anchor and nothing to redistribute.
     /// Not a rotation -- see `rotate-root` for that.
@@ -107,6 +134,21 @@ enum Command {
         /// New `root.json` expiration, RFC 3339.
         #[arg(long, value_parser = parse_time)]
         root_expires: DateTime<Utc>,
+    },
+    /// Produce an offline update "lockbox": the complete metadata set plus
+    /// the named targets (every target when none is named), a directory
+    /// `rauc-update import` verifies exactly as it would an online mirror.
+    Lockbox {
+        /// Repository directory.
+        #[arg(long)]
+        repo: PathBuf,
+        /// Output directory; must not already hold a repository.
+        #[arg(long)]
+        out: PathBuf,
+        /// Carry only this target (a bundle brings its pinned manifest
+        /// along); repeatable. Defaults to every target.
+        #[arg(long = "target", value_name = "NAME")]
+        targets: Vec<String>,
     },
     /// Verify a repository offline against a trusted root.
     Verify {
@@ -203,19 +245,26 @@ async fn main() -> Result<()> {
             name,
             verity_root_hash,
             release_version,
+            manifest,
             expires,
         } => {
             let added = repo::add(
                 &common.repo,
                 &common.keys_dir,
                 &target,
-                name.as_deref(),
                 &verity_root_hash,
-                release_version.as_deref(),
+                repo::AddOptions {
+                    name: name.as_deref(),
+                    release_version: release_version.as_deref(),
+                    manifest: manifest.as_deref(),
+                },
                 (&expires).into(),
             )
             .await?;
             println!("added target {}", added.raw());
+            if manifest.is_some() {
+                println!("pinned manifest {}.manifest.json beside it", added.raw());
+            }
         }
         Command::Sign {
             common,
@@ -253,6 +302,30 @@ async fn main() -> Result<()> {
                  clients still pinned to an older root reach it through this file"
             );
         }
+        Command::RotateOnline {
+            common,
+            new_keys_dir,
+            root_expires,
+            expires,
+        } => {
+            let version = repo::rotate_online_keys(
+                &common.repo,
+                &common.keys_dir,
+                &new_keys_dir,
+                root_expires,
+                (&expires).into(),
+            )
+            .await?;
+            println!(
+                "rotated the online keys; root is v{version} in {}",
+                common.repo.display()
+            );
+            println!(
+                "the outgoing targets/snapshot/timestamp keys are revoked; destroy them, \
+                 move the incoming keys to the release host, and record the incident \
+                 if this rotation is a response to compromise"
+            );
+        }
         Command::RefreshRoot {
             common,
             root_expires,
@@ -262,6 +335,15 @@ async fn main() -> Result<()> {
             println!(
                 "refreshed root to v{version} in {} (same key; the trust anchor is unchanged)",
                 common.repo.display()
+            );
+        }
+        Command::Lockbox { repo, out, targets } => {
+            let carried = repo::lockbox(&repo, &out, &targets)?;
+            println!(
+                "lockbox {} carries {} target(s): {}",
+                out.display(),
+                carried.len(),
+                carried.join(", ")
             );
         }
         Command::Verify {
