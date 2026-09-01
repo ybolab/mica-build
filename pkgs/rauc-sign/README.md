@@ -11,9 +11,10 @@ halves of the TUF trust model because they share one metadata format:
   rollback protection, and `rauc-update` (phase 2, second half) adds the
   transport on top of the same walk — compatibility selection from signed
   release metadata, resumable download into a bounded reserve directory, and
-  the offline "lockbox" import. Both exist and are exercised offline by the
-  test suite; nothing ships them to a device yet (see the provisioning
-  section below).
+  the offline "lockbox" import. Both are exercised offline by the test suite
+  and both are SHIPPED, as `mos-rauc-update` (see "Packaging" below); what is
+  still owed is the trust anchor they verify from and the thing that runs
+  them (see the provisioning section below).
 
 ## Contents
 
@@ -167,9 +168,13 @@ and no flag skips any of that. Four subcommands, same scriptable contract
 
 Device identity (board/profile/running version) comes from
 `/usr/share/mos/release-identity.env` (`BOARD=`/`PROFILE=`/`VERSION=` lines)
-or explicit `--board`/`--profile`/`--current-version` flags. **Nothing in the
-image pipeline writes that file yet** — shipping it is the image side's half
-of this contract.
+or explicit `--board`/`--profile`/`--current-version` flags. The image
+pipeline writes that file: `rootfs/compose/compose-install.sh` renders it
+from the board, profile and pool version the composition was given. `VERSION`
+is therefore the POOL version (`0.1.0+git<commit>-1`), which is what an image
+build can measure about itself and not a release number —
+`docs/design/release-signing.md` §3.1 states what that costs the
+"newer than running" comparison.
 
 The **reserve directory is a contract, not a mechanism**: who provisions it,
 on which partition, and how many bytes `--max-bytes` may promise is a
@@ -234,11 +239,11 @@ to be made deliberately, not defaulted. Candidate paths, none implemented:
   path is an attack surface that must enforce the chain rule strictly.
 
 Until one of these is chosen and built, `rauc-verify` and `rauc-update` are
-tools a test (or a person with a shell) points at a directory — that is the
-whole truth of their deployment status. The same honesty applies to the
-device identity file `rauc-update` defaults to
-(`/usr/share/mos/release-identity.env`): defined here, shipped by nothing
-yet.
+tools a person with a shell (or, later, mosd) points at a directory and a
+`--root` they provided themselves — that is the whole truth of their
+deployment status. What HAS changed is the two smaller halves: the binaries
+are in the image, and the device identity file they default to
+(`/usr/share/mos/release-identity.env`) is written by the composition.
 
 ## Repository layout produced
 
@@ -359,6 +364,41 @@ deterministic. `--root-expires` is on `init` and on the two root ceremonies, and
 because `root.json` is the one role the online path never re-signs. `rauc-sign verify --datastore` persists
 the last trusted metadata for the release side; the device side's equivalent is
 the mandatory `--state` file.
+
+## Packaging
+
+The device half of this crate ships as one Debian package, `mos-rauc-update`,
+built by the producer at `pkgs/rauc-sign/deb/rauc-update/`:
+
+```
+make os-deb-rauc-update
+  -> bash build-env/deb/build.sh --producer rauc-update --arch <amd64|arm64>
+  -> _out/debs/<arch>/pool/mos-rauc-update_<version>_<arch>.deb
+```
+
+`/usr/bin/rauc-update` and `/usr/bin/rauc-verify`, and nothing else. It ships
+no unit, because nothing on a device schedules this client yet, and no
+maintainer script: the identity file it reads is written by the composition,
+not by dpkg.
+
+**`rauc-sign` is not in it, and that is asserted rather than intended.** The
+producer's `PREPARE` hook (`hack/build-deb.sh`) compiles with `--bin
+rauc-update --bin rauc-verify` into a producer-private `CARGO_TARGET_DIR` and
+then fails by name if a `rauc-sign` binary is anywhere in that directory. The
+signing tool loads the offline root key; a device that carried it would carry
+the one program whose whole purpose is to make metadata devices trust.
+
+The version is the pool's — `<crate version>+git<commit>[.dirty]-1`, from
+`build-env/deb/version.sh`, the one rule every producer in this repository
+asks for. This is a first-party package, so it declares no `VERSION_FROM`;
+the upstream repacks beside it (`mos-rauc`, `mos-podman`) are the case that
+key exists for.
+
+`rootfs/packages/feature-rauc.pkgs` names the package alongside `mos-rauc`,
+so both boards install it and `MOS_ROOTFS_WITHOUT=rauc` declines the client
+with the installer it feeds. `verify`'s `packed-update-client` and
+`packed-release-identity` checks are what refuse an image missing either
+half.
 
 ## Checks
 
