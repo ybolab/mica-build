@@ -405,6 +405,167 @@ pub async fn rotate_root(
     Ok(next.get())
 }
 
+/// Publishes the next root version with **fresh online role keys** bound to
+/// `targets`, `snapshot` and `timestamp`, then re-signs the online metadata
+/// with them. The outgoing online keys are revoked: no metadata they sign
+/// after this verifies against the new root.
+///
+/// This is the recovery for a compromised (or retiring) release host, and it
+/// is an **offline ceremony**: it needs the sealed root key, because only a
+/// new root version can change which online keys the fleet accepts. The root
+/// key itself does not change hands — the root role's binding is untouched, so
+/// the one signature the unchanged root key produces satisfies both halves of
+/// the cross-sign check and no anchor needs redistributing.
+///
+/// Unlike [`rotate_root`], this cannot stop at the root document: the
+/// repository's `targets`, `snapshot` and `timestamp` are signed by the very
+/// keys being revoked, so a repository left as-is would be refused whole by
+/// every client that walks to the new root. The re-sign therefore happens
+/// here, in the same ceremony, with the incoming keys — target entries are
+/// carried forward unchanged and every online role's version is bumped. The
+/// target files themselves are content-addressed and unchanged, so nothing is
+/// copied.
+///
+/// Expiration is deliberately not enforced when loading the outgoing
+/// repository: revoking a compromised key is most urgent exactly when the
+/// repository has been left to rot.
+///
+/// Returns the root version that was published.
+pub async fn rotate_online_keys(
+    repo: &Path,
+    keys_dir: &Path,
+    new_keys_dir: &Path,
+    root_expires: DateTime<Utc>,
+    expires: Expirations,
+) -> Result<u64> {
+    let meta_dir = metadata_dir(repo);
+    let root_path = meta_dir.join("root.json");
+    let root_bytes =
+        fs::read(&root_path).with_context(|| format!("read {}", root_path.display()))?;
+    let current: Signed<Root> = serde_json::from_slice(&root_bytes)
+        .with_context(|| format!("parse {}", root_path.display()))?;
+    // Same reasoning as rotate_root: an anchor its own keys do not sign is not
+    // the anchor the fleet is on, and building on it would be discovered by
+    // the fleet, after the ceremony.
+    current
+        .signed
+        .verify_role(&current)
+        .with_context(|| format!("{} is not signed by its own root keys", root_path.display()))?;
+
+    let next = bump(current.signed.version)?;
+    let next_path = meta_dir.join(format!("{next}.root.json"));
+    ensure!(
+        !next_path.exists(),
+        "{} already exists; a published root version is never rewritten \
+         (is metadata/root.json a stale copy of an older version?)",
+        next_path.display()
+    );
+
+    // Load the repository while the outgoing root still validates it, to carry
+    // the target entries into the re-signed metadata. Once the new root is
+    // written, metadata signed by the revoked keys can no longer be loaded —
+    // which is the point of the ceremony, and why the load happens first.
+    let repository = RepositoryLoader::new(
+        &root_bytes,
+        dir_url(&meta_dir)?,
+        dir_url(&targets_dir(repo))?,
+    )
+    .expiration_enforcement(ExpirationEnforcement::Unsafe)
+    .load()
+    .await
+    .context("load repository under the outgoing online keys")?;
+    let versions = Versions {
+        targets: repository.targets().signed.version,
+        snapshot: repository.snapshot().signed.version,
+        timestamp: repository.timestamp().signed.version,
+    };
+    let carried: Vec<(TargetName, Target)> = repository
+        .targets()
+        .signed
+        .targets
+        .iter()
+        .map(|(name, target)| (name.clone(), target.clone()))
+        .collect();
+
+    let mut new_root = current.signed.clone();
+    new_root.version = next;
+    new_root.expires = root_expires;
+    for role in keys::ONLINE_ROLES {
+        let role_type: RoleType = role.parse().map_err(|_| anyhow!("unknown role {role}"))?;
+        let (new_key_id, new_key) = load_key(new_keys_dir, role)?;
+        let role_keys = new_root
+            .roles
+            .get_mut(&role_type)
+            .ok_or_else(|| anyhow!("{} does not delegate the {role} role", root_path.display()))?;
+        ensure!(
+            !role_keys.keyids.contains(&new_key_id),
+            "the {role} key in {} is the one already holding the role; an online-key \
+             rotation revokes the outgoing keys, so it must introduce keys the root \
+             does not already trust",
+            new_keys_dir.display()
+        );
+        role_keys.keyids = vec![new_key_id.clone()];
+        new_root.keys.insert(new_key_id, new_key);
+    }
+    prune_unreferenced_keys(&mut new_root);
+
+    // The root role's binding is unchanged, so the one key in `keys_dir` signs
+    // a document that both the outgoing root and the new root accept. Both
+    // halves are still checked explicitly, exactly as in rotate_root, so a
+    // wrong sealed key is refused in the room rather than by the fleet.
+    let sources = keys::sources(keys_dir, &["root"])?;
+    let signed = SignedRole::new(
+        new_root.clone(),
+        &KeyHolder::Root(new_root.clone()),
+        &sources,
+        &SystemRandom::new(),
+    )
+    .await
+    .context("sign the new root metadata")?;
+    current
+        .signed
+        .verify_role(signed.signed())
+        .context("the new root is not signed by a threshold of the outgoing root keys")?;
+    new_root
+        .verify_role(signed.signed())
+        .context("the new root is not signed by a threshold of its own root keys")?;
+
+    signed
+        .write(&meta_dir, true)
+        .await
+        .context("write the new root metadata")?;
+    publish_alias(&meta_dir, next.get(), "root")?;
+
+    // Re-sign the online roles with the incoming keys, carrying the targets
+    // forward. The editor is opened from the just-published root, so what it
+    // signs is exactly what a client walking to the new root will demand.
+    let mut editor = RepositoryEditor::new(meta_dir.join("root.json"))
+        .await
+        .context("load the new root.json into the editor")?;
+    for (name, target) in carried {
+        editor.add_target(name, target)?;
+    }
+    editor
+        .targets_version(bump(versions.targets)?)?
+        .targets_expires(expires.targets)?
+        .snapshot_version(bump(versions.snapshot)?)
+        .snapshot_expires(expires.snapshot)
+        .timestamp_version(bump(versions.timestamp)?)
+        .timestamp_expires(expires.timestamp);
+    let online = keys::sources(new_keys_dir, &keys::ONLINE_ROLES)?;
+    let signed_repo = editor
+        .sign(&online)
+        .await
+        .context("sign metadata with the incoming online keys")?;
+    signed_repo
+        .write(&meta_dir)
+        .await
+        .context("write metadata")?;
+    publish_alias(&meta_dir, versions.targets.get() + 1, "targets")?;
+    publish_alias(&meta_dir, versions.snapshot.get() + 1, "snapshot")?;
+    Ok(next.get())
+}
+
 /// Verifies a repository offline against a trusted root, then reads every target
 /// back through the metadata so target bytes are hash-checked too.
 ///

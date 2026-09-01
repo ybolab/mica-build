@@ -98,6 +98,26 @@ enum Command {
         #[arg(long, value_parser = parse_time)]
         root_expires: DateTime<Utc>,
     },
+    /// Replace the ONLINE role keys (targets, snapshot, timestamp): publish
+    /// the next root version binding fresh keys and re-sign the online
+    /// metadata with them, revoking the outgoing keys. The recovery for a
+    /// compromised or retiring release host; an offline ceremony -- needs the
+    /// root key and the incoming online keys, and the trust anchor does not
+    /// change hands.
+    RotateOnline {
+        #[command(flatten)]
+        common: Common,
+        /// Directory holding the freshly generated `targets.pk8`,
+        /// `snapshot.pk8` and `timestamp.pk8` that take over the online roles.
+        /// `--keys-dir` holds the (unchanged) root key.
+        #[arg(long)]
+        new_keys_dir: PathBuf,
+        /// New `root.json` expiration, RFC 3339.
+        #[arg(long, value_parser = parse_time)]
+        root_expires: DateTime<Utc>,
+        #[command(flatten)]
+        expires: ExpiryArgs,
+    },
     /// Re-sign root at its annual expiry with the SAME key: a new version and a
     /// new expiration, no change of trust anchor and nothing to redistribute.
     /// Not a rotation -- see `rotate-root` for that.
@@ -251,6 +271,30 @@ async fn main() -> Result<()> {
             println!(
                 "distribute metadata/{version}.root.json as the new trust anchor; \
                  clients still pinned to an older root reach it through this file"
+            );
+        }
+        Command::RotateOnline {
+            common,
+            new_keys_dir,
+            root_expires,
+            expires,
+        } => {
+            let version = repo::rotate_online_keys(
+                &common.repo,
+                &common.keys_dir,
+                &new_keys_dir,
+                root_expires,
+                (&expires).into(),
+            )
+            .await?;
+            println!(
+                "rotated the online keys; root is v{version} in {}",
+                common.repo.display()
+            );
+            println!(
+                "the outgoing targets/snapshot/timestamp keys are revoked; destroy them, \
+                 move the incoming keys to the release host, and record the incident \
+                 if this rotation is a response to compromise"
             );
         }
         Command::RefreshRoot {
