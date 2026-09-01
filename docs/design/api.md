@@ -33,7 +33,13 @@
   explicit and does not hide readable configuration.
 - The built-in SPA uses root-relative `/api/...` requests and stores no session
   or bearer credential in browser storage. Its committed `ui/dist` output is
-  rebuilt and byte-compared in CI before Cargo embeds it.
+  rebuilt and byte-compared in CI before `apid/build.rs` recursively embeds the
+  complete tree. `index.html` is the only stable name; content-hashed route,
+  locale and vendor chunks remain independently addressable and cacheable.
+- `/`, `/ui` and `/api` are isolated ownership domains. Misses never fall
+  through to another resource root. The shared logical-path validator decodes
+  once and rejects repeated/encoded separators, dot components, controls,
+  residual escapes and encoded `api`/`ui` aliases before lookup.
 
 ## 0. How to read this document
 
@@ -2402,43 +2408,38 @@ claim is made anywhere in this section"* stays true.
 
 ### 4.1 Routing between API and assets — **[implemented]**
 
-**Implemented at `pkgs/mosd/apid/src/routes.rs`** — `app`, whose
-*declaration order* is this subsection's precedence rule: `/` (`pkgs/mosd/apid/src/routes.rs`), the
-reserved `/builtin` subtree (`pkgs/mosd/apid/src/routes.rs`), the fifteen legacy declarations
-(`pkgs/mosd/apid/src/routes.rs`), the reserved `/api` subtree, and rule 4's
-`.fallback(serve::fallback)` (`pkgs/mosd/apid/src/routes.rs`). The asset side is
-`pkgs/mosd/apid/src/assets/serve.rs` (`root` and `fallback`). Nothing re-checks a
-prefix: no handler under `assets/` reads one, which is the property this
-subsection asked for rather than a coincidence of the implementation.
+**Implemented at `pkgs/mosd/apid/src/routes.rs`** — `app` structurally owns the
+three product namespaces: `/api` is the versioned management API with its own
+JSON fallback, `/ui` is the built-in SPA with its own embedded-tree fallback,
+and all remaining UI paths belong to the active custom bundle at `/`.
+`/healthz` remains one explicit operational probe outside asset resolution.
+The custom side is `pkgs/mosd/apid/src/assets/serve.rs`; the built-in side is
+`pkgs/mosd/apid/src/assets/builtin.rs`. A miss inside one namespace is terminal
+and never causes lookup in another resource tree.
 
-**Two things the implementation settled that the text above did not, both
-reported deliberately rather than designed around.** First, `nest("/api", …)`
-claims `/api`, `/api/x` and `/api/x/y` but **not** `/api/` — measured against
-axum 0.8.9 — so `/api/` alone fell through to the asset router and, with a
-bundle installed, was answered by §4.2's fallback with 200 and HTML. Rule 1
-forbids that in as many words, and it is closed by the explicit second
-declaration at `pkgs/mosd/apid/src/routes.rs`, which is why that line is not
-redundant. Second, and **not closed**: rule 1 is written about paths that
-*begin* `/api/`, and `//api/versions` does not — it reaches the fallback, where
-§4.4 rule 3 strips all leading separators and resolves it to the bundle's
-`api/versions`. No API path is shadowed and phase 2's routes answer at
-`/api/v1/...` regardless, so this is not the failure rule 1 exists to prevent;
-what it is, is the reserved subtree's *names* remaining reachable from a bundle
-by adding one slash. Closing it needs either the in-handler prefix check §4.1
-rejects or a path-normalising middleware, and §4 chooses neither, so it is left
-open and named here rather than in a comment.
+Axum 0.8 does not make the trailing-root spellings of a nested router
+interchangeable, so `/api/` and `/ui/` remain explicit declarations. The path
+layer in `pkgs/mosd/apid/src/assets/path.rs` closes the former leading-separator
+gap as well: it requires one prefix-stripped relative key, decodes exactly once
+and rejects repeated or encoded separators, empty/dot components, controls,
+backslashes and residual escapes. At the root custom-UI boundary it also rejects
+a decoded first component equal to `api` or `ui`; therefore `//api/versions`,
+`/%61pi/versions` and equivalent aliases are 404 rather than another spelling
+of a bundle file. Segment-aware matching leaves `/apiary` and `/uikit` valid.
 
 **The precedence rule.** One request arrives; apid decides in this order, and
 the order is total — no request is ever ambiguous:
 
-1. **`/api/` — a reserved subtree.** The API router is mounted at `/api/v1` and
-   the whole `/api/` prefix is claimed, **including its own not-found
-   handler**. No request whose path begins `/api/` ever reaches the asset
-   router, whether or not it matches a declared operation.
-2. **Reserved non-API paths.** `/healthz`, and the built-in-UI prefix section
-   6.3 reserves. Declared routes.
-3. **Legacy server-rendered paths**, for as long as they are declared.
-4. **Everything else — the asset router**, as the router's fallback.
+1. **`/api` — a reserved subtree.** Declared operations answer normally and
+   every miss below the prefix uses the API's JSON 404. No API request reaches
+   an asset resolver.
+2. **`/ui` — the built-in resource tree.** It serves only the compile-time
+   embedded VFS and owns its own SPA fallback and 404 behavior.
+3. **`/healthz` — the operational exception.** It is a direct liveness route,
+   not a fourth asset tree.
+4. **`/` and every remaining UI path — the custom resource tree.** Exact `/`
+   serves the active custom index or redirects to `/ui`; the fallback never
+   reads the built-in VFS.
 
 **Why this order rather than any other.** Rule 1 is not a convention that has
 to be policed; it is the shape axum's router already has. As of `86cd669` the
@@ -2467,14 +2468,10 @@ custom UI can never serve a page or an asset at `/api/anything`, and it never
 gets that path back. That is the price of rule 1 being structural. It is
 cheap here only because the reserved set is small and is written down.
 
-**What happens to today's server-rendered paths while they still exist.** They
-are declared routes, so rule 3 falls out of rule 1's mechanism with no special
-case: at `86cd669` the reserved page paths are `/`, `/setup`, `/login`,
-`/logout`, `/network`, `/hostname`, `/power`, `/power/reboot`,
-`/power/poweroff`, `/ssh`, `/ssh/enable`, `/ssh/password`, `/ssh/keys/add`,
-`/ssh/keys/remove` and `/healthz`, each a `.route()` declaration
-(`pkgs/mosd/apid/src/routes.rs`). A custom
-bundle cannot occupy any of them.
+**The earlier server-rendered page routes no longer exist.** Product pages now
+live in the React SPA and use `/api/v1/...`; only `/healthz` remains a declared
+non-API, non-asset path. This releases names such as `/network` and `/login` to
+an active custom SPA without weakening `/api` or `/ui` ownership.
 
 **`/` is the one that matters, and it must not be waved past.** A replaceable UI
 whose index cannot be served at the site root is not replaceable in any useful
@@ -2484,17 +2481,11 @@ status pane. So `/` is the single exception to rule 3:
 
 - `GET /` serves the **active bundle's `index.html` when a bundle is active**
   and its index is readable (section 5.3's definition of active);
-- otherwise `GET /` serves the built-in UI.
+- otherwise `GET /` redirects to `/ui`.
 
-The built-in status pane that occupies `GET /` today (`home` in
-`pkgs/mosd/apid/src/routes.rs`) moves under section 6.3's reserved
-prefix, where it is reachable unconditionally. `/` is therefore **conditional**
-and the reserved prefix is **not** — and section 6.3 requires exactly one
-unconditional path, not two, so this trade is the one that section makes.
-
-The other legacy pane paths stay reserved until the phasing in section 8 moves
-each pane onto the API and deletes its route. Until then a custom UI cannot use
-those thirteen paths. That shrinkage is section 8's to schedule.
+`/` is therefore conditional and `/ui` is unconditional. The custom bundle can
+never shadow or replace `/ui`, including by placing a `ui/` directory inside
+its own tree.
 
 ### 4.2 SPA fallback — **[implemented]**
 
@@ -3277,31 +3268,36 @@ belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 
 ### 6.2 The built-in default UI, inside verity — **[implemented]**
 
-This subsection was marked **[proposed]** because the *role* proposed for the
-built-in UI — a fallback at a reserved path — did not exist; the artifact and
-the protection described below already did at `86cd669`, and each is cited.
-**The role now exists.** The built-in UI is what the asset router answers with
-whenever a bundle cannot be served — `built_in` in
-`pkgs/mosd/apid/src/assets/serve.rs`, reached from `root`, from §4.2's condition 5
-and from §6.1 classes 1, 2 and 4 — and it is reachable unconditionally at
-§6.3's reserved prefix, `builtin_home` in `pkgs/mosd/apid/src/routes.rs`. Its
-form is unchanged and is asserted on the image rather than assumed:
-the image verifier's `check_builtin_ui` required the deactivate
-form's rendered markup to be present in `/usr/bin/apid`, which is the
-compiled-into-the-binary property checked as an on-image fact rather than as a
-crate test, and `verify/src/checks-root.test.ts` drives that assertion against an input
-in which it is false.
+The built-in UI is a React/Vite SPA whose committed output is
+`pkgs/mosd/apid/ui/dist`. It is reachable unconditionally at `/ui` and `/ui/`;
+safe extensionless paths below `/ui/` use its own `index.html`, while exact
+assets and misses never consult `/srv/ui`. When no usable custom bundle is
+active, `GET /` redirects to this recovery UI rather than copying its bytes into
+the root namespace.
 
-**Where it lives in the image: it is not a directory of files.** The built-in
-UI is **compiled into the `apid` binary**. The pages are `maud` `html!` macro
-expansions in `pkgs/mosd/apid/src/routes.rs` (the macro is imported and
-used by every page handler), and the only
-stylesheet is a `&str` constant emitted into the page head
-(`pkgs/mosd/apid/src/routes.rs`), described in the source as
-*"Inline stylesheet shared by every page; no external assets"*
-(`pkgs/mosd/apid/src/routes.rs`). Section 1.6 evidences the rest: no
-`include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
-and no non-Rust file in the crate other than its manifest.
+**Where it lives in the image: it is a virtual tree inside one binary.**
+`pkgs/mosd/apid/build.rs` recursively walks the committed `ui/dist`, rejects
+symlinks, non-files and unsafe logical names, requires `index.html`, sorts the
+paths and generates an `include_bytes!` table in Cargo's `OUT_DIR`.
+`pkgs/mosd/apid/src/assets/builtin.rs` includes that table and performs binary
+search lookup. The running device reads no built-in UI directory, archive or
+locale endpoint; every hashed JavaScript, CSS and imported asset is covered by
+the same `apid` binary as the stable HTML entry.
+
+The frontend producer uses Bun and Vite before the Rust/image build and commits
+the result. Native and cross Cargo builds consume that tree without invoking a
+JavaScript toolchain. `pkgs/mosd/apid/ui/run.sh` rebuilds in a temporary
+directory and recursively compares every path and byte with the committed
+`dist`; Cargo separately fails closed if the committed tree lacks the entry or
+contains a path the embedded VFS cannot safely name. There is no fixed file
+count and no Rust source edit when a content hash changes.
+
+The VFS keeps each asset independently addressable and cacheable. The stable
+entry and SPA fallbacks are `no-store`; Vite's content-hashed `assets/` output
+is immutable for one year; any other embedded file is `no-cache`. MIME remains
+a fixed allowlist and every built-in response carries `nosniff`, CSP and a
+no-referrer policy. Route components and the Simplified Chinese catalog are
+lazy chunks, but remain local, verity-covered resources.
 
 **How it gets there.** The `mosd` producer builds `apid` and packs it as the
 `mos-apid` package: `/usr/bin/apid` mode `0755`,
@@ -3338,50 +3334,25 @@ naming which one is load-bearing matters more than the count:
    (`pkgs/mosd/apid/src/config.rs`) and that is how the crate's tests run. This
    is a real gap, and is not counted as covered here.
 
-**What we ship, and what we deliberately do not.** mos builds **no JavaScript
-toolchain**, and section 1.6 measured that at `86cd669` four independent ways.
-The built-in UI therefore stays **server-rendered `maud` with no build step**,
-and **this document does not choose a frontend framework for it** —
-`docs/design/dashboard.md` §5.8 already settled the live-value mechanism as
-full-page refresh with a no-JavaScript off switch
-(`docs/design/dashboard.md`; cited, not edited), which is the same
-constraint approached from the other side.
-
-**A customer's own UI is their toolchain, not ours.** This asymmetry is
-deliberate and should not be read as an oversight. A bundle is a directory of
-files that apid serves (5.3); whether the customer produced it with a bundler, a
-compiler, a Makefile or by hand is invisible to the device and must **stay**
-invisible. mos ships no bundler, pins no framework version, offers no build
-integration, and takes no position on what a customer's UI is written in. The
-reason is exactly section 6's requirement: **the artifact we guarantee will keep
-working forever is the one with no build chain**, and guaranteeing that for
-something we did not build and cannot rebuild would be a promise with no
-mechanism behind it.
+**A customer's own UI still owns its toolchain.** A custom bundle remains an
+opaque, validated directory under `/srv/ui`; whether a customer produced it
+with a bundler, compiler, Makefile or by hand is invisible to the device. The
+built-in SPA's build chain is a repository concern and does not become a
+runtime dependency or a requirement imposed on custom bundles.
 
 ### 6.3 The deterministic way to reach it — **[implemented]**
 
-**Implemented at `pkgs/mosd/apid/src/routes.rs`** — candidate (A) is
-`.nest(BUILTIN, …)` at `pkgs/mosd/apid/src/routes.rs`, which claims the **whole** `/builtin`
-subtree, its own not-found handler included, and is unshadowable for exactly
-the structural reason `/api/` is; candidate (B) is the deactivate control the
-pane carries, `builtin_deactivate` behind `POST /builtin/deactivate`, which
-performs §5.3's deactivate. The two together are the
-chosen mechanism, and both spellings answer: `nest` claims the bare `/builtin`
-and **not** `/builtin/`, so the trailing-slash spelling — the one this document
-writes — is declared outside the nest at `pkgs/mosd/apid/src/routes.rs`. An operator recovering a
-device should not have to get the slash right. The escape is driven from every
-one of §6.1's five classes, identically and without diagnosis, by
-`pkgs/mosd/apid/src/tests/broken_classes.rs`, and the shadowing guard is fired in
-both directions as a standing test. On the image,
-`verify/src/checks-root.ts` asserts two facts the escape depends on: the packed
-read-only root ships **nothing** at or under `/builtin`, so the prefix has not
-grown a second, separately-built on-disk half; and the deactivate form's
-rendered markup is present in `/usr/bin/apid`, which is true if and
-only if the pane is compiled into the binary. Both are guard-fired against a
-mutated input by `verify/src/checks-root.test.ts`.
+**Implemented at `pkgs/mosd/apid/src/routes.rs`** — `/ui` is a nested router
+that claims the complete built-in namespace and never consults `/srv/ui`.
+Both `/ui` and `/ui/` answer the stable embedded entry; descendants are handled
+only by `pkgs/mosd/apid/src/assets/builtin.rs`. The root custom UI cannot shadow
+this prefix even if its bundle contains an identically named `ui/` tree.
 
-The deactivate control is **POST only** — no `GET` handler exists — so no
-prefetch, crawler or mis-clicked link can deactivate a working custom UI.
+Deactivation is now an authenticated, CSRF-protected API action at
+`DELETE /api/v1/ui/active`, not a form under the recovery prefix. The built-in
+System page calls that API and the unconditional `/ui` URL remains usable
+whether the custom bundle is active, absent or malformed. A crawler or ordinary
+GET cannot change the active UI.
 
 The requirement, restated as a test the mechanism must pass:
 
@@ -3392,7 +3363,7 @@ The requirement, restated as a test the mechanism must pass:
 Three candidates, evaluated.
 
 **(A) A reserved path the asset router can never shadow.** A prefix — call it
-`/builtin/` — served by the built-in handlers. 4.1's precedence rule makes it
+`/ui/` — served by the built-in VFS. 4.1's precedence rule makes it
 unshadowable **structurally**: axum matches declared routes before consulting
 the fallback, so no bundle content can occupy the prefix, and this is true
 because of how dispatch works rather than because of a check.
@@ -3403,25 +3374,16 @@ because of how dispatch works rather than because of a check.
 - **Class 5: yes, by definition.** Class 5 means the UI *renders*, so the
   listener is up and the prefix answers.
 - **Costs.** It burns a path prefix permanently, and it only helps an operator
-  who knows the URL. The mitigation proposed here — that the built-in error
-  pages *"already exist and can name the path"* — **is the one surface that
-  cannot carry it**, and it was measured why: the crate's only error page is
-  `bus_error` (`pkgs/mosd/apid/src/routes.rs`), reached when a mosd call
-  fails, and `gate` calls `get_settings("access")` on every path but `/healthz`
-  *before* dispatch — so at the moment that page is on screen, `/builtin/` is
-  answering 502 for the same reason, and naming the prefix there would advertise
-  a path that is down. The prefix is instead named on the three built-in
-  surfaces an operator with a broken custom UI actually reaches: the sign-in
-  page (`pkgs/mosd/apid/src/routes.rs`), the navigation on every built-in pane
-  (`pkgs/mosd/apid/src/routes.rs`), and the reserved subtree's own 404. The cost that must not be glossed: **(A) is a way *in*, not a way
-  *out*.** It deactivates nothing, so the next navigation to `/` is broken
-  again.
+  who knows the URL. The product and UI-selection response therefore document
+  `/ui` as the recovery address. The cost that must not be glossed: **(A) is a
+  way *in*, not a way *out*.** It deactivates nothing, so the next navigation
+  to `/` still selects the custom bundle.
 
 **(B) An override that disables the custom UI and survives a reboot.** Removing
 `/srv/ui/current` — 5.3's *deactivate*.
 
-- **Deterministic: yes, and it is the way *out*.** Afterwards `/` itself is the
-  built-in UI, by 4.1's `/` rule.
+- **Deterministic: yes, and it is the way *out*.** Afterwards `/` redirects to
+  the built-in `/ui`, by 4.1's `/` rule.
 - **Survives a reboot: yes.** The pointer is on DATA, and 5.4's third row
   asserts exactly this.
 - **Cost, and it is decisive:** it requires an action the operator can only take
@@ -3440,10 +3402,10 @@ button.
 
 **Chosen: (A) and (B) together, and neither alone.** (A) is the way in and
 depends on nothing but the listener; (B) is the way out and becomes reachable
-once (A) is. Concretely: **the built-in UI at the reserved prefix carries a
-control that performs (B).** One documented action — *go to
-`https://<device>/builtin/`* — reaches a working UI regardless of which of the
-five classes occurred, and one click from there deactivates the bundle. **The
+once (A) is. Concretely: **the built-in UI at `/ui` carries a System action
+that performs authenticated API operation (B).** One documented action — *go
+to `https://<device>/ui`* — reaches a working UI regardless of which of the five
+classes occurred, and the deactivate action returns `/` to that UI. **The
 operator never has to diagnose anything**, which is the test this subsection
 opened with.
 

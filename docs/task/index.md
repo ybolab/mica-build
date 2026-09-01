@@ -54,3 +54,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-002 Design the local application lifecycle module**](UI-002.md) `P1`
 - [x] [**UI-003 Define the built-in UI design guide**](UI-003.md) `P1`
 - [x] [**UI-004 Add localization and selectable Spectrum themes**](UI-004.md) `P1`
+- [x] [**UI-005 Embed isolated UI asset trees**](UI-005.md) `P1`

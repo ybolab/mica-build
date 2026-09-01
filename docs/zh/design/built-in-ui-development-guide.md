@@ -1,6 +1,6 @@
 # mos 内置 UI 开发指南
 
-> 文档版本：1.1
+> 文档版本：1.2
 > 基线日期：2026-09-01
 > 状态：已批准的 UI 开发与交付基线
 > 适用范围：`mos-apid` 随系统镜像交付的内置 Web UI，以及未来复用同一 UI 的本地触屏/kiosk
@@ -30,8 +30,8 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
    运行中的 UI 必须隐藏，不能显示不可用菜单、假数据或永远 disabled 的按钮。
 5. **安全操作显式且可恢复。** 一次性秘密只展示一次；危险操作显示影响范围；不可逆操作需要
    专用确认流程；所有 mutation 都正确处理 CSRF、任务进度和 API 错误。
-6. **内置交付约束优先。** 运行时不得依赖 CDN；构建必须保持固定的 `index.html`、
-   `assets/app.js`、`assets/app.css` 三个嵌入文件，除非后端资产嵌入机制在同一变更中调整。
+6. **内置交付约束优先。** 运行时不得依赖 CDN；`ui/dist` 的完整文件树必须以编译期虚拟文件系统
+   嵌入 `mos-apid`，入口以外的构建资源使用内容哈希，并通过路由与语言包懒加载减少首次下载。
 
 推荐路线不是重做现有界面，而是先统一状态、错误、表单和响应式规范，再完成已经具备 API 的
 网络管理，最后随各后端计划获批和落地逐项开放系统页面。
@@ -103,7 +103,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
             ├─ HTTPS / 同源 ─> mos-apid ─> versioned API ─> mosd
 本地 kiosk ─┘          │                         │
                        ├─ /ui/ 内置 SPA          ├─ settings + tasks
-                       └─ / 自定义或内置 UI       └─ reconcilers ─> OS/services
+                       └─ / 自定义 UI 或跳转 /ui   └─ reconcilers ─> OS/services
 ```
 
 - `/ui` 永远指向内置恢复界面。
@@ -111,6 +111,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 - `/api` 是唯一管理协议；listener 健康检查 `/healthz` 是部署例外，不是产品管理接口。
 - SPA 的无扩展名路径可以回退到 `index.html`；类似文件名的缺失资源应返回 404。
 - 自定义 UI 保存在 DATA，能跨重启与 A/B；内置 UI 位于受保护系统镜像中。
+- `/`、`/ui`、`/api` 是相互隔离的三个所有权域；一个域内资源缺失或路径非法时不得去另一个域查找。
 
 ### 3.2 安全边界
 
@@ -122,6 +123,10 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 - 读取到 `"<redacted>"` 表示设备持有秘密，不是一个可回写的值；将该字符串回写会被 422 拒绝。
 - SSH authorized key 授予 root 权限。界面必须在添加区和列表区都保持此风险可见。
 - console shell 设置虽然存在于 schema，但当前没有协调器，不能显示为可用开关。
+- 资源路径只解码一次；重复分隔符、`.`、`..`、编码分隔符、反斜杠、控制字符、残留 `%`，以及编码后的
+  根级 `api`/`ui` 别名都返回 404，不做归一化或跨域重试。`/apiary`、`/uikit` 等普通名称不受影响。
+- `/api` 下的未声明请求始终返回 JSON API 404；`/ui` 下的资源只来自内置 VFS；其余路径只访问当前
+  自定义 bundle。`/healthz` 是显式运行状态探针，不进入任何资源解析器。
 
 ### 3.3 CSP 与离线资产
 
@@ -165,12 +170,12 @@ pkgs/mosd/apid/ui/
 ├── src/app/routes/           # 文件路由；页面入口保持薄
 ├── src/components/ui/        # Button/Card/Field/Select/Status/Switch 等 primitives
 ├── src/components/           # AppShell、认证、Preferences、TaskProgress
-├── src/i18n/                 # 内嵌 English/简体中文资源、检测与格式化
+├── src/i18n/                 # English fallback、懒加载中文、检测与格式化
 ├── src/theme/                # light/dark/system 偏好与文档根同步
 ├── src/lib/                  # API transport、类型、领域辅助函数
 ├── src/routeTree.gen.ts      # 自动生成，不手改
 ├── src/styles.css            # 全局 token 与当前布局
-├── vite.config.ts            # /ui/ base 与固定构建文件名
+├── vite.config.ts            # /ui/ base、路由拆分与内容哈希输出
 └── dist/                     # 受版本控制的嵌入产物
 ```
 
@@ -189,20 +194,33 @@ Query 管理。表单草稿使用组件本地状态，不为简单设置引入�
 
 ### 4.2 构建硬约束
 
-Vite base 是 `/ui/`。Rust 当前通过 `include_bytes!` 精确嵌入：
+Vite base 是 `/ui/`。`dist/index.html` 是唯一稳定的启动文件；其余 Vite 产物位于 `dist/assets/`，
+文件名包含内容哈希。路由页面、中文 message catalog 和 vendor/app 代码可以形成独立 chunk，文件数量和
+名称不是后端源代码的一部分。例如当前输出形态是：
 
 ```text
 dist/index.html
-dist/assets/app.js
-dist/assets/app.css
+dist/assets/index-<hash>.css
+dist/assets/index-<hash>.js
+dist/assets/vendor-<hash>.js
+dist/assets/<route>-<hash>.js
+dist/assets/zh-cn-<hash>.js
 ```
 
-因此不得自行开启 auto code splitting、内容哈希文件名或额外动态 chunk。若确需拆包，必须先修改
-后端资源枚举、MIME、fallback、缓存与测试，再在同一交付中切换。
+`pkgs/mosd/apid/build.rs` 在 Rust 编译时递归扫描已提交的 `ui/dist`，拒绝符号链接、不安全名称和非普通
+文件，按逻辑路径排序后生成 `include_bytes!` 资产表。`assets::builtin` 对该表做二分查找，所以添加、删除
+或重命名 chunk 不需要修改 Rust 路由。Rust/native/cross build 只消费已提交的 `dist`，不运行 Bun 或 Vite；
+缺少 `index.html` 或资源树非法会直接使构建失败。
 
-当前基线大小约为：HTML 484 B、CSS 42,943 B、JS 381,657 B；gzip 后 CSS 约 8.2 KiB、JS
-约 116.4 KiB。它不是永久硬上限，但每个 PR 都应报告变化；单项 gzip 增长超过 10% 时必须说明
-原因和替代方案。
+缓存规则固定如下：`index.html` 和所有 SPA fallback 使用 `no-store`；由 Vite 生成的 `assets/` 内容哈希
+资源使用 `public, max-age=31536000, immutable`；其他嵌入文件默认 `no-cache`。所有响应继续使用固定 MIME
+allowlist、`nosniff`、CSP 和 `Referrer-Policy`。安全的无扩展路径才允许 SPA fallback；文件型 miss 和敌意
+路径必须返回空 404。
+
+2026-09-01 基线共有 13 个文件、612,924 B，逐文件 gzip 合计约 193.4 KiB。`index.html` 首屏引用的
+HTML、CSS、runtime、vendor 与 app entry 合计 579,234 B，逐文件 gzip 约 181.2 KiB；其余约 33.7 KiB
+原始内容按页面或中文语言选择懒加载。大小不是永久硬上限，但每个 PR 都应同时报告首屏引用集合与完整
+资源树的 raw/gzip 变化；任一指标增长超过 10% 时说明原因和替代方案。不得只比较最大的单个 chunk。
 
 ### 4.3 本地开发与质量门禁
 
@@ -224,8 +242,8 @@ bun run coverage
 `run.sh` 是交付门禁：冻结安装、lint、typecheck、test，在临时目录重新构建，再逐字节比较提交的
 `dist`。源代码与嵌入产物必须在同一提交更新。
 
-当前 8 个测试通过，但 line coverage 只有 24.51%（statements 22.59%、branches 21.82%、
-functions 16.52%）。它只能证明已覆盖的逻辑通过，不代表页面状态完整。
+测试数量和覆盖率以当前 `bun run test`/`bun run coverage` 报告为准。门禁通过只能证明已覆盖的逻辑，
+不代表页面状态已经完整；新增交互仍须按第 15 节补齐状态矩阵。
 
 ## 5. 推荐信息架构与路由
 
@@ -972,16 +990,21 @@ danger 必须使用各自 token，并同时提供 icon/文本。项目没有可�
 
 ```text
 src/i18n/
-├── i18n.ts                   # i18next 实例、持久化与 document 同步
+├── i18n.ts                   # i18next 实例、异步初始化、持久化与 document 同步
 ├── locale.ts                 # en/zh-CN 检测和归一化
-├── resources.ts              # 类型化的内嵌双语资源
+├── resources.ts              # English fallback 与 catalog shape
+├── zh-cn.ts                  # 与 English 同 shape 的简体中文 catalog
+├── load.ts                   # 静态 locale loader map；中文动态 import
 └── format.ts                 # 已知状态的本地化，未知值原样保留
 ```
 
-运行时采用 `i18next` + `react-i18next`。资源必须编译进 `app.js`，不得产生 APID 不会嵌入的 locale JSON；
-English 与简体中文 key shape 由类型和测试保持一致。默认语言优先 `mos.ui.locale` 中的用户明确选择，其次
-浏览器语言，最后 English；所有中文浏览器变体归一为 `zh-CN`。语言偏好是浏览器本地状态，只有后端明确
-提供共享偏好后才变成设备级设置。
+运行时采用 `i18next` + `react-i18next`。English 编译进入初始 entry 并始终作为 fallback；简体中文由静态
+动态 import 生成内容哈希 chunk，只在初始检测选择中文或用户切换语言时加载。初始语言为中文时，React 在
+catalog 加载完成后再 mount，避免首帧闪现英文；加载失败则保持可用的 English fallback。不得改为运行时
+locale JSON、远程 endpoint 或 CDN。English 与简体中文 key shape 由类型和测试保持一致。
+
+默认语言优先 `mos.ui.locale` 中的用户明确选择，其次浏览器语言，最后 English；所有中文浏览器变体归一为
+`zh-CN`。语言偏好是浏览器本地状态，只有后端明确提供共享偏好后才变成设备级设置。
 
 ### 12.2 文案规则
 
@@ -1143,7 +1166,7 @@ success、422 field path、409 conflict、503/504 unknown result、cache invalid
 | Route integration | session gate、route params、query invalidation、API fixture |
 | Browser smoke | setup/login、service toggle、token one-time、logout、navigation、responsive |
 | Backend contract | OpenAPI 与 binary 输出一致；UI fixture 可被当前 schema 解析 |
-| Asset delivery | `/ui` fallback、CSP、MIME、404、固定三文件、committed dist byte match |
+| Asset delivery | `/ui` VFS 全树、路由域隔离、fallback、CSP、MIME、缓存、敌意路径 404、committed dist byte match |
 
 测试数据不得使用真实 token、Wi-Fi 或设备密钥。错误 fixture 要覆盖 `code/message/source/path`，不要只 mock
 HTTP status。
@@ -1238,7 +1261,7 @@ PLAN-046 的 onboarding 可能重构 Setup；本地显示需要板卡 capability
 - 不把 console shell 的 inert setting 暴露给用户；
 - 不持久化浏览器 CSRF、一次性 token 或设备秘密；
 - 不依赖 CDN、remote font、第三方运行时或在线图标；
-- 不开启 Vite code splitting，除非后端 asset embedding 同时变化；
+- 不关闭现有 Vite 路由/locale code splitting 或恢复固定文件名；不得让懒加载资源脱离内置 VFS；
 - 不用 toast 作为一次性秘密、高风险动作或唯一错误的唯一载体；
 - 不用接口配置成功、task succeeded 或绿色图标冒充端到端连通性。
 
@@ -1276,7 +1299,8 @@ UI 开发在提交前逐项确认：
 - [ ] 320 px 和 200% zoom 不丢失任务；
 - [ ] English/zh-CN 文案和 accessible name 完整；
 - [ ] 不含外部 runtime dependency，CSP 下可运行；
-- [ ] 固定三文件构建契约仍成立；
+- [ ] `dist` 完整树可递归嵌入，`index.html` 及其引用资源可访问，哈希资源缓存规则正确；
+- [ ] `/`、`/ui`、`/api` 的资源、miss、SPA fallback 和敌意路径不会跨所有权域；
 - [ ] lint/typecheck/test/coverage/`run.sh` 通过；
 - [ ] `dist` 与源代码同步，bundle delta 已记录；
 - [ ] 本文、OpenAPI 和实现没有互相冲突。
@@ -1288,6 +1312,7 @@ UI 开发在提交前逐项确认：
 - 当前 SPA：`pkgs/mosd/apid/ui/`
 - HTTP 契约：`pkgs/mosd/apid/openapi.json`
 - 内置资产服务与 CSP：`pkgs/mosd/apid/src/assets/builtin.rs`
+- 内置资产清单生成：`pkgs/mosd/apid/build.rs`
 - API 与 replaceable UI 设计：`docs/design/api.md`
 - 管理面和 settings/reconciler：`docs/design/mosd.md`
 - 当前 dashboard 设计记录：`docs/design/dashboard.md`

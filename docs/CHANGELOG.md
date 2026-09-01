@@ -29,6 +29,17 @@ modules, whose `OS_DIR` (now equal to `REPO_ROOT`) was retired. The `os-*`
 make target names stayed: they are names, not paths. Historical records keep
 the paths they were written with. Landed as 69febcae.
 
+## Built-in UI assets are an isolated embedded tree (2026-09-01)
+
+APID now generates a sorted compile-time VFS from the complete committed
+`ui/dist` tree instead of naming `index.html`, `app.js` and `app.css` in Rust.
+Vite emits content-hashed vendor, route and locale chunks; page routes and the
+Simplified Chinese catalog load on demand, while every resource remains inside
+the verity-covered binary. `/`, `/ui` and `/api` are terminal ownership domains:
+misses and ambiguous encoded or repeated-separator paths cannot cross between
+the custom UI, built-in UI and JSON API. The Chinese UI development guide now
+documents the VFS, lazy-loading, cache and path-isolation contract. PLAN-059.
+
 ## The built-in UI is bilingual and theme-selectable (2026-09-01)
 
 The recovery SPA now ships typed inline English and Simplified Chinese
