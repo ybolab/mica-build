@@ -4,15 +4,18 @@
 #
 #   bash docs/verify-index.sh          (or: make docs-verify)
 #
-#   docs/design/*.md  <->  docs/README.md
+#   docs/design/*.md   <->  docs/README.md
+#   docs/user/*.md     <->  docs/README.md
+#   docs/website/*.md  <->  docs/README.md
+#   docs/bsp/*.md      <->  docs/README.md
 #
-# SCOPE, and why it is this narrow. `docs/plan/` and `docs/task/` are PMA
-# process tracking: they are not part of the product, and a record is deleted
-# when it closes, so the set this would assert is empty or nearly so. A check
-# over an empty set reports green without having checked anything. They are
-# left ungated deliberately. If a second shipped directory appears -- research
-# notes, a second language tree -- `check_readme_dir` already takes the
-# directory as an argument and one call adds it.
+# SCOPE. `docs/plan/` and `docs/task/` are PMA process tracking: they are not
+# part of the product, and a record is deleted when it closes, so the set this
+# would assert is empty or nearly so. A check over an empty set reports green
+# without having checked anything. They are left ungated deliberately. The
+# shipped trees -- design/, and since PLAN-042/PLAN-050 also user/, website/
+# and bsp/ -- each get one `check_readme_dir` call; a further shipped
+# directory is one more call.
 #
 # The reverse direction is the half that is easy to omit and the half that
 # catches a rename: a forward-only check passes happily on an index full of
@@ -108,8 +111,11 @@ check_readme_dir() {
     done
 }
 
-echo "docs/verify-index.sh: design/ <-> $README"
+echo "docs/verify-index.sh: design/ user/ website/ bsp/ <-> $README"
 check_readme_dir design
+check_readme_dir user
+check_readme_dir website
+check_readme_dir bsp
 # --- verdict ---------------------------------------------------------------
 if [ "$FAIL" -ne 0 ]; then
     echo "docs/verify-index.sh: $FAIL FAILED, $CHECKS passed" >&2
