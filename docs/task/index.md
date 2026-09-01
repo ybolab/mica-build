@@ -52,3 +52,6 @@ one lock and rejects a transition when their current states do not match.
 - [ ] [**RFCT-288 Add diagnostics and operational network state**](RFCT-288.md) `P0`
 - [ ] [**RFCT-289 Define security and manufacturing lifecycle**](RFCT-289.md) `P0`
 - [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
+- [x] [**UI-001 Define the built-in UI development guide**](UI-001.md) `P1`
+- [x] [**UI-002 Design the local application lifecycle module**](UI-002.md) `P1`
+- [x] [**UI-003 Define the built-in UI design guide**](UI-003.md) `P1`

@@ -34,18 +34,22 @@ pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $*"; }
 fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $*"; }
 
 # One English page per gated tree, one of them translated, and the three-row
-# table that claims exactly that.
+# table that claims exactly that. The translated pair carries one `> status:`
+# line on each side: without it the parity clause would compare two empty
+# lists and pass by finding nothing, in the baseline and in every case below.
 new_fixture() {
     local dir="$1"
     rm -rf "${dir}"
     mkdir -p "${dir}/docs/user" "${dir}/docs/website" "${dir}/docs/bsp" \
              "${dir}/docs/zh/user" "${dir}/docs/design"
     cp "${VERIFIER}" "${dir}/docs/zh/"
-    printf '# fixture user page\n'    >"${dir}/docs/user/page.md"
+    printf '# fixture user page\n\n> status: shipped — evidence: `docs/user/page.md`\n' \
+        >"${dir}/docs/user/page.md"
     printf '# fixture website page\n' >"${dir}/docs/website/page.md"
     printf '# fixture bsp page\n'     >"${dir}/docs/bsp/page.md"
     printf '# fixture design page\n'  >"${dir}/docs/design/page.md"
-    printf '# 夹具用户页面\n'          >"${dir}/docs/zh/user/page.md"
+    printf '# 夹具用户页面\n\n> status: shipped — evidence: `docs/user/page.md`\n' \
+        >"${dir}/docs/zh/user/page.md"
     cat >"${dir}/docs/zh/README.md" <<'EOF'
 # fixture zh index
 
@@ -204,7 +208,18 @@ replace_line "${FIX}/docs/zh/README.md" '| `../user/page.md` | db66fc02 | curren
 expect_fail "a translated page whose row does not say 'current'" 1 \
     "is translated but docs/zh/README.md does not carry a 'current' row"
 
-# --- 10. a table with no rows at all -----------------------------------------
+# --- 10. a zh page whose status line drifted from its source -----------------
+# The prose of a translation is free; its claims are not. Nothing else here
+# reads inside a page, so a `current` row keeps claiming agreement while the
+# two pages state different statuses.
+FIX="${WORK}/status-line-drift"
+new_fixture "${FIX}"
+replace_line "${FIX}/docs/zh/user/page.md" '> status: shipped — evidence: `docs/user/page.md`' \
+    '> status: proposed — evidence: `docs/plan/PLAN-001.md`'
+expect_fail "a translated page whose status line does not match its source" 1 \
+    "docs/zh/user/page.md carries different '> status:' lines than its source docs/user/page.md"
+
+# --- 11. a table with no rows at all -----------------------------------------
 # Five assertions fire, and all five are wanted: the floor itself, one per
 # English page now untracked, and the translated page with no row to be current.
 FIX="${WORK}/vacuous-table"

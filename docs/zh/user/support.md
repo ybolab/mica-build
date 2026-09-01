@@ -16,14 +16,16 @@ mos 是产品构建于其上的操作系统，因此支持是共担的责任：m
   板卡；mos 支持契约，集成商拥有板卡证据。
 - **unsupported**——其余一切，包括内核低于支持底线的板卡。
 
-层级定义、认证矩阵与准入评估标准正在形式化；今天的板卡凭本仓库中的证据
-持有其地位，而不是凭一份完成的档案。层级细节在 BSP 文档
-[../../bsp/support-tiers.md](../../bsp/support-tiers.md) 与
-[../../bsp/qualification.md](../../bsp/qualification.md)。
+层级定义、认证矩阵与准入评估标准已随 BSP 文档发布：层级在
+[../../bsp/support-tiers.md](../../bsp/support-tiers.md)，矩阵及其行语法在
+[../../bsp/qualification.md](../../bsp/qualification.md)，厂商准入评估标准在
+[../../bsp/intake.md](../../bsp/intake.md)。词汇存在不等于某块板卡挣得了
+层级：今天没有任何板卡是 mos-qualified，因为在档的唯一一份档案里，十二行
+认证结果全部是 `not tested`——今天的板卡凭本仓库中的证据持有其地位，而不是
+凭一份完成的档案。
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
-
-TODO(PLAN-050): revisit after this plan merges
+> status: shipped — evidence: `docs/bsp/support-tiers.md`, `docs/bsp/qualification.md`, `docs/bsp/intake.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
 
 ## 2. 当前硬件地位
 

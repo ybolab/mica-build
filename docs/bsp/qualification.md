@@ -5,9 +5,12 @@ reliability-relevant behaviors, each proven on real hardware (or honestly
 left unproven), recorded with dates and evidence in the board dossier's
 Qualification results section. It is what separates "an image that boots"
 from a supported product — the distinction [support-tiers.md](support-tiers.md)
-is built on.
+is built on. What follows is the process and the row grammar; the results are
+a board fact, and no board has produced them yet — the one dossier on file
+carries all twelve of its rows as `not tested`.
 
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
+> status: shipped — evidence: `docs/bsp/board-template.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
 
 ## 1. The named-revision rule
 

@@ -81,12 +81,14 @@ TODO(PLAN-048): revisit after this plan merges
 
 An appliance lives for years on a kernel and bootloader its vendor may stop
 maintaining. mos records BSP provenance per board — source repository, synced
-commit, deviation register — and the staged porting manual, qualification
-evidence and long-term BSP/CVE procedure are planned as the board contract's
-next layer; the entry point for integrators is
-[../bsp/porting.md](../bsp/porting.md).
+commit, deviation register — and the board contract's next layer is published:
+the staged porting manual, the vendor intake rubric and the field-reliability
+qualification process, with [../bsp/porting.md](../bsp/porting.md) as the
+integrator's entry point. The evidence those procedures collect is a board
+fact and is not in yet: the one dossier on file has every qualification row at
+`not tested`, and long-term CVE response is assigned as a lifecycle duty by
+the tier definitions rather than written up as a procedure.
 
 > status: shipped — evidence: `docs/design/bsp-cx3576-sync.md`
-> status: proposed — evidence: `docs/plan/PLAN-050.md`
-
-TODO(PLAN-050): revisit after this plan merges
+> status: shipped — evidence: `docs/bsp/porting.md`, `docs/bsp/intake.md`, `docs/bsp/qualification.md`, `docs/bsp/support-tiers.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`

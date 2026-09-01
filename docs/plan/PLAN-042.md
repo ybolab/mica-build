@@ -115,21 +115,29 @@ before any mutation is trusted to be what turned it red.
   047, 048, 049, 051, 052 and 053. Each marks a section labelled `proposed`
   against an approved plan that has not merged; the sweep belongs to the plan
   that closes the gap, not to this one.
-- **Five markers now name plans that have closed** — `TODO(PLAN-042)` in
-  `docs/user/doc-contract.md` and `TODO(PLAN-050)` in `docs/user/support.md`,
+- **The markers naming closed plans are gone.** `TODO(PLAN-042)` in
+  `docs/user/doc-contract.md`, `TODO(PLAN-050)` in `docs/user/support.md`,
   `docs/website/embedded.md`, `docs/website/hardware.md` and
-  `docs/website/support.md`. They are due for a sweep, but not a mechanical
-  one: `doc-contract.md` section 5 can now be relabelled `shipped` against the
-  zh tree and its check, while the PLAN-050 sections rest on hardware evidence
-  that is still `not tested`, so relabelling those would overclaim. Each needs
-  the judgement of whoever owns the section.
+  `docs/website/support.md`, their two zh mirrors, and the thirteen English
+  plus two Chinese `> status: proposed` lines that cited `docs/plan/PLAN-042.md`
+  or `docs/plan/PLAN-050.md` were swept when those plans closed — a record is
+  deleted when it closes, so those evidence references would have gone dead
+  under `docs/verify-status.sh` the moment the files were pruned. The sweep was
+  by judgement, not mechanical: `doc-contract.md` section 5 is now `shipped`
+  against the zh tree and its check, and each PLAN-050 section is split between
+  the delivered process (`shipped`, citing the BSP pages that carry it) and the
+  hardware evidence still absent (`board-dependent`, citing the cx3576 dossier
+  whose twelve rows read `not tested`).
 - **Command and example execution is partial.** `make os-quadlet-doc-test`
   feeds every example in the containers guide through the shipped generator, so
   a broken example fails the build. The command blocks in the user pages are
   verified against the `Makefile` and the scripts they name by review, not by a
   gate that executes them.
-- **The Chinese pages carry the English status lines verbatim, but no gate
-  diffs them.** `docs/verify-status.sh` scans the three English trees; the
-  coverage check asserts the table-to-tree correspondence, not per-line
-  agreement between a page and its translation. A zh status line edited out of
-  step with its source would not be caught today.
+- **The Chinese pages carry the English status lines verbatim, and a gate now
+  diffs them.** `docs/verify-status.sh` scans the three English trees;
+  `docs/zh/verify-coverage.sh` adds the per-line direction it cannot see —
+  every `current` row's Chinese page must carry the same `> status:` lines, in
+  the same order, as its English source, with a negative case driving that
+  clause red on a fixture whose translation drifted. The zh tree's evidence
+  references are still not resolved against the filesystem directly; they are
+  held by equality with an English line that is.
