@@ -1,6 +1,6 @@
 # RFCT-285 Add storage status and data lifecycle management
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01

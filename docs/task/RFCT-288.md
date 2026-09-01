@@ -1,6 +1,6 @@
 # RFCT-288 Add diagnostics and operational network state
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01

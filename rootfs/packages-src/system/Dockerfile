@@ -146,7 +146,8 @@ RUN set -eu; \
     done; \
     for f in mos-apply-hostname.service mos-seed-home.service mos-seed-root.service \
              mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
-             var-lib-mos.mount etc-hostname.mount etc-ssh.mount home.mount root.mount \
+             var-lib-mos.mount var-lib-systemd-timesync.mount etc-hostname.mount \
+             etc-ssh.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount; do \
         install -D -m 0644 "/in/overlay/etc/systemd/system/${f}" \
             "${R}/etc/systemd/system/${f}"; \
@@ -160,6 +161,11 @@ RUN set -eu; \
     install -D -m 0644 /in/overlay/etc/mos/health.conf "${R}/etc/mos/health.conf"; \
     install -D -m 0644 /in/overlay/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf \
         "${R}/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf"; \
+    # The pinned time-sync base policy (PLAN-044). The daemon it configures is
+    # in Depends, so the drop-in, the enablement link below and the unit they
+    # govern arrive in one transaction or not at all.
+    install -D -m 0644 /in/overlay/etc/systemd/timesyncd.conf.d/50-mos.conf \
+        "${R}/etc/systemd/timesyncd.conf.d/50-mos.conf"; \
     install -d -m 0755 "${R}/etc/systemd/network"; \
     printf '%s\n' '[Match]' 'Name=eth*' '' '[Network]' 'DHCP=yes' \
         >"${R}/etc/systemd/network/80-dhcp.network"; \
@@ -183,7 +189,8 @@ RUN set -eu; \
         "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
-             mos-seed-root.service var-lib-mos.mount etc-ssh.mount etc-hostname.mount \
+             mos-seed-root.service var-lib-mos.mount var-lib-systemd-timesync.mount \
+             etc-ssh.mount etc-hostname.mount \
              home.mount root.mount usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
         ln -s "/etc/systemd/system/${u}" \
@@ -207,6 +214,13 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"; \
     ln -s /usr/lib/systemd/system/systemd-network-generator.service \
         "${R}/etc/systemd/system/sysinit.target.wants/systemd-network-generator.service"; \
+    # timesyncd's enablement, copied like the mos-health pair so the target is
+    # the tree's: the overlay link spells /lib because that is what
+    # deb-systemd-helper writes for a Debian-shipped unit, and its own postinst
+    # would create this exact link -- shipping it as payload makes it declared
+    # instead of a maintainer-script leftover.
+    cp -a /in/overlay/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service \
+        "${R}/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service"; \
     ln -s /usr/lib/systemd/system/ssh.service \
         "${R}/etc/systemd/system/sshd.service"; \
     ln -s /lib/systemd/system/fstrim.timer \

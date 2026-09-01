@@ -85,6 +85,16 @@ chmod 0755 /mnt/state/systemd-units
 mkdir -p /mnt/state/quadlet
 chmod 0755 /mnt/state/quadlet
 
+# timesyncd's saved-clock directory, bound onto /var/lib/systemd/timesync by
+# var-lib-systemd-timesync.mount so the last-known-good clock floor survives
+# both reboots and updates (/var is EPHEMERAL). Owned by the systemd-timesync
+# account because the daemon runs unprivileged and writes its clock file here
+# every 60 seconds; the user is static in the image's /etc/passwd, so the
+# chown cannot race an allocation.
+mkdir -p /mnt/state/timesync
+chown systemd-timesync:systemd-timesync /mnt/state/timesync
+chmod 0755 /mnt/state/timesync
+
 # The hostname has to be writable: mosd's reconciler sets it through
 # systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
 # into the image while /etc/hostname still shows the squashfs copy;
