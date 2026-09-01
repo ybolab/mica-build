@@ -18,8 +18,9 @@ use rauc_sign::client;
 use rauc_sign::keys;
 use rauc_sign::repo;
 use ring::rand::SystemRandom;
+use serde_json::Value;
 use tough::editor::signed::SignedRole;
-use tough::schema::{KeyHolder, RoleType, Root, Signed};
+use tough::schema::{KeyHolder, RoleType, Root, Signed, Snapshot, Targets, Timestamp};
 
 /// The persistent version state file, beside (not inside) the repository.
 fn state_path(fx: &Fixture) -> PathBuf {
@@ -246,6 +247,60 @@ async fn expired_metadata_is_rejected() {
     );
 }
 
+/// The wrong-key case in its bluntest form: a complete, internally consistent
+/// repository authored with someone else's keys — same layout, same target
+/// name, every signature valid against its own root — is refused by a client
+/// pinned to the real anchor. Self-consistency is what an attacker-authored
+/// repository has too; the pinned root is what it cannot have.
+#[tokio::test]
+async fn a_repository_authored_with_foreign_keys_is_rejected() {
+    let real = Fixture::new().await;
+    let foreign = Fixture::new().await;
+
+    // Control: the foreign repository is not broken — its own anchor accepts it.
+    client::verify_repository(
+        &foreign.repo,
+        &foreign.trusted_root,
+        &real.scratch("state-foreign.json"),
+    )
+    .await
+    .expect("the foreign repository verifies against its own anchor");
+
+    let err = client::verify_repository(
+        &foreign.repo,
+        &real.trusted_root,
+        &real.scratch("state.json"),
+    )
+    .await
+    .expect_err("a repository signed by foreign keys must be refused");
+    assert!(
+        format!("{err:#}").contains("threshold"),
+        "error should report an unmet signature threshold: {err:#}"
+    );
+}
+
+/// Expiry is enforced on the root itself, not only on the online roles: a
+/// republished root whose expiration is already past is refused even though
+/// every signature on it is valid.
+#[tokio::test]
+async fn expired_root_is_rejected() {
+    let fx = Fixture::new().await;
+
+    // The refresh ceremony with an expiration in the past; nothing here reads
+    // the wall clock, so the expiry is exactly what the test injected.
+    repo::rotate_root(&fx.repo, &fx.keys_dir, None, at("2020-01-01T00:00:00Z"))
+        .await
+        .expect("refresh root to an already-past expiry");
+
+    let err = client::verify_repository(&fx.repo, &fx.trusted_root, &state_path(&fx))
+        .await
+        .expect_err("expired root must fail");
+    assert!(
+        format!("{err:#}").contains("expired"),
+        "error should report expiry: {err:#}"
+    );
+}
+
 /// A pinned root whose root role demands two signatures, carrying only one,
 /// must be refused at the very start of the walk. The doctored root is built
 /// with tough's own signing path because the signer (correctly) refuses to
@@ -277,5 +332,160 @@ async fn unmet_root_threshold_is_rejected() {
     assert!(
         format!("{err:#}").contains("threshold of 2 not met"),
         "error should report the unmet threshold: {err:#}"
+    );
+}
+
+/// Re-signs one role's doctored document with the key the fixture's root binds
+/// to it, so the shape refusals below are about the SHAPE — every signature in
+/// the doctored repository verifies.
+async fn resign_role<T: tough::schema::Role>(fx: &Fixture, role: T, key_role: &str) -> Vec<u8> {
+    let root: Signed<Root> = serde_json::from_slice(
+        &fs::read(repo::metadata_dir(&fx.repo).join("root.json")).expect("read root"),
+    )
+    .expect("parse root");
+    let sources = keys::sources(&fx.keys_dir, &[key_role]).expect("key source");
+    let signed = SignedRole::new(
+        role,
+        &KeyHolder::Root(root.signed),
+        &sources,
+        &SystemRandom::new(),
+    )
+    .await
+    .expect("re-sign doctored role");
+    signed.buffer().to_vec()
+}
+
+/// Updates a `meta` entry's hash and length pins to match `bytes`, so a
+/// doctored role's edit does not trip the pin of the role above it — the test
+/// wants the refusal it is aiming at, not the first one on the walk.
+fn repin(entry: &mut Value, bytes: &[u8]) {
+    if !entry["hashes"]["sha256"].is_null() {
+        entry["hashes"]["sha256"] = Value::String(hex::encode(ring::digest::digest(
+            &ring::digest::SHA256,
+            bytes,
+        )));
+    }
+    if !entry["length"].is_null() {
+        entry["length"] = Value::from(bytes.len());
+    }
+}
+
+/// A trusted root that omits one of the four top-level roles leaves that role
+/// unverifiable, and is refused rather than half-walked. The signer always
+/// binds all four (`repo::init`), so this shape only ever reaches a device as
+/// a doctored or hand-built anchor.
+#[tokio::test]
+async fn a_root_missing_a_role_is_rejected() {
+    let fx = Fixture::new().await;
+
+    let mut root: Signed<Root> =
+        serde_json::from_slice(&fs::read(&fx.trusted_root).expect("read trusted root"))
+            .expect("parse trusted root");
+    root.signed
+        .roles
+        .remove(&RoleType::Targets)
+        .expect("targets role");
+
+    let root_keys = keys::sources(&fx.keys_dir, &["root"]).expect("root key source");
+    let holder = KeyHolder::Root(root.signed.clone());
+    let signed = SignedRole::new(root.signed, &holder, &root_keys, &SystemRandom::new())
+        .await
+        .expect("sign the role-less root with the root key");
+    let pinned = fx.scratch("missing-role-root.json");
+    fs::write(&pinned, signed.buffer()).expect("write pinned root");
+
+    let err = client::verify_repository(&fx.repo, &pinned, &state_path(&fx))
+        .await
+        .expect_err("a root missing the targets role must be refused");
+    assert!(
+        format!("{err:#}").contains("targets"),
+        "error should name the missing role: {err:#}"
+    );
+}
+
+/// Targets metadata that delegates to other roles names keys and policy this
+/// client does not model, and half-verifying a repository is worse than
+/// refusing it. The signer never writes a non-empty delegation, so the shape
+/// is built by hand here — validly signed at every level, with the snapshot
+/// and timestamp pins updated to match, so the delegation itself is the only
+/// thing wrong with the repository.
+#[tokio::test]
+async fn delegated_targets_are_rejected() {
+    let fx = Fixture::new().await;
+    let meta = repo::metadata_dir(&fx.repo);
+
+    // The delegation is complete and satisfiable: it binds the fixture's own
+    // targets key, and the delegated role's metadata exists, validly signed by
+    // it. Anything less is refused earlier, by tough, for the lesser reason
+    // that the delegation cannot be resolved — this test wants the refusal to
+    // be the delegation itself.
+    let root_doc = read_json(&meta.join("root.json"));
+    let targets_keyid = root_doc["signed"]["roles"]["targets"]["keyids"][0]
+        .as_str()
+        .expect("targets keyid")
+        .to_string();
+    let targets_key = root_doc["signed"]["keys"][&targets_keyid].clone();
+
+    let factory = serde_json::json!({
+        "signed": {
+            "_type": "targets",
+            "spec_version": "1.0.0",
+            "version": 1,
+            "expires": "2099-01-01T00:00:00Z",
+            "targets": {},
+        },
+        "signatures": [],
+    });
+    let factory: Signed<Targets> =
+        serde_json::from_value(factory).expect("parse delegated role metadata");
+    let factory_bytes = resign_role(&fx, factory.signed, "targets").await;
+    fs::write(meta.join("1.factory.json"), &factory_bytes).expect("write delegated role");
+    fs::write(meta.join("factory.json"), &factory_bytes).expect("write delegated alias");
+
+    let mut tv = read_json(&meta.join("targets.json"));
+    tv["signed"]["delegations"] = serde_json::json!({
+        "keys": { &targets_keyid: targets_key },
+        "roles": [{
+            "name": "factory",
+            "keyids": [&targets_keyid],
+            "threshold": 1,
+            "paths": ["*"],
+            "terminating": false,
+        }],
+    });
+    let doctored: Signed<Targets> =
+        serde_json::from_value(tv).expect("parse doctored targets metadata");
+    let targets_bytes = resign_role(&fx, doctored.signed, "targets").await;
+    fs::write(meta.join("targets.json"), &targets_bytes).expect("write targets");
+    fs::write(meta.join("2.targets.json"), &targets_bytes).expect("write versioned targets");
+
+    let mut sv = read_json(&meta.join("snapshot.json"));
+    repin(&mut sv["signed"]["meta"]["targets.json"], &targets_bytes);
+    sv["signed"]["meta"]["factory.json"] = serde_json::json!({
+        "hashes": {
+            "sha256": hex::encode(ring::digest::digest(&ring::digest::SHA256, &factory_bytes)),
+        },
+        "length": factory_bytes.len(),
+        "version": 1,
+    });
+    let snapshot: Signed<Snapshot> =
+        serde_json::from_value(sv).expect("parse repinned snapshot metadata");
+    let snapshot_bytes = resign_role(&fx, snapshot.signed, "snapshot").await;
+    fs::write(meta.join("snapshot.json"), &snapshot_bytes).expect("write snapshot");
+    fs::write(meta.join("2.snapshot.json"), &snapshot_bytes).expect("write versioned snapshot");
+
+    let mut ts = read_json(&meta.join("timestamp.json"));
+    repin(&mut ts["signed"]["meta"]["snapshot.json"], &snapshot_bytes);
+    let timestamp: Signed<Timestamp> =
+        serde_json::from_value(ts).expect("parse repinned timestamp metadata");
+    let timestamp_bytes = resign_role(&fx, timestamp.signed, "timestamp").await;
+    fs::write(meta.join("timestamp.json"), &timestamp_bytes).expect("write timestamp");
+
+    let err = client::verify_repository(&fx.repo, &fx.trusted_root, &state_path(&fx))
+        .await
+        .expect_err("delegated targets must be refused");
+    assert!(
+        format!("{err:#}").contains("delegates"),
+        "error should say the metadata delegates: {err:#}"
     );
 }

@@ -42,9 +42,6 @@ Explicitly out of scope for the whole crate, still:
 - the Uptane director/image repository split — this is a single image
   repository;
 - delegated targets roles and hardware-backed key stores;
-- replacing a compromised *online* role key: `rotate-root` carries the
-  `targets`, `snapshot` and `timestamp` bindings forward unchanged, so a
-  different online key can still only be introduced by a fresh repository;
 - transport: nothing here fetches metadata over a network, on either side;
 - mosd's install orchestration (RAUC install/confirm) — named as roadmap by
 - RAUC's own CMS bundle signature, which is a separate key hierarchy applied
@@ -78,8 +75,18 @@ a threshold of the outgoing root's keys and a threshold of the new root's own �
 before anything is written. Neither will overwrite an already-published
 `<n>.root.json`.
 
-The operator-facing procedure — media, minutes, key disposition, distribution —
-is section 1.6 of `docs/design/release-signing.md`.
+The third ceremony is `rotate-online`: the recovery for a compromised or
+retiring release host. It publishes the next root version with **fresh**
+`targets`, `snapshot` and `timestamp` keys bound, revoking the outgoing ones —
+and, unlike the root ceremonies, it re-signs the three online roles with the
+incoming keys in the same run, because the existing metadata is signed by the
+very keys being revoked and a repository left that way would be refused whole.
+The root key does not change hands, so nothing is distributed to devices.
+Rotating "to" a key the root already trusts is refused, as is rewriting a
+published root version.
+
+The operator-facing procedures — media, minutes, key disposition, distribution
+— are sections 1.6 and 1.7 of `docs/design/release-signing.md`.
 
 ## Phase 2, first half: the device-side verifier
 
@@ -224,6 +231,13 @@ cargo run -p rauc-sign -- rotate-root \
 cargo run -p rauc-sign -- refresh-root \
   --repo _out/tuf --keys-dir <current keys> --root-expires 2028-01-01T00:00:00Z
 
+# revoke the online keys and bind fresh ones (offline root key + incoming
+# online keys; re-signs targets/snapshot/timestamp with them in the same run)
+cargo run -p rauc-sign -- rotate-online \
+  --repo _out/tuf --keys-dir <root key dir> --new-keys-dir <incoming online keys> \
+  --root-expires 2028-01-01T00:00:00Z \
+  --targets-expires ... --snapshot-expires ... --timestamp-expires ...
+
 # release-side offline verification against a trusted root
 cargo run -p rauc-sign -- verify --repo _out/tuf --root <trusted root.json> [--datastore _out/tuf-trusted]
 
@@ -255,9 +269,12 @@ and `deny.toml`. `.github/workflows/check.yml` runs both scripts, and the
 second one is the only thing on that job that checks this code.
 
 The device-side client is tested against the same in-repo fixture the signer
-tests use (`pkgs/rauc-sign/tests/`): the honest publish sequence verifies, and a
-published rollback, a tampered target, a tampered-metadata edit, expired
-metadata, and an unmet root threshold are each rejected.
+tests use (`pkgs/rauc-sign/tests/`): the honest publish sequence verifies, and
+a published rollback, a tampered target, a tampered-metadata edit, expired
+metadata (timestamp and root alike), an unmet root threshold, a complete
+repository authored with foreign keys, a trusted root missing one of the four
+roles, and targets metadata carrying a (fully resolvable, validly signed)
+delegation are each rejected.
 
 The root ceremonies have their own suite, not split along the signer/device
 line, because the property being tested is that a device pinned to the
@@ -268,4 +285,9 @@ outgoing key did not sign (accepted by the new anchor, refused by the old), a
 broken outgoing signature, a withdrawn rotation as a root rollback across a
 restart, rotating to the incumbent key, rewriting a published root version,
 rotating from an anchor its own keys do not sign, and either ceremony run with
-the wrong outgoing key.
+the wrong outgoing key. The online-key rotation has its own suite
+(`tests/online_rotation.rs`) with the same shape: the anchor still reaches the
+rotated repository and the release host publishes with the incoming keys,
+while the revoked keys can neither publish through the signer nor forge a
+timestamp a client accepts, and rotating to an incumbent online key is
+refused.
