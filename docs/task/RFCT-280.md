@@ -1,6 +1,6 @@
 # RFCT-280 Add RTC, NTP and timezone management
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
