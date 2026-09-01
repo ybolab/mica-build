@@ -14,11 +14,27 @@ bridge and WireGuard, while operators lack coherent observed carrier, address,
 lease, route and DNS state. Similar gaps exist for current storage, time,
 thermal, watchdog and reset-cause evidence.
 
+There is also no single answer to "what is this device": kernel version,
+system (image) version, per-package software versions, build date and machine
+id live in scattered places or nowhere. Parts of it already exist as seams --
+`/usr/share/mos/manifest.tsv` ships every installed package with its version
+and the pool's git stamp (PLAN-041), `/etc/machine-id` is seeded by
+mos-machine-id, the kernel is readable from `uname`/`/boot/config-*` -- but
+nothing aggregates them into one identity surface for the UI, the API or a
+support conversation.
+
 ## Proposal
 
+- **SW:** expose one system-information surface (API and built-in UI) that
+  answers device identity in one read: machine id, board, kernel version,
+  system (image) version and its git stamp, build date, the installed package
+  versions (from `/usr/share/mos/manifest.tsv`), active RAUC slot and uptime.
+  Read-only, assembled from the existing seams rather than restated by a
+  second mechanism.
 - **SW:** define one versioned diagnostic snapshot containing release/board,
-  boot/slot/reset, bounded journal, service/reconciler failures, storage, time,
-  thermal/watchdog and observed network state.
+  the system-information surface above, boot/slot/reset, bounded journal,
+  service/reconciler failures, storage, time, thermal/watchdog and observed
+  network state.
 - **SW:** make collection bounded in size/time, atomic, available offline and
   exportable through authenticated local tooling/API without enabling SSH.
 - **SW/SEC:** apply a reviewed redaction schema for credentials, tokens, private
@@ -62,3 +78,7 @@ and SKU-specific cellular support unless separately selected.
 - 2026-08-31: Production embedded comparison identified diagnostics, reset and
   observed-network state as pilot serviceability gaps.
 - 2026-09-01: Split from PLAN-037 as the local field-diagnostics capability.
+- 2026-09-02: System-information surface added on user direction: kernel
+  version, system version, per-package software versions, build date and
+  machine id belong to this plan, aggregated from the existing seams
+  (manifest.tsv, machine-id, uname, RAUC slot).

@@ -13,8 +13,13 @@ network/system state needed to troubleshoot embedded devices without SSH.
 
 ## Acceptance
 
-- A versioned snapshot contains release/board, slot/reset, bounded logs,
-  failures, storage, time, thermal/watchdog and live network evidence.
+- A system-information surface (API and built-in UI) answers device identity
+  in one read: machine id, board, kernel version, system (image) version with
+  its git stamp, build date, installed package versions (sourced from
+  `/usr/share/mos/manifest.tsv`), active slot and uptime.
+- A versioned snapshot contains release/board, the system-information surface,
+  slot/reset, bounded logs, failures, storage, time, thermal/watchdog and live
+  network evidence.
 - Collection is bounded, atomic, authenticated and exportable offline.
 - Redaction tests exclude credentials, keys, tokens, Wi-Fi/registry secrets and
   user content.
