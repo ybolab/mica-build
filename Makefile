@@ -41,8 +41,8 @@ help:
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
-	@echo "  docs-verify         assert docs/README.md and the design tree agree, in both directions"
-	@echo "  docs-verify-test    prove those assertions actually fail on a duplicate or a missing row"
+	@echo "  docs-verify         assert the docs index, internal links, truth-status lines and board dossiers"
+	@echo "  docs-verify-test    prove those assertions actually fail on fixtures where their facts are false"
 	@echo "  podman              build the container engine from source into pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
@@ -411,6 +411,9 @@ os-deb-preflight-test:
 # so -- a check over an empty set reports green without having checked.
 docs-verify:
 	bash docs/verify-index.sh
+	bash docs/verify-links.sh
+	bash docs/verify-status.sh
+	bash docs/bsp/verify-board.sh
 
 # Negative tests for the target above. Each assertion is driven against an
 # index where its fact is false and required to fail with ITS OWN message -- a
@@ -420,6 +423,9 @@ docs-verify:
 # than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
+	bash docs/verify-links-test.sh
+	bash docs/verify-status-test.sh
+	bash docs/bsp/verify-board-test.sh
 
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
 # generator the image ships. A configuration example nothing executes is a claim
