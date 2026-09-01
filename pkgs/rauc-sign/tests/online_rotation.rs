@@ -116,9 +116,12 @@ async fn online_rotation_revokes_the_old_keys_and_keeps_the_anchor() {
         &fx.repo,
         &incoming,
         &fx.bundle,
-        Some("update-1.1.0.raucb"),
         common::VERITY_ROOT_HASH,
-        Some("1.1.0"),
+        repo::AddOptions {
+            name: Some("update-1.1.0.raucb"),
+            release_version: Some("1.1.0"),
+            ..Default::default()
+        },
         valid_expirations(),
     )
     .await

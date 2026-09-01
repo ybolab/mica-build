@@ -215,11 +215,14 @@ they travel with the artifacts. Authenticity comes from the two trust chains
 against the out-of-band root anchor (`rauc-sign verify --repo <repo> --root
 <trusted root.json>`, **[implemented]** as tooling in `pkgs/rauc-sign`), and
 the device itself verifies the bundle's CMS signature against its keyring at
-install time (**[implemented]**). Publishing the release *directory* into
-the TUF repository — pinning `manifest.json` the way bundle targets are
-pinned — is **[proposed]**; today `rauc-sign add` pins the bundle
-(`release-signing.md` §3) and the manifest binds the rest to the bundle by
-digest.
+install time (**[implemented]**). Pinning `manifest.json` in the TUF
+repository is **[implemented]**: `rauc-sign add --manifest` publishes it as
+its own target beside the bundle (`<bundle>.manifest.json`, sha256 and
+length pinned) and stamps the manifest's board/profile/channel/version onto
+the bundle target as signed selection metadata (`release-signing.md` §3);
+the manifest then binds the *rest* of the release directory to the bundle by
+digest — the other artifacts are covered transitively, not pinned as TUF
+targets individually, and publishing them as such remains **[proposed]**.
 
 ### 6.3 Identify a release in a support case — **[implemented]** fields
 

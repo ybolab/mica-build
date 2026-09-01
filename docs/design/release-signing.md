@@ -622,12 +622,19 @@ KEYRING=/path/to/ca.cert.pem \
 # 3. Publish into the TUF repository with the online keys. The verity root
 #    hash is the bundle's own (verity-format) root hash as `rauc info`
 #    reports it -- rauc-sign never shells out to rauc, so it is supplied
-#    explicitly and deliberately.
+#    explicitly and deliberately. --manifest pins the gated release's
+#    manifest.json as its own TUF target beside the bundle
+#    (<bundle>.manifest.json, sha256+length) and stamps the bundle target's
+#    custom block with the manifest's board/profile/channel/version and
+#    schema version -- the SIGNED facts rauc-update's selection reads, so
+#    device-side compatibility needs no unsigned side channel. A manifest
+#    that does not pin this bundle's sha256 is refused.
 rauc-sign add \
   --repo <repo> --keys-dir <online-keys> \
   --target _out/cx3576/mos-cx3576-<epoch>.raucb \
   --verity-root-hash <64 hex> \
   --release-version 1.2.3 \
+  --manifest _out/cx3576/release/manifest.json \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ...
 
 # 4. Verify the published repository as a CLIENT would, against the ceremony
@@ -637,9 +644,87 @@ rauc-sign add \
 rauc-sign verify --repo <repo> --root /trusted/root.json --datastore /var/lib/rauc-sign/trusted
 ```
 
-Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s layout). The
-offline "lockbox" workflow is planned and not implemented; when it exists it
-will consume the same signed artifacts.
+Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s
+layout). Any web server or object store that serves the directory unchanged
+will do; range requests are the one feature the device client uses.
+
+### 3.1 The device-side update client — **[runbook]** as tooling; nothing ships or schedules it yet
+
+`rauc-update` (same crate) consumes what §3 publishes. Its verification is
+`rauc-verify`'s walk — pinned root, persistent rollback state — with
+transport and policy on top, and no flag on any subcommand skips metadata or
+digest verification. The operator sequence on a device (or a bench shell):
+
+```sh
+# 1. Mirror the metadata over plain HTTP (or rsync the repo and skip this).
+#    The mirror is unverified input; step 2 is what trusts or refuses it.
+rauc-update sync --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
+
+# 2. Verify from the pinned anchor and select the newest compatible target:
+#    board+profile (identity below), channel (default stable), manifest
+#    schema floor (equality with 1), version strictly newer than running.
+#    Prints every rejected candidate with its reason; "none" exits 2.
+#    A downgrade needs --allow-downgrade and is logged to stderr.
+rauc-update check \
+  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json>
+
+# 3. Download resumably (HTTP range requests) into the reserved directory.
+#    The completed size never exceeds --max-bytes together with what the
+#    directory already holds; a digest mismatch deletes the partial; the
+#    last stdout line is the verified bundle path.
+rauc-update fetch \
+  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --url http://mirror.example/tuf --reserve-dir /data/update --max-bytes <n>
+
+# 4. Hand off. The orchestrated route is mosd's D-Bus member:
+busctl call com.mos.mosd /com/mos/mosd com.mos.mosd1 InstallUpdate s <path>
+#    The direct fallback (also what `rauc-update fetch --install` runs):
+rauc install <path>
+```
+
+Device identity comes from `/usr/share/mos/release-identity.env`
+(`BOARD=`/`PROFILE=`/`VERSION=` lines) or explicit
+`--board`/`--profile`/`--current-version` flags. **[not implemented]**: the
+image pipeline does not write that file yet, nothing schedules `sync`/`check`
+on a device, and mosd does not call this client — the tooling half exists and
+is test-exercised; the wiring half is owed. The reserve directory is likewise
+a contract, not a mechanism: which partition backs `/data/update` and how
+many bytes it may promise is a storage-policy decision owned outside this
+crate; the client refuses to exceed the budget or start a download the
+filesystem visibly cannot hold, and that is its whole side of the bargain.
+
+Transport is plain HTTP by design: integrity and authenticity come from the
+signed metadata (a hostile mirror yields a refusal), confidentiality is not
+provided — terminate TLS at a local proxy or sync the repository out of band
+if it is needed.
+
+### 3.2 The offline lockbox — **[runbook]**
+
+The USB/SD path for devices without a network route. On the release host:
+
+```sh
+# The complete metadata set plus the named bundle and its pinned manifest
+# (all targets when none is named). No key is read; this is file copies.
+rauc-sign lockbox --repo <repo> --out /media/usb/lockbox \
+  --target mos-cx3576-<epoch>.raucb
+```
+
+On the device, with the media mounted:
+
+```sh
+rauc-update import \
+  --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
+  --reserve-dir /data/update --max-bytes <n>
+```
+
+`import` verifies exactly as online — same pinned anchor, same rollback
+state, same selection, same digest gate — then stages the bundle into the
+reserve. A lockbox carrying stale metadata is refused by the state file; a
+tampered bundle is refused by the digest; there is no import that bypasses
+either. The metadata in a lockbox is carried verbatim (no key leaves §1.5's
+custody to produce one), so a partial lockbox lists targets it does not
+carry: `import` verifies the target it selects, and only a full lockbox
+passes `rauc-sign verify` whole.
 
 ## 4. What never happens
 

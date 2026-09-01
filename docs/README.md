@@ -5,6 +5,7 @@
 - `architecture.md` — top-level system architecture and component map (start here)
 - `design/` — subsystem design records
   - `access.md` — debug/maintenance access: channels, auth phases, lockdown layers
+  - `applications.md` — planned managed applications: curated OCI-first catalog, signed manifest, lifecycle, trust and API boundary
   - `boards.md` — BSP contract: artifacts, kernel assertions, new-board checklist
   - `remote-management.md` — what reaches the device today (apid on the LAN over HTTPS), the NAT/fleet channel as a requirement with no design, update control flow
   - `display.md` — HDMI kiosk UI: cage+WPE rendering `apid` locally
