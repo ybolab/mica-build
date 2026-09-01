@@ -26,6 +26,8 @@
   - [`uboot-ab-handshake.md`](design/uboot-ab-handshake.md) — U-Boot / RAUC / 健康闸之间的 A/B 启动契约
   - [`built-in-ui-development-guide.md`](design/built-in-ui-development-guide.md) — 内置 UI 的自包含开发、交互、API 映射与分阶段交付指南
   - [`built-in-ui-design.md`](design/built-in-ui-design.md) — 面向产品/UI 设计师的完整功能、页面、流程、状态与原型指南
+- `research/` — 调研笔记:作为基准阅读的外部产品,不属于设计记录
+  - [`venus-gui-v2.md`](research/venus-gui-v2.md) — Venus OS gui-v2 功能参考,源码通读,映射到 apid/dashboard 归属
 
 ## 与英文文档的关系
 
