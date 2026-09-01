@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-08-31
+> Updated: 2026-09-01
 
 ## Usage
 
@@ -47,7 +47,20 @@ one lock and rejects a transition when their current states do not match.
 - [-] [**RFCT-270 Deliver rootfs components as Debian packages**](RFCT-270.md) `P1`
 - [x] [**RFCT-271 Write the build guide: x64 and cx3576, cross-compile versus emulation**](RFCT-271.md) `P2`
 - [x] [**RFCT-272 Chain the rootfs stages through OCI layouts so cx3576 builds without host binfmt**](RFCT-272.md) `P1`
-- [-] [**RFCT-273 Design the embedded-first user delivery documentation set**](RFCT-273.md) `P1`
+- [-] [**RFCT-273 Coordinate the embedded delivery roadmap**](RFCT-273.md) `P1`
 - [x] [**RFCT-274 Bound, scope and queue the settings-write path so the UI stops hanging**](RFCT-274.md) `P1`
 - [x] [**RFCT-275 Make the built-in UI a pure SPA over the management API**](RFCT-275.md) `P1`
 - [x] [**RFCT-276 Add a recoverable built-in/custom UI selector**](RFCT-276.md) `P1`
+- [ ] [**RFCT-278 Build the user documentation contract and official website content**](RFCT-278.md) `P0`
+- [ ] [**RFCT-279 Publish release identity and supply-chain artifacts**](RFCT-279.md) `P0`
+- [ ] [**RFCT-280 Add RTC, NTP and timezone management**](RFCT-280.md) `P0`
+- [ ] [**RFCT-281 Add the unexpanded BusyBox emergency binary**](RFCT-281.md) `P2`
+- [ ] [**RFCT-282 Deliver install, onboarding and provisioning**](RFCT-282.md) `P0`
+- [ ] [**RFCT-283 Deliver authenticated system updates**](RFCT-283.md) `P0`
+- [ ] [**RFCT-284 Deliver recovery and credential access recovery**](RFCT-284.md) `P0`
+- [ ] [**RFCT-285 Add storage status and data lifecycle management**](RFCT-285.md) `P0`
+- [ ] [**RFCT-286 Document BSP porting and qualify field reliability**](RFCT-286.md) `P0`
+- [ ] [**RFCT-287 Document native and container application delivery**](RFCT-287.md) `P1`
+- [ ] [**RFCT-288 Add diagnostics and operational network state**](RFCT-288.md) `P0`
+- [ ] [**RFCT-289 Define security and manufacturing lifecycle**](RFCT-289.md) `P0`
+- [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`

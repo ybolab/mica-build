@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-08-31
+> Updated: 2026-09-01
 
 ## Usage
 
@@ -35,7 +35,20 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-033 Close the six defects found in the MQTT decoupling review**](PLAN-033.md) `2026-08-30`
 - [x] [**PLAN-035 Build the cx3576 rootfs chain on a host without binfmt through buildkit**](PLAN-035.md) `2026-08-30`
 - [x] [**PLAN-036 Compose rootfs from independently built Debian packages**](PLAN-036.md) `2026-08-30`
-- [ ] [**PLAN-037 Build an embedded-first delivery documentation system**](PLAN-037.md) `2026-08-31`
+- [ ] [**PLAN-037 Coordinate the embedded delivery roadmap**](PLAN-037.md) `2026-08-31`
 - [x] [**PLAN-038 Bound, scope and queue the settings-write path**](PLAN-038.md) `2026-08-31`
 - [x] [**PLAN-039 Serve a built-in SPA and put management behind `/api`**](PLAN-039.md) `2026-08-31`
 - [x] [**PLAN-040 Select a retained custom UI from the built-in SPA**](PLAN-040.md) `2026-09-01`
+- [ ] [**PLAN-042 Build the user documentation contract and official website content**](PLAN-042.md) `2026-09-01`
+- [ ] [**PLAN-043 Publish release identity and supply-chain artifacts**](PLAN-043.md) `2026-09-01`
+- [ ] [**PLAN-044 Add RTC, NTP and timezone management**](PLAN-044.md) `2026-09-01`
+- [ ] [**PLAN-045 Add the unexpanded BusyBox emergency binary**](PLAN-045.md) `2026-09-01`
+- [ ] [**PLAN-046 Deliver install, onboarding and provisioning**](PLAN-046.md) `2026-09-01`
+- [ ] [**PLAN-047 Deliver authenticated system updates**](PLAN-047.md) `2026-09-01`
+- [ ] [**PLAN-048 Deliver recovery and credential access recovery**](PLAN-048.md) `2026-09-01`
+- [ ] [**PLAN-049 Add storage status and data lifecycle management**](PLAN-049.md) `2026-09-01`
+- [ ] [**PLAN-050 Document BSP porting and qualify field reliability**](PLAN-050.md) `2026-09-01`
+- [ ] [**PLAN-051 Document native and container application delivery**](PLAN-051.md) `2026-09-01`
+- [ ] [**PLAN-052 Add diagnostics and operational network state**](PLAN-052.md) `2026-09-01`
+- [ ] [**PLAN-053 Define security and manufacturing lifecycle**](PLAN-053.md) `2026-09-01`
+- [ ] [**PLAN-054 Design conditional fleet management**](PLAN-054.md) `2026-09-01`
