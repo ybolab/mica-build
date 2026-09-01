@@ -5,6 +5,22 @@
 本目录是 mos 的中文文档，按**当前版本**重写，不是英文文档的逐行翻译。
 
 - [`architecture.md`](architecture.md) — 系统架构总览与组件地图（从这里开始）
+- `user/` — 用户文档（**覆盖全部 15 篇**，含文档契约本身）
+  - [`quickstart.md`](user/quickstart.md) — 快速上手：QEMU 里的 x64 基线
+  - [`download.md`](user/download.md) — 发布版组成与镜像获取（今天：自己构建）
+  - [`install.md`](user/install.md) — 把镜像写到板卡并到达首次启动
+  - [`first-run.md`](user/first-run.md) — 首次启动、离线自我配置、认领设备
+  - [`configuration.md`](user/configuration.md) — 设置树模型与今天可配置什么
+  - [`applications.md`](user/applications.md) — 原生软件包与容器两条交付路径
+  - [`update-rollback.md`](user/update-rollback.md) — A/B 更新、健康门与回滚
+  - [`recovery.md`](user/recovery.md) — 从自动回滚到整盘重刷的恢复阶梯
+  - [`storage.md`](user/storage.md) — 四个存储层级与数据归属规则
+  - [`troubleshooting.md`](user/troubleshooting.md) — 诊断顺序：访问、识别、证据
+  - [`security.md`](user/security.md) — 安全姿态与点名的缺口
+  - [`release-notes.md`](user/release-notes.md) — 发布版标识与发布说明政策
+  - [`api.md`](user/api.md) — 管理 API：一份机器可读契约
+  - [`support.md`](user/support.md) — 支持层级与生命周期归属
+  - [`doc-contract.md`](user/doc-contract.md) — 用户文档契约（读者、真实状态分类法、中英规则）
 - `design/` — 子系统设计与专项开发指南
   - [`api.md`](design/api.md) — API 优先的 apid：表面、认证、静态托管、可替换界面
   - [`applications.md`](design/applications.md) — 计划中的托管应用：精选 OCI 优先目录、签名 manifest、生命周期、信任与 API 边界
@@ -30,6 +46,53 @@
 ## 与英文文档的关系
 
 英文文档是**权威**。两边冲突时以英文为准，中文这边按缺陷处理。
+
+## 覆盖表
+
+按 [`user/doc-contract.md`](user/doc-contract.md) 第 5 节的规则，下表为
+`docs/user/`、`docs/website/` 和 `docs/bsp/` 下的每一个英文页面各记录一行：
+源页面（相对本目录的路径）、翻译所依据的源版本（git 短提交号）、以及覆盖
+状态（`current` | `lagging` | `not-translated`）。`docs/zh/verify-coverage.sh`
+（挂在 `make docs-verify` 上）保证这张表与两边的文件树一致。
+
+`docs/website/` 与 `docs/bsp/` 整树标记 `not-translated`，这是政策而非
+欠账：两者面向集成商与工程读者，英文是其工作语言；doc-contract.md 管辖
+这条规则，规则若变，先改契约再改表。
+
+| 源页面 | 源版本 | 覆盖状态 |
+|---|---|---|
+| `../user/api.md` | db66fc02 | current |
+| `../user/applications.md` | db66fc02 | current |
+| `../user/configuration.md` | db66fc02 | current |
+| `../user/doc-contract.md` | db66fc02 | current |
+| `../user/download.md` | db66fc02 | current |
+| `../user/first-run.md` | db66fc02 | current |
+| `../user/install.md` | db66fc02 | current |
+| `../user/quickstart.md` | db66fc02 | current |
+| `../user/recovery.md` | db66fc02 | current |
+| `../user/release-notes.md` | db66fc02 | current |
+| `../user/security.md` | db66fc02 | current |
+| `../user/storage.md` | db66fc02 | current |
+| `../user/support.md` | db66fc02 | current |
+| `../user/troubleshooting.md` | db66fc02 | current |
+| `../user/update-rollback.md` | db66fc02 | current |
+| `../website/contract.md` | db66fc02 | not-translated |
+| `../website/documentation.md` | db66fc02 | not-translated |
+| `../website/downloads.md` | db66fc02 | not-translated |
+| `../website/embedded.md` | db66fc02 | not-translated |
+| `../website/hardware.md` | db66fc02 | not-translated |
+| `../website/licensing.md` | db66fc02 | not-translated |
+| `../website/product.md` | db66fc02 | not-translated |
+| `../website/security.md` | db66fc02 | not-translated |
+| `../website/support.md` | db66fc02 | not-translated |
+| `../bsp/assurance.md` | db66fc02 | not-translated |
+| `../bsp/board-env.md` | db66fc02 | not-translated |
+| `../bsp/board-template.md` | db66fc02 | not-translated |
+| `../bsp/cx3576-example.md` | db66fc02 | not-translated |
+| `../bsp/intake.md` | db66fc02 | not-translated |
+| `../bsp/porting.md` | db66fc02 | not-translated |
+| `../bsp/qualification.md` | db66fc02 | not-translated |
+| `../bsp/support-tiers.md` | db66fc02 | not-translated |
 
 `docs/design/` 下的每一篇都有中文对应。中文版是**面向当前版本的概览**，
 不是逐行翻译：英文版里可直接执行的命令序列、完整配置清单和逐块数据来源表格不在这里重复，

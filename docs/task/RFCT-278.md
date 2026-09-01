@@ -1,6 +1,7 @@
 # RFCT-278 Build the user documentation contract and official website content
 
-- **status**: pending
+- **status**: completed
+- **completedAt**: 2026-09-01
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
@@ -34,3 +35,12 @@ Building the user documentation and website content contract.
 
 - This is documentation/content work; it does not implement missing features or
   deploy a public website.
+
+## Completion
+
+Completed 2026-09. The user documentation set, the official-site content
+briefs and the Chinese user set with its coverage table are in the tree, and
+the navigation, internal-link, truth-status and en/zh coverage checks are wired
+into `make docs-verify` and `make docs-verify-test`. The delivered artifacts,
+the gate that proves them and what remains open are recorded in
+[PLAN-042](../plan/PLAN-042.md)'s Completion section.
