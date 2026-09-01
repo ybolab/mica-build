@@ -5,8 +5,9 @@
 本目录是 mos 的中文文档，按**当前版本**重写，不是英文文档的逐行翻译。
 
 - [`architecture.md`](architecture.md) — 系统架构总览与组件地图（从这里开始）
-- `design/` — 子系统设计（**覆盖全部 16 篇**）
+- `design/` — 子系统设计与专项开发指南
   - [`api.md`](design/api.md) — API 优先的 apid：表面、认证、静态托管、可替换界面
+  - [`applications.md`](design/applications.md) — 计划中的托管应用：精选 OCI 优先目录、签名 manifest、生命周期、信任与 API 边界
   - [`access.md`](design/access.md) — 调试与运维通道：入口、认证、分层关闭
   - [`boards.md`](design/boards.md) — BSP 契约：产物、内核断言、新板卡清单
   - [`bsp-cx3576-sync.md`](design/bsp-cx3576-sync.md) — cx3576 上游 BSP 同步记录与偏离登记
@@ -23,6 +24,8 @@
   - [`remote-management.md`](design/remote-management.md) — 远程管理的现状与缺口
   - [`ro-root.md`](design/ro-root.md) — 只读根：squashfs + dm-verity，以及写入去哪里
   - [`uboot-ab-handshake.md`](design/uboot-ab-handshake.md) — U-Boot / RAUC / 健康闸之间的 A/B 启动契约
+  - [`built-in-ui-development-guide.md`](design/built-in-ui-development-guide.md) — 内置 UI 的自包含开发、交互、API 映射与分阶段交付指南
+  - [`built-in-ui-design.md`](design/built-in-ui-design.md) — 面向产品/UI 设计师的完整功能、页面、流程、状态与原型指南
 
 ## 与英文文档的关系
 
