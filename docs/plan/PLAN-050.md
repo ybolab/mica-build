@@ -1,8 +1,8 @@
 # PLAN-050 Document BSP porting and qualify field reliability
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-286](../task/RFCT-286.md)
 
 ## Context
