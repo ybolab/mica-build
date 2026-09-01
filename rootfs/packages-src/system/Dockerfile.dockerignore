@@ -1,0 +1,11 @@
+# The build context is this producer's own directory, and two things are COPYed
+# out of it: its control template and its own maintainer script. The shared
+# copyright file lives one level up and arrives through the `family` named
+# context producer.env declares, so an edit to the driver, the README or a
+# sibling producer cannot invalidate this producer's context.
+#
+# The payload itself is not here. It arrives through the `overlay` build
+# context build-env/deb/build.sh resolves from producer.env.
+*
+!control/*.control
+!maintainer/**

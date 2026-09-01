@@ -55,9 +55,9 @@ integration burden D-Bus removes for free.
 
   > **Correction (2026-08-19).** This line read `/state/mos/settings.toml`,
   > which is not a path that exists on any image. The real default is
-  > `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs`,
+  > `/var/lib/mos/settings.toml` (`pkgs/mosd/mosd-settings/src/store.rs`,
   > `DEFAULT_PATH`), a bind from `/mnt/state/mos` (`docs/design/ro-root.md` §4),
-  > and `os/pkgs/mosd/mosd/src/main.rs`
+  > and `pkgs/mosd/mosd/src/main.rs`
   > documents the same. The doc contradicted both the code and §5.1 below.
 - Migrations: Bottlerocket migrator pattern — forward AND backward migration
   units shipped with each release (the A/B design requires the rollback
@@ -205,21 +205,21 @@ The last two, registered since and taking the final positions in the list:
 | `MqttReconciler` | `mqtt` | broker config file + `mos-mqtt-broker.service` + `mos-mqttd.service` |
 
 Each cell, measured. Both subtrees are the reconciler's own name:
-`"container"` (`os/pkgs/mosd/mosd/src/reconciler/container.rs`) and
-`"mqtt"` (`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs`). The container
+`"container"` (`pkgs/mosd/mosd/src/reconciler/container.rs`) and
+`"mqtt"` (`pkgs/mosd/mosd/src/reconciler/mqtt.rs`). The container
 executor is not a daemon — the engine is daemonless and the image carries no
 podman unit — so what the reconciler operates is the mount that makes Quadlet's
 directory readable, `pub const QUADLET_MOUNT_UNIT: &str = "etc-containers-systemd.mount";`
-(`os/pkgs/mosd/mosd/src/reconciler/container.rs`), followed by
+(`pkgs/mosd/mosd/src/reconciler/container.rs`), followed by
 `self.control.daemon_reload().await?;`
-(`os/pkgs/mosd/mosd/src/reconciler/container.rs`), without which the mount
+(`pkgs/mosd/mosd/src/reconciler/container.rs`), without which the mount
 is correct, the files are visible and no unit exists. The MQTT executor writes
 `const DEFAULT_CONFIG_PATH: &str = "/run/mos/mqtt-broker.toml";`
-(`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs`) and drives two units,
+(`pkgs/mosd/mosd/src/reconciler/mqtt.rs`) and drives two units,
 `const BROKER_UNIT: &str = "mos-mqtt-broker.service";`
-(`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs`) and
+(`pkgs/mosd/mosd/src/reconciler/mqtt.rs`) and
 `const BRIDGE_UNIT: &str = "mos-mqttd.service";`
-(`os/pkgs/mosd/mosd/src/reconciler/mqtt.rs`).
+(`pkgs/mosd/mosd/src/reconciler/mqtt.rs`).
 
 **The `SshdReconciler` row is corrected, and both cells were wrong.** It used to
 read subtree `access.ssh`, `access.device` and effects "sshd drop-in +
@@ -280,27 +280,27 @@ the reconciler has to do that a `.network` file alone cannot express.
 
 **A virtual link needs a `.netdev` as well.** The renderer is a second function
 beside the unit renderer: *"Render the `.netdev` unit that creates `iface`, for
-a kind that needs one"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs`),
+a kind that needs one"* (`pkgs/mosd/mosd/src/reconciler/network.rs`),
 answering *"`None` for a physical entry, whose device the kernel already has"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`). A VLAN's netdev carries
+(`pkgs/mosd/mosd/src/reconciler/network.rs`). A VLAN's netdev carries
 `Kind=vlan` and its `[VLAN] Id=`, a bridge's `Kind=bridge`, and a tunnel's
 `Kind=wireguard` plus
 *"the `[WireGuard]` and `[WireGuardPeer]` sections of a tunnel's netdev"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`).
+(`pkgs/mosd/mosd/src/reconciler/network.rs`).
 
 **Attachment is a line on the OTHER interface's unit.** A VLAN child is named
 by its parent and a bridge port by nothing of its own, because
 *"networkd creates a VLAN only when the parent's `.network` names it"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`) — so the child's
+(`pkgs/mosd/mosd/src/reconciler/network.rs`) — so the child's
 existence is a fact the PARENT's unit has to state, and `render_unit` takes the
 parent's VLAN children and the bridge that claimed this interface as arguments
 rather than reading them off the entry. A port carries no addressing:
 *"A port's addressing is the bridge's; validation has already refused an entry
 that tried to keep its own"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`). Both relations are
+(`pkgs/mosd/mosd/src/reconciler/network.rs`). Both relations are
 fail-closed before a single file is written — *"an undeclared parent is a VLAN
 that would never come up"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`) — which is the same
+(`pkgs/mosd/mosd/src/reconciler/network.rs`) — which is the same
 boundary argument the address validator makes: the settings file is writable
 without apid.
 
@@ -308,45 +308,45 @@ without apid.
 The sweep still deletes every `50-mos-` unit the pass did not write, now over
 both suffixes — *"Whether `file_name` is one this reconciler wrote:
 `50-mos-<iface>.network` or, for a virtual link, `50-mos-<iface>.netdev`"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`) — and it then asks the
+(`pkgs/mosd/mosd/src/reconciler/network.rs`) — and it then asks the
 kernel to drop the device, because *"Removing a `.netdev` file and reloading
 does not delete the device networkd built from it: networkd creates virtual
 devices, it does not reap them"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`). The same delete covers a
+(`pkgs/mosd/mosd/src/reconciler/network.rs`). The same delete covers a
 netdev whose properties changed: *"Devices whose netdev properties changed. They
 apply at creation only, so the device has to go and be built again"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`). The deletes run
+(`pkgs/mosd/mosd/src/reconciler/network.rs`). The deletes run
 *"Before the reload, so networkd builds the recreated devices back on the same
-pass that deleted them"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs`),
+pass that deleted them"* (`pkgs/mosd/mosd/src/reconciler/network.rs`),
 and a failed delete in the sweep is logged rather than returned — the unit file
 is already gone and failing there would report every converged interface as
 unconverged.
 
 **A WireGuard private key never enters the settings tree.** The schema is
 explicit that it never will: *"There is no private-key field here and there
-never will be"* (`os/pkgs/mosd/mosd-settings/src/model.rs`). The key lives
+never will be"* (`pkgs/mosd/mosd-settings/src/model.rs`). The key lives
 in a file under the STATE directory that holds `settings.toml`, in
 `networkd-secrets/` — *"A sibling of `secrets/` rather than anything under it,
 and the name says so because the path is load-bearing"*
-(`os/pkgs/mosd/mosd/src/wgkeys.rs`), a sibling and not a child because the
+(`pkgs/mosd/mosd/src/wgkeys.rs`), a sibling and not a child because the
 identity module pins `secrets/` to 0700 on every pass and nothing below a 0700
 directory is traversable by the `systemd-network` user. The modes follow from
 who reads it: *"the key file is `root:systemd-network` 0640 under a sibling
 directory of the same ownership at 0750"*
-(`os/pkgs/mosd/mosd/src/wgkeys.rs`). Generation is lazy and idempotent —
+(`pkgs/mosd/mosd/src/wgkeys.rs`). Generation is lazy and idempotent —
 *"Idempotent: an interface that already has a key keeps it, so a reconcile pass
-never rotates by accident"* (`os/pkgs/mosd/mosd/src/wgkeys.rs`) — and
+never rotates by accident"* (`pkgs/mosd/mosd/src/wgkeys.rs`) — and
 each write is the store's usual shape: *"temp file beside the target, fsync,
-rename, fsync the directory"* (`os/pkgs/mosd/mosd/src/wgkeys.rs`), with
+rename, fsync the directory"* (`pkgs/mosd/mosd/src/wgkeys.rs`), with
 mode and group set on the temp file before the rename. The rendered unit names
 the file rather than carrying the key: *"`PrivateKeyFile=` names the key rather
-than carrying it"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs`), which
+than carrying it"* (`pkgs/mosd/mosd/src/reconciler/network.rs`), which
 matters because the netdev sits in networkd's world-readable runtime directory.
 Only the public half is ever published, into the live-state entry —
 `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`) — beside the `file`, `dhcp`
+(`pkgs/mosd/mosd/src/reconciler/network.rs`) — beside the `file`, `dhcp`
 and `kind` keys every entry carries: `"kind": kind_name(cfg.kind),`
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`).
+(`pkgs/mosd/mosd/src/reconciler/network.rs`).
 
 This is the reconciler discipline's *"secrets reach the config file and nothing
 else"* rule applied to a secret the config file may not hold either: the key
@@ -356,14 +356,14 @@ reaches its own file, and the module carries no logging statement at all.
 answers the new public key, and it is a method for the reason the transient root
 password is: *"Deliberately not a setting, for the reason a transient root
 password is not one: a key that reached the settings tree would be persisted and
-served back out of it"* (`os/pkgs/mosd/mosd/src/bus.rs`). It refuses an
+served back out of it"* (`pkgs/mosd/mosd/src/bus.rs`). It refuses an
 interface that is not a declared `network` entry of kind `wireguard`, runs under
 the same lock every mutating method takes, and then re-reconciles:
 *"The reconcilers are re-run afterwards so the tunnel's unit is re-rendered and
 networkd builds the device back around the key now on disk"*
-(`os/pkgs/mosd/mosd/src/bus.rs`). The re-run is not optional, because
+(`pkgs/mosd/mosd/src/bus.rs`). The re-run is not optional, because
 *"networkd reads `PrivateKeyFile=` when it creates the device and never again"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs`) — a rotation that only
+(`pkgs/mosd/mosd/src/reconciler/network.rs`) — a rotation that only
 rewrote the file would change what the public key says without changing what the
 tunnel uses. No `SettingsChanged` is emitted: nothing in the settings tree
 changed.
@@ -429,7 +429,7 @@ when the machine goes down mid-call.
 
 **Update orchestration.** The three update members speak to RAUC
 (`de.pengutronix.rauc.Installer`) through a `RaucClient` trait
-(`os/pkgs/mosd/mosd/src/rauc.rs`) with the same shape as the power control: lazy
+(`pkgs/mosd/mosd/src/rauc.rs`) with the same shape as the power control: lazy
 per-call bus connection in production, a dry-run client that never touches the
 host (constructed under `MOSD_DRY_RUN=1`, so no test can install a bundle on
 the build host), and a recording mock for the bus-layer unit tests. Like the
@@ -457,7 +457,7 @@ projected into an item tree or MQTT.
   `active` and concrete slot names are deliberately not offered.
 
 **What mosd deliberately does NOT do: confirm the booted slot.** The boot
-health gate (`os/rootfs/overlay/usr/lib/mos/mos-health`) owns the automatic
+health gate (`rootfs/overlay/usr/lib/mos/mos-health`) owns the automatic
 `rauc status mark-good` — it probes systemd, mosd and apid first, and an
 automatic mark in mosd would duplicate that gate and could confirm a slot the
 gate would have failed. `MarkUpdate` exists for the case the gate cannot
@@ -475,13 +475,13 @@ through when RAUC is absent (v1 image, container) or wedged. Honest limit: the
 *other* unconfirmed window — already booted into the new slot, health gate not
 yet run — is not visible in RAUC's `boot-status` (the U-Boot backend reads the
 attempt counter only as exhausted-or-not), so it is not warned about; closing
-it needs the gate to report its confirmation into mosd, which is an `os/`
+it needs the gate to report its confirmation into mosd, which is an image-pipeline
 change and is deferred. The apid power pane does not yet display
 `power.update_warning`; that is apid's half and is deferred with it.
 
 ### 5.5 Verification status
 
-Everything above is verified locally: `bash os/pkgs/mosd/hack/check.sh` is green
+Everything above is verified locally: `bash pkgs/mosd/hack/check.sh` is green
 (203 tests, measured 2026-08-19; the update-orchestration additions were measured
 crate-scoped on 2026-08-23 — `cargo nextest run -p mosd` green, including a
 private-bus test that drives the production RAUC call path against a fake

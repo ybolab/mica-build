@@ -18,7 +18,7 @@
 #   - linux/arm64 emulation ON THE HOST, for the cx3576 lane:
 #       docker run --privileged --rm tonistiigi/binfmt --install arm64
 #     This line USED TO SAY the opposite -- that host emulation was not
-#     required, because os/rootfs/build.sh created a docker-container
+#     required, because rootfs/build.sh created a docker-container
 #     builder with bundled QEMU when the host builder lacked the platform.
 #     The rootfs is a CHAIN of one Dockerfile per
 #     stage, each `FROM` the local image tag the previous one was written to,
@@ -29,7 +29,7 @@
 #     platform. NOT VERIFIED ON A RUNNER: no arm64-capable host was available
 #     to that change, so this is the requirement as analysed, not as observed.
 #   - the daemon must be able to bind-mount paths the job writes (the
-#     os/build suite points TMPDIR into the workspace for exactly this;
+#     build suite points TMPDIR into the workspace for exactly this;
 #     a rootless daemon in a different mount namespace fails its visible-
 #     workspace preflight, loudly).
 #   - disk: ~10 GiB free for the fast lane; budget >= 50 GiB for the deep lane
@@ -75,7 +75,7 @@ concurrency:
 
 jobs:
   # Six upstreams in three languages are pinned
-  # in os/pkgs/podman/versions.env, and until this job existed nothing in the
+  # in pkgs/podman/versions.env, and until this job existed nothing in the
   # tree ever asked whether any of them had moved. `make podman-pins` asks, and
   # goes red when a pin is behind.
   #
@@ -137,7 +137,7 @@ jobs:
         run: make podman-pins
 
   # The two excluded suites that need no BSP artifacts: the dbus policy test
-  # stands up its own bus, and the os/build suite fabricates synthetic fixtures
+  # stands up its own bus, and the build suite fabricates synthetic fixtures
   # for every input the real pipeline would build. Every push and PR.
   #
   # Not a duplicate of check.yml's dbus-daemon step: the standard lane
@@ -186,7 +186,7 @@ jobs:
       # BOTH assemblers against synthetic fixtures: byte-identical reassembly,
       # the full GPT contract, and every guard's negative direction.
       #
-      # This step ran os/tests/mkimage-v2-selftest.sh until later
+      # This step ran tests/mkimage-v2-selftest.sh until later
       # deleted the shell assemblers and the two selftests that
       # drove them. It is REPOINTED rather than removed because os-build-test
       # was not in any workflow: dropping the step would have taken every
@@ -232,7 +232,7 @@ jobs:
           $SUDO true || { echo "runner is neither root nor passwordless-sudo" >&2; exit 1; }
           docker info >/dev/null || { echo "no reachable docker daemon" >&2; exit 1; }
           docker buildx version >/dev/null || { echo "docker buildx is not available" >&2; exit 1; }
-          # The probe's base comes from os/build-env/images.env like every other
+          # The probe's base comes from build-env/images.env like every other
           # image in this tree. It runs after actions/checkout, so the resolver
           # is on disk; that ordering is what makes a key usable here at all.
           #
@@ -242,7 +242,7 @@ jobs:
           # message -- rather than the pipeline spending hours on the kernel and
           # U-Boot builds and then failing in the assembler, which is the
           # same defect reported from the far end of the long pole.
-          PROBE_IMAGE="$(bash os/build-env/from.sh --ref IMAGE_ALPINE_3_21)"
+          PROBE_IMAGE="$(bash build-env/from.sh --ref IMAGE_ALPINE_3_21)"
           docker run --rm --privileged "${PROBE_IMAGE}" sh -c 'test -e /dev/loop-control && losetup -f >/dev/null' \
             || { echo "the daemon refuses --privileged containers or has no loop devices" >&2; exit 1; }
 
@@ -275,7 +275,7 @@ jobs:
         run: make os-verify-cx3576
 
       # THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
-      # os/rootfs/build.sh runs it as its last step under `set -e`, so the
+      # rootfs/build.sh runs it as its last step under `set -e`, so the
       # step above that builds the image has already executed every self-built
       # binary inside the root it packed. A second invocation here would report
       # the same green twice and would read like the only thing running it.

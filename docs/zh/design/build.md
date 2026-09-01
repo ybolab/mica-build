@@ -7,7 +7,7 @@
 > `build-harness.md` 讲的是*检查*怎么跑；本页讲的是*产物*怎么来。
 
 所有步骤都在 docker 里执行。主机只需要带 buildx 的 docker、bash、make 和
-git；主机上不安装任何工具链，每个编译器都来自 `os/build-env/images.env`
+git；主机上不安装任何工具链，每个编译器都来自 `build-env/images.env`
 里按 digest 固定的 builder 镜像。
 
 ## 1. 一次构建产出什么
@@ -16,11 +16,11 @@ git；主机上不安装任何工具链，每个编译器都来自 `os/build-env
 
 | 产物 | 由谁生成 | 是什么 |
 |---|---|---|
-| `<board>-mos-<epoch>.img` 与 `<board>-mos-latest.img` | `bash os/build/run.sh --mkimage-cx3576`（cx3576）或 `--mkimage-x64` | 可直接烧写的整盘 A/B 镜像 |
-| `rootfs-verity.img` + `rootfs-verity.env` | `os/rootfs/build.sh` | 一个 rootfs 槽：squashfs 加 dm-verity 哈希树，以及内核命令行需要的参数 |
-| RAUC 更新包 | `bash os/build/run.sh --bundle --board <board>` | 给已经在跑 mos 的设备用的签名更新 |
+| `<board>-mos-<epoch>.img` 与 `<board>-mos-latest.img` | `bash build/run.sh --mkimage-cx3576`（cx3576）或 `--mkimage-x64` | 可直接烧写的整盘 A/B 镜像 |
+| `rootfs-verity.img` + `rootfs-verity.env` | `rootfs/build.sh` | 一个 rootfs 槽：squashfs 加 dm-verity 哈希树，以及内核命令行需要的参数 |
+| RAUC 更新包 | `bash build/run.sh --bundle --board <board>` | 给已经在跑 mos 的设备用的签名更新 |
 
-镜像文件名来自板卡定义（`os/boards/<board>/board.env` 里的
+镜像文件名来自板卡定义（`boards/<board>/board.env` 里的
 `IMAGE_NAME_PREFIX`、`IMAGE_LATEST_NAME`），脚本里不写死。
 
 rootfs 能开始构建之前，必须先存在**一样**东西：`_out/debs/<arch>/` 下的本地
@@ -33,18 +33,18 @@ Debian 包仓库，由 `make os-debs` 构建并建立索引。rootfs 构建只�
 
 | 输入 | 由谁构建 | 落在哪 |
 |---|---|---|
-| builder 镜像 `localhost/mos-build-{base,c,go,rust}:<arch>` | `os/build-env/build.sh` | 本地 docker 镜像库 |
-| RAUC | `os/pkgs/rauc/build.sh`，由 `rauc` producer 的 `PREPARE` 钩子驱动 | `os/pkgs/rauc/out-<arch>/`，打包成 `mos-rauc` |
-| podman 及其六个配套二进制 | `os/pkgs/podman/build.sh`，由 `podman` producer 的钩子驱动 | `os/pkgs/podman/out-<arch>/`，打包成 `mos-podman` |
-| mosd、apid、mos-mqttd、mos-mqtt-broker | `os/pkgs/mosd/hack/build-deb.sh`，由 `mosd` 和 `mqtt` 两个 producer 驱动 | `target-deb/<producer>/`，打包成 `mosd`、`mos-apid`、`mos-mqttd`、`mos-mqtt-broker` |
+| builder 镜像 `localhost/mos-build-{base,c,go,rust}:<arch>` | `build-env/build.sh` | 本地 docker 镜像库 |
+| RAUC | `pkgs/rauc/build.sh`，由 `rauc` producer 的 `PREPARE` 钩子驱动 | `pkgs/rauc/out-<arch>/`，打包成 `mos-rauc` |
+| podman 及其六个配套二进制 | `pkgs/podman/build.sh`，由 `podman` producer 的钩子驱动 | `pkgs/podman/out-<arch>/`，打包成 `mos-podman` |
+| mosd、apid、mos-mqttd、mos-mqtt-broker | `pkgs/mosd/hack/build-deb.sh`，由 `mosd` 和 `mqtt` 两个 producer 驱动 | `target-deb/<producer>/`，打包成 `mosd`、`mos-apid`、`mos-mqttd`、`mos-mqtt-broker` |
 
 钩子能自己构建输入的 producer 会自己构建而不是停下来，而这个代价值得放在看得见
 的地方付：`make os-deb-preflight` 在 `os-debs` 启动第一个容器之前，一次性列出
 所有 producer 缺的全部输入，并说明其中哪些会由这次运行自己补上。
 
 cx3576 还需要它的 BSP：内核（`Image`、`modules.tar`、`rk3576-src.dtb`）和
-A/B 版 U-Boot（`u-boot-rockchip.bin`），由 `os/boards/cx3576/bsp/Makefile`
-构建到 `os/boards/cx3576/bsp/out/`，再由 `board-cx3576` producer staged 进
+A/B 版 U-Boot（`u-boot-rockchip.bin`），由 `boards/cx3576/bsp/Makefile`
+构建到 `boards/cx3576/bsp/out/`，再由 `board-cx3576` producer staged 进
 `mos-board-cx3576`。x64 没有 BSP：UEFI 固件负责引导，Debian 的
 `linux-image-amd64` 作为 `mos-board-x64` 的 `Depends` 进入镜像。
 
@@ -54,8 +54,8 @@ A/B 版 U-Boot（`u-boot-rockchip.bin`），由 `os/boards/cx3576/bsp/Makefile`
 ### 1.1 rootfs 是组合出来的，不是串出来的
 
 根文件系统不再是一串按固定顺序改同一个镜像的 Dockerfile，而是**一次 APT
-事务**——基底是 `os/build-env/images.env` 里按 digest 固定的 Debian 镜像——
-再加**一个收尾器**。`os/rootfs/compose/` 下正好就这两个文件：
+事务**——基底是 `build-env/images.env` 里按 digest 固定的 Debian 镜像——
+再加**一个收尾器**。`rootfs/compose/` 下正好就这两个文件：
 
 | 文件 | 做什么 |
 |---|---|
@@ -69,14 +69,14 @@ A/B 版 U-Boot（`u-boot-rockchip.bin`），由 `os/boards/cx3576/bsp/Makefile`
 **决定配置顺序的是 `Depends`，不是文件名里的数字**——而一次 apt 事务在构造上
 就是原子的，所以已经没有任何东西需要一条阶段边界把它们隔开。
 
-`os/build/src/stages-cli.ts` 仍然原封不动地串这两个文件：它在被指向的目录里
+`build/src/stages-cli.ts` 仍然原封不动地串这两个文件：它在被指向的目录里
 发现 `<数字>-<名字>.Dockerfile`，按数字顺序构建，把上一个的镜像交给下一个，
 并导出最后一个的 `artifact` 和 `factory-root` 目标。它完全不知道自己被指向的
 是哪个目录，所以组合路径不需要第二个驱动。
 
-**选择是一次解析。** `os/rootfs/packages/resolve.sh` 把板卡、profile、射频集合
+**选择是一次解析。** `rootfs/packages/resolve.sh` 把板卡、profile、射频集合
 和拒绝列表全部作为参数接收，然后打印包名；四个输入都由
-`os/rootfs/build.sh` 决定，解析器一个都不自己重新推导。拒绝一个特性就是
+`rootfs/build.sh` 决定，解析器一个都不自己重新推导。拒绝一个特性就是
 *少点几个包*——`MOS_ROOTFS_WITHOUT`，`WITH_CONTAINERS=0` 和 `WITH_MOSD=0` 折进
 同一个列表——而一个匹配不到任何东西的特性名会被拒绝，不会悄悄构建出完整镜像。
 
@@ -112,12 +112,12 @@ APT 直接拒绝这次事务。这个计数是在*解析出来的集合*上做�
 | 接缝 | 归谁 | 决定什么 |
 |---|---|---|
 | `/etc/ssl/certs/ca-certificates.crt`、`/usr/share/ca-certificates` 下的锚点、`/etc/ca-certificates.conf` | `mos-ca-trust`——**包载荷** | **TLS 信任库**：设备向外发起连接时相信哪些证书颁发机构 |
-| `/etc/rauc/keyring.pem` | **不归任何包**；由 `os/rootfs/build.sh` 从 `ca/ca.cert.pem` staged 进去 | **RAUC 信任根**：这台设备愿意安装谁签名的更新包 |
+| `/etc/rauc/keyring.pem` | **不归任何包**；由 `rootfs/build.sh` 从 `ca/ca.cert.pem` staged 进去 | **RAUC 信任根**：这台设备愿意安装谁签名的更新包 |
 
 keyring 是任何包都不可以携带的、每次构建各自的信任材料：一个包是一份产物、装进
 很多个镜像，而操作者放进仓库根 `ca/` 的那个 CA 是关于*这一次*构建的决定。所以
 `build.sh` 自己把它复制进组合上下文，并**拒绝**留在
-`os/rootfs/overlay/etc/rauc/keyring.pem` 的 keyring——overlay 会被整份复制
+`rootfs/overlay/etc/rauc/keyring.pem` 的 keyring——overlay 会被整份复制
 进每一个镜像，留在那里的文件就是一个没人选择过的信任根——而当材料旁边的
 `ca/GENERATED` 标记它是开发级时发出警告。`MOS_EXPECT_DEV_KEYRING=1` 在校验期
 强制同一判定。
@@ -139,7 +139,7 @@ keyring 是任何包都不可以携带的、每次构建各自的信任材料：
   旧链是无条件安装这些的。一个库跟着它的使用者一起来、一起走，正是依赖系统在
   正常工作，所以这条被裁定为*记录，不设 gate*。这条裁定附带一个条件：任何其他
   依赖这些库的组件都必须自己声明依赖，而完整根查不出来——`mos-rauc` 装着的时候，
-  不管包有没有声明，每个 ELF 都能解析。`os/tests/install-closure-gate.sh` 正是
+  不管包有没有声明，每个 ELF 都能解析。`tests/install-closure-gate.sh` 正是
   为此单独构建一个拒绝了 rauc 的根，每次运行都打印两个根实际相差的包集合；
   如果某次运行里只有 `mos-rauc` 一个包离开，它会把这次报成*空搜索空间*，而不是
   拿来当证明引用。
@@ -147,7 +147,7 @@ keyring 是任何包都不可以携带的、每次构建各自的信任材料：
   跑一次容器引擎。这不是签名根该带的东西，也不该由任何包认领。
 
 删除旧链背后完整的书面推理——每一条被判过的差异，包括那些被消除而不是被批准的
-——在 `os/tests/dual-build-sanctions.md`。
+——在 `tests/dual-build-sanctions.md`。
 
 ## 2. 一次性准备
 
@@ -155,8 +155,8 @@ keyring 是任何包都不可以携带的、每次构建各自的信任材料：
 `localhost/mos-build-*:<arch>` 标签，标签里的架构是*目标*的架构：
 
 ```sh
-MOS_BUILD_PLATFORM=linux/amd64 bash os/build-env/build.sh   # 给 x64
-MOS_BUILD_PLATFORM=linux/arm64 bash os/build-env/build.sh   # 给 cx3576
+MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh   # 给 x64
+MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh   # 给 cx3576
 ```
 
 `make build-env` 构建的是主机自己架构的那一族。另一架构是另一组标签；组件
@@ -165,24 +165,24 @@ localhost/mos-build-base:amd64, which is not in the local docker image
 store`），而不是去一个叫 `localhost` 的 registry 拉取。
 
 **信任根：`ca/`。** 仓库根目录下的 `ca/` 是签名 CA 进入构建的唯一入口，已
-gitignore。`os/build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
-`ca/signer.key.pem` 签名；`os/rootfs/build.sh` 把 `ca/ca.cert.pem` 放进镜像
+gitignore。`build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
+`ca/signer.key.pem` 签名；`rootfs/build.sh` 把 `ca/ca.cert.pem` 放进镜像
 的 `/etc/rauc/keyring.pem`——镜像因此能安装同一批构建出来的 bundle。
 
 不需要先跑任何东西。构建发现 `ca/` 不存在、或四个文件缺了任何一个时，会在那里
 生成一套开发级信任根，打印一条醒目的通知，然后继续。`make os-devkeys` 是同一件
-事的手动入口，可以在构建前先做；`bash os/pkgs/rauc/gen-dev-keys.sh --force` 用
+事的手动入口，可以在构建前先做；`bash pkgs/rauc/gen-dev-keys.sh --force` 用
 于轮换，代价是所有已用旧密钥签名的 bundle 都会验签失败。
 
 生成器会在材料旁边留下 `ca/GENERATED`。这个标记让"生成的信任根"和"提供的生产
 材料"在此后每一次构建里都可区分，而不只是在生成它的那一次。
-`os/rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为依据
+`rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为依据
 （`MOS_EXPECT_DEV_KEYRING=1` 可以强制同一条警告）。生产发布把真实材料放进
 `ca/`，并且不带这个标记。
 
 有两条规则没变。`CERT`/`KEY`/`KEYRING` 仍然优先于约定——三个都设置时不会生成
 任何东西，也不会读 `ca/` 里的任何文件。放在
-`os/rootfs/overlay/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
+`rootfs/overlay/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
 无条件拒绝：overlay 会被整份复制进每一个镜像，留在那里的文件就是一个没人选择过
 的 CA，而 `ca/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，对开发镜像跑
 `make os-verify-<board>` 需要 `MOS_EXPECT_DEV_KEYRING=1` 来声明它是台架镜像。
@@ -195,15 +195,15 @@ TLS 信任库是两条不同的接缝——1.1 节把两者并排列出。
 在 amd64 主机上每一步都是原生执行。按顺序：
 
 ```sh
-MOS_BUILD_PLATFORM=linux/amd64 bash os/build-env/build.sh
-bash os/pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
-MOS_BOARD=x64 bash os/pkgs/rauc/build.sh
-MOS_ARCH=amd64 bash os/pkgs/podman/build.sh
+MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh
+bash pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
+MOS_BOARD=x64 bash pkgs/rauc/build.sh
+MOS_ARCH=amd64 bash pkgs/podman/build.sh
 make os-debs                                   # 包仓库，以及它的索引
-MOS_BOARD=x64 bash os/rootfs/build.sh       # 等价于 make os-rootfs-x64-composed
-bash os/build/run.sh --mkimage-x64
-bash os/verify/run.sh --verify --board x64
-bash os/build/run.sh --bundle --board x64
+MOS_BOARD=x64 bash rootfs/build.sh       # 等价于 make os-rootfs-x64-composed
+bash build/run.sh --mkimage-x64
+bash verify/run.sh --verify --board x64
+bash build/run.sh --bundle --board x64
 ```
 
 大多数步骤有 `make` 写法（`make os-rauc`、`make podman`、
@@ -218,7 +218,7 @@ bash os/build/run.sh --bundle --board x64
 在 rootfs 构建**之前**跑：`build.sh` 会拒绝一个版本号不等于本树版本号的仓库，
 包括未提交改动给任何一侧加上的 `.dirty` 后缀。
 
-产物用 `os/pkgs/mosd/tests/apid-api/` 下的 QEMU 台架启动，它以
+产物用 `pkgs/mosd/tests/apid-api/` 下的 QEMU 台架启动，它以
 `_out/x64/x64-mos-latest.img` 为输入，自己不构建任何东西。
 
 ## 4. cx3576：哪些交叉编译、哪些模拟、哪些要主机配合
@@ -234,16 +234,16 @@ amd64 主机有三条路到达 arm64，下面每一步恰好用其中一条：
 
 | 步骤 | 命令 | 路径 | 需要主机 binfmt |
 |---|---|---|---|
-| arm64 builder 镜像族 | `MOS_BUILD_PLATFORM=linux/arm64 bash os/build-env/build.sh` | buildkit 内模拟 | 否 |
+| arm64 builder 镜像族 | `MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh` | buildkit 内模拟 | 否 |
 | U-Boot 两个变体 | `make cx3576-uboot cx3576-uboot-mos` | 交叉编译（amd64 Ubuntu 阶段里 `CROSS_COMPILE=aarch64-linux-gnu-`）；镜像用 `uboot-mos`，校验器拿 debug 变体与之比对以证明配对 | 否 |
 | 内核 | `make cx3576-kernel` | 交叉编译，同一套工具链 | 否 |
 | RAUC | `make os-rauc`（默认 `MOS_BOARD=cx3576`） | 主机有 binfmt 用 `default`，否则用 `mos-arm64` 并把 builder 镜像以 OCI layout 交给它 | 否 |
 | podman | `make podman`（默认 `MOS_ARCH=arm64`） | 同 RAUC；源码阶段在构建平台上用 amd64 基础镜像运行 | 否 |
-| mosd 一族 | `mosd` 与 `mqtt` 两个 producer 通过 `os/pkgs/mosd/hack/build-deb.sh` 调用 | 交叉编译：`mos-build-rust:amd64` 里 cargo target `aarch64-unknown-linux-gnu` | 否 |
+| mosd 一族 | `mosd` 与 `mqtt` 两个 producer 通过 `pkgs/mosd/hack/build-deb.sh` 调用 | 交叉编译：`mos-build-rust:amd64` 里 cargo target `aarch64-unknown-linux-gnu` | 否 |
 | 包仓库 | `make os-debs` | 各 producer 各走上面自己那一条；打包阶段本身只是带 `Architecture` 标记的文件复制 | 否 |
-| rootfs 组合 | `bash os/rootfs/build.sh`（默认 `MOS_BOARD=cx3576`） | 主机有 binfmt 用 `default`，否则用 `mos-arm64` 并以 OCI layout 串接那两个文件（4.1 节） | 否 |
+| rootfs 组合 | `bash rootfs/build.sh`（默认 `MOS_BOARD=cx3576`） | 主机有 binfmt 用 `default`，否则用 `mos-arm64` 并以 OCI layout 串接那两个文件（4.1 节） | 否 |
 | smoke | rootfs 构建的最后一步 | daemon 能执行 arm64 就 `docker run`，否则在 `mos-arm64` 上每个二进制做一次一次性构建 | 否 |
-| 磁盘镜像 | `bash os/build/run.sh --mkimage-cx3576` | 纯文件拼装 | 否 |
+| 磁盘镜像 | `bash build/run.sh --mkimage-cx3576` | 纯文件拼装 | 否 |
 | 镜像校验 | `make os-verify-cx3576` | 只从镜像里读文件 | 否 |
 | 更新包 | `make os-bundle-cx3576` | 在 amd64 容器里跑 `rauc bundle` | 否 |
 
@@ -251,15 +251,15 @@ amd64 主机有三条路到达 arm64，下面每一步恰好用其中一条：
 按顺序：
 
 ```sh
-MOS_BUILD_PLATFORM=linux/arm64 bash os/build-env/build.sh
-bash os/pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
+MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh
+bash pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
 make cx3576-uboot cx3576-uboot-mos
 make cx3576-kernel
 make os-rauc
 make podman
 make os-debs
-bash os/rootfs/build.sh
-bash os/build/run.sh --mkimage-cx3576
+bash rootfs/build.sh
+bash build/run.sh --mkimage-cx3576
 make os-verify-cx3576
 make os-bundle-cx3576
 ```
@@ -271,7 +271,7 @@ rootfs 构建。
 ### 4.1 rootfs 组合如何不靠主机到达 arm64
 
 组合是两个 Dockerfile（1.1 节），第二个以 `FROM ${MOS_STAGE_PREV}` 开头。
-`os/build/src/stages-cli.ts` 按 builder 的驱动类型从两种方式里选一种把它们连起来：
+`build/src/stages-cli.ts` 按 builder 的驱动类型从两种方式里选一种把它们连起来：
 
 - **tag 模式**，`docker` 驱动：第一个文件的产物是 daemon 镜像库里的一个 tag，
   收尾器的 `FROM` 在那里找到它。这个驱动执行 arm64 只能靠主机 `binfmt_misc`，
@@ -346,12 +346,12 @@ sudo systemctl restart systemd-binfmt
 
 | 报错 | 含义 | 处理 |
 |---|---|---|
-| `LOCAL_MOS_BUILD_BASE resolves to localhost/mos-build-base:<arch>, which is not in the local docker image store` | 那个架构的 builder 镜像族没构建过，或是用旧的不带架构的标签构建的 | `MOS_BUILD_PLATFORM=linux/<arch> bash os/build-env/build.sh` |
+| `LOCAL_MOS_BUILD_BASE resolves to localhost/mos-build-base:<arch>, which is not in the local docker image store` | 那个架构的 builder 镜像族没构建过，或是用旧的不带架构的标签构建的 | `MOS_BUILD_PLATFORM=linux/<arch> bash build-env/build.sh` |
 | `note: the 'default' builder cannot reach linux/arm64 on this host; using the docker-container builder 'mos-arm64'` | 不是错误：rootfs 组合正在走 layout 模式 | 不用处理；想要更快的 tag 模式再在主机上注册模拟器（第 5 节） |
 | 构建过程中的 `exec /bin/sh: exec format error` | 要么没有模拟器，**要么**在 `--platform` 下用了单架构的 `localhost/` 基础镜像（标签没有索引可选，buildkit 直接用它持有的那份且不套模拟器） | 先检查 daemon（第 5 节）；能执行的话就是该阶段的基础镜像架构不对——见 `build-harness.md` 5.1 节 |
-| `docker-container` builder 报 `pull access denied ... localhost/...` | 把本地标签交给了读不到镜像库的 builder | 改用 `default` builder，或把镜像以 OCI layout 交过去（`os/build-env/from.sh --contexts=`） |
+| `docker-container` builder 报 `pull access denied ... localhost/...` | 把本地标签交给了读不到镜像库的 builder | 改用 `default` builder，或把镜像以 OCI layout 交过去（`build-env/from.sh --contexts=`） |
 | `modules.tar not found` | cx3576 内核没构建，或 `BOARD_DIR` 指错了 | `make cx3576-kernel`，或设置 `BOARD_DIR` |
-| `os/pkgs/rauc/out-<arch>/rauc not found` / `os/pkgs/podman/out-<arch>/podman not found` | 组件构建的是另一架构，或根本没构建 | `MOS_BOARD=<board> make os-rauc`、`MOS_ARCH=<arch> make podman` |
+| `pkgs/rauc/out-<arch>/rauc not found` / `pkgs/podman/out-<arch>/podman not found` | 组件构建的是另一架构，或根本没构建 | `MOS_BOARD=<board> make os-rauc`、`MOS_ARCH=<arch> make podman` |
 | `_out/debs/<arch> does not exist` / `... holds no .deb at all` / `... carries no usable index` | 那个架构没有包仓库，或者 `repo.sh` 从没为它建过索引 | `make os-debs` |
 | `the <arch> pool was built at version '...' and this tree is '...'` | 仓库是另一个提交的，或者某一侧因为有未提交改动带上了 `.dirty` | 先提交，再重跑 `make os-debs`——否则会把另一棵树的包装进一个之后每项检查都会算在本树头上的镜像 |
 | `the resolution names package(s) the <arch> pool does not contain` | 解析结果里的某个 producer 没为这个架构构建过；报错会为每个包点名对应的 `make os-deb-<producer>` | 跑掉它们，然后 `make os-debs` 重建索引 |
@@ -366,13 +366,13 @@ sudo systemctl restart systemd-binfmt
 的，所以它们确立的是第 4 节的 arm64 路由——builder 选择、layout 模式和 buildkit
 smoke 执行器——而不是 1.1 节的组合路径。它们作为那条路由的记录保留；组合路径
 自己的验收是 PLAN-036 的 dual-build gate 以及它写下的账本
-`os/tests/dual-build-sanctions.md`。
+`tests/dual-build-sanctions.md`。
 
 *2026-08-30 与 2026-08-31 在本机测得。* 第 3 节的 x64 序列按原样在一个 shell
 里跑通，主机为 amd64、docker 28、没有主机 binfmt。同一主机上
 `docker run --rm --platform linux/arm64 alpine:3.21 uname -m` 回答
 `exec /bin/uname: exec format error`。x64 镜像通过
-`bash os/verify/run.sh --verify --board x64` 292/292（22 项 skip，x64/grub），
+`bash verify/run.sh --verify --board x64` 292/292（22 项 skip，x64/grub），
 并构建了签名的 RAUC bundle。
 
 第 4 节的 cx3576 序列此后在同一台无 binfmt 的主机上端到端跑通，两天各一次，

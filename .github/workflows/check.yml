@@ -1,6 +1,6 @@
 # The gates this repository already defines, executed on every push.
 #
-# It runs `os/pkgs/mosd/hack/check.sh` and the `make` targets rather than restating
+# It runs `pkgs/mosd/hack/check.sh` and the `make` targets rather than restating
 # what they do. That is deliberate and it is the whole design: a workflow that
 # spelled out `cargo clippy -- -D warnings` here would be a second copy of the
 # gate definition, free to drift from the one a developer runs locally, and the
@@ -43,8 +43,8 @@ jobs:
       # install its own build deps must go red here, not green later.
       #
       # `dbus-daemon` is a TEST dependency, listed here for the same reason as
-      # the compiler. Three suites in the nextest run below -- os/pkgs/mosd/mosd/tests/bus.rs,
-      # os/pkgs/mosd/mosd/tests/scan.rs and os/pkgs/mosd/mosd/tests/tree.rs -- stand up a private
+      # the compiler. Three suites in the nextest run below -- pkgs/mosd/mosd/tests/bus.rs,
+      # pkgs/mosd/mosd/tests/scan.rs and pkgs/mosd/mosd/tests/tree.rs -- stand up a private
       # `dbus-daemon --session`, and scan.rs and bus.rs panic by name rather
       # than skip when it is absent. Provisioning it is what makes those suites
       # actually run here; without it they would either go red (scan.rs, bus.rs)
@@ -96,12 +96,12 @@ jobs:
             [ -n "$v" ] || { echo "no rust-version in $1" >&2; exit 1; }
             echo "$v"
           }
-          mosd_msrv=$(read_msrv os/pkgs/mosd/Cargo.toml)
-          sign_msrv=$(read_msrv os/pkgs/rauc-sign/Cargo.toml)
+          mosd_msrv=$(read_msrv pkgs/mosd/Cargo.toml)
+          sign_msrv=$(read_msrv pkgs/rauc-sign/Cargo.toml)
           [ "$mosd_msrv" = "$sign_msrv" ] || {
             echo "error: the two workspaces disagree about the MSRV." >&2
-            echo "       os/pkgs/mosd/Cargo.toml:         $mosd_msrv" >&2
-            echo "       os/pkgs/rauc-sign/Cargo.toml:    $sign_msrv" >&2
+            echo "       pkgs/mosd/Cargo.toml:         $mosd_msrv" >&2
+            echo "       pkgs/rauc-sign/Cargo.toml:    $sign_msrv" >&2
             echo "       This job installs one toolchain and runs both gates on it, so it" >&2
             echo "       cannot honour two MSRVs. Reconcile them, or split this job." >&2
             exit 1
@@ -159,18 +159,18 @@ jobs:
 
       # The gates themselves. Nothing above this line asserts anything about the
       # code; nothing below it is a check this file invented.
-      - name: os/pkgs/mosd/hack/check.sh
-        run: bash os/pkgs/mosd/hack/check.sh
+      - name: pkgs/mosd/hack/check.sh
+        run: bash pkgs/mosd/hack/check.sh
 
       # The SECOND cargo workspace, and the reason it needs its own step: until
       # Before the split, this crate was a member of the mosd workspace, reached by a
-      # `../` entry in os/pkgs/mosd/Cargo.toml's members list, so the `--workspace` flags
+      # `../` entry in pkgs/mosd/Cargo.toml's members list, so the `--workspace` flags
       # inside the script above covered it. The extraction ended that. A `--workspace`
       # that no longer spans a crate does not complain -- it simply checks less
       # and still exits 0 -- so without this step the crate would ship
       # unchecked with this whole job still green.
-      - name: os/pkgs/rauc-sign/hack/check.sh
-        run: bash os/pkgs/rauc-sign/hack/check.sh
+      - name: pkgs/rauc-sign/hack/check.sh
+        run: bash pkgs/rauc-sign/hack/check.sh
 
       # The gate above already runs the in-tree test that compares the
       # committed document against the generated one, so this step catches no
@@ -181,22 +181,22 @@ jobs:
       # it did, leaves that test green and the documented regeneration command
       # broken.
       #
-      # `os/pkgs/mosd/hack/check.sh` cds into `os/pkgs/mosd/`; this step runs from the
+      # `pkgs/mosd/hack/check.sh` cds into `pkgs/mosd/`; this step runs from the
       # repository root, hence `--manifest-path`.
       - name: The committed OpenAPI document is what the shipped flag prints
         run: |
           set -euo pipefail
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
-          cargo run --locked --manifest-path os/pkgs/mosd/Cargo.toml -p apid -- --openapi \
+          cargo run --locked --manifest-path pkgs/mosd/Cargo.toml -p apid -- --openapi \
             >"$tmp/openapi.json"
-          diff -u os/pkgs/mosd/apid/openapi.json "$tmp/openapi.json" || {
-            echo "error: os/pkgs/mosd/apid/openapi.json is not what apid --openapi prints." >&2
-            echo "       Regenerate it from os/pkgs/mosd/:" >&2
+          diff -u pkgs/mosd/apid/openapi.json "$tmp/openapi.json" || {
+            echo "error: pkgs/mosd/apid/openapi.json is not what apid --openapi prints." >&2
+            echo "       Regenerate it from pkgs/mosd/:" >&2
             echo "         cargo run -p apid -- --openapi > apid/openapi.json" >&2
             exit 1
           }
-          echo "os/pkgs/mosd/apid/openapi.json matches apid --openapi"
+          echo "pkgs/mosd/apid/openapi.json matches apid --openapi"
 
       # docs/design/api.md §2.1's breaking-vs-additive lists made mechanical:
       # the committed spec is compared against the base branch's copy, and any
@@ -233,13 +233,13 @@ jobs:
           base="${{ github.base_ref }}"
           if [ -z "$base" ]; then
             echo "skipped: no base branch on a ${{ github.event_name }} event, so there is"
-            echo "         no committed spec to diff os/pkgs/mosd/apid/openapi.json against."
+            echo "         no committed spec to diff pkgs/mosd/apid/openapi.json against."
             exit 0
           fi
 
           git fetch --depth=1 origin "$base"
-          if ! git cat-file -e FETCH_HEAD:os/pkgs/mosd/apid/openapi.json 2>/dev/null; then
-            echo "skipped: ${base} carries no os/pkgs/mosd/apid/openapi.json, so every path in this"
+          if ! git cat-file -e FETCH_HEAD:pkgs/mosd/apid/openapi.json 2>/dev/null; then
+            echo "skipped: ${base} carries no pkgs/mosd/apid/openapi.json, so every path in this"
             echo "         spec is new and nothing can have been broken."
             exit 0
           fi
@@ -275,9 +275,9 @@ jobs:
           response-non-success-status-removed err
           SEVERITY
 
-          git show FETCH_HEAD:os/pkgs/mosd/apid/openapi.json >"$tmp/base-openapi.json"
+          git show FETCH_HEAD:pkgs/mosd/apid/openapi.json >"$tmp/base-openapi.json"
           echo "base: ${base} at $(git rev-parse --short FETCH_HEAD)"
-          "$tmp/oasdiff" breaking "$tmp/base-openapi.json" os/pkgs/mosd/apid/openapi.json \
+          "$tmp/oasdiff" breaking "$tmp/base-openapi.json" pkgs/mosd/apid/openapi.json \
             --fail-on ERR --color never --severity-levels "$tmp/severity.txt" || {
             echo "error: the changes above are breaking under docs/design/api.md §2.1." >&2
             echo "       A correct v1 client can be broken by them, so they need a new" >&2
@@ -332,16 +332,16 @@ jobs:
           echo "Not run here (bash only, needs neither bun nor docker; simply not wired yet):" >&2
           echo "  make os-shell-pipefail-lint" >&2
 
-  # The os/verify bun+TypeScript suite, and the board-definition schema lint
+  # The verify bun+TypeScript suite, and the board-definition schema lint
   # that now lives inside it. A SEPARATE JOB rather than a step in
   # offline-suites, because that job's first sentence is that its suites need
   # neither root nor docker, and this one needs docker. A scope statement that
   # quietly stopped being true would be worse than an extra job.
   #
   # WHICH BUN CI RUNS IS THE PIN DECISION, and the decision is: none. No bun is
-  # installed here. The runner has none of its own, so os/verify/run.sh takes
+  # installed here. The runner has none of its own, so verify/run.sh takes
   # its container route and runs the bun pinned by digest as IMAGE_BUN_1 in
-  # os/build-env/images.env -- the same bun a developer without one gets, and
+  # build-env/images.env -- the same bun a developer without one gets, and
   # the same one on every push regardless of what a runner image happens to
   # ship. Installing bun instead would have meant either a floating
   # `curl bun.sh/install` -- the loosest kind of reference this campaign spent
@@ -375,14 +375,14 @@ jobs:
         run: |
           set -euo pipefail
           command -v docker >/dev/null 2>&1 || {
-            echo "error: no docker on this runner. os/verify runs bun in the container pinned as" >&2
-            echo "       IMAGE_BUN_1 in os/build-env/images.env, and there is no other bun here." >&2
+            echo "error: no docker on this runner. verify runs bun in the container pinned as" >&2
+            echo "       IMAGE_BUN_1 in build-env/images.env, and there is no other bun here." >&2
             exit 1
           }
           docker version --format 'docker {{.Server.Version}}'
           if command -v bun >/dev/null 2>&1; then
             echo "error: this runner already has bun at $(command -v bun)." >&2
-            echo "       os/verify would use it and the pinned container would go unexercised, so this" >&2
+            echo "       verify would use it and the pinned container would go unexercised, so this" >&2
             echo "       job would report green about a route it never took. Either remove it, or set" >&2
             echo "       MOS_VERIFY_CONTAINER=1 on the steps below so the pin is still what runs." >&2
             exit 1
@@ -398,7 +398,7 @@ jobs:
             echo "       Same problem as a bun on PATH: the pin would go unexercised." >&2
             exit 1
           fi
-          echo "no bun on PATH and none at ~/.bun/bin/bun: os/verify takes its pinned-container route"
+          echo "no bun on PATH and none at ~/.bun/bin/bun: verify takes its pinned-container route"
 
       # `tee` and then grep the announce line, rather than trusting the exit
       # status alone: a pass proves the suite ran, and this proves WHICH bun ran
@@ -408,14 +408,14 @@ jobs:
       # took it to 207; a number in a step name is a number nobody re-runs the
       # job to check, and this campaign has spent whole tasks on counts that
       # broke the moment a suite was widened. run.sh prints the real one.
-      - name: The os/verify suite, in the pinned bun container
+      - name: The verify suite, in the pinned bun container
         run: |
           set -euo pipefail
-          image="$(bash os/build-env/from.sh --ref IMAGE_BUN_1)"
+          image="$(bash build-env/from.sh --ref IMAGE_BUN_1)"
           make os-verify-test 2>&1 | tee /tmp/os-verify.log
           grep -qF "in ${image} (no bun on this host)" /tmp/os-verify.log || {
             echo "error: the suite passed, but not in the pinned container." >&2
-            echo "       Expected an announce line naming ${image}; os/verify/run.sh prints one on" >&2
+            echo "       Expected an announce line naming ${image}; verify/run.sh prints one on" >&2
             echo "       every run and it is the only thing that says which bun produced the result." >&2
             exit 1
           }
@@ -428,7 +428,7 @@ jobs:
       # The apid API suite's build-time half. HERE and not in offline-suites,
       # for that job's own stated reason: it needs docker. There is no bun on
       # this runner, so spec-pins.sh takes the same pinned-container route
-      # os/verify does, and its announce line says so.
+      # verify does, and its announce line says so.
       #
       # The suite ITSELF (make os-apid-api-test) does not run anywhere in CI:
       # it needs a built image and boots QEMU. That is the whole reason this
@@ -438,13 +438,13 @@ jobs:
         run: make os-apid-api-spec-pins
 
       - name: The built-in apid SPA and committed production assets agree
-        run: bash os/pkgs/mosd/apid/ui/run.sh
+        run: bash pkgs/mosd/apid/ui/run.sh
 
       - name: What this job does not cover
         if: always()
         run: |
-          echo "This job runs bun ONLY as the digest pinned in os/build-env/images.env." >&2
-          echo "It therefore does not check that os/verify works on any other bun --" >&2
+          echo "This job runs bun ONLY as the digest pinned in build-env/images.env." >&2
+          echo "It therefore does not check that verify works on any other bun --" >&2
           echo "including whatever bun a developer has on PATH, which is the route" >&2
           echo "run.sh prefers locally." >&2
           echo >&2

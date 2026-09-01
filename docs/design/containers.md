@@ -7,7 +7,7 @@ other and what survives an update are yours to describe — in systemd's terms,
 not in a mos-specific format.
 
 This document is the integrator's guide to doing that. Every example below is
-extracted by `os/tests/quadlet-doc-test.sh` and fed to the Quadlet generator this
+extracted by `tests/quadlet-doc-test.sh` and fed to the Quadlet generator this
 image actually ships, so an example that stopped working fails the test suite
 rather than sitting here looking correct.
 
@@ -25,7 +25,7 @@ rather than sitting here looking correct.
 | `aardvark-dns` | `/usr/libexec/podman/aardvark-dns` | container-to-container name resolution |
 | `catatonit` | `/usr/libexec/podman/catatonit` | container init, for `--init` |
 
-Versions are pinned in `os/pkgs/podman/versions.env` and built from upstream source,
+Versions are pinned in `pkgs/podman/versions.env` and built from upstream source,
 not taken from Debian. `podman --version` on the device is the authority.
 
 There is **no `podman.socket` and no `podman.service`**. The REST API is not

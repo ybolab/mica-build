@@ -1,4 +1,0 @@
-# The management daemon and its HTTP API. Declined by WITH_MOSD=0, which
-# os/rootfs/build.sh folds into the same decline list as MOS_ROOTFS_WITHOUT.
-mosd
-mos-apid

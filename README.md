@@ -13,20 +13,22 @@ Wi-Fi reconcilers drive the wpa_supplicant and hostapd userland the image ships.
 ```
 mos/
 ├── docs/            project docs: PMA plans (docs/plan/), tasks (docs/task/), designs (docs/design/)
-├── os/              systemd OS build: rootfs, image assembly, verification, boot, RAUC, layout;
-│                    os/boards/ carries one directory per supported board — cx3576
-│                    (Rockchip RK3576, arm64: U-Boot, kernel, firmware) and x64 (generic
-│                    x86_64 UEFI, the QEMU/CI baseline, no BSP build); os/pkgs/ holds the
-│                    compiled components: podman, RAUC, the mosd Rust workspace (mosd,
-│                    apid and the MQTT broker; its workspace-level tests live under
-│                    os/pkgs/mosd/tests/), and TUF release signing
+├── boards/          one directory per supported board — cx3576 (Rockchip RK3576,
+│                    arm64: U-Boot, kernel, firmware) and x64 (generic x86_64 UEFI,
+│                    the QEMU/CI baseline, no BSP build)
+├── pkgs/            the compiled components: podman, RAUC, the mosd Rust workspace
+│                    (mosd, apid and the MQTT broker; its workspace-level tests live
+│                    under pkgs/mosd/tests/), and TUF release signing
+├── rootfs/          the root filesystem: composition, package manifests, producers
+├── build/           image assembly · build-env/  pinned builder images
+├── verify/          image verification · tests/  shell suites · tools/  QEMU helpers
 └── Makefile         top-level routing; run `make help` for the full target list
 ```
 
 The image is an A/B layout with a squashfs + dm-verity read-only root,
 RAUC updates and a U-Boot `BOOT_ORDER` handshake. Build and check it with
 `make os-image-cx3576`, `make os-verify-cx3576` and
-`make os-bundle-cx3576`, paired with the U-Boot that `make -C os/boards/cx3576/bsp
+`make os-bundle-cx3576`, paired with the U-Boot that `make -C boards/cx3576/bsp
 uboot-mos` builds. See `docs/design/uboot-ab-handshake.md`.
 
 Each board directory carries a `board.env` file describing the board as plain

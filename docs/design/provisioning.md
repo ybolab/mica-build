@@ -204,7 +204,7 @@ write per boot, and a live state that never settles.
 **What survives into the current model:** bcrypt is still the format mos writes
 into `/etc/shadow`, for exactly the libcrypt reason measured above — but the
 only thing written there now is the **transient** root password
-(`os/pkgs/mosd/mosd/src/transient.rs`, cost 12), and the idempotency question does not
+(`pkgs/mosd/mosd/src/transient.rs`, cost 12), and the idempotency question does not
 arise because it is written once per operator action rather than on every
 reconcile. `mos-shadow-reconcile` recognises it by an exact hash match against
 its marker, not by `bcrypt::verify`.
@@ -259,7 +259,7 @@ a later phase should close.
 sshd, not `pam_unix`, not the serial console, not apid — which has always
 authenticated its admin against `access.webAdmin` rather than against this. No
 code path in the repository calls a verifier against
-`access.device.passwordHash`; `os/pkgs/mosd/mosd/src/identity.rs::verify_password`, the
+`access.device.passwordHash`; `pkgs/mosd/mosd/src/identity.rs::verify_password`, the
 function that was written to, is now `#[cfg(test)]` precisely because it had no
 caller outside its own tests.
 
@@ -296,7 +296,7 @@ behind the daemon's back. That is what `docs/design/mosd.md` §3 describes.
 
 ## 5. Layer 3 — bring-up interim — does not exist
 
-**The image pipeline (`os/**`) has no embedded-config mechanism and no
+**The image pipeline has no embedded-config mechanism and no
 committed CA**, so there is no embedded-config directory for a CI check to
 assert is absent. What the image verifiers assert instead is narrower and is
 implemented: the shipped `/etc/shadow` carries no usable root password, so no

@@ -40,6 +40,6 @@ These documents describe design and behaviour. They do not cite code by line
 and do not narrate implementations statement by statement, because a document
 coupled to line numbers is falsified by edits that leave its design intact.
 Where a precise contract is needed, the artifact that carries it is named
-instead: the HTTP surface is specified by `os/pkgs/mosd/apid/openapi.json`,
+instead: the HTTP surface is specified by `pkgs/mosd/apid/openapi.json`,
 which CI holds equal to what the shipped binary prints, and the rest lives in
 the code the document points at by module.

@@ -1,0 +1,262 @@
+#!/bin/sh
+# mos health gate -- the PENDING_CONFIRM -> CONFIRMED edge.
+#
+# Probes the system in order (systemd state, mosd, apid), reports /var
+# pressure to mosd, and on success runs `rauc status mark-good` to confirm the
+# booted slot. On failure it does NOTHING: no mark-good, no reboot, no
+# remediation. Rollback is the U-Boot BOOT_x_LEFT counter's job and stealing it
+# would break the rollback contract.
+#
+# No-op (exit 0) when rauc is absent or reports no booted slot — a v1 image or
+# a container. Idempotent: mark-good on an already-confirmed slot is not an
+# error. Configuration: /etc/mos/health.conf (override with MOS_HEALTH_CONF).
+set -u
+
+CONF=${MOS_HEALTH_CONF:-/etc/mos/health.conf}
+
+log() { echo "mos-health: $*"; }
+fail() { echo "mos-health: FAIL $*" >&2; exit 1; }
+
+# First value of `key=` in the conf, empty when the conf or the key is absent.
+conf_get() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF" | head -n1; }
+# Every value of `key=` in the conf, one per line.
+conf_all() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF"; }
+
+PROBE_TIMEOUT=$(conf_get probe-timeout-sec)
+: "${PROBE_TIMEOUT:=10}"
+
+# Run a probe under the configured timeout. `timeout` is coreutils and always
+# present on the target; the fallback keeps the script usable without it.
+run() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$PROBE_TIMEOUT" "$@"
+    else
+        "$@"
+    fi
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+# `systemctl list-unit-files <name>` exits 0 with empty output on some
+# versions when the unit is absent, so test the output rather than $?.
+unit_present() { [ -n "$(run systemctl list-unit-files --no-legend "$1" 2>/dev/null)" ]; }
+
+# Best-effort health report into mosd's live-state tree at health.<component>.
+# Never fatal: the report is observability, not a gate.
+report_health() {
+    have busctl || return 0
+    run busctl --system --quiet call com.mos.mosd /com/mos/mosd \
+        com.mos.mosd1 ReportHealth sss "$1" "$2" "$3" >/dev/null 2>&1 ||
+        log "note: could not report $1 health to mosd"
+}
+
+# --- gate 0: is there anything to confirm? ----------------------------------
+#
+# Three outcomes, deliberately kept distinct. Conflating them is what let an
+# always-passing gate hide for a whole campaign, so each gets its own log line:
+#
+#   1. rauc is not installed        -> clean no-op, exit 0 (v1 image, container)
+#   2. rauc ran and answered, but   -> clean no-op, exit 0
+#      names no booted slot
+#   3. rauc ran and FAILED, or its  -> LOUD failure, exit 1
+#      output cannot be parsed
+#
+# Case 3 must never look like case 1: "I could not read rauc" is a broken gate,
+# not an absent one.
+have rauc || {
+    log "rauc not installed - no A/B slot to confirm (v1 image or container); exiting 0"
+    exit 0
+}
+
+RAUC_ERR=$(mktemp 2>/dev/null) || RAUC_ERR=/dev/null
+[ "$RAUC_ERR" = /dev/null ] || trap 'rm -f "$RAUC_ERR"' EXIT INT TERM
+rauc_out=$(run rauc status --output-format=shell 2>"$RAUC_ERR")
+rauc_rc=$?
+if [ "$rauc_rc" -ne 0 ]; then
+    fail "\`rauc status\` exited $rauc_rc, so the booted slot is unknown and the" \
+        "slot cannot be confirmed. rauc said:" \
+        "$(sed -n '/^[^[:space:]]/p' "$RAUC_ERR" | tail -n1)"
+fi
+# Anchor on a variable every rauc shell dump starts with. If it is missing, the
+# output is not what this parser was written against - say so loudly instead of
+# quietly reading an empty slot out of it.
+case "$rauc_out" in
+*RAUC_SYSTEM_COMPATIBLE=*) ;;
+*)
+    fail "\`rauc status --output-format=shell\` produced output this gate cannot" \
+        "parse (no RAUC_SYSTEM_COMPATIBLE line). Refusing to guess at the booted slot."
+    ;;
+esac
+
+# The booted slot is read from RAUC_SYSTEM_BOOTED_BOOTNAME rather than derived
+# from the per-slot RAUC_SLOT_STATE_n='booted' rows. Both are emitted by rauc
+# 1.8, but the per-slot route needs the numeric index n mapped back to a slot
+# through the positional order of RAUC_SYSTEM_SLOTS, and that ordering is not a
+# documented guarantee. RAUC_SYSTEM_BOOTED_BOOTNAME is a single top-level
+# scalar, is populated exactly when rauc has identified the booted slot, and
+# every rootfs slot we ship carries a bootname because the U-Boot backend
+# requires one. It also names the slot the same way U-Boot does (A / B), so the
+# log line here matches what BOOT_ORDER and BOOT_x_LEFT talk about.
+BOOTED=$(printf '%s\n' "$rauc_out" |
+    sed -n 's/^RAUC_SYSTEM_BOOTED_BOOTNAME=//p' | head -n1 | tr -d "\"'")
+[ -n "$BOOTED" ] || {
+    log "rauc answered but names no booted slot (no bootname) - nothing to confirm; exiting 0"
+    exit 0
+}
+have systemctl || {
+    log "systemctl not available - not a systemd system; exiting 0"
+    exit 0
+}
+log "booted slot bootname: $BOOTED"
+
+# --- probe a: systemd ------------------------------------------------------
+#
+# THIS GATE CANNOT WAIT FOR `is-system-running` TO SAY `running`, and the first
+# version of this probe did exactly that.
+#
+# mos-health.service is `WantedBy=multi-user.target`, so it is a job in the
+# INITIAL TRANSACTION. `is-system-running` reports `starting` until every job
+# in that transaction is done -- including this one. The probe was therefore
+# waiting for a state that requires its own completion: it burned the full
+# settle window on every boot and then failed. Measured on two x64 boots:
+# "Startup finished" landed 31 ms and 35 ms AFTER this unit exited, which is
+# the signature of being the last job.
+#
+# `tests/health-test.sh` never caught it because it stubs the answer
+# (`is-system-running) echo "${FAKE_SYS_STATE:-running}"`), so the probe was
+# handed the state it wanted and the suite stayed green for as long as nobody
+# booted the thing.
+#
+# WHAT THE GATE ACTUALLY WANTS TO KNOW is "did anything fail", and that is
+# answered directly by enumerating failed units -- which the `degraded` branch
+# below already did. `is-system-running` was only ever a rollup of it.
+#
+# So `starting` is resolved rather than trusted: if the only job still RUNNING
+# is this gate, nothing else is going to change and the boot is finished as far
+# as every other unit is concerned. If some other job is still running, that is
+# a real "still starting" and it is named.
+SETTLE=$(conf_get settle-sec)
+: "${SETTLE:=60}"
+SELF_UNIT=mos-health.service
+
+# Units of jobs still in state `running`, excluding this gate's own. A job in
+# state `waiting` is blocked on ordering -- mos-status-led.service waits on
+# this unit by design -- so waiting jobs are not evidence of anything.
+other_running_jobs() {
+    run systemctl list-jobs --no-legend --plain 2>/dev/null |
+        awk -v self="$SELF_UNIT" '$4 == "running" && $2 != self {print $2}' |
+        tr '\n' ' '
+}
+
+waited=0
+while :; do
+    sysstate=$(run systemctl is-system-running 2>/dev/null)
+    case "$sysstate" in
+    initializing | starting) ;;
+    *) break ;;
+    esac
+    # Nothing but this gate is running: waiting longer cannot change the
+    # answer, because the answer is waiting on us. Without this the settle
+    # window is spent in full on EVERY boot.
+    others=$(other_running_jobs)
+    [ -z "$others" ] && break
+    [ "$waited" -ge "$SETTLE" ] && break
+    sleep 1
+    waited=$((waited + 1))
+done
+log "systemd is-system-running = ${sysstate:-unknown} (settled after ${waited}s)"
+
+# The substantive check, shared by every state that reaches it.
+check_failed_units() {
+    failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
+        awk '{print $1}')
+    for unit in $failed; do
+        tolerated=0
+        for allowed in $(conf_all tolerate-failed); do
+            [ "$unit" = "$allowed" ] && tolerated=1
+        done
+        [ "$tolerated" = 1 ] || fail "failed unit outside the allowlist: $unit"
+        log "tolerated failed unit: $unit"
+    done
+}
+
+case "$sysstate" in
+running)
+    log "probe systemd: OK"
+    ;;
+degraded)
+    check_failed_units
+    log "probe systemd: OK (degraded, every failed unit allowlisted)"
+    ;;
+initializing | starting)
+    others=$(other_running_jobs)
+    [ -z "$others" ] ||
+        fail "systemd is still ${sysstate} after ${waited}s with jobs running that are not this gate: ${others}"
+    check_failed_units
+    log "probe systemd: OK (${sysstate}, but this gate is the only job left running; every failed unit allowlisted)"
+    ;;
+*)
+    fail "systemd is-system-running = ${sysstate:-unknown}"
+    ;;
+esac
+
+# --- probe b: mosd ---------------------------------------------------------
+# GetState("") is the cheapest existing call on com.mos.mosd1; reaching it
+# proves the daemon owns its bus name and is answering.
+if ! have busctl; then
+    log "probe mosd: SKIP (busctl not available)"
+elif ! unit_present mosd.service; then
+    log "probe mosd: SKIP (mosd.service not installed)"
+elif run busctl --system --quiet call com.mos.mosd /com/mos/mosd \
+    com.mos.mosd1 GetState s "" >/dev/null 2>&1; then
+    log "probe mosd: OK"
+else
+    fail "mosd did not answer com.mos.mosd1.GetState on the system bus"
+fi
+
+# --- probe c: apid ---------------------------------------------------------
+# apid serves HTTPS with a self-signed certificate, so the probe skips
+# verification; /healthz is apid's existing endpoint and bypasses its auth gate.
+if ! unit_present apid.service; then
+    log "probe apid: SKIP (apid.service not installed)"
+elif have curl; then
+    if run curl -sS -k -o /dev/null -f https://127.0.0.1/healthz; then
+        log "probe apid: OK"
+    else
+        fail "apid did not answer https://127.0.0.1/healthz"
+    fi
+elif have wget; then
+    if run wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz; then
+        log "probe apid: OK"
+    else
+        fail "apid did not answer https://127.0.0.1/healthz"
+    fi
+else
+    log "probe apid: SKIP (no curl or wget in the image)"
+fi
+
+# --- report: /var pressure (never fatal) -----------------------------------
+THRESHOLD=$(conf_get var-threshold-pct)
+: "${THRESHOLD:=85}"
+used=$(df -P /var 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+case "$used" in
+'' | *[!0-9]*)
+    log "/var usage unknown - not reported"
+    ;;
+*)
+    if [ "$used" -ge "$THRESHOLD" ]; then
+        log "/var at ${used}% (threshold ${THRESHOLD}%) - reported as degraded, NOT fatal"
+        report_health var degraded "/var at ${used}% of capacity (threshold ${THRESHOLD}%)"
+    else
+        log "/var at ${used}% (threshold ${THRESHOLD}%)"
+        report_health var ok "/var at ${used}% of capacity"
+    fi
+    ;;
+esac
+
+# --- confirm ---------------------------------------------------------------
+if run rauc status mark-good >/dev/null 2>&1; then
+    log "booted slot $BOOTED marked good (PENDING_CONFIRM -> CONFIRMED)"
+else
+    fail "rauc status mark-good failed for booted slot $BOOTED"
+fi
+exit 0

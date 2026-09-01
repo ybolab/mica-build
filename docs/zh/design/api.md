@@ -3,7 +3,7 @@
 > [English](../../design/api.md) | 中文
 >
 > 英文版 4,500 余行，逐节标注了「已实现 / 已提案」。本文是中文概览。
-> **接口的权威规格是 `os/pkgs/mosd/apid/openapi.json`**，不是任何一份散文。
+> **接口的权威规格是 `pkgs/mosd/apid/openapi.json`**，不是任何一份散文。
 
 ## 0. 怎么读这份文档
 

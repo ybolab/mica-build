@@ -3,7 +3,7 @@
 > English | [中文](../zh/design/boards.md)
 >
 > How a board joins mos: what it must produce, what the OS build consumes, and
-> the hard assertions between them. Reference implementation: `os/boards/cx3576/bsp`.
+> the hard assertions between them. Reference implementation: `boards/cx3576/bsp`.
 
 ## 1. Separation rule
 
@@ -15,11 +15,11 @@ in the OS build chain.
 
 ## 2. Board directory layout
 
-A board is a directory under `os/boards/`. `board.env` is the definition and the
+A board is a directory under `boards/`. `board.env` is the definition and the
 only member every board has; the rest appear when the board needs them.
 
 ```
-os/boards/<name>/
+boards/<name>/
 ├── board.env          # partition layout, MOS_ARCH, console and cmdline extras,
 │                      #   RAUC backend, firmware / radio / hwinit lists
 ├── overlay/           # files this board adds to the image root
@@ -38,21 +38,21 @@ os/boards/<name>/
     └── rootfs/             # firmware drop + demo/smoke-test rootfs (NOT the product)
 ```
 
-Boards with an upstream-supported boot chain (`os/boards/x64`, UEFI) have no
+Boards with an upstream-supported boot chain (`boards/x64`, UEFI) have no
 `bsp/` at all — board.env, grub.cfg, an overlay, and nothing that compiles a
 bootloader: "a UEFI machine's firmware provides the boot chain, so nothing here
 compiles a bootloader, and the kernel is a stock distro one"
-(`os/boards/x64/board.env`) — Debian's `linux-image-amd64`, which reaches the
+(`boards/x64/board.env`) — Debian's `linux-image-amd64`, which reaches the
 image as a `Depends` of the `mos-board-x64` package.
 
 ## 3. Artifact interface into the OS image
 
 | Artifact | Producer | Consumer |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `os/boards/<name>/bsp/kernel` | `os/boards/<name>/deb/board-<name>/render.sh` stages them and the board package unpacks `modules.tar` into `/usr/lib/modules`, refusing an unpack that yields no module; `os/build/src/mkimage-cx3576.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`os/build/src/mkimage-cx3576.ts`) |
-| bootloader binary | `os/boards/<name>/bsp/uboot` | `os/build/src/mkimage-cx3576.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A mos image must carry the uboot-mos variant" (`os/build/src/mkimage-cx3576.ts`) |
-| `board.env` | `os/boards/<name>/` | every consumer: both assemblers, the rootfs driver, RAUC's config renderer, os/verify. Read as data, never sourced — "Nothing here ever hands the file to a shell" (`os/verify/src/board-env.ts`) |
-| firmware blobs | `os/boards/<name>/bsp/rootfs/firmware` | `os/rootfs/build.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`os/rootfs/build.sh`) |
+| `Image` + `modules.tar` + `*.dtb` | `boards/<name>/bsp/kernel` | `boards/<name>/deb/board-<name>/render.sh` stages them and the board package unpacks `modules.tar` into `/usr/lib/modules`, refusing an unpack that yields no module; `build/src/mkimage-cx3576.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`build/src/mkimage-cx3576.ts`) |
+| bootloader binary | `boards/<name>/bsp/uboot` | `build/src/mkimage-cx3576.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A mos image must carry the uboot-mos variant" (`build/src/mkimage-cx3576.ts`) |
+| `board.env` | `boards/<name>/` | every consumer: both assemblers, the rootfs driver, RAUC's config renderer, verify. Read as data, never sourced — "Nothing here ever hands the file to a shell" (`verify/src/board-env.ts`) |
+| firmware blobs | `boards/<name>/bsp/rootfs/firmware` | `rootfs/build.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`rootfs/build.sh`) |
 
 Modules/kernel version coupling is absolute: the modules tree inside the rootfs
 MUST match the BSP kernel release, asserted at image assembly.
@@ -68,7 +68,7 @@ assert (grep on the final .config, fail the build otherwise):
 - Runtime: cgroup v2 set, containerd/netfilter prerequisites (the docker set
   already asserted in cx3576's Dockerfile), seccomp.
 - Shared baseline fragment: maintained once for all boards at
-  `os/boards/common/mos-required.fragment` (buildx named context `mos-common`),
+  `boards/common/mos-required.fragment` (buildx named context `mos-common`),
   merged before olddefconfig — the source of truth for the list above plus the
   pseudo filesystems and security options it also asserts (hugetlbfs, tracing,
   SELinux + LSM boot list). Board-specific requirements stay in the board's own
@@ -81,19 +81,19 @@ The A/B design requires: `CONFIG_BOOTCOUNT_LIMIT`, redundant env
 `CONFIG_SYS_BOOTM_LEN ≥ 0x8000000`, RAUC BOOT_ORDER handshake script, and a
 rescue path (cx3576: recovery-key → rockusb, boot-failure → rockusb fallback).
 The boot script and RAUC `system.conf` are generated from one source — the
-board definition, since "the template plus os/boards/cx3576/board.env are the
-single source of truth" (`os/pkgs/rauc/render-config.sh`) — to prevent
+board definition, since "the template plus boards/cx3576/board.env are the
+single source of truth" (`pkgs/rauc/render-config.sh`) — to prevent
 drift.
 
 ## 6. Kernel support policy
 
 The boot path sets the floor. The root is a squashfs carrying its own dm-verity
 hash tree, described by one `dm-mod.create=` table on the kernel command line —
-"one boot contract, written once by os/rootfs/build.sh, read by the kernel's
+"one boot contract, written once by rootfs/build.sh, read by the kernel's
 dm-init on a board whose kernel has it and by this script on a board whose kernel
-does not" (`os/rootfs/initramfs/scripts/mos-verity`) — above a userland that
+does not" (`rootfs/initramfs/scripts/mos-verity`) — above a userland that
 is "Debian trixie + systemd" — the digest-pinned base
-`os/rootfs/compose/10-compose.Dockerfile` installs onto, with systemd arriving
+`rootfs/compose/10-compose.Dockerfile` installs onto, with systemd arriving
 as `mos-system`'s `Depends`. A board
 that builds its own kernel therefore has to carry the §4 assertion set built in —
 `=y`, never `=m`, because nothing can load a module before the root is there;
@@ -107,24 +107,24 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
 
 ## 7. Adding a new board — checklist
 
-1. Create `os/boards/<name>/` with a `board.env`, plus a `bsp/` only if the
+1. Create `boards/<name>/` with a `board.env`, plus a `bsp/` only if the
    board builds its own boot chain. The definition must first pass
-   `bash os/verify/run.sh --lint os/boards/<name>/board.env`,
-   "the board-definition schema lint" (`os/verify/run.sh`).
-2. Kernel: vendor tree + `os/boards/common/mos-required.fragment` merged before
+   `bash verify/run.sh --lint boards/<name>/board.env`,
+   "the board-definition schema lint" (`verify/run.sh`).
+2. Kernel: vendor tree + `boards/common/mos-required.fragment` merged before
    olddefconfig, every `=y` line then asserted against the built `.config` — a
-   "missing mos-required option" (`os/boards/cx3576/bsp/kernel/Dockerfile`)
+   "missing mos-required option" (`boards/cx3576/bsp/kernel/Dockerfile`)
    fails the build.
 3. U-Boot: §5 config; verified boot keys enrolled. A UEFI board has none of it
    and ships a `grub.cfg` for the ESP instead.
 4. Smoke path first — a stock or vendor image — to validate hardware bring-up
    before the full image is worth building.
-5. Rootfs composed from the package pool (`os/rootfs/compose/`, sequenced by
-   `os/build/src/stages-cli.ts`, which "decides the order and the tags"
-   (`os/build/src/stages-cli.ts`)); the board's own content ships as
+5. Rootfs composed from the package pool (`rootfs/compose/`, sequenced by
+   `build/src/stages-cli.ts`, which "decides the order and the tags"
+   (`build/src/stages-cli.ts`)); the board's own content ships as
    `mos-board-<name>`. Image assembled by
-   `bash os/build/run.sh --mkimage-cx3576` or `--mkimage-x64`, green against
-   `bash os/verify/run.sh --verify --board <name>`, then apid liveness on
+   `bash build/run.sh --mkimage-cx3576` or `--mkimage-x64`, green against
+   `bash verify/run.sh --verify --board <name>`, then apid liveness on
    hardware — `/healthz`, which proves only that the apid process is listening,
    not that mosd or any other service on the board is healthy.
 6. Power-cut rig run before the board is called supported.
@@ -133,5 +133,5 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
 
 | Board | Arch | Boot chain | Status |
 |---|---|---|---|
-| cx3576 (CX3576-Z, RK3576) | arm64 ("MOS_ARCH=arm64", `os/boards/cx3576/board.env`) | U-Boot at eMMC sector 64 -> `boot.scr` -> `booti` on `Image` + `rk3576-src.dtb` (`os/boards/cx3576/boot.cmd`) | BSP builds `uboot-mos` and the kernel; the §4 assertion set is enforced in the kernel build, and the RAUC `BOOT_ORDER` handshake is implemented in `os/boards/cx3576/boot.cmd`. `CONFIG_FIT_SIGNATURE` (§5) is configured nowhere in the tree |
-| x64 (generic UEFI) | amd64 ("MOS_ARCH=amd64", `os/boards/x64/board.env`) | UEFI firmware -> GRUB from one static ESP -> the slot's own boot partition (`os/boards/x64/grub.cfg`) | QEMU/CI baseline. No `bsp/`, "by design, not by omission" (`os/boards/x64/board.env`) |
+| cx3576 (CX3576-Z, RK3576) | arm64 ("MOS_ARCH=arm64", `boards/cx3576/board.env`) | U-Boot at eMMC sector 64 -> `boot.scr` -> `booti` on `Image` + `rk3576-src.dtb` (`boards/cx3576/boot.cmd`) | BSP builds `uboot-mos` and the kernel; the §4 assertion set is enforced in the kernel build, and the RAUC `BOOT_ORDER` handshake is implemented in `boards/cx3576/boot.cmd`. `CONFIG_FIT_SIGNATURE` (§5) is configured nowhere in the tree |
+| x64 (generic UEFI) | amd64 ("MOS_ARCH=amd64", `boards/x64/board.env`) | UEFI firmware -> GRUB from one static ESP -> the slot's own boot partition (`boards/x64/grub.cfg`) | QEMU/CI baseline. No `bsp/`, "by design, not by omission" (`boards/x64/board.env`) |

@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The os/ wrapper is gone (2026-09-02)
+
+`os/boards`, `os/build`, `os/build-env`, `os/pkgs`, `os/rootfs`, `os/tests`,
+`os/tools` and `os/verify` now live at the repository root. The wrapper dated
+from when the tree was expected to hold more than the OS; it never did.
+Every path reference followed -- including the self-locating scripts that
+derive the repository root from their own depth, and both TypeScript path
+modules, whose `OS_DIR` (now equal to `REPO_ROOT`) was retired. The `os-*`
+make target names stayed: they are names, not paths. Historical records keep
+the paths they were written with. PLAN-055.
+
 ## Package versions mean something, and the image says what it holds (2026-09-01)
 
 Upstream repacks now carry their upstream version in front of the pool's git

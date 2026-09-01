@@ -3,7 +3,7 @@
 > [English](../../design/boards.md) | 中文
 >
 > 一块板如何接入 mos：它必须产出什么、操作系统构建消费什么、以及两者之间的硬性断言。
-> 参考实现：`os/boards/cx3576/bsp`。
+> 参考实现：`boards/cx3576/bsp`。
 
 ## 1. 分离规则
 
@@ -14,11 +14,11 @@ Yocto 只允许出现在板卡目录内部（当厂商只以 Yocto layer 的形�
 
 ## 2. 板卡目录结构
 
-一块板就是 `os/boards/` 下的一个目录。`board.env` 是它的定义，也是每块板唯一都有的成员；
+一块板就是 `boards/` 下的一个目录。`board.env` 是它的定义，也是每块板唯一都有的成员；
 其余按需出现。
 
 ```
-os/boards/<name>/
+boards/<name>/
 ├── board.env          # 分区布局、MOS_ARCH、console 与 cmdline 附加项、
 │                      #   RAUC 后端、固件 / 射频 / hwinit 清单
 ├── overlay/           # 这块板往镜像根里追加的文件
@@ -36,7 +36,7 @@ os/boards/<name>/
     └── rootfs/        # 固件投放 + 演示/冒烟测试根文件系统（**不是**产品根）
 ```
 
-启动链由上游支持的板卡（`os/boards/x64`，UEFI）**根本没有 `bsp/`**：只有 board.env、
+启动链由上游支持的板卡（`boards/x64`，UEFI）**根本没有 `bsp/`**：只有 board.env、
 grub.cfg 和一个 overlay，没有任何编译引导程序的东西——UEFI 机器的固件就提供了启动链，
 内核直接用 Debian 的 `linux-image-amd64`，它作为 `mos-board-x64` 的 `Depends` 进入镜像。
 
@@ -46,7 +46,7 @@ grub.cfg 和一个 overlay，没有任何编译引导程序的东西——UEFI �
 |---|---|---|
 | `Image` + `modules.tar` + `*.dtb` | `bsp/kernel` | 板卡 producer 的 `render.sh` 把它们 staged 进 `mos-board-<name>`，包把 `modules.tar` 解到 `/usr/lib/modules`；镜像装配器把 `Image` 和 dtb 写进每个 boot 槽位，**两者都必须有** |
 | 引导程序二进制 | `bsp/uboot` | 镜像装配器在板卡的 `UBOOT_SEEK_SECTOR` 处裸写；**拒绝调试 blob**——mos 镜像必须带 uboot-mos 变体 |
-| `board.env` | `os/boards/<name>/` | 所有消费者：两个装配器、根文件系统驱动、RAUC 配置渲染器、os/verify。**当作数据读取，绝不 source**——没有任何环节把这个文件交给 shell |
+| `board.env` | `boards/<name>/` | 所有消费者：两个装配器、根文件系统驱动、RAUC 配置渲染器、verify。**当作数据读取，绝不 source**——没有任何环节把这个文件交给 shell |
 | 固件 blob | `bsp/rootfs/firmware` | 只暂存 `BOARD_FIRMWARE_FILES` 点名的那些，因为**只有确认在运行时用到的集合才可以进入签名根** |
 
 **模块与内核版本的耦合是绝对的**：根文件系统里的模块树必须匹配 BSP 内核版本，在镜像装配时断言。
@@ -60,7 +60,7 @@ grep，不满足就让构建失败）：
   存储控制器编进内核、`OVERLAY_FS=y`。无 initramfs 的 verity 启动**在根挂载之前无法加载模块**，
   所以只能 `=y`，不能 `=m`。
 - **运行时**：cgroup v2、containerd/netfilter 前置项、seccomp。
-- **共享基线**：`os/boards/common/mos-required.fragment` 为所有板卡统一维护，
+- **共享基线**：`boards/common/mos-required.fragment` 为所有板卡统一维护，
   在 olddefconfig 之前合并。上面这份清单，以及它同时断言的伪文件系统与安全选项
   （hugetlbfs、tracing、SELinux + LSM 启动列表），都以它为准。板卡特有的要求留在板卡自己的配置基线里。
 
@@ -85,17 +85,17 @@ RAUC BOOT_ORDER 握手脚本，以及一条救援路径（cx3576：恢复键 →
 
 ## 7. 新增一块板的清单
 
-1. 建 `os/boards/<name>/` 和 `board.env`；只有当这块板自己构建启动链时才加 `bsp/`。
+1. 建 `boards/<name>/` 和 `board.env`；只有当这块板自己构建启动链时才加 `bsp/`。
    定义必须先通过板卡定义 schema lint：
-   `bash os/verify/run.sh --lint os/boards/<name>/board.env`
+   `bash verify/run.sh --lint boards/<name>/board.env`
 2. **内核**：厂商树 + `mos-required.fragment`，在 olddefconfig 之前合并，
    然后对构建出的 `.config` 逐条断言每个 `=y`。缺少 mos-required 选项就让构建失败。
 3. **U-Boot**：第 5 节的配置；烧录验证启动密钥。UEFI 板卡这些全都不需要，
    改为为 ESP 提供一份 `grub.cfg`。
 4. **先走冒烟路径**——用现成或厂商镜像——把硬件带起来验证过，再去做完整镜像。
-5. 根文件系统从包仓库组合出来（`os/rootfs/compose/`），板卡自己的内容作为
-   `mos-board-<name>` 交付；镜像用 `bash os/build/run.sh --mkimage-cx3576`（或 `--mkimage-x64`）装配，
-   对 `bash os/verify/run.sh --verify --board <name>` 跑绿，然后在硬件上验 apid 存活。
+5. 根文件系统从包仓库组合出来（`rootfs/compose/`），板卡自己的内容作为
+   `mos-board-<name>` 交付；镜像用 `bash build/run.sh --mkimage-cx3576`（或 `--mkimage-x64`）装配，
+   对 `bash verify/run.sh --verify --board <name>` 跑绿，然后在硬件上验 apid 存活。
    注意 `/healthz` **只证明 apid 进程在监听**，不证明 mosd 或板上任何其他服务是健康的。
 6. **断电试验台跑过之后**，这块板才能被称为受支持。
 

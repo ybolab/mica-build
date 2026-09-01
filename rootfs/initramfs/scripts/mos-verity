@@ -1,0 +1,164 @@
+#!/bin/sh
+# initramfs local-top script: create /dev/dm-0 from the verity parameters on
+# the kernel command line, before the root filesystem is looked for.
+#
+# THE COMMAND LINE IS THE SAME ONE cx3576 USES. That is deliberate: one boot
+# contract, written once by rootfs/build.sh, read by the kernel's dm-init
+# on a board whose kernel has it and by this script on a board whose kernel
+# does not. Two cmdline formats would be two things to keep in step, and the
+# one that broke would be the one nobody was looking at.
+#
+#     dm-mod.create="rootfs,,,ro,0 <sectors> verity 1 <data> <hash>
+#         <data_bs> <hash_bs> <data_blocks> <hash_start> <algo> <root_hash> <salt>"
+#
+# WHAT THIS SCRIPT MAY USE. A Debian initramfs is klibc, not a distribution:
+# the whole command set is
+#
+#     blkid cat chroot cpio dd dmesg false fstype gunzip halt insmod ipconfig
+#     kill kmod ln losetup ls minips mkdir mkfifo mknod modprobe mount mv
+#     nfsmount nuke pivot_root poweroff readlink reboot resume rmmod run-init
+#     sh sleep sync true udevadm umount uname
+#
+# plus whatever a hook copied in -- here, veritysetup. There is no tr, no sed,
+# no grep, no awk, no cut. The first version of this script used `tr` to strip
+# quotes and failed with "tr: not found" after the kernel had already handed
+# over, which reads as a hang on a headless machine. Everything below is shell
+# parameter expansion for that reason; rootfs/build.sh asserts it.
+set -e
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in
+prereqs) prereqs; exit 0 ;;
+esac
+
+. /scripts/functions
+
+# /proc/cmdline is read WHOLE, not split on whitespace. The dm-mod.create value
+# is quoted and CONTAINS SPACES, so `for arg in $(cat /proc/cmdline)` tears the
+# verity table into fragments -- a bug the missing `tr` was hiding behind.
+cmdline="$(cat /proc/cmdline)"
+case "${cmdline}" in
+*dm-mod.create=*) ;;
+*)
+    panic "mos-verity: no dm-mod.create= on the kernel command line. This image boots root=/dev/dm-0, which nothing else creates."
+    ;;
+esac
+
+# The quote wraps the WHOLE key=value, not just the value: the kernel shows
+#     BOOT_IMAGE=/vmlinuz-a "dm-mod.create=rootfs,,,ro,0 467360 verity 1 ..."
+# so after stripping up to `dm-mod.create=` what is left does NOT begin with a
+# quote. Testing the remainder for one -- which the first version did -- takes
+# the unquoted branch, cuts at the first space, and yields `rootfs,,,ro,0`: a
+# one-field table that parses to nothing. Whether the value is quoted is a fact
+# about the text BEFORE the key.
+rest="${cmdline#*dm-mod.create=}"
+case "${cmdline}" in
+*\"dm-mod.create=*) spec="${rest%%\"*}" ;;
+*) spec="${rest%% *}" ;;
+esac
+
+# dm-init's format is <name>,<uuid>,<minor>,<flags>,<table>. Everything after
+# the fourth comma is the dm-verity table, whose field order is the kernel
+# target's and not ours.
+table="${spec#*,*,*,*,}"
+
+# shellcheck disable=SC2086
+set -- ${table}
+if [ "$#" -lt 13 ]; then
+    panic "mos-verity: the verity table has $# fields, expected at least 13. Table was: ${table}"
+fi
+# start=$1 length=$2 target=$3 version=$4
+data_dev="$5"; hash_dev="$6"; data_bs="$7"; hash_bs="$8"; data_blocks="$9"
+shift 9
+hash_start="$1"; algo="$2"; root_hash="$3"; salt="$4"
+
+if [ "${data_bs}" = "" ] || [ "${root_hash}" = "" ] || [ "${salt}" = "" ]; then
+    panic "mos-verity: could not parse the verity table. Table was: ${table}"
+fi
+
+modprobe dm_mod 2>/dev/null || true
+modprobe dm_verity 2>/dev/null || true
+modprobe squashfs 2>/dev/null || true
+
+# PARTUUID= is what the cmdline carries, because a partition GUID survives
+# renumbering and a /dev/sdaN does not. udev has already made the by-partuuid
+# links by the time local-top runs -- usually. virtio_blk is a module here, so
+# the wait below is for the case where it has not.
+resolve() {
+    case "$1" in
+    PARTUUID=*)
+        uuid="${1#PARTUUID=}"
+        if [ -e "/dev/disk/by-partuuid/${uuid}" ]; then
+            readlink -f "/dev/disk/by-partuuid/${uuid}"
+        else
+            blkid -t "$1" -o device 2>/dev/null | while read -r d; do
+                echo "${d}"
+                break
+            done
+        fi
+        ;;
+    *) echo "$1" ;;
+    esac
+}
+
+i=0
+data=""
+while [ "${i}" -lt 30 ]; do
+    data="$(resolve "${data_dev}")"
+    if [ -n "${data}" ] && [ -b "${data}" ]; then
+        break
+    fi
+    udevadm settle --timeout=1 2>/dev/null || sleep 1
+    i=$((i + 1))
+done
+
+if [ -z "${data}" ] || [ ! -b "${data}" ]; then
+    panic "mos-verity: ${data_dev} never appeared after ${i} tries. Without it there is no root device to verify."
+fi
+hash="$(resolve "${hash_dev}")"
+
+# --hash-offset is in BYTES; the table gives a block number in hash_bs units.
+# "could not run it" and "it said no" are DIFFERENT FAILURES and the messages
+# have to differ. The first version had only the second, so an initrd that was
+# missing veritysetup entirely reported "the rootfs partition does not match
+# the hash this image was built with" -- which sends the reader to check image
+# integrity, the one thing that was fine.
+if ! command -v veritysetup >/dev/null 2>&1; then
+    panic "mos-verity: veritysetup is not in this initramfs. Nothing has been verified and nothing is wrong with the image; the initrd is missing a binary the mos-verity hook was supposed to copy in."
+fi
+
+# --no-superblock is the DEVICE side of the convention 7bc518d changed, and it
+# was the side that commit missed. 7bc518d moved the format to --no-superblock
+# and updated two of the three consumers of that convention: the writer,
+# rootfs/scripts/pack-verity.sh, and the reader, verify's walk. This
+# line is the third, and the only one that runs on the device. Since that
+# commit the hash tree begins exactly at --hash-offset, where the superblock
+# used to be, so an open without the flag reads tree bytes as a superblock and
+# answers "Device <dev> is not a valid VERITY device" -- an image that is
+# perfectly intact, refused.
+#
+# THIS FILE IS THE X64 BOOT PATH, which is why the miss was fatal there rather
+# than cosmetic: Debian's kernel is modular, dm-init is a module, and the
+# dm-mod.create= cmdline is ignored with "dm_mod: unknown parameter 'create'
+# ignored", so nothing else assembles the root. cx3576 boots the same images
+# because its vendor kernel has dm-init built in and takes that cmdline, which
+# is why a bench device stayed green while every x64 image was unbootable.
+#
+# Whoever changes the verity format next: the consumers are the writer, the
+# verifier and this call. Enumerate them, not the files you remember.
+veritysetup open "${data}" mos-root "${hash}" "${root_hash}" \
+    --no-superblock \
+    --hash-offset="$((hash_start * hash_bs))" \
+    --data-block-size="${data_bs}" \
+    --hash-block-size="${hash_bs}" \
+    --data-blocks="${data_blocks}" \
+    --hash="${algo}" \
+    --salt="${salt}" ||
+    panic "mos-verity: veritysetup refused the root hash. The rootfs partition does not match the hash this image was built with."
+
+# root=/dev/dm-0 is what the cmdline says. device-mapper numbers devices in
+# creation order and this is the first, so it is dm-0 -- but the link is made
+# rather than assumed, so a future second mapping cannot shift it.
+if [ ! -e /dev/dm-0 ]; then
+    ln -sf /dev/mapper/mos-root /dev/dm-0
+fi

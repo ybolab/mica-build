@@ -58,7 +58,7 @@ the screen at an application UI (served by an app container) instead of apid.
 ## 4. Boot experience & tty policy
 
 - Boot splash: U-Boot shows the board splash (cx3576's master is
-  `os/boards/cx3576/bsp/rootfs/assets/splash.png`), kernel keeps `quiet` fbcon off the
+  `boards/cx3576/bsp/rootfs/assets/splash.png`), kernel keeps `quiet` fbcon off the
   HDMI in prod; kiosk takes DRM master when the service starts. Target: no text
   ever flashes on a customer screen.
   - The master is a **source asset with no consumer yet**: no build step reads
@@ -71,7 +71,7 @@ the screen at an application UI (served by an app container) instead of apid.
 
 ## 5. Board requirements (extends boards.md §4)
 
-`os/boards/<board>/board.env` carries no display capability key, so no board
+`boards/<board>/board.env` carries no display capability key, so no board
 advertises the feature today. A board whose product has an HDMI output must
 provide:
 
@@ -84,7 +84,7 @@ provide:
 - Output and default rotation, which are a comment in the board definition and
   not yet a key: "Display defaults, recorded rather than declared: the output is
   hdmi and the default rotation is 0"
-  (`os/boards/cx3576/board.env`). DisplayConfig therefore has no
+  (`boards/cx3576/board.env`). DisplayConfig therefore has no
   board-supplied default, and gains one when a key does.
 
 ## 6. Security notes

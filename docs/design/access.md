@@ -65,9 +65,9 @@ the debug profile uses the base image's shell.
 
 ## 3. Configuration model — **[implemented]**
 
-Implemented by `os/pkgs/mosd/mosd-settings/src/model.rs` (the tree),
-`os/pkgs/mosd/mosd/src/reconciler/sshd.rs` (the reconciler) and
-`os/pkgs/mosd/mosd/src/transient.rs` (the transient password).
+Implemented by `pkgs/mosd/mosd-settings/src/model.rs` (the tree),
+`pkgs/mosd/mosd/src/reconciler/sshd.rs` (the reconciler) and
+`pkgs/mosd/mosd/src/transient.rs` (the transient password).
 
 ### 3.1 As shipped
 
@@ -210,10 +210,10 @@ root password below.
 
 ### 4.1 Phase 1 as shipped — **[implemented]**
 
-Implemented by `os/pkgs/mosd/mosd/src/reconciler/sshd.rs` (keys),
-`os/pkgs/mosd/mosd/src/transient.rs` and `os/pkgs/mosd/mosd/src/bus.rs` (the transient
-password), `os/rootfs/overlay/usr/lib/mos/mos-shadow-reconcile` (the boot
-clear) and `os/pkgs/mosd/apid/src/routes.rs` (the operator-facing pane).
+Implemented by `pkgs/mosd/mosd/src/reconciler/sshd.rs` (keys),
+`pkgs/mosd/mosd/src/transient.rs` and `pkgs/mosd/mosd/src/bus.rs` (the transient
+password), `rootfs/overlay/usr/lib/mos/mos-shadow-reconcile` (the boot
+clear) and `pkgs/mosd/apid/src/routes.rs` (the operator-facing pane).
 
 **The default state of a device is: SSH off, root with no password, no keys.**
 Both image profiles. Neither profile seeds `access.ssh.enabled` true
@@ -223,7 +223,7 @@ ships `ssh.service` enabled — `mos-system` ships
 ssh.service`, so `deb-systemd-helper` never writes the
 `multi-user.target.wants` symlink when openssh-server is configured, and the
 package's postinst asserts that outcome rather than arranging it
-(`os/rootfs/packages-src/system/Dockerfile`). Getting in requires
+(`rootfs/packages-src/system/Dockerfile`). Getting in requires
 an authenticated admin action through apid, over the network the appliance is
 already on.
 
@@ -331,7 +331,7 @@ keeping every other account locked; it is not permanent architecture.
 ### 5.1 Runtime — **[implemented]**
 
 `enabled: false` → the reconciler stops and runtime-disables `ssh.service`
-(`os/pkgs/mosd/mosd/src/reconciler/sshd.rs`). Reversible, and the default.
+(`pkgs/mosd/mosd/src/reconciler/sshd.rs`). Reversible, and the default.
 
 ### 5.2 META lockdown — **[not implemented]**
 
@@ -346,7 +346,7 @@ bit, nothing that reads one, and no reset that preserves one.
 
 **And factory reset itself is not implemented either.** Nothing in the tree
 performs one. The only mention in code is a doc comment in
-`os/pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
+`pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
 device to first boot. So this paragraph describes a reset nobody can invoke,
 preserving a bit nobody can set — which is precisely why §0's marker discipline
 exists. Whether the lockdown is built at all is an open product decision.
@@ -357,7 +357,7 @@ Decision 2026-08-17: prod ships SSH. **Two** profiles ship today, selected at
 build time and recorded in the image.
 
 `/usr/lib/mos/profile.conf` carries `MOS_PROFILE=dev` or `MOS_PROFILE=prod`,
-mode 0444, written by `os/rootfs/build.sh`. It is under `/usr/lib` and not
+mode 0444, written by `rootfs/build.sh`. It is under `/usr/lib` and not
 `/etc` because it describes the *image* rather than the device — and that also
 puts it inside the read-only verity root, where a production device cannot be
 edited into a development one.
@@ -373,7 +373,7 @@ resolves to `prod` too. The build rejects any `MOS_PROFILE` value that is not
 exactly `dev` or `prod` in lowercase.
 
 The `ROOT_PASSWORD` build arg is **v1-only** and is not selected by the profile
-on mos: `os/rootfs/build.sh` and `os/rootfs/compose/` carry no such plumbing,
+on mos: `rootfs/build.sh` and `rootfs/compose/` carry no such plumbing,
 because the pack stage unconditionally fails any build whose factory shadow
 holds a usable hash — for every account and on both profiles — and both
 verifiers assert the same about the packed artifact. A baked mos root credential
@@ -396,7 +396,7 @@ Four intents were stated here. Two now have code and tests; two do not, and
 saying which is which is the point of this section.
 
 **[implemented] Failure counters and backoff state persist across a restart.**
-`GuardStore` (`os/pkgs/mosd/apid/src/auth.rs`) wraps the in-RAM `LoginGuard` and
+`GuardStore` (`pkgs/mosd/apid/src/auth.rs`) wraps the in-RAM `LoginGuard` and
 writes the consecutive-failure run and the window deadline to
 `login_guard.json` on every mutation, atomically and 0600. A refused attempt
 mutates nothing and therefore writes nothing — without that check an
@@ -412,7 +412,7 @@ on a device whose META partition no daemon currently writes at runtime. What
 §6 actually asks for is that a power cycle not reset the clock, and STATE
 satisfies that: it survives reboot and A/B update alike.
 
-The directory is 0700 (`StateDirectoryMode=0700` in `os/pkgs/mosd/dist/apid.service`;
+The directory is 0700 (`StateDirectoryMode=0700` in `pkgs/mosd/dist/apid.service`;
 apid's own `ensure_state_dir` uses the same mode when it creates the path
 itself), every file in it is 0600, and the unit orders itself after the STATE
 mount with `RequiresMountsFor=/var/lib/mos` — counters written to a tmpfs
@@ -427,7 +427,7 @@ lockout: the failure direction here has to be open, because the alternative is
 an appliance no operator can reach.
 
 **[implemented] A bounded persistent audit trail.** `Audit`
-(`os/pkgs/mosd/apid/src/audit.rs`) appends one JSONL line per audited event — RFC 3339
+(`pkgs/mosd/apid/src/audit.rs`) appends one JSONL line per audited event — RFC 3339
 UTC timestamp, event, outcome, source address — into a two-file ring capped at
 ~512 KiB total, mirrored to the journal so the volatile log tells the same
 story. Lines are fsynced individually, because the two most consequential
@@ -503,7 +503,7 @@ An operator who loses the webAdmin password **and** every authorized key has
   `serial-getty@ttyFIQ0` from the kernel `console=` parameter on both profiles.
   No package ships a getty unit; `mos-board-cx3576` ships only a drop-in that
   amends the generated one
-  (`os/boards/cx3576/overlay/etc/systemd/system/serial-getty@ttyFIQ0.service.d/local-line.conf`).
+  (`boards/cx3576/overlay/etc/systemd/system/serial-getty@ttyFIQ0.service.d/local-line.conf`).
   A login prompt appears. It has no account that will accept a
   credential — root is locked and every other account is locked by
   `mos-shadow-reconcile`.
@@ -519,7 +519,7 @@ working door.
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
 The mos image is a **full-disk image carrying all eleven partitions**, and
-`os/build/src/mkimage-cx3576.ts` builds fresh ext4 filesystems for META, STATE and DATA into
+`build/src/mkimage-cx3576.ts` builds fresh ext4 filesystems for META, STATE and DATA into
 it (`mkext4` for each of `meta.img`, `state.img`, `data.img`). Flashing it over
 rockusb therefore replaces all three:
 
@@ -559,7 +559,7 @@ it, the appliance does not support persisting it.
 
 The mechanism is **one mount unit plus one verifier assertion**, added
 deliberately — not an overlay. The image ships **eight** binds today. Read the
-units (`os/rootfs/overlay/etc/systemd/system/*.mount`) rather than trusting
+units (`rootfs/overlay/etc/systemd/system/*.mount`) rather than trusting
 this list:
 
 | Bind unit | Source | Mountpoint | Tier |

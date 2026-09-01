@@ -65,3 +65,4 @@ one lock and rejects a transition when their current states do not match.
 - [ ] [**RFCT-288 Add diagnostics and operational network state**](RFCT-288.md) `P0`
 - [ ] [**RFCT-289 Define security and manufacturing lifecycle**](RFCT-289.md) `P0`
 - [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
+- [x] [**RFCT-291 Flatten os/ into the repository root**](RFCT-291.md) `P2`

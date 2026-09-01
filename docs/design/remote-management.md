@@ -16,16 +16,16 @@ implemented]** is *"deliberately, no code at all. Prose only"*
 ## 1. What reaches the device today — **[implemented]**
 
 **apid, on the LAN, over HTTPS.** It is the *"mos API daemon (serves the web
-dashboard)"* (`os/pkgs/mosd/dist/apid.service`), started as `/usr/bin/apid`
-(`os/pkgs/mosd/dist/apid.service`) after mosd — `After=network.target mosd.service`
-(`os/pkgs/mosd/dist/apid.service`). It binds an HTTPS listener and a
-*"Redirect-only HTTP listen address"* (`os/pkgs/mosd/apid/src/config.rs`),
+dashboard)"* (`pkgs/mosd/dist/apid.service`), started as `/usr/bin/apid`
+(`pkgs/mosd/dist/apid.service`) after mosd — `After=network.target mosd.service`
+(`pkgs/mosd/dist/apid.service`). It binds an HTTPS listener and a
+*"Redirect-only HTTP listen address"* (`pkgs/mosd/apid/src/config.rs`),
 defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
-(`os/pkgs/mosd/apid/src/config.rs`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
-(`os/pkgs/mosd/apid/src/config.rs`). No second protocol, no third port.
+(`pkgs/mosd/apid/src/config.rs`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
+(`pkgs/mosd/apid/src/config.rs`). No second protocol, no third port.
 
 **The API is the gate.** `app` structurally reserves `/api`, `/ui`, `/healthz`
-and `/` before the custom-bundle fallback (`os/pkgs/mosd/apid/src/routes.rs`).
+and `/` before the custom-bundle fallback (`pkgs/mosd/apid/src/routes.rs`).
 The static SPA is always readable; appliance data is not. Each management API
 handler extracts either a stored bearer token or a signed browser session. A
 session-authenticated mutation additionally requires its random
@@ -36,16 +36,16 @@ unauthenticated API operations; `/healthz` proves listener liveness only.
 versioned settings/state reads, typed writes and collections, queued task
 records, setup/session lifecycle, UI selection, live network observation and
 system actions. Its generated contract is
-`os/pkgs/mosd/apid/openapi.json`. There are no HTML form mutation routes beside
+`pkgs/mosd/apid/openapi.json`. There are no HTML form mutation routes beside
 it.
 
 **apid owns no state; it is a client of mosd** over D-Bus — its one backend
-choice is *"Which message bus to reach"* (`os/pkgs/mosd/apid/src/config.rs`) mosd on,
+choice is *"Which message bus to reach"* (`pkgs/mosd/apid/src/config.rs`) mosd on,
 carrying one interface *"for the settings, state and transient-password calls"*
-(`os/pkgs/mosd/apid/src/bus_client.rs`) and another for the power actions. mosd
-holds the tree (`BusName=com.mos.mosd`, `os/pkgs/mosd/dist/mosd.service`); *"apid
+(`pkgs/mosd/apid/src/bus_client.rs`) and another for the power actions. mosd
+holds the tree (`BusName=com.mos.mosd`, `pkgs/mosd/dist/mosd.service`); *"apid
 never spawns a process and never talks to systemd itself"*
-(`os/pkgs/mosd/apid/src/settings_api.rs`).
+(`pkgs/mosd/apid/src/settings_api.rs`).
 
 **SSH and the console are access channels, not management ones**, and both are
 shut: SSH ships *"off by default on both"* profiles
@@ -77,7 +77,7 @@ decisions any future design settles first, each constraining the others:
 - **How a device enrolls**, and what revoking an enrollment does. mosd already
   mints per-device identity at first boot — *"A device instead gives itself an
   identity and its credentials here, at first boot, from the system CSPRNG"*
-  (`os/pkgs/mosd/mosd/src/identity.rs`) — so enrollment has something to bind to.
+  (`pkgs/mosd/mosd/src/identity.rs`) — so enrollment has something to bind to.
 - **How update targeting shares the channel.** Per-device targeting and
   management want the same device-initiated connection; decided separately they
   produce two.
@@ -95,8 +95,8 @@ is guaranteed to exhaust its credits"*
 
 **What does not exist — [not implemented].** No on-device pull: the device-side
 verifier is built and tested on the host, and *"nothing ships it to a device
-yet"* (`os/pkgs/rauc-sign/README.md`). apid declares no update route
-(`os/pkgs/mosd/apid/src/routes.rs`), so it offers no local check/apply button
+yet"* (`pkgs/rauc-sign/README.md`). apid declares no update route
+(`pkgs/mosd/apid/src/routes.rs`), so it offers no local check/apply button
 either; earlier text here claiming one described a surface that is not there.
 
 **The constraint on any future trigger.** Whatever triggers an update — a
@@ -117,7 +117,7 @@ credential boundary described in section 1.
 other inbound management port, no outbound management connection, and **no
 operator credential provisioned onto a device**. A signed rootfs is
 byte-identical on every unit, so a credential baked into one would be *"a
-fleet-wide shared secret"* (`os/rootfs/scripts/pack-assert-shadow-chain.sh`)
+fleet-wide shared secret"* (`rootfs/scripts/pack-assert-shadow-chain.sh`)
 — the pack step fails the build over that, and the reasoning binds any future
 fleet credential too.
 
@@ -126,4 +126,4 @@ an independent credential domain; compromise of one grants nothing in another.
 An apid session is not an enrollment credential, an enrollment credential is
 not a root shell, and an endpoint holding a fleet's channel credentials must
 not thereby hold the keys that authorise an image — the update trust anchor is
-already *"a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md`) and stays one.
+already *"a separate key hierarchy"* (`pkgs/rauc-sign/README.md`) and stays one.

@@ -6,7 +6,7 @@
 并给你一个开关把整套能力关掉。什么在跑、按什么顺序、容器之间怎么互相找到、
 更新之后什么留下来——这些由你来描述，**用 systemd 的语言，而不是某种 mos 专有格式**。
 
-英文版里的每个示例都由 `os/tests/quadlet-doc-test.sh` 抽取出来、
+英文版里的每个示例都由 `tests/quadlet-doc-test.sh` 抽取出来、
 喂给镜像里实际发布的那个 Quadlet 生成器，所以一个失效的示例会让测试套件变红，
 而不是留在文档里看着像对的。**要抄示例请看英文版**，那里的才是被测试的。
 
@@ -22,7 +22,7 @@
 | `aardvark-dns` | `/usr/libexec/podman/aardvark-dns` | 容器间名字解析 |
 | `catatonit` | `/usr/libexec/podman/catatonit` | 容器 init，供 `--init` 用 |
 
-版本锁定在 `os/pkgs/podman/versions.env`，**从上游源码构建，不取 Debian 的包**。
+版本锁定在 `pkgs/podman/versions.env`，**从上游源码构建，不取 Debian 的包**。
 设备上 `podman --version` 的输出是权威。
 
 **没有 `podman.socket`，也没有 `podman.service`。** 这个镜像没有构建 REST API，

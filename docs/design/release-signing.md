@@ -27,12 +27,12 @@ own, because a runbook's sections are neither `[implemented]` code nor
 hierarchies, and conflating them is the first mistake this document exists to
 prevent:
 
-1. **The TUF repository** (`os/pkgs/rauc-sign`, `rauc-sign`): four ed25519 role keys
+1. **The TUF repository** (`pkgs/rauc-sign`, `rauc-sign`): four ed25519 role keys
    sign the metadata that tells a device *which* bundle is current, pinning
    its sha256, length and dm-verity root hash. The `root` key is offline
    material; `targets`/`snapshot`/`timestamp` are online release-host keys.
-   See `os/pkgs/rauc-sign/README.md` for the phase-1 scope.
-2. **The RAUC CMS signature** (`os/build/src/bundle.ts`, `rauc bundle`): an X.509
+   See `pkgs/rauc-sign/README.md` for the phase-1 scope.
+2. **The RAUC CMS signature** (`build/src/bundle.ts`, `rauc bundle`): an X.509
    signer certificate, chained to a CA whose certificate is the device-side
    keyring, signs the bundle payload itself. This is what
    `/etc/rauc/system.conf` verifies at install time.
@@ -48,7 +48,7 @@ allows, and nothing below ever merges them.
 On an **offline machine**: no network interfaces up, an OS booted from known
 media, and a filesystem that will not outlive the ceremony except for the key
 media deliberately written. `rauc-sign` is a static-enough Rust binary; build
-it beforehand (`cargo build --release -p rauc-sign` in the `os/pkgs/rauc-sign/`
+it beforehand (`cargo build --release -p rauc-sign` in the `pkgs/rauc-sign/`
 workspace)
 and carry the binary and this repository checkout to the machine.
 
@@ -62,7 +62,7 @@ The name says `dev` because the *default* directory is the gitignored
 development location; the generator itself is the production generator — one
 fresh ed25519 key per role (`root.pk8`, `targets.pk8`, `snapshot.pk8`,
 `timestamp.pk8`, raw PKCS#8, mode 0600), refusing to overwrite anything that
-exists, so a stale key cannot be silently replaced (`os/pkgs/rauc-sign/src/keys.rs`).
+exists, so a stale key cannot be silently replaced (`pkgs/rauc-sign/src/keys.rs`).
 
 ### 1.3 Repository initialization, and the threshold decision
 
@@ -87,7 +87,7 @@ inputs. The file's bytes are not; see §1.6, step 3.
 above a role's key count is rejected at `init` rather than producing metadata
 no set of signatures can ever satisfy. Multi-key roles, delegated targets and
 hardware-backed key stores are explicitly out of phase 1
-(`os/pkgs/rauc-sign/README.md`); when a threshold above 1 becomes possible, this section
+(`pkgs/rauc-sign/README.md`); when a threshold above 1 becomes possible, this section
 gets rewritten around it — until then, writing "use 3-of-5" here would be a
 procedure the tooling cannot execute.
 
@@ -272,7 +272,7 @@ as §1.5 says of the original. This is for **newly provisioned** devices: a
 device already carrying an older anchor does not need it, because it reaches
 `<n>.root.json` through the repository. How any anchor first reaches a device
 is a separate, still-unbuilt question — see the trust anchor provisioning
-section of `os/pkgs/rauc-sign/README.md`.
+section of `pkgs/rauc-sign/README.md`.
 
 **Never delete an intermediate root file.** `metadata/1.root.json`,
 `metadata/2.root.json`, … all stay served, forever. A device that has been
@@ -295,7 +295,7 @@ key still does. **[not implemented]**, and narrower than it was.
 
 ### 2.1 The offline CA ceremony
 
-This mirrors `os/pkgs/rauc/gen-dev-keys.sh` step for step — the dev script is the
+This mirrors `pkgs/rauc/gen-dev-keys.sh` step for step — the dev script is the
 tested shape, and deviating from a tested shape in a ceremony is how typos
 become fleet incidents — with the three choices that distinguish production:
 a real subject, real validity horizons, and offline custody. Same machine
@@ -366,25 +366,25 @@ is warranted.
 
 The keyring reaches a device **in the image**, from one place. The facts:
 
-- `os/pkgs/rauc/system.conf.in` names `/etc/rauc/keyring.pem`;
-  `os/pkgs/rauc/render-config.sh` renders the generated
-  `os/rootfs/overlay/etc/rauc/system.conf`.
+- `pkgs/rauc/system.conf.in` names `/etc/rauc/keyring.pem`;
+  `pkgs/rauc/render-config.sh` renders the generated
+  `rootfs/overlay/etc/rauc/system.conf`.
 - The repository-root `ca/` directory is the single seam by which a CA enters a
-  build: `os/build` signs bundles with `ca/signer.{cert,key}.pem` and
-  `os/rootfs/build.sh` stages `ca/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
+  build: `build` signs bundles with `ca/signer.{cert,key}.pem` and
+  `rootfs/build.sh` stages `ca/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
   the CA this runbook produces in `ca/`, build, and the image trusts it. `ca/`
   is gitignored, so the material is never in the history.
 - A build that finds `ca/` empty **generates a development-grade root** there,
   says so unmissably, and continues; the generator leaves `ca/GENERATED` beside
   it, and that marker is what keeps such a root recognisable on every later
-  build. `os/rootfs/build.sh` warns off the marker. Production material is
+  build. `rootfs/build.sh` warns off the marker. Production material is
   placed in `ca/` without it.
-- The overlay is **not** a source: `os/rootfs/build.sh` refuses an
+- The overlay is **not** a source: `rootfs/build.sh` refuses an
   `etc/rauc/keyring.pem` found there, unconditionally, because the overlay is
   copied wholesale into every image and a file left in it is a CA nobody chose.
-  `os/verify/src/checks-root.ts` still fails an image carrying a baked-in
+  `verify/src/checks-root.ts` still fails an image carrying a baked-in
   keyring unless `MOS_EXPECT_DEV_KEYRING=1` names it a bench image, and
-  `os/verify/src/checks-root.test.ts` proves both directions of that gate.
+  `verify/src/checks-root.test.ts` proves both directions of that gate.
 - **The gap that remains is rotation, not provisioning.** `/etc` is a read-only
   squashfs, so replacing the keyring on a deployed device means shipping a new
   image or a channel that survives an A/B update — a STATE-backed seed plus bind
@@ -406,9 +406,9 @@ land:
   RAUC verifies bundles against is `path=` in the rendered
   `/etc/rauc/system.conf`, and two verifier checks hold the contract from
   both directions: `rauc-keyring-path`
-  (`os/verify/src/checks-rauc.ts`) asserts the rendered config names
-  exactly `/etc/rauc/keyring.pem` (`os/pkgs/rauc/system.conf.in`), and
-  `packed-keyring-from-ca` (`os/verify/src/checks-root.ts`) asserts the
+  (`verify/src/checks-rauc.ts`) asserts the rendered config names
+  exactly `/etc/rauc/keyring.pem` (`pkgs/rauc/system.conf.in`), and
+  `packed-keyring-from-ca` (`verify/src/checks-root.ts`) asserts the
   shipped root carries at that path a BYTE-EQUAL copy of `ca/ca.cert.pem` —
   and refuses one that carries anything else, or a development-grade root
   (`ca/GENERATED`) without `MOS_EXPECT_DEV_KEYRING=1`. So the keyring RAUC
@@ -421,7 +421,7 @@ land:
   written in place and must not be baked in (§4). A provisioned keyring
   must live on STATE or META and reach `/etc/rauc/keyring.pem` the way
   `/etc/ssh` reaches its path — a seed plus bind mount
-  (`os/rootfs/overlay/usr/lib/mos/mos-seed-state`). No such bind exists
+  (`rootfs/overlay/usr/lib/mos/mos-seed-state`). No such bind exists
   yet, deliberately: creating one is part of choosing the channel.
 - **The open decision, stated as the user's.** Which channel delivers the
   file (STATE/META provisioning file, factory step, first-boot enrolment —
@@ -451,7 +451,7 @@ MOS_PROFILE=prod make os-rootfs-cx3576
 CERT=/path/to/signer.cert.pem \
 KEY=/path/to/signer.key.pem \
 KEYRING=/path/to/ca.cert.pem \
-    bash os/build/run.sh --bundle 1.2.3
+    bash build/run.sh --bundle 1.2.3
 
 # 3. Publish into the TUF repository with the online keys. The verity root
 #    hash is the bundle's own (verity-format) root hash as `rauc info`
@@ -471,7 +471,7 @@ rauc-sign add \
 rauc-sign verify --repo <repo> --root /trusted/root.json --datastore /var/lib/rauc-sign/trusted
 ```
 
-Then publish `<repo>` as static content (`os/pkgs/rauc-sign/README.md`'s layout). The
+Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s layout). The
 offline "lockbox" workflow is planned and not implemented; when it exists it
 will consume the same signed artifacts.
 

@@ -39,16 +39,16 @@ help:
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
-	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
-	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
+	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
+	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert docs/README.md and the design tree agree, in both directions"
 	@echo "  docs-verify-test    prove those assertions actually fail on a duplicate or a missing row"
-	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
+	@echo "  podman              build the container engine from source into pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  os-netavark-kernel-test  assert the cx3576 kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
-	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash os/build-env/deb/producers.sh\` lists them (docker)"
+	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
@@ -57,7 +57,7 @@ help:
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
 	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool (needs os-debs; docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
-	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
+	@echo "  cx3576-<t>          delegate target <t> to boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
 # `make os` is retired. It keeps a recipe rather than being deleted for the
 # reason x64-% has one: with neither a recipe nor a rule, `make os` prints
@@ -72,15 +72,15 @@ os:
 # NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
 # target refuses until `make os-debs` has built it -- by name, rather than by
 # compiling a component on demand. That refusal is the composer's, not this
-# file's; see os/rootfs/build.sh.
+# file's; see rootfs/build.sh.
 os-rootfs-cx3576:
-	bash os/rootfs/build.sh
+	bash rootfs/build.sh
 
 # The shipping assembler: build the rootfs slot image, then write the A/B disk
 # image around it.
 os-image-cx3576:
-	bash os/rootfs/build.sh
-	bash os/build/run.sh --mkimage-cx3576
+	bash rootfs/build.sh
+	bash build/run.sh --mkimage-cx3576
 
 # THE IMAGE CONTRACT: read the assembled image back and check it against the
 # contract, check by check.
@@ -89,13 +89,13 @@ os-image-cx3576:
 # it reads them out of the pinned IMAGE_ALPINE_3_21. Verify the other board
 # with --board.
 os-verify-cx3576:
-	bash os/verify/run.sh --verify --board cx3576
+	bash verify/run.sh --verify --board cx3576
 
 # Every self-built binary EXECUTED inside the root that ships it, with the
 # version it reports required to equal the version this repository pinned.
 # `os-verify-cx3576` reads the image; this one runs what is in it.
 #
-# THIS IS NOT THE ONLY THING THAT RUNS IT: `os/rootfs/build.sh` runs the same
+# THIS IS NOT THE ONLY THING THAT RUNS IT: `rootfs/build.sh` runs the same
 # command as its last step, under `set -e`, so a root whose binaries do not run
 # does not become an image. This target is how to ask the question on its own,
 # against a root that is already built.
@@ -106,7 +106,7 @@ os-verify-cx3576:
 # image is absent, and refuses before concluding anything when the host cannot
 # execute it. MOS_BOARD selects the board; x64 is the default.
 os-smoke-test:
-	bash os/verify/run.sh --smoke
+	bash verify/run.sh --smoke
 
 # The three negative tests, which are a check on the check above.
 #
@@ -123,7 +123,7 @@ os-smoke-test:
 # front of every rootfs build would make "the smoke run passed" mean two
 # different things depending on which invocation produced it.
 os-smoke-negative-test:
-	bash os/verify/run.sh --smoke-negative
+	bash verify/run.sh --smoke-negative
 
 # The assumption every smoke result rests on and nothing else checks: that the
 # OCI image the smoke run executes in is byte-for-byte the tree the device
@@ -136,41 +136,41 @@ os-smoke-negative-test:
 # build host -- no unsquashfs, no getcap) and a built rootfs, like
 # os-verify-cx3576. MOS_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
-	bash os/tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
+	bash tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
 
 # The RAUC update bundle. Its rebuild gate is on the squashfs PAYLOAD rather
 # than on the file: rauc salts the bundle's own verity hash tree at random and
 # the CMS signature carries a signingTime, so the file hash moves every run.
 # --board x64 builds the grub branch.
 os-bundle-cx3576:
-	bash os/build/run.sh --bundle
+	bash build/run.sh --bundle
 
 # The MANUAL entry to the repo-root ca/, which is where every build takes its
 # trust root from. Running it is optional: a build that finds ca/ empty
 # generates the same material itself and says so loudly. This target exists for
 # doing it on purpose, ahead of a build, and for `--force` rotation.
 os-devkeys:
-	bash os/pkgs/rauc/gen-dev-keys.sh
+	bash pkgs/rauc/gen-dev-keys.sh
 
 os-health-test:
-	bash os/tests/health-test.sh
+	bash tests/health-test.sh
 
 # Drives the real mos-shadow-reconcile against fixtures in a temp dir: the
 # transient-root-password clearing, the mismatch branch that lets a dev image's
 # ROOT_PASSWORD survive a reboot, and the pre-existing append rule. Needs no
 # root and touches no host state.
 os-shadow-test:
-	bash os/tests/shadow-reconcile-test.sh
+	bash tests/shadow-reconcile-test.sh
 
 # Stands up a real dbus-daemon whose configuration <include>s the SHIPPED
-# os/pkgs/mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
+# pkgs/mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
 # drives root and non-root clients at it. Reading the XML back would only prove
 # the file says the right thing; this proves dbus-daemon acts on it. Both
 # directions of every guard — a refusal-only suite passes just as well against a
 # policy that denies root too. Needs root (it drops to uid 65534 with setpriv)
 # and fails loudly when it cannot run rather than skipping.
 os-dbus-policy-test:
-	bash os/pkgs/mosd/tests/dbus-policy-test.sh
+	bash pkgs/mosd/tests/dbus-policy-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
@@ -180,9 +180,9 @@ os-dbus-policy-test:
 # Needs privileged docker, so it is a dedicated target rather than part of
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
-	bash os/tests/repart-loader-test.sh
+	bash tests/repart-loader-test.sh
 
-# Executes the SHIPPED os/boards/cx3576/boot.cmd -- compiled by the same mkimage
+# Executes the SHIPPED boards/cx3576/boot.cmd -- compiled by the same mkimage
 # invocation the assembler uses, byte-unmodified -- under a U-Boot sandbox binary
 # (same source pin as the board build) that carries the board's persistent-env
 # contract, against a A/B-layout GPT disk backed by a host file. Proves the A/B
@@ -190,11 +190,11 @@ os-repart-test:
 # decrement persists 3->2->1->0, the other slot is chosen at zero, exhaustion
 # refills to 3, a slot missing its mos-verity-<slot>.env is burned, and a
 # returning booti burns the slot it tried. Needs docker; network only on the
-# first (uncached) build, offline afterwards. See os/tests/handshake-test/harness.sh
+# first (uncached) build, offline afterwards. See tests/handshake-test/harness.sh
 # for the execution model, including the one emulated transition (kernel handoff)
 # and why.
 os-uboot-handshake-test:
-	bash os/tests/handshake-test/run.sh
+	bash tests/handshake-test/run.sh
 
 # A board is defined by its layout file and the shared scripts read that
 # definition rather than knowing any board's shape. This checks the definition
@@ -202,22 +202,22 @@ os-uboot-handshake-test:
 # second direction is what catches e.g. BOOT_ATTEMPTS_DEFAULT sitting in the
 # grub board's layout, which RAUC refuses on the device.
 #
-# Both go through os/verify/run.sh so that there is exactly ONE place deciding
+# Both go through verify/run.sh so that there is exactly ONE place deciding
 # how bun is invoked; on a host without bun they run in the container pinned as
 # IMAGE_BUN_1.
 os-layout-lint:
-	bash os/verify/run.sh --lint
+	bash verify/run.sh --lint
 
-# The os/verify bun+TypeScript suite, entered through one script.
+# The verify bun+TypeScript suite, entered through one script.
 #
-# os/verify/run.sh finds bun, installs the dev dependencies if they are absent,
+# verify/run.sh finds bun, installs the dev dependencies if they are absent,
 # typechecks and runs the suite -- and turns a run that asserted nothing red,
 # which bun does not: `bun test` exits 0 on a test file that declares no tests.
 # A host with no bun runs all of that in the container pinned as IMAGE_BUN_1 in
-# os/build-env/images.env, automatically and with the route announced; CI
+# build-env/images.env, automatically and with the route announced; CI
 # installs no bun, so that is the route it takes.
 os-verify-test:
-	bash os/verify/run.sh
+	bash verify/run.sh
 
 # The TypeScript build driver: the typed board geometry the assemblers read, and
 # the Bun.$ wrappers for the toolset they drive.
@@ -228,21 +228,21 @@ os-verify-test:
 # src/toolbox.ts's rule. Nothing is skipped: a tool reachable neither way is a
 # failure, not a gap.
 os-build-test:
-	bash os/build/run.sh
+	bash build/run.sh
 
 # RAUC, built from upstream source instead of installed from Debian. The reason
-# is recorded in os/pkgs/rauc/versions.env: the distribution builds it with
+# is recorded in pkgs/rauc/versions.env: the distribution builds it with
 # streaming on, that links libcurl-gnutls, and rauc is the ONLY consumer of that
 # library in the whole packed root -- it would bring GnuTLS, p11-kit, GMP,
 # Nettle and Kerberos into a signed image for an install path this project
 # defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib, all
 # of which the image already carries.
 os-rauc:
-	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/pkgs/rauc/build.sh
+	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash pkgs/rauc/build.sh
 
 # ONE PRODUCER, every architecture it declares, resolved against discovery.
 # This is a PATTERN rule and not a list: `make os-deb-mosd`, `make os-deb-mqtt`
-# and `make os-deb-<anything os/build-env/deb/producers.sh finds>` all route
+# and `make os-deb-<anything build-env/deb/producers.sh finds>` all route
 # here. A producer added to the tree gets its target with no edit to this file
 # -- which is the point, because the workstreams adding the next producers have
 # been told to escalate rather than edit here, and that only works if there is
@@ -262,18 +262,18 @@ os-rauc:
 # there would match nothing and silently declare nothing -- the same reason the
 # <board>-% delegations at the top of this file are unlisted. Shadowing needs a
 # FILE named os-deb-<producer> in the repository root, whose entries are
-# Makefile, README.md, LICENSE, docs/ and os/; nothing there can
+# Makefile, README.md, LICENSE, docs/ and the build trees; nothing there can
 # match, and a stray one would show as a visible "Nothing to be done" rather
 # than a wrong build. `os-deb-package-gate` below is an explicit target and is
 # therefore not caught by this pattern: make prefers an explicit rule over a
 # pattern rule that also matches.
 os-deb-%:
 	@set -e; \
-	bash os/build-env/deb/producers.sh --dir-for '$*' >/dev/null; \
-	arches="$$(bash os/build-env/deb/producers.sh | awk -v p='$*' '$$1 == p { print $$3 }' | tr ',' ' ')"; \
+	bash build-env/deb/producers.sh --dir-for '$*' >/dev/null; \
+	arches="$$(bash build-env/deb/producers.sh | awk -v p='$*' '$$1 == p { print $$3 }' | tr ',' ' ')"; \
 	for arch in $$arches; do \
-	    echo "bash os/build-env/deb/build.sh --producer $* --arch $$arch"; \
-	    bash os/build-env/deb/build.sh --producer '$*' --arch "$$arch"; \
+	    echo "bash build-env/deb/build.sh --producer $* --arch $$arch"; \
+	    bash build-env/deb/build.sh --producer '$*' --arch "$$arch"; \
 	done
 
 # EVERY MISSING INPUT AT ONCE, before anything is built. os-debs used to fail
@@ -286,14 +286,14 @@ os-deb-%:
 # EXPLICIT, so make prefers it over the `os-deb-%` pattern above --
 # `os-deb-package-gate` below is explicit for the same reason.
 os-deb-preflight:
-	bash os/build-env/deb/preflight.sh
+	bash build-env/deb/preflight.sh
 
 # THE WHOLE LOCAL POOL: every DISCOVERED producer at every architecture it
 # declares, then the index beside each pool. The composer resolves its package
 # set through _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}, so a build
 # that stopped before repo.sh would leave a pool APT cannot see into.
 #
-# No producer is named here. The set comes from os/build-env/deb/producers.sh,
+# No producer is named here. The set comes from build-env/deb/producers.sh,
 # which refuses an empty discovery by name -- without that, this target would
 # loop over nothing, run repo.sh over a stale pool and report success.
 #
@@ -321,16 +321,16 @@ os-deb-preflight:
 # have been packed and names one file; this one names them all, first.
 os-debs: os-deb-preflight
 	@set -e; \
-	rows="$$(bash os/build-env/deb/producers.sh)"; \
+	rows="$$(bash build-env/deb/producers.sh)"; \
 	printf '%s\n' "$$rows" | while read -r producer dir arches packages enablement; do \
 	    for arch in $$(printf '%s' "$$arches" | tr ',' ' '); do \
-	        echo "bash os/build-env/deb/build.sh --producer $$producer --arch $$arch  ($$dir)"; \
-	        bash os/build-env/deb/build.sh --producer "$$producer" --arch "$$arch"; \
+	        echo "bash build-env/deb/build.sh --producer $$producer --arch $$arch  ($$dir)"; \
+	        bash build-env/deb/build.sh --producer "$$producer" --arch "$$arch"; \
 	    done; \
 	done; \
 	for arch in amd64 arm64; do \
-	    echo "bash os/build-env/deb/repo.sh --arch $$arch"; \
-	    bash os/build-env/deb/repo.sh --arch "$$arch"; \
+	    echo "bash build-env/deb/repo.sh --arch $$arch"; \
+	    bash build-env/deb/repo.sh --arch "$$arch"; \
 	done
 
 # The package-level gates of PLAN-036 section 6, over the pool os-debs built:
@@ -345,10 +345,10 @@ os-debs: os-deb-preflight
 # cached packing layer and re-exports the same bytes, which proves the export is
 # deterministic and nothing about pack.sh.
 os-deb-package-gate:
-	bash os/tests/deb-package-gate.sh
+	bash tests/deb-package-gate.sh
 
 # The INSTALL-time half of PLAN-036 section 6, over the same pools: APT installs
-# the set os/rootfs/packages/resolve.sh yields into a clean pinned Debian base,
+# the set rootfs/packages/resolve.sh yields into a clean pinned Debian base,
 # once per architecture, and again with `rauc` declined; the three radio packages
 # go into three separate roots; and the mos-profile provider experiment is run
 # and recorded verbatim.
@@ -359,7 +359,7 @@ os-deb-package-gate:
 # whether APT can satisfy the closure, whether a wants-symlink lands on a unit
 # somebody shipped, or what a binary reports when it is asked.
 os-install-closure-gate:
-	bash os/tests/install-closure-gate.sh
+	bash tests/install-closure-gate.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
@@ -367,18 +367,18 @@ os-install-closure-gate:
 # hands back that failure -- so the pipeline reports "not found" BECAUSE the
 # pattern was found. The rationale is at the top of the script.
 os-shell-pipefail-lint:
-	bash os/tests/shell-pipefail-lint.sh
+	bash tests/shell-pipefail-lint.sh
 
-# os/rootfs/packages/resolve.sh over every board, profile, radio set and feature
+# rootfs/packages/resolve.sh over every board, profile, radio set and feature
 # set this repository supports, plus the reverse direction: every package a
 # producer declares has to be reachable by SOME legal resolution. That half is
 # the one nothing else can see -- a package no manifest can name is simply never
 # installed, and every check downstream of composition runs over the set that
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
-	bash os/tests/rootfs-manifest-test.sh
+	bash tests/rootfs-manifest-test.sh
 
-# THE x64 ROOT. os/rootfs/build.sh installs the resolved package set out of
+# THE x64 ROOT. rootfs/build.sh installs the resolved package set out of
 # _out/debs/<arch> and refuses a missing or stale pool by naming `make os-debs`
 # rather than building one -- a composer that compiled a component on demand
 # would make a stale pool invisible.
@@ -387,7 +387,7 @@ os-rootfs-manifest-test:
 # x64 is the board whose pool this host can build, so this is the composition
 # that runs here, and naming it says which one was run.
 os-rootfs-x64-composed:
-	MOS_BOARD=x64 bash os/rootfs/build.sh
+	MOS_BOARD=x64 bash rootfs/build.sh
 
 # Negative and positive tests for the pre-flight above. Its value is a count and
 # a list, and both fail silently: a run that looked at nothing prints the same
@@ -399,7 +399,7 @@ os-rootfs-x64-composed:
 # and no pool: this runs the pre-flight, the two hooks that answer it, and the
 # podman versions stamp, against fixtures it builds and removes.
 os-deb-preflight-test:
-	bash os/tests/deb-preflight-test.sh
+	bash tests/deb-preflight-test.sh
 
 # Structural check on docs/README.md. It exists because the index is the one
 # thing no other check can reach: a document that is never listed there is not
@@ -425,15 +425,15 @@ docs-verify-test:
 # generator the image ships. A configuration example nothing executes is a claim
 # that cannot fail; this makes the document part of the suite.
 os-quadlet-doc-test:
-	bash os/tests/quadlet-doc-test.sh
+	bash tests/quadlet-doc-test.sh
 
 # The container engine, built from upstream source into seven aarch64 binaries.
 # Same arrangement as the board artifact builds -- a Dockerfile whose last stage
 # is FROM scratch, exported with -o. Dynamically linked against the image's
 # glibc except catatonit, which is copied into containers and must not depend on
-# this image's libc; os/pkgs/podman/README.md has the reasoning.
+# this image's libc; pkgs/podman/README.md has the reasoning.
 podman:
-	bash os/pkgs/podman/build.sh
+	bash pkgs/podman/build.sh
 
 # Is any of those seven binaries built from a source tree upstream has moved
 # past? versions.env is the upgrade interface and this is what says there is
@@ -442,14 +442,14 @@ podman:
 # copy from an upstream page nobody re-checked. Needs the network, so it runs
 # in the weekly privileged lane rather than the fast one.
 podman-pins:
-	bash os/pkgs/podman/check-pins.sh
+	bash pkgs/podman/check-pins.sh
 
 # The check on that check, against upstream responses recorded in
-# os/tests/podman-pins/. Offline, and it drives the red directions too -- most
+# tests/podman-pins/. Offline, and it drives the red directions too -- most
 # of all catatonit, whose upstream has been quiet since 2024, where "correctly
 # pinned" and "never actually compared" produce the same green.
 podman-pins-test:
-	bash os/tests/podman-pins-test.sh
+	bash tests/podman-pins-test.sh
 
 # The kernel side of the same engine. netavark writes nftables rules -- masquerade,
 # dnat, `fib daddr type local` -- into one inet table, and a board kernel built
@@ -459,10 +459,10 @@ podman-pins-test:
 # netavark source at the tag versions.env pins, and each entry cites the line
 # that needs it. Offline, bash only.
 os-netavark-kernel-test:
-	bash os/tests/netavark-kernel-config-test.sh
+	bash tests/netavark-kernel-config-test.sh
 
 # The builder image every component build stands on, built from a base pinned by
-# DIGEST in os/build-env/images.env rather than by a tag upstream repoints
+# DIGEST in build-env/images.env rather than by a tag upstream repoints
 # whenever it rebuilds.
 #
 # mos-build-base carries only the language-independent floor -- ca-certificates,
@@ -487,13 +487,13 @@ os-netavark-kernel-test:
 # the host. It fails loudly when a pin is missing, unresolved or written as a
 # tag rather than skipping.
 build-env:
-	bash os/build-env/build.sh
+	bash build-env/build.sh
 
 cx3576-%:
-	$(MAKE) -C os/boards/cx3576/bsp $*
+	$(MAKE) -C boards/cx3576/bsp $*
 
 x64-%:
-	@echo "x64 has no BSP build; assemble its image with: bash os/build/run.sh --mkimage-x64 (board definition: os/boards/x64/board.env)" && false
+	@echo "x64 has no BSP build; assemble its image with: bash build/run.sh --mkimage-x64 (board definition: boards/x64/board.env)" && false
 
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
@@ -517,18 +517,18 @@ x64-%:
 # another container holds that directory rather than discovering the collision
 # halfway through a nine-minute boot.
 #
-# `bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` performs the preconditions and the
+# `bash pkgs/mosd/tests/apid-api/run.sh --dry-run` performs the preconditions and the
 # network discovery and boots nothing; it is how to check the harness in
 # seconds. Needs docker, and it fails loudly when it cannot run rather than
 # skipping.
 .PHONY: os-apid-api-test
 os-apid-api-test:
-	bash os/pkgs/mosd/tests/apid-api/run.sh
+	bash pkgs/mosd/tests/apid-api/run.sh
 
 # The BUILD-TIME half of that suite, and the only part of it that runs on a
 # checkout: every literal a phase pins which openapi.json ALSO states, asserted
 # to agree with the document. No image, no QEMU, no network -- it reads the
-# phase files' own bytes and os/pkgs/mosd/apid/openapi.json and compares them.
+# phase files' own bytes and pkgs/mosd/apid/openapi.json and compares them.
 #
 # It exists because os-apid-api-test above is the only thing that runs the
 # phases, and it needs a built image and a nine-minute boot. A milestone that
@@ -541,4 +541,4 @@ os-apid-api-test:
 # the pinned container.
 .PHONY: os-apid-api-spec-pins
 os-apid-api-spec-pins:
-	bash os/pkgs/mosd/tests/apid-api/spec-pins.sh
+	bash pkgs/mosd/tests/apid-api/spec-pins.sh

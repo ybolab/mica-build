@@ -10,7 +10,7 @@
 
 ## 1. bun 跑在一个固定的容器里，这是一个决定
 
-两个 bun 套件都以同样方式解析运行时：从 `os/build-env/images.env` 里锁定的 `IMAGE_BUN_1` 摘要。
+两个 bun 套件都以同样方式解析运行时：从 `build-env/images.env` 里锁定的 `IMAGE_BUN_1` 摘要。
 
 **固定的是摘要而不是 `oven/bun:1` 标签**，因为那个标签在上游每个 1.x 发布时都会被重新指向，
 而这套工具链是判定 apid 的 API 是否合规的东西。
@@ -25,7 +25,7 @@
 `IMAGE_BUN_1` 只有 bun，所以任何在它内部驱动 docker 的路线都会死在一句关于 docker 的报错上，
 而不是关于你正在做的事。**挂载守护进程套接字没有用，因为缺的是客户端，不是套接字。**
 
-`os/verify/Dockerfile` 存在的唯一目的就是补上这个缺口——**要复用它，不要另写一个**。
+`verify/Dockerfile` 存在的唯一目的就是补上这个缺口——**要复用它，不要另写一个**。
 它是两个摘要 `FROM` 加一次 COPY，并在构建时用 `RUN docker --version && bun --version` 断言结果，
 所以一个上游挪了位置的 COPY 会在**构建时**失败，而不是在三步之后的 verify 运行里失败。
 
@@ -62,11 +62,11 @@
 
 ## 6. 镜像是输入，「没有镜像」应当读作工具链故障
 
-`os/pkgs/mosd/tests/apid-api/run.sh` **什么都不构建**。镜像缺席时它按名字拒绝，并打印出构建它的两条命令。
+`pkgs/mosd/tests/apid-api/run.sh` **什么都不构建**。镜像缺席时它按名字拒绝，并打印出构建它的两条命令。
 那两条命令是一条更长的链的最后两环，前面几环失败时的表现是一样的——**看起来像工具链坏了**。
 
 顺序是：包（rauc、podman）→ 根文件系统 → 镜像 → 运行。
-`bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` 只做前置条件与网络发现、不启动任何东西，
+`bash pkgs/mosd/tests/apid-api/run.sh --dry-run` 只做前置条件与网络发现、不启动任何东西，
 是几秒钟内检查工具链的方法。
 
 **这个套件在 CI 里哪儿都不跑，这是既定决定而非疏漏。** 它要在 QEMU 里启动一个 x64 镜像，
@@ -89,6 +89,6 @@ OpenAPI 文档一致。**apid 表面改动之后，请手动跑这个套件。**
 **刻意没有引用门禁。** `docs/verify-citations.sh` 及其三份基线，
 连同它们所维护的那种耦合一起被移除了：文档不再用 `path:line` 引用代码，
 也就没有引用需要保持可解析。需要精确契约时，文档点名承载它的产物——
-HTTP 表面是 `os/pkgs/mosd/apid/openapi.json`，CI 保证它等于发布的二进制所打印的内容。
+HTTP 表面是 `pkgs/mosd/apid/openapi.json`，CI 保证它等于发布的二进制所打印的内容。
 
 ## 8. 验证

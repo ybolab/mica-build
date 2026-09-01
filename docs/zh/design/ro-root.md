@@ -24,7 +24,7 @@
 `<HASH_START_BLOCK>` 处的块直接当作树的顶层读。带超级块打包会把 8 字节的 `verity\0\0` 正好
 放在那里，并把整棵树往后推一个哈希块，于是两块板（两种 bootloader 拼出同一张表）都会以
 `device-mapper: verity: metadata block <n> is corrupted` 启动失败。`veritysetup verify` 看不见
-这个问题，因为它按写入时的同一套约定把超级块读回来；os/verify 的
+这个问题，因为它按写入时的同一套约定把超级块读回来；verify 的
 `verity-hash-start-no-superblock` 检查读的是字节本身。
 
 重建 verity target 所需的参数写在旁边的 `.env` 文件里（`VERITY_ROOT_HASH`、`VERITY_SALT`、

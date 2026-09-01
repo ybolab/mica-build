@@ -5,12 +5,12 @@ packed, how the kernel assembles it without an initramfs, and where every
 runtime write goes once `/` is immutable.
 
 Companion documents: the A/B update
-design this implements), `os/boards/cx3576/board.env` (every layout constant),
-`os/rootfs/README.md` (how to build it).
+design this implements), `boards/cx3576/board.env` (every layout constant),
+`rootfs/README.md` (how to build it).
 
 ## 1. What the rootfs image is
 
-`os/rootfs/build.sh` produces a single raw file, `_out/cx3576/rootfs-verity.img`:
+`rootfs/build.sh` produces a single raw file, `_out/cx3576/rootfs-verity.img`:
 
 ```
 +---------------------------+ 0
@@ -25,7 +25,7 @@ design this implements), `os/boards/cx3576/board.env` (every layout constant),
 The hash tree lives in the same file as the data it covers, at
 `--hash-offset=SQUASHFS_BYTES`. One file means one artifact to sign, one raw
 `dd` into a slot, and one RAUC image per slot. The trailing pad exists because
-`os/build/src/mkimage-cx3576.ts` writes the file into the slot at a MiB boundary.
+`build/src/mkimage-cx3576.ts` writes the file into the slot at a MiB boundary.
 
 The pack formats with `veritysetup --no-superblock`, which is what makes
 `SQUASHFS_BYTES == hash offset == VERITY_HASH_START_BLOCK * 4096` the address of
@@ -37,7 +37,7 @@ tells it to skip one. Formatting with a superblock instead put eight bytes of
 board -- both bootloaders compose the same table -- failed to boot with
 `device-mapper: verity: metadata block <n> is corrupted`. `veritysetup verify`
 did not see it, because it reads the superblock back by the same convention that
-wrote it; os/verify's `verity-hash-start-no-superblock` is the check that reads
+wrote it; verify's `verity-hash-start-no-superblock` is the check that reads
 the bytes instead.
 
 The parameters needed to reconstruct the verity target are written next to it in
@@ -81,7 +81,7 @@ Remaining deviation: the byte layout still depends on the `squashfs-tools` and
 `cryptsetup` versions in the pack stage, both of which come from
 `debian:bookworm-slim` at build time. Pinning the base image digest is the
 follow-up that would close this; it is the same class of deviation
-`os/build/src/mkimage-cx3576.ts` already documents for mtools.
+`build/src/mkimage-cx3576.ts` already documents for mtools.
 
 Verified: two cache-hot `make os-rootfs-cx3576` runs produce a byte-identical
 `rootfs-verity.img` and the same `VERITY_ROOT_HASH`.
@@ -96,7 +96,7 @@ vendor tree (`armbian/linux-rockchip`, branch `rk-6.1-rkr5.1`, 6.1.115) and out
 of the built `Image`:
 
 1. **`CONFIG_DM_INIT=y` is asserted at kernel build time.**
-   `os/boards/common/mos-required.fragment` already pins `CONFIG_BLK_DEV_DM=y`,
+   `boards/common/mos-required.fragment` already pins `CONFIG_BLK_DEV_DM=y`,
    `CONFIG_DM_INIT=y`, `CONFIG_DM_VERITY=y`, `CONFIG_SQUASHFS=y`,
    `CONFIG_SQUASHFS_ZSTD=y`. `drivers/md/dm-init.c` appears in the built Image's
    string table.
@@ -157,8 +157,8 @@ investigations agree on every point.
 `boot-cmdline-b.txt`. The boot slots deliberately carry **no**
 `extlinux/extlinux.conf`: the boot-framework investigation found that both U-Boot boot frameworks try
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
-bypass the whole RAUC A/B handshake. `os/build/src/mkimage-cx3576.ts` instead compiles
-`os/boards/cx3576/boot.cmd` into a `boot.scr` shared by both slots and derives a
+bypass the whole RAUC A/B handshake. `build/src/mkimage-cx3576.ts` instead compiles
+`boards/cx3576/boot.cmd` into a `boot.scr` shared by both slots and derives a
 per-slot `mos-verity-<slot>.env` by extracting the `dm-mod.create="..."` and
 `dm-mod.waitfor=` fragments out of these files with `sed`. The filename carries
 the slot because a RAUC bundle installs one boot payload into whichever slot is
@@ -189,7 +189,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   `docs/design/uboot-ab-handshake.md` §7.3 originally said `mos`; this
   generator is the authority and that section has been reconciled.
 - `dm-mod.waitfor=` is **mandatory**, not an optimisation, and
-  `os/build/src/mkimage-cx3576.ts` rejects a cmdline file that lacks it. `dm_init_init()`
+  `build/src/mkimage-cx3576.ts` rejects a cmdline file that lacks it. `dm_init_init()`
   runs at `late_initcall` and the `wait_for_device_probe()` it already calls
   does **not** cover eMMC card discovery, which happens on a delayed
   workqueue. Without the wait, the verity table is built before the partitions
@@ -201,11 +201,11 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   same one udev gives `/dev/disk/by-partuuid/` (libblkid formats GUIDs
   lowercase). The kernel compares with `strncasecmp` and accepts either, so one
   canonical lowercase spelling everywhere is the least surprising choice.
-  `os/build/src/mkimage-cx3576.ts` cross-checks each slot's table against `ROOTFS_A_GUID` /
+  `build/src/mkimage-cx3576.ts` cross-checks each slot's table against `ROOTFS_A_GUID` /
   `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
   case-insensitively, so the two spellings coexist by design.
 - The console/earlycon/storagemedia/net.ifnames arguments are board facts and
-  live in `os/boards/<board>/board.env` as `BOARD_CMDLINE_ARGS`. They were
+  live in `boards/<board>/board.env` as `BOARD_CMDLINE_ARGS`. They were
   carried over from the `APPEND` line of the v1 single-slot assembler, which
   the v1 removal deleted; the root argument is `root=/dev/dm-0 ... ro` rather than
   v1's `root=PARTLABEL=rootfs rw`.
@@ -216,7 +216,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
 ## 3. squashfs xattrs
 
 `CONFIG_SQUASHFS_XATTR` has been approved by L1 and applied to
-`os/boards/common/mos-required.fragment` on master, with the kernel artifact
+`boards/common/mos-required.fragment` on master, with the kernel artifact
 rebuild running on the L1 side. Squashfs xattr support is therefore assumed
 present and no workaround for dropped file capabilities is implemented.
 
@@ -283,7 +283,7 @@ partitions absorb everything:
 
 > **Partition numbers shifted in M5.** The Rockchip loader area became a real
 > GPT partition at p1, so every partition after it moved up by one.
-> The numbers above are the current ones and match `os/boards/cx3576/board.env`.
+> The numbers above are the current ones and match `boards/cx3576/board.env`.
 > Partition **GUIDs did not move** — the identity digits in each GUID are
 > allocated in the order partitions were added and are frozen once allocated,
 > which is exactly why the dm-verity cmdline, `/etc/fstab`, `/etc/fw_env.config`
@@ -336,7 +336,7 @@ inside the verity root. It is the same trade Venus makes with `/data/rc.local`,
 and mos is better placed to observe it because the rest of the root stays
 verity-protected.
 
-`os/verify/src/checks-home.ts` asserts the mountpoint exists in the packed root (a
+`verify/src/checks-home.ts` asserts the mountpoint exists in the packed root (a
 verity root cannot create it at runtime, so a missing directory is a mount unit
 that fails at boot), that the bind is enabled and STATE-backed, and — negatively
 — that **no** unit in the image mounts over `/etc/systemd/system`.
@@ -403,7 +403,7 @@ any tool other than mosd, never matches a marker and therefore survives. That
 distinction is the whole reason a marker exists instead of "lock root on every
 boot". (the signing fix removed the `ROOT_PASSWORD` build argument this paragraph
 used as its example: the pack-stage assertion had always rejected the hash it
-would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `os/pkgs/mosd/mosd/src/transient.rs`.
+would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `pkgs/mosd/mosd/src/transient.rs`.
 
 The marker is resolved **beside** the shadow file rather than at a fixed path,
 because that file is `/mnt/state/mos/shadow` before `var-lib-mos.mount` is up
@@ -476,7 +476,7 @@ Two operations follow from that table:
   as if freshly flashed: new host keys, new machine-id, default hostname.
   **Nothing implements it.** No unit, script or bus method performs a factory
   reset; the only mention in code is a doc comment in
-  `os/pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
+  `pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
   device to first boot. The nearest real operation is a whole-disk reflash,
   which replaces META, STATE and DATA with the image's fresh filesystems — see
   `docs/design/access.md` §9.2, including why "cleared" there means unreachable
@@ -494,7 +494,7 @@ the seeded content and under 2% of the smallest realistic eMMC, so `/var` can
 never compete with DATA for the disk. Changing the number moves DATA's start
 offset, so it is frozen for a flashed fleet in the same way
 `MOS_ROOTFS_SLOT_MIB` is; the constant and this rationale live in
-`os/boards/cx3576/board.env`.
+`boards/cx3576/board.env`.
 
 **Standing review criterion for future units**, not a one-off audit result:
 **identity, credentials, pairings and update state never live on `/var`.** Any
@@ -517,7 +517,7 @@ is what §4's "Fill-up containment" below is for.
 
 **The DATA constants are required, and the build proves it.** `build.sh`
 fails if `DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` or `MOS_VAR_MIB` is absent
-from `os/boards/cx3576/board.env`, naming the file and the missing keys. All
+from `boards/cx3576/board.env`, naming the file and the missing keys. All
 four are demanded even though only `DATA_GUID` is read here, because a
 partially-edited layout env is the failure being guarded against: the assembler
 needs the other three, and a rootfs built against half a layout is the kind of
@@ -538,7 +538,7 @@ definition count must be eight, and exactly one definition must carry
 The three block mounts are `/etc/fstab` entries rather than hand-written
 `.mount` units, so that `x-systemd.growfs` works through the fstab generator
 and mountpoint ordering is derived automatically. They are keyed on
-`PARTUUID=` taken from `os/boards/cx3576/board.env`, **lowercased**: udev builds
+`PARTUUID=` taken from `boards/cx3576/board.env`, **lowercased**: udev builds
 `/dev/disk/by-partuuid/` symlinks from libblkid, which formats GUIDs in
 lowercase, and systemd's fstab generator resolves `PARTUUID=` through those
 symlinks without normalising case. (The kernel cmdline is case-insensitive, but
@@ -751,9 +751,9 @@ That is the only form systemd accepts for `systemd.machine_id=` and for
 `/etc/machine-id`; a dashed UUID is rejected.
 
 **Status — steps 1 and 2 are live; step 3 is what remains.** The U-Boot half has
-landed: `uboot-mos` is on main, a mos image carries it (and `os/build/src/mkimage-cx3576.ts`
+landed: `uboot-mos` is on main, a mos image carries it (and `build/src/mkimage-cx3576.ts`
 refuses to assemble a mos image around the debug variant), and
-`os/boards/cx3576/boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
+`boards/cx3576/boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
 that environment variable is set. The redundant environment this design depends
 on genuinely exists on a mos device, which is also why `/etc/fw_env.config`
 addresses something real rather than something planned.
@@ -785,8 +785,8 @@ respect this.
 partitions by GUID (`/dev/disk/by-partuuid/…`, offset 0, size 64 KiB) rather
 than at a hardcoded `/dev/mmcblk0` offset: the GUIDs are layout constants, the
 disk name is not. It is the single `fw_env.config` source in the tree — the rootfs work
-deliberately did not create a competing `os/pkgs/rauc/fw_env.config.in` and instead
-**asserts this file's structure** in `os/pkgs/rauc/render-config.sh`: exactly two
+deliberately did not create a competing `pkgs/rauc/fw_env.config.in` and instead
+**asserts this file's structure** in `pkgs/rauc/render-config.sh`: exactly two
 device lines (which is what marks the environment redundant to libubootenv),
 each matching its UENV GUID case-insensitively at offset 0 with size
 `UENV_SIZE_BYTES`, and the partition starts cross-checked against
@@ -817,7 +817,7 @@ Every `/etc` write path in the legacy rootfs, and what happens to it in the curr
 
 ### Board hardware-init units under a read-only root
 
-All six `os/boards/cx3576/hwinit/` units are read-only-root safe, checked
+All six `boards/cx3576/hwinit/` units are read-only-root safe, checked
 rather than assumed:
 every `/etc` reference in `hwinit-modules`, `hwinit-otg`, `hwinit-can`,
 `hwinit-bt`, `hwinit-mac` and `hwinit-gadget` is a **read** of its
@@ -834,7 +834,7 @@ takes the `mode=` from `otg.conf`. Nothing regresses for the default
 configuration, and no code needs changing for it today. When the override is
 actually wanted, the fix is the same shape as everything else here — read it
 from `/mnt/state` (persistent) or `/run` (per-boot) with the `/etc/mos` path
-kept as a fallback. That is a change to `os/boards/cx3576/hwinit/`. It was held
+kept as a fallback. That is a change to `boards/cx3576/hwinit/`. It was held
 back while that directory was shared with the legacy chain and an image-side change
 would have been unilateral; the v1 removal deleted v1 and moved the directory under
 the board, so what holds it back now is only that nothing needs the override
@@ -843,7 +843,7 @@ yet.
 ### Correction: hostname was not a latent gap
 
 An earlier revision of this document claimed "nothing in mos sets the hostname
-today". That was wrong. `os/pkgs/mosd/mosd/src/reconciler/hostname.rs` is a merged M2
+today". That was wrong. `pkgs/mosd/mosd/src/reconciler/hostname.rs` is a merged M2
 reconciler that calls `SetStaticHostname` on `org.freedesktop.hostname1`, and
 `systemd-hostnamed` implements that by writing `/etc/hostname`. It is reachable
 from the M3 first-run wizard, so on a read-only `/etc` "set the hostname in the

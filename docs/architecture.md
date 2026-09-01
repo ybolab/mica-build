@@ -14,14 +14,14 @@ device's settings and drives systemd to match them.
 
 | Layer | What it is | Where |
 |---|---|---|
-| OS core | Debian trixie with systemd as PID 1, packed into a squashfs with a dm-verity hash tree over it | `os/rootfs/` |
-| Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `os/pkgs/mosd/mosd/`, `docs/design/mosd.md` |
-| API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `os/pkgs/mosd/apid/`, `docs/design/api.md` |
-| Application data | `mos-mqttd` bridges only exact package-enrolled `com.mos.<class>[.<suffix>]` application item trees to MQTT; `com.mos.mosd` is forbidden | `os/pkgs/mosd/mqttd/`, `os/pkgs/mosd/broker/`, `docs/design/bus.md` |
-| A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `os/pkgs/rauc/`, `docs/design/uboot-ab-handshake.md` |
-| Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `os/pkgs/rauc-sign/`, `docs/design/release-signing.md` |
-| BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `os/boards/`, `docs/design/boards.md` |
-| Workloads | podman plus the Quadlet systemd generator, off by default | `os/pkgs/podman/`, `docs/design/containers.md` |
+| OS core | Debian trixie with systemd as PID 1, packed into a squashfs with a dm-verity hash tree over it | `rootfs/` |
+| Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `pkgs/mosd/mosd/`, `docs/design/mosd.md` |
+| API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `pkgs/mosd/apid/`, `docs/design/api.md` |
+| Application data | `mos-mqttd` bridges only exact package-enrolled `com.mos.<class>[.<suffix>]` application item trees to MQTT; `com.mos.mosd` is forbidden | `pkgs/mosd/mqttd/`, `pkgs/mosd/broker/`, `docs/design/bus.md` |
+| A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `pkgs/rauc/`, `docs/design/uboot-ab-handshake.md` |
+| Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `pkgs/rauc-sign/`, `docs/design/release-signing.md` |
+| BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `boards/`, `docs/design/boards.md` |
+| Workloads | podman plus the Quadlet systemd generator, off by default | `pkgs/podman/`, `docs/design/containers.md` |
 
 ## 2. Component inventory (runtime)
 
@@ -47,12 +47,12 @@ device's settings and drives systemd to match them.
   (`docs/design/connd.md`).
 - **`mosd`** owns the settings tree persisted on STATE, exports it over the
   system bus as `com.mos.mosd`, and runs one reconciler per concern in
-  `os/pkgs/mosd/mosd/src/reconciler/`. Its unit is `Type=dbus` (`os/pkgs/mosd/dist/mosd.service`).
+  `pkgs/mosd/mosd/src/reconciler/`. Its unit is `Type=dbus` (`pkgs/mosd/dist/mosd.service`).
 - **`apid`** terminates TLS, authenticates the operator, and reads and writes
   device state by calling mosd over that bus; its TLS material, login-backoff
   counters and audit ring live under `/var/lib/mos/apid`
-  (`os/pkgs/mosd/dist/apid.service`). The dashboard is one of its clients, and
-  `os/pkgs/mosd/apid/openapi.json` is generated from the handlers.
+  (`pkgs/mosd/dist/apid.service`). The dashboard is one of its clients, and
+  `pkgs/mosd/apid/openapi.json` is generated from the handlers.
 - **Networking** is mosd's `network`, `wifi.client` and `wifi.ap` subtrees,
   reconciled into systemd-networkd, wpa_supplicant and hostapd units. The
   wireless half is recorded under the name `connd`; the concern is a pair of
@@ -61,7 +61,7 @@ device's settings and drives systemd to match them.
   `bridge` or `wireguard` — and the one optional block that belongs to it. The
   block is authoritative and the interface name is not:
   *"`eth0.100` is a convention, not a declaration"*
-  (`os/pkgs/mosd/mosd-settings/src/model.rs`). A physical entry renders
+  (`pkgs/mosd/mosd-settings/src/model.rs`). A physical entry renders
   one `.network` file, as it always did; each of the other three additionally
   renders a `.netdev` that creates the device, and the attachment is a line on
   the *other* interface's unit — `VLAN=` on the parent, `Bridge=` on the port.
@@ -77,7 +77,7 @@ device's settings and drives systemd to match them.
   configuration, health, updates and power stay on the management plane and
   never become MQTT items (`docs/design/bus.md`). `mos-mqtt-broker` is the
   local broker, built from `rumqttd` as a library
-  (`os/pkgs/mosd/Cargo.toml`).
+  (`pkgs/mosd/Cargo.toml`).
 - **Containers** run through podman with the Quadlet generator. While the
   `container.enabled` switch is false — the default — `/etc/containers/systemd`
   is not mounted and no container unit exists (`docs/design/containers.md`).
@@ -85,7 +85,7 @@ device's settings and drives systemd to match them.
 ## 3. Storage and boot
 
 The disk is one GPT; the partition set is declared per board in
-`os/boards/<board>/board.env`. On cx3576, where x64 replaces the loader and the
+`boards/<board>/board.env`. On cx3576, where x64 replaces the loader and the
 two U-Boot environment partitions with an ESP:
 
 ```
@@ -93,14 +93,14 @@ loader | uenv-a | uenv-b | boot-a | boot-b | rootfs-a | rootfs-b | meta | state 
 ```
 
 - **Root is read-only.** Each `rootfs-` slot holds a squashfs image with its
-  dm-verity hash tree appended, assembled by `os/rootfs/build.sh`.
+  dm-verity hash tree appended, assembled by `rootfs/build.sh`.
 - **No initramfs in the normal boot path.** The verity device is described
   entirely on the kernel command line with `dm-mod.create=`, composed per slot
   from that slot's verity parameters and the board's `BOARD_CMDLINE_ARGS`
-  (`os/rootfs/build.sh`, `docs/design/ro-root.md` §2).
+  (`rootfs/build.sh`, `docs/design/ro-root.md` §2).
 - **Each boot slot carries** `Image`, the device tree, the shared `boot.scr` and
   a per-slot `mos-verity-<slot>.env` holding that slot's verity arguments
-  (`os/build/src/mkimage-cx3576.ts`). Deliberately no `extlinux/extlinux.conf`:
+  (`build/src/mkimage-cx3576.ts`). Deliberately no `extlinux/extlinux.conf`:
   U-Boot tries extlinux first, so one there would bypass the handshake.
 - **The handshake** is `BOOT_ORDER` plus a per-slot attempt counter in the
   redundant U-Boot environment at `uenv-a` / `uenv-b`. A slot that fails to boot
@@ -124,11 +124,11 @@ A release is signed twice by two unrelated hierarchies, and the separation is
 the point: a TUF online key cannot sign a bundle and the bundle key cannot sign
 metadata. Ceremonies, key custody and rotation are
 `docs/design/release-signing.md`; `rauc-sign` signs and `rauc-verify`
-verifies, both in `os/pkgs/rauc-sign/`.
+verifies, both in `pkgs/rauc-sign/`.
 
 Two gaps are recorded rather than assumed: nothing in the build signs SPL or
 U-Boot, and no production keyring ships in the image
-(`docs/design/uboot-ab-handshake.md` §9, `os/pkgs/rauc/system.conf.in`).
+(`docs/design/uboot-ab-handshake.md` §9, `pkgs/rauc/system.conf.in`).
 
 ## 5. Access model
 
@@ -148,7 +148,7 @@ Disablement is layered, and two layers ship: the runtime switch, where
 profile — `dev` or `prod`, written into `/usr/lib` inside the verity root, so a
 production device cannot be edited into a development one. The profile is a
 package — `mos-profile-dev` or `mos-profile-prod`, whose whole payload is that
-one immutable file (`os/rootfs/packages-src/profile`) — and they `Conflict` by
+one immutable file (`rootfs/packages-src/profile`) — and they `Conflict` by
 name, so an image carries exactly one. The one-way META lockdown between them
 is designed, and marked not implemented (`docs/design/access.md` §5.2).
 
@@ -157,45 +157,44 @@ is designed, and marked not implemented (`docs/design/access.md` §5.2).
 ```
 mos/
 ├── docs/          plans (docs/plan/), tasks (docs/task/), design records (docs/design/)
-├── os/            the OS build
-│   ├── boards/    one board.env per board — the partition geometry and every layout
-│   │              constant — plus that board's BSP: kernel, U-Boot and firmware
-│   ├── build/     TypeScript: the image assemblers, the bundle builder, the toolset wrappers
-│   ├── build-env/ the pinned builder images every component build is FROM
-│   ├── pkgs/      source this repository compiles into a shipped artefact:
-│   │              podman/ (the container engine), rauc/ (the RAUC binary, its slot
-│   │              config and the manifest templates), rauc-sign/ (TUF release trust
-│   │              tooling, its own cargo workspace) and mosd/ — the Rust workspace:
-│   │              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings; workspace-level
-│   │              black-box harnesses are kept together under mosd/tests/
-│   ├── rootfs/    the root filesystem: compose/ (the two composition Dockerfiles),
-│   │              packages/ (the manifests and the resolver), packages-src/ (the
-│   │              system, profile, radio and CA-trust producers), plus build.sh
-│   ├── tests/     shell suites over the built image
-│   ├── tools/     three QEMU helper scripts
-│   └── verify/    TypeScript: the board model, and the checks an assembled image must pass
+├── boards/    one board.env per board — the partition geometry and every layout
+│              constant — plus that board's BSP: kernel, U-Boot and firmware
+├── build/     TypeScript: the image assemblers, the bundle builder, the toolset wrappers
+├── build-env/ the pinned builder images every component build is FROM
+├── pkgs/      source this repository compiles into a shipped artefact:
+│              podman/ (the container engine), rauc/ (the RAUC binary, its slot
+│              config and the manifest templates), rauc-sign/ (TUF release trust
+│              tooling, its own cargo workspace) and mosd/ — the Rust workspace:
+│              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings; workspace-level
+│              black-box harnesses are kept together under mosd/tests/
+├── rootfs/    the root filesystem: compose/ (the two composition Dockerfiles),
+│              packages/ (the manifests and the resolver), packages-src/ (the
+│              system, profile, radio and CA-trust producers), plus build.sh
+├── tests/     shell suites over the built image
+├── tools/     three QEMU helper scripts
+├── verify/    TypeScript: the board model, and the checks an assembled image must pass
 └── Makefile       top-level routing; `make help` lists every target
 ```
 
 The rootfs is **composed**: one APT transaction installs a resolved set of mos
 `.deb` packages out of the local pool at `_out/debs/<arch>/` onto a
 digest-pinned Debian base, and one finalizer closes and packs the result
-(`os/rootfs/compose/`, two files). What is in an image is a package list, and
+(`rootfs/compose/`, two files). What is in an image is a package list, and
 what orders the configuration is `Depends` — adding a component is adding a
 producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 
 ## 7. Boards
 
 - **`cx3576`** — CX3576-Z, Rockchip RK3576, arm64. Vendor kernel tree, mainline
-  U-Boot built in `os/boards/cx3576/bsp/uboot/`, WiFi and Bluetooth. Its RAUC bootloader
+  U-Boot built in `boards/cx3576/bsp/uboot/`, WiFi and Bluetooth. Its RAUC bootloader
   backend is `uboot`, so this is the board the `BOOT_ORDER` handshake is for.
 - **`x64`** — generic UEFI x86_64, the QEMU and CI baseline. No BSP build:
   firmware boots it, so there is nothing to compile. Its bootloader backend is
-  `grub` and its assembler is `os/build/src/mkimage-x64.ts`.
+  `grub` and its assembler is `build/src/mkimage-x64.ts`.
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared
-assertion set in `os/boards/common/mos-required.fragment` (`docs/design/boards.md`).
+assertion set in `boards/common/mos-required.fragment` (`docs/design/boards.md`).
 
 ## 8. Where to read next
 

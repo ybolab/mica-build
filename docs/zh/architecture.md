@@ -13,14 +13,14 @@
 
 | 层 | 是什么 | 位置 |
 |---|---|---|
-| 系统内核层 | Debian trixie，systemd 作 PID 1，打包为 squashfs 并附加 dm-verity 哈希树 | `os/rootfs/` |
-| 管理面 | `mosd` — 设置树、驱动 unit 的协调器、D-Bus 接口 | `os/pkgs/mosd/mosd/`，[`design/mosd.md`](design/mosd.md) |
-| API | `apid` — HTTPS 守护进程；仪表盘只是它所服务 API 的一个客户端 | `os/pkgs/mosd/apid/`，`../design/api.md` |
-| 应用数据 | `mos-mqttd` 只把应用包按准确名称登记的 `com.mos.<class>[.<suffix>]` item 树桥接到 MQTT；`com.mos.mosd` 被硬性排除 | `os/pkgs/mosd/mqttd/`、`os/pkgs/mosd/broker/`、[`design/bus.md`](design/bus.md) |
-| A/B 安装器 | RAUC；cx3576 上配合 U-Boot 的 `BOOT_ORDER` 握手，x64 上用 GRUB | `os/pkgs/rauc/`，`../design/uboot-ab-handshake.md` |
-| 更新信任 | TUF 元数据锁定一个 CMS 签名的 RAUC bundle | `os/pkgs/rauc-sign/`，`../design/release-signing.md` |
-| BSP 产物 | 每块板一套 buildkit Dockerfile，产出内核、设备树与引导程序 | `os/boards/`，[`design/boards.md`](design/boards.md) |
-| 工作负载 | podman 加 Quadlet systemd 生成器，默认关闭 | `os/pkgs/podman/`，`../design/containers.md` |
+| 系统内核层 | Debian trixie，systemd 作 PID 1，打包为 squashfs 并附加 dm-verity 哈希树 | `rootfs/` |
+| 管理面 | `mosd` — 设置树、驱动 unit 的协调器、D-Bus 接口 | `pkgs/mosd/mosd/`，[`design/mosd.md`](design/mosd.md) |
+| API | `apid` — HTTPS 守护进程；仪表盘只是它所服务 API 的一个客户端 | `pkgs/mosd/apid/`，`../design/api.md` |
+| 应用数据 | `mos-mqttd` 只把应用包按准确名称登记的 `com.mos.<class>[.<suffix>]` item 树桥接到 MQTT；`com.mos.mosd` 被硬性排除 | `pkgs/mosd/mqttd/`、`pkgs/mosd/broker/`、[`design/bus.md`](design/bus.md) |
+| A/B 安装器 | RAUC；cx3576 上配合 U-Boot 的 `BOOT_ORDER` 握手，x64 上用 GRUB | `pkgs/rauc/`，`../design/uboot-ab-handshake.md` |
+| 更新信任 | TUF 元数据锁定一个 CMS 签名的 RAUC bundle | `pkgs/rauc-sign/`，`../design/release-signing.md` |
+| BSP 产物 | 每块板一套 buildkit Dockerfile，产出内核、设备树与引导程序 | `boards/`，[`design/boards.md`](design/boards.md) |
+| 工作负载 | podman 加 Quadlet systemd 生成器，默认关闭 | `pkgs/podman/`，`../design/containers.md` |
 
 ## 2. 运行时组件
 
@@ -47,7 +47,7 @@
   每个关注点跑一个协调器。它的 unit 是 `Type=dbus`。
 - **`apid`** 终结 TLS、认证操作者，并通过总线调用 mosd 来读写设备状态。它的 TLS 材料、
   登录退避计数和审计环存放在 `/var/lib/mos/apid`。仪表盘是它的客户端之一，
-  `os/pkgs/mosd/apid/openapi.json` 由处理函数生成。
+  `pkgs/mosd/apid/openapi.json` 由处理函数生成。
 - **网络**是 mosd 的 `network`、`wifi.client`、`wifi.ap` 三棵子树，协调进
   systemd-networkd、wpa_supplicant 与 hostapd 的 unit。无线那半以 `connd` 之名记录，
   但它是**一对协调器，不是一个进程**。
@@ -67,7 +67,7 @@
 
 ## 3. 存储与启动
 
-整盘一张 GPT，分区集合由每块板的 `os/boards/<board>/board.env` 声明。cx3576 上：
+整盘一张 GPT，分区集合由每块板的 `boards/<board>/board.env` 声明。cx3576 上：
 
 ```
 loader | uenv-a | uenv-b | boot-a | boot-b | rootfs-a | rootfs-b | meta | state | ephemeral | data
@@ -120,37 +120,36 @@ keyring。
 ```
 mos/
 ├── docs/          计划（plan/）、任务（task/）、设计（design/）、中文（zh/）
-├── os/            操作系统构建
-│   ├── boards/    每板一个 board.env——分区几何与全部布局常量——外加该板 BSP
-│   ├── build/     TypeScript：镜像装配器、bundle 构建器、工具封装
-│   ├── build-env/ 每个组件构建所 FROM 的固定构建器镜像
-│   ├── pkgs/      本仓库编译成发布产物的源码：podman/、rauc/、rauc-sign/、
-│   │              以及 mosd/ Rust 工作区（mosd、apid、mos-mqttd、
-│   │              mos-mqtt-broker、mosd-settings）；工作区级黑盒测试统一放在 mosd/tests/
-│   ├── rootfs/    根文件系统：compose/（两个组合 Dockerfile）、packages/（清单与解析器）、
-│   │              packages-src/（system、profile、射频、CA 信任库四个 producer），加 build.sh
-│   ├── tests/     针对已构建镜像的 shell 套件
-│   ├── tools/     QEMU 辅助脚本
-│   └── verify/    TypeScript：板卡模型，以及装配后镜像必须通过的检查
+├── boards/    每板一个 board.env——分区几何与全部布局常量——外加该板 BSP
+├── build/     TypeScript：镜像装配器、bundle 构建器、工具封装
+├── build-env/ 每个组件构建所 FROM 的固定构建器镜像
+├── pkgs/      本仓库编译成发布产物的源码：podman/、rauc/、rauc-sign/、
+│              以及 mosd/ Rust 工作区（mosd、apid、mos-mqttd、
+│              mos-mqtt-broker、mosd-settings）；工作区级黑盒测试统一放在 mosd/tests/
+├── rootfs/    根文件系统：compose/（两个组合 Dockerfile）、packages/（清单与解析器）、
+│              packages-src/（system、profile、射频、CA 信任库四个 producer），加 build.sh
+├── tests/     针对已构建镜像的 shell 套件
+├── tools/     QEMU 辅助脚本
+├── verify/    TypeScript：板卡模型，以及装配后镜像必须通过的检查
 └── Makefile       顶层路由；`make help` 列出全部目标
 ```
 
 根文件系统是**组合**出来的：一次 APT 事务把解析出来的一组 mos `.deb` 包从本地包仓库
 `_out/debs/<arch>/` 装到一个按 digest 固定的 Debian 基底上，再由一个收尾器封根并打包
-（`os/rootfs/compose/`，两个文件）。**镜像里有什么就是一份包清单**，而决定配置顺序的是
+（`rootfs/compose/`，两个文件）。**镜像里有什么就是一份包清单**，而决定配置顺序的是
 `Depends`——新增一个组件是新增一个 producer，不是新增一个阶段。完整模型见
 `docs/design/build.md` 1.1 节。
 
 ## 7. 板卡
 
 - **`cx3576`** —— CX3576-Z，Rockchip RK3576，arm64。厂商内核树，U-Boot 用主线源码在
-  `os/boards/cx3576/bsp/uboot/` 构建，带 WiFi 和蓝牙。它的 RAUC 引导后端是 `uboot`，
+  `boards/cx3576/bsp/uboot/` 构建，带 WiFi 和蓝牙。它的 RAUC 引导后端是 `uboot`，
   `BOOT_ORDER` 握手就是为这块板做的。
 - **`x64`** —— 通用 UEFI x86_64，QEMU 与 CI 的基准。没有 BSP 构建：固件直接引导它，
   没有东西要编。引导后端是 `grub`。
 
 **板卡产出产物，操作系统构建消费产物**，两边都不伸手进对方的构建里。内核配置必须满足
-`os/boards/common/mos-required.fragment` 里的共享断言集。
+`boards/common/mos-required.fragment` 里的共享断言集。
 
 ## 8. 接着读什么
 

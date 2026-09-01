@@ -1,7 +1,7 @@
 # Design: cx3576 Upstream BSP Sync Record
 
 > Not a design in the usual sense: a **sync record** for a vendored tree.
-> `os/boards/cx3576/bsp/` is derived from an upstream BSP repository, not authored
+> `boards/cx3576/bsp/` is derived from an upstream BSP repository, not authored
 > here, so it needs a place that names where it came from, which upstream
 > commit it is level with, and where we deliberately differ.
 
@@ -30,9 +30,9 @@ this record exists to prevent.
 | | |
 |---|---|
 | Repository | `ssh://git@git.ds.cc/miehq/cx3576-alpine.git` |
-| Relationship | `os/boards/cx3576/bsp/` is **derived from** that tree, not authored in this repository |
+| Relationship | `boards/cx3576/bsp/` is **derived from** that tree, not authored in this repository |
 
-`os/boards/cx3576/bsp/` is a drifted derivative, not a mirror. Measured at `b4b7c72`
+`boards/cx3576/bsp/` is a drifted derivative, not a mirror. Measured at `b4b7c72`
 against upstream `b210e2b^`, `kernel/config/kernel-cx3576z.config` and
 `kernel/dts/rk3576-cx3576z.dts` were byte-identical, while `Makefile`,
 `kernel/Dockerfile`, `rootfs/alpine/Dockerfile` and `uboot/Dockerfile` had
@@ -83,11 +83,11 @@ One entry today.
 
 | | |
 |---|---|
-| **Where** | `os/boards/cx3576/bsp/uboot/patches/0006-rk3576-generic-cx3576z-usb-host-led-boot-order.patch`, the `bootstd` node in the `arch/arm/dts/rk3576-generic.dts` hunk |
+| **Where** | `boards/cx3576/bsp/uboot/patches/0006-rk3576-generic-cx3576z-usb-host-led-boot-order.patch`, the `bootstd` node in the `arch/arm/dts/rk3576-generic.dts` hunk |
 | **Upstream has** | `bootdev-order = "mmc1", "mmc0", "usb";` — SD first, so an inserted SD card overrides eMMC |
 | **We have** | `bootdev-order = "mmc0", "mmc1", "usb";` — eMMC first, SD second, USB last |
 | **Reason** | The user decided it, 2026-08-20. |
-| **Guard** | `os/boards/cx3576/bsp/uboot/Dockerfile` asserts `test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb"` on the compiled device tree |
+| **Guard** | `boards/cx3576/bsp/uboot/Dockerfile` asserts `test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb"` on the compiled device tree |
 
 SD is retained as a fallback, not removed: a rescue SD still boots when eMMC is
 unbootable, but it cannot override an eMMC that boots.
@@ -116,7 +116,7 @@ above still passes.
 clearing the variable before anything reads the order. The clear is per-boot and
 non-destructive: it takes no value and issues no `saveenv`, so it does not
 rewrite the stored environment. Each stage's exact `BOOTCOMMAND` string is
-asserted separately in `os/boards/cx3576/bsp/uboot/Dockerfile`, so dropping the clear
+asserted separately in `boards/cx3576/bsp/uboot/Dockerfile`, so dropping the clear
 cannot pass silently.
 
 This is a mechanism note, not a second deviation: upstream carries the same

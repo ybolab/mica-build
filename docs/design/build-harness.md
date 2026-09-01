@@ -15,26 +15,26 @@ date is given.
 ## 1. bun runs in a pinned container, and that is a decision
 
 Both bun suites resolve their runtime the same way, from the digest pinned as
-`IMAGE_BUN_1` in `os/build-env/images.env`. `os/verify` reads it as
-`BUN_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1`
-(`os/verify/run.sh`), and `os/pkgs/mosd/tests/apid-api/run.sh` the same:
+`IMAGE_BUN_1` in `build-env/images.env`. `verify` reads it as
+`BUN_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1`
+(`verify/run.sh`), and `pkgs/mosd/tests/apid-api/run.sh` the same:
 
-    bash os/build-env/from.sh --ref IMAGE_BUN_1
+    bash build-env/from.sh --ref IMAGE_BUN_1
 
-`os/pkgs/mosd/tests/apid-api/run.sh` does exactly that, with an override for a caller who
+`pkgs/mosd/tests/apid-api/run.sh` does exactly that, with an override for a caller who
 means it —
-`BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)}"`
-(`os/pkgs/mosd/tests/apid-api/run.sh`). The pin is a digest and not the `oven/bun:1` tag
+`BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"`
+(`pkgs/mosd/tests/apid-api/run.sh`). The pin is a digest and not the `oven/bun:1` tag
 because that tag is repointed upstream on every 1.x release, and this harness is
 what decides whether apid's API is judged conformant.
 
-`os/verify/run.sh` holds the one seam where host-or-container is decided:
+`verify/run.sh` holds the one seam where host-or-container is decided:
 "The seam. Everything above and below passes an argv and reads a status,"
-(`os/verify/run.sh`). Above it the route is chosen once —
-`WHY="MOS_VERIFY_CONTAINER=1"` (`os/verify/run.sh`) — and the
+(`verify/run.sh`). Above it the route is chosen once —
+`WHY="MOS_VERIFY_CONTAINER=1"` (`verify/run.sh`) — and the
 environment variable is documented as
 "MOS_VERIFY_CONTAINER=1 use the pinned container even where a host bun exists,"
-(`os/verify/run.sh`). That is the knob to reach for when you want to compare
+(`verify/run.sh`). That is the knob to reach for when you want to compare
 the two routes on one machine.
 
 **The container is a pin, not a workaround.** *Measured 2026-08-28:* this host
@@ -43,8 +43,8 @@ does have a usable bun and it works.
 | what | command | result |
 | --- | --- | --- |
 | a host bun exists | `command -v bun; bun --version` | `/srv/bkd/runtime/bun`, `1.4.0` |
-| it parses the committed lockfile | `cd os/pkgs/mosd/tests/apid-api && bun install --frozen-lockfile --dry-run` | all five packages resolved, `[2.00ms] done` |
-| it runs the suite's selftest green | `cd os/pkgs/mosd/tests/apid-api && bun run src/selftest.ts` | `RESULT: PASS (47/47 checks)` |
+| it parses the committed lockfile | `cd pkgs/mosd/tests/apid-api && bun install --frozen-lockfile --dry-run` | all five packages resolved, `[2.00ms] done` |
+| it runs the suite's selftest green | `cd pkgs/mosd/tests/apid-api && bun run src/selftest.ts` | `RESULT: PASS (47/47 checks)` |
 
 So a host route is *possible* here and is nevertheless not taken. The reason is
 recorded where the decision was made: `run.sh` has
@@ -61,34 +61,34 @@ container as the pin doing its job, not as a fallback.
 inside it dies with a message about docker rather than about what you were
 doing:
 "docker client, so inside it every route ends at `docker: command not found`."
-(`os/verify/Dockerfile`), and the pin's own block says the same —
+(`verify/Dockerfile`), and the pin's own block says the same —
 "this every route inside it ends at `docker: command not found`. Mounting the"
-(`os/build-env/images.env`) daemon socket does not help, because what is
+(`build-env/images.env`) daemon socket does not help, because what is
 missing is the client, not the socket.
 
-`os/verify/Dockerfile` exists solely to close that gap, and it is the file to
+`verify/Dockerfile` exists solely to close that gap, and it is the file to
 reuse rather than a second one to write. It is two digest `FROM`s and one copy —
 `COPY --from=cli /usr/local/bin/docker /usr/local/bin/docker`
-(`os/verify/Dockerfile`) — with the result asserted at build time by
-`RUN docker --version && bun --version` (`os/verify/Dockerfile`), so a COPY
+(`verify/Dockerfile`) — with the result asserted at build time by
+`RUN docker --version && bun --version` (`verify/Dockerfile`), so a COPY
 whose source moved upstream fails at build rather than three steps later inside a
 verify run. The client half is pinned as `IMAGE_DOCKER_CLI_28`, chosen because
 the "`-cli` variant carries the client and NOT dockerd. The client is a static"
-(`os/build-env/images.env`) binary, which is what lets an alpine-built
+(`build-env/images.env`) binary, which is what lets an alpine-built
 client run on the debian-based bun image.
 
-Both `os/verify/run.sh` and `os/pkgs/mosd/tests/apid-api/run.sh` build that image on demand and
+Both `verify/run.sh` and `pkgs/mosd/tests/apid-api/run.sh` build that image on demand and
 tag it with both input digests, so bumping either pin names an image that was
 never built and there is no stale parent to find. Nothing in `make build-env`
 builds it; whichever of the two runs first pays the few seconds for it.
 
-## 3. The Rust gate: `os/pkgs/mosd/hack/check.sh`
+## 3. The Rust gate: `pkgs/mosd/hack/check.sh`
 
 The gate is five commands, unremarkable in themselves —
-`cargo fmt --all --check` (`os/pkgs/mosd/hack/check.sh`),
+`cargo fmt --all --check` (`pkgs/mosd/hack/check.sh`),
 `cargo clippy --workspace --all-targets --locked -- -D warnings`
-(`os/pkgs/mosd/hack/check.sh`) and
-`cargo nextest run --workspace --locked` (`os/pkgs/mosd/hack/check.sh`) among
+(`pkgs/mosd/hack/check.sh`) and
+`cargo nextest run --workspace --locked` (`pkgs/mosd/hack/check.sh`) among
 them. **Run it unmodified.** The harness is the container it runs in, not an
 edit to the script; every trap below is fixed by how you invoke the container.
 
@@ -149,9 +149,9 @@ dependencies are broken. They are not: with `/tools/bin` first,
 dbus-daemon` in the image prints nothing. Several tests assert real bus
 behaviour over a private session bus and are written to fail rather than skip
 without it: "real bus behaviour over a private session bus and MUST NOT skip: install it"
-(`os/pkgs/mosd/apid/tests/e2e.rs`), and the identical refusal is repeated in
+(`pkgs/mosd/apid/tests/e2e.rs`), and the identical refusal is repeated in
 "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts"
-(`os/pkgs/mosd/mosd/tests/scan.rs`). Measured without it, the gate exits
+(`pkgs/mosd/mosd/tests/scan.rs`). Measured without it, the gate exits
 **`rc=100`** (the panic location below is normalized because source-line
 positions are not part of the contract):
 
@@ -163,7 +163,7 @@ positions are not part of the contract):
     rc=100
 
 **Which** test surfaces it first is scheduling, not signal: `bus_roundtrip`
-(`os/pkgs/mosd/mosd/tests/bus.rs`) carries the same requirement, and nextest
+(`pkgs/mosd/mosd/tests/bus.rs`) carries the same requirement, and nextest
 cancels the remaining 648 at the first failure. Read `rc=100` together with a
 `dbus-daemon was not found` panic as one fact, whatever the test name is.
 `apt-get install -y dbus` in the container before the gate is what makes it
@@ -192,11 +192,11 @@ and the failure is silent. *Measured 2026-08-28:*
 
 The mount **succeeds**. The container starts, the directory is there, and it is
 bare. Nothing reports an error, so the run fails later saying a file was not
-found — and the file is there; it is the mount that is empty. `os/verify/run.sh`
+found — and the file is there; it is the mount that is empty. `verify/run.sh`
 carries a preflight against exactly this, whose message is worth reading before
 you debug anything else:
 "The mount succeeded and delivered nothing, which is how a bind mount of /tmp"
-(`os/verify/run.sh`).
+(`verify/run.sh`).
 
 ## 5. arm64 on this host: build yes, execute no
 
@@ -230,7 +230,7 @@ No arm64 in either. Settle it with a throwaway build instead.
 `--output type=oci,dest=<dir>,tar=false,name=mos-probe:a` and handed to the
 second as `--build-context mos-probe:a=oci-layout://<dir>`: the second stage
 read the first's file and wrote `stage-b sees: aarch64 on aarch64`. That is
-the mechanism `os/build/src/stages-cli.ts` calls layout mode, and it is why
+the mechanism `build/src/stages-cli.ts` calls layout mode, and it is why
 the cx3576 rootfs chain no longer needs the daemon to execute arm64.
 
 **The daemon does not.** The same image, run rather than built:
@@ -275,7 +275,7 @@ any of it.*
 
 The capability question above has a companion that reads like it and is not
 it: what happens when the emulator IS available and the BASE is the wrong
-architecture. The answer is the reason `os/pkgs/podman/Dockerfile` carries two
+architecture. The answer is the reason `pkgs/podman/Dockerfile` carries two
 base arguments for one image.
 
 `--platform` on a `FROM` selects a manifest out of an index. A digest-pinned
@@ -303,8 +303,8 @@ mismatch is the behaviour to expect and not the behaviour to get.
 
 The remedy is a second argument, not a second `--platform`: a stage that runs
 at the build platform takes a base resolved at the build platform's
-architecture. `os/pkgs/podman/build.sh` does this with `MOS_BUILD_BASE_NATIVE`,
-resolved through a second `os/build-env/from.sh` call with `--arch` from
+architecture. `pkgs/podman/build.sh` does this with `MOS_BUILD_BASE_NATIVE`,
+resolved through a second `build-env/from.sh` call with `--arch` from
 `uname -m`, and carried to a container-driver builder as a fifth OCI layout
 next to the four. Proved before it was written, with a two-stage throwaway
 whose `src` stood on the amd64 base and whose `verify` stood on the arm64 one,
@@ -316,35 +316,35 @@ One build, two architectures, one builder.
 
 ## 6. The image is an input, and "no image" reads as a harness failure
 
-`os/pkgs/mosd/tests/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
+`pkgs/mosd/tests/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
 it is absent it refuses by name and prints the two commands that make it:
-"image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build.sh && bash os/build/run.sh --mkimage-x64"
-(`os/pkgs/mosd/tests/apid-api/run.sh`). The same sentence guards the missing directory one
+"image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash rootfs/build.sh && bash build/run.sh --mkimage-x64"
+(`pkgs/mosd/tests/apid-api/run.sh`). The same sentence guards the missing directory one
 step earlier:
 "does not exist, so there is no image to boot; this harness builds nothing."
-(`os/pkgs/mosd/tests/apid-api/run.sh`).
+(`pkgs/mosd/tests/apid-api/run.sh`).
 
 Those two commands are the last two links of a longer chain, and the earlier
 links fail the same way — as an apparently broken harness. In order:
 
-1. **The components.** `bash os/pkgs/rauc/build.sh` and
-   `bash os/pkgs/podman/build.sh` produce `os/pkgs/rauc/out-<arch>/` and
-   `os/pkgs/podman/out-<arch>/`. Nothing in the rootfs build reads either
+1. **The components.** `bash pkgs/rauc/build.sh` and
+   `bash pkgs/podman/build.sh` produce `pkgs/rauc/out-<arch>/` and
+   `pkgs/podman/out-<arch>/`. Nothing in the rootfs build reads either
    directory: the `rauc` and `podman` producers do, from their `PREPARE` hooks,
    and pack the result as `mos-rauc` and `mos-podman`.
 2. **The package pool.** `make os-debs` builds every producer at every
    architecture it declares and then indexes both pools. The rootfs build
    installs out of `_out/debs/<arch>/` and compiles nothing, so this step is
    where a missing or stale component becomes a refusal that names a target.
-3. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build.sh`, which refuses a
+3. **The rootfs.** `MOS_BOARD=x64 bash rootfs/build.sh`, which refuses a
    pool that is absent, unindexed, or stamped at a version other than this
    tree's.
-4. **The image.** `bash os/build/run.sh --mkimage-x64`, which writes the A/B disk
+4. **The image.** `bash build/run.sh --mkimage-x64`, which writes the A/B disk
    image around the rootfs slot. Its name is read from the board definition,
-   `IMAGE_LATEST_NAME=x64-mos-latest.img` (`os/boards/x64/board.env`),
+   `IMAGE_LATEST_NAME=x64-mos-latest.img` (`boards/x64/board.env`),
    rather than repeated in the harness.
-5. **The run.** `make os-apid-api-test`, or `bash os/pkgs/mosd/tests/apid-api/run.sh`.
-   `bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` does the preconditions and the network
+5. **The run.** `make os-apid-api-test`, or `bash pkgs/mosd/tests/apid-api/run.sh`.
+   `bash pkgs/mosd/tests/apid-api/run.sh --dry-run` does the preconditions and the network
    discovery and boots nothing, which is how to check the harness in seconds.
 
 **This suite runs nowhere in CI, and that is the standing decision rather than
@@ -355,8 +355,8 @@ image the harness does not build. What CI does check is narrower and cheap:
 with the committed OpenAPI document. Run the suite itself by hand after a
 change to apid's surface.
 
-The boot engine itself is `os/pkgs/mosd/tests/apid-api/src/qemu.ts`, beside the suite that
-drives it. It was a shell tool under `os/tools/` until later ported it; that
+The boot engine itself is `pkgs/mosd/tests/apid-api/src/qemu.ts`, beside the suite that
+drives it. It was a shell tool under `tools/` until later ported it; that
 file is gone, and a search for it is a search for something deleted.
 
 ## 7. The docs gate
@@ -380,7 +380,7 @@ argument and one call adds it.
 three baselines were removed with the coupling they existed to police:
 documents no longer cite code by `path:line`, so there is no citation to keep
 resolvable. Where a document needs a precise contract it names the artifact
-that carries it — the HTTP surface is `os/pkgs/mosd/apid/openapi.json`, which
+that carries it — the HTTP surface is `pkgs/mosd/apid/openapi.json`, which
 CI holds equal to what the shipped binary prints.
 
 ## 8. Verification
@@ -392,7 +392,7 @@ gate ran in `localhost/mos-build-rust` with `/srv/mos-rust-tools` mounted at
 | command | final line |
 | --- | --- |
 | `bash docs/verify-index.sh` | `docs/verify-index.sh: 767/767 PASS` |
-| `bash hack/check.sh` in `os/pkgs/mosd`, dbus installed | `705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
+| `bash hack/check.sh` in `pkgs/mosd`, dbus installed | `705 tests run: 705 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
 | the same nextest line with **no** `dbus-daemon` | `57/705 tests run: 56 passed, 1 failed, 0 skipped`, `error: test run failed`, `rc=100` |
 | `cargo fmt --all --check`, `/tools/bin` first | clean |
 | the gate's clippy line, `/tools/rust96/bin` first | `error[E0463]: can't find crate for 'std'`, `rc=101` |

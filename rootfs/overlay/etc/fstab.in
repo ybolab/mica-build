@@ -1,0 +1,27 @@
+# /etc/fstab — mos A/B layout (read-only squashfs + dm-verity root).
+#
+# Rendered from boards/cx3576/board.env by rootfs/build.sh; the at-sign
+# placeholders are partition GUIDs from that file. Never edit this on device:
+# the whole tree is on a verity-protected read-only squashfs.
+#
+# The root filesystem is deliberately absent. The kernel assembles /dev/dm-0
+# from dm-mod.create= on the cmdline and mounts it read-only; there is no
+# remount to perform and no entry that could ever succeed in rewriting it.
+#
+# Storage tiers (docs/design/ro-root.md section 4):
+#   /srv        DATA       application data. Precious, GROWS to fill the disk.
+#   /mnt/state  STATE      configuration + identity. Precious, small.
+#   /mnt/meta   META       update/appliance metadata. Precious, small.
+#   /var        EPHEMERAL  disposable runtime residue. Fixed size, wipeable.
+# Only /srv carries x-systemd.growfs: it is the only partition repart grows.
+#
+# PARTUUID values are lowercase because udev's /dev/disk/by-partuuid/ symlinks
+# are created from libblkid's lowercase GUID formatting, and systemd's
+# fstab-generator resolves PARTUUID= through those symlinks verbatim.
+#
+# <device>                      <mount>     <type>  <options>                   <dump> <pass>
+@SRV_LINE@
+PARTUUID=@STATE_GUID@           /mnt/state  ext4    noatime                     0      2
+PARTUUID=@META_GUID@            /mnt/meta   ext4    noatime                     0      2
+PARTUUID=@EPHEMERAL_GUID@       /var        ext4    @VAR_OPTS@                  0      2
+tmpfs                           /tmp        tmpfs   noatime,nosuid,nodev,mode=1777 0   0
