@@ -43,3 +43,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-052 Add diagnostics and operational network state**](PLAN-052.md) `2026-09-01`
 - [ ] [**PLAN-053 Define security and manufacturing lifecycle**](PLAN-053.md) `2026-09-01`
 - [ ] [**PLAN-054 Design conditional fleet management**](PLAN-054.md) `2026-09-01`
+- [x] [**PLAN-055 Define the built-in UI development guide**](PLAN-055.md) `2026-09-01`
+- [x] [**PLAN-056 Design a managed application catalog and lifecycle**](PLAN-056.md) `2026-09-01`
+- [x] [**PLAN-057 Define the built-in UI product-design guide**](PLAN-057.md) `2026-09-01`
