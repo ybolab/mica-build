@@ -44,7 +44,7 @@ if [ ! -s "${HERE}/versions.lock" ]; then
 fi
 
 # The builder is NAMED rather than inherited, and named rather than pinned --
-# the same BUILDX_BUILDER register as os/rootfs/build-v2.sh. BUILDX_BUILDER wins,
+# the same BUILDX_BUILDER register as os/rootfs/build.sh. BUILDX_BUILDER wins,
 # because a caller who names a builder has made a decision; with nothing named,
 # `default` is the docker driver on every docker installation. What must not
 # happen is inheriting the ambient selection: a leftover `mos-rauc-arm64` from
@@ -165,7 +165,7 @@ docker buildx build "${BUILDER_ARGS[@]}" \
     "${HERE}"
 
 # The exported tree, re-checked. The build stage asserts what it BUILT; this
-# asserts what landed on disk for os/rootfs/build-v2.sh to stage. An export
+# asserts what landed on disk for os/rootfs/build.sh to stage. An export
 # that dropped a file, or a cache hit that served an older layer, is invisible
 # to the first check and caught here.
 missing=""

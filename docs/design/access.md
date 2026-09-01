@@ -125,7 +125,7 @@ method (§4.1) and `mos-shadow-reconcile` at boot.
 
 Unit enablement is **runtime-scoped** (`EnableUnitFiles` with `runtime = true`,
 so symlinks land in `/run/systemd/system`). Persistent enablement would need
-`/etc/systemd/system` to be writable, and on the v2 read-only root it is not —
+`/etc/systemd/system` to be writable, and on the mos read-only root it is not —
 a persistent enable would fail with EROFS on device while passing every test on
 a normal filesystem. mosd reconciles the whole tree at every start, so the unit
 returns to its configured state on each boot without a persisted symlink.
@@ -212,7 +212,7 @@ root password below.
 
 Implemented by `os/pkgs/mosd/mosd/src/reconciler/sshd.rs` (keys),
 `os/pkgs/mosd/mosd/src/transient.rs` and `os/pkgs/mosd/mosd/src/bus.rs` (the transient
-password), `os/rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile` (the boot
+password), `os/rootfs/overlay/usr/lib/mos/mos-shadow-reconcile` (the boot
 clear) and `os/pkgs/mosd/apid/src/routes.rs` (the operator-facing pane).
 
 **The default state of a device is: SSH off, root with no password, no keys.**
@@ -269,8 +269,8 @@ not write — one set by hand over the serial console, or by a future
 provisioning path — never equals a marker. Locking unconditionally would be
 this code overwriting a credential it does not own. The marker makes the
 reconciler clear only what it wrote. (A baked `ROOT_PASSWORD` is *not* such a
-case on v2: the pack stage fails any build whose factory shadow carries a
-usable hash, so no buildable v2 image ships one — see §5.3.)
+case on mos: the pack stage fails any build whose factory shadow carries a
+usable hash, so no buildable mos image ships one — see §5.3.)
 
 Password authentication is offered to sshd **only while a transient password is
 really active** (§3.2). So a device whose password has expired at boot does not
@@ -357,7 +357,7 @@ Decision 2026-08-17: prod ships SSH. **Two** profiles ship today, selected at
 build time and recorded in the image.
 
 `/usr/lib/mos/profile.conf` carries `MOS_PROFILE=dev` or `MOS_PROFILE=prod`,
-mode 0444, written by `os/rootfs/build-v2.sh`. It is under `/usr/lib` and not
+mode 0444, written by `os/rootfs/build.sh`. It is under `/usr/lib` and not
 `/etc` because it describes the *image* rather than the device — and that also
 puts it inside the read-only verity root, where a production device cannot be
 edited into a development one.
@@ -373,11 +373,11 @@ resolves to `prod` too. The build rejects any `MOS_PROFILE` value that is not
 exactly `dev` or `prod` in lowercase.
 
 The `ROOT_PASSWORD` build arg is **v1-only** and is not selected by the profile
-on v2: `os/rootfs/build-v2.sh` and `os/rootfs/compose/` carry no such plumbing,
-because the v2 pack stage unconditionally fails any build whose factory shadow
+on mos: `os/rootfs/build.sh` and `os/rootfs/compose/` carry no such plumbing,
+because the pack stage unconditionally fails any build whose factory shadow
 holds a usable hash — for every account and on both profiles — and both
-verifiers assert the same about the packed artifact. A baked v2 root credential
-is therefore unbuildable, dev profile included. Dev root access on v2 is §4.1's
+verifiers assert the same about the packed artifact. A baked mos root credential
+is therefore unbuildable, dev profile included. Dev root access on mos is §4.1's
 transient password set at runtime through mosd, plus the serial console, whose
 root account stays locked until that password is set.
 
@@ -517,8 +517,8 @@ working door.
 
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
-The v2 image is a **full-disk image carrying all eleven partitions**, and
-`os/build/src/mkimage-v2.ts` builds fresh ext4 filesystems for META, STATE and DATA into
+The mos image is a **full-disk image carrying all eleven partitions**, and
+`os/build/src/mkimage-cx3576.ts` builds fresh ext4 filesystems for META, STATE and DATA into
 it (`mkext4` for each of `meta.img`, `state.img`, `data.img`). Flashing it over
 rockusb therefore replaces all three:
 
@@ -558,7 +558,7 @@ it, the appliance does not support persisting it.
 
 The mechanism is **one mount unit plus one verifier assertion**, added
 deliberately — not an overlay. The image ships **eight** binds today. Read the
-units (`os/rootfs/overlay-v2/etc/systemd/system/*.mount`) rather than trusting
+units (`os/rootfs/overlay/etc/systemd/system/*.mount`) rather than trusting
 this list:
 
 | Bind unit | Source | Mountpoint | Tier |

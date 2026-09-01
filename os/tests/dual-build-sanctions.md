@@ -188,8 +188,8 @@ built from this worktree at one commit, on this host, with x64 being amd64 and
 therefore native:
 
 ```
-a. full     MOS_BOARD=x64 bash os/rootfs/build-v2.sh
-b. reduced  MOS_BOARD=x64 MOS_ROOTFS_WITHOUT=mqtt bash os/rootfs/build-v2.sh
+a. full     MOS_BOARD=x64 bash os/rootfs/build.sh
+b. reduced  MOS_BOARD=x64 MOS_ROOTFS_WITHOUT=mqtt bash os/rootfs/build.sh
 ```
 
 Each run's `_out/x64/factory-root.oci` was preserved before the next overwrote
@@ -662,7 +662,7 @@ rather than a hypothetical one:
   arm64 produces two trees this gate never saw.
 - **Kernel and module handling**, which is not merely arch-different but
   structurally different. x64 takes kernel, initramfs and modules from Debian's
-  `linux-image-amd64`, and `os/rootfs/build-v2.sh` stages an EMPTY `modules.tar`
+  `linux-image-amd64`, and `os/rootfs/build.sh` stages an EMPTY `modules.tar`
   for it precisely because there is no vendor tree; cx3576 stages a vendor
   `modules.tar` out of its BSP. The module payload path is therefore
   UNEXERCISED on x64, not exercised at another architecture.

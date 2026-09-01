@@ -7,7 +7,7 @@ mode asks for, and then checks that step actually ran.
 
     make os-verify-test                 # the whole suite
     make os-layout-lint                 # the schema lint over every shipped board
-    make os-verify-cx3576-v2            # verify an assembled image
+    make os-verify-cx3576            # verify an assembled image
     bash os/verify/run.sh --help
     bash os/verify/run.sh -t "arith"    # extra arguments go to `bun test`
     bash os/verify/run.sh --lint FILE   # the lint instead of the suite
@@ -190,7 +190,7 @@ On a host with nothing but docker:
 
     env -i PATH=/usr/bin:/bin HOME=<empty>    (no bun, no image tools)
     run.sh --verify --board x64     RESULT: PASS (290/290 checks, 22 skipped)  rc=0
-    make os-verify-cx3576-v2        RESULT: FAIL (387/395 checks, 3 skipped)   rc=1
+    make os-verify-cx3576        RESULT: FAIL (387/395 checks, 3 skipped)   rc=1
 
 cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
 not carry: `os/boards/cx3576/bsp/out/` is not populated by a clone, so eight conclusions
@@ -296,7 +296,7 @@ one named failure, no image and no container. The baseline is asserted GREEN
 first in every case.
 
 Fixtures are built from the SHIPPED inputs, not from an idea of them.
-`/etc/fstab` is rendered from `os/rootfs/overlay-v2/etc/fstab.in` with the
+`/etc/fstab` is rendered from `os/rootfs/overlay/etc/fstab.in` with the
 board's own GUIDs, because a fixture built from this package's idea of the table
 would test that idea rather than the shipped one, and an `fstab.in` that grew a
 new placeholder would go on passing. The renderer refuses a leftover
@@ -586,7 +586,7 @@ lint prints where a looser reader would say nothing.
 `--smoke` loads `_out/<board>/factory-root.oci` — the packed root the build
 exports as an OCI image — and EXECUTES every self-built artifact inside it,
 requiring exit 0 and that the version each one reports equals the version this
-repository pins. `os/rootfs/build-v2.sh` runs it as its last step under `set
+repository pins. `os/rootfs/build.sh` runs it as its last step under `set
 -e`, so a root whose binaries do not run does not become an image.
 
 It refuses rather than skipping when the image is absent.
@@ -671,7 +671,7 @@ worktree was, `unknown` when absent. Nothing in the build records a git
 provenance fact for the runner to compare it against: `factory-root.txt` carries
 ref, platform, target, archive, bytes, sha256 and source-date-epoch;
 `rootfs-stages.txt` carries per-stage content hashes; `rootfs-verity.env`
-carries verity parameters; `rootfs-report-v2.txt` is a package inventory. So the
+carries verity parameters; `rootfs-report.txt` is a package inventory. So the
 whole reported line is carried into the verdict message verbatim and nothing
 claims to have checked it:
 

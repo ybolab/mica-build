@@ -13,9 +13,9 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The scripts under test are the ones that SHIP: the overlay is copied into the
-# image verbatim by the v2 rootfs build, so testing that copy tests the file the
+# image verbatim by the mos rootfs build, so testing that copy tests the file the
 # device runs. The overlay is the only copy there is.
-HEALTH=$HERE/../rootfs/overlay-v2/usr/lib/mos
+HEALTH=$HERE/../rootfs/overlay/usr/lib/mos
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0

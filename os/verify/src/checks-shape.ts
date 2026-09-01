@@ -66,7 +66,7 @@ const SHAPE_CHECKS: readonly CheckCase[] = [
   {
     // `check 0`, and it runs ONLY under --expect-symlink -- which the
     // parity harness passes exactly when the image is the board's default path,
-    // because that is how `make os-verify-<board>-v2` invokes the oracle. An
+    // because that is how `make os-verify-<board>` invokes the oracle. An
     // image named explicitly on the command line prints no such conclusion, and
     // this check would then be `unfired` rather than wrong.
     id: 'image-default-path-symlink',
@@ -138,10 +138,10 @@ const SHAPE_CHECKS: readonly CheckCase[] = [
         return [verdict(id, false,
           `file-capability preservation not evaluated (the environment cannot observe capabilities)`)]
       }
-      const report = join(ctx.outDir, 'rootfs-report-v2.txt')
+      const report = join(ctx.outDir, 'rootfs-report.txt')
       if (!existsSync(report)) {
         return [verdict(id, false,
-          `capability inventory not found: ${report} (produce it with os/rootfs/build-v2.sh)`)]
+          `capability inventory not found: ${report} (produce it with os/rootfs/build.sh)`)]
       }
       const source = capsFromReport(readFileSync(report, 'utf8'))
       const packed = await capsFromRoot(ctx)

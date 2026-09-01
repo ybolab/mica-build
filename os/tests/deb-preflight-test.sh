@@ -447,15 +447,15 @@ else
 fi
 sed -i 's/^CRUN_VERSION=.*/CRUN_VERSION=1.29.1/' "${FIXP}/versions.env"
 
-echo "== E. the IMAGE path: os/rootfs/build-v2.sh refuses a stale engine too =="
+echo "== E. the IMAGE path: os/rootfs/build.sh refuses a stale engine too =="
 
-# The other half of the stamp: os/rootfs/build-v2.sh reuses out-<arch> and used
+# The other half of the stamp: os/rootfs/build.sh reuses out-<arch> and used
 # to check only that the seven binaries exist -- precisely the case
 # os/pkgs/podman/build.sh's comment describes. The packaging path was guarded
 # and the image path was not, which is the worse of the two to leave open,
 # because it ships.
 #
-# Driven against the REAL os/pkgs/podman/out-amd64 because build-v2.sh derives
+# Driven against the REAL os/pkgs/podman/out-amd64 because build.sh derives
 # that path from its own location and takes no override. Only VERSIONS.env is
 # touched, and it is restored by RE-DERIVING it rather than by keeping a copy:
 # the stamp is a function of versions.env, so the restore is correct even if
@@ -476,11 +476,11 @@ bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
 mkdir -p "${TMP}/nodocker"
 printf '#!/bin/sh\necho "STOPHERE: docker was invoked" >&2\nexit 97\n' >"${TMP}/nodocker/docker"
 chmod +x "${TMP}/nodocker/docker"
-build_v2() {
+build_rootfs() {
     E_RC=0
     rm -rf "${REPO_ROOT}/_out/x64/podman"
     E_OUT="$(PATH="${TMP}/nodocker:${PATH}" MOS_BOARD=x64 WITH_MOSD=0 MOS_ROOTFS_WITHOUT="rauc" \
-        timeout 300 bash "${REPO_ROOT}/os/rootfs/build-v2.sh" 2>&1)" || E_RC=$?
+        timeout 300 bash "${REPO_ROOT}/os/rootfs/build.sh" 2>&1)" || E_RC=$?
     E_STAGED=0
     for b in "${BINARIES[@]}"; do
         [ ! -f "${REPO_ROOT}/_out/x64/podman/${b}" ] || E_STAGED=$((E_STAGED + 1))
@@ -488,7 +488,7 @@ build_v2() {
 }
 
 printf 'PODMAN_VERSIONS_SHA256=%064d\n' 0 >"${PODMAN_REAL}/VERSIONS.env"
-build_v2
+build_rootfs
 if [ "${E_RC}" -ne 0 ] && [ "${E_STAGED}" -eq 0 ] &&
     says "${E_OUT}" "was built from a different os/pkgs/podman/versions.env" &&
     ! says "${E_OUT}" "STOPHERE"; then
@@ -500,7 +500,7 @@ fi
 # THE GREEN DIRECTION, which is the one that matters: without it the guard
 # could be a bare `exit 1` and E1 would still pass.
 bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
-build_v2
+build_rootfs
 if [ "${E_STAGED}" -eq "${#BINARIES[@]}" ] && says "${E_OUT}" "STOPHERE" &&
     ! says "${E_OUT}" "was built from a different os/pkgs/podman/versions.env"; then
     pass "E2 re-stamping lets the SAME directory be staged: ${E_STAGED} binaries, and the run reaches the image build"

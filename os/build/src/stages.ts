@@ -481,7 +481,7 @@ export function unusedArgs(
  *
  * The middle case is not hypothetical. pack-assert-var-disposable.sh reads
  * BOARD_RADIOS to decide whether /var/lib/bluetooth is precious state. Were
- * os/rootfs/build-v2.sh to stop supplying it, `ARG BOARD_RADIOS=""` would
+ * os/rootfs/build.sh to stop supplying it, `ARG BOARD_RADIOS=""` would
  * apply, the script would read an empty radio list WITHOUT ERROR, and the
  * disposability assertion would quietly stop requiring the bluetooth mount unit
  * on a board that has one -- a check that keeps passing by examining less. No
@@ -640,7 +640,7 @@ export interface OciExport {
 // Seconds since the epoch, and nothing else. `@1577836800` is the touch(1)
 // spelling os/boards/<board>/board.env uses for the same instant, and buildkit
 // would take it as a malformed value -- silently, because SOURCE_DATE_EPOCH is
-// read from the environment rather than parsed by a flag. os/rootfs/build-v2.sh
+// read from the environment rather than parsed by a flag. os/rootfs/build.sh
 // strips the `@` before passing it; this is what makes that a checked step
 // rather than a convention.
 const EPOCH_SECONDS = /^\d+$/

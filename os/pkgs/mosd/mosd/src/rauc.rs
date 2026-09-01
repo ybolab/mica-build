@@ -6,7 +6,7 @@
 //! recorded in the LIVE-STATE tree under `update` by the bus layer.
 //!
 //! What this module deliberately does NOT do: confirm the booted slot. The
-//! boot health gate (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) owns the
+//! boot health gate (`os/rootfs/overlay/usr/lib/mos/mos-health`) owns the
 //! PENDING_CONFIRM -> CONFIRMED edge — it probes systemd, mosd and apid and
 //! only then runs `rauc status mark-good`. An automatic mark-good here would
 //! duplicate that gate and, worse, could confirm a slot the gate would have

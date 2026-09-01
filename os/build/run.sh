@@ -41,7 +41,7 @@ usage() {
     cat <<'USAGE'
 usage: bash os/build/run.sh [--help] [bun-test-args...]
        bash os/build/run.sh --build-rootfs [driver-args...]
-       bash os/build/run.sh --mkimage-v2 [assembler-args...]
+       bash os/build/run.sh --mkimage-cx3576 [assembler-args...]
        bash os/build/run.sh --mkimage-x64 [assembler-args...]
        bash os/build/run.sh --bundle [bundle-args...]
        bash os/build/run.sh --compare-roots [comparator-args...]
@@ -52,13 +52,13 @@ example). Every step must pass; nothing here skips.
 
 With --build-rootfs FIRST, it assembles the rootfs instead of running the
 suite -- the numbered Dockerfiles in os/rootfs/compose/, in order, each FROM the
-local image tag the previous one was written to. os/rootfs/build-v2.sh calls it with
+local image tag the previous one was written to. os/rootfs/build.sh calls it with
 the build arguments it computed; try --build-rootfs --help. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
 
-With --mkimage-v2 FIRST, it assembles the cx3576 image instead. Its remaining
-arguments are the assembler's own; try --mkimage-v2 --help. The same
+With --mkimage-cx3576 FIRST, it assembles the cx3576 image instead. Its remaining
+arguments are the assembler's own; try --mkimage-cx3576 --help. The same
 first-position rule applies, for the same reason.
 
 With --mkimage-x64 FIRST, it assembles the x64 image. Same shape, same
@@ -93,7 +93,7 @@ environment:
 USAGE
 }
 
-# --build-rootfs and --mkimage-v2 are MODES, not filters, so each is recognised
+# --build-rootfs and --mkimage-cx3576 are MODES, not filters, so each is recognised
 # only in first position. os/verify/run.sh learned this from the failing side: a
 # mode flag forwarded to `bun test` is ignored by it -- an unknown option does
 # not stop the run -- and the suite then reports a green that is about something
@@ -104,12 +104,12 @@ USAGE
 # milestones (M5b, M6b, M6c, M6d and PLAN-036) and share only the preamble above
 # and run_bun below. Nothing about any of them is a version of another -- in
 # particular --mkimage-x64 is an ARM of this dispatch and not a `--board` flag
-# on --mkimage-v2, for the reason the usage text gives.
+# on --mkimage-cx3576, for the reason the usage text gives.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --build-rootfs) MODE=build-rootfs; shift ;;
---mkimage-v2) MODE=mkimage-v2; shift ;;
+--mkimage-cx3576) MODE=mkimage-cx3576; shift ;;
 --mkimage-x64) MODE=mkimage-x64; shift ;;
 --bundle) MODE=bundle; shift ;;
 --compare-roots) MODE=compare-roots; shift ;;
@@ -123,8 +123,8 @@ for arg in "$@"; do
 done
 
 for arg in "$@"; do
-    case "${arg}" in --mkimage-v2) ;; *) continue ;; esac
-    echo "error: --mkimage-v2 has to be the FIRST argument; here it came after '$1'." >&2
+    case "${arg}" in --mkimage-cx3576) ;; *) continue ;; esac
+    echo "error: --mkimage-cx3576 has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
     echo "       a green suite in answer to a request to assemble an image." >&2
     exit 1
@@ -306,7 +306,7 @@ fi
 # Mounting the plugin directory would close it, at the cost of a second host
 # binary inside the pinned image, and the pin exists so that what runs is a
 # recorded value. Left open and named, because --build-rootfs is reached from
-# os/rootfs/build-v2.sh, which needs docker on the host anyway.
+# os/rootfs/build.sh, which needs docker on the host anyway.
 if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
     echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
     echo "       The suite runs in the pinned bun container; this mode cannot, because it drives" >&2
@@ -371,7 +371,7 @@ fi
 
 # The assembler.
 # No vacuity guard here either, and for its own reason: this mode produces a
-# FILE, and src/mkimage-v2.ts reads the loader back out of it before it will
+# FILE, and src/mkimage-cx3576.ts reads the loader back out of it before it will
 # rename it into place. There is no shape of "ran and asserted nothing"
 # available -- the failure a count guards against elsewhere is a suite that
 # declared no tests, and this declares no tests at all.
@@ -381,10 +381,10 @@ fi
 # The toolbox starts sibling containers through the mounted client and socket,
 # which is exactly what the pinned bun image is given. Widening that refusal to
 # cover both modes would refuse a run that works.
-if [ "${MODE}" = mkimage-v2 ]; then
+if [ "${MODE}" = mkimage-cx3576 ]; then
     echo "os/build: assembling the cx3576 image"
     rc=0
-    run_bun run src/mkimage-v2-cli.ts "$@" || rc=$?
+    run_bun run src/mkimage-cx3576-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 

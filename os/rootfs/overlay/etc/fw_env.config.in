@@ -3,7 +3,7 @@
 #
 # RAUC integration owns this file. It is the single fw_env.config source
 # in the tree; there is deliberately no os/pkgs/rauc/fw_env.config.in to drift from
-# it. It is rendered from os/boards/cx3576/board.env by os/rootfs/build-v2.sh, and
+# it. It is rendered from os/boards/cx3576/board.env by os/rootfs/build.sh, and
 # os/pkgs/rauc/render-config.sh asserts its contract (run on every bundle build):
 # exactly two device lines, each addressing its UENV partition at offset 0 with
 # size UENV_SIZE_BYTES, and those partition starts cross-checked against the
@@ -16,9 +16,9 @@
 # The pair is addressed by partition GUID rather than by a hardcoded
 # /dev/mmcblk0 offset: the GUIDs are layout constants, the disk name is not.
 #
-# The environment addressed here exists on a v2 device — the image carries the
+# The environment addressed here exists on a mos device — the image carries the
 # uboot-mos variant, which has the redundant pair at UENV_A/B_OFFSET_BYTES, and
-# os/build/src/mkimage-v2.ts refuses to assemble a v2 image around the debug variant.
+# os/build/src/mkimage-cx3576.ts refuses to assemble a mos image around the debug variant.
 #
 # Two writers exist for this environment (RAUC slot marking and the first-boot
 # machine-id oneshot), and the dashboard's boot-credit poll will add a reader

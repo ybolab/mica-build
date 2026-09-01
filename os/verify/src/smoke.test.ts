@@ -961,7 +961,7 @@ describe('readFactoryRoot -- a missing image REFUSES rather than skipping', () =
     const empty = join(scratch(), 'no-such-out')
     mkdirSync(empty, { recursive: true })
     expect(() => readFactoryRoot('x64', empty)).toThrow(/factory-root\.txt does not exist/)
-    expect(() => readFactoryRoot('x64', empty)).toThrow(/MOS_BOARD=x64 bash os\/rootfs\/build-v2\.sh/)
+    expect(() => readFactoryRoot('x64', empty)).toThrow(/MOS_BOARD=x64 bash os\/rootfs\/build\.sh/)
     expect(() => readFactoryRoot('x64', empty)).toThrow(/a skip reports the same green as a pass/)
   })
 

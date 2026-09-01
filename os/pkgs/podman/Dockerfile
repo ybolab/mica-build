@@ -6,7 +6,7 @@
 #
 # Same shape as os/boards/cx3576/bsp/kernel/Dockerfile: builder stages, then a final
 # scratch stage that `-o` exports. Nothing here installs into a rootfs;
-# os/rootfs/build-v2.sh stages the output as it stages modules.tar and mosd.
+# os/rootfs/build.sh stages the output as it stages modules.tar and mosd.
 
 # The engine is built here for version control, not size: trixie ships podman
 # 5.4.2, crun 1.21 and netavark 1.14, and building makes the version a
@@ -313,7 +313,7 @@ COPY --from=src /src/podman /src/podman
 # measured on trixie -- into the image for container-image signature
 # verification this appliance does not do. exclude_graphdriver_btrfs and
 # exclude_graphdriver_devicemapper: the storage driver is overlay
-# (os/rootfs/overlay-v2/etc/containers/storage.conf), devicemapper is
+# (os/rootfs/overlay/etc/containers/storage.conf), devicemapper is
 # deprecated upstream, and both keep libbtrfs and libdevmapper out of the link.
 
 # Kept: seccomp, because on a root-mode engine the seccomp profile is the main

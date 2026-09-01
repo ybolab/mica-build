@@ -4,7 +4,7 @@ Builds a minimal Debian trixie + systemd root filesystem for the cx3576 board
 as a squashfs + dm-verity slot image, ready to be written into an A/B rootfs
 slot by the assembly step.
 
-The sections up to "Layout v2" below describe the parts of the build that are
+The sections up to "The A/B layout" below describe the parts of the build that are
 not specific to the packed layout: the package set, the config directories, the
 image profile, mosd and the board hardware-init layer.
 
@@ -74,7 +74,7 @@ reconciler rendering into a read-only path fails on device and nowhere else.
 
 ## Image profile (`/usr/lib/mos/profile.conf`)
 
-`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build-v2.sh`
+`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build.sh`
 builds the production image from the same tree. The build rejects anything that
 is not exactly `dev` or `prod` in lowercase.
 
@@ -159,10 +159,10 @@ hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
 ---
 
-# Layout v2 — squashfs + dm-verity rootfs
+# The A/B layout — squashfs + dm-verity rootfs
 
-`build-v2.sh` / `compose/` / `packages/` / `packages-src/` / `scripts/` /
-`overlay-v2/` are the build. The design record is `docs/design/ro-root.md` —
+`build.sh` / `compose/` / `packages/` / `packages-src/` / `scripts/` /
+`overlay/` are the build. The design record is `docs/design/ro-root.md` —
 read it before changing anything here.
 
 ## The build is a composition: `compose/`
@@ -176,7 +176,7 @@ local image tag the first was written to:
 - **`90-pack.Dockerfile`** — the finalizer: close the root, tree surgery,
   whole-tree assertions, squashfs, dm-verity, and the two export surfaces.
 
-`build-v2.sh` stages the context and computes every argument; sequencing is
+`build.sh` stages the context and computes every argument; sequencing is
 `os/build/run.sh --build-rootfs`, pointed here with `--stages-dir`.
 
 **What used to be a stage is a package now.** The floor, the read-only-root
@@ -189,7 +189,7 @@ by construction — so there is nothing here for a stage boundary to sit between
 and this directory holds two files rather than nine.
 
 **Declining a feature is naming fewer packages.** `MOS_ROOTFS_WITHOUT`, into
-which `build-v2.sh` folds the historical `WITH_CONTAINERS=0` and `WITH_MOSD=0`,
+which `build.sh` folds the historical `WITH_CONTAINERS=0` and `WITH_MOSD=0`,
 reaches the image through `packages/resolve.sh`, which refuses a feature name
 that matches nothing rather than silently resolving the full set. The durable
 record of what an image is made of is `_out/<board>/rootfs-packages.txt`, one
@@ -232,15 +232,15 @@ refactor it claims to be.
 make os-debs
 # needs os/boards/cx3576/bsp/out/kernel/modules.tar (make -C os/boards/cx3576/bsp kernel),
 # or point BOARD_DIR at prebuilt BSP artifacts:
-BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-rootfs-cx3576-v2   # rootfs only
-BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-image-cx3576-v2    # rootfs + full v2 image
+BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-rootfs-cx3576   # rootfs only
+BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-image-cx3576    # rootfs + full mos image
 ```
 
 `make os-debs` runs the BSP-consuming producer too, so `BOARD_DIR` matters there
 as well; `make os-deb-preflight` names every missing producer input at once,
 before the first container starts.
 
-Host binfmt is **not** required for a cross build. `build-v2.sh` selects the
+Host binfmt is **not** required for a cross build. `build.sh` selects the
 `default` (docker-driver) builder when it can reach the target platform and the
 `mos-<arch>` docker-container builder when it cannot, the way the RAUC and
 podman builds do. On the container builder the link between the two files is an
@@ -250,8 +250,8 @@ tag that is present it answers `pull access denied, repository does not exist`,
 about a registry. `docs/design/build.md` §4.1 records both modes.
 
 Outputs to `_out/<board>/`. The first four are consumed by the image assembler
--- `os/build/src/mkimage-v2.ts` and `mkimage-x64.ts`, entered through
-`bash os/build/run.sh --mkimage-v2|--mkimage-x64`. The last three are **not**:
+-- `os/build/src/mkimage-cx3576.ts` and `mkimage-x64.ts`, entered through
+`bash os/build/run.sh --mkimage-cx3576|--mkimage-x64`. The last three are **not**:
 they are read by the smoke runner, and nothing copies any of them into the
 image.
 
@@ -260,7 +260,7 @@ image.
 | `rootfs-verity.img` | assembler | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
 | `rootfs-verity.env` | assembler | verity parameters as strict `KEY=value` |
 | `boot-cmdline-a.txt` / `-b.txt` | assembler | the full kernel `append` line for each slot |
-| `rootfs-report-v2.txt` | a reader | package list, installed size, setuid/setgid inventory, file capabilities |
+| `rootfs-report.txt` | a reader | package list, installed size, setuid/setgid inventory, file capabilities |
 | `factory-root.oci` | smoke runner | the packed root as an OCI-layout archive; `docker load -i` it |
 | `factory-root.txt` | smoke runner | what that archive is: `ref`, `platform`, `target`, `archive`, `bytes`, `sha256`, `source-date-epoch`, TAB-separated |
 | `rootfs-stages.txt` | smoke runner | the Dockerfiles as built, in order, each with its content hash. It records which FILES ran, not what the image is made of |
@@ -271,7 +271,7 @@ image.
 
 `os/pkgs/mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
 `target`, `elf-arch` and `commit`, TAB-separated, the same shape
-`factory-root.txt` uses so one reader reads both -- and `build-v2.sh` copies it
+`factory-root.txt` uses so one reader reads both -- and `build.sh` copies it
 into `_out/<board>/` beside the factory root. **It is not copied into the
 image.**
 
@@ -281,7 +281,7 @@ describes *whatever was compiled most recently*: build cx3576 and then x64 and
 holds x86-64 binaries. The per-board copy is what keeps the smoke runner
 comparing an image against the build that produced it.
 
-`build-v2.sh` **removes** it when `mosd` is declined, for the same reason it
+`build.sh` **removes** it when `mosd` is declined, for the same reason it
 empties the staged `mosd/` directory: a record left by a previous build would
 describe binaries this image does not carry, and the smoke runner would then
 assert a commit against an artifact that is not there. Absent is a state it
@@ -289,17 +289,17 @@ already handles -- it prints that nothing was asserted, and says so on its own
 first lines -- and stale is one nothing could catch.
 
 Every layout constant is read from `os/boards/cx3576/board.env`; none is duplicated
-in `build-v2.sh`, `compose/` or the overlay. The board console/storage
+in `build.sh`, `compose/` or the overlay. The board console/storage
 cmdline fragment (`console=ttyFIQ0,… earlycon=… net.ifnames=0`) is a board fact
-too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build-v2.sh` when
-x64 became the second board to need a v2 image.
+too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build.sh` when
+x64 became the second board to need a mos image.
 
 ### The cmdline files are a contract
 
 The assembler does not re-derive the verity table: it lifts the
 `dm-mod.create="..."` and `dm-mod.waitfor=` fragments straight out of these two
 files with `sed` and writes them into each boot slot's `mos-verity.env`, next to
-the shared `boot.scr`. (The v2 slots carry no `extlinux.conf` — U-Boot tries
+the shared `boot.scr`. (The mos slots carry no `extlinux.conf` — U-Boot tries
 extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
 
 - `dm-mod.waitfor=PARTUUID=<that slot's rootfs GUID>` is **required**, and the
@@ -332,9 +332,9 @@ deterministic: it comes from a pinned base image and a pinned package set.
 Step 2 of the pack diffs the packed image's setuid/setgid inventory against the
 source tree's and **fails the build** on any difference, so re-adding the flag
 is a build error rather than a review finding. The verified inventory is in
-`rootfs-report-v2.txt`.
+`rootfs-report.txt`.
 
-## v2 package allowlist
+## Package allowlist
 
 The base list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
 iproute2 bluez rfkill wpasupplicant hostapd — the two connd packages, their
@@ -354,7 +354,7 @@ above and apply identically here) **plus**:
   slot good, and every update rolls back. 47 KB.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot.
-- **`curl`** — the health gate's apid probe (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) fetches
+- **`curl`** — the health gate's apid probe (`os/rootfs/overlay/usr/lib/mos/mos-health`) fetches
   `https://127.0.0.1/healthz`. It prefers `curl`, falls back to `wget`, and
   SKIPs when neither is present. `rauc` links libcurl but does not ship the
   binary, so without this package the gate covers two of its three components
@@ -371,11 +371,11 @@ rauc-service, libubootenv-tool and curl plus their dependencies account for the
 13 MB; the budget is unchanged. `rauc-service` is 47 KB by dpkg Installed-Size,
 which is below the megabyte rounding of `TOTAL_MB` — it did not move the number. curl's own chain is about 1 MB of that (`curl` 537 KB,
 `libcurl4` 860 KB, `libssh2-1` 345 KB, `libnghttp2-14` 228 KB, `libpsl5` 152 KB,
-`librtmp1` 142 KB, per `rootfs-report-v2.txt`).
+`librtmp1` 142 KB, per `rootfs-report.txt`).
 
-## Read-only root wiring (`overlay-v2/`)
+## Read-only root wiring (`overlay/`)
 
-Staged into the build context by `build-v2.sh`, with `*.in` templates rendered
+Staged into the build context by `build.sh`, with `*.in` templates rendered
 from the layout env so the shipped image carries no placeholder:
 
 | Path | Purpose |
@@ -441,16 +441,16 @@ it installs whichever `mos-board-<board>` the resolution selected.
 
 ## RAUC system.conf is rendered, not committed
 
-`os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
+`os/rootfs/overlay/etc/rauc/system.conf` is **generated** by
 `os/pkgs/rauc/render-config.sh`, which owns the template and its assertions,
-and is gitignored. `build-v2.sh` runs the renderer before
+and is gitignored. `build.sh` runs the renderer before
 staging the overlay, so the template plus `os/boards/cx3576/board.env` are the
 single source of truth and the rendered file cannot drift from them.
 
 The bundle builder, `os/build/src/bundle.ts`, runs `render-config.sh --check`.
 It guards a narrower case — someone hand-editing the generated file after the
 last build — rather than committed-copy drift, which the renderer rules out. It
-consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first and
+consumes `rootfs-verity.img` too, so `build.sh` has necessarily run first and
 the file is present.
 
 ## systemd-repart is a package of its own on trixie
@@ -481,7 +481,7 @@ The rule is: **identity, credentials, pairings and update state never live on
 `/var`**. Full audit in `docs/design/ro-root.md` §4.
 
 The DATA constants (`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID`,
-`MOS_VAR_MIB`) are **required**: `build-v2.sh` fails if any is missing from
+`MOS_VAR_MIB`) are **required**: `build.sh` fails if any is missing from
 `os/boards/cx3576/board.env`. There is deliberately no fallback. A build that
 quietly emitted the superseded nine-partition arrangement — `/var` growing, no
 `/srv` — would pass every downstream check, which is precisely the class of
@@ -493,15 +493,15 @@ The pack stage runs a CJK check over the mos-owned paths — the overlay's mount
 units, seed scripts, `repart.d` definitions, `fstab` and `fw_env.config`.
 Vendor packages ship translations and are deliberately not scanned.
 
-## Dev root access on v2
+## Dev root access on mos
 
-There is **no baked root credential on v2, ever** — not for the dev profile
-either. A v2 rootfs is byte-identical on every device that flashes it, so any
+There is **no baked root credential on mos, ever** — not for the dev profile
+either. A mos rootfs is byte-identical on every device that flashes it, so any
 usable hash in the image is a fleet-wide shared secret; the pack stage asserts
 the factory shadow carries only locked markers and **fails the build**
-otherwise, which is why `build-v2.sh` has no `ROOT_PASSWORD` plumbing at all.
+otherwise, which is why `build.sh` has no `ROOT_PASSWORD` plumbing at all.
 
-What a developer actually gets on v2:
+What a developer actually gets on mos:
 
 - **A transient root password**, set at runtime through mosd
   (`SetTransientRootPassword`, driven from apid's admin UI). It lands in the
@@ -515,7 +515,7 @@ What a developer actually gets on v2:
 
 ## Determinism, and what it took to get there
 
-Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
+Two cache-hot `make os-rootfs-cx3576` runs produce a byte-identical
 `rootfs-verity.img`. sshd host keys are **not** baked into the image — they
 would be a private key shared by every device and would change the verity root
 hash on every cold build; `mos-seed-state` generates them per device on first
@@ -535,7 +535,7 @@ tolerated, because a floating root is a floating dm-verity root hash, and
 
 | Surface | What it carried | What was done |
 |---|---|---|
-| `/boot/initrd.img-*` | build-host inode numbers on 182 of 183 cpio entries, and the wall clock in 71 mtimes | `compose/10-compose` declares `SOURCE_DATE_EPOCH`; `build-v2.sh` passes the same instant it pins the squashfs to. `initramfs-tools` then clamps every staged mtime to the epoch, passes `cpio --reproducible` so entry inodes are renumbered from 1, and compresses with `gzip -n`. The declaration has to be in that file rather than in a script's arguments: `update-initramfs` reads the variable from the ENVIRONMENT, and here it is the kernel package's own postinst that runs it |
+| `/boot/initrd.img-*` | build-host inode numbers on 182 of 183 cpio entries, and the wall clock in 71 mtimes | `compose/10-compose` declares `SOURCE_DATE_EPOCH`; `build.sh` passes the same instant it pins the squashfs to. `initramfs-tools` then clamps every staged mtime to the epoch, passes `cpio --reproducible` so entry inodes are renumbered from 1, and compresses with `gzip -n`. The declaration has to be in that file rather than in a script's arguments: `update-initramfs` reads the variable from the ENVIRONMENT, and here it is the kernel package's own postinst that runs it |
 | `/usr/share/factory/var/cache/ldconfig/aux-cache` | glibc's `{dev, ino, ctime, size}` for every shared library, as the BUILD host saw them | dropped in `pack-tree-surgery.sh`. A regenerable cache, already wrong for the device the moment it ships, and `ldconfig` rebuilds it anyway |
 | `/usr/share/factory/etc/shadow` and `/etc/shadow-` | the shadow last-change DAY for the accounts Debian's postinsts create: `systemd-network`, `messagebus`, `systemd-resolve`, `sshd` | `account-pin-shadow-dates.sh`, in `compose/90-pack`'s `closed` stage, pins every account to day 18262 — the same `2020-01-01` the three mos accounts already carried. On the composed path `useradd` writes that day itself, because the whole apt transaction runs under `SOURCE_DATE_EPOCH`; the pin is what makes the field a function of the tree either way |
 
@@ -584,7 +584,7 @@ sweeping by it afterwards is the only way to see a removal that failed.
 
 Both sides cold, one board, both cut with `git worktree add --detach`, both on
 the `default` buildx builder, and each driven through its own tree's
-`os/rootfs/build-v2.sh` rather than a re-typed argument list — a transcribed
+`os/rootfs/build.sh` rather than a re-typed argument list — a transcribed
 argument set is a second variable between two sides whose whole claim is that
 there is one.
 

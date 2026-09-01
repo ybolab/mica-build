@@ -9,7 +9,7 @@ make os-apid-api-test
 bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run
 ```
 
-The harness builds nothing. `_out/x64/x64-mos-v2-latest.img` is an input; a
+The harness builds nothing. `_out/x64/x64-mos-latest.img` is an input; a
 missing image is refused with the commands that produce it.
 
 ## Network path

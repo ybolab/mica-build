@@ -10,7 +10,7 @@ design this implements), `os/boards/cx3576/board.env` (every layout constant),
 
 ## 1. What the rootfs image is
 
-`os/rootfs/build-v2.sh` produces a single raw file, `_out/cx3576/rootfs-verity.img`:
+`os/rootfs/build.sh` produces a single raw file, `_out/cx3576/rootfs-verity.img`:
 
 ```
 +---------------------------+ 0
@@ -25,7 +25,7 @@ design this implements), `os/boards/cx3576/board.env` (every layout constant),
 The hash tree lives in the same file as the data it covers, at
 `--hash-offset=SQUASHFS_BYTES`. One file means one artifact to sign, one raw
 `dd` into a slot, and one RAUC image per slot. The trailing pad exists because
-`os/build/src/mkimage-v2.ts` writes the file into the slot at a MiB boundary.
+`os/build/src/mkimage-cx3576.ts` writes the file into the slot at a MiB boundary.
 
 The pack formats with `veritysetup --no-superblock`, which is what makes
 `SQUASHFS_BYTES == hash offset == VERITY_HASH_START_BLOCK * 4096` the address of
@@ -81,9 +81,9 @@ Remaining deviation: the byte layout still depends on the `squashfs-tools` and
 `cryptsetup` versions in the pack stage, both of which come from
 `debian:bookworm-slim` at build time. Pinning the base image digest is the
 follow-up that would close this; it is the same class of deviation
-`os/build/src/mkimage-v2.ts` already documents for mtools.
+`os/build/src/mkimage-cx3576.ts` already documents for mtools.
 
-Verified: two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
+Verified: two cache-hot `make os-rootfs-cx3576` runs produce a byte-identical
 `rootfs-verity.img` and the same `VERITY_ROOT_HASH`.
 
 ## 2. Decision: cmdline-only `dm-mod.create=`, no initramfs
@@ -153,11 +153,11 @@ investigations agree on every point.
 
 ### The generated cmdline
 
-`build-v2.sh` writes one line per slot into `boot-cmdline-a.txt` /
+`build.sh` writes one line per slot into `boot-cmdline-a.txt` /
 `boot-cmdline-b.txt`. The boot slots deliberately carry **no**
 `extlinux/extlinux.conf`: the boot-framework investigation found that both U-Boot boot frameworks try
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
-bypass the whole RAUC A/B handshake. `os/build/src/mkimage-v2.ts` instead compiles
+bypass the whole RAUC A/B handshake. `os/build/src/mkimage-cx3576.ts` instead compiles
 `os/boards/cx3576/boot.cmd` into a `boot.scr` shared by both slots and derives a
 per-slot `mos-verity-<slot>.env` by extracting the `dm-mod.create="..."` and
 `dm-mod.waitfor=` fragments out of these files with `sed`. The filename carries
@@ -189,7 +189,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   `docs/design/uboot-ab-handshake.md` §7.3 originally said `mos`; this
   generator is the authority and that section has been reconciled.
 - `dm-mod.waitfor=` is **mandatory**, not an optimisation, and
-  `os/build/src/mkimage-v2.ts` rejects a cmdline file that lacks it. `dm_init_init()`
+  `os/build/src/mkimage-cx3576.ts` rejects a cmdline file that lacks it. `dm_init_init()`
   runs at `late_initcall` and the `wait_for_device_probe()` it already calls
   does **not** cover eMMC card discovery, which happens on a delayed
   workqueue. Without the wait, the verity table is built before the partitions
@@ -201,7 +201,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   same one udev gives `/dev/disk/by-partuuid/` (libblkid formats GUIDs
   lowercase). The kernel compares with `strncasecmp` and accepts either, so one
   canonical lowercase spelling everywhere is the least surprising choice.
-  `os/build/src/mkimage-v2.ts` cross-checks each slot's table against `ROOTFS_A_GUID` /
+  `os/build/src/mkimage-cx3576.ts` cross-checks each slot's table against `ROOTFS_A_GUID` /
   `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
   case-insensitively, so the two spellings coexist by design.
 - The console/earlycon/storagemedia/net.ifnames arguments are board facts and
@@ -221,10 +221,10 @@ rebuild running on the L1 side. Squashfs xattr support is therefore assumed
 present and no workaround for dropped file capabilities is implemented.
 
 The pack stage records the actual privilege inventory in
-`rootfs-report-v2.txt` rather than assuming it, so a regression is visible:
+`rootfs-report.txt` rather than assuming it, so a regression is visible:
 
 - **File capabilities: none.** `getcap -r` over the packed tree returns an
-  empty set. The v2 package allowlist contains no capability-carrying binary
+  empty set. The package allowlist contains no capability-carrying binary
   (notably `iputils-ping`, the usual one, is not installed), so whether xattrs
   survive the buildkit layer export is currently moot for this image. It stops
   being moot the moment a package with capabilities is added — the report
@@ -253,12 +253,12 @@ The pack stage records the actual privilege inventory in
   Numeric uid/gid on both sides, because the tree is arm64 Debian while the
   pack stage runs on the build platform, whose `/etc/passwd` cannot resolve ids
   like `_ssh` or `messagebus`. The verified inventory is appended to
-  `rootfs-report-v2.txt`. Verified negatively as well as positively: re-adding
+  `rootfs-report.txt`. Verified negatively as well as positively: re-adding
   `-all-root` fails the build with the expected diff.
 
 ## 4. Where writes go
 
-`/` is a verity-protected squashfs and can never be written. The layout v2 data
+`/` is a verity-protected squashfs and can never be written. The layout's data
 partitions absorb everything:
 
 | Path | Backing | Options |
@@ -346,9 +346,9 @@ that fails at boot), that the bind is enabled and STATE-backed, and — negative
 **This is a correction.** Earlier revisions listed `/etc/shadow` among the
 read-only paths on the verity squashfs. That is no longer
 true, and the change is load-bearing: **per-device password authentication works
-on v2 ONLY because of it.**
+on mos ONLY because of it.**
 
-`pam_unix` will read exactly one file for a password, and on v2 that path sat
+`pam_unix` will read exactly one file for a password, and on mos that path sat
 inside the dm-verity squashfs — so sshd password auth could not work and mosd
 could not apply a per-device password at all.
 
@@ -401,7 +401,7 @@ to a locked marker and the marker file is deleted**, so the password vanishes;
 credential the reconciler did not write — a hash set by hand on STATE, or by
 any tool other than mosd, never matches a marker and therefore survives. That
 distinction is the whole reason a marker exists instead of "lock root on every
-boot". (the signing fix removed the v2 `ROOT_PASSWORD` build argument this paragraph
+boot". (the signing fix removed the `ROOT_PASSWORD` build argument this paragraph
 used as its example: the pack-stage assertion had always rejected the hash it
 would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `os/pkgs/mosd/mosd/src/transient.rs`.
 
@@ -504,7 +504,7 @@ extended to cover it. `/var` may hold only what the device can lose at any
 moment without a user noticing.
 
 The growth target has now moved twice, and the reasoning is worth keeping.
-v1 grew the root. Early v2 grew EPHEMERAL, on the assumption that `/var` was
+The legacy layout grew the root. An early revision of this layout grew EPHEMERAL, on the assumption that `/var` was
 the filesystem that needed the disk. Neither is right: the root is a
 fixed-size verity image in a frozen A/B slot and must never be resized, and
 `/var` is disposable — spending 100 GB of eMMC on log space would be an odd
@@ -515,7 +515,7 @@ holds what is worth the whole disk, so it is the partition that grows and
 Capping `/var` creates a fill-up mode that did not exist while it grew, which
 is what §4's "Fill-up containment" below is for.
 
-**The DATA constants are required, and the build proves it.** `build-v2.sh`
+**The DATA constants are required, and the build proves it.** `build.sh`
 fails if `DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` or `MOS_VAR_MIB` is absent
 from `os/boards/cx3576/board.env`, naming the file and the missing keys. All
 four are demanded even though only `DATA_GUID` is read here, because a
@@ -547,8 +547,8 @@ lowercase is used there too for consistency.)
 `fstrim.timer` is enabled — the writable filesystems are on eMMC and nothing
 else issues discards.
 
-`Storage=volatile` for journald is carried over from v1. `/var` is writable
-under v2, so a persistent journal is now possible; enabling it is a separate
+`Storage=volatile` for journald is carried over from the legacy rootfs. `/var` is writable
+under the current layout, so a persistent journal is now possible; enabling it is a separate
 decision about flash wear and retention and is left to a follow-up.
 
 ### Nothing precious on /var — audited, and asserted at build time
@@ -614,9 +614,9 @@ fail `mark-good`: a log flood must never trigger an update rollback.
 
 ### First-boot growth moved to DATA
 
-v1 grew the root partition with `/etc/repart.d/50-rootfs.conf`. Under v2 the
+The legacy rootfs grew the root partition with `/etc/repart.d/50-rootfs.conf`. Under the current layout the
 root is a fixed-size verity image inside a frozen A/B slot and must never be
-resized, so that definition is gone from the v2 rootfs and DATA grows instead.
+resized, so that definition is gone from the mos rootfs and DATA grows instead.
 Filesystem growth is `x-systemd.growfs` on the `/srv` fstab entry; repart only
 moves the partition boundary and relocates the backup GPT, which is why the
 assembled image reserves only a 1 MiB tail.
@@ -624,7 +624,7 @@ assembled image reserves only a 1 MiB tail.
 There is a trap here worth recording. systemd-repart pairs definition files
 with existing partitions **by partition type UUID, in order**: the Nth
 definition of a type matches the Nth on-disk partition of that type
-(`man 5 repart.d`). Eight of the ten v2 partitions carry the `linux-generic`
+(`man 5 repart.d`). Eight of the ten partitions carry the `linux-generic`
 type — uenv-a, uenv-b, rootfs-a, rootfs-b, meta, state, ephemeral, data — so a
 lone "grow the last one" file would have silently attached itself to
 **uenv-a**. `/etc/repart.d/` therefore holds all eight definitions in disk
@@ -751,11 +751,11 @@ That is the only form systemd accepts for `systemd.machine_id=` and for
 `/etc/machine-id`; a dashed UUID is rejected.
 
 **Status — steps 1 and 2 are live; step 3 is what remains.** The U-Boot half has
-landed: `uboot-mos` is on main, a v2 image carries it (and `os/build/src/mkimage-v2.ts`
-refuses to assemble a v2 image around the debug variant), and
+landed: `uboot-mos` is on main, a mos image carries it (and `os/build/src/mkimage-cx3576.ts`
+refuses to assemble a mos image around the debug variant), and
 `os/boards/cx3576/boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
 that environment variable is set. The redundant environment this design depends
-on genuinely exists on a v2 device, which is also why `/etc/fw_env.config`
+on genuinely exists on a mos device, which is also why `/etc/fw_env.config`
 addresses something real rather than something planned.
 
 What is still pending is the oneshot that *populates* `machine_id`, which is
@@ -798,19 +798,19 @@ The oneshot itself is **the machine-id oneshot's** deliverable and the U-Boot si
 
 ## 6. Runtime writers to `/etc` — audit
 
-Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
+Every `/etc` write path in the legacy rootfs, and what happens to it in the current image:
 
 | Writer | Status |
 |---|---|
 | sshd host key generation | **Redirected.** Keys are not baked; `mos-seed-state` generates them into `/mnt/state/ssh`, bound over `/etc/ssh`. |
-| `/etc/resolv.conf` | **Already fine.** v1 makes it a symlink to `../run/systemd/resolve/stub-resolv.conf`; the target is on tmpfs and stays writable. Carried into v2 unchanged. |
+| `/etc/resolv.conf` | **Already fine.** The legacy rootfs made it a symlink to `../run/systemd/resolve/stub-resolv.conf`; the target is on tmpfs and stays writable. Carried over unchanged. |
 | networkd unit rendering by mosd | **Solved as this row predicted.** M5's WiFi reconcilers render into `/run/systemd/network`, which networkd reads at higher precedence than `/etc`, exactly as required here. The static `/etc/systemd/network/80-dhcp.network` is still baked at build time and is still never written. See `docs/design/connd.md` §6 for the naming constraint that goes with it. |
 | `/etc/shadow` | **Redirected to STATE** (M5). Symlink → `/var/lib/mos/shadow`, seeded from `/usr/share/factory/etc/shadow` and reconciled on every boot. See §4. This is the one row in this table that changed from read-only to writable. |
 | `/etc/ssh/sshd_config.d/10-mos.conf` | **Writable.** Rendered by mosd's sshd reconciler into the existing `/etc/ssh` STATE bind. No new mount was needed. |
 | `/etc/wpa_supplicant`, `/etc/hostapd` | **Writable** (M5). New STATE binds, mode 0700; mosd's WiFi reconcilers render 0600 config files into them. The paths are contracts with Debian's `wpa_supplicant@.service` / `hostapd@.service` templates, not preferences. |
 | hostname persistence | **Solved**, and it had a live consumer — see below. `/etc/hostname` is bound from `/mnt/state/hostname` and re-applied by `mos-apply-hostname.service`. |
 | `/etc/machine-id` | **Solved via the U-Boot env** (§5). The U-Boot half is live; transient per boot until later's oneshot populates the `machine_id` variable. |
-| `/etc/mos/otg-mode` (hwinit-otg override) | **Read-only in v2.** The documented per-device USB OTG role override cannot be created on the device. Defaults from `otg.conf` are unaffected — see below. |
+| `/etc/mos/otg-mode` (hwinit-otg override) | **Read-only now.** The documented per-device USB OTG role override cannot be created on the device. Defaults from `otg.conf` are unaffected — see below. |
 | `/etc/adjtime` (hwclock) | Not written: no RTC sync unit is enabled. |
 | `/etc/mtab` | Symlink to `/proc/self/mounts` in Debian; never written. |
 | `/etc/.updated`, `/etc/.pwd.lock` | systemd/shadow best-effort writes; they fail silently on EROFS and nothing depends on them. **`.pwd.lock` stays read-only even though `/etc/shadow` no longer is** — both writers of the shadow file use temp+rename, which needs no lock file. See §4. |
@@ -827,7 +827,7 @@ through `ip link` — none of them to the root filesystem.
 
 One consequence is worth recording, because it is a silent capability loss
 rather than an error. `hwinit-otg` supports a per-device override at
-`/etc/mos/otg-mode` (`[ -r /etc/mos/otg-mode ] && mode=$(head -n1 ...)`). On v2
+`/etc/mos/otg-mode` (`[ -r /etc/mos/otg-mode ] && mode=$(head -n1 ...)`). On mos
 that path is inside the verity-protected squashfs, so an operator cannot create
 it on the device: the override is effectively unavailable and the board always
 takes the `mode=` from `otg.conf`. Nothing regresses for the default
@@ -835,7 +835,7 @@ configuration, and no code needs changing for it today. When the override is
 actually wanted, the fix is the same shape as everything else here — read it
 from `/mnt/state` (persistent) or `/run` (per-boot) with the `/etc/mos` path
 kept as a fallback. That is a change to `os/boards/cx3576/hwinit/`. It was held
-back while that directory was shared with the v1 chain and a v2-side change
+back while that directory was shared with the legacy chain and an image-side change
 would have been unilateral; the v1 removal deleted v1 and moved the directory under
 the board, so what holds it back now is only that nothing needs the override
 yet.
@@ -848,7 +848,7 @@ reconciler that calls `SetStaticHostname` on `org.freedesktop.hostname1`, and
 `systemd-hostnamed` implements that by writing `/etc/hostname`. It is reachable
 from the M3 first-run wizard, so on a read-only `/etc` "set the hostname in the
 web UI" would have failed with EROFS — a user-visible functional regression in
-v2, not a gap waiting for a future consumer.
+the RO-root image, not a gap waiting for a future consumer.
 
 It is fixed with the mechanism already built for `/etc/ssh` rather than a new
 one: seed `/mnt/state/hostname` on first boot, bind it over `/etc/hostname`,
@@ -870,5 +870,5 @@ change. Nothing depends on it — systemd's `nss-myhostname`, which is in
 - The machine-id oneshot.
 - The U-Boot side: `ENV_OFFSET` pinning, `BOOT_ORDER` handshake, appending
   `systemd.machine_id=` (the boot-framework investigation — since landed).
-- v2 image contract verification.
+- mos image contract verification.
 - Any initramfs. Per §2, M4 ships none.

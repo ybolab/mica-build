@@ -28,7 +28,7 @@ use anyhow::{Context, Result, anyhow};
 /// Restated rather than shared with the sshd reconciler: that module is private
 /// to `reconciler`, and this constant is read from `main` to configure the bus
 /// service. The two must name the same file, which they do by construction —
-/// `/etc/shadow` is a symlink onto STATE on the v2 image.
+/// `/etc/shadow` is a symlink onto STATE on the mos image.
 pub const DEFAULT_SHADOW: &str = "/etc/shadow";
 /// Environment variable overriding [`DEFAULT_SHADOW`]. The same variable the
 /// sshd reconciler honours, so one override redirects both and a test can point
@@ -81,7 +81,7 @@ pub fn production_shadow_path() -> PathBuf {
 ///
 /// The symlink is resolved first, and that is why this is not one line.
 /// `Path::with_file_name` is lexical: it rewrites the last component of the
-/// string and resolves nothing. On the v2 image `/etc/shadow` is a symlink onto
+/// string and resolves nothing. On the mos image `/etc/shadow` is a symlink onto
 /// STATE, so writing the shadow file follows the link and succeeds while a
 /// marker placed "beside" it lexically lands in the literal `/etc/`, a
 /// dm-verity squashfs. The write then fails with `Read-only file system (os
@@ -318,7 +318,7 @@ mod tests {
     /// The case production passes, and the one the three above miss.
     ///
     /// Every path in the test above is already resolved. The only path mosd
-    /// ever hands this function on a device is `/etc/shadow`, which on the v2
+    /// ever hands this function on a device is `/etc/shadow`, which on the mos
     /// image is a SYMLINK onto STATE -- and `Path::with_file_name` is lexical,
     /// so a marker resolved lexically lands in the literal `/etc/`, a
     /// read-only dm-verity squashfs: mosd fails with `os error 30`, apid

@@ -4,7 +4,7 @@
 //! reconcilers drive `wpa_supplicant@…` and `hostapd` through the same trait.
 //!
 //! Enablement is runtime-scoped. `EnableUnitFiles` with `runtime = false`
-//! writes symlinks under `/etc/systemd/system`, which the v2 read-only root
+//! writes symlinks under `/etc/systemd/system`, which the mos read-only root
 //! does not offer: `/etc` lives on the dm-verity squashfs and only
 //! `/etc/ssh/sshd_config.d` is bind-mounted writable from STATE. Runtime scope
 //! writes to `/run/systemd/system`, which always works, and mosd reconciles the

@@ -45,7 +45,7 @@ ART_DIR="${OUT_DIR}/apid-api"
 # assignment under `set -e`, as a bare exit 1 with no output. Refuse with a
 # sentence instead; the image check further down never gets a chance to.
 if ! RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"; then
-    echo "FAIL: ${OUT_DIR} does not exist, so there is no image to boot; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64" >&2
+    echo "FAIL: ${OUT_DIR} does not exist, so there is no image to boot; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build.sh && bash os/build/run.sh --mkimage-x64" >&2
     exit 1
 fi
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
@@ -317,7 +317,7 @@ finish() {
 note "repository ${REPO_ROOT}"
 
 if [ ! -e "${IMG}" ]; then
-    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
+    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build.sh && bash os/build/run.sh --mkimage-x64"
     finish
 fi
 pass "image present: ${IMG##*/} -> $(basename "$(readlink -f "${IMG}")")"
@@ -765,7 +765,7 @@ run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 MERGED="${ART_DIR}/result.json"
 # The image identity goes in the envelope, because a result file that does not
 # say which artefact it covered is a result file that cannot be trusted a week
-# later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
+# later. `x64-mos-latest.img` is a symlink and its target changes under it
 # every time somebody builds; the resolved name and the mtime are what pin a run
 # to a surface. When a route check fails, this identity says whether the image
 # moved under the source tree or the contract did.

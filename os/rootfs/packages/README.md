@@ -33,7 +33,7 @@ The features are the `feature-*.pkgs` basenames plus **`radios`**, which has no
 manifest of its own: the radio packages are per-radio and `--radios` selects
 them, so `radios` is the switch deciding whether that family is consulted at
 all. It is the same thing `MOS_ROOTFS_WITHOUT=radios` means to
-`os/rootfs/build-v2.sh`, which drops the radio packages whatever the board
+`os/rootfs/build.sh`, which drops the radio packages whatever the board
 declares.
 
 `radio-wifi.pkgs` names both `mos-wifi` and `mos-wifi-ap` because the single
@@ -56,7 +56,7 @@ of two resolutions is a diff of the images.
 **Every input is an argument and none is re-derived.** `resolve.sh` does not
 read `os/boards/<board>/board.env`, `os/boards/<board>/bsp/containers.env`, or
 `WITH_MOSD` / `WITH_CONTAINERS` / `MOS_ROOTFS_WITHOUT` / `MOS_PROFILE` from the
-environment. `os/rootfs/build-v2.sh` already owns every one of those decisions —
+environment. `os/rootfs/build.sh` already owns every one of those decisions —
 which board file is read, which environment variable beats which file, how the
 historical `WITH_*` spellings fold into one decline list. A second copy of that
 logic here is the second table this repository keeps deleting, and the two would

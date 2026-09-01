@@ -46,7 +46,7 @@ usage() {
 # EVERY INPUT IS AN ARGUMENT, AND NONE OF THEM IS RE-DERIVED HERE. This script
 # does not read os/boards/<board>/board.env, os/boards/<board>/bsp/containers.env
 # or WITH_MOSD/WITH_CONTAINERS/MOS_ROOTFS_WITHOUT/MOS_PROFILE out of the
-# environment, and it must not learn to: os/rootfs/build-v2.sh already owns
+# environment, and it must not learn to: os/rootfs/build.sh already owns
 # every one of those decisions -- which board file is read, which environment
 # variable beats which file, how the historical WITH_* spellings fold into the
 # decline list. A second copy of that logic here is the second table this
@@ -189,7 +189,7 @@ done
 # `radios` is a feature and has no feature-radios.pkgs, because the radio
 # packages are per-radio and --radios selects them: the feature is the switch
 # that decides whether the radio family is consulted at all, which is what
-# MOS_ROOTFS_WITHOUT=radios means to os/rootfs/build-v2.sh (it drops
+# MOS_ROOTFS_WITHOUT=radios means to os/rootfs/build.sh (it drops
 # stages/30-feature-radios whatever the board declares). An empty
 # feature-radios.pkgs carrying only that sentence would still leave this case
 # in the code below, so it is stated once, here.
@@ -210,7 +210,7 @@ for feature in ${WITHOUT}; do
         exit 1
     }
 done
-# The same spelling os/rootfs/build-v2.sh uses, so "is this feature in the
+# The same spelling os/rootfs/build.sh uses, so "is this feature in the
 # image" reads identically on both sides of the argument list.
 WITHOUT_FEATURES=" ${WITHOUT} "
 declined() { case "${WITHOUT_FEATURES}" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }

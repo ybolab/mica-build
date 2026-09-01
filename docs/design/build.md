@@ -18,8 +18,8 @@ A board build ends with three artifacts under `_out/<board>/`:
 
 | Artifact | Made by | What it is |
 |---|---|---|
-| `<board>-mos-v2-<epoch>.img` and `<board>-mos-v2-latest.img` | `bash os/build/run.sh --mkimage-v2` (cx3576) or `--mkimage-x64` | the whole-disk A/B image to flash |
-| `rootfs-verity.img` + `rootfs-verity.env` | `os/rootfs/build-v2.sh` | one rootfs slot: squashfs with its dm-verity tree, and the parameters the kernel command line needs |
+| `<board>-mos-<epoch>.img` and `<board>-mos-latest.img` | `bash os/build/run.sh --mkimage-cx3576` (cx3576) or `--mkimage-x64` | the whole-disk A/B image to flash |
+| `rootfs-verity.img` + `rootfs-verity.env` | `os/rootfs/build.sh` | one rootfs slot: squashfs with its dm-verity tree, and the parameters the kernel command line needs |
 | the RAUC bundle | `bash os/build/run.sh --bundle --board <board>` | the signed update for a device already running mos |
 
 The image names are read from the board definition (`IMAGE_NAME_PREFIX`,
@@ -87,7 +87,7 @@ directory it was given, which is why composition needed no second driver.
 
 **Selection is a resolution.** `os/rootfs/packages/resolve.sh` takes the board,
 the profile, the radio set and the decline list as arguments and prints package
-names; `os/rootfs/build-v2.sh` decides all four and the resolver re-derives
+names; `os/rootfs/build.sh` decides all four and the resolver re-derives
 none of them. A declined feature is *fewer packages named* —
 `MOS_ROOTFS_WITHOUT`, into which `WITH_CONTAINERS=0` and `WITH_MOSD=0` fold —
 and a feature name that matches nothing is refused rather than silently
@@ -129,13 +129,13 @@ conflated once during this migration and corrected:
 | Seam | Owner | What it decides |
 |---|---|---|
 | `/etc/ssl/certs/ca-certificates.crt`, the anchors under `/usr/share/ca-certificates`, `/etc/ca-certificates.conf` | `mos-ca-trust` — **package payload** | the **TLS trust store**: which certificate authorities the device believes on an outbound connection |
-| `/etc/rauc/keyring.pem` | **not package-owned**; `os/rootfs/build-v2.sh` stages it from `ca/ca.cert.pem` | the **RAUC trust root**: whose signed update bundles this device will install |
+| `/etc/rauc/keyring.pem` | **not package-owned**; `os/rootfs/build.sh` stages it from `ca/ca.cert.pem` | the **RAUC trust root**: whose signed update bundles this device will install |
 
 The keyring is per-build trust material no package may ever carry: a package is
 one artifact installed into many images, and the CA an operator put in the
-repository-root `ca/` is a decision about *this* build. So `build-v2.sh` copies
+repository-root `ca/` is a decision about *this* build. So `build.sh` copies
 it into the composition context itself, **refuses** one left at
-`os/rootfs/overlay-v2/etc/rauc/keyring.pem` — the overlay is copied wholesale
+`os/rootfs/overlay/etc/rauc/keyring.pem` — the overlay is copied wholesale
 into every image, so a file there is a trust root nobody chose — and warns when
 `ca/GENERATED` beside the material marks it development-grade.
 `MOS_EXPECT_DEV_KEYRING=1` forces the same verdict at verify time.
@@ -193,7 +193,7 @@ rather than pulling from a registry called `localhost`.
 
 **The trust root: `ca/`.** The repository-root `ca/` directory is the one place
 a signing CA enters a build, and it is gitignored. `os/build/run.sh --bundle`
-signs with `ca/signer.cert.pem` and `ca/signer.key.pem`; `os/rootfs/build-v2.sh`
+signs with `ca/signer.cert.pem` and `ca/signer.key.pem`; `os/rootfs/build.sh`
 stages `ca/ca.cert.pem` into the image at `/etc/rauc/keyring.pem`, which is what
 lets an image install the bundles built beside it.
 
@@ -205,17 +205,17 @@ every bundle already signed with the old key.
 
 The generator leaves `ca/GENERATED` beside the material, and that marker is what
 distinguishes a generated root from provided production material on every later
-build, not only on the one that made it. `os/rootfs/build-v2.sh` keys its "this
+build, not only on the one that made it. `os/rootfs/build.sh` keys its "this
 image trusts a DEVELOPMENT RAUC keyring" warning off it (`MOS_EXPECT_DEV_KEYRING=1`
 forces the same warning). A production release puts real material in `ca/` and
 does not carry the marker.
 
 Two rules do not change. `CERT`/`KEY`/`KEYRING` still beat the convention for
 the bundle step — with all three set, nothing is generated and nothing in `ca/`
-is read. And a keyring left at `os/rootfs/overlay-v2/etc/rauc/keyring.pem` is
+is read. And a keyring left at `os/rootfs/overlay/etc/rauc/keyring.pem` is
 still refused, now unconditionally: the overlay is copied wholesale into every
 image, so a file there is a CA nobody chose, and `ca/` is the one sanctioned
-source. Since every image now ships a keyring, `make os-verify-<board>-v2` on a
+source. Since every image now ships a keyring, `make os-verify-<board>` on a
 development image needs `MOS_EXPECT_DEV_KEYRING=1` to name it as a bench image.
 
 The keyring is the one path in a mos root that is **not** package payload, and
@@ -232,14 +232,14 @@ bash os/pkgs/rauc/gen-dev-keys.sh   # optional: a build with no ca/ does this it
 MOS_BOARD=x64 bash os/pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash os/pkgs/podman/build.sh
 make os-debs                                   # the package pool, then its index
-MOS_BOARD=x64 bash os/rootfs/build-v2.sh       # == make os-rootfs-x64-composed
+MOS_BOARD=x64 bash os/rootfs/build.sh       # == make os-rootfs-x64-composed
 bash os/build/run.sh --mkimage-x64
 bash os/verify/run.sh --verify --board x64
 bash os/build/run.sh --bundle --board x64
 ```
 
 `make` spellings exist for most of them (`make os-rauc`, `make podman`,
-`make os-verify-cx3576-v2`), but their defaults are cx3576 and arm64, so for
+`make os-verify-cx3576`), but their defaults are cx3576 and arm64, so for
 x64 the environment variable is not optional. The rootfs build ends with a
 smoke run that executes the freshly built binaries inside the packed root;
 on x64 that is a native `docker run`, so nothing extra is needed.
@@ -250,11 +250,11 @@ output directories are empty — but podman's is roughly three quarters of an ho
 of compiling six upstream clones across four language toolchains, so running it
 first is how that cost is paid somewhere it can be seen rather than from inside
 a packaging hook. `make os-debs` must run **after** them and **before** the
-rootfs build: `build-v2.sh` refuses a pool whose one version is not this tree's,
+rootfs build: `build.sh` refuses a pool whose one version is not this tree's,
 including the `.dirty` suffix an uncommitted change puts on either side.
 
 Boot the result with the QEMU harness under `os/pkgs/mosd/tests/apid-api/`,
-which takes `_out/x64/x64-mos-v2-latest.img` as its input and builds nothing.
+which takes `_out/x64/x64-mos-latest.img` as its input and builds nothing.
 
 ## 4. cx3576: what crosses, what emulates, what needs the host
 
@@ -279,10 +279,10 @@ exactly one of them:
 | podman | `make podman` (`MOS_ARCH=arm64` is the default) | as RAUC; its source stage runs at the build platform on the amd64 base | no |
 | mosd family | run by the `mosd` and `mqtt` producers via `os/pkgs/mosd/hack/build-deb.sh` | cross-compile: cargo target `aarch64-unknown-linux-gnu` in `mos-build-rust:amd64` | no |
 | the package pool | `make os-debs` | each producer's own route, above; the packing stages themselves are `Architecture`-tagged file copies | no |
-| rootfs composition | `bash os/rootfs/build-v2.sh` (`MOS_BOARD=cx3576` is the default) | `default` builder if the host has binfmt, else `mos-arm64` with the two files linked by OCI layout (section 4.1) | no |
+| rootfs composition | `bash os/rootfs/build.sh` (`MOS_BOARD=cx3576` is the default) | `default` builder if the host has binfmt, else `mos-arm64` with the two files linked by OCI layout (section 4.1) | no |
 | smoke run | last step of the rootfs build | `docker run` if the daemon can execute arm64, else one throwaway build per artifact on `mos-arm64` | no |
-| disk image | `bash os/build/run.sh --mkimage-v2` | file assembly only | no |
-| image verification | `make os-verify-cx3576-v2` | reads files out of the image | no |
+| disk image | `bash os/build/run.sh --mkimage-cx3576` | file assembly only | no |
+| image verification | `make os-verify-cx3576` | reads files out of the image | no |
 | bundle | `make os-bundle-cx3576` | `rauc bundle` in an amd64 container | no |
 
 So the whole of cx3576 builds on an amd64 host with no host-level emulation
@@ -296,9 +296,9 @@ make cx3576-kernel
 make os-rauc
 make podman
 make os-debs
-bash os/rootfs/build-v2.sh
-bash os/build/run.sh --mkimage-v2
-make os-verify-cx3576-v2
+bash os/rootfs/build.sh
+bash os/build/run.sh --mkimage-cx3576
+make os-verify-cx3576
 make os-bundle-cx3576
 ```
 
@@ -321,7 +321,7 @@ ways, chosen by the builder's driver:
   context under the very tag the `FROM` names. Nothing touches the daemon's
   image store, and the builder's bundled QEMU executes the arm64 steps.
 
-`build-v2.sh` picks the builder the way RAUC and podman do — `default` when it
+`build.sh` picks the builder the way RAUC and podman do — `default` when it
 reaches the platform, else `mos-<arch>` — and the smoke run at the end, when
 the daemon cannot execute the root, executes every register entry inside that
 builder instead, one throwaway build per artifact, with the same register and
@@ -382,7 +382,7 @@ sudo systemctl restart systemd-binfmt
 
 Then re-run the daemon check above; the `default` builder's platform list
 (`docker buildx inspect default`) gains `linux/arm64` at the same time, which is
-the exact test `build-v2.sh` applies. Undo with `--uninstall arm64` or by
+the exact test `build.sh` applies. Undo with `--uninstall arm64` or by
 removing the package.
 
 **What needs no emulator at all.** Reading bytes out of an arm64 image —
@@ -431,7 +431,7 @@ stage handed over as an OCI layout, the smoke run executed the packed root's
 binaries through the buildkit executor and reported
 `11 pass, 1 executor-limited (crun), 0 fail` — crun's memfd re-exec is the
 emulator's documented limit, reported as its own verdict rather than a pass —
-and the assembled image passed `make os-verify-cx3576-v2` at 395/395 with a
+and the assembled image passed `make os-verify-cx3576` at 395/395 with a
 signed RAUC bundle built and read back. No tag touched the image store and
 no binfmt was registered at any point.
 

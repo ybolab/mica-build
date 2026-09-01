@@ -155,7 +155,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     const paramFile = join(ctx.outDir, 'rootfs-verity.env')
     if (!existsSync(paramFile)) {
       log(`   [veritysetup] NOT RUN: ${paramFile} is not there, so this probe has no root hash to`)
-      log(`                 verify ${label} against. Produce it with os/rootfs/build-v2.sh.`)
+      log(`                 verify ${label} against. Produce it with os/rootfs/build.sh.`)
       continue
     }
     await step(log, `veritysetup on ${label}`, async () => {

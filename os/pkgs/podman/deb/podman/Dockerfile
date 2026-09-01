@@ -7,7 +7,7 @@
 # This file only STAGES, ASSERTS and PACKS. The seven binaries were compiled by
 # this producer's PREPARE hook -- os/pkgs/podman/build.sh, six pinned upstreams
 # across four toolchains -- and arrive through the `bin` context; the container
-# configuration arrives through `overlay`, which is os/rootfs/overlay-v2 and the
+# configuration arrives through `overlay`, which is os/rootfs/overlay and the
 # tree that owns those files today.
 #
 # This stage runs at the TARGET architecture because dpkg-shlibdeps resolves an

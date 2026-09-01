@@ -19,7 +19,7 @@
 #             would pass it. A guard that has never been seen to fire is not a
 #             guard.
 
-# A second section then runs the repart definitions the v2 image actually
+# A second section then runs the repart definitions the mos image actually
 # ships, unpacked out of the packed root, and asserts that DATA is bigger
 # afterwards -- the growth /srv depends on. Its negative direction removes
 # SizeMinBytes=0 from the uenv placeholders, reconstructing the state in which
@@ -55,7 +55,7 @@ if [ "${#IMAGES[@]}" -eq 0 ]; then
     done
 fi
 if [ "${#IMAGES[@]}" -eq 0 ]; then
-    echo "error: no image found; build one with 'make os-image-cx3576-v2'" >&2
+    echo "error: no image found; build one with 'make os-image-cx3576'" >&2
     exit 1
 fi
 command -v docker >/dev/null || { echo "error: docker is required" >&2; exit 1; }
@@ -119,9 +119,9 @@ loader_magic_of() {
 # loader, carrying LOADER_TYPECODE, is not one of them.
 
 # The set is synthesised rather than copied from the image so that this test
-# covers both pipelines from one code path: v1 and v2 ship different definition
+# covers both pipelines from one code path: cx3576 and x64 ship different definition
 # sets, and what is under test here is the loader, not either set.
-# SizeMinBytes=0 is set for the same reason the shipped v2 definitions set it:
+# SizeMinBytes=0 is set for the same reason the shipped definitions set it:
 # systemd-repart will not claim an existing partition smaller than the
 # definition's minimum size, and that minimum defaults to 10 MiB, while uenv-a
 # and uenv-b are 64 KiB. Omitting it makes repart abort the whole run with
@@ -262,7 +262,7 @@ for IMAGE in "${IMAGES[@]}"; do
     fi
 done
 
-# v2: the shipped repart definitions must actually grow DATA.
+# The shipped repart definitions must actually grow DATA.
 #
 # The loop above proves the loader survives, but it does so with a synthesised
 # definition set. That deliberately says nothing about the set the image
@@ -282,10 +282,10 @@ done
 # two uenv definitions, reconstructing the pre-fix state, and asserts the run
 # refuses and DATA does not grow. Without it the positive case would be a guard
 # that has never been seen to fire.
-V2_IMAGE=""
+MOS_IMAGE=""
 for candidate in "${IMAGES[@]}"; do
     case "$(basename "${candidate}")" in
-    "${IMAGE_NAME_PREFIX}"*) V2_IMAGE="${candidate}" ;;
+    "${IMAGE_NAME_PREFIX}"*) MOS_IMAGE="${candidate}" ;;
     esac
 done
 ROOTFS_SLOT="${REPO_ROOT}/_out/cx3576/rootfs-verity.img"
@@ -324,11 +324,11 @@ run_repart_rc() {
 }
 
 echo
-echo "=== v2 growth: the definitions the image ships ==="
-if [ -z "${V2_IMAGE}" ]; then
-    fail "no v2 image among the images under test, so the shipped-definition growth check cannot run; build one with 'make os-image-cx3576-v2'"
+echo "=== shipped-definition growth ==="
+if [ -z "${MOS_IMAGE}" ]; then
+    fail "no mos image among the images under test, so the shipped-definition growth check cannot run; build one with 'make os-image-cx3576'"
 elif [ ! -f "${ROOTFS_SLOT}" ]; then
-    fail "${ROOTFS_SLOT} not found, so /etc/repart.d cannot be read out of the SHIPPED root; build it with 'make os-image-cx3576-v2'"
+    fail "${ROOTFS_SLOT} not found, so /etc/repart.d cannot be read out of the SHIPPED root; build it with 'make os-image-cx3576'"
 else
     cp "${ROOTFS_SLOT}" "${work}/slot.squashfs"
     rm -rf "${work}/defs-shipped" "${work}/defs-prefix"
@@ -352,21 +352,21 @@ else
         fail "could not unpack /etc/repart.d out of ${ROOTFS_SLOT}: $(tail -n 3 "${work}/unpack-defs.log" | tr '\n' ' ')"
     fi
 
-    data_before="$(part_sectors_of "${V2_IMAGE}" "${DATA_PARTNUM}")"
+    data_before="$(part_sectors_of "${MOS_IMAGE}" "${DATA_PARTNUM}")"
     if [ -n "${data_before}" ] && [ "${data_before}" -gt 0 ] 2>/dev/null; then
-        pass "v2 DATA (p${DATA_PARTNUM}) is ${data_before} sectors in the image as built"
+        pass "DATA (p${DATA_PARTNUM}) is ${data_before} sectors in the image as built"
     else
-        fail "cannot read the size of v2 DATA (p${DATA_PARTNUM}) from ${V2_IMAGE}; nothing below can be attributed to repart"
+        fail "cannot read the size of DATA (p${DATA_PARTNUM}) from ${MOS_IMAGE}; nothing below can be attributed to repart"
     fi
 
     if [ "${shipped_n}" -gt 0 ]; then
         # --- positive: the shipped set, on the real GPT, grown medium
-        rc="$(run_repart_rc "grow-shipped" defs-shipped "${V2_IMAGE}")"
+        rc="$(run_repart_rc "grow-shipped" defs-shipped "${MOS_IMAGE}")"
         data_after="$(part_sectors_of "${work}/grow-shipped.img" "${DATA_PARTNUM}")"
         if [ "${rc}" = "0" ]; then
-            pass "the shipped v2 definitions drive systemd-repart to completion (exit 0) on an 8G medium"
+            pass "the shipped definitions drive systemd-repart to completion (exit 0) on an 8G medium"
         else
-            fail "the shipped v2 definitions made systemd-repart exit ${rc}: $(grep -iE 'refus|error|cannot|fit' "${work}/grow-shipped.log" | head -n 3 | tr '\n' ' ')"
+            fail "the shipped definitions made systemd-repart exit ${rc}: $(grep -iE 'refus|error|cannot|fit' "${work}/grow-shipped.log" | head -n 3 | tr '\n' ' ')"
         fi
         if [ -n "${data_after}" ] && [ -n "${data_before}" ] &&
             [ "${data_after}" -gt "${data_before}" ] 2>/dev/null; then
@@ -399,7 +399,7 @@ else
         else
             fail "no shipped definition carries SizeMinBytes=0, so the negative case cannot reconstruct the pre-fix state and the positive case is unattributed"
         fi
-        rc_neg="$(run_repart_rc "grow-prefix" defs-prefix "${V2_IMAGE}")"
+        rc_neg="$(run_repart_rc "grow-prefix" defs-prefix "${MOS_IMAGE}")"
         data_neg="$(part_sectors_of "${work}/grow-prefix.img" "${DATA_PARTNUM}")"
         if [ "${stripped}" -eq 0 ]; then
             fail "the pre-fix negative case did not run (nothing was stripped)"

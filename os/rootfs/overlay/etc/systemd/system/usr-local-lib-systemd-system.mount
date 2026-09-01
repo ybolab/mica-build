@@ -1,7 +1,7 @@
 [Unit]
 Description=Third-party systemd units from the STATE partition
 # An integrator installs their own service by dropping a unit into
-# the system unit directory and letting systemd own its lifecycle. On v2 every
+# the system unit directory and letting systemd own its lifecycle. On mos every
 # unit directory the image ships is inside the read-only dm-verity squashfs, so
 # without this bind there is nowhere on the device to install one that survives
 # a reboot -- which is why every mosd reconciler enables units with runtime=true

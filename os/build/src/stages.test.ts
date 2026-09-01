@@ -327,7 +327,7 @@ describe('planChain', () => {
     TRIXIE: 'debian@sha256:aaa',
     BOOKWORM: 'debian@sha256:bbb',
     MOS_PROFILE: 'dev',
-    OVERLAY_DIR: '_out/x64/overlay-v2',
+    OVERLAY_DIR: '_out/x64/overlay',
   }
 
   test('tags each stage per board and links each to its predecessor', () => {
@@ -353,7 +353,7 @@ describe('planChain', () => {
   test('a stage is handed only the arguments it declares', () => {
     const builds = planChain(discoverStages(dir()), { board: 'x64', supplied })
     expect(builds[0]!.buildArgs).toEqual({ TRIXIE: 'debian@sha256:aaa', MOS_PROFILE: 'dev' })
-    expect(builds[1]!.buildArgs).toEqual({ OVERLAY_DIR: '_out/x64/overlay-v2' })
+    expect(builds[1]!.buildArgs).toEqual({ OVERLAY_DIR: '_out/x64/overlay' })
     expect(builds[2]!.buildArgs).toEqual({ BOOKWORM: 'debian@sha256:bbb' })
   })
 
@@ -419,29 +419,29 @@ describe('planChain', () => {
 // THE SHIPPED PAIR, and the only check in this file whose subject is the real
 // tree rather than a fixture. The refusal above proves the driver reacts; this
 // proves the two files that actually ship are on the right side of it, and it
-// goes red if os/rootfs/build-v2.sh drops one of the `--arg` lines that keep
+// goes red if os/rootfs/build.sh drops one of the `--arg` lines that keep
 // them there -- which is the whole failure this guard exists for, and which no
 // fixture can notice.
 //
 // Both sides are counted and neither may be zero: a compose directory that
-// declared no empty default, or a build-v2.sh this could read no --arg out of,
+// declared no empty default, or a build.sh this could read no --arg out of,
 // would make the pairing pass by comparing nothing against nothing.
 describe('the shipped compose directory and its supplier', () => {
-  const BUILD_V2 = join(REPO_ROOT, 'os', 'rootfs', 'build-v2.sh')
+  const ROOTFS_BUILD_SH = join(REPO_ROOT, 'os', 'rootfs', 'build.sh')
 
-  /** The names build-v2.sh hands the driver, read out of the file itself. */
-  function suppliedByBuildV2(): string[] {
-    const text = readFileSync(BUILD_V2, 'utf8')
+  /** The names build.sh hands the driver, read out of the file itself. */
+  function suppliedByRootfsBuild(): string[] {
+    const text = readFileSync(ROOTFS_BUILD_SH, 'utf8')
     return [...text.matchAll(/^\s*--arg\s+([A-Za-z_][A-Za-z0-9_]*)=/gm)].map(m => m[1] as string)
   }
 
-  test('every empty-defaulted ARG in os/rootfs/compose is supplied by build-v2.sh', () => {
+  test('every empty-defaulted ARG in os/rootfs/compose is supplied by build.sh', () => {
     const stages = discoverStages(STAGES_DIR)
     expect(stages.length).toBeGreaterThan(0)
     const declared = [...new Set(stages.flatMap(s => s.emptyDefaultArgs))].sort()
     expect(declared.length).toBeGreaterThan(0)
 
-    const names = suppliedByBuildV2()
+    const names = suppliedByRootfsBuild()
     expect(names.length).toBeGreaterThan(0)
 
     const supplied = Object.fromEntries(names.map(n => [n, '']))

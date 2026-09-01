@@ -18,13 +18,13 @@
 #   - linux/arm64 emulation ON THE HOST, for the cx3576 lane:
 #       docker run --privileged --rm tonistiigi/binfmt --install arm64
 #     This line USED TO SAY the opposite -- that host emulation was not
-#     required, because os/rootfs/build-v2.sh created a docker-container
+#     required, because os/rootfs/build.sh created a docker-container
 #     builder with bundled QEMU when the host builder lacked the platform.
 #     The rootfs is a CHAIN of one Dockerfile per
 #     stage, each `FROM` the local image tag the previous one was written to,
 #     and a docker-container builder cannot resolve a local tag -- measured, it
 #     reports "pull access denied" about a registry for an image that is
-#     present. build-v2.sh now uses the `default` docker-driver builder and
+#     present. build.sh now uses the `default` docker-driver builder and
 #     refuses up front, naming the binfmt command, if it cannot reach the
 #     platform. NOT VERIFIED ON A RUNNER: no arm64-capable host was available
 #     to that change, so this is the requirement as analysed, not as observed.
@@ -201,7 +201,7 @@ jobs:
           mkdir -p _out/tmp
           TMPDIR="$PWD/_out/tmp" make os-build-test
 
-  # The full pipeline: BSP kernel and U-Boot, the v2 image, its verification,
+  # The full pipeline: BSP kernel and U-Boot, the mos image, its verification,
   # a signed (dev-key) bundle, and os-repart-test against the image just
   # built -- the one suite that cannot run without one. On demand and weekly,
   # not per push: the kernel and U-Boot builds are the long pole and were
@@ -268,19 +268,19 @@ jobs:
       # binfmt since; see the preflight note at the top of this
       # file for what changed and why) and the eleven-partition A/B image
       # around it.
-      - name: make os-image-cx3576-v2
-        run: make os-image-cx3576-v2
+      - name: make os-image-cx3576
+        run: make os-image-cx3576
 
-      - name: make os-verify-cx3576-v2
-        run: make os-verify-cx3576-v2
+      - name: make os-verify-cx3576
+        run: make os-verify-cx3576
 
       # THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
-      # os/rootfs/build-v2.sh runs it as its last step under `set -e`, so the
+      # os/rootfs/build.sh runs it as its last step under `set -e`, so the
       # step above that builds the image has already executed every self-built
       # binary inside the root it packed. A second invocation here would report
       # the same green twice and would read like the only thing running it.
       #
-      # These two are what build-v2.sh does NOT do. The gate compares the OCI
+      # These two are what build.sh does NOT do. The gate compares the OCI
       # export against the squashfs the device ships -- the assumption every
       # smoke result rests on, and nothing else checks it. The negative tests
       # break that root three ways and require the runner to notice; they are a

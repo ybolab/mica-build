@@ -63,7 +63,7 @@ import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
  * "rootfs-verity.env carries no VERITY_ROOT_HASH" is only actionable once you
  * know what writes it.
  */
-export const ROOTFS_PRODUCER = 'os/rootfs/build-v2.sh'
+export const ROOTFS_PRODUCER = 'os/rootfs/build.sh'
 
 /**
  * The FAT label a bundle's boot payload carries, and why it is not a slot's.
@@ -80,7 +80,7 @@ export const BUNDLE_BOOT_FAT_LABEL = 'BOOT'
 export const MANIFEST_IN: string = join(OS_DIR, 'pkgs', 'rauc', 'manifest.raucm.in')
 
 /** The system.conf the image actually ships -- rendered, not committed. */
-export const SYSTEM_CONF: string = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'rauc', 'system.conf')
+export const SYSTEM_CONF: string = join(OS_DIR, 'rootfs', 'overlay', 'etc', 'rauc', 'system.conf')
 
 /**
  * The repository-root ca/ -- the one place a trust root enters a build.
@@ -115,7 +115,7 @@ export function envFileGet(text: string, key: string): string {
 }
 
 /**
- * The RAUC version os/rootfs/build-v2.sh recorded in the rootfs report.
+ * The RAUC version os/rootfs/build.sh recorded in the rootfs report.
  *
  * `sed -n 's/^RAUC_VERSION //p' | tail -n1` -- space-separated there, because
  * the report is a two-column list and not an env file. The `=` form belongs to

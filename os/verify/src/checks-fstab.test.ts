@@ -1,7 +1,7 @@
 // The fstab checks, driven from the failing side.
 //
 // The baseline /etc/fstab is RENDERED
-// FROM THE SHIPPED TEMPLATE, os/rootfs/overlay-v2/etc/fstab.in, with the
+// FROM THE SHIPPED TEMPLATE, os/rootfs/overlay/etc/fstab.in, with the
 // board's own GUIDs -- the same thing the image fixture contract does and for
 // the same reason: a table hand-written here would test this file's idea of the
 // table rather than the one that ships, and an fstab.in that grew a placeholder

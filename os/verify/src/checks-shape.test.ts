@@ -56,7 +56,7 @@ interface World {
   link?: string
   /** How many partitions the IMAGE's table carries. Defaults to the layout's. */
   partitions?: number
-  /** `_out/<board>/rootfs-report-v2.txt`, or absent. */
+  /** `_out/<board>/rootfs-report.txt`, or absent. */
   report?: string
   /** What `getcap -r ROOT` prints on stdout, root-prefixed by the fixture. */
   packedCaps?: readonly string[]
@@ -72,7 +72,7 @@ function fixture(world: World): { ctx: ImageContext, dispose: () => void } {
   mkdirSync(dir, { recursive: true })
   const outDir = join(dir, 'out')
   mkdirSync(outDir, { recursive: true })
-  if (world.report !== undefined) writeFileSync(join(outDir, 'rootfs-report-v2.txt'), world.report)
+  if (world.report !== undefined) writeFileSync(join(outDir, 'rootfs-report.txt'), world.report)
   const root = join(dir, 'root')
   mkdirSync(root, { recursive: true })
 
@@ -188,8 +188,8 @@ const REPORT_TWO = `== file capabilities ==
 
 describe('image-default-path-symlink', () => {
   test('green when the default path is a symlink to a timestamped image', async () => {
-    for (const [board, name] of [[cx3576, 'cx3576-mos-v2-1787661246.img'],
-      [x64, 'x64-mos-v2-1787660533.img']] as const) {
+    for (const [board, name] of [[cx3576, 'cx3576-mos-1787661246.img'],
+      [x64, 'x64-mos-1787660533.img']] as const) {
       const r = await drive('image-default-path-symlink', { board, link: name })
       expect(r.verdict).toBe('pass')
       expect(r.message).toBe(`default path is a symlink to ${name}`)
@@ -206,20 +206,20 @@ describe('image-default-path-symlink', () => {
   })
 
   test('RED when the link names something that is not a timestamped image', async () => {
-    const r = await drive('image-default-path-symlink', { board: cx3576, link: 'cx3576-mos-v2-dev.img' })
+    const r = await drive('image-default-path-symlink', { board: cx3576, link: 'cx3576-mos-dev.img' })
     expect(r.verdict).toBe('fail')
-    expect(r.message).toContain('cx3576-mos-v2-<epoch>.img')
+    expect(r.message).toContain('cx3576-mos-<epoch>.img')
   })
 
   test('RED on the OTHER board\'s image name, which is a real assembly mistake', async () => {
-    const r = await drive('image-default-path-symlink', { board: cx3576, link: 'x64-mos-v2-1787660533.img' })
+    const r = await drive('image-default-path-symlink', { board: cx3576, link: 'x64-mos-1787660533.img' })
     expect(r.verdict).toBe('fail')
   })
 
   test('a leading ./ is stripped, as the oracle strips it', async () => {
-    const r = await drive('image-default-path-symlink', { board: x64, link: './x64-mos-v2-1787660533.img' })
+    const r = await drive('image-default-path-symlink', { board: x64, link: './x64-mos-1787660533.img' })
     expect(r.verdict).toBe('pass')
-    expect(r.message).toBe('default path is a symlink to x64-mos-v2-1787660533.img')
+    expect(r.message).toBe('default path is a symlink to x64-mos-1787660533.img')
   })
 })
 

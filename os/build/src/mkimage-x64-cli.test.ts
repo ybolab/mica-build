@@ -53,7 +53,7 @@ describe('the arguments', () => {
 
 describe('the inputs it derives', () => {
   test('all five come from the OUT DIRECTORY, and none from a BSP tree', async () => {
-    // The other difference from src/mkimage-v2-cli.ts, and it is the board's:
+    // The other difference from src/mkimage-cx3576-cli.ts, and it is the board's:
     // cx3576 takes its kernel and dtb from os/boards/cx3576/bsp/out and its U-Boot from a
     // BSP build, so it has two families of missing input and two sentences. x64
     // has one family -- everything is produced by the rootfs build -- so it has
@@ -70,7 +70,7 @@ describe('the inputs it derives', () => {
         factoryVar: join(missing, 'factory-var'),
         imgOut: join(dir, 'out.img'),
       }, { log: () => {} })).rejects.toThrow(
-        /rootfs-verity\.img not found\. Build the root first: MOS_BOARD=x64 bash os\/rootfs\/build-v2\.sh/,
+        /rootfs-verity\.img not found\. Build the root first: MOS_BOARD=x64 bash os\/rootfs\/build\.sh/,
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -84,14 +84,14 @@ describe('the inputs it derives', () => {
     // variable" instead of printing it. A `${MOS_BOARD:-x64}` default would still
     // have been wrong -- a cx3576 left in the environment would name the wrong
     // board to build.
-    expect(ROOTFS_PRODUCER).toBe('MOS_BOARD=x64 bash os/rootfs/build-v2.sh')
+    expect(ROOTFS_PRODUCER).toBe('MOS_BOARD=x64 bash os/rootfs/build.sh')
     expect(ROOTFS_PRODUCER).not.toContain('$')
   })
 
   test('the image name and the -latest link come from the board, not from here', () => {
-    expect(g.naming.prefix).toBe('x64-mos-v2-')
+    expect(g.naming.prefix).toBe('x64-mos-')
     expect(g.naming.suffix).toBe('.img')
-    expect(g.naming.latestName).toBe('x64-mos-v2-latest.img')
+    expect(g.naming.latestName).toBe('x64-mos-latest.img')
   })
 })
 

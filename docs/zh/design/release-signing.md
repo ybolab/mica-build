@@ -32,7 +32,7 @@
 
 **信任根入口**：仓库根目录的 `ca/` 是 CA 进入构建的唯一入口（已 gitignore）。
 把这份 runbook 产出的 CA 放进 `ca/` 再构建，`os/build` 就用它签 bundle，
-`os/rootfs/build-v2.sh` 把 `ca/ca.cert.pem` 放进镜像的 `/etc/rauc/keyring.pem`。
+`os/rootfs/build.sh` 把 `ca/ca.cert.pem` 放进镜像的 `/etc/rauc/keyring.pem`。
 `ca/` 为空时构建会自动生成一套开发级信任根并留下 `ca/GENERATED` 标记，
 构建据此发出醒目警告；生产材料不带这个标记。
 

@@ -368,18 +368,18 @@ The keyring reaches a device **in the image**, from one place. The facts:
 
 - `os/pkgs/rauc/system.conf.in` names `/etc/rauc/keyring.pem`;
   `os/pkgs/rauc/render-config.sh` renders the generated
-  `os/rootfs/overlay-v2/etc/rauc/system.conf`.
+  `os/rootfs/overlay/etc/rauc/system.conf`.
 - The repository-root `ca/` directory is the single seam by which a CA enters a
   build: `os/build` signs bundles with `ca/signer.{cert,key}.pem` and
-  `os/rootfs/build-v2.sh` stages `ca/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
+  `os/rootfs/build.sh` stages `ca/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
   the CA this runbook produces in `ca/`, build, and the image trusts it. `ca/`
   is gitignored, so the material is never in the history.
 - A build that finds `ca/` empty **generates a development-grade root** there,
   says so unmissably, and continues; the generator leaves `ca/GENERATED` beside
   it, and that marker is what keeps such a root recognisable on every later
-  build. `os/rootfs/build-v2.sh` warns off the marker. Production material is
+  build. `os/rootfs/build.sh` warns off the marker. Production material is
   placed in `ca/` without it.
-- The overlay is **not** a source: `os/rootfs/build-v2.sh` refuses an
+- The overlay is **not** a source: `os/rootfs/build.sh` refuses an
   `etc/rauc/keyring.pem` found there, unconditionally, because the overlay is
   copied wholesale into every image and a file left in it is a CA nobody chose.
   `os/verify/src/checks-root.ts` still fails an image carrying a baked-in
@@ -421,7 +421,7 @@ land:
   written in place and must not be baked in (§4). A provisioned keyring
   must live on STATE or META and reach `/etc/rauc/keyring.pem` the way
   `/etc/ssh` reaches its path — a seed plus bind mount
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-state`). No such bind exists
+  (`os/rootfs/overlay/usr/lib/mos/mos-seed-state`). No such bind exists
   yet, deliberately: creating one is part of choosing the channel.
 - **The open decision, stated as the user's.** Which channel delivers the
   file (STATE/META provisioning file, factory step, first-boot enrolment —
@@ -432,14 +432,14 @@ land:
 ## 3. Signing a release bundle — **[runbook]**
 
 On the release host, with the online TUF keys (§1.5) and the RAUC signer
-(§2.1) in place, `_out/cx3576/` populated by the v2 rootfs build and the BSP
+(§2.1) in place, `_out/cx3576/` populated by the mos rootfs build and the BSP
 kernel present (the privileged CI lane's deep job,
 `.github/workflows/privileged.yml`, runs this same chain with dev keys —
 production signing is deliberately **not** a CI step; see §4):
 
 ```sh
 # 1. Build the prod-profile rootfs and the image inputs.
-MOS_PROFILE=prod make os-rootfs-cx3576-v2
+MOS_PROFILE=prod make os-rootfs-cx3576
 
 # 2. Build and CMS-sign the bundle. Caller-supplied CERT/KEY/KEYRING win over
 #    the dev-key defaults on both the host and the container build path --

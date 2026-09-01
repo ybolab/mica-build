@@ -35,7 +35,7 @@ Copyright: The mos project
 License: Apache-2.0
 Comment: mos's own material in this package: the four /etc/containers
  configuration files and the Quadlet mount unit, taken from
- os/rootfs/overlay-v2/. The text is the repository's own LICENSE file, copied
+ os/rootfs/overlay/. The text is the repository's own LICENSE file, copied
  rather than retyped.
 
 Files: usr/bin/podman

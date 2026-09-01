@@ -7,7 +7,7 @@ stage, so nothing about their agreement is structural; a smoke run inside a
 *different* tree is a measurement of something that never boots.
 
 `make os-factory-root-gate` is the target (docker-requiring, like
-`os-verify-cx3576-v2`), and the deep lane of `.github/workflows/privileged.yml`
+`os-verify-cx3576`), and the deep lane of `.github/workflows/privileged.yml`
 is the step, which is the only place it can run on cx3576.
 
 It needs a matched pair — `factory-root.oci` and `rootfs-verity.img` from one
@@ -31,7 +31,7 @@ mutation pass, that line is a positive result that cannot fail.
 ## Running it
 
 ```sh
-MOS_BOARD=x64 bash os/rootfs/build-v2.sh     # produces _out/x64/{rootfs-verity.img,factory-root.oci}
+MOS_BOARD=x64 bash os/rootfs/build.sh     # produces _out/x64/{rootfs-verity.img,factory-root.oci}
 make os-factory-root-gate                    # MOS_BOARD selects the board; x64 by default
 bash os/tests/factory-root-gate/gate.sh _out/x64   # the same thing, said longhand
 ```

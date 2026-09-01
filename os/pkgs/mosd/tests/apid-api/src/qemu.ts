@@ -80,7 +80,7 @@ export function readBoardEnv(text: string): Map<string, string> {
  * 1 MiB) carries EFI/mos/grub.cfg and EFI/mos/grubenv, while BOOT-A
  * (partition 2, at 65 MiB) carries vmlinuz, initrd.img and cmdline.cfg at its
  * FAT root and has no EFI directory at all. Measured against
- * x64-mos-v2-latest.img, 2026-08-28. Reading the boot slot here made mcopy
+ * x64-mos-latest.img, 2026-08-28. Reading the boot slot here made mcopy
  * fail with `File "::/EFI/mos/grub.cfg" not found`, which took the whole
  * prepare down -- and since the apid-api harness always sets MOS_QEMU_APPEND
  * (its readiness signal is the journald line the append produces), that
@@ -365,7 +365,7 @@ async function main(): Promise<void> {
 
   if (!fs.existsSync(img)) {
     die(
-      `error: ${img} not found. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && ` +
+      `error: ${img} not found. Build it: MOS_BOARD=x64 bash os/rootfs/build.sh && ` +
         `bash os/build/run.sh --mkimage-x64`,
     );
   }

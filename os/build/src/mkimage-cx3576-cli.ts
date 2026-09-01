@@ -2,9 +2,9 @@
 // called, and the -latest symlink.
 //
 // THE SEAM: epoch naming and the -latest symlink happen on the host side, in
-// this file; src/mkimage-v2.ts is everything below them. The seam is
+// this file; src/mkimage-cx3576.ts is everything below them. The seam is
 // structural rather than conventional, because nothing re-execs:
-// src/mkimage-v2.ts is called in-process and the toolbox decides, per toolset,
+// src/mkimage-cx3576.ts is called in-process and the toolbox decides, per toolset,
 // whether the TOOLS run here or in the pinned container.
 //
 // THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
@@ -15,11 +15,11 @@
 import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadGeometry } from './geometry.ts'
-import { assembleCx3576, BOARD, ROOTFS_PRODUCER, ubootMissingError } from './mkimage-v2.ts'
+import { assembleCx3576, BOARD, ROOTFS_PRODUCER, ubootMissingError } from './mkimage-cx3576.ts'
 import { slotPinFromEnv } from './layout-cx3576.ts'
 import { REPO_ROOT } from './paths.ts'
 
-const USAGE = `usage: bash os/build/run.sh --mkimage-v2 [--out-dir DIR] [--board-dir DIR]
+const USAGE = `usage: bash os/build/run.sh --mkimage-cx3576 [--out-dir DIR] [--board-dir DIR]
 
 Assembles the flashable cx3576 A/B GPT disk image. Inputs come from
 _out/${BOARD}/ and os/boards/${BOARD}/bsp/out/.

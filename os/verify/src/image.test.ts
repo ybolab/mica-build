@@ -538,7 +538,7 @@ describe('veritysetup, where exit 1 means two different things', () => {
   test('exit 2, "Verification of data area failed.", is the same direction one level lower', async () => {
     // What a tree at the WRONG OFFSET produces -- measured against cryptsetup
     // 2.7.5 by verifying a superblock-formatted image with --no-superblock,
-    // which is exactly the pre-fix v2 image. Left unmapped it throws, and a
+    // which is exactly the pre-fix mos image. Left unmapped it throws, and a
     // throw is not a verdict about the image, so the one artifact this check
     // exists to reject would come out as a harness error instead of a FAIL.
     const areaFailed = stub([['veritysetup', {

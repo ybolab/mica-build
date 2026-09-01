@@ -24,7 +24,7 @@ import {
 
 /** Four real conclusions and a real summary line, cx3576, 2026-08-25. */
 const REAL = [
-  'PASS: default path is a symlink to cx3576-mos-v2-1787661246.img',
+  'PASS: default path is a symlink to cx3576-mos-1787661246.img',
   'PASS: disk GUID is 5AC35760-0002-4000-8000-000000000000',
   'PASS: p1 PARTLABEL is \'loader\'',
   'PASS: p2 PARTLABEL is \'uenv-a\'',

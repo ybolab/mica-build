@@ -351,7 +351,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     initrdImage,
     rootfsVerityImg,
     rootfsVerityEnv,
-    rootfsReport: join(outDir, 'rootfs-report-v2.txt'),
+    rootfsReport: join(outDir, 'rootfs-report.txt'),
     raucBuildEnv: join(OS_DIR, 'pkgs', 'rauc', `out-${arch}`, 'RAUC_VERSION.env'),
     bootCmdlineA: uboot ? bootCmdlineA : undefined,
     bootCmdlineB: uboot ? bootCmdlineB : undefined,

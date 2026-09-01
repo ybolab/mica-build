@@ -5,7 +5,7 @@
 #   bash os/build-env/deb/build.sh --producer system --arch all
 #
 # This file only STAGES and PACKS. Nothing is compiled here: the payload is the
-# board-independent part of os/rootfs/overlay-v2 plus two files the stage chain
+# board-independent part of os/rootfs/overlay plus two files the stage chain
 # generates, so the package carries what stages/10-base and stages/20-install
 # write into the image today.
 #
@@ -123,7 +123,7 @@ ARG SOURCE_DATE_EPOCH
 # cannot generate root-capable units from STATE with no operator decision.
 #
 # mos-health.service and mos-machine-id.service are enabled by symlinks that
-# ship as symlinks INSIDE overlay-v2, pointing into /usr/lib/systemd/system
+# ship as symlinks INSIDE overlay, pointing into /usr/lib/systemd/system
 # where those two units live; they are copied with `cp -a` so their targets are
 # the tree's and not this file's guess at them.
 #

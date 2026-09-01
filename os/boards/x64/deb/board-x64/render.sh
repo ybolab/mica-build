@@ -5,7 +5,7 @@
 #
 #   <src-root>/os/boards/x64/board.env
 #   <src-root>/os/boards/x64/overlay/etc/systemd/system/boot.mount.in
-#   <src-root>/os/rootfs/overlay-v2/etc/fstab.in
+#   <src-root>/os/rootfs/overlay/etc/fstab.in
 #   <src-root>/os/pkgs/rauc/render-config.sh
 #     -> <out-dir>/fstab, <out-dir>/boot.mount, <out-dir>/system.conf
 #
@@ -18,10 +18,10 @@
 # run. <src-root> is therefore a reconstruction of the repository layout inside
 # the build, and not a checkout.
 #
-# WHAT THIS SHARES WITH os/rootfs/build-v2.sh AND WHAT IT DOES NOT. The RAUC
+# WHAT THIS SHARES WITH os/rootfs/build.sh AND WHAT IT DOES NOT. The RAUC
 # configuration is not rendered here at all: render-config.sh is INVOKED, so
 # the template, the statusfile placement and the boot-attempts refusal have one
-# owner. The two overlay templates have no such renderer -- build-v2.sh renders
+# owner. The two overlay templates have no such renderer -- build.sh renders
 # them inline, in the middle of a build that also stages an image -- so their
 # rules are restated here: the same lowercased PARTUUIDs, the same VAR_OPTS,
 # the same /srv line, and the same refusal to emit a file with a placeholder
@@ -40,7 +40,7 @@ OUT="${2-}"
 
 BOARD=x64
 BOARD_ENV="${SRC}/os/boards/${BOARD}/board.env"
-FSTAB_IN="${SRC}/os/rootfs/overlay-v2/etc/fstab.in"
+FSTAB_IN="${SRC}/os/rootfs/overlay/etc/fstab.in"
 BOOT_MOUNT_IN="${SRC}/os/boards/${BOARD}/overlay/etc/systemd/system/boot.mount.in"
 RENDER_CONFIG="${SRC}/os/pkgs/rauc/render-config.sh"
 for f in "${BOARD_ENV}" "${FSTAB_IN}" "${BOOT_MOUNT_IN}" "${RENDER_CONFIG}"; do
@@ -64,7 +64,7 @@ for key in DATA_GUID STATE_GUID META_GUID EPHEMERAL_GUID ESP_GUID; do
 done
 [ -z "${missing}" ] || die "${BOARD_ENV} is missing:${missing}"
 
-# Lowercase, for the reason os/rootfs/build-v2.sh gives: udev derives
+# Lowercase, for the reason os/rootfs/build.sh gives: udev derives
 # /dev/disk/by-partuuid/ from libblkid, which formats GUIDs in lowercase, and
 # systemd's fstab-generator resolves PARTUUID= through those symlinks without
 # normalising case.
@@ -98,7 +98,7 @@ MOS_BOARD="${BOARD}" SYSTEM_CONF_OUT="${OUT}/system.conf" bash "${RENDER_CONFIG}
 
 # /srv is the only filesystem that grows and /var must NOT carry
 # x-systemd.growfs: it is fixed-size disposable residue. Tab-separated, the
-# shape build-v2.sh emits, so the two renderings can be compared byte for byte.
+# shape build.sh emits, so the two renderings can be compared byte for byte.
 printf -v SRV_LINE 'PARTUUID=%s\t/srv\text4\tnoatime,x-systemd.growfs\t0\t2' \
     "$(lower "${DATA_GUID}")"
 VAR_OPTS="noatime"
@@ -112,7 +112,7 @@ render "${FSTAB_IN}" "${OUT}/fstab" \
 
 # No /etc/fw_env.config, and its absence is the statement: there is no U-Boot
 # on this board, and that template names two partitions os/boards/x64/board.env
-# does not create. build-v2.sh deletes it on MOS_ARCH=amd64 for the same
+# does not create. build.sh deletes it on MOS_ARCH=amd64 for the same
 # reason; a producer that rendered it anyway would put a configuration file
 # describing storage that does not exist into a signed root.
 

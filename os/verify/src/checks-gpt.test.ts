@@ -210,7 +210,7 @@ describe('the per-partition family', () => {
 
   test('gpt-partition-attrs goes RED on any bit set', async () => {
     // The legacy-BIOS-bootable bit -- the one a well-meaning `sgdisk -A 4:set:2`
-    // would set, and the one v2 says the slot choice must never come from.
+    // would set, and the one the layout says the slot choice must never come from.
     const gpt = gptWith(healthyGpt(cx3576, SLOT), 4, { attributeFlags: '0000000000000004' })
     const r = firing(await drive('gpt-partition-attrs', { gpt }), '4')
     expect(r.verdict).toBe('fail')

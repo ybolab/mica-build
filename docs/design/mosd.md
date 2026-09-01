@@ -256,7 +256,7 @@ as the contract for the next one:
   that reads its configuration once at start, whose file changed under it, is
   restarted. Otherwise the rewrite silently did not take effect.
 - **enablement is runtime-scoped** (`EnableUnitFiles` with `runtime = true`).
-  Persistent enablement needs `/etc/systemd/system` to be writable, and on the v2
+  Persistent enablement needs `/etc/systemd/system` to be writable, and on the mos
   read-only root it is not — a persistent enable would fail with EROFS on device
   while passing every test on a normal filesystem. mosd reconciles the whole tree
   at every start, so units return to their configured state each boot anyway.
@@ -457,7 +457,7 @@ projected into an item tree or MQTT.
   `active` and concrete slot names are deliberately not offered.
 
 **What mosd deliberately does NOT do: confirm the booted slot.** The boot
-health gate (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) owns the automatic
+health gate (`os/rootfs/overlay/usr/lib/mos/mos-health`) owns the automatic
 `rauc status mark-good` — it probes systemd, mosd and apid first, and an
 automatic mark in mosd would duplicate that gate and could confirm a slot the
 gate would have failed. `MarkUpdate` exists for the case the gate cannot

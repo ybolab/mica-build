@@ -51,7 +51,7 @@ layouts instead of the suite -- `make os-layout-lint`. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
 
-With --verify FIRST, it runs the image verifier -- `make os-verify-<board>-v2`.
+With --verify FIRST, it runs the image verifier -- `make os-verify-<board>`.
 It runs the os/verify check register against one assembled image and prints one
 PASS/FAIL/SKIP line per conclusion and a RESULT line, which is what
 The predecessor shell verifier printed before this package replaced it. Its remaining

@@ -49,10 +49,10 @@ image as a `Depends` of the `mos-board-x64` package.
 
 | Artifact | Producer | Consumer |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `os/boards/<name>/bsp/kernel` | `os/boards/<name>/deb/board-<name>/render.sh` stages them and the board package unpacks `modules.tar` into `/usr/lib/modules`, refusing an unpack that yields no module; `os/build/src/mkimage-v2.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`os/build/src/mkimage-v2.ts`) |
-| bootloader binary | `os/boards/<name>/bsp/uboot` | `os/build/src/mkimage-v2.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A v2 image must carry the uboot-mos variant" (`os/build/src/mkimage-v2.ts`) |
+| `Image` + `modules.tar` + `*.dtb` | `os/boards/<name>/bsp/kernel` | `os/boards/<name>/deb/board-<name>/render.sh` stages them and the board package unpacks `modules.tar` into `/usr/lib/modules`, refusing an unpack that yields no module; `os/build/src/mkimage-cx3576.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`os/build/src/mkimage-cx3576.ts`) |
+| bootloader binary | `os/boards/<name>/bsp/uboot` | `os/build/src/mkimage-cx3576.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A mos image must carry the uboot-mos variant" (`os/build/src/mkimage-cx3576.ts`) |
 | `board.env` | `os/boards/<name>/` | every consumer: both assemblers, the rootfs driver, RAUC's config renderer, os/verify. Read as data, never sourced — "Nothing here ever hands the file to a shell" (`os/verify/src/board-env.ts`) |
-| firmware blobs | `os/boards/<name>/bsp/rootfs/firmware` | `os/rootfs/build-v2.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`os/rootfs/build-v2.sh`) |
+| firmware blobs | `os/boards/<name>/bsp/rootfs/firmware` | `os/rootfs/build.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`os/rootfs/build.sh`) |
 
 Modules/kernel version coupling is absolute: the modules tree inside the rootfs
 MUST match the BSP kernel release, asserted at image assembly.
@@ -89,7 +89,7 @@ drift.
 
 The boot path sets the floor. The root is a squashfs carrying its own dm-verity
 hash tree, described by one `dm-mod.create=` table on the kernel command line —
-"one boot contract, written once by os/rootfs/build-v2.sh, read by the kernel's
+"one boot contract, written once by os/rootfs/build.sh, read by the kernel's
 dm-init on a board whose kernel has it and by this script on a board whose kernel
 does not" (`os/rootfs/initramfs/scripts/mos-verity`) — above a userland that
 is "Debian trixie + systemd" — the digest-pinned base
@@ -123,7 +123,7 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
    `os/build/src/stages-cli.ts`, which "decides the order and the tags"
    (`os/build/src/stages-cli.ts`)); the board's own content ships as
    `mos-board-<name>`. Image assembled by
-   `bash os/build/run.sh --mkimage-v2` or `--mkimage-x64`, green against
+   `bash os/build/run.sh --mkimage-cx3576` or `--mkimage-x64`, green against
    `bash os/verify/run.sh --verify --board <name>`, then apid liveness on
    hardware — `/healthz`, which proves only that the apid process is listening,
    not that mosd or any other service on the board is healthy.

@@ -65,7 +65,7 @@ function synthesised(board: typeof cx3576): string {
 /**
  * The config the shipped overlay actually renders, for one board.
  *
- * Taken from `_out/<board>/overlay-v2/`, which the image build stages and the
+ * Taken from `_out/<board>/overlay/`, which the image build stages and the
  * Dockerfile copies to /etc/rauc/system.conf, so the baseline these mutations
  * are made from is the file that shipped. A checkout that has never built falls
  * back to the rendered SHAPE with the board's own GUIDs -- the mutations below
@@ -73,7 +73,7 @@ function synthesised(board: typeof cx3576): string {
  * actually changed the text before driving the check.
  */
 function shippedConf(board: typeof cx3576): string {
-  const staged = join(REPO_ROOT, '_out', board.name, 'overlay-v2', 'etc', 'rauc', 'system.conf')
+  const staged = join(REPO_ROOT, '_out', board.name, 'overlay', 'etc', 'rauc', 'system.conf')
   return existsSync(staged) ? readFileSync(staged, 'utf8') : synthesised(board)
 }
 

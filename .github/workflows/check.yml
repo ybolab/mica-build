@@ -326,7 +326,7 @@ jobs:
           echo "Not run here (needs root or privileged docker):" >&2
           echo "  make os-dbus-policy-test   real dbus-daemon, drops to uid 65534" >&2
           echo "  make os-repart-test        privileged docker, loop devices" >&2
-          echo "  make os-image-cx3576-v2 / os-verify-cx3576-v2   image assembly and verification" >&2
+          echo "  make os-image-cx3576 / os-verify-cx3576   image assembly and verification" >&2
           echo "Not run here (board artifact builds; cross toolchains and BSP trees):" >&2
           echo "  make cx3576-uboot / cx3576-kernel / cx3576-image" >&2
           echo "Not run here (bash only, needs neither bun nor docker; simply not wired yet):" >&2
@@ -448,7 +448,7 @@ jobs:
           echo "including whatever bun a developer has on PATH, which is the route" >&2
           echo "run.sh prefers locally." >&2
           echo >&2
-          echo "It also does not run make os-verify-cx3576-v2. That" >&2
+          echo "It also does not run make os-verify-cx3576. That" >&2
           echo "target needs a BUILT IMAGE and docker, and a bun on the host --" >&2
           echo "run.sh refuses --verify on the container route, because the verifier" >&2
           echo "drives docker itself and the pinned bun image has no docker client." >&2

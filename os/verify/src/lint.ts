@@ -441,7 +441,7 @@ function lintPartitionSet(r: Recorder, b: Board): void {
 
   // 1..N with no gaps. systemd-repart pairs definitions with partitions IN
   // ORDER, so a hole does not fail, it shifts every definition onto the wrong
-  // partition -- see the comment in os/rootfs/build-v2.sh.
+  // partition -- see the comment in os/rootfs/build.sh.
   const n = b.partitions.length
   const missing: number[] = []
   for (let want = 1; want <= n; want += 1) {

@@ -102,8 +102,8 @@ succeeded、failed、interrupted 或有界历史已经找不到该 id 时停止�
 **全部解析为 `prod`**；而且比较是**大小写敏感**的，所以 `DEV` 也解析为 `prod`。
 构建会拒绝任何不是小写 `dev` 或 `prod` 的值。
 
-`ROOT_PASSWORD` 构建参数**仅存在于 v1**。v2 的打包阶段会**无条件地**让任何"工厂 shadow 里
-存在可用哈希"的构建失败——对每个账户、在两种 profile 上都如此。**因此 v2 烤入 root 凭据是
+`ROOT_PASSWORD` 构建参数**仅存在于已废弃的遗留构建链**。打包阶段会**无条件地**让任何"工厂 shadow 里
+存在可用哈希"的构建失败——对每个账户、在两种 profile 上都如此。**因此烤入 root 凭据是
 不可构建的，dev profile 也不例外。**
 
 **缺失的部分（所以是"部分"）**：`sealed`——那种"无 shell"本身构成签名镜像身份一部分的
@@ -133,7 +133,7 @@ succeeded、failed、interrupted 或有界历史已经找不到该 id 时停止�
 
 ### 9.2 整盘重刷能恢复什么 —— **[已实现]**
 
-v2 镜像是一个**携带全部十一个分区的整盘镜像**，并为 META、STATE、DATA 构建全新的 ext4 文件系统。
+mos 镜像是一个**携带全部十一个分区的整盘镜像**，并为 META、STATE、DATA 构建全新的 ext4 文件系统。
 经 rockusb 刷写因此会替换这三者：STATE（凭据与身份）、META（一体机与更新元数据）、
 DATA（运维的 `/home`、`/root` 及 `/srv` 下的一切）。
 

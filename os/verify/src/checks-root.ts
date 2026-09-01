@@ -591,7 +591,7 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
   {
     // A keyring inside the signed read-only root is a trusted signer on every
     // device flashed with this image, so the question is not whether one is
-    // there -- os/rootfs/build-v2.sh stages one into every image now -- but
+    // there -- os/rootfs/build.sh stages one into every image now -- but
     // WHERE it came from. The repository-root ca/ is the single seam by which a
     // trust root enters a build, and a byte comparison against ca/ca.cert.pem
     // is what ties the image to that seam: a keyring that arrived any other way

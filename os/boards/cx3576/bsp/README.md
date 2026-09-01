@@ -12,7 +12,7 @@ nothing here builds or modifies the mos rootfs, which `os/rootfs/` owns.
 - `uboot/` — mainline U-Boot v2026.07 + rkbin blobs -> `u-boot-rockchip.bin` (eMMC sector 64).
   `make uboot` builds the v1/Alpine debug variant into `out/uboot/`; `make uboot-mos`
   builds the A/B variant with the redundant environment and the `boot.scr` contract
-  into `out/uboot-mos/`, which is the one the v2 image takes
+  into `out/uboot-mos/`, which is the one the mos image takes
 - `kernel/` — armbian rk-6.1-rkr5.1 (6.1.115): config baseline, in-tree dts, patches -> `Image`, `modules.tar`, `rk3576-src.dtb`.
   The config must satisfy `os/boards/common/mos-required.fragment`
 - `rootfs/` — Alpine demo rootfs (overlay under `alpine/rootfs/`, installed onto `/`)
@@ -22,7 +22,7 @@ nothing here builds or modifies the mos rootfs, which `os/rootfs/` owns.
   systemd units
 - `Dockerfile.alpine` — assembles the flashable Alpine debug/demo disk image (extlinux boot)
 
-The Alpine image is the board smoke-test path. The v2 mos image consumes
+The Alpine image is the board smoke-test path. The mos image consumes
 `out/uboot-mos/` and `out/kernel/` from here, defaulting to this directory and
 overridable with `BOARD_DIR`.
 

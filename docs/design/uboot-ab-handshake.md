@@ -8,7 +8,7 @@
 
 The user builds a **custom U-Boot based on mainline upstream** for CX3576-Z
 (Rockchip RK3576, eMMC `/dev/mmcblk0`). This document is the requirements
-contract that build must satisfy so that the layout-v2 image, RAUC's `uboot`
+contract that build must satisfy so that the A/B-layout image, RAUC's `uboot`
 bootloader backend, `/etc/fw_env.config` and the dm-verity boot path all agree.
 
 Evidence convention used throughout:
@@ -24,7 +24,7 @@ Evidence convention used throughout:
 
 The board definition had **not** landed when this analysis was
 written against branch base `fd6233f`; no directory in the tree held it [V].
-Every constant below is therefore quoted from the campaign layout-v2 table. It
+Every constant below is therefore quoted from the A/B-layout table. It
 has since landed and moved to its present path, so
 every generated file (defconfig fragment, `fw_env.config`, `boot.cmd`) **must
 be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
@@ -33,7 +33,7 @@ drift.
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
 `os/boards/common/mos-required.fragment` directly. No action in this document.
 
-Layout-v2 constants this document depends on:
+A/B-layout constants this document depends on:
 
 | Name | Value | Meaning |
 |---|---|---|
@@ -159,18 +159,18 @@ only enters a partition whose `fstype` probe succeeds
 `bootflow_run_boot()` and keeps iterating on failure
 (`u-boot/cmd/bootflow.c`) [V].
 
-The practical consequence: **if `extlinux/extlinux.conf` is present in a v2 boot
+The practical consequence: **if `extlinux/extlinux.conf` is present in a mos boot
 slot, it wins and the A/B handshake is silently bypassed.** See §5.4.
 
 ### 1.4 Raw SPL + U-Boot placement
 
 The assembler writes `u-boot-rockchip.bin` at `UBOOT_SEEK_SECTOR`, sector 64
 (`os/boards/cx3576/board.env`), with a `dd` whose block size is the sector
-size (`os/build/src/mkimage-v2.ts`) [V]. Inside that combined image,
+size (`os/build/src/mkimage-cx3576.ts`) [V]. Inside that combined image,
 SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
 
-**No collision with layout v2**: the actual artifact
+**No collision with the A/B layout**: the actual artifact
 `os/boards/cx3576/bsp/out/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
 so written at sector 64 it occupies 0.031 MiB … 8.989 MiB, leaving 7.01 MiB of
 headroom before `uenv-a` at 16 MiB. The custom U-Boot must
@@ -179,9 +179,9 @@ keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
 with ~7 MiB of headroom. The assembler asserts the fit rather than trusting it:
 a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
 `os/boards/cx3576/board.env` — fails the build
-(`os/build/src/mkimage-v2.ts`) [V].
+(`os/build/src/mkimage-cx3576.ts`) [V].
 
-The kernel command line is not the assembler's. `os/rootfs/build-v2.sh`
+The kernel command line is not the assembler's. `os/rootfs/build.sh`
 composes one per rootfs slot from that slot's verity parameters and the board's
 `BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env`) [V].
 
@@ -268,7 +268,7 @@ UENV_SIZE_BYTES     = 0x10000      # 64 KiB per copy
 ```
 
 They are non-negotiable because three independent artefacts are already pinned
-to them: the layout-v2 GPT (p1/p2 exist purely to reserve this space and to give
+to them: the A/B-layout GPT (p1/p2 exist purely to reserve this space and to give
 Linux a bounds-checked block device per copy), `/etc/fw_env.config` shipped by
 the boot contract, and RAUC's `uboot` backend which reaches the env only through
 `fw_setenv`/`fw_printenv`.
@@ -296,7 +296,7 @@ the image assembler, whenever the layout changes.
 # --- persistent environment: redundant pair in the eMMC user area -----------
 # uenv-a @ 16 MiB (GPT p1), uenv-b @ 17 MiB (GPT p2), 64 KiB each.
 # Offsets are absolute byte offsets into the mmc 0 user area, which is exactly
-# where layout-v2 places p1/p2.
+# where A/B-layout places p1/p2.
 CONFIG_ENV_IS_IN_MMC=y
 CONFIG_ENV_OFFSET=0x1000000
 CONFIG_ENV_SIZE=0x10000
@@ -477,7 +477,7 @@ Take **(A)**. The decisive arguments:
   hash offset, algorithm). In (A) the script is a file in the boot partition, so
   RAUC rewrites it as part of the slot group and a bad boot script is rolled
   back by the same mechanism as a bad kernel. In (B) the logic is in U-Boot,
-  which layout v2 stores as raw sectors outside any slot — updating it is a
+  which the layout stores as raw sectors outside any slot — updating it is a
   non-atomic, non-rollback-able write to the one thing that must never break.
   This asymmetry decides it.
 - **Fall-through when BOOT-A's filesystem is unreadable** works in (A) without
@@ -530,7 +530,7 @@ are *not* baked in — they are imported from the chosen slot's boot partition
 (§7.3), so the script is byte-identical in both boot partitions.
 
 **This block is synced to the shipped `os/boards/cx3576/boot.cmd`**, which is
-what `os/build/src/mkimage-v2.ts` compiles into `boot.scr`. It now differs from the
+what `os/build/src/mkimage-cx3576.ts` compiles into `boot.scr`. It now differs from the
 version first published here in **two** places. Both were defects that made
 every update revert silently, and both are recorded in the shipped script's
 provenance header:
@@ -553,7 +553,7 @@ provenance header:
    integrated end to end. (integration check, fixed deliberately.)
 
 ```sh
-# boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
+# boot.cmd — mos A/B handshake for CX3576-Z (A/B layout).
 # Compiled to boot.scr and written to BOTH boot partitions by the assembler.
 # Identical in both slots: whichever copy runs may boot either slot.
 #
@@ -671,20 +671,20 @@ reset
 sits in the gap between `pxefile_addr_r` and `kernel_addr_r`.
 
 The `Image` / `rk3576-src.dtb` filenames match what the assembler stages into
-each boot partition (`os/build/src/mkimage-v2.ts`) [V].
+each boot partition (`os/build/src/mkimage-cx3576.ts`) [V].
 
 ### 5.4 Composition with `extlinux/extlinux.conf`
 
 Per §1.3, extlinux is tried **before** `boot.scr` in both bootstd and
 `distro_bootcmd`. Therefore:
 
-> **The v2 boot slots must not contain `extlinux/extlinux.conf`.** If they do,
+> **The mos boot slots must not contain `extlinux/extlinux.conf`.** If they do,
 > U-Boot boots it directly and the entire A/B handshake — counter decrement,
 > `BOOT_ORDER`, rollback — is bypassed with no error message.
 
 Two acceptable ways to satisfy this, in order of preference:
 
-1. `os/build/src/mkimage-v2.ts` simply does not write `extlinux/extlinux.conf` into
+1. `os/build/src/mkimage-cx3576.ts` simply does not write `extlinux/extlinux.conf` into
    BOOT-A/BOOT-B. `boot.scr` replaces it. This is the recommendation.
 2. If a manual recovery entry is wanted, write it under a name the automatic
    scan does not look for (e.g. `extlinux/extlinux.conf.manual`) and document
@@ -714,11 +714,11 @@ mkimage -T script -C none -n "mos boot" -d boot.cmd boot.scr
 `SOURCE_DATE_EPOCH` is **mandatory**: `mkimage` stamps the legacy image header
 with the current time unless it is set (`u-boot/tools/imagetool.c`) [V],
 which would break the campaign's byte-identical-rebuild contract. `1577836800`
-is the layout-v2 fixed mtime (2020-01-01T00:00:00Z). `-C none` because the
+is the A/B-layout fixed mtime (2020-01-01T00:00:00Z). `-C none` because the
 script is not compressed; `-T script` requires `CONFIG_LEGACY_IMAGE_FORMAT=y`
 in U-Boot, which is already set [V].
 
-**Owner of the assembly step: the image assembler** (`os/build/src/mkimage-v2.ts`). What it must do:
+**Owner of the assembly step: the image assembler** (`os/build/src/mkimage-cx3576.ts`). What it must do:
 
 1. Build `boot.scr` from the `boot.cmd` above with the exact invocation above,
    and write the **same** `boot.scr` to both BOOT-A and BOOT-B (FAT root, since
@@ -730,9 +730,9 @@ in U-Boot, which is already set [V].
    `verity_args=dm-mod.create="rootfs,,0,ro,<table>" dm-mod.waitfor=PARTUUID=<slot rootfs PARTUUID>`
    with `<table>` built from that slot's verity metadata (§7.3). Slot A's file
    references PARTUUID `...0005`, slot B's references `...0006`.
-3. Not write `extlinux/extlinux.conf` into the v2 boot slots (§5.4).
+3. Not write `extlinux/extlinux.conf` into the mos boot slots (§5.4).
 4. Apply the fixed mtime `@1577836800` to every staged file before the `mcopy`
-   that fills the slot (`os/build/src/mkimage-v2.ts`) [V].
+   that fills the slot (`os/build/src/mkimage-cx3576.ts`) [V].
 5. Zero-fill uenv-a/uenv-b so a freshly flashed device starts from the
    compiled-in default environment rather than stale bytes. (These were p1/p2
    when this section was written; they are **p2/p3** since the loader partition
@@ -750,7 +750,7 @@ shell variables for the `mos-verity-<slot>.env` renderer.
 
 ### 6.1 The problem
 
-The v2 root is a read-only squashfs with no initramfs and no `/etc` overlay, so
+The mos root is a read-only squashfs with no initramfs and no `/etc` overlay, so
 systemd cannot persist `/etc/machine-id` the normal way. Without persistence
 every boot gets a fresh transient ID, which breaks anything keyed on device
 identity (journal continuity, D-Bus machine ID, fleet enrolment).
@@ -892,7 +892,7 @@ All four questions answered against the actual vendor kernel tree
   `PARTUUID=` is resolved by `devt_from_partuuid()` walking `block_class`
   (`do_mounts.c`) [V].
 
-  **So layout-v2's fixed partition GUIDs are directly usable in the verity
+  **So A/B-layout's fixed partition GUIDs are directly usable in the verity
   table** — no `/dev/mmcblk0p5` hardcoding, and slot A vs slot B differ only by
   which GUID is named.
 - `dm-mod.waitfor=` **exists** on this tree: `static char *waitfor[DM_MAX_WAITFOR]`
@@ -933,12 +933,12 @@ with, for slot A:
 
 - `<name>` = `rootfs`, `<uuid>` empty, `<minor>` `0`, `<flags>` `ro`. (Earlier
   drafts of this section said `mos`. The shipped generator
-  (`os/rootfs/build-v2.sh`) emits `rootfs`, and that is the authority. Nothing
+  (`os/rootfs/build.sh`) emits `rootfs`, and that is the authority. Nothing
   depends on the choice: the boot path uses `root=/dev/dm-0`, never
   `/dev/mapper/<name>`, so the name is only what shows up in `dmsetup` output.)
 - `<data_dev>` = `<hash_dev>` = `PARTUUID=5AC35760-0002-4000-8000-000000000005`
   (hash tree appended to the same partition)
-- `<alg>` = `sha256`, `<salt>` = the layout-v2 pinned salt
+- `<alg>` = `sha256`, `<salt>` = the A/B-layout pinned salt
   `0000000000000000000000000000000000000000000000000000000000000001`
 - `<digest>`, `<n_blocks>`, `<hash_start>` from `veritysetup format` output
 
@@ -1144,9 +1144,9 @@ Ordered by how badly each could sink the approach.
 > with the **v1** image. The two are not interchangeable in either direction and
 > neither mistake announces itself: `uboot-mos` on a v1 image corrupts the boot
 > FAT partition on the first `saveenv` (v1's boot partition starts at 16 MiB,
-> exactly the copy-A offset), and the debug variant on a v2 image has no
+> exactly the copy-A offset), and the debug variant on a mos image has no
 > persistent environment, so it boots, looks healthy, and silently never runs
-> the A/B handshake. `os/build/src/mkimage-v2.ts` asserts both directions.
+> the A/B handshake. `os/build/src/mkimage-cx3576.ts` asserts both directions.
 >
 > Items 4-8 were requirements on the build and are satisfied by that variant;
 > they remain listed as the contract it must keep satisfying. On-device A/B
@@ -1160,17 +1160,17 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
    Without it: no `BOOT_ORDER` persistence, RAUC's `uboot` backend is
    non-functional, machine-id cannot persist. The **debug** variant still has
    `CONFIG_ENV_IS_NOWHERE=y` [V], which is why it must never be paired with a
-   v2 image. **RESOLVED for `uboot-mos` by `8b24f9d`.**
+   mos image. **RESOLVED for `uboot-mos` by `8b24f9d`.**
 2. **`CONFIG_CMD_SETEXPR=y`** plus `CMD_SOURCE`, `CMD_IMPORTENV`,
    `CMD_FS_GENERIC`, `CMD_BOOTI`, `LEGACY_IMAGE_FORMAT` (§3.2). Without
    `setexpr` the attempt counter cannot be decremented in a script; the generic
    defconfig disables it [V]. **RESOLVED by `8b24f9d`.**
 3. **`boot.scr` must be the only automatically discoverable boot entry** in
-   BOOT-A/BOOT-B — no `extlinux/extlinux.conf` in v2 boot slots — and `bootcmd`
+   BOOT-A/BOOT-B — no `extlinux/extlinux.conf` in mos boot slots — and `bootcmd`
    should pin `bootmeth order script` (§5.4). Without this, extlinux wins and
    the handshake is silently bypassed in both bootstd and `distro_bootcmd` [V].
    **RESOLVED by `8b24f9d` (`bootmeth order script`) together with
-   `os/build/src/mkimage-v2.ts`, which writes no extlinux config into a v2 boot slot.**
+   `os/build/src/mkimage-cx3576.ts`, which writes no extlinux config into a mos boot slot.**
 4. **Preserve the three existing customisations**: DDR `v1.12` + BL31 `v1.24`
    blob pins, the saradc `vdd-microvolts` DT append, and the rockusb loader-mode
    patch (§2). Without them, respectively: no boot, no recovery button, no
@@ -1190,7 +1190,7 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
    `8b24f9d` resolved items 1-3, so it is not covered by that commit: it is a
    requirement on the **boot script**, not on the U-Boot build, and it emerged
    only once the handshake was integrated end to end. rauc identifies its booted
-   slot from `rauc.slot=`, the `root=` device, or `realpath(device)`; the v2 root
+   slot from `rauc.slot=`, the `root=` device, or `realpath(device)`; the mos root
    is `/dev/dm-0`, a device-mapper node that matches no slot's `bootname`, slot
    name or device path, so the other two routes have nothing to work with.
    Verified against rauc 1.8: without it, `rauc status` reports *"Did not find
@@ -1199,8 +1199,8 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
 
 Dependencies this creates on other subtasks, for scheduling:
 
-- **the image assembler** (`os/build/src/mkimage-v2.ts`): generate and install `boot.scr` +
-  per-slot `mos-verity-<slot>.env`, drop `extlinux.conf` from v2 boot slots,
+- **the image assembler** (`os/build/src/mkimage-cx3576.ts`): generate and install `boot.scr` +
+  per-slot `mos-verity-<slot>.env`, drop `extlinux.conf` from mos boot slots,
   zero-fill p1/p2 (§5.5). **Delivered.**
 - **the rootfs work** (rootfs): add `libubootenv-tool` to the package allowlist, ship
   `/etc/fw_env.config` from §3.3, ship an empty `/etc/machine-id` (§6.2).

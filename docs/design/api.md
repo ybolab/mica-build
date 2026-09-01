@@ -825,7 +825,7 @@ merged into mosd — and the HTTPS management daemon is named `apid`
 (`docs/design/dashboard.md`). **The bus as a contract:** `com.mos.mosd1`
 stays served whatever the UI does, because the boot health gate is a second
 consumer calling it directly
-(`os/rootfs/overlay-v2/usr/lib/mos/mos-health`), and its
+(`os/rootfs/overlay/usr/lib/mos/mos-health`), and its
 failure path is an A/B rollback. This document therefore assumes a
 server-rendered no-JavaScript built-in UI, two processes, a bus that keeps
 existing, and the name `apid`; a section below that needs any of those to change
@@ -1725,9 +1725,9 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    answers the literal `"ok"` (`os/pkgs/mosd/apid/src/routes.rs`), so **an appliance whose mosd is dead
    answers `/healthz` with `ok`**. A monitor polling it sees a healthy device.
    `/healthz` cannot be fixed, because the boot health gate depends on exactly
-   that behaviour (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) — its
+   that behaviour (`os/rootfs/overlay/usr/lib/mos/mos-health`) — its
    comment says so in as many words: *"/healthz is apid's existing endpoint and
-   bypasses its auth gate"* (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`).
+   bypasses its auth gate"* (`os/rootfs/overlay/usr/lib/mos/mos-health`).
 
    So the API adds a second, differently-scoped endpoint:
 
@@ -2230,7 +2230,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
    address operators actually use (`os/pkgs/mosd/apid/src/tls.rs`), every client
    is configured to skip verification — the shipped boot health probe does
    exactly that, `curl -k` with a `wget --no-check-certificate` fallback
-   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`). An attacker who
+   (`os/rootfs/overlay/usr/lib/mos/mos-health`). An attacker who
    can answer for the device's address terminates TLS with their own
    certificate, and the client, told to accept anything, hands over the bearer
    token in the first request. Nothing in this design stops that. The mitigation
@@ -2390,9 +2390,9 @@ none of it is exercised on hardware**: the Rust is one `cargo nextest` run on
 the build host against temporary directories, and the image assertions run
 against an assembled image and a fixture root, not against a board. The
 accurate statement of the surrounding position, because both overstatements are
-wrong: hardware **has** booted — a **v1** image reached the `mos login:` prompt
+wrong: hardware **has** booted — a **legacy (pre-verity)** image reached the `mos login:` prompt
 on a real CX3576-Z, and the repart/maskrom and SPL-hash investigations ran
-against a real board — while the **v2** stack these sections land in (verity
+against a real board — while the **verity** stack these sections land in (verity
 root, A/B, `rauc install`, and apid itself) has **never** run on hardware.
 *"Never booted"* and *"verified on device"* are both false. `[implemented]`
 here means what §0 says it means and nothing more, and §6.3's *"No hardware
@@ -2849,7 +2849,7 @@ the same file (`docs/design/ro-root.md`), mounted read-only by the kernel
 from `dm-mod.create=` with no fstab entry that could ever remount it — the
 fstab template says so in as many words: *"there is no remount to perform and no
 entry that could ever succeed in rewriting it"*
-(`os/rootfs/overlay-v2/etc/fstab.in`; `docs/design/ro-root.md`) — so a
+(`os/rootfs/overlay/etc/fstab.in`; `docs/design/ro-root.md`) — so a
 write there does not fail a permission check, it fails a cryptographic one. And
 the slot is replaced **wholesale** by an A/B update: RAUC installs the entire
 `rootfs.img` into the raw `rootfs-a`/`rootfs-b` slot
@@ -2876,13 +2876,13 @@ chain to the packed-mountpoint check. Their negative cases live in
 **It needs no bind, and that is the point.** `/home` and `/root` needed mount
 units because those paths sit *inside* the verity squashfs and had to be
 redirected onto DATA — `home.mount` binds `/srv/home` onto `/home`
-(`os/rootfs/overlay-v2/etc/systemd/system/home.mount`) and `root.mount`
+(`os/rootfs/overlay/etc/systemd/system/home.mount`) and `root.mount`
 binds `/srv/root` onto `/root`
-(`os/rootfs/overlay-v2/etc/systemd/system/root.mount`). `/srv` is not a
+(`os/rootfs/overlay/etc/systemd/system/root.mount`). `/srv` is not a
 redirect: it is the DATA partition's **own mountpoint**, mounted directly from
 the image's `fstab` — `/srv` is the DATA tier there
-(`os/rootfs/overlay-v2/etc/fstab.in`) and the only one carrying
-`x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in`) — and the verifier
+(`os/rootfs/overlay/etc/fstab.in`) and the only one carrying
+`x-systemd.growfs` (`os/rootfs/overlay/etc/fstab.in`) — and the verifier
 asserts that entry by mountpoint and options, requiring
 `noatime` and `x-systemd.growfs` under the label
 *"DATA is the growth target"* (`os/verify/src/checks-fstab.ts`).
@@ -2902,13 +2902,13 @@ Two facts the image already guarantees and that this depends on:
   *"every fstab/bind mountpoint exists in the read-only root"*
   (`os/verify/src/checks-root.ts`).
 - DATA is the only partition `systemd-repart` grows and the only one carrying
-  `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in`), so a bundle root
+  `x-systemd.growfs` (`os/rootfs/overlay/etc/fstab.in`), so a bundle root
   here has no ceiling short of the disk.
 
 **It needs no seed unit either.** `mos-seed-home` exists for one reason:
 `mount(8)` does not create the source of a bind, so the source must exist before
-the mount runs (`os/rootfs/overlay-v2/etc/systemd/system/home.mount`;
-`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home`). There is no bind here,
+the mount runs (`os/rootfs/overlay/etc/systemd/system/home.mount`;
+`os/rootfs/overlay/usr/lib/mos/mos-seed-home`). There is no bind here,
 so nothing fails if `/srv/ui` is absent. **Absence is a defined state** — it is
 section 6.1's first failure class, and it is the shipped state of every device
 — and apid creating the directory lazily on first install is strictly simpler
@@ -2930,14 +2930,14 @@ directories beneath it, `0644` for files.**
   and `0700` would force a group or an ownership change the day apid stops
   being root.
 - **The owner is not pinned to a numeric uid**, unlike `/srv/home/mos`
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home`), because
+  (`os/rootfs/overlay/usr/lib/mos/mos-seed-home`), because
   root is `0` on every image that will ever exist. If a future `apid` account
   owns this tree instead, that uid **must** be pinned by number for exactly the
   reason `mos-seed-home` documents — the directory outlives the rootfs that
   created it.
 - **Explicitly not under `/srv/home` or `/srv/root`.** Those are the bind
   sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700`
-  `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home`). A UI bundle is
+  `os/rootfs/overlay/usr/lib/mos/mos-seed-home`). A UI bundle is
   appliance state, not a user's file, and mixing the two would make "delete my
   files" and "remove the UI" the same gesture.
 
@@ -3037,9 +3037,9 @@ bundle.
 **Keeping two generations** is what makes deactivate-and-reactivate cheap, and
 it costs two copies of a bundle on DATA. That is the cheapest place on the
 device to spend it: DATA grows to fill the disk
-(`os/rootfs/overlay-v2/etc/fstab.in`) and is already the tier chosen for
+(`os/rootfs/overlay/etc/fstab.in`) and is already the tier chosen for
 unbounded operator data over a 64 MiB STATE, for exactly this kind of reason
-(`os/rootfs/overlay-v2/etc/systemd/system/home.mount`).
+(`os/rootfs/overlay/etc/systemd/system/home.mount`).
 
 **Removal is two operations, and conflating them is a mistake.**
 
@@ -3307,7 +3307,7 @@ and no non-Rust file in the crate other than its manifest.
 `multi-user.target.wants/apid.service` symlink **as payload** rather than as a
 `systemctl enable` anything runs (`os/pkgs/mosd/deb/mosd/Dockerfile`). The
 composition installs that package out of the pool, and the
-binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
+binary is then part of the tree that `os/rootfs/build.sh` packs into the
 squashfs and covers with the dm-verity hash tree
 (`docs/design/ro-root.md`).
 
@@ -3316,7 +3316,7 @@ naming which one is load-bearing matters more than the count:
 
 1. **Load-bearing: dm-verity.** `/` is a squashfs assembled by the kernel from
    `dm-mod.create=` and mounted read-only, with no fstab entry that could remount
-   it (`os/rootfs/overlay-v2/etc/fstab.in`, `docs/design/ro-root.md`). A
+   it (`os/rootfs/overlay/etc/fstab.in`, `docs/design/ro-root.md`). A
    write to `/usr/bin/apid` fails at the block layer, not at a permission check.
    **This holds even though apid runs as root** — the unit sets no `User=` line
    (`os/pkgs/mosd/dist/apid.service`), so root is exactly what would be writing,
@@ -3562,7 +3562,7 @@ an absence measured four ways is a fact about the device, not a proposal.
 | **The API upload path** | **no** — `grep -rn Multipart os/pkgs/mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`os/pkgs/mosd/mosd-settings/src/model.rs`; `docs/design/access.md`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md`; the pane says so and a test asserts the sentence, `os/pkgs/mosd/apid/src/routes.rs`, `os/pkgs/mosd/apid/src/tests.rs`) | n/a |
 | **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/pkgs/rauc/render-config.sh`), `rootfs.1`, `boot.0` and `boot.1`. DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/pkgs/rauc/system.conf.in`) |
-| **A factory image** | **yes**, but it ships DATA **empty.** In `os/build/src/mkimage-v2.ts`, `dataImg` is created with `makeExt4` without a `seedDir`, then written into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
+| **A factory image** | **yes**, but it ships DATA **empty.** In `os/build/src/mkimage-cx3576.ts`, `dataImg` is created with `makeExt4` without a `seedDir`, then written into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md`) | none that works | n/a |
 
 **The count that matters.** Of five candidate channels, exactly **one reaches
@@ -3832,7 +3832,7 @@ built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — the built-in UI is compiled into the `apid` binary —
 and identifies how it gets inside the verity squashfs
 (`os/pkgs/mosd/deb/mosd/Dockerfile` packs it as `mos-apid`;
-`os/rootfs/build-v2.sh` composes and packs the root). No second
+`os/rootfs/build.sh` composes and packs the root). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.
@@ -3971,7 +3971,7 @@ unasserted.
 
 **What is explicitly still missing.** There is no API. Nothing about static
 hosting. `/healthz` still answers `ok` while mosd is dead (§2.4 case 3), because
-it must (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`).
+it must (`os/rootfs/overlay/usr/lib/mos/mos-health`).
 
 **Why this is first and not folded into phase 2.** Two reasons, and the second
 is the load-bearing one. First, §2.4's *whole error table* depends on
@@ -4314,7 +4314,7 @@ location constrained by size: a bundle staged for `rauc install` is ~72 MiB
 against a 64 MiB STATE
 (`os/boards/cx3576/board.env`), so it must stage on DATA — the same tier
 §5.2 chose for `/srv/ui`, for the same reason, and it is the only partition
-carrying `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in`).
+carrying `x-systemd.growfs` (`os/rootfs/overlay/etc/fstab.in`).
 
 **One asymmetry between this phase and phase 5 that makes §7 concrete rather
 than abstract.** The update-upload path **is** signature-checked and the

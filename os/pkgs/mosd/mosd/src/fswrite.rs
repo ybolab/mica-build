@@ -65,7 +65,7 @@ pub fn write_config_owned(
 ///
 /// Asked of the filesystem rather than configured, because a caller that had
 /// to be TOLD which of its paths are bind mounts is a caller that will be
-/// wrong after the next change to os/rootfs/overlay-v2. A path that does not
+/// wrong after the next change to os/rootfs/overlay. A path that does not
 /// exist yet is not a mount point -- systemd cannot bind onto nothing.
 fn is_mount_point(path: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;

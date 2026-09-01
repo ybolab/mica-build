@@ -382,6 +382,6 @@ describe('the arguments, and the defaults they fall back to', () => {
   })
 
   test('an unknown flag is refused, not forwarded', () => {
-    expect(() => parseArgs(['--mkimage-v2'], {})).toThrow(/unknown argument "--mkimage-v2"/)
+    expect(() => parseArgs(['--mkimage-cx3576'], {})).toThrow(/unknown argument "--mkimage-cx3576"/)
   })
 })

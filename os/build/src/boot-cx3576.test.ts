@@ -250,7 +250,7 @@ describe('THE RENUMBERING GUARD', () => {
 const GUID_A = g.requirePartition('ROOTFS_A').require('GUID')
 const HASH = '776ffaf3c23c995829e39e443ef46e0b2ea5dd40d8a0ba9aa8849dfb9335f49f'
 
-/** A cmdline in the shape os/rootfs/build-v2.sh emits, at whatever case is asked for. */
+/** A cmdline in the shape os/rootfs/build.sh emits, at whatever case is asked for. */
 function cmdline(guid: string, hash: string): string {
   return `dm-mod.create="rootfs,,,ro,0 190064 verity 1 PARTUUID=${guid} PARTUUID=${guid} 4096 4096 `
     + `23758 23758 sha256 ${hash} ${g.veritySalt}" dm-mod.waitfor=PARTUUID=${guid} root=/dev/dm-0 `
@@ -262,7 +262,7 @@ const base = {
   slot: 'A',
   rootfsGuid: GUID_A,
   rootHash: HASH,
-  producer: 'os/rootfs/build-v2.sh',
+  producer: 'os/rootfs/build.sh',
 }
 
 describe('the per-slot verity env, lifted out of the cmdline rather than re-derived', () => {
@@ -285,7 +285,7 @@ describe('the per-slot verity env, lifted out of the cmdline rather than re-deri
 
   test('no dm-mod.create= at all', () => {
     expect(() => verityEnvFor({ ...base, cmdline: 'root=/dev/dm-0 ro rootwait\n' }))
-      .toThrow(/carries no dm-mod\.create= verity table; fix os\/rootfs\/build-v2\.sh/)
+      .toThrow(/carries no dm-mod\.create= verity table; fix os\/rootfs\/build\.sh/)
   })
 
   test('no dm-mod.waitfor= -- required on kernel 6.1, not decorative', () => {
@@ -328,7 +328,7 @@ describe('the per-slot verity env, lifted out of the cmdline rather than re-deri
       cmdline(GUID_A.toLowerCase(), HASH).replace(/ dm-mod\.waitfor=\S+/, ''),
       cmdline(GUID_A.toLowerCase(), HASH.replace(/^7/, '8')),
     ]) {
-      expect(() => verityEnvFor({ ...base, cmdline: bad })).toThrow(/os\/rootfs\/build-v2\.sh/)
+      expect(() => verityEnvFor({ ...base, cmdline: bad })).toThrow(/os\/rootfs\/build\.sh/)
     }
   })
 

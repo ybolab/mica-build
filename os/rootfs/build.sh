@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
+# Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
 # Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
-#        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."] bash os/rootfs/build-v2.sh
+#        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."] bash os/rootfs/build.sh
 
-# There is deliberately no ROOT_PASSWORD here. A v2 rootfs is a signed,
+# There is deliberately no ROOT_PASSWORD here. A mos rootfs is a signed,
 # byte-identical squashfs and the pack stage fails any build whose factory
-# shadow carries a usable hash, so a baked v2 root password is unbuildable by
-# design, not merely discouraged. Dev root access on v2 is the transient
+# shadow carries a usable hash, so a baked mos root password is unbuildable by
+# design, not merely discouraged. Dev root access on mos is the transient
 # password set at runtime through mosd (SetTransientRootPassword; cleared on
 # the next boot by mos-shadow-reconcile) plus the serial console, whose root
 # account stays locked until that password is set. See
 # docs/design/access.md section 4.1.
 
 # Outputs (all under _out/<board>/). The first four are consumed by the image
-# assembler, os/build/src/mkimage-v2.ts and mkimage-x64.ts:
+# assembler, os/build/src/mkimage-cx3576.ts and mkimage-x64.ts:
 #   rootfs-verity.img: squashfs-zstd with the verity hash tree appended,
 #     padded to a whole MiB
 #   rootfs-verity.env: verity parameters, strict KEY=value
 #   boot-cmdline-a.txt, boot-cmdline-b.txt: the kernel append line per slot
 
 # The rest are records rather than assembler inputs:
-#   rootfs-report-v2.txt: package list + installed size
+#   rootfs-report.txt: package list + installed size
 #   pkg-logs/: dpkg.log, alternatives.log and apt/, taken out of /var/log by
 #     the finalizer before the package-manager purge removes them. They are
 #     NOT in the image -- the purge takes them -- and they are kept because
@@ -217,8 +217,8 @@ rm -f "$OUT_DIR/mosd-build.txt"
 # PARTUUID values are lowercased: udev derives /dev/disk/by-partuuid/ symlinks
 # from libblkid, which formats GUIDs in lowercase, and systemd's fstab-generator
 # resolves PARTUUID= through those symlinks without normalising case.
-OVERLAY_SRC="$SCRIPT_DIR/overlay-v2"
-OVERLAY_STAGE="$OUT_DIR/overlay-v2"
+OVERLAY_SRC="$SCRIPT_DIR/overlay"
+OVERLAY_STAGE="$OUT_DIR/overlay"
 
 # The RAUC system.conf is rendered from os/pkgs/rauc/system.conf.in and the
 # layout env by os/pkgs/rauc/render-config.sh, which owns that template and
@@ -241,7 +241,7 @@ cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
 # Layered rather than selected: everything both boards share stays in one
 # place, so a change to it cannot reach one board and miss the other.
 
-# The status indicator is a board file. It is not in overlay-v2 and is deleted
+# The status indicator is a board file. It is not in overlay and is deleted
 # here for boards that declare no LED: the shared overlay would otherwise claim
 # every board has an indicator and the truth would live in a conditional
 # somewhere else. os/boards/cx3576/overlay/ carries mos-status-led, its unit
@@ -264,7 +264,7 @@ fi
 # repository-root ca/, the same trust root os/build signs bundles with. That is
 # what lets a released image install the releases it is shipped alongside.
 #
-# The overlay is not that place, and no flag makes it one. os/rootfs/overlay-v2/
+# The overlay is not that place, and no flag makes it one. os/rootfs/overlay/
 # is copied wholesale into the root, so a keyring left there once reaches every
 # later image by being FORGOTTEN -- exactly the way a trust root must never
 # arrive. The refusal used to be waivable by MOS_EXPECT_DEV_KEYRING=1 because
@@ -344,7 +344,7 @@ for key in DATA_GUID DATA_PARTNUM DATA_FS_UUID MOS_VAR_MIB; do
 done
 if [ -n "$missing" ]; then
     echo "error: $LAYOUT_ENV is missing:$missing" >&2
-    echo "The DATA partition (/srv) and the fixed /var size are part of layout v2;" >&2
+    echo "The DATA partition (/srv) and the fixed /var size are part of the A/B layout;" >&2
     echo "a rootfs built without them would silently ship the superseded" >&2
     echo "nine-partition arrangement. Restore the constants in $LAYOUT_ENV." >&2
     exit 1
@@ -547,7 +547,7 @@ PRODUCER_DIRS=$(bash "$REPO_ROOT/os/build-env/deb/producers.sh" |
 if ! declined rauc; then
     COMPOSE_RAUC_VERSION=$(sed -n 's/^RAUC_VERSION=//p' "$REPO_ROOT/os/pkgs/rauc/versions.env" | tail -n1)
     [ -n "$COMPOSE_RAUC_VERSION" ] ||
-        { echo "error: os/pkgs/rauc/versions.env declares no RAUC_VERSION. The finalizer records it in rootfs-report-v2.txt and os/build/src/bundle.ts refuses to build a bundle whose rauc differs from it; an empty value makes that comparison pass by finding nothing" >&2; exit 1; }
+        { echo "error: os/pkgs/rauc/versions.env declares no RAUC_VERSION. The finalizer records it in rootfs-report.txt and os/build/src/bundle.ts refuses to build a bundle whose rauc differs from it; an empty value makes that comparison pass by finding nothing" >&2; exit 1; }
 fi
 
 mkdir -p "$COMPOSE_STAGE"
@@ -735,7 +735,7 @@ cat "$PACKAGES_RECORD"
 
 VERITY_ENV="$OUT_DIR/rootfs-verity.env"
 IMG="$OUT_DIR/rootfs-verity.img"
-REPORT="$OUT_DIR/rootfs-report-v2.txt"
+REPORT="$OUT_DIR/rootfs-report.txt"
 FACTORY_ROOT_OCI="$OUT_DIR/factory-root.oci"
 
 # The OCI export, asserted here as well as in the driver, because the two
@@ -822,7 +822,7 @@ write_cmdline "$OUT_DIR/boot-cmdline-a.txt" "$ROOTFS_A_GUID"
 write_cmdline "$OUT_DIR/boot-cmdline-b.txt" "$ROOTFS_B_GUID"
 
 echo
-echo "=== rootfs-report-v2.txt ==="
+echo "=== rootfs-report.txt ==="
 cat "$REPORT"
 echo "=== rootfs-verity.env ==="
 cat "$VERITY_ENV"

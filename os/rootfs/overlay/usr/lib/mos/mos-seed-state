@@ -48,7 +48,7 @@ chmod 0700 /mnt/state/bluetooth
 cp -an /etc/ssh/. /mnt/state/ssh/
 
 # The two connd config directories, on the same reasoning as /etc/ssh: mosd's
-# WiFi reconcilers render into them at runtime, and on v2 /etc is a read-only
+# WiFi reconcilers render into them at runtime, and on mos /etc is a read-only
 # squashfs. The image copy is carried across first (both packages ship helper
 # scripts there) so the bind does not hide anything the image provided.
 # 0700 because both hold a pre-shared key in the clear once a device is

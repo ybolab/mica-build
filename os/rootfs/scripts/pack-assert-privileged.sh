@@ -14,4 +14,4 @@ fi
 { echo
   echo "== setuid/setgid (mode uid gid path; identical in source tree and packed image) =="
   cat /out/privileged-pkg.txt
-} >> /out/rootfs-report-v2.txt
+} >> /out/rootfs-report.txt

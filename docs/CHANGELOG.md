@@ -4,6 +4,19 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The v2 suffix is retired (2026-09-01)
+
+The `v2` in file and target names dated from when the current layout coexisted
+with a legacy chain; that chain is gone, so the suffix stopped naming a
+distinction. `os/rootfs/build-v2.sh` is now `build.sh`, `os/rootfs/overlay-v2/`
+is `overlay/`, the cx3576 assembler `mkimage-v2*` is `mkimage-cx3576*` (the
+name `mkimage-x64` already used), the make targets dropped their `-v2`, and
+images assemble as `<board>-mos-<epoch>.img`. Prose that said "v2 image" or
+"layout v2" now says "mos image" or "the A/B layout". Version numbers that
+really are versions -- the settings schema's v2, the API `/api/v2` rule,
+upstream releases -- are untouched, and historical records (this file,
+docs/plan, docs/task) keep the names they were written with.
+
 ## The rootfs is composed from Debian packages (2026-08-31)
 
 The nine-file rootfs stage chain is gone. A root is now one APT transaction

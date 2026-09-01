@@ -128,7 +128,7 @@ mos/
 │   │              以及 mosd/ Rust 工作区（mosd、apid、mos-mqttd、
 │   │              mos-mqtt-broker、mosd-settings）；工作区级黑盒测试统一放在 mosd/tests/
 │   ├── rootfs/    根文件系统：compose/（两个组合 Dockerfile）、packages/（清单与解析器）、
-│   │              packages-src/（system、profile、射频、CA 信任库四个 producer），加 build-v2.sh
+│   │              packages-src/（system、profile、射频、CA 信任库四个 producer），加 build.sh
 │   ├── tests/     针对已构建镜像的 shell 套件
 │   ├── tools/     QEMU 辅助脚本
 │   └── verify/    TypeScript：板卡模型，以及装配后镜像必须通过的检查

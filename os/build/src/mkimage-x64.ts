@@ -1,5 +1,5 @@
 // X64 board (amd64 industrial PC, UEFI firmware) A/B GPT disk-image assembler:
-// layout v2, nine partitions.
+// the A/B layout, nine partitions.
 //
 // One static ESP that GRUB is loaded from, a FAT32 boot partition per slot, two
 // raw squashfs+dm-verity rootfs slots and the meta/state/ephemeral/data ext4
@@ -7,7 +7,7 @@
 // os/verify's typed model and this package's geometry; nothing is duplicated
 // here and nothing re-reads that file.
 //
-// This is intentionally not src/mkimage-v2.ts with a board parameter. The
+// This is intentionally not src/mkimage-cx3576.ts with a board parameter. The
 // cx3576 assembler is U-Boot-specific: it has a
 // loader partition at a fixed sector, a redundant environment pair, a compiled
 // boot.scr and geometry assertions about all three, none of which exists on a
@@ -43,7 +43,7 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 //     tree, because `mmd` has no source to take a time from and stamps ::/EFI
 //     with the wall clock -- measured at 18 moving bytes in the shell's header;
 //   * `cp -a` of the factory /var runs on the host, where the x64 assembly contract
-//     runs it. That is the opposite of src/mkimage-v2.ts and it is deliberate:
+//     runs it. That is the opposite of src/mkimage-cx3576.ts and it is deliberate:
 //     that script stages inside its container and this one does not, `cp -a` is
 //     `--preserve=all` (xattrs included), mke2fs -d copies xattrs into the
 //     image, and this host runs SELinux while neither container does. Each port
@@ -82,7 +82,7 @@ export const BOARD = 'x64'
  * default is wrong too, because a cx3576 left in the environment would name
  * the wrong board to build.
  */
-export const ROOTFS_PRODUCER = `MOS_BOARD=${BOARD} bash os/rootfs/build-v2.sh`
+export const ROOTFS_PRODUCER = `MOS_BOARD=${BOARD} bash os/rootfs/build.sh`
 
 /** The stamp that keeps mos-seed-var from racing every other unit that writes /var. */
 export const SEED_STAMP = '.mos-var-seeded'
@@ -220,7 +220,7 @@ export async function checkEspIsFat32(tb: Toolbox, image: string, espSizeMib: bi
  * A/B order that never changes -- the one symptom this boot chain exists to make
  * impossible.
  *
- * A separate function for the reason src/mkimage-v2.ts gives for
+ * A separate function for the reason src/mkimage-cx3576.ts gives for
  * checkLoaderLanded: nothing a caller can pass to the assembly makes a real
  * grub-editenv produce a file of another size, so inline it could only ever be
  * observed NOT firing.
@@ -279,7 +279,7 @@ export function bootSlotFault(aList: readonly string[], bList: readonly string[]
  * is 2048 sectors, so no start is relocatable by the alignment this assembler
  * passes. That is a statement about the board file and the flag; this is one
  * about the table sgdisk actually wrote, and the two are not the same claim --
- * the lesson src/mkimage-v2.ts records for cx3576.
+ * the lesson src/mkimage-cx3576.ts records for cx3576.
  *
  * On this board a wrong alignment does not announce itself. Measured
  * (src/mkimage-x64.test.ts): `-a 4096` over the real x64 geometry moves the ESP

@@ -431,7 +431,7 @@ const HEALTH_CHECKS: readonly CheckCase[] = [
           + "RAUC_SLOT_STATE_n='booted'); verified against rauc 1.8 driving this exact system.conf. "
           + 'The gate therefore always reads an empty slot, always exits 0 and never reaches `rauc '
           + 'status mark-good`, so every update rolls back. Fix belongs in '
-          + 'os/rootfs/overlay-v2/usr/lib/mos/mos-health, NOT here')]
+          + 'os/rootfs/overlay/usr/lib/mos/mos-health, NOT here')]
       }
       return [verdict(id, true,
         'mos-health does not depend on the non-existent RAUC_SYSTEM_BOOTED_SLOT variable')]

@@ -93,14 +93,14 @@ loader | uenv-a | uenv-b | boot-a | boot-b | rootfs-a | rootfs-b | meta | state 
 ```
 
 - **Root is read-only.** Each `rootfs-` slot holds a squashfs image with its
-  dm-verity hash tree appended, assembled by `os/rootfs/build-v2.sh`.
+  dm-verity hash tree appended, assembled by `os/rootfs/build.sh`.
 - **No initramfs in the normal boot path.** The verity device is described
   entirely on the kernel command line with `dm-mod.create=`, composed per slot
   from that slot's verity parameters and the board's `BOARD_CMDLINE_ARGS`
-  (`os/rootfs/build-v2.sh`, `docs/design/ro-root.md` §2).
+  (`os/rootfs/build.sh`, `docs/design/ro-root.md` §2).
 - **Each boot slot carries** `Image`, the device tree, the shared `boot.scr` and
   a per-slot `mos-verity-<slot>.env` holding that slot's verity arguments
-  (`os/build/src/mkimage-v2.ts`). Deliberately no `extlinux/extlinux.conf`:
+  (`os/build/src/mkimage-cx3576.ts`). Deliberately no `extlinux/extlinux.conf`:
   U-Boot tries extlinux first, so one there would bypass the handshake.
 - **The handshake** is `BOOT_ORDER` plus a per-slot attempt counter in the
   redundant U-Boot environment at `uenv-a` / `uenv-b`. A slot that fails to boot
@@ -170,7 +170,7 @@ mos/
 │   │              black-box harnesses are kept together under mosd/tests/
 │   ├── rootfs/    the root filesystem: compose/ (the two composition Dockerfiles),
 │   │              packages/ (the manifests and the resolver), packages-src/ (the
-│   │              system, profile, radio and CA-trust producers), plus build-v2.sh
+│   │              system, profile, radio and CA-trust producers), plus build.sh
 │   ├── tests/     shell suites over the built image
 │   ├── tools/     three QEMU helper scripts
 │   └── verify/    TypeScript: the board model, and the checks an assembled image must pass

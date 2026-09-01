@@ -6,7 +6,7 @@
 #   make uboot      (default artifact)      debug variant, ENV_IS_NOWHERE
 #   make uboot-mos  (--target artifact-mos) mos A/B variant: persistent redundant
 #     env + boot.scr contract (docs/design/uboot-ab-handshake.md); pairs with the
-#     v2 image only — its env offsets fall inside the v1 boot partition.
+#     mos image only — its env offsets fall inside the alpine image boot partition.
 
 # The builder image is injected from os/build-env/images.env by
 # os/build-env/from.sh, which os/boards/cx3576/bsp/Makefile calls. A bare tag like
@@ -217,7 +217,7 @@ RUN cd /uboot && \
     # mmc0 alias to the eMMC controller (needs hardware; recorded no-action).
     # This stage rebuilds u-boot.dtb, so bootdev-order is re-asserted here: the
     # one property mos deliberately diverges from upstream on (eMMC first, SD as
-    # fallback) and the one that ships in the v2 A/B image. The LED and SD-power
+    # fallback) and the one that ships in the mos A/B image. The LED and SD-power
     # assertions of the build stage are not repeated, because this stage edits no
     # DTS and the nodes they cover are unchanged by scripts/config.
     test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \

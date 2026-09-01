@@ -292,7 +292,7 @@ function notStaticallyEnabled(id: string, unit: string): CheckCase {
  *
  * Masking is the only form that also blocks the D-Bus activation path
  * wpasupplicant ships
- * (/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service). On v2 the
+ * (/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service). On mos the
  * mask lives inside the signed read-only root, so it cannot be undone on device.
  */
 function maskedCheck(unit: string): CheckCase {
@@ -360,7 +360,7 @@ export function mountUnitFor(where: string): string {
 /**
  * A reconciler render target: bound, from STATE, and ENABLED.
  *
- * The v2 root is a read-only dm-verity squashfs, so a reconciler rendering into
+ * The mos root is a read-only dm-verity squashfs, so a reconciler rendering into
  * a read-only path fails on the device and nowhere else. The BACKING is
  * asserted, not just that the directory exists -- and the enablement separately,
  * because M4 shipped units that were installed and never enabled.

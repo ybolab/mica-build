@@ -73,7 +73,7 @@ function world(board = x64, w: World = {}): Fixture {
   const out = join(root, '_out')
   const pkgs = join(root, 'pkgs')
 
-  const image = join(out, board.name, `${board.name}-mos-v2-latest.img`)
+  const image = join(out, board.name, `${board.name}-mos-latest.img`)
   plant(image, w.image ?? IMAGE)
   for (const [name, when] of Object.entries(w.roots ?? {})) {
     plant(join(out, name, 'rootfs-verity.img'), when)

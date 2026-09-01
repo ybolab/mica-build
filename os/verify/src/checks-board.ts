@@ -396,7 +396,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
           'boot-slot-no-extlinux',
           hits.length === 0,
           hits.length === 0
-            ? `${slot.display} contains no extlinux/ directory and no extlinux.conf (a v2 slot must `
+            ? `${slot.display} contains no extlinux/ directory and no extlinux.conf (a mos slot must `
               + `boot via ${scriptName})`
             : `${slot.display} contains extlinux (${hits.join(' ')} ). Both U-Boot boot frameworks `
               + `try extlinux BEFORE boot.scr, so this silently bypasses the whole RAUC A/B `

@@ -18,7 +18,7 @@ FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
 TARGET="${1:?usage: build-target.sh <rust-target> <elf-arch>}"
 ELF_ARCH="${2:?usage: build-target.sh <rust-target> <elf-arch>}"
 
-# os/rootfs/build-v2.sh, os/pkgs/mosd/hack/build-aarch64.sh and a hand invocation all
+# os/rootfs/build.sh, os/pkgs/mosd/hack/build-aarch64.sh and a hand invocation all
 # reach this file, and a relative path resolves against whichever is the caller,
 # so both roots are derived from $0.
 for p in "${WORKSPACE}/Cargo.toml" "${FROM_SH}"; do
@@ -100,7 +100,7 @@ fi
 # inferred from it. `os/verify/src/smoke.ts` asserts the commit these binaries
 # report against the commit this build embedded, and that second value cannot
 # come from `git rev-parse HEAD` at run time, which would pass on any freshly
-# built tree. os/rootfs/build-v2.sh copies this into _out/<board>/ beside the
+# built tree. os/rootfs/build.sh copies this into _out/<board>/ beside the
 # factory root it goes into.
 #
 # This copy describes the last build for any target, which is why the runner
@@ -113,7 +113,7 @@ fi
 MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
 {
     echo "# What os/pkgs/mosd/hack/build-target.sh built, and the commit it embedded in mosd and apid."
-    echo "# Written on every build. os/rootfs/build-v2.sh copies it into _out/<board>/."
+    echo "# Written on every build. os/rootfs/build.sh copies it into _out/<board>/."
     echo "# An empty commit means none could be resolved; the binaries then report unknown."
     printf 'target\t%s\n' "${TARGET}"
     printf 'elf-arch\t%s\n' "${ELF_ARCH}"
@@ -189,7 +189,7 @@ docker run --rm \
 # It runs in a second container, not the build one and not the host, the same
 # separation os/pkgs/podman/build.sh and os/pkgs/rauc/build.sh draw: the build
 # asserts what it built, this asserts what landed in the directory
-# os/rootfs/build-v2.sh is about to copy from, so an export that dropped a file
+# os/rootfs/build.sh is about to copy from, so an export that dropped a file
 # or a mount that wrote somewhere unexpected is caught. On the host it would
 # make `file` a host requirement, and docker is the only one this script has;
 # the `file` it uses is mos-build-base's, whose version images.env pins a floor

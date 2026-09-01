@@ -82,7 +82,7 @@ export interface ImageContext {
    * The tree's trust root -- the repository-root `ca/`.
    *
    * A seam for the same reason `outDir` is one, and not a second convention:
-   * `ca/` is where os/rootfs/build-v2.sh takes the keyring it stages into every
+   * `ca/` is where os/rootfs/build.sh takes the keyring it stages into every
    * image, so the check that asks "did the shipped keyring come from there?"
    * has to read it. Reading the real `ca/` from a test would make the suite
    * pass on a host that had built once and fail on one that had not, and would

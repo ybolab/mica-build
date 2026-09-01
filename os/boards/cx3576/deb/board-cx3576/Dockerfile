@@ -65,7 +65,7 @@ RUN set -eu; \
     install -m 0644 /in/stage/etc/fw_env.config "${ROOT}/etc/fw_env.config"; \
     install -m 0644 /in/stage/etc/rauc/system.conf "${ROOT}/etc/rauc/system.conf"; \
     \
-    # The board's repart definitions, byte for byte. os/rootfs/build-v2.sh \
+    # The board's repart definitions, byte for byte. os/rootfs/build.sh \
     # derives the required definition COUNT from the layout's linux-generic \
     # partitions, so a definition dropped here does not fail the package -- it \
     # fails the image build that composes it, which is where that invariant \

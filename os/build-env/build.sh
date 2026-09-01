@@ -329,7 +329,7 @@ check_dockerfile_frontends
 # The builder that can reach the chosen platform.
 
 # The `default` builder is named explicitly for a native build, and that is the
-# one place this differs from os/pkgs/podman/build.sh and os/rootfs/build-v2.sh,
+# one place this differs from os/pkgs/podman/build.sh and os/rootfs/build.sh,
 # which pass no --builder at all and inherit whatever `docker buildx use` last
 # selected. This family cannot inherit it: four of the five images are FROM
 # localhost/mos-build-base, a tag that exists only in the local docker image

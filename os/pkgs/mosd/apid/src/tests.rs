@@ -2920,7 +2920,7 @@ async fn health_without_a_session_is_the_envelope_and_not_a_redirect() {
 // `/healthz` is unchanged by any of this, and this test is the pin.
 //
 // The boot health gate probes exactly this path, unauthenticated, and treats
-// any non-2xx as a failed boot (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`),
+// any non-2xx as a failed boot (`os/rootfs/overlay/usr/lib/mos/mos-health`),
 // so its path, its exemption, its status, its literal body and the fact that
 // it is not JSON are all load-bearing. §2.4 case 3 is explicit that `/healthz`
 // cannot be fixed and that the API adds a second endpoint instead — the two

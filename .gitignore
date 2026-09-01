@@ -19,17 +19,17 @@ os/pkgs/rauc-sign/.devkeys/
 /ca/
 
 # The RAUC system configuration is RENDERED from os/pkgs/rauc/system.conf.in and
-# os/boards/cx3576/board.env by os/pkgs/rauc/render-config.sh, which os/rootfs/build-v2.sh
+# os/boards/cx3576/board.env by os/pkgs/rauc/render-config.sh, which os/rootfs/build.sh
 # runs before staging the overlay. It is generated rather than committed so the
 # template stays the single source of truth and the rendered file cannot drift
 # away from it.
-os/rootfs/overlay-v2/etc/rauc/system.conf
+os/rootfs/overlay/etc/rauc/system.conf
 
-# The image's RAUC keyring is STAGED from ca/ by os/rootfs/build-v2.sh, which
+# The image's RAUC keyring is STAGED from ca/ by os/rootfs/build.sh, which
 # refuses one found in the overlay -- the overlay is not a source of trust.
 # The entry stays so that a copy left over from before that rule can never be
 # committed into the one directory the build copies wholesale into the image.
-os/rootfs/overlay-v2/etc/rauc/keyring.pem
+os/rootfs/overlay/etc/rauc/keyring.pem
 
 # Built by os/pkgs/rauc/build.sh, like os/pkgs/podman/out-*: compiled artefacts, not source.
 os/pkgs/rauc/out-*/

@@ -16,8 +16,8 @@ git；主机上不安装任何工具链，每个编译器都来自 `os/build-env
 
 | 产物 | 由谁生成 | 是什么 |
 |---|---|---|
-| `<board>-mos-v2-<epoch>.img` 与 `<board>-mos-v2-latest.img` | `bash os/build/run.sh --mkimage-v2`（cx3576）或 `--mkimage-x64` | 可直接烧写的整盘 A/B 镜像 |
-| `rootfs-verity.img` + `rootfs-verity.env` | `os/rootfs/build-v2.sh` | 一个 rootfs 槽：squashfs 加 dm-verity 哈希树，以及内核命令行需要的参数 |
+| `<board>-mos-<epoch>.img` 与 `<board>-mos-latest.img` | `bash os/build/run.sh --mkimage-cx3576`（cx3576）或 `--mkimage-x64` | 可直接烧写的整盘 A/B 镜像 |
+| `rootfs-verity.img` + `rootfs-verity.env` | `os/rootfs/build.sh` | 一个 rootfs 槽：squashfs 加 dm-verity 哈希树，以及内核命令行需要的参数 |
 | RAUC 更新包 | `bash os/build/run.sh --bundle --board <board>` | 给已经在跑 mos 的设备用的签名更新 |
 
 镜像文件名来自板卡定义（`os/boards/<board>/board.env` 里的
@@ -76,7 +76,7 @@ A/B 版 U-Boot（`u-boot-rockchip.bin`），由 `os/boards/cx3576/bsp/Makefile`
 
 **选择是一次解析。** `os/rootfs/packages/resolve.sh` 把板卡、profile、射频集合
 和拒绝列表全部作为参数接收，然后打印包名；四个输入都由
-`os/rootfs/build-v2.sh` 决定，解析器一个都不自己重新推导。拒绝一个特性就是
+`os/rootfs/build.sh` 决定，解析器一个都不自己重新推导。拒绝一个特性就是
 *少点几个包*——`MOS_ROOTFS_WITHOUT`，`WITH_CONTAINERS=0` 和 `WITH_MOSD=0` 折进
 同一个列表——而一个匹配不到任何东西的特性名会被拒绝，不会悄悄构建出完整镜像。
 
@@ -112,12 +112,12 @@ APT 直接拒绝这次事务。这个计数是在*解析出来的集合*上做�
 | 接缝 | 归谁 | 决定什么 |
 |---|---|---|
 | `/etc/ssl/certs/ca-certificates.crt`、`/usr/share/ca-certificates` 下的锚点、`/etc/ca-certificates.conf` | `mos-ca-trust`——**包载荷** | **TLS 信任库**：设备向外发起连接时相信哪些证书颁发机构 |
-| `/etc/rauc/keyring.pem` | **不归任何包**；由 `os/rootfs/build-v2.sh` 从 `ca/ca.cert.pem` staged 进去 | **RAUC 信任根**：这台设备愿意安装谁签名的更新包 |
+| `/etc/rauc/keyring.pem` | **不归任何包**；由 `os/rootfs/build.sh` 从 `ca/ca.cert.pem` staged 进去 | **RAUC 信任根**：这台设备愿意安装谁签名的更新包 |
 
 keyring 是任何包都不可以携带的、每次构建各自的信任材料：一个包是一份产物、装进
 很多个镜像，而操作者放进仓库根 `ca/` 的那个 CA 是关于*这一次*构建的决定。所以
-`build-v2.sh` 自己把它复制进组合上下文，并**拒绝**留在
-`os/rootfs/overlay-v2/etc/rauc/keyring.pem` 的 keyring——overlay 会被整份复制
+`build.sh` 自己把它复制进组合上下文，并**拒绝**留在
+`os/rootfs/overlay/etc/rauc/keyring.pem` 的 keyring——overlay 会被整份复制
 进每一个镜像，留在那里的文件就是一个没人选择过的信任根——而当材料旁边的
 `ca/GENERATED` 标记它是开发级时发出警告。`MOS_EXPECT_DEV_KEYRING=1` 在校验期
 强制同一判定。
@@ -166,7 +166,7 @@ store`），而不是去一个叫 `localhost` 的 registry 拉取。
 
 **信任根：`ca/`。** 仓库根目录下的 `ca/` 是签名 CA 进入构建的唯一入口，已
 gitignore。`os/build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
-`ca/signer.key.pem` 签名；`os/rootfs/build-v2.sh` 把 `ca/ca.cert.pem` 放进镜像
+`ca/signer.key.pem` 签名；`os/rootfs/build.sh` 把 `ca/ca.cert.pem` 放进镜像
 的 `/etc/rauc/keyring.pem`——镜像因此能安装同一批构建出来的 bundle。
 
 不需要先跑任何东西。构建发现 `ca/` 不存在、或四个文件缺了任何一个时，会在那里
@@ -176,16 +176,16 @@ gitignore。`os/build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
 
 生成器会在材料旁边留下 `ca/GENERATED`。这个标记让"生成的信任根"和"提供的生产
 材料"在此后每一次构建里都可区分，而不只是在生成它的那一次。
-`os/rootfs/build-v2.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为依据
+`os/rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为依据
 （`MOS_EXPECT_DEV_KEYRING=1` 可以强制同一条警告）。生产发布把真实材料放进
 `ca/`，并且不带这个标记。
 
 有两条规则没变。`CERT`/`KEY`/`KEYRING` 仍然优先于约定——三个都设置时不会生成
 任何东西，也不会读 `ca/` 里的任何文件。放在
-`os/rootfs/overlay-v2/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
+`os/rootfs/overlay/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
 无条件拒绝：overlay 会被整份复制进每一个镜像，留在那里的文件就是一个没人选择过
 的 CA，而 `ca/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，对开发镜像跑
-`make os-verify-<board>-v2` 需要 `MOS_EXPECT_DEV_KEYRING=1` 来声明它是台架镜像。
+`make os-verify-<board>` 需要 `MOS_EXPECT_DEV_KEYRING=1` 来声明它是台架镜像。
 
 keyring 是 mos 根里唯一**不是**包载荷的路径，而且它和 `mos-ca-trust` 提供的
 TLS 信任库是两条不同的接缝——1.1 节把两者并排列出。
@@ -200,14 +200,14 @@ bash os/pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己�
 MOS_BOARD=x64 bash os/pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash os/pkgs/podman/build.sh
 make os-debs                                   # 包仓库，以及它的索引
-MOS_BOARD=x64 bash os/rootfs/build-v2.sh       # 等价于 make os-rootfs-x64-composed
+MOS_BOARD=x64 bash os/rootfs/build.sh       # 等价于 make os-rootfs-x64-composed
 bash os/build/run.sh --mkimage-x64
 bash os/verify/run.sh --verify --board x64
 bash os/build/run.sh --bundle --board x64
 ```
 
 大多数步骤有 `make` 写法（`make os-rauc`、`make podman`、
-`make os-verify-cx3576-v2`），但它们的默认值是 cx3576 和 arm64，所以给 x64
+`make os-verify-cx3576`），但它们的默认值是 cx3576 和 arm64，所以给 x64
 构建时环境变量不能省。rootfs 构建的最后一步是 smoke：在刚打包好的根里执行
 新编出来的二进制；x64 上这是原生 `docker run`，不需要额外准备。
 
@@ -215,11 +215,11 @@ bash os/build/run.sh --bundle --board x64
 在自己的输出目录为空时会从 `PREPARE` 钩子里把它们跑起来——但 podman 那一次大约
 是四十五分钟、跨四套语言工具链编译六个上游克隆，所以先跑一遍，是把这个代价付在
 看得见的地方，而不是付在一个打包钩子内部。`make os-debs` 必须在它们**之后**、
-在 rootfs 构建**之前**跑：`build-v2.sh` 会拒绝一个版本号不等于本树版本号的仓库，
+在 rootfs 构建**之前**跑：`build.sh` 会拒绝一个版本号不等于本树版本号的仓库，
 包括未提交改动给任何一侧加上的 `.dirty` 后缀。
 
 产物用 `os/pkgs/mosd/tests/apid-api/` 下的 QEMU 台架启动，它以
-`_out/x64/x64-mos-v2-latest.img` 为输入，自己不构建任何东西。
+`_out/x64/x64-mos-latest.img` 为输入，自己不构建任何东西。
 
 ## 4. cx3576：哪些交叉编译、哪些模拟、哪些要主机配合
 
@@ -241,10 +241,10 @@ amd64 主机有三条路到达 arm64，下面每一步恰好用其中一条：
 | podman | `make podman`（默认 `MOS_ARCH=arm64`） | 同 RAUC；源码阶段在构建平台上用 amd64 基础镜像运行 | 否 |
 | mosd 一族 | `mosd` 与 `mqtt` 两个 producer 通过 `os/pkgs/mosd/hack/build-deb.sh` 调用 | 交叉编译：`mos-build-rust:amd64` 里 cargo target `aarch64-unknown-linux-gnu` | 否 |
 | 包仓库 | `make os-debs` | 各 producer 各走上面自己那一条；打包阶段本身只是带 `Architecture` 标记的文件复制 | 否 |
-| rootfs 组合 | `bash os/rootfs/build-v2.sh`（默认 `MOS_BOARD=cx3576`） | 主机有 binfmt 用 `default`，否则用 `mos-arm64` 并以 OCI layout 串接那两个文件（4.1 节） | 否 |
+| rootfs 组合 | `bash os/rootfs/build.sh`（默认 `MOS_BOARD=cx3576`） | 主机有 binfmt 用 `default`，否则用 `mos-arm64` 并以 OCI layout 串接那两个文件（4.1 节） | 否 |
 | smoke | rootfs 构建的最后一步 | daemon 能执行 arm64 就 `docker run`，否则在 `mos-arm64` 上每个二进制做一次一次性构建 | 否 |
-| 磁盘镜像 | `bash os/build/run.sh --mkimage-v2` | 纯文件拼装 | 否 |
-| 镜像校验 | `make os-verify-cx3576-v2` | 只从镜像里读文件 | 否 |
+| 磁盘镜像 | `bash os/build/run.sh --mkimage-cx3576` | 纯文件拼装 | 否 |
+| 镜像校验 | `make os-verify-cx3576` | 只从镜像里读文件 | 否 |
 | 更新包 | `make os-bundle-cx3576` | 在 amd64 容器里跑 `rauc bundle` | 否 |
 
 也就是说，cx3576 的全部内容都能在没有任何主机级模拟的 amd64 主机上构建。
@@ -258,9 +258,9 @@ make cx3576-kernel
 make os-rauc
 make podman
 make os-debs
-bash os/rootfs/build-v2.sh
-bash os/build/run.sh --mkimage-v2
-make os-verify-cx3576-v2
+bash os/rootfs/build.sh
+bash os/build/run.sh --mkimage-cx3576
+make os-verify-cx3576
 make os-bundle-cx3576
 ```
 
@@ -281,7 +281,7 @@ rootfs 构建。
   context 交出去。全程不碰 daemon 的镜像库，arm64 步骤由 builder 自带的 QEMU
   执行。
 
-`build-v2.sh` 像 RAUC 和 podman 一样选 builder——`default` 够得着目标平台就用它，
+`build.sh` 像 RAUC 和 podman 一样选 builder——`default` 够得着目标平台就用它，
 否则用 `mos-<arch>`；最后的 smoke 在 daemon 无法执行该根时改为在同一个 builder 里
 执行寄存器中的每一项，每个二进制一次一次性构建，寄存器和判定逻辑不变。layout
 模式的代价是每一次交接都要把根的各层经 docker socket 复制一遍，而组合把交接次数
@@ -336,7 +336,7 @@ sudo systemctl restart systemd-binfmt
 
 然后重跑上面的 daemon 检查；`default` builder 的平台列表
 （`docker buildx inspect default`）会同时多出 `linux/arm64`，这正是
-`build-v2.sh` 用的判断。撤销用 `--uninstall arm64` 或卸载软件包。
+`build.sh` 用的判断。撤销用 `--uninstall arm64` 或卸载软件包。
 
 **完全不需要模拟器的事。** 从 arm64 镜像里读字节——
 `docker create --platform linux/arm64 ... && docker cp`——在任何主机上都行，
@@ -380,7 +380,7 @@ smoke 执行器——而不是 1.1 节的组合路径。它们作为那条路由
 OCI layout 交接；smoke 通过 buildkit 执行器运行打包根内的自建二进制，报告
 `11 pass, 1 executor-limited (crun), 0 fail`——crun 的 memfd 重执行是模拟器
 的已记录限制，作为独立判定而非通过上报；组装出的镜像通过
-`make os-verify-cx3576-v2` 395/395，并构建且回读验签了 RAUC bundle。全程无
+`make os-verify-cx3576` 395/395，并构建且回读验签了 RAUC bundle。全程无
 tag 进入镜像存储，也未注册任何 binfmt。
 
 2026-08-31 之前那次报的 394 是还没有 `verity-hash-start-no-superblock`

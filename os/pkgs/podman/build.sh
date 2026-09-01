@@ -7,7 +7,7 @@
 # A script rather than a bare `docker buildx build` in the Makefile, for one
 # reason: the builder selection below. The first run of this build failed with
 # `exec /bin/sh: exec format error` because the default buildx builder cannot
-# execute linux/arm64 — and os/rootfs/build-v2.sh had already solved exactly
+# execute linux/arm64 — and os/rootfs/build.sh had already solved exactly
 # that, with the same fallback, forty lines of its own. Duplicating the
 # invocation in a Makefile recipe would have duplicated the bug too.
 set -euo pipefail
@@ -65,7 +65,7 @@ for tool in docker; do
 done
 
 # The builder is NAMED rather than inherited, and named rather than pinned --
-# the same BUILDX_BUILDER register as os/rootfs/build-v2.sh, and the same block as
+# the same BUILDX_BUILDER register as os/rootfs/build.sh, and the same block as
 # os/pkgs/rauc/build.sh. BUILDX_BUILDER wins, because a caller who names a
 # builder has made a decision; with nothing named, `default` is the docker
 # driver on every docker installation. What must not happen is inheriting the
@@ -142,7 +142,7 @@ fi
 #
 #   * It checked the PREVIOUS image. The binaries built here go into the NEXT
 #     one, whose package list this build has not seen.
-#   * It was a cycle. os/rootfs/build-v2.sh now stages os/pkgs/podman/out, so the
+#   * It was a cycle. os/rootfs/build.sh now stages os/pkgs/podman/out, so the
 #     rootfs needed the engine and the engine's check needed the rootfs; a
 #     clean checkout could build neither.
 #
@@ -270,7 +270,7 @@ docker buildx build "${BUILDER_ARGS[@]}" \
 # The Dockerfile's own stage already refuses a wrong-architecture artifact, a
 # dynamically linked catatonit, or a NEEDED soname the image does not carry. This re-checks the EXPORTED tree, which is a different claim: the
 # stage asserts what it built, this asserts what landed on disk for
-# os/rootfs/build-v2.sh to stage. An export that dropped a file, or a cache hit
+# os/rootfs/build.sh to stage. An export that dropped a file, or a cache hit
 # that served an older layer, is invisible to the first check and caught here.
 missing=""
 for b in podman quadlet crun conmon catatonit netavark aardvark-dns; do
@@ -287,7 +287,7 @@ done
 # what that leaves open: "a stale out/ from the other architecture looks
 # exactly like a fresh one to anything that only checks the files are
 # present". Reuse is the normal path (prepare.sh reuses a complete directory,
-# build-v2.sh stages one as it stands), so without this the version bump that
+# build.sh stages one as it stands), so without this the version bump that
 # is this project's whole upgrade interface can be made, committed and shipped
 # while the device keeps running the engine from before it.
 #

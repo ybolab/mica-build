@@ -235,7 +235,7 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // The guard the family above did not have, and the reason no v2 image ever
+    // The guard the family above did not have, and the reason no mos image ever
     // booted: `veritysetup format` without --no-superblock writes a verity
     // SUPERBLOCK at --hash-offset and starts the tree one hash block later,
     // while `dm-mod.create=`'s verity v1 target has no superblock concept and
@@ -303,7 +303,7 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
       const path = join(ctx.outDir, 'rootfs-verity.env')
       if (!existsSync(path)) {
         return [verdict(id, false,
-          `verity parameter file not found: ${path} (produce it with os/rootfs/build-v2.sh)`)]
+          `verity parameter file not found: ${path} (produce it with os/rootfs/build.sh)`)]
       }
       const { rootHash } = await slotAFields(ctx)
       return [eqCi(id,
@@ -406,7 +406,7 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
       return [verdict('rootfs-a-no-ext4', ok,
         ok
           ? `ROOTFS-A carries no ext4 superblock (magic at 1024+56 is 0x${magic || '????'}, not 0xef53)`
-          : `ROOTFS-A carries an ext4 superblock; the v2 root must be a read-only squashfs, not a `
+          : `ROOTFS-A carries an ext4 superblock; the mos root must be a read-only squashfs, not a `
             + `writable filesystem`)]
     },
   },
@@ -434,7 +434,7 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
 
   {
     // rauc 1.8 get_cmdline_bootname() takes the FIRST of `rauc.external`,
-    // `rauc.slot=<x>`, barebox bootstate, then `root=<x>`. A v2 image boots
+    // `rauc.slot=<x>`, barebox bootstate, then `root=<x>`. A mos image boots
     // `root=/dev/dm-0`, which is not a bootname, not a slot name and not the
     // realpath of any slot device -- so the root= fallback CANNOT work and
     // `rauc.slot=` is required. This is a property of the boot path, not of RAUC.

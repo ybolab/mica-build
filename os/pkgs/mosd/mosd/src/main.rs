@@ -8,7 +8,7 @@
 //!   `/var/lib/mos/settings.toml`).
 //! - `MOSD_BUS` — `system` (default) or `session`.
 //! - `MOSD_SHADOW_PATH` — the shadow file a transient root password is written
-//!   into (default `/etc/shadow`, a symlink onto STATE on the v2 image); the
+//!   into (default `/etc/shadow`, a symlink onto STATE on the mos image); the
 //!   sshd reconciler honours the same variable.
 //! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
 //!   reconcilers or service scan are constructed, power actions go to a no-op

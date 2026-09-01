@@ -318,7 +318,7 @@ One build, two architectures, one builder.
 
 `os/pkgs/mosd/tests/apid-api/run.sh` **builds nothing**. When `_out/x64/` or the image inside
 it is absent it refuses by name and prints the two commands that make it:
-"image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
+"image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build.sh && bash os/build/run.sh --mkimage-x64"
 (`os/pkgs/mosd/tests/apid-api/run.sh`). The same sentence guards the missing directory one
 step earlier:
 "does not exist, so there is no image to boot; this harness builds nothing."
@@ -336,12 +336,12 @@ links fail the same way — as an apparently broken harness. In order:
    architecture it declares and then indexes both pools. The rootfs build
    installs out of `_out/debs/<arch>/` and compiles nothing, so this step is
    where a missing or stale component becomes a refusal that names a target.
-3. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build-v2.sh`, which refuses a
+3. **The rootfs.** `MOS_BOARD=x64 bash os/rootfs/build.sh`, which refuses a
    pool that is absent, unindexed, or stamped at a version other than this
    tree's.
 4. **The image.** `bash os/build/run.sh --mkimage-x64`, which writes the A/B disk
    image around the rootfs slot. Its name is read from the board definition,
-   `IMAGE_LATEST_NAME=x64-mos-v2-latest.img` (`os/boards/x64/board.env`),
+   `IMAGE_LATEST_NAME=x64-mos-latest.img` (`os/boards/x64/board.env`),
    rather than repeated in the harness.
 5. **The run.** `make os-apid-api-test`, or `bash os/pkgs/mosd/tests/apid-api/run.sh`.
    `bash os/pkgs/mosd/tests/apid-api/run.sh --dry-run` does the preconditions and the network

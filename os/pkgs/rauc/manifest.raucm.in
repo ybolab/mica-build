@@ -3,7 +3,7 @@
 # One bundle installs both members of a slot group: the raw squashfs+verity
 # rootfs image and the FAT32 boot slot payload (kernel, dtb, boot.scr, the
 # per-slot verity env files). The compatible string is taken from the rendered
-# os/rootfs/overlay-v2/etc/rauc/system.conf, so a bundle can never claim a
+# os/rootfs/overlay/etc/rauc/system.conf, so a bundle can never claim a
 # compatible the device does not use.
 
 [update]

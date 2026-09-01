@@ -219,7 +219,7 @@ describe('the argv normalisation is measured, not assumed', () => {
 
   test('and with the cx3576 assembly contract\'s --clear plus -a 1, where every start is MiB-aligned', async () => {
     const ours = await build('clear-ours.img', writeGptArgs({ diskGuid, partitions }, '').slice(0, -1))
-    const v2Shape = await build('clear-v2.img', [
+    const cx3576Shape = await build('clear-cx3576.img', [
       'sgdisk', '--clear', '-a', '1', `--disk-guid=${diskGuid}`,
       ...partitions.flatMap(p => [
         `--new=${p.partnum}:${p.startSector}:+${p.sizeSectors}S`,
@@ -228,7 +228,7 @@ describe('the argv normalisation is measured, not assumed', () => {
         `--partition-guid=${p.partnum}:${p.guid}`,
       ]),
     ])
-    expect(ours).toEqual(v2Shape)
+    expect(ours).toEqual(cx3576Shape)
   }, TOOL_TIMEOUT_MS)
 
   test('the comparison above is not vacuous: a REAL difference is visible to it', async () => {

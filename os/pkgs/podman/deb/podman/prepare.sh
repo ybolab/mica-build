@@ -13,7 +13,7 @@
 # EXISTING OUTPUT IS REUSED. os/pkgs/podman/build.sh writes out-<arch>/ and a
 # cold arm64 build of it takes roughly three quarters of an hour, so a complete
 # one is used as it stands -- the same directory, and the same reuse,
-# os/rootfs/build-v2.sh stages into an image. It is rebuilt only when a binary
+# os/rootfs/build.sh stages into an image. It is rebuilt only when a binary
 # is missing from it. The directory carries the architecture in its name, so the
 # other architecture's output cannot be mistaken for this one's -- and since
 # os/pkgs/podman/versions-stamp.sh exists, a directory compiled from a

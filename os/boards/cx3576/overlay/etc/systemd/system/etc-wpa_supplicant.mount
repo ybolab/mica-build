@@ -2,7 +2,7 @@
 Description=wpa_supplicant configuration from the STATE partition
 # The station reconciler renders /etc/wpa_supplicant/wpa_supplicant-<iface>.conf
 # at runtime, and that path is not a preference: it is baked into the ExecStart
-# of Debian's wpa_supplicant@.service template. On v2 /etc is inside the
+# of Debian's wpa_supplicant@.service template. On mos /etc is inside the
 # read-only dm-verity squashfs, so without this bind the reconciler's write
 # fails on device and nowhere else — every unit test green, no uplink.
 # The file carries PSKs in the clear, so it must also survive an A/B update

@@ -11,7 +11,7 @@ step actually ran.
     bash os/build/run.sh src/geometry.test.ts # extra arguments go to `bun test`
     bash os/build/run.sh -t "sgdisk"
     bash os/build/run.sh --build-rootfs       # the os/rootfs stage chain
-    bash os/build/run.sh --mkimage-v2         # assemble the cx3576 image
+    bash os/build/run.sh --mkimage-cx3576         # assemble the cx3576 image
     bash os/build/run.sh --mkimage-x64        # assemble the x64 image
     bash os/build/run.sh --bundle             # build and sign the RAUC bundle
 
@@ -25,8 +25,8 @@ Each mode is recognised only in first position, so none can be mistaken for a
 | mode | what it runs |
 |---|---|
 | *(none)* | the suite |
-| `--build-rootfs` | the numbered-Dockerfile driver, pointed at `os/rootfs/compose/` — `10-compose` then `90-pack`, the second `FROM` the local image tag the first was written to. `os/rootfs/build-v2.sh` calls it with the build arguments it computed |
-| `--mkimage-v2` | the cx3576 image assembler |
+| `--build-rootfs` | the numbered-Dockerfile driver, pointed at `os/rootfs/compose/` — `10-compose` then `90-pack`, the second `FROM` the local image tag the first was written to. `os/rootfs/build.sh` calls it with the build arguments it computed |
+| `--mkimage-cx3576` | the cx3576 image assembler |
 | `--mkimage-x64` | the x64 image assembler |
 | `--bundle [--board NAME]` | the RAUC update bundle, built and signed |
 
@@ -63,10 +63,10 @@ Per-operation, which is where the design decisions came from:
 | `Toolbox.open`, debian + apt | ~12 s (x64 assembly), ~20 s (rauc + squashfs + openssl) |
 | one `docker exec` into an open toolbox | ~40 ms |
 | one `docker run --rm` — what a session avoids | ~320 ms |
-| `bash os/build/run.sh --mkimage-v2` | ~55 s |
+| `bash os/build/run.sh --mkimage-cx3576` | ~55 s |
 | `bash os/build/run.sh --mkimage-x64` | ~27 s |
 | `bash os/build/run.sh --bundle` | ~22 s |
-| `src/mkimage-v2.test.ts` (seven full assemblies, fabricated inputs) | ~45 s |
+| `src/mkimage-cx3576.test.ts` (seven full assemblies, fabricated inputs) | ~45 s |
 | `src/mkimage-x64.test.ts` (three full assemblies) | ~70 s |
 | `src/bundle.test.ts` (six real bundles) | ~32 s |
 
@@ -425,7 +425,7 @@ beside it in the same file — the tree's own `boot.cmd`, the tree's own board
 definition, or the same input unmutated. Without that, a guard that refused
 everything would satisfy the whole table.
 
-**slot pin, strict mode** — `src/layout-cx3576.test.ts`, `src/mkimage-v2.test.ts`
+**slot pin, strict mode** — `src/layout-cx3576.test.ts`, `src/mkimage-cx3576.test.ts`
 
 | driven | what it prints |
 |---|---|
@@ -462,7 +462,7 @@ the FIRST following assignment, never unlatches, and ignores leading whitespace
 — transcribed rather than tidied, because a scan that read a different line
 would be right about today's file and wrong about the next one.
 
-**loader content** — `src/mkimage-v2.test.ts`
+**loader content** — `src/mkimage-cx3576.test.ts`
 
 | driven | what it prints |
 |---|---|
@@ -473,7 +473,7 @@ would be right about today's file and wrong about the next one.
 | the same image with the blob dd'd in, read at sector **2048** | refused — it reads at the start sector it is GIVEN, so a relocated partition points at nothing |
 | a file with two bytes in it | "has only 2 byte(s) at offset 0, and 4 were read" — a short read is not a wrong magic |
 
-**the uboot-mos-only rule** — `src/mkimage-v2.test.ts`
+**the uboot-mos-only rule** — `src/mkimage-cx3576.test.ts`
 
 | driven | what it prints |
 |---|---|
@@ -486,8 +486,8 @@ would be right about today's file and wrong about the next one.
 
 | refusal | driven in |
 |---|---|
-| `board.env` not found | `mkimage-v2-cli.test.ts` — refused by name |
-| `boot.cmd` not found | `mkimage-v2.test.ts` |
+| `board.env` not found | `mkimage-cx3576-cli.test.ts` — refused by name |
+| `boot.cmd` not found | `mkimage-cx3576.test.ts` |
 | verity env filenames are not `<base>-a.env`/`<base>-b.env` | `boot-cx3576.test.ts`, both sides, plus a renamed base that stays consistent |
 | `rauc.slot=${bootslot}` missing from `boot.cmd` | `boot-cx3576.test.ts` — **`replaceAll`**, because the token appears in a comment too and a replace that changed only the comment is a negative test that is not negative |
 | the per-slot verity env load missing | `boot-cx3576.test.ts`, and the pattern it looks for is derived from the board |
@@ -496,19 +496,19 @@ would be right about today's file and wrong about the next one.
 | the table does not name this slot's PARTUUID | `boot-cx3576.test.ts`, and slot B pointed at rootfs-a through an assembly |
 | the `waitfor` names a different partition from the table | `boot-cx3576.test.ts` |
 | the table carries a different root hash | `boot-cx3576.test.ts` |
-| `FACTORY_VAR` absent / a file / without `lib/` | `mkimage-v2.test.ts`, all three |
-| kernel, dtb, rootfs-verity.img/.env, both cmdlines absent | `mkimage-v2.test.ts`, five cases, each asserting the sentence that says what MAKES it |
-| the three loader identities | `layout-cx3576.test.ts` individually and all three at once; `mkimage-v2.test.ts` through an assembly |
-| payload not a whole-MiB multiple / zero bytes | `mkimage-v2.test.ts` |
-| `VERITY_ROOT_HASH` missing | `mkimage-v2.test.ts` |
-| salt not the pinned one | `mkimage-v2.test.ts`, with an UPPERCASE salt as the case-folding control |
+| `FACTORY_VAR` absent / a file / without `lib/` | `mkimage-cx3576.test.ts`, all three |
+| kernel, dtb, rootfs-verity.img/.env, both cmdlines absent | `mkimage-cx3576.test.ts`, five cases, each asserting the sentence that says what MAKES it |
+| the three loader identities | `layout-cx3576.test.ts` individually and all three at once; `mkimage-cx3576.test.ts` through an assembly |
+| payload not a whole-MiB multiple / zero bytes | `mkimage-cx3576.test.ts` |
+| `VERITY_ROOT_HASH` missing | `mkimage-cx3576.test.ts` |
+| salt not the pinned one | `mkimage-cx3576.test.ts`, with an UPPERCASE salt as the case-folding control |
 | `sgdisk --verify` reporting problems | `src/tools/sgdisk.test.ts` — both shapes, including problem text with exit 0 |
 | the assembled loader partition moved | below |
-| the rootfs input / BSP input messages | `mkimage-v2-cli.test.ts`, asserting they are DIFFERENT sentences |
+| the rootfs input / BSP input messages | `mkimage-cx3576-cli.test.ts`, asserting they are DIFFERENT sentences |
 
 ### Loader alignment, and why the table is read back
 
-Driven against a real sgdisk in `src/mkimage-v2.test.ts`, over the real cx3576
+Driven against a real sgdisk in `src/mkimage-cx3576.test.ts`, over the real cx3576
 geometry on a sparse 1315 MiB file:
 
 | alignment | what sgdisk does | what catches it |
@@ -866,7 +866,7 @@ runs no such second guard**, which is why the refusal lives there and not in
 
 | driven | what it prints |
 |---|---|
-| `VERITY_ROOT_HASH` deleted | "VERITY_ROOT_HASH missing from … fix os/rootfs/build-v2.sh" |
+| `VERITY_ROOT_HASH` deleted | "VERITY_ROOT_HASH missing from … fix os/rootfs/build.sh" |
 | a salt of 64 `f`s | "does not match the pinned VERITY_SALT" |
 | `VERITY_SALT` deleted entirely | "salt '' does not match" — an absent value does not compare equal to the pin |
 | a salt with LETTERS, upper-cased on one side | accepted |
@@ -936,7 +936,7 @@ that a guard stayed quiet about an input it had no reason to complain about.
 | **each of the three key files missing from the repo-root `ca/`, in turn** | "signing material not found: …" naming that file, and `make os-devkeys` |
 | `CERT=/hsm/typo.pem` missing | "…supplied from the environment but this file does not exist", and NOT `make os-devkeys` — a different reader with a different fix |
 | `CERT=/keys-backup/c.pem` against `KEYDIR=/keys` | the environment sentence: the under-`KEYDIR` test needs the slash, and `/keys-backup` is not under `/keys` |
-| **each rootfs-side input missing, in turn** | "not found; run 'MOS_BOARD=cx3576 bash os/rootfs/build-v2.sh' first" |
+| **each rootfs-side input missing, in turn** | "not found; run 'MOS_BOARD=cx3576 bash os/rootfs/build.sh' first" |
 | **each board-side input missing, in turn** | "build the BSP or set BOARD_DIR (currently: /bsp)" — a different action, so a different sentence |
 | both families missing | the rootfs-side sentence first |
 | `riscv64`, `armv7l`, `ppc64le`, `''` | "os/pkgs/rauc/ builds amd64 and arm64" |
@@ -966,7 +966,7 @@ identical bytes. That is a property of the assemblers, not of the rootfs build �
 a cold rootfs build does **not** reproduce itself, so a rootfs hash committed as
 an expectation is a check that looks like coverage and is not.
 
-`src/mkimage-v2.test.ts` and `src/mkimage-x64.test.ts` each carry the control
+`src/mkimage-cx3576.test.ts` and `src/mkimage-x64.test.ts` each carry the control
 that makes "byte-identical" mean something: one changed input — a different
 U-Boot blob, a different rootfs payload — and the images must compare **unequal**.
 `src/bundle.test.ts` carries the same pair over a fabricated payload and a

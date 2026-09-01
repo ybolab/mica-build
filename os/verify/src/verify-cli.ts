@@ -4,7 +4,7 @@
 //   bash os/verify/run.sh --verify --board x64 --image PATH
 //   bash os/verify/run.sh --verify --board x64 --probe
 //
-// What `make os-verify-cx3576-v2` runs, and orchestration only: the checks are
+// What `make os-verify-cx3576` runs, and orchestration only: the checks are
 // in checks.ts and the sixteen modules it composes, the tools are in tools.ts,
 // and nothing here decides anything about an image.
 //
@@ -60,7 +60,7 @@ function usage(): string {
  * The board, or a message naming what this tree actually ships.
  *
  * No default board. `MOS_BOARD` is honoured because the oracle's callers set it
- * and because `make os-verify-<board>-v2` is per board, but a bare run refuses
+ * and because `make os-verify-<board>` is per board, but a bare run refuses
  * rather than falling back to cx3576. That fallback is the exact defect this
  * campaign has been removing: the retired shell verifier this module replaced
  * defaulted BOARD_DIR to the cx3576 BSP in an otherwise board-derived script,
@@ -91,7 +91,7 @@ function boardOrRefuse(name: string): Board {
  * `_out/<board>/<IMAGE_LATEST_NAME>` -- read off the board, never written here.
  *
  * The same derivation the parity harness used, and the same one `make
- * os-image-<board>-v2` writes to, so the default path of a verify run and the
+ * os-image-<board>` writes to, so the default path of a verify run and the
  * output path of an assembly run cannot drift apart without the board file
  * saying so.
  */
@@ -152,7 +152,7 @@ async function main(): Promise<number> {
 
   if (!existsSync(image)) {
     throw new Error(
-      `${image} is not there. Build it with 'make os-image-${board.name}-v2', or name one with `
+      `${image} is not there. Build it with 'make os-image-${board.name}', or name one with `
       + `--image. A verifier that carried on would report on nothing.`,
     )
   }

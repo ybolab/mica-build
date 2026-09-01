@@ -188,7 +188,7 @@ describe('cx3576: the U-Boot board, values copied from os/boards/cx3576/board.en
     expect(g().ext4.fakeTime).toBe('1577836800')
     expect(g().disk.headMib).toBe(16n)
     expect(g().disk.tailSlackMib).toBe(1n)
-    expect(g().naming.latestName).toBe('cx3576-mos-v2-latest.img')
+    expect(g().naming.latestName).toBe('cx3576-mos-latest.img')
   })
 })
 
@@ -243,7 +243,7 @@ describe('x64: the GRUB board, values copied from os/boards/x64/board.env', () =
   test('the pinned settings differ from cx3576 where the boards differ', () => {
     expect(g().slot).toEqual({ slotMib: 512n, headroomPct: 125n, alignMib: 16n })
     expect(g().disk.headMib).toBe(1n)
-    expect(g().naming.latestName).toBe('x64-mos-v2-latest.img')
+    expect(g().naming.latestName).toBe('x64-mos-latest.img')
     // Identical where they are meant to be identical: the reproducibility pins.
     expect(g().ext4).toEqual(loadGeometry('cx3576').ext4)
     expect(g().veritySalt).toBe(loadGeometry('cx3576').veritySalt)

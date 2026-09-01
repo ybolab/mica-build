@@ -3,7 +3,7 @@
 # the kernel command line, before the root filesystem is looked for.
 #
 # THE COMMAND LINE IS THE SAME ONE cx3576 USES. That is deliberate: one boot
-# contract, written once by os/rootfs/build-v2.sh, read by the kernel's dm-init
+# contract, written once by os/rootfs/build.sh, read by the kernel's dm-init
 # on a board whose kernel has it and by this script on a board whose kernel
 # does not. Two cmdline formats would be two things to keep in step, and the
 # one that broke would be the one nobody was looking at.
@@ -23,7 +23,7 @@
 # no grep, no awk, no cut. The first version of this script used `tr` to strip
 # quotes and failed with "tr: not found" after the kernel had already handed
 # over, which reads as a hang on a headless machine. Everything below is shell
-# parameter expansion for that reason; os/rootfs/build-v2.sh asserts it.
+# parameter expansion for that reason; os/rootfs/build.sh asserts it.
 set -e
 PREREQ=""
 prereqs() { echo "$PREREQ"; }

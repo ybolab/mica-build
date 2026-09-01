@@ -147,7 +147,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
         pass: `u-boot at sector ${sector} matches the ${variant} variant (`,
         fail: [
           'u-boot compare source not found',
-          `; a v2 image may only carry the ${variant} variant`,
+          `; a mos image may only carry the ${variant} variant`,
         ],
       },
       run: async (ctx: ImageContext): Promise<readonly CheckResult[]> => {
@@ -161,7 +161,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
         return [verdict(matchesId, ok,
           ok
             ? `u-boot at sector ${sector} matches the ${variant} variant (${src})`
-            : `u-boot at sector ${sector} differs from ${src}; a v2 image may only carry the `
+            : `u-boot at sector ${sector} differs from ${src}; a mos image may only carry the `
               + `${variant} variant`)]
       },
     },
@@ -189,7 +189,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
         const same = bytesEqual(ctx.image, offset, src)
         return [verdict(notDebugId, !same,
           same
-            ? `the blob at sector ${sector} is byte-identical to the DEBUG u-boot (${src}). A v2 `
+            ? `the blob at sector ${sector} is byte-identical to the DEBUG u-boot (${src}). A mos `
               + `image carrying it would boot, look healthy and never run the RAUC A/B handshake: `
               + `no BOOT_ORDER, no attempt counters, no rollback`
             : `u-boot at sector ${sector} differs from the debug variant (${debugDir}), so the A/B `
@@ -584,7 +584,7 @@ const BOOT_SCRIPT_CHECKS: readonly CheckCase[] = [
       return [verdict('boot-scr-root-args', ok,
         ok
           ? `${script} boots root=/dev/dm-0 rootfstype=squashfs ro (read-only squashfs root)`
-          : `${script} does not set 'root=/dev/dm-0 rootfstype=squashfs ro'; the v2 root must be `
+          : `${script} does not set 'root=/dev/dm-0 rootfstype=squashfs ro'; the mos root must be `
             + `mounted read-only from the verity device`)]
     },
   },

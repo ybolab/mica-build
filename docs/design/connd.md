@@ -291,7 +291,7 @@ The rest of the image contract:
 |---|---|
 | Binaries | `/usr/sbin/wpa_supplicant`, `/usr/sbin/hostapd` |
 | Unit templates | `wpa_supplicant@.service`, `hostapd@.service` — Debian's own, ExecStart config paths cross-checked against the reconciler constants |
-| Config dirs (v2) | `/etc/wpa_supplicant` and `/etc/hostapd`, STATE-backed binds via `etc-wpa_supplicant.mount` / `etc-hostapd.mount`, mode 0700 |
+| Config dirs | `/etc/wpa_supplicant` and `/etc/hostapd`, STATE-backed binds via `etc-wpa_supplicant.mount` / `etc-hostapd.mount`, mode 0700 |
 | Config dirs (v1) | writable ext4 root, mode 0700; v1 has no STATE partition to back them |
 | Control socket | `/run/wpa_supplicant`, on tmpfs, created by wpa_supplicant itself |
 | networkd dir | `/run/systemd/network` |

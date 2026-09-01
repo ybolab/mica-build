@@ -3,7 +3,7 @@
 # The image os/verify runs the full verifier in on a host that has no bun.
 #
 #   bash os/verify/run.sh --verify --board cx3576   (on a host with no bun)
-#   make os-verify-cx3576-v2
+#   make os-verify-cx3576
 #
 # Not built by `make build-env`, which builds the four mos-build-* compiler
 # images: .github/workflows/check.yml's os-verify job installs no bun and runs no

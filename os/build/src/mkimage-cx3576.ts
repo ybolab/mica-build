@@ -1,5 +1,5 @@
 // Flashable cx3576 (Rockchip RK3576, eMMC /dev/mmcblk0) A/B GPT disk-image
-// assembler: layout v2, eleven partitions.
+// assembler: the A/B layout, eleven partitions.
 //
 // The raw Rockchip loader area, a redundant U-Boot env pair, two FAT32 boot
 // slots, two raw squashfs+dm-verity rootfs slots and the meta/state/ephemeral/
@@ -70,7 +70,7 @@ export const BOARD = 'cx3576'
  * Named in every error message about one of them, because "rootfs-verity.img not
  * found" is only actionable once you know what makes it.
  */
-export const ROOTFS_PRODUCER = 'os/rootfs/build-v2.sh'
+export const ROOTFS_PRODUCER = 'os/rootfs/build.sh'
 
 export interface AssemblyInputs {
   readonly kernelImage: string
@@ -129,7 +129,7 @@ export function envFileGet(path: string, key: string): string {
  *
  * The v1 blob is not a substitute and the sentence says why at length: it is the
  * debug variant -- CONFIG_ENV_IS_NOWHERE, no persistent environment at all, and
- * no pinned bootmeth order -- so a v2 image built with it would boot, look
+ * no pinned bootmeth order -- so a mos image built with it would boot, look
  * healthy, and silently never run the RAUC A/B handshake.
  */
 export function ubootMissingError(path: string, debugVariantDir: string): Error {
@@ -260,7 +260,7 @@ export async function assembleCx3576(
       && sameBytes(inputs.uboot, inputs.ubootDebug)) {
       throw new Error(
         `the U-Boot blob at ${inputs.uboot} is byte-identical to the debug build at ${inputs.ubootDebug}.\n`
-        + `A v2 image must carry the uboot-mos variant: redundant environment at `
+        + `A mos image must carry the uboot-mos variant: redundant environment at `
         + `${geometry.requirePartition('UENV_A').require('OFFSET_BYTES')}/`
         + `${geometry.requirePartition('UENV_B').require('OFFSET_BYTES')}, setexpr, bootmeth order `
         + `pinned to script. The debug build has none of that and the A/B handshake would silently `

@@ -75,7 +75,7 @@ function mutate(text: string, from: string | RegExp, to: string): string {
 const ROOT_HASH = '776ffaf3c23c995829e39e443ef46e0b2ea5dd40d8a0ba9aa8849dfb9335f49f'
 const SALT = cx3576.veritySalt
 
-/** A slot's kernel cmdline in the shape os/rootfs/build-v2.sh emits it. */
+/** A slot's kernel cmdline in the shape os/rootfs/build.sh emits it. */
 function cmdlineFor(geometry: Geometry, guidKey: string): string {
   const guid = geometry.require(guidKey).toLowerCase()
   return `dm-mod.create="rootfs,,,ro,0 190064 verity 1 PARTUUID=${guid} PARTUUID=${guid} `
@@ -153,7 +153,7 @@ describe('the env-file readers answer the way the shell\'s sed answers', () => {
 
 describe('THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT', () => {
   const ok = {
-    reportPath: '/out/rootfs-report-v2.txt',
+    reportPath: '/out/rootfs-report.txt',
     reportText: 'coreutils\t21046\nRAUC_VERSION v1.13\n',
     buildEnvPath: '/os/pkgs/rauc/out-amd64/RAUC_VERSION.env',
     buildEnvText: 'RAUC_VERSION=v1.13\nRAUC_SHA256=372828c2\n',
@@ -165,7 +165,7 @@ describe('THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT', () =
 
   test('a MISSING report is refused -- the image\'s version is unknown', () => {
     expect(() => assertRaucMatchesImage({ ...ok, reportText: undefined }))
-      .toThrow(/rootfs-report-v2\.txt not found; the image's RAUC version is unknown/)
+      .toThrow(/rootfs-report\.txt not found; the image's RAUC version is unknown/)
   })
 
   test('a report that records NO version is refused: the comparison would find nothing', () => {
@@ -668,7 +668,7 @@ describe('the mount set is derived from the inputs, and nests nothing', () => {
     dtb: '/elsewhere/bsp/out/kernel/rk3576-src.dtb',
     rootfsVerityImg: join(REPO_ROOT, '_out/cx3576/rootfs-verity.img'),
     rootfsVerityEnv: join(REPO_ROOT, '_out/cx3576/rootfs-verity.env'),
-    rootfsReport: join(REPO_ROOT, '_out/cx3576/rootfs-report-v2.txt'),
+    rootfsReport: join(REPO_ROOT, '_out/cx3576/rootfs-report.txt'),
     raucBuildEnv: join(REPO_ROOT, 'os/pkgs/rauc/out-amd64/RAUC_VERSION.env'),
     cert: '/secrets/signer.cert.pem',
     key: '/secrets/signer.key.pem',
@@ -765,7 +765,7 @@ describe('buildBundle end to end, against a real rauc', () => {
     const cmdlineB = join(work, 'boot-cmdline-b.txt')
     writeFileSync(cmdlineA, CMDLINE_A)
     writeFileSync(cmdlineB, CMDLINE_B)
-    const report = join(work, 'rootfs-report-v2.txt')
+    const report = join(work, 'rootfs-report.txt')
     writeFileSync(report, 'coreutils\t21046\nRAUC_VERSION v9.9\n')
     const buildEnv = join(work, 'RAUC_VERSION.env')
     writeFileSync(buildEnv, 'RAUC_VERSION=v9.9\n')

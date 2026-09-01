@@ -203,7 +203,7 @@ export function imageFixture(request: FixtureRequest): Fixture {
  * name ONE check.
  *
  * What is not invented here. /etc/fstab is rendered from the SHIPPED template,
- * os/rootfs/overlay-v2/etc/fstab.in, with the board's own GUIDs -- the same
+ * os/rootfs/overlay/etc/fstab.in, with the board's own GUIDs -- the same
  * discipline the image fixture contract follows and for the same
  * reason: a fixture built from this file's idea of the table would test that
  * idea rather than the shipped one, and an fstab.in that grew a new placeholder
@@ -217,7 +217,7 @@ export interface RootFixture {
   readonly dispose: () => void
 }
 
-const FSTAB_IN = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'fstab.in')
+const FSTAB_IN = join(OS_DIR, 'rootfs', 'overlay', 'etc', 'fstab.in')
 
 /**
  * The escape page's markup, TRANSCRIBED -- and deliberately a second copy.
@@ -341,7 +341,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}... trailer\n`)
 
   // --- the RAUC keyring, byte-equal to the trust root the fixture's ca/ holds ---
-  // Present, and that is the shipped state now: os/rootfs/build-v2.sh stages
+  // Present, and that is the shipped state now: os/rootfs/build.sh stages
   // ca/ca.cert.pem here in every image, so an absent keyring is the mutation.
   file('/etc/rauc/keyring.pem', FIXTURE_CA_CERT)
 

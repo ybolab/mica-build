@@ -688,7 +688,7 @@ export interface VerityRequest {
  * veritysetup finds a superblock, takes those five values back out of it, and
  * starts the tree one hash block later -- so it can verify a payload the kernel
  * then refuses, which is exactly the pair of agreeing-but-wrong statements that
- * made every v2 image fail to boot while this check passed.
+ * made every mos image fail to boot while this check passed.
  *
  * Three exit statuses and only two of them are answers. Measured against
  * cryptsetup 2.7.5: "Verification of root hash failed." is exit 1 and the

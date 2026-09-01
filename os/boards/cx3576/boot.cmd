@@ -1,5 +1,5 @@
 # Source for the boot.scr written into BOOT-A and BOOT-B. Compiled by
-# os/build/src/mkimage-v2.ts with SOURCE_DATE_EPOCH pinned to the layout-v2 FILE_MTIME.
+# os/build/src/mkimage-cx3576.ts with SOURCE_DATE_EPOCH pinned to the A/B-layout FILE_MTIME.
 # Body follows docs/design/uboot-ab-handshake.md section 5.3, with
 # TWO deliberate divergences from the version first published there. Both were
 # defects that made updates silently revert, and section 5.3 documents both
@@ -17,7 +17,7 @@
 #    '/dev/dm-0')", so the health gate never reaches `rauc status mark-good`
 #    and the installed slot is rolled back.
 #
-# boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
+# boot.cmd — mos A/B handshake for CX3576-Z (A/B layout).
 # Compiled to boot.scr and written to BOTH boot partitions by the assembler.
 # Identical in both slots: whichever copy runs may boot either slot.
 #
@@ -27,7 +27,7 @@
 # PARTITION NUMBERS. bootpart/rootpart below are literal GPT partition numbers,
 # because hush cannot read os/boards/cx3576/board.env. They are BOOT_A_PARTNUM /
 # BOOT_B_PARTNUM / ROOTFS_A_PARTNUM / ROOTFS_B_PARTNUM from that file, and
-# os/build/src/mkimage-v2.ts refuses to compile this script if any of the four disagrees.
+# os/build/src/mkimage-cx3576.ts refuses to compile this script if any of the four disagrees.
 # Do not edit one here without editing the layout: a stale number sends U-Boot
 # to the wrong partition after it has already persisted the attempt decrement.
 

@@ -6,7 +6,7 @@
 // matcher would not have found.
 //
 // docs/design/access.md 4.2 supports exactly one credential on the console: a
-// transient root password. The only path pam_unix reads it from on v2 is
+// transient root password. The only path pam_unix reads it from on mos is
 // /etc/shadow, which is inside the dm-verity squashfs and unwritable by
 // construction, so it is a symlink onto /run -- a tmpfs systemd mounts before
 // any unit starts -- and mos-shadow-reconcile builds the file there from
@@ -562,7 +562,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
       return [verdict('factory-shadow-root-locked', false,
         `the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs `
         + `is byte-identical on every device, so this is a fleet-wide shared secret. Something in the `
-        + `build wrote a root credential (v2 has no ROOT_PASSWORD build arg on purpose); root access `
+        + `build wrote a root credential (the build has no ROOT_PASSWORD build arg on purpose); root access `
         + `is provisioned at runtime — mosd's transient password`)]
     },
   },

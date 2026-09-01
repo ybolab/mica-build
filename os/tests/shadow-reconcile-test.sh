@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline tests for os/rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile, with
+# Offline tests for os/rootfs/overlay/usr/lib/mos/mos-shadow-reconcile, with
 # the transient-root-password clearing as the subject. The REAL script is run,
 # once per case, against fixtures in a temp dir: MOS_SHADOW_PASSWD and
 # MOS_SHADOW_FACTORY redirect its two absolute inputs and the shadow path is
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCRIPT=$HERE/../rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile
+SCRIPT=$HERE/../rootfs/overlay/usr/lib/mos/mos-shadow-reconcile
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0

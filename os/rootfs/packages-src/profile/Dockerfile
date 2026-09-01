@@ -44,7 +44,7 @@ ARG SOURCE_DATE_EPOCH
 # green.
 #
 # 0444 for the same reason it is 0444 there. /usr/lib and not /etc: the file
-# describes the IMAGE, not the device, and on v2 /usr is inside the read-only
+# describes the IMAGE, not the device, and on mos /usr is inside the read-only
 # verity root, so a production device cannot be edited into a development one.
 #
 # No maintainer scripts and no enablement links -- this package owns no unit.

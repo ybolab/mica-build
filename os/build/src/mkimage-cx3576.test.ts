@@ -33,7 +33,7 @@ import {
   mountsFor,
   sameBytes,
   type AssemblyInputs,
-} from './mkimage-v2.ts'
+} from './mkimage-cx3576.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
 import { Toolbox } from './toolbox.ts'
@@ -61,7 +61,7 @@ function filler(path: string, bytes: number, byte: number, prefix?: Buffer): voi
   writeFileSync(path, buf)
 }
 
-/** A cmdline in the shape os/rootfs/build-v2.sh emits, at the case asked for. */
+/** A cmdline in the shape os/rootfs/build.sh emits, at the case asked for. */
 function cmdlineFor(guid: string): string {
   return `dm-mod.create="rootfs,,,ro,0 8192 verity 1 PARTUUID=${guid} PARTUUID=${guid} 4096 4096 `
     + `1024 1024 sha256 ${HASH} ${g.veritySalt}" dm-mod.waitfor=PARTUUID=${guid} root=/dev/dm-0 `
@@ -69,7 +69,7 @@ function cmdlineFor(guid: string): string {
 }
 
 beforeAll(async () => {
-  dir = makeWorkDir('mkimage-v2-test')
+  dir = makeWorkDir('test-mkimage-cx3576')
   const rknS = Buffer.from(g.requirePartition('LOADER').require('MAGIC_HEX'), 'hex')
 
   // Two distinct U-Boot blobs, mirroring the board's two variants. Both carry
@@ -145,7 +145,7 @@ async function assemble(
 
 /** A board.env with lines appended; a later assignment wins, as in a shell. */
 function mutatedBoard(appended: string): { geometry: Geometry, cleanup: () => void } {
-  const d = makeWorkDir('mkimage-v2-board')
+  const d = makeWorkDir('test-mkimage-board')
   const path = join(d, 'board.env')
   writeFileSync(path, `${readFileSync(join(BOARDS_DIR, 'cx3576', 'board.env'), 'utf8')}\n${appended}\n`)
   return { geometry: loadGeometryFromPath(path), cleanup: () => rmSync(d, { recursive: true, force: true }) }
@@ -286,7 +286,7 @@ describe('the verity payload and what the producer said about it', () => {
   test('a payload that is not a whole number of MiB', async () => {
     // It is written RAW into a slot, so it must land on a whole MiB boundary.
     expect(assemble({ rootfsVerityImg: join(dir, 'rootfs-verity-ragged.img') }))
-      .rejects.toThrow(/is 4194305 bytes, not a non-zero whole-MiB multiple; fix os\/rootfs\/build-v2\.sh/)
+      .rejects.toThrow(/is 4194305 bytes, not a non-zero whole-MiB multiple; fix os\/rootfs\/build\.sh/)
   })
 
   test('an EMPTY payload -- zero is a whole number of MiB and is not a rootfs', async () => {
@@ -299,7 +299,7 @@ describe('the verity payload and what the producer said about it', () => {
     const p = join(dir, 'no-hash.env')
     writeFileSync(p, `VERITY_SALT=${g.veritySalt}\n`)
     expect(assemble({ rootfsVerityEnv: p }))
-      .rejects.toThrow(/VERITY_ROOT_HASH missing from .*; fix os\/rootfs\/build-v2\.sh/)
+      .rejects.toThrow(/VERITY_ROOT_HASH missing from .*; fix os\/rootfs\/build\.sh/)
   })
 
   test('a salt that is not the pinned one', async () => {
@@ -380,9 +380,9 @@ describe('the inputs a build cannot start without', () => {
   for (const [key, why] of [
     ['kernelImage', 'it is a BSP artifact'],
     ['dtb', 'it is a BSP artifact'],
-    ['rootfsVerityEnv', "produce it with 'os/rootfs/build-v2.sh'"],
-    ['bootCmdlineA', "produce it with 'os/rootfs/build-v2.sh'"],
-    ['bootCmdlineB', "produce it with 'os/rootfs/build-v2.sh'"],
+    ['rootfsVerityEnv', "produce it with 'os/rootfs/build.sh'"],
+    ['bootCmdlineA', "produce it with 'os/rootfs/build.sh'"],
+    ['bootCmdlineB', "produce it with 'os/rootfs/build.sh'"],
   ] as [keyof AssemblyInputs, string][]) {
     test(`${key} absent, and the message says what makes it`, async () => {
       try {

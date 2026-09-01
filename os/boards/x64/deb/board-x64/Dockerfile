@@ -92,7 +92,7 @@ COPY --from=grub /harvest/grub-common.copyright /in/grub-common.copyright
 COPY --from=board board.env /src/os/boards/x64/board.env
 COPY --from=board overlay/etc/systemd/system/boot.mount.in /src/os/boards/x64/overlay/etc/systemd/system/boot.mount.in
 COPY --from=rauc render-config.sh system.conf.in /src/os/pkgs/rauc/
-COPY --from=overlay etc/fstab.in /src/os/rootfs/overlay-v2/etc/fstab.in
+COPY --from=overlay etc/fstab.in /src/os/rootfs/overlay/etc/fstab.in
 
 # libdevmapper1.02.1 in the PACKING container, and it changes no byte of the
 # payload. dpkg-shlibdeps resolves an ELF's dependencies against the libraries
@@ -127,7 +127,7 @@ ARG SOURCE_DATE_EPOCH
 # NO /etc/fw_env.config. There is no U-Boot on this board and that file names
 # two partitions os/boards/x64/board.env does not create -- a configuration
 # file describing storage that does not exist is readable, plausible and wrong.
-# render.sh does not render it and os/rootfs/build-v2.sh deletes it on amd64.
+# render.sh does not render it and os/rootfs/build.sh deletes it on amd64.
 #
 # NO GRUB CONFIGURATION IN THE PAYLOAD. This package once staged
 # os/boards/x64/grub.cfg at /usr/lib/mos/board/x64/grub.cfg, placeholders

@@ -3,7 +3,7 @@
 # once the default target has been reached.
 #
 # The device tree gives status-red `default-state = "on"`, so the kernel lights
-# red at init and nothing in the v2 systemd rootfs ever turned it off. Without
+# red at init and nothing in the mos systemd rootfs ever turned it off. Without
 # this consumer a fully booted board sits on a permanent "still booting" red --
 # a signal that is WRONG rather than merely absent, which is worse for a field
 # engineer than no indicator at all.

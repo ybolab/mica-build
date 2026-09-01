@@ -5,7 +5,7 @@
 //!   `access.ssh.authorizedKeys`, at 0600, after the list has been re-validated
 //!   — one file per managed login account, every one holding the same key list.
 //! - `/etc/ssh/sshd_config.d/10-mos.conf` is rendered from `access.ssh`. That
-//!   directory is the one writable part of `/etc` on the v2 read-only root, a
+//!   directory is the one writable part of `/etc` on the mos read-only root, a
 //!   STATE-backed bind mount (`etc-ssh.mount`).
 //! - `ssh.service` is brought to the state `access.ssh.enabled` asks for.
 //!

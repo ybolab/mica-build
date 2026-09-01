@@ -639,7 +639,7 @@ describe('rauc-slot-on-boot-path', () => {
 
   test('a root= naming the slot\'s own PARTUUID is the OTHER passing direction', async () => {
     // rauc's root= fallback works when root= is a partition it can realpath.
-    // A v2 image boots root=/dev/dm-0, which is why rauc.slot= is required --
+    // A mos image boots root=/dev/dm-0, which is why rauc.slot= is required --
     // but the branch exists and must be able to pass.
     const guidA = (x64.partition('ROOTFS_A')?.guid ?? '').toLowerCase()
     const guidB = (x64.partition('ROOTFS_B')?.guid ?? '').toLowerCase()

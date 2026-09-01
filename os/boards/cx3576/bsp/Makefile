@@ -40,7 +40,7 @@ uboot:
 	  -o out/uboot uboot
 
 # mos A/B variant (persistent redundant env + boot.scr contract); consumed by
-# the v2 image pipeline, while the debug variant above stays on v1/alpine.
+# the mos image pipeline, while the debug variant above stays on alpine.
 uboot-mos:
 	IMG="$$(bash $(FROM_SH) $(UBUNTU_ARG))" && \
 	docker buildx build -f uboot/Dockerfile --target artifact-mos $$IMG \

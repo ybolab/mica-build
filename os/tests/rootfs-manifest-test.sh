@@ -123,7 +123,7 @@ expect_set() {
 # 1. The resolved sets.
 # ---------------------------------------------------------------------------
 
-# The radios are read HERE and passed in, exactly as os/rootfs/build-v2.sh does
+# The radios are read HERE and passed in, exactly as os/rootfs/build.sh does
 # it: resolve.sh takes its inputs as arguments and re-derives none of them, so
 # this test stands in for the driver rather than letting the resolver read the
 # board file behind it.

@@ -3,7 +3,7 @@
 //   bash os/build/run.sh --build-rootfs --board x64 --dest _out/x64 \
 //        --platform linux/amd64 --arg KEY=VALUE ...
 //   bash os/build/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
-// os/rootfs/build-v2.sh stages the build context -- it cross-builds mosd,
+// os/rootfs/build.sh stages the build context -- it cross-builds mosd,
 // renders the overlay, checks the repart definitions against the layout and
 // computes every verity parameter -- and then calls this instead of running one
 // `docker buildx build` over one Dockerfile. This adds two things: it decides
@@ -11,7 +11,7 @@
 // and it refuses the two ways a chain fails that a single file cannot. The
 // build arguments, platform, context and output directory arrive from the
 // caller unchanged, because a driver that recomputed them would be a second
-// answer to a question build-v2.sh answers.
+// answer to a question build.sh answers.
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -200,7 +200,7 @@ export function parseArgs(argv: readonly string[]): Options {
   // first symptom is a determinism gate that has nothing to compare.
   if (!o.planOnly && o.sourceDateEpoch === undefined) {
     throw new Error(
-      `--source-date-epoch is required: without it the OCI export of the factory root stamps the wall clock into its config and its layer, and no two builds of one tree agree. os/rootfs/build-v2.sh passes the board's FILE_MTIME, which is the same instant the squashfs is pinned to.\n\n${usage()}`,
+      `--source-date-epoch is required: without it the OCI export of the factory root stamps the wall clock into its config and its layer, and no two builds of one tree agree. os/rootfs/build.sh passes the board's FILE_MTIME, which is the same instant the squashfs is pinned to.\n\n${usage()}`,
     )
   }
   return o
@@ -253,7 +253,7 @@ export type ChainMode = 'tags' | 'layouts'
  * layout as a named build context: handed the previous stage that way, the
  * same docker-container builder chained two arm64 stages on a host with no
  * binfmt (2026-08-30). That is layout mode, and it is what lets
- * os/rootfs/build-v2.sh use the emulator buildkit bundles instead of one the
+ * os/rootfs/build.sh use the emulator buildkit bundles instead of one the
  * host has to register.
  */
 export function chainMode(driver: string | undefined): ChainMode | undefined {

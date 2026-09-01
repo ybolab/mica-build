@@ -23,9 +23,9 @@ mos/
 └── Makefile         top-level routing; run `make help` for the full target list
 ```
 
-The image is **v2**: an A/B layout with a squashfs + dm-verity read-only root,
+The image is an A/B layout with a squashfs + dm-verity read-only root,
 RAUC updates and a U-Boot `BOOT_ORDER` handshake. Build and check it with
-`make os-image-cx3576-v2`, `make os-verify-cx3576-v2` and
+`make os-image-cx3576`, `make os-verify-cx3576` and
 `make os-bundle-cx3576`, paired with the U-Boot that `make -C os/boards/cx3576/bsp
 uboot-mos` builds. See `docs/design/uboot-ab-handshake.md`.
 

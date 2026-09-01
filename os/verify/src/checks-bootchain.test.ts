@@ -347,7 +347,7 @@ describe('uboot-blob-matches-variant', () => {
       bsp: { [UBOOT_SRC]: Buffer.from('A-DIFFERENT-U-BOOT-BUILD-01234567') },
     })))
     expect(r.verdict).toBe('fail')
-    expect(r.message).toContain('a v2 image may only carry the uboot-mos variant')
+    expect(r.message).toContain('a mos image may only carry the uboot-mos variant')
   })
 
   test('RED, naming the path, when the BSP tree was never built', async () => {

@@ -2,7 +2,7 @@
 // called, and the -latest symlink.
 //
 // The shell has no such seam -- it is one file from `stat -c%s` to `ln -sf` --
-// but the split is src/mkimage-v2-cli.ts's, for the same reason: the epoch in
+// but the split is src/mkimage-cx3576-cli.ts's, for the same reason: the epoch in
 // the filename is the only per-build variation, computed here, once, so nothing
 // downstream may see a clock. An assembler that could read the time is one
 // whose output might depend on when it ran, and the byte-identity gate is that

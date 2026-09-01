@@ -7,7 +7,7 @@ set -euo pipefail
 # run.sh). Executes the shipped os/boards/cx3576/boot.cmd -- compiled by the
 # same `mkimage -T script` invocation the assembler uses, byte-unmodified --
 # under a U-Boot v2026.07 sandbox binary (same source pin as the board build)
-# against a layout-v2 GPT disk image backed by a host file, and asserts the
+# against a A/B-layout GPT disk image backed by a host file, and asserts the
 # whole A/B handshake state machine across separate process invocations.
 
 # Execution model: one process invocation = one boot cycle. Three facts of the
@@ -119,7 +119,7 @@ mkfatslot() { # out-img fat-label file...
     done
 }
 
-# Layout-v2 GPT with the real partition numbers, start sectors, labels, GUIDs
+# A/B-layout GPT with the real partition numbers, start sectors, labels, GUIDs
 # and typecodes for p1..p5 (the ones the script's literal bootpart values point
 # into) plus token-sized rootfs slots at the real p6 start so the numbering the
 # script carries is the numbering the disk carries. The uenv pair sits at the

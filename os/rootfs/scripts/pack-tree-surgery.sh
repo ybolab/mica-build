@@ -5,7 +5,7 @@
 # Called from os/rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 mkdir -p /out &&
-mv /rootfs/rootfs-report.txt /out/rootfs-report-v2.txt &&
+mv /rootfs/rootfs-report.txt /out/rootfs-report.txt &&
 mv /rootfs/rootfs-report.pkglogs /out/pkg-logs &&
 ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf &&
 echo 'mos' > /rootfs/etc/hostname &&

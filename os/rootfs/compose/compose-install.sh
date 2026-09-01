@@ -20,13 +20,13 @@ fail() { echo "error: $*" >&2; exit 1; }
 for v in MOS_ARCH MOS_BOARD SOURCE_DATE_EPOCH; do
     eval "value=\${${v}:-}"
     [ -n "${value}" ] ||
-        fail "${v} is empty or unset in this build step. os/rootfs/compose/10-compose.Dockerfile declares it and os/rootfs/build-v2.sh passes it; an unset one here is not a failure anyone sees -- SOURCE_DATE_EPOCH in particular would leave the wall clock and this host's inode numbers inside the initrd that ships in the verity-covered root"
+        fail "${v} is empty or unset in this build step. os/rootfs/compose/10-compose.Dockerfile declares it and os/rootfs/build.sh passes it; an unset one here is not a failure anyone sees -- SOURCE_DATE_EPOCH in particular would leave the wall clock and this host's inode numbers inside the initrd that ships in the verity-covered root"
 done
 
 POOL="/mos-debs/${MOS_ARCH}"
 LIST=/mos-compose/packages.txt
 
-# The pool, checked again HERE and not only on the host. os/rootfs/build-v2.sh
+# The pool, checked again HERE and not only on the host. os/rootfs/build.sh
 # refuses a missing or stale pool before a container starts, with the make
 # target that produces it; this is the statement that the bind mount actually
 # delivered that pool rather than an empty directory -- which is how a bind
@@ -44,7 +44,7 @@ POOL_N="$(grep -c '^Package: ' "${POOL}/Packages")"
 
 # The resolution, as os/rootfs/packages/resolve.sh printed it: one name per
 # line, sorted, no comments. Read rather than recomputed -- resolve.sh takes its
-# inputs as arguments and os/rootfs/build-v2.sh owns the decline logic.
+# inputs as arguments and os/rootfs/build.sh owns the decline logic.
 [ -s "${LIST}" ] ||
     fail "${LIST} is missing or empty. It is the resolved package set and it is what this stage installs; an empty one composes a root holding nothing but Debian, and every check downstream would run over that"
 WANT="$(tr '\n' ' ' <"${LIST}")"
@@ -170,18 +170,18 @@ TOTAL_N="$(dpkg-query -W -f='.\n' | grep -c .)"
 echo "compose: ${local_n} local package(s) installed, ${TOTAL_N} packages in the root"
 
 # The RAUC trust root, staged from the repository-root ca/ by
-# os/rootfs/build-v2.sh, which is the single seam by which a CA enters a build.
-# It is not in any package and must not be: os/rootfs/overlay-v2 is copied
+# os/rootfs/build.sh, which is the single seam by which a CA enters a build.
+# It is not in any package and must not be: os/rootfs/overlay is copied
 # wholesale into mos-system's payload, so a keyring left there once would reach
 # every later image by being forgotten. Installed here, on the composition path,
-# for exactly the reason build-v2.sh stages it into the overlay on the chain
+# for exactly the reason build.sh stages it into the overlay on the chain
 # path -- one place, per build, chosen by whoever filled ca/.
 [ -s /mos-compose/keyring.pem ] ||
     fail "/mos-compose/keyring.pem is missing or empty. It is staged from ca/ca.cert.pem and it is what every device flashed with this image trusts RAUC bundles from; an image without it can install no update at all"
 install -D -m 0644 /mos-compose/keyring.pem /etc/rauc/keyring.pem
 
 # The build report's RAUC line. os/build/src/bundle.ts reads it back out of
-# _out/<board>/rootfs-report-v2.txt and refuses to build a bundle with a rauc
+# _out/<board>/rootfs-report.txt and refuses to build a bundle with a rauc
 # whose version differs, so an empty value here would make that comparison pass
 # by finding nothing. The finalizer consumes /rootfs-report.rauc and deletes it;
 # it never reaches the image.

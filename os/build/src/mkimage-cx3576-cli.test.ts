@@ -8,13 +8,13 @@
 //
 // Nothing here assembles. main() is driven only as far as its preconditions,
 // which is where these refusals live; the assembly itself is
-// src/mkimage-v2.test.ts's.
+// src/mkimage-cx3576.test.ts's.
 
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadGeometry } from './geometry.ts'
-import { main, parseArgs } from './mkimage-v2-cli.ts'
+import { main, parseArgs } from './mkimage-cx3576-cli.ts'
 import { boardEnvPath, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { loadBoard } from './verify-package.ts'
 
@@ -59,7 +59,7 @@ describe('the two families of missing input', () => {
     const e = emptyOut()
     try {
       await expect(main(['--out-dir', join(e.dir, 'out'), '--board-dir', join(e.dir, 'board')]))
-        .rejects.toThrow(/rootfs-verity\.img not found; run 'bash os\/rootfs\/build-v2\.sh' first/)
+        .rejects.toThrow(/rootfs-verity\.img not found; run 'bash os\/rootfs\/build\.sh' first/)
     } finally { e.cleanup() }
   })
 

@@ -249,7 +249,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // v2 sets no GPT attribute bits anywhere: the ESP typecode alone makes a
+    // The layout sets no GPT attribute bits anywhere: the ESP typecode alone makes a
     // boot slot bootable to U-Boot, and the slot choice comes from the RAUC
     // BOOT_ORDER environment, never from a GPT flag.
     id: 'gpt-partition-attrs',

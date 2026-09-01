@@ -9,9 +9,9 @@ BOARDS := cx3576 x64
 # open-ended; a stray file named e.g. `cx3576-kernel` in this directory shadows
 # the delegation, which is a visible "Nothing to be done" rather than a wrong
 # build.
-.PHONY: help os os-rootfs-cx3576-v2 \
+.PHONY: help os os-rootfs-cx3576 \
 	os-quadlet-doc-test \
-	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
+	os-image-cx3576 os-verify-cx3576 os-bundle-cx3576 os-devkeys os-health-test podman \
 	podman-pins podman-pins-test os-netavark-kernel-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test \
@@ -24,11 +24,11 @@ BOARDS := cx3576 x64
 
 help:
 	@echo "mos build targets:"
-	@echo "  os                  RETIRED; use the os-*-cx3576-v2 targets"
-	@echo "v2 (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
-	@echo "  os-rootfs-cx3576-v2 build the squashfs+dm-verity rootfs slot image"
-	@echo "  os-image-cx3576-v2  build the cx3576 A/B disk image (layout v2)"
-	@echo "  os-verify-cx3576-v2 verify the assembled v2 image against the v2 image contract (docker)"
+	@echo "  os                  RETIRED; use the os-*-cx3576 targets"
+	@echo "image (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
+	@echo "  os-rootfs-cx3576 build the squashfs+dm-verity rootfs slot image"
+	@echo "  os-image-cx3576  build the cx3576 A/B disk image (A/B layout)"
+	@echo "  os-verify-cx3576 verify the assembled mos image against the mos image contract (docker)"
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
 	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
@@ -66,21 +66,21 @@ help:
 # prevent.
 os:
 	@echo "os: retired." >&2
-	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
+	@echo "    build and verify with: make os-image-cx3576 / os-verify-cx3576 / os-bundle-cx3576" >&2
 	@false
 
 # NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
 # target refuses until `make os-debs` has built it -- by name, rather than by
 # compiling a component on demand. That refusal is the composer's, not this
-# file's; see os/rootfs/build-v2.sh.
-os-rootfs-cx3576-v2:
-	bash os/rootfs/build-v2.sh
+# file's; see os/rootfs/build.sh.
+os-rootfs-cx3576:
+	bash os/rootfs/build.sh
 
 # The shipping assembler: build the rootfs slot image, then write the A/B disk
 # image around it.
-os-image-cx3576-v2:
-	bash os/rootfs/build-v2.sh
-	bash os/build/run.sh --mkimage-v2
+os-image-cx3576:
+	bash os/rootfs/build.sh
+	bash os/build/run.sh --mkimage-cx3576
 
 # THE IMAGE CONTRACT: read the assembled image back and check it against the
 # contract, check by check.
@@ -88,14 +88,14 @@ os-image-cx3576-v2:
 # Needs DOCKER on a host without sgdisk/mtools/debugfs/unsquashfs/veritysetup --
 # it reads them out of the pinned IMAGE_ALPINE_3_21. Verify the other board
 # with --board.
-os-verify-cx3576-v2:
+os-verify-cx3576:
 	bash os/verify/run.sh --verify --board cx3576
 
 # Every self-built binary EXECUTED inside the root that ships it, with the
 # version it reports required to equal the version this repository pinned.
-# `os-verify-cx3576-v2` reads the image; this one runs what is in it.
+# `os-verify-cx3576` reads the image; this one runs what is in it.
 #
-# THIS IS NOT THE ONLY THING THAT RUNS IT: `os/rootfs/build-v2.sh` runs the same
+# THIS IS NOT THE ONLY THING THAT RUNS IT: `os/rootfs/build.sh` runs the same
 # command as its last step, under `set -e`, so a root whose binaries do not run
 # does not become an image. This target is how to ask the question on its own,
 # against a root that is already built.
@@ -134,7 +134,7 @@ os-smoke-negative-test:
 # It compares the two trees four ways and then BREAKS each comparison in turn
 # and requires each to go red. Needs docker (neither side is readable on the
 # build host -- no unsquashfs, no getcap) and a built rootfs, like
-# os-verify-cx3576-v2. MOS_BOARD selects the board; x64 is the default.
+# os-verify-cx3576. MOS_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
 	bash os/tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
 
@@ -175,7 +175,7 @@ os-dbus-policy-test:
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
 # things the image contract cannot — that growth does not wipe the Rockchip
-# idbloader at LBA 64, and that the definitions the v2 image ships actually GROW
+# idbloader at LBA 64, and that the definitions the mos image ships actually GROW
 # DATA rather than refusing the run (a refusal looks exactly like a clean exit).
 # Needs privileged docker, so it is a dedicated target rather than part of
 # os-verify; it fails loudly when it cannot run rather than skipping.
@@ -185,7 +185,7 @@ os-repart-test:
 # Executes the SHIPPED os/boards/cx3576/boot.cmd -- compiled by the same mkimage
 # invocation the assembler uses, byte-unmodified -- under a U-Boot sandbox binary
 # (same source pin as the board build) that carries the board's persistent-env
-# contract, against a layout-v2 GPT disk backed by a host file. Proves the A/B
+# contract, against a A/B-layout GPT disk backed by a host file. Proves the A/B
 # handshake state machine across real process invocations: the boot-attempt
 # decrement persists 3->2->1->0, the other slot is chosen at zero, exhaustion
 # refills to 3, a slot missing its mos-verity-<slot>.env is burned, and a
@@ -378,16 +378,16 @@ os-shell-pipefail-lint:
 os-rootfs-manifest-test:
 	bash os/tests/rootfs-manifest-test.sh
 
-# THE x64 ROOT. os/rootfs/build-v2.sh installs the resolved package set out of
+# THE x64 ROOT. os/rootfs/build.sh installs the resolved package set out of
 # _out/debs/<arch> and refuses a missing or stale pool by naming `make os-debs`
 # rather than building one -- a composer that compiled a component on demand
 # would make a stale pool invisible.
 #
-# Kept as its own target rather than folded into os-rootfs-cx3576-v2's shape:
+# Kept as its own target rather than folded into os-rootfs-cx3576's shape:
 # x64 is the board whose pool this host can build, so this is the composition
 # that runs here, and naming it says which one was run.
 os-rootfs-x64-composed:
-	MOS_BOARD=x64 bash os/rootfs/build-v2.sh
+	MOS_BOARD=x64 bash os/rootfs/build.sh
 
 # Negative and positive tests for the pre-flight above. Its value is a count and
 # a list, and both fail silently: a run that looked at nothing prints the same
@@ -498,14 +498,14 @@ x64-%:
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
 # only thing in this repository that TALKS TO apid rather than reading it --
-# os-verify-cx3576-v2 inspects the binary and the image, mosd's own tests
+# os-verify-cx3576 inspects the binary and the image, mosd's own tests
 # exercise handlers in-process, and neither can tell a route that exists in
 # routes.rs from a route the running daemon actually serves. A session cookie
 # that is missing Secure, a redirect that names a port nothing can reach, an
 # auth gate that lets one route through unauthenticated: all of them are
 # invisible from inside the process and obvious from outside it.
 #
-# IT BUILDS NOTHING and assumes _out/x64/x64-mos-v2-latest.img already exists;
+# IT BUILDS NOTHING and assumes _out/x64/x64-mos-latest.img already exists;
 # a missing image is refused by name, with the two commands that make it. A
 # target that quietly rebuilt would turn a check into a forty-minute build and
 # would then be testing the tree rather than the artefact under test.

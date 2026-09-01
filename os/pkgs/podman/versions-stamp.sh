@@ -13,7 +13,7 @@
 # architecture naming answered the second half of that sentence; the first half
 # -- stale -- was left open, and out-<arch> is reused rather than rebuilt by
 # os/pkgs/podman/deb/podman/prepare.sh and staged as it stands by
-# os/rootfs/build-v2.sh. Bump a version in versions.env, and both would go on
+# os/rootfs/build.sh. Bump a version in versions.env, and both would go on
 # packaging and shipping the binaries compiled from the version before it, with
 # every check green: the seven files are all present, all executable, and all
 # the right architecture. The only thing wrong with them is which sources they

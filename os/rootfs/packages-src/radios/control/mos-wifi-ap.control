@@ -15,7 +15,7 @@ Description: mos Wi-Fi access-point support
  that instance's configuration file; the distribution's non-templated unit
  would start a second hostapd against a configuration nothing wrote.
  .
- The bind mount is not a convenience. On the v2 image /etc is inside the
+ The bind mount is not a convenience. On the mos image /etc is inside the
  read-only dm-verity squashfs, so without it the provisioning access point --
  the path to a device's first configuration -- never comes up, and the AP
  pre-shared key would not survive an A/B update.

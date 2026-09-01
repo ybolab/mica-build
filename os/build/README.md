@@ -82,8 +82,8 @@ cx3576 141/141 while x64 was wholly unreadable.
 
 ## The cx3576 assembler
 
-`src/mkimage-v2.ts`, with `src/layout-cx3576.ts`, `src/boot-cx3576.ts` and
-`src/pin-seeded-times.ts` under it and `src/mkimage-v2-cli.ts` over it.
+`src/mkimage-cx3576.ts`, with `src/layout-cx3576.ts`, `src/boot-cx3576.ts` and
+`src/pin-seeded-times.ts` under it and `src/mkimage-cx3576-cli.ts` over it.
 
 Assembly is **byte-reproducible with itself**: the same inputs and the same
 board definition give the same image, every run.
@@ -172,7 +172,7 @@ sentence.
 `src/pin-seeded-times.ts` under it and `src/mkimage-x64-cli.ts` over it. Fourteen
 refusals, each driven from the failing side with a positive control beside it.
 
-### Why this is not `mkimage-v2.ts` with a board parameter
+### Why this is not `mkimage-cx3576.ts` with a board parameter
 
 That assembler is U-Boot — a loader at a fixed sector, a redundant environment
 pair, a compiled `boot.scr` and geometry assertions about all three — and none of
@@ -282,7 +282,7 @@ The bundle's two branches differ only in what a boot slot holds — a compiled
 `boot.scr` plus both slots' verity env files on U-Boot, the kernel, the initrd
 and a GRUB cmdline fragment on grub — and that is a board fact. So this is one
 module with one branch on `RAUC_BOOTLOADER`, and `--bundle` takes a board where
-`--mkimage-v2` and `--mkimage-x64` are separate arms. The grub branch's refusals
+`--mkimage-cx3576` and `--mkimage-x64` are separate arms. The grub branch's refusals
 are driven from the failing side; **no x64 bundle has been built**, because this
 tree has no x64 rootfs to bundle.
 
@@ -405,8 +405,8 @@ bash os/build/run.sh        # the same thing
 bash os/build/run.sh --help
 bash os/build/run.sh src/geometry.test.ts   # extra arguments go to `bun test`
 
-bash os/build/run.sh --mkimage-v2           # assemble the cx3576 image
-bash os/build/run.sh --mkimage-v2 --help
+bash os/build/run.sh --mkimage-cx3576           # assemble the cx3576 image
+bash os/build/run.sh --mkimage-cx3576 --help
 bash os/build/run.sh --mkimage-x64          # assemble the x64 image
 bash os/build/run.sh --mkimage-x64 --help
 bash os/build/run.sh --bundle               # build and SIGN the update bundle
@@ -417,12 +417,12 @@ bash os/build/run.sh --build-rootfs --board x64 --plan \
     --arg BOARD_RADIOS= --arg RAUC_VERSION=1.14   # decide the order and the tags
 ```
 
-`make os-image-cx3576-v2` and `make os-bundle-cx3576` are the top-level routes
-into `--mkimage-v2` and `--bundle`.
+`make os-image-cx3576` and `make os-bundle-cx3576` are the top-level routes
+into `--mkimage-cx3576` and `--bundle`.
 
 `--build-rootfs` is the numbered-Dockerfile driver (`src/stages.ts` decides,
 `src/stages-cli.ts` runs). It takes the directory to build through
-`--stages-dir` and knows nothing else about it; `os/rootfs/build-v2.sh` points
+`--stages-dir` and knows nothing else about it; `os/rootfs/build.sh` points
 it at `os/rootfs/compose/`, which holds `10-compose` and `90-pack`.
 
 `--without NAME` is **stage selection** — it leaves an `<n>-feature-NAME` file
@@ -430,12 +430,12 @@ out, refuses a name no feature file matches rather than silently building the
 full image, and refuses to decline a file that is not a feature. **Nothing
 passes it today.** The composition directory contains no feature files at all,
 so a decline reaches the image through the *resolution* instead, as fewer
-package names: `os/rootfs/build-v2.sh` folds `WITH_CONTAINERS=0`, `WITH_MOSD=0`
+package names: `os/rootfs/build.sh` folds `WITH_CONTAINERS=0`, `WITH_MOSD=0`
 and `MOS_ROOTFS_WITHOUT` into one list and hands it to
 `os/rootfs/packages/resolve.sh`, which refuses an unmatched feature name for the
 same reason this flag did.
 
-`--mkimage-v2`, `--mkimage-x64` and `--bundle` are **modes**, each recognised
+`--mkimage-cx3576`, `--mkimage-x64` and `--bundle` are **modes**, each recognised
 only in first position: anywhere else one would be forwarded to `bun test`,
 which ignores an unknown flag and reports a green suite in answer to a request
 to assemble an image. That is `os/verify/run.sh`'s rule, and it is driven here
@@ -498,8 +498,8 @@ src/tools/rauc.ts          the update bundle
 src/layout-cx3576.ts       cx3576's DERIVED layout: slot sizing, and the chain down to DATA
 src/boot-cx3576.ts         boot.cmd's guards and the per-slot verity env, both pure
 src/pin-seeded-times.ts    which inode timestamps are data and which are the assembler's noise
-src/mkimage-v2.ts          the cx3576 assembler
-src/mkimage-v2-cli.ts      the host half: where the inputs are, and the -latest symlink
+src/mkimage-cx3576.ts          the cx3576 assembler
+src/mkimage-cx3576-cli.ts      the host half: where the inputs are, and the -latest symlink
 src/layout-x64.ts          x64's DERIVED layout -- a second arithmetic, not a second spelling
 src/grub-x64.ts            grub.cfg's three guards and the per-slot cmdline fragment, all pure
 src/mkimage-x64.ts         the x64 assembler

@@ -23,7 +23,7 @@ rh="$(awk -F: '$1 == "root" { print $2; exit }' "${fac}")"
 case "${rh}" in
     "") echo "error: the root: entry in the factory shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1 ;;
     '!'* | '*'*) ;;
-    *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential; v2 has no ROOT_PASSWORD build arg on purpose, and root access is provisioned at runtime (mosd's transient password)" >&2; exit 1 ;;
+    *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential; the rootfs build has no ROOT_PASSWORD build arg on purpose, and root access is provisioned at runtime (mosd's transient password)" >&2; exit 1 ;;
 esac
 missing=""; empty=""; hashed=""
 while IFS=: read -r u _; do

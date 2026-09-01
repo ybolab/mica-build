@@ -118,7 +118,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # self-checks below are what make this step able to fail; a purge that silently
 # removed too much would surface as a device that does not boot, days later.
 
-# Measured before removing, not assumed. Nothing in overlay-v2, in mosd or in
+# Measured before removing, not assumed. Nothing in overlay, in mosd or in
 # apid invokes dpkg or apt at runtime -- the only two mentions in the overlay
 # are comments. Every perl script in the image is maintainer-script tooling
 # that runs during installation and never after (deb-systemd-helper,
@@ -168,7 +168,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 
 # Build report (moved out of the tree by the pack stage; never ships in the
 # image). TOTAL_MB is measured HERE, after the purge, so the budget gate in
-# build-v2.sh weighs the root that ships rather than the one that was built.
+# build.sh weighs the root that ships rather than the one that was built.
 RUN { cat /rootfs-report.pkgs; \
       echo; \
       echo "RAUC_VERSION $(cat /rootfs-report.rauc)"; \
@@ -279,7 +279,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-extension-dir.sh
 
 # /etc/shadow moves onto STATE. Every device gets its own root password, and
-# pam_unix reads it from /etc/shadow -- which on v2 sits on the dm-verity
+# pam_unix reads it from /etc/shadow -- which on mos sits on the dm-verity
 # squashfs, where nothing can ever write it. The only writable paths under /etc
 # are the /etc/hostname and /etc/ssh binds, and a bind-mounted file cannot be
 # replaced by rename, which is how mosd writes a credential safely. So the file
@@ -332,7 +332,7 @@ RUN find /rootfs -xdev -perm /6000 -printf '%M %U %G %P\n' 2>/dev/null \
 RUN { echo; \
       echo "== file capabilities =="; \
       getcap -r /rootfs 2>/dev/null | sed 's|^/rootfs||' | sort; \
-    } >> /out/rootfs-report-v2.txt
+    } >> /out/rootfs-report.txt
 
 # Pack, in three steps so each can carry its own explanation and cache
 # independently: squash, assert, then hash.
@@ -378,7 +378,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # instead of two.
 #
 # --no-superblock is not an optimisation. This image is assembled by dm-init off
-# `dm-mod.create=` (os/rootfs/build-v2.sh's write_cmdline), and a verity v1
+# `dm-mod.create=` (os/rootfs/build.sh's write_cmdline), and a verity v1
 # table has no superblock concept: the kernel reads the block at
 # hash_start_block as the tree's TOP LEVEL. A superblock sits exactly there and
 # pushes the tree one hash block down, so every boot fails with
@@ -432,7 +432,7 @@ COPY --from=pack /out/factory-var/ /factory-var/
 COPY --from=pack /out/pkg-logs/ /pkg-logs/
 COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
-COPY --from=pack /out/rootfs-report-v2.txt /
+COPY --from=pack /out/rootfs-report.txt /
 COPY --from=pack /out/boot/ /boot/
 
 # The factory root as an OCI image.

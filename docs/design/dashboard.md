@@ -233,13 +233,13 @@ The inventory section 7 gap-table row cited.
   - (ii) is **(a) available today**, with a hard limitation: exactly one
     component reports health, exactly once per boot. `mos-health` calls
     `ReportHealth("var", …)` at
-    `os/rootfs/overlay-v2/usr/lib/mos/mos-health`, and **nothing
+    `os/rootfs/overlay/usr/lib/mos/mos-health`, and **nothing
     ever refreshes it**. The tile must
     therefore timestamp it as a boot-time reading, not present it as current.
   - (iii) is **(b) needs new mosd work** — gap-table **row 5**. A 262-line gate
-    probes systemd, mosd and apid (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) and then runs
+    probes systemd, mosd and apid (`os/rootfs/overlay/usr/lib/mos/mos-health`) and then runs
     `rauc status mark-good`
-    (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`), and its verdict —
+    (`os/rootfs/overlay/usr/lib/mos/mos-health`), and its verdict —
     did it pass, was the slot confirmed, which probe failed — goes to the journal
     and nowhere a UI can read.
 - **Why it earns the first screen:** it is the only tile that can be red for a
@@ -330,8 +330,8 @@ better mechanism and then hid it.**
     which states *"mosd owns every system action: apid never spawns a process and
     never talks to systemd itself"*).
   - **row 2** — boot attempt credits. `BOOT_A_LEFT` / `BOOT_B_LEFT` in the
-    redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in`),
-    reachable only via `fw_printenv`, and that file's own comment at `os/rootfs/overlay-v2/etc/fw_env.config.in`
+    redundant U-Boot environment (`os/rootfs/overlay/etc/fw_env.config.in`),
+    reachable only via `fw_printenv`, and that file's own comment at `os/rootfs/overlay/etc/fw_env.config.in`
     warns there is **no cross-process locking** between the two existing writers.
   - **row 3** — RAUC status and last install result, kept on the META partition
     (`os/pkgs/rauc/system.conf.in`).
@@ -388,12 +388,12 @@ better mechanism and then hid it.**
   — **DATA** (`/srv`) first, because it is the only tier that grows.
 - **Feed:** `statvfs` on the four tier mount points. mos has four tiers with
   distinct loss semantics — STATE `/mnt/state`, DATA `/srv`, META `/mnt/meta`,
-  EPHEMERAL `/var` (`os/rootfs/overlay-v2/etc/fstab.in`, tier table at
+  EPHEMERAL `/var` (`os/rootfs/overlay/etc/fstab.in`, tier table at
   `docs/design/ro-root.md`, which records DATA as the one tier marked
   *"yes — fills the media"*).
 - **Availability: (b) needs new mosd work** — gap-table **row 11**. Today the
   UI has *almost nothing*: only `/var`, only as a boot-time percentage inside
-  the `health.var` detail string (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`).
+  the `health.var` detail string (`os/rootfs/overlay/usr/lib/mos/mos-health`).
   `/srv` — the tier that actually fills up — has **no reporting of any kind**.
   The inventory's own judgement is that the `statvfs` read is trivial and the bus
   surface for it does not exist.
@@ -524,7 +524,7 @@ names the reason, and where it belongs instead. **[proposal]**
   such tiles — which fails rule 2 of section 2.1. Kernel and OS version belong
   with the update page once row 3 lands.
 - **No log or journal tail.** The boot gate's own output goes to the journal
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`), so a tail is tempting.
+  (`os/rootfs/overlay/usr/lib/mos/mos-health`), so a tail is tempting.
   It is refused here for two reasons: it is unbounded in size and unbounded in
   what it may disclose, and it answers "what happened" rather than "what is
   true", which is a diagnostics question. Section 3.2 gives it a page.
@@ -798,11 +798,11 @@ section 8's.
 
 | # | Proposed in | What is missing | Gap row | `mosd` work required |
 |---|---|---|---|---|
-| 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status — **built since this was measured**: `GetUpdateState` answers per-slot status over the bus, and the dated `grep -rci rauc mosd/mosd/src/` 0-count re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`. `apid` cannot subprocess (`os/pkgs/mosd/apid/src/settings_api.rs`), so it lives in `mosd`. The parse also exists in shell at `os/rootfs/overlay-v2/usr/lib/mos/mos-health` |
-| 2 | 2.5, 2.7 | Boot attempt credits remaining | **row 2** | Read `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in`). The read hazard is answered by the rule the file records: all access via `fw_printenv`/`fw_setenv` under libubootenv's flock, one writer per variable — the credits stay RAUC-owned and this reader polls only |
+| 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status — **built since this was measured**: `GetUpdateState` answers per-slot status over the bus, and the dated `grep -rci rauc mosd/mosd/src/` 0-count re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`. `apid` cannot subprocess (`os/pkgs/mosd/apid/src/settings_api.rs`), so it lives in `mosd`. The parse also exists in shell at `os/rootfs/overlay/usr/lib/mos/mos-health` |
+| 2 | 2.5, 2.7 | Boot attempt credits remaining | **row 2** | Read `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay/etc/fw_env.config.in`). The read hazard is answered by the rule the file records: all access via `fw_printenv`/`fw_setenv` under libubootenv's flock, one writer per variable — the credits stay RAUC-owned and this reader polls only |
 | 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/pkgs/rauc/system.conf.in`) |
 | 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/build/src/bundle.ts`, `os/pkgs/rauc/system.conf.in`), but there is still **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `os/pkgs/mosd/apid/`, re-measured on this tree). The caller half is dated: `InstallUpdate` now hands an on-device bundle path to RAUC's D-Bus `InstallBundle`, with progress read back through `GetUpdateState`. Still needs the upload path and a place to put the bundle |
-| 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`); its verdict goes to the journal. Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
+| 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay/usr/lib/mos/mos-health`); its verdict goes to the journal. Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
 | 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md`), has **no reporting of any kind** today |
 | 8 | 2.2, 3.4.1 | Observed hostname as opposed to configured | **row 13** | A read-back from hostnamed. There is no `GetHostname` call anywhere; the live-state key echoes the configured value (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs`) |
@@ -1735,8 +1735,8 @@ changes.
   and `ProtectSystem=`; and the policy file no longer contains a bare
   `<allow send_destination="com.mos.mosd"/>` in the `default` context.
 - **The honest end-to-end test is the boot health gate itself.** Probe c
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) fetches `https://127.0.0.1/healthz` on port
-  443; probe b (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) calls `com.mos.mosd1 GetState` over `busctl` as
+  (`os/rootfs/overlay/usr/lib/mos/mos-health`) fetches `https://127.0.0.1/healthz` on port
+  443; probe b (`os/rootfs/overlay/usr/lib/mos/mos-health`) calls `com.mos.mosd1 GetState` over `busctl` as
   root. If the capability change broke the port bind, probe c fails. If the
   allowlist was written wrong, probe b fails. Both fail the gate loudly. That is
   a better test than any assertion about file contents, and it already exists.
@@ -1789,9 +1789,9 @@ chosen by operator demand and by which items unblock others, not by size.
 | | Scope | Gap rows | Unblocks | Verified by |
 |---|---|---|---|---|
 | **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction the inventory records as currently impossible |
-| **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
-| **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. The dated "0 across all 12 files" rauc measurement re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`: `GetUpdateState` answers slot status with the pending-not-confirmed flag, and `mos-health` now reports its verdict through `ReportHealth` — this row is largely built, wiring remains |
-| **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on the serialisation rule, no longer on an open question.** The read hazard has an answer: every access goes through `fw_printenv`/`fw_setenv`, and the shipped libubootenv takes `flock(LOCK_EX)` on `/var/lock/fw_printenv.lock` across the whole read or read-modify-write, so a poll cannot land mid-write. The rule and its two caveats — the lock is silently skipped while `/var/lock` is absent, so the polling service keeps `DefaultDependencies=yes`; the lock never spans a check-then-set, so `BOOT_A_LEFT`/`BOOT_B_LEFT` stay RAUC-owned and 4d is read-only — are recorded at `os/rootfs/overlay-v2/etc/fw_env.config.in`. **4d starts only as an exec of `fw_printenv` under that rule** — never a private libubootenv link, never a raw read of the UENV partitions. It is deliberately last among the read items because it touches the one store RAUC also writes |
+| **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay/etc/fstab.in` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
+| **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay/usr/lib/mos/mos-health`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. The dated "0 across all 12 files" rauc measurement re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`: `GetUpdateState` answers slot status with the pending-not-confirmed flag, and `mos-health` now reports its verdict through `ReportHealth` — this row is largely built, wiring remains |
+| **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay/etc/fw_env.config.in`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on the serialisation rule, no longer on an open question.** The read hazard has an answer: every access goes through `fw_printenv`/`fw_setenv`, and the shipped libubootenv takes `flock(LOCK_EX)` on `/var/lock/fw_printenv.lock` across the whole read or read-modify-write, so a poll cannot land mid-write. The rule and its two caveats — the lock is silently skipped while `/var/lock` is absent, so the polling service keeps `DefaultDependencies=yes`; the lock never spans a check-then-set, so `BOOT_A_LEFT`/`BOOT_B_LEFT` stay RAUC-owned and 4d is read-only — are recorded at `os/rootfs/overlay/etc/fw_env.config.in`. **4d starts only as an exec of `fw_printenv` under that rule** — never a private libubootenv link, never a raw read of the UENV partitions. It is deliberately last among the read items because it touches the one store RAUC also writes |
 | **4e** | **Install a bundle, with progress** — an upload path and a place to put the bundle. The caller and progress surface exist: `InstallUpdate` hands a bundle path to RAUC's D-Bus `InstallBundle`, `GetUpdateState` reads progress back. Today: no upload route — `Multipart` appears nowhere under `os/pkgs/mosd/`, re-measured on this tree | **4** | The update page of section 3.2; section 5.9's 2-second update-page refresh and its two specified degraded forms | The largest single item (section 4.1 item 4). Section 4.2 item 2's constraint is binding: mos refuses `plain`-format bundles by configuration (`os/pkgs/rauc/system.conf.in`), and **no "install this file anyway" affordance may be added** |
 | **4f** | **Observed hostname**; and the **redaction policy** that must precede any diagnostics export | **13**; and section 4.1 item 10 (not a gap row) | Section 2.2's caveat; section 3.2's Diagnostics page | Diagnostics is mechanically buildable today — `GetState("")` and `GetSettings("")` already return whole trees (`os/pkgs/mosd/mosd/src/bus.rs`) — which is exactly why the **policy** must land first. Section 3.2: shipping an export before the redaction rule *"is how a support channel becomes a disclosure channel"* |
 
@@ -1810,7 +1810,7 @@ ship in the same change as 4c rather than waiting for the full update page.
 
 1. **The set of `com.mos.mosd1` consumers is what is in *this tree*.** It was
    established by `grep -rln apid` and by reading
-   `os/rootfs/overlay-v2/usr/lib/mos/mos-health`; a consumer that exists only on
+   `os/rootfs/overlay/usr/lib/mos/mos-health`; a consumer that exists only on
    a deployed device, in an operator's script, or on the unread `sshweb` branch
    would not appear. The bus name is reachable by any local root process, so
    such consumers are possible without mos knowing.

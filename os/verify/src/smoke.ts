@@ -148,7 +148,7 @@ export function versionTokens(line: string): string[] {
  * The commit half of the version contract.
  *
  * `os/pkgs/mosd/hack/build-target.sh` writes the commit it handed the compiler into
- * `_out/mosd-build.txt`, build-v2.sh copies it to `_out/<board>/mosd-build.txt`,
+ * `_out/mosd-build.txt`, build.sh copies it to `_out/<board>/mosd-build.txt`,
  * `readMosdBuildFact` reads it back and `judge` compares the two; see
  * `BuildCommitFact`. The printed-only state is a branch, not a deletion: with no
  * record -- a hand-assembled `_out/` -- the runner says so on its own first lines
@@ -193,7 +193,7 @@ export function firstLine(stdout: string): string {
  * reported sha against HEAD at run time passes on any freshly built tree and
  * asserts only that somebody had just rebuilt, never that the embedding works.
  * `os/pkgs/mosd/hack/build-target.sh` writes the commit it handed the compiler into
- * `_out/mosd-build.txt`, `os/rootfs/build-v2.sh` carries it into `_out/<board>/`
+ * `_out/mosd-build.txt`, `os/rootfs/build.sh` carries it into `_out/<board>/`
  * beside the factory root, and this is what the runner reads back. `commit` is
  * optional because the fact may genuinely not be there -- a hand-assembled
  * `_out/` -- and the rule there is to print it and assert nothing rather than to
@@ -630,7 +630,7 @@ export function factoryRootPaths(
 /**
  * Read the record, refusing loudly when the build has not been run.
  *
- * A missing image is a refusal, not a skip. `make os-verify-cx3576-v2` on a tree
+ * A missing image is a refusal, not a skip. `make os-verify-cx3576` on a tree
  * with no image refuses before running a single check, and that is the behaviour
  * to copy: a runner that skipped when it found nothing to smoke would report the
  * same green on a tree that had never built an image as on one whose artifacts
@@ -646,7 +646,7 @@ export function readFactoryRoot(
       `${board}: ${existsSync(record) ? archive : record} does not exist.\n`
       + `       The smoke run executes the self-built binaries INSIDE the packed root, and that root\n`
       + `       is exported by os/rootfs/compose/90-pack.Dockerfile's \`factory-root\` target. Build it\n`
-      + `       with: MOS_BOARD=${board} bash os/rootfs/build-v2.sh\n`
+      + `       with: MOS_BOARD=${board} bash os/rootfs/build.sh\n`
       + `       This refuses rather than skipping: a skip reports the same green as a pass, and an\n`
       + `       image that ships its binaries unexecuted is exactly what this check exists to end.`,
     )
@@ -665,11 +665,11 @@ export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
  * The commit the mosd and apid in this board's factory root were built from.
  *
  * Read out of the record `os/pkgs/mosd/hack/build-target.sh` wrote and
- * `os/rootfs/build-v2.sh` copied in beside the image -- NOT out of the working
+ * `os/rootfs/build.sh` copied in beside the image -- NOT out of the working
  * tree. See [`BuildCommitFact`]. Absent is not a refusal here, unlike the
  * factory root itself: the record is younger than images that may still be
  * sitting in `_out/`, so a fact the runner cannot see is printed and asserted
- * about nothing. A root built by os/rootfs/build-v2.sh always has it, and when
+ * about nothing. A root built by os/rootfs/build.sh always has it, and when
  * mosd is declined that script removes it -- but then `declinedFeatures` refuses
  * the run first. A record that exists and cannot be read IS a refusal: a file
  * with no `commit` key was written by something other than build-target.sh, and
@@ -682,7 +682,7 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
     return {
       source:
         `${shown} does not exist, so no commit was recorded for this image. It is written by `
-        + `os/pkgs/mosd/hack/build-target.sh on every build and copied here by os/rootfs/build-v2.sh; `
+        + `os/pkgs/mosd/hack/build-target.sh on every build and copied here by os/rootfs/build.sh; `
         + `rebuild the board to have the commit asserted rather than printed`,
     }
   }
@@ -1006,7 +1006,7 @@ async function inspectId(
  *
  * Load rather than trust a tag. A tag is daemon state: it says what is currently
  * loaded, and `localhost/mos-factory-root:x64` may name a root some other
- * worktree on this host built an hour ago. `os/rootfs/build-v2.sh` guards the
+ * worktree on this host built an hour ago. `os/rootfs/build.sh` guards the
  * same seam from the other side -- "a stale or absent archive would be handed to
  * the smoke runner as this build's root". Loading is idempotent and costs ~2s on
  * the real 250 MB export because the layers are already content-addressed.
@@ -1113,7 +1113,7 @@ export async function loadFactoryRoot(
  * `exec /bin/true: exec format error` with status 255, measured on this host
  * against a pulled upstream arm64v8/busybox, so the measurement is about the host
  * and not our export. Refusing here, naming the platform and the remedy, is the
- * same shape as `os-verify-cx3576-v2` refusing on a tree with no image.
+ * same shape as `os-verify-cx3576` refusing on a tree with no image.
  *
  * It also MEASURES, and that is why it hands back a number. `/bin/true` returns
  * immediately, so its elapsed time is what starting a container costs on this
@@ -1311,7 +1311,7 @@ export function buildkitExec(
   }, { route: 'buildkit' as const })
 }
 
-/** `mos-<arch>` -- the container builder os/rootfs/build-v2.sh and the package builds create for a cross build. */
+/** `mos-<arch>` -- the container builder os/rootfs/build.sh and the package builds create for a cross build. */
 export function containerBuilderFor(platform: string): string {
   return `mos-${platform.split('/')[1] ?? platform}`
 }
@@ -1435,7 +1435,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     if (!existsSync(manifest)) {
       throw new Error(
         `${manifest} does not exist, so this run cannot tell whether the root beside it was built `
-        + `with every feature stage. os/rootfs/build-v2.sh writes it on every build; an image with `
+        + `with every feature stage. os/rootfs/build.sh writes it on every build; an image with `
         + `no manifest was produced by something else, and the register covers a full-featured root.`,
       )
     }

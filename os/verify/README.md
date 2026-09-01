@@ -184,7 +184,7 @@ bash os/verify/run.sh --verify --board cx3576 --probe
 ## Verifying an image
 
 ```sh
-make os-verify-cx3576-v2                        # the image contract
+make os-verify-cx3576                        # the image contract
 bash os/verify/run.sh --verify --board x64      # the other board
 bash os/verify/run.sh --verify --board x64 --image PATH
 ```
@@ -294,7 +294,7 @@ PASS  catatonit  …  == CATATONIT_VERSION=v0.2.1  [said: "tini version 0.2.1_ca
 
 ### It refuses rather than skipping, in four places
 
-- **no image** — names the file and `MOS_BOARD=<b> bash os/rootfs/build-v2.sh`
+- **no image** — names the file and `MOS_BOARD=<b> bash os/rootfs/build.sh`
 - **register vs pins disagree** — nothing is executed at all
 - **a feature stage was declined** — read off the build's own
   `rootfs-stages.txt`; against such a root the declined feature's artifacts would
@@ -307,7 +307,7 @@ PASS  catatonit  …  == CATATONIT_VERSION=v0.2.1  [said: "tini version 0.2.1_ca
 
 ### It is part of the build
 
-`os/rootfs/build-v2.sh` runs `run.sh --smoke` as its **last step, under
+`os/rootfs/build.sh` runs `run.sh --smoke` as its **last step, under
 `set -e`**, so a root whose binaries do not run does not become an image.
 
 In the script rather than in the `Makefile`, because two make targets run it, so

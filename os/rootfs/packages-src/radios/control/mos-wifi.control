@@ -16,7 +16,7 @@ Description: mos Wi-Fi station support
  instance's configuration file; a distribution unit that also claimed the
  daemon would race it for the same control socket.
  .
- The bind mount is not a convenience. On the v2 image /etc is inside the
+ The bind mount is not a convenience. On the mos image /etc is inside the
  read-only dm-verity squashfs, so without it the reconciler's write fails on
  the device and nowhere else, and the PSKs it writes would not survive an A/B
  update.

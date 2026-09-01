@@ -486,7 +486,7 @@ describe('the five inputs', () => {
     for (const [key] of cases) {
       const overrides = { [key]: join(dir, 'nowhere', 'gone') } as Partial<AssemblyInputs>
       expect(assemble(overrides)).rejects.toThrow(
-        /not found\. Build the root first: MOS_BOARD=x64 bash os\/rootfs\/build-v2\.sh/,
+        /not found\. Build the root first: MOS_BOARD=x64 bash os\/rootfs\/build\.sh/,
       )
       driven += 1
     }
@@ -515,7 +515,7 @@ describe('the five inputs', () => {
 describe('the factory /var', () => {
   test('absent is refused, naming the producer to run', async () => {
     expect(assemble({ factoryVar: join(dir, 'nowhere') }))
-      .rejects.toThrow(/not found\. The rootfs build exports it; run 'MOS_BOARD=x64 bash os\/rootfs\/build-v2\.sh' first/)
+      .rejects.toThrow(/not found\. The rootfs build exports it; run 'MOS_BOARD=x64 bash os\/rootfs\/build\.sh' first/)
   })
 
   test('a FILE where a directory should be is refused too', async () => {

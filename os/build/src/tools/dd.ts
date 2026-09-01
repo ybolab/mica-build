@@ -29,7 +29,7 @@ export interface DdSpec {
   /**
    * `conv=`. NOT defaulted, and not normalised across callers: the cx3576 assembly contract
    * uses `notrunc,sparse` and the x64 assembly contract uses `notrunc`. They agree on
-   * the bytes for a target that is already zero -- v2's comment says so -- but
+   * the bytes for a target that is already zero -- the cx3576 assembler's comment says so -- but
    * which one a call passes is that call's decision, taken where the reason is.
    */
   readonly conv?: readonly string[]

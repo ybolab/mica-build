@@ -15,7 +15,7 @@
 # Three things force a host-side step here, and no other producer in the family
 # needed one:
 #
-#   - BOARD_DIR. os/rootfs/build-v2.sh takes prebuilt BSP artifacts from
+#   - BOARD_DIR. os/rootfs/build.sh takes prebuilt BSP artifacts from
 #     ${BOARD_DIR:-os/boards/<b>/bsp}, and this producer accepts the same
 #     override. A build context in producer.env is a fixed repository-relative
 #     path -- that file is plain KEY=value with no expansion, deliberately --
@@ -73,7 +73,7 @@ fi
 # shellcheck source=../../board.env
 . "${LAYOUT_ENV}"
 
-# The same override os/rootfs/build-v2.sh accepts, spelled the same way.
+# The same override os/rootfs/build.sh accepts, spelled the same way.
 BOARD_DIR="${BOARD_DIR:-${BOARD_ROOT}/bsp}"
 BSP_MAKEFILE="${BOARD_ROOT}/bsp/Makefile"
 
@@ -139,7 +139,7 @@ require_bsp "${MODULES_TAR}" kernel
 
 # Firmware is committed vendor content rather than a build product, so a
 # missing file is not answered with a make target. The shape of the message is
-# os/rootfs/build-v2.sh's for the same failure.
+# os/rootfs/build.sh's for the same failure.
 for fw in ${BOARD_FIRMWARE_FILES}; do
     case "${fw}" in
     /usr/lib/firmware/*) ;;
@@ -210,7 +210,7 @@ mkdir -p "${STAGE}/etc/rauc" "${STAGE}/firmware" "${STAGE}/boot"
 # key by key. A whole-file copy cannot disagree with its source.
 cp "${LAYOUT_ENV}" "${STAGE}/board.env"
 
-# The rendering, exactly as os/rootfs/build-v2.sh does it. lower() and render()
+# The rendering, exactly as os/rootfs/build.sh does it. lower() and render()
 # are that script's, including the refusal to emit a file with a placeholder
 # left in it; SRV_LINE and VAR_OPTS are its values.
 #
@@ -235,7 +235,7 @@ render() {
     fi
 }
 
-OVERLAY_SRC="${REPO_ROOT}/os/rootfs/overlay-v2"
+OVERLAY_SRC="${REPO_ROOT}/os/rootfs/overlay"
 SRV_LINE="PARTUUID=$(lower "${DATA_GUID}")	/srv	ext4	noatime,x-systemd.growfs	0	2"
 VAR_OPTS="noatime"
 render "${OVERLAY_SRC}/etc/fstab.in" "${STAGE}/etc/fstab" \
@@ -253,7 +253,7 @@ render "${OVERLAY_SRC}/etc/fw_env.config.in" "${STAGE}/etc/fw_env.config" \
 # rendering of its template: it owns the statusfile placement, the boot-attempts
 # radix range and the fw_env.config cross-checks, and every one of those is an
 # assertion this producer wants run. SYSTEM_CONF_OUT is the script's own
-# override, which keeps the generated file out of os/rootfs/overlay-v2 -- that
+# override, which keeps the generated file out of os/rootfs/overlay -- that
 # copy belongs to the image build, and a package producer must not move it.
 MOS_BOARD="${MOS_BOARD}" SYSTEM_CONF_OUT="${STAGE}/etc/rauc/system.conf" \
     bash "${REPO_ROOT}/os/pkgs/rauc/render-config.sh"

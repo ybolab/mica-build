@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Renders the RAUC system configuration from the layout-v2 constants, and
+# Renders the RAUC system configuration from the A/B-layout constants, and
 # asserts that the U-Boot environment access file agrees with the GPT.
 #
 #   bash os/pkgs/rauc/render-config.sh          render the overlay file
 #   bash os/pkgs/rauc/render-config.sh --check  verify the rendered file is current
 
-# Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which the overlay
+# Output: os/rootfs/overlay/etc/rauc/system.conf, which the overlay
 # mechanism copies into the image at /etc/rauc/system.conf. The rendered file
 # is gitignored, never committed: the template plus os/boards/cx3576/board.env
 # are the single source of truth, and a committed rendering could drift from
-# them with nothing to notice until after the fact. os/rootfs/build-v2.sh runs
+# them with nothing to notice until after the fact. os/rootfs/build.sh runs
 # this renderer before staging the overlay; --check (run by the bundle builder,
 # os/build/src/bundle.ts) guards the narrower case of the rendered file being
 # edited by hand after the last build.
@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
-OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
+OVERLAY="${REPO_ROOT}/os/rootfs/overlay"
 SYSTEM_CONF_IN="${SCRIPT_DIR}/system.conf.in"
 SYSTEM_CONF_OUT="${SYSTEM_CONF_OUT:-${OVERLAY}/etc/rauc/system.conf}"
 FSTAB_IN="${OVERLAY}/etc/fstab.in"
@@ -144,7 +144,7 @@ esac
 # /etc/fw_env.config assertions.
 #
 # The file itself is the overlay template, rendered into the image by
-# os/rootfs/build-v2.sh. This task owns its contract, so it is asserted here
+# os/rootfs/build.sh. This task owns its contract, so it is asserted here
 # rather than duplicated into a second competing file: two device lines (which
 # is what marks the environment redundant to libubootenv — configure only one
 # side and every read from the other fails its CRC check), addressed by
@@ -344,7 +344,7 @@ if [ "${MODE}" = "check" ]; then
     # render step they have not run yet.
     if [ ! -f "${SYSTEM_CONF_OUT}" ]; then
         echo "error: ${SYSTEM_CONF_OUT} has not been rendered yet (it is generated, not committed)." >&2
-        echo "Run 'bash os/pkgs/rauc/render-config.sh' — os/rootfs/build-v2.sh does this automatically before staging the overlay." >&2
+        echo "Run 'bash os/pkgs/rauc/render-config.sh' — os/rootfs/build.sh does this automatically before staging the overlay." >&2
         exit 1
     fi
     if ! diff -u "${SYSTEM_CONF_OUT}" "${rendered}"; then
