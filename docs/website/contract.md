@@ -4,7 +4,7 @@ This document is the contract for the mos official website: which pages exist,
 what each may say, and the rules that keep the site honest. It defines content
 and truth rules only. Rendering technology, CMS selection, hosting and public
 deployment are explicitly out of scope and are decided separately after this
-contract is stable (see [PLAN-042](../plan/PLAN-042.md)).
+contract is stable (PLAN-042, completed; see the changelog).
 
 ## Purpose and audience
 

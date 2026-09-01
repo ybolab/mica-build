@@ -1296,7 +1296,7 @@ UI 开发在提交前逐项确认：
 - 外部比较研究：`docs/research/venus-gui-v2.md`
 - Applications 权威设计：`docs/design/applications.md`
 - 面向设计师的产品/原型指南：`docs/zh/design/built-in-ui-design.md`
-- 未完成路线图：`docs/plan/PLAN-042.md`～`docs/plan/PLAN-056.md`
+- 未完成路线图：`docs/plan/` 目录下的未完成计划
 
 当这些产物变化时，优先更新实现和 OpenAPI，再同步本指南的成熟度、页面状态与 API 表；不要只改
 高保真设计稿或脱离仓库的临时说明。

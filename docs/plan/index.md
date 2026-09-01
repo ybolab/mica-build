@@ -30,7 +30,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 ## Plans
 
 - [ ] [**PLAN-037 Coordinate the embedded delivery roadmap**](PLAN-037.md) `2026-08-31`
-- [ ] [**PLAN-042 Build the user documentation contract and official website content**](PLAN-042.md) `2026-09-01`
 - [ ] [**PLAN-043 Publish release identity and supply-chain artifacts**](PLAN-043.md) `2026-09-01`
 - [ ] [**PLAN-044 Add RTC, NTP and timezone management**](PLAN-044.md) `2026-09-01`
 - [ ] [**PLAN-045 Add the unexpanded BusyBox emergency binary**](PLAN-045.md) `2026-09-01`
@@ -38,7 +37,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-047 Deliver authenticated system updates**](PLAN-047.md) `2026-09-01`
 - [ ] [**PLAN-048 Deliver recovery and credential access recovery**](PLAN-048.md) `2026-09-01`
 - [ ] [**PLAN-049 Add storage status and data lifecycle management**](PLAN-049.md) `2026-09-01`
-- [ ] [**PLAN-050 Document BSP porting and qualify field reliability**](PLAN-050.md) `2026-09-01`
 - [ ] [**PLAN-051 Document native and container application delivery**](PLAN-051.md) `2026-09-01`
 - [ ] [**PLAN-052 Add diagnostics and operational network state**](PLAN-052.md) `2026-09-01`
 - [ ] [**PLAN-053 Define security and manufacturing lifecycle**](PLAN-053.md) `2026-09-01`
