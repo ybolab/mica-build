@@ -88,6 +88,7 @@ CTX_N=0
 HOOK_N=0
 IMAGE_N=0
 ARTEFACT_N=0
+VF_N=0
 REPORTS=()
 MISSING_N=0
 WARNED_N=0
@@ -139,14 +140,16 @@ while read -r producer dir arches _packages _enablement; do
         FROM_IMAGES=""
         PREPARE=""
         PREFLIGHT=""
+        VERSION_FROM=""
         # shellcheck disable=SC1090
         . "${producer_dir}/producer.env"
-        printf 'C=%s\nF=%s\nP=%s\nL=%s\n' "${BUILD_CONTEXTS}" "${FROM_IMAGES}" "${PREPARE}" "${PREFLIGHT}"
+        printf 'C=%s\nF=%s\nP=%s\nL=%s\nV=%s\n' "${BUILD_CONTEXTS}" "${FROM_IMAGES}" "${PREPARE}" "${PREFLIGHT}" "${VERSION_FROM}"
     )"
     contexts="$(printf '%s\n' "${vals}" | sed -n 's/^C=//p')"
     from_images="$(printf '%s\n' "${vals}" | sed -n 's/^F=//p')"
     prepare="$(printf '%s\n' "${vals}" | sed -n 's/^P=//p')"
     preflight="$(printf '%s\n' "${vals}" | sed -n 's/^L=//p')"
+    version_from="$(printf '%s\n' "${vals}" | sed -n 's/^V=//p')"
 
     # ---------------------------------------------------------- build contexts
     #
@@ -167,6 +170,27 @@ while read -r producer dir arches _packages _enablement; do
 Every build context a producer names is a COMMITTED tree, so this is a path that
 moved or a checkout that is incomplete -- not something a build produces."
     done
+
+    # ------------------------------------------------- the upstream version
+    #
+    # build.sh refuses these too, at this producer's turn; here they are
+    # reported together with every other missing input. The value's SHAPE
+    # (digit after a stripped `v`) stays build.sh's own refusal: it is about
+    # what the version MEANS, not about whether an input file is present.
+    if [ -n "${version_from}" ]; then
+        VF_N=$((VF_N + 1))
+        vf_path="${version_from%%:*}"
+        vf_key="${version_from##*:}"
+        if [ -z "${vf_path}" ] || [ -z "${vf_key}" ] || [ "${vf_path}" = "${version_from}" ]; then
+            note_missing "error: ${dir}/producer.env declares VERSION_FROM='${version_from}', which is not <repository-relative env file>:<KEY>."
+        elif [ ! -f "${REPO_ROOT}/${vf_path}" ]; then
+            note_missing "error: ${dir}/producer.env declares VERSION_FROM=${version_from} and ${vf_path} does not exist.
+The upstream version this producer stamps comes from that file or from nowhere."
+        elif [ -z "$(sed -n "s/^${vf_key}=//p" "${REPO_ROOT}/${vf_path}" | head -n1)" ]; then
+            note_missing "error: ${dir}/producer.env declares VERSION_FROM=${version_from} and ${vf_path} declares no non-empty ${vf_key}.
+An empty upstream version would compose into '+git<commit>-1', which dpkg accepts and orders below every real version."
+        fi
+    fi
 
     # ---------------------------------------------------------- the hook file
     if [ -n "${prepare}" ]; then
@@ -304,8 +328,8 @@ the packing step copies, so without it the build stages nothing."
     fi
 done <<<"${ROWS}"
 
-EXAMINED=$((CTX_N + HOOK_N + IMAGE_N + ARTEFACT_N))
-BREAKDOWN="${CTX_N} build context(s), ${HOOK_N} PREPARE hook(s), ${IMAGE_N} base image(s) and ${ARTEFACT_N} producer artefact(s)"
+EXAMINED=$((CTX_N + HOOK_N + IMAGE_N + ARTEFACT_N + VF_N))
+BREAKDOWN="${CTX_N} build context(s), ${HOOK_N} PREPARE hook(s), ${IMAGE_N} base image(s), ${VF_N} upstream version source(s) and ${ARTEFACT_N} producer artefact(s)"
 
 # A count refused rather than reported. Every number above is derived from a set
 # discovered at run time, and each of them can go to zero -- a producer.env that

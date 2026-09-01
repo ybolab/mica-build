@@ -43,6 +43,14 @@ usage() {
     echo "usage: bash os/rootfs/packages/resolve.sh --board <board> --profile <profile> --radios \"<radios>\" --without \"<features>\"" >&2
 }
 
+in_list() {
+    local needle="$1"
+    shift
+    local item
+    for item in "$@"; do [ "${item}" != "${needle}" ] || return 0; done
+    return 1
+}
+
 # EVERY INPUT IS AN ARGUMENT, AND NONE OF THEM IS RE-DERIVED HERE. This script
 # does not read os/boards/<board>/board.env, os/boards/<board>/bsp/containers.env
 # or WITH_MOSD/WITH_CONTAINERS/MOS_ROOTFS_WITHOUT/MOS_PROFILE out of the
@@ -186,27 +194,28 @@ for file in "${MANIFEST_FILES[@]}"; do
     esac
 done
 
-# `radios` is a feature and has no feature-radios.pkgs, because the radio
-# packages are per-radio and --radios selects them: the feature is the switch
-# that decides whether the radio family is consulted at all, which is what
-# MOS_ROOTFS_WITHOUT=radios means to os/rootfs/build.sh (it drops
-# stages/30-feature-radios whatever the board declares). An empty
-# feature-radios.pkgs carrying only that sentence would still leave this case
-# in the code below, so it is stated once, here.
-FEATURES+=("radios")
+# Each RADIO NAME is a decline token of its own -- there is no umbrella
+# `radios` feature and no feature-radios.pkgs. --radios is the board's
+# statement of which radios the HARDWARE has; --without <radio> is the build's
+# decision to leave one of them out anyway. The two compose per radio, so
+# `--without bluetooth` keeps Wi-Fi, which the retired umbrella token could
+# not say.
+#
+# A radio and a feature sharing one name would make that token ambiguous in
+# --without, so the collision is refused here rather than resolved by
+# precedence.
+for radio in ${KNOWN_RADIOS[@]+"${KNOWN_RADIOS[@]}"}; do
+    ! in_list "${radio}" ${FEATURES[@]+"${FEATURES[@]}"} || {
+        echo "error: ${HERE} holds both feature-${radio}.pkgs and radio-${radio}.pkgs. The name is a --without token in both families, so declining '${radio}' would be ambiguous; one of the two manifests has to be renamed" >&2
+        exit 1
+    }
+    FEATURES+=("${radio}")
+done
 mapfile -t FEATURES < <(printf '%s\n' "${FEATURES[@]}" | sort -u)
-
-in_list() {
-    local needle="$1"
-    shift
-    local item
-    for item in "$@"; do [ "${item}" != "${needle}" ] || return 0; done
-    return 1
-}
 
 for feature in ${WITHOUT}; do
     in_list "${feature}" ${FEATURES[@]+"${FEATURES[@]}"} || {
-        echo "error: --without names the feature '${feature}', which this repository has no such thing as. The features that exist are: ${FEATURES[*]}. They come from the feature-<name>.pkgs manifests in ${HERE}, plus 'radios', which gates the radio-<name>.pkgs family" >&2
+        echo "error: --without names the feature '${feature}', which this repository has no such thing as. The features that exist are: ${FEATURES[*]}. They come from the feature-<name>.pkgs and radio-<name>.pkgs manifests in ${HERE}" >&2
         exit 1
     }
 done
@@ -223,10 +232,10 @@ in_list "${PROFILE}" ${PROFILES[@]+"${PROFILES[@]}"} || {
     echo "error: --profile is '${PROFILE}', for which ${HERE} holds no profile-${PROFILE}.pkgs. The profiles with a manifest are: ${PROFILES[*]-none}" >&2
     exit 1
 }
-# Radio names are checked even when `radios` is declined. A board declaring a
-# radio this repository has never heard of is a broken board file, and a build
-# that happens to decline radios is not the place for that to become invisible;
-# os/rootfs/scripts/radios-packages.sh refuses the same unknown name today.
+# Radio names are checked even when every radio is declined. A board declaring
+# a radio this repository has never heard of is a broken board file, and a
+# build that happens to decline radios is not the place for that to become
+# invisible.
 for radio in ${RADIOS}; do
     in_list "${radio}" ${KNOWN_RADIOS[@]+"${KNOWN_RADIOS[@]}"} || {
         echo "error: --radios names '${radio}', for which ${HERE} holds no radio-${radio}.pkgs. The radios with a manifest are: ${KNOWN_RADIOS[*]-none}" >&2
@@ -237,13 +246,12 @@ done
 RESOLVED="${MANIFEST[common]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[profile-${PROFILE}]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[board-${BOARD}]:-}"
-if ! declined radios; then
-    for radio in ${RADIOS}; do
-        RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}"
-    done
-fi
+for radio in ${RADIOS}; do
+    declined "${radio}" || RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}"
+done
 for feature in "${FEATURES[@]}"; do
-    [ "${feature}" != "radios" ] || continue
+    # A radio token has no feature-<name>.pkgs; the loop above already read its
+    # radio-<name>.pkgs, gated on the board declaring it.
     declined "${feature}" || RESOLVED="${RESOLVED}${MANIFEST[feature-${feature}]:-}"
 done
 

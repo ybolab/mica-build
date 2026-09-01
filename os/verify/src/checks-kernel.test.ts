@@ -188,7 +188,11 @@ describe('modprobe resolution', () => {
     await withHealthyRoot(async (fx) => {
       write(fx, `/lib/modules/${RELEASE}/modules.dep`,
         'kernel/net/8021q/8021q.ko.xz: \n'
-        + 'kernel/bridge/bridge.ko.xz: \n')
+        + 'kernel/bridge/bridge.ko.xz: \n'
+        + 'kernel/drivers/net/veth.ko:\n'
+        + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko: kernel/net/netfilter/nft_fib.ko\n'
+        + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko: kernel/net/netfilter/nft_fib.ko\n'
+        + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/netfilter/nft_fib.ko\n')
       write(fx, `/lib/modules/${RELEASE}/kernel/net/8021q/8021q.ko.xz`, 'x')
       write(fx, `/lib/modules/${RELEASE}/kernel/bridge/bridge.ko.xz`, 'x')
       const got = await only(fx, MODPROBE_ID)
@@ -211,14 +215,16 @@ describe('the readers, directly', () => {
   test('configLines reports the raw line and the parsed value', async () => {
     await withHealthyRoot(async (fx) => {
       const got = configLines(fx.root, RELEASE)
-      expect(got.map(l => l.value)).toEqual(['m', 'm', 'y'])
+      expect(got.map(l => l.value)).toEqual(['m', 'm', 'y', 'm', 'm', 'm', 'm'])
       expect(got.map(l => l.line)).toContain('CONFIG_VLAN_8021Q=m')
     })
   })
 
   test('a value that is neither y nor m is not a value', async () => {
     await withHealthyRoot(async (fx) => {
-      write(fx, `/boot/config-${RELEASE}`, 'CONFIG_VLAN_8021Q=n\nCONFIG_BRIDGE=m\nCONFIG_WIREGUARD=y\n')
+      write(fx, `/boot/config-${RELEASE}`,
+        'CONFIG_VLAN_8021Q=n\nCONFIG_BRIDGE=m\nCONFIG_WIREGUARD=y\n'
+        + 'CONFIG_VETH=m\nCONFIG_NFT_FIB_INET=m\nCONFIG_NFT_FIB_IPV4=m\nCONFIG_NFT_FIB_IPV6=m\n')
       const got = configLines(fx.root, RELEASE)
       expect(got.filter(l => l.value === undefined).map(l => l.symbol)).toEqual(['CONFIG_VLAN_8021Q'])
       expect(got.map(l => l.line)).toContain('CONFIG_VLAN_8021Q=n')

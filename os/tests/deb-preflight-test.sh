@@ -82,24 +82,14 @@ restore_all() {
     done
     MOVED=()
 }
-# Section E is the one case that touches a real build directory. The stamp it
-# overwrites is DERIVABLE, so the restore re-computes it rather than replaying a
-# saved copy: correct even if this test is killed between E1 and E2, which is
-# the window in which a real os/pkgs/podman/out-amd64 would otherwise be left
-# carrying a digest that refuses every later image build.
-E_ACTIVE=0
-E_CREATED=0
-PODMAN_REAL=""
 cleanup() {
     restore_all
     [ ! -f "${TMP}/render.sh.orig" ] || cp "${TMP}/render.sh.orig" "${RENDER}"
-    if [ "${E_ACTIVE}" = 1 ]; then
-        if [ "${E_CREATED}" = 1 ]; then
-            rm -rf "${PODMAN_REAL}"
-        else
-            bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
-        fi
-    fi
+    [ ! -f "${TMP}/rauc-versions.env.orig" ] || cp "${TMP}/rauc-versions.env.orig" "${REPO_ROOT}/os/pkgs/rauc/versions.env"
+    # Section E mutates the real pool's manifest.txt; a saved copy is the
+    # restore, and leaving the mutated one behind would refuse every later
+    # image build on this host.
+    [ ! -f "${TMP}/pool-manifest.txt.orig" ] || cp "${TMP}/pool-manifest.txt.orig" "${REPO_ROOT}/_out/debs/amd64/manifest.txt"
     rm -rf "${TMP}"
 }
 # INT and TERM as well as EXIT. Several cases move a tracked file or a real
@@ -447,65 +437,70 @@ else
 fi
 sed -i 's/^CRUN_VERSION=.*/CRUN_VERSION=1.29.1/' "${FIXP}/versions.env"
 
-echo "== E. the IMAGE path: os/rootfs/build.sh refuses a stale engine too =="
+echo "== E. the IMAGE path: os/rootfs/build.sh refuses a pool from another tree =="
 
-# The other half of the stamp: os/rootfs/build.sh reuses out-<arch> and used
-# to check only that the seven binaries exist -- precisely the case
-# os/pkgs/podman/build.sh's comment describes. The packaging path was guarded
-# and the image path was not, which is the worse of the two to leave open,
-# because it ships.
+# The composed image path installs everything -- the engine included -- from
+# the package pool, so the staleness that used to live on an out-<arch>
+# staging directory now lives on the POOL: os/rootfs/build.sh refuses a pool
+# whose git stamp is not this tree's, before resolve.sh runs and before any
+# container starts. (This section used to drive a stale-engine refusal
+# through os/pkgs/podman/out-amd64 staging; that staging left build.sh with
+# the stage chain, and its stamp is now section D's business at package-build
+# time.)
 #
-# Driven against the REAL os/pkgs/podman/out-amd64 because build.sh derives
-# that path from its own location and takes no override. Only VERSIONS.env is
-# touched, and it is restored by RE-DERIVING it rather than by keeping a copy:
-# the stamp is a function of versions.env, so the restore is correct even if
-# the test is killed between the two runs. A directory this test had to create
-# is removed again; one that was already there is left exactly as it was.
-PODMAN_REAL="${REPO_ROOT}/os/pkgs/podman/out-amd64"
-if [ ! -d "${PODMAN_REAL}" ]; then
-    mkdir -p "${PODMAN_REAL}"
-    for b in "${BINARIES[@]}"; do cp "${HOST_ELF}" "${PODMAN_REAL}/${b}"; done
-    E_CREATED=1
-fi
-E_ACTIVE=1
-bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
-
-# A docker that refuses, so the green run stops as soon as it reaches the image
-# build instead of starting one. Reaching it at all is the assertion: it is
-# past the staging block by definition.
+# Driven by mutating the pool's own manifest.txt, backed up and restored --
+# the .deb archives are untouched, and SHA256SUMS covers only those. Whether a
+# pool exists here is a property of the HOST, like the BSP artefacts in
+# section A, so with none the section says so and proves nothing rather than
+# demanding a build.
 mkdir -p "${TMP}/nodocker"
 printf '#!/bin/sh\necho "STOPHERE: docker was invoked" >&2\nexit 97\n' >"${TMP}/nodocker/docker"
 chmod +x "${TMP}/nodocker/docker"
 build_rootfs() {
     E_RC=0
-    rm -rf "${REPO_ROOT}/_out/x64/podman"
     E_OUT="$(PATH="${TMP}/nodocker:${PATH}" MOS_BOARD=x64 WITH_MOSD=0 MOS_ROOTFS_WITHOUT="rauc" \
         timeout 300 bash "${REPO_ROOT}/os/rootfs/build.sh" 2>&1)" || E_RC=$?
-    E_STAGED=0
-    for b in "${BINARIES[@]}"; do
-        [ ! -f "${REPO_ROOT}/_out/x64/podman/${b}" ] || E_STAGED=$((E_STAGED + 1))
-    done
 }
 
-printf 'PODMAN_VERSIONS_SHA256=%064d\n' 0 >"${PODMAN_REAL}/VERSIONS.env"
-build_rootfs
-if [ "${E_RC}" -ne 0 ] && [ "${E_STAGED}" -eq 0 ] &&
-    says "${E_OUT}" "was built from a different os/pkgs/podman/versions.env" &&
-    ! says "${E_OUT}" "STOPHERE"; then
-    pass "E1 the image build refuses a stale engine BY NAME, having staged nothing and reached no docker build"
+POOL_MANIFEST="${REPO_ROOT}/_out/debs/amd64/manifest.txt"
+# A stamp no tree produces: rev-parse never yields twelve zeros, so the
+# baseline run's output cannot contain it and the fragment discriminates on
+# every host, whatever state its real pool is in.
+BOGUS_STAMP="git000000000000-1"
+if [ ! -f "${POOL_MANIFEST}" ]; then
+    pass "E0 no amd64 pool on this host; the pool-stamp refusal is proven where one exists (build one with 'make os-debs')"
 else
-    fail "E1 expected a refusal naming the stale stamp with 0 staged and no docker; got exit ${E_RC}, staged ${E_STAGED}: $(printf '%s\n' "${E_OUT}" | tail -3)"
-fi
+    # E0: the baseline outcome, whatever it is -- a stamp-matching pool
+    # reaches the docker stop, a genuinely stale one refuses; both are host
+    # facts. What E1/E2 assert is the DELTA the mutation makes against it.
+    build_rootfs
+    E0_RC="${E_RC}"
+    if says "${E_OUT}" "${BOGUS_STAMP}"; then
+        fail "E0 the baseline run already names ${BOGUS_STAMP}; the mutation below could not discriminate"
+    else
+        pass "E0 baseline captured (exit ${E0_RC}); it does not name ${BOGUS_STAMP}"
+    fi
 
-# THE GREEN DIRECTION, which is the one that matters: without it the guard
-# could be a bare `exit 1` and E1 would still pass.
-bash "${STAMP_SH}" --stamp "${PODMAN_REAL}"
-build_rootfs
-if [ "${E_STAGED}" -eq "${#BINARIES[@]}" ] && says "${E_OUT}" "STOPHERE" &&
-    ! says "${E_OUT}" "was built from a different os/pkgs/podman/versions.env"; then
-    pass "E2 re-stamping lets the SAME directory be staged: ${E_STAGED} binaries, and the run reaches the image build"
-else
-    fail "E2 expected ${#BINARIES[@]} staged, no stamp refusal and the run to reach docker; got exit ${E_RC}, staged ${E_STAGED}: $(printf '%s\n' "${E_OUT}" | tail -3)"
+    cp "${POOL_MANIFEST}" "${TMP}/pool-manifest.txt.orig"
+    sed -E -i "s/\+git[0-9a-f]{12}(\.dirty)?-[0-9]+/+${BOGUS_STAMP}/g" "${POOL_MANIFEST}"
+    build_rootfs
+    if [ "${E_RC}" -ne 0 ] && ! says "${E_OUT}" "STOPHERE" &&
+        says "${E_OUT}" "pool was built at stamp '${BOGUS_STAMP}'"; then
+        pass "E1 a pool stamped by another tree is refused BY STAMP, before any container starts"
+    else
+        fail "E1 expected a refusal naming ${BOGUS_STAMP} and no docker; got exit ${E_RC}: $(printf '%s\n' "${E_OUT}" | tail -3)"
+    fi
+
+    # THE GREEN DIRECTION, which is the one that matters: without it the guard
+    # could be a bare `exit 1` and E1 would still pass. Restoring the manifest
+    # returns the run to its baseline outcome.
+    cp "${TMP}/pool-manifest.txt.orig" "${POOL_MANIFEST}"
+    build_rootfs
+    if [ "${E_RC}" = "${E0_RC}" ] && ! says "${E_OUT}" "pool was built at stamp '${BOGUS_STAMP}'"; then
+        pass "E2 restoring the manifest returns the run to its baseline (exit ${E_RC})"
+    else
+        fail "E2 expected the baseline exit ${E0_RC} back and no ${BOGUS_STAMP} refusal; got exit ${E_RC}: $(printf '%s\n' "${E_OUT}" | tail -3)"
+    fi
 fi
 
 echo "== F. a warning-only run is GREEN, and says what it will cost =="
@@ -532,6 +527,54 @@ else
     fail "F1 expected exit 0 with $((${#BINARIES[@]} * 2)) warned and ${BASE_MISSING} missing; got exit ${PF_RC}, warned ${PF_WARNED}, missing ${PF_MISSING}"
 fi
 restore_all
+
+echo "== G. the upstream version source is an examined input =="
+
+# The two VERSION_FROM declarations (podman, rauc) are inputs like any other:
+# absent, they are reported with everything else in one run rather than at
+# that producer's turn. The baseline is re-measured here because section F
+# proved the tree returns to it, and a stale baseline would fold F's state
+# into these deltas.
+run_preflight
+G_MISSING="${PF_MISSING}"
+G_EXAMINED="${PF_EXAMINED}"
+
+# G1: the named env file is gone -- exactly one more missing input, named.
+hide "${REPO_ROOT}/os/pkgs/rauc/versions.env"
+run_preflight
+if [ "${PF_RC}" -ne 0 ] && [ "${PF_MISSING}" = "$((G_MISSING + 1))" ] &&
+    says "${PF_OUT}" "VERSION_FROM=os/pkgs/rauc/versions.env:RAUC_VERSION and os/pkgs/rauc/versions.env does not exist"; then
+    pass "G1 a hidden versions.env is one missing input, named with its VERSION_FROM (${G_MISSING} -> ${PF_MISSING})"
+else
+    fail "G1 expected exit!=0 and $((G_MISSING + 1)) missing naming the VERSION_FROM; got exit ${PF_RC}, missing ${PF_MISSING}"
+fi
+restore_all
+
+# G2: the file is there and the KEY is not -- the same count, the other message.
+RAUC_VERSIONS_ENV="${REPO_ROOT}/os/pkgs/rauc/versions.env"
+cp "${RAUC_VERSIONS_ENV}" "${TMP}/rauc-versions.env.orig"
+sed -i 's/^RAUC_VERSION=/RAUC_VERSION_RENAMED=/' "${RAUC_VERSIONS_ENV}"
+run_preflight
+G2_RC="${PF_RC}"
+G2_MISSING="${PF_MISSING}"
+G2_NAMED=0
+! says "${PF_OUT}" "declares no non-empty RAUC_VERSION" || G2_NAMED=1
+cp "${TMP}/rauc-versions.env.orig" "${RAUC_VERSIONS_ENV}"
+if [ "${G2_RC}" -ne 0 ] && [ "${G2_MISSING}" = "$((G_MISSING + 1))" ] && [ "${G2_NAMED}" = 1 ]; then
+    pass "G2 a versions.env without the named key is one missing input, naming the key"
+else
+    fail "G2 expected exit!=0 and $((G_MISSING + 1)) missing naming RAUC_VERSION; got exit ${G2_RC}, missing ${G2_MISSING}, named ${G2_NAMED}"
+fi
+
+# G3: restored, the run returns to its baseline -- the two mutations above
+# proved a delta of exactly one each, and this proves they proved it against
+# the same denominator.
+run_preflight
+if [ "${PF_MISSING}" = "${G_MISSING}" ] && [ "${PF_EXAMINED}" = "${G_EXAMINED}" ]; then
+    pass "G3 restoring returns the run to ${G_MISSING} missing of ${G_EXAMINED} examined"
+else
+    fail "G3 after restoring, expected ${G_MISSING} missing of ${G_EXAMINED}; got ${PF_MISSING} of ${PF_EXAMINED}"
+fi
 
 echo
 if [ "${FAIL_N}" -eq 0 ]; then

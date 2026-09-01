@@ -22,6 +22,7 @@ die() {
 ROOT=""
 CONTROL=""
 VERSION=""
+SYSTEM_VERSION=""
 ARCH=""
 OUT=""
 SCRIPTS=""
@@ -30,6 +31,7 @@ while [ "$#" -gt 0 ]; do
     --root) ROOT="${2-}"; [ -n "${ROOT}" ] || die "--root takes the staged tree directory"; shift 2 ;;
     --control) CONTROL="${2-}"; [ -n "${CONTROL}" ] || die "--control takes a control template"; shift 2 ;;
     --version) VERSION="${2-}"; [ -n "${VERSION}" ] || die "--version takes a Debian version"; shift 2 ;;
+    --system-version) SYSTEM_VERSION="${2-}"; [ -n "${SYSTEM_VERSION}" ] || die "--system-version takes a Debian version"; shift 2 ;;
     --arch) ARCH="${2-}"; [ -n "${ARCH}" ] || die "--arch takes amd64, arm64 or all"; shift 2 ;;
     --out) OUT="${2-}"; [ -n "${OUT}" ] || die "--out takes a directory"; shift 2 ;;
     --maintainer-scripts) SCRIPTS="${2-}"; [ -n "${SCRIPTS}" ] || die "--maintainer-scripts takes a directory"; shift 2 ;;
@@ -103,10 +105,24 @@ case "$(control_field Architecture "${CONTROL}")" in
 *) die "--control ${CONTROL} has an Architecture: that does not contain @ARCH@, so --arch ${ARCH} would be discarded and the template's own value shipped" ;;
 esac
 
+# @SYSTEM_VERSION@ is the cross-boundary pin: an upstream-versioned package
+# (mos-podman at 5.8.6+git…) that Depends on a first-party one (mos-system at
+# 0.1.0+git…) cannot use @VERSION@, which is its OWN version. Both directions
+# are refused: a template using the token without the value would ship the
+# literal token in a Depends, and a value without a consumer means the caller
+# believes a pin exists that does not.
+if grep -c '@SYSTEM_VERSION@' "${CONTROL}" >/dev/null; then
+    [ -n "${SYSTEM_VERSION}" ] ||
+        die "--control ${CONTROL} uses @SYSTEM_VERSION@ and no --system-version was given; the literal token would ship inside a relationship field"
+else
+    [ -z "${SYSTEM_VERSION}" ] ||
+        die "--system-version ${SYSTEM_VERSION} was given and --control ${CONTROL} carries no @SYSTEM_VERSION@, so the pin the caller intended does not exist in the template"
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-sed -e "s|@VERSION@|${VERSION}|g" -e "s|@ARCH@|${ARCH}|g" "${CONTROL}" >"${WORK}/control"
+sed -e "s|@VERSION@|${VERSION}|g" -e "s|@SYSTEM_VERSION@|${SYSTEM_VERSION}|g" -e "s|@ARCH@|${ARCH}|g" "${CONTROL}" >"${WORK}/control"
 PACKAGE="$(control_field Package "${WORK}/control")"
 [[ "${PACKAGE}" =~ ^[a-z0-9][a-z0-9+.-]+$ ]] ||
     die "'${PACKAGE}' is not a Debian package name (lowercase letters, digits, plus, minus and dot, at least two characters)"

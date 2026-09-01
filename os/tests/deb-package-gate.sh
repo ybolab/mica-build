@@ -30,7 +30,10 @@
 #   b  Package, Version, Architecture and the Depends closure. Each archive
 #      declares the architecture of the pool it sits in OR `all`; the pool's
 #      package set is what the producers building for that pool declare; one
-#      version spans the whole pool. See (i) for how a dependency is classified.
+#      `+git<commit><dirty>-<rev>` STAMP spans the whole pool, while the prefix
+#      in front of it is per package -- workspace version for first-party
+#      packages, upstream version where producer.env declares VERSION_FROM.
+#      See (i) for how a dependency is classified.
 #   c  two builds under one SOURCE_DATE_EPOCH are byte-identical. See the long
 #      comment on the cache below -- this is the check that most easily passes
 #      without having run anything.
@@ -58,12 +61,13 @@
 #   i  ARCHITECTURE: ALL, and VIRTUAL PROVIDES.
 #      An `Architecture: all` archive is a legitimate member of EVERY pool: its
 #      producer runs one build and exports it into both. So it is not an
-#      ownership collision, and the one-version rule spans it. What IS checked is
+#      ownership collision, and the one-stamp rule spans it. What IS checked is
 #      that the copies are the SAME BYTES -- the composer resolves each pool
 #      independently, and two pools holding different archives under one filename
 #      is a device whose package set depends on which pool it installed from.
 #      A dependency is LOCAL-REAL when a producer emits a package of that name,
-#      and then it must be pinned to the exact version and be in the pool.
+#      and then it must be pinned to that package's exact pool version and be
+#      in the pool.
 #      It is LOCAL-VIRTUAL when no producer emits it but an archive in the pool
 #      declares it in `Provides` -- `mos-profile` is provided by both
 #      mos-profile-dev and mos-profile-prod and no archive of that name exists.
@@ -348,9 +352,17 @@ for arch in "${ARCHES[@]}"; do
 
     got_names=()
     pool_versions=()
+    # Package -> version, for THIS pool: the exact-pin check below compares a
+    # dependency against the version of the package it names, because versions
+    # are per package now -- only the stamp is pool-wide.
+    unset POOL_PKG_VER
+    declare -A POOL_PKG_VER=()
     for d in "${debs[@]}"; do
-        got_names+=("$(dpkg-deb --field "${pool}/${d}" Package)")
-        pool_versions+=("$(dpkg-deb --field "${pool}/${d}" Version)")
+        n="$(dpkg-deb --field "${pool}/${d}" Package)"
+        v="$(dpkg-deb --field "${pool}/${d}" Version)"
+        got_names+=("${n}")
+        pool_versions+=("${v}")
+        POOL_PKG_VER["${n}"]="${v}"
     done
     VERSIONS+=("${pool_versions[@]}")
 
@@ -399,16 +411,33 @@ for arch in "${ARCHES[@]}"; do
         fail "${arch}: ${pool} holds archive(s) no discovered producer declares:${orphan}. Most likely a producer was deleted or renamed and its output was left behind; repo.sh indexes it and the composer would install it"
     fi
 
-    # One version across the pool, SPANNING the Architecture: all archives in it.
-    # They are built from the same commit as everything else, so an `all` archive
-    # at another version is the same half-rebuilt pool a native one would be.
-    pool_version="$(printf '%s\n' "${pool_versions[@]}" | LC_ALL=C sort -u | tr '\n' ' ')"
-    if [ "$(printf '%s\n' "${pool_versions[@]}" | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
-        pass "${arch}: one version across the pool (${pool_version% })"
+    # One STAMP across the pool, SPANNING the Architecture: all archives in it.
+    # Every archive is built from the same commit whatever its upstream prefix
+    # says, so an archive at another stamp is the same half-rebuilt pool a
+    # whole-version mismatch used to be. The stamp is everything after the last
+    # `+`, and its shape is asserted per archive first: a version with no
+    # recognisable stamp would otherwise contribute a garbage "stamp" that
+    # merely has to collide with another garbage one to pass.
+    pool_stamps=()
+    for v in "${pool_versions[@]}"; do
+        stamp="${v##*+}"
+        case "${stamp}" in
+        git[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-* | \
+            git[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].dirty-*)
+            pool_stamps+=("${stamp}")
+            ;;
+        *)
+            fail "${arch}: the version '${v}' carries no git<commit>[.dirty]-<rev> stamp after its last '+'. Every archive is stamped by os/build-env/deb/version.sh; a version without the stamp cannot be attributed to a commit"
+            ;;
+        esac
+    done
+    pool_stamp="$(printf '%s\n' ${pool_stamps[@]+"${pool_stamps[@]}"} | LC_ALL=C sort -u | tr '\n' ' ')"
+    if [ "${#pool_stamps[@]}" -eq "${#pool_versions[@]}" ] &&
+        [ "$(printf '%s\n' "${pool_stamps[@]}" | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
+        pass "${arch}: one git stamp across the pool (${pool_stamp% }, ${#pool_versions[@]} archive(s))"
     else
-        fail "${arch}: the pool holds more than one version [${pool_version% }]. Rebuild it whole with \`make os-debs\`"
+        fail "${arch}: the pool holds more than one git stamp [${pool_stamp% }]. Rebuild it whole with \`make os-debs\`"
     fi
-    VERSION="${pool_versions[0]}"
 
     # LOCAL-VIRTUAL names: what the archives of this pool declare in Provides.
     # Collected before the closure below, because a dependency may name one.
@@ -516,12 +545,18 @@ for arch in "${ARCHES[@]}"; do
                     continue
                 fi
                 local_deps="${local_deps}${dep_name} "
+                # Pinned to the version of the package it NAMES, which since
+                # the upstream-version split is not necessarily this archive's
+                # own: mosd (0.1.0+git…) pins mos-system at mos-system's pool
+                # version. A dependency on a local package the pool does not
+                # hold falls to the in-pool check below with an empty pin here.
+                dep_ver="${POOL_PKG_VER[${dep_name}]:-}"
                 case "${alt}" in
-                *"(= ${VERSION})"*)
-                    pass "${name} ${arch}: depends on ${dep_name} at the exact version (= ${VERSION})"
+                *"(= ${dep_ver:-<not in pool>})"*)
+                    pass "${name} ${arch}: depends on ${dep_name} at its exact pool version (= ${dep_ver})"
                     ;;
                 *)
-                    fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is not the exact version (= ${VERSION}) this pool was built at. These are built from one commit across interfaces that carry no compatibility promise"
+                    fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is not that package's exact pool version (= ${dep_ver:-<not in pool>}). These are built from one commit across interfaces that carry no compatibility promise"
                     ;;
                 esac
                 in_pool=0
@@ -703,14 +738,15 @@ for pkg in ${ALL_PKGS}; do
     fi
 done
 
-# One version across every pool, not merely within one. A pool built at an older
-# commit than its neighbour ships a device an image whose packages come from two
-# trees.
-all_versions="$(printf '%s\n' "${VERSIONS[@]}" | LC_ALL=C sort -u | tr '\n' ' ')"
-if [ "$(printf '%s\n' "${VERSIONS[@]}" | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
-    pass "one version across every pool (${all_versions% })"
+# One STAMP across every pool, not merely within one. A pool built at an older
+# commit than its neighbour ships an image whose packages come from two trees.
+# The per-archive stamp SHAPE was already asserted inside each pool's loop, so
+# this only compares; a shapeless version has already failed there.
+all_stamps="$(printf '%s\n' "${VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | tr '\n' ' ')"
+if [ "$(printf '%s\n' "${VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
+    pass "one git stamp across every pool (${all_stamps% })"
 else
-    fail "the pools hold more than one version [${all_versions% }]: they were not built from one commit"
+    fail "the pools hold more than one git stamp [${all_stamps% }]: they were not built from one commit"
 fi
 
 echo "note: local virtual dependencies satisfied by a Provides in the pool: $(printf '%s\n' ${VIRTUALS[@]+"${VIRTUALS[@]}"} | LC_ALL=C sort -u | tr '\n' ' ')"

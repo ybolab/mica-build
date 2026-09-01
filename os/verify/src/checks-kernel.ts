@@ -42,7 +42,22 @@ const REQUIRED = [
   { symbol: 'CONFIG_VLAN_8021Q', module: '8021q', what: 'VLAN interfaces' },
   { symbol: 'CONFIG_BRIDGE', module: 'bridge', what: 'bridge interfaces' },
   { symbol: 'CONFIG_WIREGUARD', module: 'wireguard', what: 'WireGuard tunnels' },
+  // The container-network floor, the same set os/boards/common/mos-required.fragment
+  // pins =y for the in-tree kernels: netavark creates the container/host veth
+  // pair and programs `fib daddr type local` in an inet table. The per-symbol
+  // citations into the pinned netavark source live in
+  // os/tests/netavark-kernel-config-test.sh. CONFIG_NFT_FIB itself is not
+  // listed here: both address families select it, and its nft_fib.ko is
+  // reached through the three modules' own modules.dep dependency walk.
+  { symbol: 'CONFIG_VETH', module: 'veth', what: 'container/host veth pairs' },
+  { symbol: 'CONFIG_NFT_FIB_INET', module: 'nft_fib_inet', what: "netavark's inet fib port-forward rule" },
+  { symbol: 'CONFIG_NFT_FIB_IPV4', module: 'nft_fib_ipv4', what: 'the IPv4 fib lookup that rule delegates to' },
+  { symbol: 'CONFIG_NFT_FIB_IPV6', module: 'nft_fib_ipv6', what: 'the IPv6 fib lookup that rule delegates to' },
 ] as const
+
+/** `VLAN_8021Q, BRIDGE, …` -- the one list, spelled from the register. */
+const SYMBOL_LIST = REQUIRED.map(r => r.symbol.slice('CONFIG_'.length)).join(', ')
+const MODULE_LIST = REQUIRED.map(r => r.module).join(', ')
 
 /** What a `/boot/config-*` file was found to say about one symbol. */
 export interface ConfigLine {
@@ -182,7 +197,7 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
     id: CONFIG_ID,
     boards: ['x64'],
     shell: {
-      pass: 'the shipped kernel config declares VLAN_8021Q, BRIDGE and WIREGUARD',
+      pass: 'the shipped kernel config declares',
       fail: 'the shipped kernel config does not declare',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -191,8 +206,8 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
       if (release === '') {
         return [verdict(CONFIG_ID, false,
           'no single /boot/config-* in the packed root, so which kernel config describes the kernel '
-          + 'this image boots cannot be decided. The virtual link kinds need VLAN_8021Q, BRIDGE and WIREGUARD, and '
-          + 'none of the three can be read')]
+          + `this image boots cannot be decided. The virtual link kinds and the container network need `
+          + `${SYMBOL_LIST}, and none of them can be read`)]
       }
       const found = configLines(root, release)
       const bad = found.filter(f => f.value === undefined)
@@ -204,13 +219,13 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
         CONFIG_ID,
         ok,
         ok
-          ? `the shipped kernel config declares VLAN_8021Q, BRIDGE and WIREGUARD in `
+          ? `the shipped kernel config declares ${SYMBOL_LIST} in `
             + `/boot/config-${release}: ${quoted}`
           : `the shipped kernel config does not declare ${bad.map(b => b.symbol).join(', ')} as =y or `
             + `=m in /boot/config-${release}: ${quoted}. mosd renders .netdev units for VLAN, bridge `
-            + `and WireGuard interfaces; systemd-networkd cannot create a device the kernel has no `
-            + `support for, and the settings write that asked for one succeeds while the device never `
-            + `appears`,
+            + `and WireGuard interfaces, and netavark needs the veth pair and the nft fib expression `
+            + `for every bridge network; a device the kernel has no support for is never created, `
+            + `while the write or the container start that asked for it reports success`,
       )]
     },
   },
@@ -223,7 +238,7 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
     id: MODPROBE_ID,
     boards: ['x64'],
     shell: {
-      pass: 'modprobe resolves 8021q, bridge and wireguard',
+      pass: 'modprobe resolves',
       fail: 'modprobe would not resolve',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -248,7 +263,7 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
         MODPROBE_ID,
         ok,
         ok
-          ? `modprobe resolves 8021q, bridge and wireguard against /lib/modules/${release}: ${quoted}`
+          ? `modprobe resolves ${MODULE_LIST} against /lib/modules/${release}: ${quoted}`
           : `modprobe would not resolve ${bad.map(b => b.module).join(', ')} against `
             + `/lib/modules/${release}: ${quoted}. A module listed in modules.dep whose object is not `
             + `in the root fails at load time with the config line still reading =m, so the config `

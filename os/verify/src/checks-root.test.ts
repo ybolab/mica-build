@@ -18,7 +18,7 @@
 // hand-written wreck would go red for reasons the real failure does not have.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
 import { FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, packedRootFixture, type RootFixture } from './checks-fixture.ts'
@@ -655,6 +655,69 @@ describe('the built-in escape, as an on-image fact', () => {
     // which moved BOTH copies together still has to face a third statement of
     // what the built-in UI's embedded index.html actually says.
     expect(BUILTIN_MARKUP).toBe('<script type="module" crossorigin src="/ui/assets/app.js"></script>')
+  })
+})
+
+describe('the shipped bill of materials', () => {
+  test('the fixture manifest passes, counting both totals', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      expect(await verdictOf(fx, 'packed-mos-manifest')).toBe('pass')
+      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('4 package(s), 2 of them mos')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('an image without the manifest fails: the purge leaves no other record', async () => {
+    const fx = await mutated('packed-mos-manifest', root =>
+      rmSync(join(root, 'usr/share/mos/manifest.tsv')))
+    try {
+      expect(await verdictOf(fx, 'packed-mos-manifest')).toBe('fail')
+      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('is not a regular file')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('two git stamps among the mos rows fail: a half-rebuilt pool composed this image', async () => {
+    const fx = await mutated('packed-mos-manifest', root =>
+      appendFileSync(join(root, 'usr/share/mos/manifest.tsv'),
+        'mos-rauc\t1.13+gitffffffffffff-1\tamd64\n'))
+    try {
+      expect(await verdictOf(fx, 'packed-mos-manifest')).toBe('fail')
+      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('2 git stamp(s)')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a manifest of only Debian rows fails: the mos set is what composition installs', async () => {
+    const fx = await mutated('packed-mos-manifest', root =>
+      writeFileSync(join(root, 'usr/share/mos/manifest.tsv'),
+        '#package\tversion\tarchitecture\nlibc6\t2.41-12\tamd64\n'))
+    try {
+      expect(await verdictOf(fx, 'packed-mos-manifest')).toBe('fail')
+      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('0 of them are mos')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a row that is not three tab-separated fields fails, named', async () => {
+    const fx = await mutated('packed-mos-manifest', root =>
+      appendFileSync(join(root, 'usr/share/mos/manifest.tsv'), 'mos-broken 1.0 amd64\n'))
+    try {
+      expect(await verdictOf(fx, 'packed-mos-manifest')).toBe('fail')
+      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('mos-broken 1.0 amd64')
+    }
+    finally {
+      fx.dispose()
+    }
   })
 })
 

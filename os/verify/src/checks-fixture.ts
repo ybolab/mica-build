@@ -340,6 +340,20 @@ function seedHealthyRoot(root: string, board: Board): void {
   // --- apid, carrying the built-in UI's embedded index markup ---
   file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}... trailer\n`)
 
+  // --- the shipped bill of materials, one git stamp across its mos rows ---
+  //
+  // Two Debian rows and two mos rows: the check counts both and asserts the
+  // stamp over the mos rows only, so a fixture of only mos packages would
+  // leave the "Debian rows are not stamped" half of that rule untested.
+  file('/usr/share/mos/manifest.tsv', [
+    '#package\tversion\tarchitecture',
+    'libc6\t2.41-12\tamd64',
+    'mos-podman\t5.8.6+git0123456789ab-1\tamd64',
+    'mos-system\t0.1.0+git0123456789ab-1\tall',
+    'zstd\t1.5.7+dfsg-2\tamd64',
+    '',
+  ].join('\n'))
+
   // --- the RAUC keyring, byte-equal to the trust root the fixture's ca/ holds ---
   // Present, and that is the shipped state now: os/rootfs/build.sh stages
   // ca/ca.cert.pem here in every image, so an absent keyring is the mutation.
@@ -987,27 +1001,42 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // fixture together and the case would stay green while the image contract
   // changed underneath it.
   //
-  // One of the three is BUILT IN and two are modules, on purpose. modprobe
-  // resolves those two ways and a fixture that exercised only one would leave
-  // the other path driven by nothing.
+  // One of the symbols is BUILT IN and the rest are modules, on purpose.
+  // modprobe resolves those two ways and a fixture that exercised only one
+  // would leave the other path driven by nothing.
   const release = '6.12.101+deb13-amd64'
   file(`/boot/config-${release}`,
     '# Automatically generated file; DO NOT EDIT.\n'
     + 'CONFIG_VLAN_8021Q=m\n'
     + 'CONFIG_BRIDGE=m\n'
     + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
-    + 'CONFIG_WIREGUARD=y\n')
+    + 'CONFIG_WIREGUARD=y\n'
+    + 'CONFIG_VETH=m\n'
+    + 'CONFIG_NFT_FIB=m\n'
+    + 'CONFIG_NFT_FIB_INET=m\n'
+    + 'CONFIG_NFT_FIB_IPV4=m\n'
+    + 'CONFIG_NFT_FIB_IPV6=m\n')
   const mod = `/lib/modules/${release}`
   file(`${mod}/modules.builtin`, 'kernel/net/wireguard/wireguard.ko\n')
   file(`${mod}/modules.dep`,
     'kernel/net/8021q/8021q.ko: kernel/net/802/mrp.ko\n'
-    + 'kernel/bridge/bridge.ko: kernel/net/802/stp.ko kernel/net/llc/llc.ko\n')
+    + 'kernel/bridge/bridge.ko: kernel/net/802/stp.ko kernel/net/llc/llc.ko\n'
+    + 'kernel/drivers/net/veth.ko:\n'
+    + 'kernel/net/netfilter/nft_fib.ko:\n'
+    + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko: kernel/net/netfilter/nft_fib.ko\n'
+    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko: kernel/net/netfilter/nft_fib.ko\n'
+    + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/ipv4/netfilter/nft_fib_ipv4.ko kernel/net/ipv6/netfilter/nft_fib_ipv6.ko kernel/net/netfilter/nft_fib.ko\n')
   for (const object of [
     'kernel/net/8021q/8021q.ko',
     'kernel/net/802/mrp.ko',
     'kernel/bridge/bridge.ko',
     'kernel/net/802/stp.ko',
     'kernel/net/llc/llc.ko',
+    'kernel/drivers/net/veth.ko',
+    'kernel/net/netfilter/nft_fib.ko',
+    'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko',
+    'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko',
+    'kernel/net/netfilter/nft_fib_inet.ko',
   ]) {
     file(`${mod}/${object}`, '\x7fELF\n')
   }

@@ -75,6 +75,19 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # has to weigh the root that actually ships.
 RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 
+# The image's own bill of materials, SHIPPED: /usr/share/mos/manifest.tsv.
+# The purge below takes /var/lib/dpkg away, so on the device this file is the
+# only record of what was installed and at which version -- and since the
+# upstream-versioned packages the version column actually says something
+# (mos-podman 5.8.6+git…, mos-rauc 1.13+git…). Sorted under LC_ALL=C so two
+# builds of one set are byte-identical. Written before the purge for the same
+# reason the inventory above is; os/verify asserts the file, its shape, and
+# the one git stamp its mos rows share.
+RUN install -d -m 0755 /usr/share/mos && \
+    { printf '#package\tversion\tarchitecture\n'; \
+    dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort; } \
+    >/usr/share/mos/manifest.tsv
+
 # The exact RAUC the image will run, recorded so the thing that BUILDS bundles
 # can refuse to build one with a different version.
 #

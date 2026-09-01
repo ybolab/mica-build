@@ -44,3 +44,18 @@ CONFIG_WIREGUARD=y
 # config regenerated from upstream cannot drop either one silently.
 CONFIG_VLAN_8021Q=y
 CONFIG_BRIDGE=y
+
+# Container networking (podman/netavark) -- an engine fact, not a board fact,
+# so it is floor, not per-board configuration: netavark creates the
+# container/host veth pair and programs `fib daddr type local` in an inet
+# table, which needs the fib expression for both address families and their
+# shared core. The per-symbol citations into the pinned netavark source live
+# in os/tests/netavark-kernel-config-test.sh; the same set was measured
+# missing on hardware (s905x5m, cx3576 baseline) as the reason bridge
+# networking failed. x64 runs Debian's kernel, where these ship as modules --
+# os/verify/src/checks-kernel.ts asserts that off the built image.
+CONFIG_VETH=y
+CONFIG_NFT_FIB=y
+CONFIG_NFT_FIB_IPV4=y
+CONFIG_NFT_FIB_IPV6=y
+CONFIG_NFT_FIB_INET=y

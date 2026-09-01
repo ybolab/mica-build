@@ -56,6 +56,25 @@ substitution, safe to source and to parse.
 | `BUILD_ARGS` | no | extra `<name>=<value>` build arguments |
 | `PREPARE` | no | a script in the producer directory, run on the host before the build |
 | `PREFLIGHT` | no | `1` if that hook honours `MOS_DEB_PREFLIGHT=1`; see below |
+| `VERSION_FROM` | no | `<repo-relative env file>:<KEY>` naming the upstream version this producer repacks; see below |
+
+`VERSION_FROM` is for producers that repack **upstream software** (podman,
+RAUC). The named key's value -- a leading `v` is stripped -- replaces the
+workspace prefix in the version, so the archive is
+`<upstream>+git<commit><dirty>-1` instead of `0.1.0+git<commit><dirty>-1`. The
+prefix says *what* is packaged and the stamp says *which commit* packaged it:
+`os/tests/deb-package-gate.sh` asserts one stamp across the pool while
+prefixes differ per package, and `os/rootfs/build.sh` matches the stamp
+against the tree it composes from. Producer-scoped -- it applies to every
+package in `PACKAGES` -- so a producer must not mix an upstream repack with a
+first-party package. First-party producers do not declare it.
+
+An upstream-versioned package that pins a first-party one uses
+`@SYSTEM_VERSION@` in its control template (mos-podman: `Depends: mos-system
+(= @SYSTEM_VERSION@)`) and passes `--system-version
+"${MOS_DEB_SYSTEM_VERSION}"` to `pack.sh` -- `@VERSION@` is that package's
+OWN version, which since the split is not the one mos-system carries.
+`pack.sh` refuses the token without the flag and the flag without the token.
 
 `ARCHES=all` means the package is architecture-independent. `all` may not be
 mixed with a specific architecture: an `all` package is already a member of
@@ -258,13 +277,15 @@ bash os/build-env/deb/version.sh
   0.1.0+git9671c7cf2d4d.dirty-1    a tree with uncommitted changes
 ```
 
-One version across the whole pool, in one implementation. The producers that
+One **stamp** across the whole pool, in one implementation. The producers that
 share that pool have nothing else in common -- the mosd ones are Rust and carry
 crate manifests, others are neither and carry none -- so a rule each producer
 implemented for itself would be a rule they agree on until one of them is
 edited. `build.sh` calls this script for every producer, and
 `os/pkgs/mosd/hack/build-deb.sh` calls it rather than composing the string
-itself.
+itself. A producer that declares `VERSION_FROM` keeps the `+git…-1` stamp this
+script prints and replaces only the prefix in front of it, so the pool-wide
+invariant is the stamp, not the whole string.
 
 The number comes from the mosd workspace's crate manifests, which is where it
 already lived: `0.1.0` is written in the crates and must not be written a second

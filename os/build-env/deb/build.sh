@@ -108,6 +108,7 @@ BUILD_CONTEXTS=""
 FROM_IMAGES=""
 BUILD_ARGS=""
 PREPARE=""
+VERSION_FROM=""
 # shellcheck disable=SC1091
 . "${PRODUCER_ENV}"
 
@@ -127,6 +128,46 @@ VERSION="$(bash "${VERSION_SH}")"
     echo "error: ${VERSION_SH} printed no version (see its message above); the archives would be named around an empty string" >&2
     exit 1
 }
+# The workspace version, BEFORE any VERSION_FROM override: it is what
+# @SYSTEM_VERSION@ substitutes to, so an upstream-versioned package can pin a
+# first-party one (mos-podman Depends mos-system (= @SYSTEM_VERSION@)) at the
+# version that package actually carries.
+SYSTEM_VERSION="${VERSION}"
+
+# An upstream-versioned producer: VERSION_FROM names the env file and key that
+# hold the upstream tag, and the packages' version becomes that tag (leading
+# `v` stripped) in front of the same `+git<commit><dirty>-<rev>` stamp every
+# other producer carries. The prefix says WHAT is packaged, the stamp says
+# WHICH COMMIT packaged it -- os/tests/deb-package-gate.sh asserts the shared
+# stamp over the pool, and os/rootfs/build.sh matches the stamp, not the
+# prefix, against the tree it composes from. Producer-scoped, because no
+# producer here mixes an upstream repack with a first-party package.
+if [ -n "${VERSION_FROM}" ]; then
+    VF_PATH="${VERSION_FROM%%:*}"
+    VF_KEY="${VERSION_FROM##*:}"
+    if [ -z "${VF_PATH}" ] || [ -z "${VF_KEY}" ] || [ "${VF_PATH}" = "${VERSION_FROM}" ]; then
+        echo "error: ${PRODUCER_REL}/producer.env declares VERSION_FROM='${VERSION_FROM}', which is not <repository-relative env file>:<KEY>. That pair is the whole wiring between the producer and the upstream version it packages; see os/build-env/deb/README.md" >&2
+        exit 1
+    fi
+    [ -f "${REPO_ROOT}/${VF_PATH}" ] || {
+        echo "error: ${PRODUCER_REL}/producer.env declares VERSION_FROM=${VERSION_FROM} and ${VF_PATH} does not exist under ${REPO_ROOT}. The upstream version comes from that file or from nowhere; a fallback here would stamp a number the tree does not declare" >&2
+        exit 1
+    }
+    UPSTREAM="$(sed -n "s/^${VF_KEY}=//p" "${REPO_ROOT}/${VF_PATH}" | head -n1)"
+    [ -n "${UPSTREAM}" ] || {
+        echo "error: ${VF_PATH} declares no non-empty ${VF_KEY}, which ${PRODUCER_REL}/producer.env names in VERSION_FROM. An empty upstream version would compose into '+git<commit>-1', which dpkg accepts and which orders below every real version" >&2
+        exit 1
+    }
+    UPSTREAM="${UPSTREAM#v}"
+    case "${UPSTREAM}" in
+    [0-9]*) ;;
+    *)
+        echo "error: ${VF_PATH}'s ${VF_KEY} is '${UPSTREAM}' after stripping a leading 'v', which does not begin with a digit. A Debian upstream version starts with a digit; anything else here is a tag this rule was never written for, and guessing an interpretation would stamp it silently" >&2
+        exit 1
+        ;;
+    esac
+    VERSION="${UPSTREAM}+${VERSION#*+}"
+fi
 
 # SOURCE_DATE_EPOCH is the commit's timestamp, resolved on the HOST: the
 # container sees this worktree through a bind mount whose .git is a file naming
@@ -370,6 +411,7 @@ done
 
 ARG_ARGS=(
     --build-arg "MOS_DEB_VERSION=${VERSION}"
+    --build-arg "MOS_DEB_SYSTEM_VERSION=${SYSTEM_VERSION}"
     --build-arg "MOS_DEB_ARCH=${DEB_ARCH}"
     --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
 )

@@ -4,6 +4,23 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Package versions mean something, and the image says what it holds (2026-09-01)
+
+Upstream repacks now carry their upstream version in front of the pool's git
+stamp -- `mos-podman 5.8.6+git…`, `mos-rauc 1.13+git…`, declared per producer
+by `VERSION_FROM` in producer.env -- while first-party packages keep the
+workspace version. The pool-wide invariant weakened from one version to one
+stamp, in the gate, the compose preflight and the exact-version Depends pins
+(now pinned to the named package's own pool version; the cross-boundary pin
+uses the new `@SYSTEM_VERSION@` control token). The composed image ships
+`/usr/share/mos/manifest.tsv`, its bill of materials written before the
+package-manager purge and asserted by os/verify. The `radios` producer split
+into independent `wifi` and `bluetooth` producers, and each radio name is its
+own `MOS_ROOTFS_WITHOUT` token -- declining Bluetooth keeps Wi-Fi -- with the
+umbrella `radios` token removed. The container-network kernel floor (VETH and
+the nft fib family) moved into the shared `mos-required.fragment` and into
+os/verify's per-image kernel checks for the Debian-kernel board. PLAN-041.
+
 ## The v2 suffix is retired (2026-09-01)
 
 The `v2` in file and target names dated from when the current layout coexisted

@@ -178,11 +178,30 @@ else
     fail "x64 dev carries cx3576 content: ${leaked% }. x64 declares BOARD_RADIOS='' and has its own board package"
 fi
 
+# Declining ONE radio keeps the other: wifi and bluetooth are independent
+# decline tokens, which is the whole point of the split -- the retired umbrella
+# token dropped both together.
+CX_NO_BT="mos-apid mos-board-cx3576 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-system mos-wifi mos-wifi-ap mosd"
+CX_NO_WIFI="mos-apid mos-bluetooth mos-board-cx3576 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-system mosd"
+expect_set "cx3576 dev, --without bluetooth keeps Wi-Fi" "${CX_NO_BT}" \
+    "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "bluetooth"
+expect_set "cx3576 dev, --without wifi keeps Bluetooth" "${CX_NO_WIFI}" \
+    "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "wifi"
+# The umbrella token is GONE, not quietly tolerated: a caller still passing
+# --without radios gets the unknown-feature refusal instead of a build that
+# happens to keep both radios.
+run_resolve "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "radios"
+if [ "${resolve_rc}" -ne 0 ]; then
+    pass "--without radios is refused: the umbrella token no longer exists"
+else
+    fail "--without radios still resolves; the umbrella token was to be removed with the producer split"
+fi
+
 # Declining every feature drops exactly the feature packages and leaves a legal
 # image set: common, one profile, one board.
-expect_set "cx3576 dev, --without 'mosd mqtt containers rauc radios'" "${CX_MINIMAL}" \
+expect_set "cx3576 dev, --without 'mosd mqtt containers rauc wifi bluetooth'" "${CX_MINIMAL}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" \
-    --without "mosd mqtt containers rauc radios"
+    --without "mosd mqtt containers rauc wifi bluetooth"
 dropped=""
 for pkg in ${CX_DEV}; do
     case " ${CX_MINIMAL} " in
@@ -192,9 +211,9 @@ for pkg in ${CX_DEV}; do
 done
 want_dropped="mos-apid mos-bluetooth mos-mqtt-broker mos-mqttd mos-podman mos-rauc mos-wifi mos-wifi-ap mosd"
 if [ "${dropped% }" = "${want_dropped}" ]; then
-    pass "declining all five features drops exactly: ${want_dropped}"
+    pass "declining all six features drops exactly: ${want_dropped}"
 else
-    fail "declining all five features dropped [${dropped% }], expected [${want_dropped}]"
+    fail "declining all six features dropped [${dropped% }], expected [${want_dropped}]"
 fi
 
 # ---------------------------------------------------------------------------
@@ -335,7 +354,7 @@ mapfile -t ALL_BOARDS < <(cd "${PACKAGES_DIR}" && for f in board-*.pkgs; do base
 mapfile -t ALL_PROFILES < <(cd "${PACKAGES_DIR}" && for f in profile-*.pkgs; do basename "${f}" .pkgs | sed 's/^profile-//'; done)
 mapfile -t ALL_FEATURES < <(
     cd "${PACKAGES_DIR}" && for f in feature-*.pkgs; do basename "${f}" .pkgs | sed 's/^feature-//'; done
-    echo radios
+    cd "${PACKAGES_DIR}" && for f in radio-*.pkgs; do basename "${f}" .pkgs | sed 's/^radio-//'; done
 )
 mapfile -t ALL_FEATURES < <(printf '%s\n' "${ALL_FEATURES[@]}" | sort -u)
 

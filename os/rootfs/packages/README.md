@@ -26,15 +26,16 @@ package set that never reaches an image and never fails a build either.
 | `common.pkgs` | always |
 | `profile-<profile>.pkgs` | `--profile <profile>`; exactly one |
 | `board-<board>.pkgs` | `--board <board>`; exactly one |
-| `radio-<radio>.pkgs` | `--radios` names `<radio>`, unless `radios` is declined |
+| `radio-<radio>.pkgs` | `--radios` names `<radio>` and `--without` does **not** |
 | `feature-<feature>.pkgs` | `--without` does **not** name `<feature>` |
 
-The features are the `feature-*.pkgs` basenames plus **`radios`**, which has no
-manifest of its own: the radio packages are per-radio and `--radios` selects
-them, so `radios` is the switch deciding whether that family is consulted at
-all. It is the same thing `MOS_ROOTFS_WITHOUT=radios` means to
-`os/rootfs/build.sh`, which drops the radio packages whatever the board
-declares.
+The `--without` tokens are the `feature-*.pkgs` basenames plus the
+`radio-*.pkgs` basenames: each radio is its own decline token, so
+`MOS_ROOTFS_WITHOUT=bluetooth` keeps Wi-Fi and vice versa. There is no
+umbrella `radios` token -- `--radios` is the board's statement of which radios
+the hardware has, `--without <radio>` is the build's decision to leave one out
+anyway, and the two compose per radio. A radio and a feature sharing one name
+is refused as ambiguous.
 
 `radio-wifi.pkgs` names both `mos-wifi` and `mos-wifi-ap` because the single
 radio name `wifi` has always meant `wpasupplicant` **and** `hostapd`: a board

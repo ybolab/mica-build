@@ -358,6 +358,7 @@ const APID_BIN = '/usr/bin/apid'
 // string keep each other honest; a shared constant would not.
 export const BUILTIN_MARKUP = '<script type="module" crossorigin src="/ui/assets/app.js"></script>'
 const KEYRING_PATH = '/etc/rauc/keyring.pem'
+const MANIFEST_PATH = '/usr/share/mos/manifest.tsv'
 const PACKED_MOUNTPOINTS = [
   '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
   '/usr/local/lib/systemd/system', '/etc/containers/systemd',
@@ -585,6 +586,57 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
             + `markup (${BUILTIN_MARKUP}), so section 6.3's escape needs nothing off the disk`
           : `${what}: the ${APID_BIN} packed in this image does NOT carry the built-in UI's index `
             + `markup (${BUILTIN_MARKUP})`,
+      )]
+    },
+  },
+
+  {
+    // The shipped bill of materials. The finalizer purges the package manager,
+    // dpkg database included, so /usr/share/mos/manifest.tsv is the one record
+    // on the device of what was installed and at which version. Three things,
+    // each with its own failure: the file parses (three tab-separated fields
+    // per row), it names mos packages at all (a manifest of only Debian rows
+    // is a compose that installed none of this repository's packages while
+    // this check read it as fine), and every mos row ends in ONE
+    // `+git<commit>[.dirty]-<rev>` stamp -- versions are per package since the
+    // upstream split, and the stamp is what still says "one commit built all
+    // of this".
+    id: 'packed-mos-manifest',
+    shell: { pass: 'the shipped manifest lists ', fail: 'manifest.tsv' },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const st = entry(root, MANIFEST_PATH)
+      if (st === undefined || !st.isFile()) {
+        return [verdict('packed-mos-manifest', false,
+          `${MANIFEST_PATH} is not a regular file in the packed root. The purge takes /var/lib/dpkg `
+          + 'away, so without this file the image has no record of what it is made of')]
+      }
+      const rows = readFileSync(join(root, MANIFEST_PATH), 'latin1')
+        .split('\n')
+        .filter(l => l !== '' && !l.startsWith('#'))
+      const malformed = rows.filter(l => l.split('\t').length !== 3)
+      if (malformed.length > 0) {
+        return [verdict('packed-mos-manifest', false,
+          `${MANIFEST_PATH} carries ${malformed.length} of ${rows.length} row(s) that are not `
+          + `package<TAB>version<TAB>architecture, the first being '${malformed[0] as string}'`)]
+      }
+      const mosRows = rows.filter(l => (l.split('\t')[0] as string).startsWith('mos'))
+      if (rows.length === 0 || mosRows.length === 0) {
+        return [verdict('packed-mos-manifest', false,
+          `${MANIFEST_PATH} lists ${rows.length} package(s) and ${mosRows.length} of them are mos `
+          + 'packages. A manifest without the mos set is a compose that installed none of it')]
+      }
+      const stamps = new Set(mosRows.map(l => (l.split('\t')[1] as string).split('+').pop() as string))
+      const shaped = [...stamps].every(s => /^git[0-9a-f]{12}(\.dirty)?-\d+$/.test(s))
+      return [verdict(
+        'packed-mos-manifest',
+        stamps.size === 1 && shaped,
+        stamps.size === 1 && shaped
+          ? `the shipped manifest lists ${rows.length} package(s), ${mosRows.length} of them mos, `
+            + `all mos rows at the one stamp ${[...stamps][0] as string}`
+          : `${MANIFEST_PATH}'s mos rows carry ${stamps.size} git stamp(s) [${[...stamps].sort().join(' ')}]; `
+            + 'every mos package is stamped by the one commit that built the pool, so two stamps or a '
+            + 'shapeless one mean a half-rebuilt pool composed this image',
       )]
     },
   },

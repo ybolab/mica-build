@@ -236,7 +236,8 @@ to know that one of its packages was filed under arm64.
 | --- | --- | --- |
 | `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
 | `system` | `mos-system` | `all` |
-| `radios` | `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` | `all` |
+| `wifi` | `mos-wifi`, `mos-wifi-ap` | `all` |
+| `bluetooth` | `mos-bluetooth` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
 | `board-x64` (`os/boards/x64/deb/board-x64`) | `mos-board-x64` | `amd64` |
 | `board-cx3576` (`os/boards/cx3576/deb/board-cx3576`) -- stages its BSP inputs through `PREPARE` | `mos-board-cx3576` | `arm64` |

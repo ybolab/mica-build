@@ -73,6 +73,10 @@ COPY --from=overlay etc/systemd/system/etc-containers-systemd.mount /in/etc/syst
 COPY --from=bin podman quadlet crun conmon netavark aardvark-dns catatonit /in/bin/
 
 ARG MOS_DEB_VERSION
+# The workspace version, for the one cross-boundary pin: this package's own
+# version is podman's (VERSION_FROM), while its Depends pins mos-system at the
+# version mos-system actually carries.
+ARG MOS_DEB_SYSTEM_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
 
@@ -153,7 +157,8 @@ RUN set -eu; \
 
 RUN set -eu; \
     pack.sh --root /stage --control /in/control/mos-podman.control \
-            --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
+            --version "${MOS_DEB_VERSION}" --system-version "${MOS_DEB_SYSTEM_VERSION}" \
+            --arch "${MOS_DEB_ARCH}" --out /out
 
 # ONE ARCHIVE, AND IT IS mos-podman's. The other half of the independence claim:
 # PACKAGES declares one package, so a producer that emitted a second archive

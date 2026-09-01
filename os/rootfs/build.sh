@@ -2,7 +2,7 @@
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
 # Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
-#        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."] bash os/rootfs/build.sh
+#        [MOS_ROOTFS_WITHOUT="wifi bluetooth rauc mqtt ..."] bash os/rootfs/build.sh
 
 # There is deliberately no ROOT_PASSWORD here. A mos rootfs is a signed,
 # byte-identical squashfs and the pack stage fails any build whose factory
@@ -114,7 +114,7 @@ esac
 # to "is this feature in the image" and every consumer below asks the same
 # question. MOS_ROOTFS_WITHOUT is the general form -- a space-separated list of
 # feature names -- and it is what makes the three features with no WITH_*
-# history (radios, rauc, mqtt) reachable from the shipping path at all.
+# history (wifi, bluetooth, rauc, mqtt) reachable from the shipping path at all.
 
 # A name nothing matches is not validated here, deliberately: the resolver
 # holds the list of feature names (it reads os/rootfs/packages/) and refuses an
@@ -459,26 +459,26 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 [ -z "$newer" ] ||
     pool_refusal "these archives are newer than $POOL_DIR/manifest.txt, so the pool was rebuilt without being re-indexed: $newer"
 
-# STALE, sense 3: the pool was not built from THIS tree. The archives carry
-# one version across every producer by rule -- os/build-env/deb/version.sh
-# is the single answer and os/tests/deb-package-gate.sh asserts it over the
-# built pool -- and the inter-package relations are exact
-# (`mos-board-x64 Depends: mos-system (= <version>)`), so a pool holding two
-# versions is one APT cannot resolve. A pool holding ONE version that is not
-# this tree's is worse than that: it resolves, it installs, and it composes
-# an image out of some other commit's packages while every check downstream
-# reports on the tree in front of it.
-pool_versions=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sort -u | tr '\n' ' ')
-pool_version=${pool_versions% }
-case "$pool_version" in
+# STALE, sense 3: the pool was not built from THIS tree. Versions are per
+# package -- an upstream repack carries its upstream number in front -- but
+# every archive ends in the one `+git<commit><dirty>-<rev>` STAMP
+# os/build-env/deb/version.sh printed when it was built, and
+# os/tests/deb-package-gate.sh asserts that stamp over the built pool. A pool
+# whose stamp is not this tree's resolves, installs, and composes an image out
+# of some other commit's packages while every check downstream reports on the
+# tree in front of it.
+pool_stamps=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sed 's/^.*+//' | sort -u | tr '\n' ' ')
+pool_stamp=${pool_stamps% }
+case "$pool_stamp" in
 *' '*)
-    pool_refusal "$POOL_DIR/manifest.txt carries more than one package version: $pool_version. The pool holds one version across every producer by rule, and the packages' own relations are exact, so APT cannot resolve this set."
+    pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
     ;;
 esac
 tree_version=$(bash "$REPO_ROOT/os/build-env/deb/version.sh")
-[ "$pool_version" = "$tree_version" ] ||
-    pool_refusal "the $MOS_ARCH pool was built at version '$pool_version' and this tree is '$tree_version'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
-echo "pool: $POOL_DIR, $pool_debs archive(s) at $pool_version"
+tree_stamp=${tree_version##*+}
+[ "$pool_stamp" = "$tree_stamp" ] ||
+    pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and this tree is '$tree_stamp'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
+echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
 
 # WHAT TO INSTALL. resolve.sh takes every input as an ARGUMENT and
 # deliberately re-derives nothing: which board file was read, which
@@ -711,7 +711,7 @@ fi
     printf '#board\t%s\n' "$MOS_BOARD"
     printf '#profile\t%s\n' "$MOS_PROFILE"
     printf '#declined\t%s\n' "${MOS_ROOTFS_WITHOUT:-(none)}"
-    printf '#pool\t_out/debs/%s at %s\n' "$MOS_ARCH" "$pool_version"
+    printf '#pool\t_out/debs/%s at stamp %s\n' "$MOS_ARCH" "$pool_stamp"
     printf '#package\tversion\tarchitecture\tsha256\tsource\n'
     for p in $RESOLVED; do
         awk -F'\t' -v pkg="$p" -v prods="$PRODUCER_DIRS" '

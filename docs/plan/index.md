@@ -39,6 +39,7 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-038 Bound, scope and queue the settings-write path**](PLAN-038.md) `2026-08-31`
 - [x] [**PLAN-039 Serve a built-in SPA and put management behind `/api`**](PLAN-039.md) `2026-08-31`
 - [x] [**PLAN-040 Select a retained custom UI from the built-in SPA**](PLAN-040.md) `2026-09-01`
+- [x] [**PLAN-041 Per-package upstream versions, an installed manifest, and independent wifi/bluetooth producers**](PLAN-041.md) `2026-09-01`
 - [ ] [**PLAN-042 Build the user documentation contract and official website content**](PLAN-042.md) `2026-09-01`
 - [ ] [**PLAN-043 Publish release identity and supply-chain artifacts**](PLAN-043.md) `2026-09-01`
 - [ ] [**PLAN-044 Add RTC, NTP and timezone management**](PLAN-044.md) `2026-09-01`

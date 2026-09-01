@@ -51,6 +51,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-274 Bound, scope and queue the settings-write path so the UI stops hanging**](RFCT-274.md) `P1`
 - [x] [**RFCT-275 Make the built-in UI a pure SPA over the management API**](RFCT-275.md) `P1`
 - [x] [**RFCT-276 Add a recoverable built-in/custom UI selector**](RFCT-276.md) `P1`
+- [x] [**RFCT-277 Upstream package versions, an on-image manifest, and the radios producer split**](RFCT-277.md) `P1`
 - [ ] [**RFCT-278 Build the user documentation contract and official website content**](RFCT-278.md) `P0`
 - [ ] [**RFCT-279 Publish release identity and supply-chain artifacts**](RFCT-279.md) `P0`
 - [ ] [**RFCT-280 Add RTC, NTP and timezone management**](RFCT-280.md) `P0`
