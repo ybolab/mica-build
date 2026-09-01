@@ -320,6 +320,23 @@ function seedHealthyRoot(root: string, board: Board): void {
     mkdirSync(dir, { recursive: true })
     symlinkSync(`/usr/lib/systemd/system/${unit}`, join(dir, unit))
   }
+  // The time contract (PLAN-044): the daemon enabled from its unit's own
+  // WantedBy, the base-policy drop-in at the pinned values, and the default
+  // timezone spelled as a UTC link. The policy content is an independent
+  // transcription, like ORACLE_BUILTIN_MARKUP: seeding it from the shipped
+  // drop-in or from checks-time.ts's own constants would move both sides of
+  // the comparison at once.
+  {
+    const dir = join(root, '/etc/systemd/system/sysinit.target.wants')
+    mkdirSync(dir, { recursive: true })
+    symlinkSync('/lib/systemd/system/systemd-timesyncd.service',
+      join(dir, 'systemd-timesyncd.service'))
+  }
+  file('/etc/systemd/timesyncd.conf.d/50-mos.conf',
+    '# base policy, not settings\n[Time]\nPollIntervalMinSec=32\nPollIntervalMaxSec=2048\n'
+    + 'ConnectionRetrySec=30\nSaveIntervalSec=60\n')
+  symlinkSync('/usr/share/zoneinfo/Etc/UTC', join(root, '/etc/localtime'))
+
   // The two the VENDOR tree enables -- sq_enabled_any's whole reason to exist.
   for (const [target, unit] of [
     ['initrd-root-fs.target.wants', 'systemd-repart.service'],
@@ -350,6 +367,7 @@ function seedHealthyRoot(root: string, board: Board): void {
     'libc6\t2.41-12\tamd64',
     'mos-podman\t5.8.6+git0123456789ab-1\tamd64',
     'mos-system\t0.1.0+git0123456789ab-1\tall',
+    'systemd-timesyncd\t257.7-1\tamd64',
     'zstd\t1.5.7+dfsg-2\tamd64',
     '',
   ].join('\n'))
