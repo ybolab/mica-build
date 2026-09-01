@@ -82,7 +82,8 @@ new_fixture() {
     rm -rf "${dir}"
     mkdir -p "${dir}/docs"
     cp "${ROOT}/docs/README.md" "${ROOT}/docs/verify-index.sh" "${dir}/docs/"
-    cp -R "${ROOT}/docs/design" "${dir}/docs/"
+    cp -R "${ROOT}/docs/design" "${ROOT}/docs/user" "${ROOT}/docs/website" \
+          "${ROOT}/docs/bsp" "${dir}/docs/"
 }
 
 # Duplicates the line matching $2 in file $1, and fails loudly if that line was
@@ -168,9 +169,12 @@ expect_all_pass "baseline: the shipped docs tree, copied verbatim"
 # --- 1. a design/ document listed twice in the README ------------------------
 FIX="${WORK}/design-entry-twice"
 new_fixture "${FIX}"
-duplicate_line "${FIX}/docs/README.md" '  - `api.md`'
-expect_fail "docs/README.md listing api.md twice under design/" 1 \
-    "lists 'api.md' 2 times under design/" \
+# `connd.md`, not `api.md`: since the user/ tree landed, `api.md` has a row
+# under BOTH design/ and user/, and duplicate_line rightly aborts on a pattern
+# that is not unique in the file.
+duplicate_line "${FIX}/docs/README.md" '  - `connd.md`'
+expect_fail "docs/README.md listing connd.md twice under design/" 1 \
+    "lists 'connd.md' 2 times under design/" \
     "will drift apart unnoticed"
 
 # --- 2. the pre-existing assertions, driven in the failing direction ---------
@@ -191,6 +195,31 @@ new_fixture "${FIX}"
 cp "${FIX}/docs/design/api.md" "${FIX}/docs/design/unlisted.md"
 expect_fail "a design document with no README row" 1 \
     "docs/design/unlisted.md exists but is not indexed in docs/README.md"
+
+# --- 3. the PLAN-042/PLAN-050 trees, one case per new check_readme_dir call --
+# Each of the three new calls is driven in a failing direction once, rotating
+# the assertion type, so removing any single call from verify-index.sh turns
+# a case here red. The mutated names are chosen to be unique across the whole
+# README -- `api.md` appears under both design/ and user/, and duplicate_line
+# would rightly abort on an ambiguous pattern.
+FIX="${WORK}/user-entry-twice"
+new_fixture "${FIX}"
+duplicate_line "${FIX}/docs/README.md" '  - `quickstart.md`'
+expect_fail "docs/README.md listing quickstart.md twice under user/" 1 \
+    "lists 'quickstart.md' 2 times under user/" \
+    "will drift apart unnoticed"
+
+FIX="${WORK}/dangling-website-entry"
+new_fixture "${FIX}"
+rm "${FIX}/docs/website/downloads.md"
+expect_fail "a website README entry whose document is gone" 1 \
+    "indexes 'downloads.md' under website/, but docs/website/downloads.md does not exist"
+
+FIX="${WORK}/unindexed-bsp-document"
+new_fixture "${FIX}"
+cp "${FIX}/docs/bsp/porting.md" "${FIX}/docs/bsp/unlisted.md"
+expect_fail "a bsp document with no README row" 1 \
+    "docs/bsp/unlisted.md exists but is not indexed in docs/README.md"
 
 echo
 total=$((PASS_N + FAIL_N))

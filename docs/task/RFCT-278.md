@@ -1,6 +1,6 @@
 # RFCT-278 Build the user documentation contract and official website content
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
