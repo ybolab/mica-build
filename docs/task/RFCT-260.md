@@ -1,6 +1,6 @@
 # RFCT-260 The AP reconciler's third copy of the WPA byte rule, and a refusal that names the secret's length
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-08-28
