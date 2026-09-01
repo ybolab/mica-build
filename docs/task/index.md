@@ -55,3 +55,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-001 Define the built-in UI development guide**](UI-001.md) `P1`
 - [x] [**UI-002 Design the local application lifecycle module**](UI-002.md) `P1`
 - [x] [**UI-003 Define the built-in UI design guide**](UI-003.md) `P1`
+- [x] [**UI-004 Add localization and selectable Spectrum themes**](UI-004.md) `P1`

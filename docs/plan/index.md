@@ -46,3 +46,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-055 Define the built-in UI development guide**](PLAN-055.md) `2026-09-01`
 - [x] [**PLAN-056 Design a managed application catalog and lifecycle**](PLAN-056.md) `2026-09-01`
 - [x] [**PLAN-057 Define the built-in UI product-design guide**](PLAN-057.md) `2026-09-01`
+- [x] [**PLAN-058 Add built-in UI localization and Spectrum themes**](PLAN-058.md) `2026-09-01`

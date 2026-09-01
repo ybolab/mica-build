@@ -154,6 +154,7 @@ permission 明确返回，而不是只在前端隐藏按钮。
 | Server state | TanStack Query |
 | Styling | Tailwind CSS v4 + `src/styles.css` tokens |
 | Components | 本地 `base-nova` 风格 primitives，底层 `@base-ui/react` |
+| Design system | Adobe Spectrum 2 视觉、状态、主题与无障碍规则，映射为本地语义 token |
 | Icons | Lucide React |
 | Test | Vitest + Testing Library |
 
@@ -162,8 +163,10 @@ permission 明确返回，而不是只在前端隐藏按钮。
 ```text
 pkgs/mosd/apid/ui/
 ├── src/app/routes/           # 文件路由；页面入口保持薄
-├── src/components/ui/        # Button/Card/Field/Status/Switch 等 primitives
-├── src/components/           # AppShell、认证、TaskProgress
+├── src/components/ui/        # Button/Card/Field/Select/Status/Switch 等 primitives
+├── src/components/           # AppShell、认证、Preferences、TaskProgress
+├── src/i18n/                 # 内嵌 English/简体中文资源、检测与格式化
+├── src/theme/                # light/dark/system 偏好与文档根同步
 ├── src/lib/                  # API transport、类型、领域辅助函数
 ├── src/routeTree.gen.ts      # 自动生成，不手改
 ├── src/styles.css            # 全局 token 与当前布局
@@ -882,27 +885,35 @@ feature 目录。不要把每个页面的专用 prop 不断塞进 Button/Card。
 
 ## 10. 视觉与响应式规范
 
-### 10.1 延续当前视觉语言
+### 10.1 Spectrum 2 与本地 token
 
-当前浅色基础 token：
+组件实现与视觉规范分层：React 控件只使用项目拥有的 shadcn `base-nova` primitives，交互底层只使用
+Base UI；Adobe Spectrum 2 是颜色层级、控件状态、focus、密度、motion 与可访问性的设计依据。不得在同一
+页面再引入 React Spectrum、Spectrum Web Components、旧版 Spectrum CSS 或另一套 primitive runtime。
+
+当前浅色 token：
 
 | Token | 值 | 用途 |
 |---|---|---|
-| background | `#f4f5f2` | 应用背景 |
-| surface | `#fbfcf9` | 卡片/面板 |
-| foreground | `#191c1f` | 主文本、深色 active nav |
-| muted | `#eceee9` | 次级表面 |
-| muted foreground | `#687078` | 次级文本 |
-| border | `#dfe2dc` | hairline |
-| accent | `#d8ff4f` | 品牌强调，不承担状态 |
-| success | `#237a4b` | 成功 |
-| warning | `#9a6415` | 风险/降级 |
-| danger | `#b7353d` | 失败/危险 |
+| background | `#f8f8f8` | Spectrum light 应用背景 |
+| surface / popover | `#ffffff` | 卡片、菜单、面板 |
+| foreground | `#292929` | 主文本 |
+| muted | `#f1f1f1` | 次级表面与 hover |
+| muted foreground | `#5c5c5c` | 次级文本 |
+| border / input | `#d5d5d5` / `#8a8a8a` | 分组边界与达到 3:1 的控件边界 |
+| accent / ring | `#0265dc` / `#1473e6` | 主动作、选择、键盘 focus |
+| accent subtle | `#e6f0ff` | 当前导航等低强调选择面 |
+| success | `#12805c` | 已证实成功 |
+| warning | `#7a5200` | 风险/降级 |
+| danger | `#c9252d` | 失败/危险动作 |
 
-深色 token 已通过 `prefers-color-scheme: dark` 定义，accent 保持一致。第一阶段继续跟随系统主题；手动
-主题选择属于产品偏好，只有引入持久化 preference 和三态 light/dark/system 后才显示。
+深色主题使用 `.dark` 的独立 Spectrum-aligned 角色，不通过 alpha 反转浅色值。`ThemeProvider` 支持
+`system`、`light`、`dark`，默认跟随系统，并以 `mos.ui.theme` 保存用户明确选择；system 模式才监听
+`prefers-color-scheme`。根元素 class、`color-scheme` 和 `theme-color` 必须同步。
 
-不要把 lime accent 用作“成功”；success/warning/danger 必须使用各自 token，并同时提供 icon/文本。
+原 mos lime `#d8ff4f` 只允许作非交互品牌标记，不承担动作、focus、选择或健康状态。success、warning、
+danger 必须使用各自 token，并同时提供 icon/文本。项目没有可再分发的 Adobe Clean，因此继续使用系统字体；
+图标继续使用组件配置中的 Lucide，不声称嵌入 Adobe 产品组件或字体。
 
 ### 10.2 尺寸和密度
 
@@ -954,20 +965,23 @@ feature 目录。不要把每个页面的专用 prop 不断塞进 Button/Card。
 
 ### 12.1 目标
 
-交付目标是 English + 简体中文 ready。当前源码仍有硬编码英文，阶段 0 应引入 message catalog，随后
-新页面不得新增裸产品字符串。
+当前内置 UI 已交付 English + 简体中文。所有前端拥有的可见文字、accessible name、确认文本、日期与
+运行时长必须进入 message catalog；新页面不得新增裸产品字符串。
 
-建议目录：
+当前目录：
 
 ```text
-src/locales/
-├── en/common.json
-└── zh-CN/common.json
+src/i18n/
+├── i18n.ts                   # i18next 实例、持久化与 document 同步
+├── locale.ts                 # en/zh-CN 检测和归一化
+├── resources.ts              # 类型化的内嵌双语资源
+└── format.ts                 # 已知状态的本地化，未知值原样保留
 ```
 
-可以采用 `i18next` + `react-i18next`，但依赖引入仍需按 bundle 变化评审。默认语言优先用户明确选择，
-其次浏览器语言，最后 English；用户偏好可保存在 localStorage，因为它不是设备安全状态。设备级语言
-只有后端明确提供共享偏好后才同步。
+运行时采用 `i18next` + `react-i18next`。资源必须编译进 `app.js`，不得产生 APID 不会嵌入的 locale JSON；
+English 与简体中文 key shape 由类型和测试保持一致。默认语言优先 `mos.ui.locale` 中的用户明确选择，其次
+浏览器语言，最后 English；所有中文浏览器变体归一为 `zh-CN`。语言偏好是浏览器本地状态，只有后端明确
+提供共享偏好后才变成设备级设置。
 
 ### 12.2 文案规则
 

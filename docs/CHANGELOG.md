@@ -15,6 +15,18 @@ modules, whose `OS_DIR` (now equal to `REPO_ROOT`) was retired. The `os-*`
 make target names stayed: they are names, not paths. Historical records keep
 the paths they were written with. PLAN-055.
 
+## The built-in UI is bilingual and theme-selectable (2026-09-01)
+
+The recovery SPA now ships typed inline English and Simplified Chinese
+resources and browser-local language selection, plus persisted system, light
+and dark appearance modes available before and after authentication. Its owned
+shadcn `base-nova` controls remain backed solely by Base UI, while local
+semantic tokens now follow Adobe Spectrum 2 color hierarchy, focus, state,
+density and accessibility guidance without importing a second component
+runtime. Every shipped route was localized, theme and locale document metadata
+stay synchronized, and the fixed three-file APID bundle remains deterministic.
+PLAN-058.
+
 ## Package versions mean something, and the image says what it holds (2026-09-01)
 
 Upstream repacks now carry their upstream version in front of the pool's git
