@@ -380,9 +380,12 @@ from the layout env so the shipped image carries no placeholder:
 
 | Path | Purpose |
 |---|---|
-| `etc/fstab.in` | `/srv` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
+| `etc/fstab.in` | `/mnt/data` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
+| `usr/lib/mos/mos-data-layout` | validates writable DATA and creates the direct `/mnt/data/mos` and `/mnt/data/srv` namespace roots plus known system subdirectories; no migration or compatibility behavior |
+| `etc/systemd/system/mos.mount` | binds `/mnt/data/mos` onto the appliance-owned `/mos` namespace |
+| `etc/systemd/system/srv.mount` | binds `/mnt/data/srv` onto the operator-owned `/srv` namespace |
 | `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID. The single `fw_env.config` source in the tree; `pkgs/rauc/render-config.sh` asserts its structure rather than shipping a competing file |
-| `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. The two `uenv` placeholders carry `SizeMinBytes=0`: repart will not claim an existing partition below the definition's minimum, which defaults to 10 MiB, and the uenv pair is 64 KiB — without it the whole run aborts with *"Can't fit requested partitions into available free space"* and `/srv` never grows |
+| `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. The two `uenv` placeholders carry `SizeMinBytes=0`: repart will not claim an existing partition below the definition's minimum, which defaults to 10 MiB, and the uenv pair is 64 KiB — without it the whole run aborts with *"Can't fit requested partitions into available free space"* and `/mnt/data` never grows |
 | `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
 | `etc/systemd/system/mos-seed-state.service` | STATE directories + per-device sshd host keys; convergent, runs every boot (no run-once stamp — a stamp would stop a later image from seeding a STATE directory it introduces) |
@@ -465,8 +468,14 @@ simply never grows past the 64 MiB the assembler creates.
 
 ## Storage tiers, and the /var contract
 
-`/srv` (DATA) grows to fill the media and holds the application data worth the
-disk. `/mnt/state` (STATE) holds configuration and identity. `/mnt/meta` (META)
+DATA grows to fill the media at `/mnt/data`. The initializer creates two direct
+children: `/mnt/data/mos` is bound to the appliance-owned `/mos` namespace and
+`/mnt/data/srv` is bound to the operator-owned `/srv` namespace. `/mos` holds
+custom UI versions, update downloads, application artifacts, the container
+graphroot, and the backing trees for `/home` and `/root`. The development image
+has no migration links or compatibility layout.
+
+`/mnt/state` (STATE) holds configuration and identity. `/mnt/meta` (META)
 holds update metadata. `/var` (EPHEMERAL) is **fixed-size disposable residue** —
 logs, caches, package bookkeeping — and wiping it is a supported recovery
 action.
@@ -484,7 +493,7 @@ The DATA constants (`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID`,
 `MOS_VAR_MIB`) are **required**: `build.sh` fails if any is missing from
 `boards/cx3576/board.env`. There is deliberately no fallback. A build that
 quietly emitted the superseded nine-partition arrangement — `/var` growing, no
-`/srv` — would pass every downstream check, which is precisely the class of
+DATA partition — would pass every downstream check, which is precisely the class of
 silent-wrong-artifact this layout work exists to prevent.
 
 ## CJK guard

@@ -8,7 +8,7 @@ Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesy
 Description: mos common system policy, state mounts and operator account
  The board-independent half of a mos root filesystem: the seed and reconcile
  tools under /usr/lib/mos, their units, the STATE and DATA bind mounts
- (/var/lib/mos, /etc/ssh, /etc/hostname, /home, /root,
+ (/var/lib/mos, /mos, /srv, /etc/ssh, /etc/hostname, /home, /root,
  /usr/local/lib/systemd/system), the six board-independent repart.d position
  holders, the /var fill-up policy, the image's default DHCP network and
  journald's volatile storage policy.

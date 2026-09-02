@@ -13,8 +13,10 @@ import { Route as IndexRouteImport } from './app/routes/index'
 import { Route as AccessRouteImport } from './app/routes/access'
 import { Route as NetworkRouteImport } from './app/routes/network'
 import { Route as ServicesRouteImport } from './app/routes/services'
+import { Route as StorageRouteImport } from './app/routes/storage'
 import { Route as SystemRouteImport } from './app/routes/system'
 import { Route as TimeRouteImport } from './app/routes/time'
+import { Route as SystemUiRouteImport } from './app/routes/system_.ui'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -36,6 +38,11 @@ const ServicesRoute = ServicesRouteImport.update({
   path: '/services',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StorageRoute = StorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SystemRoute = SystemRouteImport.update({
   id: '/system',
   path: '/system',
@@ -46,22 +53,31 @@ const TimeRoute = TimeRouteImport.update({
   path: '/time',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SystemUiRoute = SystemUiRouteImport.update({
+  id: '/system_/ui',
+  path: '/system/ui',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
   '/network': typeof NetworkRoute
   '/services': typeof ServicesRoute
+  '/storage': typeof StorageRoute
   '/system': typeof SystemRoute
   '/time': typeof TimeRoute
+  '/system/ui': typeof SystemUiRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
   '/network': typeof NetworkRoute
   '/services': typeof ServicesRoute
+  '/storage': typeof StorageRoute
   '/system': typeof SystemRoute
   '/time': typeof TimeRoute
+  '/system/ui': typeof SystemUiRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -69,22 +85,42 @@ export interface FileRoutesById {
   '/access': typeof AccessRoute
   '/network': typeof NetworkRoute
   '/services': typeof ServicesRoute
+  '/storage': typeof StorageRoute
   '/system': typeof SystemRoute
   '/time': typeof TimeRoute
+  '/system_/ui': typeof SystemUiRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/access' | '/network' | '/services' | '/system' | '/time'
+  fullPaths:
+    | '/'
+    | '/access'
+    | '/network'
+    | '/services'
+    | '/storage'
+    | '/system'
+    | '/time'
+    | '/system/ui'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/access' | '/network' | '/services' | '/system' | '/time'
+  to:
+    | '/'
+    | '/access'
+    | '/network'
+    | '/services'
+    | '/storage'
+    | '/system'
+    | '/time'
+    | '/system/ui'
   id:
     | '__root__'
     | '/'
     | '/access'
     | '/network'
     | '/services'
+    | '/storage'
     | '/system'
     | '/time'
+    | '/system_/ui'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -92,8 +128,10 @@ export interface RootRouteChildren {
   AccessRoute: typeof AccessRoute
   NetworkRoute: typeof NetworkRoute
   ServicesRoute: typeof ServicesRoute
+  StorageRoute: typeof StorageRoute
   SystemRoute: typeof SystemRoute
   TimeRoute: typeof TimeRoute
+  SystemUiRoute: typeof SystemUiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -126,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/storage': {
+      id: '/storage'
+      path: '/storage'
+      fullPath: '/storage'
+      preLoaderRoute: typeof StorageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/system': {
       id: '/system'
       path: '/system'
@@ -140,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TimeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/system_/ui': {
+      id: '/system_/ui'
+      path: '/system/ui'
+      fullPath: '/system/ui'
+      preLoaderRoute: typeof SystemUiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -148,8 +200,10 @@ const rootRouteChildren: RootRouteChildren = {
   AccessRoute: AccessRoute,
   NetworkRoute: NetworkRoute,
   ServicesRoute: ServicesRoute,
+  StorageRoute: StorageRoute,
   SystemRoute: SystemRoute,
   TimeRoute: TimeRoute,
+  SystemUiRoute: SystemUiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

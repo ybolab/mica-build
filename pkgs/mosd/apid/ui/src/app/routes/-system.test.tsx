@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { I18nextProvider } from 'react-i18next'
 import type { UiStatus } from '@/lib/types'
+import { i18n } from '@/i18n/i18n'
 import { UiPanel } from './system'
 
 function response(value: UiStatus) {
@@ -17,9 +19,11 @@ function renderPanel() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <UiPanel />
-    </QueryClientProvider>,
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <UiPanel />
+      </QueryClientProvider>
+    </I18nextProvider>,
   )
 }
 
@@ -85,6 +89,7 @@ describe('custom UI selector', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
     expect(fetch.mock.calls[1][0]).toBe('/api/v1/ui/active')
     expect((fetch.mock.calls[1][1] as RequestInit).method).toBe('PUT')
+    expect((fetch.mock.calls[1][1] as RequestInit).body).toBe('{"generation":7}')
     expect((await screen.findByRole('link', { name: 'Open custom UI at root' })).getAttribute('href')).toBe('/')
   })
 

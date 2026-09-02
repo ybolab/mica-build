@@ -4,6 +4,31 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The built-in UI moved to an internal namespace (2026-09-02)
+
+The verity-covered recovery SPA now owns `/_ui` and uses canonical `/_ui/`
+asset and navigation URLs; `/` redirects there when no usable custom UI is
+active. `/ui` has no compatibility alias and is now an ordinary custom-UI
+route, so an integrator bundle can own that path without being intercepted by
+APID. The route router, one-decode reserved-segment guard, Vite/TanStack bases,
+localized recovery copy, committed hashed assets, tests and current English
+and Chinese guidance moved together. `/api/v1/ui` and `/srv/ui` retain their
+existing API and storage meanings. PLAN-060.
+
+## User documentation, website briefs and the BSP porting set (2026-09-02)
+
+`docs/user/` now carries the fifteen-page customer journey from download to
+support under an explicit documentation contract: audience, page ownership
+and a truth-status taxonomy on every claim. `docs/website/` holds one content
+brief per official-website page. `docs/bsp/` is the porting manual, the
+vendor intake rubric, the `board.env` reference, the dossier template with
+its cx3576 instance, the field-reliability qualification matrix, the I1-I4
+boot-assurance ladder and the support tiers. `docs/zh/` mirrors all three
+sets. `make docs-verify` grew four gates -- internal links, truth-status
+lines, en/zh coverage and dossier shape -- each with its own negative test.
+The twelve cx3576 qualification rows still read "not tested"; they need a
+bench run. PLAN-042, PLAN-050.
+
 ## The os/ wrapper is gone (2026-09-02)
 
 `os/boards`, `os/build`, `os/build-env`, `os/pkgs`, `os/rootfs`, `os/tests`,
@@ -13,7 +38,30 @@ Every path reference followed -- including the self-locating scripts that
 derive the repository root from their own depth, and both TypeScript path
 modules, whose `OS_DIR` (now equal to `REPO_ROOT`) was retired. The `os-*`
 make target names stayed: they are names, not paths. Historical records keep
-the paths they were written with. PLAN-055.
+the paths they were written with. Landed as 69febcae.
+
+## Built-in UI assets are an isolated embedded tree (2026-09-01)
+
+APID now generates a sorted compile-time VFS from the complete committed
+`ui/dist` tree instead of naming `index.html`, `app.js` and `app.css` in Rust.
+Vite emits content-hashed vendor, route and locale chunks; page routes and the
+Simplified Chinese catalog load on demand, while every resource remains inside
+the verity-covered binary. `/`, `/ui` and `/api` are terminal ownership domains:
+misses and ambiguous encoded or repeated-separator paths cannot cross between
+the custom UI, built-in UI and JSON API. The Chinese UI development guide now
+documents the VFS, lazy-loading, cache and path-isolation contract. PLAN-059.
+
+## The built-in UI is bilingual and theme-selectable (2026-09-01)
+
+The recovery SPA now ships typed inline English and Simplified Chinese
+resources and browser-local language selection, plus persisted system, light
+and dark appearance modes available before and after authentication. Its owned
+shadcn `base-nova` controls remain backed solely by Base UI, while local
+semantic tokens now follow Adobe Spectrum 2 color hierarchy, focus, state,
+density and accessibility guidance without importing a second component
+runtime. Every shipped route was localized, theme and locale document metadata
+stay synchronized, and the fixed three-file APID bundle remains deterministic.
+PLAN-058.
 
 ## Package versions mean something, and the image says what it holds (2026-09-01)
 

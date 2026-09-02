@@ -370,7 +370,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
       fail: [
         'container image storage is unconfigured:',
         ', on the EPHEMERAL partition.',
-        ', which is neither DATA (/srv) nor a path this check knows.',
+        ', which is neither system DATA (/mos) nor a path this check knows.',
       ],
     },
     decide: (root) => {
@@ -397,7 +397,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           `container image storage is unconfigured: ${CONTAINER_STORAGE_CONF} sets no graphroot, so `
           + `podman uses its built-in /var/lib/containers/storage on the wipeable EPHEMERAL partition`)
       }
-      if (graph.startsWith('/srv/')) {
+      if (graph.startsWith('/mos/')) {
         return verdict(id, true,
           `container image storage is at ${graph}, on DATA -- the only growable partition, and the `
           + `one that survives an A/B update`)
@@ -408,7 +408,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           + `wiped by design; images would be capped and then silently destroyed`)
       }
       return verdict(id, false,
-        `container image storage is at ${graph}, which is neither DATA (/srv) nor a path this check `
+        `container image storage is at ${graph}, which is neither system DATA (/mos) nor a path this check `
         + `knows. Image storage grows without bound and belongs on the partition systemd-repart extends`)
     },
   }),

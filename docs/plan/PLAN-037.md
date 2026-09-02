@@ -50,7 +50,7 @@ Work is labelled consistently in every child plan:
 
 | Plan / task | Deliverable and approval boundary | Class | Priority | Estimate | Main dependencies |
 | --- | --- | --- | --- | --- | --- |
-| [PLAN-042](PLAN-042.md) / [RFCT-278](../task/RFCT-278.md) | User documentation contract and official website content | DOC | P0 | 3-4 engineer-weeks | Verified claims from all shipped capabilities |
+| PLAN-042 / RFCT-278 (completed) | User documentation contract and official website content | DOC | P0 | 3-4 engineer-weeks | Verified claims from all shipped capabilities |
 | [PLAN-043](PLAN-043.md) / [RFCT-279](../task/RFCT-279.md) | Release identity, artifacts, SBOM and supply-chain publication | SW/OPS/DOC | P0 | 2-3 weeks | Existing build, TUF and RAUC tooling |
 | [PLAN-044](PLAN-044.md) / [RFCT-280](../task/RFCT-280.md) | RTC, always-running NTP and timezone management | SW/INT/DOC | P0 | 2-3 weeks plus board validation | mosd/apid/UI settings and board RTC support |
 | [PLAN-045](PLAN-045.md) / [RFCT-281](../task/RFCT-281.md) | One unexpanded `/usr/bin/busybox` emergency binary | SW/DOC | P2 | 0.5-1 week | Base rootfs composition |
@@ -58,7 +58,7 @@ Work is labelled consistently in every child plan:
 | [PLAN-047](PLAN-047.md) / [RFCT-283](../task/RFCT-283.md) | Authenticated, resumable system update delivery | SW/OPS/DOC | P0 | 5-8 weeks | Release metadata, trusted time and RAUC/TUF keys |
 | [PLAN-048](PLAN-048.md) / [RFCT-284](../task/RFCT-284.md) | Manual recovery, access recovery and reset contracts | SW/INT/DOC | P0 | 4-6 weeks | Slot/update state and storage reset decisions |
 | [PLAN-049](PLAN-049.md) / [RFCT-285](../task/RFCT-285.md) | Storage status, media health and data lifecycle | SW/INT/DOC | P0 | 4-7 weeks | Board media capabilities and recovery policy |
-| [PLAN-050](PLAN-050.md) / [RFCT-286](../task/RFCT-286.md) | BSP porting manual and field-reliability qualification | INT/DOC | P0 | 2-3 weeks for framework; 1-3 per board | Vendor inputs and physical hardware |
+| PLAN-050 / RFCT-286 (completed) | BSP porting manual and field-reliability qualification | INT/DOC | P0 | 2-3 weeks for framework; 1-3 per board | Vendor inputs and physical hardware |
 | [PLAN-051](PLAN-051.md) / [RFCT-287](../task/RFCT-287.md) | Native/image and custom-container application delivery | DOC/INT, COND controls | P1 | 2-3 weeks | Stable update, persistence and API contracts |
 | [PLAN-052](PLAN-052.md) / [RFCT-288](../task/RFCT-288.md) | Diagnostics bundle and operational network state | SW/DOC | P0 | 4-6 weeks | Storage, time and redaction rules |
 | [PLAN-053](PLAN-053.md) / [RFCT-289](../task/RFCT-289.md) | Security boundary and manufacturing lifecycle | SW/INT/OPS/DOC | P0 | 4-7 weeks | Board assurance, release keys and provisioning |
@@ -76,10 +76,10 @@ The first pilot-critical chain is release identity and trusted time
 ([PLAN-046](PLAN-046.md)) can advance in parallel but need the same release and
 board identities. Recovery and storage ([PLAN-048](PLAN-048.md),
 [PLAN-049](PLAN-049.md)) jointly define which reset, repair and data-preserving
-operations are safe. BSP evidence ([PLAN-050](PLAN-050.md)) feeds every public
+operations are safe. BSP evidence (PLAN-050) feeds every public
 hardware claim.
 
-Documentation and website structure ([PLAN-042](PLAN-042.md)) can start early,
+Documentation and website structure (PLAN-042) can start early,
 but capability pages remain explicitly proposed until their software,
 integration and operations evidence passes. BusyBox ([PLAN-045](PLAN-045.md))
 is independent. Application guidance ([PLAN-051](PLAN-051.md)) and diagnostics

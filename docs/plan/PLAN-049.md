@@ -1,6 +1,6 @@
 # PLAN-049 Add storage status and data lifecycle management
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-01 13:18
 - **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-285](../task/RFCT-285.md)
@@ -64,3 +64,57 @@ future SKU requires them.
 - 2026-08-31: The user asked whether disk management exists. The precise answer
   is “storage layout foundation: yes; operator disk management: not yet”.
 - 2026-09-01: Split from PLAN-037 as the fixed-storage lifecycle capability.
+
+## Completion (2026-09-02)
+
+Delivered as RFCT-285. Design record: docs/design/storage.md.
+
+- **Read-mostly StorageStatus** (`pkgs/mosd/mosd/src/storage_status.rs`): the
+  fixed tiers from `boards/*/board.env` with identity, role, size,
+  used/free/reserved space, mount/read-only state and the fsck evidence
+  systemd actually records; the physical media beneath them. Served as
+  `GetStorageStatus` on the bus and `GET /api/v1/storage/status` over HTTPS,
+  with a `/storage` console page. Observed at call time, never cached, and
+  with no write counterpart anywhere.
+- **Media health, risk #1 respected**: eMMC lifetime/EOL normalized from the
+  JEDEC sysfs registers as a 10% bucket with the raw values retained;
+  NVMe/SATA SMART reported `unsupported` with the reason (no reader ships in
+  this image) rather than as an empty object that reads as healthy. Absence
+  is data everywhere on this surface — the one deliberate inversion is the
+  install admission check, which refuses nothing on evidence it does not have.
+- **Space policy**: 80/75 and 90/85 percent enter/clear hysteresis bands over
+  DATA and STATE as base policy constants; a 256 MiB reserved update
+  workspace exposed in status AND enforced at `request_install`, the one seam
+  where mos consumes DATA space for an update. **No quotas**: this plan gates
+  them behind a product profile needing enforcement, and none does.
+- **Lifecycle decisions**: backup/restore, offline repair, data-preserving
+  replacement, factory reset/wipe, secure erase, encryption and removable
+  media are each explicitly `unsupported`, served in the API's `lifecycle`
+  object and justified one by one in docs/design/storage.md §6 —
+  "Unselected features remain unsupported", stated rather than implied.
+- **No repartition surface**: asserted by a route-surface scan over the
+  generated OpenAPI document plus probes of the paths a client would guess.
+
+**Not done, and escalated**: per-board physical-media validation on real
+eMMC/NVMe bench hardware. The wear path is covered by fixture-tree tests
+only, which is a test of the parser and the assembly, not of a device.
+
+## Completion addendum (2026-09-02): reworked onto the PLAN-063 layout
+
+Delivered against the layout PLAN-063 / RFCT-292 established while this work
+was in flight, not the one that mounted DATA at `/srv`.
+
+- DATA reports at `/mnt/data`; `/mos` and `/srv` are reported as bind
+  namespaces of it, with **one shared capacity pool reported once** on the
+  `data` tier. This is PLAN-063 risk 3 discharged in the status shape, and
+  PLAN-063's note that "quota and reservation work remains owned by PLAN-049"
+  is what this plan answers.
+- Readiness for `/mos` follows PLAN-061's contract verbatim — mount, source
+  resolves to DATA, no symlink substitution, read-only state, free space, and
+  a create/fsync/remove/fsync probe in the owned subtree. **RFCT-285 does not
+  re-implement the layout**: `mos-data-layout` initializes it fail-closed and
+  the two mount units order it; this plan reports on it and names the
+  no-fallback states (`unavailable`) that PLAN-061 requires.
+- The reservation targets `/mos/updates`, PLAN-061's artifact taxonomy.
+- Still not done and still escalated: per-board physical-media validation on
+  real eMMC/NVMe bench hardware.

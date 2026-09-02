@@ -24,7 +24,7 @@ defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
 (`pkgs/mosd/apid/src/config.rs`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
 (`pkgs/mosd/apid/src/config.rs`). No second protocol, no third port.
 
-**The API is the gate.** `app` structurally reserves `/api`, `/ui`, `/healthz`
+**The API is the gate.** `app` structurally reserves `/api`, `/_ui`, `/healthz`
 and `/` before the custom-bundle fallback (`pkgs/mosd/apid/src/routes.rs`).
 The static SPA is always readable; appliance data is not. Each management API
 handler extracts either a stored bearer token or a signed browser session. A
@@ -109,7 +109,7 @@ endpoint equal to compromise of every device it reaches.
 ## 4. Security posture
 
 **Exposed today — [implemented].** apid on the LAN is the entire inbound
-management surface. `/ui` and custom UI assets are public static code on that
+management surface. `/_ui` and custom UI assets are public static code on that
 origin; every appliance operation and datum is protected by the `/api`
 credential boundary described in section 1.
 

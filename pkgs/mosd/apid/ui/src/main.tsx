@@ -1,23 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createRouter, RouterProvider } from '@tanstack/react-router'
-import { routeTree } from './routeTree.gen'
+import { AppProviders } from '@/app/providers'
+import { initializeI18n } from '@/i18n/i18n'
+import { initializeTheme } from '@/theme/theme'
 import './styles.css'
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: false } },
-})
-const router = createRouter({ routeTree, basepath: '/ui' })
+initializeTheme()
 
-declare module '@tanstack/react-router' {
-  interface Register { router: typeof router }
+async function bootstrap() {
+  await initializeI18n()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <AppProviders />
+    </StrictMode>,
+  )
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  </StrictMode>,
-)
+void bootstrap()

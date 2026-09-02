@@ -1,7 +1,7 @@
 # mos 内置 UI 开发指南
 
-> 文档版本：1.1
-> 基线日期：2026-09-01
+> 文档版本：1.3
+> 基线日期：2026-09-02
 > 状态：已批准的 UI 开发与交付基线
 > 适用范围：`mos-apid` 随系统镜像交付的内置 Web UI，以及未来复用同一 UI 的本地触屏/kiosk
 
@@ -30,8 +30,8 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
    运行中的 UI 必须隐藏，不能显示不可用菜单、假数据或永远 disabled 的按钮。
 5. **安全操作显式且可恢复。** 一次性秘密只展示一次；危险操作显示影响范围；不可逆操作需要
    专用确认流程；所有 mutation 都正确处理 CSRF、任务进度和 API 错误。
-6. **内置交付约束优先。** 运行时不得依赖 CDN；构建必须保持固定的 `index.html`、
-   `assets/app.js`、`assets/app.css` 三个嵌入文件，除非后端资产嵌入机制在同一变更中调整。
+6. **内置交付约束优先。** 运行时不得依赖 CDN；`ui/dist` 的完整文件树必须以编译期虚拟文件系统
+   嵌入 `mos-apid`，入口以外的构建资源使用内容哈希，并通过路由与语言包懒加载减少首次下载。
 
 推荐路线不是重做现有界面，而是先统一状态、错误、表单和响应式规范，再完成已经具备 API 的
 网络管理，最后随各后端计划获批和落地逐项开放系统页面。
@@ -80,7 +80,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 | 临时 root 密码 | S | 到重启失效 | 保持二次确认，不与 Web 密码混淆 |
 | Web 管理密码 | S | 已有修改动作 | 修改成功后说明 session 行为 |
 | 主机名 | S | typed setting + apply task | 显示 saved/applied 状态 |
-| 内置/自定义 UI 选择 | S | 只能激活已保留且验证通过的 bundle | 不提供 UI 上传，因为 API 不存在 |
+| 自定义 UI 包与版本选择 | S | 浏览器上传 ZIP、保留多版本、精确激活/停用/删除 | 补齐拖放与更完整的版本详情测试 |
 | 重启、关机 | S | 异步接受 | 用专用确认对话框替换 `window.confirm` |
 | System Information、诊断 | P | 仅有健康、meta 和零散系统 seam | 等 PLAN-052 的聚合 API |
 | 时间、NTP、时区 | P | PLAN-044 草案 | 不显示“暂停时间”或不存在的轮询控件 |
@@ -88,7 +88,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 | 恢复、回滚、凭据恢复 | P | PLAN-048 草案 | 等专用 challenge 与不可逆语义 |
 | 存储状态和生命周期 | P | 布局存在，无 operator API | 只规划健康/容量，不做分区编辑器 |
 | 安装、认领、工厂 onboarding | P | PLAN-046 草案 | 扩展 setup 状态机前先定设备生命周期 |
-| 本地显示 | C | 架构设想复用同一 `/ui`，暂无板卡声明支持 | 先保证触控规范，不宣称已交付 |
+| 本地显示 | C | 架构设想复用同一 `/_ui/`，暂无板卡声明支持 | 先保证触控规范，不宣称已交付 |
 | Fleet 管理 | C | PLAN-054 为条件设计，当前只有入站 LAN HTTPS | 不把 fleet 菜单放进本地 UI |
 | 托管应用清单与精选目录 | P | PLAN-056 已批准设计；当前没有 app API/manager | OCI 优先，后续支持声明式 native bundle |
 | 公开开放市场/通用编排 | C | 没有运营、隔离、计费或第三方准入能力 | 不进入当前本地 UI 或对外承诺 |
@@ -102,15 +102,16 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 远程浏览器 ─┐
             ├─ HTTPS / 同源 ─> mos-apid ─> versioned API ─> mosd
 本地 kiosk ─┘          │                         │
-                       ├─ /ui/ 内置 SPA          ├─ settings + tasks
-                       └─ / 自定义或内置 UI       └─ reconcilers ─> OS/services
+                       ├─ /_ui/ 内置 SPA         ├─ settings + tasks
+                       └─ / 自定义 UI 或跳转 /_ui/ └─ reconcilers ─> OS/services
 ```
 
-- `/ui` 永远指向内置恢复界面。
+- `/_ui/` 永远指向内置恢复界面；`/ui` 可由自定义 UI 使用。
 - `/` 根据 UI 状态选择已激活的自定义 bundle；无可用 bundle 时回到内置 UI。
 - `/api` 是唯一管理协议；listener 健康检查 `/healthz` 是部署例外，不是产品管理接口。
 - SPA 的无扩展名路径可以回退到 `index.html`；类似文件名的缺失资源应返回 404。
-- 自定义 UI 保存在 DATA，能跨重启与 A/B；内置 UI 位于受保护系统镜像中。
+- 自定义 UI 保存在 DATA 的 `/mos/ui`，能跨重启与 A/B；内置 UI 位于受保护系统镜像中。
+- `/`、`/_ui`、`/api` 是相互隔离的三个所有权域；一个域内资源缺失或路径非法时不得去另一个域查找。
 
 ### 3.2 安全边界
 
@@ -122,6 +123,10 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 - 读取到 `"<redacted>"` 表示设备持有秘密，不是一个可回写的值；将该字符串回写会被 422 拒绝。
 - SSH authorized key 授予 root 权限。界面必须在添加区和列表区都保持此风险可见。
 - console shell 设置虽然存在于 schema，但当前没有协调器，不能显示为可用开关。
+- 资源路径只解码一次；重复分隔符、`.`、`..`、编码分隔符、反斜杠、控制字符、残留 `%`，以及编码后的
+  根级 `api`/`_ui` 的重复分隔符或编码别名都返回 404，不做归一化或跨域重试。`/ui`、`/apiary`、`/_uikit` 等普通名称不受影响。
+- `/api` 下的未声明请求始终返回 JSON API 404；`/_ui` 下的资源只来自内置 VFS；其余路径只访问当前
+  自定义 bundle。`/healthz` 是显式运行状态探针，不进入任何资源解析器。
 
 ### 3.3 CSP 与离线资产
 
@@ -154,6 +159,7 @@ permission 明确返回，而不是只在前端隐藏按钮。
 | Server state | TanStack Query |
 | Styling | Tailwind CSS v4 + `src/styles.css` tokens |
 | Components | 本地 `base-nova` 风格 primitives，底层 `@base-ui/react` |
+| Design system | Adobe Spectrum 2 视觉、状态、主题与无障碍规则，映射为本地语义 token |
 | Icons | Lucide React |
 | Test | Vitest + Testing Library |
 
@@ -162,12 +168,14 @@ permission 明确返回，而不是只在前端隐藏按钮。
 ```text
 pkgs/mosd/apid/ui/
 ├── src/app/routes/           # 文件路由；页面入口保持薄
-├── src/components/ui/        # Button/Card/Field/Status/Switch 等 primitives
-├── src/components/           # AppShell、认证、TaskProgress
+├── src/components/ui/        # Button/Card/Field/Select/Status/Switch 等 primitives
+├── src/components/           # AppShell、认证、Preferences、TaskProgress
+├── src/i18n/                 # English fallback、懒加载中文、检测与格式化
+├── src/theme/                # light/dark/system 偏好与文档根同步
 ├── src/lib/                  # API transport、类型、领域辅助函数
 ├── src/routeTree.gen.ts      # 自动生成，不手改
 ├── src/styles.css            # 全局 token 与当前布局
-├── vite.config.ts            # /ui/ base 与固定构建文件名
+├── vite.config.ts            # /_ui/ base、路由拆分与内容哈希输出
 └── dist/                     # 受版本控制的嵌入产物
 ```
 
@@ -186,20 +194,64 @@ Query 管理。表单草稿使用组件本地状态，不为简单设置引入�
 
 ### 4.2 构建硬约束
 
-Vite base 是 `/ui/`。Rust 当前通过 `include_bytes!` 精确嵌入：
+Vite base 是 `/_ui/`。`dist/index.html` 是唯一稳定的启动文件；其余 Vite 产物位于 `dist/assets/`，
+文件名包含内容哈希。路由页面、中文 message catalog 和 vendor/app 代码可以形成独立 chunk，文件数量和
+名称不是后端源代码的一部分。例如当前输出形态是：
 
 ```text
 dist/index.html
-dist/assets/app.js
-dist/assets/app.css
+dist/assets/index-<hash>.css
+dist/assets/index-<hash>.js
+dist/assets/vendor-<hash>.js
+dist/assets/<route>-<hash>.js
+dist/assets/zh-cn-<hash>.js
 ```
 
-因此不得自行开启 auto code splitting、内容哈希文件名或额外动态 chunk。若确需拆包，必须先修改
-后端资源枚举、MIME、fallback、缓存与测试，再在同一交付中切换。
+`pkgs/mosd/apid/build.rs` 在 Rust 编译时递归扫描已提交的 `ui/dist`，拒绝符号链接、不安全名称和非普通
+文件，按逻辑路径排序后生成 `include_bytes!` 资产表。`assets::builtin` 对该表做二分查找，所以添加、删除
+或重命名 chunk 不需要修改 Rust 路由。Rust/native/cross build 只消费已提交的 `dist`，不运行 Bun 或 Vite；
+缺少 `index.html` 或资源树非法会直接使构建失败。
 
-当前基线大小约为：HTML 484 B、CSS 42,943 B、JS 381,657 B；gzip 后 CSS 约 8.2 KiB、JS
-约 116.4 KiB。它不是永久硬上限，但每个 PR 都应报告变化；单项 gzip 增长超过 10% 时必须说明
-原因和替代方案。
+缓存规则固定如下：`index.html` 和所有 SPA fallback 使用 `no-store`；由 Vite 生成的 `assets/` 内容哈希
+资源使用 `public, max-age=31536000, immutable`；其他嵌入文件默认 `no-cache`。所有响应继续使用固定 MIME
+allowlist、`nosniff`、CSP 和 `Referrer-Policy`。安全的无扩展路径才允许 SPA fallback；文件型 miss 和敌意
+路径必须返回空 404。
+
+2026-09-01 基线共有 13 个文件、612,924 B，逐文件 gzip 合计约 193.4 KiB。`index.html` 首屏引用的
+HTML、CSS、runtime、vendor 与 app entry 合计 579,234 B，逐文件 gzip 约 181.2 KiB；其余约 33.7 KiB
+原始内容按页面或中文语言选择懒加载。大小不是永久硬上限，但每个 PR 都应同时报告首屏引用集合与完整
+资源树的 raw/gzip 变化；任一指标增长超过 10% 时说明原因和替代方案。不得只比较最大的单个 chunk。
+
+#### 自定义 UI 包
+
+自定义 UI 不复制进内置 `dist`，而是打成 `.mos-ui.zip` 后由浏览器或 API 上传。包根必须直接包含
+`index.html` 和以下 schema 1 清单；`immutableDir` 通常是 Vite 的 `assets`：
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "example-console",
+  "version": "1.4.0",
+  "immutableDir": "assets",
+  "apiVersions": ["v1"]
+}
+```
+
+仓库提供与服务端共享校验代码的 `mos-ui-pack`。它生成排序、固定时间戳和权限的可复现 ZIP，并可在
+上传前检查清单、条目数、压缩/展开大小和 SHA-256：
+
+```bash
+cd pkgs/mosd
+cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
+  pack apid/ui/dist --name example-console --version 1.4.0 \
+  --api-version v1 -o example-console-1.4.0.mos-ui.zip
+cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
+  inspect example-console-1.4.0.mos-ui.zip
+```
+
+上传上限为 64 MiB 压缩文件、256 MiB 总展开内容、32 MiB 单文件、4,096 条目、32 层路径和
+100:1 总展开比。包不得包含绝对/父级/空路径、反斜杠、重复名称、非 UTF-8 名称、加密条目、符号链接
+或其他特殊文件。服务端仍会独立执行全部检查；本地工具不是信任边界。
 
 ### 4.3 本地开发与质量门禁
 
@@ -221,17 +273,17 @@ bun run coverage
 `run.sh` 是交付门禁：冻结安装、lint、typecheck、test，在临时目录重新构建，再逐字节比较提交的
 `dist`。源代码与嵌入产物必须在同一提交更新。
 
-当前 8 个测试通过，但 line coverage 只有 24.51%（statements 22.59%、branches 21.82%、
-functions 16.52%）。它只能证明已覆盖的逻辑通过，不代表页面状态完整。
+测试数量和覆盖率以当前 `bun run test`/`bun run coverage` 报告为准。门禁通过只能证明已覆盖的逻辑，
+不代表页面状态已经完整；新增交互仍须按第 15 节补齐状态矩阵。
 
 ## 5. 推荐信息架构与路由
 
 ### 5.1 路由树
 
-`/ui/` 是 Overview，不另增 `/overview` 作为主路径。推荐树如下：
+`/_ui/` 是 Overview，不另增 `/overview` 作为主路径。推荐树如下：
 
 ```text
-/ui/                              Overview                         [S]
+/_ui/                             Overview                         [S]
 ├── network                       Network 总览                    [S]
 │   ├── interfaces/:iface         接口配置与观测                  [A]
 │   ├── wifi                      已知 Wi-Fi 网络                  [A]
@@ -263,7 +315,7 @@ functions 16.52%）。它只能证明已覆盖的逻辑通过，不代表页面�
 - 桌面（>860 px）：左侧 238 px sidebar，一级导航常驻，二级导航出现在页面内或 section nav。
 - 中等宽度（581～860 px）：顶部横向一级导航；二级导航使用横向可滚动 tabs 或当前页选择器。
 - 手机/窄触屏（≤580 px）：标题和主操作纵向排列；表格转为摘要卡或允许带提示的横向滚动。
-- 二级页面的 sidebar active 状态归属一级父项，例如 `/ui/network/wifi` 仍高亮 Network。
+- 二级页面的 sidebar active 状态归属一级父项，例如 `/_ui/network/wifi` 仍高亮 Network。
 - Setup 和 Login 由 session 状态决定，不暴露为可收藏的独立管理路径。
 - P/C 页面不加入运行时导航。Applications 在 PLAN-056 中已确定为第六个产品入口，但只有
   `mos-appd`、typed API、capability 和安全门禁一并交付后才注册到运行时导航。
@@ -350,7 +402,7 @@ Overview 当前轮询：health 15 秒、network 10 秒、tasks 5 秒；TaskProgr
 
 ## 7. 页面开发说明
 
-### 7.1 Overview `/ui/` `[S]`
+### 7.1 Overview `/_ui/` `[S]`
 
 **目标：** 十秒内回答“设备管理面是否可用、网络边缘是否正常、最近配置是否成功”。
 
@@ -378,7 +430,7 @@ Overview 当前轮询：health 15 秒、network 10 秒、tasks 5 秒；TaskProgr
 - 没有 task 是正常 empty state：“本次启动尚无配置任务”，不能显示 warning；
 - 未来 update、storage 等摘要只有在相应 capability 存在时才加入，最多保持 3～4 个首屏指标。
 
-### 7.2 Network 总览 `/ui/network` `[S]`
+### 7.2 Network 总览 `/_ui/network` `[S]`
 
 **目标：** 并排呈现声明配置与实际网络事实，快速定位“未配置、已配置未应用、已应用未连通”。
 
@@ -397,7 +449,7 @@ Overview 当前轮询：health 15 秒、network 10 秒、tasks 5 秒；TaskProgr
 observed provider 失败时必须继续显示 configured 数据和最后一次成功数据，并在表头明确 “Live state
 unavailable”。正常 operator 视图用字段与摘要替代 configured JSON；原始 JSON 移到折叠详情。
 
-### 7.3 接口编辑 `/ui/network/interfaces/:iface` `[A]`
+### 7.3 接口编辑 `/_ui/network/interfaces/:iface` `[A]`
 
 **API：** `PUT /api/v1/network/{iface}`、`DELETE /api/v1/network/{iface}`，必要时读取
 `GET /api/v1/network`。整体替换 `PUT /api/v1/network` 只用于确有跨接口原子编辑的高级流程，普通
@@ -423,7 +475,7 @@ kind 和对应参数块才是事实。
 - 204 只表示写入接受完成，不等于链路已工作。随后刷新 configured 和 observed，明确显示差异；
 - 不提供未经后端支持的自动回滚倒计时。若产品需要“失联自动回滚”，先设计后端事务契约。
 
-### 7.4 Wi-Fi 已知网络 `/ui/network/wifi` `[A]`
+### 7.4 Wi-Fi 已知网络 `/_ui/network/wifi` `[A]`
 
 **当前 API 能力只包括：** 列表、添加、忘记 known network。它不等于扫描附近 AP、启用/停用 station、
 立即 connect、显示信号强度或配置 AP 模式。
@@ -444,7 +496,7 @@ PSK 接受 8～63 个可打印 ASCII 字符（不含双引号和反斜杠），�
 “Forget” 是破坏性操作，确认框显示 SSID 和影响：设备以后不会再自动使用该已知网络。SSID 进入
 URL 前必须编码。没有 observed association API 时不要显示 “Connected”。
 
-### 7.5 WireGuard `/ui/network/wireguard/:iface` `[A]`
+### 7.5 WireGuard `/_ui/network/wireguard/:iface` `[A]`
 
 **能力：** 列出、添加、删除 peer；轮换本机 tunnel private key；读取到的设置中永远没有私钥。
 
@@ -462,7 +514,7 @@ Rotate key 会改变本机公钥并可能使所有远端 peer 失联。确认对
 成功后只展示 API 返回的新 public half 和需要更新远端的说明。UI、日志、错误和剪贴板都不得出现
 设备 private key。
 
-### 7.6 Services `/ui/services` `[S]`
+### 7.6 Services `/_ui/services` `[S]`
 
 当前只管理两个系统级能力：Container runtime 和 MQTT。开关分别通过 typed settings 路径写入，
 页面读取 live state，并用 TaskProgress 跟踪 202 返回的任务。
@@ -488,7 +540,7 @@ Rotate key 会改变本机公钥并可能使所有远端 peer 失联。确认对
 MQTT listen/auth 虽存在于 settings schema，但没有可用 typed product write；Container 也不是应用市场。
 不得用 generic settings UI 绕过这条白名单。
 
-### 7.7 Applications `/ui/apps` `[P · PLAN-056]`
+### 7.7 Applications `/_ui/apps` `[P · PLAN-056]`
 
 Applications 是独立于 Services 的第六个产品区域。它管理“一个可安装产品”的身份、来源、版本、
 权限、数据和生命周期；Services 继续只管理 `container.enabled`、`mqtt.enabled` 等 mos 系统能力。
@@ -521,7 +573,7 @@ manifest；不得在浏览器中自行判断签名可信或将原始 bundle 当�
 
 #### 页面结构
 
-`/ui/apps` 默认进入 **Installed**；同一级 tab 为 **Catalog** 和 **Activity**。
+`/_ui/apps` 默认进入 **Installed**；同一级 tab 为 **Catalog** 和 **Activity**。
 
 - **Installed**：搜索、来源/kind/state filter、应用卡或摘要表。卡片显示名称、版本、kind、信任来源、
   desired/runtime/health、更新时间和一个主动作；系统应用和 unmanaged 应用清楚标为只读；
@@ -579,7 +631,7 @@ interlock；本指南不默认开启。
 #### 停止、移除与清除数据
 
 Stop 是可恢复的普通确认；Restart 在应用正在运行且没有冲突 task 时提供。Remove 默认 **Keep application
-data**，先停止并移除受管 runtime definition/artifact，保留 `/srv/mos/apps/<id>/data/` 与 registry retention
+data**，先停止并移除受管 runtime definition/artifact，保留 `/mos/apps/<id>/data/` 与 registry retention
 记录，允许兼容版本重新安装。Purge data 是独立高风险动作，必须再次显示 app id、路径类别、数据量与不可逆
 影响，并要求输入应用名称或后端 challenge。System 和 External/unmanaged 不显示 Remove。
 
@@ -598,7 +650,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 ```
 
 小型 registry/active revision 元数据放 STATE：`/mnt/state/mos/apps/`；下载 staging、artifact cache 和应用
-持久数据放 DATA：`/srv/mos/apps/`。日志位于有界、易失 journal；秘密进入新的受保护 per-app store。不得把
+持久数据放 DATA：`/mos/apps/`。日志位于有界、易失 journal；秘密进入新的受保护 per-app store。不得把
 大型 image/bundle 写入 STATE，也不得把持久数据写入 `/var`。应用和系统更新共享 maintenance interlock；
 启动时必须重新校验 active revision 与当前 OS 的兼容性，不能只在安装时检查。
 
@@ -613,7 +665,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 - OS rollback incompatibility：应用 safe-disable 为 Blocked，保留数据和诊断，不反复 crash-loop；
 - manager unavailable：Applications 保留入口和缓存，但所有 mutation disabled；这不是 unsupported。
 
-### 7.8 Access `/ui/access` `[S]`
+### 7.8 Access `/_ui/access` `[S]`
 
 按风险从日常到高权限分为四组，而不是按 API 顺序堆放。
 
@@ -648,9 +700,10 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 - 与 SSH 面板放在同一高权限区域是当前信息架构选择；视觉上仍应独立成卡片；
 - 设备没有凭据恢复机制时，界面必须坦率说明：忘记管理员凭据可能只能整盘重刷。
 
-### 7.9 System `/ui/system` `[S]`
+### 7.9 System `/_ui/system` `[S]`
 
-当前 System 首页包含三组。
+当前 System 首页包含三组；自定义 UI 的完整生命周期进入 `/_ui/system/ui` 专页，首页只保留状态摘要与
+管理入口。
 
 #### General / hostname
 
@@ -659,14 +712,17 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 
 #### UI selection
 
-`GET /api/v1/ui` 返回当前 mode，以及 retained custom bundle 是否可用和不可用原因。
+`GET /api/v1/ui` 返回当前 mode 和紧凑候选摘要；`GET /api/v1/ui/bundles` 返回全部保留版本。
 
 - built-in 永远可恢复；
-- Activate 只选择设备上最新、仍通过安全与兼容检查的 retained bundle；
+- 上传只安装为 inactive，不改变 `/`；进度区分传输与服务端验证/安装；
+- Activate 发送精确 generation，并由服务端重新执行安全、摘要与 API 兼容检查；
 - Deactivate 回到 built-in；
-- 409 显示“没有可激活的兼容 bundle”及服务端原因；
-- 不显示 upload/dropzone，因为当前 API 没有上传；
-- 切换后解释 `/` 的选择变化，并始终提供 `/ui` 恢复地址。
+- 版本表显示 name、version、generation、可用性和 active 状态；活动版本不得删除；
+- 相同包、同名同版本不同摘要、版本数量已满或不兼容均以 409 的服务端原因为准；
+- ZIP 拒绝、空间不足和上传中断保留已选择文件，允许修正后重试；
+- 系统不自动清理旧版本；达到 32 个版本或空间余量不足时要求用户显式删除 inactive 版本；
+- 切换后解释 `/` 的选择变化，并始终提供 `/_ui/` 恢复地址。
 
 #### Power
 
@@ -680,7 +736,7 @@ Reboot 和 Power off 使用专用 ConfirmDialog，不再使用浏览器 `window.
 202 表示设备接受动作。之后进入 “Rebooting”/“Powering off” 全页状态，停止普通 mutation；重启可
 周期性探测 session 恢复，关机不承诺自动恢复。
 
-### 7.10 System Information `/ui/system/info` `[P · PLAN-052/043]`
+### 7.10 System Information `/_ui/system/info` `[P · PLAN-052/043]`
 
 只有聚合、版本化 API 可用后才显示。目标字段：machine id（默认部分遮挡）、board、kernel、系统镜像
 版本及 git stamp、build date、安装包 manifest、active RAUC slot、uptime。
@@ -691,13 +747,13 @@ Reboot 和 Power off 使用专用 ConfirmDialog，不再使用浏览器 `window.
 - 不把 `/api/v1/meta` 的 daemon/schema 当作完整系统版本；
 - release identity 必须来自 PLAN-043 定义的产物，不能由前端拼接猜测。
 
-### 7.11 Time `/ui/system/time` `[P · PLAN-044]`
+### 7.11 Time `/_ui/system/time` `[P · PLAN-044]`
 
 目标页面包含当前本地时间、UTC、时区、同步状态、NTP servers、last successful sync 和 source。
 保存时明确哪些值立即应用，哪些需要等待 timesyncd。草案要求系统持续校时，因此不设计“暂停 NTP”
 或 GUI 自己轮询修改系统时间。能力缺失时页面隐藏。
 
-### 7.12 Update `/ui/system/update` `[P · PLAN-047]`
+### 7.12 Update `/_ui/system/update` `[P · PLAN-047]`
 
 必须以完整后端状态机为前提：
 
@@ -711,19 +767,19 @@ idle -> checking -> downloading -> ready -> installing
 认证、maintenance window、slot 和 rollback 结果由后端提供。只存在 mosd bus seam 而没有 apid 产品 API
 时，UI 不得直接接 D-Bus 或显示半成品按钮。
 
-### 7.13 Storage `/ui/system/storage` `[P · PLAN-049]`
+### 7.13 Storage `/_ui/system/storage` `[P · PLAN-049]`
 
 只规划 operator 需要的状态：system/data/media tiers、容量、使用率、健康、只读/降级、阈值、数据生命周期
 说明。不得做通用 partition editor、任意 mount 或文件浏览器。清理/格式化等动作必须有独立 API、影响
 预览和不可逆确认。
 
-### 7.14 Diagnostics `/ui/system/diagnostics` `[P · PLAN-052]`
+### 7.14 Diagnostics `/_ui/system/diagnostics` `[P · PLAN-052]`
 
 页面以一次版本化、大小和时间均有界的诊断快照为数据源。内容包括 release/board、启动槽、reset cause、
 服务/协调器失败、存储、时间、thermal/watchdog 和 observed network。Support bundle 必须按已审核 schema
 脱敏并显示大小、包含范围和隐私说明。没有经过测试的脱敏边界前不得提供下载。
 
-### 7.15 Recovery `/ui/system/recovery` `[P · PLAN-048]`
+### 7.15 Recovery `/_ui/system/recovery` `[P · PLAN-048]`
 
 按风险从低到高排列：restart service（若未来有 typed action）、rollback、credential recovery、reset、wipe。
 每个动作都需要后端返回 eligibility、影响范围和 challenge；前端不能自行推断可恢复性。不可逆动作采用
@@ -882,27 +938,35 @@ feature 目录。不要把每个页面的专用 prop 不断塞进 Button/Card。
 
 ## 10. 视觉与响应式规范
 
-### 10.1 延续当前视觉语言
+### 10.1 Spectrum 2 与本地 token
 
-当前浅色基础 token：
+组件实现与视觉规范分层：React 控件只使用项目拥有的 shadcn `base-nova` primitives，交互底层只使用
+Base UI；Adobe Spectrum 2 是颜色层级、控件状态、focus、密度、motion 与可访问性的设计依据。不得在同一
+页面再引入 React Spectrum、Spectrum Web Components、旧版 Spectrum CSS 或另一套 primitive runtime。
+
+当前浅色 token：
 
 | Token | 值 | 用途 |
 |---|---|---|
-| background | `#f4f5f2` | 应用背景 |
-| surface | `#fbfcf9` | 卡片/面板 |
-| foreground | `#191c1f` | 主文本、深色 active nav |
-| muted | `#eceee9` | 次级表面 |
-| muted foreground | `#687078` | 次级文本 |
-| border | `#dfe2dc` | hairline |
-| accent | `#d8ff4f` | 品牌强调，不承担状态 |
-| success | `#237a4b` | 成功 |
-| warning | `#9a6415` | 风险/降级 |
-| danger | `#b7353d` | 失败/危险 |
+| background | `#f8f8f8` | Spectrum light 应用背景 |
+| surface / popover | `#ffffff` | 卡片、菜单、面板 |
+| foreground | `#292929` | 主文本 |
+| muted | `#f1f1f1` | 次级表面与 hover |
+| muted foreground | `#5c5c5c` | 次级文本 |
+| border / input | `#d5d5d5` / `#8a8a8a` | 分组边界与达到 3:1 的控件边界 |
+| accent / ring | `#0265dc` / `#1473e6` | 主动作、选择、键盘 focus |
+| accent subtle | `#e6f0ff` | 当前导航等低强调选择面 |
+| success | `#12805c` | 已证实成功 |
+| warning | `#7a5200` | 风险/降级 |
+| danger | `#c9252d` | 失败/危险动作 |
 
-深色 token 已通过 `prefers-color-scheme: dark` 定义，accent 保持一致。第一阶段继续跟随系统主题；手动
-主题选择属于产品偏好，只有引入持久化 preference 和三态 light/dark/system 后才显示。
+深色主题使用 `.dark` 的独立 Spectrum-aligned 角色，不通过 alpha 反转浅色值。`ThemeProvider` 支持
+`system`、`light`、`dark`，默认跟随系统，并以 `mos.ui.theme` 保存用户明确选择；system 模式才监听
+`prefers-color-scheme`。根元素 class、`color-scheme` 和 `theme-color` 必须同步。
 
-不要把 lime accent 用作“成功”；success/warning/danger 必须使用各自 token，并同时提供 icon/文本。
+原 mos lime `#d8ff4f` 只允许作非交互品牌标记，不承担动作、focus、选择或健康状态。success、warning、
+danger 必须使用各自 token，并同时提供 icon/文本。项目没有可再分发的 Adobe Clean，因此继续使用系统字体；
+图标继续使用组件配置中的 Lucide，不声称嵌入 Adobe 产品组件或字体。
 
 ### 10.2 尺寸和密度
 
@@ -954,20 +1018,28 @@ feature 目录。不要把每个页面的专用 prop 不断塞进 Button/Card。
 
 ### 12.1 目标
 
-交付目标是 English + 简体中文 ready。当前源码仍有硬编码英文，阶段 0 应引入 message catalog，随后
-新页面不得新增裸产品字符串。
+当前内置 UI 已交付 English + 简体中文。所有前端拥有的可见文字、accessible name、确认文本、日期与
+运行时长必须进入 message catalog；新页面不得新增裸产品字符串。
 
-建议目录：
+当前目录：
 
 ```text
-src/locales/
-├── en/common.json
-└── zh-CN/common.json
+src/i18n/
+├── i18n.ts                   # i18next 实例、异步初始化、持久化与 document 同步
+├── locale.ts                 # en/zh-CN 检测和归一化
+├── resources.ts              # English fallback 与 catalog shape
+├── zh-cn.ts                  # 与 English 同 shape 的简体中文 catalog
+├── load.ts                   # 静态 locale loader map；中文动态 import
+└── format.ts                 # 已知状态的本地化，未知值原样保留
 ```
 
-可以采用 `i18next` + `react-i18next`，但依赖引入仍需按 bundle 变化评审。默认语言优先用户明确选择，
-其次浏览器语言，最后 English；用户偏好可保存在 localStorage，因为它不是设备安全状态。设备级语言
-只有后端明确提供共享偏好后才同步。
+运行时采用 `i18next` + `react-i18next`。English 编译进入初始 entry 并始终作为 fallback；简体中文由静态
+动态 import 生成内容哈希 chunk，只在初始检测选择中文或用户切换语言时加载。初始语言为中文时，React 在
+catalog 加载完成后再 mount，避免首帧闪现英文；加载失败则保持可用的 English fallback。不得改为运行时
+locale JSON、远程 endpoint 或 CDN。English 与简体中文 key shape 由类型和测试保持一致。
+
+默认语言优先 `mos.ui.locale` 中的用户明确选择，其次浏览器语言，最后 English；所有中文浏览器变体归一为
+`zh-CN`。语言偏好是浏览器本地状态，只有后端明确提供共享偏好后才变成设备级设置。
 
 ### 12.2 文案规则
 
@@ -1065,9 +1137,12 @@ const networkKeys = {
 | `POST /api/v1/actions/transient-root-password` | 临时 root 密码 | S | 202 TaskAccepted；到重启失效 |
 | `POST /api/v1/actions/reboot` | Reboot | S | 202；随后会断开 |
 | `POST /api/v1/actions/poweroff` | Power off | S | 202；不承诺自动恢复 |
-| `GET /api/v1/ui` | UI mode/retained bundle | S | builtIn/custom + unavailable reason |
-| `PUT /api/v1/ui/active` | Activate retained custom UI | S | 200；没有可用 bundle 时 409 |
-| `DELETE /api/v1/ui/active` | Return to built-in UI | S | 200；`/ui` 始终可用 |
+| `GET /api/v1/ui` | UI mode/紧凑候选摘要 | S | builtIn/custom + unavailable reason |
+| `GET /api/v1/ui/bundles` | 全部保留 UI 版本 | S | generation、清单、摘要、兼容/active 状态 |
+| `POST /api/v1/ui/bundles` | 上传并安装 UI ZIP | S | raw `application/zip`；201；不自动激活 |
+| `PUT /api/v1/ui/active` | 精确激活自定义 UI | S | JSON `{ "generation": N }`；重新校验后 200 |
+| `DELETE /api/v1/ui/active` | Return to built-in UI | S | 200；`/_ui/` 始终可用 |
+| `DELETE /api/v1/ui/bundles/{generation}` | 删除 inactive 版本 | S | 204；active 返回 409 |
 
 泛型 settings 页面是明确禁止项。当前 generic PUT 只写 hostname、SSH enabled、container enabled、
 MQTT enabled；Network/Wi-Fi/SSH key/token/UI/power 等必须走各自 typed route。
@@ -1129,7 +1204,7 @@ success、422 field path、409 conflict、503/504 unknown result、cache invalid
 | Route integration | session gate、route params、query invalidation、API fixture |
 | Browser smoke | setup/login、service toggle、token one-time、logout、navigation、responsive |
 | Backend contract | OpenAPI 与 binary 输出一致；UI fixture 可被当前 schema 解析 |
-| Asset delivery | `/ui` fallback、CSP、MIME、404、固定三文件、committed dist byte match |
+| Asset delivery | `/_ui` VFS 全树、路由域隔离、fallback、CSP、MIME、缓存、敌意路径 404、committed dist byte match |
 
 测试数据不得使用真实 token、Wi-Fi 或设备密钥。错误 fixture 要覆盖 `code/message/source/path`，不要只 mock
 HTTP status。
@@ -1224,7 +1299,7 @@ PLAN-046 的 onboarding 可能重构 Setup；本地显示需要板卡 capability
 - 不把 console shell 的 inert setting 暴露给用户；
 - 不持久化浏览器 CSRF、一次性 token 或设备秘密；
 - 不依赖 CDN、remote font、第三方运行时或在线图标；
-- 不开启 Vite code splitting，除非后端 asset embedding 同时变化；
+- 不关闭现有 Vite 路由/locale code splitting 或恢复固定文件名；不得让懒加载资源脱离内置 VFS；
 - 不用 toast 作为一次性秘密、高风险动作或唯一错误的唯一载体；
 - 不用接口配置成功、task succeeded 或绿色图标冒充端到端连通性。
 
@@ -1262,7 +1337,8 @@ UI 开发在提交前逐项确认：
 - [ ] 320 px 和 200% zoom 不丢失任务；
 - [ ] English/zh-CN 文案和 accessible name 完整；
 - [ ] 不含外部 runtime dependency，CSP 下可运行；
-- [ ] 固定三文件构建契约仍成立；
+- [ ] `dist` 完整树可递归嵌入，`index.html` 及其引用资源可访问，哈希资源缓存规则正确；
+- [ ] `/`、`/_ui`、`/api` 的资源、miss、SPA fallback 和敌意路径不会跨所有权域；
 - [ ] lint/typecheck/test/coverage/`run.sh` 通过；
 - [ ] `dist` 与源代码同步，bundle delta 已记录；
 - [ ] 本文、OpenAPI 和实现没有互相冲突。
@@ -1274,6 +1350,7 @@ UI 开发在提交前逐项确认：
 - 当前 SPA：`pkgs/mosd/apid/ui/`
 - HTTP 契约：`pkgs/mosd/apid/openapi.json`
 - 内置资产服务与 CSP：`pkgs/mosd/apid/src/assets/builtin.rs`
+- 内置资产清单生成：`pkgs/mosd/apid/build.rs`
 - API 与 replaceable UI 设计：`docs/design/api.md`
 - 管理面和 settings/reconciler：`docs/design/mosd.md`
 - 当前 dashboard 设计记录：`docs/design/dashboard.md`
@@ -1282,7 +1359,7 @@ UI 开发在提交前逐项确认：
 - 外部比较研究：`docs/research/venus-gui-v2.md`
 - Applications 权威设计：`docs/design/applications.md`
 - 面向设计师的产品/原型指南：`docs/zh/design/built-in-ui-design.md`
-- 未完成路线图：`docs/plan/PLAN-042.md`～`docs/plan/PLAN-056.md`
+- 未完成路线图：`docs/plan/` 目录下的未完成计划
 
 当这些产物变化时，优先更新实现和 OpenAPI，再同步本指南的成熟度、页面状态与 API 表；不要只改
 高保真设计稿或脱离仓库的临时说明。

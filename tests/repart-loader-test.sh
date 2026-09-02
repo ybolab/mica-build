@@ -21,9 +21,9 @@
 
 # A second section then runs the repart definitions the mos image actually
 # ships, unpacked out of the packed root, and asserts that DATA is bigger
-# afterwards -- the growth /srv depends on. Its negative direction removes
+# afterwards -- the growth /mnt/data depends on. Its negative direction removes
 # SizeMinBytes=0 from the uenv placeholders, reconstructing the state in which
-# repart refused the whole run and /srv silently never grew.
+# repart refused the whole run and /mnt/data silently never grew.
 #
 #   bash tests/repart-loader-test.sh [image]...
 #
@@ -126,7 +126,7 @@ loader_magic_of() {
 # definition's minimum size, and that minimum defaults to 10 MiB, while uenv-a
 # and uenv-b are 64 KiB. Omitting it makes repart abort the whole run with
 # "Can't fit requested partitions into available free space" before touching
-# anything, so /srv never grows. The growth check further down runs the shipped
+# anything, so /mnt/data never grows. The growth check further down runs the shipped
 # definitions rather than these synthesised ones.
 mkdefs() {
     local img="$1" dir="$2" n=0 i part_count type
@@ -272,7 +272,7 @@ done
 # and uenv-b are 64 KiB. repart therefore concluded it had to create two new
 # partitions, could not place them, and aborted with
 #     Can't fit requested partitions into available free space (6.7G), refusing.
-# before touching anything. /srv never grew on a real device, and a refusal
+# before touching anything. /mnt/data never grew on a real device, and a refusal
 # looks exactly like a clean exit.
 
 # So this section runs the definitions the image ships, unpacked out of the
@@ -370,7 +370,7 @@ else
         fi
         if [ -n "${data_after}" ] && [ -n "${data_before}" ] &&
             [ "${data_after}" -gt "${data_before}" ] 2>/dev/null; then
-            pass "DATA actually GREW: ${data_before} -> ${data_after} sectors ($((data_before / 2048)) MiB -> $((data_after / 2048)) MiB). /srv scales with the medium"
+            pass "DATA actually GREW: ${data_before} -> ${data_after} sectors ($((data_before / 2048)) MiB -> $((data_after / 2048)) MiB). /mnt/data scales with the medium"
         else
             fail "DATA did NOT grow: ${data_before} -> ${data_after:-unreadable} sectors. A repart run that REFUSES looks exactly like a clean exit, so this is the assertion that distinguishes them"
         fi

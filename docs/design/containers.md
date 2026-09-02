@@ -43,7 +43,7 @@ so container enablement has no MQTT read or write path. `mqtt.enabled` is kept
 on the same management side for the same reason: a system lifecycle switch is
 not application data.
 
-Turn it on from the Services page in the built-in SPA at `/ui`, or through the
+Turn it on from the Services page in the built-in SPA at `/_ui/`, or through the
 same API route. Automation uses a bearer token; a signed-in browser session is
 also accepted and its mutations carry the session's CSRF header:
 
@@ -186,7 +186,7 @@ VolumeName=pgdata
 ```
 
 A named volume lives under the graph root, which on this device is
-`/srv/containers/storage` — the DATA partition.
+`/mos/containers/storage` — the MOS-owned namespace on the DATA partition.
 
 Two consequences worth stating plainly:
 

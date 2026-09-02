@@ -1,7 +1,7 @@
 # mos 内置 UI 设计指南
 
-> 文档版本：1.0
-> 基线日期：2026-09-01
+> 文档版本：1.1
+> 基线日期：2026-09-02
 > 读者：产品设计师、UI/UX 设计师、交互原型设计师、产品负责人
 > 交付形式：单一 Markdown 设计源
 > 范围：远程浏览器中的设备管理界面，以及未来复用同一界面的本地触屏/kiosk
@@ -97,7 +97,7 @@ Applications 管理。
 | Services | Container runtime、MQTT 全局开关与观测 | L |
 | Applications | 清单、精选目录、安装/更新/回滚/移除 | P |
 | Access | API token、SSH key/开关、临时 root 密码 | L |
-| System | hostname、内置/自定义 UI、重启、关机 | L |
+| System | hostname、UI ZIP 上传/多版本选择、内置恢复、重启、关机 | L |
 | System | 版本/板卡/slot/软件清单 | P |
 | System | timezone、NTP 与同步状态 | P |
 | System | 签名系统更新、维护窗口、验证与回滚 | P |
@@ -468,7 +468,12 @@ Access 按从日常到高权限排列，并持续说明每种凭据能做什么�
 ### 12.1 General `[L]`
 
 - Hostname：Saved、Applying、Applied/Failed；
-- UI selection：built-in 与已保留且验证通过的 custom UI，始终显示恢复入口；当前没有上传就不画上传；
+- UI selection：首页显示 built-in/custom 摘要并始终显示 `/_ui/` 恢复入口；“管理 UI 版本”进入专页；
+- UI versions：上传一个 `.mos-ui.zip`、观察传输与验证阶段、查看全部保留版本、精确 Activate、Return to
+  built-in、删除 inactive 版本；上传成功不自动激活，活动版本不能删除，系统不自动淘汰旧版本；
+- 版本行至少表现产品名、版本、generation、兼容/验证结论和 active 状态。拒绝原因区分格式错误、重复包、
+  同名版本冲突、不兼容、版本上限、空间不足和网络中断；可恢复错误后保留已选择文件；
+- 自定义 UI 与设备管理 API 同源运行，上传区域必须解释其管理员权限影响，并要求只安装可信包；
 - Power：Reboot、Power off 使用专用确认，显示 hostname、活动任务、会话将断开和重新上电要求。
 
 ### 12.2 Information `[P]`
@@ -637,23 +642,27 @@ service unavailable、result unknown。Pending 时防重复；result unknown 时
 
 ## 16. 视觉方向
 
-延续当前 mos 的安静、工具型视觉语言，不做品牌重塑。
+延续 mos 安静、工具型的产品气质，以 Adobe Spectrum 2 作为视觉、状态、密度、动效和无障碍设计系统。
+这是设计语言的一致化，不是复制 Adobe 产品外壳：mos 的信息结构、品牌名称和设备语义保持独立。
 
 ### 16.1 基础色
 
 | 角色 | 参考值 | 用法 |
 |---|---|---|
-| Canvas | `#f4f5f2` | 页面背景 |
-| Surface | `#fbfcf9` | 主工作区、dialog、列表表面 |
-| Text | `#191c1f` | 主要文字 |
-| Muted | `#687078` | 次要说明、时间 |
-| Border | `#dfe2dc` | 分组与边界 |
-| Accent | `#d8ff4f` | 当前导航、主动作；不承担成功语义 |
-| Success | `#237a4b` | 有证据的成功/健康 |
-| Warning | `#9a6415` | 需注意/降级 |
-| Danger | `#b7353d` | 失败与破坏性动作 |
+| Canvas | `#f8f8f8` | 浅色页面背景 |
+| Surface | `#ffffff` | 主工作区、dialog、列表表面 |
+| Text | `#292929` | 主要文字 |
+| Muted | `#5c5c5c` | 次要说明、时间 |
+| Border | `#d5d5d5` | 分组与边界 |
+| Action blue | `#0265dc` | 主动作、选择和当前导航 |
+| Focus blue | `#1473e6` | 键盘 focus 指示，不与状态混用 |
+| Success | `#12805c` | 有证据的成功/健康 |
+| Warning | `#7a5200` | 需注意/降级 |
+| Danger | `#c9252d` | 失败与破坏性动作 |
+| mos marker | `#d8ff4f` | 仅作少量非交互品牌标记 |
 
-状态不能只靠颜色；始终配文字、图标或结构。卡片只在确有分组/交互意义时使用，避免每个字段一个圆角容器。
+浅色和深色不是简单反相，必须分别检查背景层、文字层级、边界、focus、hover、disabled 和语义状态。状态不能
+只靠颜色；始终配文字、图标或结构。卡片只在确有分组/交互意义时使用，避免每个字段一个圆角容器。
 
 ### 16.2 字体、密度与层级
 
@@ -701,6 +710,11 @@ Telemetry 数据”，避免只有 “OK/确定”。
 
 英文文案使用 sentence case；中文不用多余空格。时间、数值和复数使用 locale；容量统一使用 IEC（MiB/GiB）。
 秘密文案应直接：“此 token 仅显示一次，请立即保存。”
+
+设计稿同时覆盖 English / 简体中文和 Light / Dark。全局偏好提供“语言”和“外观”两个选择；外观包含
+跟随系统、浅色、深色，且在登录/首次设置和登录后的 shell 中始终可达。语言切换不能依赖读懂当前语言；
+选项名称分别自称 “English”“简体中文”。设计验收至少组合检查：英文浅色、英文深色、中文浅色、中文深色，
+以及系统主题在运行期间变化的状态。
 
 ## 19. 原型工作要求
 
