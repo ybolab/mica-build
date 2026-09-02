@@ -3,7 +3,8 @@
 #
 # Called from rootfs/compose/10-compose.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: MOS_ARCH, MOS_BOARD, MOS_PROFILE,
-# MOS_RELEASE_VERSION, RAUC_VERSION, SOURCE_DATE_EPOCH.
+# MOS_RELEASE_VERSION, MOS_RELEASE_COMMIT_DATE, RAUC_VERSION,
+# SOURCE_DATE_EPOCH.
 #
 # Bind mounts this reads: /mos-debs (the whole _out/debs tree) and /mos-compose
 # (the host-staged packages.txt and keyring.pem).
@@ -17,7 +18,7 @@ set -eu
 
 fail() { echo "error: $*" >&2; exit 1; }
 
-for v in MOS_ARCH MOS_BOARD MOS_PROFILE MOS_RELEASE_VERSION SOURCE_DATE_EPOCH; do
+for v in MOS_ARCH MOS_BOARD MOS_PROFILE MOS_RELEASE_VERSION MOS_RELEASE_COMMIT_DATE SOURCE_DATE_EPOCH; do
     eval "value=\${${v}:-}"
     [ -n "${value}" ] ||
         fail "${v} is empty or unset in this build step. rootfs/compose/10-compose.Dockerfile declares it and rootfs/build.sh passes it; an unset one here is not a failure anyone sees -- SOURCE_DATE_EPOCH in particular would leave the wall clock and this host's inode numbers inside the initrd that ships in the verity-covered root"
@@ -197,6 +198,15 @@ install -D -m 0644 /mos-compose/keyring.pem /etc/rauc/keyring.pem
 # the finalizer's /usr/share/mos/manifest.tsv, taken from the same dpkg
 # database a few steps later, carries that version on every first-party row.
 #
+# MOS_RELEASE_COMMIT_DATE arrives the same way, and it is what mosd reports as
+# `system.commitDate`. It is the date of the commit INSIDE the version above --
+# build.sh reads it out of the stamp it has already checked the pool against,
+# so the two cannot come to name different commits -- and it is the one date in
+# this root that a rebuild reproduces AND that says when the source was
+# written. Every file time here is SOURCE_DATE_EPOCH, which is a constant, so
+# without this line the only date an image could offer is one that is identical
+# in every image ever built.
+#
 # The version, checked against a package that actually landed rather than
 # taken on trust. build.sh's pool-stamp refusal is upstream of this and covers
 # the tree-versus-pool case; what this covers is the seam between them -- an
@@ -223,9 +233,10 @@ install -d -m 0755 /usr/share/mos
     printf 'BOARD=%s\n' "${MOS_BOARD}"
     printf 'PROFILE=%s\n' "${MOS_PROFILE}"
     printf 'VERSION=%s\n' "${MOS_RELEASE_VERSION}"
+    printf 'COMMIT_DATE=%s\n' "${MOS_RELEASE_COMMIT_DATE}"
 } >/usr/share/mos/release-identity.env
 chmod 0644 /usr/share/mos/release-identity.env
-echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION} (the version ${identity_version_owner} carries)"
+echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION}, source committed ${MOS_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)"
 
 # The build report's RAUC line. build/src/bundle.ts reads it back out of
 # _out/<board>/rootfs-report.txt and refuses to build a bundle with a rauc

@@ -94,3 +94,23 @@ and SKU-specific cellular support unless separately selected.
 | Observed network distinct from desired settings | `GET /api/v1/network/status`, diagnostics design section 3, and the `/_ui/network-status` route in `network-status.tsx`; `shows live evidence separately from desired network settings` and `names unavailable top-level evidence without assuming lists exist` in `-network-status.test.tsx`; `matches route boundaries instead of similarly prefixed pages` in `src/components/app-shell.test.ts`. |
 | Board telemetry adapters | `GET /api/v1/system/telemetry` and the thermal/watchdog/reset adapter and absence contract in diagnostics design section 4. Fixture coverage validates parsing and absence semantics. Physical-board validation of reset reason, temperature, watchdog and radio fields is hardware-dependent, **not done**, and escalated by the coordinating workstream. |
 | Operational documentation | Collection, privacy/retention and escalation procedures in diagnostics design sections 10.1-10.3, followed by symptom-to-evidence-to-remediation trees for no network, wrong time, DATA full, failed update/slot rollback and unexpected reboot in section 10.4. Assurance-level handling is sourced from the linked security model and is not redefined. |
+
+### Correction (2026-09-02): the reported date
+
+The system-information contract shipped with `system.buildDate`, derived from
+the mtime of `/usr/share/mos/manifest.tsv`. Every file time in a composed root
+is pinned to `SOURCE_DATE_EPOCH`, which `build/src/geometry.ts` fixes to a
+constant so two builds of one tree are byte-identical -- so that field reported
+2020-01-01 on every mos image ever built, and a cx3576 measured today reported
+exactly that.
+
+The date is now the commit date of the commit the image's `+git` stamp names:
+`rootfs/build.sh` reads the commit out of the stamp it has already checked the
+pool against, and `rootfs/compose/compose-install.sh` records it as
+`COMMIT_DATE` in `/usr/share/mos/release-identity.env`. It is truthful and
+reproducible, which a wall clock could not be. The two fields are renamed to
+what they are: `system.commitDate` (the source's date, absent with a reason
+when the identity states none, and stating a `.dirty` stamp in its detail) and
+`system.fileEpoch` (the pinned epoch every file in the image carries, reported
+as that and not as a build date). Diagnostics design section 2;
+`verify`'s `packed-release-identity` holds an image to the new key.
