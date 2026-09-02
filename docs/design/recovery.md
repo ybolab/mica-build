@@ -229,14 +229,30 @@ everything below it destroys something that was on the device.**
   survive the switch; a slot that cannot boot at all (the bootloader already
   handled that, §6.1); a lost credential.
 - *Mechanism, and no second state machine:* the vocabulary is RAUC's own and
-  already exists — `POST /api/v1/update/mark` with `good`/`bad` on
-  `booted`/`other`, validated by `validate_mark` in
-  `pkgs/mosd/mosd/src/rauc.rs`, which deliberately refuses `active` and
-  concrete slot names (`docs/design/updates.md` §5.2). What is **[proposed]** is
-  the *guard*: an unverified slot must not be markable `good`, the operator must
-  see `slots`, `booted_slot`, `primary` and `pending_not_confirmed` in the same
-  response that offers the action, and the reboot that follows goes through the
-  safe-to-reboot gate (`docs/design/updates.md` §4) like any other.
+  already exists — `good`/`bad` on `booted`/`other`, validated by
+  `validate_mark` in `pkgs/mosd/mosd/src/rauc.rs`, which deliberately refuses
+  `active` and concrete slot names (`docs/design/updates.md` §5.2).
+- *What ships:* the guard, as `rollback_eligibility` in
+  `pkgs/mosd/mosd/src/rauc.rs` and `POST /api/v1/update/rollback` in
+  `pkgs/mosd/apid/src/update_api.rs`. The action emits one mark, `bad` on the
+  **booted** slot, and can therefore never mark the target `good` — an
+  invariant with a test over the whole two-slot input space, not a review
+  note. It refuses, 409 and a named reason each, when there is no alternate
+  slot, when the alternate is the booted slot, when the alternate was never
+  written or is marked bad, and when the booted slot is itself
+  pending-not-confirmed. The verdict — `target`, `permitted`, `reason` — rides
+  in the same `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary`
+  and `pending_not_confirmed`, so the state and the offer cannot disagree.
+- *What does not ship, which is why this is still **[partial]**:* the reboot.
+  The route changes the boot order and stops; realising it is a second,
+  explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate
+  (`docs/design/updates.md` §4), and nothing sequences the two. Nor can the
+  guard see the *precondition* above in full: "booted successfully before" is
+  the confirmed/pending distinction, and RAUC's `boot-status` reads the U-Boot
+  attempt counter only as exhausted-or-not (`pkgs/mosd/mosd/src/rauc.rs`
+  states that limit). The guard approximates it with "written, not condemned,
+  and not the slot we are mid-confirmation on". That the bootloader then
+  actually falls back is bench evidence, §6.1's, not a claim made here.
 
 ---
 
