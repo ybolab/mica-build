@@ -24,6 +24,7 @@
   - `build-harness.md` — how this repository's checks are run: the pinned bun container, the Rust gate's container and PATH, scratch that is not `/tmp`, arm64 build-vs-execute, and the docs gates
   - `build.md` — the build guide: what a board build produces, the x64 and cx3576 sequences, which cx3576 steps cross-compile, emulate inside buildkit or need host binfmt, and how to read the build's refusals
   - `time.md` — RTC, saved clock floor, NTP synchronization and timezone management
+  - `diagnostics.md` — diagnostics: the system-information surface, observed network state, board telemetry, and the bounded redacted support snapshot
 - `user/` — user documentation: the customer journey from download to support
   - `doc-contract.md` — the contract behind this set: audience, page ownership, truth-status taxonomy, evidence rules
   - `quickstart.md` — the shortest honest path to a running mos system
