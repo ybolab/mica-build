@@ -479,6 +479,13 @@ control of the device (`access.md` §7), so a document written there with any
 card reader is the most authoritative one available and a stick left in a
 socket cannot displace it.
 
+**A transport-level failure is a journal entry, not a status field.** §4.1.8
+reports what mosd did with a document it was given; a medium that would not
+mount, or a filesystem type the kernel does not have, never becomes a document,
+so there is nothing for mosd to record. The unit says which source it staged,
+or that it staged none, and `journalctl -u mos-provisioning-import` is where an
+operator whose stick did nothing looks first.
+
 **The transport references no networking API at all.** Neither does
 `provisioning_doc.rs`, whose entire import list is `std::collections`,
 `std::fmt`, `std::fs`, `std::path`, `anyhow`, `hex`, `ring::digest`, `toml`,
