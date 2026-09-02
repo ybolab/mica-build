@@ -516,6 +516,15 @@ that password to the operator (M5's own known gap). The path was already
 unusable. This campaign makes it **honestly** unusable rather than closing a
 working door.
 
+**The designed path back in, and it is not shipped.** `docs/design/recovery.md`
+section 5 designs one: under the physical-presence contract of that document's
+section 4, a recovery flow **mints a new management credential and returns it
+once**, never discloses, decrypts or recovers the previous secret, invalidates
+that secret at the same commit, and audits every attempt. It is credential
+**rotation**, not disclosure, and it is not a permanent shell. It is
+**[proposed]** — nothing in 9.1 changes until it ships, and 9.1 remains the
+shipped truth.
+
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
 The mos image is a **full-disk image carrying all eleven partitions**, and

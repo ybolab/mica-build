@@ -1,8 +1,8 @@
 # PLAN-046 Deliver install, onboarding and provisioning
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-282](../task/RFCT-282.md)
 
 ## Context

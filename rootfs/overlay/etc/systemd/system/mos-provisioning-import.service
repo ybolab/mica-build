@@ -1,0 +1,25 @@
+[Unit]
+Description=Stage an offline provisioning document from the boot medium or removable media
+Documentation=file:/usr/lib/mos/mos-provisioning-import
+# BEFORE mosd, which is what reads the staging tree: mosd applies a document
+# between loading the settings store and its first reconcile, so a document
+# staged after it started would not be seen until the next boot.
+#
+# AFTER local-fs.target, which is when udev has populated
+# /dev/disk/by-partlabel. A removable device therefore has to be attached at
+# power-on; a stick pushed in later is a next-boot document, deliberately —
+# there is no udev rule here that would let inserting media reconfigure a
+# running appliance.
+After=local-fs.target
+Before=mosd.service
+
+[Service]
+Type=oneshot
+# The mounts must survive the unit exiting: mosd reads them, and ExecStop
+# releases them at shutdown.
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-provisioning-import
+ExecStop=/usr/lib/mos/mos-provisioning-import --release
+
+[Install]
+WantedBy=multi-user.target
