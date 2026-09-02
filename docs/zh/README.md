@@ -70,7 +70,7 @@
 | `../user/doc-contract.md` | 1ba62bb2 | current |
 | `../user/download.md` | db66fc02 | current |
 | `../user/first-run.md` | 1ba62bb2 | current |
-| `../user/install.md` | 1ba62bb2 | current |
+| `../user/install.md` | 20ffb7e6 | current |
 | `../user/manufacturing.md` | 1ba62bb2 | current |
 | `../user/quickstart.md` | db66fc02 | current |
 | `../user/recovery.md` | 1ba62bb2 | current |
