@@ -41,6 +41,21 @@ Compromise of either chain alone is contained by the other only if the keys
 are actually separate — separate machines, separate custodians where staffing
 allows, and nothing below ever merges them.
 
+**Independence, stated as facts about files rather than intent.** The two
+domains share no key material and no single file whose compromise breaks
+both. The RAUC domain's material is the repository-root `ca/` directory (RSA
+X.509, PEM: `ca.key.pem`, `ca.cert.pem`, `signer.key.pem`,
+`signer.cert.pem`) and nothing else reads or writes it but the RAUC build
+surfaces (`pkgs/rauc/gen-dev-keys.sh`, `build/src/bundle.ts`,
+`rootfs/build.sh`). The TUF domain's material is a `<role>.pk8` directory
+(ed25519, raw PKCS#8 — `pkgs/rauc-sign/.devkeys/` in development, the §1
+ceremony media in production) and nothing reads it but `rauc-sign`. Either
+directory can be wiped and re-provisioned without touching the other; both
+are gitignored. `tests/trust-domain-hygiene-test.sh` re-proves all of this
+on every run — no tracked key material, both directories ignored, neither
+domain's tooling naming the other's files — so the separation is enforced,
+not remembered.
+
 ## 1. The TUF root ceremony — **[runbook]**
 
 ### 1.1 Where it runs
@@ -280,16 +295,70 @@ offline across several rotations walks the chain one version at a time from
 whatever anchor it holds; a gap in that sequence is where its walk stops, and
 it stops permanently.
 
-**Still not implemented: replacing a compromised *online* key.**
-`rotate-root` carries the `targets`, `snapshot` and `timestamp` key bindings
-forward unchanged, and no command binds a *different* online key into a new
-root version. So the consequence §1.5's host hygiene is holding off is
-unchanged: a compromised online key still ends the repository's lineage, and
-the recovery is still a fresh ceremony (§1.1–1.5) with a new trust anchor
-distributed out of band and devices re-anchored by whatever mechanism ships
-anchors to devices — which does not exist either. Rotating the *root* key no
-longer requires that, which is the point of the cross-sign; revoking an online
-key still does. **[not implemented]**, and narrower than it was.
+### 1.7 Replacing a compromised *online* key — **[runbook]**
+
+`rotate-online` is the recovery for a compromised (or retiring) release host:
+it publishes the next root version with **fresh** `targets`, `snapshot` and
+`timestamp` keys bound, revoking the outgoing ones. The trust anchor does not
+change hands — the root role's binding is untouched — so nothing is
+distributed to devices and no §1.6 rotation is implied. What §1.5's host
+hygiene is holding off is therefore no longer the end of the repository's
+lineage: an online-key compromise is now a ceremony, not a fresh repository.
+
+Same room as §1.1, same sealed `root.pk8`, same complete `metadata/` carried
+in on media. Blank media for the incoming online keys.
+
+**Step 1: generate the incoming online keys.**
+
+```sh
+rauc-sign gen-dev-keys --keys-dir /ceremony/new-online \
+  --role targets --role snapshot --role timestamp
+```
+
+Three roles and not four: the root key is not being replaced, and a spare
+copy of it on media bound for the release host would be a custody violation,
+not a convenience.
+
+**Step 2: publish.**
+
+```sh
+rauc-sign rotate-online \
+  --repo /ceremony/tuf \
+  --keys-dir /ceremony/keys \
+  --new-keys-dir /ceremony/new-online \
+  --root-expires <RFC 3339, one year out> \
+  --targets-expires ... --snapshot-expires ... --timestamp-expires ...
+```
+
+Unlike the §1.6 ceremonies this one cannot stop at the root document: the
+repository's `targets`, `snapshot` and `timestamp` are signed by the very
+keys being revoked, and a repository left that way would be refused whole by
+every client that walks to the new root. So the command re-signs the three
+online roles with the incoming keys in the same run — target entries carried
+forward unchanged, every online version bumped — which is why it takes the
+three online expirations that `sign` normally takes. The §1.6 refusals still
+hold: an incumbent key offered as "new" is refused naming the role, a
+published `<n>.root.json` is never rewritten, and both root-threshold checks
+run before anything is written.
+
+**Step 3: the media, and the minutes.** Per §1.5, in the custody record: the
+root version published and its sha256; the incoming online keys carried to
+the release host on media that is wiped afterwards; the **outgoing** online
+keys destroyed — they are revoked, and if this ceremony is a response to
+compromise, the incident recorded. The anchor is unchanged, so there is
+nothing to distribute.
+
+**Step 4: prove it, from a held anchor.**
+
+```sh
+rauc-sign verify --repo <repo> --root <out-of-band anchor copy>
+```
+
+Must print `OK root v<n> ...`. A device pinned to any earlier anchor walks to
+the new root and accepts only metadata the incoming keys sign;
+`pkgs/rauc-sign/tests/online_rotation.rs` proves both directions — the walk
+succeeds, and metadata the revoked keys sign afterwards is refused by signer
+and client alike.
 
 ## 2. The RAUC production CA — **[runbook]** for the ceremony, with a named gap
 
@@ -307,10 +376,11 @@ umask 0077
 # The CA. RSA (deterministic PKCS#1 v1.5 signatures, same reasoning the dev
 # script records); 4096 for a key that must outlive every device it signs
 # for. CA:TRUE pathlen:0 -- it signs signer certificates and nothing below
-# them. Validity 15 years: the keyring baked into a fielded device is
-# realistically never replaced without the (missing) provisioning path in
-# 2.3, so the CA must outlive the fleet, and an expired baked keyring bricks
-# updates on every device at once.
+# them. Validity 15 years: the 2.4 rollover can replace a fielded keyring,
+# but only on devices that take the overlap update -- a device that misses
+# the window keeps this CA until reflash or the (missing) 2.3 provisioning
+# path, so the CA must outlive the fleet, and an expired baked keyring
+# bricks updates on every device at once.
 openssl req -x509 -newkey rsa:4096 -keyout ca.key.pem -out ca.cert.pem \
     -days 5475 -nodes -sha256 \
     -subj "/O=<the shipping organisation>/CN=mos release CA" \
@@ -358,11 +428,13 @@ old signer key. No device is touched; the next bundle simply chains through
 the new signer. A *compromised* signer is revoked the hard way — RAUC's
 keyring model as shipped here has no CRL distribution to devices — by
 reissuing and then out-waiting the exposure: any bundle the attacker signed
-verifies until the CA itself is replaced, which is the §2.3 gap again. Record
-the incident; ship the fleet-wide mitigation through the update itself if one
-is warranted.
+verifies until the CA itself is replaced. Replacing the CA is the §2.4
+rollover; read its compromise caveat before treating it as the remedy, because
+a rollover shipped through the update channel is signed by the very chain
+being retired. Record the incident; ship the fleet-wide mitigation through
+the update itself if one is warranted.
 
-### 2.3 How the keyring reaches devices — at build time; **rotation** is the remaining gap
+### 2.3 How the keyring reaches devices — at build time; the update channel carries rotation
 
 The keyring reaches a device **in the image**, from one place. The facts:
 
@@ -385,19 +457,25 @@ The keyring reaches a device **in the image**, from one place. The facts:
   `verify/src/checks-root.ts` still fails an image carrying a baked-in
   keyring unless `MOS_EXPECT_DEV_KEYRING=1` names it a bench image, and
   `verify/src/checks-root.test.ts` proves both directions of that gate.
-- **The gap that remains is rotation, not provisioning.** `/etc` is a read-only
-  squashfs, so replacing the keyring on a deployed device means shipping a new
-  image or a channel that survives an A/B update — a STATE-backed seed plus bind
-  mount, the way `/etc/ssh` is handled. No such channel exists yet, and §1.4's
-  reissue horizon depends on it.
+- **Rotation rides the update channel, with a bounded residue.** `/etc` is a
+  read-only squashfs replaced whole by every A/B update, so the keyring cannot
+  be edited in place — but it CAN be replaced by the update itself, and the
+  keyring is a CA *file*, not a single certificate, so old and new can coexist
+  in it during a rollover. §2.4 is that procedure. What it cannot cover —
+  devices that miss the overlap window, and rotation away from a CA that is
+  already compromised — still needs a trust channel outside the image (the
+  STATE-backed seed plus bind mount, the way `/etc/ssh` is handled), which
+  does not exist yet.
 
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
-enrolment) rather than baking it into the signed root — is the trust-anchor
-provisioning story designed and **completed 2026-08-23** — together with the TUF root anchor from §1.5,
-which has the same shape and should ship through the same channel. Until
-provisioning ships, this runbook produces a CA whose keyring has no road to a
-production device, and says so rather than gesturing at one.
+enrolment) rather than relying on the image to carry it — is the trust-anchor
+provisioning story, designed together with the TUF root anchor from §1.5,
+which has the same shape and should ship through the same channel. Until that
+channel ships, the image IS the road (§2.5), the update channel carries
+rotation (§2.4), and the two cases the image cannot carry — missed overlap
+windows and CA compromise — are named where they arise instead of gestured
+past.
 
 What is pinned down today, so the eventual decision has a fixed place to
 land:
@@ -417,17 +495,105 @@ land:
   production-signed bundle on hardware — is observable only on a booted
   device; that last step stays documented, not tested.
 - **How it survives updates.** `/etc` is the read-only dm-verity squashfs,
-  replaced whole by every A/B update, so the keyring cannot simply be
-  written in place and must not be baked in (§4). A provisioned keyring
-  must live on STATE or META and reach `/etc/rauc/keyring.pem` the way
-  `/etc/ssh` reaches its path — a seed plus bind mount
-  (`rootfs/overlay/usr/lib/mos/mos-seed-state`). No such bind exists
-  yet, deliberately: creating one is part of choosing the channel.
+  replaced whole by every A/B update, so the baked keyring is whatever the
+  installed image's build staged from `ca/` — which is what makes §2.4's
+  overlap update work, and what makes it the only writer. A *provisioned*
+  keyring — the future channel — would instead live on STATE or META and
+  reach `/etc/rauc/keyring.pem` the way `/etc/ssh` reaches its path — a
+  seed plus bind mount (`rootfs/overlay/usr/lib/mos/mos-seed-state`). No
+  such bind exists yet, deliberately: creating one is part of choosing the
+  channel.
 - **The open decision, stated as the user's.** Which channel delivers the
   file (STATE/META provisioning file, factory step, first-boot enrolment —
   the same candidates as the TUF root anchor above), and who holds,
   rotates and revokes the signing CA, are product decisions about key
   custody that this repository records and does not make.
+
+### 2.4 CA rollover: old and new coexist in one keyring — **[runbook]**, with a compromise caveat
+
+The keyring RAUC verifies against is an OpenSSL CA file: concatenated PEM
+certificates, every one of them trusted. That is the whole rollover
+mechanism, and `tests/rauc-trust-negative-test.sh` proves its three
+properties host-side — a keyring holding the outgoing and the incoming CA
+accepts bundles chained to either, and still refuses a third party.
+
+The procedure, one phase per fleet-visible state:
+
+1. **Mint the incoming CA** — the §2.1 ceremony, again, on the offline
+   machine. The outgoing CA's media stay sealed; nothing here reads its key.
+2. **The overlap update.** On the build host, `ca/ca.cert.pem` becomes the
+   concatenation — outgoing certificate first, incoming appended
+   (`cat old-ca.cert.pem new-ca.cert.pem > ca/ca.cert.pem`); `ca/signer.*`
+   stay the OUTGOING signer's. Build and release as normal (§3). The bundle
+   chains to the old CA, so every fielded device installs it; the image it
+   installs carries the two-certificate keyring. The verifier's
+   `packed-keyring-from-ca` check is byte-equality against `ca/ca.cert.pem`,
+   so the concatenated file flows through the build and the checks unchanged.
+3. **Switch the signer.** Once the fleet has converged on the overlap image
+   — convergence is measured by whatever fleet telemetry exists, and waiting
+   is the cost of not stranding anyone — replace `ca/signer.{cert,key}.pem`
+   with a signer issued by the INCOMING CA (§2.1's signer step). Bundles now
+   chain to the new CA; devices on the overlap keyring accept them. A device
+   that missed the overlap window refuses them and is stranded — recoverable
+   only by physical reflash until the out-of-image trust channel (§2.3)
+   exists.
+4. **The retirement update.** `ca/ca.cert.pem` becomes the incoming
+   certificate alone; build and release, signed by the new chain. Destroy or
+   retire the outgoing CA key under the §1.5 custody rules, and record it.
+
+**The compromise caveat, stated plainly.** Every update in this procedure is
+signed by a chain the device already trusts, so a *scheduled* rotation is
+sound. Rotation away from a **compromised** CA is not: the attacker holds the
+same signing power the rollover update uses, and can race it or sign a
+"rollover" of their own. Recovery from CA compromise therefore needs a trust
+channel the CA does not control — the provisioning-time channel of §2.3,
+which does not exist yet. Until it does, CA compromise means physical
+re-provisioning, and this runbook says so rather than implying the rollover
+covers it. **[not implemented]** — the out-of-image channel only; every step
+above it is executable today.
+
+### 2.5 Production provisioning: the operator steps, and what the build then does — **[runbook]** host-side
+
+Placing production material, exactly:
+
+```sh
+# On the build host, from the §2.1 ceremony's public/host-side outputs:
+mkdir -p ca && chmod 0700 ca
+cp <media>/ca.cert.pem     ca/ca.cert.pem      # the keyring (public)
+cp <media>/signer.cert.pem ca/signer.cert.pem  # the bundle signer cert
+cp <media>/signer.key.pem  ca/signer.key.pem   # the bundle signer key
+chmod 0600 ca/signer.key.pem
+# ca/ca.key.pem does NOT exist here: the CA key never touches this host.
+# ca/GENERATED does NOT exist here: that marker means "development-grade",
+# and nothing may write it but pkgs/rauc/gen-dev-keys.sh.
+```
+
+What the build does with that, each step observable without hardware:
+
+- `pkgs/rauc/gen-dev-keys.sh --if-absent` (run by every build entry) finds
+  the four files it checks for complete and exits silently — it generates
+  only into an empty or half-written `ca/`, and refuses to overwrite
+  otherwise. No development-keyring banner is printed, because the banner
+  keys off generation, not presence.
+- `rootfs/build.sh` stages `ca/ca.cert.pem` into the image at
+  `/etc/rauc/keyring.pem`, and does not warn: the warning keys off
+  `ca/GENERATED`, which production material does not carry.
+- The bundle build signs with `ca/signer.{cert,key}.pem` and read-backs
+  through the shipped `system.conf` against the same keyring (§3).
+- `make os-verify-cx3576` passes `packed-keyring-from-ca` without
+  `MOS_EXPECT_DEV_KEYRING=1`: the shipped keyring is byte-equal to
+  `ca/ca.cert.pem` and no marker names it development-grade. The same check
+  still refuses a marked root without that variable, so a dev image cannot
+  masquerade — `verify/src/checks-root.test.ts` holds both directions.
+
+The TUF half of provisioning — pinning the production `root.json` on the
+device — has no tooling road yet: the anchor is distributed out of band
+(§1.5) and `rauc-verify --root` consumes wherever an integrator placed it.
+The candidate channels and their tradeoffs are recorded in
+`pkgs/rauc-sign/README.md` (image-baked, STATE/META provisioning file,
+signed USB import), all **[not implemented]**; choosing one is the same
+product decision as the keyring channel above, and this runbook does not
+pre-empt it.
 
 ## 3. Signing a release bundle — **[runbook]**
 
@@ -456,12 +622,19 @@ KEYRING=/path/to/ca.cert.pem \
 # 3. Publish into the TUF repository with the online keys. The verity root
 #    hash is the bundle's own (verity-format) root hash as `rauc info`
 #    reports it -- rauc-sign never shells out to rauc, so it is supplied
-#    explicitly and deliberately.
+#    explicitly and deliberately. --manifest pins the gated release's
+#    manifest.json as its own TUF target beside the bundle
+#    (<bundle>.manifest.json, sha256+length) and stamps the bundle target's
+#    custom block with the manifest's board/profile/channel/version and
+#    schema version -- the SIGNED facts rauc-update's selection reads, so
+#    device-side compatibility needs no unsigned side channel. A manifest
+#    that does not pin this bundle's sha256 is refused.
 rauc-sign add \
   --repo <repo> --keys-dir <online-keys> \
   --target _out/cx3576/mos-cx3576-<epoch>.raucb \
   --verity-root-hash <64 hex> \
   --release-version 1.2.3 \
+  --manifest _out/cx3576/release/manifest.json \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ...
 
 # 4. Verify the published repository as a CLIENT would, against the ceremony
@@ -471,9 +644,121 @@ rauc-sign add \
 rauc-sign verify --repo <repo> --root /trusted/root.json --datastore /var/lib/rauc-sign/trusted
 ```
 
-Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s layout). The
-offline "lockbox" workflow is planned and not implemented; when it exists it
-will consume the same signed artifacts.
+Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s
+layout). Any web server or object store that serves the directory unchanged
+will do; range requests are the one feature the device client uses.
+
+### 3.1 The device-side update client — **[runbook]**; shipped in the image and driven by mosd
+
+`rauc-update` (same crate) consumes what §3 publishes. Its verification is
+`rauc-verify`'s walk — pinned root, persistent rollback state — with
+transport and policy on top, and no flag on any subcommand skips metadata or
+digest verification. The operator sequence on a device (or a bench shell):
+
+```sh
+# 1. Mirror the metadata over plain HTTP (or rsync the repo and skip this).
+#    The mirror is unverified input; step 2 is what trusts or refuses it.
+rauc-update sync --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
+
+# 2. Verify from the pinned anchor and select the newest compatible target:
+#    board+profile (identity below), channel (default stable), manifest
+#    schema floor (equality with 1), version strictly newer than running.
+#    Prints every rejected candidate with its reason; "none" exits 2.
+#    A downgrade needs --allow-downgrade and is logged to stderr.
+rauc-update check \
+  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json>
+
+# 3. Download resumably (HTTP range requests) into the reserved directory.
+#    The completed size never exceeds --max-bytes together with what the
+#    directory already holds; a digest mismatch deletes the partial; the
+#    last stdout line is the verified bundle path.
+rauc-update fetch \
+  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --url http://mirror.example/tuf --reserve-dir /data/update --max-bytes <n>
+
+# 4. Hand off. The orchestrated route is mosd's D-Bus member:
+busctl call com.mos.mosd /com/mos/mosd com.mos.mosd1 InstallUpdate s <path>
+#    The direct fallback (also what `rauc-update fetch --install` runs):
+rauc install <path>
+```
+
+Both binaries are in the image. The `mos-rauc-update` package
+(`pkgs/rauc-sign/deb/rauc-update`) installs `/usr/bin/rauc-update` and
+`/usr/bin/rauc-verify` on both boards, through `feature-rauc.pkgs` — so
+declining `rauc` declines the client with the installer it feeds. The
+release-side `rauc-sign` is not in that package and never will be: it loads
+the offline keys and runs where §1 runs.
+
+Device identity comes from `/usr/share/mos/release-identity.env`
+(`BOARD=`/`PROFILE=`/`VERSION=` lines) or explicit
+`--board`/`--profile`/`--current-version` flags, and the image pipeline now
+writes that file: `rootfs/compose/compose-install.sh` renders the three
+lines from the board, the profile and the pool version the composition was
+given — build arguments only, so two builds of one tree write one file — and
+`verify`'s `packed-release-identity` refuses an image whose file disagrees
+with its own board, its own profile marker or its own
+`/usr/share/mos/manifest.tsv`.
+
+**What `VERSION` is, stated because it is not what a reader assumes.** It is
+the POOL version — `<workspace version>+git<commit>[.dirty]-1`, the string
+`build-env/deb/version.sh` prints — and not a marketing release number. It
+is the one version an image build can measure about itself; the release
+version in §3's signed manifest is chosen at bundle time and no image input
+carries it. The consequence for selection: `compare_versions` splits on `.`
+and compares numerically where both sides parse, so a release published as
+`1.0.0` orders above `0.1.0+git…-1` and is offered, while two images built
+from different commits at one workspace version compare EQUAL — a bundle
+built from such a pair is a downgrade unless `--allow-downgrade` is passed.
+Binding the identity to a real release version is owed, and is the same
+decision as choosing where the release version enters the image build.
+
+Nothing above waits for an operator any more: mosd drives this client. Its
+update lifecycle runs `rauc-update sync`/`check`/`fetch` as bounded
+subprocesses and a policy file (`/var/lib/mos/update-policy.toml`) sets the
+auto-check cadence (`docs/design/updates.md`). What is still owed is the
+rest of the image-side contract: **[not implemented]** the pinned
+`root.json` is provisioned by nothing (§2.5's last paragraph), nothing
+provisions the `/var/lib/mos/update/` tree that policy defaults to (mirror,
+rollback state, reserve), and `mos-health` does not report `health.boot` —
+the entry that lifts the lifecycle past `validating`. The reserve directory
+is likewise a contract, not a mechanism: which partition backs
+`/data/update` and how many bytes it may promise is a storage-policy
+decision owned outside this crate; the client refuses to exceed the budget
+or start a download the filesystem visibly cannot hold, and that is its
+whole side of the bargain.
+
+Transport is plain HTTP by design: integrity and authenticity come from the
+signed metadata (a hostile mirror yields a refusal), confidentiality is not
+provided — terminate TLS at a local proxy or sync the repository out of band
+if it is needed.
+
+### 3.2 The offline lockbox — **[runbook]**
+
+The USB/SD path for devices without a network route. On the release host:
+
+```sh
+# The complete metadata set plus the named bundle and its pinned manifest
+# (all targets when none is named). No key is read; this is file copies.
+rauc-sign lockbox --repo <repo> --out /media/usb/lockbox \
+  --target mos-cx3576-<epoch>.raucb
+```
+
+On the device, with the media mounted:
+
+```sh
+rauc-update import \
+  --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
+  --reserve-dir /data/update --max-bytes <n>
+```
+
+`import` verifies exactly as online — same pinned anchor, same rollback
+state, same selection, same digest gate — then stages the bundle into the
+reserve. A lockbox carrying stale metadata is refused by the state file; a
+tampered bundle is refused by the digest; there is no import that bypasses
+either. The metadata in a lockbox is carried verbatim (no key leaves §1.5's
+custody to produce one), so a partial lockbox lists targets it does not
+carry: `import` verifies the target it selects, and only a full lockbox
+passes `rauc-sign verify` whole.
 
 ## 4. What never happens
 
@@ -499,8 +784,11 @@ deadline will one day propose:
   policy; a `sign` invocation that invents a different horizon is a change
   to this document first.
 - **No `--allow-rollback` outside a recorded incident.**
-- **No keyring baked into the signed root filesystem** — even the production
-  one, tempting as it is as a shortcut past §2.3: a keyring inside the
-  dm-verity-sealed root can only ever be replaced by a full image update
-  signed by the very CA being replaced, which is exactly the circularity a
-  provisioning-time trust anchor exists to break.
+- **No keyring from anywhere but `ca/`.** The keyring in the signed root is
+  staged from `ca/` and byte-checked against it (`packed-keyring-from-ca`);
+  one found in the overlay is refused unconditionally. And no pretending the
+  baked keyring solves rotation: a keyring inside the dm-verity-sealed root
+  is replaced only by an image update a currently-trusted CA signed — §2.4's
+  overlap makes that sound for a scheduled rotation and says plainly that it
+  cannot recover from CA compromise, which is what the provisioning-time
+  trust channel (§2.3) remains owed for.

@@ -1,6 +1,6 @@
 # RFCT-279 Publish release identity and supply-chain artifacts
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
