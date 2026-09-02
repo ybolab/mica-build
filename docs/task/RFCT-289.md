@@ -1,6 +1,6 @@
 # RFCT-289 Define security and manufacturing lifecycle
 
-- **status**: implementing
+- **status**: completed
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
@@ -35,3 +35,15 @@ Defining production security and manufacturing lifecycle.
 
 - Production private keys remain outside the repository; universal I3/I4 is not
   promised.
+
+## Completion
+
+Completed on 2026-09-02 after the campaign acceptance sweep.
+
+| Acceptance | Verdict | Evidence and verification | Residue |
+|---|---|---|---|
+| Threat documentation separates rootfs integrity, update authenticity, boot authenticity, data confidentiality, recovery and rootful applications. | Satisfied | `docs/design/security-model.md`; `docs/design/security-lifecycle.md`; `make docs-verify` passed. | None. |
+| Trust anchors and device credentials have generation, injection, rotation, revocation and recovery procedures with negative tests. | Partially satisfied | `docs/design/security-lifecycle.md`; `docs/design/release-signing.md`; `tests/rauc-trust-negative-test.sh`; negative and hygiene suites passed. | TUF-root provisioning, RAUC device-keyring rotation, managed device PKI and board boot-key procedures remain partial/proposed or operator-only. |
+| Factory inputs/results are versioned and RMA/rework cannot clone identity. | Escalated | `docs/design/manufacturing.md`; `docs/design/provisioning.md`; documentation verification passed. | Factory station/MES tooling, immutable input issuance, result persistence, quarantine and RMA execution do not exist in this tree. |
+| Each board/revision reports I1-I4 evidence and physical/debug boundaries; unsupported secure-boot claims fail publication checks. | Satisfied | `boards/cx3576/evidence.json`; `boards/x64/evidence.json`; `build/src/release-manifest.ts`; build Bun tests and the release verification gate passed. | Both boards truthfully remain I1; higher levels require the evidence named in their qualification prose. |
+| Vulnerability intake, advisory, incident and EOL operations have owners. | Satisfied | `docs/design/security-lifecycle.md`; `make docs-verify` passed. | The owner roles and procedures exist, while the operational channels remain manual/proposed. |

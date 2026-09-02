@@ -187,9 +187,10 @@ Three channels, promotion strictly forward, one release at a time:
 Promotion is a signing act, not a file move — a channel's metadata is signed
 per `docs/design/release-signing.md` §3 — and a publication gate must refuse
 a release whose claims exceed its board evidence, including any boot-assurance
-claim above the board's evidenced ladder level. The channel/manifest tooling
-and that gate are **[proposed]** and land with the release-manifest work;
-until they exist, promotion is this procedure executed by hand by the release
+claim above the board's evidenced ladder level. The unsupported-claim
+publication gate is **[implemented]** by `checkBoardEvidence` in
+`build/src/release-manifest.ts`. Channel promotion remains **[proposed]**;
+until it exists, promotion is this procedure executed by hand by the release
 owner, recorded in the release notes.
 
 ### 2.2 Signing and key custody — **[procedure]**
