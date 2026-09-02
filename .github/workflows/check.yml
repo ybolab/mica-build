@@ -188,14 +188,14 @@ jobs:
           set -euo pipefail
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
-          MOS_APID_UI_DIST_DIR="$PWD/pkgs/mosd/apid/ui/dist" \
+          MOS_APID_UI_DIST_DIR="$PWD/_out/apid-ui/dist" \
             cargo run --locked --manifest-path pkgs/mosd/Cargo.toml -p apid -- --openapi \
             >"$tmp/openapi.json"
           diff -u pkgs/mosd/apid/openapi.json "$tmp/openapi.json" || {
             echo "error: pkgs/mosd/apid/openapi.json is not what apid --openapi prints." >&2
             echo "       Regenerate it from pkgs/mosd/:" >&2
             echo "         bash apid/ui/build.sh" >&2
-            echo '         MOS_APID_UI_DIST_DIR="$PWD/apid/ui/dist" cargo run -p apid -- --openapi > apid/openapi.json' >&2
+            echo '         MOS_APID_UI_DIST_DIR="$PWD/../../_out/apid-ui/dist" cargo run -p apid -- --openapi > apid/openapi.json' >&2
             exit 1
           }
           echo "pkgs/mosd/apid/openapi.json matches apid --openapi"
@@ -448,9 +448,7 @@ jobs:
         if: always()
         run: |
           echo "This job runs bun ONLY as the digest pinned in build-env/images.env." >&2
-          echo "It therefore does not check that verify works on any other bun --" >&2
-          echo "including whatever bun a developer has on PATH, which is the route" >&2
-          echo "run.sh prefers locally." >&2
+          echo "The UI source is read-only and every generated file stays below _out/." >&2
           echo >&2
           echo "It also does not run make os-verify-cx3576. That" >&2
           echo "target needs a BUILT IMAGE and docker, and a bun on the host --" >&2

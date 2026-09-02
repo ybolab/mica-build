@@ -4,6 +4,18 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Built-in UI builds are isolated from source (2026-09-02)
+
+The built-in UI now has one production and quality path through the Bun image
+pinned by `build-env/images.env`; host Bun discovery and configurable output
+directories are gone. The UI source is mounted read-only, while dependency
+installation, generated metadata and Vite output are confined to
+`_out/apid-ui/`, with the production tree fixed at `_out/apid-ui/dist`. Rust
+target and package builders also mount repository source read-only, write Cargo
+artifacts through a separate target mount and consume the UI tree through
+`/build/apid-ui:ro`. This supersedes PLAN-065's source-adjacent producer
+placement without changing APID's embedded VFS or runtime routes. PLAN-066.
+
 ## Built-in UI assets are generated before Rust builds (2026-09-02)
 
 `pkgs/mosd/apid/ui/dist/` is now ignored generated output rather than a second

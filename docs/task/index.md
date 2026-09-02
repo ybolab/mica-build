@@ -62,3 +62,5 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-008 Recreate the built-in UI from the approved prototype**](UI-008.md) `P1`
 - [x] [**UI-009 Generate built-in UI assets during the build**](UI-009.md) `P1`
 - [x] [**RFCT-293 Ship the `docker` command name as a podman symlink**](RFCT-293.md) `P2`
+- [x] [**UI-010 Isolate built-in UI build outputs**](UI-010.md) `P1`
+- [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`

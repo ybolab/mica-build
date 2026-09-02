@@ -31,7 +31,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
    明确操作不会改变设备且刷新后复位。进入生产交付前可按 capability 屏蔽。
 5. **安全操作显式且可恢复。** 一次性秘密只展示一次；危险操作显示影响范围；不可逆操作需要
    专用确认流程；所有 mutation 都正确处理 CSRF、任务进度和 API 错误。
-6. **内置交付约束优先。** 运行时不得依赖 CDN；构建阶段生成且不纳入版本控制的 `ui/dist` 完整
+6. **内置交付约束优先。** 运行时不得依赖 CDN；构建阶段生成且不纳入版本控制的 `_out/apid-ui/dist` 完整
    文件树必须以编译期虚拟文件系统嵌入 `mos-apid`，入口以外的构建资源使用内容哈希，并通过路由
    与语言包懒加载减少首次下载。
 
@@ -212,12 +212,12 @@ dist/assets/<route>-<hash>.js
 dist/assets/zh-cn-<hash>.js
 ```
 
-`pkgs/mosd/apid/ui/build.sh` 使用本机 Bun；本机没有 Bun 时改用仓库锁定的 Bun 容器，生成完整 `dist`。
-完整 target 与 package producer 构建强制使用固定容器路径，避免本机版本和 checkout 路径进入发布产物；
-本地质量门禁仅在没有 Bun 时使用该容器。输出只允许落在 `ui/dist` 或仓库 `_out/` 下，防止 Vite
-`emptyOutDir` 清理源码或任意目录。`dist` 必须保持 gitignore。`pkgs/mosd/hack/check.sh`、
-`build-target.sh` 和 `build-deb.sh` 均先完成前端构建，再通过绝对路径环境变量
-`MOS_APID_UI_DIST_DIR` 把产物交给 Rust；Rust-only 构建容器不运行 Bun 或 Vite。
+`pkgs/mosd/apid/ui/build.sh` 始终使用仓库锁定的 Bun 容器，生成完整的 `_out/apid-ui/dist`，宿主机
+不需要安装 Bun。脚本只读挂载 `apid/ui` 源码，把它复制到 `_out/apid-ui/work` 后执行冻结安装、
+TanStack 路由生成、TypeScript 检查和 Vite 构建；因此依赖、编译元数据和生成文件都不会写回源码树。
+`pkgs/mosd/hack/check.sh`、`build-target.sh` 和 `build-deb.sh` 均先完成前端构建，再通过绝对路径环境变量
+`MOS_APID_UI_DIST_DIR` 把产物交给 Rust。Rust 构建容器把源码挂载为只读，把前端产物挂载到
+`/build/apid-ui:ro`，并使用独立可写的 `CARGO_TARGET_DIR`；它本身不运行 Bun 或 Vite。
 
 `pkgs/mosd/apid/build.rs` 递归扫描传入的生成目录，拒绝符号链接、不安全名称和非普通文件，要求
 `index.html` 存在，按逻辑路径排序，把通过检查的字节复制到 Cargo `OUT_DIR`，再生成 `include_bytes!`
@@ -227,7 +227,7 @@ dist/assets/zh-cn-<hash>.js
 ```bash
 cd pkgs/mosd
 bash apid/ui/build.sh
-MOS_APID_UI_DIST_DIR="$PWD/apid/ui/dist" cargo check -p apid
+MOS_APID_UI_DIST_DIR="$PWD/../../_out/apid-ui/dist" cargo check -p apid
 ```
 
 缓存规则固定如下：`index.html` 和所有 SPA fallback 使用 `no-store`；由 Vite 生成的 `assets/` 内容哈希
@@ -261,7 +261,7 @@ allowlist、`nosniff`、CSP 和 `Referrer-Policy`。安全的无扩展路径才�
 cd pkgs/mosd
 bash apid/ui/build.sh
 cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
-  pack apid/ui/dist --name example-console --version 1.4.0 \
+  pack ../../_out/apid-ui/dist --name example-console --version 1.4.0 \
   --api-version v1 -o example-console-1.4.0.mos-ui.zip
 cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
   inspect example-console-1.4.0.mos-ui.zip
@@ -289,11 +289,10 @@ bash run.sh
 仓库当前没有可以擅自假定的同源后端代理流程，实现新的 API 页面前应把本地 API 连接方式写入该
 包 README 或开发脚本。
 
-`build.sh` 是唯一生产资源构建入口，默认写入被忽略的 `dist/`；`--out-dir` 只接受该目录或仓库
-`_out/` 下的暂存目录，`--container` 强制使用锁定的 Bun 构建环境。
-`run.sh` 是前端交付门禁：冻结安装、lint、typecheck、test，再通过 `build.sh` 生成新的生产树。
-`tests/apid-ui-build-contract-test.sh` 另外保证 `dist/` 未被 Git 跟踪，并检查所有仓库维护的 APID Cargo
-入口都先构建 UI、再显式传入生成目录。
+`build.sh` 是唯一生产资源构建入口：它没有本机 Bun 分支，也不接受可变输出路径，固定在锁定容器内
+从只读源码生成 `_out/apid-ui/dist`。`run.sh` 只是该入口的检查模式，依次执行冻结安装、lint、
+typecheck、test 和生产构建。`tests/apid-ui-build-contract-test.sh` 另外保证源码内 `dist/` 未被 Git
+跟踪，检查唯一容器路径、只读挂载和所有仓库维护的 APID Cargo 入口是否显式传入隔离后的生成目录。
 
 测试数量和覆盖率以当前 `bun run test`/`bun run coverage` 报告为准。门禁通过只能证明已覆盖的逻辑，
 不代表页面状态已经完整；新增交互仍须按第 15 节补齐状态矩阵。

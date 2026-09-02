@@ -14,10 +14,12 @@ date is given.
 
 ## 1. bun runs in a pinned container, and that is a decision
 
-Both bun suites resolve their runtime the same way, from the digest pinned as
-`IMAGE_BUN_1` in `build-env/images.env`. `verify` reads it as
+Every bun entry resolves its runtime from the digest pinned as `IMAGE_BUN_1` in
+`build-env/images.env`. `verify` reads it as
 `BUN_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1`
-(`verify/run.sh`), and `pkgs/mosd/tests/apid-api/run.sh` the same:
+(`verify/run.sh`), `pkgs/mosd/tests/apid-api/run.sh` does the same, and the
+built-in UI production entry resolves that pin directly before mounting its
+source read-only:
 
     bash build-env/from.sh --ref IMAGE_BUN_1
 
@@ -26,7 +28,9 @@ means it —
 `BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"`
 (`pkgs/mosd/tests/apid-api/run.sh`). The pin is a digest and not the `oven/bun:1` tag
 because that tag is repointed upstream on every 1.x release, and this harness is
-what decides whether apid's API is judged conformant.
+what decides whether apid's API and built-in UI are judged conformant. Unlike
+the QEMU suites, `pkgs/mosd/apid/ui/build.sh` has no host-runtime or image
+override route.
 
 `verify/run.sh` holds the one seam where host-or-container is decided:
 "The seam. Everything above and below passes an argv and reads a status,"
@@ -85,11 +89,14 @@ builds it; whichever of the two runs first pays the few seconds for it.
 ## 3. The Rust gate: `pkgs/mosd/hack/check.sh`
 
 The gate requires the ignored built-in UI tree before Rust: when
-`MOS_APID_UI_DIST_DIR` is absent it runs `apid/ui/build.sh` and exports that
-absolute path itself. When the gate is run inside the Rust-only container,
-build the tree on the host first and pass
-`MOS_APID_UI_DIST_DIR=/src/pkgs/mosd/apid/ui/dist`; the script then consumes it
-without looking for Bun or Docker in that container. It next runs five
+`MOS_APID_UI_DIST_DIR` is absent it runs `apid/ui/build.sh`, which always uses
+the pinned Bun container with read-only source, and exports
+`_out/apid-ui/dist` as an absolute path. When the gate is run inside the
+Rust-only container, generate the tree first, mount it at
+`/build/apid-ui:ro`, and pass `MOS_APID_UI_DIST_DIR=/build/apid-ui`; the script
+then consumes it without looking for Bun or Docker in that container. Mount
+the repository itself read-only and provide a separate writable
+`CARGO_TARGET_DIR`. It next runs five
 unremarkable Rust commands — `cargo fmt --all --check` (`pkgs/mosd/hack/check.sh`),
 `cargo clippy --workspace --all-targets --locked -- -D warnings`
 (`pkgs/mosd/hack/check.sh`) and

@@ -10,7 +10,9 @@
 
 ## 1. bun 跑在一个固定的容器里，这是一个决定
 
-两个 bun 套件都以同样方式解析运行时：从 `build-env/images.env` 里锁定的 `IMAGE_BUN_1` 摘要。
+所有 bun 入口都从 `build-env/images.env` 里锁定的 `IMAGE_BUN_1` 摘要解析运行时。QEMU 验证与
+APID API 套件在这个基础上构造带 docker 客户端的镜像；`pkgs/mosd/apid/ui/build.sh` 直接使用
+原始锁定镜像，并把 UI 源码只读挂载进去，没有本机运行时或镜像覆盖分支。
 
 **固定的是摘要而不是 `oven/bun:1` 标签**，因为那个标签在上游每个 1.x 发布时都会被重新指向，
 而这套工具链是判定 apid 的 API 是否合规的东西。
@@ -32,10 +34,11 @@
 ## 3. Rust 门禁
 
 Rust 门禁要求先有被忽略的内置 UI 资源树：没有设置 `MOS_APID_UI_DIST_DIR` 时，它会自行运行
-`apid/ui/build.sh` 并导出绝对路径。在 Rust-only 容器内运行门禁时，先在宿主机生成资源树，再把
-`MOS_APID_UI_DIST_DIR=/src/pkgs/mosd/apid/ui/dist` 传入；脚本会直接消费，不在该容器里寻找 Bun
-或 Docker。随后才运行五条 Rust 命令；**照原样运行它**。工具链是它所运行的那个容器，而不是
-对脚本的修改。
+`apid/ui/build.sh`；该脚本始终在锁定的 Bun 容器中以只读方式挂载源码，并导出
+`_out/apid-ui/dist` 的绝对路径。在 Rust-only 容器内运行门禁时，先生成资源树，将它只读挂载到
+`/build/apid-ui`，再传入 `MOS_APID_UI_DIST_DIR=/build/apid-ui`。仓库源码同样只读挂载，Cargo 通过
+独立的可写 `CARGO_TARGET_DIR` 输出；Rust 容器不寻找 Bun 或 Docker。随后才运行五条 Rust 命令；
+**照原样运行它**。工具链是它所运行的那个容器，而不是对脚本的修改。
 
 *（以下是对这台主机的测量，每一条都曾以一次失败的运行为代价换来）*
 

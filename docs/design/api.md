@@ -1,6 +1,6 @@
 # apid: an API-first management daemon with replaceable UI
 
-> **Current status (PLAN-039/040/060/061/062, 2026-09-02): implemented.** The management daemon
+> **Current status (PLAN-039/040/060/061/062/066, 2026-09-02): implemented.** The management daemon
 > is API-first. Every appliance read, write, authentication operation and action
 > is under `/api`; `/healthz` is the listener-only operational exception. The
 > built-in UI is a React SPA embedded in `apid` and served at `/_ui/`. `/` serves
@@ -37,8 +37,9 @@
   address-family, address, DNS and route details. Observation failure is
   explicit and does not hide readable configuration.
 - The built-in SPA uses root-relative `/api/...` requests and stores no session
-  or bearer credential in browser storage. Its ignored `ui/dist` output is
-  generated before Rust checks and packaging, then `apid/build.rs` recursively
+  or bearer credential in browser storage. Its ignored `_out/apid-ui/dist`
+  output is generated in the pinned Bun container before Rust checks and
+  packaging, then `apid/build.rs` recursively
   embeds the complete tree supplied by the build entry. `index.html` is the
   only stable name; content-hashed route,
   locale and vendor chunks remain independently addressable and cacheable.
@@ -3251,7 +3252,7 @@ belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 ### 6.2 The built-in default UI, inside verity — **[implemented]**
 
 The built-in UI is a React/Vite SPA whose generated output is
-`pkgs/mosd/apid/ui/dist`. It is reachable unconditionally at `/_ui` and `/_ui/`;
+`_out/apid-ui/dist`. It is reachable unconditionally at `/_ui` and `/_ui/`;
 safe extensionless paths below `/_ui/` use its own `index.html`, while exact
 assets and misses never consult `/mos/ui`. When no usable custom bundle is
 active, `GET /` redirects to this recovery UI rather than copying its bytes into
@@ -3267,16 +3268,19 @@ search lookup. The running device reads no built-in UI directory, archive or
 locale endpoint; every hashed JavaScript, CSS and imported asset is covered by
 the same `apid` binary as the stable HTML entry.
 
-The frontend producer uses Bun and Vite before the Rust/image build and leaves
-the result in ignored `ui/dist`. `pkgs/mosd/apid/ui/build.sh` uses local Bun or
-the repository's pinned Bun container; complete target and package-producer
-builds require the pinned-container path, while local checks use it as the
-no-Bun fallback. Each invokes the frontend before entering Cargo, then passes
-its absolute output path explicitly. `pkgs/mosd/apid/ui/run.sh` runs install, lint,
-typecheck, tests and a fresh production build; Cargo separately fails closed if
-the generated tree lacks the entry or contains a path the embedded VFS cannot
-safely name. There is no fixed file count, committed build output or Rust
-source edit when a content hash changes.
+The frontend producer always uses the repository's pinned Bun container before
+the Rust/image build and leaves the result in ignored `_out/apid-ui/dist`.
+`pkgs/mosd/apid/ui/build.sh` mounts only UI source at `/source:ro`, copies it to
+the writable `_out/apid-ui/work` mount, and confines dependency installation,
+code generation, compiler metadata and Vite output to that build root. Complete
+target and package-producer builds invoke it before Cargo, mount the resulting
+tree at `/build/apid-ui:ro`, and pass that absolute path explicitly. Their
+repository source mount is also read-only; `CARGO_TARGET_DIR` is a separate
+writable mount. `pkgs/mosd/apid/ui/run.sh` reuses the same container path in
+check mode for install, lint, typecheck, tests and a fresh production build.
+Cargo separately fails closed if the generated tree lacks the entry or contains
+a path the embedded VFS cannot safely name. There is no fixed file count,
+committed build output or Rust source edit when a content hash changes.
 
 The VFS keeps each asset independently addressable and cacheable. The stable
 entry and SPA fallbacks are `no-store`; Vite's content-hashed `assets/` output
