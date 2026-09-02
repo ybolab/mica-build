@@ -547,8 +547,8 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **8**, declared as
-`pub const SCHEMA_VERSION: u32 = 8;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
+**Schema version.** `SCHEMA_VERSION` is **9**, declared as
+`pub const SCHEMA_VERSION: u32 = 9;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
 stamped into every default tree, `schema_version: SCHEMA_VERSION,`
 (`pkgs/mosd/mosd-settings/src/model.rs`). It was **4** when this section was
 first written; the number moves and the API must never hard-code it, which is
@@ -583,7 +583,7 @@ module remains authoritative when fields are added or renamed.
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
-| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **8** — `pub const SCHEMA_VERSION: u32 = 8;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's third value and the reason §2.1 serves the number rather than documenting it |
+| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **9** — `pub const SCHEMA_VERSION: u32 = 9;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's third value and the reason §2.1 serves the number rather than documenting it |
 | `hostname` | `String` | `pub hostname: String,` (`pkgs/mosd/mosd-settings/src/model.rs`) | system hostname, default `hostname: "mos".to_string(),` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `network.<iface>` | `IfaceSettings` | `pub network: BTreeMap<String, IfaceSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct IfaceSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `pub enum IfaceKind {` (`pkgs/mosd/mosd-settings/src/model.rs`)), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `pub struct StaticConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `vlan` at `pub struct VlanConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `bridge` at `pub struct BridgeConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `wireguard` at `pub struct WireguardConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`) with its peers at `pub struct WireguardPeer {` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `pub web_admin: Option<WebAdminSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct WebAdminSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `password_hash` only; absent until first-run setup writes it |
@@ -892,7 +892,7 @@ follows is a reading of a snapshot and not a defect in it.
    the health probe `get_state(HEALTH_PROBE_PATH)` (`pkgs/mosd/apid/src/routes.rs`)
    and the passthrough `get_state(&path)` (`pkgs/mosd/apid/src/routes.rs`).
 5. **Schema version "3"** is now
-   **8** — `pub const SCHEMA_VERSION: u32 = 8;`
+   **9** — `pub const SCHEMA_VERSION: u32 = 9;`
    (`pkgs/mosd/mosd-settings/src/model.rs`). It was 4 when this section was
    written and 7 at the last re-measure, which is the third time this one row
    has gone stale and is the reason section 2.1 must serve the number rather
@@ -1089,7 +1089,7 @@ array. A client that reads only `current` and ignores `versions` will conclude
 that a device it can still talk to is one it cannot.
 
 `settingsSchemaVersion` carries mosd's `SCHEMA_VERSION`
-(`pub const SCHEMA_VERSION: u32 = 8;`, `pkgs/mosd/mosd-settings/src/model.rs`;
+(`pub const SCHEMA_VERSION: u32 = 9;`, `pkgs/mosd/mosd-settings/src/model.rs`;
 **6** at `f7cb5ba` and **4** when this paragraph was written). **It is not the API version and the two must never
 be conflated.** The schema version is the shape of the tree on disk
 (`pkgs/mosd/mosd-settings/src/store.rs`), moved by a registered migration chain
