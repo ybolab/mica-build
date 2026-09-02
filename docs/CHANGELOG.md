@@ -44,6 +44,32 @@ localized recovery copy, committed hashed assets, tests and current English
 and Chinese guidance moved together. `/api/v1/ui` and `/mos/ui` retain their
 existing API and storage meanings. PLAN-060.
 
+## Install, onboarding, provisioning and recovery (2026-09-02)
+
+A device can now be configured before anybody logs into it: a versioned,
+totally validated provisioning document arrives on the boot partition or on
+removable media, applies in one save or not at all, and is refused once the
+device has an administrator — so a fielded appliance cannot be reconfigured
+from a stick. Claiming records how it happened, and a bootstrap credential is
+bound by a forced rotation at first sign-in rather than by an expiry, because
+an unclaimed device is the one with no trusted clock and a window that closes
+with nobody in it would brick. Slot state is inspectable and a manual rollback
+is guarded: it can only ever mark the booted slot bad, never mark a target
+good, and it refuses a target that was installed more recently than the
+running system or that cannot be ordered against it — which derives "the
+target has run before" from RAUC installing only the inactive slot, a premise
+now named where the guard lives. Reset has three tiers with a table that says
+what each one preserves as well as what it clears, executed from an intent
+record applied on the next boot; META and the system slots are unreachable
+because the type that carries the roots has no member for them. Secure wipe is
+deliberately absent until a board evidences a device-level erase primitive.
+The console renders every reachable flow and explains the two that are not.
+
+Not closed, and the records say so: the presence gate ships and nothing writes
+a presence assertion, so tier 3 and credential recovery are implemented,
+tested and unreachable on a fielded device; every install, flash and
+first-boot procedure is documented and unrun on hardware. PLAN-046, PLAN-048.
+
 ## Time, storage, diagnostics and the system-information surface (2026-09-02)
 
 The image now keeps time on purpose: `systemd-timesyncd` ships as base policy
