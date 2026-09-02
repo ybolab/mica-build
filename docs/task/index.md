@@ -61,3 +61,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-292 Adopt the direct development-stage DATA layout**](RFCT-292.md) `P0`
 - [x] [**UI-008 Recreate the built-in UI from the approved prototype**](UI-008.md) `P1`
 - [x] [**UI-009 Generate built-in UI assets during the build**](UI-009.md) `P1`
+- [x] [**RFCT-293 Ship the `docker` command name as a podman symlink**](RFCT-293.md) `P2`

@@ -21,9 +21,22 @@
 | `netavark` | `/usr/libexec/podman/netavark` | 网络 |
 | `aardvark-dns` | `/usr/libexec/podman/aardvark-dns` | 容器间名字解析 |
 | `catatonit` | `/usr/libexec/podman/catatonit` | 容器 init，供 `--init` 用 |
+| `docker` | `/usr/bin/docker` | 指向 `podman` 的软链接，docker 命令行因此可用 |
 
 版本锁定在 `pkgs/podman/versions.env`，**从上游源码构建，不取 Debian 的包**。
 设备上 `podman --version` 的输出是权威。
+
+`docker` 这个名字**只是一个软链接**。`docker run ...` 就是 `podman run ...`
+——同样的参数、同样的输出、同样的行为；podman 只用 `argv[0]` 称呼自己，所以
+`docker --version` 回答的是 `docker version 5.8.6`、用法文本里写的是 `docker`，
+名字本身不会切换任何模式。
+
+它**不带来**任何 Docker 藏在套接字后面的东西：这里没有守护进程、没有
+`/run/docker.sock`、没有 REST API，因此一个去连套接字而不是执行二进制的客户端
+不会因此可用。`docker compose` 也会像 `podman compose` 一样失败——
+`Error: looking up compose provider failed`，因为 podman 是去调用外部 compose
+provider，而 `docker-compose` 和 `podman-compose` 都不在设备上。compose 文件
+不是这个镜像描述一组容器的方式，第 3 节才是。
 
 **没有 `podman.socket`，也没有 `podman.service`。** 这个镜像没有构建 REST API，
 所以**不存在需要加固的引擎套接字**——如果你在找一个可以连的套接字，它不存在。

@@ -24,9 +24,24 @@ rather than sitting here looking correct.
 | `netavark` | `/usr/libexec/podman/netavark` | networking |
 | `aardvark-dns` | `/usr/libexec/podman/aardvark-dns` | container-to-container name resolution |
 | `catatonit` | `/usr/libexec/podman/catatonit` | container init, for `--init` |
+| `docker` | `/usr/bin/docker` | a symlink to `podman`, so the docker command line works |
 
 Versions are pinned in `pkgs/podman/versions.env` and built from upstream source,
 not taken from Debian. `podman --version` on the device is the authority.
+
+The `docker` name is a symlink and nothing else. `docker run ...` is
+`podman run ...` with the same flags, the same output and the same behaviour;
+podman reads `argv[0]` only to name itself, so `docker --version` answers
+`docker version 5.8.6` and the usage text says `docker`, and no mode is selected
+by the name.
+
+What the name does **not** bring is anything Docker keeps behind its socket:
+there is no daemon, no `/run/docker.sock` and no REST API here, so a client that
+dials the socket rather than running the binary is no better off. `docker
+compose` fails the way `podman compose` does — `Error: looking up compose
+provider failed`, because podman shells out to a compose provider and neither
+`docker-compose` nor `podman-compose` is on the device. Compose files are not
+this image's way of describing a set of containers; section 3 is.
 
 There is **no `podman.socket` and no `podman.service`**. The REST API is not
 built into this image, so there is no engine socket to secure — and nothing to
