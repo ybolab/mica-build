@@ -871,14 +871,14 @@ follows is a reading of a snapshot and not a defect in it.
    handler is `pub async fn root`
    (`pkgs/mosd/apid/src/assets/serve.rs`), with the built-in branch at
    `pub(crate) async fn home` (`pkgs/mosd/apid/src/routes.rs`).
-2. **Its route table is missing forty-four of the fifty-nine method+path
-   pairs section 1.2 counts.** The five SSH routes it predicted —
+2. **Its route table is missing most of the method+path pairs the shipped
+   router declares.** The five SSH routes it predicted —
    `GET /ssh`, `POST /ssh/enable`, `POST /ssh/password`,
    `POST /ssh/keys/add`, `POST /ssh/keys/remove` — exist at
    `pkgs/mosd/apid/src/routes.rs`; the four `/containers` and `/mqtt` pairs
    landed after it (`pkgs/mosd/apid/src/routes.rs`); so did `/password`, the
    two `/network/peers/*` posts and the whole `/builtin` subtree; and so did
-   the twenty-seven `/api` pairs `fn api_router` now declares
+   every `/api` pair `fn api_router` now declares
    (`pkgs/mosd/apid/src/routes.rs`). Its own section 8 predicted the first five
    and instructed a re-measure after the `sshweb` merge
 .
@@ -931,13 +931,13 @@ forward.
 said the opposite. `pkgs/mosd/apid/openapi.json`
 declares `"openapi": "3.1.0"` (`pkgs/mosd/apid/openapi.json`) for a document
 titled `"title": "apid"` (`pkgs/mosd/apid/openapi.json`) at
-`"version": "v1"` (`pkgs/mosd/apid/openapi.json`), and it declares **twenty-one
-paths carrying twenty-seven operations** — nine `GET`, three `PUT`, ten `POST`
-and five `DELETE` — beginning at `"/api/v1/actions/change-password"`
+`"version": "v1"` (`pkgs/mosd/apid/openapi.json`), and it declares **forty-six
+paths carrying fifty-nine operations** — twenty-five `GET`, twenty-one `POST`,
+nine `DELETE` and four `PUT` — beginning at `"/api/v1/actions/change-password"`
 (`pkgs/mosd/apid/openapi.json`) and ending at `"/api/versions"`
 (`pkgs/mosd/apid/openapi.json`), the whole map opening at `"paths": {`
 (`pkgs/mosd/apid/openapi.json`). Its
-`components.schemas`, which opens at `"schemas": {` (`pkgs/mosd/apid/openapi.json`), holds **twenty-six** entries, not
+`components.schemas`, which opens at `"schemas": {` (`pkgs/mosd/apid/openapi.json`), holds **fifty-six** entries, not
 the five this paragraph recorded: `"ApiError"`
 (`pkgs/mosd/apid/openapi.json`) and `"ApiErrorDetail"`
 (`pkgs/mosd/apid/openapi.json`) still, plus the request and response bodies
@@ -949,9 +949,10 @@ which is why it is quoted here as a measurement rather than as documentation.
 
 **Four read routes, no writes, no actions, no collections** was the state at
 `f7cb5ba` and is the sentence the API campaign was written to retire. What ships now is
-reads, writes, four collections, five actions and an unauthenticated first-run
-route; section 1.2 counts the same twenty-seven pairs from the router's side,
-and the two counts agree because the document is generated from the router.
+reads, writes, collections, action verbs and an unauthenticated first-run
+route; `fn api_router` declares exactly the same method+path pairs from the
+router's side, and the two cannot disagree because the document is generated
+from the router.
 Each subsection below opens by drawing its own line between what ships and what
 is still proposed, and nothing is deleted for being unimplemented: an unbuilt
 proposal is still the argument for building it.
@@ -983,8 +984,8 @@ spec against the base branch's (`.github/workflows/check.yml`).
 
 The clause that stood here — that **"JSON in" does not ship**, no route under
 the prefix accepting a request body of any kind — is false as of M4 and was
-falsified once more by every milestone after it. Ten routes take a JSON body
-today (section 1.2), each as a `Result` so a malformed one is §2.4's `400
+falsified once more by every milestone after it. Seventeen operations take a
+JSON body today, each as a `Result` so a malformed one is §2.4's `400
 request_invalid` rather than axum's own rejection. Both directions this section
 asks for now exist.
 
@@ -1435,10 +1436,12 @@ API surface was four `GET` paths, so every "API equivalent" column named a
 route that did not exist.
 
 That is no longer the state of the tree. `pkgs/mosd/apid/openapi.json`
-specifies 23 paths, including the settings write, task reads, the action verbs and the
-collection routes the inventory anticipated. It is generated from the code and
-gated in CI, so it answers "which operations exist" without a second copy to
-keep in step.
+specifies every path the surface serves — the settings write, task reads, the
+action verbs and the collection routes the inventory anticipated, and the
+update, storage, diagnostics, telemetry, time and recovery surfaces that came
+after it. It is generated from the code and gated in CI, so it answers "which
+operations exist" without a second copy to keep in step, and this document does
+not restate the count.
 
 What the schema does not carry, and this document therefore keeps, is why the
 surface has the shape it does: the resource model of section 2.2, the error

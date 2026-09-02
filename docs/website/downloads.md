@@ -58,16 +58,22 @@ command; it never asks the visitor to trust a bare checksum typed into HTML.
 
 ### The release list
 
-**This brief deliberately contains no release list.** There is no published
-release manifest yet, and the site must not fabricate one. The list, the
-channels (development, candidate, stable), per-artifact checksums and
-signatures, SBOM and support windows are rendered from the signed
-machine-readable release manifest once it exists — the site regenerates from
-release facts, per the [content contract](contract.md).
+**This brief deliberately contains no release list.** The machine-readable
+release manifest the list would be rendered from now exists: it binds the
+version, the channel (`development`, `candidate`, `stable`), the board and
+profile, the source commit and every artifact's size and digest, and a
+publication gate refuses a release directory that does not match it. The site
+regenerates from those facts, per the [content contract](contract.md), and
+never from hand-typed prose.
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
 
-TODO(PLAN-043): revisit after this plan merges
+What is still missing is anywhere to point at. No release is published and no
+channel is hosted, so there is nothing to list; support windows have a written
+policy and no mechanism binding one to a release. A list rendered today would
+be fabricated, which is why this brief has none.
+
+> status: unsupported
 
 Until then, the downloads page states plainly that releases are not yet
 published and points evaluators at the build documentation

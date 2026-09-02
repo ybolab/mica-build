@@ -1,9 +1,9 @@
 # 发布版与镜像获取
 
 本页说明一个 mos 发布版由什么组成、如何为板卡选择发布版、以及如何获取产物。
-先把诚实的结论放在最前面：**目前没有托管下载服务。**发布版从本仓库构建——
-由你自己，或由交付你产品的集成商——而已发布版本、渠道和下载元数据的路线图
-是一份计划，不是已发布的服务。
+先把诚实的结论放在最前面：**目前没有托管下载服务。**发布版从本仓库组装——
+由你自己，或由交付你产品的集成商——成为一个通过门禁的发布目录；不存在的是
+把它发布出去的地方。
 
 ## 1. 一个发布版由什么组成
 
@@ -18,6 +18,10 @@
 `rootfs-verity.env` 中的 dm-verity 根哈希是一个发布版根文件系统的身份：
 两次构建若哈希相同，则字节相同。镜像的完整软件包清单随镜像一起发布，位于
 `/usr/share/mos/manifest.tsv`，含每个包的版本和源码树的 git 标记。
+
+`make os-release-cx3576` 把镜像与 bundle 连同第 4 节描述的那些记录一起组装成
+一个**发布目录**（`_out/<board>/release`），并对它跑门禁。一个发布版*是*那个
+目录，而不是一个孤零零的镜像。
 
 > status: shipped — evidence: `docs/design/build.md`, `rootfs/compose/90-pack.Dockerfile`
 
@@ -66,22 +70,35 @@ make os-verify-cx3576
 锚）验证已发布的仓库元数据。签名 runbook——密钥仪式、保管、轮换——是
 [../design/release-signing.md](../design/release-signing.md)。
 
-尚不存在的东西：随镜像发布的逐产物校验和与签名文件、命名兼容性与摘要的
-机器可读发布清单、SBOM，以及可以获取这一切的下载渠道。在那落地之前，可信
-的陈述更窄：你自己构建的镜像与你的源码树产出的完全一致，而
-`make os-verify-cx3576`（或 `bash verify/run.sh --verify --board x64`）
-逐项对照镜像契约检查组装好的镜像。
+其余部分由发布目录携带：覆盖每个产物的 `SHA256SUMS`；把发布版的版本、渠道、
+板卡、profile、源码 commit 以及每个产物的大小与摘要绑在一起的 `manifest.json`；
+一份 CycloneDX SBOM；一份来源（provenance）记录；一份许可证与源码提供清单；
+以及发布说明。用 coreutils 和 `jq`：`sha256sum -c SHA256SUMS` 证明这些字节就是
+发布版声明的字节，清单则打印出发布身份——而这几行命令由本仓库自己的测试对着
+一个生成出来的夹具发布版实际执行，所以这段流程不会和工具悄悄走散。
 
-> status: shipped — evidence: `pkgs/rauc-sign/README.md`, `make os-verify-cx3576`
+`SHA256SUMS` 与 `manifest.json` 提供的是完整性而非真实性：它们和产物一起走。
+真实性来自上面那两条信任链。除此之外，`make os-verify-cx3576`
+（或 `bash verify/run.sh --verify --board x64`）逐项对照镜像契约检查组装好的
+镜像。
 
-## 5. 已发布版本、渠道与下载元数据
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`, `make os-verify-cx3576`
 
-发布身份计划覆盖：每个发布版一份签名的机器可读发布清单（版本、渠道、
-板卡/profile 兼容性、产物摘要与大小、构建与源码身份）、逐产物校验和与签名、
-SPDX/CycloneDX SBOM 与源码提供清单，以及带发布门禁的
-development/candidate/stable 晋级流程。官方站点的下载页简报是
+## 5. 渠道，以及发布这件事还缺什么
+
+一个发布版在自己的清单里写明渠道——`development`、`candidate` 或 `stable`——
+这个名字是关于"合格性"的声明，不是一个目录：`development` 不带任何承诺，
+`candidate` 正在合格化过程中，`stable` 才是客户部署的那一档。发布门禁会从零
+重新检查一个已组装的发布目录，并逐项点名拒绝：缺少某个角色的产物、字节变了
+的文件、空的发布说明、没有任何组件的 SBOM、缺失或不一致的板卡证据。它没有
+豁免开关。
+
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
+
+缺的是另一半：**托管**。没有下载主机，没有按渠道晋级进去的目录，因此也没有
+任何可获取的已发布版本——今天的"下载"意思是"拿到那个通过门禁的发布目录"。
+支持窗口与生命周期终止日期同样只有政策、没有机制（[support.md](support.md)）。
+官方站点的下载页简报是
 [../../website/downloads.md](../../website/downloads.md)。
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
-
-TODO(PLAN-043): revisit after this plan merges
+> status: unsupported

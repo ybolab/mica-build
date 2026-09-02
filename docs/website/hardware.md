@@ -60,7 +60,7 @@ CI baseline: firmware boots it, so it has no BSP build.
 > status: shipped — evidence: `boards/x64/board.env`
 
 Neither board carries a completed field-reliability qualification matrix — the
-cx3576 dossier holds the matrix with all twelve rows at `not tested`, and the
+cx3576 dossier holds the matrix with every row at `not tested`, and the
 x64 baseline has no dossier at all — so neither is presented as mos-qualified.
 
 > status: board-dependent — evidence: `docs/bsp/cx3576-example.md`

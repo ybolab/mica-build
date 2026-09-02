@@ -40,14 +40,27 @@
 
 > status: shipped — evidence: `docs/user/doc-contract.md`
 
-## 3. 渠道、晋级与门禁发布
+## 3. 渠道、清单与门禁发布
 
-把发布版命名进渠道（development、candidate、stable）、一份签名的机器可读
-发布清单、以及一个拒绝缺少产物、schema 有效清单、受支持板卡证据**或其
-发布说明**的发布版的发布门禁，由发布身份计划定义。它落地后，本页将获得
-渠道词汇，清单将成为本页散文所服从的机器可读来源；官方站点的下载简报是
+发布目录里的 `manifest.json` 如今就是本页散文所服从的机器可读来源。它把发布
+版本、渠道（`development`、`candidate` 或 `stable`）、板卡与其 profile、完整
+的源码 commit 及构建时工作树是否有未提交改动、构建器镜像的固定版本、从板卡
+证据文件读出的启动保障等级，以及每个产物的文件名、角色、大小与 sha256 绑在
+一起。其中没有一个数字是手打的：每个数值要么是对着暂存文件量出来的，要么是
+从盖这个戳的机制里读出来的，工具链也没有任何开关能覆盖一次测量。
+
+发布门禁会从零重新检查一个已组装的发布目录，并逐项点名拒绝——缺少某个角色的
+产物、大小或摘要变了的文件、与清单不一致的 `SHA256SUMS`、**空的发布说明**、
+没有任何组件的 SBOM、缺失或不一致的板卡证据。它没有豁免开关，而且每一条拒绝
+都由工具自己的变异测试证明会真的变红。因此，没有发布说明就不成其为一次发布。
+
+官方站点的下载简报是
 [../../website/downloads.md](../../website/downloads.md)。
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
 
-TODO(PLAN-043): revisit after this plan merges
+**晋级仍然不是一件已存在的事。**渠道是记录在清单里的一个声明，不是一个地方：
+没有任何东西托管发布版，没有任何东西把一个发布版从 `candidate` 挪到
+`stable`，也没有任何机制把支持窗口或生命周期终止日期绑定到某个发布版上。
+
+> status: unsupported

@@ -140,3 +140,8 @@ being a statement rather than an omission.
   bound to one named revision + storage device + radio module + BSP version.
 - Every row `pass` | `fail` | `N/A` | `not tested`; pass/fail rows carry an
   ISO date and an evidence note. Never implicitly green.
+- The installation row records the documented flash and first-boot procedure
+  as actually exercised on a unit, and its evidence note names the image
+  profile it was run at. A dossier whose Recovery method section describes a
+  flash transport nobody has driven says `not tested` here; describing the
+  procedure is not running it.

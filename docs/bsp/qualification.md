@@ -7,7 +7,7 @@ Qualification results section. It is what separates "an image that boots"
 from a supported product — the distinction [support-tiers.md](support-tiers.md)
 is built on. What follows is the process and the row grammar; the results are
 a board fact, and no board has produced them yet — the one dossier on file
-carries all twelve of its rows as `not tested`.
+carries every one of its rows as `not tested`.
 
 > status: shipped — evidence: `docs/bsp/board-template.md`
 > status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
@@ -72,6 +72,16 @@ without the hardware; nothing else may be dropped.
 | 10 | Watchdog/reset cause | a hung system is reset by the watchdog; the reset cause is readable afterwards |
 | 11 | Offline service | the device is fully operable and configurable with no network, per the provisioning model |
 | 12 | Recovery | every recovery path in the dossier's Recovery method section actually restores a unit from the state it claims to handle |
+| 13 | Installation and first boot | the documented flash procedure puts an image on a blank unit over the board's own transport, and that unit reaches its first boot and a claimable state |
+
+**Row 13 binds a profile as well as a revision.** The other twelve bind to
+section 1's combination; an installation is additionally exercised at one
+image profile (`dev` or `prod`), because the profile is written immutably into
+the image being written. The evidence note names the profile, and a board
+claiming both runs the row twice or says which one is unproven. The row also
+covers any offline provisioning document the procedure places on the medium:
+"first boot" means the unit came up in the state the procedure claims, not
+merely that it powered on.
 
 Rows 3, 4 and 12 are the ones that make a board *supported* rather than
 *booting*: the BSP contract's new-board checklist ends with the power-cut

@@ -49,18 +49,22 @@ content's own license instead.
 
 ### SBOM and source offer
 
-A complete supply-chain delivery — SPDX/CycloneDX SBOM per release, a
-license inventory across the full package set including the Debian base, and
-a formal corresponding-source offer for copyleft components — is planned as
-part of release identity publication and must not be claimed by the site
-until it ships. Until then, the site states exactly what exists: the mos
-sources are public under Apache-2.0, and the per-image package inventory
-identifies the Debian packages whose source is available from the Debian
-archive.
+A release directory now carries the supply-chain delivery: a CycloneDX SBOM
+with one component per row of the image's own bill of materials, and a license
+and source-offer inventory carrying the written offer, the source identity it
+is redeemable against, and the package list it covers. Both are derived from
+the image's package manifest and from nothing else, so two builds of one image
+emit identical bytes, and the publication gate refuses a release whose SBOM
+has no components.
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
 
-TODO(PLAN-043): revisit after this plan merges
+The site may say a release carries an SBOM and a source offer. It may not yet
+say where either is published, or who answers a source request: no release is
+hosted, and the operational channel for honouring the offer — an address and a
+responder — does not exist.
+
+> status: unsupported
 
 ### Rules for this page
 

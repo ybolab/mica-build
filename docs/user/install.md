@@ -38,9 +38,13 @@ The artifact you want is `_out/<board>/<board>-mos-<epoch>.img`, or the
 
 ## 2. Verify it before you write it
 
-There is no published checksum or signature file for an image today
-([download.md](download.md) section 4 states that gap). What exists, and what
-you should run, is the image contract check: it opens the assembled image and
+If you were handed a release directory, check it there first: it carries
+`SHA256SUMS` and a manifest pinning every artifact's digest, and
+[download.md](download.md) section 4 has the exact commands. What no release
+has is anywhere to be published from, so an image that reached you by any
+other route carries no digest to check it against.
+
+Either way, run the image contract check: it opens the assembled image and
 asserts the partition table, the slot payloads, the verity parameters and the
 trust material check by check, naming what it read and what it expected.
 
@@ -184,7 +188,9 @@ host-side test, and none of those is a flashed unit. No dossier row on any
 board records an installation, a first boot or a recovery entry that was
 performed on physical hardware. Treat every step on this page as a procedure
 to be validated on the first bench unit, and record the result in the board's
-dossier (`docs/bsp/qualification.md` row 12 is where a recovery entry lands).
+dossier: `docs/bsp/qualification.md` row 13 is where an installation and its
+first boot land, naming the profile they were run at, and row 12 is where a
+recovery entry does.
 
 > status: board-dependent — evidence: `docs/bsp/qualification.md`, `docs/bsp/cx3576-example.md`
 

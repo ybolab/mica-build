@@ -127,11 +127,10 @@ validators and the status route are covered by tests. The *transports* are
 not: no test and no bench run has staged a real boot partition or a real USB
 stick into a booting device, and the boot-partition transport in particular
 has never run on a physical board. The mechanism ships; the procedure is
-unproven.
+unproven, and a board dossier is where a run of it gets recorded
+([../bsp/qualification.md](../bsp/qualification.md)).
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
-
-TODO(PLAN-046): revisit after this plan merges
+> status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-provisioning-import`, `docs/design/provisioning.md`
 
 ## 4. Claiming the device
 

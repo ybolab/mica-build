@@ -71,9 +71,12 @@ CSPRNG 抽出 32 个十六进制字符的 `deviceId`，从中派生 `mos-xxxxxxx
 比对；序列号或 MAC 通过*运行时*路径读回——由已启动的系统报出来——再与配额
 比对。
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
+完整要求连同每一步的负责角色，见
+[../../design/manufacturing.md](../../design/manufacturing.md)。这里面的任何
+一项，mos 都不提供记录格式、schema 或工位工具，也没有任何在建的工作去做它：
+需要这些记录的产线自己建。
 
-TODO(PLAN-046): revisit after this plan merges
+> status: unsupported
 
 ## 4. 隔离：失败与重复的配置
 
@@ -99,9 +102,14 @@ STATE 镜像到另一台上以"保住"它的身份；序列号的连续性在记
 闪存上处理。在 RMA 签收时，退回单元的凭据从收到那一刻起就按**已泄露**处理，
 任何与该身份绑定的车队侧信任在签收时撤销，而不是等到诊断时。
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
+这条不变式是本节里唯一由产品**以构造方式**（而不是靠流程）强制的部分。
 
-TODO(PLAN-046): revisit after this plan merges
+> status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-seed-state`, `docs/design/provisioning.md`
+
+上面其余的一切——隔离记录、物理隔离、池账目、重复检测、返修的新一代记录与
+报废处置——都是对产线的要求，背后没有任何工具，也没有任何计划。
+
+> status: unsupported
 
 ## 5. 调试与恢复端口：工厂对现场
 

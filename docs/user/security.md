@@ -41,8 +41,11 @@ The named gaps:
 - **No keyring rotation channel on deployed devices** — replacing the trust
   anchor on a fielded device currently means an image signed by the very key
   being replaced.
-- **Nothing ships the TUF verifier to devices**; TUF verification is a
-  host-side capability today.
+- **The device-side TUF verifier ships, and its trust anchor does not.**
+  `rauc-verify` and `rauc-update` are in the image and walk release metadata
+  from a pinned root, but no image provisions that root, so the walk has
+  nothing to start from until an operator supplies one
+  ([update-rollback.md](update-rollback.md)).
 
 > status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`
 
@@ -94,13 +97,24 @@ operation sits behind the API credential boundary.
 
 ## 6. Security lifecycle
 
-Vulnerability handling, advisories, factory identity and key provisioning,
-debug/fuse policy, and per-board boot-assurance records are being defined as
-the security and manufacturing lifecycle plan; the advisories brief for the
-official site is [../website/security.md](../website/security.md). Until that
-lands there is no published advisory process to point an auditor at, and this
-page is the honest inventory.
+The lifecycle is now written down: every credential in the product with its
+owning role and rotation procedure, the release channel and signing
+procedures, severity classes with triage and patch targets, advisory
+publication, incident response, and support windows and end of life. Each
+section states its own maturity rather than implying it is enforced. Boards
+carry a boot-assurance claim in a committed evidence file, and the release
+gate reads that file rather than letting a release name its own level.
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: shipped — evidence: `docs/design/security-lifecycle.md`, `boards/cx3576/evidence.json`
 
-TODO(PLAN-053): revisit after this plan merges
+**None of the response channels exists yet, and an auditor should be told
+so.** There is no published security contact and no disclosure policy at the
+repository root, no advisory feed, no end-of-life announcement mechanism, and
+no tooling that enforces a support window or a patch target — reports today
+reach the maintainers privately and are handled case by case. Factory identity
+injection, factory records and debug/fuse policy are likewise designed and
+unbuilt ([manufacturing.md](manufacturing.md)). The advisories brief for the
+official site is [../website/security.md](../website/security.md); this page
+is the honest inventory.
+
+> status: unsupported

@@ -63,15 +63,21 @@ directly, and it is only as strong as I1 below it plus the key custody
 around it: with development keys, I2 is a tested mechanism, not a production
 promise.
 
-The tooling ships and is exercised in the build; owning production keys is
-an operational act, written down as a runbook before being performed, and
-the end-to-end delivery of authenticated updates is planned work.
+The tooling ships and is exercised in the build, and so does the delivery half
+it used to be waiting on: the image carries a client that walks signed release
+metadata from a pinned root, downloads with resume, and refuses anything the
+metadata does not cover.
 
 > status: shipped — evidence: `build/src/bundle.ts`
 
-> status: shipped — evidence: `pkgs/rauc-sign/README.md`
+> status: shipped — evidence: `pkgs/rauc-sign/README.md`, `docs/design/updates.md`
 
-> status: proposed — evidence: `docs/plan/PLAN-047.md`
+What remains is operational rather than mechanical, and it is what keeps I2
+from being a production claim: owning production keys is an act written down
+as a runbook and not yet performed, and no image provisions the pinned root
+anchor the client verifies against.
+
+> status: unsupported
 
 ## I3 — authenticated kernel, FIT, DTB and verity parameters
 
@@ -84,10 +90,11 @@ signature-checked before use — on a U-Boot board, a signed FIT with
 **Where it stands.** No shipped board implements I3: the BSP contract
 records that `CONFIG_FIT_SIGNATURE` is configured nowhere in the tree, and
 the x64 boot path (one static ESP, stock GRUB) verifies nothing either. I3
-is board-specific best effort, planned under the security and manufacturing
-lifecycle work.
+also needs a board boot key to sign with, and that lifecycle is written down
+and unbuilt (`docs/design/security-lifecycle.md` section 1.5). I3 is
+board-specific best effort and nothing in the tree pursues it.
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: unsupported
 
 ## I4 — hardware-rooted boot plus production debug policy
 
@@ -101,9 +108,11 @@ authenticates nothing an attacker cares about.
 
 **Where it stands.** No shipped board implements or configures I4. Fusing is
 irreversible and can remove recovery, so it belongs to the manufacturing
-lifecycle design, not to a board port's defaults.
+lifecycle design (`docs/design/manufacturing.md` section 7, which records it
+as prose with no tooling) and not to a board port's defaults. Nothing in this
+tree fuses anything.
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: unsupported
 
 ## Claiming a level
 

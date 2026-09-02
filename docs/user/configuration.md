@@ -86,27 +86,58 @@ and data belong on DATA ([storage.md](storage.md)).
 
 > status: shipped — evidence: `docs/design/access.md`, `docs/design/ro-root.md`
 
-## 5. Known gaps
+## 5. Deliberate limits, and what is still missing
 
 ### 5.1 Time
 
-There is no supported runtime configuration of NTP servers or timezone today,
-and no enabled network-time service in the rootfs. The plan adds
-`systemd-timesyncd` always-on, typed `time.ntp.servers` and `time.timezone`
-settings, and synchronization status over the API.
+Network time is not a gap any more, but two things about it are deliberate
+limits rather than omissions.
 
-> status: proposed — evidence: `docs/plan/PLAN-044.md`
+`systemd-timesyncd` is installed and statically enabled, so it always runs:
+**there is no enable, disable or pause control** — not in the settings tree,
+not in the API, not in the UI. Two settings exist and only two,
+`time.ntp.servers` (a validated list; empty means the image's fallback pool)
+and `time.timezone`. `GET /api/v1/time/status` reports whether the clock is
+disciplined, which server answered, and whether the last correction was a step
+or a slew.
 
-TODO(PLAN-044): revisit after this plan merges
+**The machine's time is UTC, always, and the timezone is presentation only.**
+`time.timezone` is never applied to `/etc/localtime` — the image bakes no zone
+and the build refuses one — because that symlink is read by every consumer of
+UTC, journald included. The zone is published as a runtime value the UI
+formats with, and nothing else.
 
-### 5.2 Offline provisioning channels and repeatable provisioning
+Below network time sits a clock floor, so a device with no RTC or a dead RTC
+battery still boots no earlier than the last minute it was known to be
+running: the saved clock lives on STATE and survives reboots and A/B updates.
+PTP, NTS and configurable polling periods are out of scope.
 
-The offline configuration channels and factory injection of section 1, and a
-versioned, validated provisioning document that can be applied idempotently
-across devices, are planned under the install/onboarding plan. Today
-configuration is applied through individual API writes over an existing
+**Unproven on hardware:** the cx3576's device tree declares an RTC, and
+neither its driver nor its backup power has been validated on a bench board.
+Nothing on this page depends on the RTC being there — that is what the saved
+floor is for — but a device that keeps time across a long power-off has not
+been demonstrated.
+
+> status: shipped — evidence: `docs/design/time.md`, `pkgs/mosd/mosd/src/time_status.rs`
+
+> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/dts/rk3576-cx3576z.dts`
+
+### 5.2 Offline provisioning channels and factory injection
+
+A versioned, validated provisioning document now exists and is applied from a
+medium before anything is listening on the network: one TOML file at a fixed
+name, whole-document validation, applied once and recorded, over two offline
+transports ([first-run.md](first-run.md)). It is the repeatable path for
+configuring a device that has never had a network.
+
+> status: shipped — evidence: `docs/design/provisioning.md`, `pkgs/mosd/mosd/src/provisioning_doc.rs`
+
+Two of the five channels the design lists still do not exist: the AP captive
+portal has its transport and not the portal, and the serial wizard was never
+built. Neither has factory injection — versioned inputs, verification at
+injection and a per-device record are described in
+[manufacturing.md](manufacturing.md) and have no tooling. Beyond the
+provisioning document, configuration is individual API writes over an existing
 network.
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
-
-TODO(PLAN-046): revisit after this plan merges
+> status: unsupported
