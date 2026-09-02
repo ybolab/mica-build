@@ -263,7 +263,8 @@ power of two.
 **Where the artifacts live.** PLAN-061's taxonomy, which PLAN-063 keeps, puts
 them under `/mos/updates`: `downloads/` for resumable partial acquisition,
 `verified/` for complete authenticated artifacts awaiting RAUC, `staging/` for
-bounded transaction-local work. `mos-data-layout` creates all three.
+bounded transaction-local work. `mos-data-layout` creates all three. What
+"authenticated" means there is `docs/design/security-model.md` §3.
 
 **Where it is enforced.** mos consumes DATA space for exactly one update
 purpose: the bundle under `/mos/updates` that `InstallUpdate` then names. That
@@ -317,7 +318,7 @@ quiet new endpoint.
 | `dataPreservingReplacement` | unsupported | Moving DATA to new media needs a published on-disk contract (the layout, the UID pinning in `mos-system`'s postinst, the STATE identity) and a validated procedure. Neither exists. |
 | `factoryReset` | unsupported | ro-root.md §4 already records this: wiping DATA + STATE + `/var` would return the device to first boot, and **nothing implements it**. The nearest real operation is a whole-disk reflash. |
 | `secureErase` | unsupported | An erase promise without device-level evidence (eMMC sanitize, NVMe format-NVM) is a promise about flash translation nobody has verified on these boards. PLAN-049 gates it behind physical-media evidence. |
-| `encryption` | unsupported | DATA/STATE encryption needs a board key lifecycle — device-bound keys, escrow, recovery — and PLAN-049 makes that a gated product decision, not an implementation detail. A key that cannot be recovered turns a full disk into a dead device. |
+| `encryption` | unsupported | DATA/STATE encryption needs a board key lifecycle — device-bound keys, escrow, recovery — and PLAN-049 makes that a gated product decision, not an implementation detail. A key that cannot be recovered turns a full disk into a dead device. The current at-rest limit is stated in `docs/design/security-model.md` §6. |
 | `removableMedia` | unsupported | USB/SD trust, mount and eject behaviour is a security decision (what does the device do when someone plugs a disk into it?) before it is a feature. Nothing auto-mounts today, and that is the safe default. |
 
 None of these is implemented, partially or behind a flag. The list is the

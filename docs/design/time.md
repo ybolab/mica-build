@@ -75,7 +75,9 @@ that validates certificate or metadata expiry runs:
 4. **TLS/TUF consumers.** Everything that validates expiries starts after
    `sysinit.target`, i.e. after the floor is in place; network time then only
    moves the clock forward-or-slightly-sideways from a floor that was already
-   sane.
+   sane. What those consumers validate is boundary (b) of
+   `docs/design/security-model.md` §3; the floor is what keeps its expiry
+   checks meaningful.
 
 The ordering `Before=systemd-timesyncd.service` on the mount is load-bearing:
 timesyncd reads the clock file once, at startup, so a bind that arrives later
