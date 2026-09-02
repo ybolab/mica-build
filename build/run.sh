@@ -44,6 +44,7 @@ usage: bash build/run.sh [--help] [bun-test-args...]
        bash build/run.sh --mkimage-cx3576 [assembler-args...]
        bash build/run.sh --mkimage-x64 [assembler-args...]
        bash build/run.sh --bundle [bundle-args...]
+       bash build/run.sh --release [release-args...]
        bash build/run.sh --compare-roots [comparator-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
@@ -73,6 +74,12 @@ same first-position rule; try --bundle --help. Unlike the two assemblers this
 one takes a board, because its two branches differ only in what a boot slot
 holds, and that is a board fact.
 
+With --release FIRST, it assembles the customer-facing release directory for a
+board (manifest.json, SHA256SUMS, SBOM, provenance, licenses, release notes,
+the image and the signed bundle) or gates an existing one; try --release
+--help. Same shape, same first-position rule. The gate is the arm that
+REFUSES: an incomplete release directory exits non-zero naming the gap.
+
 With --compare-roots FIRST, it compares two extracted root trees against the
 written sanction ledger in tests/dual-build-sanctions.md -- PLAN-036 section
 6's dual-build gate. Same shape, same first-position rule; try --compare-roots
@@ -100,8 +107,8 @@ USAGE
 # else entirely. A request to build a rootfs, or to assemble an image, answered
 # by a passing test suite.
 #
-# Five modes rather than one, and they stay five: they arrived from different
-# milestones (M5b, M6b, M6c, M6d and PLAN-036) and share only the preamble above
+# Six modes rather than one, and they stay six: they arrived from different
+# milestones (M5b, M6b, M6c, M6d, PLAN-036 and PLAN-043) and share only the preamble above
 # and run_bun below. Nothing about any of them is a version of another -- in
 # particular --mkimage-x64 is an ARM of this dispatch and not a `--board` flag
 # on --mkimage-cx3576, for the reason the usage text gives.
@@ -112,6 +119,7 @@ case "${1:-}" in
 --mkimage-cx3576) MODE=mkimage-cx3576; shift ;;
 --mkimage-x64) MODE=mkimage-x64; shift ;;
 --bundle) MODE=bundle; shift ;;
+--release) MODE=release; shift ;;
 --compare-roots) MODE=compare-roots; shift ;;
 esac
 for arg in "$@"; do
@@ -143,6 +151,15 @@ for arg in "$@"; do
     echo "error: --bundle has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
     echo "       a green suite in answer to a request to build a signed update bundle." >&2
+    exit 1
+done
+
+for arg in "$@"; do
+    case "${arg}" in --release) ;; *) continue ;; esac
+    echo "error: --release has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
+    echo "       a green suite in answer to a request about a release -- and the gate arm is a" >&2
+    echo "       GATE, so a green it did not earn is the whole failure it exists to prevent." >&2
     exit 1
 done
 
@@ -416,6 +433,20 @@ if [ "${MODE}" = bundle ]; then
     echo "build: building the RAUC update bundle"
     rc=0
     run_bun run src/bundle-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# The release assembler and its publication gate. Everything the bundle block
+# above says applies unchanged, minus the tools: this mode drives no external
+# toolset at all -- it measures files, derives records from them and re-checks
+# the result -- so it needs neither docker buildx nor a sibling container, and
+# the container route carries it. The assemble arm ends by running the same
+# gate a fresh invocation would, so there is no shape of "wrote a directory
+# and asserted nothing".
+if [ "${MODE}" = release ]; then
+    echo "build: release manifest tooling"
+    rc=0
+    run_bun run src/release-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 

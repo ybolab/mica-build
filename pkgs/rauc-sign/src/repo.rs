@@ -47,6 +47,23 @@ pub const CUSTOM_VERITY_ROOT_HASH: &str = "verityRootHash";
 /// `custom` key under which a target records the release version string.
 pub const CUSTOM_RELEASE_VERSION: &str = "releaseVersion";
 
+/// `custom` keys stamped on a bundle target by [`add`] when a release
+/// manifest is supplied, so the device-side selection reads compatibility out
+/// of **signed** metadata and needs no unsigned side channel.
+pub const CUSTOM_BOARD: &str = "board";
+/// See [`CUSTOM_BOARD`].
+pub const CUSTOM_PROFILE: &str = "profile";
+/// See [`CUSTOM_BOARD`].
+pub const CUSTOM_CHANNEL: &str = "channel";
+/// See [`CUSTOM_BOARD`]. Recorded verbatim from the manifest — the signer does
+/// not hold the schema floor, the device-side client does, so a future signer
+/// can publish a newer schema without this tool refusing it.
+pub const CUSTOM_MANIFEST_SCHEMA_VERSION: &str = "manifestSchemaVersion";
+/// `custom` key on a bundle target naming the pinned manifest target.
+pub const CUSTOM_MANIFEST_TARGET: &str = "manifestTarget";
+/// `custom` key on a manifest target naming the bundle target it describes.
+pub const CUSTOM_MANIFEST_FOR: &str = "manifestFor";
+
 /// Expiration instants for the roles that every signing operation re-signs.
 ///
 /// These are always supplied by the caller. Nothing in this crate reads the wall
@@ -153,20 +170,45 @@ pub async fn init(
     Ok(())
 }
 
+/// The optional identities [`add`] records beside a bundle target.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AddOptions<'a> {
+    /// Target name in the metadata; defaults to the file name.
+    pub name: Option<&'a str>,
+    /// Release version recorded in the target's custom block. When a manifest
+    /// is also given the two must agree.
+    pub release_version: Option<&'a str>,
+    /// Release `manifest.json` to pin beside the bundle as its own target.
+    pub manifest: Option<&'a Path>,
+}
+
 /// Adds `file` as a target, pinning its sha256, length and the RAUC bundle's
 /// dm-verity root hash, then re-signs targets, snapshot and timestamp.
 ///
 /// `verity_root_hash` is supplied by the caller; this tool never shells out to
 /// `rauc` to discover it.
+///
+/// When [`AddOptions::manifest`] names a release `manifest.json`
+/// (`build/src/release-manifest.ts`'s schema), the manifest is pinned as its
+/// own target beside the bundle — `<bundle target name>.manifest.json`, sha256
+/// and length like any target — and the bundle target's `custom` block is
+/// stamped with the manifest's board, profile, channel, release version and
+/// schema version, which is what the device-side selection reads. A manifest
+/// whose artifact list does not pin the bundle being published is refused:
+/// pinning it would sign a binding that binds nothing.
 pub async fn add(
     repo: &Path,
     keys_dir: &Path,
     file: &Path,
-    name: Option<&str>,
     verity_root_hash: &str,
-    release_version: Option<&str>,
+    options: AddOptions<'_>,
     expires: Expirations,
 ) -> Result<TargetName> {
+    let AddOptions {
+        name,
+        release_version,
+        manifest,
+    } = options;
     let hash = verity_root_hash.trim();
     ensure!(
         hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -197,6 +239,52 @@ pub async fn add(
         );
     }
 
+    let mut manifest_entry: Option<(TargetName, Target, PathBuf)> = None;
+    if let Some(manifest_path) = manifest {
+        let identity = read_manifest_identity(manifest_path)?;
+        let bundle_sha256 = hex::encode(&target.hashes.sha256);
+        ensure!(
+            identity.artifact_sha256.contains(&bundle_sha256),
+            "{} pins no artifact with the sha256 of {} ({bundle_sha256}); a manifest \
+             that does not list the bundle being published binds nothing",
+            manifest_path.display(),
+            file.display()
+        );
+        if let Some(version) = release_version {
+            ensure!(
+                version == identity.version,
+                "--release-version {version} disagrees with the manifest's \
+                 release.version {}; one of them is the wrong release",
+                identity.version
+            );
+        }
+        let manifest_name = TargetName::new(format!("{}.manifest.json", target_name.raw()))?;
+        let mut manifest_target = Target::from_path(manifest_path)
+            .await
+            .with_context(|| format!("hash manifest {}", manifest_path.display()))?;
+        manifest_target.custom.insert(
+            CUSTOM_MANIFEST_FOR.to_string(),
+            Value::String(target_name.raw().to_string()),
+        );
+        for (key, value) in [
+            (CUSTOM_BOARD, identity.board),
+            (CUSTOM_PROFILE, identity.profile),
+            (CUSTOM_CHANNEL, identity.channel),
+            (CUSTOM_RELEASE_VERSION, identity.version),
+        ] {
+            target.custom.insert(key.to_string(), Value::String(value));
+        }
+        target.custom.insert(
+            CUSTOM_MANIFEST_SCHEMA_VERSION.to_string(),
+            Value::from(identity.schema_version),
+        );
+        target.custom.insert(
+            CUSTOM_MANIFEST_TARGET.to_string(),
+            Value::String(manifest_name.raw().to_string()),
+        );
+        manifest_entry = Some((manifest_name, manifest_target, manifest_path.to_path_buf()));
+    }
+
     let meta_dir = metadata_dir(repo);
     let out_targets = targets_dir(repo);
     fs::create_dir_all(&out_targets)
@@ -204,6 +292,9 @@ pub async fn add(
 
     let (mut editor, versions) = open_editor(repo).await?;
     editor.add_target(target_name.clone(), target)?;
+    if let Some((manifest_name, manifest_target, _)) = &manifest_entry {
+        editor.add_target(manifest_name.clone(), manifest_target.clone())?;
+    }
     editor
         .targets_version(bump(versions.targets)?)?
         .targets_expires(expires.targets)?
@@ -219,9 +310,175 @@ pub async fn add(
         .copy_target(file, &out_targets, PathExists::Replace, Some(&target_name))
         .await
         .context("copy target into repository")?;
+    if let Some((manifest_name, _, manifest_path)) = &manifest_entry {
+        signed
+            .copy_target(
+                manifest_path,
+                &out_targets,
+                PathExists::Replace,
+                Some(manifest_name),
+            )
+            .await
+            .context("copy manifest into repository")?;
+    }
     publish_alias(&meta_dir, versions.targets.get() + 1, "targets")?;
     publish_alias(&meta_dir, versions.snapshot.get() + 1, "snapshot")?;
     Ok(target_name)
+}
+
+/// The selection-relevant identity read out of a release `manifest.json`.
+///
+/// Only the fields the signer transcribes are demanded; the full schema
+/// belongs to the release gate (`build/src/release-manifest.ts`), and holding
+/// a second copy of it here would be the drift this repository keeps refusing.
+struct ManifestIdentity {
+    schema_version: u64,
+    version: String,
+    channel: String,
+    board: String,
+    profile: String,
+    /// sha256 of every artifact the manifest pins.
+    artifact_sha256: Vec<String>,
+}
+
+fn read_manifest_identity(path: &Path) -> Result<ManifestIdentity> {
+    let value: Value = serde_json::from_slice(
+        &fs::read(path).with_context(|| format!("read manifest {}", path.display()))?,
+    )
+    .with_context(|| format!("parse manifest {}", path.display()))?;
+    let string_at = |value: &Value, pointer: &str| -> Result<String> {
+        value
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("{} carries no string at {pointer}", path.display()))
+    };
+    let schema_version = value
+        .get("schemaVersion")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("{} carries no integer schemaVersion", path.display()))?;
+    let artifacts = value
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("{} lists no artifacts array", path.display()))?;
+    let artifact_sha256 = artifacts
+        .iter()
+        .map(|artifact| string_at(artifact, "/sha256"))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ManifestIdentity {
+        schema_version,
+        version: string_at(&value, "/release/version")?,
+        channel: string_at(&value, "/release/channel")?,
+        board: string_at(&value, "/board/name")?,
+        profile: string_at(&value, "/board/profile")?,
+        artifact_sha256,
+    })
+}
+
+/// Produces an offline update "lockbox" from a published repository: the
+/// complete `metadata/` set plus the named targets' hash-prefixed files (every
+/// target when none is named; a named bundle brings its pinned manifest
+/// along). The result is itself a repository directory, which is the point —
+/// `rauc-update import` and `rauc-verify` walk it exactly as they would an
+/// online mirror, pinned root, rollback state and all.
+///
+/// Reads the repository's own unversioned `targets.json` to resolve names to
+/// hash-prefixed files: this runs on the release host over a repository it
+/// just published, and the consumer re-verifies everything from its own
+/// anchor, so a wrong resolution here can mis-assemble a lockbox but never
+/// make one verify.
+///
+/// The metadata is carried verbatim — it cannot be re-signed here, offline
+/// keys are not present — so a **partial** lockbox still lists every published
+/// target. `rauc-update import` verifies exactly the target it selects, which
+/// is why that works; `rauc-sign verify`, which reads every listed target
+/// back, passes only on a full lockbox.
+///
+/// Returns the sorted names of the targets carried.
+pub fn lockbox(repo: &Path, out: &Path, targets: &[String]) -> Result<Vec<String>> {
+    let meta_src = metadata_dir(repo);
+    ensure!(
+        meta_src.join("root.json").is_file(),
+        "{} is not a repository (no metadata/root.json)",
+        repo.display()
+    );
+    let out_meta = metadata_dir(out);
+    ensure!(
+        !out_meta.join("root.json").exists(),
+        "{} already contains a repository",
+        out.display()
+    );
+    fs::create_dir_all(&out_meta).with_context(|| format!("create {}", out_meta.display()))?;
+    let out_targets = targets_dir(out);
+    fs::create_dir_all(&out_targets)
+        .with_context(|| format!("create {}", out_targets.display()))?;
+
+    for entry in fs::read_dir(&meta_src).with_context(|| format!("read {}", meta_src.display()))? {
+        let entry = entry.with_context(|| format!("read {}", meta_src.display()))?;
+        if entry
+            .metadata()
+            .with_context(|| format!("stat {}", entry.path().display()))?
+            .is_file()
+        {
+            fs::copy(entry.path(), out_meta.join(entry.file_name()))
+                .with_context(|| format!("copy {}", entry.path().display()))?;
+        }
+    }
+
+    let targets_doc: Value = serde_json::from_slice(
+        &fs::read(meta_src.join("targets.json")).context("read targets.json")?,
+    )
+    .context("parse targets.json")?;
+    let listed = targets_doc
+        .pointer("/signed/targets")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow!("targets.json lists no targets object"))?;
+
+    let mut selected: std::collections::BTreeSet<String> = if targets.is_empty() {
+        listed.keys().cloned().collect()
+    } else {
+        let mut set = std::collections::BTreeSet::new();
+        for name in targets {
+            ensure!(
+                listed.contains_key(name),
+                "target {name} is not listed in {}; nothing signed pins it",
+                meta_src.join("targets.json").display()
+            );
+            set.insert(name.clone());
+        }
+        set
+    };
+    // A named bundle's pinned manifest comes along: an import path that can
+    // select needs the same signed selection block the online path reads.
+    for name in selected.clone() {
+        if let Some(partner) = listed
+            .get(&name)
+            .and_then(|target| target.pointer(&format!("/custom/{CUSTOM_MANIFEST_TARGET}")))
+            .and_then(Value::as_str)
+            && listed.contains_key(partner)
+        {
+            selected.insert(partner.to_string());
+        }
+    }
+
+    for name in &selected {
+        let sha256 = listed
+            .get(name)
+            .and_then(|target| target.pointer("/hashes/sha256"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("targets.json pins no sha256 for {name}"))?;
+        let file_name = format!("{sha256}.{name}");
+        let src = targets_dir(repo).join(&file_name);
+        ensure!(
+            src.is_file(),
+            "{} is listed but {} is missing from the repository",
+            name,
+            src.display()
+        );
+        fs::copy(&src, out_targets.join(&file_name))
+            .with_context(|| format!("copy {}", src.display()))?;
+    }
+    Ok(selected.into_iter().collect())
 }
 
 /// Re-signs the repository, bumping `snapshot` and `timestamp`.
@@ -402,6 +659,167 @@ pub async fn rotate_root(
         .await
         .context("write the new root metadata")?;
     publish_alias(&meta_dir, next.get(), "root")?;
+    Ok(next.get())
+}
+
+/// Publishes the next root version with **fresh online role keys** bound to
+/// `targets`, `snapshot` and `timestamp`, then re-signs the online metadata
+/// with them. The outgoing online keys are revoked: no metadata they sign
+/// after this verifies against the new root.
+///
+/// This is the recovery for a compromised (or retiring) release host, and it
+/// is an **offline ceremony**: it needs the sealed root key, because only a
+/// new root version can change which online keys the fleet accepts. The root
+/// key itself does not change hands — the root role's binding is untouched, so
+/// the one signature the unchanged root key produces satisfies both halves of
+/// the cross-sign check and no anchor needs redistributing.
+///
+/// Unlike [`rotate_root`], this cannot stop at the root document: the
+/// repository's `targets`, `snapshot` and `timestamp` are signed by the very
+/// keys being revoked, so a repository left as-is would be refused whole by
+/// every client that walks to the new root. The re-sign therefore happens
+/// here, in the same ceremony, with the incoming keys — target entries are
+/// carried forward unchanged and every online role's version is bumped. The
+/// target files themselves are content-addressed and unchanged, so nothing is
+/// copied.
+///
+/// Expiration is deliberately not enforced when loading the outgoing
+/// repository: revoking a compromised key is most urgent exactly when the
+/// repository has been left to rot.
+///
+/// Returns the root version that was published.
+pub async fn rotate_online_keys(
+    repo: &Path,
+    keys_dir: &Path,
+    new_keys_dir: &Path,
+    root_expires: DateTime<Utc>,
+    expires: Expirations,
+) -> Result<u64> {
+    let meta_dir = metadata_dir(repo);
+    let root_path = meta_dir.join("root.json");
+    let root_bytes =
+        fs::read(&root_path).with_context(|| format!("read {}", root_path.display()))?;
+    let current: Signed<Root> = serde_json::from_slice(&root_bytes)
+        .with_context(|| format!("parse {}", root_path.display()))?;
+    // Same reasoning as rotate_root: an anchor its own keys do not sign is not
+    // the anchor the fleet is on, and building on it would be discovered by
+    // the fleet, after the ceremony.
+    current
+        .signed
+        .verify_role(&current)
+        .with_context(|| format!("{} is not signed by its own root keys", root_path.display()))?;
+
+    let next = bump(current.signed.version)?;
+    let next_path = meta_dir.join(format!("{next}.root.json"));
+    ensure!(
+        !next_path.exists(),
+        "{} already exists; a published root version is never rewritten \
+         (is metadata/root.json a stale copy of an older version?)",
+        next_path.display()
+    );
+
+    // Load the repository while the outgoing root still validates it, to carry
+    // the target entries into the re-signed metadata. Once the new root is
+    // written, metadata signed by the revoked keys can no longer be loaded —
+    // which is the point of the ceremony, and why the load happens first.
+    let repository = RepositoryLoader::new(
+        &root_bytes,
+        dir_url(&meta_dir)?,
+        dir_url(&targets_dir(repo))?,
+    )
+    .expiration_enforcement(ExpirationEnforcement::Unsafe)
+    .load()
+    .await
+    .context("load repository under the outgoing online keys")?;
+    let versions = Versions {
+        targets: repository.targets().signed.version,
+        snapshot: repository.snapshot().signed.version,
+        timestamp: repository.timestamp().signed.version,
+    };
+    let carried: Vec<(TargetName, Target)> = repository
+        .targets()
+        .signed
+        .targets
+        .iter()
+        .map(|(name, target)| (name.clone(), target.clone()))
+        .collect();
+
+    let mut new_root = current.signed.clone();
+    new_root.version = next;
+    new_root.expires = root_expires;
+    for role in keys::ONLINE_ROLES {
+        let role_type: RoleType = role.parse().map_err(|_| anyhow!("unknown role {role}"))?;
+        let (new_key_id, new_key) = load_key(new_keys_dir, role)?;
+        let role_keys = new_root
+            .roles
+            .get_mut(&role_type)
+            .ok_or_else(|| anyhow!("{} does not delegate the {role} role", root_path.display()))?;
+        ensure!(
+            !role_keys.keyids.contains(&new_key_id),
+            "the {role} key in {} is the one already holding the role; an online-key \
+             rotation revokes the outgoing keys, so it must introduce keys the root \
+             does not already trust",
+            new_keys_dir.display()
+        );
+        role_keys.keyids = vec![new_key_id.clone()];
+        new_root.keys.insert(new_key_id, new_key);
+    }
+    prune_unreferenced_keys(&mut new_root);
+
+    // The root role's binding is unchanged, so the one key in `keys_dir` signs
+    // a document that both the outgoing root and the new root accept. Both
+    // halves are still checked explicitly, exactly as in rotate_root, so a
+    // wrong sealed key is refused in the room rather than by the fleet.
+    let sources = keys::sources(keys_dir, &["root"])?;
+    let signed = SignedRole::new(
+        new_root.clone(),
+        &KeyHolder::Root(new_root.clone()),
+        &sources,
+        &SystemRandom::new(),
+    )
+    .await
+    .context("sign the new root metadata")?;
+    current
+        .signed
+        .verify_role(signed.signed())
+        .context("the new root is not signed by a threshold of the outgoing root keys")?;
+    new_root
+        .verify_role(signed.signed())
+        .context("the new root is not signed by a threshold of its own root keys")?;
+
+    signed
+        .write(&meta_dir, true)
+        .await
+        .context("write the new root metadata")?;
+    publish_alias(&meta_dir, next.get(), "root")?;
+
+    // Re-sign the online roles with the incoming keys, carrying the targets
+    // forward. The editor is opened from the just-published root, so what it
+    // signs is exactly what a client walking to the new root will demand.
+    let mut editor = RepositoryEditor::new(meta_dir.join("root.json"))
+        .await
+        .context("load the new root.json into the editor")?;
+    for (name, target) in carried {
+        editor.add_target(name, target)?;
+    }
+    editor
+        .targets_version(bump(versions.targets)?)?
+        .targets_expires(expires.targets)?
+        .snapshot_version(bump(versions.snapshot)?)
+        .snapshot_expires(expires.snapshot)
+        .timestamp_version(bump(versions.timestamp)?)
+        .timestamp_expires(expires.timestamp);
+    let online = keys::sources(new_keys_dir, &keys::ONLINE_ROLES)?;
+    let signed_repo = editor
+        .sign(&online)
+        .await
+        .context("sign metadata with the incoming online keys")?;
+    signed_repo
+        .write(&meta_dir)
+        .await
+        .context("write metadata")?;
+    publish_alias(&meta_dir, versions.targets.get() + 1, "targets")?;
+    publish_alias(&meta_dir, versions.snapshot.get() + 1, "snapshot")?;
     Ok(next.get())
 }
 

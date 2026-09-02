@@ -195,8 +195,10 @@ previous boot to ask for; the hostname column is left out of every line.
 
 ## 6. The redaction schema, version 1
 
-Redaction is a tested security boundary, and it fails closed. Three passes,
-in order, in `apid/src/diagnostics.rs`:
+Redaction is a tested security boundary, and it fails closed. It is the
+management-API redaction `docs/design/security-model.md` §6 counts among the
+confidentiality that does exist. Three passes, in order, in
+`apid/src/diagnostics.rs`:
 
 1. **The live denylist.** The field-name denylist every read route already
    applies (`psk`, `passwordHash`, `password_hash`, `hash`, `privateKey`)
@@ -333,10 +335,10 @@ says.
    actual UTC collection time separately when `time.status` is not
    `synchronized`.
 5. Store the exported file in the case location approved for the device's
-   assurance level as defined by `docs/design/security-model.md`. The device
-   never uploads it. Collection
-   remains usable without upstream connectivity; only the bounded DNS probe
-   can touch the network, and its failure does not fail the snapshot.
+   assurance level as defined by the
+   [security model](security-model.md). The device never uploads it.
+   Collection remains usable without upstream connectivity; only the bounded
+   DNS probe can touch the network, and its failure does not fail the snapshot.
 
 If the console is unavailable but the authenticated HTTPS API is reachable,
 use the same API sequence from a locally attached service workstation. Do not
@@ -351,8 +353,8 @@ storage and time status, IP addressing/routes/DNS, telemetry and collection
 results. IP addresses, gateways, DNS servers and the machine id are retained
 because support needs them to correlate the device and diagnose connectivity.
 Treat the exported file according to the handling and disclosure rules for the
-device's assurance level in `docs/design/security-model.md`; this design does
-not restate or alter those levels.
+device's assurance level in the [security model](security-model.md); this
+design does not restate or alter those levels.
 
 The versioned redaction boundary removes credentials, tokens, private keys,
 Wi-Fi and registry secrets, user content, SSIDs, MAC addresses, BSSIDs and

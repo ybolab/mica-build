@@ -1,2 +1,8 @@
-# The A/B update client.
+# The A/B update mechanism: the installer, and the device-side client that
+# feeds it.
 mos-rauc
+# rauc-update and rauc-verify: they discover, verify and stage a bundle, and
+# `rauc-update fetch --install` hands the staged path to the `rauc` above.
+# Declining `rauc` declines both halves together, which is why the client is
+# here rather than in common.pkgs.
+mos-rauc-update
