@@ -618,12 +618,12 @@ describe('the built-in escape, as an on-image fact', () => {
   })
 
   test('the ROUTE CONSTANT alone is not the markup', async () => {
-    // Why the constant is markup and not "/ui/assets/app.js": the bare asset
-    // path would still be in the binary (the asset route registers it) after
+    // Why the constant is markup and not "/_ui/assets/": the bare asset prefix
+    // would still be in the binary (the asset route registers it) after
     // index.html moved out to an asset tree, which is the one change this
     // check exists to catch.
     const fx = await mutated('packed-builtin-in-binary', root =>
-      writeFileSync(join(root, 'usr/bin/apid'), 'ELF ... /ui/assets/app.js ... trailer\n'))
+      writeFileSync(join(root, 'usr/bin/apid'), 'ELF ... /_ui/assets/ ... trailer\n'))
     try {
       expect(await verdictOf(fx, 'packed-builtin-in-binary')).toBe('fail')
     }
@@ -654,7 +654,7 @@ describe('the built-in escape, as an on-image fact', () => {
     // ...and the value itself, transcribed once more here, so that an edit
     // which moved BOTH copies together still has to face a third statement of
     // what the built-in UI's embedded index.html actually says.
-    expect(BUILTIN_MARKUP).toBe('<script type="module" crossorigin src="/ui/assets/app.js"></script>')
+    expect(BUILTIN_MARKUP).toBe('<script type="module" crossorigin src="/_ui/assets/index-')
   })
 })
 

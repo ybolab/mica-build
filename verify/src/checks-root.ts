@@ -349,14 +349,19 @@ function enabledCheck(c: EnabledCase): CheckCase {
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
 // A fragment of the built-in UI's index.html as apid embeds it, verbatim.
-// Markup and not a bare route constant: "/ui/assets/app.js" alone would still
-// be in the binary -- the asset route registers that path -- after index.html
-// moved out to an on-disk asset tree, which is the one change this catches.
+// Markup and not a bare route constant: "/_ui/assets/" alone would still be in
+// the binary -- the asset route registers that prefix -- after index.html moved
+// out to an on-disk asset tree, which is the one change this catches.
+//
+// It stops at the entry chunk's content hash on purpose. The bundler renames
+// that file on every rebuild, so a fragment carrying one hash would go red on
+// a correct image the next time the UI is built; everything up to the hash is
+// the part the markup states about itself.
 //
 // EXPORTED so that checks-fixture.ts's independent transcription of the same
 // string can be asserted equal to it. Two independent transcriptions of one
 // string keep each other honest; a shared constant would not.
-export const BUILTIN_MARKUP = '<script type="module" crossorigin src="/ui/assets/app.js"></script>'
+export const BUILTIN_MARKUP = '<script type="module" crossorigin src="/_ui/assets/index-'
 const KEYRING_PATH = '/etc/rauc/keyring.pem'
 const MANIFEST_PATH = '/usr/share/mos/manifest.tsv'
 const PACKED_MOUNTPOINTS = [
