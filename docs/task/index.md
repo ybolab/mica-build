@@ -64,3 +64,5 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-293 Ship the `docker` command name as a podman symlink**](RFCT-293.md) `P2`
 - [x] [**UI-010 Isolate built-in UI build outputs**](UI-010.md) `P1`
 - [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
+- [x] [**UI-012 Align the built-in console with the approved prototype details**](UI-012.md) `P1`
+- [-] [**UI-013 Complete the built-in console against the prototype information architecture**](UI-013.md) `P1`

@@ -4,6 +4,21 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The built-in console matches the prototype detail for detail (2026-09-02)
+
+PLAN-064 reproduced the approved prototype in outline; the shipped console now
+reproduces it in detail. The OKLCH re-derivation of the palette is replaced by
+the prototype's own Klein values for both themes, including the hover,
+accent-soft, accent-strong, skeleton and chrome roles. The type scale drops to
+the prototype's 22px page titles, 16px section titles, 15px control and table
+text and one 13px secondary size, and the shell adopts its 56/52px header,
+square logo mark with a stacked wordmark and hostname, navigation pills with an
+inverted active state, 44px footer on the page ground and 300px drawer with a
+status block. Buttons, inputs, tags, tables, tab strips, switches, dialogs,
+progress bars and the blueprint-framed sign-in card follow the prototype's
+sizes, radii and states, and the breakpoints move to 581px and 1100px. Content,
+routes, API bindings and the simulation boundary are unchanged. PLAN-067.
+
 ## Built-in UI builds are isolated from source (2026-09-02)
 
 The built-in UI now has one production and quality path through the Bun image
