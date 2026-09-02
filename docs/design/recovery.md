@@ -378,6 +378,31 @@ everything below it destroys something that was on the device.**
     slot directly and refuses only a `readonly` one, never a booted one
     (`write_slot_start`, `src/main.c`). It is not the install path, and mosd
     never invokes it.
+  - *What the shipped binary actually carries — measured, not inferred.* The
+    bullet above says `--override-boot-slot` "appears nowhere in this
+    repository", and that is a statement about this repository's own text. It
+    is **not** a claim that the option is absent from the image, and a reader
+    should not round it up into one: the string `override-boot-slot` **is
+    present in the shipped `/usr/bin/rauc`, once, with its help text**.
+    `-Dservice=true` compiles it out of the *install subcommand*, not out of
+    the binary — it survives on `entries_service`. So an assertion of the form
+    "the string is absent from the image" would be false about a correct image,
+    and is deliberately not made anywhere in this tree.
+  - *What is asserted instead, and by what.* The honest and sufficient
+    statement is that **nothing on the device passes the option**, and that is
+    now a gate rather than a paragraph:
+    `rauc-units-never-override-boot-slot` (`verify/src/checks-rauc-units.ts`,
+    in the register `verify/run.sh --verify` runs against every assembled
+    image) reads every unit and drop-in under `/etc/systemd/system`,
+    `/usr/lib/systemd/system` and `/usr/local/lib/systemd/system` in the packed
+    root, folds continuation lines, and fails if any `Exec*=` command line that
+    starts rauc names the option. It fails, too, when it finds *no* rauc
+    command line: an "is X absent?" assertion passes for free over a tree it
+    never read, so the search space is counted. This is the one failure the
+    rest of the tree is silent about — a unit passing the flag inverts the
+    derivation above while every other gate stays green. Half (i) of the
+    premise — RAUC selecting only inactive slots — is not gated by anything and
+    a pin bump can still move it; that is what the re-run recipe below is for.
   - *To re-run this reading at the next pin bump.* Clone the tag, confirm
     `git archive --format=tar <tag> | sha256sum` equals `RAUC_SHA256`, then
     read, in order: `determine_target_install_group`,

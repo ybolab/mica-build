@@ -336,7 +336,20 @@ established at the pinned version, and a pin bump can move it. The underlying
 RAUC v1.13 evidence — the verified source pin, the target-selection reading
 with the recipe to re-run it, the `r_mark_good`/`r_mark_active` contrast that
 proves the mark is bootloader-only, and why `activated.*` cannot substitute —
-is recorded once in `recovery.md` §3 node 2 and not repeated here. Its verdict is recorded
+is recorded once in `recovery.md` §3 node 2 and not repeated here.
+
+Two things that sentence must not be read as saying. "Nor anywhere in this
+repository" is about this repository's text: the string `override-boot-slot`
+**is** in the shipped `/usr/bin/rauc`, once, with its help text —
+`-Dservice=true` compiles it out of the install subcommand, not out of the
+binary, and it survives on the daemon's own argv. And the part that can be
+asserted about the image is asserted: `rauc-units-never-override-boot-slot`
+(`verify/src/checks-rauc-units.ts`) fails any assembled image in which a unit
+or drop-in whose `Exec*=` command line starts rauc names the option, and fails
+an image in which it finds no rauc command line at all. RAUC's half of the
+premise stays a premise; this half is a gate.
+
+Its verdict is recorded
 in the state document as `rollback` — `target` (the resolved alternate slot,
 or `null`), `permitted`, and `reason` — so the operator reads the decision in
 the same `GET /api/v1/update` answer that carries `slots`, `booted_slot`,
