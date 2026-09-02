@@ -513,10 +513,12 @@ document:** *nothing in the tree WRITES a presence assertion*, so the
 presence-gated flows — §5's credential recovery and §2's tier 3 — are
 **implemented and tested but unreachable on hardware** until an asserter
 exists. The gate refuses every request a fielded device can make of it. A prod
-image ships no console shell (`docs/design/access.md` §5), so the asserter has
-to be a unit bound to the board's own console device, and **whether a mos-owned
-unit can own that console TTY without displacing the getty is a bench
-question** — one no board has been asked. `serial-getty@ttyFIQ0` is spawned
+image ships no console shell (`docs/design/access.md` §5), so the candidate this
+document leans on is a unit bound to the board's own console device, and
+**whether a mos-owned unit can own that console TTY without displacing the
+getty is a bench question** — one no board has been asked. It is not the only
+candidate, and the others are recorded in §4.4 so that a "no" from the bench is
+a choice between known options rather than a dead end. `serial-getty@ttyFIQ0` is spawned
 from the kernel `console=` parameter on both cx3576 profiles
 (`docs/design/access.md` §9.1 measures this), which is exactly the contention
 to resolve. Nothing here guesses at the answer: a unit written against an
@@ -617,6 +619,80 @@ mistake worth naming:
   bundle; the offline route stays `rauc-update import` through the same pinned
   root walk and the same `/mos/updates/verified` workspace
   (`docs/design/updates.md` §5.3).
+
+### 4.4 Candidates for the missing asserter, and what each costs
+
+**None of these is implemented, and recording them is not choosing one.** The
+preamble's bench question has a "no" branch, and a reader who gets that answer
+back should be choosing between known options rather than re-deriving the field
+from scratch under time pressure. Each candidate below is stated with its cost
+in the same breath, because a candidate whose weakness arrives in a later
+caveat is a candidate that gets picked before its weakness is read.
+
+Every one of them ends at the same seam. The reader
+(`ConsolePresence` in `pkgs/mosd/apid/src/routes.rs`) consumes a mechanism, a
+channel and a REQUIRED deadline; adopting a candidate changes what the board
+answers `recovery.presence` with and what writes the assertion, and changes no
+flow, no route and no tier. That is what the seam is for, and it is why this
+section can be a list of options rather than a fork in the design.
+
+**1. A unit bound to the board console device.** The candidate §4 already
+leans on, and the one blocked on the bench question above.
+- *Strongest property, and it is the one that matters:* the assertion is **live
+  and continuous, and it ends when the session ends**. That is what makes it
+  match the deadline the reader already requires — the deadline measures a
+  session somebody is present for, and here there is one.
+- *Cost:* the bench question. `serial-getty@ttyFIQ0` is spawned from the kernel
+  `console=` parameter on both cx3576 profiles, so this candidate is unavailable
+  until a board says whether a mos-owned unit can hold that TTY.
+
+**2. The recovery button**, on boards that have one **and** where a post-loader
+stage can read it.
+- *Cost, and it is a bench question twice over:* the cx3576 button is wired to
+  the loader today — it drops the board into rockusb (§4.2, §8) — so whether
+  anything after the loader can read it is untested, and nothing in this tree
+  reads it for any purpose.
+- ***Cost, structurally, and this is the disqualifying one to weigh first:*
+  it is cx3576-ONLY.** x64 has no board-defined button — §4.2 and §8 both say
+  so in terms — so a mechanism built on this one gives the two boards two
+  different recovery stories: a guard that exists on one board and not the
+  other. That asymmetry is the trap, not the missing hardware. A recovery path
+  that only one board has is a path `docs/design/bsp` cannot write a single
+  procedure for, and the honest per-board answer then has to say the x64 case
+  is unsolved anyway — which leaves the field exactly where it started, having
+  spent the bench time.
+
+**3. A token on removable media**, reusing the mount path P1 already ships:
+`/run/mos/provisioning/{boot,media}`, staged by
+`mos-provisioning-import` and rooted at `DEFAULT_STAGING_ROOT` in
+`pkgs/mosd/mosd/src/provisioning_doc.rs`.
+- *Board-independent, needs no bench answer, and is **the only candidate
+  available today**.* Nothing has to be qualified before it can be built.
+- ***Weakness, in the same breath rather than in a later caveat:* a medium can
+  be posted, left in a drawer, or forgotten in the slot, so the assertion would
+  happen AT BOOT, when nobody is standing at the device.** That is weaker in
+  exactly the dimension "physical presence" exists to carry: §4.1's value is
+  (a) that a remote attacker cannot reach the operation, (b) that every use
+  leaves a record, and (c) that a destructive operation cannot be triggered by
+  a stray call — and a forgotten stick weakens (c) without helping (a).
+- *It also sits badly beside the REQUIRED deadline the reader enforces.* A
+  deadline measures a session somebody is present for; **a forgotten stick has
+  no session**, so whatever window such a token declared would be a number
+  chosen by whoever wrote the medium rather than a measurement of anyone's
+  presence. Note that this is *not* §4.2's third bullet: that one requires the
+  medium to be **out of the device**, which is possession and therefore
+  presence by construction. A token read from an inserted medium at boot is the
+  weaker relative of it, and the distinction is the whole of the argument.
+
+**The decision this material is for, and it is not taken here.** A later reader
+may reasonably conclude that candidate 3 is acceptable for **tier 3** — a
+destructive operation whose blast radius is the device's own state, requested
+by someone who prepared a medium for it — and **not** for **credential
+recovery**, which mints a working management credential and would, on a
+forgotten stick, mint it at a boot nobody attended. That is a product decision
+to be taken with this section in front of the person taking it. It is
+deliberately left open: nothing above ranks the candidates, and §4.3's list of
+what presence authorizes is unchanged either way.
 
 ## 5. Credential recovery: rotate, never reveal — **[implemented]**
 
@@ -910,7 +986,7 @@ today, and this document does not soften it.
 
 | Board | Bootloader access | Reflash transport | Physical-presence entry mechanism | Both-slots-failed evidence path | Recovery level, honestly |
 |---|---|---|---|---|---|
-| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it** — **bench-dependent**. The board answers `recovery.presence` with `console-attach` (§4), and nothing on it writes that assertion yet — **bench-dependent** | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[proposed]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
+| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it** — **bench-dependent**. The board answers `recovery.presence` with `console-attach` (§4), and nothing on it writes that assertion yet — **bench-dependent** | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[partial]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
 | **x64** (generic UEFI) | the platform owner's firmware setup and the GRUB console; mos configures neither | remove the medium and write the full-disk image from another machine; there is no in-band loader mode | none defined by mos — presence is the machine's own console/firmware or possession of the medium — **bench-dependent**, and it is a claim about a chassis mos does not specify. The board answers `recovery.presence` with `console-attach` (§4), on a console mos does not define | attached console output plus `ORDER`/`A_TRY`/`B_TRY` read from `grubenv` on the ESP (§6.1) | **I1**. QEMU/CI evidence only; no field evidence exists; §2's tiers, §4's gate and §5's recovery are code that no x64 unit has run — **bench-dependent** |
 
 **Who must prove each bench-dependent row.** The qualification owner named in
