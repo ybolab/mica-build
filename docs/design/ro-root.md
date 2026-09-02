@@ -276,8 +276,8 @@ partitions absorb everything:
 | `/etc/wpa_supplicant` | bind from `/mnt/state/wpa_supplicant` | mosd's rendered supplicant config (M5) |
 | `/etc/hostapd` | bind from `/mnt/state/hostapd` | mosd's rendered hostapd config (M5) |
 | `/usr/local/lib/systemd/system` | bind from `/mnt/state/systemd-units` | third-party systemd units an integrator installs. The only bind target **inside `/usr`** — see below |
-| `/home` | bind from `/srv/home` | operator home directories, on **DATA**; source created by `mos-seed-home` |
-| `/root` | bind from `/srv/root` | root's home directory, on **DATA**; source created by `mos-seed-root` |
+| `/home` | bind from `/mos/home` | operator home directories, on **DATA**; source created by `mos-seed-home` |
+| `/root` | bind from `/mos/root` | root's home directory, on **DATA**; source created by `mos-seed-root` |
 | **`/etc/shadow`** | **symlink → `/var/lib/mos/shadow`** | **not read-only any more — see below (M5)** |
 | `/run`, `/run/lock`, `/dev/shm` | tmpfs | systemd API mounts, unchanged |
 
@@ -466,7 +466,7 @@ follow from the tier rather than the other way round.
 | Tier | Mount | Contents | Grows? | Lost when |
 |---|---|---|---|---|
 | **STATE** (p9) | `/mnt/state` | configuration and identity: mosd settings, the apid admin password hash and session key, **the per-device secrets and the shadow file**, sshd host keys, **the WiFi daemon configs**, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
-| **DATA** (p11) | `/srv` | application data, and the **operator's home directories**: `/home` and `/root` are binds from `/srv/home` and `/srv/root` | **yes** — fills the media | factory reset only |
+| **DATA** (p11) | `/srv` plus `/mos` Phase-A bind | operator data under `/srv`; MOS-owned artifacts and the backing for `/home` and `/root` under `/mos` | **yes** — fills the media | factory reset only |
 | **META** (p8) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
 | **EPHEMERAL** (p10) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
 

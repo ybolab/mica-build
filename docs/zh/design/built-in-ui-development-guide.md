@@ -1,7 +1,7 @@
 # mos 内置 UI 开发指南
 
-> 文档版本：1.2
-> 基线日期：2026-09-01
+> 文档版本：1.3
+> 基线日期：2026-09-02
 > 状态：已批准的 UI 开发与交付基线
 > 适用范围：`mos-apid` 随系统镜像交付的内置 Web UI，以及未来复用同一 UI 的本地触屏/kiosk
 
@@ -80,7 +80,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 | 临时 root 密码 | S | 到重启失效 | 保持二次确认，不与 Web 密码混淆 |
 | Web 管理密码 | S | 已有修改动作 | 修改成功后说明 session 行为 |
 | 主机名 | S | typed setting + apply task | 显示 saved/applied 状态 |
-| 内置/自定义 UI 选择 | S | 只能激活已保留且验证通过的 bundle | 不提供 UI 上传，因为 API 不存在 |
+| 自定义 UI 包与版本选择 | S | 浏览器上传 ZIP、保留多版本、精确激活/停用/删除 | 补齐拖放与更完整的版本详情测试 |
 | 重启、关机 | S | 异步接受 | 用专用确认对话框替换 `window.confirm` |
 | System Information、诊断 | P | 仅有健康、meta 和零散系统 seam | 等 PLAN-052 的聚合 API |
 | 时间、NTP、时区 | P | PLAN-044 草案 | 不显示“暂停时间”或不存在的轮询控件 |
@@ -110,7 +110,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 - `/` 根据 UI 状态选择已激活的自定义 bundle；无可用 bundle 时回到内置 UI。
 - `/api` 是唯一管理协议；listener 健康检查 `/healthz` 是部署例外，不是产品管理接口。
 - SPA 的无扩展名路径可以回退到 `index.html`；类似文件名的缺失资源应返回 404。
-- 自定义 UI 保存在 DATA，能跨重启与 A/B；内置 UI 位于受保护系统镜像中。
+- 自定义 UI 保存在 DATA 的 `/mos/ui`，能跨重启与 A/B；内置 UI 位于受保护系统镜像中。
 - `/`、`/_ui`、`/api` 是相互隔离的三个所有权域；一个域内资源缺失或路径非法时不得去另一个域查找。
 
 ### 3.2 安全边界
@@ -221,6 +221,37 @@ allowlist、`nosniff`、CSP 和 `Referrer-Policy`。安全的无扩展路径才�
 HTML、CSS、runtime、vendor 与 app entry 合计 579,234 B，逐文件 gzip 约 181.2 KiB；其余约 33.7 KiB
 原始内容按页面或中文语言选择懒加载。大小不是永久硬上限，但每个 PR 都应同时报告首屏引用集合与完整
 资源树的 raw/gzip 变化；任一指标增长超过 10% 时说明原因和替代方案。不得只比较最大的单个 chunk。
+
+#### 自定义 UI 包
+
+自定义 UI 不复制进内置 `dist`，而是打成 `.mos-ui.zip` 后由浏览器或 API 上传。包根必须直接包含
+`index.html` 和以下 schema 1 清单；`immutableDir` 通常是 Vite 的 `assets`：
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "example-console",
+  "version": "1.4.0",
+  "immutableDir": "assets",
+  "apiVersions": ["v1"]
+}
+```
+
+仓库提供与服务端共享校验代码的 `mos-ui-pack`。它生成排序、固定时间戳和权限的可复现 ZIP，并可在
+上传前检查清单、条目数、压缩/展开大小和 SHA-256：
+
+```bash
+cd pkgs/mosd
+cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
+  pack apid/ui/dist --name example-console --version 1.4.0 \
+  --api-version v1 -o example-console-1.4.0.mos-ui.zip
+cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
+  inspect example-console-1.4.0.mos-ui.zip
+```
+
+上传上限为 64 MiB 压缩文件、256 MiB 总展开内容、32 MiB 单文件、4,096 条目、32 层路径和
+100:1 总展开比。包不得包含绝对/父级/空路径、反斜杠、重复名称、非 UTF-8 名称、加密条目、符号链接
+或其他特殊文件。服务端仍会独立执行全部检查；本地工具不是信任边界。
 
 ### 4.3 本地开发与质量门禁
 
@@ -600,7 +631,7 @@ interlock；本指南不默认开启。
 #### 停止、移除与清除数据
 
 Stop 是可恢复的普通确认；Restart 在应用正在运行且没有冲突 task 时提供。Remove 默认 **Keep application
-data**，先停止并移除受管 runtime definition/artifact，保留 `/srv/mos/apps/<id>/data/` 与 registry retention
+data**，先停止并移除受管 runtime definition/artifact，保留 `/mos/apps/<id>/data/` 与 registry retention
 记录，允许兼容版本重新安装。Purge data 是独立高风险动作，必须再次显示 app id、路径类别、数据量与不可逆
 影响，并要求输入应用名称或后端 challenge。System 和 External/unmanaged 不显示 Remove。
 
@@ -619,7 +650,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 ```
 
 小型 registry/active revision 元数据放 STATE：`/mnt/state/mos/apps/`；下载 staging、artifact cache 和应用
-持久数据放 DATA：`/srv/mos/apps/`。日志位于有界、易失 journal；秘密进入新的受保护 per-app store。不得把
+持久数据放 DATA：`/mos/apps/`。日志位于有界、易失 journal；秘密进入新的受保护 per-app store。不得把
 大型 image/bundle 写入 STATE，也不得把持久数据写入 `/var`。应用和系统更新共享 maintenance interlock；
 启动时必须重新校验 active revision 与当前 OS 的兼容性，不能只在安装时检查。
 
@@ -671,7 +702,8 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 
 ### 7.9 System `/_ui/system` `[S]`
 
-当前 System 首页包含三组。
+当前 System 首页包含三组；自定义 UI 的完整生命周期进入 `/_ui/system/ui` 专页，首页只保留状态摘要与
+管理入口。
 
 #### General / hostname
 
@@ -680,13 +712,16 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 
 #### UI selection
 
-`GET /api/v1/ui` 返回当前 mode，以及 retained custom bundle 是否可用和不可用原因。
+`GET /api/v1/ui` 返回当前 mode 和紧凑候选摘要；`GET /api/v1/ui/bundles` 返回全部保留版本。
 
 - built-in 永远可恢复；
-- Activate 只选择设备上最新、仍通过安全与兼容检查的 retained bundle；
+- 上传只安装为 inactive，不改变 `/`；进度区分传输与服务端验证/安装；
+- Activate 发送精确 generation，并由服务端重新执行安全、摘要与 API 兼容检查；
 - Deactivate 回到 built-in；
-- 409 显示“没有可激活的兼容 bundle”及服务端原因；
-- 不显示 upload/dropzone，因为当前 API 没有上传；
+- 版本表显示 name、version、generation、可用性和 active 状态；活动版本不得删除；
+- 相同包、同名同版本不同摘要、版本数量已满或不兼容均以 409 的服务端原因为准；
+- ZIP 拒绝、空间不足和上传中断保留已选择文件，允许修正后重试；
+- 系统不自动清理旧版本；达到 32 个版本或空间余量不足时要求用户显式删除 inactive 版本；
 - 切换后解释 `/` 的选择变化，并始终提供 `/_ui/` 恢复地址。
 
 #### Power
@@ -1102,9 +1137,12 @@ const networkKeys = {
 | `POST /api/v1/actions/transient-root-password` | 临时 root 密码 | S | 202 TaskAccepted；到重启失效 |
 | `POST /api/v1/actions/reboot` | Reboot | S | 202；随后会断开 |
 | `POST /api/v1/actions/poweroff` | Power off | S | 202；不承诺自动恢复 |
-| `GET /api/v1/ui` | UI mode/retained bundle | S | builtIn/custom + unavailable reason |
-| `PUT /api/v1/ui/active` | Activate retained custom UI | S | 200；没有可用 bundle 时 409 |
+| `GET /api/v1/ui` | UI mode/紧凑候选摘要 | S | builtIn/custom + unavailable reason |
+| `GET /api/v1/ui/bundles` | 全部保留 UI 版本 | S | generation、清单、摘要、兼容/active 状态 |
+| `POST /api/v1/ui/bundles` | 上传并安装 UI ZIP | S | raw `application/zip`；201；不自动激活 |
+| `PUT /api/v1/ui/active` | 精确激活自定义 UI | S | JSON `{ "generation": N }`；重新校验后 200 |
 | `DELETE /api/v1/ui/active` | Return to built-in UI | S | 200；`/_ui/` 始终可用 |
+| `DELETE /api/v1/ui/bundles/{generation}` | 删除 inactive 版本 | S | 204；active 返回 409 |
 
 泛型 settings 页面是明确禁止项。当前 generic PUT 只写 hostname、SSH enabled、container enabled、
 MQTT enabled；Network/Wi-Fi/SSH key/token/UI/power 等必须走各自 typed route。

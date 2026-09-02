@@ -83,6 +83,18 @@ function isUnder(value: string, prefix: string): boolean {
   return prefix !== '' && value.startsWith(`${prefix}/`)
 }
 
+/** Resolve a path in the public /mos namespace to its Phase-A DATA backing. */
+function mosBacking(root: string, value: string): string | undefined {
+  const unit = '/etc/systemd/system/mos.mount'
+  const where = unitValue(root, unit, 'Where=')
+  const what = unitValue(root, unit, 'What=')
+  if (where !== '/mos' || !regularFileFollowingLinks(root, unit)) return undefined
+  if (wantsLink(root, ETC_UNITS, 'mos.mount') === undefined) return undefined
+  if (value === '/mos') return what
+  if (!isUnder(value, '/mos')) return undefined
+  return `${what}${value.slice('/mos'.length)}`
+}
+
 /** `sed -n 's/^Before=//p' | tr ' ' '\n' | grep -Fx unit` -- EVERY Before= line. */
 function ordersBefore(root: string, unitPath: string, unit: string): boolean {
   return text(root, unitPath).split('\n')
@@ -222,10 +234,12 @@ function bindCheck(c: BindCase): CheckCase {
           `no /etc/fstab entry mounts DATA (PARTUUID=${guid}), so ${c.unit}'s backing tier cannot `
           + `be established`)]
       }
-      if (what === '' || !isUnder(what, dataMount)) {
+      const backing = mosBacking(root, what)
+      if (what === '' || backing === undefined || !isUnder(backing, dataMount)) {
         return [verdict(c.id, false,
-          `${c.unit} binds ${c.where} from '${what === '' ? '<no What=>' : what}', which is not under `
-          + `${dataMount} (the DATA partition). ${c.tierRationale}`)]
+          `${c.unit} binds ${c.where} from '${what === '' ? '<no What=>' : what}', which does not `
+          + `resolve through the enabled /mos bind under ${dataMount} (the DATA partition). `
+          + `${c.tierRationale}`)]
       }
       if (wantsLink(root, ETC_UNITS, c.unit) === undefined) {
         return [verdict(c.id, false,
@@ -233,7 +247,8 @@ function bindCheck(c: BindCase): CheckCase {
           + `never be bound and ${c.unenabledClause}`)]
       }
       return [verdict(c.id, true,
-        `${c.unit} binds ${c.where} from ${what} on DATA (fstab mounts DATA at ${dataMount}) and is enabled`)]
+        `${c.unit} binds ${c.where} from ${what} (${backing}) on DATA (fstab mounts DATA at `
+        + `${dataMount}) and is enabled`)]
     },
   }
 }
@@ -360,13 +375,13 @@ const SEED_ROOT_CHECK: CheckCase = {
 const SEED_HOME_SCRIPT_CHECK: CheckCase = {
   id: 'mos-seed-home-writes-data',
   shell: {
-    pass: 'mos-seed-home creates /srv/home/mos on DATA, mode 0700, owned by the pinned pair ',
+    pass: 'mos-seed-home creates /mos/home/mos on DATA, mode 0700, owned by the pinned pair ',
     fail: [
       '/usr/lib/mos/mos-seed-home is not in the image,',
       'mos-seed-home pins uid ',
-      'mos-seed-home does not create /srv/home/mos.',
-      'mos-seed-home does not chmod 0700 /srv/home/mos',
-      'mos-seed-home does not chown /srv/home/mos to its pinned MOS_UID:MOS_GID pair',
+      'mos-seed-home does not create /mos/home/mos.',
+      'mos-seed-home does not chmod 0700 /mos/home/mos',
+      'mos-seed-home does not chown /mos/home/mos to its pinned MOS_UID:MOS_GID pair',
     ],
   },
   run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -385,24 +400,24 @@ const SEED_HOME_SCRIPT_CHECK: CheckCase = {
         + `not ${MOS_ID}:${MOS_ID}. The seed and /etc/passwd must agree by NUMBER: the home on DATA `
         + `outlives this rootfs, so a mismatch leaves the directory owned by an id the image does not define`)]
     }
-    if (!matches(root, script, /^[ \t]*mkdir \/srv\/home\/mos$/)) {
+    if (!matches(root, script, /^[ \t]*mkdir \/mos\/home\/mos$/)) {
       return [verdict(id, false,
-        `mos-seed-home does not create /srv/home/mos. It must create the home under the DATA path, `
+        `mos-seed-home does not create /mos/home/mos. It must create the home under the DATA path, `
         + `never under /home: /home in the unbound view is inside the read-only verity squashfs, and `
         + `a seed writing there fails`)]
     }
-    if (!matches(root, script, /^[ \t]*chmod 0700 \/srv\/home\/mos$/)) {
+    if (!matches(root, script, /^[ \t]*chmod 0700 \/mos\/home\/mos$/)) {
       return [verdict(id, false,
-        `mos-seed-home does not chmod 0700 /srv/home/mos; a home directory readable by every local `
+        `mos-seed-home does not chmod 0700 /mos/home/mos; a home directory readable by every local `
         + `uid is not a private home`)]
     }
-    if (!matches(root, script, /^[ \t]*chown "\$\{MOS_UID\}:\$\{MOS_GID\}" \/srv\/home\/mos$/)) {
+    if (!matches(root, script, /^[ \t]*chown "\$\{MOS_UID\}:\$\{MOS_GID\}" \/mos\/home\/mos$/)) {
       return [verdict(id, false,
-        `mos-seed-home does not chown /srv/home/mos to its pinned MOS_UID:MOS_GID pair; resolving the `
+        `mos-seed-home does not chown /mos/home/mos to its pinned MOS_UID:MOS_GID pair; resolving the `
         + `name at runtime would make the owner whatever the running image says today`)]
     }
     return [verdict(id, true,
-      `mos-seed-home creates /srv/home/mos on DATA, mode 0700, owned by the pinned pair ${uid}:${gid} `
+      `mos-seed-home creates /mos/home/mos on DATA, mode 0700, owned by the pinned pair ${uid}:${gid} `
       + `— the same numbers /etc/passwd gives ${MOS_USER}`)]
   },
 }
@@ -410,12 +425,12 @@ const SEED_HOME_SCRIPT_CHECK: CheckCase = {
 const SEED_ROOT_SCRIPT_CHECK: CheckCase = {
   id: 'mos-seed-root-writes-data',
   shell: {
-    pass: 'mos-seed-root creates /srv/root on DATA (never under /root',
+    pass: 'mos-seed-root creates /mos/root on DATA (never under /root',
     fail: [
       '/usr/lib/mos/mos-seed-root is not in the image,',
-      'mos-seed-root does not create /srv/root.',
-      'mos-seed-root does not chmod 0700 /srv/root',
-      'mos-seed-root does not chown 0:0 /srv/root numerically',
+      'mos-seed-root does not create /mos/root.',
+      'mos-seed-root does not chmod 0700 /mos/root',
+      'mos-seed-root does not chown 0:0 /mos/root numerically',
       'mos-seed-root writes under /root:',
     ],
   },
@@ -427,20 +442,20 @@ const SEED_ROOT_SCRIPT_CHECK: CheckCase = {
       return [verdict(id, false,
         `/usr/lib/mos/mos-seed-root is not in the image, so what it creates cannot be checked`)]
     }
-    if (!matches(root, script, /^[ \t]*mkdir \/srv\/root$/)) {
+    if (!matches(root, script, /^[ \t]*mkdir \/mos\/root$/)) {
       return [verdict(id, false,
-        `mos-seed-root does not create /srv/root. It must create the bind source under the DATA path, `
+        `mos-seed-root does not create /mos/root. It must create the bind source under the DATA path, `
         + `never under /root: /root in the unbound view is inside the read-only verity squashfs, and a `
         + `seed writing there before the bind fails`)]
     }
-    if (!matches(root, script, /^[ \t]*chmod 0700 \/srv\/root$/)) {
+    if (!matches(root, script, /^[ \t]*chmod 0700 \/mos\/root$/)) {
       return [verdict(id, false,
-        `mos-seed-root does not chmod 0700 /srv/root; DATA is not verity-protected, so a root home `
+        `mos-seed-root does not chmod 0700 /mos/root; DATA is not verity-protected, so a root home `
         + `group- or world-readable on disk is not caught by anything else`)]
     }
-    if (!matches(root, script, /^[ \t]*chown 0:0 \/srv\/root$/)) {
+    if (!matches(root, script, /^[ \t]*chown 0:0 \/mos\/root$/)) {
       return [verdict(id, false,
-        `mos-seed-root does not chown 0:0 /srv/root numerically; the directory outlives every rootfs `
+        `mos-seed-root does not chown 0:0 /mos/root numerically; the directory outlives every rootfs `
         + `flashed onto this device, so its owner is part of the on-disk contract and must not be `
         + `resolved out of the running image's /etc/passwd`)]
     }
@@ -455,7 +470,7 @@ const SEED_ROOT_SCRIPT_CHECK: CheckCase = {
         + `under ${dataMount === '' ? '/srv' : dataMount}`)]
     }
     return [verdict(id, true,
-      `mos-seed-root creates /srv/root on DATA (never under /root, which is read-only before the `
+      `mos-seed-root creates /mos/root on DATA (never under /root, which is read-only before the `
       + `bind), mode 0700 owned 0:0 — a static read of the script, not a run of it`)]
   },
 }

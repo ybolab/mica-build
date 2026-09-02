@@ -186,7 +186,7 @@ VolumeName=pgdata
 ```
 
 A named volume lives under the graph root, which on this device is
-`/srv/containers/storage` — the DATA partition.
+`/mos/containers/storage` — the MOS-owned namespace on the DATA partition.
 
 Two consequences worth stating plainly:
 

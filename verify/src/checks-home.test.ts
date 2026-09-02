@@ -160,11 +160,11 @@ describe('/home is bound from DATA', () => {
     // is wrong is the partition: 64 MiB of precious identity under a directory
     // of unbounded size.
     const fx = await mutated('home-mount-on-data',
-      root => rewrite(root, HOME_MOUNT, t => t.replace('What=/srv/home', 'What=/mnt/state/home')))
+      root => rewrite(root, HOME_MOUNT, t => t.replace('What=/mos/home', 'What=/mnt/state/home')))
     try {
       expect(await verdictOf(fx, 'home-mount-on-data')).toBe('fail')
       const message = await messageOf(fx, 'home-mount-on-data')
-      expect(message).toContain("binds /home from '/mnt/state/home', which is not under /srv")
+      expect(message).toContain("binds /home from '/mnt/state/home', which does not resolve through the enabled /mos bind under /srv")
       expect(message).toContain('DATA is also the only partition repart grows')
     }
     finally {
@@ -287,7 +287,7 @@ describe('what the /home seed writes, read statically', () => {
 
   test('a seed that creates nothing fails, naming the read-only view of /home', async () => {
     const fx = await mutated('mos-seed-home-writes-data',
-      root => rewrite(root, SEED_HOME, t => t.replace('mkdir /srv/home/mos\n', '')))
+      root => rewrite(root, SEED_HOME, t => t.replace('mkdir /mos/home/mos\n', '')))
     try {
       expect(await messageOf(fx, 'mos-seed-home-writes-data'))
         .toContain('/home in the unbound view is inside the read-only verity squashfs')
@@ -314,7 +314,7 @@ describe('what the /home seed writes, read statically', () => {
     // directory outlives the rootfs, so the pair has to be the pinned numbers.
     const fx = await mutated('mos-seed-home-writes-data',
       root => rewrite(root, SEED_HOME, t =>
-        t.replace('chown "${MOS_UID}:${MOS_GID}" /srv/home/mos', 'chown mos:mos /srv/home/mos')))
+        t.replace('chown "${MOS_UID}:${MOS_GID}" /mos/home/mos', 'chown mos:mos /mos/home/mos')))
     try {
       expect(await messageOf(fx, 'mos-seed-home-writes-data'))
         .toContain('resolving the name at runtime would make the owner whatever the running image says today')
@@ -517,10 +517,10 @@ describe('/root, its mode, and its seed', () => {
 
   test('root.mount on STATE fails on the tier, as /home\'s twin does', async () => {
     const fx = await mutated('root-mount-on-data',
-      root => rewrite(root, ROOT_MOUNT, t => t.replace('What=/srv/root', 'What=/mnt/state/root')))
+      root => rewrite(root, ROOT_MOUNT, t => t.replace('What=/mos/root', 'What=/mnt/state/root')))
     try {
       expect(await messageOf(fx, 'root-mount-on-data'))
-        .toContain("binds /root from '/mnt/state/root', which is not under /srv")
+        .toContain("binds /root from '/mnt/state/root', which does not resolve through the enabled /mos bind under /srv")
     }
     finally {
       fx.dispose()
@@ -603,7 +603,7 @@ describe('what the /root seed writes', () => {
 
   test('a chown by NAME fails: the owner is part of the on-disk contract', async () => {
     const fx = await mutated('mos-seed-root-writes-data',
-      root => rewrite(root, SEED_ROOT, t => t.replace('chown 0:0 /srv/root', 'chown root:root /srv/root')))
+      root => rewrite(root, SEED_ROOT, t => t.replace('chown 0:0 /mos/root', 'chown root:root /mos/root')))
     try {
       expect(await messageOf(fx, 'mos-seed-root-writes-data'))
         .toContain('must not be resolved out of the running image\'s /etc/passwd')
@@ -615,10 +615,10 @@ describe('what the /root seed writes', () => {
 
   test('a seed that creates nothing fails', async () => {
     const fx = await mutated('mos-seed-root-writes-data',
-      root => rewrite(root, SEED_ROOT, t => t.replace('mkdir /srv/root\n', '')))
+      root => rewrite(root, SEED_ROOT, t => t.replace('mkdir /mos/root\n', '')))
     try {
       expect(await messageOf(fx, 'mos-seed-root-writes-data'))
-        .toContain('mos-seed-root does not create /srv/root.')
+        .toContain('mos-seed-root does not create /mos/root.')
     }
     finally {
       fx.dispose()

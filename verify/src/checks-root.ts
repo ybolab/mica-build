@@ -360,7 +360,7 @@ export const BUILTIN_MARKUP = '<script type="module" crossorigin src="/ui/assets
 const KEYRING_PATH = '/etc/rauc/keyring.pem'
 const MANIFEST_PATH = '/usr/share/mos/manifest.tsv'
 const PACKED_MOUNTPOINTS = [
-  '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
+  '/mnt/state', '/mnt/meta', '/srv', '/mos', '/var', '/home', '/root',
   '/usr/local/lib/systemd/system', '/etc/containers/systemd',
 ] as const
 

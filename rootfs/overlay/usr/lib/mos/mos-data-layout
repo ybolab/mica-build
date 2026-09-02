@@ -1,0 +1,99 @@
+#!/bin/sh
+# Establish the Phase-A writable system-data namespace.
+set -eu
+
+DATA_ROOT=${MOS_DATA_ROOT:-/srv}
+SYSTEM_ROOT=${DATA_ROOT}/.mos
+MARKER=${SYSTEM_ROOT}/.layout-version
+
+die() {
+    echo "mos-data-layout: $*" >&2
+    exit 1
+}
+
+[ -d "$DATA_ROOT" ] || die "$DATA_ROOT is not a directory"
+
+# The service has RequiresMountsFor=/srv. The probe is still deliberate: a
+# read-only or full DATA filesystem must stop boot consumers, never redirect
+# system data into the immutable root, STATE, /var, or /tmp.
+[ ! -L "$SYSTEM_ROOT" ] || die "$SYSTEM_ROOT must not be a symbolic link"
+if [ -e "$SYSTEM_ROOT" ]; then
+    [ -d "$SYSTEM_ROOT" ] || die "$SYSTEM_ROOT exists but is not a directory"
+fi
+mkdir -p "$SYSTEM_ROOT" || die "cannot create writable system root $SYSTEM_ROOT"
+chown 0:0 "$SYSTEM_ROOT"
+chmod 0755 "$SYSTEM_ROOT"
+PROBE=${SYSTEM_ROOT}/.writable-probe.$$
+trap 'rm -f "$PROBE"' EXIT HUP INT TERM
+( umask 077; set -C; : >"$PROBE" ) || die "$SYSTEM_ROOT is not writable"
+sync -f "$PROBE"
+rm -f "$PROBE"
+
+migrate_one() {
+    name=$1
+    mode=$2
+    legacy=${DATA_ROOT}/${name}
+    canonical=${SYSTEM_ROOT}/${name}
+    wanted=.mos/${name}
+
+    if [ -L "$legacy" ]; then
+        actual=$(readlink "$legacy")
+        [ "$actual" = "$wanted" ] \
+            || die "$legacy points to '$actual', expected rollback link '$wanted'"
+        if [ -L "$canonical" ]; then
+            die "$canonical must not be a symbolic link"
+        fi
+        if [ ! -d "$canonical" ]; then
+            [ ! -e "$canonical" ] \
+                || die "$canonical exists but is not a directory"
+            mkdir -m "$mode" "$canonical"
+        fi
+        chown 0:0 "$canonical"
+        chmod "$mode" "$canonical"
+        return
+    fi
+
+    if [ -e "$legacy" ]; then
+        [ -d "$legacy" ] || die "$legacy exists but is not a directory"
+        [ ! -e "$canonical" ] && [ ! -L "$canonical" ] \
+            || die "collision: both $legacy and $canonical exist"
+        mv "$legacy" "$canonical"
+        chown 0:0 "$canonical"
+        chmod "$mode" "$canonical"
+        ln -s "$wanted" "$legacy"
+        return
+    fi
+
+    if [ -e "$canonical" ] || [ -L "$canonical" ]; then
+        [ -d "$canonical" ] && [ ! -L "$canonical" ] \
+            || die "$canonical exists but is not a real directory"
+    else
+        mkdir -m "$mode" "$canonical"
+    fi
+    chown 0:0 "$canonical"
+    chmod "$mode" "$canonical"
+    ln -s "$wanted" "$legacy"
+}
+
+migrate_one ui 0755
+migrate_one containers 0711
+migrate_one home 0755
+migrate_one root 0700
+
+install -d -o 0 -g 0 -m 0755 \
+    "$SYSTEM_ROOT/apps" \
+    "$SYSTEM_ROOT/updates" \
+    "$SYSTEM_ROOT/updates/downloads" \
+    "$SYSTEM_ROOT/updates/verified" \
+    "$SYSTEM_ROOT/updates/staging"
+
+TMP_MARKER=${MARKER}.$$
+trap 'rm -f "$PROBE" "$TMP_MARKER"' EXIT HUP INT TERM
+( umask 022; printf '1\n' >"$TMP_MARKER" )
+sync -f "$TMP_MARKER"
+mv -f "$TMP_MARKER" "$MARKER"
+sync -f "$SYSTEM_ROOT"
+sync -f "$DATA_ROOT"
+trap - EXIT HUP INT TERM
+
+echo "mos-data-layout: /mos backing tree ready at $SYSTEM_ROOT"

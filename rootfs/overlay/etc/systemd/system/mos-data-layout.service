@@ -1,0 +1,15 @@
+[Unit]
+Description=Prepare the writable /mos system-data namespace
+Documentation=file:/usr/lib/mos/mos-data-layout
+DefaultDependencies=no
+RequiresMountsFor=/srv
+Before=mos.mount mos-seed-home.service mos-seed-root.service local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-data-layout
+
+[Install]
+WantedBy=local-fs.target

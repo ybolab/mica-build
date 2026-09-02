@@ -47,3 +47,5 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-058 Add built-in UI localization and Spectrum themes**](PLAN-058.md) `2026-09-01`
 - [x] [**PLAN-059 Embed isolated UI asset trees**](PLAN-059.md) `2026-09-01`
 - [x] [**PLAN-060 Move the built-in UI to `/_ui/`**](PLAN-060.md) `2026-09-01`
+- [x] [**PLAN-061 Establish the `/mos` persistent system namespace**](PLAN-061.md) `2026-09-02`
+- [x] [**PLAN-062 Add uploadable versioned custom UI packages**](PLAN-062.md) `2026-09-02`

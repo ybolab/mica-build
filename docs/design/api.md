@@ -1,6 +1,6 @@
 # apid: an API-first management daemon with replaceable UI
 
-> **Current status (PLAN-039 and PLAN-040, 2026-09-01): implemented.** The management daemon
+> **Current status (PLAN-039/040/060/061/062, 2026-09-02): implemented.** The management daemon
 > is API-first. Every appliance read, write, authentication operation and action
 > is under `/api`; `/healthz` is the listener-only operational exception. The
 > built-in UI is a React SPA embedded in `apid` and served at `/_ui/`. `/` serves
@@ -12,6 +12,9 @@
 > cookie cannot authenticate the API, or that the API is read-only is
 > superseded by this current-contract note and by
 > `pkgs/mosd/apid/openapi.json`.
+> The same applies to historical statements below that `/srv/ui` is the
+> canonical store, that upload is absent, that activation always chooses the
+> newest generation, or that retention is automatically pruned.
 
 ## Current shipped contract — **[implemented]**
 
@@ -21,11 +24,14 @@
   and logout. A signed session cookie authenticates API calls; a session-based
   mutation also requires the per-session `X-CSRF-Token`. Stored bearer tokens
   remain supported for automation and do not require CSRF.
-- `GET /api/v1/ui` reports the active selection separately from an optional
-  validated retained custom candidate. `PUT /api/v1/ui/active` rechecks and
-  selects the newest usable retained generation; `DELETE` selects the built-in
-  UI without deleting installed files. `/_ui/` remains reachable regardless of
-  custom-bundle state and cannot be shadowed.
+- `GET /api/v1/ui` reports a compact active selection, while
+  `GET /api/v1/ui/bundles` lists every retained generation. Authenticated
+  `POST /api/v1/ui/bundles` streams a bounded raw ZIP into `/mos/ui`, validates
+  and atomically installs it without activation. `PUT /api/v1/ui/active`
+  rechecks and selects the exact requested generation; `DELETE` selects the
+  built-in UI without deleting installed files. A generation can be deleted
+  only while inactive. `/_ui/` remains reachable regardless of custom-bundle
+  state and cannot be shadowed.
 - `GET /api/v1/network` combines configured intent with an on-demand,
   normalized `systemd-networkd` observation obtained by mosd over D-Bus. It
   reports the observed interface count and per-interface operational, carrier,

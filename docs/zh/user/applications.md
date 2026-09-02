@@ -48,7 +48,7 @@ TODO(PLAN-051): revisit after this plan merges
 - **定义放哪。**`/etc/containers/systemd`，它绑定到一个 STATE 支持的
   目录——定义在重启和 A/B 更新中保留。添加或修改文件后：
   `systemctl daemon-reload`，然后启动单元。
-- **数据放哪。**命名卷落在 DATA 上的 `/srv/containers/storage`；bind mount
+- **数据放哪。**命名卷落在 DATA 上的 `/mos/containers/storage`；bind mount
   主机路径放在 `/srv` 下。绝不要用 `/var`——它小、可丢弃、按设计会被清空
   （[storage.md](storage.md)）。
 - **日志**进 journal（`journalctl -u <name>.service`），它是易失的。
@@ -81,10 +81,11 @@ SSH、凭据、更新、电源、容器启用——永远不是 MQTT item，桥�
 
 ## 4. 应用 UI
 
-apid 可以用集成商的 Web UI 替代内置 UI 提供服务：安装在 DATA 上 `/srv/ui`
-下的自定义 bundle 在 `/` 提供，而无论自定义 bundle 状态如何，内置 UI 始终
-在 `/_ui/` 可达——坏掉的自定义 UI 永远不会把你锁在管理面之外。选择是一个
-API 动作；见 [api.md](api.md)。
+apid 可以用集成商的 Web UI 替代内置 UI。在内置界面的 System → UI 版本页上传由
+`mos-ui-pack` 生成的 `.mos-ui.zip`；系统校验后把它作为未激活版本保留在 DATA 的
+`/mos/ui`。可以保留多个版本、精确选择一个在 `/` 提供、回到内置 UI，并删除 inactive
+版本。无论自定义 bundle 状态如何，内置 UI 始终在 `/_ui/` 可达——坏掉的自定义 UI
+永远不会把你锁在管理面之外。见 [api.md](api.md)。
 
 > status: shipped — evidence: `docs/design/api.md`, `pkgs/mosd/apid/openapi.json`
 

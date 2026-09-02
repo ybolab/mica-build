@@ -158,8 +158,8 @@ The manager owns:
 | Data | Planned location/owner | Durability |
 |---|---|---|
 | Registry, active revision, small activation metadata | `/mnt/state/mos/apps/` | STATE; survives reboot and A/B |
-| Download staging and artifact cache | `/srv/mos/apps/.staging/` and manager-owned cache | DATA; bounded and garbage-collected |
-| Per-app persistent data | `/srv/mos/apps/<app-id>/data/` | DATA; retained by default on remove |
+| Download staging and artifact cache | `/mos/apps/.staging/` and manager-owned cache | DATA; bounded and garbage-collected |
+| Per-app persistent data | `/mos/apps/<app-id>/data/` | DATA; retained by default on remove |
 | Generated runtime definitions | manager-owned STATE-backed directories | STATE; atomically published |
 | Secrets | new protected per-app secret store | write-only through API; delivered as credential files |
 | Runtime logs | bounded journal query/export | EPHEMERAL; not a permanent audit trail |

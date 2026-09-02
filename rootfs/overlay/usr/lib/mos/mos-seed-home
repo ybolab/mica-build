@@ -1,23 +1,23 @@
 #!/bin/sh
 # Seed the persistent home directory on the DATA partition.
 #
-# home.mount binds /srv/home onto /home. DATA rather than STATE because a home
+# home.mount binds /mos/home onto /home. DATA rather than STATE because a home
 # directory accumulates USER DATA of unbounded size -- a staged update bundle
 # alone is ~72 MiB, against a 64 MiB STATE partition -- and DATA is the only
 # tier systemd-repart grows. See home.mount for the full reasoning.
 #
-# ORDERING. This writes ONLY under /srv, never under /home, and it runs BEFORE
+# ORDERING. This writes ONLY under /mos, never under /home, and it runs BEFORE
 # home.mount. Both halves matter:
 #   - Before, because mount(8) does not create the source of a bind. A seed
 #     ordered after the bind could not have made the bind succeed in the first
 #     place, so /home would never be mounted and the unit would never run.
-#   - Only under /srv, because /home in the unbound view is a directory inside
+#   - Only under /mos, because /home in the unbound view is a directory inside
 #     the read-only verity squashfs. That is the hazard an "after the bind"
 #     ordering is usually meant to avoid, and writing to the DATA path removes
-#     it outright instead of ordering around it. /srv/home/mos and /home/mos
+#     it outright instead of ordering around it. /mos/home/mos and /home/mos
 #     are the same inode once home.mount is up.
 #
-# NON-CLOBBERING. An existing /srv/home/mos is left exactly as it is: it holds
+# NON-CLOBBERING. An existing /mos/home/mos is left exactly as it is: it holds
 # an operator's files, and it outlives the rootfs that created it. Only the
 # creating run sets the owner and the mode.
 #
@@ -35,16 +35,16 @@ MOS_GID=1000
 
 # 0755 root:root, the standard mode for /home itself: it is a container for
 # per-user directories, each of which carries its own permissions.
-mkdir -p /srv/home
-chmod 0755 /srv/home
+mkdir -p /mos/home
+chmod 0755 /mos/home
 
-if [ -d /srv/home/mos ]; then
-    echo "home: /srv/home/mos already present, left untouched"
+if [ -d /mos/home/mos ]; then
+    echo "home: /mos/home/mos already present, left untouched"
 else
-    mkdir /srv/home/mos
-    chown "${MOS_UID}:${MOS_GID}" /srv/home/mos
-    chmod 0700 /srv/home/mos
-    echo "home: created /srv/home/mos owned ${MOS_UID}:${MOS_GID} mode 0700"
+    mkdir /mos/home/mos
+    chown "${MOS_UID}:${MOS_GID}" /mos/home/mos
+    chmod 0700 /mos/home/mos
+    echo "home: created /mos/home/mos owned ${MOS_UID}:${MOS_GID} mode 0700"
 fi
 
 sync

@@ -208,7 +208,7 @@ describe('the four storage tiers', () => {
       expect(await verdictOf(fx, 'fstab-data')).toBe('fail')
       expect(await messageOf(fx, 'fstab-data')).toContain("lacks the 'x-systemd.growfs' option")
       // And the UI ceiling assertion goes red on the SAME edit, because it
-      // reads the option off whichever entry governs /srv/ui. Two checks, one
+      // reads the option off whichever entry governs /mos/ui. Two checks, one
       // cause -- and that is the oracle's behaviour too.
       expect(await uiRed(fx)).toEqual([UI_CEILING])
     }
@@ -361,7 +361,8 @@ describe('the table\'s own shape', () => {
 describe('where the custom UI root actually lands', () => {
   test('NOTHING covers it -- the early return, one firing instead of six', async () => {
     // The path six independent `one` checks could not model. With no covering
-    // entry /srv/ui lands on the read-only verity squashfs: apid cannot create
+    // entry /srv/.mos/ui (the /mos/ui backing path) lands on the read-only
+    // verity squashfs: apid cannot create
     // it on first install and no bundle can ever be installed.
     const fx = packedRootFixture(cx3576)
     try {
@@ -383,15 +384,15 @@ describe('where the custom UI root actually lands', () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(await uiRed(fx)).toEqual([])
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'STATE')}\t/srv/ui\text4\t`
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'STATE')}\t/srv/.mos/ui\text4\t`
         + `noatime,x-systemd.growfs\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_OFF_DATA, UI_ON_STATE, UI_UNASSERTED].sort())
       const firings = await uiFirings(fx)
       expect((firings.get(UI_ON_STATE) as CheckResult).message).toContain(guid(cx3576, 'STATE'))
-      // The DEEPER mountpoint wins, which is what the kernel does -- /srv/ui
+      // The DEEPER mountpoint wins, which is what the kernel does -- /mos/ui
       // beats /srv. A port taking the first match would have read the DATA
       // entry and stayed green.
-      expect((firings.get(UI_OFF_DATA) as CheckResult).message).toContain('/srv/ui')
+      expect((firings.get(UI_OFF_DATA) as CheckResult).message).toContain('/srv/.mos/ui')
     }
     finally {
       fx.dispose()
@@ -403,7 +404,7 @@ describe('where the custom UI root actually lands', () => {
     // custom UI silently disappears the first time it is cleared.
     const fx = packedRootFixture(cx3576)
     try {
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'EPHEMERAL')}\t/srv/ui\text4\t`
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'EPHEMERAL')}\t/srv/.mos/ui\text4\t`
         + `noatime,x-systemd.growfs\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_OFF_DATA, UI_ON_EPHEMERAL, UI_UNASSERTED].sort())
     }
@@ -419,7 +420,7 @@ describe('where the custom UI root actually lands', () => {
     // squashfs. DATA's own device, so only the mountpoint question is live.
     const fx = packedRootFixture(cx3576)
     try {
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/srv/ui\text4\t`
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/srv/.mos/ui\text4\t`
         + `noatime,x-systemd.growfs\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_OFF_DATA, UI_UNASSERTED].sort())
       expect((await uiFirings(fx)).get(UI_UNASSERTED)?.message).toContain('NOT in the set')
@@ -435,7 +436,7 @@ describe('where the custom UI root actually lands', () => {
     // cannot see. Here DATA is correct and the deeper entry is not.
     const fx = packedRootFixture(cx3576)
     try {
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/srv/ui\text4\tnoatime\t0\t2\n`)
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/srv/.mos/ui\text4\tnoatime\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_CEILING, UI_OFF_DATA, UI_UNASSERTED].sort())
       // The DATA tier check stays GREEN -- which is the whole point: it cannot
       // see this.
@@ -453,24 +454,24 @@ describe('where the custom UI root actually lands', () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(await uiRed(fx)).toEqual([])
-      mkdirSync(join(fx.root, 'srv/ui'), { recursive: true })
-      writeFileSync(join(fx.root, 'srv/ui/index.html'), '<html>\n')
+      mkdirSync(join(fx.root, 'mos/ui'), { recursive: true })
+      writeFileSync(join(fx.root, 'mos/ui/index.html'), '<html>\n')
       expect(await uiRed(fx)).toEqual([UI_BAKED])
-      expect((await uiFirings(fx)).get(UI_BAKED)?.message).toContain('/srv/ui/index.html')
+      expect((await uiFirings(fx)).get(UI_BAKED)?.message).toContain('/mos/ui/index.html')
     }
     finally {
       fx.dispose()
     }
   })
 
-  test('an EMPTY /srv/ui directory is content too', async () => {
+  test('an EMPTY /mos/ui directory is content too', async () => {
     // The directory itself counts: `find` lists it even when nothing is under
     // it, and a port reporting only the CONTENTS would pass an empty one.
     const fx = packedRootFixture(cx3576)
     try {
-      mkdirSync(join(fx.root, 'srv/ui'), { recursive: true })
+      mkdirSync(join(fx.root, 'mos/ui'), { recursive: true })
       expect(await uiRed(fx)).toEqual([UI_BAKED])
-      expect((await uiFirings(fx)).get(UI_BAKED)?.message).toContain('/srv/ui')
+      expect((await uiFirings(fx)).get(UI_BAKED)?.message).toContain('/mos/ui')
     }
     finally {
       fx.dispose()
@@ -484,13 +485,13 @@ describe('where the custom UI root actually lands', () => {
     // sentence while agreeing on the verdict.
     const fx = packedRootFixture(cx3576)
     try {
-      mkdirSync(join(fx.root, 'srv/ui'), { recursive: true })
-      for (let i = 0; i < 9; i += 1) writeFileSync(join(fx.root, `srv/ui/f${i}`), '')
+      mkdirSync(join(fx.root, 'mos/ui'), { recursive: true })
+      for (let i = 0; i < 9; i += 1) writeFileSync(join(fx.root, `mos/ui/f${i}`), '')
       const msg = (await uiFirings(fx)).get(UI_BAKED)?.message as string
-      // ten paths: /srv/ui itself plus nine files -> five named, five more.
+      // ten paths: /mos/ui itself plus nine files -> five named, five more.
       expect(msg).toContain('(+5 more)')
-      expect(msg).toContain('/srv/ui/f0')
-      expect(msg).not.toContain('/srv/ui/f8')
+      expect(msg).toContain('/mos/ui/f0')
+      expect(msg).not.toContain('/mos/ui/f8')
     }
     finally {
       fx.dispose()

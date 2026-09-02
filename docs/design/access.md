@@ -570,8 +570,8 @@ this list:
 | `etc-hostapd.mount` | `/mnt/state/hostapd` | `/etc/hostapd` | STATE |
 | `var-lib-mos.mount` | `/mnt/state/mos` | `/var/lib/mos` | STATE |
 | `var-lib-bluetooth.mount` | `/mnt/state/bluetooth` | `/var/lib/bluetooth` | STATE |
-| `home.mount` | `/srv/home` | `/home` | **DATA** |
-| `root.mount` | `/srv/root` | `/root` | **DATA** |
+| `home.mount` | `/mos/home` | `/home` | **DATA** |
+| `root.mount` | `/mos/root` | `/root` | **DATA** |
 
 ### 10.3 Files, scripts and data — **[implemented]**
 

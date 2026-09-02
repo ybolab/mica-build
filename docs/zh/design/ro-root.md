@@ -66,7 +66,7 @@ verity 设备**完全由内核命令行描述**，按槽位从该槽的 verity �
 | `/etc/hostname` | bind 自 `/mnt/state/hostname` | **文件** bind，不是目录 |
 | `/etc/wpa_supplicant`、`/etc/hostapd` | bind 自 STATE | 协调器渲染的配置 |
 | `/usr/local/lib/systemd/system` | bind 自 `/mnt/state/systemd-units` | 集成商装的第三方 unit。**`/usr` 内唯一的 bind 目标** |
-| `/home`、`/root` | bind 自 `/srv/home`、`/srv/root` | 家目录，在 **DATA** 上 |
+| `/home`、`/root` | bind 自 `/mos/home`、`/mos/root` | 家目录，在 **DATA** 上 |
 | **`/etc/shadow`** | **符号链接 → `/var/lib/mos/shadow`** | 不再是只读的 |
 | `/run`、`/run/lock`、`/dev/shm` | tmpfs | systemd API 挂载 |
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=Writable mos system data on DATA
+DefaultDependencies=no
+Requires=mos-data-layout.service
+After=mos-data-layout.service
+Before=local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Mount]
+What=/srv/.mos
+Where=/mos
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

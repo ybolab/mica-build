@@ -271,7 +271,7 @@ function seedHealthyRoot(root: string, board: Board): void {
 
   // --- the mountpoints the packed root must ship ---
   for (const d of [
-    '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
+    '/mnt/state', '/mnt/meta', '/srv', '/mos', '/var', '/home', '/root',
     '/usr/local/lib/systemd/system', '/etc/containers/systemd',
   ]) mkdirSync(join(root, d), { recursive: true })
 
@@ -371,7 +371,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   // final contents rather than be overwritten by them.
   seedSystem(root, board, file)
 
-  // Nothing at /builtin and nothing under /srv/ui: absence is the shipped state
+  // Nothing at /builtin and nothing under /mos/ui: absence is the shipped state
   // for both, and seeding either would make the fixture red before a test had
   // mutated anything. /etc/rauc/keyring.pem is the opposite case and is seeded
   // above -- every image stages one from ca/, so its ABSENCE is the mutation.
@@ -435,7 +435,7 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
     '[engine]\nhelper_binaries_dir = ["/usr/libexec/podman"]\nlog_driver = "journald"\n')
   // DATA, not /var: /var is the EPHEMERAL partition, 512 MiB and wiped by
   // design, so images there are capped and then silently destroyed.
-  file('/etc/containers/storage.conf', '[storage]\ndriver = "overlay"\ngraphroot = "/srv/containers/storage"\n')
+  file('/etc/containers/storage.conf', '[storage]\ndriver = "overlay"\ngraphroot = "/mos/containers/storage"\n')
 
   file('/etc/systemd/system/etc-containers-systemd.mount',
     '[Mount]\nWhat=/mnt/state/quadlet\nWhere=/etc/containers/systemd\nType=none\nOptions=bind\n')
@@ -460,8 +460,8 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
  * off the discardable /var.
  *
  * The seed SCRIPTS are seeded in the shape the checks read them, which is a
- * static read of a handful of anchored lines -- `mkdir /srv/root`,
- * `chmod 0700 /srv/root`, `chown 0:0 /srv/root` at the start of a line and
+ * static read of a handful of anchored lines -- `mkdir /mos/root`,
+ * `chmod 0700 /mos/root`, `chown 0:0 /mos/root` at the start of a line and
  * nothing else. That is deliberately the oracle's own reading rather than a
  * plausible script: the check greps for those exact lines, so a fixture written
  * to be realistic instead of to be READ would pass for the wrong reason.
@@ -483,8 +483,9 @@ function seedHomes(root: string, board: Board, file: WriteFile): void {
       `[Mount]\nWhat=${what}\nWhere=${where}\nType=none\nOptions=bind\n[Install]\nWantedBy=local-fs.target\n`)
     enableEtcUnit(root, unit, 'local-fs.target.wants')
   }
-  mount('home.mount', '/srv/home', '/home')
-  mount('root.mount', '/srv/root', '/root')
+  mount('mos.mount', '/srv/.mos', '/mos')
+  mount('home.mount', '/mos/home', '/home')
+  mount('root.mount', '/mos/root', '/root')
   mount('usr-local-lib-systemd-system.mount', '/mnt/state/systemd-units', '/usr/local/lib/systemd/system')
   // var-lib-mos.mount is written by seedMqtt (the bridge's EnvironmentFile lives
   // on it); enabling it is this family's business, and a unit installed and not
@@ -508,18 +509,18 @@ function seedHomes(root: string, board: Board, file: WriteFile): void {
     + '# The pair is PINNED, not resolved: the home on DATA outlives this rootfs.\n'
     + 'MOS_UID=1000\n'
     + 'MOS_GID=1000\n'
-    + '[ -d /srv/home/mos ] && exit 0\n'
-    + 'mkdir /srv/home/mos\n'
-    + 'chmod 0700 /srv/home/mos\n'
-    + 'chown "${MOS_UID}:${MOS_GID}" /srv/home/mos\n')
+    + '[ -d /mos/home/mos ] && exit 0\n'
+    + 'mkdir /mos/home/mos\n'
+    + 'chmod 0700 /mos/home/mos\n'
+    + 'chown "${MOS_UID}:${MOS_GID}" /mos/home/mos\n')
 
   file('/usr/lib/mos/mos-seed-root',
     '#!/bin/sh\n'
-    + '# Everything here is under /srv: /root before the bind is the verity root.\n'
-    + '[ -d /srv/root ] && exit 0\n'
-    + 'mkdir /srv/root\n'
-    + 'chmod 0700 /srv/root\n'
-    + 'chown 0:0 /srv/root\n')
+    + '# Everything here is under /mos: /root before the bind is the verity root.\n'
+    + '[ -d /mos/root ] && exit 0\n'
+    + 'mkdir /mos/root\n'
+    + 'chmod 0700 /mos/root\n'
+    + 'chown 0:0 /mos/root\n')
   chmodSync(join(root, '/usr/lib/mos/mos-seed-root'), 0o755)
 }
 

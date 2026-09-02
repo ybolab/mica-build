@@ -465,8 +465,15 @@ simply never grows past the 64 MiB the assembler creates.
 
 ## Storage tiers, and the /var contract
 
-`/srv` (DATA) grows to fill the media and holds the application data worth the
-disk. `/mnt/state` (STATE) holds configuration and identity. `/mnt/meta` (META)
+DATA grows to fill the media. `/mos` is the canonical appliance-owned namespace
+for large retained artifacts: custom UI versions, update downloads, application
+artifacts, the container graphroot, and the backing trees for `/home` and
+`/root`. `/srv` is the operator-owned namespace. During rollback-compatible
+Phase A, DATA remains mounted at `/srv`, `/srv/.mos` is bound to `/mos`, and
+relative compatibility links preserve the former system paths for an old A/B
+slot. New code must use `/mos`; the links are not extension points.
+
+`/mnt/state` (STATE) holds configuration and identity. `/mnt/meta` (META)
 holds update metadata. `/var` (EPHEMERAL) is **fixed-size disposable residue** —
 logs, caches, package bookkeeping — and wiping it is a supported recovery
 action.

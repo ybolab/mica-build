@@ -5,7 +5,7 @@
 // path apid reads.
 //
 // UI_ROOT is asserted separately because the tier checks are about partitions:
-// none would notice /srv/ui moving off DATA -- onto STATE, where 64 MiB holds
+// none would notice /mos/ui moving off DATA -- onto STATE, where 64 MiB holds
 // the settings tree and the sshd host keys and the first large bundle fills it,
 // or onto /var, which is wiped by design and has no growfs, so every installed
 // custom UI silently disappears. Both are silent on the device and invisible to
@@ -33,7 +33,10 @@ import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
 import { verdict } from './verdict.ts'
 
-const UI_ROOT = '/srv/ui'
+const UI_ROOT = '/mos/ui'
+// Phase A binds /srv/.mos at /mos. fstab governs the backing path, while the
+// baked-content assertion below deliberately inspects the public namespace.
+const UI_STORAGE_ROOT = '/srv/.mos/ui'
 const DATA_MOUNT = '/srv'
 const PACKED_MOUNTPOINTS = [
   '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
@@ -302,12 +305,13 @@ export const FSTAB_CHECKS: readonly CheckCase[] = [
       const stateDev = `partuuid=${guidOf(board, 'STATE')}`
       const ephDev = `partuuid=${guidOf(board, 'EPHEMERAL')}`
 
-      const row = coveringRow(rows, UI_ROOT)
+      const row = coveringRow(rows, UI_STORAGE_ROOT)
       if (row === undefined) {
         // The early return, and the whole reason this check is `many`: one
         // conclusion instead of six, on both sides, rather than six silences.
         return [uiFiring(UI_NO_FILESYSTEM, false,
-          `${UI_NO_FILESYSTEM}: no /etc/fstab entry covers ${UI_ROOT}, so it lands on the read-only `
+          `${UI_NO_FILESYSTEM}: no /etc/fstab entry covers ${UI_STORAGE_ROOT}, the backing path for `
+          + `${UI_ROOT}, so it lands on the read-only `
           + `verity squashfs. apid cannot create it on first install, no bundle can ever be `
           + `installed, and the root is deliberately absent from fstab so no entry could ever come `
           + `to cover it`)]
