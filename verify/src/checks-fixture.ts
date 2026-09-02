@@ -302,6 +302,17 @@ function seedHealthyRoot(root: string, board: Board): void {
     '[Unit]\nAfter=mosd.service\n[Service]\nStateDirectory=mos/apid\n')
   file('/usr/share/dbus-1/system.d/com.mos.mosd.conf',
     '<busconfig>\n<policy user="root">\n<allow own="com.mos.mosd"/>\n</policy>\n</busconfig>\n')
+  // Upstream's own unit, TRANSCRIBED -- the ExecStart is the whole point of it
+  // here, because `rauc-units-never-override-boot-slot` counts the rauc command
+  // lines it found and is RED over a tree that carries none. Seeded with the
+  // flag ABSENT, because absent is the shipped state and its presence is the
+  // mutation. Transcribed and not imported for ORACLE_BUILTIN_MARKUP's reason:
+  // a fixture built out of the constant the check reads would move both sides
+  // of the comparison in one edit.
+  file('/usr/lib/systemd/system/rauc.service',
+    '[Unit]\nDescription=RAUC Update Service\n\n[Service]\nType=dbus\n'
+    + 'BusName=de.pengutronix.rauc\n'
+    + 'ExecStart=/usr/bin/rauc --mount=/run/rauc/mnt service\n')
   file('/etc/systemd/system/mos-shadow-reconcile.service',
     '[Service]\nExecStart=/usr/lib/mos/mos-shadow-reconcile\n')
   file('/etc/tmpfiles.d/mos-var.conf', 'q /var/tmp 1777 root root 10d\ne /var/cache - - - 30d\n')

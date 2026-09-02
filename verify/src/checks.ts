@@ -42,6 +42,7 @@ import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
 import { MQTT_CHECKS } from './checks-mqtt.ts'
 import { RAUC_CHECKS } from './checks-rauc.ts'
+import { RAUC_UNIT_CHECKS } from './checks-rauc-units.ts'
 import { ROOT_CHECKS } from './checks-root.ts'
 import { SHADOW_CHECKS } from './checks-shadow.ts'
 import { SLOT_CHECKS } from './checks-slots.ts'
@@ -145,6 +146,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...GPT_CHECKS,
   ...SLOT_CHECKS,
   ...RAUC_CHECKS,
+  ...RAUC_UNIT_CHECKS,
   ...ROOT_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
