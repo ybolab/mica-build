@@ -10,10 +10,12 @@
   - `remote-management.md` — what reaches the device today (apid on the LAN over HTTPS), the NAT/fleet channel as a requirement with no design, update control flow
   - `display.md` — HDMI kiosk UI: cage+WPE rendering `apid` locally
   - `provisioning.md` — configuration without a network: three-layer model
+  - `time.md` — network time: NTP servers, the presentation-only timezone, the STATE-backed clock floor and the read-only synchronization status
   - `mosd.md` — management plane design brief: D-Bus tree, settings schema, reconcilers
   - `connd.md` — connectivity concern (no `connd` process ships): WiFi STA/AP as two mosd reconcilers driving wpasupplicant/hostapd units
   - `containers.md` — integrator's guide: Quadlet units, container interconnection, dependency ordering, persistence
   - `ro-root.md` — read-only root: squashfs + dm-verity rootfs pack and boot wiring
+  - `storage.md` — fixed storage tiers and media: status surface, wear reporting, low-space policy, the reserved update workspace and the explicit data-lifecycle decisions
   - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
   - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture
   - `api.md` — API-first apid: current HTTP/bus surface, proposed API, static hosting, replaceable UI
