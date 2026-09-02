@@ -239,20 +239,32 @@ everything below it destroys something that was on the device.**
   invariant with a test over the whole two-slot input space, not a review
   note. It refuses, 409 and a named reason each, when there is no alternate
   slot, when the alternate is the booted slot, when the alternate was never
-  written or is marked bad, and when the booted slot is itself
-  pending-not-confirmed. The verdict — `target`, `permitted`, `reason` — rides
-  in the same `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary`
-  and `pending_not_confirmed`, so the state and the offer cannot disagree.
+  written or is marked bad, when the alternate is not the strictly older of
+  the two installs, and when the booted slot is itself pending-not-confirmed.
+  The verdict — `target`, `permitted`, `reason` — rides in the same
+  `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary` and
+  `pending_not_confirmed`, so the state and the offer cannot disagree.
+- *How the precondition above is enforced, not merely asserted:* "booted
+  successfully before" is not a field RAUC records, so the guard derives it
+  from the install order. An install always writes the slot that is not
+  running; therefore a booted slot installed AFTER the alternate proves the
+  device was running the alternate when that install happened. The guard
+  permits a rollback only when the target is the strictly older install, and
+  refuses every case it cannot order — absent, unparseable or equal
+  timestamps, the last being a factory flash that wrote both slots at once.
+  It fails CLOSED, because the failure this node exists to prevent is booting
+  a slot that has never worked.
 - *What does not ship, which is why this is still **[partial]**:* the reboot.
   The route changes the boot order and stops; realising it is a second,
   explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate
-  (`docs/design/updates.md` §4), and nothing sequences the two. Nor can the
-  guard see the *precondition* above in full: "booted successfully before" is
-  the confirmed/pending distinction, and RAUC's `boot-status` reads the U-Boot
-  attempt counter only as exhausted-or-not (`pkgs/mosd/mosd/src/rauc.rs`
-  states that limit). The guard approximates it with "written, not condemned,
-  and not the slot we are mid-confirmation on". That the bootloader then
-  actually falls back is bench evidence, §6.1's, not a claim made here.
+  (`docs/design/updates.md` §4), and nothing sequences the two. And the
+  install-order derivation is only as good as the clock at install time: a
+  device that installed with a wrong clock can record an ordering that did not
+  happen. Closing that needs a monotonic per-slot boot record, which no field
+  on this surface carries — RAUC's `boot-status` reads the U-Boot attempt
+  counter only as exhausted-or-not (`pkgs/mosd/mosd/src/rauc.rs` states that
+  limit). That the bootloader then actually falls back is bench evidence,
+  §6.1's, not a claim made here.
 
 ---
 
