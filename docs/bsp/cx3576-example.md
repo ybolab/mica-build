@@ -135,10 +135,15 @@ configured nowhere in the tree); the kernel verifies the root via dm-verity
   per concern under
   [boards/cx3576/hwinit/](../../boards/cx3576/hwinit/hwinit-can), reading
   facts staged from `bsp/init/`.
-- **RTC:** presence is not recorded in the board tree; RTC/NTP/timezone
-  management is planned work.
+- **RTC:** the board device tree declares an `AT8563`/`hym8563` at `0x51` on
+  `i2c7` (and disables the SoC reference design's node on another bus), and
+  `board.env` records no RTC fact of its own. Neither the driver nor the
+  backup cell has been exercised on a unit — qualification row 8 is `not
+  tested` below. Time management itself does not depend on it: always-on NTP,
+  the STATE-backed clock floor and the timezone setting ship and are the same
+  on a board with no RTC at all.
 
-> status: proposed — evidence: `docs/plan/PLAN-044.md`
+> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/dts/rk3576-cx3576z.dts`, `docs/design/time.md`
 
 ## Recovery method
 
@@ -186,9 +191,14 @@ this board:
 evidenced on this board's eMMC, so a unit leaving the operator's control
 needs the medium destroyed rather than reflashed.
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
+> status: unsupported
 
-TODO(PLAN-048): revisit after this plan merges
+The rungs that do reach this board — read-only diagnosis, the guarded
+rollback, and the configuration and application-data resets — are implemented
+and reachable with an authenticated session; none of them has been run on a
+unit, which is what the Recovery row below records.
+
+> status: shipped — evidence: `docs/design/recovery.md`, `pkgs/mosd/mosd/src/reset.rs`
 
 ## Artifact digests
 
@@ -242,24 +252,29 @@ Per [assurance.md](assurance.md), for CX3576-Z as shipped from this tree:
 
 - **I2 — authenticated normal system update: mechanism in place, not a
   production claim.** RAUC verifies bundle signatures against the keyring
-  in the signed root and TUF metadata pins releases; production key
-  custody is a runbook not yet performed, so with development keys this is
-  a tested mechanism only.
+  in the signed root, TUF metadata pins releases, and the device-side client
+  that walks that metadata ships in the image.
 
-> status: shipped — evidence: `build/src/bundle.ts`
+> status: shipped — evidence: `build/src/bundle.ts`, `docs/design/updates.md`
 
-> status: proposed — evidence: `docs/plan/PLAN-047.md`
+  What is missing on this board is operational, not mechanical: production
+  key custody is a runbook nobody has performed, and no image provisions the
+  pinned root anchor the client would start from, so with development keys
+  this is a tested mechanism only.
+
+> status: unsupported
 
 - **I3 — authenticated kernel/FIT, DTB and verity parameters: not met.**
-  No FIT signature configuration exists in the tree.
+  No FIT signature configuration exists in the tree, and no board boot key
+  lifecycle exists to sign one with.
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: unsupported
 
 - **I4 — hardware-rooted boot plus production debug policy: not met.** No
   fusing performed or configured; rockusb/maskrom debug paths are open (a
   bring-up feature, a production decision not yet made).
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: unsupported
 
 ## Qualification results
 
@@ -286,3 +301,4 @@ are noted as evidence about their own surface, never as a hardware `pass`.
 | Watchdog/reset cause | not tested | — | needs bench hardware |
 | Offline service | not tested | — | needs bench hardware (QEMU offline runs exercise x64, not this board) |
 | Recovery | not tested | — | needs bench hardware; every listed path is design-claimed, none rig-proven |
+| Installation and first boot | not tested | — | needs bench hardware; the rockusb flash and first boot are documented for both profiles and neither has been run on a unit |

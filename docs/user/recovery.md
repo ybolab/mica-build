@@ -149,9 +149,7 @@ that boot. An interrupted reset is replayable: the next boot finishes it.
   **nothing in the tree writes the presence assertion it requires**, so on a
   fielded device it is refused, every time.
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
-
-TODO(PLAN-048): revisit after this plan merges
+> status: shipped — evidence: `pkgs/mosd/apid/src/routes.rs`, `docs/design/recovery.md`
 
 ### Step 6 — Full factory reset — IRREVERSIBLE, and not reachable today
 
@@ -169,9 +167,7 @@ TODO(PLAN-048): revisit after this plan merges
   the same physical presence as step 5 — and refused for the same reason,
   today, on every board.
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
-
-TODO(PLAN-048): revisit after this plan merges
+> status: shipped — evidence: `pkgs/mosd/mosd/src/reset.rs`, `docs/design/recovery.md`
 
 ### A factory reset does not make a device anonymous
 
@@ -273,9 +269,7 @@ a recovery that does not exist.
   is no supported way to run a filesystem repair on an unmounted tier. The
   boot-time check that runs automatically is what exists.
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
-
-TODO(PLAN-048): revisit after this plan merges
+> status: unsupported
 
 ## 8. Before you recover: collect the evidence
 

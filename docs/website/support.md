@@ -52,31 +52,31 @@ carry, not a board the site can point at.
 
 ### Lifecycle and support windows
 
-A release's support window, its channel, and end-of-life dates are release
-facts: the site renders them from the machine-readable release manifest and
-support policy once those are published, and this page must not promise a
-window that no policy backs yet.
+A release's channel is a release fact the site may render: the machine-readable
+manifest binds it beside the version, board, profile and source commit, and the
+publication gate refuses a release whose manifest does not agree with what was
+built. The support-window and end-of-life policy is written — a stable release
+supported until superseded plus an overlap stated in its own release notes,
+per-board support bounded by the board's qualification, EOL announced with a
+notice period — and lives in the security lifecycle record.
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `docs/design/security-lifecycle.md`
 
-TODO(PLAN-043): revisit after this plan merges
+**The site may not print a window, a date or an advisory-coverage promise.**
+No tooling binds a window to a release, no release is published for one to
+attach to, and no advisory or EOL announcement channel exists. A policy
+sentence is not a commitment the site can render.
 
-The security end-of-life procedure — when a release stops receiving advisory
-coverage — is part of the planned security lifecycle and appears here when it
-ships.
-
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: unsupported
 
 ### Filing a case
 
 A support case cites the device's release identity — version, board, profile
-and active slot — so the responder reproduces against the exact image. Today
-that identity is assembled from existing seams (the shipped package manifest,
-the machine id, the active RAUC slot); a single system-information surface
-that answers it in one read, plus a bounded redacted diagnostic snapshot to
-attach to a case, are planned.
+and active slot — so the responder reproduces against the exact image. One
+authenticated read answers it: the system-information surface returns the
+machine id, board, kernel, image version and build date, the installed package
+set and the booted slot. A bounded, redacted diagnostic snapshot can be
+collected and downloaded to attach to the case; the device never uploads it
+anywhere.
 
-> status: shipped — evidence: `rootfs/compose/90-pack.Dockerfile`
-> status: proposed — evidence: `docs/plan/PLAN-052.md`
-
-TODO(PLAN-052): revisit after this plan merges
+> status: shipped — evidence: `docs/design/diagnostics.md`, `pkgs/mosd/apid/openapi.json`

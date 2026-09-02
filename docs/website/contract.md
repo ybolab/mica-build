@@ -78,14 +78,18 @@ change that publishes the claim — never before.
 ## The update cadence rule
 
 Site facts **regenerate from release facts; they are never hand-copied.**
-Release identity, artifact names, digests, per-board compatibility and support
-windows on the site are rendered from the machine-readable release manifest and
-qualification records once those exist, so a new release updates the site by
-regeneration, not by editing prose.
+Release identity, artifact names, digests and per-board compatibility come from
+the machine-readable release manifest each release directory carries, and
+per-board evidence from the board dossiers, so a new release updates the site by
+regeneration rather than by editing prose.
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `docs/bsp/qualification.md`
 
-TODO(PLAN-043): revisit after this plan merges
+Support windows are the exception, and it is a rule rather than a delay:
+nothing binds a window to a release, so there is no release fact to regenerate
+from and the site prints none.
+
+> status: unsupported
 
 Until that manifest ships, the downloads page carries no concrete release list
 (see [downloads.md](downloads.md)) — an empty honest page beats a hand-typed

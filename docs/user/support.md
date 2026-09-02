@@ -27,9 +27,9 @@ published with the BSP documentation: the tiers in
 grammar in [../bsp/qualification.md](../bsp/qualification.md), the vendor
 rubric in [../bsp/intake.md](../bsp/intake.md). The vocabulary existing is not
 a board having earned a tier: no board is mos-qualified today, because the one
-dossier on file carries all twelve qualification rows as `not tested`, so
-today's boards hold their standing by the evidence in this repository rather
-than by a completed dossier.
+dossier on file carries every qualification row as `not tested`, so today's
+boards hold their standing by the evidence in this repository rather than by a
+completed dossier.
 
 > status: shipped — evidence: `docs/bsp/support-tiers.md`, `docs/bsp/qualification.md`, `docs/bsp/intake.md`
 > status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
@@ -57,14 +57,25 @@ build.
   the reference boards, application delivery and updates (containers are
   explicitly not updated by mos), the product's configuration profile, and
   end-customer support.
-- **Support windows, end-of-life procedure and vulnerability triage** are not
-  yet defined — they are part of the release identity and security lifecycle
-  plans, and no support duration should be promised to an end customer on
-  mos's behalf until they land.
+- **The security lifecycle** assigns every procedure an owning role — release
+  owner, security owner, support owner, manufacturing owner — and states each
+  procedure's real maturity: key ceremonies and custody, credential lifecycle,
+  vulnerability intake, severity classes with triage and patch targets,
+  advisory publication, incident response, support windows and end of life.
+  Read it before promising anything on mos's behalf
+  ([../design/security-lifecycle.md](../design/security-lifecycle.md)).
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`, `docs/plan/PLAN-053.md`
+> status: shipped — evidence: `docs/design/security-lifecycle.md`
 
-TODO(PLAN-043): revisit after this plan merges
+**Written policy is not an operating channel, and the difference matters
+here.** No tooling enforces a support window; no end-of-life date is bound to
+a release by any mechanism; there is no published security contact, no
+advisory feed and no channel promotion. Until those exist, **no support
+duration, patch target or advisory coverage may be promised to an end customer
+on mos's behalf** — a severity target with no intake channel behind it is a
+number, not a commitment.
+
+> status: unsupported
 
 ## 4. What a support case needs
 

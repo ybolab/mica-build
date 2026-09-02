@@ -124,9 +124,7 @@ x64 在 ESP 的 `grubenv` 里）、引导加载器自己的控制台输出，以
 - **为什么你做不了：**见第 7 节。该流程已实现、已测试，而**树里没有任何
   东西会写出它所要求的在场断言**，所以在已上线的设备上它每次都被拒绝。
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
-
-TODO(PLAN-048): revisit after this plan merges
+> status: shipped — evidence: `pkgs/mosd/apid/src/routes.rs`, `docs/design/recovery.md`
 
 ### 第 6 步——恢复出厂——不可逆，且今天够不着
 
@@ -140,9 +138,7 @@ TODO(PLAN-048): revisit after this plan merges
 - **纸面上怎么做：**重置路由加 `{"tier": "full-factory"}`，由与第 5 步相同的
   物理在场把关——今天在每块板卡上都因同样的原因被拒绝。
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
-
-TODO(PLAN-048): revisit after this plan merges
+> status: shipped — evidence: `pkgs/mosd/mosd/src/reset.rs`, `docs/design/recovery.md`
 
 ### 恢复出厂不会让设备变得匿名
 
@@ -225,9 +221,7 @@ sanitize、NVMe format-NVM），而它在这些板卡上的真实行为没有人
 - **没有离线修复层。**没有恢复环境发布，因此没有受支持的方式在未挂载的层上
   跑文件系统修复。存在的只有启动时自动跑的那次检查。
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
-
-TODO(PLAN-048): revisit after this plan merges
+> status: unsupported
 
 ## 8. 恢复之前：先收集证据
 

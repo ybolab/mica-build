@@ -20,8 +20,8 @@ mos 是产品构建于其上的操作系统，因此支持是共担的责任：m
 [../../bsp/support-tiers.md](../../bsp/support-tiers.md)，矩阵及其行语法在
 [../../bsp/qualification.md](../../bsp/qualification.md)，厂商准入评估标准在
 [../../bsp/intake.md](../../bsp/intake.md)。词汇存在不等于某块板卡挣得了
-层级：今天没有任何板卡是 mos-qualified，因为在档的唯一一份档案里，十二行
-认证结果全部是 `not tested`——今天的板卡凭本仓库中的证据持有其地位，而不是
+层级：今天没有任何板卡是 mos-qualified，因为在档的唯一一份档案里，每一行
+认证结果都是 `not tested`——今天的板卡凭本仓库中的证据持有其地位，而不是
 凭一份完成的档案。
 
 > status: shipped — evidence: `docs/bsp/support-tiers.md`, `docs/bsp/qualification.md`, `docs/bsp/intake.md`
@@ -45,13 +45,21 @@ mos 是产品构建于其上的操作系统，因此支持是共担的责任：m
   API 契约、BSP 契约，以及带真实状态纪律的文档集。
 - **集成商**拥有：参考板卡之外的板卡选择与认证证据、应用交付与更新
   （容器明确不由 mos 更新）、产品的配置 profile，以及最终客户支持。
-- **支持窗口、生命周期终止程序与漏洞分诊**尚未定义——它们属于发布身份
-  与安全生命周期计划；在它们落地之前，不应代表 mos 向最终客户承诺任何
-  支持期限。
+- **安全生命周期**为每一项程序指派了一个负责角色——发布负责人、安全负责人、
+  支持负责人、制造负责人——并写明每项程序的真实成熟度：密钥仪式与保管、凭据
+  生命周期、漏洞接收、带分诊与修复目标的严重级别、公告发布、事件响应，以及
+  支持窗口与生命周期终止。代表 mos 承诺任何事之前先读它
+  （[../../design/security-lifecycle.md](../../design/security-lifecycle.md)）。
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`, `docs/plan/PLAN-053.md`
+> status: shipped — evidence: `docs/design/security-lifecycle.md`
 
-TODO(PLAN-043): revisit after this plan merges
+**写下来的政策不等于一条在运行的渠道，这里的区别很要紧。**没有任何工具强制
+支持窗口；没有任何机制把生命周期终止日期绑到某个发布版上；没有公开的安全
+联系方式、没有公告源、也没有渠道晋级。在这些东西存在之前，**不得代表 mos 向
+最终客户承诺任何支持期限、修复目标或公告覆盖**——一个背后没有接收渠道的严重
+级别目标，只是一个数字，不是承诺。
+
+> status: unsupported
 
 ## 4. 支持工单需要什么
 

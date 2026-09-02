@@ -105,11 +105,10 @@ WiFi 客户端网络，以及时间设置。每个键都映射到一个已经存
 **哪些从未在硬件上执行过。**文档解析器、它的校验器和状态路由都有测试覆盖。
 **传输通道没有**：没有任何测试、没有任何台架运行把真实的引导分区或真实的
 U 盘送进一次真实启动，其中引导分区通道尤其从未在物理板卡上跑过。机制发布
-了；流程没有被证明。
+了；流程没有被证明，而记录一次真实运行的地方是板卡档案
+（[../../bsp/qualification.md](../../bsp/qualification.md)）。
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
-
-TODO(PLAN-046): revisit after this plan merges
+> status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-provisioning-import`, `docs/design/provisioning.md`
 
 ## 4. 认领设备
 

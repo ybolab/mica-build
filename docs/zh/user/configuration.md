@@ -73,24 +73,47 @@ WiFi 的有无取决于板卡：cx3576 带 WiFi 和蓝牙；x64 QEMU 基线没�
 
 > status: shipped — evidence: `docs/design/access.md`, `docs/design/ro-root.md`
 
-## 5. 已知缺口
+## 5. 刻意的限制，以及还缺什么
 
 ### 5.1 时间
 
-今天没有受支持的 NTP 服务器或时区运行时配置，rootfs 中也没有启用的网络
-时间服务。计划将加入常开的 `systemd-timesyncd`、类型化的
-`time.ntp.servers` 与 `time.timezone` 设置，以及通过 API 的同步状态。
+网络时间已经不再是缺口，但关于它有两件事是刻意的限制，而不是遗漏。
 
-> status: proposed — evidence: `docs/plan/PLAN-044.md`
+`systemd-timesyncd` 已安装并静态启用，因此始终在跑：**没有任何启用、停用或
+暂停控制**——设置树里没有，API 里没有，UI 里也没有。设置只有两个，且只有两个：
+`time.ntp.servers`（一个经过校验的列表；留空表示使用镜像内置的备用池）和
+`time.timezone`。`GET /api/v1/time/status` 报告时钟是否已被驯服、哪台服务器
+应答，以及最近一次校正是阶跃还是缓变。
 
-TODO(PLAN-044): revisit after this plan merges
+**机器的时间永远是 UTC，时区只用于呈现。**`time.timezone` 从不被写入
+`/etc/localtime`——镜像不烘焙任何时区，构建也会拒绝一个——因为那个符号链接会
+被每一个 UTC 消费者读到，journald 也在内。时区作为一个运行时值发布，供 UI
+格式化使用，仅此而已。
 
-### 5.2 离线配置通道与可重复配置
+网络时间之下还有一层时钟下界，因此一台没有 RTC 或 RTC 电池已耗尽的设备，
+启动后的时间也不会早于它上一次被确知在运行的那一分钟：保存的时钟在 STATE 上，
+跨重启与 A/B 更新都保留。PTP、NTS 和可配置的轮询周期不在范围内。
 
-第 1 节中的离线配置通道与工厂注入，以及一份可以跨设备幂等应用的、带版本
-且经过校验的配置文档，规划在安装/接入计划之下。今天，配置是在既有网络上
-通过一次次 API 写入来应用的。
+**未在硬件上验证：**cx3576 的设备树声明了一个 RTC，其驱动与备用电源都没有在
+台架板卡上验证过。本页没有任何内容依赖 RTC 存在——那正是时钟下界的用途——但
+"跨长时间断电仍保持时间"这件事没有被演示过。
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
+> status: shipped — evidence: `docs/design/time.md`, `pkgs/mosd/mosd/src/time_status.rs`
 
-TODO(PLAN-046): revisit after this plan merges
+> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/dts/rk3576-cx3576z.dts`
+
+### 5.2 离线配置通道与工厂注入
+
+一份带版本、经过校验的配置文档如今已经存在，并在网络上还没有任何东西监听
+之前就从介质上被应用：固定文件名的一个 TOML 文件、整份文档一起校验、应用一次
+并记录下来，走两条离线传输（[first-run.md](first-run.md)）。它就是为一台从未
+联过网的设备做配置的可重复路径。
+
+> status: shipped — evidence: `docs/design/provisioning.md`, `pkgs/mosd/mosd/src/provisioning_doc.rs`
+
+设计列出的五条通道里仍有两条不存在：AP 强制门户只有传输、没有门户本身，串口
+向导从未被构建。工厂注入也一样没有——带版本的输入、注入时验证与每设备记录写在
+[manufacturing.md](manufacturing.md) 里，没有任何工具支撑。除了这份配置文档，
+配置仍然是在既有网络上一次次 API 写入。
+
+> status: unsupported

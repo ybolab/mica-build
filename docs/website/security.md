@@ -62,12 +62,13 @@ site does the same:
 
 > status: shipped — evidence: `pkgs/rauc/system.conf.in`, `docs/design/release-signing.md`
 
-- **No device-side update client yet.** Devices can install a bundle already
-  present locally; discovery, authenticated download and resume are planned.
+- **The device-side update client ships without its trust anchor.** A device
+  discovers, downloads with resume, verifies and installs an update on its
+  own, and refuses anything the signed metadata does not cover. What no image
+  provisions is the pinned root that walk starts from, so the online path is
+  inert until an operator supplies one.
 
-> status: proposed — evidence: `docs/plan/PLAN-047.md`
-
-TODO(PLAN-047): revisit after this plan merges
+> status: shipped — evidence: `docs/design/updates.md`, `pkgs/rauc-sign/`
 
 - **Data at rest is not encrypted**, and rootful container integrators can
   grant themselves broad privilege; neither is currently constrained.
@@ -76,14 +77,21 @@ TODO(PLAN-047): revisit after this plan merges
 
 ### Advisories and reporting
 
-A formal security lifecycle — vulnerability intake, severity and patch
-targets, advisory publication, incident response and end-of-life — is planned
-work and is presented here as such; until it ships, security reports go
-through the [support](support.md) contact and are handled case by case.
+The security lifecycle is written: vulnerability intake, severity classes with
+triage and patch targets, advisory publication, incident response and
+end-of-life, each with one accountable owner role and each stating its own
+maturity.
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: shipped — evidence: `docs/design/security-lifecycle.md`
 
-TODO(PLAN-053): revisit after this plan merges
+**The site must not present any of it as an operating channel.** There is no
+published security contact or disclosure policy, no advisory feed and no
+incident notification path; security reports go through the
+[support](support.md) contact and are handled case by case. Printing a triage
+target with no intake behind it would be exactly the overclaim the content
+contract forbids.
+
+> status: unsupported
 
 When the advisory process ships, this page gains the advisory index,
 rendered from the advisory records — never hand-copied, per the

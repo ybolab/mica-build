@@ -39,16 +39,22 @@ carries the features the OS depends on.
 ### Factory and offline setup
 
 A device must become configurable before it has a network, an account or a
-cloud to phone. mos designs provisioning as configuration without a network —
-seeded device identity and settings on the writable STATE partition — and the
-complete customer onboarding journey (artifact selection, flashing, first
-boot, claim, repeatable initial configuration) is planned work, not yet a
-shipped end-to-end path.
+cloud to phone. mos provisions itself: the first boot seeds a device identity
+and its settings onto the writable STATE partition, and a validated
+provisioning document placed on the boot partition or a removable medium can
+carry a first configuration — network, credential, hostname — onto a unit that
+has never seen a network. The whole journey, from choosing an artifact through
+flashing, first boot, claim and repeatable initial configuration, is documented
+end to end.
 
 > status: shipped — evidence: `docs/design/provisioning.md`, `rootfs/overlay/usr/lib/mos/mos-seed-state`
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
 
-TODO(PLAN-046): revisit after this plan merges
+**The site may not call that journey proven.** No step of it has been executed
+on physical hardware from this tree — the flash, the first boot and both
+offline transports are unrun — and mos ships no factory tooling: no versioned
+input pools, no verification at injection, no per-device record.
+
+> status: unsupported
 
 ### Bounded flash
 
@@ -69,13 +75,21 @@ maskROM USB loader path can be reflashed whole when nothing else answers.
 > status: shipped — evidence: `docs/design/uboot-ab-handshake.md`
 > status: board-dependent — evidence: `docs/design/access.md`
 
-The complete recovery ladder — guarded manual rollback, both-slots-failed
-runbooks, credential recovery, factory reset tiers — is planned and not yet
-delivered.
+The recovery ladder above that is built and ordered least-destructive first:
+read-only diagnosis, a guarded manual rollback that refuses any switch it
+cannot prove goes backward, a configuration reset, an application-data reset,
+credential recovery, a full factory reset, and the reflash. Every tier names
+what it costs before it is offered.
 
-> status: proposed — evidence: `docs/plan/PLAN-048.md`
+> status: shipped — evidence: `docs/design/recovery.md`, `pkgs/mosd/mosd/src/reset.rs`
 
-TODO(PLAN-048): revisit after this plan merges
+**Two rungs of that ladder cannot be climbed on any board that exists.**
+Credential recovery and the full factory reset are gated on a physical-presence
+assertion, and nothing in the tree writes one, so a fielded device refuses both
+— an operator who has lost the administrator credential still pays the device's
+identity for a reflash. Secure wipe is not implemented at all.
+
+> status: unsupported
 
 ### Long-lived BSP maintenance
 
