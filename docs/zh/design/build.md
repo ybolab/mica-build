@@ -120,8 +120,8 @@ keyring 是任何包都不可以携带的、每次构建各自的信任材料：
 `build.sh` 自己把它复制进组合上下文，并**拒绝**留在
 `rootfs/overlay/etc/rauc/keyring.pem` 的 keyring——overlay 会被整份复制
 进每一个镜像，留在那里的文件就是一个没人选择过的信任根——而当材料旁边的
-`ca/GENERATED` 标记它是开发级时发出警告。`MOS_EXPECT_DEV_KEYRING=1` 在校验期
-强制同一判定。
+`ca/GENERATED` 标记它是开发级时发出警告。校验期读的是同一个标记，并把读到的
+等级写进判定。
 
 #### 两条路径不一致的地方，对的是组合这一条
 
@@ -177,16 +177,16 @@ gitignore。`build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
 
 生成器会在材料旁边留下 `ca/GENERATED`。这个标记让"生成的信任根"和"提供的生产
 材料"在此后每一次构建里都可区分，而不只是在生成它的那一次。
-`rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为依据
-（`MOS_EXPECT_DEV_KEYRING=1` 可以强制同一条警告）。生产发布把真实材料放进
-`ca/`，并且不带这个标记。
+`rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为唯一依据:
+没有任何构建期变量可以声明一个台架镜像。生产发布把真实材料放进 `ca/`，
+并且不带这个标记。
 
 有两条规则没变。`CERT`/`KEY`/`KEYRING` 仍然优先于约定——三个都设置时不会生成
 任何东西，也不会读 `ca/` 里的任何文件。放在
 `rootfs/overlay/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
 无条件拒绝：overlay 会被整份复制进每一个镜像，留在那里的文件就是一个没人选择过
-的 CA，而 `ca/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，对开发镜像跑
-`make os-verify-<board>` 需要 `MOS_EXPECT_DEV_KEYRING=1` 来声明它是台架镜像。
+的 CA，而 `ca/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，
+`make os-verify-<board>` 对两种等级的材料都通过，并在判定里写明它读到的是哪一种。
 
 keyring 是 mos 根里唯一**不是**包载荷的路径，而且它和 `mos-ca-trust` 提供的
 TLS 信任库是两条不同的接缝——1.1 节把两者并排列出。

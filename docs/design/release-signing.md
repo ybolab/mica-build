@@ -454,9 +454,9 @@ The keyring reaches a device **in the image**, from one place. The facts:
 - The overlay is **not** a source: `rootfs/build.sh` refuses an
   `etc/rauc/keyring.pem` found there, unconditionally, because the overlay is
   copied wholesale into every image and a file left in it is a CA nobody chose.
-  `verify/src/checks-root.ts` still fails an image carrying a baked-in
-  keyring unless `MOS_EXPECT_DEV_KEYRING=1` names it a bench image, and
-  `verify/src/checks-root.test.ts` proves both directions of that gate.
+  `verify/src/checks-root.ts` fails an image whose keyring is not byte-equal
+  to `ca/ca.cert.pem`, and `verify/src/checks-root.test.ts` proves both
+  directions of that gate.
 - **Rotation rides the update channel, with a bounded residue.** `/etc` is a
   read-only squashfs replaced whole by every A/B update, so the keyring cannot
   be edited in place — but it CAN be replaced by the update itself, and the
@@ -488,9 +488,10 @@ land:
   exactly `/etc/rauc/keyring.pem` (`pkgs/rauc/system.conf.in`), and
   `packed-keyring-from-ca` (`verify/src/checks-root.ts`) asserts the
   shipped root carries at that path a BYTE-EQUAL copy of `ca/ca.cert.pem` —
-  and refuses one that carries anything else, or a development-grade root
-  (`ca/GENERATED`) without `MOS_EXPECT_DEV_KEYRING=1`. So the keyring RAUC
-  reads is, by the shipped configuration, the CA the build was pointed at.
+  and refuses one that carries anything else. Whether that root is
+  development-grade (`ca/GENERATED`) is stated in the verdict, not refused. So
+  the keyring RAUC reads is, by the shipped configuration, the CA the build was
+  pointed at.
   Whether it is honoured end to end — `rauc install` accepting a
   production-signed bundle on hardware — is observable only on a booted
   device; that last step stays documented, not tested.
@@ -580,11 +581,11 @@ What the build does with that, each step observable without hardware:
   `ca/GENERATED`, which production material does not carry.
 - The bundle build signs with `ca/signer.{cert,key}.pem` and read-backs
   through the shipped `system.conf` against the same keyring (§3).
-- `make os-verify-cx3576` passes `packed-keyring-from-ca` without
-  `MOS_EXPECT_DEV_KEYRING=1`: the shipped keyring is byte-equal to
-  `ca/ca.cert.pem` and no marker names it development-grade. The same check
-  still refuses a marked root without that variable, so a dev image cannot
-  masquerade — `verify/src/checks-root.test.ts` holds both directions.
+- `make os-verify-cx3576` passes `packed-keyring-from-ca`: the shipped keyring
+  is byte-equal to `ca/ca.cert.pem`. When a marker names that root
+  development-grade the check says so in the verdict rather than refusing, so a
+  dev image cannot masquerade as production in a transcript —
+  `verify/src/checks-root.test.ts` holds both readings.
 
 The TUF half of provisioning — pinning the production `root.json` on the
 device — has no tooling road yet: the anchor is distributed out of band
@@ -790,9 +791,10 @@ deadline will one day propose:
   comments.
 - **No dev CA on a shipped device.** A generated trust root carries
   `ca/GENERATED`, so the build says loudly which images trust one and the
-  verifier fails such an image closed unless `MOS_EXPECT_DEV_KEYRING=1` names it
-  a bench image. That variable is a bench waiver, not a build option, and
-  nothing that leaves a desk is built with it.
+  verifier names the grade it read. Which material is in `ca/` is chosen before
+  the build — by the release pipeline, not by a flag at verify time. No gate in
+  this repository yet refuses to PUBLISH an image built on a generated root;
+  that assertion belongs to the release gate and does not exist.
 - **No expiry decided ad hoc.** The horizons in §1.4 and §2.1 are the
   policy; a `sign` invocation that invents a different horizon is a change
   to this document first.

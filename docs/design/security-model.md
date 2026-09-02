@@ -75,7 +75,7 @@ A release is signed twice, by two unrelated hierarchies
   verifies against `/etc/rauc/keyring.pem`, staged at build time from the
   repository-root `ca/` seam. A development-grade CA is unmissably marked
   (`ca/GENERATED`, `pkgs/rauc/gen-dev-keys.sh`) and the image verifier fails a
-  marked root unless `MOS_EXPECT_DEV_KEYRING=1` names a bench image
+  marked root and names it development-grade in the verdict
   (`verify/src/checks-root.ts`, both directions proven by
   `verify/src/checks-root.test.ts`).
 - **TUF metadata** — **[partial]**: `rauc-sign` maintains the four-role

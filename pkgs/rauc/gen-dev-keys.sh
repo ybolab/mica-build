@@ -15,9 +15,10 @@
 # It also drops ca/GENERATED. That marker is what distinguishes a trust root
 # this script made from production material an operator put there, FOREVER
 # after -- not only in the run that made it. The image build keys its loud
-# development-keyring warning off the marker, and verify keeps refusing a
-# marked root in an image unless MOS_EXPECT_DEV_KEYRING=1 says it is a bench
-# image. Production material is placed in ca/ WITHOUT the marker.
+# development-keyring warning off the marker, and verify names the grade it
+# read in its verdict. Neither refuses: dev and production take the same path
+# through ca/, and CI chooses which material is there before the build.
+# Production material is placed in ca/ WITHOUT the marker.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -158,5 +159,5 @@ echo "  GENERATED        marks this root development-grade for every later build
 echo
 echo "Because GENERATED is present, rootfs/build.sh warns loudly that the"
 echo "image trusts a development CA, and the image verifier (make"
-echo "os-verify-cx3576) still refuses that image unless MOS_EXPECT_DEV_KEYRING=1"
-echo "names it as a bench image. Do not flash it onto anything that leaves your desk."
+echo "os-verify-cx3576) names the trust root DEVELOPMENT-GRADE in its verdict."
+echo "Do not flash it onto anything that leaves your desk."

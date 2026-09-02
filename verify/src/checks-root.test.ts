@@ -727,17 +727,13 @@ describe('the shipped keyring, which must be the one from ca/', () => {
   // released state -- an image trusting the CA its bundles are signed with --
   // so it is the baseline every mutation below departs from.
 
-  test('POSITIVE CONTROL: production material, matching bytes, and NO env var: pass', async () => {
+  test('POSITIVE CONTROL: production material and matching bytes: pass', async () => {
     const fx = packedRootFixture(cx3576)
-    const before = process.env['MOS_EXPECT_DEV_KEYRING']
     try {
-      delete process.env['MOS_EXPECT_DEV_KEYRING']
       expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
       expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('no GENERATED marker')
     }
     finally {
-      if (before === undefined) delete process.env['MOS_EXPECT_DEV_KEYRING']
-      else process.env['MOS_EXPECT_DEV_KEYRING'] = before
       fx.dispose()
     }
   })
@@ -790,57 +786,46 @@ describe('the shipped keyring, which must be the one from ca/', () => {
     }
   })
 
-  test('ca/GENERATED makes the SAME bytes a development keyring, waived only by MOS_EXPECT_DEV_KEYRING=1', async () => {
+  test('ca/GENERATED names the SAME bytes development-grade, and says so instead of refusing', async () => {
     // Nothing about the image changes here -- the keyring is byte-identical to
     // the production case above. What changes is the marker beside the trust
-    // root, which is the whole point of dropping one: it says the CA whose
-    // bundles this image will install has an unprotected key in a working tree,
-    // and it keeps saying it on every later build.
+    // root: it says the CA whose bundles this image will install has an
+    // unprotected key in a working tree, and it keeps saying it on every later
+    // build.
     //
-    // The escape is PORTED and not dropped: leaving it out would make this
-    // stricter than the oracle on precisely the images somebody sets it for.
+    // Both readings PASS, and the message is the whole difference. Dev and
+    // production reach the image by one path through ca/, and which material is
+    // there is chosen before the build; a verifier that refused one of them
+    // would be a build-time switch wearing a verifier's clothes. What this
+    // asserts is that the verdict cannot be read as production when it is not.
     const fx = packedRootFixture(cx3576)
-    const before = process.env['MOS_EXPECT_DEV_KEYRING']
     try {
-      delete process.env['MOS_EXPECT_DEV_KEYRING']
       expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
+      expect(await messageOf(fx, 'packed-keyring-from-ca')).not.toContain('DEVELOPMENT-GRADE')
 
       writeFileSync(join(fx.ctx.caDir, 'GENERATED'), 'auto-generated development trust root\n')
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('DEVELOPMENT-GRADE')
-
-      process.env['MOS_EXPECT_DEV_KEYRING'] = '1'
       expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('explicitly expected')
-
-      // ...and only the exact value 1, not any truthy string.
-      process.env['MOS_EXPECT_DEV_KEYRING'] = 'yes'
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
+      const marked = await messageOf(fx, 'packed-keyring-from-ca')
+      expect(marked).toContain('DEVELOPMENT-GRADE')
+      expect(marked).not.toContain('no GENERATED marker')
     }
     finally {
-      if (before === undefined) delete process.env['MOS_EXPECT_DEV_KEYRING']
-      else process.env['MOS_EXPECT_DEV_KEYRING'] = before
       fx.dispose()
     }
   })
 
-  test('the waiver does NOT rescue a keyring that came from somewhere else', async () => {
-    // MOS_EXPECT_DEV_KEYRING says "I expect this image to trust a development
-    // CA". It does not say "I expect this image to trust anything at all", and
-    // an escape that covered the byte mismatch too would waive the one property
-    // this check exists for.
+  test('a development marker does NOT excuse a keyring that came from somewhere else', async () => {
+    // The marker says which material ca/ holds. It says nothing about whether
+    // the image ships that material, and the byte comparison is the one
+    // property this check exists for: it must survive the marker being there.
     const fx = packedRootFixture(cx3576)
-    const before = process.env['MOS_EXPECT_DEV_KEYRING']
     try {
       writeFileSync(join(fx.ctx.caDir, 'GENERATED'), 'auto-generated development trust root\n')
       writeFileSync(join(fx.root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\nsomebody else\n')
-      process.env['MOS_EXPECT_DEV_KEYRING'] = '1'
       expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
       expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('the bytes differ')
     }
     finally {
-      if (before === undefined) delete process.env['MOS_EXPECT_DEV_KEYRING']
-      else process.env['MOS_EXPECT_DEV_KEYRING'] = before
       fx.dispose()
     }
   })
