@@ -1,8 +1,8 @@
 # PLAN-052 Add diagnostics and operational network state
 
-- **status**: draft
+- **status**: completed
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-288](../task/RFCT-288.md)
 
 ## Context
@@ -82,3 +82,15 @@ and SKU-specific cellular support unless separately selected.
   version, system version, per-package software versions, build date and
   machine id belong to this plan, aggregated from the existing seams
   (manifest.tsv, machine-id, uname, RAUC slot).
+
+## Completion (2026-09-02)
+
+| Proposal item | Evidence |
+|---|---|
+| One-read system information | `GET /api/v1/system/info` and the `/_ui/system-information` route in `pkgs/mosd/apid/ui/src/app/routes/system-information.tsx`; `answers device identity with one API read` and `names unavailable identity evidence instead of showing a healthy blank` in `-system-information.test.tsx`; diagnostics design section 2. |
+| Versioned diagnostic snapshot | Schema version 1 and its release, system, boot, failure, storage, time, telemetry and network members in diagnostics design section 5; authenticated collection/list/export/delete routes under `/api/v1/diagnostics/snapshots` in section 8; the `/_ui/diagnostics` route. |
+| Bounded, atomic, offline authenticated collection/export | Enforced collection, evidence and retention limits plus atomic publication and offline behavior in diagnostics design section 7; authentication contract in section 8; `shows retention bounds and authenticated snapshot actions`, `generates a snapshot and refreshes the list`, and `deletes a snapshot and refreshes the list` in `-diagnostics.test.tsx`. |
+| Reviewed redaction boundary | Three-pass redaction schema in diagnostics design section 6; `every_planted_secret_is_absent_from_the_produced_snapshot`, `every_benign_member_survives_the_pass`, and the API export assertion named there. |
+| Observed network distinct from desired settings | `GET /api/v1/network/status`, diagnostics design section 3, and the `/_ui/network-status` route in `network-status.tsx`; `shows live evidence separately from desired network settings` and `names unavailable top-level evidence without assuming lists exist` in `-network-status.test.tsx`; `matches route boundaries instead of similarly prefixed pages` in `src/components/app-shell.test.ts`. |
+| Board telemetry adapters | `GET /api/v1/system/telemetry` and the thermal/watchdog/reset adapter and absence contract in diagnostics design section 4. Fixture coverage validates parsing and absence semantics. Physical-board validation of reset reason, temperature, watchdog and radio fields is hardware-dependent, **not done**, and escalated by the coordinating workstream. |
+| Operational documentation | Collection, privacy/retention and escalation procedures in diagnostics design sections 10.1-10.3, followed by symptom-to-evidence-to-remediation trees for no network, wrong time, DATA full, failed update/slot rollback and unexpected reboot in section 10.4. Assurance-level handling is sourced from the linked security model and is not redefined. |

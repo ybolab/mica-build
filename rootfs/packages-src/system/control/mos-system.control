@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, udev, dbus, kmod, openssh-server, iproute2, libubootenv-tool, curl, passwd
+Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, libubootenv-tool, curl, passwd
 Description: mos common system policy, state mounts and operator account
  The board-independent half of a mos root filesystem: the seed and reconcile
  tools under /usr/lib/mos, their units, the STATE and DATA bind mounts
@@ -41,6 +41,15 @@ Description: mos common system policy, state mounts and operator account
  without it that probe SKIPs and the gate reports green over two of three
  components; passwd provides the useradd, groupadd and chage the postinst
  execs by name.
+ .
+ systemd-timesyncd is here because network time is base policy on every image
+ (PLAN-044), and this package ships the two files that govern it: the pinned
+ policy drop-in under /etc/systemd/timesyncd.conf.d and the
+ sysinit.target.wants enablement link. The daemon those files configure and
+ enable has to arrive with them -- a root holding the link without the unit is
+ a service systemd cannot start and a wants-symlink that resolves to nothing.
+ Unversioned, like systemd above: an upstream Debian package, not a pool
+ member with a stamp to pin.
  .
  RAUC's runtime libraries are deliberately not here. glib, json-glib and
  libfdisk are in the image for the self-built rauc alone and belong to

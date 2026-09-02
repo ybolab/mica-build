@@ -14,6 +14,7 @@
   - `connd.md` — connectivity concern (no `connd` process ships): WiFi STA/AP as two mosd reconcilers driving wpasupplicant/hostapd units
   - `containers.md` — integrator's guide: Quadlet units, container interconnection, dependency ordering, persistence
   - `ro-root.md` — read-only root: squashfs + dm-verity rootfs pack and boot wiring
+  - `storage.md` — fixed storage tiers and media: status surface, wear reporting, low-space policy, the reserved update workspace and the explicit data-lifecycle decisions
   - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
   - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture
   - `api.md` — API-first apid: current HTTP/bus surface, proposed API, static hosting, replaceable UI
@@ -27,6 +28,8 @@
   - `manufacturing.md` — factory inputs, per-device result records, quarantine, RMA without identity cloning, debug/fuse policy
   - `build-harness.md` — how this repository's checks are run: the pinned bun container, the Rust gate's container and PATH, scratch that is not `/tmp`, arm64 build-vs-execute, and the docs gates
   - `build.md` — the build guide: what a board build produces, the x64 and cx3576 sequences, which cx3576 steps cross-compile, emulate inside buildkit or need host binfmt, and how to read the build's refusals
+  - `time.md` — RTC, saved clock floor, NTP synchronization and timezone management
+  - `diagnostics.md` — diagnostics: the system-information surface, observed network state, board telemetry, and the bounded redacted support snapshot
 - `user/` — user documentation: the customer journey from download to support
   - `doc-contract.md` — the contract behind this set: audience, page ownership, truth-status taxonomy, evidence rules
   - `quickstart.md` — the shortest honest path to a running mos system

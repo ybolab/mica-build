@@ -663,7 +663,7 @@ describe('the shipped bill of materials', () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(await verdictOf(fx, 'packed-mos-manifest')).toBe('pass')
-      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('4 package(s), 2 of them mos')
+      expect(await messageOf(fx, 'packed-mos-manifest')).toContain('5 package(s), 2 of them mos')
     }
     finally {
       fx.dispose()
