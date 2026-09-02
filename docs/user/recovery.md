@@ -1,88 +1,288 @@
 # Recovery
 
-This page is ordered from the recovery that happens by itself to the one that
-costs the most, and it is blunt about the gaps: several recovery flows an
-appliance eventually needs are designed but not built, and pretending
-otherwise would be worse than the gap.
+Recovery on mos is **data-preserving first**: the steps below are ordered so
+that each one costs more than the one above it, and an operator who reaches
+step *n* has established that steps 1..*n*-1 were not enough. Working down the
+order is the procedure. Skipping to the bottom because it is the step everyone
+remembers is how devices lose data they did not have to lose.
 
-## 1. Automatic: a bad slot rolls back
+The page is also blunt about the gap in the middle of that order: two of the
+steps are built, tested, and **cannot be performed on any board that exists
+today**. Section 7 says which, and why, and what an operator does instead.
 
-A failed update never needs an operator. A slot that cannot boot, or cannot
-pass the boot health gate, exhausts its boot credits and the bootloader
-returns to the previous slot — that is the normal, tested path and it is
-described in [update-rollback.md](update-rollback.md).
+## 1. Automatic: a bad slot rolls back by itself
+
+A failed update needs no operator. A slot that cannot boot, or cannot pass the
+boot health gate, never gets its boot credits refilled; the next resets
+exhaust them and the bootloader returns to the previous slot. That is the
+normal path and [update-rollback.md](update-rollback.md) describes it.
 
 > status: shipped — evidence: `docs/design/uboot-ab-handshake.md`, `rootfs/overlay/usr/lib/mos/mos-health`
 
-## 2. Both slots failing: the device keeps cycling
+## 2. Both slots failing: the device reboots in a loop
 
 When neither slot has credits left, the cx3576 boot script refills all
-counters and resets, so the device reboots repeatedly rather than halting
-dead. The operator-visible symptom of a device with two bad slots is exactly
-that reboot loop, and it means: go to the physical recovery path below.
+counters and resets; x64's GRUB boots in order anyway rather than sitting at a
+menu. Either way the device **reboots repeatedly rather than halting**, and
+that loop is the operator-visible symptom of two bad slots. It is not bricked
+and it is not idle.
 
-> status: board-dependent — evidence: `boards/cx3576/boot.cmd`
+Nothing in-band runs in this state, so the evidence that survives is only what
+the bootloader keeps and what the console prints: the slot order and both
+attempt counters (in the redundant U-Boot environment on cx3576, in `grubenv`
+on the ESP on x64), the bootloader's own console lines, and the slot's boot
+payload read from another machine. Attach a console before power-cycling
+again; the journal and everything else on a writable tier may not be readable
+at all. Then go to step 7.
 
-## 3. Physical: whole-disk reflash
+> status: board-dependent — evidence: `boards/cx3576/boot.cmd`, `boards/x64/grub.cfg`
 
-The last resort sits below the OS and is reachable when nothing else is. On
-cx3576 that is the Rockchip loader path (rockusb) — recovery button at power
-on, or the automatic fallthrough when boot fails — followed by writing the
-full disk image over USB, as in [install.md](install.md). On x64, boot any
-live medium and rewrite the disk.
+## 3. The decision tree
 
-What a reflash costs, stated precisely:
+| # | Step | Reversible? | What it costs |
+|---|---|---|---|
+| 1 | read-only diagnosis | yes | nothing |
+| 2 | guarded manual rollback | yes | one reboot; the condemned slot stops being a rollback target |
+| 3 | configuration reset | **no** | every modelled setting |
+| 4 | application-data reset | **no** | all operator data in `/srv` and every application's data under `/mos` |
+| 5 | credential recovery | **no** | the previous credential and every API token |
+| 6 | full factory reset | **no** | settings, credentials, applications and operator data together |
+| 7 | whole-disk reflash | **no** | every partition, **and the device's identity** |
+| 8 | secure wipe | **terminal** | the device, as a configured unit |
 
-- **STATE is replaced** — settings, the administrator credential, SSH host
-  keys, device identity and secrets. The device returns to first boot and
-  mints a new identity ([first-run.md](first-run.md)).
-- **DATA is replaced** — application data and home directories.
-- **META is replaced** — update bookkeeping.
-- **Grown DATA blocks are unreachable, not erased.** The flashed image is
-  smaller than the disk; a reflash writes only the image's own extent, so
-  blocks beyond it keep their old contents with nothing referencing them.
-  A device being disposed of or handed to another party needs a media wipe,
-  not a reflash.
+**The line is between steps 2 and 3.** Everything above it can be undone by
+rebooting. Everything below it destroys something that was on the device, and
+nothing on this page restores it: there is no backup-and-restore contract in
+this product, so an unrecoverable step is unrecoverable in the strongest sense
+mos currently offers.
 
-> status: board-dependent — evidence: `docs/design/access.md`, `boards/cx3576/board.env`
+> status: shipped — evidence: `docs/design/recovery.md`
 
-## 4. Lost credentials: there is no software path back in
+## 4. The reversible steps
 
-An operator who loses the administrator (web) credential **and** every
-authorized SSH key cannot get back into the appliance by software. The API is
-the only thing that can re-enable access and it requires the credential; SSH
-is off or keyless; the serial console shows a login prompt with no account
-that accepts a password. This is a deliberate property of the credential
-model — credentials survive updates, so an update is not a back door — and its
-price is that the recovery from total credential loss is the whole-disk
-reflash above, with everything that costs.
+### Step 1 — Read-only diagnosis
 
-Administrator credential recovery with physical presence — a designed flow
-that rotates rather than discloses — is planned, not built.
+- **Fixes:** nothing. It decides which step below is the right one, and most
+  cases stop here.
+- **Costs:** nothing.
+- **Does not recover:** a device that does not boot far enough to answer —
+  that case is section 2's, not this one.
+- **What to read:** `GET /api/v1/update` for the update lifecycle, both slots,
+  the booted slot and whether a rollback is permitted; `GET
+  /api/v1/storage/status` for tier readiness and media health; the diagnostics
+  snapshot and the audit trail. [troubleshooting.md](troubleshooting.md) is
+  the diagnosis page proper.
 
-> status: shipped — evidence: `docs/design/access.md`
+### Step 2 — Guarded manual rollback
 
-## 5. Factory reset: not implemented
+- **Fixes:** a bad update that *boots* — a slot that comes up and misbehaves,
+  which the automatic attempt counters never catch precisely because the slot
+  boots.
+- **Costs:** one reboot. The slot you are on is marked bad and stops being a
+  rollback target. **No operator data is touched**; settings and DATA both
+  survive the switch.
+- **Does not recover:** anything caused by STATE or DATA content, since both
+  survive; a slot that cannot boot at all (the bootloader already handled
+  that); a lost credential.
+- **How:** `POST /api/v1/update/rollback`, authenticated. The guard enforces
+  that a rollback goes *backward* — the target must be the strictly older of
+  the two installs — and refuses with a named reason when there is no
+  alternate slot, when the alternate was never written or is marked bad, when
+  it is not the older install, and when the booted slot is itself pending and
+  unconfirmed. It fails closed on any case it cannot order.
+- **The route changes the boot order and stops.** Realising the rollback is a
+  second, explicit reboot; nothing sequences the two for you.
 
-There is no factory-reset operation today — no button, no API action, no
-console incantation. Wiping STATE would return the device to first boot (that
-is how the provisioning design is written), but nothing in the shipped system
-performs that wipe. The nearest real operation is the whole-disk reflash of
-section 3, which is strictly more destructive.
+**Unproven on hardware:** that the bootloader then actually falls back is
+bench evidence no board has produced. The guard and its refusals are tested
+off hardware.
 
-The planned recovery work defines the missing tiers explicitly — manual slot
-rollback as a guarded operator action, a per-board recovery runbook with
-minimal failure-record collection, credential recovery, configuration reset,
-application-data reset, full factory reset and secure wipe, each naming its
-exact effects — and makes interrupted recovery replayable.
+> status: shipped — evidence: `pkgs/mosd/mosd/src/rauc.rs`, `pkgs/mosd/apid/openapi.json`
+
+## 5. The destructive steps: resets and credential recovery
+
+Every step in this section is **irreversible**. Each is requested by name —
+there is no parameterless reset — and each is audited. A reset **stages** an
+intent and mosd carries it out on the next boot, so the operator's step is two
+actions, the request and a reboot, and the device is fully pre-reset until
+that boot. An interrupted reset is replayable: the next boot finishes it.
+
+### Step 3 — Configuration reset — IRREVERSIBLE
+
+- **Fixes:** a device made unreachable or unusable by its own network, access
+  or policy settings, and any settings state too tangled to unpick.
+- **Costs irreversibly:** every modelled setting — network, access, time,
+  update policy, application settings, all at once. There is no per-subtree
+  reset.
+- **Does not recover:** a lost credential (the administrator credential is
+  kept on purpose — a settings action that dropped it would be a lockout
+  wearing a friendlier name), application data, a broken slot.
+- **How:** `POST /api/v1/reset` with `{"tier": "configuration"}`,
+  authenticated, no physical presence needed.
+
+### Step 4 — Application-data reset — IRREVERSIBLE
+
+- **Fixes:** an application whose own state wedges it or the device, a full
+  `/srv`, an application layer to be handed over clean.
+- **Costs irreversibly:** **all operator data in `/srv`** and every
+  application's data under `/mos`. There is no backup contract to fall back
+  on.
+- **Does not recover:** platform settings, credentials, slots.
+- **How:** the same route with `{"tier": "application-data"}`, on the same
+  terms.
+
+### Step 5 — Credential recovery — IRREVERSIBLE, and not reachable today
+
+- **Fixes:** the lockout of an operator who has lost the administrator
+  credential and every authorized key — **without losing a byte of operator
+  data.** That is why it is ordered here, above the factory reset: it is the
+  only step that cures a lockout while preserving everything.
+- **Costs irreversibly:** the previous credential stops working at the moment
+  the new one is minted, and every API token goes with it. Any automation
+  holding one must be re-enrolled.
+- **Does not recover:** the previous secret. The flow **mints and never
+  reveals** — nothing on this device will hand a stored password back.
+- **How, on paper:** `POST /api/v1/recovery/credential`, authorised by
+  physical presence and by nothing else. An authenticated caller is refused
+  and told to use `POST /api/v1/actions/change-password` instead.
+- **Why you cannot do it:** section 7. The flow is implemented and tested and
+  **nothing in the tree writes the presence assertion it requires**, so on a
+  fielded device it is refused, every time.
 
 > status: proposed — evidence: `docs/plan/PLAN-048.md`
 
 TODO(PLAN-048): revisit after this plan merges
 
-## 6. Before you recover: collect the evidence
+### Step 6 — Full factory reset — IRREVERSIBLE, and not reachable today
+
+- **Fixes:** nothing specific. It is the decision that the device's whole
+  mutable state is to be abandoned — decommissioning, handover, or a fault
+  that survived steps 3 to 5.
+- **Costs irreversibly:** settings, the administrator credential, API tokens,
+  every application and all operator data, together.
+- **Preserves, by design:** the device identity, calibration data, the update
+  metadata on META and both system slots. A reset resets *state*, not the
+  installed software version.
+- **Does not recover:** a device that cannot boot, since nothing in-band runs;
+  a corrupted system slot.
+- **How, on paper:** the reset route with `{"tier": "full-factory"}`, gated on
+  the same physical presence as step 5 — and refused for the same reason,
+  today, on every board.
+
+> status: proposed — evidence: `docs/plan/PLAN-048.md`
+
+TODO(PLAN-048): revisit after this plan merges
+
+### A factory reset does not make a device anonymous
+
+This is the sentence a reader most often supplies for themselves, wrongly, and
+getting it wrong ends with a linkable device in somebody else's hands.
+
+**A full factory reset PRESERVES the device's identity and its calibration
+data. It does so deliberately.** The `deviceId` is drawn once on the device
+and is never re-issued, because re-minting it on a serviceable unit would
+silently sever every fleet-side, support-side and warranty record that names
+that device — an outcome worse than the lockout the reset was answering. The
+device that comes back from a factory reset is the *same device*, with the
+same identity, the same hostname derived from it, and the same calibration.
+It is not a new unit and it is not an anonymous one.
+
+So a factory reset is **not** a disposal operation. **A device leaving the
+operator's control — resale, return, RMA, disposal — needs a whole-disk
+reflash, or the medium destroyed.** Only a reflash replaces STATE outright and
+so causes a fresh identity to be minted on the next first boot, and only
+physical destruction of the medium removes the data: a reflash writes just the
+image's own extent, so blocks DATA grew into beyond it survive on the medium,
+unreferenced by the new filesystem but present on it. `docs/design/access.md`
+section 9.2 is the precise statement of what a reflash does and does not
+reach, and `docs/design/manufacturing.md` section 5 is the RMA rule this
+follows: a returned device's credentials are treated as exposed from the
+moment it is received, because STATE is not encrypted and whoever shipped it
+could read it.
+
+If the device is going to another party and its data must not go with it,
+destroy the medium. Nothing softer is honest today, and section 6 says why.
+
+> status: shipped — evidence: `pkgs/mosd/mosd/src/reset.rs`, `pkgs/mosd/apid/src/routes.rs`, `docs/design/manufacturing.md`
+
+## 6. Below the OS: reflash and disposal
+
+### Step 7 — Whole-disk reflash — IRREVERSIBLE, and it changes the device's identity
+
+The last resort sits below the OS and is reachable when nothing else is: on
+cx3576 the Rockchip loader path (recovery button at power-on, the automatic
+fallthrough when boot fails, or maskrom when the loader area itself is gone),
+followed by writing the full disk image over USB; on x64, boot another medium
+and rewrite the disk. [install.md](install.md) is the procedure.
+
+- **Fixes:** everything software can be wrong with the device, both slots
+  included. It needs nothing on the device to work.
+- **Costs irreversibly:** every partition — STATE, DATA and META — **and the
+  device's identity**: the next first boot mints a new `deviceId` and new
+  secrets, and fleet-side records naming the old one must be re-linked by
+  hand.
+- **Does not recover:** nothing software-wise. But note what it does **not**
+  do: it does not erase. See the paragraph above and step 8.
+
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `docs/design/access.md`
+
+### Step 8 — Secure wipe — TERMINAL, and not implemented
+
+There is no secure wipe on mos. The device cannot express the request: the
+reset vocabulary has exactly three tiers and no fourth, so `secure-wipe` is
+not a body this device can parse. That absence is the position rather than an
+oversight — a wipe promises something about the *medium*, which needs a
+device-level erase primitive (eMMC sanitize, NVMe format-NVM) whose real
+behaviour on these boards nobody has verified.
+
+**The instruction, until a board has that evidence on file, is to destroy the
+medium.** Not reflash it, not fill it with zeros, not run a userspace shredder
+over a flash translation layer that was free to write somewhere else.
+
+> status: unsupported
+
+## 7. What an operator cannot do today
+
+Stated rather than omitted, because a reader who assumes these work will plan
+a recovery that does not exist.
+
+- **Steps 5 and 6 are refused on every fielded device.** Both are gated on a
+  physical-presence assertion. The gate ships and is tested: it reads an
+  assertion left at `/run/mos/presence` by an operator at the local console
+  and refuses an absent, expired or wrong-mechanism one. **Nothing in this
+  tree writes that assertion.** Both boards answer the presence capability
+  with `console-attach`, and neither has an asserter, so the gate refuses
+  every request a fielded device can make of it — `403`, with
+  `presence_required`, audited, nothing staged. Whether a mos-owned unit can
+  own a board's console device without displacing the login prompt on it is a
+  bench question no board has been asked.
+- **The cx3576 recovery button is not a presence assertion.** It drops the
+  board into rockusb loader mode and no software recovery flow reads it. There
+  is no button-driven recovery in this product.
+- **So an operator locked out today has one answer, and it is step 7.** Losing
+  the administrator credential and every authorized key still leaves no
+  software path back into the appliance: apid is the only thing that can
+  enable SSH, add a key or set a password, and it needs the credential; SSH is
+  off or keyless; the serial console shows a login prompt with no account that
+  accepts one. That is the position `docs/design/access.md` section 9.1
+  records, and it is still the shipped truth on both boards. The way back is
+  the whole-disk reflash, paying the device's identity for a forgotten
+  password.
+- **Secure wipe does not exist**, per step 8.
+- **There is no offline repair tier.** No recovery environment ships, so there
+  is no supported way to run a filesystem repair on an unmounted tier. The
+  boot-time check that runs automatically is what exists.
+
+> status: proposed — evidence: `docs/plan/PLAN-048.md`
+
+TODO(PLAN-048): revisit after this plan merges
+
+## 8. Before you recover: collect the evidence
 
 If the device still boots into either slot, capture what
-[troubleshooting.md](troubleshooting.md) lists (journal, update state, the
-device identity from `/usr/share/mos/manifest.tsv`) before reflashing —
-a reflash destroys the evidence with the fault.
+[troubleshooting.md](troubleshooting.md) lists — the journal, the update
+state, the storage status, and the device identity from
+`/usr/share/mos/manifest.tsv` — **before** you reset or reflash. Every step
+from 3 down destroys the fault along with the state, and a support case opened
+after a reflash has nothing in it. [support.md](support.md) section 4 lists
+what a report needs.
