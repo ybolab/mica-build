@@ -356,6 +356,14 @@ importer deliberately writes none**, and its absence is what identifies it:
 - therefore a device that is claimed, carries no record, and has an applied
   document was claimed **by** that document.
 
+**This reading holds because only the setup route and the document importer can
+create a first `webAdmin`; a third writer would make the silence ambiguous.** A
+device claimed by that third writer would be indistinguishable from one claimed
+by a document, and would be told to rotate a credential no medium ever carried.
+The premise is stated here and deliberately not asserted by a check: a count of
+writers is a claim about the shape of the source, and a third one arrives with
+its own code review rather than by drift.
+
 apid reads it exactly that way. The alternative — teaching the importer to
 write a record too — would put a second statement of "this device is claimed"
 beside `webAdmin`, on the one write path that runs before anything is
@@ -401,6 +409,20 @@ they can read **why** on `GET /api/v1/claim`, and they can do the one thing that
 lifts it. A claim through `POST /api/v1/setup` sets no such flag: that password
 was chosen by the caller at the moment of the claim and was never written down
 anywhere the device can reason about.
+
+**The bound is FIRST SIGN-IN, not elapsed time, and nothing counts down.** A
+bootstrap credential on a device that is claimed but has never been signed into
+stays valid **indefinitely** — a device that came off the line with a document
+on its card and sat in a warehouse for a year is holding the same working
+password on the day it is unboxed. That is the deliberate price of a bound that
+cannot brick the device: the only moment this appliance can safely demand a
+rotation is one where somebody is there to perform it, and "somebody is there"
+is exactly what a sign-in proves and a clock reading does not. **A reader who
+takes "forced rotation" to mean the credential stops working on its own will
+plan an exposure window that does not exist.** There is none. What bounds that
+exposure before the first sign-in is physical custody of the medium
+(`docs/design/provisioning.md` §4.1.6, which is why that section says to treat
+one as credential material), not this rule.
 
 **Observable before it bites.** `GET /api/v1/claim` (authenticated) answers the
 state, the channel, the moment and `rotationRequired`. It is authenticated
