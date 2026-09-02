@@ -1,8 +1,8 @@
 # PLAN-053 Define security and manufacturing lifecycle
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-289](../task/RFCT-289.md)
 
 ## Context
