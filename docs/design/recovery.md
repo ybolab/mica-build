@@ -270,15 +270,25 @@ everything below it destroys something that was on the device.**
   here goes red if it changes; this bullet is the warning, and deliberately
   not a check. A direct confirmed-boot record would remove the dependency and
   is a separate design.
-- *How well the premise is established — evidence and gap:* **Verified:** mosd
-  never names a target slot. `install_bundle` in `pkgs/mosd/mosd/src/rauc.rs`
-  calls `InstallBundle` with the bundle path and an empty options map and no
-  target argument, so RAUC alone selects the slot; and this repository recorded
-  the behaviour independently of this guard, for a different feature and before
-  it existed — `docs/design/updates.md`'s lifecycle table says the install task
-  "is writing the other slot", authored in 98379d18. **Not verified:** RAUC's
-  own target-selection code. Nobody has read it. The invariant is relied upon,
-  not proven.
+- *How well the premise is established — the conjunction it has become:*
+  RAUC's target-selection code has now been read at the pinned v1.13, and the
+  premise survives as a **conjunction with both halves verified**, not as a
+  single unchecked invariant. **(i) RAUC only ever selects a slot it believes
+  is inactive** — `select_inactive_slot_class_member` skips every slot whose
+  state is not `ST_INACTIVE`, and no install option, config key or D-Bus
+  argument can name a target; the bullet below is the reading. **(ii) Nothing
+  on this device tells RAUC that the wrong slot is booted** — mosd names no
+  target (`install_bundle` in `pkgs/mosd/mosd/src/rauc.rs` calls
+  `InstallBundle` with the bundle path and an empty options map), the D-Bus
+  install API carries no target or boot-slot key to pass, and the one lever
+  that exists, `--override-boot-slot`, appears nowhere in this repository —
+  not in `pkgs/rauc/`, not in the shipped `rauc.service`. This repository also
+  recorded the behaviour independently of this guard, for a different feature
+  and before it existed — `docs/design/updates.md`'s lifecycle table says the
+  install task "is writing the other slot", authored in 98379d18. It stays a
+  **premise** rather than a property of this tree: it is established *at the
+  pinned version*, and a pin bump can move it, which is what the re-run recipe
+  below exists for.
 - *The RAUC v1.13 evidence, recorded here so a later reader hits it:*
   - *The pin is verified.* `pkgs/rauc/versions.env` pins v1.13 with
     `RAUC_SHA256=372828c2...87941`, and
@@ -294,6 +304,50 @@ everything below it destroys something that was on the device.**
   - *`activated.*` cannot substitute.* It is written by `set_primary` — what an
     install does — so a slot activated but never booted still reads
     `activated_count >= 1`. It records activation, never a boot.
+  - *How the install target is chosen, and whether it can be the booted slot.*
+    It is the inactive slot — and *which* slot that is, is the overridable
+    part. `do_install_bundle` calls `determine_target_install_group`
+    (`src/install.c`), which per root slot class takes
+    `select_inactive_slot_class_member`, a loop that skips every slot whose
+    `state != ST_INACTIVE`. Nothing on the install path can name a slot
+    instead: `RaucInstallArgs` (`include/install.h`) holds only
+    `ignore_compatible`, `ignore_version_limit`, `transaction` and the
+    bundle-access args, and `r_installer_handle_install_bundle`
+    (`src/service.c`) accepts only `ignore-compatible`,
+    `ignore-version-limit`, `transaction-id`, `tls-*` and `http-headers`,
+    failing every other key with "Unsupported key". What IS overridable is the
+    *input* to that filter — which slot counts as booted.
+    `determine_slot_states` (`src/install.c`) labels `ST_BOOTED` the slot
+    matching `r_context()->bootslot`, everything else `ST_INACTIVE`, and
+    `bootslot` comes from `--override-boot-slot BOOTNAME` when given
+    (`src/main.c`), otherwise from `get_cmdline_bootname` (`src/context.c`).
+    Point that option at the *other* slot and the running slot is labelled
+    inactive and becomes the target. `rauc.external` on the kernel command
+    line is the blunter form of the same thing: bootslot becomes `_external_`
+    (as does `/dev/nfs`), `determine_slot_states` marks EVERY slot inactive,
+    and no slot is protected.
+  - *Why that override is out of reach on this image.* `pkgs/rauc/Dockerfile`
+    builds `-Dservice=true`, and `entries_install` compiles
+    `--override-boot-slot` in only under `#if ENABLE_SERVICE == 0`
+    (`src/main.c`) — so the shipped `rauc install` does not accept it, and in
+    a service build `install_start` hands the job to the daemon over
+    `InstallBundle` regardless. The option survives only on `entries_service`,
+    the daemon's own argv, and the shipped unit is upstream's
+    `ExecStart=… rauc --mount=/run/rauc/mnt service`. Separately, and worth
+    knowing as the honest edge of the invariant: `rauc write-slot` DOES name a
+    slot directly and refuses only a `readonly` one, never a booted one
+    (`write_slot_start`, `src/main.c`). It is not the install path, and mosd
+    never invokes it.
+  - *To re-run this reading at the next pin bump.* Clone the tag, confirm
+    `git archive --format=tar <tag> | sha256sum` equals `RAUC_SHA256`, then
+    read, in order: `determine_target_install_group`,
+    `select_inactive_slot_class_member` and `determine_slot_states` in
+    `src/install.c`; the `entries_install` / `entries_service` option tables
+    and the `r_context_conf()->bootslot` assignment in `src/main.c`; and the
+    `g_variant_dict_lookup` key list plus its "Unsupported key" rejection in
+    `r_installer_handle_install_bundle` (`src/service.c`). Confirm
+    `pkgs/rauc/Dockerfile` still builds `-Dservice=true`, since that is what
+    keeps the override off the install command.
 - *What does not ship, which is why this is still **[partial]**:* the reboot.
   The route changes the boot order and stops; realising it is a second,
   explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate

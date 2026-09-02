@@ -319,18 +319,24 @@ install path able to target the booted slot, or an out-of-band flash that also
 rewrites `installed.timestamp` — the derivation does not**, and nothing in this
 tree goes red, because the invariant is RAUC's and not ours.
 
-How well that premise is established, stated with its gap: **verified** is that
-mosd never names a target slot — `install_bundle` in
-`pkgs/mosd/mosd/src/rauc.rs` calls `InstallBundle` with the bundle path and an
-empty options map and no target argument, so RAUC alone selects — and that this
-repository recorded the behaviour independently of this guard, for a different
-feature and before it existed (§1's lifecycle table: the install task "is
-writing the other slot", authored in 98379d18). **Not verified** is RAUC's own
-target-selection code; nobody has read it, so the invariant is relied upon
-rather than proven. The underlying RAUC v1.13 evidence — the verified source
-pin, the `r_mark_good`/`r_mark_active` contrast that proves the mark is
-bootloader-only, and why `activated.*` cannot substitute — is recorded once in
-`recovery.md` §3 node 2 and not repeated here. Its verdict is recorded
+How well that premise is established: RAUC's target-selection code has been
+read at the pinned v1.13, so the premise is now a **conjunction with both
+halves verified** — RAUC only ever selects a slot it believes is inactive, AND
+nothing here tells it that the wrong slot is booted. mosd's half is direct:
+`install_bundle` in `pkgs/mosd/mosd/src/rauc.rs` calls `InstallBundle` with the
+bundle path and an empty options map and no target argument, so RAUC alone
+selects; the D-Bus install API carries no target or boot-slot key to pass in;
+and this repository recorded the behaviour independently of this guard, for a
+different feature and before it existed (§1's lifecycle table: the install task
+"is writing the other slot", authored in 98379d18). RAUC's half is that
+selection is restricted to `ST_INACTIVE` slot-class members and the only lever
+over it, `--override-boot-slot`, is neither on the install command in this
+build nor anywhere in this repository. It remains a **premise**: it is
+established at the pinned version, and a pin bump can move it. The underlying
+RAUC v1.13 evidence — the verified source pin, the target-selection reading
+with the recipe to re-run it, the `r_mark_good`/`r_mark_active` contrast that
+proves the mark is bootloader-only, and why `activated.*` cannot substitute —
+is recorded once in `recovery.md` §3 node 2 and not repeated here. Its verdict is recorded
 in the state document as `rollback` — `target` (the resolved alternate slot,
 or `null`), `permitted`, and `reason` — so the operator reads the decision in
 the same `GET /api/v1/update` answer that carries `slots`, `booted_slot`,
