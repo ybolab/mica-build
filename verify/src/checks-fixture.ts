@@ -349,8 +349,31 @@ function seedHealthyRoot(root: string, board: Board): void {
     '#package\tversion\tarchitecture',
     'libc6\t2.41-12\tamd64',
     'mos-podman\t5.8.6+git0123456789ab-1\tamd64',
-    'mos-system\t0.1.0+git0123456789ab-1\tall',
+    `mos-system\t${FIXTURE_POOL_VERSION}\tall`,
     'zstd\t1.5.7+dfsg-2\tamd64',
+    '',
+  ].join('\n'))
+
+  // --- the device-side update client, and the identity it selects against ---
+  //
+  // mos-rauc-update ships both binaries; the release-side rauc-sign is
+  // deliberately NOT seeded, because its ABSENCE is the shipped state and its
+  // presence is the mutation.
+  //
+  // The identity's three values are the fixture's own statements of the same
+  // facts, which is what makes the check's comparisons real rather than a
+  // constant compared with itself: the board is the one this fixture was seeded
+  // for, the profile is what profile.conf above says, and the version is the
+  // one manifest.tsv records for mos-system.
+  file('/usr/bin/rauc-update', 'ELF ... rauc-update\n')
+  file('/usr/bin/rauc-verify', 'ELF ... rauc-verify\n')
+  chmodSync(join(root, '/usr/bin/rauc-update'), 0o755)
+  chmodSync(join(root, '/usr/bin/rauc-verify'), 0o755)
+  file('/usr/share/mos/release-identity.env', [
+    '# What this device is, for rauc-update.',
+    `BOARD=${board.name}`,
+    'PROFILE=dev',
+    `VERSION=${FIXTURE_POOL_VERSION}`,
     '',
   ].join('\n'))
 
@@ -1060,6 +1083,16 @@ function enable(root: string, unit: string, target = 'multi-user.target.wants'):
 export const FIXTURE_CA_CERT = '-----BEGIN CERTIFICATE-----\nfixture trust root\n-----END CERTIFICATE-----\n'
 
 /** A context over a synthetic packed root. Everything that reads the IMAGE throws. */
+/**
+ * The pool version every first-party package in the fixture carries.
+ *
+ * ONE constant for the manifest row and the identity file, because the check
+ * that compares them is the thing under test: two literals that happened to
+ * agree would go red the day either was edited, for a reason that is not about
+ * an image.
+ */
+export const FIXTURE_POOL_VERSION = '0.1.0+git0123456789ab-1'
+
 export function packedRootFixture(board: Board): RootFixture {
   const dir = mkdtempSync(join(tmpdir(), 'mos-root-fixture-'))
   const root = join(dir, 'root')
