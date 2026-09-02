@@ -2,10 +2,9 @@
 
 This page covers what a mos release consists of, how to choose one for a
 board, and how to obtain the artifacts. The honest headline first: **there is
-no hosted download service today.** A release is built from this repository —
-by you, or by the integrator who ships your product — and the roadmap for
-published releases, channels and download metadata is a plan, not a shipped
-service.
+no hosted download service today.** A release is assembled from this
+repository — by you, or by the integrator who ships your product — into a
+gated release directory; what does not exist is anywhere to publish it.
 
 ## 1. What a release consists of
 
@@ -21,6 +20,10 @@ The dm-verity root hash in `rootfs-verity.env` is the identity of a release's
 root filesystem: two builds with the same hash carry the same bytes. The full
 package inventory of an image ships inside it at `/usr/share/mos/manifest.tsv`,
 with per-package versions and the source tree's git stamp.
+
+`make os-release-cx3576` assembles the image and the bundle into a **release
+directory** (`_out/<board>/release`) beside the records section 4 describes,
+and gates it. That directory, not a loose image, is what a release *is*.
 
 > status: shipped — evidence: `docs/design/build.md`, `rootfs/compose/90-pack.Dockerfile`
 
@@ -76,26 +79,39 @@ time, and the TUF tooling (`rauc-sign verify`, against a trust anchor held out
 of band) verifies published repository metadata. The signing runbook — key
 ceremonies, custody, rotation — is `../design/release-signing.md`.
 
-What does not exist yet: per-artifact checksum and signature files published
-alongside images, a machine-readable release manifest naming compatibility and
-digests, SBOMs, or a download channel to fetch any of it from. Until that
-lands, the trustworthy statement is narrower: an image you built yourself is
-exactly what your tree produced, and `make os-verify-cx3576` (or
-`bash verify/run.sh --verify --board x64`) checks the assembled image against
-the image contract, check by check.
+A release directory carries the rest: `SHA256SUMS` over every artifact, a
+`manifest.json` binding the release's version, channel, board, profile, source
+commit and each artifact's size and digest, a CycloneDX SBOM, a provenance
+record, a license and source-offer inventory, and the release notes. With
+coreutils and `jq`, `sha256sum -c SHA256SUMS` proves the bytes are the bytes
+the release manifested and the manifest prints the identity — and those exact
+command lines are executed by the repository's own test against a generated
+fixture release, so the procedure cannot drift away from the tooling.
 
-> status: shipped — evidence: `pkgs/rauc-sign/README.md`, `make os-verify-cx3576`
+`SHA256SUMS` and `manifest.json` are integrity, not authenticity: they travel
+with the artifacts. Authenticity is the two chains above. Beyond that,
+`make os-verify-cx3576` (or `bash verify/run.sh --verify --board x64`) checks
+an assembled image against the image contract, check by check.
 
-## 5. Published releases, channels and download metadata
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`, `make os-verify-cx3576`
 
-The plan for release identity covers: one signed machine-readable release
-manifest per release (version, channel, board/profile compatibility, artifact
-digests and sizes, build and source identity), per-artifact checksums and
-signatures, SPDX/CycloneDX SBOM and source-offer inventory, and a
-development/candidate/stable promotion flow with publication gates. The
-downloads page brief for the official site is
-[../website/downloads.md](../website/downloads.md).
+## 5. Channels, and what publication still lacks
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+A release names a channel — `development`, `candidate` or `stable` — in its
+manifest, and the name is a claim about qualification rather than a directory:
+`development` carries no promise, `candidate` is under qualification, `stable`
+is what a customer deploys. A publication gate re-checks an assembled release
+directory from scratch and refuses it by name for a missing artifact, a file
+whose bytes moved, empty release notes, a component-less SBOM or absent board
+evidence. It has no waiver flag.
 
-TODO(PLAN-043): revisit after this plan merges
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
+
+What does not exist is the other half: **hosting**. There is no download host,
+no per-channel directory a release is promoted into, and therefore no published
+release to fetch — "download" today means "receive the gated release
+directory". Support windows and end-of-life dates are likewise policy without
+a mechanism ([support.md](support.md)). The downloads page brief for the
+official site is [../website/downloads.md](../website/downloads.md).
+
+> status: unsupported

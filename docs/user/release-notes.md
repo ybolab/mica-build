@@ -50,17 +50,32 @@ The policy, binding on whoever publishes a release:
 
 > status: shipped — evidence: `docs/user/doc-contract.md`
 
-## 3. Channels, promotion and gated publication
+## 3. Channels, the manifest and gated publication
 
-Naming releases into channels (development, candidate, stable), a signed
-machine-readable release manifest, and a publication gate that refuses a
-release missing its artifacts, schema-valid manifest, supported-board
-evidence **or its release notes** are defined by the release identity plan.
-When that lands, this page gains the channel vocabulary and the manifest
-becomes the machine-readable source this page's prose defers to; the
-downloads brief for the official site is
+`manifest.json` in the release directory is now the machine-readable source
+this page's prose defers to. It binds the release version, the channel
+(`development`, `candidate` or `stable`), the board and its profile, the full
+source commit and whether the tree was dirty, the builder-image pins, the
+board's boot-assurance level read out of the board evidence file, and every
+artifact's filename, role, size and sha256. Nothing in it is typed by hand:
+each number is measured off the staged file or read out of the mechanism that
+stamped it, and the tooling has no flag that overrides a measurement.
+
+The publication gate re-checks an assembled release directory from scratch and
+refuses it by name — a missing artifact role, a file whose size or digest
+moved, `SHA256SUMS` disagreeing with the manifest, **empty release notes**, an
+SBOM with no components, absent or diverged board evidence. There is no waiver
+flag, and each refusal is proven red by mutation in the tooling's own tests. A
+release without notes is therefore not a release.
+
+The downloads brief for the official site is
 [../website/downloads.md](../website/downloads.md).
 
-> status: proposed — evidence: `docs/plan/PLAN-043.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
 
-TODO(PLAN-043): revisit after this plan merges
+**What promotion still is not.** A channel is a claim recorded in a manifest,
+not a place: nothing hosts releases, nothing moves one from `candidate` to
+`stable`, and no support window or end-of-life date is bound to a release by
+any mechanism.
+
+> status: unsupported

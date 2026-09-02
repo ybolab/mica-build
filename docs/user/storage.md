@@ -49,25 +49,61 @@ filesystem checks cover them.
 
 ## 3. What you can observe today
 
-There is no storage-status API yet. On the device, the ordinary tools answer:
-`df` for capacity per tier, `podman system df` for the container share of
-DATA, and the journal for filesystem check results. Media health (eMMC wear,
-SMART) is not surfaced at all.
+`GET /api/v1/storage/status` answers the tiers in one authenticated read,
+observed at request time rather than cached: per tier the resolved device, the
+partition size, the mount and filesystem, used/free/reserved space with the
+percentage the low-space policy is judged against, and the boot-time
+filesystem check systemd recorded for it. A tier this board does not have is
+reported as absent with the reason rather than omitted, and the booted rootfs
+slot is resolved through its verity device so it does not read as unmounted.
 
-> status: shipped — evidence: `docs/design/containers.md`
+Three things beside the tier list are worth knowing before reading one:
 
-## 4. What is planned
+- **`/mos` and `/srv` report readiness, not capacity.** They are two binds of
+  the single DATA filesystem, so the bytes are counted once against the tier
+  and neither bind carries a space object; each reports whether it is mounted,
+  whether its source really is the DATA partition, and — for `/mos` — whether
+  a write probe succeeded. `/srv` is never probed: it is the operator's
+  namespace, and the surface says so rather than passing silently.
+- **Low-space pressure is a band, not a number to interpret.** DATA and STATE
+  enter `warning` at 80% used and `critical` at 90%, and clear lower, so a
+  tier sitting on a threshold cannot flap between two states.
+- **Media health is normalized where the device answers and `unsupported`
+  where it does not.** eMMC wear is reported as the 10% bucket the JEDEC
+  register actually carries — a range, never a single "27% worn" — with the
+  raw register beside it; NVMe and SATA report unsupported with the reason,
+  because this image ships no SMART reader.
 
-The storage lifecycle plan adds the operator-facing subsystem this page
-currently cannot describe: a `StorageStatus` model (identity, role, sizes,
-used/free/reserved, mount and error state, last check/repair result),
-normalized media-health signals by board and media type, low-space thresholds
-with hysteresis and a protected update workspace, offline repair and
-data-preserving replacement procedures, and versioned backup/export and
-restore contracts — published before they are claimed. Encryption posture and
-a removable-media contract are decisions inside that plan; until it lands,
-neither exists.
+A fsck result is the number the checker exited with, not a boolean, because
+that number carries the repair fact: 0 is clean and 1 means errors were
+*corrected*. There is no check history — systemd keeps the last invocation
+and so does this surface — and a tier with no check unit reports that nobody
+has checked it rather than reading as clean.
 
-> status: proposed — evidence: `docs/plan/PLAN-049.md`
+The ordinary tools still answer on the device — `df` for capacity, `podman
+system df` for the container share of DATA, the journal for check output —
+and the API is what an operator or an integration reads without a shell.
 
-TODO(PLAN-049): revisit after this plan merges
+> status: shipped — evidence: `docs/design/storage.md`, `pkgs/mosd/apid/openapi.json`
+
+## 4. What the device will not do to its storage
+
+There is no partition editor. No format, repartition, resize, mount, unmount
+or erase operation exists on the management API, and a build that grew one
+fails its own check. Every storage lifecycle decision beyond that is answered
+explicitly in the status body rather than left to be inferred from a missing
+route, and today every answer is the same one: backup and restore, offline
+repair, data-preserving media replacement, a factory reset of the tiers,
+secure erase, encryption at rest and removable media are all unsupported. The
+design record carries the reason for each; promoting one is a visible change
+to that list, not a quiet new endpoint.
+
+> status: unsupported
+
+The one storage policy that does bite an operator is the update workspace:
+256 MiB of DATA is held for update work, and an install is refused before it
+starts when that reservation is gone. It is a reservation, not a quota —
+nothing counts or caps per-application or per-container usage, and nothing
+stops an application filling DATA once the check has passed.
+
+> status: shipped — evidence: `docs/design/storage.md`, `pkgs/mosd/mosd/src/storage_status.rs`

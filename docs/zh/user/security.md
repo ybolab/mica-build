@@ -34,7 +34,10 @@ bundle 的摘要、长度和 verity 根哈希。密钥仪式、保管与轮换�
   任何带开发密钥环的镜像都不应离开工作台。
 - **已部署设备上没有密钥环轮换渠道**——替换在役设备上的信任锚，目前
   意味着一个由正被替换的那把密钥签名的镜像。
-- **没有任何东西把 TUF 验证器发布到设备上**；TUF 验证今天是主机侧能力。
+- **设备侧 TUF 验证器已发布，它的信任锚没有。**`rauc-verify` 与
+  `rauc-update` 在镜像里，从一个固定的根开始走发布元数据；但没有任何镜像
+  预置那个根，所以在操作员补上它之前，这条验证路径没有起点
+  （[update-rollback.md](update-rollback.md)）。
 
 > status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`
 
@@ -78,11 +81,19 @@ bundle 的摘要、长度和 verity 根哈希。密钥仪式、保管与轮换�
 
 ## 6. 安全生命周期
 
-漏洞处理、安全公告、工厂身份与密钥配备、调试/熔丝策略、以及每板卡启动
-保证记录，正在安全与制造生命周期计划中定义；官方站点的公告简报是
-[../../website/security.md](../../website/security.md)。在它落地之前，
-没有可以指给审计者看的已发布公告流程，本页就是诚实的清单。
+生命周期如今被写了下来：产品里的每一份凭据，连同它的负责角色与轮换程序；
+发布渠道与签名程序；带分诊与修复目标的严重级别；公告发布；事件响应；以及
+支持窗口与生命周期终止。每一节都写明自己的成熟度，而不是暗示它已被强制。
+板卡在一份提交进仓库的证据文件里携带启动保障声明，发布门禁读的是那份文件，
+不允许一个发布版自称等级。
 
-> status: proposed — evidence: `docs/plan/PLAN-053.md`
+> status: shipped — evidence: `docs/design/security-lifecycle.md`, `boards/cx3576/evidence.json`
 
-TODO(PLAN-053): revisit after this plan merges
+**其中没有任何一条响应渠道已经存在，这一点应当直接告诉审计者。**仓库根目录
+没有公开的安全联系方式与披露政策，没有公告源，没有事件通知路径，也没有任何
+工具强制支持窗口或修复目标——今天的报告私下抵达维护者，逐案处理。工厂身份
+注入、工厂记录与调试/熔丝策略同样是"已设计、未构建"
+（[manufacturing.md](manufacturing.md)）。官方站点的公告简报是
+[../../website/security.md](../../website/security.md)；本页就是诚实的清单。
+
+> status: unsupported

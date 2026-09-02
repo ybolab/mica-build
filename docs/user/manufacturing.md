@@ -91,9 +91,12 @@ and checked against the release's digests before first boot; a serial or MAC
 is read back through the *runtime* path — the booted system reporting it — and
 checked against the allocation.
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
+The full requirement, with the owning role for each step, is
+[../design/manufacturing.md](../design/manufacturing.md). mos ships no record
+format, no schema and no station tooling for any of it, and no work is in
+flight to build one: a line that needs these records builds them.
 
-TODO(PLAN-046): revisit after this plan merges
+> status: unsupported
 
 ## 4. Quarantine: failed and duplicated provisioning
 
@@ -126,9 +129,17 @@ credentials are treated as **exposed** from the moment it is received, and any
 fleet-side trust tied to that identity is revoked at intake rather than at
 diagnosis.
 
-> status: proposed — evidence: `docs/plan/PLAN-046.md`
+That invariant is the one part of this section the product enforces by
+construction rather than by procedure.
 
-TODO(PLAN-046): revisit after this plan merges
+> status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-seed-state`, `docs/design/provisioning.md`
+
+Everything else above — the quarantine record, the segregation, pool
+accounting, duplicate detection, the rework generation and the scrap
+disposition — is a requirement on a line, with no tooling behind it and none
+planned.
+
+> status: unsupported
 
 ## 5. Debug and recovery ports, factory versus field
 

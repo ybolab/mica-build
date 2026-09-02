@@ -2,8 +2,8 @@
 
 Diagnosis on mos follows one order: get access, identify exactly what is
 running, read the evidence the system already keeps, and only then act. This
-page follows that order, and ends with the honest state of the diagnostic
-surfaces that do not exist yet.
+page follows that order, and ends with the bounded, redacted snapshot that
+carries that evidence into a support case.
 
 ## 1. Getting access
 
@@ -32,15 +32,30 @@ The full access model, including what each channel can and cannot do, is
 
 ## 2. Identifying the device and release
 
-`/usr/share/mos/manifest.tsv` inside the image lists every installed package
-with its version, plus the package pool's git stamp — quote it in every
-support case. `hostnamectl` gives the device's hostname (which encodes the
-first eight hex characters of the device id) and machine id.
+`GET /api/v1/system/info` answers the device's identity in one authenticated
+read: machine id, board model and the firmware source it was read from,
+kernel release, the `os-release` fields, the system version carrying the
+package pool's git stamp and the build date, the daemon's own version, the
+installed package set, the booted RAUC slot with its bundle version and boot
+status, and uptime. Every member says whether it was available and, when it
+was not, why — a package manifest whose mos rows disagree reports the
+disagreement and every stamp it found rather than picking one. Quote that read
+in every support case.
 
-A single aggregated system-information surface (board, image version, kernel,
-build date, package set in one API read) is planned, not shipped.
+`GET /api/v1/system/telemetry` adds the board's thermal zones, watchdog
+devices and a reset reason classified from generic kernel evidence;
+`GET /api/v1/network/status` adds what networkd, wpa_supplicant and resolved
+observe right now, which is the answer to "the device thinks its network is
+X". In a shell, `/usr/share/mos/manifest.tsv` is the same bill of materials
+the API reads, and `hostnamectl` gives the hostname (which encodes the first
+eight hex characters of the device id) and the machine id.
 
-> status: shipped — evidence: `rootfs/compose/90-pack.Dockerfile`
+**Hardware-dependent, and unvalidated.** What the thermal, watchdog and
+reset-cause adapters report has been proven against fixture trees, not against
+the cx3576 or x64 boards. An absent or implausible reading there is an
+escalation carrying the board identity, never a green result.
+
+> status: shipped — evidence: `docs/design/diagnostics.md`, `pkgs/mosd/apid/openapi.json`
 
 ## 3. Reading the evidence
 
@@ -89,16 +104,39 @@ artifacts that pass everything and fail on hardware.
 
 > status: shipped — evidence: `docs/design/build.md`, `make os-verify-cx3576`
 
-## 5. What does not exist yet
+## 5. The support snapshot
 
-There is no bounded, redacted support bundle to export, no troubleshooting
-decision tree in the UI, and no aggregated diagnostics surface (storage
-health, thermal, watchdog, reset cause). The diagnostics plan adds those, plus
-the one-read system-information surface of section 2.
+`POST /api/v1/diagnostics/snapshots` collects one bounded, redacted JSON
+document — release and system information, boot and update state, this boot's
+warning-and-worse journal excerpt, failed units and tasks, storage and time
+status, telemetry and the observed network — and `GET
+/api/v1/diagnostics/snapshots/{id}` downloads it as an attachment. The
+built-in UI's diagnostics panel does the same two steps.
 
-> status: proposed — evidence: `docs/plan/PLAN-052.md`
+What to know before attaching one to a case:
 
-TODO(PLAN-052): revisit after this plan merges
+- **It is bounded, and it says where it was cut.** Collection stops at 20
+  seconds and each source at 6; a source that did not answer is present as an
+  absent object carrying its reason. Read the collection result first: an
+  unavailable section is evidence, not a check that passed.
+- **Redaction is a tested boundary.** Credentials, tokens, private keys, Wi-Fi
+  secrets, SSIDs, MAC and BSS addresses and the hostname in journal lines are
+  dropped or replaced by a sentinel, and nothing under `/srv` or `/home` is
+  read at all. IP addresses, routes, DNS servers and the machine id are kept
+  deliberately — they are the evidence the snapshot exists to carry — so an
+  exported file still identifies the device and its network. Handle it
+  accordingly.
+- **The device never uploads it.** Export is a download by an authenticated
+  client, and collection needs no upstream connectivity. The store keeps at
+  most 8 snapshots and 16 MiB, dropping the oldest first, and has no
+  time-based expiry: delete one when its case closes.
+- **A second collection while one is running is refused**, not queued.
+
+The design record carries the decision trees this page's order implies — no
+network, wrong time, DATA full, a failed update or rollback, an unexpected
+reboot — each branching on the snapshot member that decides it.
+
+> status: shipped — evidence: `docs/design/diagnostics.md`, `pkgs/mosd/apid/openapi.json`
 
 ## 6. When to stop diagnosing
 
