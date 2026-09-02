@@ -521,11 +521,16 @@ renamed and not rewritten. Three reasons, in order of weight:
 
 #### 4.1.7 What is deliberately NOT here
 
-- **No signature.** `access.md` §7 describes channel 2 as a "signed config drop
-  … vendor-key verified". This ships the transport without that: authorisation
-  is physical possession of the medium, and §4.1.4's already-claimed rule is
-  what bounds it. A vendor-key check needs a trust root the image does not
-  carry for this purpose, and adding one is a separate decision.
+- **No signature: this transport verifies no signature.** Said in those words
+  rather than left to be inferred from the paragraphs around it — a reader who
+  has to infer it can infer it wrong, and what they would be wrong about is
+  whether a file on a stick is authenticated. Neither transport checks the
+  document against any key. Authorisation is physical possession of the medium,
+  and §4.1.4's already-claimed rule is what bounds it. `access.md` §7 used to
+  describe channel 2 as a *"signed config drop … vendor-key verified"*; it no
+  longer does, and it now names this gap from its own side. A vendor-key check
+  needs a trust root the image does not carry for this purpose, and adding one
+  is a separate decision.
 - **No udev trigger.** Media are consulted once, at boot, before anything is
   listening. A stick pushed in later is a next-boot document — there is
   deliberately no rule that lets inserting media reconfigure a *running*
