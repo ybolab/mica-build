@@ -16,9 +16,13 @@ bootloader=@BOOTLOADER@
 # Slot status lives on the META partition, and explicitly NOT on /var. /var is
 # discardable by design: its contract is that wiping it costs nothing. RAUC's
 # status file is update state -- which slot was installed, at what version, and
-# whether it has been marked good -- and losing it in the middle of an update
-# is precisely the failure the A/B design exists to prevent. The standing rule
-# is that identity, credentials, pairings and update state never live on /var.
+# when it was activated -- and losing it in the middle of an update is
+# precisely the failure the A/B design exists to prevent. It does NOT record
+# the good/bad mark: in the pinned rauc (v1.13) `r_mark_good` writes the
+# bootloader state and an event-log line and never saves slot status, so
+# `boot-status` is computed live from the bootloader rather than read back
+# from this file. The standing rule is that identity, credentials, pairings
+# and update state never live on /var.
 
 # META over STATE: META is the partition for update metadata, while STATE holds
 # machine identity and configuration (ssh host keys, hostname, /var/lib/mos).
