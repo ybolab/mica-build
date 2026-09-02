@@ -547,12 +547,13 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **11**, declared as
-`pub const SCHEMA_VERSION: u32 = 11;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
+**Schema version.** `SCHEMA_VERSION` is **12**, declared as
+`pub const SCHEMA_VERSION: u32 = 12;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
 stamped into every default tree, `schema_version: SCHEMA_VERSION,`
 (`pkgs/mosd/mosd-settings/src/model.rs`). It was **4** when this section was
-first written, **9** at the last re-measure, and **10** for the
-provisioning-document record; the standing rule is that **whoever moves the
+first written, **9** at the last re-measure, **10** for the
+provisioning-document record, **11** for the claim record and **12** for the
+staged reset intent; the standing rule is that **whoever moves the
 constant updates this document in the same change**, because nothing gates the
 value — the index check tests membership, not content, which is how this line
 sat at 8 while the code said 9. The number moves and the API must never
@@ -588,7 +589,7 @@ module remains authoritative when fields are added or renamed.
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
-| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **11** — `pub const SCHEMA_VERSION: u32 = 11;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's fifth value and the reason §2.1 serves the number rather than documenting it |
+| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **12** — `pub const SCHEMA_VERSION: u32 = 12;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's sixth value and the reason §2.1 serves the number rather than documenting it |
 | `hostname` | `String` | `pub hostname: String,` (`pkgs/mosd/mosd-settings/src/model.rs`) | system hostname, default `hostname: "mos".to_string(),` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `network.<iface>` | `IfaceSettings` | `pub network: BTreeMap<String, IfaceSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct IfaceSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `pub enum IfaceKind {` (`pkgs/mosd/mosd-settings/src/model.rs`)), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `pub struct StaticConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `vlan` at `pub struct VlanConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `bridge` at `pub struct BridgeConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `wireguard` at `pub struct WireguardConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`) with its peers at `pub struct WireguardPeer {` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `pub web_admin: Option<WebAdminSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct WebAdminSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `password_hash` only; absent until first-run setup writes it |
@@ -602,6 +603,7 @@ module remains authoritative when fields are added or renamed.
 | `container` | `ContainerSettings` | `pub container: ContainerSettings,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct ContainerSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `enabled` only; false means the Quadlet directory is not bound from STATE and no container unit exists |
 | `mqtt` | `MqttSettings` | `pub mqtt: MqttSettings,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct MqttSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `enabled` (a master switch over both units), `listen` (`address`, `port`, `pub struct MqttListenSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`)), `auth` (`pub struct MqttAuthSettings {`, `pkgs/mosd/mosd-settings/src/model.rs`) |
 | `access.apiTokens` | `Vec<ApiToken>` | `pub api_tokens: Vec<ApiToken>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct ApiToken {` (`pkgs/mosd/mosd-settings/src/model.rs`) | §3.2's token list, added deliberately after this table was written: a stable hex `id`, an operator label, the stored hash and a creation stamp. Never the secret |
+| `reset` | `Option<ResetSettings>` | `pub reset: Option<ResetSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct ResetSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | the staged reset intent (`docs/design/recovery.md` §2.2): `tier` (`configuration` \| `application-data` \| `full-factory`, `pub enum ResetTier {` (`pkgs/mosd/mosd-settings/src/model.rs`)), `requested` (a device-clock label, never a deadline) and `presence` (the mechanism that authorized a presence-gated tier). Absent unless one is waiting; **there is no fourth tier and no spelling of secure wipe parses**, which `docs/design/recovery.md` §2 footnote `[^wipe]` is the reason for |
 
 The last two rows are new since this section was first written, and they are
 why section 1.2's route table grew the `/containers` and `/mqtt` panes. Nothing
@@ -898,7 +900,7 @@ follows is a reading of a snapshot and not a defect in it.
    the health probe `get_state(HEALTH_PROBE_PATH)` (`pkgs/mosd/apid/src/routes.rs`)
    and the passthrough `get_state(&path)` (`pkgs/mosd/apid/src/routes.rs`).
 5. **Schema version "3"** is now
-   **11** — `pub const SCHEMA_VERSION: u32 = 11;`
+   **12** — `pub const SCHEMA_VERSION: u32 = 12;`
    (`pkgs/mosd/mosd-settings/src/model.rs`). It was 4 when this section was
    written, 7 at the re-measure after that and 9 at the one after that, which
    is the fifth time this one row has gone stale and is the reason section 2.1
@@ -1095,7 +1097,7 @@ array. A client that reads only `current` and ignores `versions` will conclude
 that a device it can still talk to is one it cannot.
 
 `settingsSchemaVersion` carries mosd's `SCHEMA_VERSION`
-(`pub const SCHEMA_VERSION: u32 = 11;`, `pkgs/mosd/mosd-settings/src/model.rs`;
+(`pub const SCHEMA_VERSION: u32 = 12;`, `pkgs/mosd/mosd-settings/src/model.rs`;
 **9** at the last re-measure, **6** at `f7cb5ba` and **4** when this paragraph was written). **It is not the API version and the two must never
 be conflated.** The schema version is the shape of the tree on disk
 (`pkgs/mosd/mosd-settings/src/store.rs`), moved by a registered migration chain
