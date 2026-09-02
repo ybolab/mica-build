@@ -104,9 +104,9 @@ become the install/control channel.
 Use the existing persistence tiers deliberately:
 
 - `/mnt/state/mos/apps/` for small registry/activation metadata;
-- `/srv/mos/apps/.staging/` and content-addressed releases/images for large
+- `/mos/apps/.staging/` and content-addressed releases/images for large
   artifacts;
-- `/srv/mos/apps/<id>/data/` for retained application data;
+- `/mos/apps/<id>/data/` for retained application data;
 - STATE-backed namespaced Quadlet and systemd definitions generated only by
   `mos-appd`;
 - a new per-app secret store under the existing protected mos state, exposed to

@@ -82,8 +82,8 @@ systemd 操作、health gate、last-known-good rollback、资源冲突和 GC。A
 | 数据 | 位置/所有者 | 语义 |
 |---|---|---|
 | registry、active revision、小型 activation metadata | `/mnt/state/mos/apps/` | STATE，跨重启/A-B |
-| download staging/artifact cache | `/srv/mos/apps/.staging/` 和 manager cache | DATA，有界清理 |
-| app data | `/srv/mos/apps/<app-id>/data/` | DATA，Remove 默认保留 |
+| download staging/artifact cache | `/mos/apps/.staging/` 和 manager cache | DATA，有界清理 |
+| app data | `/mos/apps/<app-id>/data/` | DATA，Remove 默认保留 |
 | runtime definitions | manager-owned STATE-backed 目录 | 原子发布 |
 | secret | 新的 per-app protected store | API write-only，以 credential file 交付 |
 | log | 有界 journal 查询/导出 | EPHEMERAL，不是永久审计 |

@@ -13,7 +13,7 @@ apid 在 443 端口提供 HTTPS（80 端口重定向），`/api` 是完整的管
 带版本的设置与状态读取、类型化写入、排队的任务记录、初始设置与会话生命
 周期、UI 选择、实时网络观察、更新状态和系统动作。错误是 JSON 信封。
 `/healthz` 是 `/api` 之外唯一的运维例外，它只证明 apid 进程在监听——
-不证明 mosd 或其他任何东西健康。`/ui` 上的内置浏览器 UI 是同一 API 的
+不证明 mosd 或其他任何东西健康。`/_ui/` 上的内置浏览器 UI 是同一 API 的
 普通客户端，没有特权旁路。
 
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`, `docs/design/remote-management.md`
@@ -51,7 +51,7 @@ API 在路径中带版本（`/api/v1/...`），仓库中的 OpenAPI 文档在 CI
 - **MQTT** 是应用数据面，不是管理通道：只有由软件包登记的应用服务被
   桥接，管理状态与动作在结构上被排除。语法与登记契约见
   [../design/bus.md](../design/bus.md)。
-- **`/ui` 与自定义 UI 资源**是静态内容，不是契约；自定义 bundle 无法
+- **`/_ui` 与自定义 UI 资源**是静态内容，不是契约；自定义 bundle 无法
   遮蔽 `/api` 路由。
 
 > status: shipped — evidence: `docs/design/bus.md`, `pkgs/mosd/dist/`

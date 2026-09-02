@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The built-in UI moved to an internal namespace (2026-09-02)
+
+The verity-covered recovery SPA now owns `/_ui` and uses canonical `/_ui/`
+asset and navigation URLs; `/` redirects there when no usable custom UI is
+active. `/ui` has no compatibility alias and is now an ordinary custom-UI
+route, so an integrator bundle can own that path without being intercepted by
+APID. The route router, one-decode reserved-segment guard, Vite/TanStack bases,
+localized recovery copy, committed hashed assets, tests and current English
+and Chinese guidance moved together. `/api/v1/ui` and `/srv/ui` retain their
+existing API and storage meanings. PLAN-060.
+
 ## User documentation, website briefs and the BSP porting set (2026-09-02)
 
 `docs/user/` now carries the fifteen-page customer journey from download to
@@ -28,6 +39,17 @@ derive the repository root from their own depth, and both TypeScript path
 modules, whose `OS_DIR` (now equal to `REPO_ROOT`) was retired. The `os-*`
 make target names stayed: they are names, not paths. Historical records keep
 the paths they were written with. Landed as 69febcae.
+
+## Built-in UI assets are an isolated embedded tree (2026-09-01)
+
+APID now generates a sorted compile-time VFS from the complete committed
+`ui/dist` tree instead of naming `index.html`, `app.js` and `app.css` in Rust.
+Vite emits content-hashed vendor, route and locale chunks; page routes and the
+Simplified Chinese catalog load on demand, while every resource remains inside
+the verity-covered binary. `/`, `/ui` and `/api` are terminal ownership domains:
+misses and ambiguous encoded or repeated-separator paths cannot cross between
+the custom UI, built-in UI and JSON API. The Chinese UI development guide now
+documents the VFS, lazy-loading, cache and path-isolation contract. PLAN-059.
 
 ## The built-in UI is bilingual and theme-selectable (2026-09-01)
 

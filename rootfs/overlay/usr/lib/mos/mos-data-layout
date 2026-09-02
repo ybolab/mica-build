@@ -1,0 +1,56 @@
+#!/bin/sh
+# Establish the direct writable system and user DATA namespaces.
+set -eu
+
+DATA_ROOT=${MOS_DATA_ROOT:-/mnt/data}
+SYSTEM_ROOT=${DATA_ROOT}/mos
+USER_ROOT=${DATA_ROOT}/srv
+
+die() {
+    echo "mos-data-layout: $*" >&2
+    exit 1
+}
+
+[ -d "$DATA_ROOT" ] && [ ! -L "$DATA_ROOT" ] \
+    || die "$DATA_ROOT is not a real directory"
+
+# The service has RequiresMountsFor=/mnt/data. The probe is still deliberate: a
+# read-only or full DATA filesystem must stop boot consumers, never redirect
+# system data into the immutable root, STATE, /var, or /tmp.
+ensure_dir() {
+    path=$1
+    mode=$2
+    [ ! -L "$path" ] || die "$path must not be a symbolic link"
+    if [ -e "$path" ]; then
+        [ -d "$path" ] || die "$path exists but is not a directory"
+    else
+        mkdir -m "$mode" "$path" || die "cannot create $path"
+    fi
+    chown 0:0 "$path"
+    chmod "$mode" "$path"
+}
+
+ensure_dir "$SYSTEM_ROOT" 0755
+ensure_dir "$USER_ROOT" 0755
+PROBE=${SYSTEM_ROOT}/.writable-probe.$$
+trap 'rm -f "$PROBE"' EXIT HUP INT TERM
+( umask 077; set -C; : >"$PROBE" ) || die "$SYSTEM_ROOT is not writable"
+sync -f "$PROBE"
+rm -f "$PROBE"
+
+ensure_dir "$SYSTEM_ROOT/ui" 0755
+ensure_dir "$SYSTEM_ROOT/containers" 0711
+ensure_dir "$SYSTEM_ROOT/home" 0755
+ensure_dir "$SYSTEM_ROOT/root" 0700
+ensure_dir "$SYSTEM_ROOT/apps" 0755
+ensure_dir "$SYSTEM_ROOT/updates" 0755
+ensure_dir "$SYSTEM_ROOT/updates/downloads" 0755
+ensure_dir "$SYSTEM_ROOT/updates/verified" 0755
+ensure_dir "$SYSTEM_ROOT/updates/staging" 0755
+
+sync -f "$SYSTEM_ROOT"
+sync -f "$USER_ROOT"
+sync -f "$DATA_ROOT"
+trap - EXIT HUP INT TERM
+
+echo "mos-data-layout: /mos backing tree ready at $SYSTEM_ROOT"

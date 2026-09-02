@@ -30,7 +30,7 @@ configuration as three layers:
 ## 2. The channel that exists: the API and the built-in UI
 
 All configuration reads and writes go over HTTPS to apid — through the
-built-in UI at `/ui` or the JSON API under `/api/v1` (contract:
+built-in UI at `/_ui/` or the JSON API under `/api/v1` (contract:
 `pkgs/mosd/apid/openapi.json`, see [api.md](api.md)). apid holds no state of
 its own; it forwards to mosd over the local system bus, where the write is
 validated against the typed schema. A rejected write leaves the tree

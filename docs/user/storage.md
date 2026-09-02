@@ -10,7 +10,7 @@ what an operator or integrator needs from this page.
 | Tier | Mounted at | Holds | Grows? | Lost when |
 |---|---|---|---|---|
 | **STATE** | `/mnt/state` (with binds into `/etc` and `/var/lib`) | configuration and identity: settings, credentials, SSH host keys, WiFi configs, pairings | no — small and fixed | reflash only |
-| **DATA** | `/srv` (with `/home` and `/root` bound onto it) | application data, container storage, operator files | **yes** — fills the disk on first boot | reflash only |
+| **DATA** | system-owned `/mos` and operator-owned `/srv` | application data, container storage, UI/update artifacts, operator files | **yes** — fills the disk on first boot | reflash only |
 | **META** | `/mnt/meta` | update and appliance metadata (RAUC slot status) | no | reflash only |
 | **EPHEMERAL** | `/var` | disposable runtime residue: logs, caches | no — fixed size | reflash, **and** routine cleanup |
 
@@ -22,9 +22,10 @@ only the rootfs and boot slots — every tier above survives it.
 
 ## 2. The rules that follow
 
-- **Put data on DATA.** Integrator files, scripts, application state and
-  container volumes belong under `/srv` (or `/home` and `/root`, which live on
-  DATA). They survive reboots and updates.
+- **Keep namespaces separate.** Appliance-managed artifacts belong under
+  `/mos`; integrator files, scripts, application state and container volumes
+  belong under `/srv` (or `/home` and `/root`, whose backing trees live under
+  `/mos`). Both namespaces are backed by DATA and survive reboots and updates.
 - **Never store anything you want to keep on `/var`.** It is deliberately
   small, aged by daily cleanup rules, and disposable by contract — the build
   fails if anything precious lands there. Storage that "works for months and

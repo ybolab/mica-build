@@ -401,7 +401,7 @@ describe('image storage is on DATA', () => {
   test('a graphroot on /var fails, and the message says images vanish silently', async () => {
     const fx = await mutated('container-engine-graphroot-on-data',
       root => rewrite(root, STORAGE_CONF, t =>
-        t.replace('/srv/containers/storage', '/var/lib/containers/storage')))
+        t.replace('/mos/containers/storage', '/var/lib/containers/storage')))
     try {
       expect(await verdictOf(fx, 'container-engine-graphroot-on-data')).toBe('fail')
       expect(await messageOf(fx, 'container-engine-graphroot-on-data'))
@@ -414,10 +414,10 @@ describe('image storage is on DATA', () => {
 
   test('a graphroot on neither tier fails as its own branch', async () => {
     const fx = await mutated('container-engine-graphroot-on-data',
-      root => rewrite(root, STORAGE_CONF, t => t.replace('/srv/containers/storage', '/opt/containers')))
+      root => rewrite(root, STORAGE_CONF, t => t.replace('/mos/containers/storage', '/opt/containers')))
     try {
       expect(await messageOf(fx, 'container-engine-graphroot-on-data'))
-        .toContain('which is neither DATA (/srv) nor a path this check knows')
+        .toContain('which is neither system DATA (/mos) nor a path this check knows')
     }
     finally {
       fx.dispose()
