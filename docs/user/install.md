@@ -24,8 +24,10 @@ Three axes, all fixed at build time and none selectable afterwards:
 - **Board** — an image is built for exactly one board and does not boot on
   another. Two boards exist: `cx3576` (CX3576-Z, Rockchip RK3576, arm64) and
   `x64` (generic UEFI x86_64).
-- **Profile** — `dev` or `prod`, written immutably into the verity root. Both
-  ship SSH off; a prod image additionally ships no console shell.
+- **Profile** — `dev` or `prod`, written immutably into the verity root, so a
+  production device cannot be edited into a development one. Both ship SSH
+  off, and neither carries a usable root password in its factory shadow file;
+  the profile selects nothing about access today.
 - **Version** — images are named by build epoch. [download.md](download.md)
   owns release selection and what a release consists of.
 
@@ -73,8 +75,8 @@ Before the first byte is written, on any board:
   previous first boot; writing the image back covers only its own extent, so
   blocks beyond it keep their old contents unreferenced by the new
   filesystem. A device being disposed of, resold or returned needs the medium
-  destroyed, not reflashed — [recovery.md](recovery.md) section 6 is the
-  statement of that rule and this is only the pointer to it.
+  destroyed, not reflashed — [recovery.md](recovery.md) sections 5 and 6 are
+  the statement of that rule and this is only the pointer to it.
 - **Capture evidence first.** If the device still boots, collect what
   [troubleshooting.md](troubleshooting.md) lists before you flash; the flash
   destroys the fault along with everything else.
@@ -190,7 +192,7 @@ dossier (`docs/bsp/qualification.md` row 12 is where a recovery entry lands).
 
 Injecting configuration at manufacture is not a variant of the steps above: it
 is the provisioning document, applied on the first boot after the flash, and
-[first-run.md](first-run.md) section 4 owns it. The ownership rules around it
+[first-run.md](first-run.md) section 3 owns it. The ownership rules around it
 — who mints identity, which records a factory keeps, what happens to a unit
 that fails a station — are [manufacturing.md](manufacturing.md).
 

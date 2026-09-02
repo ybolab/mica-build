@@ -19,8 +19,9 @@ CI。第 7 节会按步骤把这条边界再讲一遍，好让略读的读者也
 - **板卡**——一个镜像只为一块板卡构建，在别的板卡上不会启动。现有两块板卡：
   `cx3576`（CX3576-Z，Rockchip RK3576，arm64）和 `x64`（通用 UEFI
   x86_64）。
-- **Profile**——`dev` 或 `prod`，不可变地写进 verity 根。两者都默认关闭
-  SSH；prod 镜像还不带控制台 shell。
+- **Profile**——`dev` 或 `prod`，不可变地写进 verity 根，因此生产设备无法被
+  改成开发设备。两者都默认关闭 SSH，出厂 shadow 文件里也都没有可用的 root
+  密码；profile 今天不决定任何访问相关的事。
 - **版本**——镜像以构建 epoch 命名。发布版的选择与组成由
   [download.md](download.md) 负责。
 
@@ -60,7 +61,7 @@ bash verify/run.sh --verify --board x64      # x64
 - **重刷不等于擦除。**上一次首次启动时 DATA 已经扩展到镜像范围之外；把
   镜像写回去只覆盖它自己的范围，超出部分的块保留原内容，只是新文件系统
   不再引用它们。要处置、转售或退回的设备需要销毁介质，而不是重刷——
-  [recovery.md](recovery.md) 第 6 节是这条规则的正文，这里只是指路。
+  [recovery.md](recovery.md) 第 5、6 节是这条规则的正文，这里只是指路。
 - **先收集证据。**如果设备还能启动，先按
   [troubleshooting.md](troubleshooting.md) 收集，再烧写；烧写会把故障连同
   其他一切一起销毁。
