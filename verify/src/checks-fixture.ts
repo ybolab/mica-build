@@ -231,7 +231,7 @@ const FSTAB_IN = join(REPO_ROOT, 'rootfs', 'overlay', 'etc', 'fstab.in')
  * construction -- the check would find what the fixture was built from, and an
  * edit to that one constant would move both sides at once and stay green.
  */
-const ORACLE_BUILTIN_MARKUP = '<script type="module" crossorigin src="/ui/assets/app.js"></script>'
+const ORACLE_BUILTIN_MARKUP = '<script type="module" crossorigin src="/_ui/assets/index-'
 
 /** For the drift assertion in checks-root.test.ts; see above. */
 export const FIXTURE_BUILTIN_MARKUP = ORACLE_BUILTIN_MARKUP
@@ -338,7 +338,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   symlinkSync('../run/systemd/resolve/stub-resolv.conf', join(root, '/etc/resolv.conf'))
 
   // --- apid, carrying the built-in UI's embedded index markup ---
-  file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}... trailer\n`)
+  file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}B0gUsHaSh.js"></script>... trailer\n`)
 
   // --- the shipped bill of materials, one git stamp across its mos rows ---
   //
