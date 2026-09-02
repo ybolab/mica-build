@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-7477145c-c22c-49ea-a99a-2585161898f6/styles.css">
+  <script src="_ds/industry-7477145c-c22c-49ea-a99a-2585161898f6/_ds_bundle.js"></script>
+  <script src="mos-i18n.js"></script>
+  <style>
+    :root{--m-chrome-bg:var(--m-bg);--m-chrome-fg:var(--m-text);--m-chrome-muted:var(--m-muted);--m-chrome-border:var(--m-border);--m-chrome-hover:var(--m-hover);--m-chrome-active-bg:var(--m-accent);--m-chrome-active-fg:var(--m-accent-fg);--m-logo-bg:var(--m-accent);--m-logo-fg:var(--m-accent-fg);--m-bg:#e7ecf2;--m-surface:#ffffff;--m-text:#0b1620;--m-muted:#3b4d60;--m-border:#93a3b4;--m-hover:#dfe6ee;--m-accent:#3a668f;--m-accent-hover:#2f5578;--m-accent-fg:#ffffff;--m-accent-soft:#d6e2ee;--m-ring:#3a668f;--m-success:#0f6b3a;--m-success-bg:#d4f0dd;--m-warning:#8a5a00;--m-warning-bg:#ffe08a;--m-danger:#a8121c;--m-danger-bg:#fcd9db;--m-skeleton:#d9e1ea;
+      --color-bg:var(--m-bg);--color-surface:var(--m-surface);--color-text:var(--m-text);--color-divider:var(--m-border);--color-accent:var(--m-ring);--color-accent-100:var(--m-accent-soft);--color-accent-800:#243d57;--color-neutral-100:var(--m-hover);--color-neutral-800:var(--m-text);--radius-md:6px;--radius-lg:8px;}
+    :root[data-theme="dark"]{--m-bg:#0a1118;--m-surface:#141d27;--m-text:#f2f6fa;--m-muted:#a9b8c8;--m-border:#485c70;--m-hover:#1f2b38;--m-accent:#7fa5cc;--m-accent-hover:#95b6d8;--m-accent-fg:#000000;--m-accent-soft:#1e2c3a;--m-ring:#7fa5cc;--m-success:#7fe0a5;--m-success-bg:#0f3320;--m-warning:#f2c15f;--m-warning-bg:#3a2c0e;--m-danger:#ff8a91;--m-danger-bg:#3e1418;--m-skeleton:#25313e;--color-accent-800:#b7d0e8;--shadow-lg:0 0 0 1px rgba(255,255,255,.06),0 20px 50px rgba(0,0,0,.6);}
+    :root[data-palette="ral"]{--m-bg:#e6e8e9;--m-surface:#ffffff;--m-text:#0a0a0a;--m-muted:#3c4247;--m-border:#8f979d;--m-hover:#d9dcdf;--m-accent:#0e4c92;--m-accent-hover:#0b3d75;--m-accent-fg:#ffffff;--m-accent-soft:#d3dfef;--m-ring:#0e4c92;--m-success:#0f6b3a;--m-success-bg:#d4f0dd;--m-warning:#6f4a00;--m-warning-bg:#ffd15c;--m-danger:#b00f16;--m-danger-bg:#fcd5d6;--m-skeleton:#d5d9dc;--color-accent-800:#0b3d75;}
+    :root[data-palette="ral"][data-theme="dark"]{--m-bg:#0b1020;--m-surface:#151b2f;--m-text:#f4f6fa;--m-muted:#aeb6c8;--m-border:#485272;--m-hover:#202741;--m-accent:#6fa0dc;--m-accent-hover:#8bb3e5;--m-accent-fg:#000000;--m-accent-soft:#1c2e4a;--m-ring:#6fa0dc;--m-warning:#f5c142;--m-warning-bg:#3a2d0a;--m-danger:#ff8a8f;--m-danger-bg:#3e1418;--m-skeleton:#26304a;--color-accent-800:#b7d0e8;}
+    :root[data-palette="klein"]{--m-bg:#f3f2ec;--m-surface:#ffffff;--m-text:#070c2e;--m-muted:#404a7a;--m-border:#a9b0d1;--m-hover:#e4e6f3;--m-accent:#002fa7;--m-accent-hover:#00257f;--m-accent-fg:#ffffff;--m-accent-soft:#d9e0fa;--m-ring:#002fa7;--m-success:#0f6b3a;--m-success-bg:#d4f0dd;--m-warning:#7a4f00;--m-warning-bg:#ffdf7e;--m-danger:#b3121b;--m-danger-bg:#fcd7d9;--m-skeleton:#dcdfee;--color-accent-800:#001f70;
+      --m-chrome-bg:#002fa7;--m-chrome-fg:#ffffff;--m-chrome-muted:#b9c6f2;--m-chrome-border:#2a54c4;--m-chrome-hover:#1a48bd;--m-chrome-active-bg:#ffffff;--m-chrome-active-fg:#002fa7;--m-logo-bg:#ffffff;--m-logo-fg:#002fa7;}
+    :root[data-palette="klein"][data-theme="dark"]{--m-bg:#070a19;--m-surface:#111530;--m-text:#f1f3fb;--m-muted:#a4accf;--m-border:#2c3358;--m-hover:#1a2044;--m-accent:#4a6cf0;--m-accent-hover:#6182f5;--m-accent-fg:#ffffff;--m-accent-soft:#182050;--m-ring:#7d97ff;--m-success:#6fd69a;--m-success-bg:#0f2e1f;--m-warning:#f5c142;--m-warning-bg:#332709;--m-danger:#ff8a8f;--m-danger-bg:#3a1418;--m-skeleton:#1b2148;--color-accent-800:#bfcbff;--shadow-lg:0 0 0 1px rgba(255,255,255,.08),0 20px 50px rgba(0,0,0,.7);
+      --m-chrome-bg:#0d1128;--m-chrome-fg:#f1f3fb;--m-chrome-muted:#8f98c4;--m-chrome-border:#242b52;--m-chrome-hover:#1a2044;--m-chrome-active-bg:#4a6cf0;--m-chrome-active-fg:#ffffff;--m-logo-bg:#4a6cf0;--m-logo-fg:#ffffff;}
+    header .btn-secondary,header .btn-ghost{color:var(--m-chrome-fg);border-color:var(--m-chrome-border);background:transparent;} header .btn-secondary:hover,header .btn-ghost:hover,header .mos-nav:hover{background:var(--m-chrome-hover);}
+    header [role=menu]{color:var(--m-text);} footer .btn-ghost{color:var(--m-text);} footer .btn-ghost:hover{background:var(--m-hover);} footer .btn-secondary{color:var(--m-text);border-color:var(--m-border);} header [role=menu] .btn-secondary{color:var(--m-text);border-color:var(--m-border);}
+    :root[data-ground="white"]:not([data-theme="dark"]){--m-bg:#ffffff;}
+    html,body{margin:0;min-height:100%;}
+    body{background:var(--m-bg);color:var(--m-text);font-family:var(--font-body);font-size:15px;font-weight:500;line-height:1.45;-webkit-font-smoothing:auto;}
+    a{color:var(--m-text);} a:hover{color:var(--m-muted);}
+    button{font-family:inherit;}
+    :focus-visible{outline:2px solid var(--m-ring);outline-offset:2px;}
+    .btn{height:38px;padding:0 14px;border-radius:6px;font-family:var(--font-body);font-weight:600;font-size:15px;gap:8px;white-space:nowrap;transition:background .15s,border-color .15s,color .15s;}
+    .btn-primary{background:var(--m-accent);color:var(--m-accent-fg);border-color:var(--m-accent);}
+    .btn-primary:hover{background:var(--m-accent-hover);border-color:var(--m-accent-hover);} .btn-primary:active{background:var(--m-accent-hover);}
+    .btn-secondary{background:var(--m-surface);border-color:var(--m-border);color:var(--m-text);}
+    .btn-secondary:hover{background:var(--m-hover);} .btn-secondary:active{background:var(--m-hover);}
+    .btn-ghost{color:var(--m-text);padding:0 10px;} .btn-ghost:hover{background:var(--m-hover);} .btn-ghost:active{background:var(--m-hover);}
+    .btn-danger{background:var(--m-danger);color:#fff;border-color:var(--m-danger);} .btn-danger:hover{filter:brightness(.92);}
+    .btn-danger-outline{background:transparent;color:var(--m-danger);border-color:var(--m-border);} .btn-danger-outline:hover{background:var(--m-danger-bg);}
+    .btn-sm{height:32px;padding:0 10px;font-size:14px;} .btn-icon{width:36px;padding:0;justify-content:center;}
+    .input{height:38px;min-height:38px;border-radius:6px;background:var(--m-surface);border:1.5px solid var(--m-border);color:var(--m-text);font-family:var(--font-body);font-size:15px;font-weight:500;padding:0 10px;}
+    .input:hover{border-color:var(--m-muted);} .input:focus-visible{outline:2px solid var(--m-ring);outline-offset:1px;border-color:var(--m-border);} .input::placeholder{color:var(--m-muted);}
+    textarea.input{height:auto;padding:8px 10px;}
+    select.input{appearance:none;padding-right:32px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23687078' stroke-width='1.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;}
+    .field > label{color:var(--m-text);font-weight:600;font-size:14px;margin-bottom:6px;}
+    .tag{border-radius:4px;font-weight:700;font-size:13px;line-height:1.4;padding:2px 8px;border:1px solid transparent;font-family:var(--font-body);white-space:nowrap;letter-spacing:0;}
+    .tag-neutral{background:var(--m-hover);border-color:var(--m-border);color:var(--m-text);}
+    .tag-outline{background:transparent;border-color:var(--m-border);color:var(--m-muted);}
+    .tag-accent{background:var(--m-accent-soft);color:var(--color-accent-800);}
+    .tag-success{background:var(--m-success-bg);color:var(--m-success);}
+    .tag-warning{background:var(--m-warning-bg);color:var(--m-warning);}
+    .tag-danger{background:var(--m-danger-bg);color:var(--m-danger);}
+    .table{font-size:15px;} .table th{font-size:13px;letter-spacing:0;text-transform:none;font-weight:700;color:var(--m-muted);padding:10px 12px;border-bottom:1px solid var(--m-border);white-space:nowrap;}
+    .table th{background:var(--m-hover);} .table td{padding:12px;border-bottom:1px solid var(--m-border);vertical-align:middle;} .table tbody tr:last-child td{border-bottom:0;} .table tbody tr:hover{background:var(--m-hover);}
+    .dialog{border-radius:8px;background:var(--m-surface);border:1px solid var(--m-border);box-shadow:var(--shadow-lg);padding:24px;gap:12px;width:min(520px,100%);}
+    .dialog-title{font-family:var(--font-body);font-weight:600;font-size:18px;letter-spacing:-.01em;} .dialog-body{opacity:1;color:var(--m-text);} .dialog-backdrop{background:rgba(0,0,0,.5);z-index:40;}
+    .radio .dot{border-color:var(--m-muted);} .radio input:checked+.dot{border-color:var(--m-text);background:var(--m-text);box-shadow:inset 0 0 0 4px var(--m-surface);} .radio:hover .dot{border-color:var(--m-text);}
+    .btn-secondary{border:1.5px solid var(--m-border);} .blueprint{border-color:var(--m-border);} .blueprint > .corner{color:var(--m-muted);}
+    .mos-sk{background:var(--m-skeleton);border-radius:4px;animation:m-pulse 1.6s ease-in-out infinite;}
+    .mos-spin{animation:m-spin 1s linear infinite;}
+    [role=menu] > button:hover{background:var(--m-hover)!important;} .mos-nav:hover{background:var(--m-hover);}
+    *{-webkit-tap-highlight-color:transparent;} button,[role=button],.input,select{touch-action:manipulation;}
+    .btn:active,.mos-nav:active,[role=menu] > button:active,.mos-press:active{transform:scale(.97);transition:transform .06s;} .mos-nav:active,[role=menu] > button:active{background:var(--m-hover);}
+    .seg-opt{cursor:pointer;} .seg-opt:active{transform:scale(.97);}
+    @media (pointer:coarse){.btn,.btn-sm,.input,select.input,.mos-nav,[role=menu] > button{min-height:44px;} .btn-icon{min-width:44px;} .table td{padding:14px 12px;} .radio,.seg-opt{min-height:44px;} .mos-nav{padding:0 14px;}}
+    @media (max-width:580px){
+      .dialog-backdrop{align-items:flex-end!important;padding:0!important;}
+      .dialog{width:100%!important;max-width:none!important;border-radius:12px 12px 0 0!important;max-height:92vh;overflow-y:auto;padding:20px 16px calc(16px + env(safe-area-inset-bottom))!important;}
+      .dialog-actions{flex-direction:column-reverse;align-items:stretch;gap:8px;} .dialog-actions .btn{width:100%;justify-content:center;} .dialog-actions > div{display:flex;flex-direction:column-reverse;gap:8px;}
+      .table th,.table td{padding:10px;} .table{font-size:14px;}
+      input,select,textarea{font-size:16px!important;}
+    }
+    .mos-scroll::-webkit-scrollbar{display:none;}
+    @media (prefers-reduced-motion:reduce){.btn:active,.mos-nav:active,[role=menu] > button:active,.mos-press:active,.seg-opt:active{transform:none;}}
+    @keyframes m-spin{to{transform:rotate(360deg);}} @keyframes m-pulse{50%{opacity:.45;}}
+    .mos-scroll::-webkit-scrollbar{display:none;}
+    @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms !important;transition:none !important;}}
+  </style>
+</helmet>
+
+<!-- ================= LOGIN ================= -->
+<sc-if value="{{ isLogin }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh; display:grid; place-items:center; padding:24px; background:var(--m-bg);">
+    <div style="position:absolute; top:16px; right:16px; display:flex; gap:8px;">
+      <button class="btn btn-secondary btn-sm" onClick="{{ openLangPicker }}" style="gap:8px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"></path></svg><span>{{ langNative }}</span></button>
+      <div style="display:flex; border:1px solid var(--m-border); border-radius:6px; overflow:hidden; background:var(--m-surface);" role="radiogroup" aria-label="{{ t.theme }}">
+        <sc-for list="{{ themeOpts }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.go }}" aria-pressed="{{ o.on }}" title="{{ o.label }}" aria-label="{{ o.label }}" style="{{ o.style }}">{{ o.icon }}</button></sc-for>
+      </div>
+    </div>
+    <div class="blueprint" style="width:100%; max-width:400px; background:var(--m-surface); padding:clamp(20px, 6vw, 32px); display:flex; flex-direction:column; gap:20px;">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="display:inline-grid; place-items:center; width:32px; height:32px; background:var(--m-accent); color:var(--m-accent-fg); font-family:var(--font-heading); font-weight:600; font-size:16px; border-radius:6px;">m</span>
+          <span style="font-family:var(--font-heading); font-weight:600; font-size:20px; letter-spacing:.01em;">mos</span>
+        </div>
+        <h1 style="margin:12px 0 0; font-family:var(--font-body); font-weight:600; font-size:20px; letter-spacing:-.01em;">{{ t.login_title }}</h1>
+        <div style="font-size:13px; color:var(--m-muted); display:flex; gap:8px; align-items:center;"><span style="font-family:ui-monospace, Menlo, monospace;">mos-edge-07</span></div>
+      </div>
+      <sc-if value="{{ loginAlert }}" hint-placeholder-val="{{ false }}">
+        <div role="alert" style="{{ loginAlertStyle }}">
+          <strong style="font-weight:600; display:block;">{{ loginAlertTitle }}</strong>
+          <span style="font-size:13px; opacity:.9;">{{ loginAlertBody }}</span>
+        </div>
+      </sc-if>
+      <div class="field"><label>{{ t.login_password }}</label><input class="input" type="password" placeholder="••••••••••" autocomplete="current-password"></div>
+      <button class="btn btn-primary" onClick="{{ doLogin }}" disabled="{{ loginDisabled }}" style="justify-content:center;">{{ loginBtn }}</button>
+      <p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.login_help }}</p>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ================= SHELL ================= -->
+<sc-if value="{{ isAuthed }}" hint-placeholder-val="{{ true }}">
+<div style="{{ shellStyle }}">
+
+  <div style="display:flex; flex-direction:column; min-width:0; min-height:100vh;">
+    <header style="{{ headerStyle }}">
+    <div style="{{ topRowStyle }}">
+      <div style="display:flex; align-items:center; gap:10px; flex:1 1 0; min-width:0;">
+        <span style="display:inline-grid; place-items:center; width:28px; height:28px; background:var(--m-logo-bg); color:var(--m-logo-fg); font-family:var(--font-heading); font-weight:600; font-size:15px; border-radius:6px; flex:none;">m</span>
+        <div style="display:flex; flex-direction:column; line-height:1.2; min-width:0;">
+          <span style="font-weight:600; font-size:14px;">mos</span>
+          <span style="font-family:ui-monospace, Menlo, monospace; font-size:12px; color:var(--m-chrome-muted); white-space:nowrap;">mos-edge-07</span>
+        </div>
+      </div>
+      <sc-if value="{{ navInline }}" hint-placeholder-val="{{ true }}">
+        <nav style="display:flex; gap:2px; flex:none; justify-content:center;" aria-label="Primary">
+          <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="6">
+            <button class="mos-nav" onClick="{{ n.go }}" aria-current="{{ n.current }}" title="{{ n.title }}" aria-label="{{ n.title }}" style="{{ n.style }}">
+              <span style="display:inline-flex; width:16px; height:16px; flex:none;">{{ n.icon }}</span>
+              <sc-if value="{{ n.showLabel }}" hint-placeholder-val="{{ true }}"><span>{{ n.label }}</span></sc-if>
+            </button>
+          </sc-for>
+        </nav>
+      </sc-if>
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:1 1 0; min-width:0;">
+        <button class="btn btn-secondary btn-icon" onClick="{{ refresh }}" title="{{ t.refresh }}" aria-label="{{ t.refresh }}" style="width:36px; height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="{{ refreshClass }}"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path></svg></button>
+        <div style="position:relative;" data-menu="settings">
+          <button class="btn btn-secondary btn-icon" onClick="{{ toggleSettingsMenu }}" aria-haspopup="menu" aria-expanded="{{ settingsOpen }}" aria-label="{{ t.settings }}" title="{{ t.settings }}" style="width:36px; height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+          <sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+            <div role="menu" style="position:absolute; right:0; top:calc(100% + 6px); width:240px; background:var(--m-surface); border:1px solid var(--m-border); border-radius:8px; box-shadow:var(--shadow-lg); padding:6px; display:flex; flex-direction:column; gap:2px; z-index:30;">
+              <button onClick="{{ openLangPicker }}" style="{{ menuItemStyle }}" title="{{ t.language }}"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"></path></svg><span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ langNative }}</span></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--m-muted);"><path d="m9 18 6-6-6-6"></path></svg></button>
+              <div style="height:1px; background:var(--m-border); margin:4px 0;"></div>
+              <div style="padding:6px 10px 6px; font-size:12px; font-weight:500; color:var(--m-muted);">{{ t.theme }}</div>
+              <div style="display:flex; border:1px solid var(--m-border); border-radius:6px; overflow:hidden; margin:0 4px 4px;" role="radiogroup" aria-label="{{ t.theme }}">
+                <sc-for list="{{ themeOpts }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.go }}" aria-pressed="{{ o.on }}" style="{{ o.styleWide }}">{{ o.icon }}<span>{{ o.label }}</span></button></sc-for>
+              </div>
+              <div style="height:1px; background:var(--m-border); margin:4px 0;"></div>
+              <button onClick="{{ doLogout }}" style="{{ menuItemStyle }}"><span>{{ t.logout }}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path></svg></button>
+            </div>
+          </sc-if>
+        </div>
+        <sc-if value="{{ navStacked }}" hint-placeholder-val="{{ false }}"><button class="btn btn-secondary btn-icon" onClick="{{ openDrawer }}" aria-label="{{ t.menu }}" title="{{ t.menu }}" aria-expanded="{{ drawerOpen }}" style="width:36px; height:36px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button></sc-if>
+      </div>
+    </div>
+    </header>
+    <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeDrawer }}" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:40;"></div>
+      <aside role="dialog" aria-modal="true" aria-label="{{ t.menu }}" style="position:fixed; top:0; right:0; bottom:0; width:min(300px, 84vw); background:var(--m-surface); border-left:1px solid var(--m-border); box-shadow:var(--shadow-lg); z-index:41; display:flex; flex-direction:column; padding-bottom:env(safe-area-inset-bottom);">
+        <div style="display:flex; align-items:center; gap:10px; padding:12px 12px 12px 16px; border-bottom:1px solid var(--m-border); min-height:52px;">
+          <span style="display:inline-grid; place-items:center; width:28px; height:28px; background:var(--m-logo-bg); color:var(--m-logo-fg); font-family:var(--font-heading); font-weight:600; font-size:15px; border-radius:6px; flex:none;">m</span>
+          <div style="display:flex; flex-direction:column; line-height:1.2; min-width:0; flex:1;"><span style="font-weight:600; font-size:14px;">mos</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:12px; color:var(--m-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">mos-edge-07</span></div>
+          <button class="btn btn-ghost btn-icon" onClick="{{ closeDrawer }}" aria-label="{{ t.close }}" style="width:40px; height:40px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <nav style="display:flex; flex-direction:column; gap:2px; padding:8px;" aria-label="Primary">
+          <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="6">
+            <button class="mos-nav" onClick="{{ n.goDrawer }}" aria-current="{{ n.current }}" style="{{ n.drawerStyle }}">
+              <span style="display:inline-flex; width:18px; height:18px; flex:none;">{{ n.icon }}</span>
+              <span>{{ n.label }}</span>
+            </button>
+          </sc-for>
+        </nav>
+        <div style="margin-top:auto; padding:12px 16px; border-top:1px solid var(--m-border); display:flex; flex-direction:column; gap:6px; font-size:13px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="{{ connDotStyle }}"></span><span style="font-weight:600;">{{ connLabel }}</span><span style="color:var(--m-muted);">· {{ freshness }}</span></div>
+          <div style="display:flex; justify-content:space-between;"><span style="color:var(--m-muted);">{{ t.release }}</span><span style="font-family:ui-monospace, Menlo, monospace;">2026.08.2 · slot A</span></div>
+        </div>
+      </aside>
+    </sc-if>
+
+    <sc-if value="{{ showBanner }}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="{{ bannerStyle }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="flex:none; margin-top:2px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4M12 16h.01"></path></svg>
+        <div style="display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600;">{{ bannerTitle }}</strong><span style="font-size:13px; opacity:.9;">{{ bannerBody }}</span></div>
+      </div>
+    </sc-if>
+
+    <main style="{{ mainStyle }}">
+      <!-- OVERVIEW -->
+      <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div style="display:flex; flex-direction:column; gap:4px;">
+              <h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ t.nav_overview }}</h1>
+                          </div>
+            <div style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--m-muted);"><span class="tag tag-neutral">{{ t.ov_healthVal }}</span><span>{{ freshness }}</span></div>
+          </div>
+
+          <section style="display:flex; flex-direction:column; gap:8px;">
+            <div style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.ov_attention }} · 2</div>
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+              <div style="{{ attnRowStyle }}">
+                <span class="tag tag-warning" style="flex:none;">{{ t.warning }}</span>
+                <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;"><strong style="font-weight:500;">{{ t.ov_attn1 }}</strong><span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.ov_attn1Body }}</span></div>
+                <button class="btn btn-secondary btn-sm" onClick="{{ goSystemTime }}">{{ t.ov_attn1Link }}</button>
+              </div>
+              <div style="{{ attnRowStyle }} border-top:1px solid var(--m-border);">
+                <span class="tag tag-neutral" style="flex:none;">{{ t.update }}</span>
+                <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;"><strong style="font-weight:500;">{{ t.ov_attn2 }}</strong><span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.ov_attn2Body }}</span></div>
+                <button class="btn btn-secondary btn-sm" onClick="{{ goSystemUpdate }}">{{ t.ov_attn2Link }}</button>
+              </div>
+            </div>
+          </section>
+
+          <section style="{{ g4 }}">
+            <sc-for list="{{ ovCards }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.go }}" style="text-align:left; cursor:pointer; font:inherit; color:inherit; border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:6px; min-height:112px;" style-hover="background:var(--m-hover);">
+                <span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ c.k }}</span>
+                <span style="{{ c.vStyle }}">{{ c.v }}</span>
+                <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ c.sub }}</span>
+              </button>
+            </sc-for>
+          </section>
+
+          <section style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--m-border);">
+              <span style="font-weight:600;">{{ t.ov_recent }}</span>
+              <span style="font-size:13px; color:var(--m-muted);">{{ freshness }}</span>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="table" style="min-width:640px;">
+                <thead><tr><th>{{ t.col_action }}</th><th>{{ t.col_target }}</th><th>{{ t.col_phase }}</th><th>{{ t.col_result }}</th><th style="text-align:right;">{{ t.col_time }}</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ tasks }}" as="k" hint-placeholder-count="3">
+                    <tr><td style="font-weight:500;">{{ k.action }}</td><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ k.target }}</td><td><span class="{{ k.tagClass }}">{{ k.phase }}</span></td><td style="color:var(--m-muted); font-size:13px;">{{ k.result }}</td><td style="text-align:right; color:var(--m-muted); font-size:13px; white-space:nowrap;">{{ k.time }}</td></tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <!-- SERVICES -->
+      <sc-if value="{{ isServices }}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{ svcList }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ t.nav_services }}</h1>
+                      </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap:12px;">
+            <sc-for list="{{ services }}" as="s" hint-placeholder-count="3">
+              <div role="button" tabIndex="{{ 0 }}" onClick="{{ s.open }}" onKeyDown="{{ s.openKey }}" class="mos-press" style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:12px; cursor:pointer; text-align:left; min-width:0;" style-hover="border-color:var(--m-accent);">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                    <span style="display:inline-grid; place-items:center; width:36px; height:36px; border-radius:8px; background:var(--m-hover); flex:none;">{{ s.icon }}</span>
+                    <div style="display:flex; flex-direction:column; min-width:0;"><strong style="font-weight:600; font-size:15px;">{{ s.name }}</strong><span style="font-size:13px; color:var(--m-muted); font-family:ui-monospace, Menlo, monospace; overflow-wrap:anywhere;">{{ s.port }}</span></div>
+                  </div>
+                  <button onClick="{{ s.toggleStop }}" role="switch" aria-checked="{{ s.on }}" aria-label="{{ s.name }}" disabled="{{ s.pending }}" style="{{ s.trackStyle }}"><span style="{{ s.knobStyle }}"></span></button>
+                </div>
+                <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ s.body }}</span>
+                <div style="display:flex; align-items:center; gap:8px; margin-top:auto; flex-wrap:wrap;"><span class="{{ s.tagClass }}">{{ s.observed }}</span><span style="font-size:13px; color:var(--m-muted);">{{ s.task }}</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ svcDetailOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <button class="btn btn-ghost btn-sm" onClick="{{ closeSvc }}" style="align-self:flex-start; padding-left:6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>{{ t.nav_services }}</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span style="display:inline-grid; place-items:center; width:44px; height:44px; border-radius:8px; background:var(--m-hover); flex:none;">{{ svc.icon }}</span>
+                <div style="display:flex; flex-direction:column; gap:2px;"><h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ svc.name }}</h1><span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ svc.body }}</span></div>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px;">
+                <sc-if value="{{ svc.showOpenTerm }}" hint-placeholder-val="{{ false }}"><button class="btn btn-primary" onClick="{{ openTerminal }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"></path></svg>{{ t.term_open }}</button></sc-if>
+                <span style="font-size:13px; font-weight:600;">{{ svc.configured }}</span>
+                <button onClick="{{ svc.toggle }}" role="switch" aria-checked="{{ svc.on }}" aria-label="{{ svc.name }}" disabled="{{ svc.pending }}" style="{{ svc.trackStyle }}"><span style="{{ svc.knobStyle }}"></span></button>
+              </div>
+            </div>
+          </div>
+
+          <div style="{{ g3 }}">
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:6px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.col_configured }} · {{ t.applied }}</span><span style="font-size:16px; font-weight:600;">{{ svc.configured }} · <span style="{{ svc.appliedStyle }}">{{ svc.applied }}</span></span></div>
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:6px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.col_observed }}</span><span style="display:flex; gap:8px; align-items:center;"><span class="{{ svc.tagClass }}">{{ svc.observed }}</span><span style="font-size:13px; color:var(--m-muted);">{{ svc.task }}</span></span></div>
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:6px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.svc_endpoint }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:16px; font-weight:600;">{{ svc.port }}</span></div>
+          </div>
+
+          <section style="display:flex; flex-direction:column; gap:8px;">
+            <h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.svc_configTitle }}</h2>
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:20px; display:flex; flex-direction:column; gap:14px;">
+              <sc-if value="{{ svc.isContainer }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ cfgGrid }}">
+                  <div class="field"><label>{{ t.ctr_hub }}</label><input class="input" value="{{ ctrHub }}" onChange="{{ onCtrHub }}" style="font-family:ui-monospace, Menlo, monospace;" placeholder="registry.example.com"></div>
+                  <div class="field"><label>{{ t.ctr_mirror }}</label><input class="input" style="font-family:ui-monospace, Menlo, monospace;" placeholder="{{ t.optional }}"></div>
+                  <div class="field"><label>{{ t.ctr_user }}</label><input class="input" placeholder="{{ t.optional }}" autocomplete="off"></div>
+                  <div class="field"><label>{{ t.ctr_token }}</label><input class="input" type="password" placeholder="{{ t.optional }}" autocomplete="off"></div>
+                </div>
+                <label class="radio" style="align-self:flex-start;"><input type="checkbox"><span class="dot" style="border-radius:4px;"></span><span style="font-size:13px;">{{ t.ctr_insecure }}</span></label>
+                <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.ctr_help }}</span>
+              </sc-if>
+              <sc-if value="{{ svc.isMqtt }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ cfgGrid }}">
+                  <div class="field"><label>{{ t.mq_listen }}</label><input class="input" value="0.0.0.0:1883" style="font-family:ui-monospace, Menlo, monospace;"></div>
+                  <div class="field"><label>{{ t.mq_listenTls }}</label><input class="input" value="0.0.0.0:8883" style="font-family:ui-monospace, Menlo, monospace;"></div>
+                </div>
+                <div class="field"><label>{{ t.mq_key }}</label>
+                  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <input class="input" type="{{ mqKeyType }}" value="{{ mqKey }}" readOnly="{{ true }}" style="font-family:ui-monospace, Menlo, monospace; flex:1; min-width:220px;">
+                    <button class="btn btn-secondary btn-sm" onClick="{{ mqToggleKey }}">{{ mqKeyBtn }}</button>
+                    <button class="btn btn-secondary btn-sm" onClick="{{ mqCopyKey }}">{{ t.copy }}</button>
+                    <button class="btn btn-danger-outline btn-sm" onClick="{{ mqRotateKey }}">{{ t.mq_rotate }}</button>
+                  </div>
+                  <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.mq_keyHelp }}</span>
+                </div>
+                <label class="radio" style="align-self:flex-start;"><input type="checkbox" checked><span class="dot" style="border-radius:4px;"></span><span style="font-size:13px;">{{ t.mq_anon }}</span></label>
+              </sc-if>
+              <sc-if value="{{ svc.isTerminal }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ cfgGrid }}">
+                  <div class="field"><label>{{ t.term_timeout }}</label><select class="input"><option>5 min</option><option selected>15 min</option><option>60 min</option></select></div>
+                  <div class="field"><label>{{ t.term_shell }}</label><select class="input"><option>/bin/sh</option><option selected>/bin/bash</option></select></div>
+                </div>
+                <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.term_help }}</span>
+              </sc-if>
+              <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:4px;"><button class="btn btn-secondary" onClick="{{ closeSvc }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ svc.saveCfg }}">{{ t.save }}</button></div>
+            </div>
+          </section>
+        </div>
+        </sc-if>
+      </sc-if>
+
+      <!-- ACCESS -->
+      <sc-if value="{{ isAccess }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ t.nav_access }}</h1>
+                      </div>
+
+          <section style="{{ g2 }}">
+            <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.acc_web }}</h2><p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.acc_webBody }}</p></div>
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:20px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div class="field" style="grid-column:1/-1;"><label>{{ t.acc_current }}</label><input class="input" type="password"></div>
+              <div class="field"><label>{{ t.acc_new }}</label><input class="input" type="password"></div>
+              <div class="field"><label>{{ t.acc_confirm }}</label><input class="input" type="password"></div>
+              <div style="grid-column:1/-1; display:flex; justify-content:flex-end;"><button class="btn btn-primary" onClick="{{ toastSaved }}">{{ t.acc_change }}</button></div>
+            </div>
+          </section>
+
+          <section style="{{ g2 }}">
+            <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.acc_tokens }}</h2><p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.acc_tokensBody }}</p></div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-if value="{{ tokenShown }}" hint-placeholder-val="{{ false }}">
+                <div role="alert" style="border:1px solid var(--m-warning); border-radius:8px; background:var(--m-warning-bg); padding:16px; display:flex; flex-direction:column; gap:12px;">
+                  <div style="display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600; color:var(--m-warning);">{{ t.acc_revealTitle }}</strong><span style="font-size:13px;">{{ t.acc_revealBody }}</span></div>
+                  <code style="display:block; font-family:ui-monospace, Menlo, monospace; font-size:13px; padding:10px 12px; background:var(--m-surface); border:1px solid var(--m-border); border-radius:6px; word-break:break-all;">mos_tok_9Kq2vX7LmP4rT1wZ8bN3cH6dJ0fS5gA</code>
+                  <div style="display:flex; gap:8px;"><button class="btn btn-primary btn-sm" onClick="{{ copyToken }}" style="min-width:90px;">{{ copyLabel }}</button><button class="btn btn-secondary btn-sm" onClick="{{ closeToken }}">{{ t.acc_closeReveal }}</button></div>
+                </div>
+              </sc-if>
+              <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                <table class="table"><thead><tr><th>{{ t.col_label }}</th><th>ID</th><th>{{ t.col_created }}</th><th></th></tr></thead>
+                  <tbody><sc-for list="{{ tokens }}" as="tk" hint-placeholder-count="2"><tr><td style="font-weight:500;">{{ tk.label }}</td><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ tk.id }}</td><td style="color:var(--m-muted); font-size:13px;">{{ tk.created }}</td><td style="text-align:right;"><button class="btn btn-ghost btn-sm" style="color:var(--m-danger);">{{ t.acc_revoke }}</button></td></tr></sc-for></tbody></table>
+                <div style="padding:12px;"><button class="btn btn-secondary btn-sm" onClick="{{ mintToken }}">{{ t.acc_mint }}</button></div>
+              </div>
+            </div>
+          </section>
+
+          <section style="{{ g2 }}">
+            <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">SSH</h2><p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.acc_sshBody }}</p></div>
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px; border-bottom:1px solid var(--m-border);">
+                <div style="display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:500;">{{ t.acc_sshSwitch }}</strong><span style="font-size:13px; color:var(--m-muted);">{{ sshStatus }}</span></div>
+                <button onClick="{{ toggleSsh }}" role="switch" aria-checked="{{ sshOn }}" aria-label="SSH" style="{{ sshTrack }}"><span style="{{ sshKnob }}"></span></button>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 16px; border-bottom:1px solid var(--m-border);">
+                <div style="display:flex; flex-direction:column; gap:2px; min-width:0;"><span style="font-family:ui-monospace, Menlo, monospace; font-size:13px; overflow:hidden; text-overflow:ellipsis;">SHA256:Qm4c…7vLo · ed25519</span><span style="font-size:13px; color:var(--m-muted);">ops@workstation · <span style="color:var(--m-danger);">{{ t.acc_grantsRoot }}</span></span></div>
+                <button class="btn btn-ghost btn-sm" onClick="{{ openRemoveKey }}" style="color:var(--m-danger);">{{ t.acc_remove }}</button>
+              </div>
+              <div style="padding:12px 16px;"><button class="btn btn-secondary btn-sm">{{ t.acc_addKey }}</button></div>
+            </div>
+          </section>
+
+          <section style="{{ g2 }}">
+            <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.acc_root }}</h2><p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.acc_rootBody }}</p></div>
+            <div style="border:1px solid var(--m-danger); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+              <div style="display:flex; flex-direction:column; gap:4px;"><span class="tag tag-danger" style="align-self:flex-start;">{{ t.acc_highPriv }}</span><span style="font-size:13px;">{{ t.acc_rootState }}</span></div>
+              <button class="btn btn-danger-outline">{{ t.acc_setRoot }}</button>
+            </div>
+          </section>
+
+        </div>
+      </sc-if>
+
+      <!-- NETWORK -->
+      <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <sc-if value="{{ isIfaceList }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:24px;">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                  <h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ t.nav_network }}</h1>
+                                  </div>
+                <button class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>{{ t.net_add }}</button>
+              </div>
+              <div class="mos-scroll" style="display:inline-flex; gap:2px; padding:3px; background:var(--m-hover); border-radius:8px; align-self:flex-start; max-width:100%; overflow-x:auto; scrollbar-width:none;">
+                <sc-for list="{{ netTabs }}" as="tb" hint-placeholder-count="3"><button onClick="{{ tb.go }}" style="{{ tb.style }}">{{ tb.label }}</button></sc-for>
+              </div>
+
+              <sc-if value="{{ isNetIfaces }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <sc-if value="{{ netAlert }}" hint-placeholder-val="{{ false }}"><div role="status" style="{{ netAlertStyle }}"><strong style="font-weight:600;">{{ netAlertTitle }}</strong><span style="font-size:13px; opacity:.9;">{{ netAlertBody }}</span></div></sc-if>
+                  <sc-if value="{{ netHasData }}" hint-placeholder-val="{{ true }}">
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                      <div style="overflow-x:auto;">
+                        <table class="table" style="min-width:760px;">
+                          <thead><tr><th>{{ t.col_iface }}</th><th>{{ t.col_type }}</th><th>{{ t.col_configured }}</th><th>{{ t.col_observed }}</th><th>{{ t.col_addresses }}</th><th style="text-align:right;">{{ t.col_lastObs }}</th><th></th></tr></thead>
+                          <tbody>
+                            <sc-for list="{{ ifaces }}" as="i" hint-placeholder-count="5">
+                              <tr onClick="{{ i.open }}" style="cursor:pointer;">
+                                <td style="font-family:ui-monospace, Menlo, monospace; font-weight:600;">{{ i.name }}</td>
+                                <td>{{ i.type }}</td>
+                                <td style="font-size:13px;">{{ i.configured }}</td>
+                                <td><span class="{{ i.tagClass }}">{{ i.observed }}</span></td>
+                                <td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ i.addr }}</td>
+                                <td style="text-align:right; color:var(--m-muted); font-size:13px;">{{ i.last }}</td>
+                                <td style="text-align:right; color:var(--m-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></td>
+                              </tr>
+                            </sc-for>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ netLoading }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:14px;" aria-busy="true" aria-label="{{ t.q_loading }}">
+                      <div style="display:flex; gap:12px;"><span class="mos-sk" style="height:14px; width:64px;"></span><span class="mos-sk" style="height:14px; width:90px;"></span><span class="mos-sk" style="height:14px; width:140px;"></span><span class="mos-sk" style="height:14px; flex:1;"></span></div>
+                      <div style="display:flex; gap:12px;"><span class="mos-sk" style="height:14px; width:64px;"></span><span class="mos-sk" style="height:14px; width:90px;"></span><span class="mos-sk" style="height:14px; width:140px;"></span><span class="mos-sk" style="height:14px; flex:1;"></span></div>
+                      <div style="display:flex; gap:12px;"><span class="mos-sk" style="height:14px; width:64px;"></span><span class="mos-sk" style="height:14px; width:90px;"></span><span class="mos-sk" style="height:14px; width:140px;"></span><span class="mos-sk" style="height:14px; flex:1;"></span></div>
+                      <span style="font-size:13px; color:var(--m-muted);">{{ t.q_loading }}</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ netEmpty }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px dashed var(--m-border); border-radius:8px; padding:40px 24px; display:flex; flex-direction:column; align-items:flex-start; gap:6px;"><strong style="font-weight:600;">{{ t.q_emptyTitle }}</strong><span style="font-size:13px; color:var(--m-muted); max-width:520px; text-wrap:pretty;">{{ t.q_emptyBody }}</span><button class="btn btn-secondary btn-sm" onClick="{{ refresh }}" style="margin-top:8px;">{{ t.refresh }}</button></div>
+                  </sc-if>
+                  <sc-if value="{{ netErrorNoData }}" hint-placeholder-val="{{ false }}">
+                    <div role="alert" style="border:1px solid var(--m-danger); border-radius:8px; background:var(--m-danger-bg); padding:24px; display:flex; flex-direction:column; align-items:flex-start; gap:6px;"><strong style="font-weight:600; color:var(--m-danger);">{{ t.q_errTitle }}</strong><span style="font-size:13px; max-width:520px; text-wrap:pretty;">{{ t.q_errBody }}</span><button class="btn btn-secondary btn-sm" onClick="{{ refresh }}" style="margin-top:8px;">{{ t.q_retry }}</button></div>
+                  </sc-if>
+                  <sc-if value="{{ netOffline }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:24px; display:flex; flex-direction:column; align-items:flex-start; gap:6px;"><strong style="font-weight:600;">{{ t.q_offlineTitle }}</strong><span style="font-size:13px; color:var(--m-muted); max-width:520px; text-wrap:pretty;">{{ t.q_offlineBody }}</span></div>
+                  </sc-if>
+                  <sc-if value="{{ netUnsupported }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:24px; display:flex; flex-direction:column; align-items:flex-start; gap:6px;"><span class="tag tag-outline">{{ t.tag_unsupported }}</span><strong style="font-weight:600; margin-top:4px;">{{ t.q_unsupTitle }}</strong><span style="font-size:13px; color:var(--m-muted); max-width:520px; text-wrap:pretty;">{{ t.q_unsupBody }}</span></div>
+                  </sc-if>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isNetWifi }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;"><span></span><button class="btn btn-secondary btn-sm">{{ t.wifi_add }}</button></div>
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                    <div style="overflow-x:auto;">
+                      <table class="table" style="min-width:560px;"><thead><tr><th>{{ t.wifi_ssid }}</th><th>{{ t.wifi_security }}</th><th>{{ t.wifi_credential }}</th><th>{{ t.wifi_auto }}</th><th></th></tr></thead>
+                        <tbody><sc-for list="{{ wifi }}" as="w" hint-placeholder-count="2"><tr><td style="font-family:ui-monospace, Menlo, monospace; font-weight:600;">{{ w.ssid }}</td><td style="font-size:13px;">{{ w.sec }}</td><td><span class="tag tag-neutral">{{ w.saved }}</span></td><td style="font-size:13px;">{{ w.auto }}</td><td style="text-align:right;"><button class="btn btn-ghost btn-sm" style="color:var(--m-danger);">{{ t.wifi_forget }}</button></td></tr></sc-for></tbody></table>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isNetWg }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; flex-direction:column; gap:16px;">
+                  <div style="{{ g3 }}">
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.wg_tunnel }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:16px;">wg0 · 10.7.0.2/24</span><span class="tag tag-success" style="align-self:flex-start;">{{ t.if_handshake }}</span></div>
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.wg_listen }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:16px;">51820/udp</span><span style="font-size:13px; color:var(--m-muted);">eth0</span></div>
+                    <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px; min-width:0;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.wg_pubkey }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:13px; word-break:break-all;">xTzH0…Qk9pV2mL8rN4wB7cJ1dF6gS3hA=</span><button class="btn btn-ghost btn-sm" onClick="{{ copyToken }}" style="align-self:flex-start; margin-left:-10px;">{{ t.wg_copy }}</button></div>
+                  </div>
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--m-border);"><span style="font-weight:600;">{{ t.wg_peers }} · 2</span><button class="btn btn-secondary btn-sm">{{ t.wg_addPeer }}</button></div>
+                    <div style="overflow-x:auto;">
+                      <table class="table" style="min-width:720px;"><thead><tr><th>{{ t.wg_fp }}</th><th>{{ t.wg_allowed }}</th><th>{{ t.wg_endpoint }}</th><th>{{ t.wg_keepalive }}</th><th>{{ t.wg_hs }}</th><th></th></tr></thead>
+                        <tbody><sc-for list="{{ peers }}" as="p" hint-placeholder-count="2"><tr><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ p.fp }}</td><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ p.allowed }}</td><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ p.endpoint }}</td><td style="font-size:13px;">{{ p.keepalive }}</td><td style="font-size:13px;">{{ p.hs }}</td><td style="text-align:right;"><button class="btn btn-ghost btn-sm" style="color:var(--m-danger);">{{ t.wg_remove }}</button></td></tr></sc-for></tbody></table>
+                    </div>
+                  </div>
+                  <div style="border:1px solid var(--m-danger); border-radius:8px; padding:16px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+                    <div style="display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600;">{{ t.wg_rotate }}</strong><span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.wg_rotateBody }}</span></div>
+                    <button class="btn btn-danger-outline" onClick="{{ openRotate }}">{{ t.wg_rotate }}</button>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- Interface detail / edit -->
+          <sc-if value="{{ isIfaceDetail }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:24px;">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="btn btn-ghost btn-sm" onClick="{{ backToList }}" style="align-self:flex-start; margin-left:-10px; color:var(--m-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>{{ t.nav_network }} / {{ t.net_tabIf }}</button>
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                  <h1 style="margin:0; font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:22px;">eth1</h1>
+                  <span class="tag tag-neutral">{{ t.if_physical }}</span><span class="tag tag-danger">{{ t.linkDown }}</span>
+                </div>
+              </div>
+
+              <sc-if value="{{ applyActive }}" hint-placeholder-val="{{ false }}">
+                <div role="status" aria-live="polite" style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:14px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <strong style="font-weight:600;">{{ t.ap_title }}</strong>
+                    <sc-if value="{{ applyDone }}" hint-placeholder-val="{{ false }}"><span class="tag tag-warning">{{ t.ap_doneTitle }}</span></sc-if>
+                  </div>
+                  <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                    <sc-for list="{{ applySteps }}" as="st" hint-placeholder-count="4">
+                      <span style="{{ st.style }}">
+                        <sc-if value="{{ st.done }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+                        <sc-if value="{{ st.active }}" hint-placeholder-val="{{ false }}"><svg class="mos-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"></path></svg></sc-if>
+                        {{ st.label }}
+                      </span>
+                    </sc-for>
+                  </div>
+                  <sc-if value="{{ applyApplying }}" hint-placeholder-val="{{ false }}"><span style="font-size:13px; color:var(--m-muted);">{{ t.ap_applyingBody }}</span></sc-if>
+                  <sc-if value="{{ applyReconnecting }}" hint-placeholder-val="{{ false }}"><span style="font-size:13px; color:var(--m-warning);">{{ t.ap_reconnBody }}</span></sc-if>
+                  <sc-if value="{{ applyDone }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; flex-direction:column; gap:10px;"><span style="font-size:13px; text-wrap:pretty;">{{ t.ap_doneBody }}</span><div style="display:flex; gap:8px;"><button class="btn btn-secondary btn-sm">{{ t.ap_revert }}</button><button class="btn btn-ghost btn-sm" onClick="{{ dismissApply }}">{{ t.ap_dismiss }}</button></div></div>
+                  </sc-if>
+                </div>
+              </sc-if>
+
+              <section style="{{ g2 }}">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.det_overview }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); display:grid; grid-template-columns:repeat(2, 1fr);">
+                  <div style="padding:12px 16px; border-bottom:1px solid var(--m-border); border-right:1px solid var(--m-border);"><div style="font-size:13px; color:var(--m-muted);">{{ t.det_mac }}</div><div style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">dc:a6:32:••:••:1b</div></div>
+                  <div style="padding:12px 16px; border-bottom:1px solid var(--m-border);"><div style="font-size:13px; color:var(--m-muted);">{{ t.det_mtu }}</div><div style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">1500</div></div>
+                  <div style="padding:12px 16px; border-right:1px solid var(--m-border);"><div style="font-size:13px; color:var(--m-muted);">{{ t.det_memberOf }}</div><div style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">br0</div></div>
+                  <div style="padding:12px 16px;"><div style="font-size:13px; color:var(--m-muted);">{{ t.det_link }}</div><div style="font-size:13px; color:var(--m-danger);">{{ t.det_carrier }}</div></div>
+                </div>
+              </section>
+
+              <section style="{{ g2 }}">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.det_addressing }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:20px; display:flex; flex-direction:column; gap:16px;">
+                  <div class="field"><label>{{ t.det_mode }}</label>
+                    <div style="display:inline-flex; gap:2px; padding:3px; background:var(--m-hover); border-radius:7px;"><button onClick="{{ setDhcp }}" style="{{ segDhcp }}">DHCP</button><button onClick="{{ setStatic }}" style="{{ segStatic }}">{{ t.if_static }}</button></div>
+                  </div>
+                  <sc-if value="{{ isStatic }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                      <div class="field"><label>{{ t.det_address }}</label><input class="input" value="10.0.0.2/24" style="font-family:ui-monospace, Menlo, monospace;"></div>
+                      <div class="field"><label>{{ t.det_gateway }}</label><input class="input" value="10.0.0.1" style="font-family:ui-monospace, Menlo, monospace;"></div>
+                      <div class="field" style="grid-column:1/-1;"><label>{{ t.det_dns }}</label><input class="input" value="10.0.0.1, 1.1.1.1" style="font-family:ui-monospace, Menlo, monospace;"></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ isDhcp }}" hint-placeholder-val="{{ false }}"><span style="font-size:13px; color:var(--m-muted);">{{ t.det_dhcpNote }}</span></sc-if>
+                  <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:4px;"><button class="btn btn-secondary" onClick="{{ backToList }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ openReview }}">{{ t.det_save }}</button></div>
+                </div>
+              </section>
+
+              <section style="{{ g2 }}">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px; color:var(--m-danger);">{{ t.det_danger }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; padding:16px; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.det_dangerBody }}</div>
+              </section>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+      <!-- APPLICATIONS -->
+      <sc-if value="{{ isApps }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div style="display:flex; flex-direction:column; gap:4px;">
+              <div style="display:flex; align-items:center; gap:8px;"><h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ t.nav_apps }}</h1></div>
+                          </div>
+          </div>
+          <div class="mos-scroll" style="display:inline-flex; gap:2px; padding:3px; background:var(--m-hover); border-radius:8px; align-self:flex-start; max-width:100%; overflow-x:auto; scrollbar-width:none;">
+            <sc-for list="{{ appTabs }}" as="tb" hint-placeholder-count="3"><button onClick="{{ tb.go }}" style="{{ tb.style }}">{{ tb.label }}</button></sc-for>
+          </div>
+
+          <sc-if value="{{ containerOff }}" hint-placeholder-val="{{ false }}">
+            <div role="alert" style="border:1px solid var(--m-danger); background:var(--m-danger-bg); border-radius:8px; padding:12px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+              <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:200px;"><strong style="font-weight:600; color:var(--m-danger);">{{ t.app_blockedTitle }}</strong><span style="font-size:13px;">{{ t.app_blockedBody }}</span></div>
+              <button class="btn btn-secondary btn-sm" onClick="{{ goServices }}">{{ t.app_openServices }}</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isAppInstalled }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;"><input class="input" placeholder="{{ t.app_search }}" style="max-width:320px;"><select class="input" style="width:auto;"><option>{{ t.col_source }}</option></select><select class="input" style="width:auto;"><option>{{ t.col_kind }}</option></select><span style="font-size:13px; color:var(--m-muted);">{{ t.app_count }}</span></div>
+              <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                <div style="overflow-x:auto;">
+                  <table class="table" style="min-width:820px;">
+                    <thead><tr><th>{{ t.col_app }}</th><th>{{ t.col_source }}</th><th>{{ t.col_kind }}</th><th>{{ t.col_desired }}</th><th>{{ t.col_runtime }}</th><th>{{ t.col_health }}</th><th></th></tr></thead>
+                    <tbody>
+                      <sc-for list="{{ apps }}" as="a" hint-placeholder-count="4">
+                        <tr>
+                          <td><div style="display:flex; flex-direction:column;"><strong style="font-weight:500;">{{ a.name }}</strong><span style="font-size:13px; color:var(--m-muted); font-family:ui-monospace, Menlo, monospace;">{{ a.ver }}</span></div></td>
+                          <td style="font-size:13px;">{{ a.source }}</td>
+                          <td><span class="tag tag-outline">{{ a.kind }}</span></td>
+                          <td style="font-size:13px;">{{ a.desired }}</td>
+                          <td><span class="{{ a.rtClass }}">{{ a.runtime }}</span></td>
+                          <td style="font-size:13px;">{{ a.health }}</td>
+                          <td style="text-align:right;"><button class="btn btn-secondary btn-sm">{{ a.action }}</button></td>
+                        </tr>
+                      </sc-for>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isAppCatalog }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap:12px;">
+                <sc-for list="{{ catalog }}" as="c" hint-placeholder-count="3">
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                      <div style="display:flex; flex-direction:column;"><strong style="font-weight:600; font-size:15px;">{{ c.name }}</strong><span style="font-size:13px; color:var(--m-muted);">{{ c.pub }}</span></div>
+                      <span class="tag tag-outline">{{ c.kind }}</span>
+                    </div>
+                    <span class="{{ c.compatClass }}" style="align-self:flex-start;">{{ c.compat }}</span>
+                    <div style="display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13px;">
+                      <span style="color:var(--m-muted);">{{ t.inst_version }}</span><span style="font-family:ui-monospace, Menlo, monospace;">{{ c.ver }}</span>
+                      <span style="color:var(--m-muted);">{{ t.cat_size }}</span><span>{{ c.size }}</span>
+                      <span style="color:var(--m-muted);">{{ t.cat_persist }}</span><span>{{ c.persist }}</span>
+                      <span style="color:var(--m-muted);">{{ t.cat_permissions }}</span><span>{{ c.perms }}</span>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onClick="{{ c.install }}" disabled="{{ c.disabled }}" style="margin-top:auto; align-self:flex-start;">{{ c.action }}</button>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isAppActivity }}" hint-placeholder-val="{{ false }}">
+            <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+              <table class="table"><thead><tr><th>{{ t.col_action }}</th><th>{{ t.col_app }}</th><th>{{ t.col_result }}</th><th style="text-align:right;">{{ t.col_time }}</th></tr></thead>
+                <tbody><sc-for list="{{ activity }}" as="v" hint-placeholder-count="3"><tr><td style="font-weight:500;">{{ v.action }}</td><td>{{ v.app }}</td><td><span class="{{ v.cls }}">{{ v.phase }}</span></td><td style="text-align:right; color:var(--m-muted); font-size:13px;">{{ v.time }}</td></tr></sc-for></tbody></table>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+      <!-- SYSTEM -->
+      <sc-if value="{{ isSystem }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <h1 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:22px; letter-spacing:-.01em;">{{ t.nav_system }}</h1>
+                      </div>
+          <div class="mos-scroll" style="display:inline-flex; gap:2px; padding:3px; background:var(--m-hover); border-radius:8px; align-self:flex-start; max-width:100%; overflow-x:auto; scrollbar-width:none;">
+            <sc-for list="{{ sysTabs }}" as="tb" hint-placeholder-count="7"><button onClick="{{ tb.go }}" style="{{ tb.style }}">{{ tb.label }}</button></sc-for>
+          </div>
+
+          <!-- General -->
+          <sc-if value="{{ isSysGeneral }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:24px;">
+              <section style="{{ g2 }}">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">Hostname</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:20px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                  <div class="field" style="flex:1; min-width:200px;"><label>Hostname</label><input class="input" value="mos-edge-07" style="font-family:ui-monospace, Menlo, monospace;"></div>
+                  <button class="btn btn-primary" onClick="{{ toastSaved }}">{{ t.save }}</button>
+                </div>
+              </section>
+              <section style="{{ g2 }}">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.sys_ui }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden; display:flex; flex-direction:column;">
+                  <sc-for list="{{ uiPkgs }}" as="u" hint-placeholder-count="2">
+                    <div style="{{ u.rowStyle }}">
+                      <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><strong style="font-weight:600;">{{ u.name }}</strong><sc-if value="{{ u.active }}" hint-placeholder-val="{{ false }}"><span class="tag tag-accent">{{ t.ui_active }}</span></sc-if><sc-if value="{{ u.builtin }}" hint-placeholder-val="{{ false }}"><span class="tag tag-outline">{{ t.ui_builtin }}</span></sc-if></div>
+                        <span style="font-size:13px; color:var(--m-muted); font-family:ui-monospace, Menlo, monospace; word-break:break-all;">{{ u.meta }}</span>
+                      </div>
+                      <div style="display:flex; gap:8px; flex:none;">
+                        <sc-if value="{{ u.canActivate }}" hint-placeholder-val="{{ true }}"><button class="btn btn-secondary btn-sm" onClick="{{ u.activate }}">{{ t.ui_use }}</button></sc-if>
+                        <sc-if value="{{ u.canDelete }}" hint-placeholder-val="{{ false }}"><button class="btn btn-danger-outline btn-sm" onClick="{{ u.remove }}">{{ t.remove }}</button></sc-if>
+                      </div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ uiUploading }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; flex-direction:column; gap:8px; padding:14px 16px; border-top:1px solid var(--m-border); background:var(--m-hover);">
+                      <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="font-weight:600;">{{ uiUploadLabel }}</span><span style="font-family:ui-monospace, Menlo, monospace; color:var(--m-muted);">{{ uiUploadFile }}</span></div>
+                      <div style="height:6px; border-radius:3px; background:var(--m-border); overflow:hidden;"><div style="{{ uiUploadBar }}"></div></div>
+                    </div>
+                  </sc-if>
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; flex-wrap:wrap;">
+                    <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.ui_uploadHelp }}</span>
+                    <button class="btn btn-secondary btn-sm" onClick="{{ uiUpload }}" disabled="{{ uiUploading }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>{{ t.ui_upload }}</button>
+                  </div>
+                </div>
+              </section>
+              <section style="{{ g2 }}">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.sys_power }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                  <div style="padding:20px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" onClick="{{ openReboot }}">{{ t.sys_reboot }}</button>
+                    <button class="btn btn-danger-outline" onClick="{{ openPoweroff }}">{{ t.sys_poweroff }}</button>
+                  </div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; border-top:1px solid var(--m-border); background:var(--m-danger-bg); flex-wrap:wrap;">
+                    <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;"><strong style="font-weight:600; color:var(--m-danger);">{{ t.sys_factory }}</strong><span style="font-size:13px; color:var(--m-text); text-wrap:pretty;">{{ t.sys_factoryHelp }}</span></div>
+                    <button class="btn btn-danger" onClick="{{ openFactoryReset }}" style="flex:none;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"></path></svg>{{ t.sys_factory }}</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </sc-if>
+
+          <!-- Information -->
+          <sc-if value="{{ isSysInfo }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;"><span></span><button class="btn btn-secondary btn-sm" onClick="{{ copyToken }}">{{ t.info_copy }}</button></div>
+              <div style="{{ g3 }}">
+                <sc-for list="{{ info }}" as="gp" hint-placeholder-count="3">
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                    <div style="padding:10px 16px; border-bottom:1px solid var(--m-border); font-weight:600; font-size:13px;">{{ gp.g }}</div>
+                    <sc-for list="{{ gp.rows }}" as="r" hint-placeholder-count="4">
+                      <div style="display:flex; flex-direction:column; gap:1px; padding:10px 16px; border-bottom:1px solid var(--m-border);"><span style="font-size:13px; color:var(--m-muted);">{{ r.k }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:13px; word-break:break-all;">{{ r.v }}</span></div>
+                    </sc-for>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="border:1px solid var(--m-border); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:6px;"><strong style="font-weight:600; font-size:13px;">{{ t.info_limits }}</strong><span style="font-size:13px; color:var(--m-muted);">{{ t.info_lim1 }}</span><span style="font-size:13px; color:var(--m-muted);">{{ t.info_lim2 }}</span></div>
+            </div>
+          </sc-if>
+
+          <!-- Time -->
+          <sc-if value="{{ isSysTime }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:24px;">
+              <div role="status" style="border:1px solid var(--m-warning); background:var(--m-warning-bg); border-radius:8px; padding:12px 16px; display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600; color:var(--m-warning);">{{ t.time_unsync }}</strong><span style="font-size:13px;">{{ t.time_unsyncBody }}</span></div>
+              <div style="{{ g3 }}">
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.time_local }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:18px; font-weight:600;">2026-09-02 14:31</span><span style="font-size:13px; color:var(--m-muted);">Asia/Shanghai</span></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">UTC</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:18px; font-weight:600;">2026-09-02 06:31</span><span style="font-size:13px; color:var(--m-muted);">{{ t.time_rtc }}</span></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.time_lastSync }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:18px; font-weight:600;">≈ 3 h</span><span style="font-size:13px; color:var(--m-warning);">pool.ntp.org · {{ t.time_unreachable }}</span></div>
+              </div>
+              <section style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.time_servers }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:20px; display:grid; grid-template-columns:{{ timeFormCols }}; gap:16px; align-items:start;">
+                  <div class="field"><label>{{ t.time_tz }}</label><select class="input"><option>Asia/Shanghai</option><option>UTC</option><option>Europe/Berlin</option><option>America/Los_Angeles</option></select></div>
+                  <div class="field"><label>{{ t.time_ntp }}</label><textarea class="input" style="font-family:ui-monospace, Menlo, monospace; min-height:64px;">pool.ntp.org
+time.cloudflare.com</textarea></div>
+                  <div style="display:flex; justify-content:flex-end; grid-column:1 / -1;"><button class="btn btn-primary" onClick="{{ toastSaved }}">{{ t.save }}</button></div>
+                </div>
+              </section>
+            </div>
+          </sc-if>
+
+          <!-- Update -->
+          <sc-if value="{{ isSysUpdate }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <sc-if value="{{ isUpdRolledBack }}" hint-placeholder-val="{{ false }}"><div role="alert" style="border:1px solid var(--m-warning); background:var(--m-warning-bg); border-radius:8px; padding:12px 16px; display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600; color:var(--m-warning);">{{ updHeadline }}</strong><span style="font-size:13px;">{{ updBody }}</span></div></sc-if>
+              <sc-if value="{{ isUpdFailed }}" hint-placeholder-val="{{ false }}"><div role="alert" style="border:1px solid var(--m-danger); background:var(--m-danger-bg); border-radius:8px; padding:12px 16px; display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600; color:var(--m-danger);">{{ updHeadline }}</strong><span style="font-size:13px;">{{ updBody }}</span></div></sc-if>
+
+              <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:20px; display:flex; flex-direction:column; gap:20px;">
+                <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;">
+                  <sc-for list="{{ updSteps }}" as="u" hint-placeholder-count="8"><div style="{{ u.style }}"><span style="{{ u.bar }}"></span><span style="white-space:nowrap;">{{ u.label }}</span></div></sc-for>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+                  <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-width:240px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <sc-if value="{{ updBusy }}" hint-placeholder-val="{{ false }}"><svg class="mos-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"></path></svg></sc-if>
+                      <sc-if value="{{ isUpdSucceeded }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--m-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+                      <strong style="font-weight:600; font-size:16px;">{{ updHeadline }}</strong>
+                    </div>
+                    <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ updBody }}</span>
+                  </div>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <sc-for list="{{ updBtns }}" as="b" hint-placeholder-count="2"><button class="{{ b.cls }}" onClick="{{ b.fn }}">{{ b.label }}</button></sc-for>
+                  </div>
+                </div>
+                <sc-if value="{{ isUpdDownloading }}" hint-placeholder-val="{{ false }}"><div style="display:flex; align-items:center; gap:12px;"><div style="flex:1; height:6px; border-radius:3px; background:var(--m-border); overflow:hidden;"><div style="{{ updBarStyle }}"></div></div><span style="font-family:ui-monospace, Menlo, monospace; font-size:13px; width:40px; text-align:right;">{{ updProgressText }}</span></div></sc-if>
+                <sc-if value="{{ isUpdInstalling }}" hint-placeholder-val="{{ false }}"><div style="display:flex; align-items:center; gap:12px;"><div style="flex:1; height:6px; border-radius:3px; background:var(--m-border); overflow:hidden;"><div style="{{ updBarStyle }}"></div></div><span style="font-family:ui-monospace, Menlo, monospace; font-size:13px; width:40px; text-align:right;">{{ updProgressText }}</span></div></sc-if>
+              </div>
+
+              <div style="{{ g3 }}">
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.upd_current }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-size:18px; font-weight:600;">2026.08.2</span><span style="font-size:13px; color:var(--m-muted);">{{ t.slot }} A</span></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.upd_target }}</span><sc-if value="{{ updShowTarget }}" hint-placeholder-val="{{ true }}"><span style="font-family:ui-monospace, Menlo, monospace; font-size:18px; font-weight:600;">2026.09.0</span><span style="font-size:13px; color:var(--m-muted);">312 MiB · slot B</span></sc-if><sc-if value="{{ isUpdIdle }}" hint-placeholder-val="{{ false }}"><span style="font-size:18px; font-weight:600; color:var(--m-muted);">—</span></sc-if></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:6px;"><span style="font-size:13px; font-weight:500; color:var(--m-muted);">{{ t.upd_channel }}</span><select class="input" style="height:32px; font-size:13px;"><option>stable</option><option>testing</option></select></div>
+              </div>
+
+              <sc-if value="{{ updShowTarget }}" hint-placeholder-val="{{ true }}">
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                  <sc-for list="{{ updChecks }}" as="c" hint-placeholder-count="5">
+                    <div style="display:grid; grid-template-columns:minmax(120px, 200px) 1fr; gap:12px; padding:10px 16px; border-bottom:1px solid var(--m-border); font-size:13px; align-items:center;"><span style="color:var(--m-muted);">{{ c.k }}</span><span style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><span class="{{ c.cls }}">{{ c.tag }}</span><span>{{ c.v }}</span></span></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <section style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.upd_auto }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                  <div style="display:flex; align-items:center; gap:16px; padding:14px 16px; border-bottom:1px solid var(--m-border);">
+                    <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:0;"><strong style="font-weight:600;">{{ t.upd_autoOn }}</strong><span style="font-size:13px; color:var(--m-muted);">{{ autoUpdBody }}</span></div>
+                    <button role="switch" aria-checked="{{ autoUpd }}" onClick="{{ toggleAutoUpd }}" style="{{ autoSw.track }}"><span style="{{ autoSw.knob }}"></span></button>
+                  </div>
+                  <div style="display:grid; grid-template-columns:{{ autoCols }}; gap:16px; padding:16px;">
+                    <div class="field"><label>{{ t.upd_window }}</label><select class="input" disabled="{{ autoUpdOff }}"><option>02:00 – 04:00</option><option>22:00 – 06:00</option><option>{{ t.upd_anytime }}</option></select></div>
+                    <div class="field"><label>{{ t.upd_policy }}</label><select class="input" disabled="{{ autoUpdOff }}"><option>{{ t.upd_policyDl }}</option><option>{{ t.upd_policyAll }}</option></select></div>
+                  </div>
+                </div>
+              </section>
+
+              <section style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.upd_manual }}</h2></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                  <sc-if value="{{ manUploading }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; flex-direction:column; gap:8px; padding:14px 16px; border-bottom:1px solid var(--m-border); background:var(--m-hover);">
+                      <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="font-weight:600;">{{ manUploadLabel }}</span><span style="font-family:ui-monospace, Menlo, monospace; color:var(--m-muted);">mos-2026.09.0-arm64.raucb</span></div>
+                      <div style="height:6px; border-radius:3px; background:var(--m-border); overflow:hidden;"><div style="{{ manUploadBar }}"></div></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ manStaged }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--m-border); flex-wrap:wrap;">
+                      <span class="tag tag-success">{{ t.tag_pass }}</span>
+                      <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:200px;"><strong style="font-weight:600;">mos 2026.09.0 · arm64</strong><span style="font-size:13px; color:var(--m-muted); font-family:ui-monospace, Menlo, monospace;">312 MiB · sha256:9e12…f7a3 · {{ t.upd_signedBy }}</span></div>
+                      <div style="display:flex; gap:8px;"><button class="btn btn-secondary btn-sm" onClick="{{ manDiscard }}">{{ t.upd_discard }}</button><button class="btn btn-primary btn-sm" onClick="{{ manInstall }}">{{ t.upd_installStaged }}</button></div>
+                    </div>
+                  </sc-if>
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; flex-wrap:wrap;">
+                    <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.upd_manualFormats }}</span>
+                    <button class="btn btn-secondary btn-sm" onClick="{{ manUpload }}" disabled="{{ manUploading }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>{{ t.upd_upload }}</button>
+                  </div>
+                </div>
+              </section>
+
+              <section style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.cfg_title }}</h2><p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.cfg_help }}</p></div>
+                <div style="{{ g2eq }}">
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:10px;">
+                    <strong style="font-weight:600;">{{ t.cfg_export }}</strong>
+                    <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.cfg_exportHelp }}</span>
+                    <span style="font-size:13px; color:var(--m-muted);">{{ t.cfg_last }}: <span style="font-family:ui-monospace, Menlo, monospace;">2026-08-30 02:10</span></span>
+                    <button class="btn btn-secondary btn-sm" onClick="{{ cfgExport }}" style="align-self:flex-start; margin-top:auto;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"></path></svg>{{ t.cfg_download }}</button>
+                  </div>
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:16px; display:flex; flex-direction:column; gap:10px;">
+                    <strong style="font-weight:600;">{{ t.cfg_import }}</strong>
+                    <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.cfg_importHelp }}</span>
+                    <button class="btn btn-secondary btn-sm" onClick="{{ cfgImport }}" style="align-self:flex-start; margin-top:auto;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>{{ t.cfg_restore }}</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </sc-if>
+
+          <!-- Storage -->
+          <sc-if value="{{ isSysStorage }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                <div style="overflow-x:auto;">
+                  <table class="table" style="min-width:680px;"><thead><tr><th>{{ t.st_role }}</th><th>{{ t.st_device }}</th><th>{{ t.st_size }}</th><th style="width:34%;">{{ t.st_used }}</th><th>{{ t.st_state }}</th></tr></thead>
+                    <tbody><sc-for list="{{ storage }}" as="r" hint-placeholder-count="4"><tr><td style="font-weight:600;">{{ r.role }}</td><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ r.dev }}</td><td style="font-family:ui-monospace, Menlo, monospace; font-size:13px;">{{ r.size }}</td><td><div style="display:flex; align-items:center; gap:10px;"><div style="{{ r.barStyle }} flex:1;"><div style="{{ r.fillStyle }}"></div></div><span style="font-family:ui-monospace, Menlo, monospace; font-size:13px; min-width:64px;">{{ r.usedTxt }}</span></div></td><td><span class="{{ r.cls }}">{{ r.state }}</span></td></tr></sc-for></tbody></table>
+                </div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.st_breakdown }}</h2>
+                <div style="{{ g4 }}">
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:14px 16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; color:var(--m-muted);">{{ t.st_b1 }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:18px;">15.8 GiB</span></div>
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:14px 16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; color:var(--m-muted);">{{ t.st_b2 }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:18px;">2.1 GiB</span></div>
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:14px 16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; color:var(--m-muted);">{{ t.st_b3 }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:18px;">38 MiB</span></div>
+                  <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); padding:14px 16px; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; color:var(--m-muted);">{{ t.st_b4 }}</span><span style="font-family:ui-monospace, Menlo, monospace; font-weight:600; font-size:18px;">2.4 GiB</span></div>
+                </div>
+              </div>
+              <div style="border:1px solid var(--m-border); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:4px;"><strong style="font-weight:600; font-size:13px;">{{ t.st_health }}</strong><span style="font-size:13px; color:var(--m-muted);">{{ t.st_healthV }}</span></div>
+            </div>
+          </sc-if>
+
+          <!-- Diagnostics -->
+          <sc-if value="{{ isSysDiag }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.diag_scope }}</h2>
+                <div style="{{ g3 }}">
+                  <sc-for list="{{ probes }}" as="p" hint-placeholder-count="6"><div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; font-size:14px;"><span>{{ p.k }}</span><span class="{{ p.cls }}">{{ p.v }}</span></div></sc-for>
+                </div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); margin-top:8px;">
+                  <div style="padding:16px; display:flex; flex-direction:column; gap:14px;">
+                    <sc-if value="{{ diagIdle }}" hint-placeholder-val="{{ true }}"><button class="btn btn-primary" onClick="{{ startDiag }}" style="align-self:flex-start;">{{ t.diag_generate }}</button></sc-if>
+                    <sc-if value="{{ diagCollecting }}" hint-placeholder-val="{{ false }}">
+                      <div role="status" aria-live="polite" style="display:flex; flex-direction:column; gap:8px;">
+                        <sc-for list="{{ diagSteps }}" as="d" hint-placeholder-count="5"><span style="{{ d.style }}">{{ d.label }}</span></sc-for>
+                        <button class="btn btn-secondary btn-sm" onClick="{{ cancelDiag }}" style="align-self:flex-start; margin-top:6px;">{{ t.diag_cancel }}</button>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ diagDone }}" hint-placeholder-val="{{ false }}">
+                      <div style="border:1px solid var(--m-success); background:var(--m-success-bg); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:10px;">
+                        <strong style="font-weight:600; color:var(--m-success);">{{ t.diag_doneTitle }}</strong>
+                        <span style="font-size:13px; text-wrap:pretty;">{{ t.diag_doneBody }}</span>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-primary btn-sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"></path></svg>{{ t.diag_download }} · 4.2 MiB</button><button class="btn btn-secondary btn-sm">{{ t.diag_docs }}</button><button class="btn btn-ghost btn-sm" onClick="{{ resetDiag }}">{{ t.diag_new }}</button></div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </div>
+              </div>
+              <section style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                <div style="display:flex; flex-direction:column; gap:4px;"><h2 style="margin:0; font-family:var(--font-body); font-weight:600; font-size:16px;">{{ t.sup_title }}</h2><p style="margin:0; font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.sup_help }}</p></div>
+                <div style="border:1px solid var(--m-border); border-radius:8px; background:var(--m-surface); overflow:hidden;">
+                  <sc-if value="{{ supIdle }}" hint-placeholder-val="{{ true }}">
+                    <div style="padding:16px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+                      <div style="display:flex; flex-direction:column; gap:4px;"><span class="tag tag-outline" style="align-self:flex-start;">{{ t.sup_off }}</span><span style="font-size:13px; color:var(--m-muted);">{{ t.sup_offBody }}</span></div>
+                      <button class="btn btn-secondary" onClick="{{ supOpen }}">{{ t.sup_request }}</button>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ supActive }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:16px; display:flex; flex-direction:column; gap:14px;">
+                      <div style="display:flex; align-items:center; gap:8px;"><span class="tag tag-warning">{{ t.sup_on }}</span><span style="font-size:13px; color:var(--m-muted);">{{ t.sup_expires }} <span style="font-family:ui-monospace, Menlo, monospace;">{{ supRemain }}</span></span></div>
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                          <span style="font-size:13px; font-weight:600; color:var(--m-muted);">{{ t.sup_pin }}</span>
+                          <div style="display:inline-flex; align-items:stretch; border:1.5px solid var(--m-border); border-radius:8px; overflow:hidden; background:var(--m-bg);">
+                            <span style="font-family:ui-monospace, Menlo, monospace; font-size:26px; font-weight:600; letter-spacing:.12em; padding:6px 16px; user-select:all; display:flex; align-items:center;">{{ supPin }}</span>
+                            <button class="btn btn-secondary" onClick="{{ supCopy }}" aria-label="{{ t.copy }}" title="{{ t.copy }}" style="height:auto; border:0; border-left:1.5px solid var(--m-border); border-radius:0; padding:0 14px; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>{{ t.copy }}</span></button>
+                          </div>
+                        </div>
+                        <div style="display:flex; gap:8px; align-self:center;"><button class="btn btn-secondary" onClick="{{ supExtend }}">{{ t.sup_extend }}</button><button class="btn btn-danger-outline" onClick="{{ supClose }}">{{ t.sup_close }}</button></div>
+                      </div>
+                      <span style="font-size:13px; color:var(--m-muted); text-wrap:pretty;">{{ t.sup_pinHelp }}</span>
+                    </div>
+                  </sc-if>
+                </div>
+              </section>
+            </div>
+          </sc-if>
+
+        </div>
+      </sc-if>
+    </main>
+    <footer style="{{ footStyle }}">
+      <div style="{{ footRowStyle }}">
+        <div style="display:flex; align-items:center; gap:8px; font-size:13px; min-width:0;" title="{{ connTitle }}">
+          <span style="{{ connDotStyle }}"></span>
+          <span style="font-weight:600; white-space:nowrap;">{{ connLabel }}</span>
+          <sc-if value="{{ navInline }}" hint-placeholder-val="{{ true }}"><span style="color:var(--m-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">· {{ connDetail }}</span></sc-if>
+          <sc-if value="{{ navInline }}" hint-placeholder-val="{{ true }}"><span style="color:var(--m-muted); white-space:nowrap;">· {{ freshness }}</span></sc-if>
+        </div>
+        <div style="margin-left:auto; display:flex; align-items:center; gap:16px; font-size:13px;">
+          <sc-if value="{{ navInline }}" hint-placeholder-val="{{ true }}"><span><span style="color:var(--m-muted);">{{ t.release }}</span> <span style="font-family:ui-monospace, Menlo, monospace;">2026.08.2</span></span>
+          <span><span style="color:var(--m-muted);">{{ t.slot }}</span> <span style="font-family:ui-monospace, Menlo, monospace;">A</span></span></sc-if>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+<sc-if value="{{ langPickerOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeLangPicker }}" style="display:grid; place-items:center; padding:16px;">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="{{ t.language }}" onClick="{{ stop }}" style="width:min(440px,100%); padding:0; gap:0; max-height:min(560px, 90vh); display:flex; flex-direction:column;">
+      <div style="padding:16px 16px 12px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid var(--m-border);">
+        <div style="display:flex; align-items:center; justify-content:space-between;"><span style="font-weight:600; font-size:16px;">{{ t.language }}</span><button class="btn btn-ghost btn-icon" onClick="{{ closeLangPicker }}" aria-label="{{ t.close }}" style="width:32px; height:32px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+        <input class="input" type="search" value="{{ langQuery }}" onChange="{{ onLangQuery }}" placeholder="{{ t.lang_search }}" autofocus="{{ true }}">
+      </div>
+      <div style="overflow-y:auto; padding:6px; display:flex; flex-direction:column; gap:2px;">
+        <sc-for list="{{ langList }}" as="l" hint-placeholder-count="6">
+          <button onClick="{{ l.go }}" aria-pressed="{{ l.on }}" style="{{ l.style }}">
+            <span style="display:flex; flex-direction:column; gap:1px; line-height:1.25; text-align:left;"><span>{{ l.native }}</span><span style="font-size:13px; color:var(--m-muted);">{{ l.sub }}</span></span>
+            <span style="display:flex; align-items:center; gap:8px;"><sc-if value="{{ l.partial }}" hint-placeholder-val="{{ false }}"><span class="tag tag-outline">{{ t.lang_partial }}</span></sc-if><sc-if value="{{ l.on }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></sc-if></span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ langEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:24px; text-align:center; font-size:13px; color:var(--m-muted);">{{ t.lang_none }}</div></sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+</sc-if>
+
+<!-- Toast -->
+<sc-if value="{{ toastShown }}" hint-placeholder-val="{{ false }}">
+  <div role="status" style="position:fixed; right:20px; bottom:20px; z-index:60; background:var(--m-surface); border:1px solid var(--m-border); border-radius:8px; box-shadow:var(--shadow-lg); padding:12px 16px; display:flex; align-items:center; gap:10px; font-size:13px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--m-success)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>{{ toastText }}</span>
+  </div>
+</sc-if>
+
+<!-- Reboot -->
+<sc-if value="{{ dialogReboot }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}">
+    <div class="dialog-title">{{ t.dlg_rebootTitle }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:10px;">
+      <div style="display:grid; grid-template-columns:90px 1fr; gap:4px 12px; font-size:13px;">
+        <span>{{ t.col_target }}</span><span style="font-family:ui-monospace, Menlo, monospace; color:var(--m-text);">mos-edge-07</span>
+        <span>{{ t.dlg_tasks }}</span><span style="color:var(--m-text);">{{ t.dlg_taskLine }}</span>
+        <span>{{ t.dlg_session }}</span><span style="color:var(--m-text);">{{ t.dlg_sessionLine }}</span>
+        <span>{{ t.dlg_recovery }}</span><span style="color:var(--m-text);">{{ t.dlg_recoveryLine }}</span>
+      </div>
+    </div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ confirmReboot }}">{{ t.dlg_confirmReboot }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Power off -->
+<sc-if value="{{ dialogPoweroff }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}">
+    <div class="dialog-title">{{ t.dlg_poweroffTitle }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:10px;">
+      <div style="display:grid; grid-template-columns:90px 1fr; gap:4px 12px; font-size:13px;">
+        <span>{{ t.col_target }}</span><span style="font-family:ui-monospace, Menlo, monospace; color:var(--m-text);">mos-edge-07</span>
+        <span>{{ t.dlg_tasks }}</span><span style="color:var(--m-text);">{{ t.dlg_taskLine }}</span>
+        <span>{{ t.dlg_session }}</span><span style="color:var(--m-danger);">{{ t.dlg_poweroffLine }}</span>
+      </div>
+    </div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-danger" onClick="{{ confirmReboot }}">{{ t.dlg_confirmPoweroff }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Interface review -->
+<sc-if value="{{ dialogReview }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}">
+    <div class="dialog-title">{{ t.rv_title }}</div>
+    <div class="dialog-body" style="display:grid; grid-template-columns:90px 1fr; gap:6px 12px; font-size:13px;">
+      <span>{{ t.rv_change }}</span><span style="font-family:ui-monospace, Menlo, monospace; color:var(--m-text);">{{ t.rv_changeLine }}</span>
+      <span>{{ t.rv_affects }}</span><span style="color:var(--m-text);">{{ t.rv_affectsLine }}</span>
+      <span>{{ t.rv_session }}</span><span style="color:var(--m-success);">{{ t.rv_sessionLine }}</span>
+      <span>{{ t.rv_recover }}</span><span style="color:var(--m-text);">{{ t.rv_recoverLine }}</span>
+    </div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ startApply }}">{{ t.rv_apply }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Close token -->
+<sc-if value="{{ dialogCloseToken }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}" style="width:min(420px,100%);">
+    <div class="dialog-title">{{ t.ct_title }}</div>
+    <div class="dialog-body">{{ t.ct_body }}</div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-danger" onClick="{{ confirmCloseToken }}">{{ t.ct_confirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Remove SSH key -->
+<sc-if value="{{ dialogRemoveKey }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}" style="width:min(420px,100%);">
+    <div class="dialog-title">{{ t.rk_title }}</div>
+    <div class="dialog-body">{{ t.rk_body }}</div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-danger" onClick="{{ confirmRemoveKey }}">{{ t.rk_confirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Web terminal -->
+<sc-if value="{{ termWindow }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ termMinimize }}" style="{{ termBackdropStyle }}"><div class="dialog" role="dialog" aria-modal="true" aria-label="{{ t.term_title }}" onClick="{{ stop }}" style="{{ termBoxStyle }}">
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px 8px 14px; border-bottom:1px solid #2a3441; font-size:13px; flex:none;">
+      <span style="font-weight:600;">{{ t.term_title }}</span>
+      <span style="font-family:ui-monospace, Menlo, monospace; color:#8b98a5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">admin@mos-edge-07 · /bin/bash · {{ t.term_idle }} 15 min</span>
+      <div style="margin-left:auto; display:flex; gap:4px; flex:none;">
+        <button class="btn btn-ghost btn-icon" onClick="{{ termMinimize }}" aria-label="{{ t.term_min }}" title="{{ t.term_min }}" style="width:32px; height:32px; color:#e6edf3; border-color:#2a3441;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg></button>
+        <button class="btn btn-ghost btn-icon" onClick="{{ termToggleFull }}" aria-label="{{ termFullLabel }}" title="{{ termFullLabel }}" style="width:32px; height:32px; color:#e6edf3; border-color:#2a3441;"><sc-if value="{{ termIsFull }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></sc-if><sc-if value="{{ termIsNormal }}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></sc-if></button>
+        <button class="btn btn-ghost btn-icon" onClick="{{ termClose }}" aria-label="{{ t.term_end }}" title="{{ t.term_end }}" style="width:32px; height:32px; color:#e6edf3; border-color:#2a3441;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+    </div>
+    <div style="padding:14px 16px; font-family:ui-monospace, Menlo, monospace; font-size:13px; line-height:1.55; flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;" onClick="{{ termFocus }}">
+      <sc-for list="{{ termLines }}" as="l" hint-placeholder-count="4"><div style="{{ l.style }}">{{ l.text }}</div></sc-for>
+      <div style="display:flex; gap:8px;"><span style="color:#7ee787;">admin@mos-edge-07</span><span style="color:#8b98a5;">:~$</span><input value="{{ termInput }}" onChange="{{ onTermInput }}" onKeyDown="{{ onTermKey }}" ref="{{ termRef }}" autofocus="{{ true }}" spellcheck="{{ false }}" style="flex:1; background:transparent; border:0; outline:0; color:inherit; font:inherit; padding:0;"></div>
+    </div>
+  </div></div>
+</sc-if>
+<sc-if value="{{ termMinimized }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed; right:16px; bottom:calc(60px + env(safe-area-inset-bottom)); z-index:35; display:flex; align-items:center; background:#0b0f14; color:#e6edf3; border:1px solid #2a3441; border-radius:8px; box-shadow:var(--shadow-lg); overflow:hidden;">
+    <button onClick="{{ termRestore }}" style="display:flex; align-items:center; gap:10px; padding:0 14px; height:44px; border:0; background:transparent; color:inherit; font:inherit; font-size:13px; cursor:pointer;" style-hover="background:#161c24;">
+      <span style="width:8px; height:8px; border-radius:50%; background:#7ee787; flex:none;"></span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"/></svg>
+      <span style="font-weight:600;">{{ t.term_title }}</span>
+      <span style="font-family:ui-monospace, Menlo, monospace; color:#8b98a5;">admin@mos-edge-07</span>
+    </button>
+    <button class="btn btn-ghost btn-icon" onClick="{{ termClose }}" aria-label="{{ t.term_end }}" title="{{ t.term_end }}" style="width:44px; height:44px; color:#8b98a5; border:0; border-left:1px solid #2a3441; border-radius:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+</sc-if>
+<!-- Request support -->
+<sc-if value="{{ dialogSupport }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}" style="width:min(480px,100%);">
+    <div class="dialog-title">{{ t.sup_dlgTitle }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:12px; font-size:13px;">
+      <span>{{ t.sup_dlgBody }}</span>
+      <div class="field"><label>{{ t.sup_duration }}</label><select class="input" value="{{ supDur }}" onChange="{{ onSupDur }}"><option value="1">1 h</option><option value="4">4 h</option><option value="24">24 h</option></select></div>
+      <div class="field"><label>{{ t.sup_reason }}</label><input class="input" placeholder="{{ t.sup_reasonPh }}"></div>
+      <ul style="margin:0; padding-left:18px; display:flex; flex-direction:column; gap:2px; color:var(--m-muted);"><li>{{ t.sup_n1 }}</li><li>{{ t.sup_n2 }}</li><li>{{ t.sup_n3 }}</li></ul>
+    </div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ confirmSupport }}">{{ t.sup_confirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Restore configuration -->
+<sc-if value="{{ dialogRestoreCfg }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}" style="width:min(460px,100%);">
+    <div class="dialog-title">{{ t.cfg_dlgTitle }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:10px; font-size:13px;">
+      <span>{{ t.cfg_dlgBody }}</span>
+      <div style="border:1px solid var(--m-border); border-radius:6px; padding:10px 12px; font-family:ui-monospace, Menlo, monospace; font-size:13px; display:flex; flex-direction:column; gap:2px;"><span>mos-edge-07 · 2026-08-30 02:10</span><span style="color:var(--m-muted);">release 2026.08.2 · sha256:4be0…11c9</span></div>
+      <span style="color:var(--m-warning);">{{ t.cfg_dlgWarn }}</span>
+    </div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ confirmRestoreCfg }}">{{ t.cfg_restoreConfirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Remove UI package -->
+<sc-if value="{{ dialogRemoveUi }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}" style="width:min(420px,100%);">
+    <div class="dialog-title">{{ t.ui_rmTitle }}</div>
+    <div class="dialog-body">{{ uiRemoveBody }}</div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-danger" onClick="{{ confirmRemoveUi }}">{{ t.remove }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Rotate WG key -->
+<sc-if value="{{ dialogRotate }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}">
+    <div class="dialog-title">{{ t.rot_title }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:8px; font-size:13px;"><span>{{ t.rot_l1 }}</span><span style="color:var(--m-danger);">{{ t.rot_l2 }}</span><span>{{ t.rot_l3 }}</span></div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-danger" onClick="{{ closeDialog }}">{{ t.rot_confirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Install update -->
+<sc-if value="{{ dialogInstallUpdate }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}">
+    <div class="dialog-title">{{ t.iu_title }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:8px; font-size:13px;"><span>{{ t.iu_l1 }}</span><span style="color:var(--m-warning);">{{ t.iu_l2 }}</span><span>{{ t.iu_l3 }}</span></div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-primary" onClick="{{ confirmInstall }}">{{ t.iu_confirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- Reset (irreversible, typed challenge) -->
+<sc-if value="{{ dialogReset }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeDialog }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}">
+    <div class="dialog-title" style="color:var(--m-danger);">{{ resetTitle }}</div>
+    <div class="dialog-body" style="display:flex; flex-direction:column; gap:12px; font-size:13px;">
+      <span>{{ resetBody }}</span>
+      <div style="display:grid; grid-template-columns:70px 1fr; gap:6px 12px;"><span style="color:var(--m-success); font-weight:500;">{{ t.rs_keeps }}</span><span style="color:var(--m-text);">{{ resetKeeps }}</span><span style="color:var(--m-danger); font-weight:500;">{{ t.rs_deletes }}</span><span style="color:var(--m-text);">{{ resetDeletes }}</span></div>
+      <span>{{ t.rs_after }}</span>
+      <div class="field"><label>{{ t.rs_label }}</label><input class="input" value="{{ resetName }}" onChange="{{ onResetName }}" style="font-family:ui-monospace, Menlo, monospace;" placeholder="mos-edge-07"></div>
+    </div>
+    <div class="dialog-actions"><button class="btn btn-secondary" onClick="{{ closeDialog }}">{{ t.cancel }}</button><button class="btn btn-danger" onClick="{{ confirmReset }}" disabled="{{ resetMismatch }}">{{ t.rs_confirm }}</button></div>
+  </div></div>
+</sc-if>
+<!-- App install flow -->
+<sc-if value="{{ installOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ instCancel }}"><div class="dialog" role="dialog" aria-modal="true" onClick="{{ stop }}" style="width:min(640px,100%); gap:16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;"><div class="dialog-title">{{ t.inst_title }} · {{ installName }} 2.4.0</div><span class="tag tag-outline">OCI</span></div>
+    <div style="display:flex; gap:16px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--m-border);">
+      <sc-for list="{{ installSteps }}" as="st" hint-placeholder-count="4"><span style="{{ st.style }}"><span style="{{ st.numStyle }}">{{ st.n }}</span>{{ st.label }}</span></sc-for>
+    </div>
+    <sc-if value="{{ isInst0 }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <sc-if value="{{ containerOff }}" hint-placeholder-val="{{ false }}"><div role="alert" style="border:1px solid var(--m-danger); background:var(--m-danger-bg); border-radius:8px; padding:12px 14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;"><div style="flex:1; min-width:180px; display:flex; flex-direction:column; gap:2px;"><strong style="font-weight:600; color:var(--m-danger);">{{ t.app_blockedTitle }}</strong><span style="font-size:13px;">{{ t.app_blockedBody }}</span></div><button class="btn btn-secondary btn-sm" onClick="{{ goServicesFromInstall }}">{{ t.app_openServices }}</button></div></sc-if>
+        <div style="display:grid; grid-template-columns:minmax(120px,160px) 1fr; gap:8px 12px; font-size:13px;">
+          <span style="color:var(--m-muted);">{{ t.inst_version }}</span><span style="font-family:ui-monospace, Menlo, monospace;">2.4.0</span>
+          <span style="color:var(--m-muted);">{{ t.inst_publisher }}</span><span>mos · <span class="tag tag-success">{{ t.tag_pass }}</span></span>
+          <span style="color:var(--m-muted);">{{ t.inst_digest }}</span><span style="font-family:ui-monospace, Menlo, monospace; word-break:break-all;">sha256:7c1e9a…d04f</span>
+          <span style="color:var(--m-muted);">{{ t.inst_compat }}</span><span>{{ t.inst_compatV }}</span>
+          <span style="color:var(--m-muted);">{{ t.inst_download }}</span><span>48 MiB</span>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ isInst1 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid; grid-template-columns:minmax(120px,160px) 1fr; gap:8px 12px; font-size:13px;">
+        <span style="color:var(--m-muted);">{{ t.inst_net }}</span><span>{{ t.inst_netV }}</span>
+        <span style="color:var(--m-muted);">{{ t.inst_dev }}</span><span>{{ t.inst_devV }}</span>
+        <span style="color:var(--m-muted);">{{ t.inst_bus }}</span><span>{{ t.inst_busV }}</span>
+        <span style="color:var(--m-muted);">{{ t.inst_res }}</span><span>{{ t.inst_resV }}</span>
+        <span style="color:var(--m-muted);">{{ t.inst_store }}</span><span>{{ t.inst_storeV }}</span>
+        <span style="color:var(--m-muted);">{{ t.inst_conflict }}</span><span style="color:var(--m-success);">{{ t.inst_conflictV }}</span>
+      </div>
+    </sc-if>
+    <sc-if value="{{ isInst2 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:8px; font-size:13px;"><span style="color:var(--m-muted);">{{ t.inst_confirmBody }}</span><span>1. {{ t.inst_c1 }}</span><span>2. {{ t.inst_c2 }}</span><span>3. {{ t.inst_c3 }}</span><span>4. {{ t.inst_c4 }}</span></div>
+    </sc-if>
+    <sc-if value="{{ isInst3 }}" hint-placeholder-val="{{ false }}">
+      <div role="status" aria-live="polite" style="display:flex; flex-direction:column; gap:10px;">
+        <sc-for list="{{ installProgress }}" as="p" hint-placeholder-count="5">
+          <span style="{{ p.style }}">
+            <sc-if value="{{ p.done }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+            <sc-if value="{{ p.active }}" hint-placeholder-val="{{ false }}"><svg class="mos-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"></path></svg></sc-if>
+            {{ p.label }}
+          </span>
+        </sc-for>
+        <sc-if value="{{ installRunning }}" hint-placeholder-val="{{ false }}"><div style="border:1px solid var(--m-success); background:var(--m-success-bg); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:2px; margin-top:6px;"><strong style="font-weight:600; color:var(--m-success);">{{ t.inst_doneTitle }}</strong><span style="font-size:13px;">{{ t.inst_doneBody }}</span></div></sc-if>
+      </div>
+    </sc-if>
+    <div class="dialog-actions" style="justify-content:space-between;">
+      <button class="btn btn-ghost" onClick="{{ instCancel }}">{{ instCancelLabel }}</button>
+      <div style="display:flex; gap:8px;">
+        <sc-if value="{{ instShowBack }}" hint-placeholder-val="{{ false }}"><button class="btn btn-secondary" onClick="{{ instBack }}">{{ t.back }}</button></sc-if>
+        <sc-if value="{{ instShowNext }}" hint-placeholder-val="{{ true }}"><button class="btn btn-primary" onClick="{{ instNext }}" disabled="{{ instNextDisabled }}">{{ t.next }}</button></sc-if>
+        <sc-if value="{{ isInst2 }}" hint-placeholder-val="{{ false }}"><button class="btn btn-primary" onClick="{{ runInstall }}">{{ t.inst_go }}</button></sc-if>
+        <sc-if value="{{ installRunning }}" hint-placeholder-val="{{ false }}"><button class="btn btn-primary" onClick="{{ instCancel }}">{{ t.inst_openApp }}</button></sc-if>
+      </div>
+    </div>
+  </div></div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;en&quot;,&quot;zh&quot;],&quot;default&quot;:&quot;en&quot;,&quot;tsType&quot;:&quot;'auto' | 'en' | 'zh'&quot;,&quot;section&quot;:&quot;Locale&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;,&quot;auto&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light' | 'dark' | 'auto'&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;palette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;steel&quot;,&quot;ral&quot;,&quot;klein&quot;],&quot;default&quot;:&quot;klein&quot;,&quot;tsType&quot;:&quot;'steel' | 'ral' | 'klein'&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;ground&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;panel&quot;,&quot;white&quot;],&quot;default&quot;:&quot;panel&quot;,&quot;tsType&quot;:&quot;'panel' | 'white'&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;wide&quot;,&quot;medium&quot;,&quot;compact&quot;],&quot;default&quot;:&quot;auto&quot;,&quot;tsType&quot;:&quot;'auto' | 'wide' | 'medium' | 'compact'&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;connection&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;connected&quot;,&quot;reconnecting&quot;,&quot;offline&quot;],&quot;default&quot;:&quot;connected&quot;,&quot;tsType&quot;:&quot;'connected' | 'reconnecting' | 'offline'&quot;,&quot;section&quot;:&quot;States&quot;},&quot;networkState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;data&quot;,&quot;loading&quot;,&quot;empty&quot;,&quot;staleData&quot;,&quot;errorData&quot;,&quot;error&quot;,&quot;offline&quot;,&quot;unsupported&quot;],&quot;default&quot;:&quot;data&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;States&quot;},&quot;loginState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;error&quot;,&quot;rateLimited&quot;,&quot;busy&quot;,&quot;expired&quot;],&quot;default&quot;:&quot;idle&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;States&quot;},&quot;updateState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;ready&quot;,&quot;rebootRequired&quot;,&quot;succeeded&quot;,&quot;rolledBack&quot;,&quot;failed&quot;],&quot;default&quot;:&quot;ready&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;States&quot;}}">
+class Component extends DCLogic {
+  state = { authed:true, page:'overview', sysTab:'general', netTab:'ifaces', appTab:'installed', lang:null, theme:null, screen:null, tokenShown:false, copied:false, sshOn:false, termOn:false, svcCfg:null, containerOn:true, mqttOn:true, pending:null, dialog:null, toast:null, refreshing:false, loginBusy:false,
+    ifaceDetail:null, addrMode:'static', applyPhase:null, install:null, installStep:0, installPhase:0, upd:null, updProgress:0, diag:'idle', diagPhase:0, resetName:'',
+    uiActive:'builtin', uiPkgs:[{ id:'ops-dark', name:'Ops Panel', meta:'v1.4.2 · sha256:81ac3f…d20e · 2026-08-19' }], uiUpload:null, uiRemoveId:null };
+  componentDidMount() { this.applyTheme(); this.onResize = () => this.setState({ screen: window.innerWidth }); window.addEventListener('resize', this.onResize); this.onResize();
+    this.mq = window.matchMedia('(prefers-color-scheme: dark)'); this.onScheme = () => { if (this.theme()==='auto') this.forceUpdate(); }; this.mq.addEventListener('change', this.onScheme);
+    this.onTap = (e) => { if (e.pointerType !== 'touch') return; const b = e.target.closest('button,.seg-opt,.radio,a'); if (b && !b.disabled && navigator.vibrate) navigator.vibrate(b.classList.contains('btn-primary') || b.classList.contains('btn-danger') ? 18 : 8); }; document.addEventListener('pointerdown', this.onTap, { passive:true });
+    this.onDocClick = (e) => { if (this.state.menu && !e.target.closest('[data-menu]')) this.setState({ menu:null }); }; document.addEventListener('mousedown', this.onDocClick);
+    this.onKey = (e) => { if (e.key === 'Escape') { if (this.state.term === 'full') this.setState({ term:'normal', termPrev:'normal' }); else if (this.state.menu || this.state.drawer) this.setState({ menu:null, drawer:false }); } }; document.addEventListener('keydown', this.onKey); }
+  componentWillUnmount() { window.removeEventListener('resize', this.onResize); document.removeEventListener('mousedown', this.onDocClick); document.removeEventListener('keydown', this.onKey); document.removeEventListener('pointerdown', this.onTap); this.mq?.removeEventListener('change', this.onScheme); clearTimeout(this.timer); }
+  componentDidUpdate() { this.applyTheme(); }
+  applyTheme() { document.documentElement.setAttribute('data-theme', this.resolvedTheme()); document.documentElement.setAttribute('data-ground', this.props.ground ?? 'panel'); document.documentElement.setAttribute('data-palette', this.props.palette ?? 'klein'); }
+  resolvedTheme() { const th = this.theme(); return th === 'auto' ? (this.mq?.matches ? 'dark' : 'light') : th; }
+  langCode() { return this.state.lang ?? this.props.lang ?? 'auto'; }
+  lang() { const c = this.langCode(); const b = c === 'auto' ? (navigator.language || 'en').slice(0,2) : c; return (window.MOS_I18N || {})[b] ? b : 'en'; }
+  theme() { return this.state.theme ?? this.props.theme ?? 'auto'; }
+  static LANGS = [['en','English','English'],['zh','简体中文','Chinese (Simplified)'],['zh-TW','繁體中文','Chinese (Traditional)'],['ja','日本語','Japanese'],['ko','한국어','Korean'],['de','Deutsch','German'],['fr','Français','French'],['es','Español','Spanish'],['pt','Português','Portuguese'],['it','Italiano','Italian'],['nl','Nederlands','Dutch'],['pl','Polski','Polish'],['ru','Русский','Russian'],['tr','Türkçe','Turkish'],['ar','العربية','Arabic'],['vi','Tiếng Việt','Vietnamese']];
+  screen() { const o = this.props.screen; if (o && o !== 'auto') return o; const w = this.state.screen || 1280; return w < 581 ? 'compact' : w < 1100 ? 'medium' : 'wide'; }
+  toast(msg) { this.setState({ toast: msg }); clearTimeout(this.toastTimer); this.toastTimer = setTimeout(() => this.setState({ toast:null }), 2200); }
+  chain(steps) { clearTimeout(this.timer); const run = (i) => { if (i >= steps.length) return; const [ms, patch] = steps[i]; this.timer = setTimeout(() => { this.setState(typeof patch === 'function' ? patch : patch); run(i + 1); }, ms); }; run(0); }
+  renderVals() {
+    const t = (window.MOS_I18N || {})[this.lang()] || window.MOS_I18N?.en || {}, s = this.state, sc = this.screen(), wide = sc === 'wide', compact = sc === 'compact';
+    const conn = this.props.connection ?? 'connected';
+    const go = (page) => () => this.setState({ page, ifaceDetail:null });
+    const icons = {
+      overview:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+      network:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6"/><rect x="2" y="16" width="6" height="6"/><rect x="9" y="2" width="6" height="6"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/></svg>',
+      services:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="1"/><rect x="2" y="14" width="20" height="8" rx="1"/><path d="M6 6h.01M6 18h.01"/></svg>',
+      apps:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
+      access:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></svg>',
+      system:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2"/></svg>' };
+    const iconEl = (svg) => React.createElement('span', { style:{ display:'inline-flex' }, dangerouslySetInnerHTML:{ __html: svg } });
+    const navBase = `display:flex;align-items:center;gap:8px;min-height:${compact?40:36}px;font-weight:500;white-space:nowrap;padding:0 10px;border-radius:6px;border:0;background:transparent;font:inherit;font-size:14px;color:inherit;cursor:pointer;text-align:left;white-space:nowrap;${wide?'width:100%;':''}`;
+    const navItems = [['overview',t.nav_overview],['network',t.nav_network],['services',t.nav_services],['apps',t.nav_apps,true],['access',t.nav_access],['system',t.nav_system]]
+      .map(([id,label,planned]) => ({ id, label, title:label, showLabel: wide || compact, planned:!!planned, go:go(id), goDrawer:() => this.setState({ page:id, ifaceDetail:null, drawer:false }), icon:iconEl(icons[id]), current: s.page===id ? 'page' : undefined,
+        drawerStyle: `display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;border-radius:8px;border:0;font:inherit;font-size:15px;cursor:pointer;text-align:left;width:100%;${s.page===id ? 'background:var(--m-accent);color:var(--m-accent-fg);font-weight:600;' : 'background:transparent;color:var(--m-text);'}`,
+        style: navBase + (s.page===id ? 'background:var(--m-chrome-active-bg);color:var(--m-chrome-active-fg);font-weight:600;' : 'color:var(--m-chrome-fg);') }));
+    const tabBtn = (active) => `height:${compact?40:32}px;padding:0 ${compact?14:12}px;flex:none;border-radius:6px;border:0;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;${active?'background:var(--m-surface);box-shadow:var(--shadow-sm);font-weight:500;color:var(--m-text);':'background:transparent;color:var(--m-muted);'}`;
+    const sysTabs = [['general',t.tab_general],['info',t.tab_info],['time',t.tab_time],['update',t.tab_update],['storage',t.tab_storage],['diag',t.tab_diag]]
+      .map(([id,label]) => ({ id, label, go:() => this.setState({ sysTab:id }), style: tabBtn(s.sysTab===id) }));
+    const netTabs = [['ifaces',t.net_tabIf],['wifi',t.net_tabWifi],['wg',t.net_tabWg]].map(([id,label]) => ({ id, label, go:() => this.setState({ netTab:id, ifaceDetail:null }), style: tabBtn(s.netTab===id) }));
+    const appTabs = [['installed',t.app_tabInstalled],['catalog',t.app_tabCatalog],['activity',t.app_tabActivity]].map(([id,label]) => ({ id, label, go:() => this.setState({ appTab:id }), style: tabBtn(s.appTab===id) }));
+    const sw = (on, pending) => ({
+      track:`position:relative;width:36px;height:20px;flex:none;border:0;padding:0;border-radius:999px;cursor:${pending?'wait':'pointer'};background:${on?'var(--m-text)':'var(--m-border)'};opacity:${pending?.55:1};transition:background .15s;`,
+      knob:`position:absolute;top:2px;left:${on?18:2}px;width:16px;height:16px;border-radius:50%;background:var(--m-surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s;` });
+    const toggleSvc = (key) => () => { if (s.pending) return; const next = !s[key]; this.setState({ [key]:next, pending:key }); this.chain([[1400, { pending:null }]]); };
+    const cSw = sw(s.containerOn, s.pending==='container'), mSw = sw(s.mqttOn, s.pending==='mqtt'), sshSw = sw(s.sshOn), tSw = sw(s.termOn, s.pending==='term');
+    const svcCfg = (key) => () => this.setState({ svcCfg: s.svcCfg===key ? null : key });
+    const svcIcon = (d) => iconEl(`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`);
+    const svcIcons = { container:'<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>', mqtt:'<path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/>', term:'<path d="m4 17 6-6-6-6M12 19h8"/>' };
+    const svcOpen = (key) => ({ open:() => this.setState({ svcDetail:key }), openKey:(e) => { if (e.key==='Enter' || e.key===' ') { e.preventDefault(); this.setState({ svcDetail:key }); } } });
+    const connMap = { connected:[t.conn_connected,t.conn_connectedDetail,'var(--m-success)'], reconnecting:[t.conn_reconnecting,t.conn_reconnectingDetail,'var(--m-warning)'], offline:[t.conn_offline,t.conn_offlineDetail,'var(--m-danger)'] };
+    const [connLabel, connDetail, connColor] = connMap[conn] || connMap.connected;
+    const loginState = this.props.loginState ?? 'idle';
+    const alertStyle = (kind) => `border:1px solid var(--m-${kind});background:var(--m-${kind}-bg);color:var(--m-${kind});border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;font-size:14px;`;
+    const loginAlerts = { error:['danger',t.login_errTitle,t.login_errBody], rateLimited:['warning',t.login_rateTitle,t.login_rateBody], busy:['warning',t.login_busyTitle,t.login_busyBody], expired:['neutral',t.login_expTitle,t.login_expBody] };
+    const la = loginAlerts[loginState];
+    const netState = this.props.networkState ?? 'data';
+    const mono = 'ui-monospace, Menlo, monospace';
+    const ifaces = [
+      { id:'eth0', name:'eth0', type:t.if_physical, configured:t.if_dhcp, observed:t.linkUp, tagClass:'tag tag-neutral', addr:'192.168.10.24/24', last:'12 s' },
+      { id:'eth1', name:'eth1', type:t.if_physical, configured:`${t.if_static} · ${t.if_member}`, observed:t.linkDown, tagClass:'tag tag-danger', addr:'10.0.0.2/24', last:'12 s' },
+      { id:'br0', name:'br0', type:t.if_bridge, configured:t.if_static, observed:t.linkUp, tagClass:'tag tag-neutral', addr:'10.0.0.1/24', last:'12 s' },
+      { id:'vlan10', name:'vlan10', type:t.if_vlan, configured:`${t.if_dhcp} · ${t.if_parent}`, observed:t.if_noAddr, tagClass:'tag tag-warning', addr:'—', last:'12 s' },
+      { id:'wg0', name:'wg0', type:t.if_wg, configured:t.if_static, observed:t.if_handshake, tagClass:'tag tag-neutral', addr:'10.7.0.2/24 · :51820', last:'12 s' } ].map(i => ({ ...i, open:() => this.setState({ ifaceDetail:i.id, applyPhase:null }) }));
+    const netAlert = { staleData:['warning',t.q_staleTitle,t.q_staleBody], errorData:['danger',t.q_errDataTitle,t.q_errDataBody] }[netState];
+    const startApply = () => { this.setState({ applyPhase:'applying', dialog:null }); this.chain([[1600,{ applyPhase:'reconnecting' }],[2600,{ applyPhase:'applied' }]]); };
+    const applyPhases = ['saved','applying','reconnecting','applied'];
+    const applyIdx = applyPhases.indexOf(s.applyPhase);
+    const stepStyle = (i, cur) => `display:flex;align-items:center;gap:8px;font-size:13px;${i<cur?'color:var(--m-success);':i===cur?'font-weight:600;':'color:var(--m-muted);'}`;
+    const apps = [
+      { name:'Edge Telemetry', ver:'1.8.2', source:t.src_catalog, kind:'OCI', desired:t.enabled, runtime:s.containerOn?t.app_running:t.app_blocked, rtClass:s.containerOn?'tag tag-neutral':'tag tag-danger', health:s.containerOn?t.app_healthy:t.app_none, action:t.act_open },
+      { name:'Modbus Gateway', ver:'0.9.4', source:t.src_catalog, kind:'OCI', desired:t.enabled, runtime:s.containerOn?t.app_stopped:t.app_blocked, rtClass:s.containerOn?'tag tag-warning':'tag tag-danger', health:t.app_unknown, action:t.act_start },
+      { name:'Node-RED', ver:'3.1.0', source:t.src_local, kind:'OCI', desired:t.disabled, runtime:t.app_retained, rtClass:'tag tag-outline', health:t.app_none, action:t.act_reinstall },
+      { name:'System UI', ver:'2026.08.2', source:t.src_system, kind:'Native', desired:t.enabled, runtime:t.app_running, rtClass:'tag tag-neutral', health:t.app_healthy, action:t.act_readonly } ];
+    const catalog = [
+      { name:'MQTT Bridge', pub:'mos · signed', ver:'2.4.0', kind:'OCI', size:'48 MiB', persist:'120 MiB', perms:t.cat_perms1, compat:t.cat_compatOk, compatClass:'tag tag-success', action:t.act_install, canInstall:true },
+      { name:'Edge Telemetry', pub:'mos · signed', ver:'1.9.0', kind:'OCI', size:'62 MiB', persist:'200 MiB', perms:t.cat_perms2, compat:t.cat_updateAvail, compatClass:'tag tag-accent', action:t.act_update, canInstall:true },
+      { name:'OPC UA Collector', pub:'Fieldworks · signed', ver:'0.7.1', kind:'Native', size:'—', persist:'—', perms:t.cat_perms3, compat:t.cat_nativeClosed, compatClass:'tag tag-outline', action:t.cat_stage2, canInstall:false } ]
+      .map(c => ({ ...c, disabled: !c.canInstall, install:() => { if (!c.canInstall) return; this.setState({ install:c.name, installStep:0, installPhase:0 }); } }));
+    const installSteps = [t.inst_s1,t.inst_s2,t.inst_s3,t.inst_s4].map((label,i) => ({ label, n:i+1, style: `display:flex;align-items:center;gap:8px;font-size:13px;${i<s.installStep?'color:var(--m-success);':i===s.installStep?'font-weight:600;':'color:var(--m-muted);'}`, numStyle:`display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:600;${i<s.installStep?'background:var(--m-success);color:#fff;':i===s.installStep?'background:var(--m-text);color:var(--m-surface);':'border:1px solid var(--m-border);'}` }));
+    const instPhases = [t.inst_p1,t.inst_p2,t.inst_p3,t.inst_p4,t.inst_p5];
+    const installProgress = instPhases.map((label,i) => ({ label, style: stepStyle(i, s.installPhase), done:i<s.installPhase, active:i===s.installPhase }));
+    const runInstall = () => { this.setState({ installStep:3, installPhase:0 }); this.chain([[1200,{installPhase:1}],[1200,{installPhase:2}],[1400,{installPhase:3}],[1400,{installPhase:4}]]); };
+    const updStates = ['idle','checking','downloading','ready','installing','rebootRequired','validating','succeeded','rolledBack','failed'];
+    const upd = s.upd ?? this.props.updateState ?? 'ready';
+    const updMain = ['idle','checking','downloading','ready','installing','rebootRequired','validating','succeeded'];
+    const updIdx = updMain.indexOf(upd);
+    const updSteps = updMain.map((id,i) => ({ id, label:t['upd_'+id], style:`display:flex;flex-direction:column;gap:6px;flex:1;min-width:64px;font-size:13px;${i<updIdx||upd==='succeeded'?'color:var(--m-success);':i===updIdx?'font-weight:600;':'color:var(--m-muted);'}`, bar:`height:3px;border-radius:2px;background:${i<updIdx||upd==='succeeded'?'var(--m-success)':i===updIdx?'var(--m-text)':'var(--m-border)'};` }));
+    const updActions = {
+      idle:[[t.upd_check,'btn-primary',() => { this.setState({ upd:'checking' }); this.chain([[1500,{ upd:'downloading', updProgress:0 }],[600,{updProgress:35}],[600,{updProgress:70}],[600,{updProgress:100}],[500,{ upd:'ready' }]]); }]],
+      ready:[[t.upd_install,'btn-primary',() => this.setState({ dialog:'installUpdate' })],[t.upd_notes,'btn-secondary',null]],
+      rebootRequired:[[t.upd_rebootNow,'btn-primary',() => { this.setState({ upd:'validating' }); this.chain([[2500,{ upd:'succeeded' }]]); }],[t.upd_later,'btn-secondary',null]],
+      succeeded:[[t.upd_done,'btn-secondary',() => this.setState({ upd:'idle' })]],
+      rolledBack:[[t.upd_viewLog,'btn-secondary',() => this.setState({ page:'system', sysTab:'diag' })],[t.upd_retry,'btn-primary',() => this.setState({ upd:'idle' })]],
+      failed:[[t.upd_retry,'btn-primary',() => this.setState({ upd:'idle' })]] };
+    const updBtns = (updActions[upd] || []).map(([label,cls,fn]) => ({ label, cls:'btn '+cls, fn: fn || (() => {}) }));
+    const confirmInstall = () => { this.setState({ dialog:null, upd:'installing', updProgress:0 }); this.chain([[700,{updProgress:20}],[700,{updProgress:55}],[700,{updProgress:90}],[700,{ upd:'rebootRequired' }]]); };
+    const diagPhases = [t.diag_p1,t.diag_p2,t.diag_p3,t.diag_p4,t.diag_p5];
+    const diagSteps = diagPhases.map((label,i) => ({ label, style: stepStyle(i, s.diagPhase) }));
+    const startDiag = () => { this.setState({ diag:'collecting', diagPhase:0 }); this.chain([[900,{diagPhase:1}],[900,{diagPhase:2}],[900,{diagPhase:3}],[900,{diagPhase:4}],[800,{ diag:'done', diagPhase:5 }]]); };
+    const storage = [
+      { role:'System A', dev:'mmcblk0p2', size:'2.0 GiB', used:1.4, usedTxt:'1.4 GiB', state:t.st_ro, cls:'tag tag-neutral' },
+      { role:'System B', dev:'mmcblk0p3', size:'2.0 GiB', used:0.0, usedTxt:'—', state:t.st_empty, cls:'tag tag-outline' },
+      { role:'STATE', dev:'mmcblk0p5', size:'512 MiB', used:0.21, usedTxt:'108 MiB', state:t.st_mounted, cls:'tag tag-neutral' },
+      { role:'DATA', dev:'mmcblk0p6', size:'24.6 GiB', used:0.83, usedTxt:'20.4 GiB', state:t.st_warning, cls:'tag tag-warning' } ].map(r => ({ ...r, barStyle:`height:6px;border-radius:3px;background:var(--m-border);overflow:hidden;`, fillStyle:`height:100%;width:${Math.round(r.used*100)}%;background:${r.used>0.8?'var(--m-warning)':'var(--m-text)'};` }));
+    const svcArr = [
+        { key:'container', icon:svcIcon(svcIcons.container), port:'unix:///run/containerd.sock', ...svcOpen('container'), name:t.svc_container, body:t.svc_containerBody, configured:s.containerOn?t.svc_enabled:t.svc_disabled, applied:s.pending==='container'?t.applying:t.applied, appliedStyle:s.pending==='container'?'color:var(--m-warning);':'', observed:s.pending==='container'?t.unknown:(s.containerOn?t.svc_running:t.svc_stopped), tagClass:s.pending==='container'?'tag tag-outline':(s.containerOn?'tag tag-success':'tag tag-neutral'), task:s.pending==='container'?t.svc_task3:t.svc_task1, on:s.containerOn, pending:s.pending==='container', toggle:toggleSvc('containerOn'), trackStyle:cSw.track, knobStyle:cSw.knob, isContainer:true, cfgOpen:s.svcCfg==='container', config:svcCfg('container'), saveCfg:() => { this.setState({ svcCfg:null }); this.toast(t.saved); } },
+        { key:'mqtt', icon:svcIcon(svcIcons.mqtt), port:':1883 · :8883', ...svcOpen('mqtt'), name:t.svc_mqtt, body:t.svc_mqttBody, configured:s.mqttOn?t.svc_enabled:t.svc_disabled, applied:s.pending==='mqtt'?t.applying:(s.mqttOn?t.svc_applyFailed:t.applied), appliedStyle:s.pending==='mqtt'?'color:var(--m-warning);':(s.mqttOn?'color:var(--m-danger);':''), observed:s.pending==='mqtt'?t.unknown:t.svc_stopped, tagClass:s.pending==='mqtt'?'tag tag-outline':(s.mqttOn?'tag tag-danger':'tag tag-neutral'), task:s.pending==='mqtt'?t.svc_task3:(s.mqttOn?t.svc_task2:t.svc_task1), on:s.mqttOn, pending:s.pending==='mqtt', toggle:toggleSvc('mqttOn'), trackStyle:mSw.track, knobStyle:mSw.knob, isMqtt:true, cfgOpen:s.svcCfg==='mqtt', config:svcCfg('mqtt'), saveCfg:() => { this.setState({ svcCfg:null }); this.toast(t.saved); } },
+        { key:'term', icon:svcIcon(svcIcons.term), port:'/console/terminal', ...svcOpen('term'), name:t.svc_term, body:t.svc_termBody, configured:s.termOn?t.svc_enabled:t.svc_disabled, applied:s.pending==='term'?t.applying:t.applied, appliedStyle:s.pending==='term'?'color:var(--m-warning);':'', observed:s.pending==='term'?t.unknown:(s.termOn?t.svc_running:t.svc_stopped), tagClass:s.pending==='term'?'tag tag-outline':(s.termOn?'tag tag-warning':'tag tag-neutral'), task:s.pending==='term'?t.svc_task3:(s.termOn?t.term_sessions0:t.svc_task1), on:s.termOn, pending:s.pending==='term', toggle:toggleSvc('termOn'), trackStyle:tSw.track, knobStyle:tSw.knob, isTerminal:true, showOpenTerm: s.termOn && s.pending!=='term', cfgOpen:s.svcCfg==='term', config:svcCfg('term'), saveCfg:() => { this.setState({ svcCfg:null }); this.toast(t.saved); } } ].map(x => ({ ...x, toggleStop:(e) => { e.stopPropagation(); x.toggle(); }, saveCfg:() => { this.setState({ svcDetail:null }); this.toast(t.saved); } }));
+    const pad = compact ? '16px' : wide ? '32px' : '24px';
+    const code = this.langCode(), q = (s.langQuery || '').trim().toLowerCase(), i18n = window.MOS_I18N || {};
+    const autoName = (() => { const b = (navigator.language||'en').slice(0,2); const f = Component.LANGS.find(x => x[0]===b); return f ? f[1] : 'English'; })();
+    const langNative = code === 'auto' ? `${t.lang_auto} · ${autoName}` : (Component.LANGS.find(x => x[0]===code) || Component.LANGS[0])[1];
+    const langRow = (on) => 'display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:8px 12px;border:0;border-radius:6px;background:' + (on ? 'var(--m-hover)' : 'transparent') + ';font:inherit;font-size:14px;color:inherit;cursor:pointer;text-align:left;' + (on ? 'font-weight:500;' : '');
+    const langList = [['auto', t.lang_auto, `${t.lang_autoBody} · ${autoName}`], ...Component.LANGS].filter(([id, nat, en]) => !q || nat.toLowerCase().includes(q) || en.toLowerCase().includes(q) || id.toLowerCase().includes(q))
+      .map(([id, nat, en]) => ({ id, native:nat, sub:en, on: code===id, partial: id!=='auto' && !i18n[id], style: langRow(code===id), go:() => this.setState({ lang:id, langPicker:false }) }));
+    const svgI = (d) => iconEl(`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`);
+    const themeIcons = { light:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', dark:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', auto:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>' };
+    const themeOpts = ['light','dark','auto'].map(id => { const on = this.theme()===id; const base = 'display:flex;align-items:center;justify-content:center;gap:6px;flex:1 1 0;min-width:0;height:36px;padding:0 6px;white-space:nowrap;border:0;font:inherit;font-size:13px;cursor:pointer;color:' + (on ? 'var(--m-text)' : 'var(--m-muted)') + ';background:' + (on ? 'var(--m-hover)' : 'transparent') + ';' + (on ? 'font-weight:500;' : '');
+      return { id, label:t['theme_'+id], on, icon:svgI(themeIcons[id]), style: base + 'width:32px;padding:0;', styleWide: base, go:() => this.setState({ theme:id }) }; });
+    const menuItem = 'display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:6px;background:transparent;font:inherit;font-size:13px;color:inherit;cursor:pointer;text-align:left;';
+    return {
+      t, lang:this.lang(), isLogin:!s.authed, isAuthed:s.authed, navItems, sysTabs, netTabs, appTabs,
+      isWide:wide, isCompact:compact,
+      shellStyle: 'display:flex;flex-direction:column;min-height:100vh;',
+      navInline: !compact, navStacked: compact, drawerOpen: !!s.drawer && compact, openDrawer:() => this.setState({ drawer:true, menu:null }), closeDrawer:() => this.setState({ drawer:false }),
+      footStyle: `margin-top:auto;position:sticky;bottom:0;background:var(--m-bg);border-top:1px solid var(--m-border);z-index:10;`,
+      footRowStyle: `display:flex;align-items:center;gap:12px;padding:6px ${pad} calc(6px + env(safe-area-inset-bottom));min-height:44px;max-width:1280px;width:100%;margin:0 auto;box-sizing:border-box;`,
+      headerStyle: `display:flex;flex-direction:column;border-bottom:1px solid var(--m-chrome-border);position:sticky;top:0;background:var(--m-chrome-bg);color:var(--m-chrome-fg);z-index:10;`,
+      topRowStyle: `display:flex;align-items:center;gap:8px;padding:0 ${pad};height:${compact?52:56}px;max-width:1280px;width:100%;margin:0 auto;box-sizing:border-box;`,
+      mainStyle: `padding:${compact?'20px 16px':wide?'28px 32px':'24px'};max-width:1280px;width:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;gap:24px;`,
+      g4: `display:grid;grid-template-columns:repeat(${compact?2:wide?4:2},1fr);gap:${compact?8:12}px;`,
+      g3: `display:grid;grid-template-columns:repeat(${compact?1:wide?3:2},1fr);gap:12px;`,
+      g2: wide ? 'display:grid;grid-template-columns:260px 1fr;gap:32px;align-items:start;' : 'display:flex;flex-direction:column;gap:12px;',
+      attnRowStyle: `display:flex;gap:12px;align-items:${compact?'flex-start':'center'};padding:12px 16px;${compact?'flex-wrap:wrap;':''}`,
+      svcRowStyle: wide ? 'display:grid;grid-template-columns:1.5fr 1fr 1.2fr auto;gap:16px;align-items:center;padding:16px;border-bottom:1px solid var(--m-border);' : 'display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:16px;border-bottom:1px solid var(--m-border);',
+      onLangSelect:(e) => this.setState({ lang:e.target.value }),
+      settingsOpen: s.menu==='settings',
+      toggleSettingsMenu:() => this.setState({ menu: s.menu==='settings' ? null : 'settings' }),
+      menuItemStyle: menuItem,
+      langNative, langPickerOpen: !!s.langPicker, langQuery: s.langQuery || '', onLangQuery:(e) => this.setState({ langQuery:e.target.value }), langList, langEmpty: langList.length===0,
+      openLangPicker:() => this.setState({ langPicker:true, langQuery:'', menu:null }), closeLangPicker:() => this.setState({ langPicker:false }), stop:(e) => e.stopPropagation(),
+      themeOpts, toggleTheme:() => this.setState({ theme: this.resolvedTheme()==='dark' ? 'light' : 'dark' }), isDark:this.resolvedTheme()==='dark', isLight:this.resolvedTheme()!=='dark', themeTitle: this.resolvedTheme()==='dark' ? t.light : t.dark,
+      doLogin:() => { if (loginState==='rateLimited' || loginState==='busy') return; this.setState({ loginBusy:true }); this.chain([[900,{ authed:true, loginBusy:false, page:'overview' }]]); },
+      doLogout:() => this.setState({ authed:false, page:'overview', tokenShown:false, dialog:null }),
+      loginBtn: s.loginBusy ? t.login_signingIn : t.login_signIn, loginDisabled: s.loginBusy || loginState==='rateLimited' || loginState==='busy',
+      loginAlert: !!la, loginAlertStyle: la ? (la[0]==='neutral' ? 'border:1px solid var(--m-border);background:var(--m-hover);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;font-size:14px;' : alertStyle(la[0])) : '', loginAlertTitle: la?.[1], loginAlertBody: la?.[2],
+      connLabel, connDetail, connTitle:`${connLabel} · ${connDetail}`, connDotStyle:`width:8px;height:8px;border-radius:50%;flex:none;background:${connColor};${conn==='reconnecting'?'animation:m-pulse 1.4s ease-in-out infinite;':''}`,
+      showBanner: conn!=='connected', bannerTitle: conn==='offline' ? t.banner_offline : t.banner_reconnecting, bannerBody: conn==='offline' ? t.banner_offlineBody : t.banner_reconnectingBody,
+      bannerStyle:`display:flex;gap:10px;padding:10px ${pad};font-size:14px;border-bottom:1px solid var(--m-border);background:var(--m-${conn==='offline'?'danger':'warning'}-bg);color:var(--m-${conn==='offline'?'danger':'warning'});`,
+      refresh:() => { this.setState({ refreshing:true }); this.chain([[900,{ refreshing:false }]]); }, refreshClass: s.refreshing ? 'mos-spin' : '', freshness: s.refreshing ? t.refreshing : t.updatedAgo,
+      isOverview:s.page==='overview', isNetwork:s.page==='network', isServices:s.page==='services', isApps:s.page==='apps', isAccess:s.page==='access', isSystem:s.page==='system',
+      goSystemTime:() => this.setState({ page:'system', sysTab:'time' }), goSystemUpdate:() => this.setState({ page:'system', sysTab:'update' }), goServices:go('services'),
+      ovCards:[
+        { k:t.ov_health, v:t.ov_healthVal, sub:t.ov_healthBody, vStyle:'font-weight:600;font-size:20px;letter-spacing:-.01em;', go:go('services') },
+        { k:t.ov_identity, v:'mos-edge-07', sub:t.ov_machineId+' 4f2e…••••', vStyle:`font-family:${mono};font-weight:600;font-size:18px;`, go:() => this.setState({ page:'system', sysTab:'info' }) },
+        { k:t.ov_network, v:'eth0 · 192.168.10.24', sub:t.linkUp+' · DHCP · '+t.ov_netObs, vStyle:`font-family:${mono};font-weight:600;font-size:16px;`, go:go('network') },
+        { k:t.ov_uptime, v:'14d 06h 12m', sub:t.ov_uptimeBody, vStyle:`font-family:${mono};font-weight:600;font-size:18px;`, go:() => this.setState({ page:'system', sysTab:'info' }) } ],
+      tasks:[
+        { action:t.task1, target:'eth1', phase:t.ph_applied, tagClass:'tag tag-warning', result:t.task1r, time:t.ago22 },
+        { action:t.task2, target:'mqtt', phase:t.ph_failed, tagClass:'tag tag-danger', result:t.task2r, time:t.ago1h },
+        { action:t.task3, target:'ci-runner', phase:t.ph_succeeded, tagClass:'tag tag-success', result:t.task3r, time:t.ago3h } ],
+      services: svcArr, svc: svcArr.find(x => x.key===s.svcDetail) || svcArr[0],
+      svcList: !s.svcDetail, svcDetailOpen: !!s.svcDetail, closeSvc:() => this.setState({ svcDetail:null }),
+      cfgGrid: `display:grid;grid-template-columns:repeat(${compact?1:2},1fr);gap:12px 16px;`,
+      ctrHub: s.ctrHub ?? 'registry-1.docker.io', onCtrHub:(e) => this.setState({ ctrHub:e.target.value }),
+      mqKey: s.mqKey ?? 'mqk_7f3a9c2e4b1d8e6f0a5c3b9d2e7f1a4c', mqKeyType: s.mqKeyShown ? 'text' : 'password', mqKeyBtn: s.mqKeyShown ? t.hide : t.show, mqToggleKey:() => this.setState({ mqKeyShown:!s.mqKeyShown }),
+      mqCopyKey:() => { if (navigator.clipboard) navigator.clipboard.writeText(s.mqKey ?? 'mqk_7f3a9c2e4b1d8e6f0a5c3b9d2e7f1a4c').catch(()=>{}); this.toast(t.toast_copied); },
+      mqRotateKey:() => { const hex = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2,'0')).join(''); this.setState({ mqKey:'mqk_'+hex, mqKeyShown:true }); this.toast(t.mq_rotated); },
+      // terminal
+      termWindow: s.term==='normal' || s.term==='full', termMinimized: s.term==='min', termIsFull: s.term==='full', termIsNormal: s.term!=='full', termFullLabel: s.term==='full' ? t.term_exitFull : t.term_full,
+      termBackdropStyle: s.term==='full' ? 'padding:0;display:grid;place-items:stretch;' : 'display:grid;place-items:center;padding:16px;',
+      termBoxStyle: (s.term==='full' ? 'width:100%;height:100%;max-height:none;border-radius:0;border:0;' : 'width:min(860px,100%);height:min(560px,80vh);') + 'padding:0!important;gap:0;overflow:hidden;background:#0b0f14;border-color:#2a3441;color:#e6edf3;display:flex;flex-direction:column;',
+      termMinimize:() => this.setState({ term:'min' }), termRestore:() => this.setState({ term: s.termPrev || 'normal' }), termToggleFull:() => this.setState({ term: s.term==='full' ? 'normal' : 'full', termPrev: s.term==='full' ? 'normal' : 'full' }), termClose:() => this.setState({ term:null, termLines:null, termInput:'' }),
+      openTerminal:() => this.setState({ term: s.termPrev || 'normal', termLines: s.termLines || [{ text:t.term_banner, style:'color:#8b98a5;' }, { text:'Last login: Tue Sep  2 14:02:11 2026 from 192.168.10.51', style:'color:#8b98a5;' }] }),
+      termLines: s.termLines || [], termInput: s.termInput || '', onTermInput:(e) => this.setState({ termInput:e.target.value }), termRef: this.termRef || (this.termRef = React.createRef()), termFocus:() => this.termRef?.current?.focus(),
+      onTermKey:(e) => { if (e.key !== 'Enter') return; const cmd = (s.termInput || '').trim(); const out = { uptime:' 14:31:07 up 14 days,  6:12,  1 user,  load average: 0.12, 0.08, 0.05', hostname:'mos-edge-07', whoami:'admin', 'ip -br a':'lo   UNKNOWN  127.0.0.1/8\neth0 UP       192.168.10.24/24\nbr0  UP       10.0.0.1/24\nwg0  UNKNOWN  10.7.0.2/24', 'df -h /data':'Filesystem      Size  Used Avail Use% Mounted on\n/dev/mmcblk0p6   25G   21G  4.2G  83% /data', clear:null }; const lines = [...(s.termLines||[]), { text:`admin@mos-edge-07:~$ ${cmd}`, style:'' }]; if (cmd === 'clear') { this.setState({ termLines:[], termInput:'' }); return; } if (cmd) lines.push(...(cmd in out ? out[cmd] : `bash: ${cmd.split(' ')[0]}: command not found`).split('\n').map(x => ({ text:x, style: cmd in out ? '' : 'color:#ff8a91;' }))); this.setState({ termLines:lines, termInput:'' }); },
+      tokens:[ { label:'ci-runner', id:'tok_7f3a', created:'2026-08-30' }, { label:'grafana-scrape', id:'tok_c21e', created:'2026-06-12' } ],
+      tokenShown:s.tokenShown, mintToken:() => this.setState({ tokenShown:true, copied:false }), closeToken:() => this.setState({ dialog:'closeToken' }), confirmCloseToken:() => this.setState({ tokenShown:false, dialog:null }),
+      copyToken:() => { this.setState({ copied:true }); this.toast(t.toast_copied); }, copyLabel:s.copied ? t.acc_copied : t.acc_copy,
+      sshOn:s.sshOn, toggleSsh:() => this.setState({ sshOn:!s.sshOn }), sshTrack:sshSw.track, sshKnob:sshSw.knob, sshStatus:s.sshOn ? t.acc_sshOn : t.acc_sshOff,
+      openRemoveKey:() => this.setState({ dialog:'removeKey' }),
+      toastSaved:() => this.toast(t.toast_saved), toastShown:!!s.toast, toastText:s.toast,
+      // network
+      netState, netLoading:netState==='loading', netEmpty:netState==='empty', netErrorNoData:netState==='error', netOffline:netState==='offline', netUnsupported:netState==='unsupported',
+      netHasData: ['data','staleData','errorData'].includes(netState), netAlert:!!netAlert, netAlertStyle: netAlert ? alertStyle(netAlert[0]) : '', netAlertTitle:netAlert?.[1], netAlertBody:netAlert?.[2],
+      ifaces, isIfaceList: !s.ifaceDetail, isIfaceDetail: !!s.ifaceDetail, backToList:() => this.setState({ ifaceDetail:null, applyPhase:null }),
+      isNetIfaces:s.netTab==='ifaces', isNetWifi:s.netTab==='wifi', isNetWg:s.netTab==='wg',
+      isStatic:s.addrMode==='static', isDhcp:s.addrMode==='dhcp', setStatic:() => this.setState({ addrMode:'static' }), setDhcp:() => this.setState({ addrMode:'dhcp' }),
+      segStatic:`height:32px;padding:0 12px;border:0;font:inherit;font-size:13px;cursor:pointer;border-radius:5px;${s.addrMode==='static'?'background:var(--m-surface);box-shadow:var(--shadow-sm);font-weight:500;':'background:transparent;color:var(--m-muted);'}`,
+      segDhcp:`height:32px;padding:0 12px;border:0;font:inherit;font-size:13px;cursor:pointer;border-radius:5px;${s.addrMode==='dhcp'?'background:var(--m-surface);box-shadow:var(--shadow-sm);font-weight:500;':'background:transparent;color:var(--m-muted);'}`,
+      openReview:() => this.setState({ dialog:'reviewIface' }), startApply, applyActive: !!s.applyPhase, applyIdx,
+      applySteps: [t.ap_saved,t.ap_applying,t.ap_reconnecting,t.ap_applied].map((label,i) => ({ label, style: stepStyle(i, applyIdx), done:i<applyIdx, active:i===applyIdx })),
+      applyDone: s.applyPhase==='applied', applyReconnecting: s.applyPhase==='reconnecting', applyApplying: s.applyPhase==='applying', dismissApply:() => this.setState({ applyPhase:null }),
+      wifi:[ { ssid:'plant-floor-2', sec:'WPA2 · PSK', saved:t.wifi_saved, auto:t.yes }, { ssid:'maint-hotspot', sec:'WPA3 · SAE', saved:t.wifi_saved, auto:t.no } ],
+      peers:[ { fp:'SHA256:9aC1…mZ2q', allowed:'10.7.0.1/32, 192.168.100.0/24', endpoint:'vpn.example.net:51820', keepalive:'25 s', hs:'42 s' }, { fp:'SHA256:kT8w…p3Xr', allowed:'10.7.0.5/32', endpoint:'—', keepalive:'—', hs:t.wg_never } ],
+      openRotate:() => this.setState({ dialog:'rotateKey' }),
+      // apps
+      apps, catalog, isAppInstalled:s.appTab==='installed', isAppCatalog:s.appTab==='catalog', isAppActivity:s.appTab==='activity', containerOn:s.containerOn, containerOff:!s.containerOn,
+      installOpen:!!s.install, installName:s.install, installSteps, installStep:s.installStep, isInst0:s.installStep===0, isInst1:s.installStep===1, isInst2:s.installStep===2, isInst3:s.installStep===3,
+      instNext:() => this.setState({ installStep: Math.min(2, s.installStep + 1) }), instBack:() => this.setState({ installStep: Math.max(0, s.installStep - 1) }), instCancel:() => this.setState({ install:null }), runInstall,
+      installProgress, installRunning: s.installPhase >= 4, instNextDisabled: !s.containerOn, instShowBack: s.installStep === 1 || s.installStep === 2, instShowNext: s.installStep < 2, instCancelLabel: s.installStep === 3 ? t.close : t.cancel,
+      goServicesFromInstall:() => this.setState({ install:null, page:'services' }),
+      activity:[ { action:t.actv1, app:'Edge Telemetry', phase:t.ph_succeeded, cls:'tag tag-success', time:t.ago3h }, { action:t.actv2, app:'Modbus Gateway', phase:t.ph_failed, cls:'tag tag-danger', time:t.ago1d }, { action:t.actv3, app:'Node-RED', phase:t.ph_succeeded, cls:'tag tag-success', time:t.ago2d } ],
+      // system
+      isSysGeneral:s.sysTab==='general', isSysInfo:s.sysTab==='info', isSysTime:s.sysTab==='time', isSysUpdate:s.sysTab==='update', isSysStorage:s.sysTab==='storage', isSysDiag:s.sysTab==='diag',
+      openReboot:() => this.setState({ dialog:'reboot' }), openPoweroff:() => this.setState({ dialog:'poweroff' }), openFactoryReset:() => this.setState({ dialog:'reset', resetKind:'factory', resetName:'' }),
+      resetTitle: s.resetKind==='factory' ? t.fr_title : t.rs_title, resetBody: s.resetKind==='factory' ? t.fr_body : t.rs_body, resetKeeps: s.resetKind==='factory' ? t.fr_keepsV : t.rs_keepsV, resetDeletes: s.resetKind==='factory' ? t.fr_deletesV : t.rs_deletesV,
+      info: [
+        { g:t.info_identity, rows:[['Hostname','mos-edge-07'],[t.info_machineId,'4f2e••••••••••••••••••••••••'],[t.info_board,'mos-cm4 rev 2 · qualified'],[t.info_serial,'MOS-2607-••••']] },
+        { g:t.info_software, rows:[[t.info_release,'2026.08.2 (stable)'],['Kernel','6.6.52-mos'],[t.info_build,'a3f9c1e · 2026-08-19'],[t.info_manifest,'214 packages']] },
+        { g:t.info_boot, rows:[[t.info_activeSlot,'A (2026.08.2)'],[t.info_altSlot,'B · '+t.info_empty],[t.info_bootAssurance,t.info_bootV],[t.info_uptime,'14d 06h 12m']] } ].map(g => ({ ...g, rows: g.rows.map(([k,v]) => ({ k, v })) })),
+      upd, updSteps, updBtns, isUpdIdle:upd==='idle', isUpdChecking:upd==='checking', isUpdDownloading:upd==='downloading', isUpdReady:upd==='ready', isUpdInstalling:upd==='installing', isUpdReboot:upd==='rebootRequired', isUpdValidating:upd==='validating', isUpdSucceeded:upd==='succeeded', isUpdRolledBack:upd==='rolledBack', isUpdFailed:upd==='failed',
+      updShowTarget: ['downloading','ready','installing','rebootRequired','validating'].includes(upd), updProgress:s.updProgress, updBarStyle:`height:100%;width:${s.updProgress}%;background:var(--m-text);transition:width .4s;`, updProgressText:`${s.updProgress}%`,
+      updBusy: ['checking','downloading','installing','validating'].includes(upd), updHeadline: t['updh_'+upd], updBody: t['updb_'+upd], confirmInstall,
+      updChecks:[ { k:t.upd_sig, tag:t.tag_pass, cls:'tag tag-success', v:t.upd_sigV }, { k:t.upd_compat, tag:t.tag_pass, cls:'tag tag-success', v:t.upd_compatV }, { k:t.upd_space, tag:t.tag_ok, cls:'tag tag-success', v:t.upd_spaceV }, { k:t.upd_interlock, tag:t.tag_blocked, cls:'tag tag-warning', v:t.upd_interlockV }, { k:t.upd_window, tag:t.tag_ok, cls:'tag tag-neutral', v:t.upd_windowV } ],
+      storage, diagIdle:s.diag==='idle', diagCollecting:s.diag==='collecting', diagDone:s.diag==='done', diagSteps, startDiag, cancelDiag:() => { clearTimeout(this.timer); this.setState({ diag:'idle' }); }, resetDiag:() => this.setState({ diag:'idle' }),
+      probes:[ { k:t.pr1, v:t.tag_included, cls:'tag tag-success' }, { k:t.pr2, v:t.tag_included, cls:'tag tag-success' }, { k:t.pr3, v:t.tag_included, cls:'tag tag-success' }, { k:t.pr4, v:t.tag_unsupported, cls:'tag tag-outline' }, { k:t.pr5, v:t.tag_included, cls:'tag tag-success' }, { k:t.pr6, v:t.tag_redacted, cls:'tag tag-neutral' } ],
+      resetName:s.resetName, onResetName:(e) => this.setState({ resetName:e.target.value }), resetMismatch: s.resetName !== 'mos-edge-07',
+      // update & recovery extras
+      timeFormCols: compact ? '1fr' : '1fr 1fr', autoCols: compact ? '1fr' : '1fr 1fr', g2eq: `display:grid;grid-template-columns:repeat(${compact?1:2},1fr);gap:12px;`,
+      autoUpd: s.autoUpd !== false, autoUpdOff: s.autoUpd === false, autoUpdBody: s.autoUpd !== false ? t.upd_autoOnBody : t.upd_autoOffBody, autoSw: sw(s.autoUpd !== false, false), toggleAutoUpd:() => { this.setState({ autoUpd: s.autoUpd === false }); this.toast(t.saved); },
+      manUploading: !!s.manUp, manUploadLabel: s.manUp?.phase===1 ? t.ui_verifying : t.ui_uploading, manUploadBar:`height:100%;width:${s.manUp?.pct||0}%;background:var(--m-text);transition:width .4s;`, manStaged: !!s.manStaged,
+      manUpload:() => { this.setState({ manUp:{ phase:0, pct:6 } }); this.chain([[600,{ manUp:{ phase:0, pct:38 } }],[700,{ manUp:{ phase:0, pct:81 } }],[500,{ manUp:{ phase:1, pct:100 } }],[900,{ manUp:null, manStaged:true }]]); },
+      manDiscard:() => this.setState({ manStaged:false }), manInstall:() => { this.setState({ manStaged:false, dialog:'installUpdate' }); },
+      cfgExport:() => this.toast(t.cfg_exported), cfgImport:() => this.setState({ dialog:'restoreCfg' }), dialogRestoreCfg: s.dialog==='restoreCfg', confirmRestoreCfg:() => { this.setState({ dialog:null }); this.toast(t.cfg_restored); },
+      // support access
+      supIdle: !s.support, supActive: !!s.support, supPin: s.support?.pin || '', supRemain: s.support ? `${s.support.hours} h` : '', supSession: s.support ? t.sup_sessionNone : '', supDur: s.supDur || '4', onSupDur:(e) => this.setState({ supDur:e.target.value }),
+      supOpen:() => this.setState({ dialog:'support' }), dialogSupport: s.dialog==='support',
+      confirmSupport:() => { const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ', pin = L[Math.floor(Math.random()*L.length)] + L[Math.floor(Math.random()*L.length)] + '-' + String(Math.floor(Math.random()*1e8)).padStart(8,'0').replace(/(\d{4})(\d{4})/, '$1-$2'); this.setState({ dialog:null, support:{ pin, hours: Number(s.supDur || 4) } }); this.toast(t.sup_opened); },
+      supCopy:() => { if (navigator.clipboard && s.support) navigator.clipboard.writeText(s.support.pin.replace(/-/g,'')).catch(()=>{}); this.toast(t.toast_copied); },
+      supClose:() => { this.setState({ support:null }); this.toast(t.sup_closed); }, supExtend:() => { this.setState(st => ({ support:{ ...st.support, hours: st.support.hours + 4 } })); this.toast(t.saved); },
+      // ui packages
+      uiPkgs: [{ id:'builtin', name:t.sys_uiBuiltin, meta:'2026.08.2 · ' + t.ui_builtinMeta, builtin:true }, ...s.uiPkgs].map((u, i) => ({ ...u, active: s.uiActive===u.id, canActivate: s.uiActive!==u.id, canDelete: !u.builtin,
+        rowStyle:`display:flex;align-items:center;gap:12px;padding:14px 16px;${i?'border-top:1px solid var(--m-border);':''}${compact?'flex-wrap:wrap;':''}`,
+        activate:() => { this.setState({ uiActive:u.id }); this.toast(t.ui_switched); }, remove:() => this.setState({ dialog:'removeUi', uiRemoveId:u.id }) })),
+      uiUploading: !!s.uiUpload, uiUploadLabel: s.uiUpload?.phase===1 ? t.ui_verifying : t.ui_uploading, uiUploadFile: 'factory-hmi-2.0.1.uipkg', uiUploadBar:`height:100%;width:${s.uiUpload?.pct||0}%;background:var(--m-text);transition:width .4s;`,
+      uiUpload:() => { this.setState({ uiUpload:{ phase:0, pct:8 } }); this.chain([[500,{ uiUpload:{ phase:0, pct:46 } }],[600,{ uiUpload:{ phase:0, pct:88 } }],[500,{ uiUpload:{ phase:1, pct:100 } }],[900,(st) => ({ uiUpload:null, uiPkgs:[...st.uiPkgs, { id:'hmi-'+Date.now(), name:'Factory HMI', meta:'v2.0.1 · sha256:c7e1…9b04 · ' + t.ui_justNow }] })]]); },
+      dialogRemoveUi: s.dialog==='removeUi', uiRemoveBody: t.ui_rmBody.replace('{name}', (s.uiPkgs.find(p => p.id===s.uiRemoveId)||{}).name || ''),
+      confirmRemoveUi:() => { this.setState(st => ({ dialog:null, uiPkgs: st.uiPkgs.filter(p => p.id!==st.uiRemoveId), uiActive: st.uiActive===st.uiRemoveId ? 'builtin' : st.uiActive })); this.toast(t.toast_removed); },
+      // dialogs
+      dialogReboot:s.dialog==='reboot', dialogPoweroff:s.dialog==='poweroff', dialogReview:s.dialog==='reviewIface', dialogCloseToken:s.dialog==='closeToken', dialogRemoveKey:s.dialog==='removeKey', dialogRotate:s.dialog==='rotateKey', dialogInstallUpdate:s.dialog==='installUpdate', dialogReset:s.dialog==='reset',
+      closeDialog:() => this.setState({ dialog:null }), stop:(e) => e.stopPropagation(),
+      confirmReboot:() => { this.setState({ dialog:null }); this.toast(t.toast_rebooting); }, confirmRemoveKey:() => { this.setState({ dialog:null }); this.toast(t.toast_removed); },
+      confirmReset:() => { if (s.resetName !== 'mos-edge-07') return; this.setState({ dialog:null }); this.toast(t.toast_resetQueued); }
+    };
+  }
+}
+</script>
+</body>
+</html>
