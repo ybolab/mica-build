@@ -1,13 +1,13 @@
 # mos 内置 UI 开发指南
 
-> 文档版本：1.3
+> 文档版本：1.4
 > 基线日期：2026-09-02
 > 状态：已批准的 UI 开发与交付基线
 > 适用范围：`mos-apid` 随系统镜像交付的内置 Web UI，以及未来复用同一 UI 的本地触屏/kiosk
 
 本文给 UI 设计、前端开发、后端开发、测试和产品评审使用。阅读本文不需要预先了解 mos
-代码库。本文同时描述当前产品、已经具备 API 但尚未完成 UI 的功能，以及尚未获批的路线图
-能力；三者不会混写。
+代码库。本文同时描述当前产品、已经具备 API 但尚未完成 UI 的功能，以及以明确“模拟界面”边界呈现的
+路线图原型；真实设备操作与临时内存状态不会混写。
 
 本文中的“必须”“不得”“应当”是实现约束；“建议”是默认选择，偏离时应在变更说明中给出
 理由。
@@ -26,8 +26,9 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
    语义，只按屏幕类别调整密度、导航和输入方式。
 3. **明确区分三种设备状态。** Configured 是已保存的期望配置，Applied 是协调器执行结果，
    Observed 是当前观测事实；不得用配置值冒充设备在线或服务健康。
-4. **没有契约就没有控件。** 后端 API 尚不存在的计划能力只在本文中保留页面结构和所需状态，
-   运行中的 UI 必须隐藏，不能显示不可用菜单、假数据或永远 disabled 的按钮。
+4. **没有契约就不伪装成真实操作。** 后端 API 尚不存在的计划能力可以在当前开发阶段实现完整可交互
+   原型，但只能修改页面内存状态，不能发出 API mutation；受影响页面底部必须显示“模拟界面”说明，
+   明确操作不会改变设备且刷新后复位。进入生产交付前可按 capability 屏蔽。
 5. **安全操作显式且可恢复。** 一次性秘密只展示一次；危险操作显示影响范围；不可逆操作需要
    专用确认流程；所有 mutation 都正确处理 CSRF、任务进度和 API 错误。
 6. **内置交付约束优先。** 运行时不得依赖 CDN；`ui/dist` 的完整文件树必须以编译期虚拟文件系统
@@ -58,7 +59,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 |---|---|---|
 | **S · 已上线 UI** | 当前代码、API 和产品路径均存在 | 修复、统一和扩展测试；不得无故改变语义 |
 | **A · API 就绪** | 类型化 API 已存在，产品 UI 尚未覆盖 | 可以实施 UI；必须以 OpenAPI 和实际错误为准 |
-| **P · 草案规划** | 只有草案计划或后端局部 seam | 可以规划 IA、状态和所需契约；运行时必须隐藏 |
+| **P · 草案规划** | 只有草案计划或后端局部 seam | 可实现交互原型；必须走隔离的内存模拟层并在页底标注，不能调用不存在的 API |
 | **C · 条件/范围外** | 需要产品决策、硬件能力或不属于本地 UI | 不进入当前开发排期和默认导航 |
 
 “能力不存在”和“能力调用失败”必须分开：能力探测确认不存在时隐藏入口；已声明存在但请求失败时
@@ -84,13 +85,13 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 | 重启、关机 | S | 异步接受 | 用专用确认对话框替换 `window.confirm` |
 | System Information、诊断 | P | 仅有健康、meta 和零散系统 seam | 等 PLAN-052 的聚合 API |
 | 时间、NTP、时区 | P | PLAN-044 草案 | 不显示“暂停时间”或不存在的轮询控件 |
-| 系统更新 | P | mosd bus 有局部状态，apid 无产品 API | 等 PLAN-047 的完整状态机和认证契约 |
+| 系统更新 | A/P | `/api/v1/update` 已提供状态和 check/fetch/install 动作；自动策略与完整恢复交互仍在规划 | 真实动作使用 API，规划部分使用模拟层 |
 | 恢复、回滚、凭据恢复 | P | PLAN-048 草案 | 等专用 challenge 与不可逆语义 |
 | 存储状态和生命周期 | P | 布局存在，无 operator API | 只规划健康/容量，不做分区编辑器 |
 | 安装、认领、工厂 onboarding | P | PLAN-046 草案 | 扩展 setup 状态机前先定设备生命周期 |
 | 本地显示 | C | 架构设想复用同一 `/_ui/`，暂无板卡声明支持 | 先保证触控规范，不宣称已交付 |
 | Fleet 管理 | C | PLAN-054 为条件设计，当前只有入站 LAN HTTPS | 不把 fleet 菜单放进本地 UI |
-| 托管应用清单与精选目录 | P | PLAN-056 已批准设计；当前没有 app API/manager | OCI 优先，后续支持声明式 native bundle |
+| 托管应用清单与精选目录 | P | PLAN-056 已批准设计；当前 UI 已提供隔离模拟，仍没有 app API/manager | OCI 与声明式 native bundle 均先完成交互原型 |
 | 公开开放市场/通用编排 | C | 没有运营、隔离、计费或第三方准入能力 | 不进入当前本地 UI 或对外承诺 |
 | 通知中心、告警历史 | P | 当前只有 apply task 历史，没有通知模型 | toast 与活动记录分开；等待后端模型 |
 
@@ -154,32 +155,35 @@ permission 明确返回，而不是只在前端隐藏按钮。
 | Runtime/package manager | Bun |
 | View | React 19 |
 | Build | Vite 8 |
-| Language | TypeScript 5.9 |
+| Language | TypeScript 7（typescript-eslint 暂由 TypeScript 6 兼容别名驱动） |
 | Routing | TanStack Router，文件路由 |
 | Server state | TanStack Query |
 | Styling | Tailwind CSS v4 + `src/styles.css` tokens |
-| Components | 本地 `base-nova` 风格 primitives，底层 `@base-ui/react` |
+| Components | shadcn/ui `base-nova` primitives，底层固定为 `@base-ui/react` |
 | Design system | Adobe Spectrum 2 视觉、状态、主题与无障碍规则，映射为本地语义 token |
 | Icons | Lucide React |
-| Test | Vitest + Testing Library |
+| Test | Vitest + Testing Library + Playwright |
 
 当前目录：
 
 ```text
 pkgs/mosd/apid/ui/
 ├── src/app/routes/           # 文件路由；页面入口保持薄
-├── src/components/ui/        # Button/Card/Field/Select/Status/Switch 等 primitives
-├── src/components/           # AppShell、认证、Preferences、TaskProgress
+├── src/app/routeTree.gen.ts  # TanStack Router 自动生成，不手改
+├── src/features/             # 页面、领域交互与壳层
+├── src/shared/components/ui/ # shadcn CLI 拥有的 base-nova primitives
+├── src/shared/simulation/    # 无网络访问的临时模拟状态与统一页底标注
+├── src/components/           # 迁移期兼容组合组件与 Preferences
 ├── src/i18n/                 # English fallback、懒加载中文、检测与格式化
 ├── src/theme/                # light/dark/system 偏好与文档根同步
-├── src/lib/                  # API transport、类型、领域辅助函数
-├── src/routeTree.gen.ts      # 自动生成，不手改
+├── src/shared/lib/http.ts    # 唯一 HTTP/CSRF transport
+├── src/lib/                  # 公共类型、领域辅助函数和迁移期 transport 转发
 ├── src/styles.css            # 全局 token 与当前布局
 ├── vite.config.ts            # /_ui/ base、路由拆分与内容哈希输出
 └── dist/                     # 受版本控制的嵌入产物
 ```
 
-新增复杂领域时采用渐进结构，不要求一次性搬迁现有页面：
+新增复杂领域按功能切片组织：
 
 ```text
 src/features/<domain>/
@@ -189,8 +193,8 @@ src/features/<domain>/
 └── *.test.tsx
 ```
 
-路由只负责 URL 参数、页面组合和权限入口；运输层留在 `src/lib/api.ts`；服务端状态继续由 TanStack
-Query 管理。表单草稿使用组件本地状态，不为简单设置引入全局 store。
+路由只负责 URL 参数、页面组合和权限入口；运输层固定在 `src/shared/lib/http.ts`；服务端状态继续由
+TanStack Query 管理。表单草稿和模拟能力使用组件/Provider 内存状态，不为简单设置引入全局 store。
 
 ### 4.2 构建硬约束
 
@@ -217,10 +221,9 @@ dist/assets/zh-cn-<hash>.js
 allowlist、`nosniff`、CSP 和 `Referrer-Policy`。安全的无扩展路径才允许 SPA fallback；文件型 miss 和敌意
 路径必须返回空 404。
 
-2026-09-01 基线共有 13 个文件、612,924 B，逐文件 gzip 合计约 193.4 KiB。`index.html` 首屏引用的
-HTML、CSS、runtime、vendor 与 app entry 合计 579,234 B，逐文件 gzip 约 181.2 KiB；其余约 33.7 KiB
-原始内容按页面或中文语言选择懒加载。大小不是永久硬上限，但每个 PR 都应同时报告首屏引用集合与完整
-资源树的 raw/gzip 变化；任一指标增长超过 10% 时说明原因和替代方案。不得只比较最大的单个 chunk。
+构建文件数量不固定；字体、路由、中文 message catalog、组件和运行时代码均可独立形成内容哈希资源。
+每个 PR 都应同时报告首屏引用集合与完整资源树的 raw/gzip 变化；任一指标增长超过 10% 时说明原因和
+替代方案。不得只比较最大的单个 chunk，也不得为了减少文件数量关闭路由、locale 或组件懒加载。
 
 #### 自定义 UI 包
 
@@ -289,7 +292,7 @@ bun run coverage
 │   ├── wifi                      已知 Wi-Fi 网络                  [A]
 │   └── wireguard/:iface          tunnel 与 peer                  [A]
 ├── services                      Container / MQTT                 [S]
-├── apps                          Applications                     [P]
+├── applications                  Applications 交互模拟            [P]
 │   ├── catalog                   精选应用目录                     [P]
 │   ├── activity                  安装与生命周期任务               [P]
 │   └── :appId                    应用详情                         [P]
@@ -312,13 +315,13 @@ bun run coverage
 
 ### 5.2 导航规则
 
-- 桌面（>860 px）：左侧 238 px sidebar，一级导航常驻，二级导航出现在页面内或 section nav。
-- 中等宽度（581～860 px）：顶部横向一级导航；二级导航使用横向可滚动 tabs 或当前页选择器。
-- 手机/窄触屏（≤580 px）：标题和主操作纵向排列；表格转为摘要卡或允许带提示的横向滚动。
-- 二级页面的 sidebar active 状态归属一级父项，例如 `/_ui/network/wifi` 仍高亮 Network。
+- 桌面与中屏：64 px Klein 蓝横向一级导航常驻；二级导航使用页面内 tabs。
+- 导航项在可用宽度降低时先隐藏图标；进入窄屏后改为右侧抽屉，不做第二套页面结构。
+- 手机/窄触屏（≤780 px）：标题和主操作纵向排列；表格允许带提示的横向滚动，主要表单单列。
+- 二级页面的 active 状态归属一级父项，例如 `/_ui/system/ui` 仍高亮 System。
 - Setup 和 Login 由 session 状态决定，不暴露为可收藏的独立管理路径。
-- P/C 页面不加入运行时导航。Applications 在 PLAN-056 中已确定为第六个产品入口，但只有
-  `mos-appd`、typed API、capability 和安全门禁一并交付后才注册到运行时导航。
+- 当前开发版本将 Applications 和 System 规划页加入导航以评审完整交互；它们只使用模拟层并在页底
+  标注。生产阶段由 capability 屏蔽，不得仅删除标注后把模拟状态当成真实能力。
 - Fleet 永远不是此本地 shell 的入口；未来 fleet 是独立产品表面。
 
 ### 5.3 页面骨架
@@ -540,12 +543,18 @@ Rotate key 会改变本机公钥并可能使所有远端 peer 失联。确认对
 MQTT listen/auth 虽存在于 settings schema，但没有可用 typed product write；Container 也不是应用市场。
 不得用 generic settings UI 绕过这条白名单。
 
-### 7.7 Applications `/_ui/apps` `[P · PLAN-056]`
+浏览器 Terminal 当前只实现交互模拟：开关与终端输出不发起 shell、systemd 或 WebSocket 请求，刷新后
+复位，页面底部持续标注“模拟界面”。真实终端能力若未来获批，必须先定义受约束会话、审计、超时、
+并发与命令权限协议，不能把通用 root shell 直接接到现有 HTTP transport。
+
+### 7.7 Applications `/_ui/applications` `[P · PLAN-056 · 当前为模拟]`
 
 Applications 是独立于 Services 的第六个产品区域。它管理“一个可安装产品”的身份、来源、版本、
 权限、数据和生命周期；Services 继续只管理 `container.enabled`、`mqtt.enabled` 等 mos 系统能力。
 当前设备没有 `/api/v1/apps`、应用目录或 `mos-appd`，所以本节是已批准的产品与接口设计，**不是当前
-已交付能力**。前端可以制作原型、类型和 fixture，但在 capability 可用前不得把路由注册到生产导航。
+已交付设备能力**。内置 UI 已注册完整交互原型：安装、启动/停止、更新、保留数据移除、详情和 Activity
+只写入 `SimulationProvider` 的内存状态，不导入 HTTP transport；页面底部固定说明刷新后复位。生产阶段
+在 capability 可用前屏蔽该入口。
 
 #### 应用类型与信任标签
 
@@ -573,7 +582,7 @@ manifest；不得在浏览器中自行判断签名可信或将原始 bundle 当�
 
 #### 页面结构
 
-`/_ui/apps` 默认进入 **Installed**；同一级 tab 为 **Catalog** 和 **Activity**。
+`/_ui/applications` 默认进入 **Installed**；同一级 tab 为 **Catalog** 和 **Activity**。
 
 - **Installed**：搜索、来源/kind/state filter、应用卡或摘要表。卡片显示名称、版本、kind、信任来源、
   desired/runtime/health、更新时间和一个主动作；系统应用和 unmanaged 应用清楚标为只读；
@@ -738,7 +747,8 @@ Reboot 和 Power off 使用专用 ConfirmDialog，不再使用浏览器 `window.
 
 ### 7.10 System Information `/_ui/system/info` `[P · PLAN-052/043]`
 
-只有聚合、版本化 API 可用后才显示。目标字段：machine id（默认部分遮挡）、board、kernel、系统镜像
+当前作为 System 页内 tab 显示模拟硬件身份，并将真实 `/api/v1/meta` 与 `/api/v1/health` 字段清楚分开；
+页底标注模拟边界。聚合、版本化 API 可用后再替换示例字段。目标字段：machine id（默认部分遮挡）、board、kernel、系统镜像
 版本及 git stamp、build date、安装包 manifest、active RAUC slot、uptime。
 
 - 页面只读，可复制 support-safe 摘要；
@@ -751,9 +761,9 @@ Reboot 和 Power off 使用专用 ConfirmDialog，不再使用浏览器 `window.
 
 目标页面包含当前本地时间、UTC、时区、同步状态、NTP servers、last successful sync 和 source。
 保存时明确哪些值立即应用，哪些需要等待 timesyncd。草案要求系统持续校时，因此不设计“暂停 NTP”
-或 GUI 自己轮询修改系统时间。能力缺失时页面隐藏。
+或 GUI 自己轮询修改系统时间。当前 tab 是只修改内存的交互模拟；不得导入 HTTP transport。
 
-### 7.12 Update `/_ui/system/update` `[P · PLAN-047]`
+### 7.12 Update `/_ui/system/update` `[A/P · PLAN-047]`
 
 必须以完整后端状态机为前提：
 
@@ -764,26 +774,28 @@ idle -> checking -> downloading -> ready -> installing
 ```
 
 每个状态定义：允许动作、进度是否确定、可否离开页面、是否安全重启、错误是否可重试。更新来源、签名/
-认证、maintenance window、slot 和 rollback 结果由后端提供。只存在 mosd bus seam 而没有 apid 产品 API
-时，UI 不得直接接 D-Bus 或显示半成品按钮。
+认证、maintenance window、slot 和 rollback 结果由后端提供。当前状态读取以及 check/fetch/install 使用
+`/api/v1/update` 产品 API；自动更新策略仍为模拟状态。UI 不得直接接 D-Bus，也不得让模拟设置进入 API。
 
 ### 7.13 Storage `/_ui/system/storage` `[P · PLAN-049]`
 
 只规划 operator 需要的状态：system/data/media tiers、容量、使用率、健康、只读/降级、阈值、数据生命周期
 说明。不得做通用 partition editor、任意 mount 或文件浏览器。清理/格式化等动作必须有独立 API、影响
-预览和不可逆确认。
+预览和不可逆确认。当前容量与分配视图是模拟数据，页底统一标注。
 
 ### 7.14 Diagnostics `/_ui/system/diagnostics` `[P · PLAN-052]`
 
 页面以一次版本化、大小和时间均有界的诊断快照为数据源。内容包括 release/board、启动槽、reset cause、
 服务/协调器失败、存储、时间、thermal/watchdog 和 observed network。Support bundle 必须按已审核 schema
-脱敏并显示大小、包含范围和隐私说明。没有经过测试的脱敏边界前不得提供下载。
+脱敏并显示大小、包含范围和隐私说明。当前收集、下载就绪和临时支持访问均为内存模拟；没有经过测试
+的脱敏边界前不得连接真实下载或远程访问。
 
 ### 7.15 Recovery `/_ui/system/recovery` `[P · PLAN-048]`
 
 按风险从低到高排列：restart service（若未来有 typed action）、rollback、credential recovery、reset、wipe。
 每个动作都需要后端返回 eligibility、影响范围和 challenge；前端不能自行推断可恢复性。不可逆动作采用
-设备名/挑战短语确认，说明保留与删除的数据，并在执行后提供明确的终态或物理恢复步骤。
+设备名/挑战短语确认，说明保留与删除的数据，并在执行后提供明确的终态或物理恢复步骤。当前备份、
+恢复和 factory reset 只展示交互与确认，不执行设备 mutation。
 
 ### 7.16 不进入本地导航的规划项
 
@@ -948,31 +960,31 @@ Base UI；Adobe Spectrum 2 是颜色层级、控件状态、focus、密度、mot
 
 | Token | 值 | 用途 |
 |---|---|---|
-| background | `#f8f8f8` | Spectrum light 应用背景 |
-| surface / popover | `#ffffff` | 卡片、菜单、面板 |
-| foreground | `#292929` | 主文本 |
-| muted | `#f1f1f1` | 次级表面与 hover |
-| muted foreground | `#5c5c5c` | 次级文本 |
-| border / input | `#d5d5d5` / `#8a8a8a` | 分组边界与达到 3:1 的控件边界 |
-| accent / ring | `#0265dc` / `#1473e6` | 主动作、选择、键盘 focus |
-| accent subtle | `#e6f0ff` | 当前导航等低强调选择面 |
-| success | `#12805c` | 已证实成功 |
-| warning | `#7a5200` | 风险/降级 |
-| danger | `#c9252d` | 失败/危险动作 |
+| background | `oklch(.961 .011 95)` | 暖灰应用背景 |
+| surface / popover | `oklch(1 0 0)` | 卡片、菜单、面板 |
+| foreground | `oklch(.17 .075 270)` | 主文本 |
+| muted | `oklch(.923 .026 270)` | 次级表面与 hover |
+| muted foreground | `oklch(.44 .075 270)` | 次级文本 |
+| border / input | `oklch(.75 .055 270)` / `oklch(.68 .055 270)` | 分组与控件边界 |
+| primary / ring | `oklch(.36 .205 264)` / `oklch(.42 .2 264)` | Klein 蓝主动作、选择和 focus |
+| accent | `oklch(.895 .052 270)` | 当前导航等低强调选择面 |
+| success | `oklch(.45 .13 150)` | 已证实成功 |
+| warning | `oklch(.46 .105 80)` | 风险/降级 |
+| danger | `oklch(.47 .19 27)` | 失败/危险动作 |
 
 深色主题使用 `.dark` 的独立 Spectrum-aligned 角色，不通过 alpha 反转浅色值。`ThemeProvider` 支持
 `system`、`light`、`dark`，默认跟随系统，并以 `mos.ui.theme` 保存用户明确选择；system 模式才监听
 `prefers-color-scheme`。根元素 class、`color-scheme` 和 `theme-color` 必须同步。
 
-原 mos lime `#d8ff4f` 只允许作非交互品牌标记，不承担动作、focus、选择或健康状态。success、warning、
-danger 必须使用各自 token，并同时提供 icon/文本。项目没有可再分发的 Adobe Clean，因此继续使用系统字体；
-图标继续使用组件配置中的 Lucide，不声称嵌入 Adobe 产品组件或字体。
+success、warning、danger 必须使用各自 token，并同时提供 icon/文本。项目没有可再分发的 Adobe Clean，
+因此自托管 Barlow 与 Barlow Condensed 并为中文使用系统无衬线回退；图标继续使用 Lucide，不声称嵌入
+Adobe 产品组件或字体。
 
 ### 10.2 尺寸和密度
 
 - body 建议 14～16 px，说明文字最小 12 px；不得用 10 px 承载关键操作或状态。
-- 所有可点击/触控目标最小 44×44 CSS px；当前 38/40/42 px 的导航和普通按钮需逐步提升。
-- 页面最大内容宽度维持约 1180 px；桌面页边距 42 px，中屏 20 px，窄屏至少 16 px。
+- 精确指针的普通控件高 38 px，紧凑表格动作最小 32 px；粗指针/触屏目标强制至少 44×44 CSS px。
+- 页面最大内容宽度为 1280 px；桌面页边距 24 px，窄屏至少 16 px。
 - 卡片间距采用 14/16 px 节奏；卡片内部 20～24 px；相关 label 与 control 间距小于卡片间距。
 - 状态和数值使用 tabular figures 或等宽数字，接口名、公钥、地址使用系统 monospace。
 
@@ -982,7 +994,7 @@ danger 必须使用各自 token，并同时提供 icon/文本。项目没有可�
 |---|---:|---|
 | Compact | 320～580 | 单列；标题换行；bottom/顶部导航可横滚；表单全宽 |
 | Medium | 581～860 | 顶部一级导航；摘要 1～2 列；dialog 宽度受限 |
-| Desktop | 861～1439 | 左 sidebar；2～3 列摘要；标准表格 |
+| Desktop | 861～1439 | 顶部横向导航；2～4 列摘要；标准表格 |
 | Wide | ≥1440 | 内容仍限制 1180～1280；不无限拉伸行长 |
 | Local touch | 由板卡声明 | 强制 ≥44 px；无 hover-only；虚拟键盘不遮挡提交/错误 |
 
@@ -1291,11 +1303,11 @@ PLAN-046 的 onboarding 可能重构 Setup；本地显示需要板卡 capability
 - 不从 desired settings 推断 live health；
 - 不让 UI 直连 D-Bus、systemd、shell 或设备文件；
 - 不显示 Wi-Fi 扫描、连接、AP mode 开关等当前 API 不具备的动作；
-- 不显示 update、recovery、storage、fleet 的假数据或 disabled 菜单；
+- 不把 update、recovery、storage、fleet 的模拟状态描述为真实设备状态；开发期原型必须页底标注，生产期按 capability 屏蔽；
 - 不把 Services 做成 Docker/应用 marketplace；Applications 是独立、带信任边界的模块；
 - 不把精选目录宣称为公开市场，不接受未签名 artifact、不带 digest 的 image、任意 unit/script 或 host path；
 - 不因应用签名通过就宣称其“安全”，也不在当前 rootful runtime 上宣称 hostile multi-tenant isolation；
-- 不提供通用 partition editor、文件管理器、终端或默认 packet capture；
+- 不提供真实通用 partition editor、文件管理器、root 终端或默认 packet capture；开发期 Terminal 仅可使用无网络访问的模拟层；
 - 不把 console shell 的 inert setting 暴露给用户；
 - 不持久化浏览器 CSRF、一次性 token 或设备秘密；
 - 不依赖 CDN、remote font、第三方运行时或在线图标；
@@ -1322,7 +1334,7 @@ PLAN-046 的 onboarding 可能重构 Setup；本地显示需要板卡 capability
 
 UI 开发在提交前逐项确认：
 
-- [ ] 该功能的成熟度不是未获批 P/C；
+- [ ] S/A 功能使用真实 typed API；P 功能只使用隔离模拟层、页底标注且可在生产构建按 capability 屏蔽；
 - [ ] 使用 typed endpoint，没有绕过为 generic settings；
 - [ ] 能指出每个状态来自 Configured、Applied 还是 Observed；
 - [ ] loading、empty、stale、degraded、offline、error 均有设计；

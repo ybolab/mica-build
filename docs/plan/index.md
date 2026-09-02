@@ -50,4 +50,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-061 Establish the `/mos` persistent system namespace**](PLAN-061.md) `2026-09-02`
 - [x] [**PLAN-062 Add uploadable versioned custom UI packages**](PLAN-062.md) `2026-09-02`
 - [x] [**PLAN-063 Adopt the direct development-stage DATA layout**](PLAN-063.md) `2026-09-02`
-- [ ] [**PLAN-064 Recreate the built-in UI from the approved prototype**](PLAN-064.md) `2026-09-02`
+- [x] [**PLAN-064 Recreate the built-in UI from the approved prototype**](PLAN-064.md) `2026-09-02`

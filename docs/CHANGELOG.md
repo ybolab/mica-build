@@ -4,6 +4,24 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The built-in UI now implements the complete product prototype (2026-09-02)
+
+The recovery SPA now matches the approved horizontal Klein-blue prototype and
+uses the shadcn/ui base-nova contract on Base UI, Spectrum-aligned OKLCH tokens,
+self-hosted Barlow fonts, responsive desktop/mobile navigation, persisted
+English/Simplified Chinese and light/dark preferences, and route-level lazy
+loading inside the embedded VFS. Overview, typed network management, system
+services, credentials, UI package versions and authenticated update actions
+use the current APID contracts. Applications, browser terminal, time, automatic
+update policy, storage, diagnostics/support, backup and recovery are complete
+interactive simulations backed only by ephemeral in-memory state; every
+affected page labels that boundary at its bottom. Vitest and Playwright cover
+the simulation boundary, navigation, preferences and critical workflows. The
+34-file embedded tree is 1,067,103 bytes raw and 501,172 bytes as the sum of
+per-file gzip streams; 250,984 raw bytes are the twelve Latin Barlow font
+assets, and the remaining increase from the 676 KiB baseline delivers the
+complete route and interaction surface. PLAN-064.
+
 ## The built-in UI moved to an internal namespace (2026-09-02)
 
 The verity-covered recovery SPA now owns `/_ui` and uses canonical `/_ui/`
@@ -12,7 +30,7 @@ active. `/ui` has no compatibility alias and is now an ordinary custom-UI
 route, so an integrator bundle can own that path without being intercepted by
 APID. The route router, one-decode reserved-segment guard, Vite/TanStack bases,
 localized recovery copy, committed hashed assets, tests and current English
-and Chinese guidance moved together. `/api/v1/ui` and `/srv/ui` retain their
+and Chinese guidance moved together. `/api/v1/ui` and `/mos/ui` retain their
 existing API and storage meanings. PLAN-060.
 
 ## Release identity, authenticated updates and the security lifecycle (2026-09-02)
@@ -29,7 +47,7 @@ import through a lockbox. mosd owns the update lifecycle (idle through
 rolled-back, plus `update-unavailable` when the DATA pool is missing,
 read-only or exhausted) under a fail-closed policy file for maintenance
 windows, metered links and a health-gated reboot; apid exposes it under
-`/api/v1/update` and the System page shows it read-only.
+`/api/v1/update` and the System page exposes its state and typed actions.
 `docs/design/security-model.md` separates six security boundaries and is
 the canonical I1-I4 boot-assurance ladder; `security-lifecycle.md` and
 `manufacturing.md` name owners for keys, releases, advisories, factory
@@ -82,7 +100,7 @@ shadcn `base-nova` controls remain backed solely by Base UI, while local
 semantic tokens now follow Adobe Spectrum 2 color hierarchy, focus, state,
 density and accessibility guidance without importing a second component
 runtime. Every shipped route was localized, theme and locale document metadata
-stay synchronized, and the fixed three-file APID bundle remains deterministic.
+stay synchronized, and the complete embedded APID asset tree remains deterministic.
 PLAN-058.
 
 ## Package versions mean something, and the image says what it holds (2026-09-01)

@@ -1,7 +1,9 @@
 # PLAN-064 Recreate the built-in UI from the approved prototype
 
-- **status**: draft
+- **status**: completed
 - **createdAt**: 2026-09-02 03:32
+- **approvedAt**: 2026-09-02 09:15
+- **completedAt**: 2026-09-02 11:15
 - **relatedTask**: [UI-008](../task/UI-008.md)
 
 ## Context
@@ -24,11 +26,12 @@ source layout predates the current PMA Web conventions.
 The current OpenAPI contract supports authentication, setup, health and device
 metadata, settings, tasks, network interfaces, Wi-Fi, WireGuard peers, service
 settings, API tokens, SSH keys, sessions, transient root access, power actions,
-and versioned UI bundle management. It does not yet provide the application
-catalog/runtime, OS update, time, storage, diagnostics/support, backup/restore,
-recovery, factory-reset or browser-terminal contracts shown by the prototype.
-The prototype's fixture data, simulated timers and older `.uipkg`, `/recover`
-and `/data` references are therefore not valid production inputs.
+authenticated update state/actions and versioned UI bundle management. It does
+not yet provide the application catalog/runtime, time, automatic-update policy,
+storage, diagnostics/support, backup/restore, recovery, factory-reset or
+browser-terminal contracts shown by the prototype. The prototype's fixture
+data, simulated timers and older `.uipkg`, `/recover` and `/data` references are
+therefore not valid production inputs.
 
 The existing lint, typecheck and 18-test suite passes. Coverage is currently
 41.70% by lines, below the PMA Web target. The committed built asset tree is
@@ -36,13 +39,14 @@ approximately 676 KiB before adding self-hosted fonts.
 
 ## Proposal
 
-Recreate the prototype as the production built-in UI while preserving the
-existing API and embedded-delivery boundaries. Visual parity applies to every
-screen that is shipped. Capabilities without an implemented API remain absent
-from production navigation instead of appearing with sample data, disabled
-actions or simulated success. Their complete interaction design remains in the
-Chinese product-design guide and the supplied prototype until their backend
-tasks are delivered.
+Recreate the complete prototype as the production built-in UI while preserving
+the existing API and embedded-delivery boundaries. Visual parity applies to
+every screen in the prototype. Capabilities with an implemented API use the
+real typed transport. Capabilities without an implemented API use an explicit,
+isolated simulation adapter and remain fully navigable and interactive. Every
+page containing simulated state or actions displays a localized simulation
+notice at the bottom of its content, immediately above the application status
+footer, stating that the behavior is simulated and does not change the device.
 
 ### 1. Align the application foundation
 
@@ -61,8 +65,11 @@ tasks are delivered.
   TypeScript 6.1. This follows the official side-by-side TypeScript 7 migration
   model instead of weakening or removing ESLint type support.
 - Continue to use TanStack Query for server state and local React state for
-  route-local interaction. Do not add Zustand unless implementation proves a
-  genuinely shared UI-only state requirement.
+  route-local interaction. Use Zustand only for simulated UI state that must be
+  shared between routes; never mirror real API state into it.
+- Define real and simulated feature adapters explicitly. A feature must not
+  silently fall back from a failed real request to fixtures, and simulated
+  adapters must not import or invoke the shared HTTP client.
 
 ### 2. Reproduce the approved visual system
 
@@ -85,7 +92,7 @@ tasks are delivered.
 - Retain only system, light and dark appearance choices. The prototype's design
   palette switcher is an authoring aid, not a new product preference.
 
-### 3. Rebuild API-backed product areas
+### 3. Rebuild the complete product surface
 
 - **Login and setup:** reproduce the centered authentication surface and keep
   the current auth/setup behavior and session handling.
@@ -96,16 +103,27 @@ tasks are delivered.
   detail panels and dialog workflows on the existing read/write contracts,
   including review/apply progress where the API exposes asynchronous tasks.
 - **Services:** restyle and retain current container and MQTT settings. Hide the
-  browser-terminal control until a terminal transport and authorization API
-  exists.
+  real browser-terminal transport until an authorization API exists, but ship
+  the prototype terminal window and session interactions through the isolated
+  simulation adapter.
 - **Access:** reproduce password, API-token, SSH-key, session and transient-root
   workflows with Base UI dialogs and current security contracts.
-- **System:** reproduce the API-backed General, device information, UI version
-  manager and power actions. Hide time, update/recovery, storage,
-  diagnostics/support, backup/restore, factory reset and other unimplemented
-  sections.
-- **Applications:** omit the route and navigation item until the native/container
+- **Applications:** reproduce Installed, Catalog and Activity views plus the
+  install, update, start/stop, uninstall and source-detail flows. Use the
+  simulation adapter for the complete module until the native/container
   application management API and lifecycle work are delivered.
+- **System:** use real APIs for General settings, device information, UI version
+  management and supported power actions. Reproduce Time, Update and Recovery,
+  Storage, Diagnostics and Support, backup/restore and factory-reset flows with
+  simulated state and progress where no API exists.
+
+Simulated state is deterministic, ephemeral and reset when the application is
+reloaded. Simulated actions may update that in-memory state and show the same
+progress, success and failure surfaces as the prototype, but they must never
+issue a request, persist device data, invoke a real power/security operation or
+claim that the underlying system changed. Mixed real/simulated System and
+Services pages retain one bottom simulation notice for the page and identify
+the simulated scope in its text.
 
 Every query surface must distinguish initial loading, refetching/stale data,
 empty results, actionable errors and offline state. Mutations must expose
@@ -139,6 +157,10 @@ confirm dialogs and prototype-only timers are not permitted.
 - Add Playwright screenshot and critical-flow coverage for representative
   desktop, tablet and mobile viewports in light and dark modes. Store only
   production UI snapshots; do not execute or ship the prototype runtime.
+- Cover every simulated route with tests proving that the bottom simulation
+  notice is visible in both locales, state resets on reload, and representative
+  actions never call the HTTP transport. Mixed pages must also prove that real
+  controls continue to use their production APIs.
 - Run lint, TypeScript 7 typecheck, unit coverage, Playwright checks and the
   production build. Regenerate the committed `dist` tree and run the APID UI
   asset/package checks so the embedded result matches the source build.
@@ -151,10 +173,10 @@ confirm dialogs and prototype-only timers are not permitted.
 - Pixel-level parity can regress across browsers and font rendering engines.
   Tokenized dimensions plus fixed Playwright environments reduce, but do not
   eliminate, platform differences.
-- Hiding unsupported prototype modules produces a smaller production
-  navigation than the complete design prototype. Showing them would imply
-  capabilities the system does not provide; they should be enabled only with
-  their future API work.
+- Simulated controls can be mistaken for real device behavior. The mandatory
+  bottom notice, explicit adapter boundary, ephemeral state and no-network
+  tests reduce that risk; the implementation must not use silent fallback or
+  persist simulated results.
 - TypeScript 7 no longer supplies the programmatic API expected by the current
   ESLint parser. The side-by-side TypeScript 6 compatibility dependency must be
   kept isolated from the TypeScript 7 CLI gate and verified in a clean install.
@@ -169,28 +191,31 @@ confirm dialogs and prototype-only timers are not permitted.
 
 In scope: the production application under `pkgs/mosd/apid/ui`; its route and
 shared-source layout; visual tokens, bundled fonts, shadcn/Base UI primitives,
-English and Chinese resources; all currently API-backed routes and workflows;
-unit, accessibility, security, visual and critical-flow tests; generated route
-tree and committed `dist`; focused APID embedding verification; and updates to
-the built-in UI development guide and changelog that describe the delivered
+English and Chinese resources; every route and workflow represented by the
+prototype; real adapters for currently supported APIs; isolated, ephemeral
+simulation adapters and bottom notices for every unsupported capability; unit,
+accessibility, security, visual and critical-flow tests; generated route tree
+and committed `dist`; focused APID embedding verification; and updates to the
+built-in UI development guide and changelog that describe the delivered
 implementation.
 
-Out of scope: backend or OpenAPI changes; application marketplace/runtime;
-browser terminal; time, update, storage, diagnostics, support, backup, recovery
-or factory-reset implementation; mock/demo product data; other locales; a
+Out of scope: backend or OpenAPI changes; real application lifecycle, browser
+terminal, time, automatic-update policy, storage, diagnostics, support, backup,
+recovery or factory-reset effects; persistence of simulated state; other locales; a
 user-selectable color-palette system; compatibility for pre-release UI layouts;
 and modifying or embedding the supplied prototype bundle.
 
 ## Alternatives
 
-1. **Ship every prototype screen with fixtures or simulated operations.** This
-   gives the largest visual surface immediately but presents false device state
-   and cannot meet production error/security requirements; rejected.
+1. **Hide every unsupported module.** This keeps the production UI entirely
+   API-backed but prevents design and interaction review of planned functions;
+   rejected by the clarified product requirement.
 2. **Only reskin the current pages.** This is faster but leaves network write
    workflows and responsive interaction materially short of the approved
    prototype; rejected.
-3. **Wait for every planned backend feature.** This avoids temporarily hidden
-   modules but blocks usable UI progress on unrelated roadmap work; rejected.
+3. **Render unsupported modules as disabled static screens.** This avoids
+   simulated state but cannot validate the prototype's dialogs, progress and
+   multi-step flows; rejected.
 4. **Copy the prototype's HTML/CSS/JavaScript runtime.** This is visually close
    but violates the PMA Web architecture, component, state, testing and
    security requirements; rejected.
@@ -200,3 +225,16 @@ and modifying or embedding the supplied prototype bundle.
 - 2026-09-02: Created after inspecting the complete supplied prototype, current
   frontend source, embedded build contract, OpenAPI surface and baseline quality
   gates.
+- 2026-09-02: Revised after the user required all unimplemented prototype
+  functions to remain interactive with a simulation notice at the bottom of
+  each affected page.
+- 2026-09-02: User approved the revised complete-prototype implementation.
+- 2026-09-02: Delivered the responsive horizontal console, all prototype
+  routes, typed production adapters, isolated application/terminal/system
+  simulations, bilingual light/dark appearances, and three committed visual
+  baselines. The normal UI gate reports 95.62% statements, 86.60% branches,
+  96.29% functions and 96.59% lines; 29 unit tests, 14 applicable Playwright
+  checks, the reproducible package gate and focused APID VFS/namespace tests
+  pass. The final embedded tree contains 34 files totaling 1,067,103 bytes
+  raw and 501,172 bytes as per-file gzip streams; its generated Rust asset
+  table is 5,926 bytes.
