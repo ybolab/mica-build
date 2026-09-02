@@ -11,7 +11,9 @@ its dossier's Assurance level section
 ([board-template.md](board-template.md)), tied to the design records that
 implement or propose each level.
 
-TODO(trust/security-model): cite docs/design/security-model.md as the canonical I1-I4 definition after the trust branch merges
+The canonical definition of the ladder is section 5 of
+[security-model.md](../design/security-model.md); this page applies it and
+does not restate it.
 
 **Additive** means each level presumes the ones below it. **Honest** means a
 level is claimed only with the mechanism in place on that board and the

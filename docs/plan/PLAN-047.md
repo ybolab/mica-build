@@ -1,8 +1,9 @@
 # PLAN-047 Deliver authenticated system updates
 
-- **status**: draft
+- **status**: completed
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-02
+- **completedAt**: 2026-09-02
 - **relatedTask**: [RFCT-283](../task/RFCT-283.md)
 
 ## Context
@@ -65,6 +66,56 @@ guides. Out of scope: application-container updates and fleet-wide orchestration
 3. Treat automatic boot fallback as the full rollback UX. Rejected because
    operators also need status, manual policy and recovery when both slots fail.
 
+## Completion
+
+### Delivered
+
+- `pkgs/rauc-sign` now ships the `rauc-update` client, signed target selection,
+  resumable and bounded `/mos/updates` acquisition, verified handoff and
+  lockbox import; `pkgs/rauc-sign/deb/rauc-update` installs the device binaries.
+- `pkgs/mosd/mosd/src/update_lifecycle.rs` and `update_policy.rs` drive the
+  state machine and policy gates; `pkgs/mosd/apid/src/update_api.rs` and the
+  System UI expose the authenticated control and status surface.
+- `docs/design/updates.md` records the state model, policies, operator paths
+  and the unit-versus-bench fault-evidence boundary.
+
+### Verification
+
+- `(cd verify && bun test)`, `make os-apid-api-spec-pins` and
+  `bash tests/deb-preflight-test.sh` — packaged client, release identity, API
+  contract and package inputs.
+- `bash tests/rauc-trust-negative-test.sh` and
+  `bash tests/trust-domain-hygiene-test.sh` — wrong-key/tampered-bundle
+  refusals and trust-domain separation.
+- `bash tests/rootfs-manifest-test.sh`, `bash tests/mos-data-layout-test.sh`,
+  `make docs-verify` and `bash tests/shell-pipefail-lint.sh`.
+
+Cargo gates were not rerun in this acceptance sweep: each merged Rust subtask
+ran its Cargo gates on the identical delivered commit.
+
+### Residue
+
+- Production images still need a product-selected provisioning path for the
+  pinned TUF `root.json` and `/var/lib/mos/update/` rollback state; RAUC device
+  keyring rotation also remains a fleet re-anchoring decision.
+- `mos-health` does not yet report `health.boot`, so a real device does not
+  advance from validation to the `succeeded` state through that signal.
+- PLAN-049 still owns the numeric DATA reservation behind `maxBytes`.
+- Every bench column in `docs/design/updates.md` section 6 remains owed,
+  including real power cuts, low-space/read-only DATA, incompatible install,
+  exhausted boot credits and the complete automatic-fallback loop on each
+  claimed board/storage class.
+
+### Acceptance matrix
+
+| Acceptance | Verdict | Evidence and verification | Residue |
+|---|---|---|---|
+| Production RAUC and TUF trust domains are provisioned, rotatable and tested against wrong-key/tampered artifacts. | Partially satisfied | `docs/design/release-signing.md`; `pkgs/rauc-sign/tests/rotation.rs`; `tests/rauc-trust-negative-test.sh`; the negative suite passed. | Device provisioning of the pinned TUF root/state and RAUC keyring rotation are not shipped; production key ceremonies are operator-owned. |
+| Compatible targets are discovered from signed release metadata and downloaded resumably within reserved space, with an offline import path. | Partially satisfied | `pkgs/rauc-sign/src/update.rs`; `pkgs/rauc-sign/src/workspace.rs`; `pkgs/rauc-sign/deb/rauc-update`; packaging/verifier gates passed. | The pinned root and STATE rollback directory are not provisioned, and PLAN-049 still owes the numeric storage reservation policy. |
+| mosd/apid/UI expose complete update, validation and rollback state. | Partially satisfied | `pkgs/mosd/mosd/src/update_lifecycle.rs`; `pkgs/mosd/apid/src/update_api.rs`; `pkgs/mosd/apid/ui/src/app/routes/system.tsx`; verify Bun tests and API spec pins passed. | `mos-health` does not publish `health.boot`, so the real image cannot yet emit the healthy `succeeded` transition through that contract. |
+| Maintenance, metered/offline and safe-to-reboot policies are explicit. | Satisfied | `pkgs/mosd/mosd/src/update_policy.rs`; `pkgs/mosd/mosd/src/update_lifecycle.rs`; `docs/design/updates.md`; the merged Rust subtask gates cover policy branches and docs verification passed. | None. |
+| Board tests cover power loss, incompatibility, low space, failed first boot and automatic fallback; operator docs match the evidence. | Partially satisfied | `docs/design/updates.md`; `pkgs/rauc-sign/tests/update.rs`; `docs/design/uboot-ab-handshake.md`; merged Rust gates cover host-side behavior and docs verification passed. | Bench owed: every section 6 hardware row, including real power interruption, storage faults, board compatibility refusal, failed first boot/credit exhaustion and the full automatic fallback loop. |
+
 ## Annotations
 
 - 2026-08-31: The user removed system extensions and selected whole-system
@@ -73,3 +124,5 @@ guides. Out of scope: application-container updates and fleet-wide orchestration
 - 2026-09-02: Bound update acquisition and verified artifacts to PLAN-061's
   writable `/mos/updates` DATA workspace; no alternate staging filesystem is
   permitted.
+- 2026-09-02: Campaign `l1-6rjx4wrt-20260901180748` was integrated from merge
+  branch `bkd/v0nvqwf3` for acceptance and completion.

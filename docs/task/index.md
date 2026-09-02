@@ -39,16 +39,16 @@ one lock and rejects a transition when their current states do not match.
 
 - [ ] [**RFCT-260 The AP reconciler's third copy of the WPA byte rule, and a refusal that names the secret's length**](RFCT-260.md) `P0`
 - [-] [**RFCT-273 Coordinate the embedded delivery roadmap**](RFCT-273.md) `P1`
-- [ ] [**RFCT-279 Publish release identity and supply-chain artifacts**](RFCT-279.md) `P0`
+- [x] [**RFCT-279 Publish release identity and supply-chain artifacts**](RFCT-279.md) `P0`
 - [ ] [**RFCT-280 Add RTC, NTP and timezone management**](RFCT-280.md) `P0`
 - [ ] [**RFCT-281 Add the unexpanded BusyBox emergency binary**](RFCT-281.md) `P2`
 - [ ] [**RFCT-282 Deliver install, onboarding and provisioning**](RFCT-282.md) `P0`
-- [ ] [**RFCT-283 Deliver authenticated system updates**](RFCT-283.md) `P0`
+- [x] [**RFCT-283 Deliver authenticated system updates**](RFCT-283.md) `P0`
 - [ ] [**RFCT-284 Deliver recovery and credential access recovery**](RFCT-284.md) `P0`
 - [ ] [**RFCT-285 Add storage status and data lifecycle management**](RFCT-285.md) `P0`
 - [ ] [**RFCT-287 Document native and container application delivery**](RFCT-287.md) `P1`
 - [ ] [**RFCT-288 Add diagnostics and operational network state**](RFCT-288.md) `P0`
-- [ ] [**RFCT-289 Define security and manufacturing lifecycle**](RFCT-289.md) `P0`
+- [x] [**RFCT-289 Define security and manufacturing lifecycle**](RFCT-289.md) `P0`
 - [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
 - [x] [**UI-001 Define the built-in UI development guide**](UI-001.md) `P1`
 - [x] [**UI-002 Design the local application lifecycle module**](UI-002.md) `P1`
