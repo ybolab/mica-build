@@ -685,9 +685,11 @@ rauc install <path>
 Device identity comes from `/usr/share/mos/release-identity.env`
 (`BOARD=`/`PROFILE=`/`VERSION=` lines) or explicit
 `--board`/`--profile`/`--current-version` flags. **[not implemented]**: the
-image pipeline does not write that file yet, nothing schedules `sync`/`check`
-on a device, and mosd does not call this client — the tooling half exists and
-is test-exercised; the wiring half is owed. The reserve directory is likewise
+image pipeline does not write that file yet. mosd now drives this client —
+`CheckUpdate`/`FetchUpdate` run `sync`/`check`/`fetch` as subprocesses and a
+policy-driven cadence schedules checks (`docs/design/updates.md`); what
+remains owed is the image side: shipping the binary, the identity file and
+the pinned root. The reserve directory is likewise
 a contract, not a mechanism: which partition backs `/data/update` and how
 many bytes it may promise is a storage-policy decision owned outside this
 crate; the client refuses to exceed the budget or start a download the
