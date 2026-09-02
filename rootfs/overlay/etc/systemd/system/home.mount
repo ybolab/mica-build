@@ -9,15 +9,15 @@ Description=Persistent home directory from the DATA partition
 # x-systemd.growfs and the only one systemd-repart extends to the end of the
 # disk, so it is the only tier a home directory can live on without a ceiling.
 #
-# The bind source is created by mos-seed-home, which must run BEFORE this unit:
+# The bind source is created by mos-seed-home under /mos, which must run BEFORE this unit:
 # mount(8) does not create the source of a bind, and /home cannot be populated
 # after the fact because the root filesystem is a read-only verity squashfs.
 Requires=mos-seed-home.service
 After=mos-seed-home.service
-RequiresMountsFor=/srv
+RequiresMountsFor=/mos
 
 [Mount]
-What=/srv/home
+What=/mos/home
 Where=/home
 Type=none
 Options=bind

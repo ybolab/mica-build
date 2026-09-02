@@ -17,7 +17,7 @@ task records, setup and session lifecycle, UI selection, live network
 observation, update state and system actions. Errors are JSON envelopes.
 `/healthz` is the one operational exception outside `/api`, and it proves
 only that the apid process is listening — not that mosd or anything else is
-healthy. The built-in browser UI at `/ui` is an ordinary client of the same
+healthy. The built-in browser UI at `/_ui/` is an ordinary client of the same
 API, with no privileged side channel.
 
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`, `docs/design/remote-management.md`
@@ -58,7 +58,7 @@ artifact ([doc-contract.md](doc-contract.md)).
   package-enrolled application services are bridged, and management state and
   actions are structurally excluded. The grammar and enrollment contract are
   [../design/bus.md](../design/bus.md).
-- **`/ui` and custom UI assets** are static content, not contract; a custom
+- **`/_ui` and custom UI assets** are static content, not contract; a custom
   bundle cannot shadow `/api` routes.
 
 > status: shipped — evidence: `docs/design/bus.md`, `pkgs/mosd/dist/`

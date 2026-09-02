@@ -648,7 +648,7 @@ Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s
 layout). Any web server or object store that serves the directory unchanged
 will do; range requests are the one feature the device client uses.
 
-### 3.1 The device-side update client — **[runbook]** as tooling; nothing ships or schedules it yet
+### 3.1 The device-side update client — **[runbook]**; shipped in the image and driven by mosd
 
 `rauc-update` (same crate) consumes what §3 publishes. Its verification is
 `rauc-verify`'s walk — pinned root, persistent rollback state — with
@@ -682,18 +682,50 @@ busctl call com.mos.mosd /com/mos/mosd com.mos.mosd1 InstallUpdate s <path>
 rauc install <path>
 ```
 
+Both binaries are in the image. The `mos-rauc-update` package
+(`pkgs/rauc-sign/deb/rauc-update`) installs `/usr/bin/rauc-update` and
+`/usr/bin/rauc-verify` on both boards, through `feature-rauc.pkgs` — so
+declining `rauc` declines the client with the installer it feeds. The
+release-side `rauc-sign` is not in that package and never will be: it loads
+the offline keys and runs where §1 runs.
+
 Device identity comes from `/usr/share/mos/release-identity.env`
 (`BOARD=`/`PROFILE=`/`VERSION=` lines) or explicit
-`--board`/`--profile`/`--current-version` flags. **[not implemented]**: the
-image pipeline does not write that file yet. mosd now drives this client —
-`CheckUpdate`/`FetchUpdate` run `sync`/`check`/`fetch` as subprocesses and a
-policy-driven cadence schedules checks (`docs/design/updates.md`); what
-remains owed is the image side: shipping the binary, the identity file and
-the pinned root. The reserve directory is likewise
-a contract, not a mechanism: which partition backs `/data/update` and how
-many bytes it may promise is a storage-policy decision owned outside this
-crate; the client refuses to exceed the budget or start a download the
-filesystem visibly cannot hold, and that is its whole side of the bargain.
+`--board`/`--profile`/`--current-version` flags, and the image pipeline now
+writes that file: `rootfs/compose/compose-install.sh` renders the three
+lines from the board, the profile and the pool version the composition was
+given — build arguments only, so two builds of one tree write one file — and
+`verify`'s `packed-release-identity` refuses an image whose file disagrees
+with its own board, its own profile marker or its own
+`/usr/share/mos/manifest.tsv`.
+
+**What `VERSION` is, stated because it is not what a reader assumes.** It is
+the POOL version — `<workspace version>+git<commit>[.dirty]-1`, the string
+`build-env/deb/version.sh` prints — and not a marketing release number. It
+is the one version an image build can measure about itself; the release
+version in §3's signed manifest is chosen at bundle time and no image input
+carries it. The consequence for selection: `compare_versions` splits on `.`
+and compares numerically where both sides parse, so a release published as
+`1.0.0` orders above `0.1.0+git…-1` and is offered, while two images built
+from different commits at one workspace version compare EQUAL — a bundle
+built from such a pair is a downgrade unless `--allow-downgrade` is passed.
+Binding the identity to a real release version is owed, and is the same
+decision as choosing where the release version enters the image build.
+
+Nothing above waits for an operator any more: mosd drives this client. Its
+update lifecycle runs `rauc-update sync`/`check`/`fetch` as bounded
+subprocesses and a policy file (`/var/lib/mos/update-policy.toml`) sets the
+auto-check cadence (`docs/design/updates.md`). What is still owed is the
+rest of the image-side contract: **[not implemented]** the pinned
+`root.json` is provisioned by nothing (§2.5's last paragraph), nothing
+provisions the `/var/lib/mos/update/` tree that policy defaults to (mirror,
+rollback state, reserve), and `mos-health` does not report `health.boot` —
+the entry that lifts the lifecycle past `validating`. The reserve directory
+is likewise a contract, not a mechanism: which partition backs
+`/data/update` and how many bytes it may promise is a storage-policy
+decision owned outside this crate; the client refuses to exceed the budget
+or start a download the filesystem visibly cannot hold, and that is its
+whole side of the bargain.
 
 Transport is plain HTTP by design: integrity and authenticity come from the
 signed metadata (a hostile mirror yields a refusal), confidentiality is not

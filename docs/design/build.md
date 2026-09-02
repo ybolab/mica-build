@@ -42,6 +42,7 @@ step further out:
 | RAUC | `pkgs/rauc/build.sh`, driven by the `rauc` producer's `PREPARE` hook | `pkgs/rauc/out-<arch>/`, packed as `mos-rauc` |
 | podman and its six companions | `pkgs/podman/build.sh`, driven by the `podman` producer's hook | `pkgs/podman/out-<arch>/`, packed as `mos-podman` |
 | mosd, apid, mos-mqttd, mos-mqtt-broker | `pkgs/mosd/hack/build-deb.sh`, driven by the `mosd` and `mqtt` producers | `target-deb/<producer>/`, packed as `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` |
+| rauc-update, rauc-verify | `pkgs/rauc-sign/hack/build-deb.sh`, driven by the `rauc-update` producer's hook | `target-deb/rauc-update/`, packed as `mos-rauc-update` |
 
 A producer whose hook can build its own input does so rather than stopping, and
 that is a cost worth paying where it can be seen: `make os-deb-preflight` lists
@@ -74,8 +75,8 @@ holds exactly those two files:
 What used to be a floor stage, a read-only-root wiring stage, four feature
 stages and a board stage is package metadata now: `mos-system`, `mos-ca-trust`,
 one of `mos-profile-{dev,prod}`, `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth`,
-`mos-podman`, `mos-rauc`, `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker`,
-and one `mos-board-<board>`. **What orders configuration is `Depends`, not a
+`mos-podman`, `mos-rauc`, `mos-rauc-update`, `mosd`, `mos-apid`, `mos-mqttd`,
+`mos-mqtt-broker`, and one `mos-board-<board>`. **What orders configuration is `Depends`, not a
 number in a filename** — and one apt transaction is atomic by construction, so
 there is nothing left for a stage boundary to sit between.
 

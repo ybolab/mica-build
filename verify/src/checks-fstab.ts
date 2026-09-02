@@ -5,11 +5,11 @@
 // path apid reads.
 //
 // UI_ROOT is asserted separately because the tier checks are about partitions:
-// none would notice /srv/ui moving off DATA -- onto STATE, where 64 MiB holds
+// none would notice /mos/ui moving off DATA -- onto STATE, where 64 MiB holds
 // the settings tree and the sshd host keys and the first large bundle fills it,
 // or onto /var, which is wiped by design and has no growfs, so every installed
 // custom UI silently disappears. Both are silent on the device and invisible to
-// a check that only asks "is DATA mounted at /srv with growfs".
+// a check that only asks "is DATA mounted at /mnt/data with growfs".
 //
 // One check, seven firings. `check_ui_location` emits one conclusion and returns
 // when no fstab entry covers the path, and six otherwise. Seven independent
@@ -33,10 +33,13 @@ import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
 import { verdict } from './verdict.ts'
 
-const UI_ROOT = '/srv/ui'
-const DATA_MOUNT = '/srv'
+const UI_ROOT = '/mos/ui'
+// The public /mos bind is backed by /mnt/data/mos. fstab governs that backing
+// path, while the baked-content assertion deliberately inspects /mos itself.
+const UI_STORAGE_ROOT = '/mnt/data/mos/ui'
+const DATA_MOUNT = '/mnt/data'
 const PACKED_MOUNTPOINTS = [
-  '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
+  '/mnt/data', '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
   '/usr/local/lib/systemd/system', '/etc/containers/systemd',
 ] as const
 
@@ -168,6 +171,15 @@ function tierCheck(t: TierCase): CheckCase {
       if (row === undefined) {
         return [verdict(t.id, false,
           `/etc/fstab has no ${t.mount} entry for PARTUUID=${guid} (${t.what})`)]
+      }
+      if (t.layout === 'DATA') {
+        const dataRows = rows.filter(r => lc(r.device) === `partuuid=${guid}`)
+        if (dataRows.length !== 1) {
+          return [verdict(t.id, false,
+            `/etc/fstab mounts DATA PARTUUID=${guid} ${dataRows.length} times at `
+            + `${dataRows.map(r => r.mount).join(', ')}; DATA must mount only at ${DATA_MOUNT} `
+            + `(${t.what})`)]
+        }
       }
       for (const o of t.require) {
         if (!hasOption(row.options, o)) {
@@ -302,12 +314,13 @@ export const FSTAB_CHECKS: readonly CheckCase[] = [
       const stateDev = `partuuid=${guidOf(board, 'STATE')}`
       const ephDev = `partuuid=${guidOf(board, 'EPHEMERAL')}`
 
-      const row = coveringRow(rows, UI_ROOT)
+      const row = coveringRow(rows, UI_STORAGE_ROOT)
       if (row === undefined) {
         // The early return, and the whole reason this check is `many`: one
         // conclusion instead of six, on both sides, rather than six silences.
         return [uiFiring(UI_NO_FILESYSTEM, false,
-          `${UI_NO_FILESYSTEM}: no /etc/fstab entry covers ${UI_ROOT}, so it lands on the read-only `
+          `${UI_NO_FILESYSTEM}: no /etc/fstab entry covers ${UI_STORAGE_ROOT}, the backing path for `
+          + `${UI_ROOT}, so it lands on the read-only `
           + `verity squashfs. apid cannot create it on first install, no bundle can ever be `
           + `installed, and the root is deliberately absent from fstab so no entry could ever come `
           + `to cover it`)]

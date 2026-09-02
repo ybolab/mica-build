@@ -2,8 +2,8 @@
 # Install the resolved package set out of the local pool, and prove what landed.
 #
 # Called from rootfs/compose/10-compose.Dockerfile, where the reasoning lives.
-# Build arguments read from the environment: MOS_ARCH, MOS_BOARD, RAUC_VERSION,
-# SOURCE_DATE_EPOCH.
+# Build arguments read from the environment: MOS_ARCH, MOS_BOARD, MOS_PROFILE,
+# MOS_RELEASE_VERSION, RAUC_VERSION, SOURCE_DATE_EPOCH.
 #
 # Bind mounts this reads: /mos-debs (the whole _out/debs tree) and /mos-compose
 # (the host-staged packages.txt and keyring.pem).
@@ -17,7 +17,7 @@ set -eu
 
 fail() { echo "error: $*" >&2; exit 1; }
 
-for v in MOS_ARCH MOS_BOARD SOURCE_DATE_EPOCH; do
+for v in MOS_ARCH MOS_BOARD MOS_PROFILE MOS_RELEASE_VERSION SOURCE_DATE_EPOCH; do
     eval "value=\${${v}:-}"
     [ -n "${value}" ] ||
         fail "${v} is empty or unset in this build step. rootfs/compose/10-compose.Dockerfile declares it and rootfs/build.sh passes it; an unset one here is not a failure anyone sees -- SOURCE_DATE_EPOCH in particular would leave the wall clock and this host's inode numbers inside the initrd that ships in the verity-covered root"
@@ -179,6 +179,53 @@ echo "compose: ${local_n} local package(s) installed, ${TOTAL_N} packages in the
 [ -s /mos-compose/keyring.pem ] ||
     fail "/mos-compose/keyring.pem is missing or empty. It is staged from ca/ca.cert.pem and it is what every device flashed with this image trusts RAUC bundles from; an image without it can install no update at all"
 install -D -m 0644 /mos-compose/keyring.pem /etc/rauc/keyring.pem
+
+# THE DEVICE IDENTITY, /usr/share/mos/release-identity.env: the file
+# `rauc-update` reads to decide which published release is for this device
+# (board, profile) and whether one is newer than what is running (version).
+# Three facts about THIS BUILD, which is why no package carries them: an
+# archive is built once per architecture and installed into images of several
+# boards and profiles, and the version it would have to state is the pool's
+# rather than its own.
+#
+# HERE, on the composition path, and from build arguments only: no wall clock,
+# no git, nothing read back out of the image. rootfs/build.sh passes
+# MOS_BOARD and MOS_PROFILE -- the same two values it hands the resolver -- and
+# MOS_RELEASE_VERSION, which is `bash build-env/deb/version.sh`'s answer for
+# this tree, the same string it has already required the POOL to have been
+# built at. So the identity moves with the pool the packages came out of, and
+# the finalizer's /usr/share/mos/manifest.tsv, taken from the same dpkg
+# database a few steps later, carries that version on every first-party row.
+#
+# The version, checked against a package that actually landed rather than
+# taken on trust. build.sh's pool-stamp refusal is upstream of this and covers
+# the tree-versus-pool case; what this covers is the seam between them -- an
+# argument that arrived wrong, or a caller that composed the list another way
+# -- and it is the same boundary-assertion reasoning as the profile count
+# above. The upstream repacks (mos-podman, mos-rauc) carry their own upstream
+# version in front of the shared stamp and are expected not to match; the
+# first-party packages are.
+identity_version_owner=""
+for p in ${WANT}; do
+    v="$(dpkg-query -W -f='${Version}' "${p}" 2>/dev/null || true)"
+    [ "${v}" = "${MOS_RELEASE_VERSION}" ] || continue
+    identity_version_owner="${p}"
+    break
+done
+[ -n "${identity_version_owner}" ] ||
+    fail "MOS_RELEASE_VERSION is '${MOS_RELEASE_VERSION}' and no package installed into this root carries that version. It is meant to be the version build-env/deb/version.sh printed for the tree the pool was built from, so a value no first-party package here shares means the identity file would state a release this image is not"
+
+install -d -m 0755 /usr/share/mos
+{
+    printf '# What this device is, for rauc-update. Written by\n'
+    printf '# rootfs/compose/compose-install.sh from the arguments of the build\n'
+    printf '# that composed this image; the root is read-only, so nothing edits it.\n'
+    printf 'BOARD=%s\n' "${MOS_BOARD}"
+    printf 'PROFILE=%s\n' "${MOS_PROFILE}"
+    printf 'VERSION=%s\n' "${MOS_RELEASE_VERSION}"
+} >/usr/share/mos/release-identity.env
+chmod 0644 /usr/share/mos/release-identity.env
+echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION} (the version ${identity_version_owner} carries)"
 
 # The build report's RAUC line. build/src/bundle.ts reads it back out of
 # _out/<board>/rootfs-report.txt and refuses to build a bundle with a rauc

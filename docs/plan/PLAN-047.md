@@ -20,7 +20,10 @@ OS-integrated native applications.
   TUF repository trust, with documented rotation, revocation and recovery.
 - **SW:** add a device-side client that selects a compatible target from signed
   PLAN-043 metadata, enforces board/profile/schema/version constraints, downloads
-  resumably into bounded space, verifies before install, then invokes RAUC.
+  resumably into bounded `/mos/updates/downloads` space, moves only a complete
+  authenticated artifact into `/mos/updates/verified`, then invokes RAUC with
+  that verified DATA-tier path. PLAN-061 owns the writable mount and readiness
+  contract; the updater must not fall back to STATE, `/var`, rootfs or tmpfs.
 - **SW:** model explicit idle, checking, downloading, ready, installing,
   reboot-required, validating, succeeded, rolled-back and failed states through
   mosd, authenticated apid and UI.
@@ -43,10 +46,14 @@ individual `.deb` files on the device and does not use `systemd-sysext`.
   compatibility and first-boot health gates must precede slot confirmation.
 - Download space can compete with DATA applications; PLAN-049 must define
   reservation and low-space behavior.
+- `/mos` can be absent, read-only or exhausted even when the rootfs is healthy;
+  PLAN-061 readiness must make that a named update-unavailable state before
+  acquisition starts, not a late write failure or fallback path.
 
 ## Scope
 
-In scope: keyring delivery, metadata selection, resumable/offline acquisition,
+In scope: keyring delivery, metadata selection, resumable/offline acquisition
+under `/mos/updates`,
 RAUC orchestration, state/API/UI, reboot gating, board fault-injection and user
 guides. Out of scope: application-container updates and fleet-wide orchestration.
 
@@ -63,3 +70,6 @@ guides. Out of scope: application-container updates and fleet-wide orchestration
 - 2026-08-31: The user removed system extensions and selected whole-system
   updates for all system components.
 - 2026-09-01: Split from PLAN-037 as the authenticated device-update boundary.
+- 2026-09-02: Bound update acquisition and verified artifacts to PLAN-061's
+  writable `/mos/updates` DATA workspace; no alternate staging filesystem is
+  permitted.
