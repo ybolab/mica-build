@@ -648,7 +648,7 @@ Then publish `<repo>` as static content (`pkgs/rauc-sign/README.md`'s
 layout). Any web server or object store that serves the directory unchanged
 will do; range requests are the one feature the device client uses.
 
-### 3.1 The device-side update client — **[runbook]**; shipped in the image, not yet scheduled
+### 3.1 The device-side update client — **[runbook]**; shipped in the image and driven by mosd
 
 `rauc-update` (same crate) consumes what §3 publishes. Its verification is
 `rauc-verify`'s walk — pinned root, persistent rollback state — with
@@ -712,11 +712,17 @@ built from such a pair is a downgrade unless `--allow-downgrade` is passed.
 Binding the identity to a real release version is owed, and is the same
 decision as choosing where the release version enters the image build.
 
-Still owed, and unchanged by the above: **[not implemented]** nothing
-schedules `sync`/`check` on a device and mosd does not call this client;
-the pinned `root.json` is provisioned by nothing (§2.5's last paragraph). The
-reserve directory is likewise a contract, not a mechanism: which partition
-backs `/data/update` and how many bytes it may promise is a storage-policy
+Nothing above waits for an operator any more: mosd drives this client. Its
+update lifecycle runs `rauc-update sync`/`check`/`fetch` as bounded
+subprocesses and a policy file (`/var/lib/mos/update-policy.toml`) sets the
+auto-check cadence (`docs/design/updates.md`). What is still owed is the
+rest of the image-side contract: **[not implemented]** the pinned
+`root.json` is provisioned by nothing (§2.5's last paragraph), nothing
+provisions the `/var/lib/mos/update/` tree that policy defaults to (mirror,
+rollback state, reserve), and `mos-health` does not report `health.boot` —
+the entry that lifts the lifecycle past `validating`. The reserve directory
+is likewise a contract, not a mechanism: which partition backs
+`/data/update` and how many bytes it may promise is a storage-policy
 decision owned outside this crate; the client refuses to exceed the budget
 or start a download the filesystem visibly cannot hold, and that is its
 whole side of the bargain.

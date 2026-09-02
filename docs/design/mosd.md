@@ -387,6 +387,9 @@ changed.
 | **`InstallUpdate`** | method |
 | **`GetUpdateState`** | method |
 | **`MarkUpdate`** | method |
+| **`CheckUpdate`** | method |
+| **`FetchUpdate`** | method |
+| **`SetRebootOverride`** | method |
 | **`RotateWireguardKey`** | method |
 
 mosd deliberately exports no `com.mos.Item1` façade. System settings, live
@@ -462,6 +465,19 @@ health gate (`rootfs/overlay/usr/lib/mos/mos-health`) owns the automatic
 automatic mark in mosd would duplicate that gate and could confirm a slot the
 gate would have failed. `MarkUpdate` exists for the case the gate cannot
 decide (e.g. a failed unit the operator has judged acceptable).
+
+**The update lifecycle on top (RFCT-283).** `CheckUpdate` / `FetchUpdate`
+drive the device-side client `rauc-update` as bounded subprocesses and record
+an explicit state machine under live-state `update.lifecycle` (idle,
+checking, downloading, ready, installing, reboot-required, validating,
+succeeded, rolled-back, failed, each with a reason). Policy — maintenance
+windows, metered/offline mode, auto-check cadence — lives in a fail-closed
+`update-policy.toml` on STATE, and `Reboot` is now interlocked by an
+application-aware safe-to-reboot gate with a bounded, audited
+`SetRebootOverride`. The whole design, the derivation rules and their honest
+limits, the operator procedures and the fault-evidence table are
+`docs/design/updates.md`; this section stays the record of the underlying
+install/mark surface.
 
 **Resolved follow-up (recorded at M5, closed deliberately):** rebooting a slot
 RAUC has installed but that has not completed a confirmed boot **burns a boot
