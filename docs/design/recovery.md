@@ -270,6 +270,30 @@ everything below it destroys something that was on the device.**
   here goes red if it changes; this bullet is the warning, and deliberately
   not a check. A direct confirmed-boot record would remove the dependency and
   is a separate design.
+- *How well the premise is established — evidence and gap:* **Verified:** mosd
+  never names a target slot. `install_bundle` in `pkgs/mosd/mosd/src/rauc.rs`
+  calls `InstallBundle` with the bundle path and an empty options map and no
+  target argument, so RAUC alone selects the slot; and this repository recorded
+  the behaviour independently of this guard, for a different feature and before
+  it existed — `docs/design/updates.md`'s lifecycle table says the install task
+  "is writing the other slot", authored in 98379d18. **Not verified:** RAUC's
+  own target-selection code. Nobody has read it. The invariant is relied upon,
+  not proven.
+- *The RAUC v1.13 evidence, recorded here so a later reader hits it:*
+  - *The pin is verified.* `pkgs/rauc/versions.env` pins v1.13 with
+    `RAUC_SHA256=372828c2...87941`, and
+    `git archive --format=tar v1.13 | sha256sum` recomputes exactly that. The
+    findings below are byte-for-byte the rauc this image builds, not a guess
+    about some rauc.
+  - *The decisive contrast.* `r_mark_good` (`src/mark.c`) calls
+    `r_boot_set_state` and writes an event-log line; it never calls
+    `r_slot_status_save` and never touches `slot->status`. `r_mark_active`
+    immediately above it DOES persist `activated_timestamp`/`activated_count`
+    and save. The omission is deliberate rather than an oversight, and that
+    contrast is what proves the mark is bootloader-only.
+  - *`activated.*` cannot substitute.* It is written by `set_primary` — what an
+    install does — so a slot activated but never booted still reads
+    `activated_count >= 1`. It records activation, never a boot.
 - *What does not ship, which is why this is still **[partial]**:* the reboot.
   The route changes the boot order and stops; realising it is a second,
   explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate
