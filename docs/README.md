@@ -36,7 +36,8 @@
   - `quickstart.md` — the shortest honest path to a running mos system
   - `download.md` — release selection and obtaining an image
   - `install.md` — writing an image to a board and reaching first boot
-  - `first-run.md` — first boot, factory/offline behaviour, initial claim of the device
+  - `first-run.md` — first boot, the offline provisioning document, and claiming the device
+  - `manufacturing.md` — putting mos on units at volume: who mints identity and the first credential, the factory record, and quarantine of failed or duplicated provisioning
   - `configuration.md` — the configuration model and every supported way to change settings
   - `applications.md` — delivering and running applications: native packages and containers
   - `update-rollback.md` — the A/B update path, health confirmation and rollback

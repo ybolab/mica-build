@@ -162,6 +162,34 @@ configured nowhere in the tree); the kernel verifies the root via dm-verity
 
 > status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`
 
+**Install entry.** The same rockusb transport is the installation path:
+[../user/install.md](../user/install.md) section 5 is the operator
+procedure, and section 3 of that page states what the write destroys. No
+row below records an installation performed on a unit.
+
+**Software recovery, above the loader.** The operator ordering — read-only
+diagnosis, guarded rollback, configuration reset, application-data reset,
+credential recovery, full factory reset, reflash — is
+[../user/recovery.md](../user/recovery.md). Two of those steps do not reach
+this board:
+
+- **Physical-presence entry: none on this board.** The board answers the
+  `recovery.presence` capability with `console-attach`, and **nothing in the
+  tree writes a presence assertion**, so credential recovery and the full
+  factory reset are refused on a fielded unit. Whether a mos-owned unit can
+  own `ttyFIQ0` without displacing the generated `serial-getty@ttyFIQ0` is
+  the bench question that blocks it.
+- **The recovery button is not a presence assertion.** It is a *loader*
+  entry (`PREBOOT` → rockusb) and no software recovery flow reads it.
+
+**Secure wipe: not available.** No device-level erase primitive has been
+evidenced on this board's eMMC, so a unit leaving the operator's control
+needs the medium destroyed rather than reflashed.
+
+> status: proposed — evidence: `docs/plan/PLAN-048.md`
+
+TODO(PLAN-048): revisit after this plan merges
+
 ## Artifact digests
 
 Provenance digests (pinned commits — asserted by the builds that consume

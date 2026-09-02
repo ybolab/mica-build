@@ -32,7 +32,8 @@ mos 是嵌入式一体机操作系统。用户文档服务三类读者，按此�
 | [quickstart.md](quickstart.md) | 通往运行中 mos 系统的最短且诚实的路径 |
 | [download.md](download.md) | 发布版选择与镜像获取 |
 | [install.md](install.md) | 把镜像写到板卡并到达首次启动 |
-| [first-run.md](first-run.md) | 首次启动、工厂/离线行为、设备的初始认领 |
+| [first-run.md](first-run.md) | 首次启动、离线配置文档、认领设备 |
+| [manufacturing.md](manufacturing.md) | 批量装机：身份与凭据的归属、工厂记录、隔离 |
 | [configuration.md](configuration.md) | 配置模型与改变设置的每种受支持方式 |
 | [applications.md](applications.md) | 交付与运行应用：原生软件包与容器 |
 | [update-rollback.md](update-rollback.md) | A/B 更新路径、健康确认与回滚 |

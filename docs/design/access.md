@@ -72,9 +72,14 @@ Implemented by `pkgs/mosd/mosd-settings/src/model.rs` (the tree),
 ### 3.1 As shipped
 
 Access policy is a subtree of the mosd settings tree (`docs/design/mosd.md` §3),
-**schema version 4**, persisted to `/var/lib/mos/settings.toml` on STATE:
+**schema version 12**, persisted to `/var/lib/mos/settings.toml` on STATE:
 
 ```toml
+[access.claim]                # §4.4, schema v11; absent until the device is
+via = "setup"                 # claimed, and absent by design on a device
+at = 1700000000               # claimed by a provisioning document
+rotationRequired = false
+
 [access.ssh]
 enabled = false
 port = 22
@@ -92,6 +97,12 @@ shellEnabled = false
 [access.device]
 generation = 0
 # passwordHash is optional and absent until first boot mints it
+
+[[access.apiTokens]]          # schema v8; the list is omitted entirely when
+id = "3f2a9c41"               # no token has been minted
+name = "ci"
+hash = "0000...0001"          # SHA-256 of the secret, never the secret
+created = 1700000000
 ```
 
 `enabled = false` is the default **on both image profiles**. `authorizedKeys` is
