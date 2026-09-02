@@ -1,6 +1,7 @@
 # PLAN-068 Complete the built-in console against the prototype information architecture
 
-- **status**: draft
+- **status**: implementing
+- **approvedAt**: 2026-09-02 23:05
 - **createdAt**: 2026-09-02 22:35
 - **relatedTask**: [UI-013](../task/UI-013.md)
 
@@ -65,16 +66,18 @@ for exactly that boundary and labels every page that uses it.
 
 ## Proposal
 
-Seven phases. Each phase is independently verifiable, ends with the pinned
-frontend gate, and only the last regenerates the Playwright baselines so
-appearance churn is reviewed once.
+Seven phases. Each phase is independently verifiable and ends with the pinned
+frontend gate plus regenerated Playwright baselines, so no phase leaves the
+suite red for the next one to inherit.
 
-1. **Shell and shared states.** Drop page descriptions and give `PageHeader`
-   the prototype's tag-plus-freshness slot. Bind footer release and active slot
-   to `system/info` and `update`. Add the spinning refresh, the reconnecting and
-   offline banner, the searchable language picker dialog, the segmented theme
-   control, and a toast. Add the shared loading skeleton, empty, error, offline
-   and unsupported blocks the later phases reuse.
+1. **Shell.** Drop page descriptions and give `PageHeader` the prototype's
+   tag-plus-freshness slot. Bind footer release and active slot to
+   `system/info`. Add the spinning refresh, the reconnecting and offline
+   banner, the searchable language picker dialog and the segmented theme
+   control. Freshness is bucketed rather than counted in seconds so the
+   appearance baselines stay deterministic. The toast and the shared
+   loading/empty/error/offline/unsupported blocks land with the phase that
+   first uses them rather than sitting unused here.
 2. **Overview.** Attention label above the card, tagged rows with trailing
    actions, four navigating summary cards with monospace identifiers, and the
    five-column task table.
@@ -127,16 +130,43 @@ interface detail route, the service detail route and the install wizard.
 - The scope is large enough that a single review is impractical; phases land
   and are verified one at a time rather than as one change.
 
-## Open questions
+## Decisions
 
-1. Shipped surfaces the prototype has no place for — observed routes and
-   cellular, device claim, provisioning document, credential recovery, reset
-   tiers, rollback, package manifest, telemetry. Keep them as marked extra
-   sections, or drop the ones you consider unnecessary?
-2. The prototype's service configuration, WireGuard rotation, configuration
-   backup, support PIN, automatic-update policy and application catalog have no
-   device API. Confirm they should ship as labelled simulation rather than be
-   left out until the API exists.
+Answered 2026-09-02 before implementation started.
+
+1. Shipped surfaces the prototype has no place for are **kept**, not dropped.
+   They are built out and then labelled as unfinished rather than presented as
+   settled product.
+2. Prototype capabilities with no device API are **built**, behind the existing
+   labelled simulation layer, and likewise marked unfinished. The prototype
+   already carries the vocabulary for this: its language picker tags a locale
+   it cannot serve as `Planned`.
 3. Folding System's Recovery tab into Update & recovery, General and
-   Diagnostics changes a navigation target that current documentation and the
-   `/_ui/system#recovery` hash reference. Confirm that is acceptable.
+   Diagnostics is **approved**. The `/_ui/system#recovery` hash and the
+   documentation that names it are re-pointed, not left dangling.
+
+A surface marked unfinished must say so in the interface itself, in both
+locales, next to the control it qualifies. A page-level notice is not enough
+when only one section of that page is incomplete.
+
+## Progress
+
+- **Phase 1 (Shell) — done.** Page descriptions are gone and `PageHeader` has
+  the prototype's right-hand slot. The footer reports release and active slot
+  from `system/info`. Refresh spins while anything is in flight, a reconnecting
+  and an offline banner sit under the header, and the settings menu holds the
+  searchable language picker and the segmented appearance control. Freshness is
+  bucketed (`just now`, `N min ago`, `N h ago`) rather than counted in seconds.
+  The language picker offers every language the prototype lists and tags the
+  ones without a bundle `Planned`; choosing one records the choice and renders
+  English. `theme.tsx` was still publishing the pre-PLAN-067 OKLCH background as
+  the browser chrome color; it now publishes the shipped token.
+- **Phase 2 (Overview) — done.** The attention count is a label above the card
+  and its rows carry a leading tag and a trailing action. Both rows were
+  hard-coded copy; they are now device facts, from `update.lifecycle.available`
+  and `time/status.synchronized`, and the section disappears when the device
+  reports neither. The four summary cards navigate and read hostname, machine
+  ID, the first addressed interface and uptime in monospace. The task table is
+  the prototype's action/target/phase/result/time. Overview no longer renders
+  the simulation notice, because nothing on it is simulated any more.
+- Phases 3 to 7 are not started.
