@@ -301,16 +301,24 @@ The vocabulary stays `validate_mark`'s — `good`/`bad` on `booted`/`other` —
 and there is no second slot state machine anywhere in the path.
 
 Whether it is permitted at all is `rollback_eligibility` in the same module, a
-pure function over the slot list and the primary slot. It enforces node 2's
-precondition — that the other slot holds a system that booted successfully
-before — rather than asserting it: **a rollback goes backward**, so the target
-must be the strictly OLDER of the two installs. That is a derivation, not a
-heuristic. An install always writes the slot that is not running, so if the
-booted slot's install is the more recent one, the device was running the
-alternate at the moment that install happened, and the alternate therefore
-booted successfully at least once. What no field on this surface records is a
-boot directly; this recovers the fact from the install order instead of
-guessing it. Its verdict is recorded
+pure function over the slot list and the primary slot. Its central rule is
+that **a rollback goes backward**: the target must be the strictly OLDER of
+the two installs, by `installed.timestamp`.
+
+That rule is how `recovery.md` §3 node 2's precondition — "the other slot
+holds a system that booted successfully before" — is enforced, by DERIVATION
+rather than by reading it. The property is not observable directly: RAUC v1.13
+(pinned in `pkgs/rauc/versions.env`) persists no mark history — its slot status
+file holds bundle metadata, an install-progress `status`, a checksum and
+`installed.*`/`activated.*`, `mark-good` writes none of it, and `boot-status`
+over D-Bus is the attempt counter read as exhausted-or-not. What makes the
+derivation valid is RAUC's invariant that **an install never writes the running
+slot**: a booted slot installed after the target means the device was running
+the target at that moment. **If that invariant ever stops holding — a future
+install path able to target the booted slot, or an out-of-band flash that also
+rewrites `installed.timestamp` — the derivation does not**, and nothing in this
+tree goes red, because the invariant is RAUC's and not ours. Its verdict is
+recorded
 in the state document as `rollback` — `target` (the resolved alternate slot,
 or `null`), `permitted`, and `reason` — so the operator reads the decision in
 the same `GET /api/v1/update` answer that carries `slots`, `booted_slot`,
@@ -329,12 +337,11 @@ that says no:
 | `install_order_unknown` | the two install timestamps cannot be ordered (one absent, one unparseable, or equal), so nothing establishes that the alternate is the older system. Equal stamps are the shape of a factory flash that wrote both slots at once, where the alternate has never run. The guard fails CLOSED here on purpose: it refuses a rollback it cannot justify rather than permitting one |
 | `booted_slot_not_confirmed` | the booted slot is itself pending-not-confirmed; that window belongs to the attempt counter, and a manual rollback inside it races the boot credit already being spent |
 
-The install-order rule is only as good as the clock at install time. Time is
-UTC everywhere (`docs/design/time.md`), but a device that installed
-with a wrong clock can record an ordering that did not happen, and a booted
-slot stamped spuriously late would let that step pass. Closing that needs a
-monotonic per-slot boot record, which nothing on this surface carries today;
-it is named here rather than approximated.
+The install-order rule is also only as good as the clock at install time. Time
+is UTC everywhere (`docs/design/time.md`), but a device that installed with a
+wrong clock can record an order that did not happen. Closing either gap needs
+mosd to record its own confirmed-boot fact; that is a separate design and is
+named here rather than approximated.
 
 **The reboot contract: this route does not reboot.** A rollback is a boot-order
 change; the reboot that realises it is `POST /api/v1/actions/reboot` and goes

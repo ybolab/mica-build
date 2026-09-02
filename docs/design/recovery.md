@@ -220,7 +220,9 @@ everything below it destroys something that was on the device.**
 
 **2. Guarded manual rollback** — **[partial]**
 - *Precondition:* the device boots, the operator can authenticate, and the
-  *other* slot holds a system that booted successfully before.
+  *other* slot holds a system that booted successfully before. The guard
+  enforces that last one by derivation rather than by reading it; the bullet
+  below states the premise that derivation stands on.
 - *Fixes:* a bad update — a slot that boots but misbehaves, which the automatic
   attempt-counter fallback never catches because the slot does boot.
 - *Costs:* one reboot, and the condemned slot stops being a rollback target.
@@ -244,27 +246,38 @@ everything below it destroys something that was on the device.**
   The verdict — `target`, `permitted`, `reason` — rides in the same
   `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary` and
   `pending_not_confirmed`, so the state and the offer cannot disagree.
-- *How the precondition above is enforced, not merely asserted:* "booted
-  successfully before" is not a field RAUC records, so the guard derives it
-  from the install order. An install always writes the slot that is not
-  running; therefore a booted slot installed AFTER the alternate proves the
-  device was running the alternate when that install happened. The guard
-  permits a rollback only when the target is the strictly older install, and
-  refuses every case it cannot order — absent, unparseable or equal
-  timestamps, the last being a factory flash that wrote both slots at once.
-  It fails CLOSED, because the failure this node exists to prevent is booting
-  a slot that has never worked.
+- *What the guard actually checks:* that **a rollback goes backward** — the
+  target must be the strictly OLDER of the two installs, by
+  `installed.timestamp`. It refuses a newer target (`alternate_is_newer`: a
+  pending or skipped update, not a rollback target) and every case it cannot
+  order at all (`install_order_unknown`: absent, unparseable or equal
+  timestamps, the last being a factory flash that wrote both slots at once).
+  It fails CLOSED on the unorderable case.
+- *How the precondition is derived, and THE PREMISE it stands on:* "booted
+  successfully before" is not observable directly — RAUC v1.13 (the version
+  `pkgs/rauc/versions.env` pins) reports `boot-status` as the bootloader's
+  attempt counter read as exhausted-or-not, and persists no mark history: its
+  slot status file holds bundle metadata, an install-progress `status`, a
+  checksum and `installed.*`/`activated.*`, and `mark-good` writes none of it
+  — it touches the bootloader and an event log only. So the backward-only
+  refusal *derives* the precondition from RAUC's invariant that **an install
+  never writes the running slot**: a booted slot installed after the target
+  means the device was running the target at that moment, which is a
+  successful boot of it. **If that invariant ever stops holding — a future
+  install path able to target the booted slot, or an out-of-band flash that
+  also rewrites `installed.timestamp` — the derivation does not.** The
+  invariant is RAUC's and the image pipeline's, not this tree's, so nothing
+  here goes red if it changes; this bullet is the warning, and deliberately
+  not a check. A direct confirmed-boot record would remove the dependency and
+  is a separate design.
 - *What does not ship, which is why this is still **[partial]**:* the reboot.
   The route changes the boot order and stops; realising it is a second,
   explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate
   (`docs/design/updates.md` §4), and nothing sequences the two. And the
-  install-order derivation is only as good as the clock at install time: a
-  device that installed with a wrong clock can record an ordering that did not
-  happen. Closing that needs a monotonic per-slot boot record, which no field
-  on this surface carries — RAUC's `boot-status` reads the U-Boot attempt
-  counter only as exhausted-or-not (`pkgs/mosd/mosd/src/rauc.rs` states that
-  limit). That the bootloader then actually falls back is bench evidence,
-  §6.1's, not a claim made here.
+  install-order rule is only as good as the clock at install time: a device
+  that installed with a wrong clock can record an order that did not happen.
+  That the bootloader then actually falls back is bench evidence, §6.1's, not
+  a claim made here.
 
 ---
 
