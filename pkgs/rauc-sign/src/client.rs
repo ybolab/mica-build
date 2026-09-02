@@ -68,6 +68,17 @@ pub async fn verify_repository(
     enforce_and_record(&repository, state)
 }
 
+/// Verifies the repository's metadata (as [`verify_repository`]) and returns
+/// the loaded [`Repository`], for a caller that reads the signed targets
+/// metadata beyond a name lookup — the update client's compatibility
+/// selection. The persistent state is enforced and advanced exactly as in
+/// [`verify_repository`]; this module hands out no `Repository` without it.
+pub async fn verify_and_open(repo: &Path, trusted_root: &Path, state: &Path) -> Result<Repository> {
+    let repository = load(repo, trusted_root).await?;
+    enforce_and_record(&repository, state)?;
+    Ok(repository)
+}
+
 /// Verifies the repository's metadata (as [`verify_repository`]), then reads
 /// `name`'s bytes back through the metadata — sha256 and length pinned — and
 /// returns the verified local path of the target file.

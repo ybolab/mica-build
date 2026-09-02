@@ -15,6 +15,28 @@ localized recovery copy, committed hashed assets, tests and current English
 and Chinese guidance moved together. `/api/v1/ui` and `/srv/ui` retain their
 existing API and storage meanings. PLAN-060.
 
+## Release identity, authenticated updates and the security lifecycle (2026-09-02)
+
+A release is now a validated manifest (version, channel, board
+compatibility, artifacts with sizes and digests, source and build identity)
+with SHA256SUMS, a CycloneDX SBOM taken from the image's package manifest,
+provenance and a license inventory; `make os-release-gate` refuses to
+publish without them or without board evidence. Devices carry
+`rauc-update`: it discovers releases from signed TUF metadata, downloads
+resumably into `/mos/updates/downloads`, moves only an authenticated bundle
+into `/mos/updates/verified` and hands RAUC that path alone, with an offline
+import through a lockbox. mosd owns the update lifecycle (idle through
+rolled-back, plus `update-unavailable` when the DATA pool is missing,
+read-only or exhausted) under a fail-closed policy file for maintenance
+windows, metered links and a health-gated reboot; apid exposes it under
+`/api/v1/update` and the System page shows it read-only.
+`docs/design/security-model.md` separates six security boundaries and is
+the canonical I1-I4 boot-assurance ladder; `security-lifecycle.md` and
+`manufacturing.md` name owners for keys, releases, advisories, factory
+records and RMA. Both boards honestly remain I1. Production key ceremonies,
+release hosting and every board-side fault row are operator or bench work
+and are listed in the task records. PLAN-043, PLAN-047, PLAN-053.
+
 ## User documentation, website briefs and the BSP porting set (2026-09-02)
 
 `docs/user/` now carries the fifteen-page customer journey from download to

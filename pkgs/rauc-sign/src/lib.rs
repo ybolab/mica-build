@@ -8,10 +8,21 @@
 //!   first half). Verifies a LOCAL copy of that repository against a pinned
 //!   trusted root and a persistent per-role version state.
 //!
-//! Transport (how metadata reaches the device), the Uptane director/image
-//! repository split, and mosd's install orchestration are phase 2's second half
-//! and are deliberately not modelled here.
+//! - [`update`] + [`http`] + [`workspace`] + the `rauc-update` binary: phase
+//!   2's second half, the device-side update client. Selects a compatible
+//!   target from the signed release metadata, downloads it resumably into the
+//!   `/mos/updates` DATA workspace over plain HTTP (readiness-probed first,
+//!   partials in `downloads/`, verified bundles in `verified/`, no fallback
+//!   filesystem), and imports offline "lockbox" media — always through the
+//!   same verified walk as [`client`].
+//!
+//! Still deliberately not modelled here: the Uptane director/image repository
+//! split, and mosd's install orchestration (the `--install` handoff shells out
+//! to `rauc install`; mosd's D-Bus route is documented, not linked).
 
 pub mod client;
+pub mod http;
 pub mod keys;
 pub mod repo;
+pub mod update;
+pub mod workspace;

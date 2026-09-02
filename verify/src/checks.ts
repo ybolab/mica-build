@@ -47,6 +47,7 @@ import { SHADOW_CHECKS } from './checks-shadow.ts'
 import { SLOT_CHECKS } from './checks-slots.ts'
 import { SYSTEM_CHECKS } from './checks-system.ts'
 import { TIME_CHECKS } from './checks-time.ts'
+import { UPDATE_CHECKS } from './checks-update.ts'
 import { ToolOutputError, type ToolRuntime } from './tools.ts'
 import { matcherAlternatives, type CheckResult, type RegisteredCheck, type Verdict } from './parity.ts'
 
@@ -154,6 +155,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...HOME_CHECKS,
   ...CONND_CHECKS,
   ...SYSTEM_CHECKS,
+  ...UPDATE_CHECKS,
   ...EXT4_CHECKS,
   ...BOOTCHAIN_CHECKS,
   ...CMDLINE_CHECKS_ALL,

@@ -111,9 +111,12 @@ async fn releases_after_a_rotation_verify_from_either_anchor() {
         &fx.repo,
         &fx.keys_dir,
         &fx.bundle,
-        Some("update-1.1.0.raucb"),
         VERITY_ROOT_HASH,
-        Some("1.1.0"),
+        repo::AddOptions {
+            name: Some("update-1.1.0.raucb"),
+            release_version: Some("1.1.0"),
+            ..Default::default()
+        },
         valid_expirations(),
     )
     .await

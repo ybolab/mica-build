@@ -12,6 +12,7 @@ BOARDS := cx3576 x64
 .PHONY: help os os-rootfs-cx3576 \
 	os-quadlet-doc-test \
 	os-image-cx3576 os-verify-cx3576 os-bundle-cx3576 os-devkeys os-health-test podman \
+	os-release-cx3576 os-release-gate \
 	podman-pins podman-pins-test os-netavark-kernel-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test \
@@ -33,6 +34,8 @@ help:
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
 	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
+	@echo "  os-release-cx3576   assemble the release directory (manifest, SHA256SUMS, SBOM, provenance, licenses, notes) and gate it"
+	@echo "  os-release-gate     re-check an assembled release directory from scratch; refuses an incomplete release by name"
 	@echo "  os-devkeys          populate the gitignored repo-root ca/ with a development trust root"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
@@ -144,6 +147,21 @@ os-factory-root-gate:
 # --board x64 builds the grub branch.
 os-bundle-cx3576:
 	bash build/run.sh --bundle
+
+# The customer-facing release directory, and the publication gate over it.
+# Release notes and the image's /usr/share/mos/manifest.tsv content have no
+# built default, so they arrive through MOS_RELEASE_NOTES and
+# MOS_PACKAGE_MANIFEST (or the --notes/--package-manifest flags of
+# `bash build/run.sh --release assemble`); the refusal for each names it.
+# The gate re-checks a release directory from scratch -- schema, sizes,
+# digests, SHA256SUMS agreement, release notes, SBOM, board evidence -- and
+# an incomplete release exits non-zero naming the gap. MOS_BOARD selects the
+# board for both; see docs/design/release-artifacts.md.
+os-release-cx3576:
+	bash build/run.sh --release assemble
+
+os-release-gate:
+	bash build/run.sh --release gate
 
 # The MANUAL entry to the repo-root ca/, which is where every build takes its
 # trust root from. Running it is optional: a build that finds ca/ empty
