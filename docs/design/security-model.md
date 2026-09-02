@@ -129,6 +129,21 @@ must fail release publication — that gate is **[implemented]**
 `docs/design/release-artifacts.md` §4), with the policy stated in
 `docs/design/security-lifecycle.md` §2.
 
+**A guard built on a board-specific mechanism is a per-board claim, not a
+system property.** This generalises beyond the boot chain and has decided two
+designs already: a rollback guard keyed on the bootloader environment would
+have read per-slot flags that x64's grubenv carries and cx3576's U-Boot
+environment does not, and a physical-presence assertion keyed on a recovery
+button would exist on cx3576 and nowhere on x64 (`docs/design/recovery.md`
+§4.2, §4.4, §8). Both were rejected for the same reason, and it is not
+effort: a mechanism that is present on one board and absent on another
+produces a protection that is strong where it was written and *silently*
+absent everywhere else, while every gate stays green. That is worse than
+having no guard at all, because a documented gap is visible to the operator
+planning around it and a board-dependent one is not. Either the guard is
+board-neutral, or the capability is declared per board and the flows that
+depend on it refuse — visibly — where it is absent.
+
 ## 5. The I1–I4 boot-assurance ladder
 
 Defined here, minimally, because no shipped document defines it and the board
