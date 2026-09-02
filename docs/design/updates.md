@@ -317,8 +317,20 @@ slot**: a booted slot installed after the target means the device was running
 the target at that moment. **If that invariant ever stops holding — a future
 install path able to target the booted slot, or an out-of-band flash that also
 rewrites `installed.timestamp` — the derivation does not**, and nothing in this
-tree goes red, because the invariant is RAUC's and not ours. Its verdict is
-recorded
+tree goes red, because the invariant is RAUC's and not ours.
+
+How well that premise is established, stated with its gap: **verified** is that
+mosd never names a target slot — `install_bundle` in
+`pkgs/mosd/mosd/src/rauc.rs` calls `InstallBundle` with the bundle path and an
+empty options map and no target argument, so RAUC alone selects — and that this
+repository recorded the behaviour independently of this guard, for a different
+feature and before it existed (§1's lifecycle table: the install task "is
+writing the other slot", authored in 98379d18). **Not verified** is RAUC's own
+target-selection code; nobody has read it, so the invariant is relied upon
+rather than proven. The underlying RAUC v1.13 evidence — the verified source
+pin, the `r_mark_good`/`r_mark_active` contrast that proves the mark is
+bootloader-only, and why `activated.*` cannot substitute — is recorded once in
+`recovery.md` §3 node 2 and not repeated here. Its verdict is recorded
 in the state document as `rollback` — `target` (the resolved alternate slot,
 or `null`), `permitted`, and `reason` — so the operator reads the decision in
 the same `GET /api/v1/update` answer that carries `slots`, `booted_slot`,
