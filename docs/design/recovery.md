@@ -220,9 +220,9 @@ everything below it destroys something that was on the device.**
 
 **2. Guarded manual rollback** — **[partial]**
 - *Precondition:* the device boots, the operator can authenticate, and the
-  *other* slot holds a system that booted successfully before. The last of
-  those is the OPERATOR's to establish: the device cannot check it, for the
-  reason the limitation bullet below names.
+  *other* slot holds a system that booted successfully before. The guard
+  enforces that last one by derivation rather than by reading it; the bullet
+  below states the premise that derivation stands on.
 - *Fixes:* a bad update — a slot that boots but misbehaves, which the automatic
   attempt-counter fallback never catches because the slot does boot.
 - *Costs:* one reboot, and the condemned slot stops being a rollback target.
@@ -253,19 +253,23 @@ everything below it destroys something that was on the device.**
   order at all (`install_order_unknown`: absent, unparseable or equal
   timestamps, the last being a factory flash that wrote both slots at once).
   It fails CLOSED on the unorderable case.
-- *The named limitation — this is NOT the precondition above:* "booted
-  successfully before" is not observable. RAUC v1.13 (the version
+- *How the precondition is derived, and THE PREMISE it stands on:* "booted
+  successfully before" is not observable directly — RAUC v1.13 (the version
   `pkgs/rauc/versions.env` pins) reports `boot-status` as the bootloader's
   attempt counter read as exhausted-or-not, and persists no mark history: its
   slot status file holds bundle metadata, an install-progress `status`, a
   checksum and `installed.*`/`activated.*`, and `mark-good` writes none of it
-  — it touches the bootloader and an event log only. So **a never-booted but
-  OLDER slot is not distinguishable from a confirmed-good one, and remains a
-  permitted rollback target.** The backward-only rule narrows that window
-  because a never-booted slot is normally also the newest, but the two come
-  apart when the running slot is re-installed in place or install metadata is
-  restored. Closing it needs mosd to record its own confirmed-boot fact; that
-  is a separate design, not folded in here.
+  — it touches the bootloader and an event log only. So the backward-only
+  refusal *derives* the precondition from RAUC's invariant that **an install
+  never writes the running slot**: a booted slot installed after the target
+  means the device was running the target at that moment, which is a
+  successful boot of it. **If that invariant ever stops holding — a future
+  install path able to target the booted slot, or an out-of-band flash that
+  also rewrites `installed.timestamp` — the derivation does not.** The
+  invariant is RAUC's and the image pipeline's, not this tree's, so nothing
+  here goes red if it changes; this bullet is the warning, and deliberately
+  not a check. A direct confirmed-boot record would remove the dependency and
+  is a separate design.
 - *What does not ship, which is why this is still **[partial]**:* the reboot.
   The route changes the boot order and stops; realising it is a second,
   explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate

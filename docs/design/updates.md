@@ -305,17 +305,20 @@ pure function over the slot list and the primary slot. Its central rule is
 that **a rollback goes backward**: the target must be the strictly OLDER of
 the two installs, by `installed.timestamp`.
 
-That is deliberately a weaker statement than `recovery.md` §3 node 2's
-precondition, "the other slot holds a system that booted successfully before",
-and the difference is stated here rather than blurred. The stronger property is
-not observable: RAUC v1.13 (pinned in `pkgs/rauc/versions.env`) persists no
-mark history — its slot status file holds bundle metadata, an install-progress
-`status`, a checksum and `installed.*`/`activated.*`, `mark-good` writes none
-of it, and `boot-status` over D-Bus is the attempt counter read as
-exhausted-or-not. The backward-only rule narrows the window because a
-never-booted slot is normally also the newest, but the two come apart when the
-running slot is re-installed in place or install metadata is restored — a
-never-booted but OLDER slot stays a permitted target. Its verdict is recorded
+That rule is how `recovery.md` §3 node 2's precondition — "the other slot
+holds a system that booted successfully before" — is enforced, by DERIVATION
+rather than by reading it. The property is not observable directly: RAUC v1.13
+(pinned in `pkgs/rauc/versions.env`) persists no mark history — its slot status
+file holds bundle metadata, an install-progress `status`, a checksum and
+`installed.*`/`activated.*`, `mark-good` writes none of it, and `boot-status`
+over D-Bus is the attempt counter read as exhausted-or-not. What makes the
+derivation valid is RAUC's invariant that **an install never writes the running
+slot**: a booted slot installed after the target means the device was running
+the target at that moment. **If that invariant ever stops holding — a future
+install path able to target the booted slot, or an out-of-band flash that also
+rewrites `installed.timestamp` — the derivation does not**, and nothing in this
+tree goes red, because the invariant is RAUC's and not ours. Its verdict is
+recorded
 in the state document as `rollback` — `target` (the resolved alternate slot,
 or `null`), `permitted`, and `reason` — so the operator reads the decision in
 the same `GET /api/v1/update` answer that carries `slots`, `booted_slot`,
