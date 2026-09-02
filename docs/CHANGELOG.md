@@ -33,6 +33,30 @@ localized recovery copy, committed hashed assets, tests and current English
 and Chinese guidance moved together. `/api/v1/ui` and `/mos/ui` retain their
 existing API and storage meanings. PLAN-060.
 
+## Time, storage, diagnostics and the system-information surface (2026-09-02)
+
+The image now keeps time on purpose: `systemd-timesyncd` ships as base policy
+with a pinned 32-2048 s poll, a 30 s retry and a 60 s clock save, its saved
+clock bound onto STATE so `max(RTC, last known good)` holds before TLS and TUF
+validity are ever checked. NTP servers and the timezone are typed settings
+with a runtime reconciler; the timezone is presentation only, rendered to
+`/run/mos/timezone`, and `/etc/localtime` stays UTC because a bind over the
+zoneinfo symlink would hand the operator's zone to every reader of UTC. The
+cx3576 kernel now asserts its RTC driver. `GET /api/v1/storage/status`
+reports the PLAN-063 tiers: DATA at `/mnt/data` with `/mos` and `/srv` as
+binds of one pool whose capacity is stated once, readiness proven by a real
+probe write with named unavailable and degraded states, eMMC wear as a JEDEC
+bucket range beside its raw evidence, and every lifecycle action explicitly
+unsupported. `GET /api/v1/system/info` assembles what this device is from
+the shipped manifest, machine id, uname and RAUC; `/api/v1/system/telemetry`
+and `/api/v1/network/status` report observed state, kept distinct from the
+desired configuration, and say so when a fact is absent. Diagnostics
+snapshots collect one at a time under `/mos/diagnostics` with retention and
+explicit deletion, redacted by a fail-closed allowlist. A Wi-Fi AP
+passphrase refusal no longer names the secret's length. Board validation of
+RTC backup power, media health, fsck evidence and the telemetry fields needs
+bench hardware and is recorded as not done. PLAN-044, PLAN-049, PLAN-052.
+
 ## Release identity, authenticated updates and the security lifecycle (2026-09-02)
 
 A release is now a validated manifest (version, channel, board
