@@ -28,6 +28,7 @@ use utoipa::OpenApi;
         crate::routes::api_v1_session_status,
         crate::routes::api_v1_session_create,
         crate::routes::api_v1_session_delete,
+        crate::routes::api_v1_claim,
         crate::routes::api_v1_ui_status,
         crate::routes::api_v1_ui_bundles,
         crate::routes::api_v1_ui_upload,
@@ -72,11 +73,15 @@ use utoipa::OpenApi;
         crate::routes::api_v1_poweroff,
         crate::routes::api_v1_transient_root_password,
         crate::routes::api_v1_setup,
+        crate::routes::api_v1_reset,
+        crate::routes::api_v1_recovery_credential,
+        crate::provisioning_api::api_v1_provisioning_status,
         crate::update_api::api_v1_update_state,
         crate::update_api::api_v1_update_check,
         crate::update_api::api_v1_update_fetch,
         crate::update_api::api_v1_update_install,
         crate::update_api::api_v1_update_mark,
+        crate::update_api::api_v1_update_rollback,
         crate::update_api::api_v1_update_reboot_override
     )
 )]

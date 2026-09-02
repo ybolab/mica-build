@@ -1,6 +1,6 @@
 # RFCT-282 Deliver install, onboarding and provisioning
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
