@@ -1,8 +1,8 @@
 # PLAN-048 Deliver recovery and credential access recovery
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-02
 - **relatedTask**: [RFCT-284](../task/RFCT-284.md)
 
 ## Context

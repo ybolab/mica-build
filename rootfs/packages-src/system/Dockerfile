@@ -122,6 +122,16 @@ ARG SOURCE_DATE_EPOCH
 # overlay-install.sh spells out at length is left unlinked so that Quadlet
 # cannot generate root-capable units from STATE with no operator decision.
 #
+# THE OFFLINE PROVISIONING TRANSPORT (PLAN-046 / RFCT-282) is
+# mos-provisioning-import, its unit, and the multi-user wants-link below. It is
+# mos-system payload and not mosd payload even though mosd is what reads what
+# it stages: the script mounts GPT-labelled boot slots and removable block
+# devices read-only, which is layout knowledge this package already owns
+# (/etc/repart.d, the mount units), and an image built with WITH_MOSD=0 still
+# wants the medium left alone rather than a dangling unit. The unit orders
+# itself Before=mosd.service from its own [Unit] section, so nothing in mosd's
+# package has to know it exists.
+#
 # mos-health.service and mos-machine-id.service are enabled by symlinks that
 # ship as symlinks INSIDE overlay, pointing into /usr/lib/systemd/system
 # where those two units live; they are copied with `cp -a` so their targets are
@@ -136,15 +146,16 @@ ARG SOURCE_DATE_EPOCH
 # from the one root.mount fixes.
 RUN set -eu; \
     R=/stage/mos-system; \
-    for f in mos-data-layout mos-health mos-machine-id mos-seed-home mos-seed-root mos-seed-state \
-             mos-seed-var mos-shadow-reconcile; do \
+    for f in mos-data-layout mos-health mos-machine-id mos-provisioning-import mos-seed-home \
+             mos-seed-root mos-seed-state mos-seed-var mos-shadow-reconcile; do \
         install -D -m 0755 "/in/overlay/usr/lib/mos/${f}" "${R}/usr/lib/mos/${f}"; \
     done; \
     for f in mos-health.service mos-machine-id.service; do \
         install -D -m 0644 "/in/overlay/usr/lib/systemd/system/${f}" \
             "${R}/usr/lib/systemd/system/${f}"; \
     done; \
-    for f in mos-apply-hostname.service mos-data-layout.service mos-seed-home.service mos-seed-root.service \
+    for f in mos-apply-hostname.service mos-data-layout.service mos-provisioning-import.service \
+             mos-seed-home.service mos-seed-root.service \
              mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
              mos.mount srv.mount var-lib-mos.mount var-lib-systemd-timesync.mount \
              etc-hostname.mount etc-ssh.mount home.mount root.mount \
@@ -196,8 +207,10 @@ RUN set -eu; \
         ln -s "/etc/systemd/system/${u}" \
             "${R}/etc/systemd/system/local-fs.target.wants/${u}"; \
     done; \
-    ln -s /etc/systemd/system/mos-shadow-reconcile.service \
-        "${R}/etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service"; \
+    for u in mos-shadow-reconcile.service mos-provisioning-import.service; do \
+        ln -s "/etc/systemd/system/${u}" \
+            "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
+    done; \
     for u in mos-health.service mos-machine-id.service; do \
         cp -a "/in/overlay/etc/systemd/system/multi-user.target.wants/${u}" \
             "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \

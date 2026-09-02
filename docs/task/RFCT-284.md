@@ -1,6 +1,6 @@
 # RFCT-284 Deliver recovery and credential access recovery
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P0
 - **owner**: unassigned
 - **createdAt**: 2026-09-01
