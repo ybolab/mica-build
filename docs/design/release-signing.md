@@ -668,13 +668,16 @@ rauc-update sync --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
 rauc-update check \
   --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json>
 
-# 3. Download resumably (HTTP range requests) into the reserved directory.
+# 3. Probe the /mos/updates workspace (DATA mounted, writable, not
+#    exhausted — exit 3 and a `<status> <kind>: ...` line otherwise), then
+#    download resumably (HTTP range requests) into /mos/updates/downloads.
 #    The completed size never exceeds --max-bytes together with what the
-#    directory already holds; a digest mismatch deletes the partial; the
-#    last stdout line is the verified bundle path.
+#    workspace already holds; a digest mismatch deletes the partial; the
+#    verified bundle is renamed into /mos/updates/verified and that path is
+#    the last stdout line. There is no flag that stages anywhere else.
 rauc-update fetch \
   --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
-  --url http://mirror.example/tuf --reserve-dir /data/update --max-bytes <n>
+  --url http://mirror.example/tuf --max-bytes <n>
 
 # 4. Hand off. The orchestrated route is mosd's D-Bus member:
 busctl call com.mos.mosd /com/mos/mosd com.mos.mosd1 InstallUpdate s <path>
@@ -713,19 +716,27 @@ Binding the identity to a real release version is owed, and is the same
 decision as choosing where the release version enters the image build.
 
 Nothing above waits for an operator any more: mosd drives this client. Its
-update lifecycle runs `rauc-update sync`/`check`/`fetch` as bounded
+update lifecycle runs `rauc-update probe`/`sync`/`check`/`fetch` as bounded
 subprocesses and a policy file (`/var/lib/mos/update-policy.toml`) sets the
-auto-check cadence (`docs/design/updates.md`). What is still owed is the
-rest of the image-side contract: **[not implemented]** the pinned
-`root.json` is provisioned by nothing (§2.5's last paragraph), nothing
-provisions the `/var/lib/mos/update/` tree that policy defaults to (mirror,
-rollback state, reserve), and `mos-health` does not report `health.boot` —
-the entry that lifts the lifecycle past `validating`. The reserve directory
-is likewise a contract, not a mechanism: which partition backs
-`/data/update` and how many bytes it may promise is a storage-policy
-decision owned outside this crate; the client refuses to exceed the budget
-or start a download the filesystem visibly cannot hold, and that is its
-whole side of the bargain.
+auto-check cadence (`docs/design/updates.md`). Where the bytes go is not a
+flag but PLAN-061's contract on PLAN-063's layout: partial downloads only
+in `/mos/updates/downloads`, a verified bundle moved into
+`/mos/updates/verified` by one same-filesystem rename, transaction-local
+work in `/mos/updates/staging`, and RAUC handed only a path in `verified/`.
+The workspace is created by `mos-data-layout` on the DATA pool; the client
+probes it before the first byte (mount source resolves to `/mnt/data`, no
+symlink substitution, not read-only, a private probe file written and
+removed, the pool's free space against the budget) and refuses with a named
+`unavailable`/`degraded` verdict instead of writing anywhere else
+(`updates.md` §1.1). What is still owed is the rest of the image-side
+contract: **[not implemented]** the pinned `root.json` is provisioned by
+nothing (§2.5's last paragraph), nothing provisions the `/var/lib/mos/update/`
+tree that policy defaults to for the metadata mirror and rollback state, and
+`mos-health` does not report `health.boot` — the entry that lifts the
+lifecycle past `validating`. How many bytes `--max-bytes` may promise of the
+pool is a storage-policy decision owned outside this crate (PLAN-049); the
+client refuses to exceed the budget or start a download the pool visibly
+cannot hold, and that is its whole side of the bargain.
 
 Transport is plain HTTP by design: integrity and authenticity come from the
 signed metadata (a hostile mirror yields a refusal), confidentiality is not
@@ -748,12 +759,14 @@ On the device, with the media mounted:
 ```sh
 rauc-update import \
   --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
-  --reserve-dir /data/update --max-bytes <n>
+  --max-bytes <n>
 ```
 
 `import` verifies exactly as online — same pinned anchor, same rollback
-state, same selection, same digest gate — then stages the bundle into the
-reserve. A lockbox carrying stale metadata is refused by the state file; a
+state, same selection, same digest gate, same workspace probe — then copies
+the bundle through `/mos/updates/staging` into `/mos/updates/verified`,
+which is the path to install (the file on the media itself is never one). A
+lockbox carrying stale metadata is refused by the state file; a
 tampered bundle is refused by the digest; there is no import that bypasses
 either. The metadata in a lockbox is carried verbatim (no key leaves §1.5's
 custody to produce one), so a partial lockbox lists targets it does not

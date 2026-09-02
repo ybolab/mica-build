@@ -1,12 +1,15 @@
 # Design: updates — lifecycle state, update policy and safe-to-reboot
 
-> Status: the state model, the policy file and the reboot gate below are
-> implemented in mosd/apid and unit-tested; the fault-evidence table in §6
-> states, per fault, exactly what is proven where and what still needs bench
-> hardware. Companions: `release-signing.md` (trust chain and the
+> Status: the state model, the policy file, the `/mos/updates` workspace
+> contract with its readiness probe, and the reboot gate below are
+> implemented in mosd/apid/`rauc-update` and unit-tested; the fault-evidence
+> table in §6 states, per fault, exactly what is proven where and what still
+> needs bench hardware. Companions: `release-signing.md` (trust chain and the
 > `rauc-update` client), `mosd.md` §5.4 (the bus surface this builds on),
 > `api.md` (HTTP conventions), `uboot-ab-handshake.md` (boot credits),
-> `../user/update-rollback.md` (the user-facing journey).
+> `../plan/PLAN-061.md` and `../plan/PLAN-063.md` (the `/mos` namespace and
+> the DATA layout the workspace lives on), `../user/update-rollback.md` (the
+> user-facing journey).
 
 ## 1. The update lifecycle state model
 
@@ -22,8 +25,9 @@ reason string, recorded by `pkgs/mosd/mosd/src/update_lifecycle.rs`:
 | `idle` | machine | Nothing in flight. `available` beside it names the last check's selection, when there was one. |
 | `checking` | machine | `rauc-update sync` + `check` running as a bounded subprocess. |
 | `downloading` | machine | `rauc-update fetch` running; resumable, byte-budgeted. |
-| `ready` | machine | A verified bundle is staged; `bundle` is the path `rauc-update` printed — the only path this module ever records. |
+| `ready` | machine | A verified bundle is staged; `bundle` is the path `rauc-update` printed — the only path this module ever records, and it must be a bundle inside `/mos/updates/verified` (§1.1). |
 | `installing` | mirrored | mosd's existing `InstallUpdate` background task is writing the other slot. |
+| `update-unavailable` | machine | The `/mos/updates` workspace refused the acquisition before it started (§1.1): `reason` is the probe's verdict, `<status> <kind>: <detail>`, with status `unavailable` (`/mos` not mounted, or not the DATA pool) or `degraded` (the pool, but read-only, exhausted, or the probe failed); `workspace` carries the same fields. Entered by the probe that runs before every check and fetch; cleared by the next probe that passes. |
 | `failed` | machine | The last check/fetch failed; `reason` carries the client's stderr tail. Cleared when the next operation starts. |
 | `reboot-required` | derived | The bootloader's first pick (`primary`) is not the booted slot: an installed, activated bundle awaits its first boot. |
 | `validating` | derived | Booted, and the boot health gate has reported this boot as not (yet) confirmed. |
@@ -31,8 +35,83 @@ reason string, recorded by `pkgs/mosd/mosd/src/update_lifecycle.rs`:
 | `rolled-back` | derived | A slot we are NOT running has `boot-status: bad`: its boot attempts are exhausted, which is what an automatic fallback leaves behind. |
 
 Precedence, written once in `render_entry`: `installing` over a running
-client operation over `failed` over `ready` over the derived boot phase over
-`idle`.
+client operation over `update-unavailable` over `failed` over `ready` over
+the derived boot phase over `idle`.
+
+### 1.1 The workspace and its readiness probe
+
+Every byte the updater writes goes to the `/mos/updates` workspace that
+PLAN-061 reserves and PLAN-063's layout backs: the DATA pool is mounted at
+`/mnt/data`, `/mos` is a bind mount of its `mos/` subtree (as `/srv` is of
+`srv/`), and `mos-data-layout` creates the three directories before any
+writer starts. There is no other place and no fallback — not STATE
+(`/var/lib/mos`), not `/var`, not the rootfs, not tmpfs:
+
+| Directory | Holds | Rule |
+|---|---|---|
+| `/mos/updates/downloads/` | resumable partial downloads, `<name>.part` only | the only directory a partial ever lives in; `--reserve-dir` may name a subdirectory of it and nothing else (anything outside is refused) |
+| `/mos/updates/verified/` | complete bundles whose sha256 and length matched the signed metadata | the only path RAUC is ever handed; a file arrives here by one same-filesystem `rename(2)` from its `.part`, so `verified/` holds a whole verified bundle or nothing |
+| `/mos/updates/staging/` | transaction-local work: the lockbox import copy, the probe file | never resumed, never installed from |
+
+**Never installable by filename alone.** A `.part`, a file in `downloads/`
+or `staging/`, a symbolic link, or a path anywhere else is refused three
+times over: `rauc-update --install` checks its own output, mosd records as
+`ready` only a fetch output that is a bundle directly inside `verified/`
+(anything else is `failed` with the reason), and `InstallUpdate` — the
+staged path and an operator's explicit `bundlePath` alike — refuses with
+`InvalidArgs` (HTTP **422** `validation_failed`) whatever is not a regular
+file inside `verified/`. The offline route is therefore `rauc-update
+import` (which lands the bundle in `verified/`) followed by an install of
+that path, never an install of a path on the removable media.
+
+**The probe.** `rauc-update probe` is the PLAN-061 readiness check, run by
+mosd before every check and fetch (`update-unavailable` is its verdict,
+recorded before any acquisition starts) and again by the client itself
+inside `fetch`/`import` before the first byte is written. In order:
+
+1. `/mos` exists and is a real directory, not a symbolic link.
+2. `/proc/self/mountinfo` lists a mount at `/mos`, and a mount at
+   `/mnt/data`, and the two are the same device (`major:minor`): the mount
+   source of `/mos` resolves to the DATA pool. An `ext4` on another device —
+   the verity root, STATE — is not DATA however it is named.
+3. Neither the `/mos` bind, its superblock, nor the pool mount carries `ro`.
+4. Nothing foreign is mounted inside `/mos/updates` (a rename could not
+   cross it), and `/mos/updates` with its three directories exist, are real
+   directories, and share `/mos`'s device.
+5. `statvfs` does not report the filesystem read-only.
+6. A private file is created with `O_EXCL` in `staging/`, written, fsynced,
+   removed, and the directory fsynced. `EROFS` is read-only, `ENOSPC`/
+   `EDQUOT` exhausted, anything else a failed probe.
+7. Capacity, the pool's and stated once (it is one pool; `/mos` and `/srv`
+   are two names for the same free space): the bytes already held under the
+   three directories must be below `maxBytes`, and `f_bavail` must cover
+   what is asked — the exact bytes still needed for a `fetch`/`import`, the
+   unspent budget (`maxBytes − held`) for a standalone probe, i.e. DATA must
+   back the reserve it promises.
+
+The verdict vocabulary is PLAN-061's ("a missing, read-only or full DATA
+tier is a named degraded/unavailable state"), split the way the storage
+status surface splits it, so the two agree about one mount:
+
+| Status | Kinds | Meaning |
+|---|---|---|
+| `unavailable` | `mount-missing`, `not-data` | look at the mount: `/mos`, `/mnt/data` or a workspace directory is absent, or what is at `/mos` is not the DATA pool (another device, a symlink substitution, a foreign mount inside the workspace) |
+| `degraded` | `read-only`, `exhausted`, `probe-failed` | look at the disk: it is the pool, but it cannot take the bytes — mounted read-only, budget spent or free space below what is needed, or the probe itself could not complete |
+
+Both refuse acquisition; neither is a late write failure. PLAN-063 names no
+numeric "critical free space" threshold, so the threshold is the one the
+operator declares: `maxBytes`. On a passing probe `lifecycle.workspace`
+reads `status: ready` with `pool`, `source`, `fs_root`, `free`, `used` and
+`budget`; before any probe has run it reads `unprobed`.
+
+The client's exit codes carry the split for scripts: 0 done, 2 nothing
+compatible, **3 workspace not ready** (the `<status> <kind>: <detail>` line
+on stdout for `probe`, on stderr for `fetch`/`import`), 1 anything else.
+For the test suites only, `RAUC_UPDATE_ROOT` relocates the whole workspace
+(mosd forwards it to the client, so the two cannot disagree about where
+`verified/` is) and `RAUC_UPDATE_MOUNTINFO` substitutes a mount table; the
+production default is the contract and the refusal of any other root is
+tested against it.
 
 **The honest limit on `validating`/`succeeded`.** RAUC's `boot-status`
 cannot carry the confirmed/pending distinction — the U-Boot backend reads
@@ -72,7 +151,12 @@ Policy lives in `update-policy.toml` beside the settings store on STATE
 (default `/var/lib/mos/update-policy.toml`; `MOSD_UPDATE_POLICY_PATH`
 overrides, and tests point it into a tempdir). It is operator-edited and
 read fresh on every policy decision, so an edit takes effect on the next
-decision with no restart and no reload verb.
+decision with no restart and no reload verb. STATE is the right tier for
+it: PLAN-061 keeps small authoritative metadata on STATE and sends only
+large bytes to `/mos`, and a few hundred bytes of policy whose loss would
+make the workspace ambiguous is exactly that. Where bundles are staged is
+not a policy key at all — the workspace is `/mos/updates` (§1.1) and there
+is no setting that could point it elsewhere.
 
 **Why not the settings tree.** Settings keys would mean a schema bump plus a
 migration, and a concurrent workstream owns the next bump — two bumpers
@@ -100,8 +184,7 @@ channel = "stable"
 repoDir = "/var/lib/mos/update/tuf-mirror"
 rootPath = "/usr/share/mos/uptane/root.json"
 statePath = "/var/lib/mos/update/uptane-state.json"
-reserveDir = "/var/lib/mos/update/reserve"
-maxBytes = 500000000
+maxBytes = 500000000            # budget for /mos/updates as a whole (§1.1)
 
 [network]
 mode = "online"              # online | metered | offline
@@ -218,13 +301,16 @@ removable media. On the device (bench shell or SSH):
 rauc-update import --lockbox /media/usb/lockbox \
   --root /usr/share/mos/uptane/root.json \
   --state /var/lib/mos/update/uptane-state.json \
-  --reserve-dir /var/lib/mos/update/reserve --max-bytes 500000000
-# last stdout line = verified bundle path
+  --max-bytes 500000000
+# last stdout line = verified bundle path, /mos/updates/verified/<name>
+# exit 3 = the workspace is not ready; the line names the status and kind
 ```
 
 then `POST /api/v1/update/install` with `{"bundlePath": "<that path>"}` (or
 the bus member `InstallUpdate`). The import verifies the same pinned-root
-walk as the online path; there is no flag that skips it.
+walk as the online path and stages through the same workspace (§1.1); there
+is no flag that skips either, and the bundle on the media itself is not an
+installable path.
 
 ### 5.4 Support data
 
@@ -252,7 +338,9 @@ minutes per phase, which puts an end-to-end update loop outside the
 | Power loss during first boot | Boot credit spent; remaining attempts retry; exhaustion falls back | Handshake contract + credit arithmetic: `docs/design/uboot-ab-handshake.md`, `build/src/boot-slots.ts` | Pulling power inside the first-boot window on a board |
 | Exhausted boot credits | Bootloader falls back; state derives `rolled-back` naming the failed slot | `derive_boot_phase` tests in `pkgs/mosd/mosd/src/update_lifecycle.rs`; warning path in `pkgs/mosd/mosd/src/rauc.rs` tests | A real slot exhausting `BOOT_x_LEFT` end to end |
 | Incompatible target | `check` rejects per axis (board/profile/channel/schema/version) with a reason each; exit 2 surfaces as "no compatible target", never an install | `pkgs/rauc-sign/tests/update.rs` selection suite; lifecycle's exit-2 handling in `update_lifecycle.rs` tests | RAUC's own compatible-string refusal on a mismatched board |
-| Insufficient space | Fetch refused up front when the filesystem visibly cannot hold it; byte budget never exceeded; failure lands as `failed` with the reason | `pkgs/rauc-sign/tests/update.rs` budget suite; failure recording in `update_lifecycle.rs` tests | Filling STATE/reserve on a real board's storage class |
+| Insufficient space | The probe refuses before the first byte when the DATA pool cannot hold what is still needed or the workspace budget is spent (`degraded exhausted`); the budget is never exceeded; the state reads `update-unavailable` with the reason | `pkgs/rauc-sign/tests/update.rs` probe and budget suites (`the_probe_names_every_unready_kind`, `fetch_refuses_to_exceed_the_byte_budget`); `update_lifecycle.rs` tests (`an_unready_workspace_is_a_named_state_before_any_acquisition`, `a_fetch_the_workspace_refuses_is_the_same_named_state`) | Filling DATA on a real board's storage class |
+| DATA workspace absent, not DATA, or read-only | Named `update-unavailable` before acquisition (`unavailable mount-missing`/`not-data`, `degraded read-only`/`probe-failed`); no byte requested, nothing written anywhere else; cleared when the probe passes | `pkgs/rauc-sign/tests/update.rs` (`the_probe_names_every_unready_kind`, `an_unready_workspace_refuses_acquisition_before_any_byte`, `the_cli_reports_readiness_with_its_own_exit_code`); `update_lifecycle.rs` per-kind state test | Unmounting/remounting DATA read-only under a running mosd on a board |
+| Interrupted download, partial never installable | The `.part` stays in `downloads/`, `verified/` is untouched, the partial and any path outside `verified/` are refused by `--install`, by the `ready` recording and by `InstallUpdate`; the resumed fetch renames the whole bundle into `verified/` | `pkgs/rauc-sign/tests/update.rs` (`an_interrupted_download_never_reaches_verified`, `only_a_verified_regular_file_is_installable`, `the_reserve_directory_is_inside_downloads_or_refused`); `update_lifecycle.rs` (`a_fetch_path_outside_verified_is_never_recorded_as_ready`, `only_a_verified_regular_file_is_installable`); `bus.rs` install validation test | Power cut mid-download, then resume, on a board |
 | Automatic fallback | Device returns to the old slot without operator action; state says so afterwards | Derivation as above; handshake contract | The full loop on a board: bad bundle → install → reboot → fallback observed on serial |
 
 Operator docs (§5 and `../user/update-rollback.md`) claim only the left
@@ -266,7 +354,9 @@ behaviour.
 - `/usr/share/mos/release-identity.env` (`BOARD=`/`PROFILE=`/`VERSION=`)
   and the pinned trust anchor at `/usr/share/mos/uptane/root.json` —
   `release-signing.md` records the anchor-provisioning decision as open.
-- Provisioning of `/var/lib/mos/update/` (mirror, rollback state, reserve)
-  on STATE, and the storage-policy decision behind `maxBytes`.
+- Provisioning of `/var/lib/mos/update/` (metadata mirror, rollback state)
+  on STATE. The workspace itself is provisioned: `mos-data-layout` creates
+  `/mos/updates/{downloads,verified,staging}` on DATA (PLAN-063). The quota
+  behind `maxBytes` stays PLAN-049's.
 - `mos-health` reporting `health.boot` after its mark-good, which is what
   lights up `validating`/`succeeded` (§1).
