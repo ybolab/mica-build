@@ -1,6 +1,6 @@
 //! `rauc-update` — device-side update client.
 //!
-//! Four subcommands, each scriptable the way `rauc-verify` is (exit 0 means
+//! Five subcommands, each scriptable the way `rauc-verify` is (exit 0 means
 //! the thing happened; a one-line reason on stderr otherwise):
 //!
 //! - `sync`: mirror the repository's metadata over plain HTTP into a local
@@ -9,19 +9,31 @@
 //!   the newest target compatible with this device's board, profile, channel,
 //!   schema floor and running version. Prints `selected ...` or `none`, with
 //!   the reason per rejected candidate; exit 2 when nothing is compatible.
-//! - `fetch`: `check`, then download the selected bundle resumably (HTTP
-//!   range requests) into a byte-budgeted reserve directory, verifying sha256
-//!   and length against the signed metadata before reporting the path.
+//! - `probe`: the PLAN-061 readiness probe of the `/mos/updates` workspace
+//!   on its own — `/mos` is mounted on the same device as the DATA pool at
+//!   `/mnt/data`, no symlink stands in for a workspace directory, a private
+//!   probe file is created, fsynced and removed, the pool's free space and
+//!   read-only state are reported once. Prints `ready ...` or
+//!   `<status> <kind>: <detail>` with status `unavailable` (not mounted, not
+//!   the pool) or `degraded` (read-only, exhausted, probe failed); exit 3
+//!   for either.
+//! - `fetch`: `check`, then probe, then download the selected bundle
+//!   resumably (HTTP range requests) into `downloads/` under a byte budget,
+//!   verifying sha256 and length against the signed metadata before one
+//!   same-filesystem rename lands it in `verified/` and its path is printed.
 //! - `import`: the offline path — the same selection and verification over a
 //!   "lockbox" directory (full metadata plus bundle, `rauc-sign lockbox`),
-//!   then stage the bundle into the reserve directory.
+//!   then the same probe, budget, staging copy and rename into `verified/`.
 //!
-//! No flag skips metadata or digest verification; there is none to add. The
-//! last stdout line of a successful `fetch`/`import` is the verified local
-//! bundle path, ready to hand to an installer; `--install` hands it to
-//! `rauc install` directly (mosd's D-Bus `InstallUpdate` is the orchestrated
-//! route and is documented in `docs/design/release-signing.md`, not linked
-//! here — a bus stack is mosd's dependency, not this crate's).
+//! No flag skips metadata or digest verification; there is none to add. No
+//! flag moves the workspace off `/mos/updates` either: an unready workspace
+//! is exit 3 with the status and kind named, never a write somewhere else. The last
+//! stdout line of a successful `fetch`/`import` is the verified local bundle
+//! path, ready to hand to an installer; `--install` hands it to `rauc
+//! install` directly, after checking it is a regular file inside `verified/`
+//! (mosd's D-Bus `InstallUpdate` is the orchestrated route and is documented
+//! in `docs/design/release-signing.md`, not linked here — a bus stack is
+//! mosd's dependency, not this crate's).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -29,6 +41,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, ensure};
 use clap::{Args, Parser, Subcommand};
 use rauc_sign::update::{self, Candidate, DeviceIdentity, Selection};
+use rauc_sign::workspace::{Unready, Workspace};
 use url::Url;
 
 #[derive(Debug, Parser)]
@@ -61,8 +74,21 @@ enum Command {
         #[command(flatten)]
         selection: SelectionArgs,
     },
-    /// Select, then download the bundle resumably into the reserve directory
-    /// and verify it against the signed metadata.
+    /// Probe the /mos/updates workspace for readiness without acquiring
+    /// anything: exit 0 and `ready ...`, or exit 3 and
+    /// `unavailable|degraded <kind>: ...`.
+    Probe {
+        /// Byte budget the workspace's content must never exceed; readiness
+        /// requires DATA to back what is still unspent of it.
+        #[arg(long)]
+        max_bytes: u64,
+        /// Bytes that must be free, instead of the unspent budget.
+        #[arg(long)]
+        need: Option<u64>,
+    },
+    /// Select, probe the workspace, then download the bundle resumably into
+    /// downloads/ and move it into verified/ once it verifies against the
+    /// signed metadata.
     Fetch {
         #[command(flatten)]
         repo: RepoArgs,
@@ -91,8 +117,9 @@ enum Command {
         state: PathBuf,
         #[command(flatten)]
         selection: SelectionArgs,
-        #[command(flatten)]
-        reserve: ReserveArgs,
+        /// Byte budget the workspace's content must never exceed.
+        #[arg(long)]
+        max_bytes: u64,
         /// Hand the verified bundle to `rauc install` after staging.
         #[arg(long)]
         install: bool,
@@ -164,10 +191,12 @@ impl SelectionArgs {
 
 #[derive(Debug, Args)]
 struct ReserveArgs {
-    /// Reserved directory the bundle is staged into.
+    /// Directory partial downloads are written to. Defaults to the
+    /// workspace's downloads/ and must lie inside it; nothing outside
+    /// /mos/updates is accepted.
     #[arg(long)]
-    reserve_dir: PathBuf,
-    /// Byte budget the reserve directory's content must never exceed.
+    reserve_dir: Option<PathBuf>,
+    /// Byte budget the workspace's content must never exceed.
     #[arg(long)]
     max_bytes: u64,
 }
@@ -201,13 +230,17 @@ fn report_selection(selection: &Selection) -> Option<&Candidate> {
     }
 }
 
-/// Hands the verified bundle to RAUC. mosd's D-Bus `InstallUpdate` is the
-/// orchestrated route (progress recorded in mosd's live state); this direct
-/// call is the documented fallback and the two install the same bundle.
-fn install(path: &Path) -> Result<()> {
+/// Hands the verified bundle to RAUC — after [`Workspace::installable`] has
+/// said it is a regular file inside `verified/`, which the path this binary
+/// just produced always is; the check is the guarantee that nothing else
+/// ever reaches this line. mosd's D-Bus `InstallUpdate` is the orchestrated
+/// route (progress recorded in mosd's live state); this direct call is the
+/// documented fallback and the two install the same bundle.
+fn install(workspace: &Workspace, path: &Path) -> Result<()> {
+    let path = workspace.installable(path)?;
     let status = std::process::Command::new("rauc")
         .arg("install")
-        .arg(path)
+        .arg(&path)
         .status()
         .context("run rauc install (is rauc on PATH?)")?;
     ensure!(status.success(), "rauc install failed with {status}");
@@ -217,6 +250,11 @@ fn install(path: &Path) -> Result<()> {
 /// Exit code for "nothing compatible": distinct from both success and error,
 /// so a poll loop can tell "up to date" from "broken".
 const EXIT_NONE: u8 = 2;
+
+/// Exit code for "the workspace is not ready" (unavailable or degraded):
+/// distinct again, so mosd can record a named `update-unavailable` state
+/// rather than a generic failure.
+const EXIT_UNREADY: u8 = 3;
 
 async fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
@@ -246,6 +284,27 @@ async fn run() -> Result<ExitCode> {
                 return Ok(ExitCode::from(EXIT_NONE));
             }
         }
+        Command::Probe { max_bytes, need } => {
+            let workspace = Workspace::from_env()?;
+            match workspace.probe(max_bytes, need) {
+                Ok(ready) => println!(
+                    "ready root={} pool={} source={} fs_root={} fstype={} free={} used={} \
+                     budget={}",
+                    workspace.root().display(),
+                    ready.pool,
+                    ready.source,
+                    ready.fs_root,
+                    ready.fstype,
+                    ready.free_bytes,
+                    ready.used_bytes,
+                    ready.max_bytes
+                ),
+                Err(unready) => {
+                    println!("{unready}");
+                    return Ok(ExitCode::from(EXIT_UNREADY));
+                }
+            }
+        }
         Command::Fetch {
             repo,
             selection,
@@ -266,8 +325,15 @@ async fn run() -> Result<ExitCode> {
             let Some(candidate) = report_selection(&outcome) else {
                 return Ok(ExitCode::from(EXIT_NONE));
             };
-            let report =
-                update::fetch(&url, candidate, &reserve.reserve_dir, reserve.max_bytes).await?;
+            let workspace = Workspace::from_env()?;
+            let report = update::fetch(
+                &url,
+                candidate,
+                &workspace,
+                reserve.reserve_dir.as_deref(),
+                reserve.max_bytes,
+            )
+            .await?;
             if report.resumed_from > 0 && report.fetched > 0 {
                 eprintln!(
                     "rauc-update: resumed at byte {} ({} bytes fetched)",
@@ -276,7 +342,7 @@ async fn run() -> Result<ExitCode> {
             }
             println!("{}", report.path.display());
             if do_install {
-                install(&report.path)?;
+                install(&workspace, &report.path)?;
             }
         }
         Command::Import {
@@ -284,7 +350,7 @@ async fn run() -> Result<ExitCode> {
             root,
             state,
             selection,
-            reserve,
+            max_bytes,
             install: do_install,
         } => {
             let identity = selection.identity()?;
@@ -300,18 +366,13 @@ async fn run() -> Result<ExitCode> {
             let Some(candidate) = report_selection(&outcome) else {
                 return Ok(ExitCode::from(EXIT_NONE));
             };
-            let report = update::import_selected(
-                &lockbox,
-                &root,
-                &state,
-                candidate,
-                &reserve.reserve_dir,
-                reserve.max_bytes,
-            )
-            .await?;
+            let workspace = Workspace::from_env()?;
+            let report =
+                update::import_selected(&lockbox, &root, &state, candidate, &workspace, max_bytes)
+                    .await?;
             println!("{}", report.path.display());
             if do_install {
-                install(&report.path)?;
+                install(&workspace, &report.path)?;
             }
         }
     }
@@ -325,6 +386,11 @@ async fn main() -> ExitCode {
         Err(err) => {
             // One line, alternate format: the whole context chain colon-joined.
             eprintln!("rauc-update: {err:#}");
+            // An unready workspace is its own exit code, however deep in the
+            // chain it sits, so a caller can name the state without parsing.
+            if err.downcast_ref::<Unready>().is_some() {
+                return ExitCode::from(EXIT_UNREADY);
+            }
             ExitCode::FAILURE
         }
     }

@@ -1,5 +1,5 @@
 //! Device-side update client: compatibility selection over signed release
-//! metadata, resumable download into a bounded reserve directory, metadata
+//! metadata, resumable download into the `/mos/updates` workspace, metadata
 //! mirroring over HTTP, and the offline "lockbox" import path.
 //!
 //! Everything here sits on top of [`crate::client`]'s verified walk: selection
@@ -9,13 +9,16 @@
 //! can hand out a bundle path whose bytes were not verified against the signed
 //! sha256 and length first. There is deliberately no flag that skips any of
 //! that: the only unverified artifact this module ever writes is a `.part`
-//! file, and the only way it loses that suffix is passing the digest check.
+//! file under `downloads/` (or `staging/` for an import copy), and the only
+//! way it reaches `verified/` under its final name is passing the digest
+//! check — one same-filesystem rename, so `verified/` never holds a partial.
 //!
-//! The reserve directory is a contract, not a mechanism: who provisions it,
-//! on which partition, and how large is a storage-policy decision owned
-//! elsewhere. This module holds its side of the contract — never exceed
-//! `--max-bytes` of content in the directory, and refuse to start a download
-//! the filesystem visibly cannot hold.
+//! Where the bytes go is [`crate::workspace`]'s contract, not a flag: partials
+//! only in `downloads/`, verified bundles only in `verified/`, no fallback
+//! filesystem, and a readiness probe before the first byte is written. This
+//! module holds the budget side — never exceed `--max-bytes` of content
+//! across the workspace, and refuse to start an acquisition the filesystem
+//! visibly cannot hold.
 
 use std::cmp::Ordering;
 use std::fs;
@@ -34,6 +37,7 @@ use crate::repo::{
     CUSTOM_BOARD, CUSTOM_CHANNEL, CUSTOM_MANIFEST_SCHEMA_VERSION, CUSTOM_MANIFEST_TARGET,
     CUSTOM_PROFILE, CUSTOM_RELEASE_VERSION, metadata_dir,
 };
+use crate::workspace::Workspace;
 
 /// The release-manifest schema version this client understands. Held as an
 /// equality, the same rule `build/src/release-manifest.ts` states for its
@@ -341,7 +345,7 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
 /// The outcome of a completed [`fetch`] or [`import_selected`].
 #[derive(Debug)]
 pub struct FetchReport {
-    /// Verified local path of the bundle inside the reserve directory.
+    /// Verified local path of the bundle, inside the workspace's `verified/`.
     pub path: PathBuf,
     /// Byte offset the download resumed from (0 for a fresh download; the
     /// full length when the file was already present and verified).
@@ -351,49 +355,51 @@ pub struct FetchReport {
 }
 
 /// Downloads `candidate`'s bundle from the published repository at `base_url`
-/// into `reserve_dir`, resuming a partial download via an HTTP range request,
-/// and verifies sha256 and length against the signed metadata before the file
-/// loses its `.part` suffix. A digest mismatch deletes the partial. The
-/// verification is not optional and has no bypass.
+/// into the workspace: the partial lives in `reserve_dir` (`downloads/`
+/// unless a directory inside it is named), resumes via an HTTP range
+/// request, and moves into `verified/` by one same-filesystem rename only
+/// after sha256 and length agree with the signed metadata. A digest mismatch
+/// deletes the partial. The verification is not optional and has no bypass.
+///
+/// The readiness probe ([`Workspace::probe`]) runs before any byte is
+/// written; its failure is an [`crate::workspace::Unready`] the caller can
+/// downcast and name.
 pub async fn fetch(
     base_url: &Url,
     candidate: &Candidate,
-    reserve_dir: &Path,
+    workspace: &Workspace,
+    reserve_dir: Option<&Path>,
     max_bytes: u64,
 ) -> Result<FetchReport> {
     let file_name = plain_file_name(&candidate.name)?;
-    fs::create_dir_all(reserve_dir)
-        .with_context(|| format!("create reserve directory {}", reserve_dir.display()))?;
-    let final_path = reserve_dir.join(&file_name);
+    let reserve_dir = workspace.reserve_dir(reserve_dir)?;
+    let final_path = workspace.verified().join(&file_name);
     let part_name = format!("{file_name}.part");
     let part_path = reserve_dir.join(&part_name);
 
     // An already-verified file is the idempotent success; a wrong one is a
     // corrupt leftover and is deleted rather than trusted or appended to.
-    if final_path.is_file() {
-        if file_sha256(&final_path)? == candidate.sha256 {
-            return Ok(FetchReport {
-                path: final_path,
-                resumed_from: candidate.length,
-                fetched: 0,
-            });
-        }
-        fs::remove_file(&final_path)
-            .with_context(|| format!("remove corrupt {}", final_path.display()))?;
+    if take_verified(&final_path, &candidate.sha256)? {
+        return Ok(FetchReport {
+            path: final_path,
+            resumed_from: candidate.length,
+            fetched: 0,
+        });
     }
-
-    admit_into_budget(
-        reserve_dir,
-        max_bytes,
-        &[file_name.as_str(), part_name.as_str()],
-        candidate.length,
-        &candidate.name,
-    )?;
+    // A final-named file in the download directory is not this module's
+    // output (nothing loses its `.part` suffix there): an unverified
+    // leftover, never installable, removed rather than counted or trusted.
+    let stale = reserve_dir.join(&file_name);
+    if fs::symlink_metadata(&stale).is_ok() {
+        fs::remove_file(&stale)
+            .with_context(|| format!("remove unverified leftover {}", stale.display()))?;
+    }
 
     // Resume state: hash whatever verified-length prefix is already on disk.
     // The bytes are NOT trusted — they only feed the digest that decides at
     // the end — so a corrupted partial costs one wasted download, never a
-    // wrong file.
+    // wrong file. Read before the probe, so the probe asks for exactly what
+    // is still needed.
     let mut hasher = digest::Context::new(&digest::SHA256);
     let mut have: u64 = 0;
     if part_path.is_file() {
@@ -408,16 +414,26 @@ pub async fn fetch(
             have = part_len;
         }
     }
-
     let still_needed = candidate.length - have;
-    let free = free_bytes(reserve_dir)?;
-    ensure!(
-        free >= still_needed,
-        "free space in {} is {free} bytes, below the {still_needed} bytes still needed \
-         for {}; the reserve is not backed by the space it promises",
-        reserve_dir.display(),
-        candidate.name
-    );
+
+    // Readiness before the first byte: DATA mounted, writable, not
+    // exhausted. Then the budget, which the probe's free-space check does
+    // not replace — the budget is what the workspace may hold, free space
+    // is what the filesystem can.
+    workspace
+        .probe(max_bytes, Some(still_needed))
+        .map_err(anyhow::Error::new)?;
+    admit_into_budget(
+        workspace,
+        max_bytes,
+        &[file_name.as_str(), part_name.as_str()],
+        candidate.length,
+        &candidate.name,
+    )?;
+    if reserve_dir != workspace.downloads() {
+        fs::create_dir_all(&reserve_dir)
+            .with_context(|| format!("create reserve directory {}", reserve_dir.display()))?;
+    }
 
     let mut fetched: u64 = 0;
     let resumed_from = have;
@@ -509,8 +525,9 @@ pub async fn fetch(
 
 /// The offline import: verifies `candidate` inside the lockbox repository —
 /// the same walk and byte verification as online, via
-/// [`client::verify_target`] — then places the bundle into the reserve
-/// directory under the same budget and digest rules as [`fetch`].
+/// [`client::verify_target`] — then copies the bundle through `staging/`
+/// (transaction-local, never resumed) into `verified/` under the same
+/// readiness, budget and digest rules as [`fetch`].
 ///
 /// The caller obtains `candidate` from [`check`] over the same lockbox
 /// directory, so board/profile/channel/version compatibility has already been
@@ -520,7 +537,7 @@ pub async fn import_selected(
     trusted_root: &Path,
     state: &Path,
     candidate: &Candidate,
-    reserve_dir: &Path,
+    workspace: &Workspace,
     max_bytes: u64,
 ) -> Result<FetchReport> {
     let verified = client::verify_target(lockbox, trusted_root, state, &candidate.name)
@@ -528,44 +545,32 @@ pub async fn import_selected(
         .with_context(|| format!("verify {} inside the lockbox", candidate.name))?;
 
     let file_name = plain_file_name(&candidate.name)?;
-    fs::create_dir_all(reserve_dir)
-        .with_context(|| format!("create reserve directory {}", reserve_dir.display()))?;
-    let final_path = reserve_dir.join(&file_name);
+    let final_path = workspace.verified().join(&file_name);
     let part_name = format!("{file_name}.part");
-    let part_path = reserve_dir.join(&part_name);
+    let part_path = workspace.staging().join(&part_name);
 
-    if final_path.is_file() {
-        if file_sha256(&final_path)? == candidate.sha256 {
-            return Ok(FetchReport {
-                path: final_path,
-                resumed_from: candidate.length,
-                fetched: 0,
-            });
-        }
-        fs::remove_file(&final_path)
-            .with_context(|| format!("remove corrupt {}", final_path.display()))?;
+    if take_verified(&final_path, &candidate.sha256)? {
+        return Ok(FetchReport {
+            path: final_path,
+            resumed_from: candidate.length,
+            fetched: 0,
+        });
     }
 
+    workspace
+        .probe(max_bytes, Some(candidate.length))
+        .map_err(anyhow::Error::new)?;
     admit_into_budget(
-        reserve_dir,
+        workspace,
         max_bytes,
         &[file_name.as_str(), part_name.as_str()],
         candidate.length,
         &candidate.name,
     )?;
-    let free = free_bytes(reserve_dir)?;
-    ensure!(
-        free >= candidate.length,
-        "free space in {} is {free} bytes, below the {} bytes needed for {}; the \
-         reserve is not backed by the space it promises",
-        reserve_dir.display(),
-        candidate.length,
-        candidate.name
-    );
 
-    // Copy through a hasher and a .part name, so the reserve directory never
-    // holds an unverified file under a final name — the same invariant the
-    // download path keeps.
+    // Copy through a hasher and a .part name in staging/, so no workspace
+    // directory ever holds an unverified file under a final name — the same
+    // invariant the download path keeps.
     let mut hasher = digest::Context::new(&digest::SHA256);
     let mut input = fs::File::open(&verified)
         .with_context(|| format!("open verified bundle {}", verified.display()))?;
@@ -587,13 +592,16 @@ pub async fn import_selected(
     }
     out.sync_all()
         .with_context(|| format!("sync {}", part_path.display()))?;
-    ensure!(
-        copied == candidate.length,
-        "{} is {copied} bytes where the signed metadata pins {}; the lockbox copy \
-         changed between verification and staging",
-        verified.display(),
-        candidate.length
-    );
+    if copied != candidate.length {
+        drop(out);
+        fs::remove_file(&part_path).with_context(|| format!("remove {}", part_path.display()))?;
+        bail!(
+            "{} is {copied} bytes where the signed metadata pins {}; the lockbox copy \
+             changed between verification and staging (deleted the copy)",
+            verified.display(),
+            candidate.length
+        );
+    }
 
     finalize_part(
         &part_path,
@@ -744,50 +752,48 @@ fn plain_file_name(name: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
-/// Refuses a download/import whose completed size would push the reserve
-/// directory's content past `max_bytes`. Files this operation itself owns
-/// (the final name and its `.part`) do not count against it.
+/// Refuses a download/import whose completed size would push the
+/// workspace's content (downloads/, verified/ and staging/ together) past
+/// `max_bytes`. Files this operation itself owns (the final name and its
+/// `.part`) do not count against it.
 fn admit_into_budget(
-    reserve_dir: &Path,
+    workspace: &Workspace,
     max_bytes: u64,
     own_names: &[&str],
     length: u64,
     target: &str,
 ) -> Result<()> {
-    let mut used: u64 = 0;
-    for entry in fs::read_dir(reserve_dir)
-        .with_context(|| format!("read reserve directory {}", reserve_dir.display()))?
-    {
-        let entry = entry.with_context(|| format!("read {}", reserve_dir.display()))?;
-        let name = entry.file_name();
-        if own_names.iter().any(|own| name.as_os_str() == *own) {
-            continue;
-        }
-        let meta = entry
-            .metadata()
-            .with_context(|| format!("stat {}", entry.path().display()))?;
-        if meta.is_file() {
-            used += meta.len();
-        }
-    }
+    let used = workspace.used_bytes(own_names)?;
     ensure!(
         used.saturating_add(length) <= max_bytes,
-        "{target} is {length} bytes and the reserve at {} already holds {used}, \
+        "{target} is {length} bytes and the workspace at {} already holds {used}, \
          which would exceed the {max_bytes}-byte budget; make room or raise the \
          budget deliberately",
-        reserve_dir.display()
+        workspace.root().display()
     );
     Ok(())
 }
 
-/// Available bytes on the filesystem holding `dir`.
-fn free_bytes(dir: &Path) -> Result<u64> {
-    let stat = rustix::fs::statvfs(dir).with_context(|| format!("statvfs {}", dir.display()))?;
-    Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+/// Whether `final_path` already holds the verified bundle. A regular file
+/// with the pinned digest is the idempotent success (`true`); anything else
+/// under that name — wrong bytes, a symbolic link — is removed, and `false`
+/// says the acquisition must produce the file.
+fn take_verified(final_path: &Path, expected_sha256: &str) -> Result<bool> {
+    let Ok(meta) = fs::symlink_metadata(final_path) else {
+        return Ok(false);
+    };
+    if meta.file_type().is_file() && file_sha256(final_path)? == expected_sha256 {
+        return Ok(true);
+    }
+    fs::remove_file(final_path)
+        .with_context(|| format!("remove corrupt {}", final_path.display()))?;
+    Ok(false)
 }
 
-/// The one gate between a `.part` file and a final name: digest agreement
-/// with the signed metadata. A mismatch deletes the partial.
+/// The one gate between a `.part` file and `verified/`: digest agreement
+/// with the signed metadata. A mismatch deletes the partial; agreement is
+/// one `rename(2)` on one filesystem, so `verified/` holds either the whole
+/// verified bundle or nothing — never a partial, whatever interrupts it.
 fn finalize_part(
     part_path: &Path,
     final_path: &Path,
@@ -805,10 +811,13 @@ fn finalize_part(
     }
     fs::rename(part_path, final_path)
         .with_context(|| format!("rename {} to {}", part_path.display(), final_path.display()))?;
-    if let Some(parent) = final_path.parent() {
-        fs::File::open(parent)
-            .and_then(|dir| dir.sync_all())
-            .with_context(|| format!("sync directory {}", parent.display()))?;
+    for dir in [final_path.parent(), part_path.parent()]
+        .into_iter()
+        .flatten()
+    {
+        fs::File::open(dir)
+            .and_then(|handle| handle.sync_all())
+            .with_context(|| format!("sync directory {}", dir.display()))?;
     }
     Ok(())
 }
