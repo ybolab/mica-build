@@ -526,7 +526,8 @@ rockusb therefore replaces all three:
 - **STATE** — credentials and identity: settings, the webAdmin hash, the shadow
   file, sshd host keys, the device secrets;
 - **META** — appliance and update metadata;
-- **DATA** — the operator's `/home`, `/root` and everything else under `/srv`.
+- **DATA** — mounted internally at `/mnt/data`, with appliance-owned `/mos` and
+  operator-owned `/srv`; `/home` and `/root` are backed from `/mos`.
 
 That is the appliance equivalent of Victron's physical-access guarantee (§11),
 at the cost of everything stored on the device.
@@ -558,20 +559,26 @@ it, the appliance does not support persisting it.
 ### 10.2 Where a file genuinely must be hand-edited: a new bind — **[implemented]**
 
 The mechanism is **one mount unit plus one verifier assertion**, added
-deliberately — not an overlay. The image ships **eight** binds today. Read the
-units (`rootfs/overlay/etc/systemd/system/*.mount`) rather than trusting
-this list:
+deliberately — not an overlay. `mos-system` ships **eight enabled core binds**;
+board and feature packages can add their own. Read the packaged units rather
+than trusting a fixed profile-wide count.
 
 | Bind unit | Source | Mountpoint | Tier |
 |---|---|---|---|
+| `mos.mount` | `/mnt/data/mos` | `/mos` | **DATA** |
+| `srv.mount` | `/mnt/data/srv` | `/srv` | **DATA** |
 | `etc-ssh.mount` | `/mnt/state/ssh` | `/etc/ssh` | STATE |
 | `etc-hostname.mount` | `/mnt/state/hostname` | `/etc/hostname` | STATE |
-| `etc-wpa_supplicant.mount` | `/mnt/state/wpa_supplicant` | `/etc/wpa_supplicant` | STATE |
-| `etc-hostapd.mount` | `/mnt/state/hostapd` | `/etc/hostapd` | STATE |
 | `var-lib-mos.mount` | `/mnt/state/mos` | `/var/lib/mos` | STATE |
-| `var-lib-bluetooth.mount` | `/mnt/state/bluetooth` | `/var/lib/bluetooth` | STATE |
 | `home.mount` | `/mos/home` | `/home` | **DATA** |
 | `root.mount` | `/mos/root` | `/root` | **DATA** |
+| `usr-local-lib-systemd-system.mount` | `/mnt/state/systemd-units` | `/usr/local/lib/systemd/system` | STATE |
+
+The cx3576 WiFi, AP and Bluetooth packages add the STATE-backed
+`etc-wpa_supplicant.mount`, `etc-hostapd.mount` and
+`var-lib-bluetooth.mount`. The container package ships
+`etc-containers-systemd.mount`, which the reconciler enables only when the
+container subsystem is enabled.
 
 ### 10.3 Files, scripts and data — **[implemented]**
 
@@ -585,7 +592,7 @@ only the ROOTFS and BOOT slots and never touches DATA.
 |---|---|---|---|
 | **Settings tree** (`/var/lib/mos/settings.toml`, STATE) — including `access.ssh.authorizedKeys` | **yes** | **yes** — RAUC writes only ROOTFS/BOOT | **no**, by definition. Not implemented today (§5.2); a whole-disk reflash is the closest real operation, and it replaces STATE outright |
 | **`/home`, `/root`, `/srv`** (DATA) | **yes** | **yes** | **no**. On a reflash, replaced by the image's fresh DATA filesystem — but see §9.2: blocks beyond the flashed extent are *unreachable*, not erased |
-| **Arbitrary `/etc` edits** | **no** — `/etc` is inside the verity squashfs except at the eight bind points; an edit elsewhere fails or is lost | **no** | n/a — there is nothing to lose |
+| **Arbitrary `/etc` edits** | **no** — `/etc` is inside the verity squashfs except at its deliberate bind points; an edit elsewhere fails or is lost | **no** | n/a — there is nothing to lose |
 | **`/var`** (EPHEMERAL) | **yes** for the files, and it is disposable by contract | **yes** — but nothing precious may live here; the build asserts it | **no**, and also wiped by a routine log cleanup, which costs nothing that matters |
 | **Transient root password** (§4.1) | **no, deliberately** — cleared by `mos-shadow-reconcile` on the next boot | **no** | **no** |
 

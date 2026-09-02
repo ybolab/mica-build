@@ -12,8 +12,7 @@
 > cookie cannot authenticate the API, or that the API is read-only is
 > superseded by this current-contract note and by
 > `pkgs/mosd/apid/openapi.json`.
-> The same applies to historical statements below that `/srv/ui` is the
-> canonical store, that upload is absent, that activation always chooses the
+> The same applies to historical statements below that upload is absent, that activation always chooses the
 > newest generation, or that retention is automatically pruned.
 
 ## Current shipped contract — **[implemented]**
@@ -190,7 +189,7 @@ contains no non-Rust file but its manifest and the generated OpenAPI document
 (`find pkgs/mosd/apid -type f ! -name '*.rs'` returns `pkgs/mosd/apid/openapi.json` and
 `pkgs/mosd/apid/Cargo.toml`), so there is no bundler input, no `package.json`, and
 nothing for a build chain to consume. What a **bundle** installed under
-`/srv/ui` may contain is a different question, settled in sections 4 and 5:
+`/mos/ui` may contain is a different question, settled in sections 4 and 5:
 apid ships no JavaScript, and since the asset router landed it will serve
 JavaScript somebody else built (section 1.6).
 
@@ -708,15 +707,14 @@ where that widening is argued for.
 
 **Vocabulary this document inherits from `access.md`.** Sections 4-6 need three
 things already settled there and must not restate them differently: the status
-markers (`docs/design/access.md`), the **eight bind mounts** the image
-ships and their STATE/DATA tiers — *"The image ships **eight** binds today"*
-(`docs/design/access.md`), tabulated at `docs/design/access.md` —
+markers (`docs/design/access.md`), the core and feature-specific bind mounts
+and their STATE/DATA tiers (`docs/design/access.md`) —
 and the **survives-what table** for reboot, A/B update and factory reset
 (`docs/design/access.md`). Two of its rows bear directly on section 5:
 `/home`, `/root` and `/srv` are DATA and survive both a reboot and an A/B
 update because RAUC writes only ROOTFS and BOOT
 (`docs/design/access.md`), while arbitrary `/etc` edits survive nothing
-because `/` is a verity squashfs outside the eight bind points
+because `/` is a verity squashfs outside the deliberate bind points
 (`docs/design/access.md`). The governing rule for section 5 is stated as a
 section heading: *"An unmodelled setting is an unsupported setting"*
 (`docs/design/access.md`), argued at `docs/design/access.md`.
@@ -765,13 +763,13 @@ in the same four positions so the change is legible rather than overwritten.
    `/usr/bin/apid`, so *"an artifact that is bytes in the binary is behind
    that protection and an artifact that is files on disk would not be"*.
 4. **The crate still ships no asset of its own; the assets come from
-   `/srv/ui`.** `find pkgs/mosd/apid -type f ! -name '*.rs'` returns
+   `/mos/ui`.** `find pkgs/mosd/apid -type f ! -name '*.rs'` returns
    `pkgs/mosd/apid/Cargo.toml` and `pkgs/mosd/apid/openapi.json` and nothing else, and
    `find pkgs/mosd/apid -type d` returns `pkgs/mosd/apid`, `pkgs/mosd/apid/src`,
    `pkgs/mosd/apid/src/assets`, `pkgs/mosd/apid/src/tests` and `pkgs/mosd/apid/tests` — no
    `assets/`, `static/` or `public/` directory of servable files. What is
    served comes from the bundle store rooted at
-   `pub const DEFAULT_ROOT: &str = "/srv/ui";`
+   `pub const DEFAULT_ROOT: &str = "/mos/ui";`
    (`pkgs/mosd/apid/src/bundle.rs`), which the router state constructs with
    `bundles: Arc::new(Store::at_default()),` (`pkgs/mosd/apid/src/routes.rs`).
 
@@ -789,7 +787,7 @@ no `.` (`pkgs/mosd/apid/src/assets/serve.rs`). When that fallback finds no
 bundle index it serves the built-in UI rather than an error
 (`pkgs/mosd/apid/src/assets/serve.rs`), through `built_in`
 (`pkgs/mosd/apid/src/assets/serve.rs`), which calls today's `home` pane and
-reads nothing under `/srv/ui`.
+reads nothing under `/mos/ui`.
 
 **The pages themselves are still asset-free.** What the built-in panes need is
 inlined: the single stylesheet is a `&str` constant emitted into the page head
@@ -810,7 +808,7 @@ from the SPA fallback (`pkgs/mosd/apid/src/assets/serve.rs`).
 live-state tree and the status pane reads it through `get_state` (§2.2 item 3).
 The state directory is read at `pkgs/mosd/apid/src/tls.rs` and
 `let key_path = dir.join("session.key");` (`pkgs/mosd/apid/src/tls.rs`); the bundle store
-under `/srv/ui` is the third, read on `GET /` and on every fallback
+under `/mos/ui` is the third, read on `GET /` and on every fallback
 (`fn active_root`, `pkgs/mosd/apid/src/assets/serve.rs`) and written only
 by the deactivate control — `match state.bundles().deactivate() {`
 (`pkgs/mosd/apid/src/routes.rs`) — and the install path. The consequence
@@ -1452,11 +1450,11 @@ workspace ban list enforces.
 **Decision 2: authorisation for installing a bundle.** The only credential in
 the crate today is the single webAdmin password, and an operation that installs
 content served from the management origin needs its own answer rather than that
-default. Until both decisions exist the `/srv/ui` bundle store stays
+default. Until both decisions exist the `/mos/ui` bundle store stays
 route-less — deliberately, not by oversight — even though the store itself is
 complete: layout, validation, atomic activation, deactivation, generation
 tracking and a status read. Installation stays out of band until then: write
-into `/srv/ui` and restart apid.
+into `/mos/ui` and restart apid.
 
 **One behaviour change the API makes, named because it is a change.** Removing
 an SSH key by an identifier that matches nothing answers **422** on the HTML
@@ -2281,7 +2279,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
    token in the crate at `f7cb5ba` — `grep -ni csrf mosd/apid/src/*.rs` returns
    nothing (§1.2). **`Lax` is a cross-site control and says nothing about a
    request issued from the device's own origin.** After §4 and §5 land, the
-   device's own origin serves an operator-supplied bundle out of `/srv/ui`
+   device's own origin serves an operator-supplied bundle out of `/mos/ui`
    (§5.2), whose installation §7.4 recommends **not** requiring a signature for.
    So a hostile or XSS-compromised bundle, running at `https://<device>/` with
    the operator's session cookie attached by the browser, can submit that form
@@ -2802,7 +2800,7 @@ verity's coverage by design.
    *this* threat than two cheap layers that each close it independently.
 
    One consequence to carry into 5.3: the assertion is made against the
-   **resolved** bundle root, not against the `/srv/ui/current` symlink itself.
+   **resolved** bundle root, not against the `/mos/ui/current` symlink itself.
    That pointer is appliance-managed and lives outside every bundle tree; the
    "no symlinks" rule applies to bundle *contents*.
 
@@ -2859,61 +2857,29 @@ possible.
 ### 5.2 The location, and the bind — **[implemented]**
 
 **Implemented at `pkgs/mosd/apid/src/bundle.rs`** — `DEFAULT_ROOT` is
-`/srv/ui`, and the layout beneath it is `bundles/<generation>/`, `current`,
+`/mos/ui`, and the layout beneath it is `bundles/<generation>/`, `current`,
 `records/`, `.staging-<generation>/` and `.trash-<generation>/`, and the modes
 are `DIR_MODE` `0755` and `FILE_MODE` `0644`, applied to the root and
-to everything under it. The root is created lazily on first activation and
-never at start-up, which is this subsection's *"absence is a defined state"*
-written as code. No mount unit and no seed unit was added, and the eight binds
-are still eight. The image side is asserted rather than assumed:
-the checks in `verify/src/checks-fstab.ts` fix `/srv/ui` as the root and
-chain to the packed-mountpoint check. Their negative cases live in
-`verify/src/checks-fstab.test.ts`.
+to everything under it. The storage initializer creates `/mnt/data/mos/ui`
+before `mos.mount` binds `/mnt/data/mos` onto `/mos`. The verifier checks both
+that DATA is mounted at `/mnt/data` and that the public `/mos` bind is backed by
+`/mnt/data/mos`.
 
-**The path is `/srv/ui/`.**
+**The path is `/mos/ui/`.**
 
-**It needs no bind, and that is the point.** `/home` and `/root` needed mount
-units because those paths sit *inside* the verity squashfs and had to be
-redirected onto DATA — `home.mount` binds `/srv/home` onto `/home`
-(`rootfs/overlay/etc/systemd/system/home.mount`) and `root.mount`
-binds `/srv/root` onto `/root`
-(`rootfs/overlay/etc/systemd/system/root.mount`). `/srv` is not a
-redirect: it is the DATA partition's **own mountpoint**, mounted directly from
-the image's `fstab` — `/srv` is the DATA tier there
-(`rootfs/overlay/etc/fstab.in`) and the only one carrying
-`x-systemd.growfs` (`rootfs/overlay/etc/fstab.in`) — and the verifier
-asserts that entry by mountpoint and options, requiring
-`noatime` and `x-systemd.growfs` under the label
-*"DATA is the growth target"* (`verify/src/checks-fstab.ts`).
+**The bind is deliberate.** DATA itself is mounted only at the internal backing
+path `/mnt/data`. `mos-data-layout.service` validates and creates the direct
+`mos` and `srv` children, then `mos.mount` exposes `/mnt/data/mos` at `/mos` and
+`srv.mount` exposes `/mnt/data/srv` at `/srv`. This keeps appliance state out of
+the operator namespace while both share the growable DATA filesystem. There is
+no compatibility symlink or migration layout in development images.
 
-So `docs/design/access.md` §10.2's mechanism — *"one mount unit plus one
-verifier assertion"* (`docs/design/access.md`) — applies here at **half
-strength: no mount unit is needed, and the verifier assertion that would have
-accompanied it already exists**. The image ships **eight** binds
-(`docs/design/access.md`); this proposal adds a ninth to **none** of
-them. That is the whole reason `/srv` was chosen over inventing a new bind
-target: it is the one persistent tier already reachable without a unit.
+`/home` and `/root` remain separate binds from `/mos/home` and `/mos/root`.
+DATA is the only partition carrying `x-systemd.growfs`, on its `/mnt/data`
+fstab entry, so a bundle root under `/mos/ui` has no ceiling short of the disk.
+The image verifier asserts every involved mountpoint and exact bind source.
 
-Two facts the image already guarantees and that this depends on:
-
-- The `/srv` mountpoint exists in the read-only root — `mos-system` ships it
-  (`rootfs/packages-src/system/Dockerfile`) — and the verifier asserts
-  *"every fstab/bind mountpoint exists in the read-only root"*
-  (`verify/src/checks-root.ts`).
-- DATA is the only partition `systemd-repart` grows and the only one carrying
-  `x-systemd.growfs` (`rootfs/overlay/etc/fstab.in`), so a bundle root
-  here has no ceiling short of the disk.
-
-**It needs no seed unit either.** `mos-seed-home` exists for one reason:
-`mount(8)` does not create the source of a bind, so the source must exist before
-the mount runs (`rootfs/overlay/etc/systemd/system/home.mount`;
-`rootfs/overlay/usr/lib/mos/mos-seed-home`). There is no bind here,
-so nothing fails if `/srv/ui` is absent. **Absence is a defined state** — it is
-section 6.1's first failure class, and it is the shipped state of every device
-— and apid creating the directory lazily on first install is strictly simpler
-than a ninth unit that has to be ordered against a mount.
-
-**Ownership and permissions: `root:root`, mode `0755` on `/srv/ui` and on the
+**Ownership and permissions: `root:root`, mode `0755` on `/mos/ui` and on the
 directories beneath it, `0644` for files.**
 
 - apid runs as root — the unit sets no `User=` line
@@ -2928,14 +2894,14 @@ directories beneath it, `0644` for files.**
 - **Not `0700`.** Content served to an authenticated browser is not a secret,
   and `0700` would force a group or an ownership change the day apid stops
   being root.
-- **The owner is not pinned to a numeric uid**, unlike `/srv/home/mos`
+- **The owner is not pinned to a numeric uid**, unlike `/mos/home/mos`
   (`rootfs/overlay/usr/lib/mos/mos-seed-home`), because
   root is `0` on every image that will ever exist. If a future `apid` account
   owns this tree instead, that uid **must** be pinned by number for exactly the
   reason `mos-seed-home` documents — the directory outlives the rootfs that
   created it.
-- **Explicitly not under `/srv/home` or `/srv/root`.** Those are the bind
-  sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700`
+- **Explicitly not under `/mos/home` or `/mos/root`.** Those are the bind
+  sources for operator-owned trees (`/mos/home/mos` is uid 1000, mode `0700`;
   `rootfs/overlay/usr/lib/mos/mos-seed-home`). A UI bundle is
   appliance state, not a user's file, and mixing the two would make "delete my
   files" and "remove the UI" the same gesture.
@@ -3004,7 +2970,7 @@ between an uncompressed tar and a pure-Rust inflate, and is not settled here.
 
 **How the write is made atomic.** Five steps, and the ordering is the mechanism:
 
-1. **Unpack into `/srv/ui/.staging-<generation>/`** — a dot-prefixed name, on
+1. **Unpack into `/mos/ui/.staging-<generation>/`** — a dot-prefixed name, on
    the **same filesystem** as the target so that step 3's `rename(2)` is atomic
    rather than a copy.
 2. **Validate the staged tree completely** — `index.html` present and readable,
@@ -3013,11 +2979,11 @@ between an uncompressed tar and a pure-Rust inflate, and is not settled here.
    tree and never on the live one, so a rejected bundle has touched nothing an
    operator can see.
 3. **`fsync` the staged tree and its parent directory, then
-   `rename("/srv/ui/.staging-N", "/srv/ui/bundles/N")`.** The `fsync` is not
+   `rename("/mos/ui/.staging-N", "/mos/ui/bundles/N")`.** The `fsync` is not
    ceremony: without it a power cut can leave a `current` pointer resolving to a
    tree whose data never reached the disk, which is exactly failure class 3 and
    exactly the failure mode the appliance's whole A/B story exists to avoid.
-4. **Flip the active pointer.** `/srv/ui/current` is a **symlink** to
+4. **Flip the active pointer.** `/mos/ui/current` is a **symlink** to
    `bundles/N`. It is replaced by creating the new symlink under a temporary
    name and `rename`-ing it over the old one — `rename(2)` over an existing
    symlink is atomic, so there is **no instant at which `current` is absent**.
@@ -3026,7 +2992,7 @@ between an uncompressed tar and a pure-Rust inflate, and is not settled here.
    ones.
 
 **A half-uploaded bundle is never served** because nothing under
-`/srv/ui/bundles/` is ever the active tree until step 4, the staging directory
+`/mos/ui/bundles/` is ever the active tree until step 4, the staging directory
 is never under `bundles/`, and the asset router resolves `current` and refuses
 anything outside the tree it resolves to (4.4 rule 5). The three steps are
 independent: unpack can fail, validation can reject, and the rename can be
@@ -3046,7 +3012,7 @@ unbounded operator data over a 64 MiB STATE, for exactly this kind of reason
   device falls back to the built-in UI. This is fast, reversible, and it is
   **the same operation as section 6.3's escape**, which is why it is specified
   here rather than invented there.
-- **Delete** — `rename` the bundle directory to `/srv/ui/.trash-<generation>`,
+- **Delete** — `rename` the bundle directory to `/mos/ui/.trash-<generation>`,
   then unlink recursively. **Never unlink the tree `current` points at**:
   deactivate first, then delete, so a delete interrupted midway cannot leave
   `current` resolving to a partially-removed tree.
@@ -3055,7 +3021,7 @@ unbounded operator data over a 64 MiB STATE, for exactly this kind of reason
 from a record of what was uploaded** — otherwise the answer is a claim about the
 past rather than a fact about the present, and it will agree with the operator's
 expectation at exactly the moment it should disagree. The read resolves
-`/srv/ui/current` and reports:
+`/mos/ui/current` and reports:
 
 - the generation it resolves to, or **the literal statement that no custom
   bundle is active and the built-in UI is being served** — that state must be a
@@ -3074,7 +3040,7 @@ specified here**.
 
 **Implemented at `pkgs/mosd/apid/src/bundle.rs` and `pkgs/mosd/apid/src/startup.rs`** for
 the row that is load-bearing. The third row's mechanism is the `current`
-symlink under `/srv/ui` on DATA — created by `Store::point_current_at`, removed
+symlink under `/mos/ui` on DATA — created by `Store::point_current_at`, removed
 by `Store::deactivate` — and it survives a restart because nothing re-creates
 it: `startup::discover` re-reads the pointer on every start and answers "no
 bundle" when it is absent. Rows 1 and 2 rest on configuration this campaign did
@@ -3088,7 +3054,7 @@ than introducing a second one.
 
 | What | Reboot | A/B update | Factory reset |
 |---|---|---|---|
-| **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`pkgs/rauc/system.conf.in`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md`) |
+| **Custom UI bundles and the `current` pointer** (`/mos/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`pkgs/rauc/system.conf.in`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md`) |
 | **The built-in UI** (compiled into `/usr/bin/apid`, inside the verity squashfs) | **yes** | **replaced, which is the point** — the new slot carries the new image's built-in UI, and there is no state to migrate because there is no state | **yes** — a reflash writes an image that contains it. This is the one row a factory reset **restores** rather than destroys, and that asymmetry is the whole of section 6 |
 | **The active/inactive choice alone** (`current` removed, bundles kept on disk) | **yes** | **yes** | **no** — the pointer is on DATA with the bundles it points at |
 
@@ -3146,7 +3112,7 @@ set declared.
 `startup::discover` is called from `pkgs/mosd/apid/src/main.rs`, after both
 listeners bind (`pkgs/mosd/apid/src/main.rs`) and after `APID_LISTENING` is printed. It
 has **no error variant**: every outcome — an unreadable disk, a garbage
-manifest, an absent `/srv/ui` — is a `BundleState`, and the work runs on the
+manifest, an absent `/mos/ui` — is a `BundleState`, and the work runs on the
 blocking pool so that a panic raised below it arrives as a `JoinError` and
 becomes a state rather than an unwind through `main`.
 
@@ -3171,7 +3137,7 @@ and it is the one that decides the shape of the rest.
 
 | # | Class | Detected by | Detected when | Response |
 |---|---|---|---|---|
-| 1 | **No bundle installed.** `/srv/ui/current` absent | The asset router, `stat`/`readlink` returning `ENOENT` | Every request, cost of one syscall | Serve the built-in UI. **This is not an error** — it is the shipped state of every device, and it must not be logged as one |
+| 1 | **No bundle installed.** `/mos/ui/current` absent | The asset router, `stat`/`readlink` returning `ENOENT` | Every request, cost of one syscall | Serve the built-in UI. **This is not an error** — it is the shipped state of every device, and it must not be logged as one |
 | 2 | **A bundle with no `index.html`**, or whose index is a directory | Install-time validation (5.3 step 2), re-checked at activation | Before the bundle is ever reachable | Rejected at install. If it somehow reaches serving — the tree was mutated outside the install path — the SPA fallback has nothing to return and serves the **built-in UI**, not a 404 and not a 500 |
 | 3 | **A malformed or half-written bundle** | Digest recorded at activation, re-checked | apid start-up and activation — **not** per request | Deactivate and serve the built-in UI, logging the mismatch |
 | 4 | **A bundle whose files are unreadable** (`EACCES`, `EIO`) | The asset router, at `open` | Every request | **Asymmetric — see below** |
@@ -3181,7 +3147,7 @@ and it is the one that decides the shape of the rest.
 reachable must be named.** Activation is a rename of a validated tree (5.3), so
 the installer cannot produce it. It can arrive by a **power cut** — closed by
 the `fsync`-before-rename in 5.3 step 3 — or by an **operator writing into
-`/srv/ui` over a root shell**, which cannot be prevented on a device that offers
+`/mos/ui` over a root shell**, which cannot be prevented on a device that offers
 one and must therefore be *detected*. The honest cost: re-hashing a whole tree
 on every request is not affordable, so the digest is checked at activation and
 at start-up only. **A corruption introduced mid-life is detected at the next
@@ -3277,7 +3243,7 @@ belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 The built-in UI is a React/Vite SPA whose committed output is
 `pkgs/mosd/apid/ui/dist`. It is reachable unconditionally at `/_ui` and `/_ui/`;
 safe extensionless paths below `/_ui/` use its own `index.html`, while exact
-assets and misses never consult `/srv/ui`. When no usable custom bundle is
+assets and misses never consult `/mos/ui`. When no usable custom bundle is
 active, `GET /` redirects to this recovery UI rather than copying its bytes into
 the root namespace.
 
@@ -3327,7 +3293,7 @@ naming which one is load-bearing matters more than the count:
    and it still cannot. Nothing an operator uploads can reach the built-in UI,
    because nothing on the running system can.
 2. **Real but not load-bearing: the bundle root is on a different filesystem.**
-   `/srv/ui` is on DATA (5.2), every install-path write is confined to it, and
+   `/mos/ui` is on DATA (5.2), every install-path write is confined to it, and
    4.4's canonicalise-and-assert bounds the *read* path to the same resolved
    tree.
 3. **Absent, and named as absent: there is no systemd sandboxing.**
@@ -3341,7 +3307,7 @@ naming which one is load-bearing matters more than the count:
    is a real gap, and is not counted as covered here.
 
 **A customer's own UI still owns its toolchain.** A custom bundle remains an
-opaque, validated directory under `/srv/ui`; whether a customer produced it
+opaque, validated directory under `/mos/ui`; whether a customer produced it
 with a bundler, compiler, Makefile or by hand is invisible to the device. The
 built-in SPA's build chain is a repository concern and does not become a
 runtime dependency or a requirement imposed on custom bundles.
@@ -3349,7 +3315,7 @@ runtime dependency or a requirement imposed on custom bundles.
 ### 6.3 The deterministic way to reach it — **[implemented]**
 
 **Implemented at `pkgs/mosd/apid/src/routes.rs`** — `/_ui` is a nested router
-that claims the complete built-in namespace and never consults `/srv/ui`.
+that claims the complete built-in namespace and never consults `/mos/ui`.
 Both `/_ui` and `/_ui/` answer the stable embedded entry; descendants are handled
 only by `pkgs/mosd/apid/src/assets/builtin.rs`. The root custom UI cannot shadow
 this prefix even if its bundle contains an identically named `ui/` tree.
@@ -3375,7 +3341,7 @@ the fallback, so no bundle content can occupy the prefix, and this is true
 because of how dispatch works rather than because of a check.
 
 - **Deterministic for classes 1-4: yes.** The built-in handlers do not read
-  `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable, wrong
+  `/mos/ui` at all, so no bundle state — absent, corrupt, unreadable, wrong
   version — can affect them.
 - **Class 5: yes, by definition.** Class 5 means the UI *renders*, so the
   listener is up and the prefix answers.
@@ -3386,7 +3352,7 @@ because of how dispatch works rather than because of a check.
   to `/` still selects the custom bundle.
 
 **(B) An override that disables the custom UI and survives a reboot.** Removing
-`/srv/ui/current` — 5.3's *deactivate*.
+`/mos/ui/current` — 5.3's *deactivate*.
 
 - **Deterministic: yes, and it is the way *out*.** Afterwards `/` redirects to
   the built-in `/_ui/`, by 4.1's `/` rule.
@@ -3432,7 +3398,7 @@ because a comfortable one here would be worthless:
   is passwordless-locked, and the serial console does spawn a getty that has *no
   account which will accept a credential* (`docs/design/access.md`). An
   operator who enabled SSH and installed a key **before** the failure can
-  `rm /srv/ui/current` and restart apid — that is a real path, and it is exactly
+  `rm /mos/ui/current` and restart apid — that is a real path, and it is exactly
   as available as SSH was, which is: only if it was arranged in advance. An
   operator who did not is in §9.1's position, and the only remedy is a
   whole-disk reflash (`docs/design/access.md`) — which also clears the
@@ -3493,12 +3459,12 @@ between them — one layer up.
 **What it would mean to get this wrong.** Exactly the merge dashboard.md
 refused, in UI form: a device where the only way to see that the UI is broken is
 the broken UI. The concrete version is tempting and should be named so nobody
-proposes it later: *ship the built-in UI as a bundle at `/srv/ui/builtin` and
+proposes it later: *ship the built-in UI as a bundle at `/mos/ui/builtin` and
 serve both through one asset pipeline.* It looks cheaper — one code path instead
 of two rendering strategies, and the default UI becomes replaceable by the same
 mechanism as everything else. It is the same trade dashboard.md scored and
 rejected: a DATA-level fault — a bad unpack, a filesystem error, an
-`rm -rf /srv/ui` — would take **both** UIs at once, and the operator's
+`rm -rf /mos/ui` — would take **both** UIs at once, and the operator's
 diagnostic surface would then have precisely the single point of failure as the
 thing being diagnosed. It converts a recoverable failure into
 `docs/design/access.md` §9.1's unrecoverable one, for the sake of one fewer code
@@ -3527,16 +3493,16 @@ Measured at `86cd669`. The marker is **[implemented]** because every row below i
 a reading of the shipped tree, including the rows that record an **absence** —
 an absence measured four ways is a fact about the device, not a proposal.
 
-| Channel | Exists at `86cd669`? | Reaches `/srv/ui`? | Credential | Signed? |
+| Channel | Exists at `86cd669`? | Reaches `/mos/ui`? | Credential | Signed? |
 |---|---|---|---|---|
 | **The API upload path** | **no** — `grep -rn Multipart pkgs/mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`pkgs/mosd/mosd-settings/src/model.rs`; `docs/design/access.md`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md`; the pane says so and a test asserts the sentence, `pkgs/mosd/apid/src/routes.rs`, `pkgs/mosd/apid/src/tests.rs`) | n/a |
 | **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`pkgs/rauc/render-config.sh`), `rootfs.1`, `boot.0` and `boot.1`. DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`pkgs/rauc/system.conf.in`) |
-| **A factory image** | **yes**, but it ships DATA **empty.** In `build/src/mkimage-cx3576.ts`, `dataImg` is created with `makeExt4` without a `seedDir`, then written into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
+| **A factory image** | **yes**, but it ships DATA **empty.** In `build/src/mkimage-cx3576.ts`, `dataImg` is created with `makeExt4` without a `seedDir`, then written into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/mos/ui` becomes owed only if the image ever ships something under `/mos/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md`) | none that works | n/a |
 
 **The count that matters.** Of five candidate channels, exactly **one reaches
-`/srv/ui` on a shipped device today, and it is root**. A RAUC bundle
+`/mos/ui` on a shipped device today, and it is root**. A RAUC bundle
 structurally cannot: it can replace the *built-in* UI, because that is compiled
 into `/usr/bin/apid` inside the rootfs slot (§6.2), and it cannot install a
 custom one. A factory image could, but does not. The console cannot. **The only
@@ -3555,7 +3521,7 @@ send and receive (`pkgs/mosd/dist/com.mos.mosd.conf`).
 
 So an operator with SSH:
 
-- writes `/srv/ui/bundles/N` and re-points `current` with two shell commands,
+- writes `/mos/ui/bundles/N` and re-points `current` with two shell commands,
   bypassing every validation §5.3 specifies — no unpack check, no manifest
   parse, no digest, no compatibility check;
 - and **does not need to**. They read `/var/lib/mos/settings.toml` directly, they
@@ -3571,7 +3537,7 @@ reaches the same conclusion for the API token — *"Anyone with SSH is already
 root, so none of this applies to them"* — and this section does not weaken it.
 
 Note also that §6.1 has **already accepted** the consequence: failure class 3
-names *"an operator writing into `/srv/ui` over a root shell"* as one of the two
+names *"an operator writing into `/mos/ui` over a root shell"* as one of the two
 ways a corrupt bundle arrives, and the response is **detection at the next
 restart, not prevention**. A signature checked at activation says nothing about
 a tree mutated afterwards, and re-verifying one per request has exactly the cost
@@ -3689,7 +3655,7 @@ The argument in full, as three claims that can each be checked:
   nothing they already uploaded. The mitigation is not a signature — it is that
   §5.3's *"what is installed right now?"* read answers **from the served tree**,
   so a suspected compromise has one place to look. A revocation runbook must
-  therefore say *"and check `/srv/ui/current`"*.
+  therefore say *"and check `/mos/ui/current`"*.
 - **There is no provenance record at all.** After an upload, nothing on the
   device says who uploaded it, from where, or when. §3.3 already records that
   nothing in the crate logs which credential served a request. §5.3's read
@@ -3811,7 +3777,7 @@ Three options, all three costed, one chosen.
 
 | Option | What it means | What it costs | Verdict |
 |---|---|---|---|
-| **A — they become the default static UI** | render the maud output into a bundle, ship it at `/srv/ui/builtin`, and serve built-in and custom through one asset pipeline | §6.4 names this exact proposal — *"ship the built-in UI as a bundle at `/srv/ui/builtin` and serve both through one asset pipeline"* — and rejects it, because a DATA-level fault (a bad unpack, a filesystem error, an `rm -rf /srv/ui`) takes **both** UIs at once and converts a recoverable failure into `docs/design/access.md` §9.1's unrecoverable one | **Rejected**, and recorded here only so that §8 does not reintroduce by scheduling what §6.4 rejected by argument |
+| **A — they become the default static UI** | render the maud output into a bundle, ship it at `/mos/ui/builtin`, and serve built-in and custom through one asset pipeline | §6.4 names this exact proposal — *"ship the built-in UI as a bundle at `/mos/ui/builtin` and serve both through one asset pipeline"* — and rejects it, because a DATA-level fault (a bad unpack, a filesystem error, an `rm -rf /mos/ui`) takes **both** UIs at once and converts a recoverable failure into `docs/design/access.md` §9.1's unrecoverable one | **Rejected**, and recorded here only so that §8 does not reintroduce by scheduling what §6.4 rejected by argument |
 | **B — they remain, as the built-in fallback alongside a custom UI** | the maud handlers keep existing and keep being compiled into the binary; they become reachable at §6.3's reserved prefix; `/` becomes conditional per §4.1 | two rendering strategies in one binary, indefinitely; and every new management capability must be built twice — a maud pane and an API route — or the built-in UI falls behind the API | **Chosen** |
 | **C — they are retired** | delete the maud handlers once a default bundle exists | §6 loses its fallback entirely: a device with a broken bundle has nothing to fall back to, which is the requirement §6 opens with. It also strands §3.2's token bootstrap, which is specified as *"a new pane in the built-in UI"* and is the only non-circular way to mint the first token | **Rejected** — it deletes the mechanism §6 exists to provide |
 
@@ -4134,7 +4100,7 @@ delivers the archive. Concretely: the asset router mounted as the HTTPS
 router's fallback so that declared routes win structurally (§4.1 rule 1); the
 SPA fallback under §4.2's five conditions; §4.3's MIME allowlist, `nosniff` and
 three-class caching posture; §4.4's traversal rules with install-time symlink
-rejection and canonicalise-and-assert; `/srv/ui` with the
+rejection and canonicalise-and-assert; `/mos/ui` with the
 `bundles/<generation>` plus `current` symlink layout (§5.2, §5.3); validation,
 `fsync`-before-rename activation, digest, optional `mos-ui.json`, deactivate and
 delete (§5.3); §6.3's reserved built-in prefix carrying the deactivate control;
@@ -4213,7 +4179,7 @@ this phase's feature is unreachable. And nothing is signed (§7).
 **Shippable on its own: yes, and this is the phase most likely to be argued
 about, so the argument is answered here.** The objection is that it is half a
 feature. It is not: the mechanism is complete and only the transport is manual,
-and §7.1 measured that **SSH is the only channel that reaches `/srv/ui` on a
+and §7.1 measured that **SSH is the only channel that reaches `/mos/ui` on a
 shipped device today anyway** — this phase does not withhold a channel, it uses
 the one that exists. It also front-loads every genuinely hard part — traversal,
 MIME sniffing, cache correctness, the escape, the start-up compatibility
@@ -4243,7 +4209,7 @@ product feature.
 2. A bundle containing a symlink is rejected at unpack with §2.4's envelope, and
    the previously active bundle is **still active** — §5.3's independence
    property, tested rather than asserted.
-3. An interrupted upload leaves nothing under `/srv/ui/bundles/` and no
+3. An interrupted upload leaves nothing under `/mos/ui/bundles/` and no
    `current` pointing at anything new.
 4. Uploading a bundle whose declared API range excludes the served version is
    refused at activation with a legible reason (§6.1 class 5, activation half).
@@ -4253,7 +4219,7 @@ what (§7.4). Expiry on the credential that authorised it (§3.2).
 Signing (§7.4, and its four triggers).
 
 **This is the phase §7 is about**, and the phase boundary is where §7 becomes
-checkable: before it, the only channel to `/srv/ui` is already root; after it,
+checkable: before it, the only channel to `/mos/ui` is already root; after it,
 there is a network-reachable one. If §7's recommendation is ever revisited, this
 is the phase whose scope changes, and nothing earlier is affected.
 
@@ -4283,7 +4249,7 @@ bus method and a `rauc install` caller, neither of which exists — plus a stagi
 location constrained by size: a bundle staged for `rauc install` is ~72 MiB
 against a 64 MiB STATE
 (`boards/cx3576/board.env`), so it must stage on DATA — the same tier
-§5.2 chose for `/srv/ui`, for the same reason, and it is the only partition
+§5.2 chose for `/mos/ui`, for the same reason, and it is the only partition
 carrying `x-systemd.growfs` (`rootfs/overlay/etc/fstab.in`).
 
 **One asymmetry between this phase and phase 5 that makes §7 concrete rather

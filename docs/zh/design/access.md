@@ -135,7 +135,8 @@ succeeded、failed、interrupted 或有界历史已经找不到该 id 时停止�
 
 mos 镜像是一个**携带全部十一个分区的整盘镜像**，并为 META、STATE、DATA 构建全新的 ext4 文件系统。
 经 rockusb 刷写因此会替换这三者：STATE（凭据与身份）、META（一体机与更新元数据）、
-DATA（运维的 `/home`、`/root` 及 `/srv` 下的一切）。
+DATA（内部挂载于 `/mnt/data`，系统使用 `/mos`，用户使用 `/srv`；`/home` 与
+`/root` 的后端位于 `/mos`）。
 
 **有一处精确性绝不能被抹掉。** DATA 在首次启动时会增长到超出所刷镜像的范围。
 之后的一次重刷只写镜像自身的范围和一张全新的 GPT，所以**超出该范围的块仍留在磁盘上，

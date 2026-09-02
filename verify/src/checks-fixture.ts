@@ -252,11 +252,11 @@ function seedHealthyRoot(root: string, board: Board): void {
   }
 
   // --- /etc/fstab, rendered from the shipped template ---
-  const srvLine = [
-    `PARTUUID=${guidOfPartition(board, 'DATA')}`, '/srv', 'ext4', 'noatime,x-systemd.growfs', '0', '2',
+  const dataLine = [
+    `PARTUUID=${guidOfPartition(board, 'DATA')}`, '/mnt/data', 'ext4', 'noatime,x-systemd.growfs', '0', '2',
   ].join(TAB)
   const fstab = readFileSync(FSTAB_IN, 'utf8')
-    .replaceAll('@SRV_LINE@', srvLine)
+    .replaceAll('@DATA_LINE@', dataLine)
     .replaceAll('@STATE_GUID@', guidOfPartition(board, 'STATE'))
     .replaceAll('@META_GUID@', guidOfPartition(board, 'META'))
     .replaceAll('@EPHEMERAL_GUID@', guidOfPartition(board, 'EPHEMERAL'))
@@ -271,7 +271,7 @@ function seedHealthyRoot(root: string, board: Board): void {
 
   // --- the mountpoints the packed root must ship ---
   for (const d of [
-    '/mnt/state', '/mnt/meta', '/srv', '/mos', '/var', '/home', '/root',
+    '/mnt/data', '/mnt/state', '/mnt/meta', '/srv', '/mos', '/var', '/home', '/root',
     '/usr/local/lib/systemd/system', '/etc/containers/systemd',
   ]) mkdirSync(join(root, d), { recursive: true })
 
@@ -483,7 +483,8 @@ function seedHomes(root: string, board: Board, file: WriteFile): void {
       `[Mount]\nWhat=${what}\nWhere=${where}\nType=none\nOptions=bind\n[Install]\nWantedBy=local-fs.target\n`)
     enableEtcUnit(root, unit, 'local-fs.target.wants')
   }
-  mount('mos.mount', '/srv/.mos', '/mos')
+  mount('mos.mount', '/mnt/data/mos', '/mos')
+  mount('srv.mount', '/mnt/data/srv', '/srv')
   mount('home.mount', '/mos/home', '/home')
   mount('root.mount', '/mos/root', '/root')
   mount('usr-local-lib-systemd-system.mount', '/mnt/state/systemd-units', '/usr/local/lib/systemd/system')

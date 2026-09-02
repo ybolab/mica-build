@@ -264,7 +264,9 @@ partitions absorb everything:
 | Path | Backing | Options |
 |---|---|---|
 | `/` | rootfs-a / rootfs-b (`/dev/dm-0`) | squashfs, `ro` |
-| `/srv` | DATA (p11) | ext4, `noatime,x-systemd.growfs` |
+| `/mnt/data` | DATA (p11) | ext4, `noatime,x-systemd.growfs`; internal backing mount |
+| `/mos` | bind from `/mnt/data/mos` | appliance-owned persistent namespace |
+| `/srv` | bind from `/mnt/data/srv` | operator-owned persistent namespace |
 | `/mnt/state` | STATE (p9) | ext4, `noatime` |
 | `/mnt/meta` | META (p8) | ext4, `noatime` |
 | `/var` | EPHEMERAL (p10) | ext4, `noatime` — **no** growfs |
@@ -466,7 +468,7 @@ follow from the tier rather than the other way round.
 | Tier | Mount | Contents | Grows? | Lost when |
 |---|---|---|---|---|
 | **STATE** (p9) | `/mnt/state` | configuration and identity: mosd settings, the apid admin password hash and session key, **the per-device secrets and the shadow file**, sshd host keys, **the WiFi daemon configs**, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
-| **DATA** (p11) | `/srv` plus `/mos` Phase-A bind | operator data under `/srv`; MOS-owned artifacts and the backing for `/home` and `/root` under `/mos` | **yes** — fills the media | factory reset only |
+| **DATA** (p11) | `/mnt/data`, exposed through `/mos` and `/srv` binds | operator data under `/srv`; MOS-owned artifacts and the backing for `/home` and `/root` under `/mos` | **yes** — fills the media | factory reset only |
 | **META** (p8) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
 | **EPHEMERAL** (p10) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
 
@@ -508,8 +510,8 @@ The legacy layout grew the root. An early revision of this layout grew EPHEMERAL
 the filesystem that needed the disk. Neither is right: the root is a
 fixed-size verity image in a frozen A/B slot and must never be resized, and
 `/var` is disposable — spending 100 GB of eMMC on log space would be an odd
-choice while the data worth keeping sat in a fixed partition. DATA/`/srv`
-holds what is worth the whole disk, so it is the partition that grows and
+choice while the data worth keeping sat in a fixed partition. DATA at
+`/mnt/data` holds what is worth the whole disk, so it is the partition that grows and
 `/var` is deliberately capped.
 
 Capping `/var` creates a fill-up mode that did not exist while it grew, which
@@ -617,7 +619,7 @@ fail `mark-good`: a log flood must never trigger an update rollback.
 The legacy rootfs grew the root partition with `/etc/repart.d/50-rootfs.conf`. Under the current layout the
 root is a fixed-size verity image inside a frozen A/B slot and must never be
 resized, so that definition is gone from the mos rootfs and DATA grows instead.
-Filesystem growth is `x-systemd.growfs` on the `/srv` fstab entry; repart only
+Filesystem growth is `x-systemd.growfs` on the `/mnt/data` fstab entry; repart only
 moves the partition boundary and relocates the backup GPT, which is why the
 assembled image reserves only a 1 MiB tail.
 

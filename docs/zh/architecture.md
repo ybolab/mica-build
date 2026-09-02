@@ -84,7 +84,7 @@ x64 则用一个 ESP 取代 loader 和两个 U-Boot 环境分区。
 - **握手**是 `BOOT_ORDER` 加上冗余 U-Boot 环境（`uenv-a` / `uenv-b`）里的按槽尝试计数。
   启动失败的槽位烧掉自己的额度，下次复位就轮到另一个。
 - **四层存储**回答"这份数据丢了会怎样"：STATE（`/mnt/state`，配置与身份）、
-  DATA（`/srv`，应用数据与家目录）、META（`/mnt/meta`，更新元数据）、
+  DATA（`/mnt/data`，对外分为系统使用的 `/mos` 与用户使用的 `/srv`）、META（`/mnt/meta`，更新元数据）、
   EPHEMERAL（`/var`，可丢弃的残留）。
 
 ## 4. 信任链

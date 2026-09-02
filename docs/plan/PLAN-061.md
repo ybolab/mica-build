@@ -198,3 +198,6 @@ operator data; running Phase B without a proven compatible-slot condition.
   now; Phase B remains gated on compatible-slot proof or factory/reflash.
 - 2026-09-02: Delivered and verified rollback-compatible Phase A. Phase B is
   intentionally still gated and is not enabled by this completion.
+- 2026-09-02: Superseded for current development images by PLAN-063, which
+  removes the compatibility phase and adopts the direct DATA layout. This plan
+  remains as the historical record of the earlier decision.

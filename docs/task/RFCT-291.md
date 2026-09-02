@@ -59,3 +59,5 @@ Establishing the `/mos` persistent system namespace.
   Phase A now and keep the clean Phase B split capability-gated.
 
 - complete: Phase A delivered; Phase B remains capability-gated by PLAN-061.
+- superseded: RFCT-292 replaces the delivered compatibility layout in current
+  development images; this task remains as historical record.

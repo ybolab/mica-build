@@ -33,6 +33,7 @@ const x64 = loadBoard(boardEnvPath('x64'))
 
 const HOME_MOUNT = '/etc/systemd/system/home.mount'
 const ROOT_MOUNT = '/etc/systemd/system/root.mount'
+const SRV_MOUNT = '/etc/systemd/system/srv.mount'
 const SEED_HOME_UNIT = '/etc/systemd/system/mos-seed-home.service'
 const SEED_ROOT_UNIT = '/etc/systemd/system/mos-seed-root.service'
 const SEED_HOME = '/usr/lib/mos/mos-seed-home'
@@ -82,7 +83,7 @@ function write(root: string, path: string, text: string): void {
 
 describe('the healthy image', () => {
   test('every check concludes on both boards, and only the Bluetooth bind splits them', async () => {
-    // Fourteen conclusions on each shipped board. The Bluetooth STATE bind is
+    // Fifteen conclusions on each shipped board. The Bluetooth STATE bind is
     // the only board-conditional member: cx3576 asserts the pair, x64 SKIPS it,
     // and the two entries are scoped to complements of one derived predicate.
     for (const board of [cx3576, x64]) {
@@ -118,11 +119,11 @@ describe('the healthy image', () => {
 
   test('the DATA mountpoint is READ from the fstab row, not spelled here', () => {
     // Both boards, from their own definitions. A check comparing against the
-    // literal `/srv` would pass an image whose fstab had moved DATA.
+    // literal `/mnt/data` would pass an image whose fstab had moved DATA.
     for (const board of [cx3576, x64]) {
       const fx = packedRootFixture(board)
       try {
-        expect(dataMountpoint(fx.root, board)).toBe('/srv')
+        expect(dataMountpoint(fx.root, board)).toBe('/mnt/data')
       }
       finally {
         fx.dispose()
@@ -131,7 +132,68 @@ describe('the healthy image', () => {
   })
 })
 
+describe('/srv is a distinct user namespace on DATA', () => {
+  test('the healthy bind is accepted', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('pass')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a source outside DATA is refused', async () => {
+    const fx = await mutated('srv-mount-on-data', root =>
+      rewrite(root, SRV_MOUNT, t => t.replace('What=/mnt/data/srv', 'What=/mnt/state/srv')))
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'srv-mount-on-data')).toContain('not a distinct subtree under /mnt/data')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('an unenabled bind is refused', async () => {
+    const fx = await mutated('srv-mount-on-data', root =>
+      rmSync(join(root, WANTS, 'srv.mount')))
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'srv-mount-on-data')).toContain('exists but is not enabled')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a mount with the right paths but without bind semantics is refused', async () => {
+    const fx = await mutated('srv-mount-on-data', root =>
+      rewrite(root, SRV_MOUNT, t => t.replace('Options=bind', 'Options=defaults')))
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'srv-mount-on-data')).toContain("Options='defaults', not 'bind'")
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
 describe('/home is bound from DATA', () => {
+  test('the public /mos hop must itself be a bind', async () => {
+    const fx = await mutated('home-mount-on-data', root =>
+      rewrite(root, '/etc/systemd/system/mos.mount', t =>
+        t.replace('Options=bind', 'Options=defaults')))
+    try {
+      expect(await verdictOf(fx, 'home-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'home-mount-on-data')).toContain('enabled /mos bind')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
   test('the unit absent fails, and the message says nothing survives a reboot', async () => {
     const fx = await mutated('home-mount-on-data', root => rmSync(join(root, HOME_MOUNT)))
     try {
@@ -164,7 +226,7 @@ describe('/home is bound from DATA', () => {
     try {
       expect(await verdictOf(fx, 'home-mount-on-data')).toBe('fail')
       const message = await messageOf(fx, 'home-mount-on-data')
-      expect(message).toContain("binds /home from '/mnt/state/home', which does not resolve through the enabled /mos bind under /srv")
+      expect(message).toContain("binds /home from '/mnt/state/home', which does not resolve through the enabled /mos bind under /mnt/data")
       expect(message).toContain('DATA is also the only partition repart grows')
     }
     finally {
@@ -520,7 +582,7 @@ describe('/root, its mode, and its seed', () => {
       root => rewrite(root, ROOT_MOUNT, t => t.replace('What=/mos/root', 'What=/mnt/state/root')))
     try {
       expect(await messageOf(fx, 'root-mount-on-data'))
-        .toContain("binds /root from '/mnt/state/root', which does not resolve through the enabled /mos bind under /srv")
+        .toContain("binds /root from '/mnt/state/root', which does not resolve through the enabled /mos bind under /mnt/data")
     }
     finally {
       fx.dispose()

@@ -1,5 +1,5 @@
 [Unit]
-Description=Writable mos system data on DATA
+Description=Persistent user data on DATA
 DefaultDependencies=no
 Requires=mos-data-layout.service
 After=mos-data-layout.service
@@ -7,8 +7,8 @@ Before=local-fs.target shutdown.target
 Conflicts=shutdown.target
 
 [Mount]
-What=/mnt/data/mos
-Where=/mos
+What=/mnt/data/srv
+Where=/srv
 Type=none
 Options=bind
 

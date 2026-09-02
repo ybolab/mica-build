@@ -187,9 +187,9 @@ describe('the four storage tiers', () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(await verdictOf(fx, 'fstab-data')).toBe('pass')
-      editFstab(fx, t => t.split('\n').filter(l => !l.includes('/srv')).join('\n'))
+      editFstab(fx, t => t.split('\n').filter(l => !l.includes('/mnt/data')).join('\n'))
       expect(await verdictOf(fx, 'fstab-data')).toBe('fail')
-      expect(await messageOf(fx, 'fstab-data')).toContain('has no /srv entry for PARTUUID=')
+      expect(await messageOf(fx, 'fstab-data')).toContain('has no /mnt/data entry for PARTUUID=')
       expect(await verdictOf(fx, 'fstab-state')).toBe('pass')
     }
     finally {
@@ -242,6 +242,20 @@ describe('the four storage tiers', () => {
       editFstab(fx, t => t.replace(
         new RegExp(`(PARTUUID=${guid(cx3576, 'META')}\\s+)/mnt/meta\\b`), '$1/mnt/metadata'))
       expect(await verdictOf(fx, 'fstab-meta')).toBe('fail')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('DATA is not also mounted at a second public path', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      expect(await verdictOf(fx, 'fstab-data')).toBe('pass')
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')} /srv ext4 noatime 0 2\n`)
+      expect(await verdictOf(fx, 'fstab-data')).toBe('fail')
+      expect(await messageOf(fx, 'fstab-data'))
+        .toContain('DATA must mount only at /mnt/data')
     }
     finally {
       fx.dispose()
@@ -361,13 +375,13 @@ describe('the table\'s own shape', () => {
 describe('where the custom UI root actually lands', () => {
   test('NOTHING covers it -- the early return, one firing instead of six', async () => {
     // The path six independent `one` checks could not model. With no covering
-    // entry /srv/.mos/ui (the /mos/ui backing path) lands on the read-only
+    // entry /mnt/data/mos/ui (the /mos/ui backing path) lands on the read-only
     // verity squashfs: apid cannot create
     // it on first install and no bundle can ever be installed.
     const fx = packedRootFixture(cx3576)
     try {
       expect((await uiFirings(fx)).size).toBe(6)
-      editFstab(fx, t => t.split('\n').filter(l => !l.includes('\t/srv\t')).join('\n'))
+      editFstab(fx, t => t.split('\n').filter(l => !l.includes('\t/mnt/data\t')).join('\n'))
       const firings = await uiFirings(fx)
       expect([...firings.keys()]).toEqual([UI_NO_FILESYSTEM])
       expect((firings.get(UI_NO_FILESYSTEM) as CheckResult).verdict).toBe('fail')
@@ -384,15 +398,15 @@ describe('where the custom UI root actually lands', () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(await uiRed(fx)).toEqual([])
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'STATE')}\t/srv/.mos/ui\text4\t`
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'STATE')}\t/mnt/data/mos/ui\text4\t`
         + `noatime,x-systemd.growfs\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_OFF_DATA, UI_ON_STATE, UI_UNASSERTED].sort())
       const firings = await uiFirings(fx)
       expect((firings.get(UI_ON_STATE) as CheckResult).message).toContain(guid(cx3576, 'STATE'))
       // The DEEPER mountpoint wins, which is what the kernel does -- /mos/ui
-      // beats /srv. A port taking the first match would have read the DATA
+      // beats /mnt/data. A port taking the first match would have read the DATA
       // entry and stayed green.
-      expect((firings.get(UI_OFF_DATA) as CheckResult).message).toContain('/srv/.mos/ui')
+      expect((firings.get(UI_OFF_DATA) as CheckResult).message).toContain('/mnt/data/mos/ui')
     }
     finally {
       fx.dispose()
@@ -404,7 +418,7 @@ describe('where the custom UI root actually lands', () => {
     // custom UI silently disappears the first time it is cleared.
     const fx = packedRootFixture(cx3576)
     try {
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'EPHEMERAL')}\t/srv/.mos/ui\text4\t`
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'EPHEMERAL')}\t/mnt/data/mos/ui\text4\t`
         + `noatime,x-systemd.growfs\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_OFF_DATA, UI_ON_EPHEMERAL, UI_UNASSERTED].sort())
     }
@@ -420,7 +434,7 @@ describe('where the custom UI root actually lands', () => {
     // squashfs. DATA's own device, so only the mountpoint question is live.
     const fx = packedRootFixture(cx3576)
     try {
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/srv/.mos/ui\text4\t`
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/mnt/data/mos/ui\text4\t`
         + `noatime,x-systemd.growfs\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_OFF_DATA, UI_UNASSERTED].sort())
       expect((await uiFirings(fx)).get(UI_UNASSERTED)?.message).toContain('NOT in the set')
@@ -432,15 +446,13 @@ describe('where the custom UI root actually lands', () => {
 
   test('the covering entry has a CEILING even though DATA does not', async () => {
     // Not the DATA entry's growfs restated: it is read off whichever entry
-    // governs UI_ROOT, so it keeps holding in exactly the case the DATA check
-    // cannot see. Here DATA is correct and the deeper entry is not.
+    // governs UI_ROOT. The DATA check independently rejects the duplicate
+    // device row, while this check explains the UI-specific ceiling.
     const fx = packedRootFixture(cx3576)
     try {
-      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/srv/.mos/ui\text4\tnoatime\t0\t2\n`)
+      editFstab(fx, t => `${t}\nPARTUUID=${guid(cx3576, 'DATA')}\t/mnt/data/mos/ui\text4\tnoatime\t0\t2\n`)
       expect(await uiRed(fx)).toEqual([UI_CEILING, UI_OFF_DATA, UI_UNASSERTED].sort())
-      // The DATA tier check stays GREEN -- which is the whole point: it cannot
-      // see this.
-      expect(await verdictOf(fx, 'fstab-data')).toBe('pass')
+      expect(await verdictOf(fx, 'fstab-data')).toBe('fail')
     }
     finally {
       fx.dispose()

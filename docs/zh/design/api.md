@@ -103,9 +103,11 @@ JSON 404/405 永远先匹配。内建资源来自 verity 覆盖的二进制，�
 
 ## 5. 自定义界面放在哪
 
-它**不能放在根文件系统里**（根是只读且被签名的）。规范位置是 DATA 上的 `/mos/ui`。
-兼容迁移阶段以 `/srv/.mos` 为 backing，并为旧 A/B slot 保留 `/srv/ui -> .mos/ui` 相对链接；新代码只使用
-`/mos/ui`。包保存在 `bundles/<generation>/`，`current` 只指向活动 generation，上传 staging 永不对外服务。
+它**不能放在根文件系统里**（根是只读且被签名的）。规范位置是 `/mos/ui`，其后端为
+DATA 上的 `/mnt/data/mos/ui`。DATA 只直接挂载到内部路径 `/mnt/data`；`/mnt/data/mos`
+绑定到系统专用的 `/mos`，`/mnt/data/srv` 绑定到用户专用的 `/srv`。开发阶段不保留
+迁移链接或兼容布局。包保存在 `bundles/<generation>/`，`current` 只指向活动 generation，
+上传 staging 永不对外服务。
 
 ## 6. 安全要求：内建界面与恢复路径 —— [已实现]
 

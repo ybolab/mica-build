@@ -107,8 +107,8 @@ loader | uenv-a | uenv-b | boot-a | boot-b | rootfs-a | rootfs-b | meta | state 
   burns its credits and the next reset moves on
   (`docs/design/uboot-ab-handshake.md`).
 - **Four storage tiers** answer "what happens if this is lost?" — STATE
-  (`/mnt/state`, configuration and identity), DATA (`/srv`, application data
-  and homes), META (`/mnt/meta`, update metadata), EPHEMERAL (`/var`,
+  (`/mnt/state`, configuration and identity), DATA (`/mnt/data`, exposed as
+  appliance-owned `/mos` and operator-owned `/srv`), META (`/mnt/meta`, update metadata), EPHEMERAL (`/var`,
   disposable residue). The table is `docs/design/ro-root.md` §4.
 
 ## 4. Trust chain

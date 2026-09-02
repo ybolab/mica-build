@@ -58,3 +58,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-006 Move the built-in UI to `/_ui/`**](UI-006.md) `P1`
 - [x] [**RFCT-291 Establish the `/mos` persistent system namespace**](RFCT-291.md) `P0`
 - [x] [**UI-007 Add uploadable versioned custom UI packages**](UI-007.md) `P1`
+- [x] [**RFCT-292 Adopt the direct development-stage DATA layout**](RFCT-292.md) `P0`

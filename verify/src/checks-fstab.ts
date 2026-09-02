@@ -9,7 +9,7 @@
 // the settings tree and the sshd host keys and the first large bundle fills it,
 // or onto /var, which is wiped by design and has no growfs, so every installed
 // custom UI silently disappears. Both are silent on the device and invisible to
-// a check that only asks "is DATA mounted at /srv with growfs".
+// a check that only asks "is DATA mounted at /mnt/data with growfs".
 //
 // One check, seven firings. `check_ui_location` emits one conclusion and returns
 // when no fstab entry covers the path, and six otherwise. Seven independent
@@ -34,12 +34,12 @@ import { ToolOutputError } from './tools.ts'
 import { verdict } from './verdict.ts'
 
 const UI_ROOT = '/mos/ui'
-// Phase A binds /srv/.mos at /mos. fstab governs the backing path, while the
-// baked-content assertion below deliberately inspects the public namespace.
-const UI_STORAGE_ROOT = '/srv/.mos/ui'
-const DATA_MOUNT = '/srv'
+// The public /mos bind is backed by /mnt/data/mos. fstab governs that backing
+// path, while the baked-content assertion deliberately inspects /mos itself.
+const UI_STORAGE_ROOT = '/mnt/data/mos/ui'
+const DATA_MOUNT = '/mnt/data'
 const PACKED_MOUNTPOINTS = [
-  '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
+  '/mnt/data', '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',
   '/usr/local/lib/systemd/system', '/etc/containers/systemd',
 ] as const
 
@@ -171,6 +171,15 @@ function tierCheck(t: TierCase): CheckCase {
       if (row === undefined) {
         return [verdict(t.id, false,
           `/etc/fstab has no ${t.mount} entry for PARTUUID=${guid} (${t.what})`)]
+      }
+      if (t.layout === 'DATA') {
+        const dataRows = rows.filter(r => lc(r.device) === `partuuid=${guid}`)
+        if (dataRows.length !== 1) {
+          return [verdict(t.id, false,
+            `/etc/fstab mounts DATA PARTUUID=${guid} ${dataRows.length} times at `
+            + `${dataRows.map(r => r.mount).join(', ')}; DATA must mount only at ${DATA_MOUNT} `
+            + `(${t.what})`)]
+        }
       }
       for (const o of t.require) {
         if (!hasOption(row.options, o)) {

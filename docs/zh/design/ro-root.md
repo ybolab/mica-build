@@ -55,7 +55,9 @@ verity 设备**完全由内核命令行描述**，按槽位从该槽的 verity �
 | 路径 | 后端 | 选项 |
 |---|---|---|
 | `/` | rootfs-a / rootfs-b（`/dev/dm-0`） | squashfs，`ro` |
-| `/srv` | DATA | ext4，`noatime,x-systemd.growfs` |
+| `/mnt/data` | DATA | ext4，`noatime,x-systemd.growfs`；内部后端挂载点 |
+| `/mos` | bind 自 `/mnt/data/mos` | 系统专用的持久化命名空间 |
+| `/srv` | bind 自 `/mnt/data/srv` | 用户专用的持久化命名空间 |
 | `/mnt/state` | STATE | ext4，`noatime` |
 | `/mnt/meta` | META | ext4，`noatime` |
 | `/var` | EPHEMERAL | ext4，`noatime`——**没有** growfs |

@@ -146,7 +146,7 @@ RUN set -eu; \
     done; \
     for f in mos-apply-hostname.service mos-data-layout.service mos-seed-home.service mos-seed-root.service \
              mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
-             mos.mount var-lib-mos.mount etc-hostname.mount etc-ssh.mount home.mount root.mount \
+             mos.mount srv.mount var-lib-mos.mount etc-hostname.mount etc-ssh.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount; do \
         install -D -m 0644 "/in/overlay/etc/systemd/system/${f}" \
             "${R}/etc/systemd/system/${f}"; \
@@ -172,7 +172,7 @@ RUN set -eu; \
     printf '%s\n' 'disable ssh.service' \
         >"${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
     chmod 0644 "${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
-    install -d -m 0755 "${R}/srv" "${R}/mos" "${R}/mnt/state" "${R}/mnt/meta" "${R}/home" \
+    install -d -m 0755 "${R}/srv" "${R}/mos" "${R}/mnt/data" "${R}/mnt/state" "${R}/mnt/meta" "${R}/home" \
         "${R}/usr/local/lib/systemd" "${R}/usr/local/lib/systemd/system" \
         "${R}/var/lib/mos" \
         "${R}/etc/systemd/system/local-fs.target.wants" \
@@ -182,7 +182,7 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants" \
         "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
-    for u in mos-data-layout.service mos.mount mos-seed-var.service mos-seed-state.service \
+    for u in mos-data-layout.service mos.mount srv.mount mos-seed-var.service mos-seed-state.service \
              mos-seed-home.service mos-seed-root.service var-lib-mos.mount etc-ssh.mount etc-hostname.mount \
              home.mount root.mount usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
