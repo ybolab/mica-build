@@ -140,7 +140,7 @@ it into the composition context itself, **refuses** one left at
 `rootfs/overlay/etc/rauc/keyring.pem` — the overlay is copied wholesale
 into every image, so a file there is a trust root nobody chose — and warns when
 `ca/GENERATED` beside the material marks it development-grade.
-`MOS_EXPECT_DEV_KEYRING=1` forces the same verdict at verify time.
+Verify reads the same marker and names the grade in its verdict.
 
 #### Where the two paths differed, the composed one was right
 
@@ -208,17 +208,17 @@ every bundle already signed with the old key.
 The generator leaves `ca/GENERATED` beside the material, and that marker is what
 distinguishes a generated root from provided production material on every later
 build, not only on the one that made it. `rootfs/build.sh` keys its "this
-image trusts a DEVELOPMENT RAUC keyring" warning off it (`MOS_EXPECT_DEV_KEYRING=1`
-forces the same warning). A production release puts real material in `ca/` and
-does not carry the marker.
+image trusts a DEVELOPMENT RAUC keyring" warning off it, and nothing else: there
+is no build-time variable that declares a bench image. A production release puts
+real material in `ca/` and does not carry the marker.
 
 Two rules do not change. `CERT`/`KEY`/`KEYRING` still beat the convention for
 the bundle step — with all three set, nothing is generated and nothing in `ca/`
 is read. And a keyring left at `rootfs/overlay/etc/rauc/keyring.pem` is
 still refused, now unconditionally: the overlay is copied wholesale into every
 image, so a file there is a CA nobody chose, and `ca/` is the one sanctioned
-source. Since every image now ships a keyring, `make os-verify-<board>` on a
-development image needs `MOS_EXPECT_DEV_KEYRING=1` to name it as a bench image.
+source. Since every image now ships a keyring, `make os-verify-<board>` passes
+on either grade of material and names in its verdict which one it read.
 
 The keyring is the one path in a mos root that is **not** package payload, and
 it is a different seam from the TLS trust store `mos-ca-trust` ships — §1.1 has

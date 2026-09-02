@@ -267,10 +267,9 @@ fi
 # The overlay is not that place, and no flag makes it one. rootfs/overlay/
 # is copied wholesale into the root, so a keyring left there once reaches every
 # later image by being FORGOTTEN -- exactly the way a trust root must never
-# arrive. The refusal used to be waivable by MOS_EXPECT_DEV_KEYRING=1 because
-# dropping a file here was the only way to get a development CA into a bench
-# image; ca/ is that way now, so the waiver would only reintroduce a second
-# source. The variable keeps its other job below.
+# arrive. The refusal was waivable once, when dropping a file here was the only
+# way to get a development CA into a bench image; ca/ is that way now, so a
+# waiver would only reintroduce a second source.
 if [ -e "$OVERLAY_STAGE/etc/rauc/keyring.pem" ]; then
     echo "error: $OVERLAY_SRC/etc/rauc/keyring.pem exists; refusing to stage it into the image." >&2
     echo "A keyring baked into the signed root makes every flashed device trust that CA's bundles, and the overlay is copied wholesale into every image, so a file left here is a trust root nobody chose. The image's keyring is staged from the repository-root ca/ instead -- delete this file and put the CA you want in ca/ (pkgs/rauc/gen-dev-keys.sh writes a development-grade one when ca/ is empty)." >&2
@@ -296,10 +295,11 @@ echo "overlay: staged etc/rauc/keyring.pem from ca/ca.cert.pem"
 # Whether that CA is development-grade is not guessed from the bytes. The
 # generator leaves ca/GENERATED beside what it wrote and production material
 # arrives without it, so the marker answers the question on every later build
-# and not only on the one that generated. MOS_EXPECT_DEV_KEYRING=1 forces the
-# same warning for an operator who knows the material in ca/ is not
-# release-grade either; verify reads both the same way.
-if [ -e "$CA_DIR/GENERATED" ] || [ "${MOS_EXPECT_DEV_KEYRING:-0}" = "1" ]; then
+# and not only on the one that generated. The marker is the whole condition:
+# there is no build-time variable that declares a bench image, because dev and
+# production take the same path through ca/ and CI decides which material is
+# there. verify reads the same marker and reports the same fact.
+if [ -e "$CA_DIR/GENERATED" ]; then
     echo "############################################################"
     echo "# WARNING: this image trusts a DEVELOPMENT RAUC keyring    #"
     echo "# at etc/rauc/keyring.pem, staged from ca/ca.cert.pem.     #"

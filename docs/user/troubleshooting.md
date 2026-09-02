@@ -79,9 +79,9 @@ degrading, so the refusal text is the diagnosis:
   common messages to actions.
 - `make os-verify-cx3576` (and the x64 equivalent) checks an assembled image
   against the image contract check by check; a red check names what it read
-  and what it expected. A development-keyring image needs
-  `MOS_EXPECT_DEV_KEYRING=1` to verify — that is a bench waiver, and its
-  absence on an unexpected image is itself a finding.
+  and what it expected. An image built on a generated trust root verifies like
+  any other; the keyring check states which grade of material it read, and that
+  sentence is what to quote when the grade is not the one expected.
 
 The rule of thumb: a mos refusal is designed to be quoted verbatim to support
 or into an issue; do not work around it, because the checks exist to stop

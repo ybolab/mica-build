@@ -38,7 +38,7 @@ Notes worth knowing before the first run:
   three quarters of an hour. Later runs reuse the build cache.
 - A build that finds no signing material generates a development trust root in
   the repository-root `ca/` directory and says so loudly. That image trusts a
-  development keyring; verifying it needs `MOS_EXPECT_DEV_KEYRING=1`.
+  development keyring, and the verifier says so in its verdict.
 - Each step refuses missing or stale inputs by name rather than rebuilding
   them silently; the refusal messages name the command to run.
 

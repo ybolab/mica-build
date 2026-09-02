@@ -657,10 +657,12 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     // match and is refused. That refusal is the old check's real purpose, kept
     // through the change of what the shipped state is.
     //
-    // The ENV escape survives with it. ca/GENERATED marks a trust root
-    // pkgs/rauc/gen-dev-keys.sh made, and an image trusting one is a bench
-    // image: it fails here exactly as before unless MOS_EXPECT_DEV_KEYRING=1
-    // names it. Production material carries no marker and needs no variable.
+    // ca/GENERATED still answers WHICH trust root this is -- the generator
+    // leaves it, production material arrives without it -- and the verdict
+    // says which one it read. It is not a refusal: dev and production take the
+    // same path through ca/, and which material is there is CI's choice, made
+    // before the build rather than waived after it. Nothing in this repository
+    // records the grade of a published release; see the task record.
     id: 'packed-keyring-from-ca',
     shell: { pass: 'the shipped RAUC keyring came from ca/' },
     run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -695,22 +697,14 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
           + `ca/ is the one place a trust root may enter a build; a keyring that arrived any other `
           + `way is a trusted signer on every device flashed with this image and nobody chose it`)]
       }
-      if (!existsSync(join(ctx.caDir, 'GENERATED'))) {
-        return [verdict('packed-keyring-from-ca', true,
-          `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem byte for byte, and that trust root `
-          + `carries no GENERATED marker, so it is production material placed there on purpose`)]
-      }
-      if (process.env['MOS_EXPECT_DEV_KEYRING'] === '1') {
-        return [verdict('packed-keyring-from-ca', true,
-          `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem, which ${ctx.caDir}/GENERATED marks `
-          + `development-grade -- explicitly expected (MOS_EXPECT_DEV_KEYRING=1, development image `
-          + `— see the WARNING above)`)]
-      }
-      return [verdict('packed-keyring-from-ca', false,
-        `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem, but ${ctx.caDir}/GENERATED marks that `
-        + `trust root DEVELOPMENT-GRADE. Every device flashed with this image would trust bundles `
-        + `signed by an unprotected key in a working tree. Put production material in ca/ without `
-        + `the marker, or set MOS_EXPECT_DEV_KEYRING=1 to name this a bench image`)]
+      const generated = existsSync(join(ctx.caDir, 'GENERATED'))
+      return [verdict('packed-keyring-from-ca', true,
+        `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem byte for byte, and that trust root `
+        + (generated
+          ? `carries ${ctx.caDir}/GENERATED, so it is DEVELOPMENT-GRADE: every device flashed with `
+            + `this image trusts bundles signed by a key in a working tree. A release build puts `
+            + `production material in ca/ instead, and CI is what chooses which is there`
+          : `carries no GENERATED marker, so it is production material placed there on purpose`))]
     },
   },
 ]

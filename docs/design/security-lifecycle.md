@@ -95,7 +95,7 @@ release host (`pkgs/rauc-sign/README.md`).
   compromised CA is a fleet re-anchoring event — the §2.3 gap again.
 - **Negative tests, by path** — `verify/src/checks-root.test.ts` proves both
   directions of the dev-keyring gate: an image carrying a `GENERATED` root
-  fails closed unless `MOS_EXPECT_DEV_KEYRING=1` names a bench image, and a
+  reports the grade it read rather than failing closed on it, and a
   keyring that is not byte-equal to `ca/ca.cert.pem` is refused.
 
 ### 1.3 Device TLS identities — owner: release owner (policy), support owner (field) — **[partial]**
