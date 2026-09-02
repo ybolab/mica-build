@@ -220,7 +220,9 @@ everything below it destroys something that was on the device.**
 
 **2. Guarded manual rollback** — **[partial]**
 - *Precondition:* the device boots, the operator can authenticate, and the
-  *other* slot holds a system that booted successfully before.
+  *other* slot holds a system that booted successfully before. The guard
+  enforces that last one by derivation rather than by reading it; the bullet
+  below states the premise that derivation stands on.
 - *Fixes:* a bad update — a slot that boots but misbehaves, which the automatic
   attempt-counter fallback never catches because the slot does boot.
 - *Costs:* one reboot, and the condemned slot stops being a rollback target.
@@ -239,20 +241,121 @@ everything below it destroys something that was on the device.**
   invariant with a test over the whole two-slot input space, not a review
   note. It refuses, 409 and a named reason each, when there is no alternate
   slot, when the alternate is the booted slot, when the alternate was never
-  written or is marked bad, and when the booted slot is itself
-  pending-not-confirmed. The verdict — `target`, `permitted`, `reason` — rides
-  in the same `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary`
-  and `pending_not_confirmed`, so the state and the offer cannot disagree.
+  written or is marked bad, when the alternate is not the strictly older of
+  the two installs, and when the booted slot is itself pending-not-confirmed.
+  The verdict — `target`, `permitted`, `reason` — rides in the same
+  `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary` and
+  `pending_not_confirmed`, so the state and the offer cannot disagree.
+- *What the guard actually checks:* that **a rollback goes backward** — the
+  target must be the strictly OLDER of the two installs, by
+  `installed.timestamp`. It refuses a newer target (`alternate_is_newer`: a
+  pending or skipped update, not a rollback target) and every case it cannot
+  order at all (`install_order_unknown`: absent, unparseable or equal
+  timestamps, the last being a factory flash that wrote both slots at once).
+  It fails CLOSED on the unorderable case.
+- *How the precondition is derived, and THE PREMISE it stands on:* "booted
+  successfully before" is not observable directly — RAUC v1.13 (the version
+  `pkgs/rauc/versions.env` pins) reports `boot-status` as the bootloader's
+  attempt counter read as exhausted-or-not, and persists no mark history: its
+  slot status file holds bundle metadata, an install-progress `status`, a
+  checksum and `installed.*`/`activated.*`, and `mark-good` writes none of it
+  — it touches the bootloader and an event log only. So the backward-only
+  refusal *derives* the precondition from RAUC's invariant that **an install
+  never writes the running slot**: a booted slot installed after the target
+  means the device was running the target at that moment, which is a
+  successful boot of it. **If that invariant ever stops holding — a future
+  install path able to target the booted slot, or an out-of-band flash that
+  also rewrites `installed.timestamp` — the derivation does not.** The
+  invariant is RAUC's and the image pipeline's, not this tree's, so nothing
+  here goes red if it changes; this bullet is the warning, and deliberately
+  not a check. A direct confirmed-boot record would remove the dependency and
+  is a separate design.
+- *How well the premise is established — the conjunction it has become:*
+  RAUC's target-selection code has now been read at the pinned v1.13, and the
+  premise survives as a **conjunction with both halves verified**, not as a
+  single unchecked invariant. **(i) RAUC only ever selects a slot it believes
+  is inactive** — `select_inactive_slot_class_member` skips every slot whose
+  state is not `ST_INACTIVE`, and no install option, config key or D-Bus
+  argument can name a target; the bullet below is the reading. **(ii) Nothing
+  on this device tells RAUC that the wrong slot is booted** — mosd names no
+  target (`install_bundle` in `pkgs/mosd/mosd/src/rauc.rs` calls
+  `InstallBundle` with the bundle path and an empty options map), the D-Bus
+  install API carries no target or boot-slot key to pass, and the one lever
+  that exists, `--override-boot-slot`, appears nowhere in this repository —
+  not in `pkgs/rauc/`, not in the shipped `rauc.service`. This repository also
+  recorded the behaviour independently of this guard, for a different feature
+  and before it existed — `docs/design/updates.md`'s lifecycle table says the
+  install task "is writing the other slot", authored in 98379d18. It stays a
+  **premise** rather than a property of this tree: it is established *at the
+  pinned version*, and a pin bump can move it, which is what the re-run recipe
+  below exists for.
+- *The RAUC v1.13 evidence, recorded here so a later reader hits it:*
+  - *The pin is verified.* `pkgs/rauc/versions.env` pins v1.13 with
+    `RAUC_SHA256=372828c2...87941`, and
+    `git archive --format=tar v1.13 | sha256sum` recomputes exactly that. The
+    findings below are byte-for-byte the rauc this image builds, not a guess
+    about some rauc.
+  - *The decisive contrast.* `r_mark_good` (`src/mark.c`) calls
+    `r_boot_set_state` and writes an event-log line; it never calls
+    `r_slot_status_save` and never touches `slot->status`. `r_mark_active`
+    immediately above it DOES persist `activated_timestamp`/`activated_count`
+    and save. The omission is deliberate rather than an oversight, and that
+    contrast is what proves the mark is bootloader-only.
+  - *`activated.*` cannot substitute.* It is written by `set_primary` — what an
+    install does — so a slot activated but never booted still reads
+    `activated_count >= 1`. It records activation, never a boot.
+  - *How the install target is chosen, and whether it can be the booted slot.*
+    It is the inactive slot — and *which* slot that is, is the overridable
+    part. `do_install_bundle` calls `determine_target_install_group`
+    (`src/install.c`), which per root slot class takes
+    `select_inactive_slot_class_member`, a loop that skips every slot whose
+    `state != ST_INACTIVE`. Nothing on the install path can name a slot
+    instead: `RaucInstallArgs` (`include/install.h`) holds only
+    `ignore_compatible`, `ignore_version_limit`, `transaction` and the
+    bundle-access args, and `r_installer_handle_install_bundle`
+    (`src/service.c`) accepts only `ignore-compatible`,
+    `ignore-version-limit`, `transaction-id`, `tls-*` and `http-headers`,
+    failing every other key with "Unsupported key". What IS overridable is the
+    *input* to that filter — which slot counts as booted.
+    `determine_slot_states` (`src/install.c`) labels `ST_BOOTED` the slot
+    matching `r_context()->bootslot`, everything else `ST_INACTIVE`, and
+    `bootslot` comes from `--override-boot-slot BOOTNAME` when given
+    (`src/main.c`), otherwise from `get_cmdline_bootname` (`src/context.c`).
+    Point that option at the *other* slot and the running slot is labelled
+    inactive and becomes the target. `rauc.external` on the kernel command
+    line is the blunter form of the same thing: bootslot becomes `_external_`
+    (as does `/dev/nfs`), `determine_slot_states` marks EVERY slot inactive,
+    and no slot is protected.
+  - *Why that override is out of reach on this image.* `pkgs/rauc/Dockerfile`
+    builds `-Dservice=true`, and `entries_install` compiles
+    `--override-boot-slot` in only under `#if ENABLE_SERVICE == 0`
+    (`src/main.c`) — so the shipped `rauc install` does not accept it, and in
+    a service build `install_start` hands the job to the daemon over
+    `InstallBundle` regardless. The option survives only on `entries_service`,
+    the daemon's own argv, and the shipped unit is upstream's
+    `ExecStart=… rauc --mount=/run/rauc/mnt service`. Separately, and worth
+    knowing as the honest edge of the invariant: `rauc write-slot` DOES name a
+    slot directly and refuses only a `readonly` one, never a booted one
+    (`write_slot_start`, `src/main.c`). It is not the install path, and mosd
+    never invokes it.
+  - *To re-run this reading at the next pin bump.* Clone the tag, confirm
+    `git archive --format=tar <tag> | sha256sum` equals `RAUC_SHA256`, then
+    read, in order: `determine_target_install_group`,
+    `select_inactive_slot_class_member` and `determine_slot_states` in
+    `src/install.c`; the `entries_install` / `entries_service` option tables
+    and the `r_context_conf()->bootslot` assignment in `src/main.c`; and the
+    `g_variant_dict_lookup` key list plus its "Unsupported key" rejection in
+    `r_installer_handle_install_bundle` (`src/service.c`). Confirm
+    `pkgs/rauc/Dockerfile` still builds `-Dservice=true`, since that is what
+    keeps the override off the install command.
 - *What does not ship, which is why this is still **[partial]**:* the reboot.
   The route changes the boot order and stops; realising it is a second,
   explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate
-  (`docs/design/updates.md` §4), and nothing sequences the two. Nor can the
-  guard see the *precondition* above in full: "booted successfully before" is
-  the confirmed/pending distinction, and RAUC's `boot-status` reads the U-Boot
-  attempt counter only as exhausted-or-not (`pkgs/mosd/mosd/src/rauc.rs`
-  states that limit). The guard approximates it with "written, not condemned,
-  and not the slot we are mid-confirmation on". That the bootloader then
-  actually falls back is bench evidence, §6.1's, not a claim made here.
+  (`docs/design/updates.md` §4), and nothing sequences the two. And the
+  install-order rule is only as good as the clock at install time: a device
+  that installed with a wrong clock can record an order that did not happen.
+  That the bootloader then actually falls back is bench evidence, §6.1's, not
+  a claim made here.
 
 ---
 

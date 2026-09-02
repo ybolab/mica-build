@@ -301,7 +301,42 @@ The vocabulary stays `validate_mark`'s — `good`/`bad` on `booted`/`other` —
 and there is no second slot state machine anywhere in the path.
 
 Whether it is permitted at all is `rollback_eligibility` in the same module, a
-pure function over the slot list and the primary slot. Its verdict is recorded
+pure function over the slot list and the primary slot. Its central rule is
+that **a rollback goes backward**: the target must be the strictly OLDER of
+the two installs, by `installed.timestamp`.
+
+That rule is how `recovery.md` §3 node 2's precondition — "the other slot
+holds a system that booted successfully before" — is enforced, by DERIVATION
+rather than by reading it. The property is not observable directly: RAUC v1.13
+(pinned in `pkgs/rauc/versions.env`) persists no mark history — its slot status
+file holds bundle metadata, an install-progress `status`, a checksum and
+`installed.*`/`activated.*`, `mark-good` writes none of it, and `boot-status`
+over D-Bus is the attempt counter read as exhausted-or-not. What makes the
+derivation valid is RAUC's invariant that **an install never writes the running
+slot**: a booted slot installed after the target means the device was running
+the target at that moment. **If that invariant ever stops holding — a future
+install path able to target the booted slot, or an out-of-band flash that also
+rewrites `installed.timestamp` — the derivation does not**, and nothing in this
+tree goes red, because the invariant is RAUC's and not ours.
+
+How well that premise is established: RAUC's target-selection code has been
+read at the pinned v1.13, so the premise is now a **conjunction with both
+halves verified** — RAUC only ever selects a slot it believes is inactive, AND
+nothing here tells it that the wrong slot is booted. mosd's half is direct:
+`install_bundle` in `pkgs/mosd/mosd/src/rauc.rs` calls `InstallBundle` with the
+bundle path and an empty options map and no target argument, so RAUC alone
+selects; the D-Bus install API carries no target or boot-slot key to pass in;
+and this repository recorded the behaviour independently of this guard, for a
+different feature and before it existed (§1's lifecycle table: the install task
+"is writing the other slot", authored in 98379d18). RAUC's half is that
+selection is restricted to `ST_INACTIVE` slot-class members and the only lever
+over it, `--override-boot-slot`, is neither on the install command in this
+build nor anywhere in this repository. It remains a **premise**: it is
+established at the pinned version, and a pin bump can move it. The underlying
+RAUC v1.13 evidence — the verified source pin, the target-selection reading
+with the recipe to re-run it, the `r_mark_good`/`r_mark_active` contrast that
+proves the mark is bootloader-only, and why `activated.*` cannot substitute —
+is recorded once in `recovery.md` §3 node 2 and not repeated here. Its verdict is recorded
 in the state document as `rollback` — `target` (the resolved alternate slot,
 or `null`), `permitted`, and `reason` — so the operator reads the decision in
 the same `GET /api/v1/update` answer that carries `slots`, `booted_slot`,
@@ -316,7 +351,15 @@ that says no:
 | `alternate_is_booted_slot` | the booted slot is the only member of its slot class — "the other slot" would be the one already running |
 | `alternate_never_installed` | the alternate carries no bundle version and no install timestamp; nothing was ever written there to fall back to |
 | `alternate_marked_bad` | the alternate's boot-status is `bad` — the bootloader has already condemned it |
+| `alternate_is_newer` | the alternate was installed MORE recently than the running system: a pending or skipped update, not a rollback target — switching to it applies the untested thing |
+| `install_order_unknown` | the two install timestamps cannot be ordered (one absent, one unparseable, or equal), so nothing establishes that the alternate is the older system. Equal stamps are the shape of a factory flash that wrote both slots at once, where the alternate has never run. The guard fails CLOSED here on purpose: it refuses a rollback it cannot justify rather than permitting one |
 | `booted_slot_not_confirmed` | the booted slot is itself pending-not-confirmed; that window belongs to the attempt counter, and a manual rollback inside it races the boot credit already being spent |
+
+The install-order rule is also only as good as the clock at install time. Time
+is UTC everywhere (`docs/design/time.md`), but a device that installed with a
+wrong clock can record an order that did not happen. Closing either gap needs
+mosd to record its own confirmed-boot fact; that is a separate design and is
+named here rather than approximated.
 
 **The reboot contract: this route does not reboot.** A rollback is a boot-order
 change; the reboot that realises it is `POST /api/v1/actions/reboot` and goes
@@ -359,8 +402,10 @@ installable path.
 A support case wants: `GET /api/v1/update` (the whole document — lifecycle
 with reasons, policy as loaded, gate verdict, slots, `install`,
 `last_mark`), the audit trail (`update-check`/`update-fetch`/
-`update-install`/`update-mark`/`update-reboot-override` events with source
-addresses), and the journal (mosd logs every admission, refusal, override
+`update-install`/`update-mark`/`update-rollback`/`update-reboot-override`
+events with source addresses; `update-rollback` records the refusal and its
+reason as well as the applied rollback, because the guard refuses inside apid
+and nothing else would witness it), and the journal (mosd logs every admission, refusal, override
 and outcome; the client's stderr tail is in `lifecycle.reason`).
 
 ## 6. Fault-test evidence
