@@ -313,12 +313,199 @@ says.
 
 ## 10. Operational procedures and troubleshooting trees
 
-Written by the follow-on subtask against the contract above, not here:
+### 10.1 Collection procedure
 
-- the collection, privacy, retention and escalation procedures an operator
-  follows (how to collect, what a snapshot contains and does not, how long
-  it is kept, what to hand to support and how);
-- the symptom → evidence → remediation troubleshooting trees, each leaf
-  naming the member of sections 2–5 it reads;
-- the hardware validation record for section 4's adapters on the supported
-  boards, and the built-in UI pages over the routes in section 8.
+1. Sign in to the built-in console as an authenticated appliance operator.
+   Open **System information** and record the machine id, board, image version,
+   build date and active slot. This is one `GET /api/v1/system/info` read; do
+   not assemble an identity from settings or labels on the enclosure.
+2. Leave the failing condition in place when it is safe to do so. Open
+   **Diagnostics**, select **Generate snapshot**, and wait for the collection
+   to finish. Collection takes at most 20 seconds. A 409 response means another
+   collection is active: wait for that collection, refresh the listing and do
+   not start concurrent retries.
+3. Treat a produced snapshot as useful even when one source was unavailable.
+   Read `collection.sections` first and record every `unavailable` or `timeout`
+   entry; absence is evidence, not a successful check.
+4. Download the snapshot from the console. The equivalent authenticated API
+   sequence is `POST /api/v1/diagnostics/snapshots`, followed by
+   `GET /api/v1/diagnostics/snapshots/{id}`. Record the id and the operator's
+   actual UTC collection time separately when `time.status` is not
+   `synchronized`.
+5. Store the exported file in the case location approved for the device's
+   assurance level as defined by `docs/design/security-model.md`. The device
+   never uploads it. Collection
+   remains usable without upstream connectivity; only the bounded DNS probe
+   can touch the network, and its failure does not fail the snapshot.
+
+If the console is unavailable but the authenticated HTTPS API is reachable,
+use the same API sequence from a locally attached service workstation. Do not
+enable SSH, run an unrestricted journal export or add packet capture to work
+around the console.
+
+### 10.2 Privacy and retention
+
+A snapshot contains the machine id, image and package versions, slot/update
+state, warning-and-worse journal lines from this boot, failed services/tasks,
+storage and time status, IP addressing/routes/DNS, telemetry and collection
+results. IP addresses, gateways, DNS servers and the machine id are retained
+because support needs them to correlate the device and diagnose connectivity.
+Treat the exported file according to the handling and disclosure rules for the
+device's assurance level in `docs/design/security-model.md`; this design does
+not restate or alter those levels.
+
+The versioned redaction boundary removes credentials, tokens, private keys,
+Wi-Fi and registry secrets, user content, SSIDs, MAC addresses, BSSIDs and
+hostnames in journal lines. Redaction reduces exposure; it does not make the
+remaining device identity and network topology public. Before transferring a
+snapshot, verify the recipient and case, transfer only the generated file, and
+never append passwords, tokens, raw private keys, unrestricted logs or files
+from `/srv` or `/home`.
+
+The on-device store retains at most 8 snapshots, 16 MiB in total and 2 MiB per
+snapshot. Publishing removes the oldest entries until both store limits are
+met. Snapshots live under the system-owned DATA namespace, so they survive a
+reboot and rootfs update. They have no time-based expiry: the operator must
+delete a snapshot from the Diagnostics page or with
+`DELETE /api/v1/diagnostics/snapshots/{id}` when the case is closed or the
+evidence is no longer required. Deleting the exported copy follows the case
+system's retention policy, not the device's count/size policy.
+
+### 10.3 Escalation
+
+An escalation must include:
+
+- the downloaded snapshot and its id;
+- the machine id, board, system version/build date and active slot from
+  `system` and `boot.slot`;
+- the symptom, first observed time, reproduction steps and whether the time
+  was independently verified because `time.status` was not synchronized;
+- every non-`ok` entry from `collection.sections`, plus actions already taken
+  and any configuration change immediately before the symptom.
+
+Do not interpret a missing section as healthy and do not replace it with
+unredacted evidence. If collection itself fails, report the HTTP error, the
+retention values shown by the listing and the system-information read; preserve
+the failing device state for a support-directed next step.
+
+Reset reason, temperature and watchdog data are hardware-dependent. Fixture
+tests validate parsing and absence semantics, but the cx3576 and x64 physical
+boards have not been validated by RFCT-288. An unavailable or implausible
+`boot.reset`, `telemetry.thermal` or `telemetry.watchdog` result must therefore
+be escalated with the board identity and snapshot; it must not be marked
+healthy or treated as completed board validation.
+
+### 10.4 Troubleshooting trees
+
+Each tree starts with observed evidence. Desired settings may be inspected only
+after the observed branch identifies the missing fact.
+
+#### No network
+
+- **Symptom:** the device has no usable network path.
+  - **Evidence:** `network.interfaces.available` is false.
+    - **Remediation:** preserve its `detail`, check whether networkd answered,
+      and escalate if the observer remains unavailable; do not infer state from
+      desired settings.
+  - **Evidence:** `network.interfaces.entries[]` is empty, or the affected
+    interface has `link.carrier: false`.
+    - **Remediation:** verify the correct physical port, cable, switch port and
+      link partner. Recollect after carrier appears.
+  - **Evidence:** carrier is present but `addresses[]` is empty, or
+    `dhcp.available` is false / `dhcp.state` is not `bound`.
+    - **Remediation:** compare the interface with the desired Network page,
+      correct the DHCP/static declaration or DHCP server, then confirm an
+      observed address and lease. Configuration alone is not success.
+  - **Evidence:** an address exists but `network.defaultRoutes.count` is zero.
+    - **Remediation:** correct the DHCP router or static gateway and verify that
+      a default route appears for the intended interface.
+  - **Evidence:** a default route exists but `network.dns.probe.reachable` is
+    false (`failed` or `timeout`).
+    - **Remediation:** verify `network.dns.linkServers` and
+      `resolverServers`, resolver reachability and upstream routing. If only
+      the probe name is blocked by policy, record that policy and validate the
+      application name through its approved resolver path.
+
+#### Wrong time
+
+- **Symptom:** displayed time, certificates or scheduled work use the wrong
+  time.
+  - **Evidence:** `time.status` is `offline-degraded` and the network tree has
+    no route or failed DNS.
+    - **Remediation:** restore routing/DNS first; the time service continues
+      retrying without an operator restart.
+  - **Evidence:** `time.status` is `invalid-source`.
+    - **Remediation:** verify the configured NTP sources and upstream server;
+      replace a source that answers with unusable samples.
+  - **Evidence:** `time.status` is `synchronizing` and
+    `time.sample.correction` is `step`.
+    - **Remediation:** allow the initial large correction to complete, then
+      recollect and require `synchronized`. Correlate events with
+      `boot.uptime`, not `collectedAt`, until then.
+  - **Evidence:** `time.status` is `unknown`, or the section is unavailable.
+    - **Remediation:** preserve `time.detail` and `collection.sections.time`,
+      verify the time service is observable, and escalate persistent absence.
+
+#### DATA full
+
+- **Symptom:** writes or update staging fail because DATA is full.
+  - **Evidence:** the `data` entry in `storage.tiers[]` has
+    `space.usedPercent` at the warning/critical policy and matching `pressure`.
+    - **Remediation:** remove no-longer-needed diagnostic snapshots and
+      operator-owned data through their supported interfaces. Do not delete
+      unknown files from `/mos`; confirm pressure clears after space is freed.
+  - **Evidence:** `storage.tiers[data].updateWorkspace.available` is false.
+    - **Remediation:** free enough DATA space to restore the reserved update
+      workspace before retrying an update.
+  - **Evidence:** the DATA tier is read-only/unmounted, or the `/mos` bind in
+    `storage.namespaces.binds[]` is degraded/unavailable despite adequate free
+    space.
+    - **Remediation:** stop writes, preserve its check/readiness evidence and
+      escalate for the documented offline repair path; capacity cleanup cannot
+      repair a filesystem or bind failure.
+
+#### Failed update or slot rollback
+
+- **Symptom:** an update fails, the new slot is not confirmed, or the device
+  boots the previous slot.
+  - **Evidence:** `boot.update` records a failed last install/mark operation or
+    a failed slot, and `failures.tasks[]` carries the apply failure.
+    - **Remediation:** keep the booted known-good slot running, correct the
+      recorded bundle/verification/storage cause, collect again, then retry
+      through the supported update workflow.
+  - **Evidence:** `boot.update.pending_not_confirmed` is true and
+    `boot.slot.booted` is the new slot.
+    - **Remediation:** do not force confirmation while health failures remain.
+      Resolve `failures.units`, `failures.health`, storage and network evidence,
+      then let the normal health-confirmation path mark the slot.
+  - **Evidence:** `boot.slot.booted` differs from the attempted slot and the
+    prior slot is primary, or reset evidence follows the attempted boot.
+    - **Remediation:** treat this as rollback, retain both the update and reset
+      evidence, and escalate before another attempt if the cause is not an
+      explicit bundle or space error.
+  - **Evidence:** `storage.tiers[data].updateWorkspace.available` is false.
+    - **Remediation:** follow the DATA-full tree before retrying; repeated
+      downloads cannot bypass the reservation.
+
+#### Unexpected reboot
+
+- **Symptom:** uptime reset without an intentional reboot.
+  - **Evidence:** `boot.uptime.seconds` confirms a recent boot and
+    `boot.reset.reason` is `watchdog`.
+    - **Remediation:** inspect `telemetry.watchdog.devices[]`, failed units,
+      health and the last bounded journal lines. Escalate with the physical
+      board because watchdog evidence remains hardware-dependent.
+  - **Evidence:** `boot.reset.reason` is `kernel-crash` and
+    `boot.reset.evidence.pstore` names a crash record.
+    - **Remediation:** preserve the snapshot and escalate the pstore/journal,
+      kernel release, image build and reproduction steps; do not reboot again
+      merely to reproduce unless support requests it.
+  - **Evidence:** temperature readings in `telemetry.thermal` are high near the
+    failure, or the thermal section is unavailable on a board expected to
+    expose it.
+    - **Remediation:** verify cooling, enclosure airflow and ambient limits,
+      then escalate the hardware-dependent reading or absence.
+  - **Evidence:** `boot.reset.reason` is `unknown`, whether available or not.
+    - **Remediation:** distinguish an operator reboot, power interruption and
+      external reset from case/site records. Escalate repeated unexplained
+      resets with board identity; generic evidence cannot classify them.
