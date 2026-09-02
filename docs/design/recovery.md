@@ -23,13 +23,14 @@ section describing a **mechanism** carries one of:
 - **[not implemented]** — deliberately no code, and the absence is the
   position rather than a gap.
 
-**Almost everything in this document is [proposed], and that is the point.**
-What exists today is the bootloader's automatic A/B fallback, the manual
-`good`/`bad` mark, and a physical whole-disk reflash. Every *reset tier*, the
-*presence gate*, *credential recovery* and the *repair tier* are designs this
-document fixes so the implementation subtasks that follow have agreed
-semantics — PLAN-048 is explicit that reset modes are built only after their
-tier semantics are agreed.
+**This document was written with almost everything [proposed], and that was
+the point:** PLAN-048 is explicit that reset modes are built only after their
+tier semantics are agreed, so §2, §4 and §5 fixed the semantics first and the
+implementation followed them. What now ships is §2's tiers 1-3, §4's gate and
+§5's credential recovery, each marked at its own section with what is still
+missing named. The *repair tier* (§6.2) is still [proposed], and §4's own half
+— the console-side asserter that WRITES a presence assertion — is the gap §4
+names and §8 carries as bench-dependent.
 
 Sections without a marker (§1, §6, §7) state principles and limits rather than
 one mechanism — §6's two subsections carry their own.
@@ -62,7 +63,16 @@ It owns neither an interactive rescue distribution nor backup contents
 does not restate the update lifecycle, the storage layout or the slot state
 machine — it cites them.
 
-## 2. The reset tier taxonomy — **[proposed]**
+## 2. The reset tier taxonomy — **[partial]**
+
+**Tiers 1, 2 and 3 are [implemented]; tier 4 is [not implemented].** The
+vocabulary is `pub enum ResetTier {` in
+`pkgs/mosd/mosd-settings/src/model.rs`, which has exactly three members, so
+no spelling of secure wipe is a request this device can accept — the absence
+is the position and not a gap (footnote [^wipe], §7). The tiers execute in
+`pkgs/mosd/mosd/src/reset.rs` and are staged by `POST /api/v1/reset` in
+`pkgs/mosd/apid/src/routes.rs`; §2.1's table below is what those tests assert,
+cell for cell, including the `preserved` and `unaffected` ones.
 
 **Four tiers, and no fifth.** A device operation that destroys operator state
 is one of these four or it is not offered; "reset" without a tier name is not
@@ -104,6 +114,18 @@ Every cell is exactly one of four words, and they are not synonyms:
 | 2 application-data reset | preserved | preserved | preserved [^apps-state] | re-seeded [^apps-mos] | cleared | unaffected | unaffected | unaffected |
 | 3 full factory reset | preserved [^identity] | preserved [^identity] | re-seeded | re-seeded | cleared | preserved [^meta] | unaffected [^slots] | unaffected [^slots] |
 | 4 secure wipe | cleared | cleared | cleared | cleared | cleared | cleared | cleared | cleared [^wipe] |
+
+**What now enforces each row.** `pkgs/mosd/mosd/src/reset.rs` reaches exactly
+two roots — the DATA pool and the STATE partition — and its `Roots` type has no
+member for META and none for a slot, so the `unaffected` and `preserved` cells
+in those three columns are a property of the type rather than a claim about the
+code. Slot vocabulary stays where `docs/design/updates.md` §5.2 put it,
+`validate_mark` and `rollback_eligibility` in `pkgs/mosd/mosd/src/rauc.rs`,
+which the applier neither calls nor duplicates. Identity, calibration and the
+per-device secrets survive because nothing in the applier opens them, and a
+test drives a populated pool through every tier asserting what SURVIVES and not
+only what goes — a tier that cleared more than its row is the failure mode here,
+and only a survival assertion catches it.
 
 The tier column names the *only* four resets; the whole-disk reflash is not in
 this table because it is not a reset — it replaces every partition including the
@@ -176,21 +198,39 @@ document's. §3 places it in the operator ordering, between tiers 3 and 4.
 
 ### 2.2 Rules that bind every tier
 
+Each rule names what enforces it, because a rule with no enforcement is the
+prose §0 warns about.
+
 - **A tier names itself in the request and in the audit record.** There is no
-  parameterless reset.
+  parameterless reset. The request body carries `tier` and nothing else, and a
+  body without one is refused before anything is written; the trail records
+  `reset-configuration`, `reset-application-data` or `reset-full-factory`, with
+  the outcomes `staged` and `refused` (`pkgs/mosd/apid/src/routes.rs`).
 - **A tier is replayable.** Power loss during a reset must leave the device
   either in the pre-reset state or in a state where re-running the same tier
   completes it; a reset is therefore staged as an intent record plus an
   idempotent apply, never as a sequence whose interruption is a third state.
   PLAN-048 requires this and it is the reason a reset is not "delete some
-  directories".
+  directories". **The record is `reset` in the settings tree** (schema v12,
+  `pub struct ResetSettings {` in `pkgs/mosd/mosd-settings/src/model.rs`,
+  `docs/design/api.md` §3): apid commits it in ONE `SetSettings`, which is one
+  `Store::save`, and mosd applies it before anything else on the next boot. The
+  filesystem work runs first and is idempotent; the save that clears the record
+  runs last, so a power loss leaves the record staged and the next boot
+  finishes the job. Both halves are asserted — an interrupted tier replayed
+  over its own half-done output is driven against the uninterrupted path and
+  must produce the same device.
 - **A tier never widens under failure.** If a tier cannot complete its own
   scope it fails and says so; it does not escalate to the next tier because the
-  next tier's delete happened to succeed.
+  next tier's delete happened to succeed. The applier returns the error, leaves
+  the record staged and writes no settings at all, so a failed tier is a tier
+  that will be retried rather than one that half-happened.
 - **Tiers 3 and 4 require §4 physical presence.** Tiers 1 and 2 are
   authenticated management actions. The line is drawn where the operation stops
   being self-serviceable: a device whose identity and credentials are gone
-  cannot be handed back to its owner over the network.
+  cannot be handed back to its owner over the network. Tier 3 is refused
+  without an assertion — 403 and `presence_required`, audited, nothing staged —
+  and the refusal is asserted rather than promised.
 
 ## 3. The recovery decision tree, data-preserving first — **[partial]**
 
@@ -429,7 +469,28 @@ everything below it destroys something that was on the device.**
 - *Costs irreversibly:* the device, as a configured unit — identity included.
 - *Does not recover:* anything. There is no step 9.
 
-## 4. The physical-presence contract — **[proposed]**
+## 4. The physical-presence contract — **[partial]**
+
+**What ships is the gate; what does not ship is the door.** Every
+presence-gated operation asks ONE seam — `pub(crate) trait Presence` in
+`pkgs/mosd/apid/src/routes.rs` — keyed by the named board capability
+`recovery.presence`, which both boards answer with `console-attach`
+(`board_presence_mechanism`, same file). The shipped reader is
+`ConsolePresence`: it reads an assertion left at `/run/mos/presence` by an
+operator at the local console — a mechanism, the console device that proved
+it, and a deadline — and refuses an absent, expired, unreadable or
+wrong-mechanism one. **What is missing, named:** nothing in the tree yet WRITES
+that assertion. A prod image ships no console shell
+(`docs/design/access.md` §5), so the console-side asserter is a unit bound to
+the board's own console device, and which device that is — and whether a unit
+can own it without displacing the getty — is a bench question on hardware that
+has never been asked one. Until a board answers it, the gate refuses every
+request and §8's rows stay bench-dependent.
+
+There is **no button code in this tree and no button flow in this document**.
+The cx3576 recovery button drops the board into rockusb loader mode and no
+software recovery flow reads it (§4.2, §8); adding one is a change to the
+capability's answer and to nothing else, which is what the seam is for.
 
 ### 4.1 What the gate is, and what it is not
 
@@ -475,18 +536,29 @@ Per board, honestly (see §8 for the full row):
   chassis mos does not define.
 
 Nothing here is entered over the network. A "presence" flag an API can set is
-not presence, and a design that adds one has removed the gate.
+not presence, and a design that adds one has removed the gate. The shipped
+reader obeys that literally: `/run/mos/presence` is on tmpfs and owned by root,
+apid only ever READS it, and there is no route, no settings path and no line in
+either daemon that creates it — an API that could set it would have to be
+written first.
 
 ### 4.3 What presence authorizes, exhaustively
 
 Three operations, and adding a fourth is a change to this section:
 
 1. **Credential recovery** (§5) — rotate the management credential.
+   **[implemented]**, `POST /api/v1/recovery/credential`.
 2. **Release of a brute-force lockout** — the release path
    `docs/design/access.md` §6 says is missing, and whose absence is the stated
    reason the hard `lockoutThreshold` is not shipped: a permanent lockout with
    no release is a brick. Supplying the release is what unblocks that threshold.
+   **[implemented]**, and deliberately not as an operation of its own: a
+   SUCCESSFUL credential recovery clears the counters and the window (§5.4), so
+   the release is a property of the flow that already proves presence rather
+   than a second route that would have to prove it again.
 3. **Tiers 3 and 4** (§2.2), the resets an authenticated session may not reach.
+   Tier 3 is **[implemented]**; tier 4 is **[not implemented]** and is not a
+   request this device can express.
 
 What presence must **never** authorize, and each of these is a specific
 mistake worth naming:
@@ -508,7 +580,31 @@ mistake worth naming:
   root walk and the same `/mos/updates/verified` workspace
   (`docs/design/updates.md` §5.3).
 
-## 5. Credential recovery: rotate, never reveal — **[proposed]**
+## 5. Credential recovery: rotate, never reveal — **[implemented]**
+
+`POST /api/v1/recovery/credential` (`pkgs/mosd/apid/src/routes.rs`). The flow
+itself is complete and every rule below is asserted; it is reachable on a
+device only once that board has a way to WRITE the §4 assertion, which §4
+records as the missing half and §8 as bench-dependent. That dependency is the
+honest shape of "implemented": the code is here and named, and the door it sits
+behind is not yet cut.
+
+**The route takes no credential extractor.** §5.2 says an authenticated
+session may not run this flow, so a caller presenting a working bearer token or
+browser session is refused before presence is even consulted, and told to use
+`POST /api/v1/actions/change-password` instead.
+
+**A device claimed by a provisioning document, recovered under presence** — the
+seam `docs/design/access.md` §4.4 stops at, and this section owns. The recovery
+writes the claim record with the channel that claimed the device preserved and
+`rotationRequired` **false**: the credential it mints was drawn by the device
+from `OsRng` and shown once at the device, so it is not a bootstrap secret that
+sat in plaintext on a medium, and demanding a rotation of a credential that was
+just rotated under physical presence would be a bound with nothing left to
+protect. A device with NO credential is refused (`not_claimed`) and pointed at
+`POST /api/v1/setup`: there is nothing to recover, and minting one here would
+be a third channel that can claim a device, which
+`mosd_settings::ClaimChannel`'s two members exist to exclude.
 
 ### 5.1 The normative rules
 
@@ -535,6 +631,22 @@ mistake worth naming:
    after the fact.
 6. **This is not a shell, and not a session.** The flow's entire output is a
    credential for the normal management channel.
+
+**How rules 2 and 3 are ordered, and why that order is the safe one.** The
+credential is published on the presence channel FIRST and committed second. The
+commit is ONE write of the whole `access` subtree, so the new hash, the emptied
+API-token list, the claim record and the bumped generation land together and
+the previous secret stops working at that same moment. Publishing after the
+commit would make a failed publication a self-inflicted lockout — the old
+credential dead and the new one unknown — which is exactly what rule 3's "not
+before" excludes; publishing first makes the worst outcome a credential the
+operator saw and that never worked, and the flow is cheap to re-run. Both
+directions are asserted, including the interrupted commit and the retry.
+
+Every API token goes at that commit too, and §3's step 5 prices it: "any client
+or automation holding it must be re-enrolled". A recovery that left a stored
+token authenticating would leave whoever holds it precisely the access the
+operator came to the device to take back.
 
 This also closes the gap `docs/design/provisioning.md` §3.5 names — "there is
 no credential-rotation path … a real gap, not a design position" — for the
@@ -582,6 +694,14 @@ the implemented line shape has exactly four members, and one enumerated event
 per mechanism keeps the trail's grammar unchanged while making "which door was
 used" greppable.
 
+**One of those four names exists in code**, `credential-recovery-console`
+(`pkgs/mosd/apid/src/routes.rs`), and its three siblings deliberately do not: a
+constant for a door this build cannot open would be a claim §8's board table
+does not support. All three outcomes are reachable and asserted — `success`,
+`refused` when presence is not established or the caller is authenticated, and
+`aborted` when presence was established and the flow did not complete, which is
+what a console that cannot be written produces.
+
 ### 5.4 Interaction with the brute-force counters
 
 `docs/design/access.md` §6 persists a consecutive-failure run and a backoff
@@ -598,6 +718,14 @@ corruption. The interaction is three rules:
   `lockoutThreshold` safe to ship later.
 - **A refused or aborted rotation clears nothing.** Otherwise a failed attempt
   becomes a remote-reachable throttle reset for whoever can rattle the door.
+
+All three are **[implemented]** and asserted through the guard's own behaviour
+rather than through a reader on its counters: the login route answers a request
+made inside an armed window with 429 before it looks at the password, so "the
+window is gone" is exactly "a correct password is admitted again". Nothing on
+the recovery path calls `GuardStore::begin_attempt`, which is the first rule
+rather than a comment about it, and `record_success` is reached only after the
+commit, which is the third.
 
 ## 6. Both slots failed, and the non-destructive repair tier
 
@@ -720,8 +848,8 @@ today, and this document does not soften it.
 
 | Board | Bootloader access | Reflash transport | Physical-presence entry mechanism | Both-slots-failed evidence path | Recovery level, honestly |
 |---|---|---|---|---|---|
-| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it** — **bench-dependent** | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; every §2 reset tier, §4 presence flow and §6.2 repair step is `[proposed]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
-| **x64** (generic UEFI) | the platform owner's firmware setup and the GRUB console; mos configures neither | remove the medium and write the full-disk image from another machine; there is no in-band loader mode | none defined by mos — presence is the machine's own console/firmware or possession of the medium — **bench-dependent**, and it is a claim about a chassis mos does not specify | attached console output plus `ORDER`/`A_TRY`/`B_TRY` read from `grubenv` on the ESP (§6.1) | **I1**. QEMU/CI evidence only; no field evidence exists, and none of §2–§6.2 is implemented — **bench-dependent** |
+| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it** — **bench-dependent**. The board answers `recovery.presence` with `console-attach` (§4), and nothing on it writes that assertion yet — **bench-dependent** | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[proposed]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
+| **x64** (generic UEFI) | the platform owner's firmware setup and the GRUB console; mos configures neither | remove the medium and write the full-disk image from another machine; there is no in-band loader mode | none defined by mos — presence is the machine's own console/firmware or possession of the medium — **bench-dependent**, and it is a claim about a chassis mos does not specify. The board answers `recovery.presence` with `console-attach` (§4), on a console mos does not define | attached console output plus `ORDER`/`A_TRY`/`B_TRY` read from `grubenv` on the ESP (§6.1) | **I1**. QEMU/CI evidence only; no field evidence exists; §2's tiers, §4's gate and §5's recovery are code that no x64 unit has run — **bench-dependent** |
 
 **Who must prove each bench-dependent row.** The qualification owner named in
 the board's dossier, against `docs/bsp/qualification.md` row 12 (Recovery):

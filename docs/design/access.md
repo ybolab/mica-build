@@ -665,14 +665,27 @@ that password to the operator (M5's own known gap). The path was already
 unusable. This campaign makes it **honestly** unusable rather than closing a
 working door.
 
-**The designed path back in, and it is not shipped.** `docs/design/recovery.md`
-section 5 designs one: under the physical-presence contract of that document's
-section 4, a recovery flow **mints a new management credential and returns it
-once**, never discloses, decrypts or recovers the previous secret, invalidates
-that secret at the same commit, and audits every attempt. It is credential
-**rotation**, not disclosure, and it is not a permanent shell. It is
-**[proposed]** — nothing in 9.1 changes until it ships, and 9.1 remains the
-shipped truth.
+**The path back in is now code, and it is not yet a door.**
+`docs/design/recovery.md` section 5 designed it and
+`POST /api/v1/recovery/credential` (`pkgs/mosd/apid/src/routes.rs`) implements
+it: under the physical-presence contract of that document's section 4, the flow
+**mints a new management credential and returns it once** on the channel that
+proved presence, never discloses, decrypts or recovers the previous secret,
+invalidates that secret at the same commit, bumps
+`access.device.generation`, and audits every attempt including the refusals. It
+is credential **rotation**, not disclosure, and it is not a permanent shell — an
+authenticated session is refused and told to use section 4.1's change-password
+path instead.
+
+**What that does not change: 9.1 above is still the shipped truth on both
+boards.** The gate is one seam keyed by the board capability
+`recovery.presence`, and nothing in the tree yet WRITES the assertion it reads
+— `docs/design/recovery.md` section 4 names that missing half and section 8
+carries it as bench-dependent per board. Until a board has it, an operator who
+has lost the credential and every key still reaches section 9.2, and the
+successful-rotation release of the brute-force guard that section 6 records as
+missing is likewise implemented but unreachable. Read those two sections
+together before concluding a fielded unit can be recovered without a reflash.
 
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
