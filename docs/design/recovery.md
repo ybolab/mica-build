@@ -401,7 +401,7 @@ everything below it destroys something that was on the device.**
 
 ### Destructive — each step below loses something no earlier step lost
 
-**3. Configuration reset — DESTRUCTIVE (configuration)** — **[proposed]**
+**3. Configuration reset — DESTRUCTIVE (configuration)** — **[implemented]**
 - *Precondition:* the device boots and the operator can authenticate; the fault
   survives a reboot and a rollback, and looks like configuration.
 - *Fixes:* an unreachable device that is unreachable because of its own network,
@@ -412,8 +412,14 @@ everything below it destroys something that was on the device.**
   debugging.
 - *Does not recover:* a lost credential (§5 does that, and tier 1 keeps the
   credential on purpose — footnote [^cfg]), application data, a broken slot.
+- *What ships, and it is reachable today:* `POST /api/v1/reset` with
+  `{"tier": "configuration"}` (`pkgs/mosd/apid/src/routes.rs`), authenticated,
+  no presence needed. It STAGES §2.2's intent record and the tier runs on the
+  next boot (`pkgs/mosd/mosd/src/reset.rs`) — so the operator's step is two
+  actions, the request and a reboot, and the device is fully pre-reset until
+  that boot.
 
-**4. Application-data reset — DESTRUCTIVE (operator data)** — **[proposed]**
+**4. Application-data reset — DESTRUCTIVE (operator data)** — **[implemented]**
 - *Precondition:* as step 3, plus evidence that the fault follows the
   applications rather than the platform.
 - *Fixes:* an application whose own state wedges it or the device, a full
@@ -424,8 +430,11 @@ everything below it destroys something that was on the device.**
   unversioned dump is worse than none — so this step is unrecoverable in the
   strongest sense the product currently offers.
 - *Does not recover:* platform settings, credentials, slots.
+- *What ships, and it is reachable today:* step 3's route with
+  `{"tier": "application-data"}`, on step 3's terms exactly — authenticated, no
+  presence, staged and applied on the next boot.
 
-**5. Credential recovery — DESTRUCTIVE (the old credential)** — **[proposed]**
+**5. Credential recovery — DESTRUCTIVE (the old credential)** — **[partial]**
 - *Precondition:* §4 physical presence. Nothing else, ever.
 - *Fixes:* the lockout `docs/design/access.md` §9.1 describes — no webAdmin
   password and no authorized key — without losing a byte of operator data.
@@ -437,8 +446,18 @@ everything below it destroys something that was on the device.**
 - *Ordered here deliberately:* it is the only step that cures a lockout while
   preserving everything, so it must be reached before anyone considers a
   factory reset for the same symptom.
+- *What ships:* the whole flow — `POST /api/v1/recovery/credential`
+  (`pkgs/mosd/apid/src/routes.rs`), every §5.1 rule asserted, §5.4's guard
+  release included.
+- **What is missing, and it is why this step is not `[implemented]`:** the flow
+  is gated on a §4 presence assertion, and **nothing in the tree writes one**.
+  An operator standing at a device today cannot take this step. Until a board
+  has an asserter, the lockout §9.1 of `docs/design/access.md` describes is
+  still answered by step 7 and not by this one — which is the ordering cost
+  this step exists to avoid, and the reason §4's missing half is the highest
+  bench priority in this document.
 
-**6. Full factory reset — DESTRUCTIVE (everything but identity)** — **[proposed]**
+**6. Full factory reset — DESTRUCTIVE (everything but identity)** — **[partial]**
 - *Precondition:* §4 physical presence, and a decision that the device's whole
   mutable state is to be abandoned — decommissioning from one operator,
   handover, or a fault that survived steps 3–5.
@@ -447,6 +466,14 @@ everything below it destroys something that was on the device.**
 - *Does not recover:* a device that cannot boot (nothing in-band runs), a
   corrupted system slot, and — deliberately — the META lockdown bit stays set
   (footnote [^meta]).
+- *What ships:* the tier itself, executed and tested cell for cell against §2.1
+  row 3 (`pkgs/mosd/mosd/src/reset.rs`), staged by step 3's route with
+  `{"tier": "full-factory"}`.
+- **What is missing:** step 5's missing half, for step 5's reason. This tier is
+  presence-gated (§2.2), the assertion nothing writes gates it, and the request
+  is refused — 403, `presence_required`, audited, nothing staged. An operator
+  who needs a factory reset on a device today takes step 7 instead, and pays
+  the device's identity for it.
 
 **7. Whole-disk reflash — DESTRUCTIVE (every partition, new identity)** — **[implemented]**
 - *Precondition:* physical access to the board's loader transport (§8) and a
@@ -461,7 +488,7 @@ everything below it destroys something that was on the device.**
 - *Does not recover:* nothing software-wise — but see §7, it does **not** erase:
   blocks beyond the flashed extent survive unreferenced.
 
-**8. Secure wipe — TERMINAL** — **[proposed]**, bench-dependent
+**8. Secure wipe — TERMINAL** — **[not implemented]**, bench-dependent
 - *Precondition:* the device is leaving the operator's control, and the board
   has device-level erase evidence on file (footnote [^wipe]). Without that
   evidence there is no software step here at all; §7 states the alternative.
@@ -479,13 +506,24 @@ presence-gated operation asks ONE seam — `pub(crate) trait Presence` in
 `ConsolePresence`: it reads an assertion left at `/run/mos/presence` by an
 operator at the local console — a mechanism, the console device that proved
 it, and a deadline — and refuses an absent, expired, unreadable or
-wrong-mechanism one. **What is missing, named:** nothing in the tree yet WRITES
-that assertion. A prod image ships no console shell
-(`docs/design/access.md` §5), so the console-side asserter is a unit bound to
-the board's own console device, and which device that is — and whether a unit
-can own it without displacing the getty — is a bench question on hardware that
-has never been asked one. Until a board answers it, the gate refuses every
-request and §8's rows stay bench-dependent.
+wrong-mechanism one.
+
+**What is missing, named, and it is the most consequential sentence in this
+document:** *nothing in the tree WRITES a presence assertion*, so the
+presence-gated flows — §5's credential recovery and §2's tier 3 — are
+**implemented and tested but unreachable on hardware** until an asserter
+exists. The gate refuses every request a fielded device can make of it. A prod
+image ships no console shell (`docs/design/access.md` §5), so the asserter has
+to be a unit bound to the board's own console device, and **whether a mos-owned
+unit can own that console TTY without displacing the getty is a bench
+question** — one no board has been asked. `serial-getty@ttyFIQ0` is spawned
+from the kernel `console=` parameter on both cx3576 profiles
+(`docs/design/access.md` §9.1 measures this), which is exactly the contention
+to resolve. Nothing here guesses at the answer: a unit written against an
+untested board would be the speculative code §4.2's rule exists to keep out.
+Until a board answers it, `docs/design/access.md` §9.1 remains the shipped
+truth, §3's steps 5 and 6 stay `[partial]`, and §8's rows stay
+bench-dependent.
 
 There is **no button code in this tree and no button flow in this document**.
 The cx3576 recovery button drops the board into rockusb loader mode and no
@@ -768,16 +806,26 @@ is on a writable tier and is **best effort** in this state. What is
 the boot-decision evidence off the bootloader-visible stores onto a writable
 tier, because that is the store this failure mode may have destroyed.
 
-### 6.2 The non-destructive repair tier — **[proposed]**
+### 6.2 The non-destructive repair tier — **[partial]**
 
 Between "reboot it" and "reset it" there is a tier with no name today, and
 naming it is what keeps operators from reaching for tier 3 to fix a dirty
 filesystem. **Repair fixes a store's structure; it never removes an operator's
 content.**
 
+**Three of the four capabilities below have shipped code and one does not, and
+none of them is reachable as a repair STEP.** That split is the whole of this
+marker, so each bullet carries its own: what exists arrived under other names —
+the layout script, a fail-open daemon, the update lifecycle — and what is
+missing is (a) offline repair, which needs a recovery environment nobody has
+built, and (b) the tier itself as a named, ordered operator step with a route
+and an audit event. An operator today reaches these capabilities by knowing
+they exist, which is precisely the discovery problem §0 warns about.
+
 What repair **may** touch:
 
-- **An unmounted writable tier**, offline: a filesystem consistency pass on
+- **An unmounted writable tier**, offline — **[not implemented]**: a filesystem
+  consistency pass on
   STATE, DATA or META from a recovery context. `docs/design/storage.md` §7 is
   unambiguous about the two halves of this — the boot-time `systemd-fsck` pass
   is automatic repair and exists, while deliberate offline repair is
@@ -786,21 +834,35 @@ What repair **may** touch:
   tier therefore depends on a recovery environment (`docs/design/access.md`
   §2's rescue entry, **[not implemented]**), and no part of it may be exposed
   as a management route that operates on a mounted tier.
-- **The layout skeleton**: recreating missing directories under `/mos` and
+- **The layout skeleton** — **[implemented]**, under another name: recreating
+  missing directories under `/mos` and
   their modes, which is `mos-data-layout`'s idempotent job already, and the
   reason a missing skeleton reports `notAttempted`/`unavailable` rather than
-  being silently improvised around (`docs/design/storage.md` §3).
-- **Daemon-private state that is already fail-open**: a corrupt
+  being silently improvised around (`docs/design/storage.md` §3). It runs on
+  every boot, so the repair a reader would come here for has already happened;
+  §2's tier 2 and tier 3 rely on the same property, which is why the applier
+  empties the declared directories rather than deleting and recreating them —
+  the modes stay `mos-data-layout`'s to state and are never restated in
+  `pkgs/mosd/mosd/src/reset.rs`.
+- **Daemon-private state that is already fail-open** — **[implemented]**, under
+  another name: a corrupt
   `login_guard.json` degrades to a clean in-RAM guard by design
   (`docs/design/access.md` §6); repair may delete such a file, and only such a
-  file — one whose loss the owning daemon already treats as recoverable.
-- **The inactive system slot**, by re-installing a verified bundle into it
+  file — one whose loss the owning daemon already treats as recoverable. The
+  one case an operator actually reaches for — an armed backoff window on a
+  device they are standing at — now has a supported answer that is not a file
+  deletion at all: a successful §5 rotation clears the counters and the window
+  (§5.4), which is why the release path is a property of that flow rather than
+  a repair operation of its own.
+- **The inactive system slot** — **[implemented]**, under another name: by
+  re-installing a verified bundle into it
   through the ordinary update path. This repairs a corrupted slot without
   touching a byte of operator data, and it is the correct answer to "one slot
   is bad" — reusing `docs/design/updates.md`'s lifecycle, `/mos/updates/verified`
   and the existing `good`/`bad` on `booted`/`other` vocabulary. **No second slot
   state machine is introduced here**, and repair does not invent an "installing
-  into the booted slot" operation.
+  into the booted slot" operation. §2's tiers keep it that way: no tier writes,
+  installs, activates or condemns a slot (footnote [^slots]).
 
 What repair **may not** touch, ever:
 
