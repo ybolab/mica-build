@@ -193,7 +193,7 @@ should treat the members it does know as advisory.
 
 | Member | Content |
 |---|---|
-| `schemaVersion` | `1` |
+| `schemaVersion` | `2` |
 | `collectedAt` | RFC 3339 UTC as this appliance's clock had it; `time` says whether that clock is disciplined, `boot.uptime` is the monotonic reference |
 | `release` | `board`, `release`, `kernel`, as section 2 defines them |
 | `system` | the whole section 2 surface |
