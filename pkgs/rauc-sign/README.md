@@ -10,8 +10,9 @@ halves of the TUF trust model because they share one metadata format:
   LOCAL copy of that directory from a pinned trusted root, with persistent
   rollback protection, and `rauc-update` (phase 2, second half) adds the
   transport on top of the same walk — compatibility selection from signed
-  release metadata, resumable download into a bounded reserve directory, and
-  the offline "lockbox" import. Both are exercised offline by the test suite
+  release metadata, resumable download into the `/mos/updates` DATA workspace
+  (probed for readiness first), and the offline "lockbox" import. Both are
+  exercised offline by the test suite
   and both are SHIPPED, as `mos-rauc-update` (see "Packaging" below); what is
   still owed is the trust anchor they verify from and the thing that runs
   them (see the provisioning section below).
@@ -154,17 +155,28 @@ and no flag skips any of that. Four subcommands, same scriptable contract
   "broken". A downgrade needs `--allow-downgrade` and is logged.
   The compatibility facts come from the **signed** custom block `rauc-sign
   add --manifest` stamps on the bundle target — no unsigned side channel.
-- `fetch ... --url <base> --reserve-dir <dir> --max-bytes <n>` downloads the
-  selected bundle with HTTP range requests: a `.part` file resumes where it
-  left off, the completed size may never exceed the byte budget together
-  with what the reserve directory already holds, a download the filesystem
-  visibly cannot hold is refused up front, and the file loses its `.part`
-  suffix only when sha256 and length agree with the signed metadata — a
-  mismatch deletes the partial. The last stdout line is the verified local
-  path.
+- `probe --max-bytes <n>` is the PLAN-061 readiness probe of the
+  `/mos/updates` workspace on its own: `/mos` is a real directory mounted on
+  the same device as the DATA pool at `/mnt/data`, no symlink stands in for
+  a workspace directory, nothing foreign is mounted inside, the pool is not
+  read-only, a private `O_EXCL` file in `staging/` is written, fsynced and
+  removed, and the pool's free space (one figure, stated once) covers what
+  is unspent of the budget. Prints `ready ...` (exit 0) or
+  `<status> <kind>: <detail>` (exit 3) — status `unavailable`
+  (`mount-missing`, `not-data`) or `degraded` (`read-only`, `exhausted`,
+  `probe-failed`). mosd runs it before every check and fetch.
+- `fetch ... --url <base> --max-bytes <n>` runs the same probe (with the
+  exact bytes still needed), then downloads the selected bundle with HTTP
+  range requests: a `.part` file in `/mos/updates/downloads` resumes where
+  it left off, the completed size may never exceed the byte budget together
+  with what the workspace already holds, and the file is renamed — same
+  filesystem, atomic — into `/mos/updates/verified` only when sha256 and
+  length agree with the signed metadata; a mismatch deletes the partial. The
+  last stdout line is the verified path; exit 3 is an unready workspace.
+  `--reserve-dir` may name a subdirectory of `downloads/` and nothing else.
 - `import --lockbox <dir> ...` is the offline path: the same selection and
-  verification over a mounted lockbox directory, then the same budgeted
-  staging into the reserve.
+  verification over a mounted lockbox directory, the same probe and budget,
+  a copy through `/mos/updates/staging`, the same rename into `verified/`.
 
 Device identity (board/profile/running version) comes from
 `/usr/share/mos/release-identity.env` (`BOARD=`/`PROFILE=`/`VERSION=` lines)
@@ -176,11 +188,17 @@ build can measure about itself and not a release number —
 `docs/design/release-signing.md` §3.1 states what that costs the
 "newer than running" comparison.
 
-The **reserve directory is a contract, not a mechanism**: who provisions it,
-on which partition, and how many bytes `--max-bytes` may promise is a
-storage-policy decision owned outside this crate. The client holds its side —
-never exceed the budget, refuse what the filesystem cannot hold, never leave
-an unverified file under a final name.
+The **workspace is a contract, not a flag** (`src/workspace.rs`): it is
+`/mos/updates` on the DATA pool, laid out by the image's `mos-data-layout`,
+and there is no fallback to STATE, `/var`, the rootfs or tmpfs — an unready
+workspace is a named refusal before the first byte, never a write somewhere
+else. The client holds its side — never exceed the budget, refuse what the
+pool cannot hold, never leave a partial anywhere but `downloads/`, never put
+anything but a digest-verified bundle in `verified/`, and hand `rauc install`
+nothing else (`--install` checks its own output). How many bytes
+`--max-bytes` may promise of the pool is a storage-policy decision owned
+outside this crate. `RAUC_UPDATE_ROOT` relocates the whole workspace and
+`RAUC_UPDATE_MOUNTINFO` substitutes a mount table for the test suite only.
 
 HTTP is deliberately minimal: plain `http` only, `GET` only, no TLS, no
 redirects, no chunked bodies, every operation timeout-bounded. Integrity and
@@ -349,13 +367,13 @@ cargo run -p rauc-sign --bin rauc-update -- check \
   --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
   [--identity /usr/share/mos/release-identity.env | --board cx3576 --profile prod --current-version 1.0.0] \
   [--channel stable] [--allow-downgrade]
+cargo run -p rauc-sign --bin rauc-update -- probe --max-bytes 500000000
 cargo run -p rauc-sign --bin rauc-update -- fetch \
   --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
-  --url http://mirror.example/tuf \
-  --reserve-dir /data/update --max-bytes 500000000 [--install]
+  --url http://mirror.example/tuf --max-bytes 500000000 [--install]
 cargo run -p rauc-sign --bin rauc-update -- import \
   --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
-  --reserve-dir /data/update --max-bytes 500000000 [--install]
+  --max-bytes 500000000 [--install]
 ```
 
 All expiration instants are explicit RFC 3339 arguments. Nothing derives an
@@ -415,16 +433,27 @@ and `deny.toml`. `.github/workflows/check.yml` runs both scripts, and the
 second one is the only thing on that job that checks this code.
 
 The update client has its own suite (`tests/update.rs`), against the same
-fixture plus a loopback static HTTP server with range support: manifest
-publication and the signed selection block, selection across every
-compatibility axis (board, profile, channel, schema floor, version — each
-rejection with a discriminating reason), downgrade admission only under the
-explicit flag, resumable download (fresh, resumed with a real range request,
-idempotent re-fetch), the byte budget (too-small budget, budget already
-spent), digest refusal with partial deletion (corrupted partial, tampered
-bundle), metadata sync including the per-file cap, and the lockbox round
-trip (full lockbox verifies whole; partial lockbox imports its selected
-target; tampered lockbox refused).
+fixture plus a loopback static HTTP server with range support (and a
+variant that drops the connection mid-body) and a workspace laid out in the
+tempdir whose mount table is a fixture file: manifest publication and the
+signed selection block, selection across every compatibility axis (board,
+profile, channel, schema floor, version — each rejection with a
+discriminating reason), downgrade admission only under the explicit flag,
+the workspace contract (the production default, every reserve directory
+outside `downloads/` refused, every unready kind and its status named by
+the probe — missing namespace, unmounted, missing pool, missing directory,
+tmpfs, rootfs and STATE devices, symlinked namespace and directory, foreign
+mount, read-only bind/superblock/pool, spent budget, insufficient free
+space, unreadable mount table — an unready workspace refusing `fetch` and
+`import` before any request, an interrupted download leaving only its
+`.part` and never anything in `verified/`, and `installable` admitting only
+a verified regular file), resumable download (fresh, resumed with a real
+range request, idempotent re-fetch), the byte budget (too-small budget,
+budget already spent), digest refusal with partial deletion (corrupted
+partial, tampered bundle), metadata sync including the per-file cap, the
+lockbox round trip (full lockbox verifies whole; partial lockbox imports its
+selected target through `staging/`; tampered lockbox refused), and the
+binary's exit-code contract (`probe`/`fetch` exit 3 with the verdict line).
 
 The device-side verifier is tested against the same in-repo fixture the signer
 tests use (`pkgs/rauc-sign/tests/`): the honest publish sequence verifies, and

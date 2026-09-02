@@ -470,7 +470,10 @@ decide (e.g. a failed unit the operator has judged acceptable).
 drive the device-side client `rauc-update` as bounded subprocesses and record
 an explicit state machine under live-state `update.lifecycle` (idle,
 checking, downloading, ready, installing, reboot-required, validating,
-succeeded, rolled-back, failed, each with a reason). Policy — maintenance
+succeeded, rolled-back, update-unavailable, failed, each with a reason;
+`update-unavailable` is the `/mos/updates` workspace's readiness verdict,
+probed before every check and fetch, and `InstallUpdate` admits only a
+verified bundle inside `/mos/updates/verified`). Policy — maintenance
 windows, metered/offline mode, auto-check cadence — lives in a fail-closed
 `update-policy.toml` on STATE, and `Reboot` is now interlocked by an
 application-aware safe-to-reboot gate with a bounded, audited
