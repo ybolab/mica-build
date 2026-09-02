@@ -87,3 +87,42 @@ registers on a bench board, and the NVMe/SATA path reports `unsupported` with
 no device to validate against. That validation is hardware-dependent; it is
 escalated by the coordinating workstream and remains open. This record does
 not claim it.
+
+## Completion addendum (2026-09-02): reworked onto the PLAN-063 layout
+
+The record above was written against the layout that mounted DATA at `/srv`.
+PLAN-063 / RFCT-292 replaced it while this work was in flight, and the
+storage surface was reworked onto it rather than left describing a layout the
+image no longer has. What changed, and what that means for the acceptance
+bullets:
+
+- **The DATA tier now reports `/mnt/data`**, and `/mos` and `/srv` are
+  reported as its two bind namespaces under a `namespaces` member, each with
+  its source path, mount state and whether the mount resolves to the DATA
+  partition. Because they are one filesystem, they carry **no capacity of
+  their own**: the bytes are reported once on the `data` tier, the shared pool
+  is named in the body, and a test asserts no bind ever grows a `space` field.
+  That is PLAN-063's own risk 3 ("`/mos` and `/srv` share one filesystem and
+  capacity pool") answered in the shape rather than in prose.
+- **Readiness is PLAN-061's contract, and RFCT-285 no longer re-implements
+  it.** `mos-data-layout` is the fail-closed initializer and `mos.mount` /
+  `srv.mount` are the ordering, so what this task adds is the *report*:
+  mounted, source-resolves-to-DATA, source-is-a-real-directory (not a symlink
+  substitution), read-only state, free space, and the create/fsync/remove/fsync
+  probe under `/mos/updates/staging`. Not mounted, and mounted-from-something-
+  that-is-not-DATA, are both `unavailable` rather than `degraded`, which is the
+  PLAN-061 no-fallback rule stated where a caller can read it.
+- **The reserved update workspace re-targets to `/mos/updates`** (PLAN-061's
+  `downloads`/`verified`/`staging` taxonomy, which PLAN-063 keeps). The
+  admission check in `request_install` tests that path rather than "is the
+  bundle on the DATA filesystem" — under the new layout that weaker question
+  would be true of a file in the operator's home directory. Thresholds and
+  hysteresis apply to the DATA filesystem as one pool, plus STATE, unchanged.
+- **The probe is the only write in the module**, it happens in the
+  system-owned namespace only, and it is removed whether or not it succeeded.
+  `/srv` is never probed: `mos-data-layout`'s ownership table gives mosd no
+  subtree of the user namespace, so the probe reports `notAttempted` with that
+  reason and never a pass.
+
+Escalations are unchanged: per-board physical-media validation on real
+eMMC/NVMe bench hardware is still NOT done and still escalated.

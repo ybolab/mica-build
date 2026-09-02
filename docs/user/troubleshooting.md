@@ -9,7 +9,7 @@ surfaces that do not exist yet.
 
 In order of preference:
 
-1. **The API and built-in UI** — HTTPS to the device, `/ui`. Live network
+1. **The API and built-in UI** — HTTPS to the device, `/_ui/`. Live network
    observation (carrier, addresses, DNS, routes per interface) is part of the
    API surface, which makes "the device thinks its network is X" readable
    without a shell.

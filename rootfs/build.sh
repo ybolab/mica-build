@@ -327,13 +327,13 @@ render() {
     fi
 }
 
-# Storage tiers. /srv (DATA, partition 10) is the only filesystem that grows;
+# Storage tiers. /mnt/data (DATA) is the only filesystem that grows;
 # /var (EPHEMERAL) is fixed-size disposable residue and must NOT carry
 # x-systemd.growfs.
 
 # The DATA constants are required, not optional. A fallback for a missing one
 # would not fail: it would quietly emit a nine-partition rootfs with /var
-# growing and no /srv, and every downstream check would pass. All four are
+# growing and no DATA mount, and every downstream check would pass. All four are
 # demanded even though only DATA_GUID is read here, because the assembler needs
 # the other three, and a rootfs built against half a layout is the kind of
 # artifact that reaches hardware before anyone notices.
@@ -344,13 +344,13 @@ for key in DATA_GUID DATA_PARTNUM DATA_FS_UUID MOS_VAR_MIB; do
 done
 if [ -n "$missing" ]; then
     echo "error: $LAYOUT_ENV is missing:$missing" >&2
-    echo "The DATA partition (/srv) and the fixed /var size are part of the A/B layout;" >&2
+    echo "The DATA partition (/mnt/data) and the fixed /var size are part of the A/B layout;" >&2
     echo "a rootfs built without them would silently ship the superseded" >&2
     echo "nine-partition arrangement. Restore the constants in $LAYOUT_ENV." >&2
     exit 1
 fi
 
-SRV_LINE="PARTUUID=$(lower "$DATA_GUID")	/srv	ext4	noatime,x-systemd.growfs	0	2"
+DATA_LINE="PARTUUID=$(lower "$DATA_GUID")	/mnt/data	ext4	noatime,x-systemd.growfs	0	2"
 VAR_OPTS="noatime"
 
 # The repart definition count must equal the number of linux-generic partitions
@@ -377,7 +377,7 @@ if [ "$grow_defs" -ne 1 ]; then
     echo "error: $grow_defs repart definitions carry Weight=1000, expected exactly 1" >&2
     exit 1
 fi
-echo "layout: DATA present -> /srv grows, /var fixed"
+echo "layout: DATA present -> /mnt/data grows, /var fixed"
 echo "layout: $have_defs repart definitions, 1 of them growing"
 
 if [ -f "$OVERLAY_STAGE/etc/systemd/system/boot.mount.in" ]; then
@@ -391,7 +391,7 @@ render "$OVERLAY_STAGE/etc/fstab.in" "$OVERLAY_STAGE/etc/fstab" \
     STATE_GUID "$(lower "$STATE_GUID")" \
     META_GUID "$(lower "$META_GUID")" \
     VAR_OPTS "$VAR_OPTS" \
-    SRV_LINE "$SRV_LINE"
+    DATA_LINE "$DATA_LINE"
 
 # fw_env.config is U-Boot's environment configuration and it is NOT rendered on
 # x64: there is no U-Boot there, and the file names two partitions the QEMU

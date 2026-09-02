@@ -24,7 +24,7 @@ mos 的配置是一棵单一的类型化设置树，由管理守护进程（`mos
 
 ## 2. 存在的那个通道：API 与内置 UI
 
-所有配置读写都通过 HTTPS 到达 apid——经由 `/ui` 的内置 UI，或 `/api/v1`
+所有配置读写都通过 HTTPS 到达 apid——经由 `/_ui/` 的内置 UI，或 `/api/v1`
 下的 JSON API（契约：`pkgs/mosd/apid/openapi.json`，见 [api.md](api.md)）。
 apid 自身不持有状态；它通过本地系统总线转发给 mosd，写入在那里对照类型化
 schema 校验。被拒绝的写入不会触碰设置树，而一次设置写入会返回一个任务，

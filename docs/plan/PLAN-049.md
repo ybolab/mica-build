@@ -98,3 +98,23 @@ Delivered as RFCT-285. Design record: docs/design/storage.md.
 **Not done, and escalated**: per-board physical-media validation on real
 eMMC/NVMe bench hardware. The wear path is covered by fixture-tree tests
 only, which is a test of the parser and the assembly, not of a device.
+
+## Completion addendum (2026-09-02): reworked onto the PLAN-063 layout
+
+Delivered against the layout PLAN-063 / RFCT-292 established while this work
+was in flight, not the one that mounted DATA at `/srv`.
+
+- DATA reports at `/mnt/data`; `/mos` and `/srv` are reported as bind
+  namespaces of it, with **one shared capacity pool reported once** on the
+  `data` tier. This is PLAN-063 risk 3 discharged in the status shape, and
+  PLAN-063's note that "quota and reservation work remains owned by PLAN-049"
+  is what this plan answers.
+- Readiness for `/mos` follows PLAN-061's contract verbatim — mount, source
+  resolves to DATA, no symlink substitution, read-only state, free space, and
+  a create/fsync/remove/fsync probe in the owned subtree. **RFCT-285 does not
+  re-implement the layout**: `mos-data-layout` initializes it fail-closed and
+  the two mount units order it; this plan reports on it and names the
+  no-fallback states (`unavailable`) that PLAN-061 requires.
+- The reservation targets `/mos/updates`, PLAN-061's artifact taxonomy.
+- Still not done and still escalated: per-board physical-media validation on
+  real eMMC/NVMe bench hardware.

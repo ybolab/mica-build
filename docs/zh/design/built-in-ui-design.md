@@ -1,7 +1,7 @@
 # mos 内置 UI 设计指南
 
-> 文档版本：1.0
-> 基线日期：2026-09-01
+> 文档版本：1.1
+> 基线日期：2026-09-02
 > 读者：产品设计师、UI/UX 设计师、交互原型设计师、产品负责人
 > 交付形式：单一 Markdown 设计源
 > 范围：远程浏览器中的设备管理界面，以及未来复用同一界面的本地触屏/kiosk
@@ -97,7 +97,7 @@ Applications 管理。
 | Services | Container runtime、MQTT 全局开关与观测 | L |
 | Applications | 清单、精选目录、安装/更新/回滚/移除 | P |
 | Access | API token、SSH key/开关、临时 root 密码 | L |
-| System | hostname、内置/自定义 UI、重启、关机 | L |
+| System | hostname、UI ZIP 上传/多版本选择、内置恢复、重启、关机 | L |
 | System | 版本/板卡/slot/软件清单 | P |
 | System | timezone、NTP 与同步状态 | P |
 | System | 签名系统更新、维护窗口、验证与回滚 | P |
@@ -468,7 +468,12 @@ Access 按从日常到高权限排列，并持续说明每种凭据能做什么�
 ### 12.1 General `[L]`
 
 - Hostname：Saved、Applying、Applied/Failed；
-- UI selection：built-in 与已保留且验证通过的 custom UI，始终显示恢复入口；当前没有上传就不画上传；
+- UI selection：首页显示 built-in/custom 摘要并始终显示 `/_ui/` 恢复入口；“管理 UI 版本”进入专页；
+- UI versions：上传一个 `.mos-ui.zip`、观察传输与验证阶段、查看全部保留版本、精确 Activate、Return to
+  built-in、删除 inactive 版本；上传成功不自动激活，活动版本不能删除，系统不自动淘汰旧版本；
+- 版本行至少表现产品名、版本、generation、兼容/验证结论和 active 状态。拒绝原因区分格式错误、重复包、
+  同名版本冲突、不兼容、版本上限、空间不足和网络中断；可恢复错误后保留已选择文件；
+- 自定义 UI 与设备管理 API 同源运行，上传区域必须解释其管理员权限影响，并要求只安装可信包；
 - Power：Reboot、Power off 使用专用确认，显示 hostname、活动任务、会话将断开和重新上电要求。
 
 ### 12.2 Information `[P]`

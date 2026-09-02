@@ -7,10 +7,30 @@
 
 ## 1. The layout is fixed, and this document does not change that
 
-`boards/*/board.env` is the single source of truth for the partition table:
+Two things own the layout and this document owns neither.
+
+**`boards/*/board.env`** is the single source of truth for the partition table:
 sizes, GUIDs, type codes, GPT names and roles. The image assembler writes that
 table, `systemd-repart` grows DATA once on first boot, and nothing afterwards
-edits it. This capability adds **observation and policy**, not layout control:
+edits it.
+
+**PLAN-063 / RFCT-292** own where those partitions surface.
+`rootfs/overlay/etc/fstab.in` mounts the DATA PARTUUID at **`/mnt/data`** (the
+only `x-systemd.growfs` row), and
+`rootfs/overlay/etc/systemd/system/{mos,srv}.mount` bind `/mnt/data/mos` at
+**`/mos`** (system-owned) and `/mnt/data/srv` at **`/srv`** (user-owned), both
+ordered before `local-fs.target` and both requiring `mos-data-layout.service`,
+the fail-closed initializer at `rootfs/overlay/usr/lib/mos/mos-data-layout`.
+There are no compatibility symlinks, no `/srv/.mos` and no migration;
+PLAN-061/RFCT-291 are the superseded historical record, read here only for the
+readiness contract they still define. `docs/design/ro-root.md` section 4
+carries the tier table this sits on, and `docs/design/access.md` section 9.2
+the reflash it names.
+
+Paths are named here, never re-derived. If this document and `fstab.in`
+disagree, `fstab.in` is right and this document is the bug.
+
+This capability adds **observation and policy**, not layout control:
 
 - **No generic partition editor.** No format, repartition, resize, mount,
   unmount or erase route exists on the management API, and
@@ -21,14 +41,17 @@ edits it. This capability adds **observation and policy**, not layout control:
   would guess.
 - **No LVM, RAID or pooling.** Out of scope until a SKU needs them, per
   PLAN-049.
-- **`mosd` writes nothing here.** `storage_status.rs` reads sysfs,
-  `/proc/self/mountinfo`, `df` and systemd's recorded unit results. It has no
-  write path at all.
+- **`mosd` writes one thing here, and it is a readiness probe.**
+  `storage_status.rs` reads sysfs, `/proc/self/mountinfo`, `df` and systemd's
+  recorded unit results; the single write is section 3's probe file, in the
+  system-owned namespace only, removed whether or not it succeeded.
 
 `pkgs/mosd/mosd/src/storage_status.rs` carries a `TIERS` table that mirrors
-board.env's `<TIER>_LABEL` and `<TIER>_ROLE` values, with a comment saying so.
-It exists only because mosd runs on a device where the env file is not
-present; board.env stays the source, and the table is a transcription of it.
+board.env's `<TIER>_LABEL` and `<TIER>_ROLE` values, and a `BINDS` table that
+mirrors the two PLAN-063 mount units, each with a comment saying so. They exist
+only because mosd runs on a device where neither source file is present;
+board.env and the mount units stay the sources, and both tables are
+transcriptions of them.
 
 ## 2. What StorageStatus reports
 
@@ -50,10 +73,10 @@ missing or the surface is broken.
 | `role`, `partitionLabel`, `expectedMount` | the `TIERS` table (board.env) |
 | `device` | `/dev/disk/by-partlabel/<label>`, resolved |
 | `partitionBytes` | `/sys/block/<disk>/<part>/size` × 512 |
-| `mounted`, `mount`, `filesystem`, `readOnly` | `/proc/self/mountinfo` |
+| `mounted`, `mount`, `filesystem`, `readOnly` | `/proc/self/mountinfo`, matched on the tier's OWN mountpoint |
 | `space` (`totalBytes`, `usedBytes`, `freeBytes`, `reservedBytes`, `usedPercent`) | `df -P -B1 <mount>` |
-| `pressure` | the threshold band in §4, DATA and STATE only |
-| `updateWorkspace` | the reservation in §5, DATA only |
+| `pressure` | the threshold band in section 5, DATA and STATE only |
+| `updateWorkspace` | the reservation in section 6, DATA only |
 | `check` | the `systemd-fsck@….service` unit systemd recorded |
 
 Two consequences of that table are worth stating out loud:
@@ -67,6 +90,12 @@ Two consequences of that table are worth stating out loud:
   resolves that to the single backing partition through
   `/sys/block/dm-N/slaves`. Without that step the slot actually holding the
   running system would report unmounted, which is both false and alarming.
+- **The DATA tier reports `/mnt/data`, not `/mos` or `/srv`.** Under PLAN-063
+  the DATA partition appears three times in the mount table — once at
+  `/mnt/data` and once per bind — so the tier lookup matches on the tier's own
+  declared mountpoint and only falls back to a device match for the A/B rootfs
+  slots, which declare none. Matching on the device alone would report
+  whichever mount the kernel listed first as "the DATA tier's mount".
 - **`reservedBytes` is the filesystem's own reserved-blocks pool**
   (`total - used - free`), which only root can write into. It is a separate
   number from `freeBytes` because conflating them reports free space no
@@ -89,7 +118,81 @@ nothing else, so neither does this surface. A tier with no fsck unit reports
 evidence the system actually records, and inventing a green result for a
 filesystem nobody has checked is exactly the fabrication PLAN-049 warns about.
 
-## 3. Media health: normalized where the device answers, `unsupported` where it does not
+## 3. `/mos` and `/srv`: two namespaces, one filesystem
+
+PLAN-063 binds two namespaces out of the single DATA filesystem. They are
+reported under `namespaces`, and they are deliberately **not** a second tier
+list:
+
+- **`/mos`** — system-owned, bound from `/mnt/data/mos`. Holds `ui/`,
+  `updates/{downloads,verified,staging}`, `apps/`, `containers/`, `home/` and
+  `root/`, each created by `mos-data-layout` with an explicit mode.
+- **`/srv`** — user-owned, bound from `/mnt/data/srv`. The product gives this
+  namespace to the operator.
+
+**One capacity pool, reported once.** Both binds are views of the same
+filesystem, so every byte belongs to the `data` tier and neither bind carries a
+`space` object. The status body says so in a `sharedCapacityTier` member and a
+sentence, and a test asserts no bind ever grows a capacity field — because the
+failure this prevents is a reader adding `/mnt/data`, `/mos` and `/srv`
+together and reporting three times the disk. PLAN-063's own risk list names
+this: "`/mos` and `/srv` share one filesystem and capacity pool even though
+their namespaces are separate."
+
+### Readiness, per the PLAN-061 contract
+
+PLAN-061 states that readiness "is more than `access(W_OK)`", and that contract
+survives PLAN-063 unchanged. Each bind reports:
+
+| Member | What it answers |
+|---|---|
+| `mounted` | is anything mounted at `/mos` / `/srv` at all |
+| `device` + `sourceOnData` | does the mount resolve to the **DATA partition** |
+| `sourceIsDirectory` | is the source under `/mnt/data` a real directory, not a symlink |
+| `readOnly` | filesystem read-only state |
+| `probe` | the write probe, below |
+| `readiness` | `ready` / `degraded` / `unavailable` / `unknown` |
+
+The verdict's order is meaning, and two states are deliberately **not**
+softened to `degraded`:
+
+- **Not mounted** is `unavailable`. Nothing is mounted there, so nothing may
+  be written there.
+- **Mounted from something that is not the DATA partition, or a source that is
+  not a real directory,** is `unavailable`. PLAN-061 refuses symlink
+  substitution by name and `mos-data-layout` dies on a symlink at those paths;
+  calling a substituted namespace "degraded" would invite exactly the fallback
+  the contract forbids. **No daemon falls back to another filesystem** — that
+  is the whole point of naming this state.
+- Read-only, a failed probe, or a `critical` DATA pool are `degraded`: the
+  namespace is the right one, it just cannot be written now.
+- No DATA tier to compare against is `unknown`, never `ready`. Claiming
+  readiness would rest on a comparison nobody made.
+
+### The write probe
+
+`/mos` gets PLAN-061's probe in full: create a private `0600` file under
+`/mos/updates/staging` with `O_EXCL`, fsync it, remove it, fsync the directory.
+The whole sequence, not just the create — a create that never reached the
+medium proves nothing about a filesystem that will be asked to hold an update
+bundle across a reboot. It is removed whether or not it succeeded, so a
+readiness check never leaks onto the filesystem it is vouching for, and a test
+asserts the directory is empty afterwards.
+
+Two cases produce no probe, and each says why rather than passing silently:
+
+- **`/srv` is never probed.** It is the user-owned namespace; mosd writing a
+  private file into it would put a daemon's litter in the space the product
+  gives to the operator. `mos-data-layout`'s ownership table gives mosd no
+  subtree of `/srv` to own, so the probe is `notAttempted` with that reason.
+- **`/mos/updates/staging` absent** means `mos-data-layout` has not run. Also
+  `notAttempted`, with that reason.
+
+`notAttempted` never serializes a `passed` member at all. That is this
+document's absence rule at the one place where getting it wrong would tell an
+operator their update storage is fine when nobody has checked.
+
+## 4. Media health: normalized where the device answers, `unsupported` where it does not
 
 PLAN-049 risk #1 is that normalized health fabricates precision. Two rules
 follow, and they are enforced by the shape of the JSON rather than by
@@ -119,9 +222,12 @@ whose wear nobody can see must not look healthy. Shipping a reader is a
 separate decision with its own image-size and attack-surface cost; when it is
 taken, this field is where it becomes visible.
 
-## 4. Low-space policy: thresholds with hysteresis
+## 5. Low-space policy: thresholds with hysteresis
 
-Two watched tiers, DATA and STATE — the two precious writable tiers. Four
+Two watched tiers, DATA and STATE — the two precious writable tiers. Watching
+the DATA *tier* is what covers `/mos` and `/srv` both: they are one filesystem,
+so one threshold pair governs the pool, and a second set per namespace would be
+two policies over the same blocks. Four
 constants in `storage_status.rs`, base policy rather than user settings,
 because a device whose operator can raise its own critical threshold to 99%
 has no low-space policy at all:
@@ -146,25 +252,38 @@ as `ok` or `degraded`, never fatally, because `/var` is disposable. Adding a
 second threshold for the same filesystem would put two numbers in the product
 that disagree about the same question.
 
-## 5. The reserved update workspace, and why it is not a quota
+## 6. The reserved update workspace, and why it is not a quota
 
-`UPDATE_WORKSPACE_RESERVED_BYTES` is **256 MiB** of DATA held for update work.
+`UPDATE_WORKSPACE_RESERVED_BYTES` is **256 MiB** of the DATA filesystem — the
+one pool `/mos` and `/srv` share — held for update work.
 It is sized against `BOARD_SIZE_BUDGET_MB` in board.env (400 on cx3576, 520 on
 x64, for an image carrying one compressed rootfs slot), rounded up to the next
 power of two.
 
+**Where the artifacts live.** PLAN-061's taxonomy, which PLAN-063 keeps, puts
+them under `/mos/updates`: `downloads/` for resumable partial acquisition,
+`verified/` for complete authenticated artifacts awaiting RAUC, `staging/` for
+bounded transaction-local work. `mos-data-layout` creates all three.
+
 **Where it is enforced.** mos consumes DATA space for exactly one update
-purpose: the bundle staged on `/srv` that `InstallUpdate` then names. That call
-is therefore the seam, and `MosdService::request_install` refuses there —
+purpose: the bundle under `/mos/updates` that `InstallUpdate` then names. That
+call is therefore the seam, and `MosdService::request_install` refuses there —
 before the in-flight flag is taken, before anything is recorded, before RAUC is
 touched — when the workspace is gone. Refusing early is cheaper than failing
 halfway through writing a slot.
 
-**A bundle already staged under the DATA mount counts back towards the
-floor.** That is not a loophole; it is the reservation being used for the
-purpose it exists for. Without it the reservation would refuse every update it
-was created to make possible, because the bundle occupying the workspace would
-look like the workspace being gone.
+**The test is the path `/mos/updates`, not "is the bundle on DATA".** Under
+PLAN-063 the whole of `/mos`, `/srv` and `/home` is one filesystem, so "on
+DATA" would be true of an image an operator dropped in their home directory,
+and those bytes are not the update workspace. A test drives `/srv/...`,
+`/home/mos/...` and `/mos/ui/...` specifically, so this check cannot decay back
+into the weaker question.
+
+**A bundle already under `/mos/updates` counts back towards the floor.** That
+is not a loophole; it is the reservation being used for the purpose it exists
+for. Without it the reservation would refuse every update it was created to
+make possible, because the bundle occupying the workspace would look like the
+workspace being gone.
 
 **Absent evidence never refuses.** A daemon whose storage observer sees
 nothing — a dry-run daemon, a container, a board whose DATA tier could not be
@@ -182,7 +301,7 @@ a status surface that says how much of the reservation is intact
 (`tiers[data].updateWorkspace.available`), which is the P0 half of PLAN-049's
 "reservation and alerting are P0 even if quotas are phased".
 
-## 6. Lifecycle decisions: all explicit, all currently unsupported
+## 7. Lifecycle decisions: all explicit, all currently unsupported
 
 PLAN-049 requires each of these to be *explicitly* supported or *explicitly*
 unsupported — "Unselected features remain unsupported". Every current answer
@@ -207,7 +326,7 @@ contract; `every_lifecycle_decision_is_explicit_and_currently_unsupported` in
 still `unsupported`, so adding a storage capability without deciding its
 lifecycle answer fails the build.
 
-## 7. Testability
+## 8. Testability
 
 `storage_status.rs` follows `network_state.rs` and `time_status.rs`: a
 `StorageStatusSource` trait whose default (`UnavailableStorageStatus`) inspects
@@ -222,13 +341,18 @@ otherwise hide. `HostStorage::at(root)` has **no** space reader by default, so
 a fixture tree cannot make a test shell out to `df` against the machine
 running it.
 
+`classify_readiness` is likewise pure over literal evidence, and the fixture
+tree covers both the initialized layout (DATA at `/mnt/data` with both binds on
+top, the probe passing and cleaning up) and the uninitialized one (no bind
+sources, no probe subtree, both namespaces `unavailable`).
+
 Everything else is a pure function over literal evidence: the mountinfo parse
 (with the kernel's octal escapes), the `df` parse, the systemd unit-name
 unescape (`\x2d` before `-`, or a partuuid path decodes to a device that does
 not exist), the JEDEC register decode, the hysteresis band, the install
 admission check and the JSON rendering.
 
-## 8. What this does not cover
+## 9. What this does not cover
 
 - Per-application or per-container quotas (§5).
 - Any of the lifecycle operations in §6.

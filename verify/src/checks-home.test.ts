@@ -33,6 +33,7 @@ const x64 = loadBoard(boardEnvPath('x64'))
 
 const HOME_MOUNT = '/etc/systemd/system/home.mount'
 const ROOT_MOUNT = '/etc/systemd/system/root.mount'
+const SRV_MOUNT = '/etc/systemd/system/srv.mount'
 const SEED_HOME_UNIT = '/etc/systemd/system/mos-seed-home.service'
 const SEED_ROOT_UNIT = '/etc/systemd/system/mos-seed-root.service'
 const SEED_HOME = '/usr/lib/mos/mos-seed-home'
@@ -82,7 +83,7 @@ function write(root: string, path: string, text: string): void {
 
 describe('the healthy image', () => {
   test('every check concludes on both boards, and only the Bluetooth bind splits them', async () => {
-    // Fourteen conclusions on each shipped board. The Bluetooth STATE bind is
+    // Fifteen conclusions on each shipped board. The Bluetooth STATE bind is
     // the only board-conditional member: cx3576 asserts the pair, x64 SKIPS it,
     // and the two entries are scoped to complements of one derived predicate.
     for (const board of [cx3576, x64]) {
@@ -118,11 +119,11 @@ describe('the healthy image', () => {
 
   test('the DATA mountpoint is READ from the fstab row, not spelled here', () => {
     // Both boards, from their own definitions. A check comparing against the
-    // literal `/srv` would pass an image whose fstab had moved DATA.
+    // literal `/mnt/data` would pass an image whose fstab had moved DATA.
     for (const board of [cx3576, x64]) {
       const fx = packedRootFixture(board)
       try {
-        expect(dataMountpoint(fx.root, board)).toBe('/srv')
+        expect(dataMountpoint(fx.root, board)).toBe('/mnt/data')
       }
       finally {
         fx.dispose()
@@ -131,7 +132,68 @@ describe('the healthy image', () => {
   })
 })
 
+describe('/srv is a distinct user namespace on DATA', () => {
+  test('the healthy bind is accepted', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('pass')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a source outside DATA is refused', async () => {
+    const fx = await mutated('srv-mount-on-data', root =>
+      rewrite(root, SRV_MOUNT, t => t.replace('What=/mnt/data/srv', 'What=/mnt/state/srv')))
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'srv-mount-on-data')).toContain('not a distinct subtree under /mnt/data')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('an unenabled bind is refused', async () => {
+    const fx = await mutated('srv-mount-on-data', root =>
+      rmSync(join(root, WANTS, 'srv.mount')))
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'srv-mount-on-data')).toContain('exists but is not enabled')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a mount with the right paths but without bind semantics is refused', async () => {
+    const fx = await mutated('srv-mount-on-data', root =>
+      rewrite(root, SRV_MOUNT, t => t.replace('Options=bind', 'Options=defaults')))
+    try {
+      expect(await verdictOf(fx, 'srv-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'srv-mount-on-data')).toContain("Options='defaults', not 'bind'")
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
 describe('/home is bound from DATA', () => {
+  test('the public /mos hop must itself be a bind', async () => {
+    const fx = await mutated('home-mount-on-data', root =>
+      rewrite(root, '/etc/systemd/system/mos.mount', t =>
+        t.replace('Options=bind', 'Options=defaults')))
+    try {
+      expect(await verdictOf(fx, 'home-mount-on-data')).toBe('fail')
+      expect(await messageOf(fx, 'home-mount-on-data')).toContain('enabled /mos bind')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
   test('the unit absent fails, and the message says nothing survives a reboot', async () => {
     const fx = await mutated('home-mount-on-data', root => rmSync(join(root, HOME_MOUNT)))
     try {
@@ -160,11 +222,11 @@ describe('/home is bound from DATA', () => {
     // is wrong is the partition: 64 MiB of precious identity under a directory
     // of unbounded size.
     const fx = await mutated('home-mount-on-data',
-      root => rewrite(root, HOME_MOUNT, t => t.replace('What=/srv/home', 'What=/mnt/state/home')))
+      root => rewrite(root, HOME_MOUNT, t => t.replace('What=/mos/home', 'What=/mnt/state/home')))
     try {
       expect(await verdictOf(fx, 'home-mount-on-data')).toBe('fail')
       const message = await messageOf(fx, 'home-mount-on-data')
-      expect(message).toContain("binds /home from '/mnt/state/home', which is not under /srv")
+      expect(message).toContain("binds /home from '/mnt/state/home', which does not resolve through the enabled /mos bind under /mnt/data")
       expect(message).toContain('DATA is also the only partition repart grows')
     }
     finally {
@@ -287,7 +349,7 @@ describe('what the /home seed writes, read statically', () => {
 
   test('a seed that creates nothing fails, naming the read-only view of /home', async () => {
     const fx = await mutated('mos-seed-home-writes-data',
-      root => rewrite(root, SEED_HOME, t => t.replace('mkdir /srv/home/mos\n', '')))
+      root => rewrite(root, SEED_HOME, t => t.replace('mkdir /mos/home/mos\n', '')))
     try {
       expect(await messageOf(fx, 'mos-seed-home-writes-data'))
         .toContain('/home in the unbound view is inside the read-only verity squashfs')
@@ -314,7 +376,7 @@ describe('what the /home seed writes, read statically', () => {
     // directory outlives the rootfs, so the pair has to be the pinned numbers.
     const fx = await mutated('mos-seed-home-writes-data',
       root => rewrite(root, SEED_HOME, t =>
-        t.replace('chown "${MOS_UID}:${MOS_GID}" /srv/home/mos', 'chown mos:mos /srv/home/mos')))
+        t.replace('chown "${MOS_UID}:${MOS_GID}" /mos/home/mos', 'chown mos:mos /mos/home/mos')))
     try {
       expect(await messageOf(fx, 'mos-seed-home-writes-data'))
         .toContain('resolving the name at runtime would make the owner whatever the running image says today')
@@ -517,10 +579,10 @@ describe('/root, its mode, and its seed', () => {
 
   test('root.mount on STATE fails on the tier, as /home\'s twin does', async () => {
     const fx = await mutated('root-mount-on-data',
-      root => rewrite(root, ROOT_MOUNT, t => t.replace('What=/srv/root', 'What=/mnt/state/root')))
+      root => rewrite(root, ROOT_MOUNT, t => t.replace('What=/mos/root', 'What=/mnt/state/root')))
     try {
       expect(await messageOf(fx, 'root-mount-on-data'))
-        .toContain("binds /root from '/mnt/state/root', which is not under /srv")
+        .toContain("binds /root from '/mnt/state/root', which does not resolve through the enabled /mos bind under /mnt/data")
     }
     finally {
       fx.dispose()
@@ -603,7 +665,7 @@ describe('what the /root seed writes', () => {
 
   test('a chown by NAME fails: the owner is part of the on-disk contract', async () => {
     const fx = await mutated('mos-seed-root-writes-data',
-      root => rewrite(root, SEED_ROOT, t => t.replace('chown 0:0 /srv/root', 'chown root:root /srv/root')))
+      root => rewrite(root, SEED_ROOT, t => t.replace('chown 0:0 /mos/root', 'chown root:root /mos/root')))
     try {
       expect(await messageOf(fx, 'mos-seed-root-writes-data'))
         .toContain('must not be resolved out of the running image\'s /etc/passwd')
@@ -615,10 +677,10 @@ describe('what the /root seed writes', () => {
 
   test('a seed that creates nothing fails', async () => {
     const fx = await mutated('mos-seed-root-writes-data',
-      root => rewrite(root, SEED_ROOT, t => t.replace('mkdir /srv/root\n', '')))
+      root => rewrite(root, SEED_ROOT, t => t.replace('mkdir /mos/root\n', '')))
     try {
       expect(await messageOf(fx, 'mos-seed-root-writes-data'))
-        .toContain('mos-seed-root does not create /srv/root.')
+        .toContain('mos-seed-root does not create /mos/root.')
     }
     finally {
       fx.dispose()

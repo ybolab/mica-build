@@ -18,15 +18,15 @@ Description=Persistent root home directory from the DATA partition
 # grants nothing, because AuthorizedKeysFile REPLACES the default locations
 # rather than adding to them.
 #
-# The bind source is created by mos-seed-root, which must run BEFORE this unit:
+# The bind source is created by mos-seed-root under /mos, which must run BEFORE this unit:
 # mount(8) does not create the source of a bind, and /root cannot be populated
 # after the fact because the root filesystem is a read-only verity squashfs.
 Requires=mos-seed-root.service
 After=mos-seed-root.service
-RequiresMountsFor=/srv
+RequiresMountsFor=/mos
 
 [Mount]
-What=/srv/root
+What=/mos/root
 Where=/root
 Type=none
 Options=bind

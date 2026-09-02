@@ -63,7 +63,7 @@ bash pkgs/mosd/tests/apid-api/run.sh             # boot and run the API suite
 
 设备在首次启动时无需任何网络输入即可完成自我配置：铸造自己的身份，把自己
 命名为 `mos-` 加设备 id 的前八个十六进制字符，并在有线接口上启用 DHCP。
-管理面是走 HTTPS 的 apid；内置 UI 在 `/ui`，第一次访问会进入初始设置——
+管理面是走 HTTPS 的 apid；内置 UI 在 `/_ui/`，第一次访问会进入初始设置——
 创建管理员凭据。SSH 默认关闭。
 
 完整的首次启动过程见 [first-run.md](first-run.md)，之后可以配置什么见
