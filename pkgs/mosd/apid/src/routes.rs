@@ -7,7 +7,12 @@
 
 use std::net::IpAddr;
 use std::os::unix::fs::PermissionsExt;
+// `PathBuf` and not `Path`: axum's own `Path` extractor is imported below, and
+// the filesystem type of that name would shadow it.
+use std::path::PathBuf;
 use std::sync::Arc;
+
+use anyhow::Context as _;
 
 use axum::body::Body;
 use axum::extract::{FromRequestParts, OriginalUri, Path, Request, State};
@@ -27,13 +32,14 @@ use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use futures_util::StreamExt;
 use mosd_settings::{
-    ApiToken, AuthorizedKey, IfaceKind, IfaceSettings, SettingsError, WifiNetwork, WireguardPeer,
+    ApiToken, AuthorizedKey, ClaimChannel, ClaimSettings, IfaceKind, IfaceSettings,
+    MIN_ADMIN_PASSWORD_LEN, ResetTier, SettingsError, WifiNetwork, WireguardPeer,
     parse_authorized_key, quote_path_segment, validate_api_tokens, validate_authorized_keys,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::access_cache::AccessCache;
+use crate::access_cache::{ACCESS_PATH, AccessCache};
 use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
@@ -72,6 +78,10 @@ pub struct AppState {
     /// one runs is refused (409) rather than queued, because each one reads
     /// every mosd surface and the second would only repeat the first.
     collecting: Arc<tokio::sync::Mutex<()>>,
+    /// The ONE physical-presence seam (`docs/design/recovery.md` §4), keyed by
+    /// the [`PRESENCE_CAPABILITY`] board capability. Every presence-gated
+    /// operation asks this and nothing else.
+    presence: Arc<dyn Presence>,
 }
 
 impl AppState {
@@ -97,6 +107,10 @@ impl AppState {
             task_registry: Arc::new(TaskRegistry::new()),
             diagnostics: Arc::new(SnapshotStore::at_default()),
             collecting: Arc::new(tokio::sync::Mutex::new(())),
+            // A path and no syscall, like the bundle and snapshot stores: the
+            // marker is read when something asks for presence and never at
+            // construction.
+            presence: Arc::new(ConsolePresence::at_default()),
         }
     }
 
@@ -198,6 +212,19 @@ impl AppState {
     #[cfg(test)]
     pub fn with_diagnostics_root(mut self, root: impl Into<std::path::PathBuf>) -> Self {
         self.diagnostics = Arc::new(SnapshotStore::new(root));
+        self
+    }
+
+    /// Drive the presence seam from a test.
+    ///
+    /// Test-only, and it is the reason the seam is a trait: a presence
+    /// assertion is an action at the DEVICE (`docs/design/recovery.md` §4.2),
+    /// so nothing a test can do to a shipped build establishes one, and
+    /// nothing a shipped build offers can either — which is the property the
+    /// gate is for.
+    #[cfg(test)]
+    pub fn with_presence(mut self, presence: Arc<dyn Presence>) -> Self {
+        self.presence = presence;
         self
     }
 }
@@ -384,9 +411,52 @@ const V1_DIAGNOSTICS_SNAPSHOT_ROUTE: &str = "/v1/diagnostics/snapshots/{id}";
 /// the first-run operation, so it is named for that and nothing else.
 const V1_SETUP_PATH: &str = "/v1/setup";
 
+/// The read-only provisioning-document status (PLAN-046 / RFCT-282).
+///
+/// A fixed path on the time status's reasoning, and the whole of this
+/// surface: there is no sibling constant here that applies, re-applies,
+/// returns or clears a provisioning document. The document is the channel for
+/// a device with NO network — it is applied by mosd from a boot medium or a
+/// stick before anything is listening — so an HTTP route that applied one
+/// would be a second, differently-trusted write path for the same thing. The
+/// handler is [`crate::provisioning_api::api_v1_provisioning_status`].
+pub(crate) const V1_PROVISIONING_STATUS_PATH: &str = "/v1/provisioning/status";
+
+/// The reset tiers (PLAN-048 / RFCT-284), one path for all three.
+///
+/// A fixed path and a `POST` alone. The tier is in the BODY and not in the
+/// path because `docs/design/recovery.md` §2.2 makes naming the tier part of
+/// the request that gets audited, and a path segment per tier would make
+/// "which resets does this device offer" a question about the route table
+/// rather than about `ResetTier` — which is where the answer that there is no
+/// fourth tier has to live. Not under `/v1/actions/` for the reason
+/// [`V1_SETUP_PATH`] is not: this writes a device-lifecycle intent, and
+/// calling it an action understates it.
+const V1_RESET_PATH: &str = "/v1/reset";
+
+/// The dot-path the staged intent lives at, which every envelope about it
+/// names.
+const RESET_PATH: &str = "reset";
+
+/// Credential recovery (`docs/design/recovery.md` §5), the one operation on
+/// this surface whose authority is physical presence rather than a credential.
+///
+/// Under `recovery/` and not `actions/` deliberately: `actions` is the
+/// namespace of things an authenticated operator does, and §5.2 says in terms
+/// that an authenticated session may not run this one.
+const V1_RECOVERY_CREDENTIAL_PATH: &str = "/v1/recovery/credential";
+
 /// Browser authentication state. Unlike the old HTML login form, every
 /// operation stays inside the reserved JSON API surface.
 const V1_SESSION_PATH: &str = "/v1/session";
+
+/// How this device was claimed, and whether its credential must be rotated.
+///
+/// A fixed path and a `GET` alone: a claim is caused by
+/// [`V1_SETUP_PATH`] or by a provisioning document, never by a write here.
+/// Beside `/v1/session` rather than under it because it describes the DEVICE
+/// and not the browser: the answer is the same for a bearer client.
+const V1_CLAIM_PATH: &str = "/v1/claim";
 const V1_UI_PATH: &str = "/v1/ui";
 const V1_UI_ACTIVE_PATH: &str = "/v1/ui/active";
 const V1_UI_BUNDLES_PATH: &str = "/v1/ui/bundles";
@@ -470,6 +540,7 @@ fn api_router() -> Router<AppState> {
                 .post(api_v1_session_create)
                 .delete(api_v1_session_delete),
         )
+        .route(V1_CLAIM_PATH, get(api_v1_claim))
         .route(V1_UI_PATH, get(api_v1_ui_status))
         .route(
             V1_UI_BUNDLES_PATH,
@@ -547,7 +618,7 @@ fn api_router() -> Router<AppState> {
         // handler exists, so nothing that merely follows a link can replace a
         // tunnel's identity.
         .route(V1_WIREGUARD_ROTATE_ROUTE, post(api_v1_wireguard_rotate))
-        // The update cluster (`update_api.rs`): one state read, five
+        // The update cluster (`update_api.rs`): one state read, six
         // POST-only actions, all behind the same credential extractor.
         .route(
             crate::update_api::V1_UPDATE_PATH,
@@ -570,6 +641,10 @@ fn api_router() -> Router<AppState> {
             post(crate::update_api::api_v1_update_mark),
         )
         .route(
+            crate::update_api::V1_UPDATE_ROLLBACK_PATH,
+            post(crate::update_api::api_v1_update_rollback),
+        )
+        .route(
             crate::update_api::V1_UPDATE_REBOOT_OVERRIDE_PATH,
             post(crate::update_api::api_v1_update_reboot_override),
         )
@@ -584,6 +659,22 @@ fn api_router() -> Router<AppState> {
         // First-run setup is the only unauthenticated write and remains
         // POST-only.
         .route(V1_SETUP_PATH, post(api_v1_setup))
+        // GET only: what a provisioning document did is observed; applying one
+        // is a file on a medium, read before anything is listening.
+        .route(
+            V1_PROVISIONING_STATUS_PATH,
+            get(crate::provisioning_api::api_v1_provisioning_status),
+        )
+        // POST only, for the reason the power actions are: no GET handler
+        // exists, so nothing that merely follows a link can stage a reset.
+        .route(V1_RESET_PATH, post(api_v1_reset))
+        // POST only, and with no credential extractor: §5.2's authority is
+        // physical presence, and an authenticated session is refused rather
+        // than admitted.
+        .route(
+            V1_RECOVERY_CREDENTIAL_PATH,
+            post(api_v1_recovery_credential),
+        )
         // §2.4's envelope on the methods those routes do not serve, declared
         // once for the subtree rather than route by route. It reaches exactly
         // the routes above — it rewrites the method-not-allowed fallback of
@@ -4682,6 +4773,12 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
 /// also present its `X-CSRF-Token` value. Keeping the check in the extractor
 /// makes it impossible for a newly added authenticated mutation to forget the
 /// browser-side protection.
+///
+/// The forced rotation that bounds a bootstrap claim is enforced here for the
+/// same reason and by the same argument: it applies to every authenticated
+/// mutation the API serves, so it belongs in the one place every authenticated
+/// mutation already passes through, rather than in a list of routes that a
+/// later one can be added outside of.
 pub(crate) enum ApiCredential {
     Bearer,
     Session(String),
@@ -4694,16 +4791,15 @@ impl FromRequestParts<AppState> for ApiCredential {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        if bearer_is_stored(state, &parts.headers).await {
-            return Ok(Self::Bearer);
-        }
-        if let Some(cookie) = session::cookie_from_headers(&parts.headers)
+        let mutation = matches!(
+            parts.method,
+            Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+        );
+        let credential = if bearer_is_stored(state, &parts.headers).await {
+            Self::Bearer
+        } else if let Some(cookie) = session::cookie_from_headers(&parts.headers)
             && state.sessions.verify(&cookie)
         {
-            let mutation = matches!(
-                parts.method,
-                Method::POST | Method::PUT | Method::PATCH | Method::DELETE
-            );
             if mutation {
                 let presented = parts
                     .headers
@@ -4720,11 +4816,40 @@ impl FromRequestParts<AppState> for ApiCredential {
                     ));
                 }
             }
-            return Ok(Self::Session(cookie));
+            Self::Session(cookie)
+        } else {
+            return Err(not_authenticated(
+                "this route requires a stored bearer token or an authenticated browser session",
+            ));
+        };
+        if mutation && bound_by_rotation(parts.uri.path()) && rotation_required(state).await {
+            // Reads stay open, and so do the two mutations that write nothing
+            // to the DEVICE. Those exemptions are what make the bound
+            // impossible to brick a device with: the operator holding the
+            // bootstrap credential can always sign in and out, can always see
+            // WHY they were refused (`GET /api/v1/claim`), and can always do
+            // the one thing that clears it. Everything else waits.
+            //
+            // The rejection is built here rather than by the handler because
+            // the handler is never reached; a refused mutation writes nothing
+            // by construction and not by each route remembering to.
+            let Source(source) = Source::from_request_parts(parts, state)
+                .await
+                .expect("the source extractor is infallible");
+            state.audit.record(CLAIM_ROTATION_EVENT, "refused", &source);
+            return Err(api_response(
+                StatusCode::CONFLICT,
+                ApiError::apid(
+                    "rotation_required",
+                    "this device was claimed with a bootstrap credential that has not been \
+                     rotated; change the administrator password with \
+                     `POST /api/v1/actions/change-password` before any other write"
+                        .to_string(),
+                )
+                .at("access.claim"),
+            ));
         }
-        Err(not_authenticated(
-            "this route requires a stored bearer token or an authenticated browser session",
-        ))
+        Ok(credential)
     }
 }
 
@@ -4823,28 +4948,22 @@ async fn healthz() -> &'static str {
 const HOSTNAME_RULES: &str =
     "Hostname must be 1-63 letters, digits or hyphens and must not start or end with a hyphen.";
 
-/// The admin-password floor, in bytes, for every surface that enforces it.
-///
-/// It was spelled `len() < 8` inline at two call sites -- the setup wizard's
-/// form handler and [`change_password`] -- and M8 adds a third enforcer.
-/// A third copy is what the rotate-key route below argues against in the
-/// general case: copies of one rule can disagree, and here disagreeing would
-/// mean one surface accepting a credential another would refuse. So the number
-/// lives once and the three call sites read it.
-///
-/// The wording each surface shows is *not* shared, and that is deliberate:
-/// the HTML pages say "at least 8 characters" to a human and the API says it
-/// in §2.4's envelope. What must not differ is the bound.
-const MIN_PASSWORD_BYTES: usize = 8;
-
-/// Whether an admin password is under [`MIN_PASSWORD_BYTES`].
+/// Whether an admin password is under [`MIN_ADMIN_PASSWORD_LEN`].
 ///
 /// Bytes and not characters, which is what every call site already measured:
 /// `str::len` is the byte length, so a password of eight non-ASCII characters
 /// was already over the floor before this function existed. Named rather than
 /// inlined so the comparison, and not only the number, has one spelling.
+///
+/// The number itself is [`mosd_settings::MIN_ADMIN_PASSWORD_LEN`] and no
+/// longer a copy of it. apid used to state its own `MIN_PASSWORD_BYTES = 8`
+/// beside mosd's, with a comment in each naming the other; two statements of
+/// one rule agree with each other right up until one of them moves, and the
+/// thing they would disagree about is whether a credential this device
+/// accepts is one it will keep accepting. `mosd-settings` is the crate both
+/// binaries link, so it is where the bound lives.
 fn password_under_floor(password: &str) -> bool {
-    password.len() < MIN_PASSWORD_BYTES
+    password.len() < MIN_ADMIN_PASSWORD_LEN
 }
 
 /// `^[a-zA-Z0-9._-]{1,15}$`
@@ -5188,6 +5307,12 @@ pub(crate) async fn api_v1_setup(
         Err(err) => return bus_api_error(&err, Some("access")),
     };
     if password_hash(&access).is_some() {
+        // A refused claim is audited, and it is the more interesting record of
+        // the two: a claim can only ever succeed once, so every later attempt
+        // is either an operator who lost track of a device or somebody probing
+        // one. §6's line carries the peer address, which is the whole of what
+        // makes the record useful.
+        state.audit.record(CLAIM_EVENT, "refused", &source);
         return api_response(
             StatusCode::CONFLICT,
             ApiError::apid(
@@ -5212,7 +5337,7 @@ pub(crate) async fn api_v1_setup(
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::apid(
                 "validation_failed",
-                format!("the admin password must be at least {MIN_PASSWORD_BYTES} bytes"),
+                format!("the admin password must be at least {MIN_ADMIN_PASSWORD_LEN} bytes"),
             )
             .at("access.webAdmin"),
         );
@@ -5325,10 +5450,10 @@ pub(crate) async fn api_v1_setup(
         }
     };
 
-    // The writes, in the order that fails safe. `access.webAdmin` is written
-    // third and not first: it is the write that takes the device out of setup
-    // mode, so a failure before it leaves the wizard reachable and a failure
-    // after it leaves a device an operator can still sign into.
+    // The writes. `hostname` and `network` come first and are their own calls:
+    // neither takes the device out of the unclaimed state, so a failure in
+    // either leaves an unclaimed, still-claimable device and the caller may
+    // simply post the same body again.
     if let Some(hostname) = request.hostname.as_deref()
         && let Err(err) = state
             .api
@@ -5344,18 +5469,27 @@ pub(crate) async fn api_v1_setup(
         // interfaces are still one write and not N chances to half-apply.
         return *response;
     }
-    let value = serde_json::json!({ "password_hash": hash });
-    if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
-        return bus_api_error(&err, Some("access.webAdmin"));
-    }
-    // The device just left setup mode, and the gate must not keep believing
-    // otherwise from a cached pre-write snapshot -- the wizard's own reasoning.
-    state.access_cache.invalidate();
-    // Recorded once the admin password exists, which is the moment the device
-    // leaves setup mode. The same event name the wizard records, because it is
-    // the same event: §6's trail says what happened to the device, not which
-    // surface asked.
-    state.audit.record("setup", "completed", &source);
+
+    // The claim itself, as ONE write of the whole `access` subtree.
+    //
+    // The credential, the record of how the device was claimed and the minted
+    // token are three keys of one subtree and they commit together. mosd turns
+    // one `SetSettings` into one `Settings::set` and one `Store::save`, and
+    // `Store::save` commits by rename -- which is
+    // `docs/design/provisioning.md` §4.1.3's argument, held here by the same
+    // construction. A power loss therefore leaves the device fully unclaimed
+    // or fully claimed, and never a credential without its token or a token
+    // without its record.
+    //
+    // It used to be two writes, `access.webAdmin` then `access.apiTokens`,
+    // ordered so that the token write was the only one whose failure left a
+    // configured device. That ordering was the best a two-write claim could
+    // do; one write does not need it.
+    //
+    // The subtree read at the top of this handler is edited in place rather
+    // than rebuilt, so every key this route has no opinion about -- `ssh`,
+    // `console`, the first-boot `device` credential -- is written back exactly
+    // as it was read.
     let mut tokens = tokens;
     tokens.push(ApiToken {
         id: minted.id,
@@ -5363,13 +5497,57 @@ pub(crate) async fn api_v1_setup(
         hash: minted.hash,
         created: device_clock_seconds(),
     });
-    if let Err(response) = write_tokens(&state, &tokens).await {
-        // Last, so this is the only write whose failure leaves a configured
-        // device: the operator signs in with the password they just set and
-        // mints a token from the pane. Every earlier failure left the device
-        // in setup mode.
-        return *response;
+    // The same validator mosd runs, so a list this route accepts is one the
+    // store will accept too -- [`write_tokens`]'s check, which the whole-subtree
+    // write does not go through.
+    if let Err(err) = validate_api_tokens(&tokens) {
+        return api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid("validation_failed", key_error_message(&err)).at(API_TOKENS_PATH),
+        );
     }
+    let claim = ClaimSettings {
+        via: ClaimChannel::Setup,
+        at: device_clock_seconds(),
+        // A password the caller chose at this moment and posted over the
+        // management API is not a bootstrap secret: it was never written onto
+        // a medium and never left with a device (`docs/design/access.md` §4.4).
+        rotation_required: false,
+    };
+    // A subtree that is not an object is a tree no `Settings` produced, so
+    // there is nothing in it to preserve; an empty map is what this route
+    // would have written into anyway.
+    let mut subtree = match access {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    subtree.insert(
+        "webAdmin".to_string(),
+        serde_json::json!({ "password_hash": hash }),
+    );
+    // Infallible: both are structs of scalars with no map keys to collide.
+    subtree.insert(
+        "claim".to_string(),
+        serde_json::to_value(claim).expect("the claim record serializes"),
+    );
+    subtree.insert(
+        "apiTokens".to_string(),
+        serde_json::to_value(&tokens).expect("api tokens serialize"),
+    );
+    if let Err(err) = state
+        .api
+        .set_settings(ACCESS_PATH, &Value::Object(subtree))
+        .await
+    {
+        return bus_api_error(&err, Some(ACCESS_PATH));
+    }
+    // The device just left setup mode, and the gate must not keep believing
+    // otherwise from a cached pre-write snapshot.
+    state.access_cache.invalidate();
+    // Recorded once the credential exists, which is the moment the device is
+    // claimed. §6's trail says what happened to the device, not which surface
+    // asked, so the event names the transition and not the route.
+    state.audit.record(CLAIM_EVENT, "completed", &source);
     let session = state.sessions.create();
     (
         StatusCode::CREATED,
@@ -5386,6 +5564,839 @@ pub(crate) async fn api_v1_setup(
         }),
     )
         .into_response()
+}
+
+// The claim lifecycle
+
+/// The §6 event name for the unclaimed → claimed transition.
+///
+/// Named for the transition rather than for the route, because both channels
+/// that can cause it produce the same state and §6's trail says what happened
+/// to the device. Its outcomes are `completed` and `refused`, which is the
+/// grammar `login` and `custom-ui-upload` already use; the ROTATION that bounds
+/// a bootstrap claim is a different action and carries its own name
+/// ([`CLAIM_ROTATION_EVENT`]), the way `update-mark` and `update-rollback` are
+/// two names rather than one with two outcomes.
+const CLAIM_EVENT: &str = "claim";
+
+/// The §6 event name for the rotation that discharges a bootstrap claim.
+///
+/// Outcomes: `completed` when the bootstrap credential is replaced, `refused`
+/// when a mutation is turned away because it has not been.
+const CLAIM_ROTATION_EVENT: &str = "claim-rotation";
+
+/// Whether a mutation on `path` is one the forced rotation holds back.
+///
+/// Two exemptions, and they are the whole list. Both are mutations that write
+/// nothing to the device:
+///
+/// - `POST /api/v1/actions/change-password` is the rotation itself, so holding
+///   it back would make the bound unclearable;
+/// - `/v1/session` is login and logout. A session lives in apid's memory and
+///   is a fact about a browser, not about the appliance. An operator who
+///   cannot sign in has no way to reach the exemption above, and one who
+///   cannot sign OUT is being made to keep a live session by a rule that
+///   exists to protect the credential behind it.
+///
+/// Stated as an exemption list rather than as an enforcement list on purpose:
+/// a route added later is bound by default, which is the direction that fails
+/// safe.
+fn bound_by_rotation(path: &str) -> bool {
+    path != V1_CHANGE_PASSWORD_PATH && path != V1_SESSION_PATH
+}
+
+/// The claim record stored under `access.claim`, when the subtree carries one
+/// this build can read.
+///
+/// A record that does not parse is `None` and therefore reads as a claim by
+/// provisioning document, which is the fail-safe direction: the consequence is
+/// that a rotation is asked for, never that one is excused.
+fn stored_claim(access: &Value) -> Option<ClaimSettings> {
+    serde_json::from_value(access.get("claim")?.clone()).ok()
+}
+
+/// `GET /api/v1/claim` response body.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClaimStatus {
+    /// `unclaimed` or `claimed`.
+    state: &'static str,
+    /// Which channel minted the administrator credential: `setup` or
+    /// `provisioning-document`. Absent while the device is unclaimed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    via: Option<ClaimChannel>,
+    /// The device clock's reading when the claim committed, seconds since the
+    /// UNIX epoch. **A label, never a deadline** — the reading
+    /// `access.apiTokens[].created` is. Absent while the device is unclaimed,
+    /// and absent for a claim by document that predates any recorded import.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    at: Option<u64>,
+    /// Whether the claiming credential is still the bootstrap secret it
+    /// arrived as. While this is true the device serves reads and refuses
+    /// every authenticated mutation but the password change that clears it.
+    rotation_required: bool,
+}
+
+/// The claim, projected from the settings tree.
+///
+/// **One truth, read two ways.** `access.webAdmin` is what makes a device
+/// claimed and always was; this adds the part it cannot state. A claim through
+/// `POST /api/v1/setup` writes `access.claim` in the same save as the
+/// credential, so its record is read back verbatim. A claim by provisioning
+/// document writes no record — mosd's importer is the one writer that does not,
+/// deliberately — and is recognised by the absence:
+///
+/// - only two writers can create the FIRST `access.webAdmin` on a device that
+///   has none, this route and the importer, because every other writer of that
+///   path is authenticated and an unclaimed device has no credential to
+///   authenticate with;
+/// - the importer refuses to apply a document at all once `access.webAdmin`
+///   exists (`docs/design/provisioning.md` §4.1.4), so if a document applied
+///   AND a credential exists AND no record does, that document is what created
+///   it.
+///
+/// The `provisioning` subtree is read only in that case, and it is exactly the
+/// case whose mutations are about to be refused, so the ordinary claimed
+/// device pays no second bus call. A `provisioning` read that FAILS answers
+/// "not claimed by document": the failure direction here is open, for
+/// `docs/design/access.md` §6's reason — the alternative to a wrong guess is
+/// an appliance no operator can reach.
+async fn claim_status(state: &AppState, access: &Value) -> ClaimStatus {
+    if password_hash(access).is_none() {
+        return ClaimStatus {
+            state: "unclaimed",
+            via: None,
+            at: None,
+            rotation_required: false,
+        };
+    }
+    if let Some(claim) = stored_claim(access) {
+        return ClaimStatus {
+            state: "claimed",
+            via: Some(claim.via),
+            at: Some(claim.at),
+            rotation_required: claim.rotation_required,
+        };
+    }
+    let document = match state.api.get_settings("provisioning").await {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::warn!(error = %err, "reading `provisioning` for the claim record failed");
+            return ClaimStatus {
+                state: "claimed",
+                via: None,
+                at: None,
+                rotation_required: false,
+            };
+        }
+    };
+    let applied = document
+        .get("document")
+        .and_then(|record| record.get("appliedDigest"))
+        .and_then(Value::as_str)
+        .is_some();
+    if !applied {
+        // Claimed, with no record and no applied document. Nothing this
+        // build writes produces that tree, so there is nothing to say about
+        // the channel and nothing to demand a rotation of.
+        return ClaimStatus {
+            state: "claimed",
+            via: None,
+            at: None,
+            rotation_required: false,
+        };
+    }
+    ClaimStatus {
+        state: "claimed",
+        via: Some(ClaimChannel::ProvisioningDocument),
+        // P1 already records WHEN, in the import record this reads; the claim
+        // does not copy it into a second field that could disagree.
+        at: document
+            .get("document")
+            .and_then(|record| record.get("lastImport"))
+            .and_then(|import| import.get("at"))
+            .and_then(Value::as_u64),
+        rotation_required: true,
+    }
+}
+
+/// Whether the credential authenticating this request is a bootstrap secret
+/// that still has to be rotated.
+async fn rotation_required(state: &AppState) -> bool {
+    let access = match access_settings(state).await {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::warn!(error = %err, "reading `access` for the rotation gate failed");
+            return false;
+        }
+    };
+    claim_status(state, &access).await.rotation_required
+}
+
+/// Report how this device was claimed and whether its credential must still be
+/// rotated.
+///
+/// **Authenticated, deliberately.** `GET /api/v1/session` already tells an
+/// unauthenticated caller whether the device is in setup mode, and that is all
+/// an unauthenticated caller learns here too — "this device was claimed from a
+/// medium and is still holding the password that was on it" is a sentence an
+/// attacker would act on, and the operator who needs to read it is signed in
+/// by construction.
+///
+/// This is the surface that makes the bound observable BEFORE it bites: the
+/// operator who claimed a device with a provisioning document sees
+/// `rotationRequired` here, and can see it the moment they sign in rather than
+/// on the first mutation the device turns away.
+#[utoipa::path(
+    get,
+    path = V1_CLAIM_PATH,
+    context_path = API,
+    tag = "session",
+    responses(
+        (status = 200, description = "How the device was claimed and whether its credential must be rotated", body = ClaimStatus),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 500, description = "The access settings could not be read", body = ApiError),
+        (status = 503, description = "mosd is unavailable (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_claim(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+) -> Response {
+    let access = match state.api.get_settings(ACCESS_PATH).await {
+        Ok(value) => value,
+        Err(err) => return bus_api_error(&err, Some(ACCESS_PATH)),
+    };
+    api_response(StatusCode::OK, claim_status(&state, &access).await)
+}
+
+// Physical presence, the reset tiers and credential recovery
+// (`docs/design/recovery.md` §2, §4 and §5)
+
+/// The named board capability that decides what a presence assertion IS.
+///
+/// **One seam, keyed by one capability.** `docs/design/recovery.md` §4.2
+/// admits three kinds of mechanism — a physical control across a power cycle,
+/// a local console the operator is attached to, and a file placed on the boot
+/// medium with the medium out of the device — and both mos boards answer this
+/// capability with [`PRESENCE_CONSOLE_ATTACH`] and nothing else. A board that
+/// later qualifies a different mechanism answers it differently and reaches
+/// the same gate; no flow reshapes, and nothing here anticipates one. In
+/// particular there is no button code in this crate and no document claiming a
+/// button flow: the cx3576 recovery button drops the board into rockusb loader
+/// mode today and no software recovery flow reads it, which §4.2 and §8 record
+/// as bench-dependent.
+pub(crate) const PRESENCE_CAPABILITY: &str = "recovery.presence";
+
+/// The capability's value on cx3576 and on x64: an operator attached to the
+/// device's local console.
+pub(crate) const PRESENCE_CONSOLE_ATTACH: &str = "console-attach";
+
+/// The §5.3 event name for the console-attach flow, which is the mechanism in
+/// the name rather than in a fourth member of the line.
+///
+/// §6's implemented line shape has exactly four members — timestamp, event,
+/// outcome, source — so one enumerated event per mechanism keeps the trail's
+/// grammar unchanged while making "which door was used" greppable. The
+/// siblings §5.3 names (`credential-recovery-button`,
+/// `credential-recovery-medium`, `credential-recovery-factory`) are NOT
+/// declared here: a constant for a door this build cannot open would be a
+/// claim the board table does not support.
+const CREDENTIAL_RECOVERY_CONSOLE_EVENT: &str = "credential-recovery-console";
+
+/// Where the console-attached asserter leaves its assertion.
+///
+/// On tmpfs and owned by root, which is what makes it presence rather than a
+/// flag: `docs/design/recovery.md` §4.2's rule is that the action must be one
+/// **no network client can perform**, and nothing reachable over the network
+/// writes here. apid only ever READS it — there is no route, no settings path
+/// and no code in this crate that creates it — so an API that could set it
+/// would have to be written first, which is the change §4.2 forbids.
+const PRESENCE_MARKER_PATH: &str = "/run/mos/presence";
+
+/// A presence assertion made at the device.
+pub(crate) struct Assertion {
+    /// The mechanism, which is also what the audit event is named for.
+    mechanism: &'static str,
+    /// The channel that proved presence, and therefore the ONE channel a
+    /// minted credential may be published on (§5.1 rule 2).
+    channel: PathBuf,
+}
+
+impl Assertion {
+    /// The assertion a test's presence seam hands back.
+    ///
+    /// Test-only, and the channel is deliberately a path nothing opens: a test
+    /// seam captures what it was asked to publish rather than writing it, so
+    /// there is no file anywhere for a minted credential to be left in.
+    #[cfg(test)]
+    pub(crate) fn console_for_test() -> Self {
+        Self {
+            mechanism: board_presence_mechanism(),
+            channel: PathBuf::from("/dev/null"),
+        }
+    }
+}
+
+/// Why an assertion was not established. Named, because §5.3 audits a refusal
+/// and an operator has to be able to tell "nobody is at the device" from "the
+/// assertion has run out".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoPresence {
+    /// No assertion has been made.
+    Absent,
+    /// One was made and its window has passed.
+    Expired,
+    /// The marker is there but this build cannot read it as an assertion.
+    Malformed,
+    /// The assertion names a mechanism this board does not answer the
+    /// capability with.
+    UnknownMechanism,
+}
+
+impl NoPresence {
+    /// The sentence the refusal carries. It names no path and no value the
+    /// marker held: a refusal is read by whoever asked, and what it may tell
+    /// them is that presence was not established.
+    fn message(self) -> String {
+        match self {
+            Self::Absent => {
+                "this operation requires physical presence at the device, and none is asserted"
+                    .to_string()
+            }
+            Self::Expired => {
+                "the physical-presence assertion has expired; assert it again at the device"
+                    .to_string()
+            }
+            Self::Malformed => {
+                "the physical-presence assertion could not be read; assert it again at the device"
+                    .to_string()
+            }
+            Self::UnknownMechanism => format!(
+                "the physical-presence assertion names a mechanism this board does not offer; \
+                 it answers `{PRESENCE_CAPABILITY}` with `{}`",
+                board_presence_mechanism()
+            ),
+        }
+    }
+}
+
+/// What this board answers [`PRESENCE_CAPABILITY`] with.
+///
+/// **The whole of the board-specific part of the gate**, and it is one
+/// function so that a board qualifying a different mechanism changes this and
+/// nothing else — no flow reshapes, no route moves, no new field appears. Both
+/// mos boards answer [`PRESENCE_CONSOLE_ATTACH`] (`docs/design/recovery.md`
+/// §4.2, §8), which is why there is no per-board branch here to test: a branch
+/// with one arm reachable would be speculative code for a mechanism no board
+/// has evidenced.
+fn board_presence_mechanism() -> &'static str {
+    PRESENCE_CONSOLE_ATTACH
+}
+
+/// The ONE seam every presence-gated operation passes through.
+///
+/// Two operations and not one, because §5.1 rule 2 binds them together: the
+/// credential is returned "on the channel that proved presence", so whatever
+/// decides presence is also what decides where a secret may be written. A
+/// design that asserted here and published somewhere else could publish over
+/// the network, which is the one thing §4.2 forbids outright.
+pub(crate) trait Presence: Send + Sync {
+    /// The assertion standing at this moment, or why there is none.
+    fn assert(&self) -> Result<Assertion, NoPresence>;
+
+    /// Write `secret` on the channel that proved presence, exactly once.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the channel cannot be written, which is §5.3's
+    /// `aborted`: presence was established and the flow did not complete.
+    fn publish(&self, assertion: &Assertion, secret: &str) -> anyhow::Result<()>;
+}
+
+/// The shipped mechanism: an assertion left by an operator at the local
+/// console, published back to the console they are attached to.
+pub(crate) struct ConsolePresence {
+    marker: PathBuf,
+}
+
+/// What [`PRESENCE_MARKER_PATH`] holds. Three members and no room for a
+/// fourth: an assertion is a mechanism, a channel and a deadline.
+#[derive(serde::Deserialize)]
+struct PresenceMarker {
+    /// The mechanism asserted, which must be the board capability's value.
+    mechanism: String,
+    /// The console device the operator is attached to.
+    channel: PathBuf,
+    /// UNIX seconds at which the assertion stops standing.
+    ///
+    /// **Required, and an assertion without one does not parse.** §5.4 gives
+    /// the flow its own bound — "one rotation per presence assertion, and the
+    /// assertion is re-performed physically for the next one" — and a marker
+    /// with no deadline would turn one visit to the device into a standing
+    /// permission, which is the permanent shell §4.3 refuses.
+    expires: u64,
+}
+
+impl ConsolePresence {
+    /// The shipped reader. A path and no syscall until something asserts.
+    pub(crate) fn at_default() -> Self {
+        Self {
+            marker: PathBuf::from(PRESENCE_MARKER_PATH),
+        }
+    }
+}
+
+impl Presence for ConsolePresence {
+    fn assert(&self) -> Result<Assertion, NoPresence> {
+        let bytes = std::fs::read(&self.marker).map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                NoPresence::Absent
+            } else {
+                NoPresence::Malformed
+            }
+        })?;
+        let marker: PresenceMarker =
+            serde_json::from_slice(&bytes).map_err(|_| NoPresence::Malformed)?;
+        if marker.mechanism != board_presence_mechanism() {
+            return Err(NoPresence::UnknownMechanism);
+        }
+        if marker.expires <= device_clock_seconds() {
+            return Err(NoPresence::Expired);
+        }
+        Ok(Assertion {
+            mechanism: board_presence_mechanism(),
+            channel: marker.channel,
+        })
+    }
+
+    fn publish(&self, assertion: &Assertion, secret: &str) -> anyhow::Result<()> {
+        use std::io::Write;
+
+        // A console is a character device. A REGULAR FILE is refused, and that
+        // refusal is the whole of the check: publishing to a file would leave
+        // the one copy of a minted credential on a filesystem, which is
+        // §4.3's "reading, decrypting or exporting any stored secret" arrived
+        // at from the other side.
+        let metadata = std::fs::metadata(&assertion.channel)
+            .with_context(|| format!("open {}", assertion.channel.display()))?;
+        anyhow::ensure!(
+            !metadata.is_file(),
+            "{} is a regular file, not a console",
+            assertion.channel.display()
+        );
+        let mut channel = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&assertion.channel)
+            .with_context(|| format!("open {}", assertion.channel.display()))?;
+        writeln!(
+            channel,
+            "mos recovery: the new administrator password is {secret}"
+        )?;
+        channel.flush()?;
+        Ok(())
+    }
+}
+
+/// `POST /api/v1/reset` request body.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub(crate) struct ResetRequest {
+    /// Which tier. §2.2: "A tier names itself in the request and in the audit
+    /// record. There is no parameterless reset."
+    #[schema(value_type = String, example = "configuration")]
+    tier: ResetTier,
+}
+
+/// `POST /api/v1/reset` response body.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ResetStaged {
+    /// The tier that is now staged.
+    #[schema(value_type = String, example = "configuration")]
+    tier: ResetTier,
+    /// When it runs. Always `next-boot`: §2.2 requires a reset to be an intent
+    /// record plus an idempotent apply, and mosd applies it before anything
+    /// else on the next boot.
+    applies: &'static str,
+}
+
+/// `POST /api/v1/recovery/credential` response body.
+///
+/// **It carries no secret and there is no member it could carry one in.**
+/// §5.1 rule 2 returns the credential on the channel that proved presence,
+/// never over the network, so the body says that a credential was minted and
+/// where it went — the operator standing at the console reads it there.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CredentialRecovered {
+    /// The mechanism that proved presence and published the credential.
+    mechanism: &'static str,
+    /// `access.device.generation` after the rotation (§5.1 rule 5).
+    generation: u32,
+}
+
+/// The §6 audit event a staged tier is recorded under.
+fn reset_event(tier: ResetTier) -> &'static str {
+    match tier {
+        ResetTier::Configuration => "reset-configuration",
+        ResetTier::ApplicationData => "reset-application-data",
+        ResetTier::FullFactory => "reset-full-factory",
+    }
+}
+
+/// Whether a tier may only be reached with physical presence.
+///
+/// §2.2's line, and the reason it is drawn there: "a device whose identity and
+/// credentials are gone cannot be handed back to its owner over the network".
+/// Tiers 1 and 2 are authenticated management actions.
+fn tier_needs_presence(tier: ResetTier) -> bool {
+    matches!(tier, ResetTier::FullFactory)
+}
+
+/// §4's refusal, in §2.4's envelope.
+fn presence_refusal(reason: NoPresence) -> Response {
+    api_response(
+        StatusCode::FORBIDDEN,
+        ApiError::apid("presence_required", reason.message()),
+    )
+}
+
+/// Stage a reset tier.
+///
+/// **This route stages; mosd applies.** §2.2 requires a reset to be an intent
+/// record plus an idempotent apply, so the whole of this handler's write is
+/// ONE `SetSettings("reset")` — one `Store::save` — after which a power loss
+/// leaves the device either not asked or asked, never half-reset. mosd carries
+/// the tier out before anything else on the next boot and clears the record.
+///
+/// **Authority, per §2.2.** Tiers 1 and 2 are authenticated management
+/// actions. Tier 3 additionally requires §4 physical presence; the order it
+/// sits at in §3's decision tree is after credential recovery, so an operator
+/// who reaches it holds a credential as well as standing at the device. There
+/// is no tier 4: `ResetTier` has three members, so `secure-wipe` is a body
+/// this route cannot parse.
+///
+/// A tier staged over another replaces it. Both are audited, so nothing is
+/// silent, and the alternative — refusing until something un-stages the first
+/// — is a dead end for an operator who asked for the wrong one.
+#[utoipa::path(
+    post,
+    path = V1_RESET_PATH,
+    context_path = API,
+    tag = "actions",
+    request_body = ResetRequest,
+    responses(
+        (status = 202, description = "The tier is staged and runs on the next boot", body = ResetStaged),
+        (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No stored bearer token or authenticated browser session (`not_authenticated`)", body = ApiError),
+        (status = 403, description = "The tier requires physical presence at the device and none is asserted (`presence_required`)", body = ApiError),
+        (status = 409, description = "The device was claimed with a bootstrap credential that has not been rotated (`rotation_required`)", body = ApiError),
+        (status = 422, description = "The body is not this shape, or names no tier this device implements (`validation_failed`)", body = ApiError),
+        (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`)", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_reset(
+    _credential: ApiCredential,
+    State(state): State<AppState>,
+    Source(source): Source,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let request: ResetRequest = match json_body(body, Some(RESET_PATH)) {
+        Ok(request) => request,
+        Err(response) => return *response,
+    };
+    let event = reset_event(request.tier);
+
+    // Presence BEFORE the write and before anything else this handler does, so
+    // a refused tier 3 is exactly a refused tier 3: nothing staged, nothing
+    // cleared, one audit line.
+    let presence = if tier_needs_presence(request.tier) {
+        match state.presence.assert() {
+            Ok(assertion) => Some(assertion.mechanism.to_string()),
+            Err(reason) => {
+                state.audit.record(event, "refused", &source);
+                return presence_refusal(reason);
+            }
+        }
+    } else {
+        None
+    };
+
+    let intent = serde_json::json!({
+        "tier": request.tier,
+        "requested": device_clock_seconds(),
+        "presence": presence,
+    });
+    if let Err(err) = state.api.set_settings(RESET_PATH, &intent).await {
+        return bus_api_error(&err, Some(RESET_PATH));
+    }
+    state.audit.record(event, "staged", &source);
+    api_response(
+        StatusCode::ACCEPTED,
+        ResetStaged {
+            tier: request.tier,
+            applies: "next-boot",
+        },
+    )
+}
+
+/// Recover the management credential: rotate, never reveal.
+///
+/// **Presence is the authority, and the only one.** §5.2: an authenticated
+/// management session may NOT run this flow — a session that can rotate the
+/// credential it authenticated with is a session-fixation lever, and an
+/// operator holding a working credential needs
+/// `POST /api/v1/actions/change-password` rather than recovery. So the route
+/// takes no credential extractor and refuses a caller that presents one.
+///
+/// **What it does, in §5.1's order.** It MINTS a new password — it never
+/// discloses, decrypts or derives the previous secret, and there is no code
+/// path from here to a stored plaintext. It publishes the new one exactly
+/// once, on the channel that proved presence. Only then does it commit, in ONE
+/// write of `access`: the new hash, the emptied token list, the claim record
+/// and the bumped generation together. Publishing first is §5.1 rule 3's
+/// direction — a crash between the two must not be a self-inflicted lockout —
+/// so the worst outcome here is a credential the operator saw and that never
+/// worked, which the flow being cheap to re-run answers.
+///
+/// **The previous credential stops working at that commit**, and so does every
+/// API token: §3's step 5 prices it, "any client or automation holding it must
+/// be re-enrolled". Every session goes with it, for the reason a password
+/// change drops them.
+///
+/// **A device-claimed by a provisioning document is the seam P2 named.** Its
+/// bootstrap secret sat in plaintext on a medium, and losing it before the
+/// forced rotation is a §5 case rather than an `docs/design/access.md` §4.4
+/// one. A recovery writes the claim record with the channel that claimed the
+/// device preserved and `rotationRequired` FALSE: the credential this flow
+/// mints was drawn by the device from `OsRng` and shown once at the device, so
+/// it is not a bootstrap secret, and demanding a rotation of a credential that
+/// was just rotated under physical presence would be a bound with nothing left
+/// to protect.
+///
+/// **An unclaimed device is refused**, pointing at `POST /api/v1/setup`. There
+/// is nothing to recover on a device that has no credential, and minting one
+/// here would be a third channel that can claim a device —
+/// `mosd_settings::ClaimChannel` has exactly two members and says why.
+#[utoipa::path(
+    post,
+    path = V1_RECOVERY_CREDENTIAL_PATH,
+    context_path = API,
+    tag = "actions",
+    responses(
+        (status = 200, description = "A new credential was minted and published on the channel that proved presence; the body carries no secret", body = CredentialRecovered),
+        (status = 403, description = "Physical presence is not asserted (`presence_required`), or the caller is authenticated and must use `POST /api/v1/actions/change-password` instead (`authenticated_session`)", body = ApiError),
+        (status = 409, description = "The device has no administrator credential to recover; claim it with `POST /api/v1/setup` (`not_claimed`)", body = ApiError),
+        (status = 500, description = "Hashing the new password failed (`hash_failed`), it could not be published on the presence channel (`publish_failed`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+        (status = 504, description = "The bounded call to mosd timed out (`mosd_timeout`)", body = ApiError),
+        (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_recovery_credential(
+    State(state): State<AppState>,
+    Source(source): Source,
+    headers: HeaderMap,
+) -> Response {
+    let event = CREDENTIAL_RECOVERY_CONSOLE_EVENT;
+
+    // §5.2's third authority does not exist, and the check that it does not is
+    // here rather than in a comment. A caller holding a working credential is
+    // turned away BEFORE presence is consulted: what they are told is which
+    // route they should have used, and that answer does not depend on whether
+    // anyone is standing at the device.
+    if bearer_is_stored(&state, &headers).await
+        || session::cookie_from_headers(&headers)
+            .is_some_and(|cookie| state.sessions.verify(&cookie))
+    {
+        state.audit.record(event, "refused", &source);
+        return api_response(
+            StatusCode::FORBIDDEN,
+            ApiError::apid(
+                "authenticated_session",
+                "credential recovery is authorized by physical presence and not by a session; \
+                 an operator holding a working credential changes it with \
+                 `POST /api/v1/actions/change-password`"
+                    .to_string(),
+            ),
+        );
+    }
+
+    // §5.4's first rule: a presence-gated rotation is NOT throttled by the
+    // login guard. The guard slows a remote guesser, presence is not
+    // guessable, and a device whose operator is standing in front of it must
+    // not be made to wait out a window an attacker armed. Nothing on this path
+    // calls `begin_attempt`, and that absence is the rule.
+    let assertion = match state.presence.assert() {
+        Ok(assertion) => assertion,
+        Err(reason) => {
+            state.audit.record(event, "refused", &source);
+            return presence_refusal(reason);
+        }
+    };
+
+    let access = match state.api.get_settings(ACCESS_PATH).await {
+        Ok(value) => value,
+        Err(err) => return bus_api_error(&err, Some(ACCESS_PATH)),
+    };
+    if password_hash(&access).is_none() {
+        state.audit.record(event, "refused", &source);
+        return api_response(
+            StatusCode::CONFLICT,
+            ApiError::apid(
+                "not_claimed",
+                "this device has no administrator credential to recover; claim it with \
+                 `POST /api/v1/setup`"
+                    .to_string(),
+            )
+            .at("access.webAdmin"),
+        );
+    }
+    let claim = claim_status(&state, &access).await;
+
+    let secret = mint_recovery_password();
+    let hashed = secret.clone();
+    let hash = match tokio::task::spawn_blocking(move || auth::hash_password(&hashed))
+        .await
+        .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
+    {
+        Ok(hash) => hash,
+        Err(err) => {
+            // Logged and not returned, for the setup route's reason: the error
+            // carries argon2's own text and the caller can do nothing with it.
+            tracing::error!(error = %err, "recovery password hashing failed");
+            state.audit.record(event, "aborted", &source);
+            return api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid(
+                    "hash_failed",
+                    "the new credential could not be hashed; nothing was written".to_string(),
+                ),
+            );
+        }
+    };
+
+    // Published BEFORE the commit, per §5.1 rule 3's direction. A failure here
+    // is §5.3's `aborted`: presence was established and the flow did not
+    // complete, the previous credential still works, and nothing was written.
+    if let Err(err) = state.presence.publish(&assertion, &secret) {
+        tracing::error!(error = %err, "publishing the recovered credential failed");
+        state.audit.record(event, "aborted", &source);
+        return api_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::apid(
+                "publish_failed",
+                "the new credential could not be published on the channel that proved \
+                 presence; nothing was written and the previous credential still works"
+                    .to_string(),
+            ),
+        );
+    }
+
+    // The commit: ONE write of the whole `access` subtree, so the new hash,
+    // the revoked tokens, the claim record and the bumped generation land
+    // together. Two writes could crash between them and leave a device whose
+    // old credential was invalidated and whose new one was not stored.
+    let generation = device_generation(&access).saturating_add(1);
+    let mut subtree = match access {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    subtree.insert(
+        "webAdmin".to_string(),
+        serde_json::json!({ "password_hash": hash }),
+    );
+    // Every bearer token is a management credential too, and §3's step 5 says
+    // in terms that the previous one stops working: a recovery that left them
+    // authenticating would leave whoever holds one exactly the access the
+    // operator came to the device to take back.
+    subtree.insert("apiTokens".to_string(), Value::Array(Vec::new()));
+    subtree.insert(
+        "claim".to_string(),
+        serde_json::to_value(ClaimSettings {
+            // A device claimed by a document carries no record, and the channel
+            // that claimed it is still that document — the rotation moves the
+            // credential, not the history.
+            via: claim.via.unwrap_or(ClaimChannel::ProvisioningDocument),
+            // WHEN the device was claimed does not move because its credential
+            // did; P2's precedent, and 0 is the reading an unset clock gives.
+            at: claim.at.unwrap_or(0),
+            rotation_required: false,
+        })
+        .expect("the claim record serializes"),
+    );
+    let mut device = subtree
+        .get("device")
+        .cloned()
+        .and_then(|value| match value {
+            Value::Object(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+    device.insert("generation".to_string(), Value::from(generation));
+    subtree.insert("device".to_string(), Value::Object(device));
+    if let Err(err) = state
+        .api
+        .set_settings(ACCESS_PATH, &Value::Object(subtree))
+        .await
+    {
+        state.audit.record(event, "aborted", &source);
+        return bus_api_error(&err, Some(ACCESS_PATH));
+    }
+
+    // apid knows its own access write happened, so the gate's cache is dropped
+    // here rather than waiting for the SettingsChanged round trip.
+    state.access_cache.invalidate();
+    // Every session was minted under a credential that no longer exists.
+    state.sessions.remove_all_except("");
+    // §5.4's second rule, and the release path §4.3 item 2 promises: a
+    // SUCCESSFUL rotation clears the guard, counters and window both, which is
+    // what would make a hard `lockoutThreshold` safe to ship. A refused or
+    // aborted one clears nothing — every early return above leaves this line
+    // unreached, which is the rule rather than a comment about it.
+    state.guard.record_success();
+    state.audit.record(event, "success", &source);
+
+    api_response(
+        StatusCode::OK,
+        CredentialRecovered {
+            mechanism: assertion.mechanism,
+            generation,
+        },
+    )
+}
+
+/// `access.device.generation` as the subtree holds it, or 0.
+///
+/// A stored value this build cannot read is 0 and therefore rotates to 1,
+/// which errs towards moving the counter rather than towards a rotation that
+/// left "which credential is of record" unanswerable (§5.1 rule 5).
+fn device_generation(access: &Value) -> u32 {
+    access
+        .get("device")
+        .and_then(|device| device.get("generation"))
+        .and_then(Value::as_u64)
+        .and_then(|generation| u32::try_from(generation).ok())
+        .unwrap_or(0)
+}
+
+/// A fresh administrator password: 128 bits of `OsRng`, hex.
+///
+/// Hex and not a denser alphabet because an operator reads this off a console
+/// and types it into a browser, and 32 unambiguous characters beat 22 with a
+/// case-and-symbol alphabet at the same entropy. Well over
+/// `MIN_ADMIN_PASSWORD_LEN`, which is a floor for a password a human chose.
+fn mint_recovery_password() -> String {
+    use rand::RngCore;
+
+    let mut bytes = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 // Login / logout
@@ -5466,8 +6477,46 @@ async fn change_password(
         .await
         .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
         .map_err(PasswordChangeError::Hashing)?;
-    let value = serde_json::json!({ "password_hash": hash });
-    if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
+    // Whether this change is the ROTATION that discharges a bootstrap claim,
+    // decided from the tree as it was read above and not from the tree after
+    // the write.
+    let claim = claim_status(state, &access).await;
+    let discharged = claim.rotation_required;
+    // The new hash and the record that the bootstrap secret is gone commit
+    // together, in ONE write of the whole `access` subtree and therefore one
+    // `Store::save`. Two writes could crash between them, and both halves of
+    // that crash are wrong: a device still demanding a rotation it has already
+    // had, or -- with the writes the other way round -- one excused from a
+    // rotation that never landed.
+    let mut subtree = match access {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    subtree.insert(
+        "webAdmin".to_string(),
+        serde_json::json!({ "password_hash": hash }),
+    );
+    if let Some(via) = claim.via {
+        subtree.insert(
+            "claim".to_string(),
+            // Infallible: a struct of scalars with no map keys to collide.
+            serde_json::to_value(ClaimSettings {
+                via,
+                // WHEN the device was claimed does not move because its
+                // credential did. 0 is the reading `ApiToken::created` gives an
+                // unset clock, and it is what a derived record carries when the
+                // import that claimed the device recorded none.
+                at: claim.at.unwrap_or(0),
+                rotation_required: false,
+            })
+            .expect("the claim record serializes"),
+        );
+    }
+    if let Err(err) = state
+        .api
+        .set_settings(ACCESS_PATH, &Value::Object(subtree))
+        .await
+    {
         return Err(PasswordChangeError::Bus(err));
     }
     // apid knows its own access write happened, so the gate's cache is
@@ -5481,6 +6530,15 @@ async fn change_password(
         .sessions
         .remove_all_except(acting_session.unwrap_or(""));
     state.audit.record("password", "changed", source);
+    if discharged {
+        // A second line and not a replacement: the password change happened
+        // and is recorded as one, and this says what it additionally did to
+        // the device's claim. An operator reading the trail for "when did this
+        // device stop holding the credential it shipped with" greps one name.
+        state
+            .audit
+            .record(CLAIM_ROTATION_EVENT, "completed", source);
+    }
     Ok(())
 }
 

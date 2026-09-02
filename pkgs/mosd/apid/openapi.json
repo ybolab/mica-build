@@ -426,6 +426,68 @@
         }
       }
     },
+    "/api/v1/claim": {
+      "get": {
+        "tags": [
+          "session"
+        ],
+        "summary": "Report how this device was claimed and whether its credential must still be\nrotated.",
+        "description": "**Authenticated, deliberately.** `GET /api/v1/session` already tells an\nunauthenticated caller whether the device is in setup mode, and that is all\nan unauthenticated caller learns here too — \"this device was claimed from a\nmedium and is still holding the password that was on it\" is a sentence an\nattacker would act on, and the operator who needs to read it is signed in\nby construction.\n\nThis is the surface that makes the bound observable BEFORE it bites: the\noperator who claimed a device with a provisioning document sees\n`rotationRequired` here, and can see it the moment they sign in rather than\non the first mutation the device turns away.",
+        "operationId": "api_v1_claim",
+        "responses": {
+          "200": {
+            "description": "How the device was claimed and whether its credential must be rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The access settings could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "mosd is unavailable (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/diagnostics/snapshots": {
       "get": {
         "tags": [
@@ -1592,6 +1654,282 @@
           },
           "504": {
             "description": "The bounded call to mosd timed out (`mosd_timeout`); the operation may still be running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/provisioning/status": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Read what a provisioning document did to this device.",
+        "description": "Two settings reads and no other source: the record mosd wrote when it last\nmet a document, and whether an administrator credential exists. Nothing is\nobserved from a medium at request time — the media are staged and read\nbefore anything is listening, so a request cannot make a device look at a\nstick.",
+        "operationId": "api_v1_provisioning_status",
+        "responses": {
+          "200": {
+            "description": "The applied document's version and canonical digest (`null` when none was ever applied), the last import attempt with its source, outcome, rejection reason and clock reading, and whether the device is still unclaimed. No value the document carried is returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisioningStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to answer (`mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recovery/credential": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Recover the management credential: rotate, never reveal.",
+        "description": "**Presence is the authority, and the only one.** §5.2: an authenticated\nmanagement session may NOT run this flow — a session that can rotate the\ncredential it authenticated with is a session-fixation lever, and an\noperator holding a working credential needs\n`POST /api/v1/actions/change-password` rather than recovery. So the route\ntakes no credential extractor and refuses a caller that presents one.\n\n**What it does, in §5.1's order.** It MINTS a new password — it never\ndiscloses, decrypts or derives the previous secret, and there is no code\npath from here to a stored plaintext. It publishes the new one exactly\nonce, on the channel that proved presence. Only then does it commit, in ONE\nwrite of `access`: the new hash, the emptied token list, the claim record\nand the bumped generation together. Publishing first is §5.1 rule 3's\ndirection — a crash between the two must not be a self-inflicted lockout —\nso the worst outcome here is a credential the operator saw and that never\nworked, which the flow being cheap to re-run answers.\n\n**The previous credential stops working at that commit**, and so does every\nAPI token: §3's step 5 prices it, \"any client or automation holding it must\nbe re-enrolled\". Every session goes with it, for the reason a password\nchange drops them.\n\n**A device-claimed by a provisioning document is the seam P2 named.** Its\nbootstrap secret sat in plaintext on a medium, and losing it before the\nforced rotation is a §5 case rather than an `docs/design/access.md` §4.4\none. A recovery writes the claim record with the channel that claimed the\ndevice preserved and `rotationRequired` FALSE: the credential this flow\nmints was drawn by the device from `OsRng` and shown once at the device, so\nit is not a bootstrap secret, and demanding a rotation of a credential that\nwas just rotated under physical presence would be a bound with nothing left\nto protect.\n\n**An unclaimed device is refused**, pointing at `POST /api/v1/setup`. There\nis nothing to recover on a device that has no credential, and minting one\nhere would be a third channel that can claim a device —\n`mosd_settings::ClaimChannel` has exactly two members and says why.",
+        "operationId": "api_v1_recovery_credential",
+        "responses": {
+          "200": {
+            "description": "A new credential was minted and published on the channel that proved presence; the body carries no secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialRecovered"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Physical presence is not asserted (`presence_required`), or the caller is authenticated and must use `POST /api/v1/actions/change-password` instead (`authenticated_session`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device has no administrator credential to recover; claim it with `POST /api/v1/setup` (`not_claimed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Hashing the new password failed (`hash_failed`), it could not be published on the presence channel (`publish_failed`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reset": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Stage a reset tier.",
+        "description": "**This route stages; mosd applies.** §2.2 requires a reset to be an intent\nrecord plus an idempotent apply, so the whole of this handler's write is\nONE `SetSettings(\"reset\")` — one `Store::save` — after which a power loss\nleaves the device either not asked or asked, never half-reset. mosd carries\nthe tier out before anything else on the next boot and clears the record.\n\n**Authority, per §2.2.** Tiers 1 and 2 are authenticated management\nactions. Tier 3 additionally requires §4 physical presence; the order it\nsits at in §3's decision tree is after credential recovery, so an operator\nwho reaches it holds a credential as well as standing at the device. There\nis no tier 4: `ResetTier` has three members, so `secure-wipe` is a body\nthis route cannot parse.\n\nA tier staged over another replaces it. Both are audited, so nothing is\nsilent, and the alternative — refusing until something un-stages the first\n— is a dead end for an operator who asked for the wrong one.",
+        "operationId": "api_v1_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "The tier is staged and runs on the next boot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetStaged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The tier requires physical presence at the device and none is asserted (`presence_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device was claimed with a bootstrap credential that has not been rotated (`rotation_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body is not this shape, or names no tier this device implements (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3631,11 +3969,11 @@
           "update"
         ],
         "summary": "Read the complete update state.",
-        "description": "Asks mosd's `GetUpdateState`, which queries RAUC and re-derives the\nlifecycle first — this is the polling surface for a UI watching a check,\ndownload or install, and it is never answered from a stale record.",
+        "description": "Asks mosd's `GetUpdateState`, which queries RAUC and re-derives the\nlifecycle first — this is the polling surface for a UI watching a check,\ndownload or install, and it is never answered from a stale record. The\n`rollback` object is derived from the same fresh slot list, so an operator\ndeciding whether to roll back reads the verdict and the slots it came from\nin one answer.",
         "operationId": "api_v1_update_state",
         "responses": {
           "200": {
-            "description": "The update state: `lifecycle` (state machine with reason strings — `update-unavailable` carries the `/mos/updates` workspace's `unavailable`/`degraded` verdict, mirrored under `lifecycle.workspace` —, effective policy, safe-to-reboot gate and override), per-slot status, `booted_slot`, `primary`, `pending_not_confirmed`, `install`, `last_mark`",
+            "description": "The update state: `lifecycle` (state machine with reason strings — `update-unavailable` carries the `/mos/updates` workspace's `unavailable`/`degraded` verdict, mirrored under `lifecycle.workspace` —, effective policy, safe-to-reboot gate and override), per-slot status, `booted_slot`, `primary`, `pending_not_confirmed`, `rollback` (`target`, `permitted`, `reason`), `install`, `last_mark`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4175,6 +4513,98 @@
           },
           "500": {
             "description": "mosd failed to arm it (`mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The bounded call to mosd timed out (`mosd_timeout`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/update/rollback": {
+      "post": {
+        "tags": [
+          "update"
+        ],
+        "summary": "Roll back to the alternate slot, if the guard permits it.",
+        "description": "The guard is mosd's `rollback_eligibility`, read out of the same\n`GetUpdateState` document `GET /api/v1/update` serves — one derivation of\nthe slot state, not a second one here. It refuses when there is no\nalternate slot, when the alternate is the booted slot, when the alternate\nwas never written or is marked bad, when the alternate is NOT the older of\nthe two installs (a rollback goes backward; a newer or unorderable target\nis a pending update, not a rollback target), and when the booted slot is\nitself pending-not-confirmed (that window belongs to the bootloader's\nattempt counter, and a manual rollback inside it races the credit being\nspent).\n\nWhat it then does is ONE mark: `bad` on the **booted** slot. That is what\nmakes the bootloader pick the other one, and it is why this route cannot\nconfirm the slot it rolls back to — PLAN-048's \"cannot mark an unverified\nslot good\" holds structurally, not by review. The unguarded\n`POST /api/v1/update/mark` remains the operator escape hatch beside it;\nthis route is the guarded one.\n\nIt does NOT reboot. A rollback is a boot-order change, and the reboot that\nrealises it goes through the safe-to-reboot gate like every other\n(`docs/design/updates.md` §4) — folding it in here would either bypass\nthat gate or duplicate its override semantics. The answer names the next\nstep instead.",
+        "operationId": "api_v1_update_rollback",
+        "responses": {
+          "200": {
+            "description": "The booted slot was marked bad; the next boot comes from `target`. Reboot with `POST /api/v1/actions/reboot`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RollbackResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No stored bearer token or authenticated browser session (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser session mutation omitted or supplied the wrong CSRF token (`csrf_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device's slot state forbids it: `no_alternate_slot`, `alternate_is_booted_slot`, `alternate_never_installed`, `alternate_marked_bad`, `alternate_is_newer`, `install_order_unknown`, `booted_slot_not_confirmed`, or `rollback_refused` for a verdict this surface does not know",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "RAUC refused or failed the mark, or mosd could not read the slot state (`mosd_failed`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4850,6 +5280,60 @@
           }
         }
       },
+      "ClaimStatus": {
+        "type": "object",
+        "description": "`GET /api/v1/claim` response body.",
+        "required": [
+          "state",
+          "rotationRequired"
+        ],
+        "properties": {
+          "at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The device clock's reading when the claim committed, seconds since the\nUNIX epoch. **A label, never a deadline** — the reading\n`access.apiTokens[].created` is. Absent while the device is unclaimed,\nand absent for a claim by document that predates any recorded import.",
+            "minimum": 0
+          },
+          "rotationRequired": {
+            "type": "boolean",
+            "description": "Whether the claiming credential is still the bootstrap secret it\narrived as. While this is true the device serves reads and refuses\nevery authenticated mutation but the password change that clears it."
+          },
+          "state": {
+            "type": "string",
+            "description": "`unclaimed` or `claimed`."
+          },
+          "via": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which channel minted the administrator credential: `setup` or\n`provisioning-document`. Absent while the device is unclaimed."
+          }
+        }
+      },
+      "CredentialRecovered": {
+        "type": "object",
+        "description": "`POST /api/v1/recovery/credential` response body.\n\n**It carries no secret and there is no member it could carry one in.**\n§5.1 rule 2 returns the credential on the channel that proved presence,\nnever over the network, so the body says that a credential was minted and\nwhere it went — the operator standing at the console reads it there.",
+        "required": [
+          "mechanism",
+          "generation"
+        ],
+        "properties": {
+          "generation": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`access.device.generation` after the rotation (§5.1 rule 5).",
+            "minimum": 0
+          },
+          "mechanism": {
+            "type": "string",
+            "description": "The mechanism that proved presence and published the credential."
+          }
+        }
+      },
       "CustomUiStatus": {
         "type": "object",
         "required": [
@@ -5199,6 +5683,38 @@
           }
         }
       },
+      "ProvisioningStatus": {
+        "type": "object",
+        "description": "What a provisioning document did to this device.",
+        "required": [
+          "unclaimed"
+        ],
+        "properties": {
+          "documentDigest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Canonical digest of the document last applied; `null` with the version."
+          },
+          "documentVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`version` of the document last applied; `null` when none ever was.",
+            "minimum": 0
+          },
+          "lastImport": {
+            "description": "The last import ATTEMPT: `source` (`boot` or `media`), `outcome`\n(`applied`, `unchanged` or `rejected`), `reason` for a rejection, and\n`at`, the device clock's reading when it happened. `null` when no\nmedium has ever been offered to this device."
+          },
+          "unclaimed": {
+            "type": "boolean",
+            "description": "Whether the device still has no administrator credential.\n\nThe same question `GET /api/v1/session` answers with `state: \"setup\"`,\nasked here because it is what decides whether a document offered on a\nmedium would be applied at all: a claimed device refuses one."
+          }
+        }
+      },
       "RebootOverride": {
         "description": "The armed override, as mosd recorded it."
       },
@@ -5218,8 +5734,69 @@
         },
         "additionalProperties": false
       },
+      "ResetRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/reset` request body.",
+        "required": [
+          "tier"
+        ],
+        "properties": {
+          "tier": {
+            "type": "string",
+            "description": "Which tier. §2.2: \"A tier names itself in the request and in the audit\nrecord. There is no parameterless reset.\"",
+            "example": "configuration"
+          }
+        }
+      },
+      "ResetStaged": {
+        "type": "object",
+        "description": "`POST /api/v1/reset` response body.",
+        "required": [
+          "tier",
+          "applies"
+        ],
+        "properties": {
+          "applies": {
+            "type": "string",
+            "description": "When it runs. Always `next-boot`: §2.2 requires a reset to be an intent\nrecord plus an idempotent apply, and mosd applies it before anything\nelse on the next boot."
+          },
+          "tier": {
+            "type": "string",
+            "description": "The tier that is now staged.",
+            "example": "configuration"
+          }
+        }
+      },
       "ResourceValue": {
         "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value: a dot-path can name a subtree, an array or a scalar.\n\nSecrets are replaced by the string `\"<redacted>\"`, which a client can\nreceive anywhere inside the body. Every field named `psk`, `passwordHash`,\n`password_hash`, `hash` or `privateKey` carries the sentinel instead of its\nvalue, at any depth and inside arrays, and so does the whole body when the\ndot-path names one of those fields directly.\n\nThe sentinel is read-only: writing it back is refused at **422** rather\nthan stored, because storing it would destroy the credential."
+      },
+      "RollbackResponse": {
+        "type": "object",
+        "description": "What a rollback did: RAUC's answer to the mark, and the slot the next boot\nwill therefore come from.",
+        "required": [
+          "slotName",
+          "message",
+          "target",
+          "nextStep"
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "RAUC's own message for the mark."
+          },
+          "nextStep": {
+            "type": "string",
+            "description": "What the operator must still do; this route deliberately does not."
+          },
+          "slotName": {
+            "type": "string",
+            "description": "RAUC's resolved name for the slot that was marked bad — the one this\nsystem is running from."
+          },
+          "target": {
+            "type": "string",
+            "description": "The slot the next boot comes from."
+          }
+        }
       },
       "SessionLoginRequest": {
         "type": "object",
@@ -5710,7 +6287,7 @@
         }
       },
       "UpdateState": {
-        "description": "The update state document, verbatim from mosd: `lifecycle` (state machine,\npolicy, reboot gate), per-slot status, `booted_slot`, `primary`,\n`pending_not_confirmed`, `install` and `last_mark`."
+        "description": "The update state document, verbatim from mosd: `lifecycle` (state machine,\npolicy, reboot gate), per-slot status, `booted_slot`, `primary`,\n`pending_not_confirmed`, `rollback`, `install` and `last_mark`.\n\n`rollback` is the one place slot state is offered as a decision: mosd's\n`rollback_eligibility` resolves the alternate slot, says whether a manual\nrollback is permitted, and names the refusal otherwise. There is no second\nread route for it — this document is the single writer of that fact."
       },
       "VlanParameters": {
         "type": "object",
