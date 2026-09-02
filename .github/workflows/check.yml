@@ -188,12 +188,14 @@ jobs:
           set -euo pipefail
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
-          cargo run --locked --manifest-path pkgs/mosd/Cargo.toml -p apid -- --openapi \
+          MOS_APID_UI_DIST_DIR="$PWD/pkgs/mosd/apid/ui/dist" \
+            cargo run --locked --manifest-path pkgs/mosd/Cargo.toml -p apid -- --openapi \
             >"$tmp/openapi.json"
           diff -u pkgs/mosd/apid/openapi.json "$tmp/openapi.json" || {
             echo "error: pkgs/mosd/apid/openapi.json is not what apid --openapi prints." >&2
             echo "       Regenerate it from pkgs/mosd/:" >&2
-            echo "         cargo run -p apid -- --openapi > apid/openapi.json" >&2
+            echo "         bash apid/ui/build.sh" >&2
+            echo '         MOS_APID_UI_DIST_DIR="$PWD/apid/ui/dist" cargo run -p apid -- --openapi > apid/openapi.json' >&2
             exit 1
           }
           echo "pkgs/mosd/apid/openapi.json matches apid --openapi"
@@ -437,8 +439,10 @@ jobs:
       - name: The apid phase pins agree with the committed OpenAPI document
         run: make os-apid-api-spec-pins
 
-      - name: The built-in apid SPA and committed production assets agree
-        run: bash pkgs/mosd/apid/ui/run.sh
+      - name: The built-in apid SPA builds as ignored production assets
+        run: |
+          make os-apid-ui-build-contract-test
+          bash pkgs/mosd/apid/ui/run.sh
 
       - name: What this job does not cover
         if: always()

@@ -237,6 +237,12 @@ os-layout-lint:
 os-verify-test:
 	bash verify/run.sh
 
+# The built-in UI is generated before Rust compiles APID. This source-only
+# gate proves the generated tree stays outside Git and that every owned Cargo
+# entry preserves the producer boundary.
+os-apid-ui-build-contract-test:
+	bash tests/apid-ui-build-contract-test.sh
+
 # The TypeScript build driver: the typed board geometry the assemblers read, and
 # the Bun.$ wrappers for the toolset they drive.
 #

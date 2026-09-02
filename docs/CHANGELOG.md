@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Built-in UI assets are generated before Rust builds (2026-09-02)
+
+`pkgs/mosd/apid/ui/dist/` is now ignored generated output rather than a second
+source of truth in Git. The frontend production entry uses local Bun or the
+pinned Bun container; local checks, target builds and package producers run it
+before Cargo and pass the absolute output directory explicitly. APID's build
+script validates that tree, copies accepted bytes into Cargo-owned output and
+generates the same sorted embedded VFS. The frontend gate now proves source,
+tests and a fresh production build, while a focused contract gate prevents
+generated files or unwired Cargo entries from returning. PLAN-065.
+
 ## The built-in UI now implements the complete product prototype (2026-09-02)
 
 The recovery SPA now matches the approved horizontal Klein-blue prototype and

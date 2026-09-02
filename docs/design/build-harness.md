@@ -84,8 +84,13 @@ builds it; whichever of the two runs first pays the few seconds for it.
 
 ## 3. The Rust gate: `pkgs/mosd/hack/check.sh`
 
-The gate is five commands, unremarkable in themselves —
-`cargo fmt --all --check` (`pkgs/mosd/hack/check.sh`),
+The gate requires the ignored built-in UI tree before Rust: when
+`MOS_APID_UI_DIST_DIR` is absent it runs `apid/ui/build.sh` and exports that
+absolute path itself. When the gate is run inside the Rust-only container,
+build the tree on the host first and pass
+`MOS_APID_UI_DIST_DIR=/src/pkgs/mosd/apid/ui/dist`; the script then consumes it
+without looking for Bun or Docker in that container. It next runs five
+unremarkable Rust commands — `cargo fmt --all --check` (`pkgs/mosd/hack/check.sh`),
 `cargo clippy --workspace --all-targets --locked -- -D warnings`
 (`pkgs/mosd/hack/check.sh`) and
 `cargo nextest run --workspace --locked` (`pkgs/mosd/hack/check.sh`) among

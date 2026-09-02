@@ -31,8 +31,9 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
    明确操作不会改变设备且刷新后复位。进入生产交付前可按 capability 屏蔽。
 5. **安全操作显式且可恢复。** 一次性秘密只展示一次；危险操作显示影响范围；不可逆操作需要
    专用确认流程；所有 mutation 都正确处理 CSRF、任务进度和 API 错误。
-6. **内置交付约束优先。** 运行时不得依赖 CDN；`ui/dist` 的完整文件树必须以编译期虚拟文件系统
-   嵌入 `mos-apid`，入口以外的构建资源使用内容哈希，并通过路由与语言包懒加载减少首次下载。
+6. **内置交付约束优先。** 运行时不得依赖 CDN；构建阶段生成且不纳入版本控制的 `ui/dist` 完整
+   文件树必须以编译期虚拟文件系统嵌入 `mos-apid`，入口以外的构建资源使用内容哈希，并通过路由
+   与语言包懒加载减少首次下载。
 
 推荐路线不是重做现有界面，而是先统一状态、错误、表单和响应式规范，再完成已经具备 API 的
 网络管理，最后随各后端计划获批和落地逐项开放系统页面。
@@ -180,7 +181,7 @@ pkgs/mosd/apid/ui/
 ├── src/lib/                  # 公共类型、领域辅助函数和迁移期 transport 转发
 ├── src/styles.css            # 全局 token 与当前布局
 ├── vite.config.ts            # /_ui/ base、路由拆分与内容哈希输出
-└── dist/                     # 受版本控制的嵌入产物
+└── dist/                     # 被 gitignore 的临时生产产物；Rust 构建前生成
 ```
 
 新增复杂领域按功能切片组织：
@@ -211,10 +212,23 @@ dist/assets/<route>-<hash>.js
 dist/assets/zh-cn-<hash>.js
 ```
 
-`pkgs/mosd/apid/build.rs` 在 Rust 编译时递归扫描已提交的 `ui/dist`，拒绝符号链接、不安全名称和非普通
-文件，按逻辑路径排序后生成 `include_bytes!` 资产表。`assets::builtin` 对该表做二分查找，所以添加、删除
-或重命名 chunk 不需要修改 Rust 路由。Rust/native/cross build 只消费已提交的 `dist`，不运行 Bun 或 Vite；
-缺少 `index.html` 或资源树非法会直接使构建失败。
+`pkgs/mosd/apid/ui/build.sh` 使用本机 Bun；本机没有 Bun 时改用仓库锁定的 Bun 容器，生成完整 `dist`。
+完整 target 与 package producer 构建强制使用固定容器路径，避免本机版本和 checkout 路径进入发布产物；
+本地质量门禁仅在没有 Bun 时使用该容器。输出只允许落在 `ui/dist` 或仓库 `_out/` 下，防止 Vite
+`emptyOutDir` 清理源码或任意目录。`dist` 必须保持 gitignore。`pkgs/mosd/hack/check.sh`、
+`build-target.sh` 和 `build-deb.sh` 均先完成前端构建，再通过绝对路径环境变量
+`MOS_APID_UI_DIST_DIR` 把产物交给 Rust；Rust-only 构建容器不运行 Bun 或 Vite。
+
+`pkgs/mosd/apid/build.rs` 递归扫描传入的生成目录，拒绝符号链接、不安全名称和非普通文件，要求
+`index.html` 存在，按逻辑路径排序，把通过检查的字节复制到 Cargo `OUT_DIR`，再生成 `include_bytes!`
+资产表。`assets::builtin` 对该表做二分查找，所以添加、删除或重命名 chunk 不需要修改 Rust 路由；
+缺少变量、入口文件或资源树非法会直接使构建失败。直接运行 Cargo 时必须先执行 `build.sh` 并传入绝对路径：
+
+```bash
+cd pkgs/mosd
+bash apid/ui/build.sh
+MOS_APID_UI_DIST_DIR="$PWD/apid/ui/dist" cargo check -p apid
+```
 
 缓存规则固定如下：`index.html` 和所有 SPA fallback 使用 `no-store`；由 Vite 生成的 `assets/` 内容哈希
 资源使用 `public, max-age=31536000, immutable`；其他嵌入文件默认 `no-cache`。所有响应继续使用固定 MIME
@@ -245,6 +259,7 @@ allowlist、`nosniff`、CSP 和 `Referrer-Policy`。安全的无扩展路径才�
 
 ```bash
 cd pkgs/mosd
+bash apid/ui/build.sh
 cargo run -p mos-ui-bundle --bin mos-ui-pack -- \
   pack apid/ui/dist --name example-console --version 1.4.0 \
   --api-version v1 -o example-console-1.4.0.mos-ui.zip
@@ -266,15 +281,19 @@ bun run lint
 bun run typecheck
 bun run test
 bun run coverage
-./run.sh
+bash build.sh
+bash run.sh
 ```
 
 `bun run dev` 通过 nsl 启动 Vite；API 页面仍需要可访问的真实 `mos-apid` 或受控测试 stub。
 仓库当前没有可以擅自假定的同源后端代理流程，实现新的 API 页面前应把本地 API 连接方式写入该
 包 README 或开发脚本。
 
-`run.sh` 是交付门禁：冻结安装、lint、typecheck、test，在临时目录重新构建，再逐字节比较提交的
-`dist`。源代码与嵌入产物必须在同一提交更新。
+`build.sh` 是唯一生产资源构建入口，默认写入被忽略的 `dist/`；`--out-dir` 只接受该目录或仓库
+`_out/` 下的暂存目录，`--container` 强制使用锁定的 Bun 构建环境。
+`run.sh` 是前端交付门禁：冻结安装、lint、typecheck、test，再通过 `build.sh` 生成新的生产树。
+`tests/apid-ui-build-contract-test.sh` 另外保证 `dist/` 未被 Git 跟踪，并检查所有仓库维护的 APID Cargo
+入口都先构建 UI、再显式传入生成目录。
 
 测试数量和覆盖率以当前 `bun run test`/`bun run coverage` 报告为准。门禁通过只能证明已覆盖的逻辑，
 不代表页面状态已经完整；新增交互仍须按第 15 节补齐状态矩阵。
@@ -1216,7 +1235,7 @@ success、422 field path、409 conflict、503/504 unknown result、cache invalid
 | Route integration | session gate、route params、query invalidation、API fixture |
 | Browser smoke | setup/login、service toggle、token one-time、logout、navigation、responsive |
 | Backend contract | OpenAPI 与 binary 输出一致；UI fixture 可被当前 schema 解析 |
-| Asset delivery | `/_ui` VFS 全树、路由域隔离、fallback、CSP、MIME、缓存、敌意路径 404、committed dist byte match |
+| Asset delivery | `/_ui` VFS 全树、路由域隔离、fallback、CSP、MIME、缓存、敌意路径 404、ignored dist/build-entry contract |
 
 测试数据不得使用真实 token、Wi-Fi 或设备密钥。错误 fixture 要覆盖 `code/message/source/path`，不要只 mock
 HTTP status。
@@ -1233,7 +1252,7 @@ HTTP status。
 - English/zh-CN 文案完整，无 hard-coded 产品字符串；
 - 秘密、错误和 debug detail 通过脱敏测试；
 - lint、typecheck、tests、coverage 和 `run.sh` 通过；
-- dist 与源代码同提交，gzip 变化已记录；
+- `dist/` 未被 Git 跟踪，标准构建入口可从当前源代码生成它，gzip 变化已记录；
 - 用户文档/帮助链接只指向真实存在且版本匹配的内容；
 - 本指南中的页面状态或 API 映射如有变化，在同一变更中更新。
 
@@ -1352,7 +1371,7 @@ UI 开发在提交前逐项确认：
 - [ ] `dist` 完整树可递归嵌入，`index.html` 及其引用资源可访问，哈希资源缓存规则正确；
 - [ ] `/`、`/_ui`、`/api` 的资源、miss、SPA fallback 和敌意路径不会跨所有权域；
 - [ ] lint/typecheck/test/coverage/`run.sh` 通过；
-- [ ] `dist` 与源代码同步，bundle delta 已记录；
+- [ ] `dist/` 未被 Git 跟踪，标准构建入口可从当前源代码生成它，bundle delta 已记录；
 - [ ] 本文、OpenAPI 和实现没有互相冲突。
 
 ## 20. 追溯位置

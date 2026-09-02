@@ -37,9 +37,10 @@
   address-family, address, DNS and route details. Observation failure is
   explicit and does not hide readable configuration.
 - The built-in SPA uses root-relative `/api/...` requests and stores no session
-  or bearer credential in browser storage. Its committed `ui/dist` output is
-  rebuilt and byte-compared in CI before `apid/build.rs` recursively embeds the
-  complete tree. `index.html` is the only stable name; content-hashed route,
+  or bearer credential in browser storage. Its ignored `ui/dist` output is
+  generated before Rust checks and packaging, then `apid/build.rs` recursively
+  embeds the complete tree supplied by the build entry. `index.html` is the
+  only stable name; content-hashed route,
   locale and vendor chunks remain independently addressable and cacheable.
 - `/`, `/_ui` and `/api` are isolated ownership domains. Misses never fall
   through to another resource root. The shared logical-path validator decodes
@@ -3241,7 +3242,7 @@ belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 
 ### 6.2 The built-in default UI, inside verity — **[implemented]**
 
-The built-in UI is a React/Vite SPA whose committed output is
+The built-in UI is a React/Vite SPA whose generated output is
 `pkgs/mosd/apid/ui/dist`. It is reachable unconditionally at `/_ui` and `/_ui/`;
 safe extensionless paths below `/_ui/` use its own `index.html`, while exact
 assets and misses never consult `/mos/ui`. When no usable custom bundle is
@@ -3249,21 +3250,25 @@ active, `GET /` redirects to this recovery UI rather than copying its bytes into
 the root namespace.
 
 **Where it lives in the image: it is a virtual tree inside one binary.**
-`pkgs/mosd/apid/build.rs` recursively walks the committed `ui/dist`, rejects
-symlinks, non-files and unsafe logical names, requires `index.html`, sorts the
-paths and generates an `include_bytes!` table in Cargo's `OUT_DIR`.
+`pkgs/mosd/apid/build.rs` requires the absolute generated directory through
+`MOS_APID_UI_DIST_DIR`, recursively walks it, rejects symlinks, non-files and
+unsafe logical names, requires `index.html`, sorts the paths, copies accepted
+bytes into Cargo's `OUT_DIR`, and generates an `include_bytes!` table there.
 `pkgs/mosd/apid/src/assets/builtin.rs` includes that table and performs binary
 search lookup. The running device reads no built-in UI directory, archive or
 locale endpoint; every hashed JavaScript, CSS and imported asset is covered by
 the same `apid` binary as the stable HTML entry.
 
-The frontend producer uses Bun and Vite before the Rust/image build and commits
-the result. Native and cross Cargo builds consume that tree without invoking a
-JavaScript toolchain. `pkgs/mosd/apid/ui/run.sh` rebuilds in a temporary
-directory and recursively compares every path and byte with the committed
-`dist`; Cargo separately fails closed if the committed tree lacks the entry or
-contains a path the embedded VFS cannot safely name. There is no fixed file
-count and no Rust source edit when a content hash changes.
+The frontend producer uses Bun and Vite before the Rust/image build and leaves
+the result in ignored `ui/dist`. `pkgs/mosd/apid/ui/build.sh` uses local Bun or
+the repository's pinned Bun container; complete target and package-producer
+builds require the pinned-container path, while local checks use it as the
+no-Bun fallback. Each invokes the frontend before entering Cargo, then passes
+its absolute output path explicitly. `pkgs/mosd/apid/ui/run.sh` runs install, lint,
+typecheck, tests and a fresh production build; Cargo separately fails closed if
+the generated tree lacks the entry or contains a path the embedded VFS cannot
+safely name. There is no fixed file count, committed build output or Rust
+source edit when a content hash changes.
 
 The VFS keeps each asset independently addressable and cacheable. The stable
 entry and SPA fallbacks are `no-store`; Vite's content-hashed `assets/` output
