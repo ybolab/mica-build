@@ -22,6 +22,7 @@
   - `bus.md` — management/application boundary, package-enrolled `com.mos.Item1` applications, D-Bus policy and MQTT grammar
   - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
   - `updates.md` — device update lifecycle: state model, update policy file, maintenance/metered/offline rules, safe-to-reboot gate, operator procedures, fault-test evidence
+  - `recovery.md` — recovery design: the four reset tiers and what each clears, the data-preserving-first decision tree, the physical-presence contract, credential rotation rather than disclosure, both-slots-failed and the non-destructive repair tier
   - `release-artifacts.md` — the release directory: manifest schema, SHA256SUMS/SBOM/provenance/licenses, publication gate, customer verification procedure
   - `security-model.md` — threat and physical-access boundaries per concern, the I1–I4 boot-assurance ladder, honest limits
   - `security-lifecycle.md` — key/credential lifecycles with owner roles, release channels and custody, support windows, security response
