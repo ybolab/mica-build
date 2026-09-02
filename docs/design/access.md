@@ -72,9 +72,14 @@ Implemented by `pkgs/mosd/mosd-settings/src/model.rs` (the tree),
 ### 3.1 As shipped
 
 Access policy is a subtree of the mosd settings tree (`docs/design/mosd.md` §3),
-**schema version 4**, persisted to `/var/lib/mos/settings.toml` on STATE:
+**schema version 12**, persisted to `/var/lib/mos/settings.toml` on STATE:
 
 ```toml
+[access.claim]                # §4.4, schema v11; absent until the device is
+via = "setup"                 # claimed, and absent by design on a device
+at = 1700000000               # claimed by a provisioning document
+rotationRequired = false
+
 [access.ssh]
 enabled = false
 port = 22
@@ -92,6 +97,12 @@ shellEnabled = false
 [access.device]
 generation = 0
 # passwordHash is optional and absent until first boot mints it
+
+[[access.apiTokens]]          # schema v8; the list is omitted entirely when
+id = "3f2a9c41"               # no token has been minted
+name = "ci"
+hash = "0000...0001"          # SHA-256 of the secret, never the secret
+created = 1700000000
 ```
 
 `enabled = false` is the default **on both image profiles**. `authorizedKeys` is
@@ -326,6 +337,160 @@ key — neither of which `crypt(3)` can express at all. The STATE-backed shadow
 machinery in `ro-root.md` §4 now exists only for the transient password and for
 keeping every other account locked; it is not permanent architecture.
 
+### 4.4 The claim: how a device stops being anyone's — **[implemented]**
+
+Implemented by `pkgs/mosd/apid/src/routes.rs` (the claim, its record, the
+rotation gate and `GET /api/v1/claim`), `pkgs/mosd/mosd-settings/src/model.rs`
+(`access.claim`, settings schema **v11**) and, for the other channel,
+`pkgs/mosd/mosd/src/provisioning_doc.rs`.
+
+**A claim is the unclaimed → claimed transition, and `access.webAdmin` is the
+one fact that decides which side of it a device is on.** It always was. What
+schema v11 adds is `access.claim`, the part `webAdmin` cannot state: which
+channel minted the credential (`setup` or `provisioning-document`), the device
+clock's reading at the commit, and whether that credential is still the
+bootstrap secret it arrived as. The record never contradicts `webAdmin`; a tree
+carrying a record and no credential is a bug, not a state.
+
+#### Two channels, one state
+
+Exactly two writers can create the FIRST `access.webAdmin` on a device that has
+none: `POST /api/v1/setup`, and the provisioning-document importer
+(`docs/design/provisioning.md` §4.1). Every other writer of that path is
+authenticated, and an unclaimed device has no credential to authenticate with.
+The setup route writes the record in the same save as the credential. **The
+importer deliberately writes none**, and its absence is what identifies it:
+
+- the importer refuses to apply a document at all once `access.webAdmin` exists
+  (§4.1.4's already-claimed rule), so a document that applied ran on an
+  unclaimed device;
+- therefore a device that is claimed, carries no record, and has an applied
+  document was claimed **by** that document.
+
+**This reading holds because only the setup route and the document importer can
+create a first `webAdmin`; a third writer would make the silence ambiguous.** A
+device claimed by that third writer would be indistinguishable from one claimed
+by a document, and would be told to rotate a credential no medium ever carried.
+The premise is stated here and deliberately not asserted by a check: a count of
+writers is a claim about the shape of the source, and a third one arrives with
+its own code review rather than by drift.
+
+apid reads it exactly that way. The alternative — teaching the importer to
+write a record too — would put a second statement of "this device is claimed"
+beside `webAdmin`, on the one write path that runs before anything is
+listening. WHEN a document claim happened is not copied either: P1 already
+records it in `provisioning.document.lastImport.at`, and a second copy is a
+second thing that can disagree.
+
+#### The bound is a forced rotation, not an expiry
+
+PLAN-046 offers either. This is a rotation, for two reasons.
+
+**An expiry would be the first deadline this appliance ever enforced against
+its own clock.** The schema says so twice already, in as many words:
+`access.apiTokens[].created` and `provisioning.document.lastImport.at` are each
+documented as *"a label, never a deadline"*, because the image enables no time
+daemon before a device is manageable and the reading is whatever the clock
+happened to say. An unclaimed device is precisely the device with no
+synchronised clock. A claim window measured against it would close early on one
+device and never on another, and nothing on the device could tell which had
+happened.
+
+**An expiry can brick; a rotation cannot.** A claim window that closed with
+nobody in it leaves a device with no credential and no way to create one —
+§9.1's "no software path back in", reached by doing nothing. Releasing that
+state needs a physical-presence gate (`docs/design/recovery.md` §4), which is
+not built. A forced rotation bites only on a device that is already claimed and
+whose operator is already signed in, so the worst it can cost is one password
+change.
+
+**What the rotation is.** A credential that arrived on a provisioning document
+sat in plaintext on a medium the device deliberately does not erase
+(`docs/design/provisioning.md` §4.1.6, *"treat a provisioning medium as
+credential material"*), and one document may be written onto a batch of cards.
+So a claim by document sets `rotationRequired`. Until it is discharged, apid
+serves every read and refuses every authenticated **mutation** with **409
+`rotation_required`** — except `POST /api/v1/actions/change-password`, which is
+the one that clears it. The check lives in the credential extractor rather than
+in a list of routes, so a mutation added later is covered by construction.
+
+Those two exemptions are the anti-brick argument, and they are what an operator
+needs: they can sign in (`POST /api/v1/session` takes no credential extractor),
+they can read **why** on `GET /api/v1/claim`, and they can do the one thing that
+lifts it. A claim through `POST /api/v1/setup` sets no such flag: that password
+was chosen by the caller at the moment of the claim and was never written down
+anywhere the device can reason about.
+
+**The bound is FIRST SIGN-IN, not elapsed time, and nothing counts down.** A
+bootstrap credential on a device that is claimed but has never been signed into
+stays valid **indefinitely** — a device that came off the line with a document
+on its card and sat in a warehouse for a year is holding the same working
+password on the day it is unboxed. That is the deliberate price of a bound that
+cannot brick the device: the only moment this appliance can safely demand a
+rotation is one where somebody is there to perform it, and "somebody is there"
+is exactly what a sign-in proves and a clock reading does not. **A reader who
+takes "forced rotation" to mean the credential stops working on its own will
+plan an exposure window that does not exist.** There is none. What bounds that
+exposure before the first sign-in is physical custody of the medium
+(`docs/design/provisioning.md` §4.1.6, which is why that section says to treat
+one as credential material), not this rule.
+
+**Observable before it bites.** `GET /api/v1/claim` (authenticated) answers the
+state, the channel, the moment and `rotationRequired`. It is authenticated
+deliberately: *"this device was claimed from a medium and still holds the
+password that was on it"* is a sentence an attacker would act on, and the
+operator who needs it is signed in by construction.
+
+**It does not overlap `recovery.md` §5.** That flow is for an operator who has
+**lost** the credential; it is presence-gated, it mints and never reveals, and
+an authenticated session may not run it. This one is for an operator who
+**holds** a credential and must replace it, which §5.2 names as "the ordinary
+change-password path, which is a different feature". A device whose bootstrap
+credential is lost before it is rotated is a §5 case, not a §4.4 one — and
+§4.3's `requirePhysicalPresence` is the gate it waits on, which is not this
+work's to build.
+
+#### Claiming twice
+
+`POST /api/v1/setup` on a claimed device answers **409 `already_configured`**
+and writes nothing. **What an unauthenticated caller learns from that is one
+bit — whether this device has an administrator credential — and it already had
+that bit**: `GET /api/v1/session` answers `setup` or `unauthenticated` without
+a credential, because a first-run wizard cannot ask for one. The refusal is
+therefore not a new disclosure; it is the same bit, in the response to a
+request that could only have been an attempt to take the device. Acceptable
+because the alternative — answering as though the claim had succeeded — would
+be a scan-friendly way to burn an operator's device out of a script, and
+because the bit is not a secret: an appliance on a network that has never been
+configured is discoverable in a dozen cheaper ways.
+
+Nothing else is disclosed. Not the hash, not its length, not when the
+credential was set, not which channel set it: those live behind §4.4's
+authenticated claim route. A refused claim is audited (§6).
+
+#### One commit point
+
+**The claim writes the `access` subtree ONCE.** The credential, the claim
+record and the API token the route mints are three keys of one subtree, so mosd
+turns them into one `Settings::set` and one `Store::save`, whose commit point
+is a rename — `docs/design/provisioning.md` §4.1.3's argument, held here by the
+same construction. A power loss therefore leaves the device fully unclaimed or
+fully claimed, never a credential without its token or a token without its
+record. The hostname and network entries a setup body may also carry are
+written **before** it and separately, because neither claims the device: a
+failure in either leaves an unclaimed, still-claimable appliance and the caller
+may post the same body again.
+
+**A retry after an interrupted claim mints no second identity and no second
+credential.** The device identity is drawn once by
+`pkgs/mosd/mosd/src/identity.rs` and the claim never touches it. If the save
+did not land, the retry claims a device that is exactly as it was. If it did
+land and only the answer was lost, the retry is the 409 above — so there is
+never a second token that also works and that nobody was told about. The
+rotation is the same shape: the new hash and the record that the bootstrap
+secret is gone commit in one write, because a crash between two writes would
+either demand a rotation that already happened or excuse one that never did.
+
 ## 5. Layered disablement
 
 ### 5.1 Runtime — **[implemented]**
@@ -464,18 +629,35 @@ write is logged and swallowed rather than refusing to serve management.
 Refusing management when the disk fails is a lockdown decision with the same
 brick risk as the paragraph above, and it is not this campaign's to take.
 
-## 7. Provisioning paths (ordered by preference) — **[not implemented]**
+## 7. Provisioning paths (ordered by preference) — **[partial]**
 
-None of these five is built; they are the ordering a later campaign should
-follow. Today the only path in is apid over an existing network.
+**Paths 1 and 2 are built.** Both are one provisioning document read from an
+offline medium at boot; `docs/design/provisioning.md` §4.1 is the mechanism and
+this list is only the preference order it came from. Paths 3, 4 and 5 are not
+built and are the ordering a later campaign should follow. Apart from the two
+offline documents, the only path in is apid over an existing network.
 
-1. BOOT-partition provisioning file (edit on SD/USB with any reader; physical
-   possession of the boot medium already implies full control).
-2. Signed config drop via USB (udev-triggered import; vendor-key signature).
-3. AP-mode captive setup (connd + apid).
-4. HDMI local setup: kiosk display renders the apid wizard with USB
-   keyboard/touch input (design/display.md).
-5. Console wizard (tty2) as the no-display, no-WiFi fallback.
+1. **[implemented]** BOOT-partition provisioning file (edit on SD/USB with any
+   reader; physical possession of the boot medium already implies full
+   control) — `docs/design/provisioning.md` §4.1.
+2. **[implemented, and weaker than this line used to promise]** Config drop on
+   removable media — `docs/design/provisioning.md` §4.1. This entry read
+   *"signed config drop via USB (udev-triggered import; vendor-key
+   signature)"*, and **what shipped has neither half**:
+   - **no signature.** The transport verifies none, and there is no vendor key
+     in the image for this purpose. Authorisation is physical possession of the
+     medium, bounded by §4.4's already-claimed rule; the gap is stated in
+     `docs/design/provisioning.md` §4.1.7 and closing it is a separate
+     decision, not an oversight.
+   - **no udev trigger.** Media are consulted **once, at boot**, before
+     anything is listening. A stick pushed into a running appliance is a
+     next-boot document; there is deliberately no rule by which inserting media
+     reconfigures a live device.
+3. **[not implemented]** AP-mode captive setup (connd + apid).
+4. **[not implemented]** HDMI local setup: kiosk display renders the apid
+   wizard with USB keyboard/touch input (design/display.md).
+5. **[not implemented]** Console wizard (tty2) as the no-display, no-WiFi
+   fallback.
 
 ## 8. Phasing & campaign mapping
 
@@ -515,6 +697,28 @@ console path was *nominally* usable — but nothing in the system ever exposed
 that password to the operator (M5's own known gap). The path was already
 unusable. This campaign makes it **honestly** unusable rather than closing a
 working door.
+
+**The path back in is now code, and it is not yet a door.**
+`docs/design/recovery.md` section 5 designed it and
+`POST /api/v1/recovery/credential` (`pkgs/mosd/apid/src/routes.rs`) implements
+it: under the physical-presence contract of that document's section 4, the flow
+**mints a new management credential and returns it once** on the channel that
+proved presence, never discloses, decrypts or recovers the previous secret,
+invalidates that secret at the same commit, bumps
+`access.device.generation`, and audits every attempt including the refusals. It
+is credential **rotation**, not disclosure, and it is not a permanent shell — an
+authenticated session is refused and told to use section 4.1's change-password
+path instead.
+
+**What that does not change: 9.1 above is still the shipped truth on both
+boards.** The gate is one seam keyed by the board capability
+`recovery.presence`, and nothing in the tree yet WRITES the assertion it reads
+— `docs/design/recovery.md` section 4 names that missing half and section 8
+carries it as bench-dependent per board. Until a board has it, an operator who
+has lost the credential and every key still reaches section 9.2, and the
+successful-rotation release of the brute-force guard that section 6 records as
+missing is likewise implemented but unreachable. Read those two sections
+together before concluding a fielded unit can be recovered without a reflash.
 
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
