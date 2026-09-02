@@ -547,11 +547,16 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **9**, declared as
-`pub const SCHEMA_VERSION: u32 = 9;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
+**Schema version.** `SCHEMA_VERSION` is **11**, declared as
+`pub const SCHEMA_VERSION: u32 = 11;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
 stamped into every default tree, `schema_version: SCHEMA_VERSION,`
 (`pkgs/mosd/mosd-settings/src/model.rs`). It was **4** when this section was
-first written; the number moves and the API must never hard-code it, which is
+first written, **9** at the last re-measure, and **10** for the
+provisioning-document record; the standing rule is that **whoever moves the
+constant updates this document in the same change**, because nothing gates the
+value — the index check tests membership, not content, which is how this line
+sat at 8 while the code said 9. The number moves and the API must never
+hard-code it, which is
 why `GET /api/v1/meta` reads it from `mosd_settings::SCHEMA_VERSION` at request
 time (`pkgs/mosd/apid/src/routes.rs`) rather than copying it. It is **read-only
 through the write path**: a write whose first path segment is `schema_version`
@@ -583,10 +588,11 @@ module remains authoritative when fields are added or renamed.
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
-| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **9** — `pub const SCHEMA_VERSION: u32 = 9;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's third value and the reason §2.1 serves the number rather than documenting it |
+| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **11** — `pub const SCHEMA_VERSION: u32 = 11;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's fifth value and the reason §2.1 serves the number rather than documenting it |
 | `hostname` | `String` | `pub hostname: String,` (`pkgs/mosd/mosd-settings/src/model.rs`) | system hostname, default `hostname: "mos".to_string(),` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `network.<iface>` | `IfaceSettings` | `pub network: BTreeMap<String, IfaceSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct IfaceSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `pub enum IfaceKind {` (`pkgs/mosd/mosd-settings/src/model.rs`)), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `pub struct StaticConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `vlan` at `pub struct VlanConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `bridge` at `pub struct BridgeConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `wireguard` at `pub struct WireguardConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`) with its peers at `pub struct WireguardPeer {` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `pub web_admin: Option<WebAdminSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct WebAdminSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `password_hash` only; absent until first-run setup writes it |
+| `access.claim` | `Option<ClaimSettings>` | `pub claim: Option<ClaimSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct ClaimSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `via` (`setup`/`provisioning-document`), `at` (a device-clock label, never a deadline) and `rotationRequired`; **absent on a claimed device means claimed by a provisioning document**, which is `docs/design/access.md` §4.4's argument and not an omission |
 | `access.ssh` | `SshSettings` | `pub ssh: SshSettings,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct SshSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `enabled` (default `enabled: false,`, `pkgs/mosd/mosd-settings/src/model.rs`), `port`, `permitRootLogin`, `passwordAuthentication`, `listenAddresses[]`, and `pub authorized_keys: Vec<AuthorizedKey>,` (`pkgs/mosd/mosd-settings/src/model.rs`), entry type `pub struct AuthorizedKey {` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `access.console` | `ConsoleSettings` | `pub console: ConsoleSettings,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct ConsoleSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `shellEnabled` |
 | `access.device` | `DeviceCredentialSettings` | `pub device: DeviceCredentialSettings,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct DeviceCredentialSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `passwordHash` (optional) and `generation`; never a plaintext secret — *"Holds the hash of the per-device password and its revision, never the password itself"* (`pkgs/mosd/mosd-settings/src/model.rs`) |
@@ -892,11 +898,11 @@ follows is a reading of a snapshot and not a defect in it.
    the health probe `get_state(HEALTH_PROBE_PATH)` (`pkgs/mosd/apid/src/routes.rs`)
    and the passthrough `get_state(&path)` (`pkgs/mosd/apid/src/routes.rs`).
 5. **Schema version "3"** is now
-   **9** — `pub const SCHEMA_VERSION: u32 = 9;`
+   **11** — `pub const SCHEMA_VERSION: u32 = 11;`
    (`pkgs/mosd/mosd-settings/src/model.rs`). It was 4 when this section was
-   written and 7 at the last re-measure, which is the third time this one row
-   has gone stale and is the reason section 2.1 must serve the number rather
-   than document it.
+   written, 7 at the re-measure after that and 9 at the one after that, which
+   is the fifth time this one row has gone stale and is the reason section 2.1
+   must serve the number rather than document it.
 6. **Its section 3.6 quotes a D-Bus policy that permits any local process**
 ; the shipped policy denies the
    default context in both directions (`pkgs/mosd/dist/com.mos.mosd.conf`) and
@@ -1089,8 +1095,8 @@ array. A client that reads only `current` and ignores `versions` will conclude
 that a device it can still talk to is one it cannot.
 
 `settingsSchemaVersion` carries mosd's `SCHEMA_VERSION`
-(`pub const SCHEMA_VERSION: u32 = 9;`, `pkgs/mosd/mosd-settings/src/model.rs`;
-**6** at `f7cb5ba` and **4** when this paragraph was written). **It is not the API version and the two must never
+(`pub const SCHEMA_VERSION: u32 = 11;`, `pkgs/mosd/mosd-settings/src/model.rs`;
+**9** at the last re-measure, **6** at `f7cb5ba` and **4** when this paragraph was written). **It is not the API version and the two must never
 be conflated.** The schema version is the shape of the tree on disk
 (`pkgs/mosd/mosd-settings/src/store.rs`), moved by a registered migration chain
 (`pkgs/mosd/mosd-settings/src/migration.rs`, entry point at
