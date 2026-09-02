@@ -98,8 +98,17 @@ Out of scope: PTP, NTS, user-configurable polling periods or an NTP pause switch
   shapes, 422 with the owning crate's sentence); the built-in UI gains a Time
   page (servers, timezone, live status) and the OpenAPI document the new
   route.
-- **NOT done here — board validation**: cx3576 RTC hardware backup-power
-  validation (driver enablement evidence, oscillator/backup behaviour) is
-  hardware-dependent, was NOT performed in this change, and is escalated by
-  the coordinating workstream. The INT item above stays open until a bench
-  measurement exists; nothing in this record claims it.
+- **Board validation**: Step 1 of 4 **DONE** (2026-09-02, user, physical
+  cx3576): the RTC driver is bound.
+
+      root@mos-b360176c:~# cat /sys/class/rtc/rtc0/name
+      rtc-hym8563 7-0051
+
+  This is `rtc-hym8563` on I2C bus 7 at address `0x51`, with `/dev/rtc0`
+  present. Steps 2-4 are **PENDING** on the bench: (2) perform a powered-off,
+  offline boot after at least 1 hour and confirm `hwclock -r` shows elapsed
+  real time (backup power); (3) confirm `GET /api/v1/time/status` reports
+  `offline-degraded` with a clock above the saved floor on that offline boot;
+  and (4) record those results here. Backup-power and offline-degraded
+  evidence do NOT yet exist; the INT item stays open until steps 2-4 are
+  recorded.
