@@ -230,7 +230,7 @@ Applications is the sixth primary destination after Services and before
 Access. The route tree is:
 
 ```text
-/ui/apps                    Installed
+/_ui/apps                   Installed
 ├── catalog                 Curated catalog
 ├── activity                App operations
 └── :appId                  App detail / Overview

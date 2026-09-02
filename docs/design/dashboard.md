@@ -1,7 +1,7 @@
 # The mos dashboard: landing screen and information architecture
 
 > **Current status (PLAN-039, 2026-08-31): first SPA implementation shipped.**
-> The built-in dashboard is a React/Vite SPA at `/ui`, using TanStack Router and
+> The built-in dashboard is a React/Vite SPA at `/_ui/`, using TanStack Router and
 > Query over `/api`. Its overview and network pages poll bounded snapshots; the
 > network page shows the observed interface count, configured kind/addressing,
 > operational and carrier state, address state and addresses. The detailed

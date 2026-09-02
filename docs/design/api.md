@@ -3,8 +3,8 @@
 > **Current status (PLAN-039 and PLAN-040, 2026-09-01): implemented.** The management daemon
 > is API-first. Every appliance read, write, authentication operation and action
 > is under `/api`; `/healthz` is the listener-only operational exception. The
-> built-in UI is a React SPA embedded in `apid` and served at `/ui`. `/` serves
-> a valid active custom UI and otherwise redirects to `/ui`.
+> built-in UI is a React SPA embedded in `apid` and served at `/_ui/`. `/` serves
+> a valid active custom UI and otherwise redirects to `/_ui/`.
 >
 > The long proposal and measurement history below is retained because it records
 > the decisions that produced the API. Any older statement that the built-in UI
@@ -24,7 +24,7 @@
 - `GET /api/v1/ui` reports the active selection separately from an optional
   validated retained custom candidate. `PUT /api/v1/ui/active` rechecks and
   selects the newest usable retained generation; `DELETE` selects the built-in
-  UI without deleting installed files. `/ui` remains reachable regardless of
+  UI without deleting installed files. `/_ui/` remains reachable regardless of
   custom-bundle state and cannot be shadowed.
 - `GET /api/v1/network` combines configured intent with an on-demand,
   normalized `systemd-networkd` observation obtained by mosd over D-Bus. It
@@ -36,7 +36,7 @@
   rebuilt and byte-compared in CI before `apid/build.rs` recursively embeds the
   complete tree. `index.html` is the only stable name; content-hashed route,
   locale and vendor chunks remain independently addressable and cacheable.
-- `/`, `/ui` and `/api` are isolated ownership domains. Misses never fall
+- `/`, `/_ui` and `/api` are isolated ownership domains. Misses never fall
   through to another resource root. The shared logical-path validator decodes
   once and rejects repeated/encoded separators, dot components, controls,
   residual escapes and encoded `api`/`ui` aliases before lookup.
@@ -2410,7 +2410,7 @@ claim is made anywhere in this section"* stays true.
 
 **Implemented at `pkgs/mosd/apid/src/routes.rs`** — `app` structurally owns the
 three product namespaces: `/api` is the versioned management API with its own
-JSON fallback, `/ui` is the built-in SPA with its own embedded-tree fallback,
+JSON fallback, `/_ui` is the built-in SPA with its own embedded-tree fallback,
 and all remaining UI paths belong to the active custom bundle at `/`.
 `/healthz` remains one explicit operational probe outside asset resolution.
 The custom side is `pkgs/mosd/apid/src/assets/serve.rs`; the built-in side is
@@ -2418,14 +2418,14 @@ The custom side is `pkgs/mosd/apid/src/assets/serve.rs`; the built-in side is
 and never causes lookup in another resource tree.
 
 Axum 0.8 does not make the trailing-root spellings of a nested router
-interchangeable, so `/api/` and `/ui/` remain explicit declarations. The path
+interchangeable, so `/api/` and `/_ui/` remain explicit declarations. The path
 layer in `pkgs/mosd/apid/src/assets/path.rs` closes the former leading-separator
 gap as well: it requires one prefix-stripped relative key, decodes exactly once
 and rejects repeated or encoded separators, empty/dot components, controls,
 backslashes and residual escapes. At the root custom-UI boundary it also rejects
 a decoded first component equal to `api` or `ui`; therefore `//api/versions`,
 `/%61pi/versions` and equivalent aliases are 404 rather than another spelling
-of a bundle file. Segment-aware matching leaves `/apiary` and `/uikit` valid.
+of a bundle file. Segment-aware matching leaves `/ui`, `/apiary` and `/uikit` valid.
 
 **The precedence rule.** One request arrives; apid decides in this order, and
 the order is total — no request is ever ambiguous:
@@ -2433,12 +2433,12 @@ the order is total — no request is ever ambiguous:
 1. **`/api` — a reserved subtree.** Declared operations answer normally and
    every miss below the prefix uses the API's JSON 404. No API request reaches
    an asset resolver.
-2. **`/ui` — the built-in resource tree.** It serves only the compile-time
+2. **`/_ui` — the built-in resource tree.** It serves only the compile-time
    embedded VFS and owns its own SPA fallback and 404 behavior.
 3. **`/healthz` — the operational exception.** It is a direct liveness route,
    not a fourth asset tree.
 4. **`/` and every remaining UI path — the custom resource tree.** Exact `/`
-   serves the active custom index or redirects to `/ui`; the fallback never
+   serves the active custom index or redirects to `/_ui/`; the fallback never
    reads the built-in VFS.
 
 **Why this order rather than any other.** Rule 1 is not a convention that has
@@ -2471,7 +2471,7 @@ cheap here only because the reserved set is small and is written down.
 **The earlier server-rendered page routes no longer exist.** Product pages now
 live in the React SPA and use `/api/v1/...`; only `/healthz` remains a declared
 non-API, non-asset path. This releases names such as `/network` and `/login` to
-an active custom SPA without weakening `/api` or `/ui` ownership.
+an active custom SPA without weakening `/api` or `/_ui` ownership.
 
 **`/` is the one that matters, and it must not be waved past.** A replaceable UI
 whose index cannot be served at the site root is not replaceable in any useful
@@ -2481,10 +2481,10 @@ status pane. So `/` is the single exception to rule 3:
 
 - `GET /` serves the **active bundle's `index.html` when a bundle is active**
   and its index is readable (section 5.3's definition of active);
-- otherwise `GET /` redirects to `/ui`.
+- otherwise `GET /` redirects to `/_ui/`.
 
-`/` is therefore conditional and `/ui` is unconditional. The custom bundle can
-never shadow or replace `/ui`, including by placing a `ui/` directory inside
+`/` is therefore conditional and `/_ui` is unconditional. The custom bundle can
+never shadow or replace `/_ui`, including by placing an `_ui/` directory inside
 its own tree.
 
 ### 4.2 SPA fallback — **[implemented]**
@@ -3269,8 +3269,8 @@ belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 ### 6.2 The built-in default UI, inside verity — **[implemented]**
 
 The built-in UI is a React/Vite SPA whose committed output is
-`pkgs/mosd/apid/ui/dist`. It is reachable unconditionally at `/ui` and `/ui/`;
-safe extensionless paths below `/ui/` use its own `index.html`, while exact
+`pkgs/mosd/apid/ui/dist`. It is reachable unconditionally at `/_ui` and `/_ui/`;
+safe extensionless paths below `/_ui/` use its own `index.html`, while exact
 assets and misses never consult `/srv/ui`. When no usable custom bundle is
 active, `GET /` redirects to this recovery UI rather than copying its bytes into
 the root namespace.
@@ -3342,15 +3342,15 @@ runtime dependency or a requirement imposed on custom bundles.
 
 ### 6.3 The deterministic way to reach it — **[implemented]**
 
-**Implemented at `pkgs/mosd/apid/src/routes.rs`** — `/ui` is a nested router
+**Implemented at `pkgs/mosd/apid/src/routes.rs`** — `/_ui` is a nested router
 that claims the complete built-in namespace and never consults `/srv/ui`.
-Both `/ui` and `/ui/` answer the stable embedded entry; descendants are handled
+Both `/_ui` and `/_ui/` answer the stable embedded entry; descendants are handled
 only by `pkgs/mosd/apid/src/assets/builtin.rs`. The root custom UI cannot shadow
 this prefix even if its bundle contains an identically named `ui/` tree.
 
 Deactivation is now an authenticated, CSRF-protected API action at
 `DELETE /api/v1/ui/active`, not a form under the recovery prefix. The built-in
-System page calls that API and the unconditional `/ui` URL remains usable
+System page calls that API and the unconditional `/_ui/` URL remains usable
 whether the custom bundle is active, absent or malformed. A crawler or ordinary
 GET cannot change the active UI.
 
@@ -3363,7 +3363,7 @@ The requirement, restated as a test the mechanism must pass:
 Three candidates, evaluated.
 
 **(A) A reserved path the asset router can never shadow.** A prefix — call it
-`/ui/` — served by the built-in VFS. 4.1's precedence rule makes it
+`/_ui/` — served by the built-in VFS. 4.1's precedence rule makes it
 unshadowable **structurally**: axum matches declared routes before consulting
 the fallback, so no bundle content can occupy the prefix, and this is true
 because of how dispatch works rather than because of a check.
@@ -3375,7 +3375,7 @@ because of how dispatch works rather than because of a check.
   listener is up and the prefix answers.
 - **Costs.** It burns a path prefix permanently, and it only helps an operator
   who knows the URL. The product and UI-selection response therefore document
-  `/ui` as the recovery address. The cost that must not be glossed: **(A) is a
+  `/_ui/` as the recovery address. The cost that must not be glossed: **(A) is a
   way *in*, not a way *out*.** It deactivates nothing, so the next navigation
   to `/` still selects the custom bundle.
 
@@ -3383,7 +3383,7 @@ because of how dispatch works rather than because of a check.
 `/srv/ui/current` — 5.3's *deactivate*.
 
 - **Deterministic: yes, and it is the way *out*.** Afterwards `/` redirects to
-  the built-in `/ui`, by 4.1's `/` rule.
+  the built-in `/_ui/`, by 4.1's `/` rule.
 - **Survives a reboot: yes.** The pointer is on DATA, and 5.4's third row
   asserts exactly this.
 - **Cost, and it is decisive:** it requires an action the operator can only take
@@ -3402,9 +3402,9 @@ button.
 
 **Chosen: (A) and (B) together, and neither alone.** (A) is the way in and
 depends on nothing but the listener; (B) is the way out and becomes reachable
-once (A) is. Concretely: **the built-in UI at `/ui` carries a System action
+once (A) is. Concretely: **the built-in UI at `/_ui/` carries a System action
 that performs authenticated API operation (B).** One documented action — *go
-to `https://<device>/ui`* — reaches a working UI regardless of which of the five
+to `https://<device>/_ui/`* — reaches a working UI regardless of which of the five
 classes occurred, and the deactivate action returns `/` to that UI. **The
 operator never has to diagnose anything**, which is the test this subsection
 opened with.

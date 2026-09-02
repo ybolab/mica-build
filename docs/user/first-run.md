@@ -51,7 +51,7 @@ inert and the machine id is per-boot transient.
 
 ## 3. Claiming the device: setup
 
-The first visit to the built-in UI at `/ui` (or `GET /api/v1/session`, which
+The first visit to the built-in UI at `/_ui/` (or `GET /api/v1/session`, which
 reports setup state to API clients) runs **setup**: you create the
 administrator credential. Setup establishes a browser session and returns a
 one-time bearer token for API-only clients. From that point every management

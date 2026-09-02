@@ -99,7 +99,7 @@ the default read-only bridge mode, is
 
 apid can serve an integrator's web UI in place of the built-in one: a custom
 bundle installed under `/srv/ui` on DATA is served at `/`, while the built-in
-UI remains reachable at `/ui` regardless of custom-bundle state — a broken
+UI remains reachable at `/_ui/` regardless of custom-bundle state — a broken
 custom UI can never lock you out of management. Selection is an API action;
 see [api.md](api.md).
 

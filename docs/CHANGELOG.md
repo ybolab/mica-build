@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The built-in UI moved to an internal namespace (2026-09-02)
+
+The verity-covered recovery SPA now owns `/_ui` and uses canonical `/_ui/`
+asset and navigation URLs; `/` redirects there when no usable custom UI is
+active. `/ui` has no compatibility alias and is now an ordinary custom-UI
+route, so an integrator bundle can own that path without being intercepted by
+APID. The route router, one-decode reserved-segment guard, Vite/TanStack bases,
+localized recovery copy, committed hashed assets, tests and current English
+and Chinese guidance moved together. `/api/v1/ui` and `/srv/ui` retain their
+existing API and storage meanings. PLAN-060.
+
 ## User documentation, website briefs and the BSP porting set (2026-09-02)
 
 `docs/user/` now carries the fifteen-page customer journey from download to

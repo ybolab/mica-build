@@ -69,7 +69,7 @@ for example a Quadlet container definition — use
 On first boot the device provisions itself with no network input: it mints its
 identity, names itself `mos-` followed by the first eight hex characters of its
 device id, and brings up DHCP on wired interfaces. The management surface is
-apid over HTTPS; the built-in UI is at `/ui`, and the first visit runs setup —
+apid over HTTPS; the built-in UI is at `/_ui/`, and the first visit runs setup —
 creating the administrator credential. SSH ships off by default.
 
 See [first-run.md](first-run.md) for the whole first-boot story and

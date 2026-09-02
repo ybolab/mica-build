@@ -88,7 +88,7 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 | 恢复、回滚、凭据恢复 | P | PLAN-048 草案 | 等专用 challenge 与不可逆语义 |
 | 存储状态和生命周期 | P | 布局存在，无 operator API | 只规划健康/容量，不做分区编辑器 |
 | 安装、认领、工厂 onboarding | P | PLAN-046 草案 | 扩展 setup 状态机前先定设备生命周期 |
-| 本地显示 | C | 架构设想复用同一 `/ui`，暂无板卡声明支持 | 先保证触控规范，不宣称已交付 |
+| 本地显示 | C | 架构设想复用同一 `/_ui/`，暂无板卡声明支持 | 先保证触控规范，不宣称已交付 |
 | Fleet 管理 | C | PLAN-054 为条件设计，当前只有入站 LAN HTTPS | 不把 fleet 菜单放进本地 UI |
 | 托管应用清单与精选目录 | P | PLAN-056 已批准设计；当前没有 app API/manager | OCI 优先，后续支持声明式 native bundle |
 | 公开开放市场/通用编排 | C | 没有运营、隔离、计费或第三方准入能力 | 不进入当前本地 UI 或对外承诺 |
@@ -102,16 +102,16 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 远程浏览器 ─┐
             ├─ HTTPS / 同源 ─> mos-apid ─> versioned API ─> mosd
 本地 kiosk ─┘          │                         │
-                       ├─ /ui/ 内置 SPA          ├─ settings + tasks
-                       └─ / 自定义 UI 或跳转 /ui   └─ reconcilers ─> OS/services
+                       ├─ /_ui/ 内置 SPA         ├─ settings + tasks
+                       └─ / 自定义 UI 或跳转 /_ui/ └─ reconcilers ─> OS/services
 ```
 
-- `/ui` 永远指向内置恢复界面。
+- `/_ui/` 永远指向内置恢复界面；`/ui` 可由自定义 UI 使用。
 - `/` 根据 UI 状态选择已激活的自定义 bundle；无可用 bundle 时回到内置 UI。
 - `/api` 是唯一管理协议；listener 健康检查 `/healthz` 是部署例外，不是产品管理接口。
 - SPA 的无扩展名路径可以回退到 `index.html`；类似文件名的缺失资源应返回 404。
 - 自定义 UI 保存在 DATA，能跨重启与 A/B；内置 UI 位于受保护系统镜像中。
-- `/`、`/ui`、`/api` 是相互隔离的三个所有权域；一个域内资源缺失或路径非法时不得去另一个域查找。
+- `/`、`/_ui`、`/api` 是相互隔离的三个所有权域；一个域内资源缺失或路径非法时不得去另一个域查找。
 
 ### 3.2 安全边界
 
@@ -124,8 +124,8 @@ mos 内置 UI 是设备管理面，不是独立控制平面。浏览器或本地
 - SSH authorized key 授予 root 权限。界面必须在添加区和列表区都保持此风险可见。
 - console shell 设置虽然存在于 schema，但当前没有协调器，不能显示为可用开关。
 - 资源路径只解码一次；重复分隔符、`.`、`..`、编码分隔符、反斜杠、控制字符、残留 `%`，以及编码后的
-  根级 `api`/`ui` 别名都返回 404，不做归一化或跨域重试。`/apiary`、`/uikit` 等普通名称不受影响。
-- `/api` 下的未声明请求始终返回 JSON API 404；`/ui` 下的资源只来自内置 VFS；其余路径只访问当前
+  根级 `api`/`_ui` 的重复分隔符或编码别名都返回 404，不做归一化或跨域重试。`/ui`、`/apiary`、`/_uikit` 等普通名称不受影响。
+- `/api` 下的未声明请求始终返回 JSON API 404；`/_ui` 下的资源只来自内置 VFS；其余路径只访问当前
   自定义 bundle。`/healthz` 是显式运行状态探针，不进入任何资源解析器。
 
 ### 3.3 CSP 与离线资产
@@ -175,7 +175,7 @@ pkgs/mosd/apid/ui/
 ├── src/lib/                  # API transport、类型、领域辅助函数
 ├── src/routeTree.gen.ts      # 自动生成，不手改
 ├── src/styles.css            # 全局 token 与当前布局
-├── vite.config.ts            # /ui/ base、路由拆分与内容哈希输出
+├── vite.config.ts            # /_ui/ base、路由拆分与内容哈希输出
 └── dist/                     # 受版本控制的嵌入产物
 ```
 
@@ -194,7 +194,7 @@ Query 管理。表单草稿使用组件本地状态，不为简单设置引入�
 
 ### 4.2 构建硬约束
 
-Vite base 是 `/ui/`。`dist/index.html` 是唯一稳定的启动文件；其余 Vite 产物位于 `dist/assets/`，
+Vite base 是 `/_ui/`。`dist/index.html` 是唯一稳定的启动文件；其余 Vite 产物位于 `dist/assets/`，
 文件名包含内容哈希。路由页面、中文 message catalog 和 vendor/app 代码可以形成独立 chunk，文件数量和
 名称不是后端源代码的一部分。例如当前输出形态是：
 
@@ -249,10 +249,10 @@ bun run coverage
 
 ### 5.1 路由树
 
-`/ui/` 是 Overview，不另增 `/overview` 作为主路径。推荐树如下：
+`/_ui/` 是 Overview，不另增 `/overview` 作为主路径。推荐树如下：
 
 ```text
-/ui/                              Overview                         [S]
+/_ui/                             Overview                         [S]
 ├── network                       Network 总览                    [S]
 │   ├── interfaces/:iface         接口配置与观测                  [A]
 │   ├── wifi                      已知 Wi-Fi 网络                  [A]
@@ -284,7 +284,7 @@ bun run coverage
 - 桌面（>860 px）：左侧 238 px sidebar，一级导航常驻，二级导航出现在页面内或 section nav。
 - 中等宽度（581～860 px）：顶部横向一级导航；二级导航使用横向可滚动 tabs 或当前页选择器。
 - 手机/窄触屏（≤580 px）：标题和主操作纵向排列；表格转为摘要卡或允许带提示的横向滚动。
-- 二级页面的 sidebar active 状态归属一级父项，例如 `/ui/network/wifi` 仍高亮 Network。
+- 二级页面的 sidebar active 状态归属一级父项，例如 `/_ui/network/wifi` 仍高亮 Network。
 - Setup 和 Login 由 session 状态决定，不暴露为可收藏的独立管理路径。
 - P/C 页面不加入运行时导航。Applications 在 PLAN-056 中已确定为第六个产品入口，但只有
   `mos-appd`、typed API、capability 和安全门禁一并交付后才注册到运行时导航。
@@ -371,7 +371,7 @@ Overview 当前轮询：health 15 秒、network 10 秒、tasks 5 秒；TaskProgr
 
 ## 7. 页面开发说明
 
-### 7.1 Overview `/ui/` `[S]`
+### 7.1 Overview `/_ui/` `[S]`
 
 **目标：** 十秒内回答“设备管理面是否可用、网络边缘是否正常、最近配置是否成功”。
 
@@ -399,7 +399,7 @@ Overview 当前轮询：health 15 秒、network 10 秒、tasks 5 秒；TaskProgr
 - 没有 task 是正常 empty state：“本次启动尚无配置任务”，不能显示 warning；
 - 未来 update、storage 等摘要只有在相应 capability 存在时才加入，最多保持 3～4 个首屏指标。
 
-### 7.2 Network 总览 `/ui/network` `[S]`
+### 7.2 Network 总览 `/_ui/network` `[S]`
 
 **目标：** 并排呈现声明配置与实际网络事实，快速定位“未配置、已配置未应用、已应用未连通”。
 
@@ -418,7 +418,7 @@ Overview 当前轮询：health 15 秒、network 10 秒、tasks 5 秒；TaskProgr
 observed provider 失败时必须继续显示 configured 数据和最后一次成功数据，并在表头明确 “Live state
 unavailable”。正常 operator 视图用字段与摘要替代 configured JSON；原始 JSON 移到折叠详情。
 
-### 7.3 接口编辑 `/ui/network/interfaces/:iface` `[A]`
+### 7.3 接口编辑 `/_ui/network/interfaces/:iface` `[A]`
 
 **API：** `PUT /api/v1/network/{iface}`、`DELETE /api/v1/network/{iface}`，必要时读取
 `GET /api/v1/network`。整体替换 `PUT /api/v1/network` 只用于确有跨接口原子编辑的高级流程，普通
@@ -444,7 +444,7 @@ kind 和对应参数块才是事实。
 - 204 只表示写入接受完成，不等于链路已工作。随后刷新 configured 和 observed，明确显示差异；
 - 不提供未经后端支持的自动回滚倒计时。若产品需要“失联自动回滚”，先设计后端事务契约。
 
-### 7.4 Wi-Fi 已知网络 `/ui/network/wifi` `[A]`
+### 7.4 Wi-Fi 已知网络 `/_ui/network/wifi` `[A]`
 
 **当前 API 能力只包括：** 列表、添加、忘记 known network。它不等于扫描附近 AP、启用/停用 station、
 立即 connect、显示信号强度或配置 AP 模式。
@@ -465,7 +465,7 @@ PSK 接受 8～63 个可打印 ASCII 字符（不含双引号和反斜杠），�
 “Forget” 是破坏性操作，确认框显示 SSID 和影响：设备以后不会再自动使用该已知网络。SSID 进入
 URL 前必须编码。没有 observed association API 时不要显示 “Connected”。
 
-### 7.5 WireGuard `/ui/network/wireguard/:iface` `[A]`
+### 7.5 WireGuard `/_ui/network/wireguard/:iface` `[A]`
 
 **能力：** 列出、添加、删除 peer；轮换本机 tunnel private key；读取到的设置中永远没有私钥。
 
@@ -483,7 +483,7 @@ Rotate key 会改变本机公钥并可能使所有远端 peer 失联。确认对
 成功后只展示 API 返回的新 public half 和需要更新远端的说明。UI、日志、错误和剪贴板都不得出现
 设备 private key。
 
-### 7.6 Services `/ui/services` `[S]`
+### 7.6 Services `/_ui/services` `[S]`
 
 当前只管理两个系统级能力：Container runtime 和 MQTT。开关分别通过 typed settings 路径写入，
 页面读取 live state，并用 TaskProgress 跟踪 202 返回的任务。
@@ -509,7 +509,7 @@ Rotate key 会改变本机公钥并可能使所有远端 peer 失联。确认对
 MQTT listen/auth 虽存在于 settings schema，但没有可用 typed product write；Container 也不是应用市场。
 不得用 generic settings UI 绕过这条白名单。
 
-### 7.7 Applications `/ui/apps` `[P · PLAN-056]`
+### 7.7 Applications `/_ui/apps` `[P · PLAN-056]`
 
 Applications 是独立于 Services 的第六个产品区域。它管理“一个可安装产品”的身份、来源、版本、
 权限、数据和生命周期；Services 继续只管理 `container.enabled`、`mqtt.enabled` 等 mos 系统能力。
@@ -542,7 +542,7 @@ manifest；不得在浏览器中自行判断签名可信或将原始 bundle 当�
 
 #### 页面结构
 
-`/ui/apps` 默认进入 **Installed**；同一级 tab 为 **Catalog** 和 **Activity**。
+`/_ui/apps` 默认进入 **Installed**；同一级 tab 为 **Catalog** 和 **Activity**。
 
 - **Installed**：搜索、来源/kind/state filter、应用卡或摘要表。卡片显示名称、版本、kind、信任来源、
   desired/runtime/health、更新时间和一个主动作；系统应用和 unmanaged 应用清楚标为只读；
@@ -634,7 +634,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 - OS rollback incompatibility：应用 safe-disable 为 Blocked，保留数据和诊断，不反复 crash-loop；
 - manager unavailable：Applications 保留入口和缓存，但所有 mutation disabled；这不是 unsupported。
 
-### 7.8 Access `/ui/access` `[S]`
+### 7.8 Access `/_ui/access` `[S]`
 
 按风险从日常到高权限分为四组，而不是按 API 顺序堆放。
 
@@ -669,7 +669,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 - 与 SSH 面板放在同一高权限区域是当前信息架构选择；视觉上仍应独立成卡片；
 - 设备没有凭据恢复机制时，界面必须坦率说明：忘记管理员凭据可能只能整盘重刷。
 
-### 7.9 System `/ui/system` `[S]`
+### 7.9 System `/_ui/system` `[S]`
 
 当前 System 首页包含三组。
 
@@ -687,7 +687,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> verified OCI/native adapter -> sy
 - Deactivate 回到 built-in；
 - 409 显示“没有可激活的兼容 bundle”及服务端原因；
 - 不显示 upload/dropzone，因为当前 API 没有上传；
-- 切换后解释 `/` 的选择变化，并始终提供 `/ui` 恢复地址。
+- 切换后解释 `/` 的选择变化，并始终提供 `/_ui/` 恢复地址。
 
 #### Power
 
@@ -701,7 +701,7 @@ Reboot 和 Power off 使用专用 ConfirmDialog，不再使用浏览器 `window.
 202 表示设备接受动作。之后进入 “Rebooting”/“Powering off” 全页状态，停止普通 mutation；重启可
 周期性探测 session 恢复，关机不承诺自动恢复。
 
-### 7.10 System Information `/ui/system/info` `[P · PLAN-052/043]`
+### 7.10 System Information `/_ui/system/info` `[P · PLAN-052/043]`
 
 只有聚合、版本化 API 可用后才显示。目标字段：machine id（默认部分遮挡）、board、kernel、系统镜像
 版本及 git stamp、build date、安装包 manifest、active RAUC slot、uptime。
@@ -712,13 +712,13 @@ Reboot 和 Power off 使用专用 ConfirmDialog，不再使用浏览器 `window.
 - 不把 `/api/v1/meta` 的 daemon/schema 当作完整系统版本；
 - release identity 必须来自 PLAN-043 定义的产物，不能由前端拼接猜测。
 
-### 7.11 Time `/ui/system/time` `[P · PLAN-044]`
+### 7.11 Time `/_ui/system/time` `[P · PLAN-044]`
 
 目标页面包含当前本地时间、UTC、时区、同步状态、NTP servers、last successful sync 和 source。
 保存时明确哪些值立即应用，哪些需要等待 timesyncd。草案要求系统持续校时，因此不设计“暂停 NTP”
 或 GUI 自己轮询修改系统时间。能力缺失时页面隐藏。
 
-### 7.12 Update `/ui/system/update` `[P · PLAN-047]`
+### 7.12 Update `/_ui/system/update` `[P · PLAN-047]`
 
 必须以完整后端状态机为前提：
 
@@ -732,19 +732,19 @@ idle -> checking -> downloading -> ready -> installing
 认证、maintenance window、slot 和 rollback 结果由后端提供。只存在 mosd bus seam 而没有 apid 产品 API
 时，UI 不得直接接 D-Bus 或显示半成品按钮。
 
-### 7.13 Storage `/ui/system/storage` `[P · PLAN-049]`
+### 7.13 Storage `/_ui/system/storage` `[P · PLAN-049]`
 
 只规划 operator 需要的状态：system/data/media tiers、容量、使用率、健康、只读/降级、阈值、数据生命周期
 说明。不得做通用 partition editor、任意 mount 或文件浏览器。清理/格式化等动作必须有独立 API、影响
 预览和不可逆确认。
 
-### 7.14 Diagnostics `/ui/system/diagnostics` `[P · PLAN-052]`
+### 7.14 Diagnostics `/_ui/system/diagnostics` `[P · PLAN-052]`
 
 页面以一次版本化、大小和时间均有界的诊断快照为数据源。内容包括 release/board、启动槽、reset cause、
 服务/协调器失败、存储、时间、thermal/watchdog 和 observed network。Support bundle 必须按已审核 schema
 脱敏并显示大小、包含范围和隐私说明。没有经过测试的脱敏边界前不得提供下载。
 
-### 7.15 Recovery `/ui/system/recovery` `[P · PLAN-048]`
+### 7.15 Recovery `/_ui/system/recovery` `[P · PLAN-048]`
 
 按风险从低到高排列：restart service（若未来有 typed action）、rollback、credential recovery、reset、wipe。
 每个动作都需要后端返回 eligibility、影响范围和 challenge；前端不能自行推断可恢复性。不可逆动作采用
@@ -1104,7 +1104,7 @@ const networkKeys = {
 | `POST /api/v1/actions/poweroff` | Power off | S | 202；不承诺自动恢复 |
 | `GET /api/v1/ui` | UI mode/retained bundle | S | builtIn/custom + unavailable reason |
 | `PUT /api/v1/ui/active` | Activate retained custom UI | S | 200；没有可用 bundle 时 409 |
-| `DELETE /api/v1/ui/active` | Return to built-in UI | S | 200；`/ui` 始终可用 |
+| `DELETE /api/v1/ui/active` | Return to built-in UI | S | 200；`/_ui/` 始终可用 |
 
 泛型 settings 页面是明确禁止项。当前 generic PUT 只写 hostname、SSH enabled、container enabled、
 MQTT enabled；Network/Wi-Fi/SSH key/token/UI/power 等必须走各自 typed route。
@@ -1166,7 +1166,7 @@ success、422 field path、409 conflict、503/504 unknown result、cache invalid
 | Route integration | session gate、route params、query invalidation、API fixture |
 | Browser smoke | setup/login、service toggle、token one-time、logout、navigation、responsive |
 | Backend contract | OpenAPI 与 binary 输出一致；UI fixture 可被当前 schema 解析 |
-| Asset delivery | `/ui` VFS 全树、路由域隔离、fallback、CSP、MIME、缓存、敌意路径 404、committed dist byte match |
+| Asset delivery | `/_ui` VFS 全树、路由域隔离、fallback、CSP、MIME、缓存、敌意路径 404、committed dist byte match |
 
 测试数据不得使用真实 token、Wi-Fi 或设备密钥。错误 fixture 要覆盖 `code/message/source/path`，不要只 mock
 HTTP status。
@@ -1300,7 +1300,7 @@ UI 开发在提交前逐项确认：
 - [ ] English/zh-CN 文案和 accessible name 完整；
 - [ ] 不含外部 runtime dependency，CSP 下可运行；
 - [ ] `dist` 完整树可递归嵌入，`index.html` 及其引用资源可访问，哈希资源缓存规则正确；
-- [ ] `/`、`/ui`、`/api` 的资源、miss、SPA fallback 和敌意路径不会跨所有权域；
+- [ ] `/`、`/_ui`、`/api` 的资源、miss、SPA fallback 和敌意路径不会跨所有权域；
 - [ ] lint/typecheck/test/coverage/`run.sh` 通过；
 - [ ] `dist` 与源代码同步，bundle delta 已记录；
 - [ ] 本文、OpenAPI 和实现没有互相冲突。

@@ -83,7 +83,7 @@ SSH、凭据、更新、电源、容器启用——永远不是 MQTT item，桥�
 
 apid 可以用集成商的 Web UI 替代内置 UI 提供服务：安装在 DATA 上 `/srv/ui`
 下的自定义 bundle 在 `/` 提供，而无论自定义 bundle 状态如何，内置 UI 始终
-在 `/ui` 可达——坏掉的自定义 UI 永远不会把你锁在管理面之外。选择是一个
+在 `/_ui/` 可达——坏掉的自定义 UI 永远不会把你锁在管理面之外。选择是一个
 API 动作；见 [api.md](api.md)。
 
 > status: shipped — evidence: `docs/design/api.md`, `pkgs/mosd/apid/openapi.json`
