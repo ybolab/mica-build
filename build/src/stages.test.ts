@@ -51,7 +51,7 @@ import { BOARDS_DIR, REPO_ROOT } from './paths.ts'
 // (verify/run.sh records the measurement), so a fixture there is invisible to
 // the container route and the same test would pass on one route and fail on the
 // other for a reason that has nothing to do with what it asserts.
-const FIXTURE_ROOT = join(STAGES_DIR, '..', '..', '..', '_out', 'stage-fixtures')
+const FIXTURE_ROOT = join(STAGES_DIR, '..', '..', '_out', 'stage-fixtures')
 // Cleared once per run rather than per fixture: each scratch() is a mkdtemp, so
 // without this the directory grows by ~25 every `bun test` and nothing ever
 // removes them. Cleared at load rather than in an afterAll so a run that dies
