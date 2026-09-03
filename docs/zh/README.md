@@ -66,7 +66,7 @@
 | 源页面 | 源版本 | 覆盖状态 |
 |---|---|---|
 | `../user/api.md` | db66fc02 | current |
-| `../user/applications.md` | db66fc02 | current |
+| `../user/applications.md` | 965de492 | current |
 | `../user/configuration.md` | 00a5147d | current |
 | `../user/doc-contract.md` | 00a5147d | current |
 | `../user/download.md` | 00a5147d | current |
