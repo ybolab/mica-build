@@ -88,9 +88,9 @@ same-origin with the baked `update.source`, and any additional host is an
 explicit operator list.** The base is the baked value and not an effective one,
 because PLAN-070 §5 makes the source URL baked-only: there is no runtime layer
 that can move the origin a credential is scoped to. PLAN-070 gives that list a home now rather than
-later — `http.credentialHosts` in the baked `meta/manifest.json`, committed
-empty — so the origin a future credential is scoped to is reviewable in a diff
-before the credential exists.
+later — `http.credentialHosts` in the baked `meta/updates/manifest.json`, empty
+in the committed `meta.example/` — so the rule and its shape exist before the
+first credential does.
 
 `allow_insecure` has no mos analogue: the TUF walk is what establishes trust,
 and `docs/design/release-signing.md` §3.1 already mirrors metadata over plain
@@ -497,7 +497,7 @@ Out of scope: folding these keys into the **settings tree** (the follow-up
 reason — the write route of §3 is not that follow-up); update authentication and the credential
 rule of the Context (recorded as a constraint, not built); staged or
 percentage-based fleet rollout (PLAN-072 and PLAN-054); a remote kill switch
-(rejected, §5); per-application updates (PLAN-069); the baked `meta/`
+(rejected, §5); per-application updates (PLAN-069); the `meta/`
 seam that defaults `source.url` (PLAN-070 — this plan works without it, on an
 operator-owned document, and §1.1 is the only place the two meet).
 
@@ -592,3 +592,11 @@ operator writes `auto`.
   §1.1 defers the layering to PLAN-070 §5.1. The `off | check | auto`
   semantics, the window rules, the never-arms-the-override invariant, the
   suppression, the withdrawal analysis and the clock predicate are unchanged.
+- 2026-09-03: PLAN-070 was revised again — `meta/` carries signing material, so
+  it is gitignored and only an allowlisted public subset is baked. Touched here
+  only where that makes a sentence false: the baked manifest is
+  `meta/updates/manifest.json`, its committed default lives in `meta.example/`,
+  and the claim that the credential host list is reviewable in a diff is
+  withdrawn with PLAN-070 §2. Every invariant above is unchanged — the three
+  layers, the `off | check | auto` semantics, the window rules, the write
+  route, the third channel state and the backlog.
