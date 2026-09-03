@@ -318,7 +318,7 @@ device-side role derived from a fleet identity.
 | C2 | Registration client: outbound HTTPS, the identity payload, the claim-code display, the enrolment credential on STATE | M | payload asserted to contain nothing from the excluded list |
 | C3 | Inventory report with the monotonic counter, backoff and the `fleet` live-state entry | M | replay rejected on a non-advancing counter |
 | C4 | The autonomy assertion: a test that drives every local capability with the plane unreachable | S | §6 is a test, not a sentence |
-| C5 | The channel hint as a hint — never a policy write | S | a hint cannot change `update-policy.toml` |
+| C5 | The channel hint as a hint — never a policy write | S | a hint cannot change `/mos/updates/config.json` |
 | C6 | Console: the switch, the claim code, the fleet state and its last error | M | — |
 | C7 | Design docs: `remote-management.md` §2 and §4, `security-model.md` §7, a new fleet section | M | `make docs-verify` |
 
@@ -370,7 +370,7 @@ to the most expensive and least reversible one (running a cloud service). The
 `meta/` seam would be blocked on a hosting decision it does not need — it is
 useful with the fleet switch permanently false, because its trust and update
 halves stand alone. And the update module would be blocked on both, when it
-works today on an operator-edited policy file with no `meta/` at all.
+works today on a locally-owned policy document with no `meta/` at all.
 
 The dependencies that do exist are one-directional and narrow: PLAN-072 needs
 PLAN-070's switch (C1 depends on F5), and PLAN-071 is *improved* by PLAN-070's
