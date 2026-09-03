@@ -68,9 +68,16 @@ count="$(printf '%s\n' ${EXTRACTED} | grep -c .)"
 echo "extracted ${count} example(s): ${EXTRACTED}"
 
 # The document's own claim about how many examples it carries. Without this a
-# document that lost five of six examples would still pass, on the one left.
-if [ "${count}" -lt 5 ]; then
-    echo "error: only ${count} examples were extracted. docs/design/containers.md is the integrator's guide to interconnection, dependency and persistence, and it cannot demonstrate those in fewer than five files" >&2
+# document that lost eight of nine examples would still pass, on the one left.
+#
+# The floor moves with the document. It was five when the guide covered
+# interconnection, dependency and persistence; PLAN-051 added a health-checked
+# unit, a hardened one carrying a dedicated user, a named device node and the
+# four resource controllers, and a digest-pinned private image -- three files
+# whose loss the old floor would not have noticed, because six examples is
+# still more than five.
+if [ "${count}" -lt 9 ]; then
+    echo "error: only ${count} examples were extracted. docs/design/containers.md is the integrator's guide to interconnection, dependency, persistence, health, identity, hardware and resource ceilings, and it cannot demonstrate those in fewer than nine files" >&2
     exit 1
 fi
 
@@ -181,6 +188,62 @@ check "db.container's volume dependency is wired without the document saying so"
     "grep -qE 'Requires=pgdata-volume\\.service' '${GENERATED}'"
 check "joining a .network wires the network unit dependency too" \
     "grep -qE 'Requires=app-network\\.service' '${GENERATED}'"
+
+# Section 7: health. `Notify=healthy` is the sentence "systemd does not consider
+# gateway.service started until the check has passed once", and it is two
+# generated facts, not one -- the unit has to become Type=notify AND podman has
+# to be told which notification to wait for. Either alone is a unit that starts
+# when the container process exists, which is the failure section 5 describes.
+check "section 7's Notify=healthy makes the unit wait: Type=notify" \
+    "grep -qE '^Type=notify' '${GENERATED}'"
+check "section 7's Notify=healthy makes the unit wait: --sdnotify=healthy" \
+    "grep -qE -- '--sdnotify=healthy' '${GENERATED}'"
+check "the health check itself reaches podman, with its timeout" \
+    "grep -qE -- '--health-cmd .*--health-timeout 5s' '${GENERATED}'"
+# Without this one, an unhealthy container is marked and left running -- the
+# document says so, and says HealthOnFailure is what closes it.
+check "section 7's HealthOnFailure turns unhealthy into an exit Restart= can see" \
+    "grep -qE -- '--health-on-failure kill' '${GENERATED}'"
+check "LogDriver=journald in the unit reaches podman rather than relying on containers.conf" \
+    "grep -qE -- '--log-driver journald' '${GENERATED}'"
+
+# Section 8: identity, hardware, ceilings. The uid assertion is exact for the
+# reason the document gives: Quadlet CONCATENATES User= and Group=, so the
+# defect this catches is a third field appended silently.
+check "section 8's dedicated user reaches podman as exactly uid:gid" \
+    "grep -qE -- '--user 10001:10001( |\$)' '${GENERATED}'"
+check "section 8's capability drop reaches podman" \
+    "grep -qE -- '--cap-drop all' '${GENERATED}'"
+check "the named device node reaches podman as --device" \
+    "grep -qE -- '--device /dev/ttyS3:/dev/ttyS3:rw' '${GENERATED}'"
+check "ConditionPathExists survives into the unit, so an absent node skips rather than fails" \
+    "grep -qE '^ConditionPathExists=/dev/ttyS3' '${GENERATED}'"
+# The ceilings are only ceilings if the container is inside the unit's cgroup.
+# --cgroups=split is what puts it there; without it the four keys below are
+# systemd limiting the podman client and nothing else.
+check "the container shares the unit's cgroup, which is what makes the ceilings bind it" \
+    "grep -qE -- '--cgroups=split' '${GENERATED}'"
+for key in 'CPUQuota=40%' 'MemoryHigh=192M' 'MemoryMax=256M' 'TasksMax=128' \
+    'IOReadBandwidthMax=/dev/mmcblk0 8M' 'IOWriteBandwidthMax=/dev/mmcblk0 4M'; do
+    check "section 8's ${key} reaches the generated unit" \
+        "grep -qF '${key}' '${GENERATED}'"
+done
+
+# Section 9: the digest-pinned private image. --pull never is the whole claim
+# that "the unit runs the image already on the device, or it does not start";
+# the digest is the claim that says which image that is.
+check "section 9's Pull=never reaches podman as --pull never" \
+    "grep -qE -- '--pull never' '${GENERATED}'"
+check "section 9's image is pinned by digest, not by a tag someone can move" \
+    "grep -qE 'registry\\.example\\.com/acme/app@sha256:[0-9a-f]{64}' '${GENERATED}'"
+# REGISTRY_AUTH_FILE is read by the podman PROCESS. The document warns that
+# [Container]'s Environment= would put it inside the container instead, where
+# nothing reads it -- so this asserts it landed in [Service], as a unit
+# Environment= line rather than as a --env argument.
+check "section 9's credential path is the podman process's environment, not the container's" \
+    "grep -qE '^Environment=REGISTRY_AUTH_FILE=/var/lib/mos/containers-auth\\.json' '${GENERATED}'"
+check "and it is NOT handed to the container as --env" \
+    "! grep -qE -- '--env REGISTRY_AUTH_FILE' '${GENERATED}'"
 
 echo
 if [ "${fail}" -eq 0 ]; then

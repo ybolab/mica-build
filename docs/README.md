@@ -13,6 +13,7 @@
   - `mosd.md` — management plane design brief: D-Bus tree, settings schema, reconcilers
   - `connd.md` — connectivity concern (no `connd` process ships): WiFi STA/AP as two mosd reconcilers driving wpasupplicant/hostapd units
   - `containers.md` — integrator's guide: Quadlet units, container interconnection, dependency ordering, persistence
+  - `native-applications.md` — integrator's guide to the native path: the `.deb` producer, the unit and what starts it, dedicated accounts, writable state, the health gate, named devices, ceilings, and what the A/B lifecycle does and does not roll back
   - `ro-root.md` — read-only root: squashfs + dm-verity rootfs pack and boot wiring
   - `storage.md` — fixed storage tiers and media: status surface, wear reporting, low-space policy, the reserved update workspace and the explicit data-lifecycle decisions
   - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
