@@ -87,6 +87,18 @@ absent case of PLAN-070 §7, unchanged.
   switch on and off.** The administrator consents to enrolment but
   cannot redirect the device to a different plane.
 
+**Where the administrator's flip is recorded, under the later decision.** Shape
+(b) needs a durable per-device switch, and PLAN-070 §5.2 now makes
+`/mos/config/` the home of system configuration, so it goes in a
+`/mos/config/fleet.json` of its own rather than into `updates.json` — one
+document per reconciler is the namespace's rule, and enrolment is not the update
+policy. **The URL is not in it.** The baked value stays the only statement of
+where this device may dial, which is what §5's compromise analysis turns on, and
+a document that carries only a boolean cannot redirect anything. The namespace's
+`0700` mode is inherited and not needed: a switch is not a secret, and the
+enrolment credential it leads to stays on STATE where the per-device secrets
+already are.
+
 **Recommended: (b).** The risk that matters here is *redirection* — a device
 talking to somebody else's plane — not *consent*. Baking the URL removes
 redirection entirely: it is inside the read-only verity root and nothing on the
@@ -396,10 +408,15 @@ single decision.
 3. **Reuse the LAN API over inbound Internet access.** Rejected for PLAN-054's
    original reason, unchanged: it assumes routability and broadens device
    exposure.
-4. **Put the fleet switch in the settings tree instead of the baked manifest.**
-   Rejected: it makes "may this device dial out" an installation-time setting
-   rather than a product fact, and it puts the URL somewhere a settings write
-   could redirect. The baked URL — unwritable, inside the verity root — is the
+4. **Put the fleet URL in a writable store instead of the baked manifest.**
+   Rejected: it makes "where may this device dial" an installation-time setting
+   rather than a product fact, and it puts the URL somewhere a write could
+   redirect. **The rejected home used to be called "the settings tree" and that
+   name no longer picks out the right thing** — PLAN-070 §5.2 moves the settings
+   store's configuration content into `/mos/config/`, which is equally writable,
+   so the objection is to *writability*, not to a particular file. It applies
+   unchanged to a `/mos/config/fleet.json`, which is why §2 puts the switch there
+   and keeps the URL baked. The baked URL — unwritable, inside the verity root — is the
    property that makes §5's compromise analysis hold, and it holds more
    strongly than the previous draft's device record did, because there is now
    no on-device write path to the value at all.
@@ -438,3 +455,15 @@ single decision.
   rather than a TUF root key; the fleet switch is unaffected, since PLAN-070
   §5.2's baked-default rule is what puts it in the baked manifest and that rule
   does not depend on which signing scheme the update path uses.
+- 2026-09-03: PLAN-070 revised again, folding in two user decisions; this record
+  moves only in wording. `/mos/config/` is now the home of all system
+  configuration rather than a namespace with one occupant, so §2 names
+  `/mos/config/fleet.json` as where shape (b)'s administrator switch is
+  recorded — a document of its own under the one-per-reconciler rule, carrying
+  the boolean and never the URL. Alternative 4's rejected home is renamed from
+  "the settings tree" to any writable store, because the settings store's
+  configuration content moved into the same namespace and the objection was
+  always to writability. The key-algorithm decision does not reach this record:
+  the plane holds no signing key by §5's own boundary, and C5's gate is
+  unchanged. §1's control-channel boundary, §3's payload, §4, §5's threat model,
+  §6's autonomy claim and the C1–C7 backlog are unchanged.

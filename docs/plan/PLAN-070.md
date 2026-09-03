@@ -1,4 +1,4 @@
-# PLAN-070 Design the meta/ seam: signing material on the build host, a public subset baked into the image
+# PLAN-070 Design the meta/ seam and the /mos/config/ system-configuration namespace
 
 - **status**: draft
 - **createdAt**: 2026-09-03 11:11
@@ -7,9 +7,40 @@
 
 ## Context
 
-### The correction this revision has to make first
+### The two decisions this revision answers, and what each one collides with
 
-Two revisions precede this one. The first replaced a device-side factory record
+Three revisions precede this one, and this one folds in two further decisions.
+Each collides with something already recorded in the tree, and both collisions
+are made visible and priced here rather than resolved quietly.
+
+**Decision A — all system configuration goes in `/mos/config/`.** mqtt, the ssh
+switch, and everything of that sort, together, so that flashing a new system and
+pouring the configuration in produces a working device with no provisioning
+ceremony in between. `/mos/config/` therefore stops being *the namespace whose
+first occupant is update* and becomes **the home of system configuration**. What
+it collides with is `pkgs/mosd/mosd-settings` — a schema-versioned settings tree
+at v12 with a registered `V0→V12` migration chain, a dot-path API behind a
+six-entry write allowlist, validation at the write surface, ten reconcilers, and
+a **secret**: `WifiNetwork.psk`, a raw WPA2 passphrase or PMK, which the previous
+revision's `0755`-and-no-secrets charter for this namespace would publish to
+every process on the device. §5.2 is the whole answer: the boundary, the shape
+chosen and the two rejected, the schema-version and migration question, the mode
+and the secret, the redactor, the API, and the STATE-to-DATA tier collision.
+The previous revision's mechanical rule — *a document belongs here iff `meta/`
+bakes a default for it* — is **retired**, because the decision falsifies it on
+the two keys it names.
+
+**Decision B — keys should be ECDSA, being shorter and easier to maintain.**
+What it collides with is `pkgs/rauc/gen-dev-keys.sh`, which chooses RSA 3072 on
+purpose and records why at the site. §6.4 measures that reason against the tree
+before arguing with it, and answers the second half the decision runs into: lode
+verifies ed25519 and has no ECDSA path, while `meta/updates/root.key` is lode's
+key. The three keys are presented as a table with a recommendation each; the
+decision itself stays the user's.
+
+### The correction the previous revision had to make first
+
+Two revisions precede that one. The first replaced a device-side factory record
 on the META partition with a **`meta/` directory in this repository** that the
 build bakes into the image. The second made the channel operator-selectable and
 moved the operator document to DATA (§5.1). Both stand; the document's path
@@ -205,7 +236,12 @@ revision's prohibitions survive and where they now bite:
 3. **No secret of any kind** — no bearer token, no PSK, no password, no
    registration key. `manifest.json` is baked, so a token pasted into it ships
    to every device. §4's schema has no field for one, and §1.2 says why no
-   check is proposed for it.
+   check is proposed for it. **This is unaffected by §5.2's charter change.**
+   `/mos/config/` now holds secrets on purpose; the baked set still must not,
+   and the reason is the difference between the two tiers rather than a
+   preference — a baked file is byte-identical on every device of a release, so
+   a secret in it is a fleet-wide shared secret by construction, while a
+   `/mos/config/` document is per device and root-only.
 
 #### 1.1 The hazard, the allowlist, and the two checks that hold it
 
@@ -318,9 +354,9 @@ development-grade material rather than refusing. It gains a `--domain`
 argument:
 
 - **`--domain rauc`** (default, and what `--if-absent` runs): generates
-  `meta/rauc/` with openssl, exactly as it generates `ca/` today. The build
-  cannot proceed without a keyring, so this half stays build-blocking and
-  automatic.
+  `meta/rauc/` with openssl, exactly as it generates `ca/` today, with the key
+  algorithm §6.4 settles. The build cannot proceed without a keyring, so this
+  half stays build-blocking and automatic.
 - **`--domain updates`**: generates a development `meta/updates/root.key` and
   writes its public half into `meta/updates/manifest.json`'s
   `trust.signingKeys`. **Not automatic**, for a reason worth stating rather
@@ -588,14 +624,23 @@ those are files in the root filesystem.
 
 #### 4.1 The reset disposition of `/mos/config/`, decided for the directory
 
-§5.1 puts the operator's own update configuration in `/mos/config/updates.json`
-on DATA. That is the `DATA (/mos)` column, which is already in the table, so no
-row and no column is invented — but `/mos/config/` is a **new subtree**, it is
-not covered by `[^apps-mos]`'s carve-out (which names `updates/`), and its
-disposition is decided **for the directory** rather than inherited from
-whatever the tier-2 rule happens to produce. A configuration subtree and an
-application-data subtree are not the same claim, and the next subsystem must
-find this answered rather than reopen it.
+§5.2 puts the whole of system configuration in `/mos/config/` on DATA. That is
+the `DATA (/mos)` column, which is already in the table, so no row and no column
+is invented — but `/mos/config/` is a **new subtree**, it is not covered by
+`[^apps-mos]`'s carve-out (which names `updates/`), and its disposition is
+decided **for the directory** rather than inherited from whatever the tier-2
+rule happens to produce. A configuration subtree and an application-data subtree
+are not the same claim, and the next subsystem must find this answered rather
+than reopen it.
+
+**And the direction of the argument has reversed since the previous revision.**
+That revision decided this table for a directory holding one small document, and
+had to argue that the disposition was worth settling in advance. Under §5.2 the
+directory *is* the device's configuration, so the table below is no longer a
+convention chosen for a namespace — it is §5.2.1's boundary read from the other
+end. Tier 1 clears what an integrator set; the set an integrator sets is what
+lives here; so tier 1 clears this directory, and the two statements are the same
+statement.
 
 | Tier | `/mos/config/` | Why |
 |---|---|---|
@@ -630,7 +675,25 @@ channel to its default* is the current behaviour. The previous revision
 accepted losing that as a side effect of moving to DATA and documented the
 regression. This decision keeps the behaviour instead: **the move stops being a
 behaviour change at all**, and the operator page no longer has to explain that
-one reset used to do something and now does not.
+one reset used to do something and now does not. Under §5.2 that now holds for
+every subsystem, not only for updates: a tier-1 reset returns the hostname, the
+network, the Wi-Fi networks, the ssh switch, the broker policy and the time
+settings to their defaults, exactly as it does today, and it does so by clearing
+one directory instead of by rebuilding a tree field by field.
+
+**One shipped safety property must survive the mechanism change, and it is easy
+to drop.** `reset.rs`'s re-seeding function builds the post-reset tree from
+`Settings::default()` and then names the survivors, and its own comment states
+why that direction and not the other: *a subtree added to the schema later is
+re-seeded by tier 1 without an edit here; what survives has to be named, which
+is the direction that fails safe — a new credential-bearing subtree is cleared
+by default rather than silently kept.* Under §5.2 the tier clears a directory
+instead, so a document added to `/mos/config/` is cleared by default and the
+property holds — **by a different mechanism, which is why it has to be written
+down here rather than left to travel with the function that carried it.** The
+survivor list shrinks to "everything STATE holds", because everything it used to
+clear has moved out; that is a simplification of the code and a place where the
+reason for the old shape can be lost with it.
 
 **The finer-grained action stays useful.** *Return to the baked default
 channel* remains an explicit action on the update surface — clearing the
@@ -818,92 +881,401 @@ rules stand and gain one case:
   absent in layer 2 still means no online source, refuse, and offline import
   remains (§7).
 
-#### 5.2 `/mos/config/` is a namespace, and the first occupant sets its rules
+#### 5.2 `/mos/config/` is where system configuration lives
 
-Update configuration is merely the first thing to live here; later
-configuration of this kind goes in the same subtree. The rules below are
-therefore written for the **namespace**, not for `updates.json`, because the
-second subsystem will otherwise arrive with TOML, a hand-editing assumption and
-its own opinion about resets — and by then the rules will be load-bearing.
+**The decision that governs this section.** `/mos/config/` is not "the namespace
+whose first occupant is update". It is **the home of system configuration** —
+mqtt, the ssh switch, and everything of that sort, together — and the goal is
+stated rather than implied: **flash a device, pour the configuration in, and it
+works**, with no provisioning ceremony between the two.
 
-**Naming: `/mos/config/<subsystem>.json`, one flat document per subsystem.**
-The alternative, `/mos/config/<subsystem>/…`, is rejected. One document per
-subsystem means one writer, one atomic rename and one parse-error blast radius;
-a directory invites several files with **no transaction across them**, so a
-subsystem could half-apply a change and have no way to say so. A flat listing
-of `/mos/config/` is also the namespace's own index — `ls` answers *what on
-this device is configured this way*. A subsystem that genuinely needs several
-documents may take a directory, and that is a decision with a stated cost
-(atomicity stops at the file) rather than a default. Changing this rule later
-means touching every writer, which is why it is settled here.
+That is a larger claim than the previous revision made, and it collides with
+something the tree already has. The collision is `pkgs/mosd/mosd-settings`,
+which is not a small thing to move: a schema-versioned document at v12 with a
+registered `V0→V12` migration chain, a dot-path API at
+`/api/v1/settings/<dot.path>` behind a six-entry write allowlist, validation
+that refuses at the write surface rather than at load, ten reconcilers
+dispatched on subtree overlap, and a fail-open redactor standing between the
+tree and every authenticated reader. §5.2.1 to §5.2.5 say what happens to each
+of those. None of it is designed around.
 
-**Format and write discipline, as namespace rules:**
+**The previous revision's boundary rule is retired.** It said a document
+belongs in `/mos/config/` **if and only if** the image bakes a default for it in
+`meta/`. The decision falsifies it outright: nothing in `meta/` defaults
+`mqtt.enabled` or `access.ssh.enabled`, and those two are the keys the decision
+names by name. It is retired rather than weakened, because the only thing it
+still discriminated was the update document's two-layer structure, and that
+structure stands on §5.1's precedence table without needing a rule to justify
+its address.
 
-- **JSON.** Not TOML, not YAML, not "whatever the subsystem prefers". These are
-  machine-written documents and JSON is what a machine writes without a
-  round-trip formatting problem; a mixed-format namespace also means every
-  reader guesses by extension, which is exactly the failure the `config.toml`
-  naming correction was made to avoid.
+#### 5.2.1 The new boundary, and it is measured rather than judged
+
+> **`/mos/config/` holds what an integrator sets. The settings store on STATE
+> holds what the device mints or observes about itself, the credential material
+> derived from it, and the intents it is carrying out.**
+
+Applied to the tree as it is:
+
+| Moves to `/mos/config/` | Stays on STATE |
+|---|---|
+| `hostname`, `network`, `wifi`, `container`, `mqtt`, `time`, `access.ssh`, `access.console` | `provisioning` (the device id, the provisioning state, the seeding generation, the document record), `access.device`, `access.webAdmin`, `access.claim`, `access.apiTokens`, the staged `reset` intent |
+
+**The line is not a new judgement: it is the tier-1 reset partition, which is
+already shipped and already tested.** `reset.rs`'s re-seeding function builds
+the post-reset tree from `Settings::default()` and then names, one by one, the
+fields that survive — the identity record, the per-device credential, and for
+tier 1 the management credential, the claim record and the API tokens. Every
+field it names is on the right-hand column above; everything it clears is on the
+left. A configuration reset is *the operation that returns what an integrator
+set*, so the set it clears **is** the set an integrator sets, and the boundary
+this section needs was measured out of shipped code rather than argued for.
+
+That has a second benefit worth stating: the rule can be checked. "Is this a
+document or a settings key?" is answered by asking whether tier 1 clears it,
+and tier 1's behaviour is asserted cell for cell by tests.
+
+**The staged `reset` intent is the third clause of the rule and it is not a
+technicality.** It is neither configuration nor credential; it is the record of
+an operation in flight, and its whole design is that the authority is checked
+and the intent committed by one writer while the effects are carried out by
+another on the next boot, replaying the same tier until the record is gone — so
+that a power loss leaves the device pre-reset or mid-reset and never in a third
+state. **Put that record in `/mos/config/` and tiers 1 and 3 would clear the
+thing that tells them to run**, halfway through running. It stays on STATE, and
+the ordering that already protects it — the settings save that clears the record
+runs last — is unchanged by anything here.
+
+**One case sits on the wrong side of its own rule, and §5.2.4 is where it is
+answered**: `wifi.client.networks[].psk` and `wifi.ap.psk` are cleared by tier
+1, so the rule puts them here — and they are secrets, so the namespace's charter
+says they must not be.
+
+#### 5.2.2 The shape: the store moves, and the two alternatives are priced
+
+Three shapes were available and one is chosen.
+
+**Chosen — the settings tree's configuration content moves to `/mos/config/`,
+split per subsystem.** The typed model, `deny_unknown_fields`, the
+validate-by-deserialize discipline, the atomic save, the dot-path API, the
+redactor, the apply queue and every reconciler survive; what changes is that one
+store becomes several behind one addressing scheme. §5.2.3 is the version
+question that comes with the split and §5.2.5 the API question.
+
+**Rejected — `/mos/config/` carries a per-subsystem overlay that seeds the
+settings tree.** Two homes for one key is the defect this campaign has spent its
+life removing, and an overlay makes a reader ask which file is authoritative for
+every key in it. The variant that survives that objection — a document
+**consumed once**, applied into the store and recorded by digest, never read
+again — is not a new mechanism at all: it is `mos-provisioning.toml`, which
+already exists, already carries an administrator password and a WPA2 key,
+already validates totally before applying anything, and already refuses to be
+read back. Building it a second time as a directory would be exactly what
+`docs/design/provisioning.md` §4.1.7 refuses in terms — *a second,
+differently-trusted write path for the same thing*. The seeding capability is
+kept where it is; it is not duplicated here.
+
+**Rejected — `/mos/config/` takes only what is genuinely new.** The cheapest
+option, and the one that leaves the settings tree entirely alone. It is rejected
+because it does not do what was decided: mqtt and the ssh switch were named, and
+under this shape both stay exactly where they are and the goal is met for
+neither. Named as a real option because it costs nothing and because the record
+should not pretend the chosen shape is free.
+
+**The documents, one per reconciler.** The unit is not the subsystem as a
+reader might name it but the subtree the apply engine already dispatches on, so
+that a write's blast radius is one document and its apply is one reconciler run:
+
+| Document | Settings subtree it carries | Reconciler |
+|---|---|---|
+| `system.json` | `hostname`, `access.console` | hostname |
+| `network.json` | `network` | network |
+| `wifi.json` | `wifi` | wifiAp, wifiClient |
+| `ssh.json` | `access.ssh` | sshd |
+| `mqtt.json` | `mqtt` | mqtt |
+| `time.json` | `time` | time |
+| `container.json` | `container` | container |
+| `updates.json` | — | the update policy (PLAN-071) |
+
+`wifi.json` carries both Wi-Fi reconcilers because `wifiAp` already declares the
+whole `wifi` subtree rather than `wifi.ap` — a narrowing that was tried, was
+measured to leave a cross-subtree dependency invisible to the overlap test, and
+was reverted with the reason recorded at the declaration. Grouping by reconciler
+therefore keeps that coupling **inside one document**, where it is inside one
+atomic write, rather than splitting it across two files with no transaction
+between them. That is the grouping rule and it is the tree's own, not a new one.
+
+#### 5.2.3 The schema version and the migration chain
+
+**One version per document, not one for the namespace.**
+
+A namespace-wide version is rejected on a specific failure: a bump would rewrite
+every document, and several atomic renames have **no transaction across them**.
+A power loss halfway leaves documents at mixed versions, which is a third state
+— and a third state is what `ResetSettings`'s design (*the record IS the reset*,
+staged intent plus idempotent apply, so an interruption leaves either the before
+or the after and never a middle) exists to refuse. A store that can be caught
+mid-migration is a store that has to grow a recovery mode.
+
+Per document, each migrates alone under its own rename, so a power loss leaves
+each document either old or new. The chain becomes several short chains. **The
+constraint that comes with it must be written down now rather than discovered:
+no migration may move a key from one document to another**, because that
+migration is the one with no transaction. A key that has to move is a new key in
+the destination and a deprecation in the source — two independent additive
+bumps, either of which is survivable alone.
+
+**The STATE half is a document too, and takes the same rule.** What stays
+behind — the identity record, the provisioning record, the device credential,
+the management credential, the claim record and the API tokens — is one
+document with one version of its own, starting at v1. It is not exempt from the
+per-document rule for being the remainder.
+
+**The existing `V0→V12` chain is not ported. It is deleted with the document it
+migrates.** This tree is in system development and carries no compatibility
+obligation; there is no fielded device holding a v12 `settings.toml`, so a split
+migration would be code written to convert a document that does not exist. Each
+new document starts at its own v1.
+
+What carries forward is the **discipline**, which is the part that was ever
+load-bearing, and it moves into this charter because the chain that taught it is
+going away:
+
+- a bump is **additive**, and `skip_serializing_if` keeps a new optional table
+  out of a document that does not use it, so two adjacent versions of one
+  document differ by the version integer alone;
+- every migration has a `down` as well as an `up`, and the `down` states what it
+  discards;
+- the reason for both is **A/B rollback survivability**: the system slot can go
+  backwards and the configuration on DATA does not, so an older binary must be
+  able to read a newer document.
+
+**What is lost, named rather than glossed.** The twelve steps of the existing
+chain carry twelve recorded arguments about what a bump may do and what a `down`
+may discard, and deleting the chain deletes that record. The three rules above
+are the extract; they are not the whole of it. That is the price of not writing a
+migration for a device that does not exist, and it is paid deliberately.
+
+#### 5.2.4 The mode, the secrets, and the charter they have to agree with
+
+**The previous revision's rule — `/mos/config/` is `0755` and holds no secret —
+cannot survive the decision.** `wifi.client.networks[].psk` is an
+`Option<String>` holding a WPA2 passphrase or a raw 64-hex-digit PMK, and
+`wifi.ap.psk` is another. Moving `wifi` here at `0755` would publish the site's
+Wi-Fi pre-shared key to every process on the device — a container under
+`/mos/containers`, an operator application under `/srv`. The security model
+grants the physical holder of the medium everything; it does not grant an
+operator's own container the site Wi-Fi key, and `0755` would.
+
+**Chosen: the namespace is `0700`, its documents are `0600`, and the no-secrets
+rule is replaced by its opposite — `/mos/config/` is credential material.** The
+charter and the mode agree, which is the thing that had to be true.
+
+Three things make this cheaper than it sounds, all of them measured:
+
+- **`0700` is not a novelty in this layout.** `mos-data-layout` already creates
+  `/mos/root` at `0700` and `/mos/containers` at `0711`; the modes are already
+  per entry, so "matching `updates/` and `ui/`" was never a property of the
+  layout as a whole.
+- **It is the discipline the tree already uses for secrets.** The per-device
+  secrets are `0600` inside a `0700` directory; apid's state directory is `0700`
+  with every file inside it `0600`, set that way both by systemd and by apid
+  itself so the two agree; the WireGuard key module states the same rule for
+  keys only root reads. `/mos/config/` at `0700` is that discipline one tier
+  over.
+- **The writer already takes a mode.** `fswrite::write_config` writes through a
+  temporary file whose mode is set **before** the rename, so a document is never
+  reachable under its final name at a laxer mode. The namespace needs a
+  parameter, not a mechanism.
+
+**The failure this prevents, named:** an unprivileged local process reading
+`/mos/config/wifi.json` and recovering the site's WPA2 pre-shared key, which is
+offline-crackable from a captured handshake and is a credential the device was
+given rather than one it minted.
+
+**The two alternatives, priced.**
+
+- **Per-document modes** — `wifi.json` at `0600`, the rest at `0755`. Rejected:
+  the namespace's mode stops being one fact, so every later document's author
+  has to decide, and the default decides the outcome on the day somebody
+  forgets. What it buys is that a local reader can read the update channel,
+  which nothing in this tree asks for. Wrong side of that ratio.
+- **A secret sidecar on STATE with the document carrying only a reference.**
+  This is the shape the tree already runs, twice: the broker reads its accounts
+  from a STATE file rather than from `mqtt.auth`, with the rule stated at the
+  field — *the tree carries the policy, the STATE file carries the secret* — and
+  the AP PSK's plaintext already lives in the per-device secrets directory, with
+  `wifi.ap.psk` being an override of a value the device otherwise supplies for
+  itself. It is
+  the **right** shape for a secret the device mints, and it is kept for exactly
+  what it already covers. It is the **wrong** shape for a secret the integrator
+  supplies: the pour would carry no key, so joining a Wi-Fi network would need a
+  second, separate step — which is the provisioning ceremony the decision exists
+  to remove. Not extended.
+
+#### 5.2.4.1 What "pour it in and it just works" means for a document holding a secret
+
+A directory an integrator copies onto a device is a directory that exists on the
+integrator's laptop. **This record does not invent a position on that, because
+one is already argued.** `docs/design/provisioning.md` §4.1.6 settled it for
+`mos-provisioning.toml`, which carries an administrator password and a WPA2
+pre-shared key, and which the device deliberately does **not** delete after
+importing: *the lifetime of a medium carrying secrets is the operator's
+decision, not the device's*; flash cannot be securely erased by overwriting, so
+a device that deleted the file would be buying the **appearance** of erasure;
+**treat a provisioning medium as credential material — it is one.**
+
+The pour is the same object under a different name, and it takes the same
+position verbatim. The consequences are the ones the device can actually keep:
+
+- **on arrival**, `0700` on the directory and `0600` on every document, set by
+  the writer before the rename;
+- **no read-back**, the rule the provisioning status surface already holds — a
+  secret that was poured in is applied and is not served back out;
+- **no copy into a served record**: the import record may carry a digest and an
+  outcome and must carry no value the document held, which is the rule the
+  provisioning document record already states about itself.
+
+And the obligation the device does not have: **nothing about the integrator's
+laptop.** Claiming one would be the same appearance of erasure §4.1.6 refuses to
+buy.
+
+#### 5.2.4.2 The redactor is fail-open, and the charter has to carry that
+
+The redactor between the settings store and every authenticated reader is a
+**denylist of field names** — `psk`, `passwordHash`, `password_hash`, `hash`,
+`privateKey` — and it is fail-open by design, with a test rather than a hope as
+the mitigation. It covers today's Wi-Fi keys because the schema spells the field
+`psk`, and a document that keeps that spelling arrives covered — which is
+precisely the property the list's own comment claims for `hash`, a name that was
+on the list before any field carried it.
+
+**That must be a rule of the namespace and not a piece of luck**, now that the
+namespace holds secrets on purpose:
+
+> A `/mos/config/` document spells a secret-bearing key with a name already on
+> the redactor's list, or the same change that adds the key adds the name.
+
+Stated here because the alternative is a subsystem author who picks
+`sharedSecret`, ships it, and finds out from a support case.
+
+#### 5.2.5 Addressing does not change, which is what makes the move affordable
+
+`GET`/`PUT /api/v1/settings/<dot.path>` keeps working unchanged, because the
+dot-path's first segment selects the document and the rest selects within it:
+`mqtt.enabled` is `enabled` in `mqtt.json`, `access.ssh.enabled` is
+`ssh.enabled` in `ssh.json`. So the six-entry write allowlist, the shape check
+behind it, the refusal sentence that enumerates what the route writes, the
+redactor, the subtree-overlap dispatch and the task queue all key on dot-paths
+and survive as they are. **The move changes storage, not addressing.**
+
+Two consequences that do not survive for free:
+
+- **`access` is split across the boundary.** `access.ssh` and `access.console`
+  move; `access.webAdmin`, `access.device`, `access.claim` and `access.apiTokens`
+  stay. So `GET /api/v1/settings/access` no longer names one file. It
+  **composes** the two stores, because the read surface is addressing rather
+  than storage and the redactor already covers the half that stays. The
+  alternative — refusing the subtree read — would break a route to preserve an
+  implementation detail.
+- **Whole-tree validation becomes per-document validation.** `Settings::set`
+  validates by deserializing the whole candidate tree, so today one write is
+  checked against one total document. Measured, that costs nothing now: the
+  cross-subtree couplings that exist — the AP PSK derived from the device
+  credential, the AP SSID and the hostname derived from the device id, and
+  `wifiAp`'s read of `wifi.client` — are all resolved in reconcilers at render
+  time rather than in validation, and the last of them is inside one document
+  under §5.2.2's grouping. What is lost is the *ability* to add a cross-document
+  rule later, and §5.2.3's constraint is the same one stated from the other
+  side: do not write one.
+
+#### 5.2.6 The tier collision: configuration moves from STATE to DATA
+
+The board layout's own comment calls the state partition *"configuration +
+identity. Small, precious"* and the data partition *"/mos system data and /srv
+operator data"*. **This decision moves the first word of that sentence to the
+other partition.** That comment and PLAN-061's rule — small authoritative
+metadata stays on STATE, only large bytes go to `/mos` — both become false for
+system configuration and must be rewritten to say what is now true rather than
+left contradicting the layout they describe. §5.1 already opened this for one
+small document and priced it on an argument specific to updates; that argument
+does **not** generalise, and this is the general case stated in its own terms.
+
+**The failure it could introduce.** A device whose DATA pool does not mount has
+no configuration, so it would come up on schema defaults — DHCP on every
+interface, sshd off — and be unreachable by anyone who was relying on the static
+address they configured.
+
+**Measured, because the differential is narrower than it looks.** STATE and DATA
+are two partitions on one medium, so a DATA fault is not an independent failure
+domain from a STATE fault. And apid's unit already carries
+`RequiresMountsFor=/var/lib/mos /mos`: the management API already does not start
+without DATA. What a DATA fault costs today is the management API and the
+container and update workspaces; what it would additionally cost is the
+configured network.
+
+**The rule: mosd fails closed.** mosd's unit gains `RequiresMountsFor=/mos`, and
+mosd refuses to start rather than rendering a configuration nobody chose. **A
+device that cannot read its configuration must not render a different one** —
+the same fail-closed rule this namespace already applies to a parse error,
+applied to the medium instead of to the bytes. The recovery route is the one
+`docs/design/recovery.md` already owns: the serial console and the recovery
+tiers, not a silently degraded network.
+
+**The alternative, priced:** keep `network` and `hostname` on STATE so a DATA
+fault leaves a device reachable on its configured address with sshd as
+configured. It is the option somebody will raise the first time a DATA pool goes
+bad, and it is rejected because it re-creates two homes for configuration and
+makes "which tier does this subsystem take" a judgement call rather than
+§5.2.1's measured boundary. Re-openable, and the thing that would re-open it is
+evidence that a DATA-only fault is a real failure mode on this hardware rather
+than a theoretical one.
+
+#### 5.2.7 The rules a later subsystem inherits
+
+Restated in one place because a subsystem author meets this list and nothing
+else, and because four of them changed in this revision.
+
+- **Naming: `/mos/config/<document>.json`, one flat document per reconciler.**
+  The alternative, a directory per subsystem, is rejected: one document means one
+  writer, one atomic rename and one parse-error blast radius, while a directory
+  invites several files with **no transaction across them**, so a subsystem could
+  half-apply a change and have no way to say so. A flat listing of
+  `/mos/config/` is also the namespace's own index. A subsystem that genuinely
+  needs several documents may take a directory, at that stated cost.
+- **JSON.** These are machine-written documents and JSON is what a machine writes
+  without a round-trip formatting problem; a mixed-format namespace means every
+  reader guesses by extension.
 - **Machine-written, never hand-edited.** The writing daemon owns the file's
-  shape. A human edits it through an authenticated API; if a human edits it
-  with `vi`, the next write overwrites them and that is the documented
-  behaviour, not a bug.
-- **Atomic: temp file, fsync, rename, directory fsync.** The discipline already
-  used elsewhere in the tree. An interrupted write leaves the previous document
-  intact, never a truncated one.
+  shape. A human edits it through an authenticated API; if a human edits it with
+  `vi`, the next write overwrites them and that is documented behaviour, not a
+  bug. **The pour is the one exception and it is bounded**: an integrator writes
+  these files onto a device that is not running, and mosd validates what it finds
+  on the next boot exactly as it validates its own output. A pour onto a *running*
+  device is not supported, for the reason the provisioning document gives for
+  having no udev trigger — inserting media must not reconfigure a running
+  appliance.
+- **Atomic: temp file, mode set before the rename, fsync, rename, directory
+  fsync.** An interrupted write leaves the previous document intact, never a
+  truncated one.
 - **Fail closed on a parse error, with no fallback.** A document that exists and
-  does not parse refuses the capabilities it gates and **never** silently
-  reverts to the baked layer. §5.1 argues this for updates; it is a namespace
-  rule because the argument is not update-specific — a parse error is not
-  absence, and treating it as absence configures a device the way nobody chose.
-- **No secrets.** These documents are world-readable at 0755 and are not
-  redacted. A subsystem with a credential to store needs a different home;
-  putting one here is the same defect as putting one in the baked layer (§1.4),
-  one tier down.
+  does not parse refuses the capabilities it gates and **never** silently reverts
+  to a baked default or a schema default. A parse error is not absence, and
+  treating it as absence configures a device the way nobody chose.
+- **`0700` on the directory, `0600` on every document, and the namespace is
+  credential material** (§5.2.4). This replaces the previous revision's `0755`
+  and its no-secrets rule, both of which the decision falsified.
+- **A secret-bearing key is spelled with a name the redactor already carries, or
+  the change that adds it adds the name** (§5.2.4.2).
+- **One version per document, additive bumps, and no migration that moves a key
+  between documents** (§5.2.3).
+- **One writer per document, and it is a daemon.** mosd writes; apid holds the
+  authenticated route and **asks**. Two processes never write one document, which
+  no amount of atomic renaming makes safe.
+- **Reset disposition is the directory's** (§4.1): tiers 1 and 3 re-seed
+  `/mos/config/`, tier 2 leaves it alone, tier 4 clears it with everything else.
 
-**One writer per document, and it is a daemon.** mosd writes; apid holds the
-authenticated route and **asks**. Stated for the namespace so that two
-processes never write one document, which no amount of atomic renaming makes
-safe. A subsystem whose daemon is not mosd owns its own document and no other.
-
-**The subtree itself.** `rootfs/overlay/usr/lib/mos/mos-data-layout` creates
-`/mos`'s subtrees by name — `ui`, `containers`, `home`, `root`, `apps`,
-`updates` — and `config` needs its own entry at **0755**: readable by any local
-reader, writable only by root, matching `updates/` and `ui/`. 0755 is safe
-precisely because of the no-secrets rule above; if that rule is ever broken the
-mode is the wrong question to fix first.
-
-**The boundary against the settings tree, as a rule a reader can apply without
-asking.** mosd already owns a schema-versioned settings tree with a migration
-chain on STATE, holding `hostname`, `network`, `access`, `provisioning`,
-`wifi`, `container`, `mqtt`, `time` and the staged reset intent. The rule is:
-
-> **A document belongs in `/mos/config/` if and only if the image bakes a
-> default for it in `meta/`.** Everything else is the settings tree's.
-
-That is mechanical, and it is why the update document moved: its channel,
-policy and interval have baked defaults and its source URL is baked outright,
-so the operator layer is the second half of a two-layer system whose first half
-is in the image. Nothing in `meta/` defaults a hostname or an IP address, so
-those stay where they are.
-
-**Two weaker lines were considered and rejected, and one of them is the obvious
-one.** *Device behaviour versus how a subsystem reaches the outside world* is
-close and reads well, but the settings tree already contains `mqtt` — broker and
-bridge policy, which is outward-reaching by definition — so a reader applying
-that line would move an existing key and be wrong. *Must survive an A/B update*
-does not discriminate at all: STATE and DATA are both separate partitions and
-both survive; the A/B slots are what is replaced. The baked-default rule is the
-one that matches the tree as it actually is, and it has the property the other
-two lack — it can be checked by looking at `meta.example/` rather than by
-judging a category.
-
-**What the rule implies for the next subsystem.** Adding a document here is
-therefore *two* changes, not one: a baked default in `meta/` and an operator
-document in `/mos/config/`. A subsystem that wants only the second has not met
-the rule and belongs in the settings tree; a subsystem that wants only the
-first is baked configuration with no operator override, which is allowed and
-needs no file here at all.
+**The subtree itself.** `mos-data-layout` gains a `config` entry at **`0700`**,
+beside the `0700` it already creates for `/mos/root`.
 
 ### 6. One directory, not two: `ca/` absorbed, and the six keys it now holds
 
@@ -1066,6 +1438,148 @@ the same failure when the window is missed. Both still need a reflash. Open
 question 2 is where a later device-time channel would land, and it would now
 cover two anchors rather than one.
 
+#### 6.4 The key algorithms: what the decision implies for each of the three
+
+**The decision.** All keys should be ECDSA — shorter, and easier to maintain.
+
+It collides with a choice this tree made on purpose and recorded at the site.
+`pkgs/rauc/gen-dev-keys.sh` picks RSA 3072 with the reason in the file: RSA
+PKCS#1 v1.5 signatures are deterministic for a given key and digest, so the only
+thing that varies between two builds of one bundle is the CMS `signingTime`
+attribute, whereas ECDSA adds a random nonce and would make even the signature
+bytes differ. `docs/design/release-signing.md` §2.1's production ceremony
+repeats the reasoning for RSA 4096. Byte-identical rebuilds are a property this
+repository measures elsewhere, so this is not a stylistic preference being
+overturned and it is not decided by preference here either.
+
+#### 6.4.1 The measurement, taken before the argument
+
+**Does anything in this tree assert that two builds of the same *bundle* are
+byte-identical?** There **is** a bundle rebuild gate, it runs, and **it excludes
+the signature on purpose**. That is a sharper answer than either "yes" or "no",
+and it is the one that prices the decision.
+
+What was read:
+
+- **The gate.** `build/src/bundle.ts` exposes `payloadReport`, a sha256 over the
+  squashfs **payload at the head** of the bundle — sized from the superblock's
+  `bytes_used` at offset 40, rounded up to the 4096 rauc pads to. The bundle
+  build suite builds two bundles from identical inputs and asserts the two
+  payload digests are equal, with the stated reason that a change putting a
+  clock back into the staging path must be *a red test rather than a hash
+  somebody has to notice*. It is not vacuous: a control test builds with one
+  input changed and asserts the digest **moves**, and a second control asserts a
+  mutated tail does **not** move it.
+- **Why the gate stops at the payload, recorded in three places** — the module
+  header, `payloadReport`'s own documentation, and the test that asserts the
+  tail is excluded. The reason names **two independent** sources of tail
+  variance: rauc **salts the bundle's own dm-verity hash tree at random**, and
+  the CMS signature carries a `signingTime` attribute.
+- **Elsewhere in the tree, for contrast.** `os-deb-package-gate` rebuilds one
+  producer per architecture on a buildx builder it creates for the purpose — the
+  empty cache is the point — and requires the Debian archives back
+  byte-identical; that is the one place a whole artifact's bytes are gated.
+  `docs/design/ro-root.md` pins every source of rootfs variation it found and
+  records a measurement, not a gate. The SBOM's claim is an argument from format.
+  And the only `cmp` over a `.raucb` in the tree runs the **other** way: the
+  trust negative test fails when a tampered bundle is *the same* as the good one.
+- **The release tooling already lives with irreproducible bytes** and says so: a
+  root document's `keys` object serializes in an unordered map's iteration order,
+  so two runs over identical inputs produce different bytes carrying the same
+  signature, and the runbook says to compare against the recorded digest and
+  **never against a fresh run**.
+
+**Three conclusions, and they decide the signer row.**
+
+1. **The gate that exists cannot see the signature.** It hashes the head; the
+   signature is in the tail, by construction. No key algorithm can turn it red,
+   so the change costs the one enforced bundle-rebuild assertion nothing.
+2. **Byte-identical bundles are not merely broken by `signingTime` — they are
+   broken twice**, and the second break is upstream rauc's random verity salt.
+   Pinning or dropping `signingTime` would not deliver them; only an upstream
+   change to how rauc salts its hash tree would. So **the claim that RSA keeps
+   byte-identical bundles *reachable* is false**, and it should not be offered as
+   the surviving half of the argument. It was the obvious thing to say and the
+   measurement does not support it.
+3. **The generator's comment is not merely unenforced; it is wrong about the
+   tree.** It says the *only* thing that varies between two builds of one bundle
+   is `signingTime`. `bundle.ts` says the tail also varies because rauc salts the
+   hash tree at random, and `bundle.ts` is the statement with a passing test
+   behind it. The generator's sentence is a claim about a file it does not
+   produce, made where nothing checks it.
+
+**What no key algorithm touches, stated so the change is not oversold.** The
+bundle is `format=verity`, so a release's identity is the dm-verity root hash of
+its payload; the determinism the rootfs design measured is over that payload;
+and `payloadReport` gates exactly that. All three are indifferent to the
+signature bytes.
+
+**The verdict, and it changes the price in the direction that matters.** The
+recorded RSA reason protects a property the tree's own gate deliberately does not
+measure, that is unreachable without an upstream change, and that the sentence
+recording it describes incorrectly. **The determinism cost of moving the signer
+to ECDSA is zero.** What remains to be paid is editorial and is not nothing: two
+comments become false and must be rewritten rather than deleted.
+
+**The limit of this measurement, named.** It is read out of this repository. If
+something outside it — a customer procedure, a release checklist not in the
+tree — compares whole bundle bytes across rebuilds, it is already failing today
+on the verity salt, and the signer change would not be what broke it. Worth one
+question to whoever runs a release before F12 lands, and not a reason to defer.
+
+#### 6.4.2 The second half: lode is ed25519, not ECDSA
+
+`meta/updates/root.key` is lode's key (§6.2), and lode's trust model is sha256
+plus **ed25519**: its verifier is `ed25519-dalek`, its `[trust] trusted_keys`
+entries are `<key_id>:<base64 ed25519 public key>`, and the signature is over a
+canonical per-artifact message. lode has no ECDSA path, so "ECDSA for this key"
+is not a configuration choice — it is a fork of lode's verifier.
+
+The tree already generates ed25519 for it: `rauc-sign gen-dev-keys` writes one
+ed25519 key per role as raw PKCS#8, and §1.1's private-key detector has a DER
+test precisely because of that encoding.
+
+**Ed25519 also satisfies the reasons the decision gave.** Its public half is 32
+bytes — shorter than an uncompressed P-256 point — it is one algorithm with one
+curve and no parameter choices to maintain, and **it is deterministic by
+construction**: RFC 8032 derives the nonce from the message and the private key,
+so a given key and message always produce the same signature bytes. That is
+exactly the property the RSA comment was written to protect. On the one key where
+determinism could still be argued for, the answer that keeps it is neither RSA
+nor ECDSA.
+
+#### 6.4.3 The three keys, and what is recommended for each
+
+**A recommendation is not a decision.** The table says what the instruction
+implies, what it costs, what it breaks, and what this record would choose;
+choosing is the user's.
+
+| Key | What the decision implies | What it costs | What it breaks | Recommended |
+|---|---|---|---|---|
+| **RAUC CA** `meta/rauc/ca.key.pem` | ECDSA in place of RSA 3072 (dev) and RSA 4096 (production ceremony) | nothing measured. A smaller key, a smaller certificate and a slightly smaller baked keyring, none of which anything in this tree is short of | nothing. RAUC verifies CMS through OpenSSL, which does ECDSA; the keyring is still an OpenSSL CA file of concatenated PEMs, so §2.4's rollover and `tests/rauc-trust-negative-test.sh`'s properties are unchanged. Two texts change: the dev generator and `release-signing.md` §2.1. The 15-year CA horizon is about the fleet's lifetime, not the algorithm, and is unchanged | **ECDSA P-256.** The decision, with nothing in the tree opposing it |
+| **RAUC signer** `meta/rauc/signer.key.pem` | ECDSA in place of RSA 3072 | **nothing measurable.** The bundle rebuild gate hashes the payload and excludes the signature by design, and byte-identical bundles are already unreachable because rauc salts the bundle's verity hash tree at random (§6.4.1) | the recorded reason in two places. Both the generator's comment and `release-signing.md` §2.1's restatement become false and must be **rewritten, not deleted** — a comment saying "RSA, for determinism" beside an EC key is worse than no comment, because the next reader takes it as a rule somebody violated | **ECDSA P-256.** The strongest argument against it did not survive being measured, and the rewritten comments should record what §6.4.1 found rather than a softer version of it |
+| **lode package key** `meta/updates/root.key` | ECDSA in place of ed25519 | a fork of lode's verifier, and the existing `rauc-sign` generator stops being the tool that writes this key | **lode compatibility**, which §6.2 made this key's whole identity. The package layer would no longer be verifiable by the thing it was modelled on | **ed25519 — diverge from the instruction, on the record.** It is shorter than P-256, is one algorithm with nothing to configure, is deterministic by construction, and is what the counterpart verifies. It meets every reason the decision gave; only its literal wording says otherwise |
+
+**If literal uniformity across all three is wanted anyway**, the price is the
+third row: mos stops being lode-compatible on the one key that is lode's, and the
+package-verification path becomes mos's own code to write and maintain. That is a
+real option and it is the user's to take; this record will not take it by
+implication.
+
+#### 6.4.4 Two keys the decision does not reach, named so it is not applied to them
+
+- **apid's TLS key is already ECDSA P-256** — it is generated by `rcgen`'s
+  default algorithm and is a per-device, self-signed, never-exported pair on
+  STATE. Nothing to change; named because a sweep for "RSA" would not find it and
+  a sweep for "keys" would.
+- **WireGuard keys are X25519 and are not a choice.** The protocol fixes the
+  curve; they are key-agreement material rather than signing keys, and they are
+  outside this decision entirely.
+- **`access.ssh.authorizedKeys` holds keys mos does not generate.** They are
+  operator-supplied public keys and their algorithm is the operator's; the tree's
+  own example is `ssh-ed25519`. The decision does not reach them and must not be
+  applied to them by a validator.
+
 ### 7. No default server, and the check that holds it
 
 **There is no built-in vendor URL anywhere in the tree and this plan adds
@@ -1140,6 +1654,14 @@ are also the cheapest available cross-check that the image is the one the
 release claims — and `trust.signingKeyIds` (§2.1) makes the package anchor
 checkable against the ceremony minutes without decoding base64 by hand.
 
+**And this endpoint's structural argument does not extend to `/mos/config/`.**
+The baked set is safe to return whole because it is allowlisted and checked
+twice, so there is nothing secret in it to disclose. `/mos/config/` is the
+opposite by §5.2.4 — it is credential material — so anything that reads it reads
+through the redactor, and §5.2.4.2's naming rule is what makes that structural
+rather than remembered. The two tiers are served by two different arguments and
+the endpoint must not borrow the first one for the second.
+
 Three facts should read side by side wherever this surfaces: the **baked**
 value, the **operator** value from `/mos/config/updates.json`, and the
 **effective** one after §5.1's precedence. An operator looking at a device
@@ -1198,6 +1720,28 @@ factory reset, that the selection is gone and the baked default is back
    else in this record turns on the answer, and the record deliberately does not
    retire shipped, tested tooling by implication. **This must be answered before
    F5**, because the reader's `trust` block differs between the two.
+7. **How does an integrator physically perform the pour?** §5.2 designs what a
+   poured document *is* and what the device does with one; it does not settle
+   how the bytes arrive. Two shapes, and they differ in what an integrator's
+   process looks like: mount the DATA partition on a laptop and write
+   `/mos/config/` directly, which works on a freshly flashed card and needs no
+   boot, versus drop the documents at a fixed place on the boot medium and have
+   the device adopt them on first boot, which is the transport the provisioning
+   document already uses and which does not require the integrator to know the
+   partition layout. **Recommended: the second**, because it reuses a shipped
+   transport and because a partition an integrator mounts is a partition an
+   integrator can corrupt — but it is not designed here and F6g is where the
+   answer lands. **This must be answered before F6g**, because the two shapes
+   have different failure modes and different documentation.
+8. **Does the ssh switch's document carry `authorizedKeys`?** §5.2.2 puts
+   `access.ssh` in `ssh.json` whole, which includes the authorized-key list.
+   Those are public keys, not secrets, so the mode question does not arise — but
+   they are access-granting, and a poured `ssh.json` is a way to hand somebody
+   root on a device before it has ever been claimed. The provisioning document
+   already carries `admin.authorizedKeys` under the already-claimed rule, which
+   is the bound that makes it safe. **Whether the pour inherits that bound or
+   needs its own** is not decided here, and it is the one place §5.2's pour and
+   `provisioning.md` §4.1.4 have to agree.
 
 ## Risks
 
@@ -1235,15 +1779,66 @@ factory reset, that the selection is gone and the baked default is back
   factory reset, and nothing told them that would happen. The mitigation is
   documentation and the read surface of §8, and both are backlog items rather
   than good intentions.
-- **`/mos/config/` is a namespace with one occupant, and namespaces set by
-  their first tenant.** Every rule in §5.2 was written against a single JSON
-  document holding a channel and a switch. The second subsystem will arrive
-  with something the rules did not anticipate — a secret, a document too large
-  to rewrite atomically, a value two daemons both want to write — and the rules
-  will be load-bearing by then. That is the reason to state them now rather
-  than the reason not to; the specific mitigation is that each rule in §5.2
-  carries the failure it prevents, so a subsystem that must break one can see
-  what it is buying.
+- **The namespace's second tenant arrived and broke two of its rules, which is
+  the risk itself rather than an argument against it.** The previous revision
+  wrote §5.2 against a single JSON document holding a channel and a switch, and
+  said in terms that the second subsystem would arrive with something the rules
+  did not anticipate — *a secret, a document too large to rewrite atomically, a
+  value two daemons both want to write*. It arrived with the first of those in
+  the same week. `0755` and no-secrets are gone (§5.2.4) and the baked-default
+  boundary rule is gone (§5.2). The mitigation that worked is the one that was
+  designed in: each rule carried the failure it prevents, so replacing two of
+  them was a priced decision rather than a discovery. The residual risk is that
+  the **next** decision does the same to §5.2.7, and the only defence is that
+  the list keeps carrying its reasons.
+- **Moving the settings store is the largest change this record has ever
+  proposed, and it touches trust-adjacent code.** A schema-versioned store with
+  a twelve-step migration chain, a write allowlist, a fail-open redactor and ten
+  reconcilers becomes several stores behind one addressing scheme. §5.2.5 argues
+  the addressing survives and §5.2.2 that the grouping is the tree's own, and
+  both are load-bearing: if either is wrong the move is much larger than
+  estimated. The control is that every existing settings test asserts behaviour
+  through the dot-path API, so they pass unchanged if the claim holds and fail
+  loudly if it does not.
+- **Deleting the `V0→V12` chain is right and is irreversible.** §5.2.3 deletes
+  it because no fielded device holds a v12 document, which is true of this tree
+  and will stop being true the day one ships. The risk is a slice that lands
+  after that day. The mitigation is ordering, not cleverness: the split ships
+  before any device does, or it does not ship in this form.
+- **A secret in `/mos/config/` is one redactor-list entry away from being
+  served.** §5.2.4.2 makes the naming rule explicit precisely because the list
+  is fail-open, but a rule in a plan is not a check. The failure is silent and is
+  discovered by the person it discloses to. This is the same limit §1.2 states
+  for the baked set, one tier down, and it has the same honest answer: no
+  entropy heuristic is proposed, because one over a file full of SSIDs and
+  hostnames would fire mostly on things that are fine.
+- **`0700` is a mode somebody will "fix".** A directory under `/mos` that a
+  non-root reader cannot list looks like an oversight next to `ui/` and
+  `updates/`, and the change that widens it is a one-character diff with no test
+  that fails. The mitigation is that the mode is stated with the failure it
+  prevents at the site that sets it, in the shape `mos-data-layout` already uses
+  for `/mos/root`.
+- **Configuration on DATA is a tier change against a comment in the partition
+  table** (§5.2.6). The specific risk is a DATA-only fault on a device somebody
+  is relying on reaching over a static address. The fail-closed rule makes the
+  outcome legible rather than silently wrong; it does not make the device
+  reachable, and the serial console is the honest remaining answer.
+- **The bundle-determinism reason is retired on a measurement, and the first
+  version of that measurement was wrong.** It was written as *nothing asserts
+  byte-identical bundles*, which would have made the RSA choice merely
+  unenforced. Reading further found a rebuild gate that does run — and that
+  excludes the signature deliberately, because rauc salts the bundle's verity
+  hash tree at random on top of `signingTime`. The conclusion strengthened and
+  the reasoning had to be replaced (§6.4.1). The residual risk is the same shape
+  one level out: something outside this repository comparing whole bundle bytes.
+  It would already be failing on the salt, so the signer change is not what would
+  break it — but it is worth one question before F12 rather than an assumption.
+- **A rewritten comment is the deliverable, not a deleted one.** The RSA
+  determinism reason appears in the generator and again in the production
+  ceremony. Deleting it leaves an EC key with no recorded reason; leaving it
+  leaves a false one. Either failure looks like the other at review time, which
+  is why §6.4.3 names rewriting as part of the change rather than as tidying
+  after it.
 - **Tier 1 gains a write to DATA it does not have today** (§4.1). `reset.rs`
   already reaches the DATA pool, so this is not a new root — but it is a new
   cell in a table whose cells are asserted cell-for-cell by tests, and the
@@ -1287,13 +1882,23 @@ schema, its mapping from lode's `lode.toml`, and the form the package anchor's
 public half takes in it; `meta/` being gitignored, the committed
 `meta.example/`, and generation when absent; the image paths and the
 byte-equality gate; the three layers and the one precedence rule between them;
-**the `/mos/config/` namespace and every rule a later subsystem inherits from
-it, including its reset disposition and its boundary against the settings
-tree**; what becomes of the STATE policy file; the no-default-server rule, the
+**the `/mos/config/` namespace as the home of system configuration: the
+boundary against the settings store, the shape of the move and the two shapes
+rejected, the per-document schema version and the migration question, the mode
+and the secrets charter, the redactor naming rule, the addressing that does not
+change, the STATE-to-DATA tier collision, and every rule a later subsystem
+inherits**; the reset disposition of the directory; what becomes of the STATE
+policy file; **the key algorithm for each of the three keys, and the measurement
+behind retiring the RSA determinism reason**; the no-default-server rule, the
 channel rules and their verifier check; the read surface.
 
 Out of scope: the update policy semantics (PLAN-071); anything the fleet switch
-turns on (PLAN-072); the per-device manufacturing record
+turns on (PLAN-072); **the provisioning document, which keeps its transport, its
+format and its position on secrets on a medium unchanged — §5.2.2 declines to
+duplicate it, and §5.2.4.1 reuses its argument rather than restating it**;
+**making `signingTime` reproducible, which §6.4.1 names as the change that would
+actually buy byte-identical bundles and which is independent of every decision
+here**; the per-device manufacturing record
 (`docs/design/manufacturing.md` stays `[proposed]`); a device-time trust
 channel (open question 2); **the release-side package repository's mechanism
 and hosting** (open question 6), which `docs/design/release-artifacts.md`
@@ -1314,12 +1919,24 @@ approving this plan; each becomes a task record when it is scheduled.
 | F5 | The reader in mosd: parse, validate, `deny_unknown_fields`, expose as live state | M | unknown key is a build error, not a runtime one; the reader always answers with a document |
 | F6 | §5.1 precedence in `update_policy.rs`: the three layers, per-key override, and the parse-error rule that does **not** fall back | M | a layer-2 document that fails to parse refuses actions and does not silently adopt the baked channel |
 | F6b | Move the operator document: `/var/lib/mos/update-policy.toml` retired, `/mos/config/updates.json` in its place, `source.url` and `source.rootPath` dropped from its schema | M | the channel is readable from exactly one file; a document naming a source URL is a load error |
-| F6c | The `/mos/config/` namespace: the `mos-data-layout` entry at 0755, the §5.2 rules written where a subsystem author meets them, and tier 1's re-seed of the subtree in `reset.rs` | M | a virgin device has the subtree at its declared mode; tier 1 returns every occupant to its baked default and leaves the rest of `/mos` alone; §2.1's table and its tests agree cell for cell |
+| F6c | The `/mos/config/` namespace: the `mos-data-layout` entry at **0700**, the §5.2.7 rules written where a subsystem author meets them, and tier 1's re-seed of the subtree in `reset.rs` | M | a virgin device has the subtree at its declared mode; tier 1 returns every occupant to its baked default and leaves the rest of `/mos` alone; §2.1's table and its tests agree cell for cell |
+| F6d | The settings store's move (§5.2.1–§5.2.3): the per-reconciler documents, one schema version each starting at v1, the `V0→V12` chain deleted with the document it migrated, and `Settings`'s split into the moved half and the STATE half | L | every existing settings test passes **through the dot-path API unchanged**, which is the claim §5.2.5 makes; a key written to one document leaves the others byte-identical; no migration crosses a document boundary |
+| F6e | The mode and the secrets charter (§5.2.4): the directory at 0700, every document written 0600 through the existing mode-before-rename writer, and the redactor naming rule asserted — a `/mos/config/` document's secret-bearing key names a field the redactor already carries | M | a document lands 0600 even when it replaces one that was laxer; a test enumerating the moved schema's secret-bearing field names against the redactor list is RED when a name is added to one and not the other |
+| F6f | Fail-closed on the medium (§5.2.6): `RequiresMountsFor=/mos` on mosd, and the refusal that says which mount is missing rather than starting on defaults | S | mosd with `/mos` unmounted does not start and names the mount; it does not render a default network |
+| F6g | The pour: mosd validates documents it did not write, on boot, with §5.2.7's fail-closed rule and no read-back of a poured secret | M | a hand-written document that parses and validates is adopted; one that does not refuses its subsystem and names the file; nothing a poured document carried appears in any served record |
 | F7 | `rauc-update` reads `trust.signingKeys` from the baked manifest instead of an anchor file path; `trust.signingKeyIds` derived at build time | S | an anchor supplied any other way is refused; a hand-written `signingKeyIds` that does not match `signingKeys` fails the build |
 | F8 | No-compiled-in-endpoint verifier check | S | fails a build with a planted default URL in a binary; passes with one in `meta/` |
 | F9 | `GET /api/v1/provisioning/status` extension: the document, the digests, and baked-versus-effective | S | — |
 | F10 | Design-doc updates: `recovery.md` §2.1's clarifying note, its **new tier-1 footnote and `config/` in `[^apps-mos]`'s untouched list (§4.1)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5 **plus §6.2's custody split and the rule that `root.key` is present on a release host while `ca.key.pem` is not**, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` |
+| F12 | The key algorithms (§6.4), whichever the decision lands on: `gen-dev-keys.sh`'s algorithm and **its rewritten comment**, `release-signing.md` §2.1's ceremony and its restatement of the same reason, and the package key left as generated. **The comment correction is owed whether or not the algorithm changes** — §6.4.1 found it states `signingTime` is the *only* source of variance, which the payload gate's own recorded reason contradicts | S | the generator and the ceremony agree on one algorithm; no comment names a reason the code no longer follows or a fact the code contradicts; the bundle payload rebuild gate and both trust test suites pass with their meanings unchanged |
 | F11 | Operator documentation: which reset returns the device to the baked default channel (§4.1), stated where a reader meets the reset, not only in the design tree; **and the baked-only source URL's residue (§5) — that the update server is fixed at build time, that changing it needs a new image or an offline import, and what to do when the server is gone** | S | a reader who runs tier 3 was told the channel goes back; a reader whose server has moved finds the two remedies and the stranded case named, not a dead end |
+
+F6d, F6e and F6f are the decision-A move and they are one change, not three:
+shipping the documents without the mode publishes the Wi-Fi key, and shipping
+either without the fail-closed mount produces a device that comes up on defaults
+when DATA is missing. F6g is separable and is the half that delivers the
+decision's actual goal — without it the documents exist and nobody can pour
+anything into them.
 
 F3 and F4 are the pair that make §1.1's hazard mechanical rather than
 conventional, and neither is optional: F3 without F4 proves only that the build
@@ -1367,19 +1984,52 @@ That item does not exist here.
 - reset tiers 1 and 3 both return the channel to the baked default, tier 2
   leaves it alone, and that disposition is decided for the `/mos/config/`
   directory rather than inherited (§4.1);
-- `/mos/config/` is the **namespace for system configuration of this kind**,
-  not a home for one file: one JSON document per subsystem at
-  `/mos/config/<subsystem>.json`, machine-written by a daemon and never
-  hand-edited, atomic on write, fail-closed on a parse error, holding no
-  secret, and re-seeded by reset tiers 1 and 3 (§5.2);
-- the boundary against the settings tree is the **baked-default rule**: a
-  document belongs in `/mos/config/` if and only if the image bakes a default
-  for it in `meta/` (§5.2);
+- `/mos/config/` is **the home of system configuration**, and the goal is
+  flash → pour → working device: one JSON document per reconciler at
+  `/mos/config/<document>.json`, machine-written by one daemon, atomic on write,
+  fail-closed on a parse error and fail-closed on a missing DATA mount, and
+  re-seeded by reset tiers 1 and 3 (§5.2);
+- the settings store's configuration content **moves** there, per subsystem; the
+  overlay shape and the take-only-what-is-new shape are rejected and priced
+  (§5.2.2);
+- the boundary against what stays on STATE is **what an integrator sets versus
+  what the device mints or observes**, and it is not a new judgement — it is the
+  tier-1 reset partition, already shipped and already tested (§5.2.1). The
+  previous revision's baked-default rule is **retired**, because the decision
+  falsifies it on `mqtt.enabled` and `access.ssh.enabled`;
+- **one schema version per document**, additive bumps, no migration that moves a
+  key between documents, and the `V0→V12` chain deleted rather than ported
+  (§5.2.3);
+- the namespace is **`0700` with `0600` documents and is credential material**;
+  the previous revision's `0755`-and-no-secrets charter is retired, because
+  `WifiNetwork.psk` is a real secret in the moved set and `0755` would publish
+  it (§5.2.4). A poured document is treated the way `provisioning.md` §4.1.6
+  already treats a provisioning medium, and that position is reused rather than
+  re-argued (§5.2.4.1);
+- a secret-bearing key in a `/mos/config/` document is spelled with a name the
+  redactor already carries, or the same change adds it (§5.2.4.2);
+- **addressing does not change**: the dot-path API, its write allowlist, the
+  redactor and the reconciler dispatch all survive, and `access` composes across
+  the boundary (§5.2.5);
+- system configuration moves from STATE to DATA, which falsifies the partition
+  table's own comment and PLAN-061's tier rule; both are rewritten, and mosd
+  fails closed on a missing `/mos` rather than rendering defaults (§5.2.6);
+- on key algorithms (§6.4): the RSA determinism reason is **measured** against
+  the tree. There is a bundle rebuild gate, it runs, and it hashes the payload
+  and excludes the signature on purpose — because rauc salts the bundle's verity
+  hash tree at random on top of `signingTime`, so byte-identical bundles are
+  unreachable whatever key signs them. The determinism cost of the change is
+  therefore zero. The RAUC CA and signer move to ECDSA P-256 with both comments
+  rewritten rather than deleted, and the lode package key is
+  **recommended to stay ed25519**, which meets every reason the decision gave
+  while its literal wording does not. That last one is a recommendation and the
+  decision stays the user's;
 - absence of a server is a supported steady state and there is no default
   server;
-- open questions 1–5 are answered before the slices that depend on them
+- open questions 1–8 are answered before the slices that depend on them
   (question 1 blocks the second deployment, not a slice; question 5 blocks
-  nothing until a development TUF repository is wanted).
+  nothing until a development TUF repository is wanted; questions 7 and 8 block
+  F6g, which is the slice that delivers decision A's goal).
 
 Approval does **not** authorise writing any of the backlog above. Each slice
 takes a task record and its own proposal.
@@ -1420,20 +2070,65 @@ takes a task record and its own proposal.
    `rauc-update`'s verifier a tool a person points at a `--root` they brought
    themselves, which is the current state stated honestly and is not a shipped
    update path.
-7. **Put the update configuration in the settings tree instead.** Rejected for
-   `docs/design/updates.md` §2's unchanged reason — a settings key means a
-   schema bump plus a migration, and a concurrent workstream owns the next bump
-   — and for a second reason this seam adds: a settings key is per-device
-   mutable state, and the trust half of `meta/` must not be. §5.2 turns this
-   from a one-off rejection into the rule that decides it for every later
-   subsystem.
-8. **`/mos/config/<subsystem>/` directories instead of flat documents.**
-   Rejected in §5.2: a directory invites several files with no transaction
+7. **Put the update configuration in the settings tree instead.** Still
+   rejected, and **the first half of the reason is gone**. That half was
+   `docs/design/updates.md` §2's — a settings key means a schema bump plus a
+   migration, and a concurrent workstream owns the next bump — and §5.2.3
+   deletes the chain that made a bump expensive, so it no longer argues
+   anything. The half that survives is the one this seam added and it is
+   sufficient: the trust half of `meta/` must not be per-device mutable state.
+   Under decision A the traffic runs the other way anyway — the settings store's
+   configuration content moves **to** `/mos/config/`, so this alternative now
+   describes a direction nothing is going in. Kept because the surviving reason
+   is the one that would decide it again.
+8a. **`/mos/config/` as a seeding overlay onto a settings tree that stays.**
+   Priced in §5.2.2. Rejected as an overlay because two homes for one key is the
+   defect this campaign exists to remove; rejected in its stronger,
+   consumed-once form because that form already exists and is called
+   `mos-provisioning.toml`, and building it again as a directory is the second
+   differently-trusted write path `provisioning.md` §4.1.7 refuses by name.
+8b. **`/mos/config/` takes only what is genuinely new; mqtt and ssh stay in the
+   settings tree.** The cheapest option by a wide margin and the only one that
+   touches no shipped storage. Rejected because it does not do what was decided
+   — the two keys it leaves behind are the two the decision named — and it is
+   listed rather than omitted so that the chosen shape's cost is visible against
+   something.
+8c. **Keep `/mos/config/` at `0755` and hold the Wi-Fi keys in a STATE sidecar
+   with the document carrying a reference.** The tree's existing shape, twice
+   over, and genuinely the right one for a secret the device mints. Rejected for
+   a secret the integrator supplies: the pour would carry no key, so a Wi-Fi
+   device would still need a separate provisioning step, which is the ceremony
+   the decision exists to remove. Re-openable if the pour turns out to be a
+   wired-deployment feature only.
+8d. **Per-document modes: `wifi.json` at `0600`, everything else at `0755`.**
+   Rejected in §5.2.4: the namespace's mode stops being one fact, so the default
+   decides the outcome the day a later author forgets, and what it buys — an
+   unprivileged local reader of the update channel — is something nothing in the
+   tree asks for.
+8e. **Keep `network` and `hostname` on STATE so a DATA fault leaves a device
+   reachable.** Priced in §5.2.6. Rejected because it re-creates two homes for
+   configuration and makes the tier a judgement call; re-openable on evidence
+   that a DATA-only fault is real on this hardware.
+8f. **Keep RSA for the RAUC signer to preserve byte-identical bundles.**
+   Rejected on the measurement rather than on taste (§6.4.1): nothing in the tree
+   asserts that property, the comment defending it concedes `signingTime`
+   already breaks it, and the change that would actually deliver it is pinning
+   `signingTime` — which is available whatever the key algorithm is. Named
+   because it is the strongest argument against decision B and it deserves to
+   lose on evidence.
+8g. **Take the decision literally and make the package key ECDSA too.** Not
+   rejected — it is the user's to take, and §6.4.3's table prices it. It costs
+   lode compatibility on the one key that is lode's, and makes the
+   package-verification path mos's own code. Listed here so that recommending
+   ed25519 is visibly a recommendation and not a quiet substitution.
+9. **`/mos/config/<document>.json` flat documents, not
+   `/mos/config/<subsystem>/` directories.**
+   Rejected in §5.2.7: a directory invites several files with no transaction
    across them, so a subsystem can half-apply a change with no way to say so,
    and a flat listing of `/mos/config/` stops being the namespace's index. A
    subsystem that genuinely needs several documents may still take a directory,
    at that stated cost.
-9. **Put the operator document inside `/mos/updates/`.** An intermediate
+10. **Put the operator document inside `/mos/updates/`.** An intermediate
    revision's answer, and it worked — `[^apps-mos]` gives that directory
    durable semantics and `used_bytes` never walks the workspace root. Rejected
    because the properties that made it safe were **accidents of the current
@@ -1441,22 +2136,22 @@ takes a task record and its own proposal.
    into a workspace contract to defend one file, and because §4.1's tier-1
    decision is ordinary for a directory and expensive for a file reached inside
    a transactional workspace.
-10. **Keep the operator policy on STATE and read only the channel from `/mos`.**
+11. **Keep the operator policy on STATE and read only the channel from `/mos`.**
    Rejected, and it is the option the addendum explicitly forbids: two files
    that both name the channel is the defect this campaign has spent its life
    removing. A split with no overlapping key is the weaker version of the same
    objection — one operator-owned concern in two homes, with two failure modes,
    two atomicity stories and two things to reset.
-11. **`/mos/update/` as a sibling of `/mos/updates/`.** Rejected on the name
+12. **`/mos/update/` as a sibling of `/mos/updates/`.** Rejected on the name
    alone (§5.1): one letter apart, different meanings, silent in both
    directions when somebody writes the wrong one.
-12. **Ship the operator document as TOML, matching the file it replaces.** The
+13. **Ship the operator document as TOML, matching the file it replaces.** The
    request that settled this named `config.toml` while asking for JSON. JSON is
    what was chosen — the document is machine-written state, not a hand-edited
    file — so the name follows the format and it is `config.json`. Named here
    rather than silently renamed, because a `.toml` file containing JSON fails
    at a reader that parses by extension, and it fails naming the wrong thing.
-13. **A single plan covering `meta/`, the update module and the fleet plane.**
+14. **A single plan covering `meta/`, the update module and the fleet plane.**
    Rejected; the argument is in PLAN-072's *Why three plans and not one* and is
    not duplicated here.
 
@@ -1553,3 +2248,47 @@ takes a task record and its own proposal.
   detector and its scoped surface, the gitignored `meta/` with `meta.example/`,
   the withdrawn diff-review claim, the fresh-checkout behaviour, the
   no-default-server rule, and PLAN-071/072's invariants.
+- 2026-09-03: **Two decisions folded in, each against something the tree
+  records.** **(A) All system configuration goes in `/mos/config/`** — mqtt, the
+  ssh switch and everything of that sort, so that flash → pour → working device
+  needs no ceremony. §5.2 is rebuilt around that: the settings store's
+  configuration content **moves**, split per reconciler; the boundary against
+  what stays on STATE is **the tier-1 reset partition**, measured out of shipped
+  code rather than judged; the schema version becomes **one per document** with
+  no cross-document migrations, and the `V0→V12` chain is **deleted rather than
+  ported** because no fielded device holds a v12 document; addressing does not
+  change, which is what makes the move affordable; and the STATE-to-DATA tier
+  move falsifies the partition table's own *"configuration + identity"* comment
+  and PLAN-061's rule, answered by mosd failing closed on a missing `/mos`
+  rather than rendering defaults. **The previous revision's baked-default
+  boundary rule is retired**, because nothing in `meta/` defaults `mqtt.enabled`
+  or `access.ssh.enabled` and those are the two keys the decision named. **And
+  the namespace's `0755`-and-no-secrets charter is retired with it**:
+  `WifiNetwork.psk` is a raw WPA2 key in the moved set, so the namespace becomes
+  `0700` with `0600` documents and is stated to **be** credential material, with
+  the per-document-mode and STATE-sidecar alternatives priced (8c, 8d). The
+  position on a poured document that holds a secret is **reused, not invented** —
+  `provisioning.md` §4.1.6's *treat a provisioning medium as credential material*
+  — and the redactor's fail-open name list gains a naming rule so a moved secret
+  arrives covered. **(B) Keys should be ECDSA.** §6.4 measures the recorded RSA
+  determinism reason before arguing with it, and the answer is sharper than
+  either "enforced" or "unenforced": **the bundle rebuild gate exists, runs, and
+  excludes the signature by design.** It hashes the squashfs payload at the head,
+  with a control test proving it is not vacuous, and the recorded reason for
+  stopping there names two independent sources of tail variance — the CMS
+  `signingTime` **and rauc salting the bundle's own verity hash tree at random**.
+  So the key algorithm cannot turn the one enforced assertion red; byte-identical
+  bundles are unreachable whatever key signs them; and the generator's sentence
+  that `signingTime` is *the only* variance is contradicted by the code that
+  measures it. The determinism cost of the change is zero. The RAUC CA and signer
+  move to ECDSA P-256 with both comments **rewritten rather than deleted**; the lode package key is **recommended to stay ed25519**, which is
+  shorter than P-256, has nothing to configure, is deterministic by construction
+  and is what lode's verifier accepts — every reason the decision gave, met by
+  the one algorithm its wording excludes. That row is a recommendation and 8g
+  prices taking the instruction literally. **Deliberately unchanged**: the baked
+  allowlist and B1/B2, the gitignored `meta/` with `meta.example/`, the two
+  signing domains and their blast-radius split, the reset dispositions, §5.1's
+  three layers, the no-default-server rule, PLAN-071's write route and
+  invariants, and PLAN-072's boundary. The title changed again with this
+  revision; `docs/plan/index.md`'s row is owed the change and is deliberately not
+  edited here.

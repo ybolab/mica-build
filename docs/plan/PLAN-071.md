@@ -113,17 +113,38 @@ The document moves and changes format, per PLAN-070 §5.1: it is
 it. `/var/lib/mos/update-policy.toml` goes away. The keys are today's, minus
 the two that moved up to the baked layer.
 
-**It is the first occupant of `/mos/config/`, and PLAN-070 §5.2 is the
-namespace's rules** — flat `<subsystem>.json`, JSON, machine-written by exactly
-one daemon, atomic temp-file-plus-rename, fail closed on a parse error with no
-fallback, and no secrets. Those are namespace rules, not this document's, so
-this plan inherits rather than restates them. Two consequences for this plan:
-the write route of §3 is mosd's alone, which is the namespace's one-writer rule
-and not a choice made here; and PLAN-070 §4.1 decides the reset disposition for
-the directory — tiers 1 and 3 both return this document to the baked defaults,
-tier 2 leaves it alone. **Tier 1 re-seeding it means the move off STATE is not
-a behaviour change**: *configuration reset returns the channel to its default*
-is true today and stays true.
+**It is one occupant of `/mos/config/`, and PLAN-070 §5.2 is the namespace's
+rules** — flat `<document>.json`, JSON, machine-written by exactly one daemon,
+atomic temp-file-plus-rename with the mode set before the rename, fail closed on
+a parse error with no fallback, one schema version per document, and the
+directory at `0700` with `0600` documents. Those are namespace rules, not this
+document's, so this plan inherits rather than restates them. Three consequences
+for this plan:
+
+- the write route of §3 is mosd's alone, which is the namespace's one-writer
+  rule and not a choice made here;
+- PLAN-070 §4.1 decides the reset disposition for the directory — tiers 1 and 3
+  both return this document to the baked defaults, tier 2 leaves it alone.
+  **Tier 1 re-seeding it means the move off STATE is not a behaviour change**:
+  *configuration reset returns the channel to its default* is true today and
+  stays true;
+- **two of those rules changed after this plan was written and neither changes
+  anything here.** The namespace is no longer `0755`-and-secret-free — it is
+  `0700` and is credential material, because the settings store's Wi-Fi keys
+  moved in beside this document — and it is no longer entered by PLAN-070's
+  baked-default rule, which was retired. `updates.json` carries no secret either
+  way, so the mode is inherited and not needed; and the retired rule was what
+  argued this document's *address*, which §5.1's precedence table now carries on
+  its own. **This plan was the reason the baked-default rule existed and it is
+  not the reason it is gone**, so nothing in §1's schema, §2's semantics or §3's
+  route moves with it.
+
+**And this document is no longer the namespace's only durable tenant**, which
+removes a claim this plan used to lean on implicitly: a reader looking at
+`/mos/config/` will now find `network.json`, `wifi.json`, `mqtt.json`,
+`ssh.json` and the rest beside it. `updates.json` is not special there, and the
+only thing that distinguishes it is that its defaults come from the image
+(§1.1) rather than from the schema.
 
 ```json
 {
@@ -544,9 +565,17 @@ agreeing that:
   unreachable from it;
 - a rolled-back version is suppressed until an operator clears it;
 - an automatic install is deferred while the clock is untrusted;
-- the policy stays a **file** rather than a settings subtree — but a
-  machine-written JSON document under `/mos/updates/` with an authenticated,
-  audited, validated-on-write route, not a hand-edited one.
+- the policy stays a **file** rather than a settings subtree — a
+  machine-written JSON document at `/mos/config/updates.json` with an
+  authenticated, audited, validated-on-write route, not a hand-edited one. (This
+  clause named `/mos/updates/` until the path was settled, and that was already
+  stale; it is corrected here rather than left to be read as a second answer.)
+  **Under PLAN-070 §5.2 the distinction it draws has narrowed**: the settings
+  store's own configuration content now lives in the same namespace, so "a file
+  rather than a settings subtree" no longer names a difference in tier or in
+  discipline. What it still names is a difference in *layering* — this document
+  overrides baked defaults and the moved subsystems have none — and that is the
+  half worth keeping.
 
 Approval does not authorise the backlog. `check` remains the default after this
 plan, so approving it does not change what a shipped device does until an
@@ -621,3 +650,16 @@ operator writes `auto`.
   here, and reset tier 1 re-seeds the document, so moving off STATE is no
   longer a behaviour change. The write route, the format, the `off | check |
   auto` semantics and every other decision are unchanged.
+- 2026-09-03: PLAN-070 revised again, folding in two user decisions. Touched
+  here only where a sentence became false. **`/mos/config/` is now the home of
+  all system configuration**, not a namespace whose first occupant is this
+  document: §1 says so, records that the namespace is `0700` and credential
+  material rather than `0755` and secret-free, and records that the
+  baked-default boundary rule which used to justify this document's address is
+  retired — §5.1's precedence table carries that on its own. The approval
+  boundary's stale `/mos/updates/` path is corrected in the same pass. Nothing
+  else moves: the `off | check | auto` semantics, the `auto`-requires-a-window
+  rule, the never-arms-the-override invariant, the version suppression, the
+  withdrawal analysis, the clock predicate, the write route and the U1–U11
+  backlog are unchanged. The key-algorithm decision does not reach this plan —
+  it verifies no signature itself and calls a client that does.
