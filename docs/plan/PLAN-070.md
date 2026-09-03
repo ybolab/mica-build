@@ -642,7 +642,11 @@ are narrower than the previous draft claimed:
    all — and a reflash. A device with no operator *and* no physical access
    whose server has gone away is stranded; that is the true residue and it is
    not fixable by anything short of a channel this product deliberately does
-   not have.
+   not have. **The residue has to be visible outside this plan**: F11 owes the
+   operator page a statement that the update server is fixed at build time,
+   that changing it needs a new image or an offline import, and what to do when
+   the server is gone. A stranded device whose operator was never told is a
+   support case that reads as a defect.
 
 **A capability is being removed, and it should be seen.** `update-policy.toml`
 lets an operator set `source.url` today. After this plan the operator document
@@ -684,7 +688,9 @@ directions. **The configuration goes inside the existing workspace**, at
 `/mos/updates/config.json`: one directory then owns everything the update
 subsystem keeps on DATA, the name is already carved out of tier 2 by
 `[^apps-mos]`, and the three neighbours are directories while this is a file,
-so the two cannot be confused even at a glance.
+so the two cannot be confused even at a glance. **§5.2 answers the objection
+that a workspace is the wrong place for a durable document**, and converts it
+into three written rules rather than a second subtree.
 
 **What becomes of `/var/lib/mos/update-policy.toml`: it goes away.** Not split,
 not kept for a subset — **moved wholesale**, because two files that both name
@@ -742,6 +748,58 @@ rules stand and gain one case:
 - **No default server** is untouched by all of this: absent in layer 1 and
   absent in layer 2 still means no online source, refuse, and offline import
   remains (§7).
+
+#### 5.2 A durable document inside a workspace, and the contract that has to say so
+
+The objection this decision has to answer, stated in full because dismissing it
+is the failure mode: `/mos/updates/` is documented as a **workspace**, whose
+discipline is that unverified leftovers are removed rather than counted or
+trusted, and whose module contract says `downloads/` holds `<name>.part` and
+**nothing else**. A durable operator document living in a directory described
+that way is a standing invitation for a future space-reclaim sweep to delete an
+operator's channel selection.
+
+**The location stands**, on one fact that outweighs the objection:
+`docs/design/recovery.md` §2.1's `[^apps-mos]` already carves `updates/` out of
+reset tier 2 **by name**, so the directory already carries durable semantics
+rather than purely transient ones. A second `/mos/config/` subtree would buy a
+separation the tier table has already declined to make, at the cost of two
+homes for the update subsystem's DATA state.
+
+**So the objection converts into a written rule rather than a relocation**, and
+it is three debts, all of them documentation of an intent the code already
+happens to satisfy:
+
+1. **The workspace module contract must state what may live at the workspace
+   root, and that it is never swept.** Today it enumerates three
+   subdirectories and says "nothing else" about `downloads/`. It must say, in
+   the same place a reader learns the layout, that `config.json` is a **durable
+   document at the root**, is not part of any transaction, is not counted
+   against the download budget, and is never removed by reconciliation. An
+   implementer who reads only the module comment must not be able to conclude
+   the file is disposable — and today that is exactly the conclusion the
+   comment supports.
+2. **The `used_bytes` exemption must be stated, not merely true.** The
+   readiness probe sums regular files under `downloads/`, `verified/` and
+   `staging/` only, so the configuration is not counted **by construction, not
+   by intent**. Write the intent down: configuration is not workspace usage. A
+   later change that walked the workspace root instead — a reasonable-looking
+   simplification — would silently make an operator's configuration compete
+   with a download budget, and the exhausted state's message already tells the
+   reader to reconcile the three directories, which is the shape that change
+   would break.
+3. **The `[^apps-mos]` clause is the third part of the same debt.** Its stated
+   reason — *a verified bundle is not application data* — no longer covers
+   everything the cell protects, because the cell now also protects an operator
+   document. §4.1 already owes that clause a rewrite; this is why it is the
+   same debt and not a separate one.
+
+The first two are properties of the code that are true today and undocumented,
+which is the class of fact that stops being true without anybody deciding to
+change it. They belong in the doc slice (F10) rather than in a check, because
+there is nothing here to assert that is not already asserted — the risk is a
+future author's reasonable inference, and a comment at the site is what
+addresses that.
 
 ### 6. One directory, not two: `ca/` absorbed, and the six keys it now holds
 
@@ -1037,11 +1095,16 @@ factory reset, that the selection is gone and the baked default is back
   documentation and the read surface of §8, and both are backlog items rather
   than good intentions.
 - **`/mos/updates/config.json` beside `downloads/`, `verified/`, `staging/`.**
-  Putting configuration inside a workspace is the right call for the naming
-  reason §5.1 gives, and it does mean the `maxBytes` budget, the workspace
-  probe and the cleanup paths all now share a directory with a file that must
-  never be deleted as scratch. Anything that sweeps that directory has to know
-  the difference.
+  Putting configuration inside a workspace is the right call for §5.1's naming
+  reason and §5.2's tier-table reason, and it does mean the `maxBytes` budget,
+  the workspace probe and the cleanup paths now share a directory with a file
+  that must never be deleted as scratch. The specific risk is that the
+  exemption is currently a **property of the code rather than a stated
+  intent** — `used_bytes` walks three named subdirectories, not the root — so
+  a later author simplifying it to a root walk would break an operator's
+  configuration without ever deciding to. §5.2's debts 1 and 2 are the
+  mitigation, and they are documentation because there is nothing to assert
+  here that is not already true.
 - **`meta/` looks editable and is not.** It is a JSON file in a directory, in
   an image, on a read-only verity root. Somebody will edit
   `/usr/share/mos/meta/updates/manifest.json` on a running device, or try to, and
@@ -1105,8 +1168,8 @@ approving this plan; each becomes a task record when it is scheduled.
 | F7 | `rauc-update` reads `trust.tufRoot`; its default anchor path moves; `trust.tufRootSha256` derived at build time | S | a `tufRoot` naming a path outside `meta/` is a build error; a hand-edited digest that does not match `root.json` fails the build |
 | F8 | No-compiled-in-endpoint verifier check | S | fails a build with a planted default URL in a binary; passes with one in `meta/` |
 | F9 | `GET /api/v1/provisioning/status` extension: the document, the digests, and baked-versus-effective | S | — |
-| F10 | Design-doc updates: `recovery.md` §2.1's clarifying note **and `[^apps-mos]`'s extended reason (§4.1)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` |
-| F11 | Operator documentation: which reset returns the device to the baked default channel (§4.1), stated where a reader meets the reset, not only in the design tree | S | a reader who runs tier 3 was told the channel goes back |
+| F10 | Design-doc updates: `recovery.md` §2.1's clarifying note **and `[^apps-mos]`'s extended reason (§4.1, §5.2 debt 3)**, **the workspace module contract's root rule and the `used_bytes` exemption (§5.2 debts 1 and 2)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` for the `docs/` half; for the workspace module contract, which is a code comment and not a document, that a reader of the comment alone can answer whether `config.json` may be swept and whether it counts against the budget |
+| F11 | Operator documentation: which reset returns the device to the baked default channel (§4.1), stated where a reader meets the reset, not only in the design tree; **and the baked-only source URL's residue (§5) — that the update server is fixed at build time, that changing it needs a new image or an offline import, and what to do when the server is gone** | S | a reader who runs tier 3 was told the channel goes back; a reader whose server has moved finds the two remedies and the stranded case named, not a dead end |
 
 F3 and F4 are the pair that make §1.1's hazard mechanical rather than
 conventional, and neither is optional: F3 without F4 proves only that the build
@@ -1150,6 +1213,11 @@ That item does not exist here.
   publish is reported rather than replaced;
 - tier 3 returns the channel to the baked default and tier 1 no longer does
   (§4.1);
+- the operator document stays at `/mos/updates/config.json` — inside the
+  workspace, not in a second `/mos/config/` subtree — and the workspace's
+  contract owes three written rules for it: what may live at the workspace
+  root and that it is never swept, that configuration is not workspace usage,
+  and `[^apps-mos]`'s extended reason (§5.2);
 - absence of a server is a supported steady state and there is no default
   server;
 - open questions 1–5 are answered before the slices that depend on them
@@ -1274,3 +1342,15 @@ takes a task record and its own proposal.
   `off | check | auto` semantics and PLAN-072's outbound-only boundary. The
   title changed again with this revision; `docs/plan/index.md`'s row is owed
   the change and is deliberately not edited here.
+- 2026-09-03: **Two rulings recorded.** (1) The operator document stays at
+  `/mos/updates/config.json`. The objection — that a workspace whose discipline
+  is "unverified leftovers are removed" is the wrong home for a durable
+  document — is answered by `[^apps-mos]` already carving `updates/` out of
+  reset tier 2 by name, so the directory already has durable semantics and a
+  second subtree buys less than it costs. The objection converts into §5.2's
+  three written rules (workspace-root contract, the `used_bytes` exemption
+  stated as intent rather than left as construction, and `[^apps-mos]`'s
+  extended reason), carried on F10. (2) The source URL being baked-only is
+  accepted — which TUF repository a device walks is a trust decision and
+  belongs with the anchors — and its residue is now owed to the operator page
+  on F11 rather than living only in this record.

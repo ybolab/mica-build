@@ -111,7 +111,17 @@ The document moves and changes format, per PLAN-070 §5.1: it is
 **`/mos/updates/config.json`** on DATA, it is **JSON**, and it is
 **machine-written** — mosd is its only writer and a human does not hand-edit
 it. `/var/lib/mos/update-policy.toml` goes away. The keys are today's, minus
-the two that moved up to the baked layer:
+the two that moved up to the baked layer.
+
+**It sits at the workspace root, and PLAN-070 §5.2 is why that is safe** — the
+short form: `[^apps-mos]` already carves `updates/` out of reset tier 2 by
+name, so the directory is not purely transient; and the readiness probe's
+`used_bytes` walks `downloads/`, `verified/` and `staging/`, never the root, so
+the document does not compete with the download budget. Both facts are true of
+the code today and undocumented, which is why PLAN-070's F10 owes the workspace
+module contract a rule saying the root holds a durable document that
+reconciliation never sweeps. This plan's writer must not treat the file as
+workspace scratch.
 
 ```json
 {
@@ -506,7 +516,7 @@ operator-owned document, and §1.1 is the only place the two meet).
 | # | Slice | Size | Gate |
 |---|---|---|---|
 | U1 | The `policy`/`rebootPolicy` enums, `[autoCheck]` retirement, and the `auto`-requires-a-window validation, now enforced on write | S | selecting `auto` with zero windows is refused at the API naming the rule, not at the next check |
-| U11 | The document's move: `/mos/updates/config.json` in JSON, mosd as its only writer, the atomic-rename save, and the apid write route with its audit | M | the channel is readable from exactly one file; an interrupted write leaves the previous document intact |
+| U11 | The document's move: `/mos/updates/config.json` in JSON, mosd as its only writer, the atomic-rename save, and the apid write route with its audit | M | the channel is readable from exactly one file; an interrupted write leaves the previous document intact; nothing in the acquisition path counts or removes it (PLAN-070 §5.2) |
 | U2 | The automatic driver: check → fetch → re-check → install, calling the same functions the manual routes call | L | a test asserting the automatic and manual paths meet the same gate set |
 | U3 | Reboot under `rebootPolicy`, gate-honoured, with the never-arms-the-override invariant | M | automatic path against a closed gate arms no override |
 | U4 | Version suppression on STATE, its clearing action and audit | M | a full bad-bundle cycle; the second automatic pass selects nothing |
@@ -600,3 +610,10 @@ operator writes `auto`.
   withdrawn with PLAN-070 §2. Every invariant above is unchanged — the three
   layers, the `off | check | auto` semantics, the window rules, the write
   route, the third channel state and the backlog.
+- 2026-09-03: L1 ruled the document stays at `/mos/updates/config.json` rather
+  than moving to a `/mos/config/` subtree, on the ground that `[^apps-mos]`
+  already gives `updates/` durable semantics. Recorded here as §1's pointer to
+  PLAN-070 §5.2 and as one clause on U11's gate: the writer must not treat the
+  file as workspace scratch, and nothing in the acquisition path may count or
+  remove it. The write route, the format and every other decision are
+  unchanged.
