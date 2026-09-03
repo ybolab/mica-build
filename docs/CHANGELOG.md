@@ -94,6 +94,35 @@ localized recovery copy, committed hashed assets, tests and current English
 and Chinese guidance moved together. `/api/v1/ui` and `/mos/ui` retain their
 existing API and storage meanings. PLAN-060.
 
+## Application delivery, an emergency binary and a recovery interface (2026-09-03)
+
+`docs/user/applications.md` now routes application code on one question — may
+this code be a release behind the OS? — into either build-time `.deb`
+composition under the RAUC lifecycle (`docs/design/native-applications.md`) or
+digest-pinned OCI/Quadlet delivery. Three more Quadlet examples are fed to the
+shipped generator by the documentation test, so a broken example is a red gate
+rather than a customer's discovery. What is not enforced is named: signature
+admission, mandatory ceilings, a secret store and per-application automatic
+rollback; the slot-wide rollback the boot health gate does perform is stated
+separately rather than folded in, because folding it in would have made the
+group false.
+
+`mos-busybox` ships one unexpanded `/usr/bin/busybox` for emergencies. Depending
+on Debian's package would have shipped an initrd carrying busybox and 271 applet
+hard links through the initramfs hook it also installs — the applet farm the
+plan rejects, arriving as a side effect of one dependency line — so the producer
+extracts the single file and runs no maintainer script. Verify walks the packed
+root for symlinks and for files sharing the binary's inode, because the hook
+expands as hard links.
+
+Physical recovery actions now have a system-layer interface: a board declares
+its own actions in `board.env`, mosd maps a boot-time intent through that
+declaration into the presence assertion and reset tier the existing flows
+consume, and a board that declares none refuses and says so. Both shipped boards
+declare none, and the debug serial console is withdrawn as a candidate — on
+cx3576, displacing its getty was measured to wedge the tty and block systemd.
+PLAN-045, PLAN-048, PLAN-051.
+
 ## Install, onboarding, provisioning and recovery (2026-09-02)
 
 A device can now be configured before anybody logs into it: a versioned,

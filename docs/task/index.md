@@ -41,12 +41,12 @@ one lock and rejects a transition when their current states do not match.
 - [-] [**RFCT-273 Coordinate the embedded delivery roadmap**](RFCT-273.md) `P1`
 - [x] [**RFCT-279 Publish release identity and supply-chain artifacts**](RFCT-279.md) `P0`
 - [x] [**RFCT-280 Add RTC, NTP and timezone management**](RFCT-280.md) `P0`
-- [ ] [**RFCT-281 Add the unexpanded BusyBox emergency binary**](RFCT-281.md) `P2`
+- [x] [**RFCT-281 Add the unexpanded BusyBox emergency binary**](RFCT-281.md) `P2`
 - [x] [**RFCT-282 Deliver install, onboarding and provisioning**](RFCT-282.md) `P0`
 - [x] [**RFCT-283 Deliver authenticated system updates**](RFCT-283.md) `P0`
 - [x] [**RFCT-284 Deliver recovery and credential access recovery**](RFCT-284.md) `P0`
 - [x] [**RFCT-285 Add storage status and data lifecycle management**](RFCT-285.md) `P0`
-- [ ] [**RFCT-287 Document native and container application delivery**](RFCT-287.md) `P1`
+- [x] [**RFCT-287 Document native and container application delivery**](RFCT-287.md) `P1`
 - [x] [**RFCT-288 Add diagnostics and operational network state**](RFCT-288.md) `P0`
 - [x] [**RFCT-289 Define security and manufacturing lifecycle**](RFCT-289.md) `P0`
 - [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
@@ -63,6 +63,6 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-009 Generate built-in UI assets during the build**](UI-009.md) `P1`
 - [x] [**RFCT-293 Ship the `docker` command name as a podman symlink**](RFCT-293.md) `P2`
 - [x] [**UI-010 Isolate built-in UI build outputs**](UI-010.md) `P1`
-- [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
+- [x] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [x] [**UI-012 Align the built-in console with the approved prototype details**](UI-012.md) `P1`
 - [x] [**UI-013 Complete the built-in console against the prototype information architecture**](UI-013.md) `P1`
