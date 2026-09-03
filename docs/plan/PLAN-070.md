@@ -30,13 +30,18 @@ The previous revision's mechanical rule — *a document belongs here iff `meta/`
 bakes a default for it* — is **retired**, because the decision falsifies it on
 the two keys it names.
 
-**Decision B — keys should be ECDSA, being shorter and easier to maintain.**
-What it collides with is `pkgs/rauc/gen-dev-keys.sh`, which chooses RSA 3072 on
-purpose and records why at the site. §6.4 measures that reason against the tree
-before arguing with it, and answers the second half the decision runs into: lode
-verifies ed25519 and has no ECDSA path, while `meta/updates/root.key` is lode's
-key. The three keys are presented as a table with a recommendation each; the
-decision itself stays the user's.
+**Decision B — the signature algorithm becomes a declared, validated parameter
+per key role.** The first form of this decision was *keys should be ECDSA, being
+shorter and easier to maintain*; the form that supersedes it is **record the
+algorithm, the CA's included, so that a later upstream upgrade only needs a
+parameter change.** What it collides with is `pkgs/rauc/gen-dev-keys.sh`, which
+chooses RSA 3072 on purpose and records why at the site. §6.4 measures that
+reason against the tree before arguing with it, and answers the second half the
+decision runs into: lode verifies ed25519 and has no ECDSA path, while
+`meta/updates/root.key` is lode's key. So the three keys are no longer a table
+of recommendations awaiting a choice — they are a **committed default each**,
+inside a **per-role allowed set** taken from the verifier that has to accept the
+result, with a build-time refusal for anything outside it.
 
 ### The correction the previous revision had to make first
 
@@ -355,7 +360,8 @@ argument:
 
 - **`--domain rauc`** (default, and what `--if-absent` runs): generates
   `meta/rauc/` with openssl, exactly as it generates `ca/` today, with the key
-  algorithm §6.4 settles. The build cannot proceed without a keyring, so this
+  algorithm **read from §6.4's parameter file** rather than written into the
+  invocation. The build cannot proceed without a keyring, so this
   half stays build-blocking and automatic.
 - **`--domain updates`**: generates a development `meta/updates/root.key` and
   writes its public half into `meta/updates/manifest.json`'s
@@ -1438,11 +1444,26 @@ the same failure when the window is missed. Both still need a reflash. Open
 question 2 is where a later device-time channel would land, and it would now
 cover two anchors rather than one.
 
-#### 6.4 The key algorithms: what the decision implies for each of the three
+#### 6.4 The key algorithm: a declared, validated parameter per key role
 
-**The decision.** All keys should be ECDSA — shorter, and easier to maintain.
+**The ruling, and it replaces the question this section used to ask.** The
+signature algorithm is **recorded — the CA's included — so that a later upstream
+upgrade only needs a parameter change.** It therefore stops being a choice baked
+into `pkgs/rauc/gen-dev-keys.sh`'s `openssl` invocations and its prose, and
+becomes a **value per key role**: a committed default, a per-role set of values
+the build will accept, and a refusal for anything outside it.
 
-It collides with a choice this tree made on purpose and recorded at the site.
+**What that withdraws.** An earlier revision of this section asked the user to
+pick one algorithm per key, once and for all, and framed its table as a
+recommendation awaiting a decision. **That question is withdrawn rather than
+answered**, because the thing it was asking to fix is now editable: §6.4.5's
+table is the **defaults** the parameter carries and the reason beside each, and
+choosing differently later is editing a value. What survives unchanged is the
+evidence — §6.4.1 is why the RAUC default is not RSA, and §6.4.2 is why the
+package key's set has exactly one member.
+
+**The collision the parameter inherits.** The algorithm becoming a value
+collides with a choice this tree made on purpose and recorded at the site.
 `pkgs/rauc/gen-dev-keys.sh` picks RSA 3072 with the reason in the file: RSA
 PKCS#1 v1.5 signatures are deterministic for a given key and digest, so the only
 thing that varies between two builds of one bundle is the CMS `signingTime`
@@ -1548,37 +1569,216 @@ exactly the property the RSA comment was written to protect. On the one key wher
 determinism could still be argued for, the answer that keeps it is neither RSA
 nor ECDSA.
 
-#### 6.4.3 The three keys, and what is recommended for each
+#### 6.4.3 Where the parameter lives, and what it may not declare
 
-**A recommendation is not a decision.** The table says what the instruction
-implies, what it costs, what it breaks, and what this record would choose;
-choosing is the user's.
+**The shape is the tree's, not a new one.** Three files here already hold a
+pinned build input as plain `KEY=value` lines with the reason written above the
+value, sourced by the one producer that reads them: `pkgs/rauc/versions.env`,
+`pkgs/podman/versions.env` and `rootfs/scripts/ca-certificates-recorded.env`.
+That is the convention this follows. **Not `build-env/images.env`**, which is
+the central pin file for the container images every Dockerfile builds from and
+which says at its own head that nothing else in `build-env/` carries a name or a
+version — a key algorithm is neither an image nor a toolchain, and putting it
+there would falsify that sentence to buy nothing.
 
-| Key | What the decision implies | What it costs | What it breaks | Recommended |
-|---|---|---|---|---|
-| **RAUC CA** `meta/rauc/ca.key.pem` | ECDSA in place of RSA 3072 (dev) and RSA 4096 (production ceremony) | nothing measured. A smaller key, a smaller certificate and a slightly smaller baked keyring, none of which anything in this tree is short of | nothing. RAUC verifies CMS through OpenSSL, which does ECDSA; the keyring is still an OpenSSL CA file of concatenated PEMs, so §2.4's rollover and `tests/rauc-trust-negative-test.sh`'s properties are unchanged. Two texts change: the dev generator and `release-signing.md` §2.1. The 15-year CA horizon is about the fleet's lifetime, not the algorithm, and is unchanged | **ECDSA P-256.** The decision, with nothing in the tree opposing it |
-| **RAUC signer** `meta/rauc/signer.key.pem` | ECDSA in place of RSA 3072 | **nothing measurable.** The bundle rebuild gate hashes the payload and excludes the signature by design, and byte-identical bundles are already unreachable because rauc salts the bundle's verity hash tree at random (§6.4.1) | the recorded reason in two places. Both the generator's comment and `release-signing.md` §2.1's restatement become false and must be **rewritten, not deleted** — a comment saying "RSA, for determinism" beside an EC key is worse than no comment, because the next reader takes it as a rule somebody violated | **ECDSA P-256.** The strongest argument against it did not survive being measured, and the rewritten comments should record what §6.4.1 found rather than a softer version of it |
-| **lode package key** `meta/updates/root.key` | ECDSA in place of ed25519 | a fork of lode's verifier, and the existing `rauc-sign` generator stops being the tool that writes this key | **lode compatibility**, which §6.2 made this key's whole identity. The package layer would no longer be verifiable by the thing it was modelled on | **ed25519 — diverge from the instruction, on the record.** It is shorter than P-256, is one algorithm with nothing to configure, is deterministic by construction, and is what the counterpart verifies. It meets every reason the decision gave; only its literal wording says otherwise |
+**The file: `pkgs/rauc/key-algorithms.env`, sourced from beside its reader.**
 
-**If literal uniformity across all three is wanted anyway**, the price is the
-third row: mos stops being lode-compatible on the one key that is lode's, and the
-package-verification path becomes mos's own code to write and maintain. That is a
-real option and it is the user's to take; this record will not take it by
-implication.
+```sh
+MOS_KEY_ALG_RAUC_CA=ecdsa-p256
+MOS_KEY_ALG_RAUC_SIGNER=ecdsa-p256
+MOS_KEY_ALG_PACKAGE=ed25519
+```
 
-#### 6.4.4 Two keys the decision does not reach, named so it is not applied to them
+Plain assignments, no expansion and no command substitution — the rule
+`ca-certificates-recorded.env` already writes for itself. The values are
+**tool-neutral names rather than one tool's spelling**: openssl wants
+`-newkey ec -pkeyopt ec_paramgen_curve:P-256` for the first two rows, and the
+third is not minted by openssl at all, so a file written in openssl's vocabulary
+is a file that cannot name its own third row. The generator maps a value to its
+tool.
 
-- **apid's TLS key is already ECDSA P-256** — it is generated by `rcgen`'s
-  default algorithm and is a per-device, self-signed, never-exported pair on
-  STATE. Nothing to change; named because a sweep for "RSA" would not find it and
-  a sweep for "keys" would.
+**Committed, and that is why the file is here rather than in `meta/`.** `meta/`
+is gitignored and generated when absent (§1.2), so an algorithm declared only
+there would be **absent from a fresh checkout** — and a generator that finds no
+declaration falls back to one compiled into itself, which is the hardcoded
+choice this parameter exists to remove, reintroduced one level down and harder
+to find. A build policy has to live in the tree that ships.
+
+**The name.** `key-algorithms.env` rather than `keys.env`, because a file called
+`keys.env` in the directory whose generator writes private keys is a file a
+reader opens expecting key material. This record has already rejected a name on
+one letter of ambiguity (§5.1, `/mos/update`); this is the same rule.
+
+**The address, and the follow-on it creates.** It sits in `pkgs/rauc/` because
+that is where its only reader sits — `gen-dev-keys.sh`, which §1.2 already makes
+the **two-domain** generator, minting lode's package key under
+`--domain updates` as well as the RAUC pair. `pkgs/rauc/` is therefore already
+the address of a script that writes material for a domain it is not named after;
+the parameter file inherits that inconsistency instead of inventing a second one
+beside it. If the generator is later renamed to something covering both domains,
+the file moves with it — one move of two files, which is not a reason to invent a
+third home now.
+
+**What the file may NOT declare, and this is the asymmetry that makes a
+parameter safe.** It carries **values**. It does **not** carry the sets those
+values are checked against. A set is a claim about what a **verifier** accepts,
+and it is true only because of code outside this repository; making it editable
+beside the value would let one commit widen a set and adopt the new member in the
+same breath, which is precisely the change that produces a fleet that cannot
+install its own updates. So: **changing an algorithm is editing a value; widening
+a set is editing the check and the verifier it names**, which is a reviewed code
+change with a different burden of proof. §6.4.4 is where the sets live.
+
+**No per-deployment override, because the case is already served.** A deployment
+that needs a different algorithm is a deployment running the production ceremony,
+and production material is **placed** in `meta/rauc/` by an operator rather than
+minted by the generator — that is §1.2's marker contract, unchanged. Its
+algorithm is expressed by what it places, and what bounds it is the **set**, not
+the default. A `meta/`-level override would be a value read by a generator that a
+production build does not run, absent from a fresh checkout, and layered above
+nothing. There is one declaration, so there is no precedence rule to state.
+
+#### 6.4.4 The per-role allowed sets, and the two refusals that hold them
+
+**Why a set at all.** A parameter whose value the verifier cannot accept is
+**worse than the hardcoded choice it replaced**, because the hardcoded one was at
+least known to work. The failure lands late and far away: a package signed with
+an algorithm lode does not verify fails on the device, at install time, after a
+download, on a fleet that already took the image carrying the trusted key. The
+set is the part of this design that earns the parameter.
+
+| Role | Allowed set | Where the set came from |
+|---|---|---|
+| **RAUC CA** `meta/rauc/ca.key.pem` | `ecdsa-p256`, `ecdsa-p384`, `rsa-3072`, `rsa-4096` | **RAUC's verifier.** RAUC checks the bundle's CMS signature through OpenSSL, which verifies RSA and EC alike, and the keyring is an OpenSSL CA file either way (§6.3). The set is bounded by what a fielded RAUC accepts rather than by taste. It excludes ed25519 deliberately: CMS over ed25519 is a signature algorithm this repository has not put through rauc, and an untested member of an allowed set is the hardcoded-choice failure with extra steps |
+| **RAUC signer** `meta/rauc/signer.key.pem` | the same four | The same verifier on the same path — the signer's certificate is verified against the CA and the CMS signature against the signer, both by OpenSSL. One set for both roles, two values, because a CA and its signer may legitimately differ (`release-signing.md` §2.1 already ships 4096 over 3072) |
+| **lode package key** `meta/updates/root.key` | `ed25519` — one member | **lode's verifier**, named: `ed25519-dalek`, over `[trust] trusted_keys` entries of the form `<key_id>:<base64 ed25519 public key>` (§6.4.2). lode has no second algorithm, so the set has no second member, and it grows when lode's verifier does and not before |
+
+**The one-member row is the row that justifies the file.** It looks like a
+declaration with no freedom left in it, and it is exactly the value a later
+author changes in code because uniformity across three roles looks tidy.
+Declared and checked, that edit is a red build naming `ed25519-dalek`; left in
+code, it is a fork of lode's verifier discovered by a device.
+
+**Refused at build time, in the shape `rootfs/build.sh` already uses.** The build
+already refuses a keyring in the overlay and a package pool that does not match
+the tree, each with a message naming the file, stating what would otherwise have
+gone wrong, and exiting — with no environment variable that softens any of it.
+Two refusals of that shape, and they are the same intent/outcome pair §1.1
+established for the bake:
+
+- **A1 — the declared value is in its role's set.** Read
+  `key-algorithms.env`, compare each of the three values against the table
+  above, and refuse a value outside its set or a role the file fails to declare.
+  This is the cheap one: it catches a typo (`ecdsa-p512`), a row copy-pasted onto
+  another role, and the uniformity edit. It runs **before** the generator, so a
+  refused value never mints a key.
+- **A2 — the material actually in `meta/` is in its role's set.** Read the keys
+  and the certificate that are *there*, and check what they are. A1 alone passes
+  a build whose `meta/` the generator never minted, which is exactly the
+  production case: a placed RSA-2048 CA, or an ECDSA package key from a
+  well-meaning ceremony, would ship. `openssl pkey -noout -text` answers for the
+  RAUC pair; the package key is raw PKCS#8 DER, the encoding §1.1's private-key
+  detector already carries a test for, so the reader exists and the key's length
+  is the ed25519 answer.
+
+**A2 also settles what the production ceremony must agree with, which is less
+than it looks.** `docs/design/release-signing.md` §2.1 is a shell block a human
+copies onto an offline machine that may hold no checkout, so it cannot source
+this file. It does not have to: **the ceremony and the generator are not required
+to agree on the default — they are required to agree on the set.** A production
+CA differing from the development default is not drift; it is the ceremony doing
+its job. A2 makes that relationship mechanical instead of a sentence somebody
+re-checks. What §2.1 still owes is its stated *reason*, which is false (§6.4.1)
+and is corrected in the same slice.
+
+**Both refusals sit on the build host, and neither is in the image verifier.**
+The signer key and its certificate never reach the image (§3), so a packed-root
+check could see only the keyring — one role of three. One place that sees all
+three beats two places that between them see one and a third, and this is not
+the §1.1 case where the outcome check exists because the image is a different
+artifact from the intent.
+
+#### 6.4.5 The defaults, and the reason beside each
+
+**These are defaults a parameter can change, not a decision that closes the
+question.** Each row is what `key-algorithms.env` ships with; the reason is what
+a later reader needs in order to change it deliberately rather than by taste.
+
+| Role | Default | Why this one | What changing it costs |
+|---|---|---|---|
+| **RAUC CA** `meta/rauc/ca.key.pem` | `ecdsa-p256` | The instruction that opened this section — shorter, less to maintain — with nothing in the tree opposing it. RAUC verifies CMS through OpenSSL, which does EC; the keyring stays a file of concatenated PEMs, so §2.4's rollover and `tests/rauc-trust-negative-test.sh`'s properties are untouched. The 15-year CA horizon is about the fleet's lifetime, not the algorithm | a **CA rollover** (§6.4.6), because a new value mints a new CA. Not a code change |
+| **RAUC signer** `meta/rauc/signer.key.pem` | `ecdsa-p256` | The determinism objection was **measured and did not survive** (§6.4.1): the bundle rebuild gate hashes the payload and excludes the signature on purpose, and byte-identical bundles are unreachable whatever key signs them, because rauc salts the bundle's own verity hash tree at random. The property the recorded RSA reason was protecting is not there to lose | a **signer reissue**, which `release-signing.md` §2.2 already treats as cheap: it needs the CA key and no fleet update |
+| **lode package key** `meta/updates/root.key` | `ed25519` | **lode's verifier accepts nothing else** (§6.4.2) — and it independently meets every reason the instruction gave: a 32-byte public half, shorter than an uncompressed P-256 point; one algorithm with one curve and nothing to configure; and **deterministic by construction**, since RFC 8032 derives the nonce from the message and the key. That last is the property the RSA comment was written to protect, kept on the one key where it is still reachable | nothing to change today — the set has one member. A change means lode's verifier gaining a second algorithm first, and §6.4.6 is what a fleet does then |
+
+**Where this leaves "all keys should be ECDSA".** Two of three roles take it.
+The third does not, and the parameter is what turns that from a recommendation
+being weighed into a **recorded bound**: `ecdsa-p256` on the package key is not a
+value this design declines to prefer, it is a value the build refuses while
+naming `ed25519-dalek`. Taking the instruction literally on that row is not a
+parameter change at all — it is Alternative 8g, a fork of lode's verifier, priced
+there.
+
+#### 6.4.6 Rotation across an algorithm change
+
+Changing a value mints a different key. What a **fleet** then does is not the
+parameter's business, and both answers already exist in this record rather than
+being invented here.
+
+- **The RAUC CA.** A new CA key is a **CA rollover**, and
+  `docs/design/release-signing.md` §2.4 is the procedure: an image whose keyring
+  concatenates the outgoing and incoming certificates, signing moved to the new
+  one, the old one dropped afterwards. None of it is algorithm-specific — a
+  keyring is an OpenSSL CA file of concatenated PEMs and does not care whether
+  its members are RSA or EC. §6.3's uncovered cases are unchanged and are not
+  restated: a device that missed the overlap window needs a reflash, and so does
+  rotation away from an already-compromised CA. **The parameter changes what a
+  new key IS; §2.4 is still how a fleet comes to trust it.**
+- **The RAUC signer.** No fleet action at all. Devices trust the CA, so a signer
+  of any algorithm in the set chains without touching a keyring — §2.2's reissue,
+  unchanged.
+- **The package key.** The anchor is `trust.signingKeys`, a **list** by §2.1's
+  decision, so an overlap **is expressible**: an image carrying both the outgoing
+  key and the incoming one lets a device that took it accept a signature from
+  either. It **costs a new image**, because the list is baked into the read-only
+  root and no operator layer names it (§5.1) — the rotation cost §2.1 already
+  states, in the same shape as a CA rollover.
+
+**What a device holding only the old public key does when a package signed by a
+new-algorithm key arrives**, stated plainly because it is the failure the overlap
+exists to avoid: the signature does not verify, the package is **refused as
+unauthentic**, and the device stays on the release it has. It does not fall back
+to installing unverified — §2.1's mapping records that lode's
+`require_signature = off` is not adoptable, because mos has no mode that skips
+either gate. The remedy is the one §6.3 already names for a missed window: a new
+image, by whatever channel that device can still take, an offline import
+included.
+
+**One thing an algorithm change breaks that the overlap does not fix**, and it is
+lode's rather than mos's: a `trusted_keys` entry is spelled
+`<key_id>:<base64 ed25519 public key>`, with the algorithm implied by the format
+rather than named in it, so a second algorithm needs the entry to say which. That
+is a lode-side change and it arrives with the verifier change that would widen the
+set in the first place. `trust.signingKeyIds` is unaffected: it is a sha256 over
+the key's bytes (§2.1) and is algorithm-agnostic by construction.
+
+#### 6.4.7 Three keys the parameter does not reach, named so nothing routes them through it
+
+- **apid's TLS key is already ECDSA P-256, and the parameter cannot reach it at
+  all.** That is a stronger statement than the value happening to agree: the pair
+  is minted **on the device**, per device, by `rcgen`'s default algorithm,
+  self-signed and never exported, on STATE. There is no build-time value to
+  declare and no build that could check one, so it is outside `key-algorithms.env`
+  structurally rather than by omission. Named because a sweep for "RSA" would
+  miss it and a sweep for "keys" would find it.
 - **WireGuard keys are X25519 and are not a choice.** The protocol fixes the
-  curve; they are key-agreement material rather than signing keys, and they are
-  outside this decision entirely.
+  curve, and they are key-agreement material rather than signing keys. A
+  parameter with one legal value that nothing may ever change is not a parameter;
+  it is a fact, and it belongs in prose where it already is.
 - **`access.ssh.authorizedKeys` holds keys mos does not generate.** They are
   operator-supplied public keys and their algorithm is the operator's; the tree's
-  own example is `ssh-ed25519`. The decision does not reach them and must not be
-  applied to them by a validator.
+  own example is `ssh-ed25519`. Neither the parameter nor A1/A2 reaches them, and
+  **A2 must not be pointed at them**: it validates material the build mints or an
+  operator places *for signing*, and an authorized key is neither.
 
 ### 7. No default server, and the check that holds it
 
@@ -1833,12 +2033,19 @@ factory reset, that the selection is gone and the baked default is back
   one level out: something outside this repository comparing whole bundle bytes.
   It would already be failing on the salt, so the signer change is not what would
   break it — but it is worth one question before F12 rather than an assumption.
-- **A rewritten comment is the deliverable, not a deleted one.** The RSA
-  determinism reason appears in the generator and again in the production
-  ceremony. Deleting it leaves an EC key with no recorded reason; leaving it
-  leaves a false one. Either failure looks like the other at review time, which
-  is why §6.4.3 names rewriting as part of the change rather than as tidying
-  after it.
+- **A rewritten comment is the deliverable, not a deleted one — and the
+  parameter moves where it gets written.** The RSA determinism reason appears in
+  the generator and again in the production ceremony. Deleting it leaves an EC
+  key with no recorded reason; leaving it leaves a false one; and either failure
+  looks like the other at review time. What the parameter changes is the
+  destination: the reason belongs beside the **value**, in
+  `key-algorithms.env`, which is the shape `ca-certificates-recorded.env`
+  already uses. The generator's comment becomes a pointer to that file, and the
+  ceremony's becomes the set plus production's own reason for its own choice
+  (§6.4.4). **F12 owns that correction** and it is owed whether or not any value
+  changes, because the sentence is false about this tree today (§6.4.1) — named
+  here so that retiring the reason does not leave the wrong comment as an
+  orphan nobody's slice claims.
 - **Tier 1 gains a write to DATA it does not have today** (§4.1). `reset.rs`
   already reaches the DATA pool, so this is not a new root — but it is a new
   cell in a table whose cells are asserted cell-for-cell by tests, and the
@@ -1888,8 +2095,11 @@ rejected, the per-document schema version and the migration question, the mode
 and the secrets charter, the redactor naming rule, the addressing that does not
 change, the STATE-to-DATA tier collision, and every rule a later subsystem
 inherits**; the reset disposition of the directory; what becomes of the STATE
-policy file; **the key algorithm for each of the three keys, and the measurement
-behind retiring the RSA determinism reason**; the no-default-server rule, the
+policy file; **the key algorithm as a declared, validated parameter per key
+role: where the declaration lives and why it must be committed, the per-role
+allowed sets and the verifiers that bound them, the two build-time refusals, the
+defaults and the measurement behind retiring the RSA determinism reason, and
+rotation across an algorithm change**; the no-default-server rule, the
 channel rules and their verifier check; the read surface.
 
 Out of scope: the update policy semantics (PLAN-071); anything the fleet switch
@@ -1928,7 +2138,7 @@ approving this plan; each becomes a task record when it is scheduled.
 | F8 | No-compiled-in-endpoint verifier check | S | fails a build with a planted default URL in a binary; passes with one in `meta/` |
 | F9 | `GET /api/v1/provisioning/status` extension: the document, the digests, and baked-versus-effective | S | — |
 | F10 | Design-doc updates: `recovery.md` §2.1's clarifying note, its **new tier-1 footnote and `config/` in `[^apps-mos]`'s untouched list (§4.1)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5 **plus §6.2's custody split and the rule that `root.key` is present on a release host while `ca.key.pem` is not**, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` |
-| F12 | The key algorithms (§6.4), whichever the decision lands on: `gen-dev-keys.sh`'s algorithm and **its rewritten comment**, `release-signing.md` §2.1's ceremony and its restatement of the same reason, and the package key left as generated. **The comment correction is owed whether or not the algorithm changes** — §6.4.1 found it states `signingTime` is the *only* source of variance, which the payload gate's own recorded reason contradicts | S | the generator and the ceremony agree on one algorithm; no comment names a reason the code no longer follows or a fact the code contradicts; the bundle payload rebuild gate and both trust test suites pass with their meanings unchanged |
+| F12 | **The key algorithm as a declared, validated parameter** (§6.4): commit `pkgs/rauc/key-algorithms.env` carrying §6.4.5's three defaults with the reason beside each; `gen-dev-keys.sh` reads it instead of naming an algorithm inside its `openssl` invocations, and **its comment becomes a pointer to that file rather than a restatement of a reason**; refusals **A1** (a declared value outside its role's set) and **A2** (material in `meta/` outside its role's set) in `rootfs/build.sh`'s existing unwaivable shape, each naming the verifier that bounds the set; `release-signing.md` §2.1's ceremony records the **set** and production's own reason rather than the dev script's. **The comment correction is owed whether or not any value changes** — §6.4.1 found it states `signingTime` is the *only* source of variance, which the payload gate's own recorded reason contradicts | M | changing an algorithm is a one-line edit to the committed file and touches no code; a declared value outside its role's set turns the build red and names the verifier; a `meta/` holding material outside the set turns it red too, including the `--domain updates` key, which A1 alone would not have seen; no comment names a reason the code no longer follows or a fact the code contradicts; the bundle payload rebuild gate and both trust test suites pass with their meanings unchanged |
 | F11 | Operator documentation: which reset returns the device to the baked default channel (§4.1), stated where a reader meets the reset, not only in the design tree; **and the baked-only source URL's residue (§5) — that the update server is fixed at build time, that changing it needs a new image or an offline import, and what to do when the server is gone** | S | a reader who runs tier 3 was told the channel goes back; a reader whose server has moved finds the two remedies and the stranded case named, not a dead end |
 
 F6d, F6e and F6f are the decision-A move and they are one change, not three:
@@ -2014,16 +2224,36 @@ That item does not exist here.
 - system configuration moves from STATE to DATA, which falsifies the partition
   table's own comment and PLAN-061's tier rule; both are rewritten, and mosd
   fails closed on a missing `/mos` rather than rendering defaults (§5.2.6);
-- on key algorithms (§6.4): the RSA determinism reason is **measured** against
-  the tree. There is a bundle rebuild gate, it runs, and it hashes the payload
-  and excludes the signature on purpose — because rauc salts the bundle's verity
-  hash tree at random on top of `signingTime`, so byte-identical bundles are
-  unreachable whatever key signs them. The determinism cost of the change is
-  therefore zero. The RAUC CA and signer move to ECDSA P-256 with both comments
-  rewritten rather than deleted, and the lode package key is
-  **recommended to stay ed25519**, which meets every reason the decision gave
-  while its literal wording does not. That last one is a recommendation and the
-  decision stays the user's;
+- on key algorithms (§6.4): the algorithm is a **declared, validated parameter
+  per key role**, not a choice baked into the generator. The declaration is
+  `pkgs/rauc/key-algorithms.env` — committed, plain `KEY=value`, sourced from
+  beside its one reader, which is the shape `versions.env` and
+  `ca-certificates-recorded.env` already use — and it is committed rather than
+  left in `meta/` because a declaration living only in a gitignored directory
+  leaves a fresh checkout with none and a generator defaulting silently
+  (§6.4.3);
+- each role has an **allowed set, which the file does not carry**: the RAUC CA
+  and signer take `ecdsa-p256 | ecdsa-p384 | rsa-3072 | rsa-4096` because RAUC
+  verifies CMS through OpenSSL, and the package key's set is **`{ed25519}`
+  alone** because lode verifies with `ed25519-dalek`. A declared value outside
+  its set (**A1**), or material in `meta/` outside it (**A2**), is refused at
+  build time in `rootfs/build.sh`'s existing unwaivable shape. **Changing an
+  algorithm is editing a value; widening a set is editing the check and the
+  verifier it names** (§6.4.4);
+- the **defaults** are ECDSA P-256 for the RAUC CA and signer and ed25519 for
+  the package key (§6.4.5). The RSA determinism reason is **measured** against
+  the tree and does not survive: there is a bundle rebuild gate, it runs, and it
+  hashes the payload and excludes the signature on purpose — because rauc salts
+  the bundle's verity hash tree at random on top of `signingTime`, so
+  byte-identical bundles are unreachable whatever key signs them. Both false
+  comments are **rewritten rather than deleted**, and the reason moves beside the
+  value; F12 owns that correction and owes it whether or not any value changes;
+- **rotation across an algorithm change is not new machinery** (§6.4.6): a new CA
+  key is `release-signing.md` §2.4's rollover, a new signer is §2.2's reissue,
+  and a new package key is an overlap in §2.1's baked list plus a new image. A
+  device holding only the old public key refuses a package signed by a
+  new-algorithm key as unauthentic and stays where it is; it has no unverified
+  path to fall back to;
 - absence of a server is a supported steady state and there is no default
   server;
 - open questions 1–8 are answered before the slices that depend on them
@@ -2116,11 +2346,17 @@ takes a task record and its own proposal.
    `signingTime` — which is available whatever the key algorithm is. Named
    because it is the strongest argument against decision B and it deserves to
    lose on evidence.
-8g. **Take the decision literally and make the package key ECDSA too.** Not
-   rejected — it is the user's to take, and §6.4.3's table prices it. It costs
-   lode compatibility on the one key that is lode's, and makes the
-   package-verification path mos's own code. Listed here so that recommending
-   ed25519 is visibly a recommendation and not a quiet substitution.
+8g. **Take the instruction literally and make the package key ECDSA too.**
+   **Now rejected, and by the build rather than by this record's preference.**
+   §6.4.4 gives the package role the one-member set `{ed25519}` on lode's
+   verifier, so `ecdsa-p256` there is refused at build time with
+   `ed25519-dalek` named in the refusal. The option survives at its real price,
+   which is not a parameter change: fork lode's verifier, or wait for it to gain
+   a second algorithm, and then widen the set in the check — a reviewed code
+   change carrying the claim that a device can verify what it would be shipped.
+   It costs lode compatibility on the one key that is lode's, and makes the
+   package-verification path mos's own code. Kept because the price is what makes
+   the one-member set a measured bound rather than a taste.
 9. **`/mos/config/<document>.json` flat documents, not
    `/mos/config/<subsystem>/` directories.**
    Rejected in §5.2.7: a directory invites several files with no transaction
@@ -2270,7 +2506,8 @@ takes a task record and its own proposal.
   position on a poured document that holds a secret is **reused, not invented** —
   `provisioning.md` §4.1.6's *treat a provisioning medium as credential material*
   — and the redactor's fail-open name list gains a naming rule so a moved secret
-  arrives covered. **(B) Keys should be ECDSA.** §6.4 measures the recorded RSA
+  arrives covered. **(B) Keys should be ECDSA — superseded by the parameter
+  recorded in the annotation below.** §6.4 measures the recorded RSA
   determinism reason before arguing with it, and the answer is sharper than
   either "enforced" or "unenforced": **the bundle rebuild gate exists, runs, and
   excludes the signature by design.** It hashes the squashfs payload at the head,
@@ -2292,3 +2529,55 @@ takes a task record and its own proposal.
   invariants, and PLAN-072's boundary. The title changed again with this
   revision; `docs/plan/index.md`'s row is owed the change and is deliberately not
   edited here.
+- 2026-09-03: **Decision B superseded in place: the algorithm becomes a declared,
+  validated parameter per key role.** The ruling is *record the signature
+  algorithm, the CA's included, so that a later upstream upgrade only needs a
+  parameter change*, and it retires the question §6.4 was still asking — the
+  three-key table is no longer a recommendation awaiting a choice. §6.4 is
+  rebuilt around four things. **(1) Where the declaration lives**:
+  `pkgs/rauc/key-algorithms.env`, plain `KEY=value` sourced from beside its one
+  reader, which is the convention `pkgs/rauc/versions.env`,
+  `pkgs/podman/versions.env` and `rootfs/scripts/ca-certificates-recorded.env`
+  already carry — not `build-env/images.env`, whose own head says nothing else in
+  that directory holds a version. It is **committed** rather than placed in
+  `meta/`, because a value living only in a gitignored directory is absent from a
+  fresh checkout and the generator would fall back to a hardcoded default one
+  level further down. There is **no per-deployment override**: production
+  material is *placed* rather than minted, so a deployment expresses its
+  algorithm by what it places and the set is what bounds it. **(2) A per-role
+  allowed set, and the file does not carry it** — a set is a claim about a
+  verifier and widening one is a reviewed code change, while changing a value is
+  not. RAUC CA and signer: EC or RSA, bounded by RAUC verifying CMS through
+  OpenSSL. Package key: **`{ed25519}` alone**, bounded by `ed25519-dalek`, which
+  is what turns §6.4.2's finding into an enforced bound instead of a
+  recommendation. Two refusals in `rootfs/build.sh`'s unwaivable shape, the same
+  intent/outcome pair as §1.1's B1/B2: **A1** over the declared value and **A2**
+  over the material actually in `meta/`, because A1 alone passes exactly the
+  production case. **(3) Defaults with the reason beside each**: ECDSA P-256 for
+  the RAUC CA and signer on §6.4.1's measurement, ed25519 for the package key on
+  §6.4.2's verifier — presented as defaults a parameter can change. **(4)
+  Rotation**: the parameter changes what a new key IS, not how a fleet comes to
+  trust it — `release-signing.md` §2.4 for a CA, §2.2 for a signer, and §2.1's
+  baked list plus a new image for the package key, with a device holding only the
+  old key refusing a new-algorithm package as unauthentic. **Sentences the
+  parameter falsified and that were rewritten rather than left**: Context
+  decision B's *"the decision itself stays the user's"*; §1.2's *"the key
+  algorithm §6.4 settles"*; §6.4's whole framing as a recommendation; F12's gate
+  *"the generator and the ceremony agree on one algorithm"*, which A2 replaces
+  with the sharper relation that they must agree on the **set** and not on the
+  default; Alternative 8g's *"not rejected — it is the user's to take"*, now
+  refused by the build; and the Risks entry on the rewritten comment, which now
+  names F12 as the owner so the wrong comment is not left an orphan. **F12 grows
+  from S to M** and becomes the parameter, its two refusals and the comment
+  correction. **Deliberately unchanged**: §6.4.1's measurement and §6.4.2's
+  lode finding, which are now the *evidence for* the defaults and one set rather
+  than arguments for a choice; Alternative 8f; §6.4.7's out-of-reach keys, which
+  gain only the sharper reason that apid's pair is minted on the device and so is
+  structurally unreachable by a build parameter. The `/mos/config/` namespace,
+  the 0700/0600 charter, the per-document schema versions, the measured
+  STATE/DATA boundary, the baked allowlist with B1/B2, PLAN-071's write route and
+  PLAN-072's boundary are untouched. **PLAN-071 and PLAN-072 need no edit**: both
+  say the key-algorithm decision does not reach them, and neither sentence becomes
+  false when the decision becomes a parameter. **The title does not need
+  changing** — the parameter lives inside §6, and `docs/plan/index.md`'s row is
+  still owed the retitle two revisions above already recorded.
