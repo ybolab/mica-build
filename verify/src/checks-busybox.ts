@@ -438,7 +438,18 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
         const body = text(root, p)
         return /^[ \t]*BUSYBOXDIR=/m.test(body) || /^[ \t]*BUSYBOX=y[ \t]*$/m.test(body)
       })
-      const execing = init.filter(p => /busybox/i.test(text(root, p)))
+      // COMMENTS ARE NOT A ROLE. A drop-in that explains, in a `#` line, which
+      // busybox invocation the BSP bring-up rootfs proved is a unit that names
+      // the word and executes nothing -- and cx3576 ships two of them, so a
+      // whole-body match reports an init role on a correct image. What makes
+      // BusyBox part of the boot contract is a DIRECTIVE naming it: something
+      // execs it, conditions on it, or is ordered against it. Match the value
+      // side of `Key=`, with comment lines removed first.
+      const directivesNaming = (body: string): boolean => body
+        .split('\n')
+        .filter(line => !/^[ \t]*[#;]/.test(line))
+        .some(line => /^[ \t]*[A-Za-z][A-Za-z0-9]*[ \t]*=.*busybox/i.test(line))
+      const execing = init.filter(p => directivesNaming(text(root, p)))
       const faults = [
         ...named.map(p => `${p} (an initramfs file named for busybox)`),
         ...configured.map(p => `${p} (sets BUSYBOXDIR or BUSYBOX=y)`),
@@ -451,7 +462,7 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
           ? 'BusyBox has no initramfs and no init role: '
             + `${initramfs.length} initramfs-tools path(s) carry no hook or conf fragment named `
             + `for it and set no BUSYBOXDIR, and ${init.length} unit, generator, preset and `
-            + '/usr/lib/mos path(s) never name it'
+            + '/usr/lib/mos path(s) name it in no directive'
           : `BusyBox has an initramfs or init role: ${faults.join(' ')}. A tool early boot or a `
             + 'normal service depends on is part of the boot contract, not an emergency tool, and '
             + 'it would be a part nobody tested',

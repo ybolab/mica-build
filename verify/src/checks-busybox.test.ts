@@ -318,7 +318,7 @@ describe('no initramfs role and no init role', () => {
         expect(await verdictOf(fx, 'packed-busybox-not-early-boot')).toBe('pass')
         const message = await messageOf(fx, 'packed-busybox-not-early-boot')
         expect(message).toContain('initramfs-tools path(s)')
-        expect(message).toContain('never name it')
+        expect(message).toContain('name it in no directive')
       }
       finally {
         fx.dispose()
@@ -351,6 +351,45 @@ describe('no initramfs role and no init role', () => {
       expect(await verdictOf(fx, 'packed-busybox-not-early-boot')).toBe('fail')
       expect(await messageOf(fx, 'packed-busybox-not-early-boot'))
         .toContain('conf.d/emergency (sets BUSYBOXDIR or BUSYBOX=y)')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('POSITIVE CONTROL: a drop-in whose COMMENT names busybox is not a role', async () => {
+    // cx3576 ships two of these. `serial-getty@ttyFIQ0.service.d/local-line.conf`
+    // explains, in a `#` line, which busybox invocation the BSP bring-up rootfs
+    // proved on this tty -- history, not a dependency. A whole-body match reads
+    // that as an init role and reports one on a correct image, which is how this
+    // check first went red: green on x64, where those drop-ins do not exist, and
+    // red on the board they ship for.
+    const fx = await mutated('packed-busybox-not-early-boot', (root) => {
+      mkdirSync(join(root, 'etc/systemd/system/serial-getty@ttyX.service.d'), { recursive: true })
+      writeFileSync(join(root, 'etc/systemd/system/serial-getty@ttyX.service.d/local-line.conf'),
+        '# The BSP bring-up rootfs proved the working form with busybox `getty -L`.\n'
+        + '[Service]\nExecStart=\nExecStart=-/sbin/agetty --local-line 1500000 %I vt100\n')
+    })
+    try {
+      expect(await verdictOf(fx, 'packed-busybox-not-early-boot')).toBe('pass')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the same drop-in fails when the DIRECTIVE names it, not the comment', async () => {
+    // The other direction of the case above, so the comment exemption cannot be
+    // read as "unit files are exempt".
+    const fx = await mutated('packed-busybox-not-early-boot', (root) => {
+      mkdirSync(join(root, 'etc/systemd/system/serial-getty@ttyX.service.d'), { recursive: true })
+      writeFileSync(join(root, 'etc/systemd/system/serial-getty@ttyX.service.d/local-line.conf'),
+        '# nothing to see here\n[Service]\nExecStart=\nExecStart=-/usr/bin/busybox getty -L 1500000 %I\n')
+    })
+    try {
+      expect(await verdictOf(fx, 'packed-busybox-not-early-boot')).toBe('fail')
+      expect(await messageOf(fx, 'packed-busybox-not-early-boot'))
+        .toContain('local-line.conf (an init file naming busybox)')
     }
     finally {
       fx.dispose()
