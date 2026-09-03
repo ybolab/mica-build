@@ -164,34 +164,68 @@ function linkTarget(root: string, path: string): string {
 }
 
 /**
- * Every regular file at or under each of `trees`, as image-absolute paths.
+ * Follow `path`'s symlink chain INSIDE the root, or undefined if it dangles.
  *
- * An entry may be a FILE as well as a directory, and both spellings are in the
- * lists above: /etc/login.defs is one file and /etc/profile.d is a directory of
- * them. A version of this that only descended directories silently scanned none
- * of the single files -- which was measured here, as a login.defs whose PATH
- * named a busybox directory passing the check.
+ * The "inside the root" half is not a nicety. An image symlink's target is
+ * image-absolute -- /etc/profile.d/70-systemd-shell-extra.sh points at
+ * /usr/lib/systemd/profile.d/... -- so handing that path to readFileSync would
+ * read the VERIFIER HOST's file of that name. The verdict would then be about
+ * this machine, and on a host that happened to have a busybox-mentioning file
+ * there it would be a red about somebody else's system.
+ */
+function insideRoot(root: string, path: string): string | undefined {
+  let at = path
+  // Bounded for the reason `resolveCommand` is: a link cycle in the image is
+  // not this check's subject, and an unbounded follow would hang the run.
+  for (let hop = 0; hop < 16; hop++) {
+    const st = entry(root, at)
+    if (st === undefined) return undefined
+    if (!st.isSymbolicLink()) return at
+    at = linkTarget(root, at)
+  }
+  return undefined
+}
+
+/**
+ * Every readable entry at or under each of `trees`, as image-absolute paths.
+ *
+ * TWO SHAPES BOTH COUNT, and each was measured absent from an earlier spelling
+ * of this function against the real roots:
+ *
+ * - A tree entry may be a FILE rather than a directory. /etc/login.defs is one
+ *   file and /etc/profile.d is a directory of them, and a version that only
+ *   descended directories scanned none of the single files -- caught here as a
+ *   login.defs whose PATH named a busybox directory passing the check.
+ * - A leaf may be a SYMLINK. On both shipped boards
+ *   /etc/profile.d/70-systemd-shell-extra.sh and
+ *   /usr/lib/environment.d/99-environment.conf are links, and so is every
+ *   enablement link under the unit trees. Skipping them left the real PATH
+ *   drop-in this image ships unread.
  */
 function filesUnder(root: string, trees: readonly string[]): string[] {
   const out: string[] = []
+  const readable = (st: Stats): boolean => st.isFile() || st.isSymbolicLink()
   for (const tree of trees) {
     const st = entry(root, tree)
     if (st === undefined) continue
-    if (st.isFile()) {
+    if (readable(st)) {
       out.push(tree)
       continue
     }
     for (const w of walk(join(root, tree))) {
-      if (w.stat.isFile()) out.push(`${tree}${w.path}`)
+      if (readable(w.stat)) out.push(`${tree}${w.path}`)
     }
   }
   return out
 }
 
-/** A file's bytes as text, or '' when it cannot be read. */
+/** A path's bytes as text, resolved inside the root; '' when there are none. */
 function text(root: string, path: string): string {
+  const real = insideRoot(root, path)
+  if (real === undefined) return ''
+  if (entry(root, real)?.isFile() !== true) return ''
   try {
-    return readFileSync(join(root, path), 'latin1')
+    return readFileSync(join(root, real), 'latin1')
   }
   catch {
     return ''
@@ -345,15 +379,15 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
       if (scanned.length === 0) {
         return [verdict('packed-busybox-no-path-change', false,
           `none of the ${PATH_SOURCES.length} PATH sources (${PATH_SOURCES.join(' ')}) holds a `
-          + 'single file in this root, so this check read nothing and would report that nothing '
-          + 'puts BusyBox on PATH whatever the image did')]
+          + 'single readable entry in this root, so this check read nothing and would report that '
+          + 'nothing puts BusyBox on PATH whatever the image did')]
       }
       const hits = scanned.filter(p => /busybox|\/build\/bin/i.test(text(root, p)))
       return [verdict(
         'packed-busybox-no-path-change',
         hits.length === 0,
         hits.length === 0
-          ? `nothing in the packed root puts BusyBox on PATH: ${scanned.length} file(s) across the `
+          ? `nothing in the packed root puts BusyBox on PATH: ${scanned.length} path(s) across the `
             + `PATH sources name neither busybox nor ${BUILD_PREFIX}/bin, and there is no `
             + `${BUILD_PREFIX} at all`
           : `BusyBox is on PATH in the packed root: ${hits.join(' ')} name(s) it. An applet that `
@@ -395,8 +429,8 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
       const init = filesUnder(root, INIT_TREES)
       if (init.length === 0) {
         return [verdict('packed-busybox-not-early-boot', false,
-          `none of the init trees (${INIT_TREES.join(' ')}) holds a file in this root. A root with `
-          + 'no unit in it is not one this check can conclude anything about, and reporting that '
+          `none of the init trees (${INIT_TREES.join(' ')}) holds a readable entry in this root. A root `
+          + 'with no unit in it is not one this check can conclude anything about, and reporting that '
           + 'BusyBox has no init role would be reporting on an empty search')]
       }
       const named = initramfs.filter(p => /busybox/i.test(p))
@@ -415,9 +449,9 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
         faults.length === 0,
         faults.length === 0
           ? 'BusyBox has no initramfs and no init role: '
-            + `${initramfs.length} initramfs-tools file(s) carry no hook or conf fragment named `
+            + `${initramfs.length} initramfs-tools path(s) carry no hook or conf fragment named `
             + `for it and set no BUSYBOXDIR, and ${init.length} unit, generator, preset and `
-            + '/usr/lib/mos file(s) never name it'
+            + '/usr/lib/mos path(s) never name it'
           : `BusyBox has an initramfs or init role: ${faults.join(' ')}. A tool early boot or a `
             + 'normal service depends on is part of the boot contract, not an emergency tool, and '
             + 'it would be a part nobody tested',

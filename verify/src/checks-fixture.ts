@@ -545,15 +545,26 @@ function seedBusybox(root: string, file: WriteFile): void {
     'dd', 'grep', 'sed', 'tar', 'mount', 'umount', 'dmesg', 'hostname', 'sync', 'sleep',
     'dash',
   ]) file(`/usr/bin/${c}`, `ELF ... ${c}\n`)
-  symlinkSync('/usr/bin/dash', join(root, '/usr/bin/sh'))
+  // RELATIVE, as the shipped root has it: `usr/bin/sh -> dash`, measured on both
+  // boards. An absolute link would work here and would not exercise the
+  // resolution the real image needs.
+  symlinkSync('dash', join(root, '/usr/bin/sh'))
 
-  // What decides PATH here, none of it naming busybox.
+  // What decides PATH here, none of it naming busybox -- and TWO OF THE FOUR
+  // ARE SYMLINKS, which is how both shipped roots have them. That is the shape
+  // that matters: a check reading only regular files skipped the one PATH
+  // drop-in this image actually ships, and one that followed the link with the
+  // image-absolute target would have read the VERIFIER HOST's file of that name.
   file('/etc/environment', 'LANG=C.UTF-8\n')
   file('/etc/profile', 'if [ "${PS1-}" ]; then\n  PS1=\'\\h:\\w\\$ \'\nfi\n')
   file('/etc/login.defs', 'ENV_SUPATH\tPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\n'
     + 'ENV_PATH\tPATH=/usr/local/bin:/usr/bin\n')
-  file('/etc/profile.d/70-systemd-shell-extra.sh', '# systemd shell extras\n')
-  file('/usr/lib/environment.d/99-environment.conf', '# environment.d\n')
+  file('/usr/lib/systemd/profile.d/70-systemd-shell-extra.sh', '# systemd shell extras\n')
+  mkdirSync(join(root, '/etc/profile.d'), { recursive: true })
+  symlinkSync('/usr/lib/systemd/profile.d/70-systemd-shell-extra.sh',
+    join(root, '/etc/profile.d/70-systemd-shell-extra.sh'))
+  mkdirSync(join(root, '/usr/lib/environment.d'), { recursive: true })
+  symlinkSync('/etc/environment', join(root, '/usr/lib/environment.d/99-environment.conf'))
 
   // initramfs-tools, transcribed from the composed x64 root. Neither file is
   // named for busybox and neither assigns BUSYBOXDIR, which is exactly why the

@@ -256,6 +256,25 @@ describe('no PATH change and no /build/bin', () => {
     }
   })
 
+  test('a SYMLINKED PATH drop-in is followed, and inside the root', async () => {
+    // Both shipped roots put /etc/profile.d/70-systemd-shell-extra.sh in as a
+    // link to /usr/lib/systemd/profile.d/..., so a check reading only regular
+    // files never read the one PATH drop-in this image has. The follow has to
+    // resolve inside the root: the link target is image-absolute, and handing it
+    // to readFileSync would read the verifier host's file of that name.
+    const fx = await mutated('packed-busybox-no-path-change', root =>
+      writeFileSync(join(root, 'usr/lib/systemd/profile.d/70-systemd-shell-extra.sh'),
+        'PATH="/usr/lib/busybox/bin:$PATH"\n'))
+    try {
+      expect(await verdictOf(fx, 'packed-busybox-no-path-change')).toBe('fail')
+      expect(await messageOf(fx, 'packed-busybox-no-path-change'))
+        .toContain('/etc/profile.d/70-systemd-shell-extra.sh')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
   test('PLAN-045\'s rejected alternative -- applets under /build/bin -- fails on the directory alone',
     async () => {
       const fx = await mutated('packed-busybox-no-path-change', (root) => {
@@ -298,7 +317,7 @@ describe('no initramfs role and no init role', () => {
       try {
         expect(await verdictOf(fx, 'packed-busybox-not-early-boot')).toBe('pass')
         const message = await messageOf(fx, 'packed-busybox-not-early-boot')
-        expect(message).toContain('initramfs-tools file(s)')
+        expect(message).toContain('initramfs-tools path(s)')
         expect(message).toContain('never name it')
       }
       finally {
