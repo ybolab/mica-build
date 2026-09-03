@@ -68,27 +68,28 @@ Everything in §5 follows from choosing the second.
 
 ### 2. The switch
 
-**Where.** `[fleet].enabled` in the PLAN-070 factory record on META, default
-`false`. It lives at the product tier because *may this device talk to a fleet
-plane at all* is a fact about the product, in the same tier that answers which
-trust roots the device honours. A device built with no factory record has no
-fleet configuration and no fleet behaviour — the absent case of PLAN-070 §5,
-unchanged.
+**Where.** `fleet.enabled` in the baked `meta/manifest.json` (PLAN-070),
+default `false`. It lives at the product tier because *may this device talk to
+a fleet plane at all* is a fact about the product, in the same tier that
+answers which trust roots the device honours. The tree's committed `meta/` sets
+it `false` and `fleet.url` to `null`, so a build that does not change it
+produces a device with no fleet configuration and no fleet behaviour — the
+absent case of PLAN-070 §7, unchanged.
 
 **Who may flip it.** Two options, and this plan recommends the second:
 
-- (a) **Factory only.** Simplest, and it means a device shipped without fleet
-  can never join one without re-provisioning from a medium.
-- (b) **The factory record pins the URL; an authenticated administrator may
-  turn the switch on and off.** The administrator consents to enrolment but
+- (a) **Build only.** Simplest, and it means a device shipped without fleet
+  can never join one without a new image.
+- (b) **The build bakes the URL; an authenticated administrator may turn the
+  switch on and off.** The administrator consents to enrolment but
   cannot redirect the device to a different plane.
 
 **Recommended: (b).** The risk that matters here is *redirection* — a device
-talking to somebody else's plane — not *consent*. Pinning the URL at the
-factory removes redirection entirely; leaving the switch to the administrator
-means a customer who buys fleet management after the fact does not need a
-reflash to get it, and means the customer performs the act that starts the
-outbound connection. A device that dials out because of a decision its owner
+talking to somebody else's plane — not *consent*. Baking the URL removes
+redirection entirely: it is inside the read-only verity root and nothing on the
+device can rewrite it. Leaving the switch to the administrator means a customer
+who buys fleet management after the fact does not need a reflash to get it, and
+means the customer performs the act that starts the outbound connection. A device that dials out because of a decision its owner
 never made is the shape this product should not have.
 
 **Does flipping it off deregister? Yes, and locally-authoritative.** The device
@@ -104,8 +105,8 @@ listening.
 ### 3. Registration
 
 **What identity is sent.** `provisioning.deviceId`; `BOARD`, `PROFILE` and
-`VERSION` from `release-identity.env`; the factory record's product labels.
-That is the whole list.
+`VERSION` from `release-identity.env`; the baked `product` labels. That is the
+whole list.
 
 Explicitly **not** sent: the administrator credential, the webAdmin hash, the
 AP PSK, the device password, SSH keys, settings, or anything under `/srv`.
@@ -113,8 +114,8 @@ Serial number and MAC addresses are an **open question** (§7), because a fleet
 inventory genuinely wants a serial and sending one turns a device identifier
 into a hardware identifier the customer did not choose to publish.
 
-**Over what channel.** Device-initiated outbound HTTPS to the factory-pinned
-`[fleet].url`. **No inbound port, ever** — that is the whole reason the channel
+**Over what channel.** Device-initiated outbound HTTPS to the baked
+`fleet.url`. **No inbound port, ever** — that is the whole reason the channel
 is device-initiated, per `docs/design/remote-management.md` §2's *"an appliance
 whose owner has to forward a port has no support story, and one that forwards a
 port carries an attack surface its owner did not choose."*
@@ -134,10 +135,14 @@ reads it can claim to be that device. Registration therefore needs something
   decision is made by the person who physically has the device — which is
   exactly the authority `docs/design/security-model.md` §1 already grants.
 - **(b) Per-device factory-injected credential.** Zero-touch. Requires factory
-  tooling that does not exist (`docs/design/manufacturing.md` §0), requires the
-  factory record to become per-device (which PLAN-070 §4.1 argues against), and
-  reintroduces the injected-secret shape `docs/design/provisioning.md` §3.1
-  structurally excludes.
+  tooling that does not exist (`docs/design/manufacturing.md` §0), and cannot
+  ride the baked seam at all: every device flashed from one image carries
+  byte-identical `meta/` bytes, so a per-device credential in it would be the
+  same credential on every device. PLAN-070 §1 makes that a prohibition with a
+  build-time refusal behind it rather than an argument. It also reintroduces
+  the injected-secret shape `docs/design/provisioning.md` §3.1 structurally
+  excludes. Choosing (b) means designing a second, per-device channel — not
+  adding a field.
 - **(c) Trust on first use.** First registration for an id wins; later ones are
   refused. **Cost:** an attacker who learns a `deviceId` before the device
   first registers takes the slot, and `deviceId` is on a label.
@@ -203,11 +208,11 @@ installable payload, a configuration write, a shell, a reboot, or a rollback.
 
 The invariant that guarantees the second list, stated because collapsing it is
 the obvious cost saving: **the fleet plane never holds an update signing key
-and never serves a bundle.** The update source is the factory-pinned TUF URL
-and stays a separate hierarchy from the fleet URL *even when the same company
-runs both*. `docs/design/remote-management.md` §4 already binds any future
-fleet credential to this; PLAN-070 makes the two URLs separate fields for the
-same reason.
+and never serves a bundle.** The update source is the baked TUF URL and stays
+a separate hierarchy from the fleet URL *even when the same company runs both*.
+`docs/design/remote-management.md` §4 already binds any future fleet credential
+to this; PLAN-070 keeps the two URLs separate fields, under separate keys, for
+the same reason.
 
 **Operator roles.** Device-side there is exactly one role today — an
 authenticated administrator on the LAN — and this plan adds none: **no
@@ -239,15 +244,17 @@ list, narrowed to what this slice actually blocks on:
 
 1. **Who runs the control plane** — the vendor, the integrator, or the end
    customer. Determines whether the plane is multi-tenant, whether §5's tenant
-   isolation is a hard boundary or an operational one, and whether the
-   factory-pinned URL is one value or one per customer.
+   isolation is a hard boundary or an operational one, and whether the baked
+   URL is one value or one per customer — which, because it is baked, is also
+   the question of whether it is one image or one per customer (PLAN-070 §5).
 2. **Scale and availability** — hundreds versus hundreds of thousands, and what
    the plane promises. The device side is nearly insensitive to this (§6 makes
    the plane non-critical by construction); the cost envelope is not.
 3. **Data residency** — where inventory records live, and whether a device's
-   report may cross a region. Determines whether the pinned URL must be
-   per-region, which is a factory-record question and therefore a
-   manufacturing-process question.
+   report may cross a region. Determines whether the baked URL must be
+   per-region, which is now a **build and release-process** question rather
+   than a manufacturing one: a per-region URL is a per-region image, and
+   PLAN-070 open question 1 is where its release identity is decided.
 4. **Offline tolerance as a product promise** — §6 states the device's
    behaviour; what the *plane* promises about a device it has not heard from
    (how long before it is shown as missing rather than absent) is a product
@@ -256,9 +263,12 @@ list, narrowed to what this slice actually blocks on:
    wrong, which is the question that most strongly decides between (a) and (b)
    in §2 and between (a) and (b) in §3.
 6. **Zero-touch enrolment: required or not** (§3). If required, it forces the
-   per-device factory credential and the factory tooling
-   `docs/design/manufacturing.md` §0 says does not exist. This is the single
-   most expensive open question on the list.
+   per-device factory credential, the factory tooling
+   `docs/design/manufacturing.md` §0 says does not exist, **and** a per-device
+   delivery channel this tree now has no candidate for — the baked seam is
+   fleet-identical by construction and cannot carry one. This is the single
+   most expensive open question on the list, and the baked seam made it more
+   expensive, not less.
 7. **Serial and MAC in the inventory** (§3). An inventory that cannot match a
    device to a purchase order is less useful; publishing hardware identifiers
    is a privacy commitment. Decide before the first report format is frozen.
@@ -304,7 +314,7 @@ device-side role derived from a fleet identity.
 
 | # | Slice | Size | Gate |
 |---|---|---|---|
-| C1 | The `[fleet]` switch read from the factory record, the administrator toggle of §2b, and the off-is-off deregistration | S | depends on PLAN-070 F1 |
+| C1 | The `fleet` switch read from the baked `meta/`, the administrator toggle of §2b, and the off-is-off deregistration | S | depends on PLAN-070 F5 |
 | C2 | Registration client: outbound HTTPS, the identity payload, the claim-code display, the enrolment credential on STATE | M | payload asserted to contain nothing from the excluded list |
 | C3 | Inventory report with the monotonic counter, backoff and the `fleet` live-state entry | M | replay rejected on a non-advancing counter |
 | C4 | The autonomy assertion: a test that drives every local capability with the plane unreachable | S | §6 is a test, not a sentence |
@@ -325,7 +335,7 @@ device slices.
 **This plan ends at an approved device-side architecture for outbound-only
 registration.** Approval means agreeing that:
 
-- the switch is off by default and lives in the factory record;
+- the switch is off by default and lives in the baked `meta/`;
 - registration is outbound-only, grants no inbound command surface, and is not
   a step toward one;
 - the plane never holds an update signing key and never serves a bundle;
@@ -343,9 +353,9 @@ The user's request named three connected things, and they are connected. They
 are nonetheless three records because they ask three different people three
 different questions, at three different reversal costs:
 
-- **PLAN-070** asks *where does trust live and what survives a reset* — an
-  engineering and security decision, reversible only by touching every fielded
-  device's META.
+- **PLAN-070** asks *where does trust live and how does it enter an image* —
+  an engineering and security decision, reversible only by shipping a new image
+  to every fielded device.
 - **PLAN-071** asks *what may a device do to itself unattended* — an
   engineering and product-safety decision, reversible by editing one file on
   one device.
@@ -357,14 +367,14 @@ different questions, at three different reversal costs:
 Folded into one record, the cheapest and most reversible decision (the update
 policy, which changes nothing until an operator writes `auto`) becomes hostage
 to the most expensive and least reversible one (running a cloud service). The
-factory seam would be blocked on a hosting decision it does not need — it is
+`meta/` seam would be blocked on a hosting decision it does not need — it is
 useful with the fleet switch permanently false, because its trust and update
 halves stand alone. And the update module would be blocked on both, when it
-works today on an operator-edited policy file with no factory record at all.
+works today on an operator-edited policy file with no `meta/` at all.
 
 The dependencies that do exist are one-directional and narrow: PLAN-072 needs
-PLAN-070's switch (C1 depends on F1), and PLAN-071 is *improved* by PLAN-070's
-seeded source URL but does not require it. That is a dependency graph, not a
+PLAN-070's switch (C1 depends on F5), and PLAN-071 is *improved* by PLAN-070's
+baked defaults but does not require them. That is a dependency graph, not a
 single decision.
 
 ## Alternatives
@@ -382,11 +392,13 @@ single decision.
 3. **Reuse the LAN API over inbound Internet access.** Rejected for PLAN-054's
    original reason, unchanged: it assumes routability and broadens device
    exposure.
-4. **Put the fleet switch in the settings tree instead of the factory record.**
+4. **Put the fleet switch in the settings tree instead of the baked `meta/`.**
    Rejected: it makes "may this device dial out" an installation-time setting
    rather than a product fact, and it puts the URL somewhere a settings write
-   could redirect. The pinned URL is the property that makes §5's compromise
-   analysis hold.
+   could redirect. The baked URL — unwritable, inside the verity root — is the
+   property that makes §5's compromise analysis hold, and it holds more
+   strongly than the previous draft's device record did, because there is now
+   no on-device write path to the value at all.
 5. **Serve update bundles from the fleet plane.** Rejected, and named because
    it is the obvious consolidation: it collapses two independent credential
    domains into one and turns a disclosure problem into a fleet-wide code-
@@ -399,3 +411,12 @@ single decision.
   updated to record the decision and the remaining open product questions.
 - 2026-09-03: This record designs the device half of one slice. The control
   plane is not designed, not estimated and not authorised here.
+- 2026-09-03: PLAN-070 was rewritten — the switch now lives in a `meta/`
+  directory baked into the image, not in a device record on the META partition.
+  Only the seam's name and its consequences moved here: the switch and URL are
+  baked and unwritable on the device (which strengthens §2's redirection
+  argument and Alternative 4), enrolment shape (b) became structurally
+  impossible rather than merely argued against, and §7's questions 1, 3 and 6
+  were re-pointed at the build and release process. §1's control-channel
+  boundary, §3's payload and claim-code recommendation, §4, §5's threat model,
+  §6's autonomy claim and the C1–C7 backlog are unchanged.

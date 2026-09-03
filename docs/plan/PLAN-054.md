@@ -27,9 +27,9 @@ What the answer settles:
   situation Alternative 3 named.
 - The **first slice is chosen**: outbound-only device registration and
   inventory reporting, off by default, designed in **PLAN-072**.
-- The **seam that carries the switch is chosen**: the factory record on META,
-  designed in **PLAN-070**, which also carries the pinned update source and the
-  out-of-image trust anchors.
+- The **seam that carries the switch is chosen**: the `meta/` directory in this
+  repository, baked into the image, designed in **PLAN-070**, which also
+  carries the default update source and the pinned TUF root.
 - **PLAN-071** is adjacent, not part of this: the `off | check | auto` update
   module is a local capability that works with no fleet plane at all. It is
   named here so nobody reads unattended updating as a fleet feature.
@@ -78,16 +78,16 @@ them, and guessing at any one of them would design the wrong thing.
 
 1. **Who runs the control plane** — vendor, integrator, or end customer.
    Decides whether the plane is multi-tenant (and whether PLAN-072 §5's tenant
-   isolation is a hard boundary or an operational one), whether the
-   factory-pinned fleet URL is one value or one per customer, and who carries
-   the operating cost.
+   isolation is a hard boundary or an operational one), whether the baked fleet
+   URL is one value or one per customer — and, because it is baked, whether
+   that means one image per customer — and who carries the operating cost.
 2. **Scale and availability** — hundreds versus hundreds of thousands of
    devices, and what the plane promises. The device side is nearly insensitive
    to this by construction (PLAN-072 §6 makes the plane non-critical); the cost
    envelope is not.
 3. **Data residency** — where inventory records live and whether a report may
-   cross a region. A per-region pinned URL is a factory-record value, so this
-   is also a manufacturing-process question.
+   cross a region. A per-region URL is a baked value, so this is also a build
+   and release-process question: a per-region URL is a per-region image.
 4. **Offline tolerance as a plane-side promise** — the device's behaviour is
    settled (PLAN-072 §6: nothing degrades with time since contact). How long
    the plane waits before showing a device as *missing* rather than *absent*
@@ -97,9 +97,13 @@ them, and guessing at any one of them would design the wrong thing.
    registration-authentication shape is acceptable.
 6. **Is zero-touch enrolment required?** If yes, it forces a per-device
    factory-injected credential, which forces the factory tooling
-   `docs/design/manufacturing.md` §0 records as non-existent, and it conflicts
-   with the per-product factory record PLAN-070 §4.1 argues for. The single
-   most expensive question here.
+   `docs/design/manufacturing.md` §0 records as non-existent — **and a
+   per-device delivery channel that no longer has a candidate in this tree.**
+   PLAN-070's `meta/` is baked into the image, so every device flashed from one
+   image carries byte-identical bytes and cannot carry a per-device credential
+   even in principle; the earlier draft merely argued against one. Answering
+   yes therefore means designing a second, per-device seam from nothing. The
+   single most expensive question here, and more expensive than it was.
 7. **Do serial number and MAC addresses go in the inventory?** An inventory
    that cannot match a device to a purchase order is less useful; publishing
    hardware identifiers is a privacy commitment. Must be decided before the
@@ -140,7 +144,7 @@ and unchanged by the product decision.
    assumes routability and broadens device exposure. **Unchanged.**
 3. Ignore fleet needs until implementation. Rejected if the product is sold for
    fleets because enrollment, trust and update targeting affect device design.
-   **The condition now holds**, which is why PLAN-070's factory record carries
+   **The condition now holds**, which is why PLAN-070's baked `meta/` carries
    the fleet switch beside the trust anchors rather than leaving it for later.
 
 ## Annotations
@@ -150,9 +154,17 @@ and unchanged by the product decision.
 - 2026-09-01: Split from PLAN-037 and limited to a decision/design gate.
 - 2026-09-03: **The user decided fleet management is wanted.** This record is
   no longer conditional on the product question; the first slice is
-  outbound-only registration, designed in PLAN-072, carried by the factory
-  record designed in PLAN-070. Seven product questions remain open and are
+  outbound-only registration, designed in PLAN-072, carried by the seam
+  designed in PLAN-070. Seven product questions remain open and are
   listed above. Status stays `draft`: the boundary is an approved architecture
   *plus* an ownership model and a cost envelope, and the questions that produce
   the last two are unanswered. PLAN-071 (the local `off | check | auto` update
   module) is adjacent and independent — it is not fleet work.
+- 2026-09-03: PLAN-070 was rewritten and the chosen seam changed: it is a
+  `meta/` directory in this repository that the build bakes into the image, not
+  a factory record on the META partition. Touched here only where that makes a
+  statement false — the seam sentence above, Alternative 3, and open questions
+  1, 3 and 6. Question 6 changed in substance and not only in wording: a baked,
+  fleet-identical seam cannot carry a per-device credential even in principle.
+  The other four questions, the boundary and the COND/* dispositions are
+  unchanged.

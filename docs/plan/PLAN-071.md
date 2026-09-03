@@ -65,7 +65,7 @@ adopt and its mechanism is wrong for mos in three specific ways.
 | `[update] check_interval` | `autoCheck.intervalMinutes`, already present | Already adopted; §1 renames it under the new section |
 | `[trust] require_signature = off \| auto \| enforce` | — | **Do not adopt.** See below |
 | `[update] keep_versions`, `pin` | — | **No analogue.** See §6 |
-| `[http] headers`, `credential_hosts`, `allow_insecure` | — | **Adopt the rule, not the keys.** See below |
+| `[http] headers`, `credential_hosts`, `allow_insecure` | — | **Adopt the rule; PLAN-070 gives the host list a key.** See below |
 
 **`require_signature` is not adoptable, and the reason is a feature.** lode's
 three-way setting exists because lode can install unsigned artifacts — `auto`
@@ -84,10 +84,15 @@ this plan does not add authentication — but the day a private release channel
 appears, the rule must already be written down, because the failure it prevents
 is silent. Recorded here as a constraint on any future credential support:
 **credentials configured for the update source are attached only to hosts
-same-origin with the factory-pinned URL, and any additional host is an explicit
-operator list.** `allow_insecure` has no mos analogue: the TUF walk is what
-establishes trust, and `docs/design/release-signing.md` §3.1 already mirrors
-metadata over plain HTTP deliberately, treating the mirror as unverified input.
+same-origin with the effective `source.url`, and any additional host is an
+explicit operator list.** PLAN-070 gives that list a home now rather than
+later — `http.credentialHosts` in the baked `meta/manifest.json`, committed
+empty — so the origin a future credential is scoped to is reviewable in a diff
+before the credential exists.
+
+`allow_insecure` has no mos analogue: the TUF walk is what establishes trust,
+and `docs/design/release-signing.md` §3.1 already mirrors metadata over plain
+HTTP deliberately, treating the mirror as unverified input.
 
 **Where the mechanisms diverge, stated once so no later reader re-derives it:**
 mos updates are whole-system A/B RAUC slots, not per-app version directories;
@@ -107,7 +112,7 @@ checkIntervalMinutes = 1440      # was [autoCheck].intervalMinutes
 rebootPolicy         = "manual"  # manual | window
 
 [source]
-url = "…"        # unchanged; seeded by the PLAN-070 factory record
+url = "…"        # unchanged; defaulted by baked meta/ (PLAN-070), see 1.1
 channel = "stable"
 # … the remaining source keys unchanged
 
@@ -121,6 +126,37 @@ channel = "stable"
 | `off` | Nothing. No timer arms. Manual check, fetch and install stay available behind their existing gates, and so does offline import. `off` is not "updates disabled" — it is "the device initiates nothing" |
 | `check` | Metadata checks on `checkIntervalMinutes`, exactly today's `autoCheck`. Never fetches, never installs. **The default**, so the shipped behaviour is unchanged by this plan |
 | `auto` | Checks, then fetches, then installs inside a maintenance window, then reboots or does not per `rebootPolicy` — §2 |
+
+#### 1.1 Where each value comes from: baked defaults, and this file on top
+
+PLAN-070 bakes `update.source`, `update.channel`, `update.policy` and
+`update.checkIntervalMinutes` into the image at `/usr/share/mos/meta/`. Those
+are **defaults, not owners**, and the rule is per key:
+
+- this file names a key → that value wins;
+- this file does not name it, or does not exist → the baked value;
+- neither → the code default, **except `source.url`, which has none.** Absent
+  in both means no online source: check and fetch refuse with the reason they
+  refuse with today, and offline import remains. That absence is unchanged by
+  PLAN-070 and is the whole of the no-default-server rule as this plan sees it.
+
+**A file that exists and does not parse does not fall back to the baked
+values.** Today's fail-closed behaviour is unchanged — every restricted action
+refuses while the reboot gate keeps evaluating with defaults — and it must not
+become "revert to what was built in", because a typo would then silently move a
+device back to the server its operator was in the middle of moving it off. A
+parse error is not absence.
+
+**Trust anchors are not on this list.** The RAUC keyring and the pinned TUF
+root are baked and no key in this file names either; PLAN-070 §5.1 is the line
+— configuration is overridable here, trust is not overridable anywhere. So a
+device whose operator has re-pointed `source.url` still verifies against the
+anchors its image shipped with, which is what keeps a policy-file edit from
+being a trust decision.
+
+The direction matters for `policy` too: the tree's committed `meta/` sets
+`policy = "check"` and names no source, so the shipped default this plan
+preserves is preserved in the image as well as in the code.
 
 `[autoCheck]` is **retired, not migrated.** `deny_unknown_fields` means an
 existing file carrying `[autoCheck]` becomes a load error, which fails closed
@@ -399,9 +435,9 @@ Out of scope: an API write surface for the policy file (the follow-up
 `docs/design/updates.md` §2 names); update authentication and the credential
 rule of the Context (recorded as a constraint, not built); staged or
 percentage-based fleet rollout (PLAN-072 and PLAN-054); a remote kill switch
-(rejected, §5); per-application updates (PLAN-069); the factory record that
-seeds `source.url` (PLAN-070 — this plan works without it, on an
-operator-edited policy file).
+(rejected, §5); per-application updates (PLAN-069); the baked `meta/`
+seam that defaults `source.url` (PLAN-070 — this plan works without it, on an
+operator-edited policy file, and §1.1 is the only place the two meet).
 
 ### Implementation backlog — estimated separately from approval
 
@@ -470,3 +506,11 @@ operator writes `auto`.
   Context table records adopt-versus-differ per key.
 - 2026-09-03: `check` stays the shipped default, so this plan changes no
   fielded device's behaviour until an operator opts in.
+- 2026-09-03: PLAN-070 was rewritten — its seam is now a `meta/` directory
+  baked into the image, not a device record on the META partition. Only the
+  source of the defaults changed here: §1.1 states the per-key precedence and
+  the parse-error rule the new seam owes, and the credential rule's same-origin
+  base is named against the effective URL with `http.credentialHosts` as its
+  home. The `off | check | auto` semantics, the window rules, the
+  never-arms-the-override invariant, the rolled-back-version suppression, the
+  clock predicate and the backlog are unchanged.
