@@ -76,8 +76,8 @@ The counting rule is narrow, and both halves of it matter:
 - **Symlinks only.** A regular file with the right name under that directory
   starts nothing, so it is not enablement.
 - **That one directory.** A link under `local-fs.target.wants` or
-  `timers.target.wants` is not counted. `mos-system` ships eleven of the first
-  and one of the second and declares `mos-system=5`; `mos-wifi`, `mos-wifi-ap`
+  `timers.target.wants` is not counted. `mos-system` ships fifteen of the first
+  and one of the second and declares `mos-system=6`; `mos-wifi`, `mos-wifi-ap`
   and `mos-board-x64` each ship one `local-fs` link and declare `0`. Those links
   are ordinary payload, and it is the byte-for-byte payload checks that speak
   about them.
