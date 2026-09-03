@@ -133,6 +133,40 @@ else
 fi
 
 echo
+echo "--- 4. the shared floor and this list do not disagree about a symbol"
+# Since the eBPF/firewall floor landed, boards/common/mos-required.fragment
+# pins most of the list above =y for EVERY board. Two floors naming the same
+# symbol are only safe while they agree: if the fragment ever stated one of
+# these as =m or "is not set", cx3576 would still be green here -- the board
+# Dockerfile's own loop covers it -- while every other board silently got the
+# weaker answer. So each symbol the fragment mentions at all must be pinned
+# there as =y. Symbols the fragment does not mention are this file's alone and
+# are skipped, which is why the overlap is counted rather than assumed.
+FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
+[ -f "${FRAGMENT}" ] || {
+    echo "error: ${FRAGMENT} not found; assertion 4 has nothing to compare against" >&2
+    exit 1
+}
+OVERLAP_N=0
+for sym in "${SYMBOLS[@]}"; do
+    stated="$(grep -E "^(CONFIG_${sym}=.*|# CONFIG_${sym} is not set)$" "${FRAGMENT}" || true)"
+    [ -n "${stated}" ] || continue
+    OVERLAP_N=$((OVERLAP_N + 1))
+    if [ "${stated}" = "CONFIG_${sym}=y" ]; then
+        pass "the shared fragment pins CONFIG_${sym}=y too"
+    else
+        fail "the shared fragment states CONFIG_${sym} as '${stated}', not =y. Every board merges that file, so a weaker statement there is a weaker floor everywhere except the board whose Dockerfile happens to re-assert it"
+    fi
+done
+# The loop above is silent when the overlap is empty, and an empty overlap is
+# exactly what a moved or emptied fragment looks like from here.
+if [ "${OVERLAP_N}" -ge 15 ]; then
+    pass "the two floors overlap on ${OVERLAP_N} symbols"
+else
+    fail "only ${OVERLAP_N} of the ${#SYMBOLS[@]} symbols above are stated in ${FRAGMENT#"${REPO_ROOT}/"}; 15 were when this assertion was written. Shrinking the overlap is allowed, but not by accident -- move this floor with it"
+fi
+
+echo
 if [ "${FAIL_N}" -eq 0 ]; then
     echo "RESULT: PASS (${PASS_N}/${PASS_N} assertions)"
 else

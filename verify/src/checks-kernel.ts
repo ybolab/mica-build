@@ -1,5 +1,7 @@
-// The networking symbols the network reconciler needs from the kernel, read off the image
-// that ships it.
+// The kernel symbols the shipped runtime needs, read off the image that ships
+// it: the virtual link kinds the network reconciler creates, the container
+// network, the eBPF runtime the container engine loads its cgroup device
+// filter through, and the firewall back-end including its bridge half.
 //
 // x64 ONLY, and the scope is the point. cx3576 builds its kernel in-tree, so
 // `boards/common/mos-required.fragment` is merged before `olddefconfig` and
@@ -30,15 +32,44 @@ import type { CheckResult } from './parity.ts'
 import { verdict } from './verdict.ts'
 
 /**
- * The symbols, and the module each one is loaded by.
+ * One required symbol: what it is, what loads it, and what it buys.
  *
- * The two names are not the same string and neither can be derived from the
- * other -- `CONFIG_VLAN_8021Q` is loaded as `8021q` and `CONFIG_BRIDGE` as
- * `bridge` -- so both are written down. A check that guessed one from the other
- * would report a missing module for a symbol that is present under its real
- * name, which reads as an image defect and is not one.
+ * `module` is the name modprobe would be asked for -- not derivable from the
+ * symbol (`CONFIG_VLAN_8021Q` loads as `8021q`, `CONFIG_NETFILTER_XTABLES` as
+ * `x_tables`), so both are written down. A check that guessed one from the
+ * other would report a missing module for a symbol that is present under its
+ * real name, which reads as an image defect and is not one.
+ *
+ * `module` is ABSENT for a symbol that builds no object of its own. Those are
+ * bools: `CONFIG_BPF_SYSCALL` and the rest of the eBPF floor compile into the
+ * kernel image, and `CONFIG_NF_TABLES_INET`, `_IPV4` and `_IPV6` compile into
+ * `nf_tables.ko`, which `CONFIG_NF_TABLES` already names. There is nothing for
+ * modprobe to look up, so the modprobe check skips them and the config check
+ * is the whole assertion. Giving one of them a module name anyway would make
+ * the modprobe check resolve the same object several times and report a
+ * confidence about a symbol it never looked at.
  */
-const REQUIRED = [
+interface Requirement {
+  readonly symbol: string
+  readonly module?: string
+  readonly what: string
+}
+
+/** A requirement that names a module, i.e. one modprobe can be asked about. */
+interface ModuleRequirement extends Requirement {
+  readonly module: string
+}
+
+/**
+ * The symbols, and the module each one is loaded by where it has one.
+ *
+ * This list and `boards/common/mos-required.fragment` are the same floor read
+ * from two sides -- the fragment is merged into a board kernel before
+ * `olddefconfig` and asserted against the built `.config`, this is asserted
+ * against Debian's built artefact -- so every symbol here is pinned `=y`
+ * there. `checks-kernel.test.ts` reads the fragment and requires it.
+ */
+export const REQUIRED: readonly Requirement[] = [
   { symbol: 'CONFIG_VLAN_8021Q', module: '8021q', what: 'VLAN interfaces' },
   { symbol: 'CONFIG_BRIDGE', module: 'bridge', what: 'bridge interfaces' },
   { symbol: 'CONFIG_WIREGUARD', module: 'wireguard', what: 'WireGuard tunnels' },
@@ -53,11 +84,59 @@ const REQUIRED = [
   { symbol: 'CONFIG_NFT_FIB_INET', module: 'nft_fib_inet', what: "netavark's inet fib port-forward rule" },
   { symbol: 'CONFIG_NFT_FIB_IPV4', module: 'nft_fib_ipv4', what: 'the IPv4 fib lookup that rule delegates to' },
   { symbol: 'CONFIG_NFT_FIB_IPV6', module: 'nft_fib_ipv6', what: 'the IPv6 fib lookup that rule delegates to' },
-] as const
+  // The eBPF runtime. Not a diagnostics nicety: crun programs the cgroup v2
+  // device controller as a BPF_PROG_TYPE_CGROUP_DEVICE program
+  // (crun 1.29.1 src/libcrun/ebpf.c:490,496), and on cgroup v2 that program IS
+  // the device policy -- there is no devices controller file to write instead.
+  // All four are bools with no object of their own.
+  { symbol: 'CONFIG_BPF', what: 'the eBPF core every program runs on' },
+  { symbol: 'CONFIG_BPF_SYSCALL', what: 'the bpf(2) syscall, without which no program can be loaded at all' },
+  { symbol: 'CONFIG_BPF_JIT', what: 'native compilation of those programs instead of interpretation' },
+  { symbol: 'CONFIG_CGROUP_BPF', what: "crun's cgroup v2 device filter, which is the device policy there" },
+  // The firewall floor: the kernel side of an nftables front-end, with
+  // iptables-nft as the reference. Citations into iptables 1.8.11, the
+  // per-symbol table and the three-bucket measurement against Debian's shipped
+  // config are in docs/design/boards.md section 4.
+  { symbol: 'CONFIG_NF_TABLES', module: 'nf_tables', what: 'the nf_tables core every rule is programmed into' },
+  { symbol: 'CONFIG_NF_TABLES_INET', what: 'the inet family netavark puts its whole table in' },
+  { symbol: 'CONFIG_NF_TABLES_IPV4', what: 'the ip family iptables-nft builds its five tables in' },
+  { symbol: 'CONFIG_NF_TABLES_IPV6', what: 'the ip6 family ip6tables-nft builds them in' },
+  { symbol: 'CONFIG_NFT_COMPAT', module: 'nft_compat', what: 'the xt match and target expressions iptables-nft emits for everything with no native form' },
+  { symbol: 'CONFIG_NETFILTER_XTABLES', module: 'x_tables', what: 'the x_tables core NFT_COMPAT depends on' },
+  { symbol: 'CONFIG_NF_CONNTRACK', module: 'nf_conntrack', what: 'connection tracking, the state stateful filtering matches on' },
+  { symbol: 'CONFIG_NFT_CT', module: 'nft_ct', what: 'the ct expression that reads that state' },
+  { symbol: 'CONFIG_NF_NAT', module: 'nf_nat', what: 'the NAT core' },
+  { symbol: 'CONFIG_NFT_NAT', module: 'nft_nat', what: 'the snat and dnat expressions' },
+  { symbol: 'CONFIG_NFT_MASQ', module: 'nft_masq', what: 'the masquerade expression' },
+  // Bridge filtering. Same-bridge container traffic is switched at layer 2 and
+  // never reaches the ip-family hooks; these three are what make it visible at
+  // all. NF_TABLES_BRIDGE builds no object: it is a tristate menuconfig whose
+  // family compiles into nf_tables.ko and whose submenu holds the
+  // per-expression modules, which are policy.
+  { symbol: 'CONFIG_BRIDGE_NETFILTER', module: 'br_netfilter', what: 'bridged IP and ARP frames reaching the ip-family hooks, so one firewall covers container-to-container traffic' },
+  { symbol: 'CONFIG_NF_TABLES_BRIDGE', what: 'the nf_tables bridge family, i.e. filtering a bridged frame at layer 2 without redirecting it into the ip hooks' },
+  { symbol: 'CONFIG_NF_CONNTRACK_BRIDGE', module: 'nf_conntrack_bridge', what: 'conntrack and IP defragmentation for bridged traffic, without which ct state is not answerable there' },
+]
+
+/**
+ * The half of the list modprobe can be asked about.
+ *
+ * Everything not here is asserted by the config check ALONE, which is why
+ * checks-kernel.test.ts requires both halves to be non-empty: a list that
+ * emptied either one would leave a whole check comparing nothing while still
+ * printing green.
+ */
+export const RESOLVABLE: readonly ModuleRequirement[]
+  = REQUIRED.filter((r): r is ModuleRequirement => r.module !== undefined)
+
+/** The symbols that build no object, so that a message can say so. */
+const BUILTIN_ONLY = REQUIRED.filter(r => r.module === undefined)
 
 /** `VLAN_8021Q, BRIDGE, …` -- the one list, spelled from the register. */
 const SYMBOL_LIST = REQUIRED.map(r => r.symbol.slice('CONFIG_'.length)).join(', ')
-const MODULE_LIST = REQUIRED.map(r => r.module).join(', ')
+const MODULE_LIST = RESOLVABLE.map(r => r.module).join(', ')
+/** `BPF, BPF_SYSCALL, …` -- the symbols the modprobe check deliberately skips. */
+const BUILTIN_ONLY_LIST = BUILTIN_ONLY.map(r => r.symbol.slice('CONFIG_'.length)).join(', ')
 
 /** What a `/boot/config-*` file was found to say about one symbol. */
 export interface ConfigLine {
@@ -206,8 +285,8 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
       if (release === '') {
         return [verdict(CONFIG_ID, false,
           'no single /boot/config-* in the packed root, so which kernel config describes the kernel '
-          + `this image boots cannot be decided. The virtual link kinds and the container network need `
-          + `${SYMBOL_LIST}, and none of them can be read`)]
+          + `this image boots cannot be decided. The virtual link kinds, the container network, the `
+          + `eBPF runtime and the firewall back-end need ${SYMBOL_LIST}, and none of them can be read`)]
       }
       const found = configLines(root, release)
       const bad = found.filter(f => f.value === undefined)
@@ -222,10 +301,13 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
           ? `the shipped kernel config declares ${SYMBOL_LIST} in `
             + `/boot/config-${release}: ${quoted}`
           : `the shipped kernel config does not declare ${bad.map(b => b.symbol).join(', ')} as =y or `
-            + `=m in /boot/config-${release}: ${quoted}. mosd renders .netdev units for VLAN, bridge `
-            + `and WireGuard interfaces, and netavark needs the veth pair and the nft fib expression `
-            + `for every bridge network; a device the kernel has no support for is never created, `
-            + `while the write or the container start that asked for it reports success`,
+            + `=m in /boot/config-${release}: ${quoted}. Each one buys: `
+            + `${bad.map(b => `${b.symbol} -- ${REQUIRED.find(r => r.symbol === b.symbol)?.what ?? '?'}`)
+              .join('; ')}. mosd renders .netdev units for VLAN, bridge and WireGuard interfaces, `
+            + `netavark needs the veth pair and the nft fib expression for every bridge network, crun `
+            + `loads its cgroup v2 device filter through bpf(2), and a firewall front-end programs `
+            + `nf_tables; a capability the kernel does not have is never created, while the write, the `
+            + `container start or the rule load that asked for it reports success`,
       )]
     },
   },
@@ -249,7 +331,7 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
           'no single /boot/config-* in the packed root, so there is no kernel release to resolve '
           + '/lib/modules/<release> against and no module lookup can be performed')]
       }
-      const resolved = REQUIRED.map(r => resolveModule(root, release, r.module))
+      const resolved = RESOLVABLE.map(r => resolveModule(root, release, r.module))
       const bad = resolved.filter(r => r.how === 'none' || r.missingDeps.length > 0)
       const quoted = resolved
         .map(r => r.how === 'builtin'
@@ -263,11 +345,13 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
         MODPROBE_ID,
         ok,
         ok
-          ? `modprobe resolves ${MODULE_LIST} against /lib/modules/${release}: ${quoted}`
+          ? `modprobe resolves ${MODULE_LIST} against /lib/modules/${release}: ${quoted}. `
+            + `${BUILTIN_ONLY_LIST} build no object of their own and were not looked up here; the `
+            + `config check above is their whole assertion`
           : `modprobe would not resolve ${bad.map(b => b.module).join(', ')} against `
             + `/lib/modules/${release}: ${quoted}. A module listed in modules.dep whose object is not `
             + `in the root fails at load time with the config line still reading =m, so the config `
-            + `check above stays green while ${REQUIRED.filter(r => bad.some(b => b.module === r.module))
+            + `check above stays green while ${RESOLVABLE.filter(r => bad.some(b => b.module === r.module))
               .map(r => r.what).join(' and ')} cannot be created on the device`,
       )]
     },

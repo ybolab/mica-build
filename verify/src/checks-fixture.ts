@@ -1173,6 +1173,14 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // One of the symbols is BUILT IN and the rest are modules, on purpose.
   // modprobe resolves those two ways and a fixture that exercised only one
   // would leave the other path driven by nothing.
+  //
+  // A THIRD kind is seeded too: symbols that name no module at all -- the eBPF
+  // bools and the three nf_tables family bools, which compile into the kernel
+  // image and into nf_tables.ko respectively. They are =y here with no entry in
+  // either index, which is what Debian's own artefact looks like, so the
+  // modprobe check has to skip them rather than fail on a lookup that could
+  // never succeed. The values mirror Debian's shipped config: the eBPF floor
+  // and the family bools =y, the netfilter modules =m.
   const release = '6.12.101+deb13-amd64'
   file(`/boot/config-${release}`,
     '# Automatically generated file; DO NOT EDIT.\n'
@@ -1184,7 +1192,25 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     + 'CONFIG_NFT_FIB=m\n'
     + 'CONFIG_NFT_FIB_INET=m\n'
     + 'CONFIG_NFT_FIB_IPV4=m\n'
-    + 'CONFIG_NFT_FIB_IPV6=m\n')
+    + 'CONFIG_NFT_FIB_IPV6=m\n'
+    + 'CONFIG_BPF=y\n'
+    + 'CONFIG_BPF_SYSCALL=y\n'
+    + 'CONFIG_BPF_JIT=y\n'
+    + 'CONFIG_CGROUP_BPF=y\n'
+    + 'CONFIG_NF_TABLES=m\n'
+    + 'CONFIG_NF_TABLES_INET=y\n'
+    + 'CONFIG_NF_TABLES_IPV4=y\n'
+    + 'CONFIG_NF_TABLES_IPV6=y\n'
+    + 'CONFIG_NFT_COMPAT=m\n'
+    + 'CONFIG_NETFILTER_XTABLES=m\n'
+    + 'CONFIG_NF_CONNTRACK=m\n'
+    + 'CONFIG_NFT_CT=m\n'
+    + 'CONFIG_NF_NAT=m\n'
+    + 'CONFIG_NFT_NAT=m\n'
+    + 'CONFIG_NFT_MASQ=m\n'
+    + 'CONFIG_BRIDGE_NETFILTER=m\n'
+    + 'CONFIG_NF_TABLES_BRIDGE=m\n'
+    + 'CONFIG_NF_CONNTRACK_BRIDGE=m\n')
   const mod = `/lib/modules/${release}`
   file(`${mod}/modules.builtin`, 'kernel/net/wireguard/wireguard.ko\n')
   file(`${mod}/modules.dep`,
@@ -1194,7 +1220,17 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     + 'kernel/net/netfilter/nft_fib.ko:\n'
     + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko: kernel/net/netfilter/nft_fib.ko\n'
     + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko: kernel/net/netfilter/nft_fib.ko\n'
-    + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/ipv4/netfilter/nft_fib_ipv4.ko kernel/net/ipv6/netfilter/nft_fib_ipv6.ko kernel/net/netfilter/nft_fib.ko\n')
+    + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/ipv4/netfilter/nft_fib_ipv4.ko kernel/net/ipv6/netfilter/nft_fib_ipv6.ko kernel/net/netfilter/nft_fib.ko\n'
+    + 'kernel/net/netfilter/x_tables.ko:\n'
+    + 'kernel/net/netfilter/nf_conntrack.ko:\n'
+    + 'kernel/net/netfilter/nf_tables.ko: kernel/net/netfilter/nfnetlink.ko\n'
+    + 'kernel/net/netfilter/nft_compat.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/x_tables.ko\n'
+    + 'kernel/net/netfilter/nft_ct.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/nf_conntrack.ko\n'
+    + 'kernel/net/netfilter/nf_nat.ko: kernel/net/netfilter/nf_conntrack.ko\n'
+    + 'kernel/net/netfilter/nft_nat.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/nf_nat.ko\n'
+    + 'kernel/net/netfilter/nft_masq.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/nf_nat.ko\n'
+    + 'kernel/net/bridge/br_netfilter.ko: kernel/bridge/bridge.ko\n'
+    + 'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko: kernel/net/netfilter/nf_conntrack.ko\n')
   for (const object of [
     'kernel/net/8021q/8021q.ko',
     'kernel/net/802/mrp.ko',
@@ -1206,6 +1242,17 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko',
     'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko',
     'kernel/net/netfilter/nft_fib_inet.ko',
+    'kernel/net/netfilter/nfnetlink.ko',
+    'kernel/net/netfilter/x_tables.ko',
+    'kernel/net/netfilter/nf_conntrack.ko',
+    'kernel/net/netfilter/nf_tables.ko',
+    'kernel/net/netfilter/nft_compat.ko',
+    'kernel/net/netfilter/nft_ct.ko',
+    'kernel/net/netfilter/nf_nat.ko',
+    'kernel/net/netfilter/nft_nat.ko',
+    'kernel/net/netfilter/nft_masq.ko',
+    'kernel/net/bridge/br_netfilter.ko',
+    'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko',
   ]) {
     file(`${mod}/${object}`, '\x7fELF\n')
   }

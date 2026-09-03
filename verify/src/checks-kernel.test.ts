@@ -17,15 +17,19 @@
 //     object goes missing as before.
 //   - two `/boot/config-*` files, i.e. two kernels in one root, where reading
 //     the first would be an assertion about a kernel the image may not boot.
+//   - a required symbol that names NO module -- the eBPF floor and the
+//     nf_tables family bools -- taken out of the config. Nothing in the
+//     modprobe half can see that one, so if the config half did not fail on it
+//     the symbol would be in the register and asserted by neither check.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { loadBoard } from './board.ts'
 import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
-import { KERNEL_CHECKS, configLines, kernelRelease, resolveModule } from './checks-kernel.ts'
+import { KERNEL_CHECKS, REQUIRED, RESOLVABLE, configLines, kernelRelease, resolveModule } from './checks-kernel.ts'
 import type { CheckCase } from './checks.ts'
-import { boardEnvPath } from './paths.ts'
+import { REPO_ROOT, boardEnvPath } from './paths.ts'
 import type { CheckResult } from './parity.ts'
 
 const x64 = loadBoard(boardEnvPath('x64'))
@@ -59,6 +63,23 @@ function write(fx: RootFixture, path: string, content: string): void {
   writeFileSync(full, content)
 }
 
+/**
+ * Edit ONE line of the seeded kernel config, leaving every other line alone.
+ *
+ * Rewriting the whole file was fine when the register held three symbols; with
+ * a register this long it makes every case fail for the same reason -- the
+ * twenty lines the case did not bother to write -- and a case that goes red
+ * for a reason it did not choose proves nothing about the reason it did.
+ * Asserts the edit actually landed, so a renamed symbol turns the test red
+ * here rather than leaving it asserting against an unmutated root.
+ */
+function editConfig(fx: RootFixture, from: string, to: string): void {
+  const full = join(fx.root, 'boot', `config-${RELEASE}`)
+  const before = readFileSync(full, 'utf8')
+  expect(before).toContain(from)
+  writeFileSync(full, before.replace(from, to))
+}
+
 /** Run `body` against a fresh fixture, with both checks green first. */
 async function withHealthyRoot(body: (fx: RootFixture) => Promise<void>): Promise<void> {
   const fx = packedRootFixture(x64)
@@ -88,10 +109,7 @@ describe('the register entries', () => {
 describe('the shipped kernel config', () => {
   test('a symbol switched off is read as off, not as mentioned', async () => {
     await withHealthyRoot(async (fx) => {
-      write(fx, `/boot/config-${RELEASE}`,
-        'CONFIG_VLAN_8021Q=m\n'
-        + 'CONFIG_BRIDGE=m\n'
-        + '# CONFIG_WIREGUARD is not set\n')
+      editConfig(fx, 'CONFIG_WIREGUARD=y', '# CONFIG_WIREGUARD is not set')
       const got = await only(fx, CONFIG_ID)
       expect(got.verdict).toBe('fail')
       expect(got.message).toContain('CONFIG_WIREGUARD')
@@ -101,10 +119,9 @@ describe('the shipped kernel config', () => {
 
   test('a longer symbol sharing the prefix does not answer for the short one', async () => {
     await withHealthyRoot(async (fx) => {
-      write(fx, `/boot/config-${RELEASE}`,
-        'CONFIG_VLAN_8021Q=m\n'
-        + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
-        + 'CONFIG_WIREGUARD=y\n')
+      // CONFIG_BRIDGE_VLAN_FILTERING=y is already in the seeded config; taking
+      // the short symbol away leaves it as the only BRIDGE-ish line.
+      editConfig(fx, 'CONFIG_BRIDGE=m\n', '')
       const got = await only(fx, CONFIG_ID)
       expect(got.verdict).toBe('fail')
       expect(got.message).toContain('CONFIG_BRIDGE')
@@ -192,9 +209,23 @@ describe('modprobe resolution', () => {
         + 'kernel/drivers/net/veth.ko:\n'
         + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko: kernel/net/netfilter/nft_fib.ko\n'
         + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko: kernel/net/netfilter/nft_fib.ko\n'
-        + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/netfilter/nft_fib.ko\n')
+        + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/netfilter/nft_fib.ko\n'
+        // The firewall floor's modules, whose objects the fixture already
+        // packed; the index has to name them or this rewrite would fail the
+        // check for a reason that has nothing to do with the suffix.
+        + 'kernel/net/netfilter/x_tables.ko:\n'
+        + 'kernel/net/netfilter/nf_conntrack.ko:\n'
+        + 'kernel/net/netfilter/nf_tables.ko:\n'
+        + 'kernel/net/netfilter/nft_ct.ko:\n'
+        + 'kernel/net/netfilter/nf_nat.ko:\n'
+        + 'kernel/net/netfilter/nft_nat.ko:\n'
+        + 'kernel/net/netfilter/nft_masq.ko:\n'
+        + 'kernel/net/netfilter/nft_compat.ko.xz: kernel/net/netfilter/x_tables.ko\n'
+        + 'kernel/net/bridge/br_netfilter.ko:\n'
+        + 'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko:\n')
       write(fx, `/lib/modules/${RELEASE}/kernel/net/8021q/8021q.ko.xz`, 'x')
       write(fx, `/lib/modules/${RELEASE}/kernel/bridge/bridge.ko.xz`, 'x')
+      write(fx, `/lib/modules/${RELEASE}/kernel/net/netfilter/nft_compat.ko.xz`, 'x')
       const got = await only(fx, MODPROBE_ID)
       expect(got.verdict).toBe('pass')
       expect(got.message).toContain('8021q.ko.xz')
@@ -212,23 +243,120 @@ describe('modprobe resolution', () => {
 })
 
 describe('the readers, directly', () => {
-  test('configLines reports the raw line and the parsed value', async () => {
+  test('configLines answers for every required symbol, in the register order', async () => {
     await withHealthyRoot(async (fx) => {
       const got = configLines(fx.root, RELEASE)
-      expect(got.map(l => l.value)).toEqual(['m', 'm', 'y', 'm', 'm', 'm', 'm'])
-      expect(got.map(l => l.line)).toContain('CONFIG_VLAN_8021Q=m')
+      // One answer per requirement and no silent drop: a reader that skipped a
+      // symbol would leave the check reporting green about a line it never read.
+      expect(got.map(l => l.symbol)).toEqual(REQUIRED.map(r => r.symbol))
+      expect(got.filter(l => l.value === undefined)).toEqual([])
+      expect(got.find(l => l.symbol === 'CONFIG_VLAN_8021Q'))
+        .toEqual({ symbol: 'CONFIG_VLAN_8021Q', line: 'CONFIG_VLAN_8021Q=m', value: 'm' })
+      // The two shapes the fixture seeds on purpose: a module symbol and a
+      // module-less bool.
+      expect(got.find(l => l.symbol === 'CONFIG_NF_TABLES')?.value).toBe('m')
+      expect(got.find(l => l.symbol === 'CONFIG_BPF_JIT'))
+        .toEqual({ symbol: 'CONFIG_BPF_JIT', line: 'CONFIG_BPF_JIT=y', value: 'y' })
     })
   })
 
   test('a value that is neither y nor m is not a value', async () => {
     await withHealthyRoot(async (fx) => {
-      write(fx, `/boot/config-${RELEASE}`,
-        'CONFIG_VLAN_8021Q=n\nCONFIG_BRIDGE=m\nCONFIG_WIREGUARD=y\n'
-        + 'CONFIG_VETH=m\nCONFIG_NFT_FIB_INET=m\nCONFIG_NFT_FIB_IPV4=m\nCONFIG_NFT_FIB_IPV6=m\n')
+      editConfig(fx, 'CONFIG_VLAN_8021Q=m', 'CONFIG_VLAN_8021Q=n')
       const got = configLines(fx.root, RELEASE)
       expect(got.filter(l => l.value === undefined).map(l => l.symbol)).toEqual(['CONFIG_VLAN_8021Q'])
       expect(got.map(l => l.line)).toContain('CONFIG_VLAN_8021Q=n')
       expect((await only(fx, CONFIG_ID)).verdict).toBe('fail')
     })
+  })
+})
+
+describe('a symbol that names no module', () => {
+  test('the register holds both shapes, so neither check runs over nothing', () => {
+    // Either half emptying is silent: a modprobe check over no modules and a
+    // config check over no bools both print the same green line as one that
+    // compared everything.
+    const builtinOnly = REQUIRED.filter(r => r.module === undefined)
+    expect(RESOLVABLE.length).toBeGreaterThan(0)
+    expect(builtinOnly.length).toBeGreaterThan(0)
+    expect(RESOLVABLE.length + builtinOnly.length).toBe(REQUIRED.length)
+    // The eBPF floor is the reason the shape exists; requiring it by name keeps
+    // a later edit from satisfying the counts above with something else.
+    expect(builtinOnly.map(r => r.symbol)).toContain('CONFIG_BPF_JIT')
+  })
+
+  test('taking it out of the config fails the config check, by name', async () => {
+    await withHealthyRoot(async (fx) => {
+      editConfig(fx, 'CONFIG_BPF_JIT=y\n', '')
+      const got = await only(fx, CONFIG_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('CONFIG_BPF_JIT')
+      expect(got.message).toContain('no such line')
+      // The failure says what was lost, not just which string was missing.
+      expect(got.message).toContain('native compilation')
+    })
+  })
+
+  test('"is not set" is read as absent for the module-less shape too', async () => {
+    await withHealthyRoot(async (fx) => {
+      editConfig(fx, 'CONFIG_CGROUP_BPF=y', '# CONFIG_CGROUP_BPF is not set')
+      const got = await only(fx, CONFIG_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('CONFIG_CGROUP_BPF')
+    })
+  })
+
+  test('the modprobe check does not look it up, and says so instead of resolving it', async () => {
+    await withHealthyRoot(async (fx) => {
+      // The same mutation that turned the config check red above leaves this
+      // one green: the two checks are separate, and this one never had an
+      // opinion about a symbol with no object to find.
+      editConfig(fx, 'CONFIG_BPF_JIT=y\n', '')
+      const got = await only(fx, MODPROBE_ID)
+      expect(got.verdict).toBe('pass')
+      expect(got.message).toContain('BPF_JIT')
+      expect(got.message).toContain('build no object of their own')
+      // A module name conjured from a symbol that has none would show up here.
+      expect(got.message).not.toContain('undefined')
+      expect(got.message).not.toContain('bpf_jit=')
+    })
+  })
+
+  test('a module the firewall floor added is resolved like any other', async () => {
+    await withHealthyRoot(async (fx) => {
+      rmSync(join(fx.root, 'lib', 'modules', RELEASE, 'kernel/net/netfilter/x_tables.ko'))
+      expect((await only(fx, CONFIG_ID)).verdict).toBe('pass')
+      const got = await only(fx, MODPROBE_ID)
+      expect(got.verdict).toBe('fail')
+      // nft_compat names x_tables in its modules.dep line, so both the module
+      // itself and the dependent are reported.
+      expect(got.message).toContain('x_tables')
+      expect(got.message).toContain('MISSING')
+      expect(got.message).toContain('NFT_COMPAT depends on')
+    })
+  })
+})
+
+describe('the register and the shared fragment', () => {
+  // Two halves of ONE floor: the fragment is merged into a board kernel and
+  // asserted against the built .config, this register is asserted against
+  // Debian's built artefact. Free to disagree, they are two floors, and the
+  // board that is not the one you are looking at silently has the other.
+  const fragment = readFileSync(
+    join(REPO_ROOT, 'boards/common/mos-required.fragment'), 'utf8')
+  const pinned = fragment.split('\n')
+    .map(l => l.trim())
+    .filter(l => /^CONFIG_[A-Z0-9_]+=y$/.test(l))
+    .map(l => l.slice(0, l.indexOf('=')))
+
+  test('the fragment pins something at all', () => {
+    // Without this, an emptied or moved fragment makes the case below pass by
+    // comparing the register against nothing.
+    expect(pinned.length).toBeGreaterThanOrEqual(REQUIRED.length)
+  })
+
+  test('every symbol this check requires is pinned =y in the fragment', () => {
+    const missing = REQUIRED.map(r => r.symbol).filter(sym => !pinned.includes(sym))
+    expect(missing).toEqual([])
   })
 })
