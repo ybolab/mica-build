@@ -305,11 +305,10 @@ typecheck、test 和生产构建。`tests/apid-ui-build-contract-test.sh` 另外
 
 ```text
 /_ui/                             Overview                         [S]
-├── network                       Network 总览                    [S]
-│   ├── interfaces/:iface         接口配置与观测                  [A]
-│   ├── wifi                      已知 Wi-Fi 网络                  [A]
-│   └── wireguard/:iface          tunnel 与 peer                  [A]
-├── services                      Container / MQTT                 [S]
+├── network                       Network 总览（接口 / Wi-Fi / WireGuard 三个页内 tab） [S]
+│   └── :name                     接口详情：概览 / 寻址 / 危险操作 [S]
+├── services                      Container / MQTT / Web 终端       [S]
+│   └── :service                  服务详情与配置                   [S]
 ├── applications                  Applications 交互模拟            [P]
 │   ├── catalog                   精选应用目录                     [P]
 │   ├── activity                  安装与生命周期任务               [P]
@@ -324,18 +323,22 @@ typecheck、test 和生产构建。`tests/apid-ui-build-contract-test.sh` 另外
     ├── time                      NTP / timezone                   [P]
     ├── update                    更新状态机                       [P]
     ├── storage                   存储健康与容量                   [P]
-    ├── diagnostics               诊断快照与 support bundle        [P]
-    └── recovery                  回滚、恢复、重置                 [P]
+    └── diagnostics               诊断快照、support bundle 与技术支持 [P]
 ```
+
+System 只有六个页内 tab（常规 / 信息 / 时间 / 更新与恢复 / 存储 / 诊断），与已批准原型一致。
+原先的 recovery tab 已拆分：重置分级并入常规的电源区块，配置备份并入更新与恢复，支持访问并入
+诊断。`/_ui/system#recovery` 锚点解析到更新与恢复，不会落回第一个 tab。
+
 
 冒号参数必须使用路由库编码；SSID、WireGuard public key 等包含特殊字符的路径参数还必须经过
 `encodeURIComponent`，尤其 public key 可包含 `/`。
 
 ### 5.2 导航规则
 
-- 桌面与中屏：64 px Klein 蓝横向一级导航常驻；二级导航使用页面内 tabs。
+- 桌面与中屏：56 px Klein 蓝横向一级导航常驻（窄屏 52 px）；二级导航使用页面内 tabs。
 - 导航项在可用宽度降低时先隐藏图标；进入窄屏后改为右侧抽屉，不做第二套页面结构。
-- 手机/窄触屏（≤780 px）：标题和主操作纵向排列；表格允许带提示的横向滚动，主要表单单列。
+- 手机/窄触屏（≤580 px）：一级导航收进右侧抽屉，标题和主操作纵向排列；表格允许带提示的横向滚动，主要表单单列。中屏（581–1099 px）导航只保留图标。
 - 二级页面的 active 状态归属一级父项，例如 `/_ui/system/ui` 仍高亮 System。
 - Setup 和 Login 由 session 状态决定，不暴露为可收藏的独立管理路径。
 - 当前开发版本将 Applications 和 System 规划页加入导航以评审完整交互；它们只使用模拟层并在页底

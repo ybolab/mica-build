@@ -54,4 +54,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-065 Generate built-in UI assets during the build**](PLAN-065.md) `2026-09-02`
 - [x] [**PLAN-066 Isolate built-in UI build outputs**](PLAN-066.md) `2026-09-02`
 - [x] [**PLAN-067 Align the built-in console with the approved prototype details**](PLAN-067.md) `2026-09-02`
-- [-] [**PLAN-068 Complete the built-in console against the prototype information architecture**](PLAN-068.md) `2026-09-02`
+- [x] [**PLAN-068 Complete the built-in console against the prototype information architecture**](PLAN-068.md) `2026-09-02`
