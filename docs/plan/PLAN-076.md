@@ -449,6 +449,41 @@ not a test that has to keep up with it.
 The console carries the same facts (PLAN-072's C6 already has a console item;
 B extends it with the reporting switch, the buffer depth and the last send).
 
+### 6a. The switch defaults — CONFIRMED by the user, 2026-09-03
+
+§6 proposed two nested switches with reporting defaulting **on**, and asked. The
+user confirmed it, in two halves that are one statement:
+
+**Enabled means reporting.** If the device uses the cloud plane at all,
+`fleet.reporting` is on. §6's reasoning stands as recorded: the consent that
+matters was given by the flip that starts outbound connections at all, and the
+second switch exists to be turned *off* by a deployment that wants an inventory
+record without a telemetry feed.
+
+**Not enabled means nothing happens — and "nothing" is the literal
+requirement.** The off state is not "reports are suppressed", it is **no
+outward activity of any kind**: no registration, no report, no connection
+attempt, no retry timer, no name resolution of the baked URL, and no process
+holding an enrolment credential. §7's separate `fleetd.service` is what makes
+this expressible rather than aspirational — off is a unit that is not running,
+which an operator confirms with `systemctl is-active` and which leaves nothing
+to audit.
+
+**This is a testable claim and the backlog must treat it as one.** A negative
+test belongs beside the positive path: with the fleet switch off, over a window
+that spans more than one cadence interval and at least one boot, assert that the
+unit is inactive, that no socket to the baked host is opened and that the baked
+hostname is never resolved. A default-off feature whose off state was never
+observed is the shape this project has already been bitten by elsewhere — an
+absence is not a decision until something checks it.
+
+**One consequence for the operator surface.** `GET /api/v1/fleet/status` must
+still answer while the fleet switch is off, and must distinguish *off* from
+*enabled but failing*. The route is served by apid, which runs regardless; it
+reports the configured state without fleetd running. A status route that goes
+silent with the feature it describes cannot answer the only question an
+operator has in that state, which is "is this device talking to anyone".
+
 ### 7. Where it runs
 
 **A separate unit: `fleetd.service`, sibling to `mosd.service` and
