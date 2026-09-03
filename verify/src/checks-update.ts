@@ -38,6 +38,31 @@ const IDENTITY_PATH = '/usr/share/mos/release-identity.env'
 /** The keys `DeviceIdentity::from_env_file` requires, in the order it names them. */
 const IDENTITY_KEYS = ['BOARD', 'PROFILE', 'VERSION'] as const
 
+/**
+ * The fourth key the composition writes, which the update client does NOT
+ * read and mosd DOES: `COMMIT_DATE_KEY` in `pkgs/mosd/mosd/src/system_info.rs`,
+ * reported as `system.commitDate` by `GET /api/v1/system/info`.
+ *
+ * It is checked apart from `IDENTITY_KEYS` because it is required by a
+ * different consumer, and folding it in would make the client's refusal
+ * message name a key the client never asks for.
+ *
+ * Why an image must carry it: it is the ONLY date in a mos root that says
+ * anything about when the source was written. Every file time is pinned to
+ * `SOURCE_DATE_EPOCH`, which `build/src/geometry.ts` fixes to a constant, so
+ * an image without this key can only answer "when is this from?" with
+ * 2020-01-01 -- the same answer every mos image has ever given.
+ */
+const COMMIT_DATE_KEY = 'COMMIT_DATE'
+
+/**
+ * `git show -s --format=%cI`, which is what `rootfs/build.sh` puts in the
+ * file: a strict RFC 3339 instant with an offset or `Z`. The shape is checked
+ * and not just the presence, because `COMMIT_DATE=` parses as a present key
+ * with an empty value and would ship a surface reporting a blank date.
+ */
+const COMMIT_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/
+
 /** The image profile marker `mos-profile-<x>` ships. */
 const PROFILE_FILE = '/usr/lib/mos/profile.conf'
 
@@ -242,9 +267,27 @@ export const UPDATE_CHECKS: readonly CheckCase[] = [
           + `judge "newer than what is running" against a release this image is not`)
       }
 
+      const commitDates = valuesOf(text, COMMIT_DATE_KEY)
+      if (commitDates.length !== 1) {
+        return fail(
+          `${IDENTITY_PATH} states ${COMMIT_DATE_KEY} ${commitDates.length} times and exactly one `
+          + `belongs there. It is the date of the commit VERSION's +git stamp names, written by `
+          + `rootfs/compose/compose-install.sh, and it is the only date in this image that is not the `
+          + `pinned SOURCE_DATE_EPOCH -- without it mosd's system-information surface can report no `
+          + `date at all, and a second one would let it report whichever the parser kept`)
+      }
+      const commitDate = commitDates[0] as string
+      if (!COMMIT_DATE_SHAPE.test(commitDate)) {
+        return fail(
+          `${IDENTITY_PATH} states ${COMMIT_DATE_KEY}=${commitDate || '(nothing)'}, which is not the `
+          + `\`git show -s --format=%cI\` shape rootfs/build.sh writes. mosd reports this value `
+          + `verbatim as system.commitDate, so anything else is a date the console would show as one`)
+      }
+
       return [verdict('packed-release-identity', true,
-        `the release identity states BOARD=${board}, PROFILE=${profile} and VERSION=${version}, `
-        + `matching the verified board, ${PROFILE_FILE} and ${VERSION_ANCHOR} in ${MANIFEST_PATH}`)]
+        `the release identity states BOARD=${board}, PROFILE=${profile}, VERSION=${version} and `
+        + `${COMMIT_DATE_KEY}=${commitDate}, matching the verified board, ${PROFILE_FILE} and `
+        + `${VERSION_ANCHOR} in ${MANIFEST_PATH}`)]
     },
   },
 ]

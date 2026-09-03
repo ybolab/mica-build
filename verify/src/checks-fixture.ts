@@ -403,6 +403,7 @@ function seedHealthyRoot(root: string, board: Board): void {
     `BOARD=${board.name}`,
     'PROFILE=dev',
     `VERSION=${FIXTURE_POOL_VERSION}`,
+    `COMMIT_DATE=${FIXTURE_COMMIT_DATE}`,
     '',
   ].join('\n'))
 
@@ -1123,6 +1124,14 @@ export const FIXTURE_CA_CERT = '-----BEGIN CERTIFICATE-----\nfixture trust root\
  * an image.
  */
 export const FIXTURE_POOL_VERSION = '0.1.0+git0123456789ab-1'
+
+/**
+ * The commit date `rootfs/compose/compose-install.sh` records beside that
+ * version: `git show -s --format=%cI` for the commit the stamp above names.
+ * A literal here rather than a `git` call, so the fixture is one tree's worth
+ * of facts and not this checkout's.
+ */
+export const FIXTURE_COMMIT_DATE = '2026-08-30T18:40:27+08:00'
 
 export function packedRootFixture(board: Board): RootFixture {
   const dir = mkdtempSync(join(tmpdir(), 'mos-root-fixture-'))

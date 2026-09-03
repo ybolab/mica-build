@@ -47,18 +47,28 @@ ARG MOS_BOARD
 # The device identity the composition writes into the root:
 # /usr/share/mos/release-identity.env, which `rauc-update` reads to decide
 # which published release is for this device and whether one is newer than what
-# is running. Three per-build facts, so they arrive as arguments rather than
-# inside a package: one archive is built per architecture and installed into
-# images of several boards and profiles, and the version is the POOL's.
+# is running, and which mosd reads for the date it reports. Per-build facts, so
+# they arrive as arguments rather than inside a package: one archive is built
+# per architecture and installed into images of several boards and profiles,
+# and the version is the POOL's.
 #
 # MOS_RELEASE_VERSION is `bash build-env/deb/version.sh`'s answer for the tree
 # rootfs/build.sh composed from -- the same string it has already required
 # the pool to carry as its stamp -- so the identity and the packages beside it
-# name one commit. Neither has a default: composing an image whose identity
-# says nothing about which board it is for would install a client that selects
-# for no device, and it would do it green.
+# name one commit.
+#
+# MOS_RELEASE_COMMIT_DATE is `git show -s --format=%cI` for the commit INSIDE
+# that stamp, taken in rootfs/build.sh from the stamp itself rather than from
+# HEAD. It is the only date a composed root carries that is not the pinned
+# SOURCE_DATE_EPOCH below -- which is a constant, and therefore the same
+# instant in every image this repository has ever produced.
+#
+# None has a default: composing an image whose identity says nothing about
+# which board it is for would install a client that selects for no device, and
+# it would do it green.
 ARG MOS_PROFILE
 ARG MOS_RELEASE_VERSION
+ARG MOS_RELEASE_COMMIT_DATE
 
 # The upstream RAUC version, for /rootfs-report.rauc -- the one file the
 # finalizer's build report reads that no package payload carries. mos-rauc

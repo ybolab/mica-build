@@ -15,7 +15,7 @@ import { describe, expect, test } from 'bun:test'
 import { chmodSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
-import { FIXTURE_POOL_VERSION, packedRootFixture, type RootFixture } from './checks-fixture.ts'
+import { FIXTURE_COMMIT_DATE, FIXTURE_POOL_VERSION, packedRootFixture, type RootFixture } from './checks-fixture.ts'
 import { UPDATE_CHECKS } from './checks-update.ts'
 import type { CheckCase } from './checks.ts'
 import { boardEnvPath } from './paths.ts'
@@ -138,12 +138,56 @@ describe('the packaged update client', () => {
 })
 
 describe('the release identity the client selects against', () => {
-  test('the fixture identity passes, naming all three values', async () => {
+  test('the fixture identity passes, naming all four values', async () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(await verdictOf(fx, 'packed-release-identity')).toBe('pass')
       expect(await messageOf(fx, 'packed-release-identity'))
-        .toContain(`BOARD=cx3576, PROFILE=dev and VERSION=${FIXTURE_POOL_VERSION}`)
+        .toContain(`BOARD=cx3576, PROFILE=dev, VERSION=${FIXTURE_POOL_VERSION} and `
+          + `COMMIT_DATE=${FIXTURE_COMMIT_DATE}`)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  // COMMIT_DATE is the newest key in the file and the only one no update-client
+  // code path reads, so it is also the one an image can quietly lose: nothing
+  // in the boot, the install or the update refuses a root without it. What it
+  // costs is a system-information surface with no date at all, or -- before
+  // this key existed -- one reporting the pinned 2020-01-01 file epoch as the
+  // day the image was built, on every image ever built.
+  test('an identity with no COMMIT_DATE fails: the image can date itself only by the pinned epoch', async () => {
+    const fx = await mutated('packed-release-identity', root =>
+      writeFileSync(join(root, IDENTITY),
+        `BOARD=cx3576\nPROFILE=dev\nVERSION=${FIXTURE_POOL_VERSION}\n`))
+    try {
+      expect(await verdictOf(fx, 'packed-release-identity')).toBe('fail')
+      expect(await messageOf(fx, 'packed-release-identity')).toContain('states COMMIT_DATE 0 times')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a COMMIT_DATE with no value fails: a present key is not a date', async () => {
+    const fx = await mutated('packed-release-identity', root => setIdentity(root, 'COMMIT_DATE', ''))
+    try {
+      expect(await verdictOf(fx, 'packed-release-identity')).toBe('fail')
+      expect(await messageOf(fx, 'packed-release-identity')).toContain('which is not the')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a COMMIT_DATE that is not an RFC 3339 instant fails: mosd reports it verbatim', async () => {
+    const fx = await mutated('packed-release-identity', root =>
+      setIdentity(root, 'COMMIT_DATE', 'Mon Sep 1 12:34:56 2026 +0800'))
+    try {
+      expect(await verdictOf(fx, 'packed-release-identity')).toBe('fail')
+      expect(await messageOf(fx, 'packed-release-identity'))
+        .toContain('COMMIT_DATE=Mon Sep 1 12:34:56 2026 +0800')
     }
     finally {
       fx.dispose()
