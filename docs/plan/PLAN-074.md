@@ -448,23 +448,66 @@ stamp: this kernel does not carry the wall clock or the builder's hostname.
   install hooks there without depending on the package that reads them. The
   branch was dead code justified by a false premise and was reverted; the
   measurement is recorded at the site so the next reader does not re-derive it.
-- **A capability was lost, and it is named rather than absorbed.** The shared
-  floor's `CONFIG_LSM` list ends in `bpf`; Debian's amd64 kernel set
-  `CONFIG_BPF_LSM=y` and neither this kernel nor cx3576's vendor kernel does, so
-  the booted machine says `bpf-restrict-fs: BPF LSM hook not enabled in the
-  kernel, BPF LSM not supported` — as cx3576 always has. x64 lost a capability
-  and gained agreement with the board that ships, which is what x64 is for.
-  Nothing in this tree uses `RestrictFileSystems=`, the hook's only consumer, so
-  the cost today is one journal line. **It is not switched on**: on this board
-  alone it would re-create the divergence, and in the shared floor it would
-  require a symbol of a vendor tree this work cannot build and boot. Flagged for
-  whoever owns the LSM floor.
+- **A capability was lost, and it is ONE item with PLAN-073's, not two.** The
+  shared floor's `CONFIG_LSM` ends in `bpf`; Debian's amd64 kernel set
+  `CONFIG_BPF_LSM=y` and neither this kernel nor cx3576's does, so the booted
+  machine says `bpf-restrict-fs: BPF LSM hook not enabled`. x64 lost a
+  capability and gained agreement with the board that ships. PLAN-073 *Left
+  owed* reached the same conclusion from the other side and carries the
+  analysis -- the 6.1 dependency chain, why nothing in the image uses the hook,
+  and that it is now unblocked on cx3576 by that task's `BPF_JIT`. It is not
+  restated here; the flag lives at the LSM assertion in
+  `boards/x64/bsp/kernel/Dockerfile` and the decision is PLAN-073's to close.
 - **§5's `checks-kernel.ts` rework went further than "provenance".** Requiring
   the shipped config to declare the floor `=y` *is* the provenance check --
   Debian's amd64 config has twelve of those as `=m` and `CONFIG_DM_INIT` nowhere
   -- and it needs no second copy of the normaliser to compare against the
   recorded file. The resolution check tightened from "resolves" to "resolves as
   builtin" in the same move.
+
+### 7d. The merge with PLAN-073, and what it changed here
+
+PLAN-073 (`bkd/yp3us6yw`) landed first with the eBPF, firewall and bridge floor.
+Two sessions picked the same identifiers within a minute; this record is
+renumbered and theirs keeps PLAN-073/RFCT-294. The merge was semantic, not
+textual:
+
+- **`checks-kernel.ts` took the union of both registers.** Theirs is 25 symbols
+  with an optional `module`, a `RESOLVABLE` half modprobe is asked about, and a
+  `BUILTIN_ONLY` half the modprobe check names as skipped. That mechanism
+  subsumes the `CONFIG_ONLY` list this plan had invented for `CONFIG_DM_INIT`,
+  so the five boot-floor symbols joined `REQUIRED` in their shape and the
+  separate list went away. **30 symbols, 21 resolvable, 9 module-less.** The
+  acceptance stayed this plan's: `=y` and `builtin`, not `=y`-or-`=m` and
+  "resolves".
+- **The modprobe check would have gone hollow, and does not.** With every floor
+  symbol builtin, no required name reaches `resolveModule`'s missing-object
+  branch -- the sharpest thing that check did. Restricting the walk to the floor
+  would have left it green forever having stopped looking. It is applied to the
+  WHOLE of `modules.dep` instead, whose subjects are the modules this kernel
+  really ships (12 of them). What still distinguishes the two checks is that
+  they read different artefacts made by different steps: `/boot/config-*` is
+  what the kernel was configured with, `modules.builtin` is what Kbuild
+  generated and `modules_install` laid down, and a config that says `=y` beside
+  an index that does not name the symbol is a root packed wrong.
+- **`boards/common/mos-required.fragment` took THEIRS wholesale.** This plan had
+  bulk-moved 34 symbols out of the cx3576 loop; theirs is the narrower, reasoned
+  set that deliberately excludes the legacy `IP_NF_*` back-end, the
+  per-extension xt matches and targets, and `NF_NAT_MASQUERADE`. Their file also
+  records a hazard this plan's block would have tripped: `merge_config.sh` greps
+  the whole file for each symbol it merges, so a COMMENT naming a symbol is
+  reported as part of that symbol's value.
+- **The cx3576 loop was recomputed, not hand-edited.** Keep = the original 54
+  minus the merged fragment's set = **35**, so the 22 symbols the floor
+  deliberately does not carry stay asserted where they always were. Dropping
+  them silently was the regression this reduction could most easily have caused.
+- **x64 needed two parents the shared floor does not pin.** The merged floor's
+  `CONFIG_BRIDGE_NETFILTER` depends on `NETFILTER_ADVANCED`, which
+  `x86_64_defconfig` leaves off -- and olddefconfig then drops the child from the
+  config entirely rather than writing `is not set`. The x64 build's own fragment
+  loop caught it by name. `CONFIG_NETFILTER` and `CONFIG_NETFILTER_ADVANCED` are
+  in the BOARD fragment, not the shared one: they are what this board's starting
+  point happens to lack, not something the product requires.
 
 ## Risks
 
