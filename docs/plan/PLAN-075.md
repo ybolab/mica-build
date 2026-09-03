@@ -1,6 +1,6 @@
 # PLAN-075 Ship `iptables` in the base image, with no policy
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-03 19:40
 - **approvedAt**: 2026-09-03 19:40 (the request itself; see *Approval boundary*)
 - **relatedTask**: RFCT-296
@@ -221,3 +221,84 @@ Seven files: one control file, three verify sources (two new), one verify test
   persistence and policy surface, exactly what this task excludes, so putting
   the package in the base means deciding about that unit's enablement in the
   same change. It is not in this diff because it was not asked for.
+
+## Outcome
+
+Delivered as proposed, with two corrections the measurements forced and one
+message fix the composed image forced.
+
+**What shipped.** `iptables` in `mos-system`'s `Depends` with a description
+paragraph naming what it is and is not; `verify/src/checks-iptables.ts` with
+`packed-iptables-present` and `packed-iptables-nft-backend`; the alternatives
+chain seeded into `packedRootFixture` in the four-hop shape the composed root
+really has; thirteen tests in `verify/src/checks-iptables.test.ts`, four of them
+driving a check red and one of them proving the chain is not resolved against
+the verifier host; and section 5.1 of `docs/user/security.md` with its Chinese
+mirror.
+
+**Verification, at this branch.**
+
+| gate | result |
+|---|---|
+| `make os-debs` (both architectures) | exit 0, 16 archives per pool |
+| `bash tests/deb-package-gate.sh` | PASS 264/264 |
+| `bash tests/install-closure-gate.sh` | PASS 99/99, 14 clean roots, 2 architectures |
+| composed x64 image + `bash verify/run.sh --verify --board x64` | PASS 309/309, 22 skipped |
+| `bash verify/run.sh` | PASS, whole suite |
+| `bash build/run.sh` | PASS 869/869 |
+| `make docs-verify` | PASS across all five checkers |
+
+The two new conclusions on the real image read:
+
+    PASS: iptables is executable in the packed root: /usr/sbin/iptables ->
+      /etc/alternatives/iptables -> /usr/sbin/iptables-nft ->
+      /usr/sbin/xtables-nft-multi, mode 0755, 228768 bytes
+    PASS: the iptables alternatives group is the nf_tables front-end: all of
+      iptables, iptables-save, iptables-restore end at xtables-nft-multi ...
+      /usr/sbin/xtables-legacy-multi ships beside it, from the same Debian
+      package, and nothing resolves to it
+
+**Three corrections, each from a measurement rather than a re-reading.**
+
+1. The closure is six packages and 2768 KiB on the shipped image, not seven and
+   3012 -- `libnftnl11` arrives with `nftables` and `nftables` arrives with
+   `mos-podman`. Both numbers are in the package description, each labelled with
+   the image it is true of.
+2. "No rule file anywhere in the image" was false: `/etc/nftables.conf` and
+   `nftables.service` are in the composed root, from the same `nftables`
+   package. Neither is enabled -- no `.wants` link names the unit and neither
+   shipped preset enables it -- so nothing runs them, and the operator page says
+   that rather than claiming the files are absent.
+3. `packed-iptables-nft-backend` first reported
+   `/usr/sbin/xtables-legacy-multi /sbin/xtables-legacy-multi`, two names for
+   one inode on a usr-merged root, which reads as two legacy binaries. Deduped
+   by `(dev, ino)`, with a test that seeds the `/sbin` link.
+
+**One observation worth keeping**, from `tests/install-closure-gate.sh`'s
+transcript of the postinst:
+
+    update-alternatives: using /usr/sbin/iptables-legacy to provide
+      /usr/sbin/iptables (iptables) in auto mode
+    update-alternatives: using /usr/sbin/iptables-nft to provide
+      /usr/sbin/iptables (iptables) in auto mode
+
+Both front-ends are registered in one transaction and the group is pointed at
+legacy first and then at nft, because priority decides and nft's is higher. Only
+the final state ships; but the intermediate is a real state the package passes
+through, and it is the reason the second check asserts the endpoint rather than
+trusting that "trixie means nft".
+
+**What was NOT done.** No rule set, no policy, no `netfilter-persistent`, no
+save/restore unit, no API, no console surface, and `nftables` was not moved out
+of `mos-podman`. RFCT-296's Notes say the same thing in the same words, because
+"the image ships iptables" is a sentence that reads as a firewall to anyone who
+does not read the next one.
+
+**Build inputs borrowed, disclosed.** This worktree is a fresh checkout, so
+three gitignored artefact trees were reused rather than rebuilt:
+`pkgs/podman/out-{amd64,arm64}` and `pkgs/rauc/out-{amd64,arm64}` copied from
+`/srv/mos` after `pkgs/podman/versions-stamp.sh --check` accepted both, and
+`BOARD_DIR=/srv/mos/boards/cx3576/bsp` for the cx3576 kernel, dtb, modules and
+u-boot that `make os-debs` and the package gate's reproducibility rebuild need.
+Nothing was written into `/srv/mos`. The x64 half -- the composition, the image
+and the verifier run -- reads none of those inputs.
