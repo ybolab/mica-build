@@ -78,7 +78,7 @@
 | `../user/security.md` | 00a5147d | current |
 | `../user/storage.md` | 00a5147d | current |
 | `../user/support.md` | 00a5147d | current |
-| `../user/troubleshooting.md` | 00a5147d | current |
+| `../user/troubleshooting.md` | 50b85a5e | current |
 | `../user/update-rollback.md` | 00a5147d | current |
 | `../website/contract.md` | db66fc02 | not-translated |
 | `../website/documentation.md` | db66fc02 | not-translated |
