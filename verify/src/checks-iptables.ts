@@ -213,16 +213,26 @@ export const IPTABLES_CHECKS: readonly CheckCase[] = [
           ? `${r.name} is not on PATH`
           : `${r.name} ends at ${endpointName(r.chain) === '' ? 'nothing' : endpointName(r.chain)} `
             + `(${spell(r.chain)})`))
-      const legacy = PATH_DIRS
-        .map(dir => `${dir}/${LEGACY_MULTI}`)
-        .filter((p) => {
-          try {
-            return statSync(join(root, p)).isFile()
-          }
-          catch {
-            return false
-          }
-        })
+      // DEDUPED BY INODE, because this root is usr-merged: /sbin is a symlink
+      // to usr/sbin, so a plain sweep of PATH_DIRS reports
+      // "/usr/sbin/xtables-legacy-multi /sbin/xtables-legacy-multi" and reads
+      // as two legacy binaries in an image that has one.
+      const seen = new Set<string>()
+      const legacy: string[] = []
+      for (const dir of PATH_DIRS) {
+        const path = `${dir}/${LEGACY_MULTI}`
+        try {
+          const st = statSync(join(root, path))
+          if (!st.isFile()) continue
+          const identity = `${st.dev}:${st.ino}`
+          if (seen.has(identity)) continue
+          seen.add(identity)
+          legacy.push(path)
+        }
+        catch {
+          continue
+        }
+      }
       if (faults.length > 0) {
         return [verdict('packed-iptables-nft-backend', false,
           `the iptables alternatives group is not the nf_tables front-end: ${faults.join('; ')}. `

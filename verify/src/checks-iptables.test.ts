@@ -217,6 +217,24 @@ describe('which of the two front-ends the group selects', () => {
     }
   })
 
+  test('a usr-merged root names the legacy binary ONCE, not once per path', async () => {
+    // The shipped root has /sbin as a symlink to usr/sbin, so /usr/sbin/... and
+    // /sbin/... are two names for one file. A sweep that reported both read as
+    // two legacy binaries in an image that has one, which is the wrong number
+    // in a verdict about which front-ends are present.
+    const fx = packedRootFixture(cx3576)
+    try {
+      symlinkSync('usr/sbin', join(fx.root, 'sbin'))
+      expect(await verdictOf(fx, 'packed-iptables-nft-backend')).toBe('pass')
+      const message = await messageOf(fx, 'packed-iptables-nft-backend')
+      expect(message.split('xtables-legacy-multi').length - 1).toBe(1)
+      expect(message).toContain('/usr/sbin/xtables-legacy-multi ships beside it')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
   test('a group set to legacy fails, naming what it ends at', async () => {
     // `update-alternatives --set iptables /usr/sbin/iptables-legacy`, which
     // leaves an executable iptables in the image writing to the old xtables
