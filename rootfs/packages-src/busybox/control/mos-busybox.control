@@ -1,0 +1,43 @@
+Package: mos-busybox
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: mos build <mos@example.invalid>
+Section: admin
+Priority: optional
+Depends: ${shlibs:Depends}
+Description: emergency BusyBox binary, unexpanded
+ One file: /usr/bin/busybox, Debian's own binary for this architecture, taken
+ out of the busybox archive of the pinned trixie base without installing it.
+ An operator whose normal userland is damaged reaches an applet by NAMING it --
+ `busybox sh`, `busybox ls`, `busybox mount` -- and that is the whole interface
+ this package offers.
+ .
+ NO APPLET LINKS ARE SHIPPED AND NONE IS GENERATED. Not in /usr/bin, not in a
+ directory of their own, not at any point in PATH. Two hundred and seventy
+ applet names in PATH would silently re-decide what `ls`, `tar`, `mount` and
+ `sh` mean for every script in this image and in the verifier, and the semantics
+ differ from GNU's in ways a passing build does not see. The GNU tools this
+ image ships stay the command set; this binary is a diagnostic tool beside
+ them, and `verify/`'s busybox family asserts exactly that against the packed
+ root.
+ .
+ Debian's own busybox package is NOT depended on and NOT installed, and the
+ difference is not packaging taste. That package ships
+ /usr/share/initramfs-tools/hooks/zz-busybox and a conf-hooks.d fragment which
+ together copy busybox into the initramfs AND build a hard-link farm of every
+ applet inside it. Both are precisely what this package exists not to do, and
+ on x64 the kernel package's postinst would have run the hook during the
+ compose. Unpacking the archive and keeping one file is what makes the image's
+ early boot independent of this binary rather than merely believed to be.
+ .
+ NOTHING MAY DEPEND ON THIS PACKAGE. No unit names it, no initramfs hook, no
+ generator, no script in the overlay -- a fallback that a normal service comes
+ to rely on is no longer an emergency tool but part of the boot contract, and
+ it would be one nobody tested. This package is a leaf on purpose.
+ .
+ It is dynamically linked, which is Debian's build and is deliberate: it links
+ the same libc the rest of the image does, so it is one binary rather than a
+ second C library in the root. The cost is stated rather than papered over --
+ a system damaged badly enough to lose /lib is damaged badly enough to lose
+ this too. This package is not a rescue environment and does not promise one;
+ that is a separate design.

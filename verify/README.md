@@ -410,7 +410,8 @@ src/layout.ts       the board definition walked into the table it describes
 src/boot-slots.ts   the two boot slots, and where each one's filesystem begins
 src/checks.ts       the check register, and what a check is handed
 src/checks-*.ts     the check families: GPT, boot slots, RAUC, ext4, root, cmdline, boot chain,
-                    D-Bus, engine, fstab, home, MQTT, shadow, shape, connd, system, board
+                    D-Bus, engine, fstab, home, MQTT, shadow, shape, connd, system, board,
+                    busybox
 src/checks-fixture.ts  a synthetic image, for driving a check RED
 src/script-commands.ts the commands a shell script invokes, and whether each resolves in the root
 src/verdict.ts      how a check spells its conclusion

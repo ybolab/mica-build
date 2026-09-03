@@ -29,6 +29,7 @@ import {
 } from './image.ts'
 import { BOARD_CHECKS } from './checks-board.ts'
 import { BOOTCHAIN_CHECKS } from './checks-bootchain.ts'
+import { BUSYBOX_CHECKS } from './checks-busybox.ts'
 import { CMDLINE_CHECKS_ALL } from './checks-cmdline.ts'
 import { SHAPE_CHECKS_ALL } from './checks-shape.ts'
 import { CONND_CHECKS } from './checks-connd.ts'
@@ -148,6 +149,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...RAUC_CHECKS,
   ...RAUC_UNIT_CHECKS,
   ...ROOT_CHECKS,
+  ...BUSYBOX_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
   ...MQTT_CHECKS,

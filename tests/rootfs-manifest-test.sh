@@ -146,11 +146,15 @@ board_radios() {
 CX_RADIOS="$(board_radios cx3576)"
 X64_RADIOS="$(board_radios x64)"
 
-CX_DEV="mos-apid mos-bluetooth mos-board-cx3576 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-X64_DEV="mos-apid mos-board-x64 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
-X64_PROD="mos-apid mos-board-x64 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
-CX_MINIMAL="mos-board-cx3576 mos-ca-trust mos-profile-dev mos-system"
+# mos-busybox is in EVERY set below, including CX_MINIMAL, and that is what
+# rootfs/packages/common.pkgs holding it means: the emergency binary is not
+# declinable, because the build that declined it is the image an operator is
+# holding when they need it (RFCT-281).
+CX_DEV="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
+CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
+X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
+X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
+CX_MINIMAL="mos-board-cx3576 mos-busybox mos-ca-trust mos-profile-dev mos-system"
 
 expect_set "cx3576 dev, radios '${CX_RADIOS}', nothing declined" "${CX_DEV}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without ""
@@ -181,8 +185,8 @@ fi
 # Declining ONE radio keeps the other: wifi and bluetooth are independent
 # decline tokens, which is the whole point of the split -- the retired umbrella
 # token dropped both together.
-CX_NO_BT="mos-apid mos-board-cx3576 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-CX_NO_WIFI="mos-apid mos-bluetooth mos-board-cx3576 mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
+CX_NO_BT="mos-apid mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
+CX_NO_WIFI="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
 expect_set "cx3576 dev, --without bluetooth keeps Wi-Fi" "${CX_NO_BT}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "bluetooth"
 expect_set "cx3576 dev, --without wifi keeps Bluetooth" "${CX_NO_WIFI}" \

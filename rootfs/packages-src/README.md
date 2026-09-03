@@ -239,6 +239,7 @@ to know that one of its packages was filed under arm64.
 | `wifi` | `mos-wifi`, `mos-wifi-ap` | `all` |
 | `bluetooth` | `mos-bluetooth` | `all` |
 | `ca-trust` | `mos-ca-trust` | `all` |
+| `busybox` | `mos-busybox` | `amd64 arm64` |
 | `board-x64` (`boards/x64/deb/board-x64`) | `mos-board-x64` | `amd64` |
 | `board-cx3576` (`boards/cx3576/deb/board-cx3576`) -- stages its BSP inputs through `PREPARE` | `mos-board-cx3576` | `arm64` |
 
@@ -306,6 +307,41 @@ spent on the one copy it can still speak about and then deleted;
 reason no package here declares one: the root is an immutable dm-verity
 squashfs, and a `conffiles` entry would promise dpkg a merge that cannot
 happen. No `Depends`, no maintainer scripts, no enablement links.
+
+### `busybox`
+
+One file: `/usr/bin/busybox`, Debian's own binary for the target architecture,
+plus its `copyright`. `amd64 arm64` and not `all` because that binary is an
+ELF -- the only producer in this directory with one -- so `dpkg-shlibdeps`
+resolves its libc against the architecture it will run on and the harvest stage
+runs at the target platform.
+
+The archive is `apt-get download`ed and `dpkg-deb -x`ed, never installed, and
+that is the producer's whole reason to exist rather than a `Depends: busybox`.
+Debian's package also ships `/usr/share/initramfs-tools/hooks/zz-busybox`, which
+copies the binary into the initramfs and hard-links every applet name beside it,
+and the `conf-hooks.d` fragment that turns the hook on. On x64 the kernel
+package's postinst runs `update-initramfs` during the compose, so a dependency
+would have produced an initrd holding busybox and 270-odd applet links -- the two
+things RFCT-281 exists to prevent -- as a side effect nobody would have read.
+Unpacking runs no maintainer script and installs no trigger, so what lands is
+exactly what the Dockerfile names.
+
+The build asserts what it took: the archive ships no link of its own, the binary
+names an `ld-linux` interpreter and RUNS (it is executed at the target
+architecture and asked for its applet list), and the staged tree is exactly two
+files with no symlink and no hard link. `verify`'s busybox family makes the
+image-side half of the same statement, and `rootfs/scripts/pack-export-boot.sh`
+makes it about the initrd that ships.
+
+The copyright is composed and does not use the shared file below: the payload is
+GPL-2 and mos wrote none of it. busybox's own `copyright` is reproduced verbatim,
+the `/usr/share/common-licenses/GPL-2` it points at is appended after it -- the
+image does not ship that directory, and the ruling `ca-trust` records applies:
+a licence's text is not rewritten to make a pointer resolve -- and the header
+names the exact upstream version the binary was taken from, because the package
+version carries the pool's git stamp and a source request needs to know which
+busybox.
 
 ## `copyright`
 

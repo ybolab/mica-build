@@ -4,3 +4,12 @@
 # account, and a root with no mos-ca-trust cannot verify a TLS peer.
 mos-system
 mos-ca-trust
+
+# The emergency binary, and it is in `common` rather than a feature set on
+# purpose. Every other manifest family is declinable -- a feature can be left
+# out with --without, a radio with the board that has none -- and a tool an
+# operator reaches for when the normal userland is damaged is worth nothing if
+# the image in their hands is the build that declined it. It costs one 830 KB
+# file, it enables nothing, nothing depends on it, and it changes no PATH; the
+# whole of it is /usr/bin/busybox, reached by naming an applet.
+mos-busybox

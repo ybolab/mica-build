@@ -68,7 +68,45 @@ wpa_supplicant 与 resolved 此刻实际观察到的状态，也就是"设备认
 
 > status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-health`, `docs/design/containers.md`, `pkgs/mosd/apid/openapi.json`
 
-## 4. 读懂构建与验证的拒绝
+## 4. 当某个正常命令缺失或损坏时
+
+镜像里带了一个应急二进制 `/usr/bin/busybox`，除此之外什么都没变：镜像中
+任何位置都没有 applet 链接，没有新增 PATH 条目，每个 GNU 命令都仍然解析到
+它原来的位置。用点名的方式调用 applet——
+
+```sh
+busybox sh
+busybox ls -l /mos
+busybox mount
+busybox --list          # 本构建提供的全部 applet
+```
+
+——这就是全部接口。如果某次修复确实需要 applet 表现得像普通命令（比如脚本
+调用 `ls`，而坏掉的正是 coreutils），那就**临时**创建这些链接，并且只把那个
+目录加进那一个 shell 的 PATH：
+
+```sh
+mkdir -p /run/mos-toolbox
+busybox --install -s /run/mos-toolbox
+PATH=/run/mos-toolbox:$PATH busybox sh
+```
+
+`/run` 是 tmpfs，所以这些链接在下次启动时消失，那个 shell 之外的任何东西都
+看不到它们。
+
+**永远不要建立持久的链接农场。**根是只读的 dm-verity squashfs，往 `/usr/bin`
+里写本来就会失败；而在能写成功的地方同样拒绝，是因为 PATH 里的 applet 名字
+会悄悄重新决定 `ls`、`tar`、`mount`、`sh` 对设备上每个脚本意味着什么，而
+BusyBox 的 applet 选项更少、行为也与 GNU 版本不同。
+
+**仅用于诊断，也不是救援环境。**这些 applet 不是受支持的命令 API：设备上的
+单元、脚本和自动化都不得依赖它们，镜像验证会断言确实没有依赖。该二进制与其他
+一切动态链接到同一个 libc，所以一个坏到连 `/lib` 都没了的系统同样失去了它——
+到那一步答案是 [recovery.md](recovery.md)，而不是一个 shell。
+
+> status: shipped — evidence: `rootfs/packages-src/busybox`, `verify/src/checks-busybox.ts`, `docs/design/recovery.md`
+
+## 5. 读懂构建与验证的拒绝
 
 现场操作员会在两个地方遇到构建系统：产出台架镜像，和验证已刷写的镜像。
 mos 工具链选择大声、点名地拒绝而不是降级运行，所以拒绝文本就是诊断：
@@ -87,7 +125,7 @@ mos 工具链选择大声、点名地拒绝而不是降级运行，所以拒绝�
 
 > status: shipped — evidence: `docs/design/build.md`, `make os-verify-cx3576`
 
-## 5. 支持快照
+## 6. 支持快照
 
 `POST /api/v1/diagnostics/snapshots` 采集一份有边界、经过脱敏的 JSON 文档——
 发布版与系统信息、启动与更新状态、本次启动 warning 及以上的 journal 摘录、
@@ -115,7 +153,7 @@ mos 工具链选择大声、点名地拒绝而不是降级运行，所以拒绝�
 
 > status: shipped — evidence: `docs/design/diagnostics.md`, `pkgs/mosd/apid/openapi.json`
 
-## 6. 何时停止诊断
+## 7. 何时停止诊断
 
 两个槽都耗尽、陷入重启循环的设备，或凭据已丢失的设备，已经超出故障排查
 的范围：去 [recovery.md](recovery.md)，并先捕获你还能拿到的证据。

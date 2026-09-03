@@ -33,7 +33,7 @@ missing named. The *repair tier* (§6.2) is still [proposed], and §4's own half
 names and §8 carries as bench-dependent.
 
 Sections without a marker (§1, §6, §7) state principles and limits rather than
-one mechanism — §6's two subsections carry their own.
+one mechanism — §6's subsections carry their own.
 
 ## 1. The boundary this design inherits, and what recovery may therefore claim
 
@@ -974,6 +974,66 @@ What repair **may not** touch, ever:
 - The booted slot's mark. Repair never marks the running slot `good`: that is
   the health gate's statement about a boot, and a repair tool asserting it
   would confirm a system nobody validated.
+
+### 6.3 The emergency BusyBox binary — **[implemented]**
+
+§6.2's first bullet says the offline repair tier depends on a recovery
+environment nobody has built, and that is still true. What the image now carries
+is smaller and is deliberately not that: **one binary at `/usr/bin/busybox`**,
+shipped by `mos-busybox` (`rootfs/packages-src/busybox/`), named in
+`rootfs/packages/common.pkgs` so that every image on every board has it.
+
+**What it is.** A tool an operator reaches for when a normal command is missing
+or broken — `busybox sh` when the shell will not start, `busybox ls`,
+`busybox mount` when coreutils or util-linux is the damaged thing. An applet is
+reached by NAMING it, and that is the whole interface.
+
+**What it is not**, and each of these is asserted rather than promised:
+
+- **Not an applet farm.** No BusyBox applet link exists anywhere in the image —
+  symlink or hard link — and `verify/`'s `packed-busybox-unexpanded` walks the
+  whole packed root to say so, driven red from a fixture carrying one.
+  `rootfs/packages-src/busybox/Dockerfile` makes the stronger, upstream half of
+  the same statement: the staged payload is exactly the binary and its
+  copyright, so no link can reach an image at all.
+- **Not a PATH change and not `/build/bin`.** PLAN-045's rejected alternative 1
+  was applets under `/build/bin` at the end of PATH; `packed-busybox-no-path-change`
+  refuses both the directory and any PATH source naming BusyBox. An applet that
+  resolves without being asked for by name has replaced a GNU command for every
+  script on the device, and BusyBox applets take fewer options and differ in
+  behaviour from their GNU counterparts.
+- **Not an initramfs or init dependency.** Debian's own `busybox` package ships
+  the initramfs hook that copies the binary into the initrd and hard-links every
+  applet beside it; this package unpacks that archive and keeps one file, so the
+  hook never arrives. `packed-busybox-not-early-boot` asserts no initramfs hook,
+  no `BUSYBOXDIR`, and no unit, generator, preset or `/usr/lib/mos` script naming
+  it, and `rootfs/scripts/pack-export-boot.sh` asserts the same over the initrd
+  that actually ships. A tool early boot depends on is part of the boot contract,
+  not an emergency tool — and it would be a part nobody qualified.
+- **Not a rescue environment.** It is dynamically linked against the same libc
+  as everything else, which is PLAN-045's stated cost: a system damaged badly
+  enough to lose `/lib` has lost this too. A static rescue binary is PLAN-045's
+  alternative 3 and stays **deferred** to the recovery environment §6.2's first
+  bullet needs; this section does not claim to be it.
+
+**Transient links, when a repair needs them.** A script that calls `ls` while
+coreutils is what is broken needs the applets to look like commands. The
+sanctioned form creates them in tmpfs and puts only that directory on that one
+shell's PATH:
+
+```sh
+mkdir -p /run/mos-toolbox
+busybox --install -s /run/mos-toolbox
+PATH=/run/mos-toolbox:$PATH busybox sh
+```
+
+`/run` is tmpfs, so the links are gone at the next boot and nothing outside that
+shell sees them. A persistent farm is refused twice over: the root is a read-only
+dm-verity squashfs and cannot hold one, and the reason it is also refused
+wherever it could be written is the shadowing above. The operator-facing form of
+all of this is `docs/user/troubleshooting.md` §4, which labels the applets
+diagnostic-only — they are not a supported command API, and nothing on the
+device may depend on them.
 
 ## 7. What no software path recovers
 

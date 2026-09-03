@@ -82,7 +82,50 @@ escalation carrying the board identity, never a green result.
 
 > status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-health`, `docs/design/containers.md`, `pkgs/mosd/apid/openapi.json`
 
-## 4. Reading build and verify refusals
+## 4. When a normal command is missing or broken
+
+The image carries one emergency binary, `/usr/bin/busybox`, and it changes
+nothing else: there are no applet links anywhere in the image, no PATH entry was
+added, and every GNU command resolves exactly where it did before. Reach an
+applet by naming it —
+
+```sh
+busybox sh
+busybox ls -l /mos
+busybox mount
+busybox --list          # every applet this build offers
+```
+
+— and that is the whole interface. If a repair genuinely needs the applets to
+look like ordinary commands (a script that calls `ls` when coreutils is the
+thing that is broken), create the links **transiently** and put only that
+directory on that one shell's PATH:
+
+```sh
+mkdir -p /run/mos-toolbox
+busybox --install -s /run/mos-toolbox
+PATH=/run/mos-toolbox:$PATH busybox sh
+```
+
+`/run` is tmpfs, so the links are gone at the next boot and nothing outside that
+shell ever sees them.
+
+**Never build a persistent link farm.** The root is a read-only dm-verity
+squashfs, so writing one into `/usr/bin` fails anyway; it is refused where it
+would succeed because an applet name in PATH silently re-decides what `ls`,
+`tar`, `mount` and `sh` mean for every script on the device, and BusyBox applets
+take fewer options and differ in behaviour from their GNU counterparts.
+
+**Diagnostic only, and not a rescue environment.** These applets are not a
+supported command API: no unit, script or automation on the device may depend on
+them, and the image verification asserts that none does. The binary is
+dynamically linked against the same libc as everything else, so a system damaged
+badly enough to lose `/lib` has lost this too — at that point the answer is
+[recovery.md](recovery.md), not a shell.
+
+> status: shipped — evidence: `rootfs/packages-src/busybox`, `verify/src/checks-busybox.ts`, `docs/design/recovery.md`
+
+## 5. Reading build and verify refusals
 
 A field operator meets the build system in two places: producing a bench image
 and verifying a flashed one. mos tooling refuses loudly and by name instead of
@@ -104,7 +147,7 @@ artifacts that pass everything and fail on hardware.
 
 > status: shipped — evidence: `docs/design/build.md`, `make os-verify-cx3576`
 
-## 5. The support snapshot
+## 6. The support snapshot
 
 `POST /api/v1/diagnostics/snapshots` collects one bounded, redacted JSON
 document — release and system information, boot and update state, this boot's
@@ -138,7 +181,7 @@ reboot — each branching on the snapshot member that decides it.
 
 > status: shipped — evidence: `docs/design/diagnostics.md`, `pkgs/mosd/apid/openapi.json`
 
-## 6. When to stop diagnosing
+## 7. When to stop diagnosing
 
 A device in a reboot loop with both slots exhausted, or one whose credentials
 are lost, is past troubleshooting: go to [recovery.md](recovery.md), and

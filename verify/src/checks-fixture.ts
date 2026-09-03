@@ -370,13 +370,19 @@ function seedHealthyRoot(root: string, board: Board): void {
 
   // --- the shipped bill of materials, one git stamp across its mos rows ---
   //
-  // Two Debian rows and two mos rows: the check counts both and asserts the
+  // Two Debian rows and three mos rows: the check counts both and asserts the
   // stamp over the mos rows only, so a fixture of only mos packages would
   // leave the "Debian rows are not stamped" half of that rule untested.
+  //
+  // mos-busybox is among them because it is what `packed-busybox-in-manifest`
+  // reads: the binary in the root and the row here are one fact, and a file that
+  // arrived outside the package system would be in the image with no row -- so
+  // the fixture has to be able to hold the two apart.
   file('/usr/share/mos/manifest.tsv', [
     '#package\tversion\tarchitecture',
     'libc6\t2.41-12\tamd64',
     'mos-podman\t5.8.6+git0123456789ab-1\tamd64',
+    `mos-busybox\t${FIXTURE_POOL_VERSION}\tamd64`,
     `mos-system\t${FIXTURE_POOL_VERSION}\tall`,
     'systemd-timesyncd\t257.7-1\tamd64',
     'zstd\t1.5.7+dfsg-2\tamd64',
@@ -418,6 +424,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   seedConnd(root, board, file)
   seedShadow(root, file)
   seedMqtt(root, file)
+  seedBusybox(root, file)
   seedBoardShape(root, board, file)
   // LAST: it prepends an ELF header to the two daemons seeded above and writes
   // the ssh.service the shadow family also touches, so it has to see their
@@ -504,6 +511,57 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
   file('/etc/ssl/certs/ca-certificates.crt',
     `${Array.from({ length: PURGE_THRESHOLD }, (_v, i) =>
       `-----BEGIN CERTIFICATE-----\ncert${i}\n-----END CERTIFICATE-----`).join('\n')}\n`)
+}
+
+// RFCT-281: the emergency BusyBox binary, and the shape around it
+
+/**
+ * The binary, the GNU commands it must not have shadowed, the files that decide
+ * PATH, and the initramfs-tools tree.
+ *
+ * THE INITRAMFS FILES ARE THE POINT OF THIS SEED and not decoration. The shipped
+ * root really does say `BUSYBOX=auto` in initramfs.conf and really does read
+ * `${BUSYBOX}` and `${BUSYBOXDIR}` in initramfs-tools' own klibc-utils hook, so
+ * a check written as "no initramfs file mentions busybox" would be RED on a
+ * correct image. Both lines are transcribed here, from the composed x64 root, so
+ * that the fixture's green is the same green a real image gets -- and so that
+ * narrowing the check to the three mechanisms that actually put busybox in an
+ * initrd (a file NAMED for it, a BUSYBOXDIR assignment, BUSYBOX=y) is a decision
+ * the fixture holds rather than a claim in a comment.
+ *
+ * /usr/bin/sh is a SYMLINK to dash, as the shipped root has it. That is what
+ * makes `packed-gnu-commands-unshadowed` a resolution test rather than an
+ * existence test: the check follows the chain a shell would, and a fixture whose
+ * every command was a regular file would never exercise the follow.
+ */
+function seedBusybox(root: string, file: WriteFile): void {
+  file('/usr/bin/busybox', 'ELF ... busybox\n')
+  chmodSync(join(root, '/usr/bin/busybox'), 0o755)
+
+  // The GNU set, in the shape the image ships it: everything a regular file in
+  // /usr/bin except sh, which is a link to dash.
+  for (const c of [
+    'ls', 'cat', 'cp', 'mv', 'rm', 'ln', 'mkdir', 'chmod', 'date',
+    'dd', 'grep', 'sed', 'tar', 'mount', 'umount', 'dmesg', 'hostname', 'sync', 'sleep',
+    'dash',
+  ]) file(`/usr/bin/${c}`, `ELF ... ${c}\n`)
+  symlinkSync('/usr/bin/dash', join(root, '/usr/bin/sh'))
+
+  // What decides PATH here, none of it naming busybox.
+  file('/etc/environment', 'LANG=C.UTF-8\n')
+  file('/etc/profile', 'if [ "${PS1-}" ]; then\n  PS1=\'\\h:\\w\\$ \'\nfi\n')
+  file('/etc/login.defs', 'ENV_SUPATH\tPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\n'
+    + 'ENV_PATH\tPATH=/usr/local/bin:/usr/bin\n')
+  file('/etc/profile.d/70-systemd-shell-extra.sh', '# systemd shell extras\n')
+  file('/usr/lib/environment.d/99-environment.conf', '# environment.d\n')
+
+  // initramfs-tools, transcribed from the composed x64 root. Neither file is
+  // named for busybox and neither assigns BUSYBOXDIR, which is exactly why the
+  // shipped image builds an initrd without it.
+  file('/etc/initramfs-tools/initramfs.conf',
+    '# BUSYBOX: [ y | n | auto ]\n#\n# Use busybox shell and utilities.\nBUSYBOX=auto\n')
+  file('/usr/share/initramfs-tools/hooks/klibc-utils',
+    '#!/bin/sh\nif [ "${BUSYBOX}" = "n" ] || [ -z "${BUSYBOXDIR}" ]; then\n\tcopy_exec_klibc\nfi\n')
 }
 
 // M4f: /home, /root, the mos account, and the STATE binds

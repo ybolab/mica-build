@@ -1,6 +1,6 @@
 # RFCT-281 Add the unexpanded BusyBox emergency binary
 
-- **status**: pending
+- **status**: implementing
 - **priority**: P2
 - **owner**: unassigned
 - **createdAt**: 2026-09-01

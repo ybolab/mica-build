@@ -1,6 +1,6 @@
 # PLAN-045 Add the unexpanded BusyBox emergency binary
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-01 13:18
 - **approvedAt**: (pending)
 - **relatedTask**: [RFCT-281](../task/RFCT-281.md)
