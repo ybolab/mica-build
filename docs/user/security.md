@@ -131,9 +131,16 @@ reconciler, and it will be rewritten. Add your own rules in your own chains.
 without containers `iptables -S` is the view you have.)
 
 **Nothing persists.** A rule added at runtime lives in the kernel and is gone
-at the next reboot. There is no `netfilter-persistent`, no `iptables-save`
-unit, no rule file anywhere in the image, and the root filesystem is read-only
-in any case. If you want a rule to survive a power cycle today, the route is
+at the next reboot. There is no `netfilter-persistent` and no `iptables-save`
+unit, and nothing in the image reloads a saved ruleset at boot. One file looks
+like it might and does not: on an image with containers, the `nftables` package
+that arrives with the engine also ships `/etc/nftables.conf` and
+`nftables.service`. **That unit is not enabled**, so it never runs — which
+matters in both directions, because its `ExecStart` begins with
+`flush ruleset` and would clear the container network's rules along with
+everything else. The file is on the read-only root, so it is not somewhere you
+can put your own rules either. If you want a rule to survive a power cycle
+today, the route is
 your own unit: a service that reapplies the rules, installed into the writable
 unit directory `/usr/local/lib/systemd/system` like any other native
 application ([applications.md](applications.md)). That is a statement of what

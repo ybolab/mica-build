@@ -109,11 +109,16 @@ ruleset` 列出整个 `nf_tables` 子系统，包括容器网络驱动写入的 
 `iptables -S` 就是你拥有的视图。）
 
 **没有任何东西会被持久化。**运行时添加的规则只活在内核里，下次重启就没了。
-镜像里没有 `netfilter-persistent`，没有 `iptables-save` 单元，没有任何规则
-文件，而且根文件系统本来就是只读的。如果今天你要让一条规则熬过一次断电，路径
-是你自己的单元：写一个重新施加规则的服务，像任何原生应用那样装进可写的单元
-目录 `/usr/local/lib/systemd/system`（[applications.md](applications.md)）。
-这是对产品当下行为的陈述，不是关于该如何运行防火墙的建议。
+镜像里没有 `netfilter-persistent`，没有 `iptables-save` 单元，也没有任何东西
+会在启动时重新载入一份保存下来的规则集。有一个文件看起来像，但它不是：在带
+容器的镜像上，随引擎一起到来的 `nftables` 包也带来了 `/etc/nftables.conf` 和
+`nftables.service`。**那个单元没有被启用**，所以它从不运行——这一点在两个方向
+上都重要，因为它的 `ExecStart` 以 `flush ruleset` 开头，一旦运行会连同容器
+网络的规则一起清空。而且那个文件位于只读根上，所以它也不是你能放自己规则的
+地方。如果今天你要让一条规则熬过一次断电，路径是你自己的单元：写一个重新施加
+规则的服务，像任何原生应用那样装进可写的单元目录
+`/usr/local/lib/systemd/system`（[applications.md](applications.md)）。这是
+对产品当下行为的陈述，不是关于该如何运行防火墙的建议。
 
 > status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `verify/src/checks-iptables.ts`
 

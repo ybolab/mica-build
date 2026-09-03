@@ -103,10 +103,19 @@ own `netavark` table. The complete view is `nft list ruleset` -- and `nft` is in
 the image only when containers are, which is the same conditional this plan
 leaves alone.
 
-**Nothing persists.** No `netfilter-persistent`, no `iptables-save` unit, no
-rule file anywhere in `rootfs/overlay/`, and the root is a read-only verity
-image, so a rule added at runtime lives in the kernel and is gone at the next
-boot.
+**Nothing persists, and one file in the composed image looks like it might.**
+No `netfilter-persistent`, no `iptables-save` unit, nothing in
+`rootfs/overlay/`, and the root is a read-only verity image. But the composed
+x64 root DOES carry `/etc/nftables.conf` and
+`/usr/lib/systemd/system/nftables.service`, both from the `nftables` package
+that arrives with `mos-podman` -- a fact that predates this change. The unit is
+NOT enabled: no `.wants` link anywhere in the packed root names it, and the two
+system presets the image ships (`50-mos-ssh.preset`, `90-systemd.preset`) do
+not either. It never runs, which is the answer in both directions, because its
+`ExecStart` is `nft -f /etc/nftables.conf` and that file begins with
+`flush ruleset` -- enabling it would clear netavark's tables at every boot. The
+operator page states this rather than claiming the image has no rule file in
+it, which is the claim that would have been false.
 
 **The register's shape.** `verify/src/checks.ts` concatenates one family per
 module; `verify/src/checks-busybox.ts` is the closest precedent -- one package,
