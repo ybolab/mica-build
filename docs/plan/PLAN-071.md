@@ -551,6 +551,50 @@ and says so rather than reporting a successful check. That is a small addition
 to the same reader and it is **not yet approved**; it is recorded here as the
 remaining half of what the TUF substitution gave up.
 
+**9.6 Freshness bound — APPROVED, 2026-09-03, and the remote side is the
+authority for what is current.**
+
+The manifest carries an expiry and the reader enforces it. This closes the
+freeze attack the paragraph above leaves open, and it completes what the
+substitution of lode's scheme for TUF gave up.
+
+**The remote manifest is authoritative for "what is current."** The device does
+not compute or remember a notion of the newest release; each check re-derives
+the candidate set from the manifest it just fetched. That is not a new rule —
+§5 already states that `available` is re-derived per check and never remembered,
+so a stale candidate cannot survive into a fetch — and the freshness bound is
+what makes it safe, because re-deriving from stale metadata is re-deriving from
+whatever an attacker chose to keep serving.
+
+**What it does not mean, stated because the two questions look alike.** The
+remote side is not authoritative for the floor. §9.1 and §9.3 stand unchanged:
+the high-water mark rises locally, and no value in a manifest, and nothing the
+control plane sends, may lower it. *What is newest* is the server's question;
+*what may this device accept* is the device's. A design that lets one answer
+both has no downgrade restriction, only the appearance of one.
+
+**Stale metadata is a distinct outcome from up to date, and this is the whole
+point.** A device served frozen metadata sees every check verify green and
+simply never moves; if that renders as "no update available" it is
+indistinguishable from being current, which is exactly the attack. The reader
+reports a stale manifest as a **failed check with its own reason**, the
+automatic path installs nothing from it, and the operator-visible state says the
+metadata is stale rather than that the device is up to date.
+
+**The clock this depends on already exists and was built for it.** An expiry
+check is only as good as the device's notion of now, and this project already
+binds one: timesyncd's saved clock on STATE, so that `max(RTC, last known good)`
+holds **before TLS and TUF** (`docs/design/time.md`, and the record in
+`docs/CHANGELOG.md`). The freshness check uses that bound, not the raw RTC — a
+board with a dead RTC must neither read a valid manifest as expired nor an
+expired one as valid. Substituting lode for TUF does not strand that mechanism;
+it transfers to it.
+
+**Owed to the release side.** Publishing now has a cadence requirement: metadata
+must be re-signed before it expires, or fielded devices start reporting stale
+checks against a repository nobody attacked. The expiry window and the re-sign
+cadence are one decision and belong with `docs/design/release-artifacts.md`.
+
 ## Risks
 
 - **`auto` is the first capability that reboots a device with nobody watching.**
