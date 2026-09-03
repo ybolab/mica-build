@@ -1,7 +1,8 @@
 # PLAN-068 Complete the built-in console against the prototype information architecture
 
-- **status**: implementing
+- **status**: completed
 - **approvedAt**: 2026-09-02 23:05
+- **completedAt**: 2026-09-03 00:10
 - **createdAt**: 2026-09-02 22:35
 - **relatedTask**: [UI-013](../task/UI-013.md)
 
@@ -169,4 +170,50 @@ when only one section of that page is incomplete.
   ID, the first addressed interface and uptime in monospace. The task table is
   the prototype's action/target/phase/result/time. Overview no longer renders
   the simulation notice, because nothing on it is simulated any more.
-- Phases 3 to 7 are not started.
+- **Phase 3 (Network) — done.** Observed state moved out of its fourth tab and
+  into the interface table's Observed and Last-observed columns. Editing moved
+  from a dialog to `/network/$name`, with the prototype's overview, addressing
+  and danger sections, the review dialog and the apply strip. Two claims the
+  prototype simply asserts are derived instead: bridge membership from the
+  desired configuration, and whether this browser would lose the device by
+  matching its host against the interface's addresses. The apply strip's
+  reconnecting step reads the shell's health state rather than a timer. Known
+  Wi-Fi and WireGuard gained the prototype's columns, summary cards and
+  rotation panel. Observed routes, DNS and capabilities stay under a marked
+  section.
+- **Phase 4 (Services) — done.** Cards carry the switch in the header and open
+  `/services/$service`, which has the configured/observed/endpoint cards, the
+  per-service configuration panel and the terminal window with its minimized
+  pill. The endpoint is read from the state document rather than assumed, and
+  the terminal takes no input because there is no endpoint to send it to.
+  `PlannedNotice` was introduced here: a per-section marker for a surface that
+  is designed but not real.
+- **Phase 5 (Applications) — done.** Source and kind filters, the retained-data
+  count, the Desired column and the container-runtime banner. The simulation
+  now tracks desired separately from runtime so the two can disagree.
+- **Phase 6 (Access) — done.** Four labelled sections, the token table with its
+  reveal panel and close confirmation, the SSH server switch above its keys,
+  and the root-password panel. Claim and provisioning stay as a marked fifth
+  section.
+- **Phase 7 (System) — done.** Six tabs; recovery folded into General, Update &
+  recovery and Diagnostics, with `#recovery` re-pointed. Update gained the
+  check table, automatic policy, manual upload and configuration backup; the
+  table lists only rows the device answers and names the checks it cannot make.
+  Two controls that existed twice after the merge are now stated once.
+
+## Completion
+
+Every phase passed the pinned frontend gate and the Playwright suite, and the
+appearance baselines were regenerated per phase rather than once at the end, so
+no phase left the suite red for the next.
+
+Not done, and deliberately so: everything without a device API is built,
+disabled and marked rather than wired to invented behavior. That covers service
+configuration, the terminal transcript, the whole Applications feature, the
+automatic-update policy, bundle upload, configuration backup and support
+access. The console is a superset of the design, because six shipped surfaces
+the prototype has no place for are retained under sections that say so.
+
+One process note: `apply-stage.ts` was written before its test rather than
+after a failing one. The behavior is covered, but that file did not go through
+RED first.

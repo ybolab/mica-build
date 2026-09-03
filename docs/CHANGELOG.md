@@ -4,6 +4,29 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The built-in console follows the prototype's information architecture (2026-09-03)
+
+PLAN-067 closed the visual gap to the approved prototype; this closes the
+structural one. Page titles lose their descriptions and gain a status slot, the
+footer reports release and active slot, the connection has the prototype's
+three states with a banner, and preferences become a searchable language picker
+and a segmented appearance control. Overview's attention rows stop being
+hard-coded copy and become device facts. Network merges observed state into the
+interface table and opens an interface detail route with a review dialog and an
+apply strip whose every step is observed. Services opens a service detail route
+and the terminal window. Applications gains its filters, retained-data count
+and Desired column. Access becomes four labelled sections. System folds to the
+prototype's six tabs, with the update check table, automatic policy, manual
+upload and configuration backup.
+
+Two rules governed the work. Nothing states a device fact the device did not
+report: service endpoints, bridge membership, whether a change would cut off
+this browser, and the update checks are all derived or omitted. And anything
+designed but not yet real is built, disabled and marked at the section that is
+incomplete, not only at the bottom of the page. Six shipped surfaces the
+prototype has no place for are retained under sections that name them as
+additions. PLAN-068.
+
 ## The built-in console matches the prototype detail for detail (2026-09-02)
 
 PLAN-064 reproduced the approved prototype in outline; the shipped console now

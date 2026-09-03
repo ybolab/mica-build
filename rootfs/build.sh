@@ -480,6 +480,40 @@ tree_stamp=${tree_version##*+}
     pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and this tree is '$tree_stamp'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
 echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
 
+# THE SOURCE COMMIT'S DATE, for /usr/share/mos/release-identity.env and from
+# there for mosd's system-information surface.
+#
+# Every timestamp inside a composed root is pinned: SQUASHFS_TIME above is
+# FILE_MTIME, which build/src/geometry.ts fixes to a constant so two builds of
+# one tree are byte-identical. That is the point of it -- and it means an
+# image's file times say 2020-01-01 and always will, so the surface that used
+# to read one back reported the same "build date" on every image ever built.
+#
+# The commit date is the fact that is BOTH truthful and reproducible: it is a
+# property of the commit, so every rebuild of one source states it identically,
+# and it is the date that source was actually written.
+#
+# Derived from the STAMP and not from HEAD. $tree_stamp is what
+# build-env/deb/version.sh printed and what the pool was just required to
+# carry; asking git about HEAD instead would be a second question with a second
+# answer the moment anything moved between the two calls, and the identity file
+# would then date an image by a commit its packages were not built from.
+commit_of_stamp=${tree_stamp#git}      # git<12hex>[.dirty]-<rev> -> <12hex>[.dirty]-<rev>
+commit_of_stamp=${commit_of_stamp%%-*} #                          -> <12hex>[.dirty]
+commit_of_stamp=${commit_of_stamp%.dirty}
+# `^{commit}` so the argument can only resolve as a commit: a bare 12-hex
+# string is also a path a repository could hold, and `git show` would then
+# print that file and this would date the image by it.
+tree_commit_date=$(git -C "$REPO_ROOT" show -s --format=%cI "${commit_of_stamp}^{commit}" 2>/dev/null || true)
+[ -n "$tree_commit_date" ] || {
+    echo "error: git names no commit date for '$commit_of_stamp', the commit in this tree's stamp '$tree_stamp'." >&2
+    echo "       That date is written into /usr/share/mos/release-identity.env and is the only date in a" >&2
+    echo "       composed image that is not the pinned SOURCE_DATE_EPOCH; composing without it would leave" >&2
+    echo "       the system-information surface with no date to report at all." >&2
+    exit 1
+}
+echo "identity: source commit $commit_of_stamp committed $tree_commit_date"
+
 # WHAT TO INSTALL. resolve.sh takes every input as an ARGUMENT and
 # deliberately re-derives nothing: which board file was read, which
 # environment variable beats which file, and how the historical WITH_*
@@ -655,6 +689,7 @@ DRIVER_ARGS=(
     --arg MOS_BOARD="$MOS_BOARD"
     --arg MOS_PROFILE="$MOS_PROFILE"
     --arg MOS_RELEASE_VERSION="$tree_version"
+    --arg MOS_RELEASE_COMMIT_DATE="$tree_commit_date"
     --arg VERITY_SALT="$VERITY_SALT"
     --arg SQUASHFS_TIME="$SQUASHFS_TIME"
     --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME"

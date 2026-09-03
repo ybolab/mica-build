@@ -66,7 +66,7 @@ is an object with `available`; the present shape is:
 | `board` | `model`, `source` (`devicetree` or `dmi`) | `/sys/firmware/devicetree/base/model`, else DMI product name and board vendor |
 | `kernel` | `release`, `version` | `/proc/sys/kernel/osrelease`, `/proc/sys/kernel/version` (what `uname -r` / `uname -v` print) |
 | `release` | `name`, `id`, `version`, `versionId`, `prettyName`, `buildId`, `imageId`, `imageVersion` (each only when the file carries it) | `/etc/os-release` |
-| `system` | `version`, `package`, `gitStamp`, `buildEpoch`, `buildDate` | the manifest row of `mos-system`, else of `mosd`; the manifest file's mtime |
+| `system` | `version`, `package`, `gitStamp`, `commitDate`, `fileEpoch` | the manifest row of `mos-system`, else of `mosd`; `/usr/share/mos/release-identity.env`; the manifest file's mtime |
 | `daemon` | `name`, `version`, `commit` (null when the build supplied none) | what `mosd --version` prints, from the same embedded values |
 | `packages` | `count`, `mosCount`, `malformedRows`, `truncated`, `entries[]` of `name`, `version`, `architecture`, `mos` | `/usr/share/mos/manifest.tsv` |
 | `slot` | `booted`, `bootname`, `bundleVersion`, `bootStatus`, `primary` | RAUC's slot status, through the client mosd already holds |
@@ -79,10 +79,32 @@ half-rebuilt pool — reports `consistent: false` and every stamp it found,
 rather than picking one; `verify`'s `packed-mos-manifest` check refuses such
 an image, and this surface is the same fact read on the device.
 
-`system.buildDate` is the manifest file's mtime. That is not a stamp of its
-own: the pack step pins every file time in the root to `SOURCE_DATE_EPOCH`,
-so the mtime IS the build's reproducible date, and reading it keeps the
-surface a reader of the existing seam rather than a second writer.
+The surface reports two times and they are different facts, named apart so
+that neither can be read as the other.
+
+`system.commitDate` is when the commit the image's git stamp names was
+committed — an `available`/`detail` object carrying `date`.
+`rootfs/compose/compose-install.sh` writes it into
+`/usr/share/mos/release-identity.env` as `COMMIT_DATE` at compose time, from
+`git show -s --format=%cI` over the commit *inside the stamp*
+`rootfs/build.sh` has already required the pool to carry — not over `HEAD`,
+which is a second question with a second answer. So the date and the packages
+beside it name one commit, and every reproducible build of that commit reports
+the same instant. A `.dirty` stamp means the packaged tree was not exactly
+that commit; the field's `detail` says so rather than leaving a bare date to
+imply otherwise. A root whose identity states no `COMMIT_DATE` reports
+`available: false` with the reason — never a blank, and never the epoch below.
+
+`system.fileEpoch` is the manifest file's mtime: the `SOURCE_DATE_EPOCH` that
+`rootfs/scripts/pack-squashfs.sh` pins every file time in the root to. It is
+**not** a build date and is deliberately not named as one.
+`build/src/geometry.ts` fixes that epoch to a constant so two builds of one
+tree are byte-identical, which makes it the same instant — 2020-01-01 — in
+every image this repository has ever produced. It is reported because it is
+what the filesystem actually says, and it answers "what time do this image's
+files carry", not "when was this image made". Reading it keeps the surface a
+reader of the existing seam rather than a second writer; naming it `buildDate`
+made it answer a question it cannot answer.
 
 `packages` carries at most 4096 rows and says `truncated: true` past that; a
 row that is not three tab-separated fields is counted in `malformedRows`
@@ -171,7 +193,7 @@ should treat the members it does know as advisory.
 
 | Member | Content |
 |---|---|
-| `schemaVersion` | `1` |
+| `schemaVersion` | `2` |
 | `collectedAt` | RFC 3339 UTC as this appliance's clock had it; `time` says whether that clock is disciplined, `boot.uptime` is the monotonic reference |
 | `release` | `board`, `release`, `kernel`, as section 2 defines them |
 | `system` | the whole section 2 surface |
@@ -319,7 +341,7 @@ says.
 
 1. Sign in to the built-in console as an authenticated appliance operator.
    Open **System information** and record the machine id, board, image version,
-   build date and active slot. This is one `GET /api/v1/system/info` read; do
+   source commit date and active slot. This is one `GET /api/v1/system/info` read; do
    not assemble an identity from settings or labels on the enclosure.
 2. Leave the failing condition in place when it is safe to do so. Open
    **Diagnostics**, select **Generate snapshot**, and wait for the collection
@@ -378,7 +400,7 @@ system's retention policy, not the device's count/size policy.
 An escalation must include:
 
 - the downloaded snapshot and its id;
-- the machine id, board, system version/build date and active slot from
+- the machine id, board, system version/source commit date and active slot from
   `system` and `boot.slot`;
 - the symptom, first observed time, reproduction steps and whether the time
   was independently verified because `time.status` was not synchronized;
