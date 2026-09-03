@@ -56,6 +56,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-067 Align the built-in console with the approved prototype details**](PLAN-067.md) `2026-09-02`
 - [x] [**PLAN-068 Complete the built-in console against the prototype information architecture**](PLAN-068.md) `2026-09-02`
 - [ ] [**PLAN-069 Design managed and untrusted application controls**](PLAN-069.md) `2026-09-03`
-- [ ] [**PLAN-070 Design the factory record: the out-of-image trust and update seam**](PLAN-070.md) `2026-09-03`
+- [ ] [**PLAN-070 Design the meta/ seam: update configuration and trust anchors baked into the image**](PLAN-070.md) `2026-09-03`
 - [ ] [**PLAN-071 Design the update module: off/check/auto with automatic install in a window**](PLAN-071.md) `2026-09-03`
 - [ ] [**PLAN-072 Design cloud registration: outbound-only, off by default**](PLAN-072.md) `2026-09-03`
