@@ -1126,13 +1126,20 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // changed underneath it.
   //
   // EVERY FLOOR SYMBOL IS =y AND EVERY FLOOR MODULE IS BUILT IN, which is what
-  // a healthy root looks like since PLAN-074: this board's kernel boots a
+  // a healthy root looks like since PLAN-074: this board's kernel assembles a
   // dm-verity root from the kernel command line with no initramfs, so nothing
-  // on that list can be a module. The `module` resolution branch is still
-  // driven -- modules.dep below carries a real entry, as the shipped kernel's
-  // does -- but from the FAILING side, by the cases in checks-kernel.test.ts
-  // that plant a floor symbol as =m. A fixture that seeded one healthy `=m`
-  // would be seeding the defect.
+  // on the floor can be a module. This fixture used to mirror Debian's artefact
+  // -- the netfilter set =m, one lone builtin -- because the board ran Debian's
+  // kernel. It does not any more.
+  //
+  // THREE KINDS ARE STILL SEEDED, and the distinction is what lets the modprobe
+  // check skip a symbol without going blind. The floor modules below are in
+  // modules.builtin. The nine symbols that name NO module -- the eBPF bools,
+  // the three nf_tables family bools, the bridge family bool, and DM_INIT,
+  // which compiles into dm-mod -- are =y with no entry in either index, so a
+  // lookup for them could never succeed and the config check is their whole
+  // assertion. And modules.dep is NOT empty: this kernel still ships a few
+  // loadable modules, which are the only subjects the dependency walk has left.
   const release = '6.12.107'
   file(`/boot/config-${release}`,
     '# Automatically generated file; DO NOT EDIT.\n'
@@ -1143,13 +1150,30 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     + 'CONFIG_OVERLAY_FS=y\n'
     + 'CONFIG_VLAN_8021Q=y\n'
     + 'CONFIG_BRIDGE=y\n'
-    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
     + 'CONFIG_WIREGUARD=y\n'
     + 'CONFIG_VETH=y\n'
-    + 'CONFIG_NFT_FIB=y\n'
     + 'CONFIG_NFT_FIB_INET=y\n'
     + 'CONFIG_NFT_FIB_IPV4=y\n'
-    + 'CONFIG_NFT_FIB_IPV6=y\n')
+    + 'CONFIG_NFT_FIB_IPV6=y\n'
+    + 'CONFIG_BPF=y\n'
+    + 'CONFIG_BPF_SYSCALL=y\n'
+    + 'CONFIG_BPF_JIT=y\n'
+    + 'CONFIG_CGROUP_BPF=y\n'
+    + 'CONFIG_NF_TABLES=y\n'
+    + 'CONFIG_NF_TABLES_INET=y\n'
+    + 'CONFIG_NF_TABLES_IPV4=y\n'
+    + 'CONFIG_NF_TABLES_IPV6=y\n'
+    + 'CONFIG_NFT_COMPAT=y\n'
+    + 'CONFIG_NETFILTER_XTABLES=y\n'
+    + 'CONFIG_NF_CONNTRACK=y\n'
+    + 'CONFIG_NFT_CT=y\n'
+    + 'CONFIG_NF_NAT=y\n'
+    + 'CONFIG_NFT_NAT=y\n'
+    + 'CONFIG_NFT_MASQ=y\n'
+    + 'CONFIG_BRIDGE_NETFILTER=y\n'
+    + 'CONFIG_NF_TABLES_BRIDGE=y\n'
+    + 'CONFIG_NF_CONNTRACK_BRIDGE=y\n'
+    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n')
   const mod = `/lib/modules/${release}`
   file(`${mod}/modules.builtin`,
     'kernel/drivers/md/dm-mod.ko\n'
@@ -1160,20 +1184,31 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     + 'kernel/net/bridge/bridge.ko\n'
     + 'kernel/drivers/net/wireguard/wireguard.ko\n'
     + 'kernel/drivers/net/veth.ko\n'
-    + 'kernel/net/netfilter/nft_fib.ko\n'
     + 'kernel/net/netfilter/nft_fib_inet.ko\n'
     + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko\n'
-    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko\n')
-  // The loadable remainder, which is small and deliberately not empty: the
-  // shipped kernel keeps a handful of =m symbols nothing boots through, and an
-  // absent modules.dep would make checks-root's own assertion about that file
-  // a question with no subject.
+    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko\n'
+    + 'kernel/net/netfilter/nf_tables.ko\n'
+    + 'kernel/net/netfilter/nft_compat.ko\n'
+    + 'kernel/net/netfilter/x_tables.ko\n'
+    + 'kernel/net/netfilter/nf_conntrack.ko\n'
+    + 'kernel/net/netfilter/nft_ct.ko\n'
+    + 'kernel/net/netfilter/nf_nat.ko\n'
+    + 'kernel/net/netfilter/nft_nat.ko\n'
+    + 'kernel/net/netfilter/nft_masq.ko\n'
+    + 'kernel/net/bridge/br_netfilter.ko\n'
+    + 'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko\n\n')
+  // The loadable remainder, small and deliberately not empty: "every object is
+  // present" over an empty modules.dep and over a full one are the same
+  // sentence, and only one of them means anything.
   file(`${mod}/modules.dep`,
-    'kernel/net/netfilter/nf_log_syslog.ko:\n'
-    + 'kernel/net/netfilter/xt_LOG.ko:\n')
+    'kernel/net/netfilter/nf_log_common.ko:\n'
+    + 'kernel/net/netfilter/nf_log_syslog.ko: kernel/net/netfilter/nf_log_common.ko\n'
+    + 'kernel/net/netfilter/xt_LOG.ko: kernel/net/netfilter/nf_log_syslog.ko\n')
   for (const object of [
+    'kernel/net/netfilter/nf_log_common.ko',
     'kernel/net/netfilter/nf_log_syslog.ko',
     'kernel/net/netfilter/xt_LOG.ko',
+
   ]) {
     file(`${mod}/${object}`, '\x7fELF\n')
   }
