@@ -4,6 +4,42 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The kernel floor covers eBPF, the firewall back-end and bridge filtering (2026-09-03)
+
+`boards/common/mos-required.fragment` named the virtual link kinds and netavark's
+fib expressions and nothing else, so two capabilities the shipped runtime already
+depends on were unstated. crun programs the cgroup v2 device controller as a
+`BPF_PROG_TYPE_CGROUP_DEVICE` program, and on cgroup v2 that program *is* the
+device policy — there is no controller file to write instead — so the eBPF core,
+`bpf(2)`, the JIT and `CGROUP_BPF` are engine facts rather than diagnostics
+niceties. The firewall half is derived from what `iptables-nft` actually resolves
+through: the nf_tables core and its inet, ip and ip6 families, the xt compat
+expression and the x_tables core it depends on, conntrack, NAT and masquerade.
+Bridge filtering adds three more, because traffic between two containers on one
+bridge is switched at layer 2 and no host firewall sees it otherwise.
+
+Eighteen symbols, each with the clause that says what it buys. Deliberately left
+out and recorded as such: the legacy `IP_NF_*` back-end and `BRIDGE_NF_EBTABLES`,
+which nothing in the image uses; the per-extension matches and targets, which are
+policy; `BRIDGE_VLAN_FILTERING`, which has no consumer because mosd renders VLANs
+as their own netdevs; and `BRIDGE_IGMP_SNOOPING`, which is not neutral — built, it
+stops forwarding multicast to ports that sent no report, which is how mDNS
+discovery inside a container network breaks. BTF was priced by building it — 7.7
+MiB added to `Image` in both A/B slots and twice the build time — and declined
+until something ships a CO-RE tool.
+
+The floor is now checked from both sides: `verify/src/checks-kernel.ts` asserts it
+against Debian's built artefact on x64, the fragment is merged before
+`olddefconfig` and asserted against the built config on cx3576, and a test reads
+the fragment and requires every registered symbol pinned there. Eight symbols
+build no object of their own, so a register entry may omit its module, and the
+modprobe check names in its PASS message which symbols it skipped — a green line
+cannot be read as covering them. One asymmetry is written down rather than
+smoothed over: `br_netfilter` defaults its `call-iptables` switches on and
+registers its hooks once a bridge exists, so a FORWARD policy reaches same-bridge
+container traffic on the board whose kernel builds it in and not on the board
+where it is a module. The capability is common; the default state is not.
+
 ## The built-in console follows the prototype's information architecture (2026-09-03)
 
 PLAN-067 closed the visual gap to the approved prototype; this closes the
