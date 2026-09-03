@@ -291,6 +291,70 @@ list, narrowed to what this slice actually blocks on:
 
 None of these is guessed at in this plan.
 
+### 7a. Answers — 2026-09-03
+
+The user answered five of the seven. Recorded here with the consequences that
+follow, so the backlog does not re-derive them.
+
+1. **Who runs the control plane — ANSWERED.** The **vendor by default**; an
+   integrator may run their own. The server implementation is **open source**,
+   which is what makes the integrator option real rather than nominal. The
+   device learns which plane it talks to from the baked `fleet.url` in `meta/`,
+   so "whose plane" is a build-time fact of that deployment's `meta/` and not a
+   runtime setting — consistent with §2's switch and with PLAN-070 §1.
+
+4. **Offline tolerance — ANSWERED.** The plane **assists and never gates local
+   execution**. The model the user named is **Victron VRM**: a portal a device
+   reports to, beside a device that runs standalone. §6's autonomy statement is
+   therefore a product promise, not an implementation detail.
+
+5. **Support liability — ANSWERED.** A plane that is down **does not affect the
+   device**. Nothing is committed beyond that, and no device behaviour is
+   conditioned on the plane being reachable.
+
+6. **Zero-touch enrolment — ANSWERED: required, keyed on `deviceId`.** This
+   **selects shape (c), trust on first use**, because (a) needs the human step
+   zero-touch excludes and **(b) is structurally impossible**: every device
+   flashed from one image carries a byte-identical baked set, so a per-device
+   credential baked into it is the same credential on every device, and
+   PLAN-070 §1 keeps that as a build-time refusal rather than an argument.
+
+   **The failure mode, and why the answers above make it tolerable.** `deviceId`
+   is not a credential — it is printable on a label and embedded in the hostname
+   — so whoever learns one before the device first registers can take the slot.
+   Because the plane is assistive and its loss does not affect the device
+   (answers 4 and 5), what an attacker gains is **a wrong inventory record on
+   the plane and a real device that cannot register**, not control of a device.
+   That is a denial of inventory, not a compromise.
+
+   **Two mitigations are therefore required, not optional:**
+   - a refused registration must be **visible on the device**, so an operator
+     sees "registered and rejected" rather than only "not registered";
+   - the plane must have an **operator path to release a wrongly claimed id**,
+     or a stolen slot is permanent.
+
+   Shape (a) stays available for a deployment that wants stronger binding; it
+   is a per-deployment choice, not a change to this default.
+
+7. **Serial and MAC in the inventory — ANSWERED: not required.** Each device
+   has its own `deviceId` and that is the identifier the plane uses. The
+   hardware identifiers stay unsent, which keeps §3's promise that a device
+   identifier does not become a hardware identifier the customer did not choose
+   to publish.
+
+**Still open: 2 (scale and availability).** Bounded but not answered: since the
+plane is assistive and its loss is a non-event for the device, **availability is
+not a product promise**, which removes the hard part of the question. What
+remains is the plane's own sizing, which is the server project's input rather
+than this device-side record.
+
+**3 (data residency) largely dissolves and is recorded as such.** An integrator
+who runs their own plane chooses residency by choosing where to run it; the
+vendor-default plane's residency is a vendor operational decision. Neither is a
+device-side design input. What survives is one device-side requirement: a device
+must be able to report **which plane it registered with**, which it can, from
+the baked `fleet.url`.
+
 ## Risks
 
 - **The first outbound connection this product has ever made.** Every claim in
