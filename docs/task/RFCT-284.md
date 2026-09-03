@@ -52,7 +52,8 @@ hardware**, and the split is the deliverable rather than a caveat on it:
   asserted; the *asserter* does not exist — `docs/design/recovery.md` §4 says
   in terms that nothing in the tree writes a presence assertion, so the entry
   is unreachable on a fielded device. The both-slots-failed procedure is
-  documented (§6) and untested on a board.
+  documented (§6) and untested on a board. **Half of this was delivered on
+  2026-09-03; see the second Completion below.**
 - *"Credential recovery rotates rather than reveals secrets and is audited."*
   **Closed in code, unreachable on a device.** `POST /api/v1/recovery/credential`
   mints and publishes once on the channel that proved presence, never
@@ -80,12 +81,14 @@ hardware**, and the split is the deliverable rather than a caveat on it:
 
 ### Bench items an operator must run
 
-1. **Answer the asserter question first** — everything else here waits on it.
-   On a cx3576, determine whether a mos-owned unit can own the board's console
-   TTY without displacing `serial-getty@ttyFIQ0` (`docs/design/access.md` §9.1
-   measures the contention). Record the answer against
-   `docs/design/recovery.md` §4.4's candidate set; a "no" selects among the
-   other candidates rather than ending the flow.
+1. **~~Answer the asserter question first~~ — withdrawn 2026-09-03.** The
+   console-owning asserter is not the design: the board's DEBUG console is not
+   a product surface and no unit may own it (`docs/design/recovery.md` §4).
+   What replaces this item: **declare and implement a physical recovery action
+   on a named board** — a bootloader menu entry appending `mos.recovery=` is
+   the expected shape — then declare it in that board's `board.env` per §4.4
+   and render `/usr/lib/mos/recovery-actions.conf` from it in the board's
+   package. Everything below still waits on this.
 2. With an asserter in place: write a presence assertion at the local console
    and confirm `POST /api/v1/recovery/credential` returns 200, publishes the
    new credential on that console only, revokes every API token, and bumps
@@ -101,3 +104,31 @@ hardware**, and the split is the deliverable rather than a caveat on it:
    boot replays the same tier to completion.
 6. Run the both-slots-failed procedure (§6) on a cx3576 over rockusb, and
    record §8's row and the dossier's Recovery row from what actually happened.
+
+## Completion (2026-09-03) — the interface for board-declared physical actions
+
+The remaining half of this task's second acceptance clause, delivered under
+[PLAN-048](../plan/PLAN-048.md); that plan's second Completion names the
+modules and the gates. **The acceptance clause is still NOT closed**, and the
+reason is now a different one: what was missing was a mechanism nobody had
+decided on, and what is missing now is a BOARD that declares and implements
+one. The flows become reachable on the first device whose BSP does.
+
+What changed, in one line each:
+
+- **The physical action is a BOARD fact**, and the system layer reserves ONE
+  interface for it: a *recovery intent* on the kernel command line, mapped
+  through the board's own declaration into the presence assertion and the reset
+  tier the existing flows already consume. `docs/design/recovery.md` §4 is
+  rewritten around it; the three candidate mechanisms it used to record as open
+  questions are now examples of what a board may implement.
+- **The console-owning asserter is withdrawn, not deferred.** The board's DEBUG
+  serial console is not a product surface and no unit may own, reconfigure or
+  depend on it; on cx3576 displacing the `ttyFIQ0` getty was measured on
+  hardware to wedge the FIQ tty and block systemd uninterruptibly.
+- **Both shipped boards declare NONE**, which is the honest state: neither has
+  an implemented physical action. The refusal now says the board declares none
+  rather than that presence is merely absent.
+- **The premise is named where the guard lives** — the boot-time intent is
+  proof against an API-level attacker and not against a root-level one — in the
+  design record and at the mapping site, with no check built for it.

@@ -37,6 +37,7 @@ import {
   loadBoard,
   type Board,
   type Partition,
+  type RecoveryAction,
 } from './board.ts'
 import { boardEnvPath, requireShippedBoards } from './paths.ts'
 
@@ -83,6 +84,36 @@ export const REQUIRED_BOARD_KEYS = [
   'BOARD_HAS_STATUS_LED',
   'MOS_ARCH',
 ] as const
+
+/**
+ * Per declared recovery action: the keys it requires
+ * (`docs/design/recovery.md` §4).
+ *
+ * Four and no fifth, because four is what the system layer does with an
+ * action: which token its mechanism puts on the kernel command line, what the
+ * presence assertion and the audit event call it, where a minted credential
+ * may be published, and which reset tier it stages. A key nobody reads would
+ * be a board claiming a capability the system cannot honour, which is what the
+ * forbidden half of ROLE_SCHEMA exists to catch one layer down.
+ */
+export const RECOVERY_ACTION_KEYS = ['INTENT', 'MECHANISM', 'CHANNEL', 'TIER'] as const
+
+/**
+ * The tiers a declared action may stage, plus `none` for an action that only
+ * asserts presence.
+ *
+ * `mosd_settings::ResetTier` has three members and no fourth: secure wipe is
+ * not implemented anywhere, so a board naming it would declare an action the
+ * device could accept and not carry out.
+ */
+export const RECOVERY_TIERS = ['none', 'configuration', 'application-data', 'full-factory'] as const
+
+/** A `mos.recovery=` value: a kernel command-line token, not a sentence. */
+const INTENT_TOKEN = /^[a-z0-9][a-z0-9-]*$/
+/** A mechanism name: what the presence assertion and the audit event carry. */
+const MECHANISM_TOKEN = /^[a-z][a-z0-9-]*$/
+/** An action name: it is the middle of the keys that describe the action. */
+const ACTION_NAME = /^[A-Z][A-Z0-9_]*$/
 
 /**
  * The three states a key can be in, which is the whole point of this port.
@@ -400,6 +431,135 @@ function lintBoardKeys(r: Recorder, b: Board): void {
 }
 
 /**
+ * The physical recovery actions a board declares, and what each maps to.
+ *
+ * TWO READERS, ONE SCHEMA, and that is the point of checking it here. The
+ * runtime reader is `mosd_settings`'s `Declaration`, which parses the same key
+ * set on the device and fails closed on anything it cannot read; this one
+ * fails the BUILD, so a board whose declaration would be refused at boot never
+ * reaches an image. A board is not free to declare something the device would
+ * then silently ignore.
+ *
+ * EMPTY IS THE STATEMENT, ABSENT IS NOT. Both shipped boards declare
+ * `BOARD_RECOVERY_ACTIONS=""`, which says "this board has no physical recovery
+ * action" and is what makes the presence-gated flows refuse with that sentence
+ * rather than with "nobody is standing at the device". A board that never
+ * mentioned the key has said nothing, and silence must not be read as either
+ * answer -- so absence fails, exactly as it does for the required board keys.
+ */
+function lintRecoveryActions(r: Recorder, b: Board): void {
+  const presence = boardKeyPresence(b, 'BOARD_RECOVERY_ACTIONS')
+  if (presence === 'absent') {
+    r.fail(
+      'declares no BOARD_RECOVERY_ACTIONS. A board says which physical recovery actions it has, '
+      + 'and a board with none says so by declaring the key empty; silence is not the same claim, '
+      + 'and the system layer would have to guess which one was meant',
+    )
+    return
+  }
+  if (b.recoveryActions.length === 0) {
+    r.pass('declares BOARD_RECOVERY_ACTIONS empty: this board has no physical recovery action')
+    return
+  }
+
+  const before = r.failed
+  const intents = new Map<string, string>()
+  const mechanisms = new Map<string, string>()
+  for (const action of b.recoveryActions) {
+    lintRecoveryAction(r, action)
+    // A shared intent is a mapping with two answers; a shared mechanism is an
+    // audit trail that cannot say which door was used, which is the whole
+    // reason the mechanism rides in the event name.
+    for (const [suffix, seen, what] of [
+      ['INTENT', intents, 'intent'],
+      ['MECHANISM', mechanisms, 'mechanism'],
+    ] as const) {
+      const value = action.get(suffix)
+      if (value === undefined || value === '') continue
+      const first = seen.get(value)
+      if (first !== undefined) {
+        r.fail(
+          `${first} and ${action.name} both declare the ${what} '${value}'. `
+          + `Two actions the device cannot tell apart are one action with an unrecorded history`,
+        )
+        continue
+      }
+      seen.set(value, action.name)
+    }
+  }
+  if (r.failed === before) {
+    r.pass(
+      `declares ${b.recoveryActions.length} physical recovery action(s), each with the four keys `
+      + 'the system layer maps an intent through, and no two sharing an intent or a mechanism',
+    )
+  }
+}
+
+/** One declared action against the schema. */
+function lintRecoveryAction(r: Recorder, action: RecoveryAction): void {
+  if (!ACTION_NAME.test(action.name)) {
+    r.fail(
+      `BOARD_RECOVERY_ACTIONS names '${action.name}', which cannot be an action name: the name is `
+      + 'the middle of the RECOVERY_<name>_* keys that describe it, so it is uppercase letters, '
+      + 'digits and underscores, starting with a letter',
+    )
+    return
+  }
+
+  for (const key of RECOVERY_ACTION_KEYS) {
+    const full = `RECOVERY_${action.name}_${key}`
+    switch (presenceOf(action.declared(key), action.get(key))) {
+      case 'absent':
+        r.fail(`BOARD_RECOVERY_ACTIONS names ${action.name} and the board declares no ${full}`)
+        break
+      case 'empty':
+        r.fail(`${emptyRequired(action.name, full)}; the system layer would map the intent to it and find nothing`)
+        break
+      case 'present':
+        break
+    }
+  }
+
+  const intent = action.get('INTENT')
+  if (intent !== undefined && intent !== '' && !INTENT_TOKEN.test(intent)) {
+    r.fail(
+      `RECOVERY_${action.name}_INTENT is '${intent}', which is not a kernel command-line token. `
+      + 'It is the value the board\'s mechanism sets as mos.recovery=<intent>: lowercase letters, '
+      + 'digits and dashes',
+    )
+  }
+
+  const mechanism = action.get('MECHANISM')
+  if (mechanism !== undefined && mechanism !== '' && !MECHANISM_TOKEN.test(mechanism)) {
+    r.fail(
+      `RECOVERY_${action.name}_MECHANISM is '${mechanism}', which is not a mechanism name. `
+      + 'It is what the presence assertion carries and what the audit event is named for: '
+      + 'lowercase letters, digits and dashes, starting with a letter',
+    )
+  }
+
+  // A channel is a DEVICE. The one thing published on it is a freshly minted
+  // administrator credential, and a regular file would leave the only copy of
+  // it on a filesystem -- which the shipped publisher refuses at runtime, so a
+  // board declaring one would ship an action that always aborts.
+  const channel = action.get('CHANNEL')
+  if (channel !== undefined && channel !== '' && (!channel.startsWith('/dev/') || channel.includes('..'))) {
+    r.fail(
+      `RECOVERY_${action.name}_CHANNEL is '${channel}'; a channel is a device under /dev. `
+      + 'A minted credential is written to it and never to a file',
+    )
+  }
+
+  const tier = action.get('TIER')
+  if (tier !== undefined && tier !== '' && !(RECOVERY_TIERS as readonly string[]).includes(tier)) {
+    r.fail(
+      `RECOVERY_${action.name}_TIER is '${tier}'; it is one of: ${RECOVERY_TIERS.join(' ')}. `
+      + 'There is no fourth reset tier, so a board cannot declare an action staging one',
+    )
+  }
+}
+
+/**
  * The partition set, its numbering, and the roles of everything in it.
  *
  * `LAYOUT_PARTITIONS=" "` is hole 3: the shell predecessor found it non-empty,
@@ -479,6 +639,7 @@ export function lintBoard(b: Board): BoardLint {
   lintPartitionSet(r, b)
   lintBootloader(r, b)
   lintBoardKeys(r, b)
+  lintRecoveryActions(r, b)
   return { path: b.path, board: b.name, checks: r.checks, unreadable: false }
 }
 

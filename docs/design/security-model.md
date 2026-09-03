@@ -135,7 +135,7 @@ designs already: a rollback guard keyed on the bootloader environment would
 have read per-slot flags that x64's grubenv carries and cx3576's U-Boot
 environment does not, and a physical-presence assertion keyed on a recovery
 button would exist on cx3576 and nowhere on x64 (`docs/design/recovery.md`
-§4.2, §4.4, §8). Both were rejected for the same reason, and it is not
+§4.4, §8). Both were rejected for the same reason, and it is not
 effort: a mechanism that is present on one board and absent on another
 produces a protection that is strong where it was written and *silently*
 absent everywhere else, while every gate stays green. That is worse than

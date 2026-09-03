@@ -29,8 +29,8 @@ tier semantics are agreed, so §2, §4 and §5 fixed the semantics first and the
 implementation followed them. What now ships is §2's tiers 1-3, §4's gate and
 §5's credential recovery, each marked at its own section with what is still
 missing named. The *repair tier* (§6.2) is still [proposed], and §4's own half
-— the console-side asserter that WRITES a presence assertion — is the gap §4
-names and §8 carries as bench-dependent.
+— a BOARD with an implemented physical recovery action to declare — is the gap
+§4 names and §8 carries as bench-dependent.
 
 Sections without a marker (§1, §6, §7) state principles and limits rather than
 one mechanism — §6's two subsections carry their own.
@@ -475,12 +475,13 @@ everything below it destroys something that was on the device.**
   (`pkgs/mosd/apid/src/routes.rs`), every §5.1 rule asserted, §5.4's guard
   release included.
 - **What is missing, and it is why this step is not `[implemented]`:** the flow
-  is gated on a §4 presence assertion, and **nothing in the tree writes one**.
-  An operator standing at a device today cannot take this step. Until a board
-  has an asserter, the lockout §9.1 of `docs/design/access.md` describes is
-  still answered by step 7 and not by this one — which is the ordering cost
-  this step exists to avoid, and the reason §4's missing half is the highest
-  bench priority in this document.
+  is gated on a §4 presence assertion, the system side that produces one from a
+  board-declared physical action ships, and **neither shipped board declares an
+  action**. An operator standing at a device today cannot take this step. Until
+  a board declares one and its BSP implements it, the lockout §9.1 of
+  `docs/design/access.md` describes is still answered by step 7 and not by this
+  one — which is the ordering cost this step exists to avoid, and the reason
+  §4's missing half is the highest bench priority in this document.
 
 **6. Full factory reset — DESTRUCTIVE (everything but identity)** — **[partial]**
 - *Precondition:* §4 physical presence, and a decision that the device's whole
@@ -523,39 +524,55 @@ everything below it destroys something that was on the device.**
 
 ## 4. The physical-presence contract — **[partial]**
 
-**What ships is the gate; what does not ship is the door.** Every
+**What ships is the gate, the interface behind it, and the mapping that joins
+them; what does not ship is any board's physical action.** Every
 presence-gated operation asks ONE seam — `pub(crate) trait Presence` in
 `pkgs/mosd/apid/src/routes.rs` — keyed by the named board capability
-`recovery.presence`, which both boards answer with `console-attach`
-(`board_presence_mechanism`, same file). The shipped reader is
-`ConsolePresence`: it reads an assertion left at `/run/mos/presence` by an
-operator at the local console — a mechanism, the console device that proved
-it, and a deadline — and refuses an absent, expired, unreadable or
-wrong-mechanism one.
+`recovery.presence`. What answers that capability is no longer a constant in
+this tree: it is what the BOARD declares.
 
-**What is missing, named, and it is the most consequential sentence in this
-document:** *nothing in the tree WRITES a presence assertion*, so the
-presence-gated flows — §5's credential recovery and §2's tier 3 — are
-**implemented and tested but unreachable on hardware** until an asserter
-exists. The gate refuses every request a fielded device can make of it. A prod
-image ships no console shell (`docs/design/access.md` §5), so the candidate this
-document leans on is a unit bound to the board's own console device, and
-**whether a mos-owned unit can own that console TTY without displacing the
-getty is a bench question** — one no board has been asked. It is not the only
-candidate, and the others are recorded in §4.4 so that a "no" from the bench is
-a choice between known options rather than a dead end. `serial-getty@ttyFIQ0` is spawned
-from the kernel `console=` parameter on both cx3576 profiles
-(`docs/design/access.md` §9.1 measures this), which is exactly the contention
-to resolve. Nothing here guesses at the answer: a unit written against an
-untested board would be the speculative code §4.2's rule exists to keep out.
-Until a board answers it, `docs/design/access.md` §9.1 remains the shipped
-truth, §3's steps 5 and 6 stay `[partial]`, and §8's rows stay
-bench-dependent.
+**The physical action is a BOARD fact, and the product decision is that it
+stays one.** Each board declares its own — a GRUB menu entry, a U-Boot menu
+selection, a button pattern held across a power cycle, a USB event — and the
+board's BSP implements it. Bootloader entry is the expected shape because it is
+the industry-standard one, and nothing bespoke is invented at the system layer
+to replace it. This document names examples (§4.4) and ranks none: a board's
+mechanism is the board's to choose and its BSP's to build.
+
+**The SYSTEM layer reserves exactly one interface and knows nothing about the
+mechanism.** It reads a *recovery intent* — one token the board's mechanism
+leaves on the kernel command line — maps it through the board's declaration,
+and turns it into the presence assertion and the reset tier the existing flows
+already consume, recording which declared action produced it. That is the whole
+of §4.2. No board name, no bootloader and no console device appears anywhere in
+it, which is the property that keeps a per-board mechanism from becoming a
+per-board flow.
+
+**What is missing, and it is named rather than implied: neither shipped board
+declares an action.** `boards/cx3576/board.env` and `boards/x64/board.env` both
+declare `BOARD_RECOVERY_ACTIONS` empty (§4.4), because neither board has an
+implemented physical action to declare. So §5's credential recovery and §2's
+tier 3 are **implemented, tested and still unreachable on a fielded device** —
+and the refusal now says *this board declares no physical recovery action*
+rather than *presence is not asserted*, which are different sentences sending
+an operator to different places. What closes the gap is BSP work on a named
+board, not a system-layer change: §3's steps 5 and 6 stay `[partial]`, §8's
+rows stay bench-dependent, and this section's marker stays `[partial]` until a
+board declares and implements one.
+
+**The board's DEBUG serial console is NOT a product surface, and no unit may
+own, reconfigure or depend on it.** On cx3576 that console is `ttyFIQ0`;
+displacing its getty was measured on hardware to wedge the FIQ tty and block
+systemd uninterruptibly. Nothing in this design is built on it, no board may
+declare it as a recovery channel, and the console-owning asserter this section
+used to lean on is withdrawn rather than left open. `docs/design/access.md`
+§9.1 remains the measurement of record.
 
 There is **no button code in this tree and no button flow in this document**.
 The cx3576 recovery button drops the board into rockusb loader mode and no
-software recovery flow reads it (§4.2, §8); adding one is a change to the
-capability's answer and to nothing else, which is what the seam is for.
+software recovery flow reads it (§4.4, §8); its `adc-keys` node is
+`status = "disabled"` in the board DTS, so the board has nothing to declare
+today.
 
 ### 4.1 What the gate is, and what it is not
 
@@ -572,40 +589,79 @@ value is (a) that a *remote* attacker cannot reach the operations behind it,
 be triggered by a stray API call or a misconfigured automation. It is not, and
 may never be described as, protection against the person holding the hardware.
 
-### 4.2 What counts as presence, per board
+### 4.2 The recovery intent, and what the system does with one — **[implemented]**
 
-An entry mechanism qualifies only if it demands an action **at the device that
-no network client can perform**, and it must be one of these:
+**A recovery intent is one token, `mos.recovery=<intent>`, on the kernel
+command line.** The board's mechanism puts it there — a GRUB menu entry that
+appends it, a U-Boot menu selection that adds it to `bootargs`, anything else a
+board implements — and the system layer reads it and nothing else about the
+mechanism. `mosd_settings`'s recovery module owns the parameter's name, the
+grammar of a declaration and the mapping; `pkgs/mosd/mosd/src/recovery.rs` is
+the boot-time caller.
 
-- **A physical control asserted across a power cycle** — a recovery/reset
-  button held during boot. The device reads it before any network interface is
-  configured.
-- **A local console the operator is physically attached to** — the serial
-  console, or an attached keyboard/display, with the mechanism entered from the
-  bootloader or from an early boot stage rather than from a logged-in shell.
-- **A file placed on the boot medium with the medium out of the device** —
-  the provisioning path `docs/design/access.md` §7 already ranks first, which is
-  presence by construction: it requires possession of the medium.
+**What happens on a boot, in order, and the order is the contract:**
 
-Per board, honestly (see §8 for the full row):
+1. **Read the intent.** mosd reads `/proc/cmdline` before every reconciler and
+   before the staged-reset applier, so an action takes effect on the boot the
+   operator made it on rather than the next one. A command line with no
+   `mos.recovery=` is an ordinary boot and nothing below runs.
+2. **Map it through the board's declaration** (§4.4). The intent selects at
+   most one declared action; the action carries the mechanism, the channel and
+   the tier.
+3. **Write the presence assertion** at `/run/mos/presence` — the mechanism, the
+   channel and a REQUIRED deadline, which is what the shipped reader
+   (`MarkerPresence` in `pkgs/mosd/apid/src/routes.rs`) consumes. The deadline
+   is a system constant measured from the boot, fifteen minutes: it measures
+   the operator's session, and how long a person stands at a device is not a
+   property of the hardware. On tmpfs, mode 0600, so an assertion is spent by
+   the boot it was made on.
+4. **Stage the tier the action declares**, when it declares one, as the same
+   one-record intent `POST /api/v1/reset` writes — so what a tier DOES is
+   unchanged and replayable across a power loss for exactly the reason an
+   API-staged tier is (§2.2). An action may declare `none` and only assert
+   presence, which is the credential-recovery shape.
+5. **Audit it, naming the declared action.** One line under
+   `recovery-action-<mechanism>` whose source is the action's own name, and,
+   when a tier was staged, a second under the same `reset-<tier>` event the API
+   route uses, also sourced to the action. An audit entry that does not name
+   the mechanism cannot answer "how did this device get reset".
 
-- **cx3576** — the adc-keys recovery button and the serial console on
-  `ttyFIQ0` both exist in the tree; the button already drops the board into
-  rockusb loader mode (`docs/design/uboot-ab-handshake.md` §5.2). Neither has
-  ever been used as a *presence assertion for a software recovery flow*, and no
-  code reads it for that purpose — **bench-dependent**.
-- **x64** — there is no board-defined button and no in-band loader transport.
-  Presence means the machine's own console and firmware, or the medium in
-  another machine's hand. Every mechanism is the platform owner's, not mos's —
-  **bench-dependent**, and weaker: an x64 presence assertion is a claim about a
-  chassis mos does not define.
+**mosd writes the assertion; apid only ever reads it.** There is no route, no
+settings path and no line in apid that creates `/run/mos/presence`, so an API
+that could set it would have to be written first — which is the change this
+section forbids. A "presence" flag an API can set is not presence.
 
-Nothing here is entered over the network. A "presence" flag an API can set is
-not presence, and a design that adds one has removed the gate. The shipped
-reader obeys that literally: `/run/mos/presence` is on tmpfs and owned by root,
-apid only ever READS it, and there is no route, no settings path and no line in
-either daemon that creates it — an API that could set it would have to be
-written first.
+**Everything fails closed, and each closed door is recorded under its own
+outcome** so that "why did this device not enter recovery" is greppable:
+`refused-board-declares-none`, `refused-unknown-intent`,
+`refused-declaration-unreadable`, `refused-malformed-intent`. A command line
+carrying the parameter twice, or carrying it empty, is a mechanism that did not
+do what it meant to, and guessing which occurrence was meant is how a
+mechanism ends up selecting a tier nobody asked for. A declaration this build
+cannot read maps nothing at all rather than mapping part of itself.
+
+**THE PREMISE THIS STANDS ON, stated because the guard stands on it and on
+nothing else.** The intent arrives on the kernel command line, which is written
+by the bootloader before Linux runs. *This holds because no route, task or
+settings path in this tree writes a bootloader configuration, a U-Boot
+environment or a kernel command line, so nothing an API client can do produces
+an intent; if that stops holding, it does not.* It is therefore **not** proof
+against an attacker who already has root on the running system — root can
+rewrite the boot configuration and reboot into whatever intent it likes — and
+it is not described as one. It is proof against an API-level attacker, which is
+the threat this gate exists for (§4.1), on boards that are **I1** and where
+physical possession is already full control. There is deliberately **no check
+for the premise**: a check on this side could only inspect the intent it was
+handed, which is exactly the thing that would have been forged.
+
+**What qualifies as a physical action.** A board may declare a mechanism only
+if it demands an action **at the device that no network client can perform**,
+taken from the bootloader or an early boot stage rather than from a logged-in
+shell. A file placed on the boot medium with the medium out of the device
+qualifies by construction — it requires possession of the medium — and
+`docs/design/access.md` §7's provisioning path already ranks it first. A token
+read from a medium left in the slot does not: that assertion happens at a boot
+nobody attended (§4.4).
 
 ### 4.3 What presence authorizes, exhaustively
 
@@ -645,79 +701,88 @@ mistake worth naming:
   root walk and the same `/mos/updates/verified` workspace
   (`docs/design/updates.md` §5.3).
 
-### 4.4 Candidates for the missing asserter, and what each costs
+### 4.4 How a board declares its actions — schema **[implemented]**, actions **[not implemented]** on both boards
 
-**None of these is implemented, and recording them is not choosing one.** The
-preamble's bench question has a "no" branch, and a reader who gets that answer
-back should be choosing between known options rather than re-deriving the field
-from scratch under time pressure. Each candidate below is stated with its cost
-in the same breath, because a candidate whose weakness arrives in a later
-caveat is a candidate that gets picked before its weakness is read.
+A board declares its physical recovery actions where its other facts live, in
+`boards/<board>/board.env`, and the layout lint holds the declaration to a
+schema (`verify/src/lint.ts`, `make os-layout-lint`). One key lists the
+actions; four keys describe each one:
 
-Every one of them ends at the same seam. The reader
-(`ConsolePresence` in `pkgs/mosd/apid/src/routes.rs`) consumes a mechanism, a
-channel and a REQUIRED deadline; adopting a candidate changes what the board
-answers `recovery.presence` with and what writes the assertion, and changes no
-flow, no route and no tier. That is what the seam is for, and it is why this
-section can be a list of options rather than a fork in the design.
+| Key | What it is |
+|---|---|
+| `BOARD_RECOVERY_ACTIONS` | the action names, whitespace-separated. **Declared empty means the board has none**; absent is not the same claim and the lint refuses it |
+| `RECOVERY_<name>_INTENT` | the value the board's mechanism sets as `mos.recovery=<intent>` |
+| `RECOVERY_<name>_MECHANISM` | what the presence assertion carries and what the audit event is named for |
+| `RECOVERY_<name>_CHANNEL` | the `/dev` node a minted credential is published on — never a file, and never the board's debug console |
+| `RECOVERY_<name>_TIER` | `none`, `configuration`, `application-data` or `full-factory`. There is no fourth tier, so no board can declare an action staging one |
 
-**1. A unit bound to the board console device.** The candidate §4 already
-leans on, and the one blocked on the bench question above.
-- *Strongest property, and it is the one that matters:* the assertion is **live
-  and continuous, and it ends when the session ends**. That is what makes it
-  match the deadline the reader already requires — the deadline measures a
-  session somebody is present for, and here there is one.
-- *Cost:* the bench question. `serial-getty@ttyFIQ0` is spawned from the kernel
-  `console=` parameter on both cx3576 profiles, so this candidate is unavailable
-  until a board says whether a mos-owned unit can hold that TTY.
+Two actions may not share an intent — that is a mapping with two answers — or a
+mechanism, which would leave an audit trail that cannot say which door was
+used. The same schema is enforced twice, and deliberately: the lint fails the
+BUILD, and the device's own reader fails CLOSED at boot, so a board cannot ship
+a declaration the device would silently ignore.
 
-**2. The recovery button**, on boards that have one **and** where a post-loader
-stage can read it.
-- *Cost, and it is a bench question twice over:* the cx3576 button is wired to
-  the loader today — it drops the board into rockusb (§4.2, §8) — so whether
-  anything after the loader can read it is untested, and nothing in this tree
-  reads it for any purpose.
-- ***Cost, structurally, and this is the disqualifying one to weigh first:*
-  it is cx3576-ONLY.** x64 has no board-defined button — §4.2 and §8 both say
-  so in terms — so a mechanism built on this one gives the two boards two
-  different recovery stories: a guard that exists on one board and not the
-  other. That asymmetry is the trap, not the missing hardware. A recovery path
-  that only one board has is a path `docs/design/bsp` cannot write a single
-  procedure for, and the honest per-board answer then has to say the x64 case
-  is unsolved anyway — which leaves the field exactly where it started, having
-  spent the bench time.
+The declaration reaches the device as `/usr/lib/mos/recovery-actions.conf`,
+which is those same lines and nothing else. **Rendering it is part of
+implementing a board's action** and belongs to the board's package alongside
+the mechanism itself; a board with no action ships no file, and an absent file
+reads as "this board declares none". Both shipped boards are in that state.
 
-**3. A token on removable media**, reusing the mount path P1 already ships:
-`/run/mos/provisioning/{boot,media}`, staged by
-`mos-provisioning-import` and rooted at `DEFAULT_STAGING_ROOT` in
-`pkgs/mosd/mosd/src/provisioning_doc.rs`.
-- *Board-independent, needs no bench answer, and is **the only candidate
-  available today**.* Nothing has to be qualified before it can be built.
-- ***Weakness, in the same breath rather than in a later caveat:* a medium can
-  be posted, left in a drawer, or forgotten in the slot, so the assertion would
-  happen AT BOOT, when nobody is standing at the device.** That is weaker in
-  exactly the dimension "physical presence" exists to carry: §4.1's value is
-  (a) that a remote attacker cannot reach the operation, (b) that every use
-  leaves a record, and (c) that a destructive operation cannot be triggered by
-  a stray call — and a forgotten stick weakens (c) without helping (a).
-- *It also sits badly beside the REQUIRED deadline the reader enforces.* A
-  deadline measures a session somebody is present for; **a forgotten stick has
-  no session**, so whatever window such a token declared would be a number
-  chosen by whoever wrote the medium rather than a measurement of anyone's
-  presence. Note that this is *not* §4.2's third bullet: that one requires the
-  medium to be **out of the device**, which is possession and therefore
-  presence by construction. A token read from an inserted medium at boot is the
-  weaker relative of it, and the distinction is the whole of the argument.
+**Both shipped boards declare NONE, and that is the honest state rather than a
+placeholder:**
 
-**The decision this material is for, and it is not taken here.** A later reader
-may reasonably conclude that candidate 3 is acceptable for **tier 3** — a
-destructive operation whose blast radius is the device's own state, requested
-by someone who prepared a medium for it — and **not** for **credential
-recovery**, which mints a working management credential and would, on a
-forgotten stick, mint it at a boot nobody attended. That is a product decision
-to be taken with this section in front of the person taking it. It is
-deliberately left open: nothing above ranks the candidates, and §4.3's list of
-what presence authorizes is unchanged either way.
+- **cx3576** — the recovery button is a *loader* entry (`PREBOOT` → rockusb,
+  `docs/design/uboot-ab-handshake.md` §5.2) and its `adc-keys` node is
+  `status = "disabled"` in the board DTS; U-Boot on this board cannot take a
+  USB keyboard today; and the debug console is excluded by the rule above. It
+  has nothing to declare.
+- **x64** — there is no board-defined button and no in-band loader transport.
+  A GRUB menu entry appending `mos.recovery=` is the shape this board would
+  most likely take, and the firmware and GRUB configuration are the platform
+  owner's rather than facts mos can assert on their behalf.
+
+**What a board that declares none does, exactly.** The flows refuse as they do
+today — same seam, same status, same envelope — and the refusal says the board
+declares none. `MarkerPresence` reads the declaration BEFORE the marker, so a
+file left in `/run` by anything at all reaches nothing on such a board: there
+is no mechanism it could name that the board declares.
+
+**Examples of what a BOARD may implement.** These are examples, not open
+questions for the system layer, and this section ranks none of them. Each is
+stated with its cost in the same breath, because a candidate whose weakness
+arrives in a later caveat is one that gets picked before its weakness is read.
+All of them end at the same interface: adopting one changes a board's
+declaration and the BSP that implements it, and changes no flow, no route and
+no tier.
+
+1. **A bootloader menu entry**, GRUB or U-Boot, appending the intent to the
+   kernel command line. The industry-standard shape and the one this interface
+   expects. *Strongest property:* the operator is at the device at the moment
+   the entry is selected, which is what the assertion's deadline measures.
+   *Cost:* it is per-board firmware work, and on x64 the GRUB configuration is
+   the platform owner's.
+2. **A recovery button**, on boards that have one and where a stage that can
+   set the intent may read it. *Cost, and it is a bench question twice over:*
+   the cx3576 button is wired to the loader today, so whether anything that can
+   set an intent may read it is untested. ***Structurally, and this is the one
+   to weigh first:* it is cx3576-ONLY** — x64 has no board-defined button, so a
+   product flow built on it would exist on one board and not the other. Under
+   this design that asymmetry is survivable in a way it was not before: the
+   capability is declared per board and the flows refuse visibly where it is
+   absent, which is exactly what `docs/design/security-model.md` §4 requires of
+   a board-specific mechanism.
+3. **A token on removable media**, reusing the mount path P1 already ships
+   (`/run/mos/provisioning/{boot,media}`, staged by `mos-provisioning-import`).
+   *Board-independent and needs no bench answer.* ***Weakness, in the same
+   breath:* a medium can be posted, left in a drawer, or forgotten in the
+   slot, so the assertion would happen AT BOOT with nobody standing at the
+   device** — weaker in exactly the dimension presence exists to carry, and it
+   sits badly beside the required deadline, which measures a session somebody
+   is present for. Note this is *not* §4.2's medium-out-of-the-device case:
+   that one is possession, and therefore presence by construction. A board
+   adopting this should weigh it for **tier 3** and against **credential
+   recovery**, which mints a working management credential and would, on a
+   forgotten stick, mint it at a boot nobody attended.
 
 ## 5. Credential recovery: rotate, never reveal — **[implemented]**
 
@@ -1011,8 +1076,8 @@ today, and this document does not soften it.
 
 | Board | Bootloader access | Reflash transport | Physical-presence entry mechanism | Both-slots-failed evidence path | Recovery level, honestly |
 |---|---|---|---|---|---|
-| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it** — **bench-dependent**. The board answers `recovery.presence` with `console-attach` (§4), and nothing on it writes that assertion yet — **bench-dependent** | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[partial]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
-| **x64** (generic UEFI) | the platform owner's firmware setup and the GRUB console; mos configures neither | remove the medium and write the full-disk image from another machine; there is no in-band loader mode | none defined by mos — presence is the machine's own console/firmware or possession of the medium — **bench-dependent**, and it is a claim about a chassis mos does not specify. The board answers `recovery.presence` with `console-attach` (§4), on a console mos does not define | attached console output plus `ORDER`/`A_TRY`/`B_TRY` read from `grubenv` on the ESP (§6.1) | **I1**. QEMU/CI evidence only; no field evidence exists; §2's tiers, §4's gate and §5's recovery are code that no x64 unit has run — **bench-dependent** |
+| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it**, and its `adc-keys` node is `status = "disabled"` in the board DTS. The board declares `BOARD_RECOVERY_ACTIONS` EMPTY (§4.4): it has no implemented physical action, so every presence-gated flow refuses on it saying so — **bench-dependent**, and what it waits on is BSP work rather than a system-layer change | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[partial]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
+| **x64** (generic UEFI) | the platform owner's firmware setup and the GRUB console; mos configures neither | remove the medium and write the full-disk image from another machine; there is no in-band loader mode | none defined by mos — presence is the machine's own console/firmware or possession of the medium — **bench-dependent**, and it is a claim about a chassis mos does not specify. The board declares `BOARD_RECOVERY_ACTIONS` EMPTY (§4.4); a GRUB menu entry appending `mos.recovery=` is the shape it would most likely take, and that configuration is the platform owner's | attached console output plus `ORDER`/`A_TRY`/`B_TRY` read from `grubenv` on the ESP (§6.1) | **I1**. QEMU/CI evidence only; no field evidence exists; §2's tiers, §4's gate and §5's recovery are code that no x64 unit has run — **bench-dependent** |
 
 **Who must prove each bench-dependent row.** The qualification owner named in
 the board's dossier, against `docs/bsp/qualification.md` row 12 (Recovery):
