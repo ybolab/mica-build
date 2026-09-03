@@ -1,6 +1,6 @@
 # PLAN-073 Build the x64 kernel in tree, with its own config
 
-- **status**: draft
+- **status**: implemented
 - **createdAt**: 2026-09-03 19:21
 - **approvedAt**: 2026-09-03 (the request itself; see *Approval boundary* for
   what it does and does not cover)
@@ -372,6 +372,58 @@ that gate, and x64 has no dossier today.
    architecture on this host, and `make os-debs` walks producers in sequence.
    Measure it before deciding whether the x64 kernel needs the same
    `PREFLIGHT=1` warn-don't-refuse treatment `podman` and `board-cx3576` have.
+
+### 7b. How each one was answered
+
+Recorded here rather than only at the decision sites, because §7 is what the
+approval boundary excluded and these are the answers it asked for.
+
+1. **Normalisation: strip.** The recorded `x64.config` carries set symbols and
+   explicit `is not set` lines and drops the six toolchain-derived
+   `CONFIG_*_VERSION*` symbols. `CONFIG_CC_VERSION_TEXT` is literally gcc's
+   `--version` output; leaving it in would make every builder-image bump land
+   as a config diff whose every line is about something else. The builder is
+   digest-pinned one level up. Result: 4 587 lines, 1 687 built in.
+2. **`CONFIG_MODULES=y`, with a tail of three.** The resolved config leaves
+   `nf_log_syslog`, `xt_LOG` and `x86_pkg_temp_thermal` loadable and builds
+   everything else in, so `modules_install` writes a `modules.builtin` of 395
+   entries and a `modules.dep` that is short but not empty. That matters for
+   the reason the question was asked: `verify/src/checks-kernel.ts` resolves
+   names against those indexes, and an index that did not exist would make
+   every lookup an answer about an absent directory. `CONFIG_MODULES=n` was not
+   taken — it would have removed the index the check reads.
+3. **`/boot`, as assumed.** `/boot/vmlinuz-<release>`, `/boot/config-<release>`
+   and `/usr/lib/modules/<release>/`. The config in the image is what lets
+   verify assert the floor off the artefact at all, and it is what would go red
+   if a distribution kernel returned.
+4. **Deferred, and `boards/x64/board.env` says so at `BOOT_SIZE_MIB`.** The
+   headroom is now large and stated as deliberate; shrinking it moves every
+   partition offset in the file and is its own reviewable change.
+5. **~12 minutes cold on this host** (≈80 s shallow fetch, ≈10 s config, ≈10.5
+   min compile at `-j$(nproc)`), and a warm rebuild reuses the buildx cache
+   down to whichever layer changed. `kernel-x64` takes the same `PREFLIGHT=1`
+   treatment as `board-cx3576` — its four artefacts are reported missing by
+   name before `make os-debs` starts a container — but as *missing* rather than
+   *warned*, because nothing in that run builds a kernel for itself.
+
+### 7c. What the implementation changed about this plan
+
+- **§1's diff gate found its first real defect immediately**, though not in a
+  config: the first packed kernel carried `#1 SMP … Thu Sep 3 19:43:59 UTC 2026`
+  and `root@buildkitsandbox`. `KBUILD_BUILD_TIMESTAMP`, `_USER` and `_HOST` are
+  pinned to the 1577836800 the rest of the tree uses. Removing the initrd took
+  away the composed-root comparison's one non-reproducible path; an
+  unreproducible bzImage would have replaced it.
+- **§3's size claim came out the other way round and is better for it.** The
+  bzImage is 14.9 MB against Debian's 12.1 MB vmlinuz, because the drivers are
+  built in rather than modular. What collapses is everything around it: 276 KB
+  of modules against 89.3 MiB, and no 35.5 MiB initrd at all.
+- **§5's `checks-kernel.ts` rework went further than "provenance".** Requiring
+  the shipped config to declare the floor `=y` *is* the provenance check --
+  Debian's amd64 config has twelve of those as `=m` and `CONFIG_DM_INIT` nowhere
+  -- and it needs no second copy of the normaliser to compare against the
+  recorded file. The resolution check tightened from "resolves" to "resolves as
+  builtin" in the same move.
 
 ## Risks
 

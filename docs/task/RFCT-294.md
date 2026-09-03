@@ -1,6 +1,6 @@
 # RFCT-294 Build the x64 kernel in tree, with its own config
 
-- **status**: in-progress
+- **status**: in-progress (implementation verified offline; QEMU boot pending)
 - **priority**: P1
 - **owner**: x64-kernel/session-20260903
 - **createdAt**: 2026-09-03 19:21

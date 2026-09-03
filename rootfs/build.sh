@@ -184,13 +184,14 @@ fi
 
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
 #
-# One instant, three consumers: this value is also what the driver is given as
+# One instant, two consumers: this value is also what the driver is given as
 # --source-date-epoch, which buildkit stamps into the OCI export of the packed
-# root, and what 10-compose declares so that the kernel package's postinst runs
-# update-initramfs under it. Deliberately the same number and not three pinned
-# constants -- the squashfs, the OCI image and
-# the initrd are three encodings of one tree, and a second epoch would be a
-# second answer to "when was this root made" that nothing would reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
+# root. It was three until PLAN-073, the third being the initrd that Debian's
+# kernel postinst built under 10-compose's declared SOURCE_DATE_EPOCH; there is
+# no initrd on either board now. Deliberately the same number and not separate
+# pinned constants -- the squashfs and the OCI image are two encodings of one
+# tree, and a second epoch would be a second answer to "when was this root made"
+# that nothing would reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
