@@ -71,6 +71,18 @@ export interface Partition {
   declared: (suffix: string) => boolean
 }
 
+/** One physical recovery action a board declares. */
+export interface RecoveryAction {
+  /** The name as it appears in BOARD_RECOVERY_ACTIONS, e.g. `UBOOT_MENU`. */
+  readonly name: string
+  /** 1-based position in BOARD_RECOVERY_ACTIONS. */
+  readonly position: number
+  /** Raw access for any suffix. Undefined when not declared. */
+  get: (suffix: string) => string | undefined
+  /** True even when the value is the empty string. */
+  declared: (suffix: string) => boolean
+}
+
 export interface Board {
   readonly path: string
   /** The directory name -- `boards/<board>/board.env` -- which is a board's identity. */
@@ -96,6 +108,17 @@ export interface Board {
   readonly radios: readonly string[] | undefined
   readonly bootSlotRequiredFiles: readonly string[] | undefined
   readonly espRequiredFiles: readonly string[] | undefined
+  /**
+   * The physical recovery actions the board declares
+   * (`docs/design/recovery.md` §4).
+   *
+   * Undefined when the key is absent; EMPTY when it is declared empty, and the
+   * difference carries the whole meaning here. Both shipped boards declare it
+   * empty, which says "this board has no physical recovery action"; a board
+   * that never mentioned it has said nothing at all, and the lint refuses that
+   * rather than reading silence as a claim.
+   */
+  readonly recoveryActions: readonly RecoveryAction[]
   /** Keys typed as numbers here whose values are not. Never thrown, never dropped. */
   readonly faults: readonly BoardFault[]
   get: (key: string) => string | undefined
@@ -192,6 +215,16 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
 
   const byName = new Map(partitions.map(p => [p.name, p]))
 
+  const recoveryActions: RecoveryAction[] = (list('BOARD_RECOVERY_ACTIONS') ?? []).map((aname, idx) => {
+    const k = (suffix: string): string => `RECOVERY_${aname}_${suffix}`
+    return {
+      name: aname,
+      position: idx + 1,
+      get: (suffix: string) => get(k(suffix)),
+      declared: (suffix: string) => declared(k(suffix)),
+    }
+  })
+
   return {
     path: env.path,
     name,
@@ -214,6 +247,7 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
     radios: list('BOARD_RADIOS'),
     bootSlotRequiredFiles: list('BOOT_SLOT_REQUIRED_FILES'),
     espRequiredFiles: list('ESP_REQUIRED_FILES'),
+    recoveryActions,
     faults,
     get,
     declared,

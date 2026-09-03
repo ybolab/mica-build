@@ -101,9 +101,10 @@ PLAN-049 defines.
   `authenticated_session` before presence is consulted. Audited under
   `docs/design/recovery.md` §6.
 - **Physical presence**: one seam, `trait Presence`, keyed by the board
-  capability `recovery.presence`; the shipped `ConsolePresence` reads
-  `/run/mos/presence` and refuses an absent, expired, unreadable or
-  wrong-mechanism assertion.
+  capability `recovery.presence`; the shipped reader reads `/run/mos/presence`
+  and refuses an absent, expired, unreadable or wrong-mechanism assertion. (The
+  reader was named `ConsolePresence` here and is `MarkerPresence` since the
+  2026-09-03 Completion below: the mechanism is the board's, not a console's.)
 - **Console** (U1): `pkgs/mosd/apid/ui/src/features/recovery/`
   (`reset-panel`, `credential-recovery-panel`) and
   `features/system/rollback-panel`.
@@ -140,3 +141,60 @@ PLAN-049 defines.
   §2's footnote `[^wipe]` makes every cell of that row conditional on
   device-level erase evidence no board has on file, and §7's answer until then
   is to destroy the medium. The absence is the position, not a gap.
+
+## Completion (2026-09-03) — the interface for board-declared physical actions
+
+RFCT-284's remaining half. The presence gate had no door: §4 recorded three
+candidate mechanisms and no decision, so tier 3 and credential recovery were
+implemented, tested and unreachable on a fielded device. The product decision
+taken here is that **the physical action is a BOARD fact** and the system layer
+reserves one interface for it.
+
+- **The interface, in the design record.** `docs/design/recovery.md` §4 is
+  rewritten: what a recovery intent is, how a board declares its actions, what
+  the system does with one, and what a board that declares none does. §4.2 is
+  `[implemented]`; §4.4's schema is `[implemented]` and the actions themselves
+  are `[not implemented]` on both boards. The three candidates become examples
+  of what a board may implement, ranked by nobody.
+- **The board declaration.** `BOARD_RECOVERY_ACTIONS` plus four
+  `RECOVERY_<name>_*` keys in `boards/<board>/board.env`, held to a schema by
+  the layout lint (`verify/src/lint.ts`, `make os-layout-lint`) in both
+  directions — a name that is not a name, a missing or empty key, an intent
+  that is not a command-line token, a mechanism that is not a mechanism name, a
+  channel that is not a `/dev` node, a tier that does not exist, and two
+  actions sharing an intent or a mechanism. Both shipped boards declare it
+  EMPTY, which is the honest state and a different claim from absence; the lint
+  refuses absence.
+- **The system side.** `mosd_settings`'s recovery module owns the declaration
+  grammar, the `mos.recovery=` parameter and the mapping — one crate, because
+  mosd maps an intent and apid has to be able to say what the board declares
+  when it refuses. `pkgs/mosd/mosd/src/recovery.rs` runs at boot before the
+  staged-reset applier: it writes the presence assertion (mechanism, channel,
+  REQUIRED deadline), stages the tier the action declares, and audits under
+  `recovery-action-<mechanism>` and the same `reset-<tier>` event the API route
+  uses, both sourced to the declared action's own name. apid remains a pure
+  READER of `/run/mos/presence`, which is what keeps §4's rule literal.
+- **One audit ring, two writers.** The line shape, the cap and the rotation
+  moved to `mosd_settings` so mosd's boot-time line and apid's API-time lines
+  cannot come to disagree about the file they share.
+- **The premise, named where the guard lives.** The boot-time intent is proof
+  against an API-level attacker and not against a root-level one, stated in the
+  form "this holds because X; if X stops holding, it does not" in §4.2 and at
+  the mapping site. No check is built for it: a check on that side could only
+  inspect the intent it was handed.
+- **Withdrawn rather than deferred.** The console-owning asserter. The board's
+  DEBUG serial console is not a product surface and no unit may own,
+  reconfigure or depend on it.
+
+### What is closed, and where
+
+- Closed by code and static gates: the interface, the mapping, the fail-closed
+  behaviour of every malformed or unknown intent, the refusal that names "this
+  board declares none", the audit naming the declared action, and the board
+  schema in both directions.
+- **NOT closed, and it is the same acceptance clause as before:** *"Every
+  qualified board has a physical-presence recovery entry."* No board declares
+  an action, because no board has one implemented. Tier 3 and credential
+  recovery remain reachable only when a board's BSP builds a mechanism, the
+  board declares it, and the board's package renders the declaration onto the
+  device. That is per-board work and is out of this plan's scope.

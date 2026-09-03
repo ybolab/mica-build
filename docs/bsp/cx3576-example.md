@@ -178,12 +178,13 @@ credential recovery, full factory reset, reflash — is
 [../user/recovery.md](../user/recovery.md). Two of those steps do not reach
 this board:
 
-- **Physical-presence entry: none on this board.** The board answers the
-  `recovery.presence` capability with `console-attach`, and **nothing in the
-  tree writes a presence assertion**, so credential recovery and the full
-  factory reset are refused on a fielded unit. Whether a mos-owned unit can
-  own `ttyFIQ0` without displacing the generated `serial-getty@ttyFIQ0` is
-  the bench question that blocks it.
+- **Physical-presence entry: none on this board.** The board declares
+  `BOARD_RECOVERY_ACTIONS` empty in [../../boards/cx3576/board.env](../../boards/cx3576/board.env):
+  it has no implemented physical recovery action, so credential recovery and
+  the full factory reset are refused on a fielded unit, saying so. Declaring
+  one is BSP work — a U-Boot menu entry appending `mos.recovery=` is the shape
+  it would most likely take. The DEBUG console on `ttyFIQ0` is not a product
+  surface and may not be declared as a recovery channel.
 - **The recovery button is not a presence assertion.** It is a *loader*
   entry (`PREBOOT` → rockusb) and no software recovery flow reads it.
 

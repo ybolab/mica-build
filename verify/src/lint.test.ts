@@ -27,6 +27,8 @@ import {
   formatRun,
   lintFile,
   lintPaths,
+  RECOVERY_ACTION_KEYS,
+  RECOVERY_TIERS,
   REQUIRED_BOARD_KEYS,
   requireAssertions,
   ROLE_SCHEMA,
@@ -287,7 +289,102 @@ const NOT_DATA: readonly RejectCase[] = [
   },
 ]
 
-const CASES: readonly RejectCase[] = [...PORTED, ...EMPTY_DECLARATION, ...NOT_DATA]
+// --- the physical recovery actions a board declares --------------------------
+//
+// docs/design/recovery.md §4: a physical action is a BOARD fact, and the
+// system layer maps an intent through this declaration and nothing else. Both
+// shipped boards declare NONE, so every case below is a MUTATION that gives a
+// board an action -- there is no shipped non-empty declaration to break, and a
+// schema nothing is ever held to is a schema that stops being true quietly.
+//
+// The runtime reader (`mosd_settings`'s `Declaration`) refuses the same set at
+// boot. These cases are why a board cannot ship a declaration the device would
+// then fail closed on with the image already built.
+
+/** Give a board one declared action, then mutate one of its keys. */
+function declaringOneAction(edit: (text: string) => string = t => t) {
+  return (text: string): string => edit(
+    setKey('BOARD_RECOVERY_ACTIONS', '"BOOT_MENU"')(text)
+    + '\nRECOVERY_BOOT_MENU_INTENT=recovery'
+    + '\nRECOVERY_BOOT_MENU_MECHANISM=boot-menu'
+    + '\nRECOVERY_BOOT_MENU_CHANNEL=/dev/tty0'
+    + '\nRECOVERY_BOOT_MENU_TIER=none\n',
+  )
+}
+
+const RECOVERY: readonly RejectCase[] = [
+  {
+    name: 'no-recovery-declaration',
+    board: 'x64',
+    edit: dropKey('BOARD_RECOVERY_ACTIONS'),
+    says: 'declares no BOARD_RECOVERY_ACTIONS',
+    why: 'silence is not the same claim as "this board has no physical recovery action"',
+  },
+  {
+    name: 'recovery-action-name-is-not-a-name',
+    board: 'x64',
+    edit: setKey('BOARD_RECOVERY_ACTIONS', '"boot menu"'),
+    says: 'cannot be an action name',
+  },
+  {
+    name: 'recovery-action-missing-key',
+    board: 'x64',
+    edit: declaringOneAction(dropKey('RECOVERY_BOOT_MENU_CHANNEL')),
+    says: 'declares no RECOVERY_BOOT_MENU_CHANNEL',
+  },
+  {
+    name: 'recovery-action-key-empty',
+    board: 'x64',
+    edit: declaringOneAction(setKey('RECOVERY_BOOT_MENU_MECHANISM', '""')),
+    says: 'declares RECOVERY_BOOT_MENU_MECHANISM as empty',
+    neverSays: 'declares no RECOVERY_BOOT_MENU_MECHANISM',
+  },
+  {
+    name: 'recovery-intent-is-not-a-cmdline-token',
+    board: 'x64',
+    edit: declaringOneAction(setKey('RECOVERY_BOOT_MENU_INTENT', 'Recover_Now')),
+    says: 'is not a kernel command-line token',
+  },
+  {
+    name: 'recovery-mechanism-is-not-a-mechanism',
+    board: 'x64',
+    edit: declaringOneAction(setKey('RECOVERY_BOOT_MENU_MECHANISM', 'BOOT_MENU')),
+    says: 'is not a mechanism name',
+  },
+  {
+    name: 'recovery-channel-is-not-a-device',
+    board: 'x64',
+    edit: declaringOneAction(setKey('RECOVERY_BOOT_MENU_CHANNEL', '/var/lib/mos/console')),
+    says: 'a channel is a device under /dev',
+    why: 'the shipped publisher refuses a regular file, so this board would ship an action that always aborts',
+  },
+  {
+    name: 'recovery-tier-is-not-a-tier',
+    board: 'x64',
+    edit: declaringOneAction(setKey('RECOVERY_BOOT_MENU_TIER', 'secure-wipe')),
+    says: 'There is no fourth reset tier',
+  },
+  {
+    name: 'two-actions-share-an-intent',
+    board: 'x64',
+    edit: text => declaringOneAction()(text)
+      .replace('BOARD_RECOVERY_ACTIONS="BOOT_MENU"', 'BOARD_RECOVERY_ACTIONS="BOOT_MENU BUTTON"')
+      + 'RECOVERY_BUTTON_INTENT=recovery\nRECOVERY_BUTTON_MECHANISM=button\n'
+      + 'RECOVERY_BUTTON_CHANNEL=/dev/tty0\nRECOVERY_BUTTON_TIER=none\n',
+    says: "both declare the intent 'recovery'",
+  },
+  {
+    name: 'two-actions-share-a-mechanism',
+    board: 'x64',
+    edit: text => declaringOneAction()(text)
+      .replace('BOARD_RECOVERY_ACTIONS="BOOT_MENU"', 'BOARD_RECOVERY_ACTIONS="BOOT_MENU BUTTON"')
+      + 'RECOVERY_BUTTON_INTENT=factory\nRECOVERY_BUTTON_MECHANISM=boot-menu\n'
+      + 'RECOVERY_BUTTON_CHANNEL=/dev/tty0\nRECOVERY_BUTTON_TIER=none\n',
+    says: "both declare the mechanism 'boot-menu'",
+  },
+]
+
+const CASES: readonly RejectCase[] = [...PORTED, ...EMPTY_DECLARATION, ...NOT_DATA, ...RECOVERY]
 
 function messagesFor(c: RejectCase): string[] {
   return withMutatedBoard(c.board, c.edit, (p) => {
@@ -397,13 +494,23 @@ describe('the run itself', () => {
       'no-arch',
       'no-arch-empty',
       'no-partition-set',
+      'no-recovery-declaration',
       'non-numeric-partnum',
       'offset-units-disagree',
       'partition-number-gap',
       'partition-set-empty',
       'partition-set-whitespace',
+      'recovery-action-key-empty',
+      'recovery-action-missing-key',
+      'recovery-action-name-is-not-a-name',
+      'recovery-channel-is-not-a-device',
+      'recovery-intent-is-not-a-cmdline-token',
+      'recovery-mechanism-is-not-a-mechanism',
+      'recovery-tier-is-not-a-tier',
       'role-empty',
       'start-units-disagree',
+      'two-actions-share-a-mechanism',
+      'two-actions-share-an-intent',
       'uboot-attempts-empty',
       'uboot-without-attempts',
       'unknown-role',
@@ -551,5 +658,40 @@ describe('the role schema', () => {
     expect([...REQUIRED_BOARD_KEYS]).toEqual([
       'BOARD_CMDLINE_ARGS', 'BOARD_SIZE_BUDGET_MB', 'BOARD_HAS_STATUS_LED', 'MOS_ARCH',
     ])
+  })
+})
+
+// --- the recovery declaration, on the boards that actually ship --------------
+
+describe('the physical recovery declaration', () => {
+  // The honest state, asserted rather than assumed: neither board has an
+  // implemented physical action, so neither declares one, and the flows refuse
+  // on both. A board that quietly grew one would change what a fielded device
+  // can be made to do from the outside, and this is where that shows up.
+  test('both shipped boards declare the key, and declare it empty', () => {
+    for (const board of requireShippedBoards()) {
+      const run = lintPaths([boardEnvPath(board)])
+      expect(run.ok, `${board} does not lint`).toBe(true)
+      expect(
+        run.checks.some(c => c.ok && c.message.includes('no physical recovery action')),
+        `${board} must declare BOARD_RECOVERY_ACTIONS empty`,
+      ).toBe(true)
+    }
+  })
+
+  test('an action carries four keys, and the tiers are the three that exist plus none', () => {
+    expect([...RECOVERY_ACTION_KEYS]).toEqual(['INTENT', 'MECHANISM', 'CHANNEL', 'TIER'])
+    expect([...RECOVERY_TIERS]).toEqual(['none', 'configuration', 'application-data', 'full-factory'])
+  })
+
+  // A board that declares a well-formed action PASSES. Without this the
+  // rejection cases above would be satisfied by a lint that refuses every
+  // non-empty declaration, which would make the schema unimplementable.
+  test('a well-formed declaration is accepted and says what it accepted', () => {
+    const run = withMutatedBoard('x64', declaringOneAction(), p => lintPaths([p]))
+    expect(run.ok, run.checks.filter(c => !c.ok).map(c => c.message).join('\n')).toBe(true)
+    expect(
+      run.checks.some(c => c.ok && c.message.includes('declares 1 physical recovery action')),
+    ).toBe(true)
   })
 })

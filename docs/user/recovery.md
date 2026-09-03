@@ -243,15 +243,16 @@ Stated rather than omitted, because a reader who assumes these work will plan
 a recovery that does not exist.
 
 - **Steps 5 and 6 are refused on every fielded device.** Both are gated on a
-  physical-presence assertion. The gate ships and is tested: it reads an
-  assertion left at `/run/mos/presence` by an operator at the local console
-  and refuses an absent, expired or wrong-mechanism one. **Nothing in this
-  tree writes that assertion.** Both boards answer the presence capability
-  with `console-attach`, and neither has an asserter, so the gate refuses
-  every request a fielded device can make of it — `403`, with
-  `presence_required`, audited, nothing staged. Whether a mos-owned unit can
-  own a board's console device without displacing the login prompt on it is a
-  bench question no board has been asked.
+  physical-presence assertion. The gate ships and is tested, and so does the
+  system side that produces an assertion: a board declares the physical
+  recovery actions it has — a bootloader menu entry, a button pattern, a USB
+  event — and the device maps the one the operator took into an assertion and,
+  where the action says so, a reset tier. **Neither shipped board declares
+  one**, because neither has an implemented physical action, so the gate
+  refuses every request a fielded device can make of it — `403`, with
+  `presence_required`, audited, nothing staged, and the refusal says the board
+  declares none rather than that nobody is standing at the device. What closes
+  this is board support work on a named board, not a change to the flows.
 - **The cx3576 recovery button is not a presence assertion.** It drops the
   board into rockusb loader mode and no software recovery flow reads it. There
   is no button-driven recovery in this product.
