@@ -244,7 +244,7 @@ mirror.
 | `bash tests/deb-package-gate.sh` | PASS 264/264 |
 | `bash tests/install-closure-gate.sh` | PASS 99/99, 14 clean roots, 2 architectures |
 | composed x64 image + `bash verify/run.sh --verify --board x64` | PASS 309/309, 22 skipped |
-| `bash verify/run.sh` | PASS, whole suite |
+| `bash verify/run.sh` | PASS 1237/1237 |
 | `bash build/run.sh` | PASS 869/869 |
 | `make docs-verify` | PASS across all five checkers |
 
@@ -293,6 +293,19 @@ save/restore unit, no API, no console surface, and `nftables` was not moved out
 of `mos-podman`. RFCT-296's Notes say the same thing in the same words, because
 "the image ships iptables" is a sentence that reads as a firewall to anyone who
 does not read the next one.
+
+**One operational finding, not about this change.** `tests/deb-package-gate.sh`
+and `tests/install-closure-gate.sh` CANNOT RUN CONCURRENTLY. The package gate's
+reproducibility leg rebuilds a producer, and `build-env/deb/build.sh` removes
+that producer's archives from the pool before writing the new ones -- its own
+comment says the pool ends with no archive for the producer -- so a closure gate
+copying the pool at that moment gets an index that names
+`mos-board-cx3576_..._arm64.deb` and a pool that does not hold it. Run
+concurrently once here, the closure gate reported FAIL 79/105 with `apt-get
+install exited 100` and "File not found - /dist/pool/mos-board-cx3576...".
+Re-run alone against the same pool it is PASS 99/99. The failure was the
+scheduling, not the tree, and the gate's own vacuity guards are what made it
+loud rather than green over an empty root.
 
 **Build inputs borrowed, disclosed.** This worktree is a fresh checkout, so
 three gitignored artefact trees were reused rather than rebuilt:
