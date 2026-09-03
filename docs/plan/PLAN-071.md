@@ -86,9 +86,9 @@ is silent. Recorded here as a constraint on any future credential support:
 **credentials configured for the update source are attached only to hosts
 same-origin with the effective `source.url`, and any additional host is an
 explicit operator list.** PLAN-070 gives that list a home now rather than
-later — `http.credentialHosts` in the baked `meta/manifest.json`, committed
-empty — so the origin a future credential is scoped to is reviewable in a diff
-before the credential exists.
+later — `http.credentialHosts` in the baked `meta/updates/manifest.json`,
+empty in the committed `meta.example/` — so the rule and its shape exist before
+the first credential does.
 
 `allow_insecure` has no mos analogue: the TUF walk is what establishes trust,
 and `docs/design/release-signing.md` §3.1 already mirrors metadata over plain
@@ -130,8 +130,9 @@ channel = "stable"
 #### 1.1 Where each value comes from: baked defaults, and this file on top
 
 PLAN-070 bakes `update.source`, `update.channel`, `update.policy` and
-`update.checkIntervalMinutes` into the image at `/usr/share/mos/meta/`. Those
-are **defaults, not owners**, and the rule is per key:
+`update.checkIntervalMinutes` into the image at
+`/usr/share/mos/meta/updates/manifest.json`. Those are **defaults, not
+owners**, and the rule is per key:
 
 - this file names a key → that value wins;
 - this file does not name it, or does not exist → the baked value;
@@ -154,8 +155,9 @@ device whose operator has re-pointed `source.url` still verifies against the
 anchors its image shipped with, which is what keeps a policy-file edit from
 being a trust decision.
 
-The direction matters for `policy` too: the tree's committed `meta/` sets
-`policy = "check"` and names no source, so the shipped default this plan
+The direction matters for `policy` too: `meta.example/` — the committed
+statement of the seam's shape, since PLAN-070's `meta/` is itself gitignored —
+sets `policy = "check"` and names no source, so the shipped default this plan
 preserves is preserved in the image as well as in the code.
 
 `[autoCheck]` is **retired, not migrated.** `deny_unknown_fields` means an
@@ -514,3 +516,11 @@ operator writes `auto`.
   home. The `off | check | auto` semantics, the window rules, the
   never-arms-the-override invariant, the rolled-back-version suppression, the
   clock predicate and the backlog are unchanged.
+- 2026-09-03: PLAN-070 was revised a second time — `meta/` carries signing
+  material, so it is gitignored and only a public subset is baked. Touched here
+  only where that makes a sentence false: the baked manifest's path is
+  `/usr/share/mos/meta/updates/manifest.json`, the committed default lives in
+  `meta.example/` rather than in `meta/`, and the claim that the credential
+  host list is reviewable in a diff is withdrawn with PLAN-070 §4.2. Every
+  invariant above, including §1.1's precedence and parse-error rules, is
+  unchanged.

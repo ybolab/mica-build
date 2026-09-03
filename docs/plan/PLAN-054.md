@@ -28,8 +28,9 @@ What the answer settles:
 - The **first slice is chosen**: outbound-only device registration and
   inventory reporting, off by default, designed in **PLAN-072**.
 - The **seam that carries the switch is chosen**: the `meta/` directory in this
-  repository, baked into the image, designed in **PLAN-070**, which also
-  carries the default update source and the pinned TUF root.
+  repository, an allowlisted public subset of which is baked into the image,
+  designed in **PLAN-070**, which also carries the default update source and
+  the pinned TUF root.
 - **PLAN-071** is adjacent, not part of this: the `off | check | auto` update
   module is a local capability that works with no fleet plane at all. It is
   named here so nobody reads unattended updating as a fleet feature.
@@ -99,9 +100,9 @@ them, and guessing at any one of them would design the wrong thing.
    factory-injected credential, which forces the factory tooling
    `docs/design/manufacturing.md` §0 records as non-existent — **and a
    per-device delivery channel that no longer has a candidate in this tree.**
-   PLAN-070's `meta/` is baked into the image, so every device flashed from one
-   image carries byte-identical bytes and cannot carry a per-device credential
-   even in principle; the earlier draft merely argued against one. Answering
+   PLAN-070's baked subset of `meta/` is fleet-identical, so every device
+   flashed from one image carries the same bytes and cannot carry a per-device
+   credential even in principle; the earlier draft merely argued against one. Answering
    yes therefore means designing a second, per-device seam from nothing. The
    single most expensive question here, and more expensive than it was.
 7. **Do serial number and MAC addresses go in the inventory?** An inventory
@@ -168,3 +169,8 @@ and unchanged by the product decision.
   fleet-identical seam cannot carry a per-device credential even in principle.
   The other four questions, the boundary and the COND/* dispositions are
   unchanged.
+- 2026-09-03: PLAN-070 was revised again — `meta/` holds signing material, so
+  it is gitignored and only a public subset reaches the image. Touched here
+  only where that makes a sentence false: the seam bullet above and question 6
+  now say *the baked subset* rather than the whole directory. The decision, the
+  boundary, the other questions and the COND/* dispositions are unchanged.

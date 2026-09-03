@@ -68,13 +68,15 @@ Everything in §5 follows from choosing the second.
 
 ### 2. The switch
 
-**Where.** `fleet.enabled` in the baked `meta/manifest.json` (PLAN-070),
-default `false`. It lives at the product tier because *may this device talk to
-a fleet plane at all* is a fact about the product, in the same tier that
-answers which trust roots the device honours. The tree's committed `meta/` sets
-it `false` and `fleet.url` to `null`, so a build that does not change it
-produces a device with no fleet configuration and no fleet behaviour — the
-absent case of PLAN-070 §7, unchanged.
+**Where.** `fleet.enabled` in the baked `meta/updates/manifest.json`
+(PLAN-070), default `false`. It lives at the product tier because *may this
+device talk to a fleet plane at all* is a fact about the product, in the same
+tier that answers which trust roots the device honours. The committed
+`meta.example/` sets it `false` and `fleet.url` to `null` — and PLAN-070's
+`meta/` is gitignored, so that example is also what a fresh checkout is
+instantiated from — so a build that does not change it produces a device with
+no fleet configuration and no fleet behaviour, the absent case of PLAN-070 §7,
+unchanged.
 
 **Who may flip it.** Two options, and this plan recommends the second:
 
@@ -136,10 +138,11 @@ reads it can claim to be that device. Registration therefore needs something
   exactly the authority `docs/design/security-model.md` §1 already grants.
 - **(b) Per-device factory-injected credential.** Zero-touch. Requires factory
   tooling that does not exist (`docs/design/manufacturing.md` §0), and cannot
-  ride the baked seam at all: every device flashed from one image carries
-  byte-identical `meta/` bytes, so a per-device credential in it would be the
-  same credential on every device. PLAN-070 §1 makes that a prohibition with a
-  build-time refusal behind it rather than an argument. It also reintroduces
+  ride the baked seam at all: every device flashed from one image carries a
+  byte-identical baked set, so a per-device credential in it would be the same
+  credential on every device. PLAN-070 §1.4 keeps that as a prohibition with a
+  build-time refusal and a packed-root check behind it rather than an
+  argument. It also reintroduces
   the injected-secret shape `docs/design/provisioning.md` §3.1 structurally
   excludes. Choosing (b) means designing a second, per-device channel — not
   adding a field.
@@ -314,7 +317,7 @@ device-side role derived from a fleet identity.
 
 | # | Slice | Size | Gate |
 |---|---|---|---|
-| C1 | The `fleet` switch read from the baked `meta/`, the administrator toggle of §2b, and the off-is-off deregistration | S | depends on PLAN-070 F5 |
+| C1 | The `fleet` switch read from the baked manifest, the administrator toggle of §2b, and the off-is-off deregistration | S | depends on PLAN-070 F5 |
 | C2 | Registration client: outbound HTTPS, the identity payload, the claim-code display, the enrolment credential on STATE | M | payload asserted to contain nothing from the excluded list |
 | C3 | Inventory report with the monotonic counter, backoff and the `fleet` live-state entry | M | replay rejected on a non-advancing counter |
 | C4 | The autonomy assertion: a test that drives every local capability with the plane unreachable | S | §6 is a test, not a sentence |
@@ -335,7 +338,7 @@ device slices.
 **This plan ends at an approved device-side architecture for outbound-only
 registration.** Approval means agreeing that:
 
-- the switch is off by default and lives in the baked `meta/`;
+- the switch is off by default and lives in the baked manifest;
 - registration is outbound-only, grants no inbound command surface, and is not
   a step toward one;
 - the plane never holds an update signing key and never serves a bundle;
@@ -420,3 +423,10 @@ single decision.
   were re-pointed at the build and release process. §1's control-channel
   boundary, §3's payload and claim-code recommendation, §4, §5's threat model,
   §6's autonomy claim and the C1–C7 backlog are unchanged.
+- 2026-09-03: PLAN-070 was revised a second time — `meta/` carries signing
+  material, so it is gitignored and only an allowlisted public subset is baked.
+  Touched here only where that makes a sentence false: the switch's file is
+  `meta/updates/manifest.json`, the committed default lives in `meta.example/`,
+  and shape (b) is excluded by the baked *set* being fleet-identical rather
+  than by the whole directory being so. §2's recommendation of (a), §5's
+  threat model, the outbound-only boundary and the backlog are unchanged.
