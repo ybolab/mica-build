@@ -92,7 +92,9 @@ Description: mos common system policy, state mounts and operator account
  upstream packaging change would otherwise walk straight through.
  .
  THE COST, measured on the composed x64 dev root: 450035 KiB over 208 packages
- before either dependency, 452803 KiB over 214 after. An image WITH containers
+ before either dependency, 452804 KiB over 214 after -- 2768 KiB of closure and
+ one more KiB for the preset file above, which is this package's own payload and
+ not a dependency's. An image WITH containers
  pays six packages and 2768 KiB, all of it iptables' -- iptables, libip4tc2,
  libip6tc2, libnetfilter-conntrack3, libnfnetlink0 and netbase, the last for
  /etc/protocols and /etc/services -- because nftables, libnftables1, libjansson4

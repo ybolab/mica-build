@@ -437,9 +437,11 @@ packages, 184965 KiB), installing **both** `nftables` and `iptables`
 | `netbase` | 6.5 | 35 |
 | **total** | | **4351** |
 
-**On the shipped x64 dev image the delta is unchanged from round 1: six
-packages and 2768 KiB**, 450035 KiB over 208 packages before to 452803 over
-214. Adding `nftables` to the base costs that image nothing, because
+**On the shipped x64 dev image the closure delta is unchanged from round 1: six
+packages and 2768 KiB**, 450035 KiB over 208 packages before to 452804 over
+214. The one KiB that is new since round 1's 452803 is
+`50-mos-nftables.preset` -- this package's own payload, not a dependency's.
+Adding `nftables` to the base costs that image nothing, because
 `nftables`, `libnftables1`, `libjansson4` and `libnftnl11` were already in it
 through `mos-podman`. What moved is the ATTRIBUTION, not the bytes: those four
 are now there by two declarations instead of one.
