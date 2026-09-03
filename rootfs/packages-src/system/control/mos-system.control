@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, iptables, libubootenv-tool, curl, passwd
+Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, nftables, iptables, libubootenv-tool, curl, passwd
 Description: mos common system policy, state mounts and operator account
  The board-independent half of a mos root filesystem: the seed and reconcile
  tools under /usr/lib/mos, their units, the STATE and DATA bind mounts
@@ -51,24 +51,56 @@ Description: mos common system policy, state mounts and operator account
  Unversioned, like systemd above: an upstream Debian package, not a pool
  member with a stamp to pin.
  .
- iptables IS A TOOL AND NOT A FIREWALL, and this package ships no rule, no
- policy and nothing that would persist one. It is in Depends beside iproute2 and
- curl for the same reason they are: base tooling every image carries whatever it
- declines. Until it was added, the only firewall front-end in any mos image was
- nftables, and that arrives through mos-podman's Depends alone -- netavark execs
- `nft` off PATH -- so a board or a build that declined containers had NO way to
- read or write a netfilter rule at all. On trixie the name resolves through
- alternatives to iptables-nft, which programs the same nf_tables subsystem
- netavark writes to; the legacy xtables binaries ship in the same Debian package
- and nothing here selects them, because the alternatives group is left in auto
- mode and nft outranks legacy 20 to 10. It costs six packages and 2768 KiB
- installed on an image that has containers -- iptables, libip4tc2, libip6tc2,
- libnetfilter-conntrack3, libnfnetlink0 and netbase, the last for /etc/protocols
- and /etc/services -- measured as 450035 KiB over 208 packages before and
- 452803 KiB over 214 after, on the composed x64 dev root. On an image that
- declines containers it is a SEVENTH package and 3012 KiB, because libnftnl11
- arrives with nftables and nftables arrives with mos-podman. libmnl is in
- neither list: iproute2 already depends on it.
+ THESE ARE TOOLS AND NOT A FIREWALL. nftables and iptables are in Depends beside
+ iproute2 and curl for the same reason those are: base tooling every image
+ carries whatever it declines. This package ships no rule, no policy and nothing
+ that would persist one. Before they were added, the only firewall front-end in
+ any mos image was nft, and it arrives through mos-podman's Depends -- netavark
+ execs it off PATH -- so a board or a build that declined containers had NO way
+ to read or write a netfilter rule at all.
+ .
+ TWO FRONT-ENDS, ONE BACKEND, AND THEY DO NOT SHOW EACH OTHER THE SAME THING.
+ Both program the kernel's nf_tables subsystem: on trixie the iptables name
+ resolves through alternatives to iptables-nft, a translation layer and not a
+ second firewall. But `nft list ruleset` shows the WHOLE subsystem -- rules
+ written through either tool, and the tables netavark reconciles -- while
+ `iptables -S` shows only what came through the iptables front-end. nft is the
+ complete view and the one to reach for; iptables is here so that third-party
+ tooling and operator habits that cannot speak nft keep working. The legacy
+ xtables binaries ship in the same Debian package as iptables and nothing here
+ selects them: the alternatives group is left in auto mode, nft outranks legacy
+ 20 to 10, and update-alternatives is run nowhere in this tree.
+ .
+ nftables IS ALSO IN mos-podman's Depends AND THAT IS NOT A DUPLICATION. A
+ package that needs a tool declares it: mos-podman needs nft because netavark
+ runs it off PATH, and this package carries it because the base image's firewall
+ vocabulary is nft whether or not containers are present. Those are two
+ independent true statements, and the contents of the base package are not
+ something mos-podman may assume.
+ .
+ THE PRESET AT /usr/lib/systemd/system-preset/50-mos-nftables.preset IS WHY
+ nftables IS SAFE TO DECLARE HERE, and it is a decision rather than a tidy-up.
+ The nftables package ships nftables.service, whose ExecStart is
+ `nft -f /etc/nftables.conf`, and that shipped config begins with `flush
+ ruleset` -- an enabled unit would clear netavark's container-network rules at
+ every boot. No shipped preset matched that unit before this one, and MEASURED
+ in a clean trixie root, `systemctl preset nftables.service` with the stock set
+ CREATES sysinit.target.wants/nftables.service: the unmatched fallback is
+ enable. With `disable nftables.service` in place the same command writes
+ nothing. The unit being unenabled today is an absence; this file makes it a
+ decision the tree owns, and it is what a `systemctl preset-all` or a future
+ upstream packaging change would otherwise walk straight through.
+ .
+ THE COST, measured on the composed x64 dev root: 450035 KiB over 208 packages
+ before either dependency, 452803 KiB over 214 after. An image WITH containers
+ pays six packages and 2768 KiB, all of it iptables' -- iptables, libip4tc2,
+ libip6tc2, libnetfilter-conntrack3, libnfnetlink0 and netbase, the last for
+ /etc/protocols and /etc/services -- because nftables, libnftables1, libjansson4
+ and libnftnl11 were already there through mos-podman. An image that DECLINES
+ containers pays ten packages and 4351 KiB, the same six plus nftables 185,
+ libnftables1 1054, libjansson4 100 and libnftnl11 244; that profile is the one
+ these two dependencies actually change. libmnl is in neither list: iproute2
+ already depends on it.
  .
  RAUC's runtime libraries are deliberately not here. glib, json-glib and
  libfdisk are in the image for the self-built rauc alone and belong to

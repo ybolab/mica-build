@@ -1,4 +1,4 @@
-# PLAN-075 Ship `iptables` in the base image, with no policy
+# PLAN-075 Ship the firewall tools in the base image, with no policy
 
 - **status**: completed
 - **createdAt**: 2026-09-03 19:40
@@ -221,6 +221,16 @@ Seven files: one control file, three verify sources (two new), one verify test
   persistence and policy surface, exactly what this task excludes, so putting
   the package in the base means deciding about that unit's enablement in the
   same change. It is not in this diff because it was not asked for.
+- 2026-09-03: **that question is ANSWERED -- ship both.** The user chose to have
+  the compatibility front-end alongside the native one, so `mos-system` depends
+  on `nftables` and `iptables`. The half of the recommendation that was a
+  caveat -- `nftables.service` and its `flush ruleset` -- became a requirement
+  rather than an objection, and is delivered as
+  `50-mos-nftables.preset`. See *Round 2*.
+- 2026-09-03: **`nftables` stays in `mos-podman`'s `Depends`**, decided by the
+  user, and this is not a duplication to clean up later. Recorded in both
+  control files so that the reader who finds it there does not have to come
+  here to learn why.
 
 ## Outcome
 
@@ -228,7 +238,9 @@ Delivered as proposed, with two corrections the measurements forced and one
 message fix the composed image forced.
 
 **What shipped.** `iptables` in `mos-system`'s `Depends` with a description
-paragraph naming what it is and is not; `verify/src/checks-iptables.ts` with
+paragraph naming what it is and is not; `verify/src/checks-iptables.ts` (renamed
+to `checks-firewall.ts` in *Round 2* below, as are the two references after
+this one) with
 `packed-iptables-present` and `packed-iptables-nft-backend`; the alternatives
 chain seeded into `packedRootFixture` in the four-hop shape the composed root
 really has; thirteen tests in `verify/src/checks-iptables.test.ts`, four of them
@@ -315,3 +327,132 @@ three gitignored artefact trees were reused rather than rebuilt:
 u-boot that `make os-debs` and the package gate's reproducibility rebuild need.
 Nothing was written into `/srv/mos`. The x64 half -- the composition, the image
 and the verifier run -- reads none of those inputs.
+
+## Round 2: both front-ends, and the preset
+
+Round 1 shipped `iptables` alone and put one question back to the user: should
+`nftables` also be in the base? The answer was **ship both**, and it supersedes
+everything above that reads as "iptables only". The *Context* section is left as
+it was written -- it is the measurement round 1 made, and it is what the answer
+was decided against.
+
+### The end state
+
+`mos-system` depends on **`nftables` and `iptables`**. `nft` is the native
+front-end and the complete view; `iptables` is the compatibility path for
+third-party tooling and operator habits that cannot speak nft.
+
+`nftables` **stays** in `mos-podman`'s `Depends`, and both control files now say
+why so that a future reader does not remove it as a duplicate: a package that
+needs a tool declares it. `mos-podman` needs `nft` because netavark execs it off
+PATH; `mos-system` carries it because the base image's firewall vocabulary is nft
+whether or not containers are present. Two independent true statements about two
+packages, and the contents of the base package are not something `mos-podman`
+may assume.
+
+### The preset, which is a requirement and not a caveat
+
+Round 1 argued `nftables` should not be a one-line base dependency, because the
+package ships `nftables.service`, its `ExecStart` is `nft -f
+/etc/nftables.conf`, and that config begins with `flush ruleset` -- an enabled
+unit clears netavark's container-network rules at every boot. Shipping the
+package anyway turns that argument into work, and the work is one file.
+
+`mos-system` now ships
+`/usr/lib/systemd/system-preset/50-mos-nftables.preset` containing
+`disable nftables.service`, in the shape `50-mos-ssh.preset` established, and
+the postinst asserts the outcome the way it does for `ssh.service` -- an
+assertion, not the mechanism.
+
+**Why an absence was not good enough, measured** in a clean `debian:trixie-slim`
+at the pinned digest with `systemd` and `nftables` installed:
+
+- No preset in the image matched `nftables.service` at all -- not
+  `90-systemd.preset`, not `50-mos-ssh.preset`.
+- `systemctl --root=<copy> preset nftables.service` with that stock set printed
+  `Created symlink '/etc/systemd/system/sysinit.target.wants/nftables.service'`.
+  **The unmatched fallback is enable.**
+- With `disable nftables.service` added as a preset file, the same command wrote
+  nothing.
+
+So the unit being unenabled today is an ABSENCE, and one `systemctl preset-all`,
+one future preset file or one upstream packaging change turns it into a boot
+that flushes the ruleset. The file makes it a decision the tree owns and states.
+
+### Verify
+
+The family moved from `checks-iptables.ts` to
+**`verify/src/checks-firewall.ts`** -- it is no longer about one tool -- and now
+carries four checks:
+
+- `packed-nft-present` -- `nft` resolves through PATH and its symlink chain,
+  inside the root, to a regular executable file.
+- `packed-nftables-service-disabled` -- the unit is in the root, no `.wants` or
+  `.requires` link names it, and the first preset rule that claims it is a
+  `disable`. All three, because the third is the one that is easy to omit: a
+  root with no link and no rule is correct today and one preset-all from the
+  failure, and a check that counted links would call it green.
+- `packed-iptables-present` and `packed-iptables-nft-backend` -- unchanged from
+  round 1 and kept deliberately. The second was offered up as beyond the literal
+  ask and the answer was to keep it: statement 1 is otherwise prose that rots
+  silently.
+
+`packed-nft-present` deliberately coexists with `checks-engine.ts`'s
+`container-engine-nft`. They are two independent statements that share a binary,
+exactly as the two `Depends` entries are: the engine check asks whether the
+container engine can run and is scoped with the engine family, this one asks
+whether the base image has its firewall vocabulary and is true of an image that
+declines containers. `checks-firewall.test.ts` asserts their matchers cannot
+claim each other's conclusions, generically and again by name.
+
+Preset resolution is systemd's, not a grep: files are masked by basename across
+`/etc`, `/run` and `/usr/lib` in that precedence order, the merged set is read
+in basename order, and the FIRST matching rule wins with `*`/`?` globbing. A
+grep for `disable nftables.service` would find its line and report green over a
+root where an `enable nftables.*` in a file sorting earlier is what systemd
+would obey. Two tests cover exactly that -- an earlier-sorting `enable`, and an
+`/etc` file masking the shipped one -- and one covers the vacuity case where the
+unit itself is gone.
+
+Twenty-four tests in the family; ten drive a check red.
+
+### The cost, measured again, because the attribution moved
+
+On a clean `debian:trixie-slim` holding `mos-system`'s other dependencies (144
+packages, 184965 KiB), installing **both** `nftables` and `iptables`
+`--no-install-recommends` gives 154 packages and 189316 KiB: **ten packages,
+4351 KiB installed, 983180 bytes of archives.**
+
+| package | version | installed KiB |
+|---|---|---|
+| `iptables` | 1.8.11-2 | 2406 |
+| `libnftables1` | 1.1.3-1 | 1054 |
+| `libnftnl11` | 1.2.9-1 | 244 |
+| `nftables` | 1.1.3-1 | 185 |
+| `libnetfilter-conntrack3` | 1.1.0-1 | 144 |
+| `libjansson4` | 2.14-2+b3 | 100 |
+| `libip4tc2` | 1.8.11-2 | 66 |
+| `libip6tc2` | 1.8.11-2 | 66 |
+| `libnfnetlink0` | 1.0.2-3 | 51 |
+| `netbase` | 6.5 | 35 |
+| **total** | | **4351** |
+
+**On the shipped x64 dev image the delta is unchanged from round 1: six
+packages and 2768 KiB**, 450035 KiB over 208 packages before to 452803 over
+214. Adding `nftables` to the base costs that image nothing, because
+`nftables`, `libnftables1`, `libjansson4` and `libnftnl11` were already in it
+through `mos-podman`. What moved is the ATTRIBUTION, not the bytes: those four
+are now there by two declarations instead of one.
+
+**The profile this decision actually changes is the container-less one, and it
+pays 4351 KiB where round 1 had it paying 3012.** That is the number to quote
+when someone asks what the base firewall vocabulary costs: ten packages and
+4.2 MiB on an image that declines containers, and nothing at all on one that
+does not.
+
+### Still not done
+
+No rule set, no policy, no `netfilter-persistent`, no `iptables-save`/`restore`
+unit, no shipped ruleset that anything loads, no management API, no console
+surface, and nothing that reapplies a rule after a reboot. Two tools and one
+preset that keeps a unit off.

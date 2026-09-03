@@ -425,7 +425,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBusybox(root, file)
-  seedIptables(root, file)
+  seedFirewall(root, file)
   seedBoardShape(root, board, file)
   // LAST: it prepends an ELF header to the two daemons seeded above and writes
   // the ssh.service the shadow family also touches, so it has to see their
@@ -576,10 +576,13 @@ function seedBusybox(root: string, file: WriteFile): void {
     '#!/bin/sh\nif [ "${BUSYBOX}" = "n" ] || [ -z "${BUSYBOXDIR}" ]; then\n\tcopy_exec_klibc\nfi\n')
 }
 
-// RFCT-296: the base image's firewall tool, and the chain its name resolves by
+// RFCT-296: the base image's firewall tools, the chain iptables resolves by,
+// and the unit that must stay disabled
 
 /**
- * `iptables`, in the four-hop alternatives shape a trixie root really has it.
+ * Both front-ends, `nftables.service`, and the presets that decide it.
+ *
+ * `iptables` is seeded in the four-hop alternatives shape a trixie root really has it.
  *
  * TRANSCRIBED FROM A MEASURED ROOT and not invented: in a clean
  * debian:trixie-slim at the pinned digest, with mos-system's Depends installed,
@@ -598,8 +601,37 @@ function seedBusybox(root: string, file: WriteFile): void {
  * presence is what makes `packed-iptables-nft-backend` green over a root that
  * HAS the legacy binary rather than over one that happens to lack it -- a check
  * that only ever saw the second could not tell the two apart.
+ *
+ * THE PRESET SET IS THE SHIPPED ONE, both files, plus systemd's own
+ * 90-systemd.preset with the two rules it really carries that sort near
+ * nftables alphabetically and match nothing here. That last file is not
+ * decoration: `packed-nftables-service-disabled` reads the merged set in
+ * basename order and takes the FIRST match, so a fixture holding only the mos
+ * preset would be green under an implementation that ignored ordering
+ * entirely.
  */
-function seedIptables(root: string, file: WriteFile): void {
+function seedFirewall(root: string, file: WriteFile): void {
+  // The native front-end, a regular file in /usr/sbin as the package ships it.
+  file('/usr/sbin/nft', 'ELF ... nft\n')
+  chmodSync(join(root, '/usr/sbin/nft'), 0o755)
+
+  // The unit and the config it would load -- both in the composed root today,
+  // from the nftables package, and neither of them enabled. The `flush ruleset`
+  // first line is transcribed because it is the reason the preset exists.
+  file('/usr/lib/systemd/system/nftables.service',
+    '[Unit]\nDescription=nftables\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\n'
+    + 'ExecStart=/usr/sbin/nft -f /etc/nftables.conf\nExecStop=/usr/sbin/nft flush ruleset\n\n'
+    + '[Install]\nWantedBy=sysinit.target\n')
+  file('/etc/nftables.conf',
+    '#!/usr/sbin/nft -f\n\nflush ruleset\n\ntable inet filter {\n\tchain input {\n'
+    + '\t\ttype filter hook input priority filter;\n\t}\n}\n')
+
+  file('/usr/lib/systemd/system-preset/50-mos-ssh.preset', 'disable ssh.service\n')
+  file('/usr/lib/systemd/system-preset/50-mos-nftables.preset', 'disable nftables.service\n')
+  file('/usr/lib/systemd/system-preset/90-systemd.preset',
+    '# Settings for units distributed with systemd itself.\n'
+    + 'enable systemd-networkd.service\ndisable systemd-time-wait-sync.service\n')
+
   file('/usr/sbin/xtables-nft-multi', 'ELF ... xtables-nft-multi\n')
   chmodSync(join(root, '/usr/sbin/xtables-nft-multi'), 0o755)
   file('/usr/sbin/xtables-legacy-multi', 'ELF ... xtables-legacy-multi\n')

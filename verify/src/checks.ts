@@ -37,7 +37,7 @@ import { DBUS_CHECKS } from './checks-dbus.ts'
 import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
 import { EXT4_CHECKS } from './checks-ext4.ts'
 import { HOME_CHECKS } from './checks-home.ts'
-import { IPTABLES_CHECKS } from './checks-iptables.ts'
+import { FIREWALL_CHECKS } from './checks-firewall.ts'
 import { KERNEL_CHECKS } from './checks-kernel.ts'
 import { FRESHNESS_CHECKS } from './checks-freshness.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
@@ -151,7 +151,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...RAUC_UNIT_CHECKS,
   ...ROOT_CHECKS,
   ...BUSYBOX_CHECKS,
-  ...IPTABLES_CHECKS,
+  ...FIREWALL_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
   ...MQTT_CHECKS,
