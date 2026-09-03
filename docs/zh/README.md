@@ -36,6 +36,7 @@
   - [`dashboard.md`](design/dashboard.md) — 仪表盘提案：着陆页、信息架构、技术姿态
   - [`display.md`](design/display.md) — HDMI kiosk 界面
   - [`mosd.md`](design/mosd.md) — 管理面：设置树、协调器、D-Bus 接口
+  - [`native-applications.md`](../design/native-applications.md) — 原生交付路径的集成商指南：`.deb` producer、单元与启动、专用账户、可写状态、健康闸、具名设备、资源上限（仅英文）
   - [`provisioning.md`](design/provisioning.md) — 无网络配置：三层模型与凭据模型
   - [`release-signing.md`](design/release-signing.md) — 生产密钥仪式：TUF root、RAUC CA、签名 runbook
   - [`remote-management.md`](design/remote-management.md) — 远程管理的现状与缺口
@@ -65,7 +66,7 @@
 | 源页面 | 源版本 | 覆盖状态 |
 |---|---|---|
 | `../user/api.md` | db66fc02 | current |
-| `../user/applications.md` | db66fc02 | current |
+| `../user/applications.md` | 965de492 | current |
 | `../user/configuration.md` | 00a5147d | current |
 | `../user/doc-contract.md` | 00a5147d | current |
 | `../user/download.md` | 00a5147d | current |

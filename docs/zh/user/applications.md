@@ -12,7 +12,37 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 两条路径的默认客户都是受信任的产品集成商，不是不受信任的应用市场——
 其安全后果在下文直白陈述。
 
-## 1. 原生应用：镜像里的软件包
+## 1. 怎么选
+
+决定它的问题不是代码怎么写，而是：**这段代码可以比操作系统落后一个
+发布吗？**如果答案是不行，它就是原生的。其余一切都由这一个答案推出，
+下表每一行都是设备的事实，而不是偏好：
+
+| | 原生软件包 | 容器 |
+|---|---|---|
+| 谁决定它何时发布 | OS 发布决定 | 你自己独立决定 |
+| 是否在签名镜像里 | 是 | 否——镜像在运行时拉取 |
+| 谁为它签名 | RAUC bundle 签名，其后是 dm-verity | 今天没有任何东西 |
+| OS 回滚会不会把它带回去 | 会，与 OS 一起原子回滚 | 不会——它跨过回滚继续运行 |
+| 它的失败会不会让 OS 回滚 | 会——失败的 unit 会让健康闸失败 | 不会——没有东西盯着它 |
+| 代码放在哪 | 只读 verity 根 | DATA 上的 `/mos/containers/storage` |
+| 运行中的设备上能否更改 | 不能 | 能——`/etc/containers/systemd` 里的一个文件 |
+| 是否需要打开容器开关 | 不需要 | 需要 |
+
+有两条后果值得读两遍。原生应用在更新健康闸之内，所以更新后的崩溃循环
+会把设备回滚到那个能工作的槽位；容器不在，所以起不来的容器就只是一个
+没有运行的容器。而容器会原样跨过 OS 回滚，这在两者按不同节奏发布时是
+特性，在应用依赖旧 OS 没有的东西时是隐患。
+
+两条路径都不会回滚应用的**数据**。那是第 6 节。
+
+各自的集成商指南是
+[../../design/native-applications.md](../../design/native-applications.md) 与
+[../design/containers.md](../design/containers.md)（前者目前只有英文）。
+
+> status: shipped — evidence: `docs/design/native-applications.md`, `docs/design/containers.md`
+
+## 2. 原生应用：镜像里的软件包
 
 根文件系统由本地 Debian 包池在固定基底上以一次 APT 事务组合而成。集成商
 的原生服务就是包池里多出的一个 producer：一个 `.deb`，携带二进制、其加固
@@ -20,17 +50,17 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 组件是添加一个 producer，不是编辑构建阶段。结果封在 verity 密封的根里，
 只能通过发布新的签名镜像来更新。
 
-> status: shipped — evidence: `docs/design/build.md`, `build-env/deb/`, `rootfs/packages/`
+> status: shipped — evidence: `docs/design/build.md`, `build-env/deb/`, `rootfs/packages/`, `make os-debs`
 
-这条路径的简明且经过测试的集成商指南——打包约定、专用用户、可写路径选择、
-设备访问、资源限制——已在计划中但尚未写出；在它落地之前，上面的构建设计
-记录和 `rootfs/packages-src/` 下的现有 producer 就是可用的样例。
+集成商指南——[../../design/native-applications.md](../../design/native-applications.md)——
+覆盖 producer 约定、专用服务账户、可写状态归属、健康与日志、按名字的设备
+访问，以及 CPU、内存、PID 和 I/O 上限。它的样例就是本仓库真正构建的软件
+包，它指向源码树的引用由 `make docs-verify` 解析，所以它点名的文件不可能
+悄悄消失。
 
-> status: proposed — evidence: `docs/plan/PLAN-051.md`
+> status: shipped — evidence: `docs/design/native-applications.md`, `make docs-verify`
 
-TODO(PLAN-051): revisit after this plan merges
-
-## 2. 容器：podman 与 Quadlet
+## 3. 容器：podman 与 Quadlet
 
 镜像随附引擎（podman、crun、conmon、netavark、aardvark-dns、Quadlet
 生成器），从固定版本的上游源码构建。mos 不做容器编排：你用 systemd 的
@@ -63,11 +93,30 @@ TODO(PLAN-051): revisit after this plan merges
   东西都能以 root 的能力运行代码；这正是那个开关所把守的，也是它默认
   关闭的原因。
 - **镜像签名不做验证。**随附策略接受一切；保护一次拉取的是 registry TLS
-  和摘要引用。能分发密钥的部署可以收紧策略——容器指南写明了机制。
+  和摘要引用。收紧它是构建时的改动，因为策略文件在只读根里——容器指南
+  写明了机制，以及它必须从哪里进来。
 
 > status: shipped — evidence: `docs/design/containers.md`
 
-## 3. 总线上的应用，与 MQTT
+### 安全地发布一个容器版本
+
+集成商在这条路径上要做的四个决定，容器指南里都有经过测试的样例：
+
+- **按摘要固定，并从你验证过的东西启动。**tag 是别人可以移动的指针；
+  `Image=...@sha256:...` 是内容本身。再加上 `Pull=never`，单元要么运行
+  设备上已有的镜像，要么根本不启动，而不是在启动时无人值守地去找
+  registry。
+- **registry 凭据由你放置和轮换。**`podman login --authfile` 写到你指定的
+  位置；把那个路径放在 STATE 上，让它挺过更新，因为 podman 对 root 的
+  默认位置在 tmpfs 上。该文件是编码的，不是加密的，mos 不管理它。
+- **回滚是手工的，并且需要旧镜像。**把 `Image=` 改回上一个摘要再重启。
+  这只在旧镜像还留在设备上时有效——`podman image prune` 会删掉它，之后
+  回滚就需要 registry。
+- **数据兼容性归你。**见第 6 节。
+
+> status: shipped — evidence: `docs/design/containers.md`, `make os-quadlet-doc-test`
+
+## 4. 总线上的应用，与 MQTT
 
 管理面与应用数据由契约分离。想发布实时数据的应用在众所周知的名字
 `com.mos.<class>[.<suffix>]` 下暴露 `com.mos.Item1` 接口，`mos-mqttd` 桥
@@ -79,7 +128,7 @@ SSH、凭据、更新、电源、容器启用——永远不是 MQTT item，桥�
 
 > status: shipped — evidence: `docs/design/bus.md`, `pkgs/mosd/mqttd/`
 
-## 4. 应用 UI
+## 5. 应用 UI
 
 apid 可以用集成商的 Web UI 替代内置 UI。在内置界面的 System → UI 版本页上传由
 `mos-ui-pack` 生成的 `.mos-ui.zip`；系统校验后把它作为未激活版本保留在 DATA 的
@@ -93,3 +142,38 @@ apid 可以用集成商的 Web UI 替代内置 UI。在内置界面的 System �
 的实现。
 
 > status: unsupported
+
+## 6. mos 不强制什么
+
+上面的一切，对一个受信任的产品集成商来说，都是文档与经过测试的约定。
+它们都不是能拒绝一个发布的机制，而这个区别对要决定向客户承诺什么的人
+最重要。
+
+一个受管应用平台会有、而这个平台没有的四项控制：**镜像签名准入**——
+随附的容器策略接受任何镜像，启动时不检查任何签名；**强制资源上限**——
+CPU、内存、PID 和 I/O 限制在两条路径上都有文档和测试，但没有任何东西
+要求它们，所以一个不带任何上限的单元照样被启动；**密钥存储**——
+registry 凭据和应用密钥都是有人放在 STATE 上、root 可读的文件，mos 不
+创建、不轮换、不托管、不审计它们；以及**自动应用回滚**——两条路径上
+都没有健康闸盯着一次应用更新。
+
+> status: unsupported
+
+最后一条在原生侧有一个限定，往哪个方向读过头都不对。原生代码继承整槽
+A/B 回滚：失败的单元让健康闸失败，设备回到那个能工作的槽位。那是真正的
+自动回滚，但它不是按应用的——它一次搬动设备上的每一个应用，而且一个
+应用的**数据**都不搬。STATE 和 DATA 按设计在 A/B 对之外，这正是它们能
+挺过更新的原因；后果是：一个在更新后首次启动时迁移了自己 schema 的应用，
+在任何回滚之后都是旧版本指着新数据。那份契约由集成商自己写、自己测，
+两条路径都一样。
+
+> status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-health`, `docs/design/native-applications.md`
+
+受管与不受信任应用的控制——独立签名的应用 bundle、可分发的容器信任
+策略、能拒绝一个发布的准入、受保护的密钥存储、审计轨迹，以及按应用的
+健康闸回滚——是另一个产品，另一份成本。它们记录为一份条件计划，不在
+上面的指南里设计。
+
+> status: proposed — evidence: `docs/plan/PLAN-069.md`
+
+TODO(PLAN-069): revisit after this plan merges
