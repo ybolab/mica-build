@@ -1,6 +1,6 @@
 # PLAN-073 Add the eBPF, firewall and bridge kernel floor, and bring both boards to it
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-03 19:22
 - **approvedAt**: 2026-09-03 19:22
 - **relatedTask**: RFCT-294
@@ -303,6 +303,38 @@ rebuild and both boards' images composed and verified.
   rule would only bind if Debian refused a symbol, which the measurement shows
   it does not.
 - **Adopt BTF now.** Rejected on evidence; see above.
+
+## Outcome
+
+Gates, all run on this branch at `abd5e727`:
+
+- `(cd verify && bun test)` 1224/1224; `(cd build && bun test)` 869/869;
+  `make docs-verify` green; `bash tests/netavark-kernel-config-test.sh` 51/51
+  including the new assertion 4.
+- The new module-less shape was driven RED twice by mutating the implementation,
+  not only the fixture: making the config reader skip module-less symbols turns
+  3 cases red, and making the modprobe check invent a module name for them turns
+  17 red.
+- **x64**: pool rebuilt at the commit stamp, image composed and assembled,
+  `bash verify/run.sh --verify --board x64` **PASS 307/307**. The config check
+  read all 25 symbols out of `/boot/config-6.12.107+deb13-amd64`, the modprobe
+  check resolved all 17 modules, and its message names the 8 module-less symbols
+  it deliberately skipped.
+- **cx3576**: BSP kernel rebuilt twice (once per fragment revision), rootfs
+  composed against it, image assembled,
+  `bash verify/run.sh --verify --board cx3576` **PASS 410/410**.
+- **The RTC bench item**: `CONFIG_RTC_DRV_HYM8563=y` **passes**. The kernel
+  Dockerfile's config step is one `&&` chain, so the build could not have
+  reached `make` with that grep failing; it did, twice
+  (`#15 DONE 3.9s`, `#16 DONE 823.9s`).
+
+## Left owed
+
+- `CONFIG_BPF_LSM` on cx3576 — now unblocked by this task's `BPF_JIT`, still off
+  by default, while the fragment's `CONFIG_LSM` names `bpf`. Not enabled here;
+  see *The three buckets, measured*.
+- Nothing was verified on hardware. Both boards are green against the image
+  contract, which reads the assembled artefact; no device booted this kernel.
 
 ## Annotations
 

@@ -1,6 +1,6 @@
 # RFCT-294 Add eBPF, firewall and bridge symbols to the common kernel floor
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: kernel-floor/bkd-yp3us6yw
 - **createdAt**: 2026-09-03 19:22
@@ -62,3 +62,5 @@ Adding the eBPF and firewall kernel floor and bringing both boards to it.
   deferred, or stated as measured empty with the evidence.
 - `CONFIG_DEBUG_INFO_BTF` decided on measured evidence, with the price and the
   recommendation written down.
+
+- complete: 18 symbols in the floor; x64 verify 307/307, cx3576 410/410; BTF priced and declined; deferred-to-x64-kernel list measured empty. Owed: CONFIG_BPF_LSM on cx3576, and no hardware boot.
