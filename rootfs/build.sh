@@ -186,7 +186,7 @@ fi
 #
 # One instant, two consumers: this value is also what the driver is given as
 # --source-date-epoch, which buildkit stamps into the OCI export of the packed
-# root. It was three until PLAN-073, the third being the initrd that Debian's
+# root. It was three until PLAN-074, the third being the initrd that Debian's
 # kernel postinst built under 10-compose's declared SOURCE_DATE_EPOCH; there is
 # no initrd on either board now. Deliberately the same number and not separate
 # pinned constants -- the squashfs and the OCI image are two encodings of one

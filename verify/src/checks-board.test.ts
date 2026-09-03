@@ -995,7 +995,7 @@ describe("what a boot slot must contain", () => {
 
   test('a grub board SKIPS the U-Boot-only group, once per slot, on one owning entry', async () => {
     // ONE skip per slot naming two families -- extlinux and the Image/dtb
-    // byte-compare. It named three until PLAN-073: a grub slot carried an
+    // byte-compare. It named three until PLAN-074: a grub slot carried an
     // initrd then, so the no-initramfs rule was inverted there and travelled in
     // this skip. x64's kernel now assembles the verity root from the command
     // line, both boards' slots carry no initrd, and that check runs

@@ -662,7 +662,7 @@ rather than a hypothetical one:
   arm64 produces two trees this gate never saw.
 - **Kernel and module handling**, which is arch-different but no longer
   structurally different, and the gap narrowed rather than closed. Until
-  PLAN-073 x64 took kernel, initramfs and modules from Debian's
+  PLAN-074 x64 took kernel, initramfs and modules from Debian's
   `linux-image-amd64` and staged an EMPTY `modules.tar`, so the module payload
   path was UNEXERCISED on x64 rather than exercised at another architecture.
   Both boards now build their own kernel and ship their own `modules.tar`, so

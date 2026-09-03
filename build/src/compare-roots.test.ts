@@ -785,7 +785,7 @@ describe('the shipped ledger is self-consistent under its own rules', () => {
       '/etc/group', '/etc/group-',
       '/etc/gshadow', '/etc/gshadow-',
       '/etc/shadow-', '/usr/share/factory/etc/shadow',
-      // No /boot/initrd.img-* here since PLAN-073. It was proof material
+      // No /boot/initrd.img-* here since PLAN-074. It was proof material
       // because it was the measured non-reproducible surface of the stage
       // chain -- 182 of 183 cpio entries differing in inode number and 70 in
       // mtime, content identical. There is no initrd in an x64 root any more,

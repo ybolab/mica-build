@@ -1,4 +1,4 @@
-# RFCT-294 Build the x64 kernel in tree, with its own config
+# RFCT-295 Build the x64 kernel in tree, with its own config
 
 - **status**: in-progress (implementation verified offline; QEMU boot pending)
 - **priority**: P1
@@ -29,7 +29,7 @@ Designing, then building, the in-tree x64 kernel.
 
 **Design half.**
 
-- `docs/plan/PLAN-073.md` carries Context, Proposal, Risks, Scope, Alternatives,
+- `docs/plan/PLAN-074.md` carries Context, Proposal, Risks, Scope, Alternatives,
   an explicit approval boundary and a separately estimated implementation
   backlog, and answers all six questions the request poses: config location and
   maintenance, the upstream pin, the derived config contents, the initramfs
@@ -56,13 +56,13 @@ Designing, then building, the in-tree x64 kernel.
 
 ## Plan
 
-- [PLAN-073](../plan/PLAN-073.md)
+- [PLAN-074](../plan/PLAN-074.md)
 
 ## Notes
 
-The index rows for this task and for PLAN-073 are **owed**: this session was
+The index rows for this task and for PLAN-074 are **owed**: this session was
 told not to edit `docs/task/index.md`, `docs/plan/index.md` or
-`docs/CHANGELOG.md`, because concurrent sessions hold them. `RFCT-294` and
-`PLAN-073` were the lowest free identifiers across every worktree of this
+`docs/CHANGELOG.md`, because concurrent sessions hold them. `RFCT-295` and
+`PLAN-074` were the lowest free identifiers across every worktree of this
 project at 2026-09-03 19:21; a concurrent session may have taken the same pair
 since.

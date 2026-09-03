@@ -84,7 +84,7 @@ ARG RAUC_VERSION=""
 # for a reason that has expired: Debian's linux-image-amd64 postinst ran
 # update-initramfs during this stage and read the variable from the ENVIRONMENT,
 # so an unset one produced a working build whose initrd carried the build clock
-# and this host's inode numbers into the verity-covered root. Since PLAN-073
+# and this host's inode numbers into the verity-covered root. Since PLAN-074
 # there is no initramfs and no kernel maintainer script here at all.
 #
 # It stays an ARG because compose-install.sh requires it and uses it directly --

@@ -160,7 +160,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # linux-base's four helpers and update-initramfs are NOT in the purge list any
 # more, and their absence from it is the statement. They arrived with
 # linux-base, which x64 pulled in through Debian's linux-image-amd64 and cx3576
-# never installed. Since PLAN-073 x64 installs mos-kernel-x64 instead -- a
+# never installed. Since PLAN-074 x64 installs mos-kernel-x64 instead -- a
 # payload of a bzImage, its config and its modules, with no Depends and no
 # maintainer script -- so linux-base reaches neither board and there is nothing
 # to remove. A purge of paths nothing can create reads like a safeguard and is
@@ -196,7 +196,7 @@ FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
 # under `set -u` is a build failure rather than a check that silently reads "no
 # radios" on a board that has them.
 ARG BOARD_RADIOS=""
-# No initramfs-tools-core here since PLAN-073. It was installed for one
+# No initramfs-tools-core here since PLAN-074. It was installed for one
 # binary, lsinitramfs, which rootfs/scripts/pack-export-boot.sh used to list
 # the exported initrd and assert veritysetup, the mos-verity script and the
 # absence of busybox in it. There is no initrd on either board now -- x64's

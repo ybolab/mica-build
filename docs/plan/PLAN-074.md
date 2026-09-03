@@ -1,10 +1,10 @@
-# PLAN-073 Build the x64 kernel in tree, with its own config
+# PLAN-074 Build the x64 kernel in tree, with its own config
 
 - **status**: implemented
 - **createdAt**: 2026-09-03 19:21
 - **approvedAt**: 2026-09-03 (the request itself; see *Approval boundary* for
   what it does and does not cover)
-- **relatedTask**: [RFCT-294](../task/RFCT-294.md)
+- **relatedTask**: [RFCT-295](../task/RFCT-295.md)
 
 ## Context
 

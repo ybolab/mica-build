@@ -129,7 +129,7 @@ rm -f /var/log/dpkg.log /var/log/alternatives.log \
 # x64's: that board took Debian's linux-image-amd64, which cannot read the
 # dm-mod.create= verity table, so an initramfs re-implemented it and
 # initramfs-tools, cryptsetup-bin and linux-base arrived with the kernel and
-# board packages. Since PLAN-073 x64 installs mos-kernel-x64 -- a bzImage, its
+# board packages. Since PLAN-074 x64 installs mos-kernel-x64 -- a bzImage, its
 # config and its modules, no Depends, no maintainer script -- so none of those
 # packages is on either board and none of those paths can exist. A purge of
 # paths nothing can create reads like a safeguard and is not one.

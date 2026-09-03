@@ -527,7 +527,7 @@ cx3576-%:
 
 # x64 HAS a BSP build now, and it has exactly one target: the kernel. This
 # rule used to be a refusal saying the board had none, which was true until
-# PLAN-073 -- a UEFI machine's firmware provides the boot chain, so there is
+# PLAN-074 -- a UEFI machine's firmware provides the boot chain, so there is
 # still no U-Boot and no vendor rootfs here, but the kernel is this
 # repository's since it stopped being Debian's. The image is still assembled
 # with `bash build/run.sh --mkimage-x64`.

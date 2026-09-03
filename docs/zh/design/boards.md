@@ -41,7 +41,7 @@ boards/<name>/
 sha256 双重钉住，配置由一个 fragment 合并到 `x86_64_defconfig` 之上、解析结果记录在树内
 （`boards/x64/bsp/kernel/`），打包为 `mos-kernel-x64`，由 `mos-board-x64` 依赖。它取代了
 Debian 的 `linux-image-amd64`——那个内核没有 `CONFIG_DM_INIT`，会静默忽略本板自己的
-`dm-mod.create=` verity 表（PLAN-073）。
+`dm-mod.create=` verity 表（PLAN-074）。
 
 ## 3. 进入镜像的产物接口
 

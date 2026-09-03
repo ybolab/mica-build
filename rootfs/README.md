@@ -534,7 +534,7 @@ boot instead.
 at one commit, each on a `docker-container` builder created for it so that
 neither could replay the other's cache, produced the same `rootfs-verity.img` —
 `6ca98787…` on both sides — and the same `/boot/initrd.img`, `01e29d26…`.
-Measured 2026-08-31, when this board still had an initrd. Since PLAN-073 it has
+Measured 2026-08-31, when this board still had an initrd. Since PLAN-074 it has
 none; what replaced it as a boot-partition payload is `mos-kernel-x64`'s
 bzImage, which is reproducible for a different reason — the source is pinned by
 tag and content hash, the builder by digest, and `KBUILD_BUILD_TIMESTAMP`,
@@ -549,7 +549,7 @@ tolerated, because a floating root is a floating dm-verity root hash, and
 
 | Surface | What it carried | What was done |
 |---|---|---|
-| `/boot/initrd.img-*` | build-host inode numbers on 182 of 183 cpio entries, and the wall clock in 71 mtimes | `compose/10-compose` declared `SOURCE_DATE_EPOCH` in the environment, because `update-initramfs` read it from there and it was the kernel package's own postinst that ran it. **The surface is gone rather than pinned**: PLAN-073 replaced Debian's kernel with one that has `CONFIG_DM_INIT`, so there is no initramfs on this board and nothing builds one. The successor payload, the bzImage, is pinned by `KBUILD_BUILD_TIMESTAMP`/`_USER`/`_HOST` in the BSP build |
+| `/boot/initrd.img-*` | build-host inode numbers on 182 of 183 cpio entries, and the wall clock in 71 mtimes | `compose/10-compose` declared `SOURCE_DATE_EPOCH` in the environment, because `update-initramfs` read it from there and it was the kernel package's own postinst that ran it. **The surface is gone rather than pinned**: PLAN-074 replaced Debian's kernel with one that has `CONFIG_DM_INIT`, so there is no initramfs on this board and nothing builds one. The successor payload, the bzImage, is pinned by `KBUILD_BUILD_TIMESTAMP`/`_USER`/`_HOST` in the BSP build |
 | `/usr/share/factory/var/cache/ldconfig/aux-cache` | glibc's `{dev, ino, ctime, size}` for every shared library, as the BUILD host saw them | dropped in `pack-tree-surgery.sh`. A regenerable cache, already wrong for the device the moment it ships, and `ldconfig` rebuilds it anyway |
 | `/usr/share/factory/etc/shadow` and `/etc/shadow-` | the shadow last-change DAY for the accounts Debian's postinsts create: `systemd-network`, `messagebus`, `systemd-resolve`, `sshd` | `account-pin-shadow-dates.sh`, in `compose/90-pack`'s `closed` stage, pins every account to day 18262 — the same `2020-01-01` the three mos accounts already carried. On the composed path `useradd` writes that day itself, because the whole apt transaction runs under `SOURCE_DATE_EPOCH`; the pin is what makes the field a function of the tree either way |
 

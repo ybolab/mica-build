@@ -11,7 +11,7 @@
 // partition and its config never enters the image. These two checks read that
 // config, so they can only run where there is one.
 //
-// WHAT THEY USED TO SAY, AND WHY IT CHANGED. Until PLAN-073 x64 ran Debian's
+// WHAT THEY USED TO SAY, AND WHY IT CHANGED. Until PLAN-074 x64 ran Debian's
 // `linux-image-amd64`. That kernel's config is not in this repository and
 // nothing in-tree proved what it set, so these checks were the x64 half of the
 // same guarantee -- and they accepted `=y` OR `=m`, because that board shipped

@@ -63,7 +63,7 @@ CONFIG_NFT_FIB_INET=y
 # The rest of the container-engine floor, moved here from the cx3576 kernel
 # Dockerfile's per-board assertion loop. It was per-board only because x64 ran
 # Debian's kernel, where all of it is =m and none of it could be required; with
-# x64 building its own (PLAN-073) the constraint "the floor must be satisfiable
+# x64 building its own (PLAN-074) the constraint "the floor must be satisfiable
 # by Debian's generic kernel" expires, and what podman and netavark need stops
 # being a fact one board happens to assert about itself.
 #

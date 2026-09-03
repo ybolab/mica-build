@@ -22,7 +22,7 @@
 # be named by one of those loops: two lists free to disagree are one list that
 # is not enforced, and the built config is the only one the hardware ever sees.
 #
-# EVERY BOARD, since PLAN-073. x64 used to be out of scope because it ran
+# EVERY BOARD, since PLAN-074. x64 used to be out of scope because it ran
 # Debian's kernel, where these are modules the distribution ships and nothing in
 # this tree chose the .config. It builds its own now, so its committed config is
 # read here too -- and the symbols themselves moved into
@@ -143,7 +143,7 @@ echo "--- 2. each symbol is re-asserted after olddefconfig, on every board"
 # `for option in` loop names board facts; boards/common/mos-required.fragment
 # names engine facts, and EVERY board Dockerfile greps every `=y` line of it
 # against the final .config. So a symbol in the fragment is gated on every
-# board at once, which is where these symbols live since PLAN-073 -- and the
+# board at once, which is where these symbols live since PLAN-074 -- and the
 # check below requires the fragment's own enforcement to exist in each
 # Dockerfile before it accepts that route.
 FRAGMENT_SYMS="$(sed -n 's/^CONFIG_\([A-Z0-9_]*\)=y$/\1/p' "${FRAGMENT}")"

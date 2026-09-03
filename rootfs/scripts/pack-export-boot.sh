@@ -13,7 +13,7 @@ if ls /rootfs/boot/vmlinuz-* >/dev/null 2>&1; then
     # NO INITRAMFS, and the assertion is the inverse of the one this script
     # used to make.
     #
-    # Until PLAN-073 this board ran Debian's generic kernel, which has no
+    # Until PLAN-074 this board ran Debian's generic kernel, which has no
     # CONFIG_DM_INIT and so ignored the dm-mod.create= verity table on the
     # kernel command line. An initrd re-implemented it, this script exported
     # that initrd, and it checked the archive for veritysetup and the

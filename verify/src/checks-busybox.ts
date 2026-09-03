@@ -455,7 +455,7 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
         ...configured.map(p => `${p} (sets BUSYBOXDIR or BUSYBOX=y)`),
         ...execing.map(p => `${p} (an init file naming busybox)`),
       ]
-      // THE initramfs SEARCH SPACE SURVIVED PLAN-073, and it was worth checking
+      // THE initramfs SEARCH SPACE SURVIVED PLAN-074, and it was worth checking
       // rather than assuming. Removing initramfs-tools from this board looked
       // like it would empty INITRAMFS_TREES and leave this half searching
       // nothing -- green forever over an absent directory. It does not:

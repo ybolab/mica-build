@@ -260,7 +260,7 @@ esac
 # NO INITRAMFS, asserted where the kernel and the root it must mount are
 # finally in one tree together.
 #
-# This block used to assert the opposite. Until PLAN-073 x64 ran Debian's
+# This block used to assert the opposite. Until PLAN-074 x64 ran Debian's
 # generic kernel, which has no CONFIG_DM_INIT and therefore ignored the
 # dm-mod.create= verity table on the kernel command line; an initramfs
 # re-implemented it, and what was checked here was that the initrd the kernel

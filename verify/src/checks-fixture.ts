@@ -1126,7 +1126,7 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // changed underneath it.
   //
   // EVERY FLOOR SYMBOL IS =y AND EVERY FLOOR MODULE IS BUILT IN, which is what
-  // a healthy root looks like since PLAN-073: this board's kernel boots a
+  // a healthy root looks like since PLAN-074: this board's kernel boots a
   // dm-verity root from the kernel command line with no initramfs, so nothing
   // on that list can be a module. The `module` resolution branch is still
   // driven -- modules.dep below carries a real entry, as the shipped kernel's

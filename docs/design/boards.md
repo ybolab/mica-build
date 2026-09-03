@@ -46,7 +46,7 @@ configured by a fragment merged over `x86_64_defconfig` and recorded resolved
 (`boards/x64/bsp/kernel/`) — and it is packaged as `mos-kernel-x64`, which
 `mos-board-x64` depends on. It replaced Debian's `linux-image-amd64`, whose
 kernel has no `CONFIG_DM_INIT` and therefore ignored this board's own
-`dm-mod.create=` verity table (PLAN-073).
+`dm-mod.create=` verity table (PLAN-074).
 
 ## 3. Artifact interface into the OS image
 

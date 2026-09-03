@@ -12,7 +12,7 @@
 //   - `CONFIG_BRIDGE_VLAN_FILTERING=y` as the only BRIDGE-ish line, which is
 //     the prefix collision: it satisfies a `startsWith('CONFIG_BRIDGE')`
 //     reader while `CONFIG_BRIDGE` itself is absent.
-//   - `=m` for a floor symbol. This is the case PLAN-073 added and the one a
+//   - `=m` for a floor symbol. This is the case PLAN-074 added and the one a
 //     distribution kernel would produce: twelve of these are `=m` in Debian's
 //     amd64 config and `CONFIG_DM_INIT` is absent from it entirely. A board
 //     that loads nothing before its root exists cannot use a module here, so

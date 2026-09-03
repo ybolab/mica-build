@@ -412,7 +412,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // EVERY BOARD, and it was U-Boot-only until PLAN-073. The exemption was
+    // EVERY BOARD, and it was U-Boot-only until PLAN-074. The exemption was
     // real while it lasted: x64 ran Debian's generic kernel, which has no
     // CONFIG_DM_INIT and ignored the dm-mod.create= verity table, so a grub
     // slot HAD to carry an initrd whose local-top script assembled the root
