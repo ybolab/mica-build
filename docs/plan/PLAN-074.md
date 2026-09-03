@@ -509,6 +509,105 @@ textual:
   in the BOARD fragment, not the shared one: they are what this board's starting
   point happens to lack, not something the product requires.
 
+### 7e. Disk-encryption capability in the kernel — capability, not a feature
+
+**Nothing is encrypted at rest after this section.** No volume is encrypted, the
+image ships no cryptsetup, no LUKS header is formatted, there is no unlock path
+and no policy. `docs/design/storage.md` still marks `encryption` unsupported and
+`docs/design/security-model.md` §6 still says at-rest encryption proceeds only
+through its own approved plan. **The gate above this is unchanged.** What ships
+is three kernel symbols and their accelerated per-board counterpart.
+
+**Why it lands in this task rather than its own.** A kernel symbol costs a
+rebuild of every board, and x64's config is now built by *subtraction* — §3
+drops the driver classes and filesystems nothing consumes. Debian shipped
+`DM_CRYPT=m`; an unnamed symbol here is not merely absent, it is actively
+removed. Naming it during a rebuild that was happening anyway costs nothing;
+naming it afterwards costs two more kernel builds.
+
+**A finding that changes what "cx3576 already had it" means.** cx3576's vendor
+config contains no `CONFIG_DM_CRYPT` line at all — not `=y`, not `is not set`.
+That is not a decision: the file also carries `# CONFIG_BLK_DEV_DM is not set`,
+and `DM_CRYPT depends on BLK_DEV_DM`, so the symbol was *invisible* when the
+config was saved and Kconfig wrote no line for it. The shared floor then merges
+`BLK_DEV_DM=y`, which makes it visible at `olddefconfig` time — where, having no
+`default`, it resolves to `n`. **So the crypt target was silently off on cx3576
+as well, and naming it in the floor is the only thing that turns it on.** There
+is no vendor-config line to edit.
+
+**Derived, then corrected by measurement.** LUKS2's default is
+`aes-xts-plain64`, so the target asks the crypto API for `xts(aes)`: the XTS
+template plus an AES implementation. `plain64` is generated inside the target
+and names no symbol; SHA256 is already required for dm-verity; argon2 is
+cryptsetup's, in userspace. That reasoning gave three symbols. Regenerating the
+config gave **six**: `DM_CRYPT` `select`s `CRYPTO_ESSIV` in 6.12 whether or not
+the fragment asks for it — the argument that ESSIV is only needed for the LUKS1
+`aes-cbc-essiv:sha256` default is true and irrelevant, because the dependency is
+the kernel's — and `CRYPTO_AES_NI_INTEL` selects `CRYPTO_CRYPTD` and
+`CRYPTO_SIMD`. The fragment says so at the site rather than keeping the
+prediction.
+
+**Generic in the floor, accelerated per board.** `CRYPTO_AES_NI_INTEL` and
+`CRYPTO_AES_ARM64_CE_BLK` are the same idea under names that exist on one
+architecture each, so a shared floor cannot name either. The floor requires the
+generic `xts(aes)`; x64's fragment carries AES-NI and cx3576's board loop
+carries CE_BLK, which its vendor config already sets.
+
+**Marked as capability everywhere it appears.** The fragment block is separately
+labelled, states that it is the only block whose entries name no consumer, and
+carries its own exit condition: each line leaves when a consumer lands in the
+image and moves into that consumer's justification, or the whole block is
+deleted if the product decision goes the other way. `checks-kernel.ts` marks the
+same thing in its register and its header. `docs/user/storage.md` and its
+Chinese mirror carry one paragraph so that a reader cannot mistake a symbol list
+for a shipped feature.
+
+### 7f. `TRUSTED_KEYS` and `ENCRYPTED_KEYS` — priced, and NOT adopted
+
+Asked for as a recommendation to come back to the user, not a change. **I
+recommend against enabling either now.**
+
+| | x64 (this kernel) | cx3576 (vendor 6.1) |
+|---|---|---|
+| `KEYS` | `=y` | `=y` |
+| `ENCRYPTED_KEYS` | not set | not set |
+| `TRUSTED_KEYS` | not set | not set |
+| TPM stack | **`# CONFIG_TCG_TPM is not set`** — no TPM at all | `TCG_TPM=y`, `TCG_TIS_I2C_INFINEON=y` |
+
+**What each depends on.** `ENCRYPTED_KEYS` needs only `KEYS` and selects HMAC,
+AES, CBC, SHA256 and RNG — all cheap, and all but RNG already present. But it is
+a key type whose payload is sealed by a *master* key, and its natural master is
+a trusted key; alone it buys a container with nothing to lock it with.
+`TRUSTED_KEYS` needs `KEYS` plus a backend: the TPM backend additionally wants
+`TCG_TPM`, `ASN1_ENCODER` and `OID_REGISTRY`. On cx3576 that is three symbols.
+**On x64 it is those plus an entire TPM subsystem and a TIS driver that §3
+deliberately dropped.**
+
+**Is it usable on arm64 over I2C, or merely compilable?** Usable in principle:
+the trusted-key backend talks through the kernel's TPM chip abstraction, which
+is bus-agnostic, and the Infineon part is a TPM 2.0. Two caveats decide the
+recommendation. (1) **On x64 it would be compiled and unexercisable** — the QEMU
+harness runs `-machine q35` with no `-tpmdev`, so the only x64 machine this
+project boots has no TPM, and shipping a key mechanism no gate can execute is
+the shape this repository refuses elsewhere. (2) **On cx3576 a trusted key would
+bind to the chip but not to the boot state.** Sealing to PCRs needs something to
+measure the boot chain, and nothing in this tree does: `CONFIG_FIT_SIGNATURE` is
+configured nowhere, U-Boot extends no PCR. A key sealed to an unmeasured TPM
+resists chip removal and not a modified boot chain — a materially weaker
+guarantee than "device-bound" suggests, and one an unlock design would be likely
+to over-read.
+
+**Why waiting is free here and was not free for dm-crypt.** That asymmetry is
+the whole argument. dm-crypt had to be decided in this task because the trimming
+in §3 *removes* it; these two are already off on both boards and stay off
+whether I act or not, so the rebuild-every-board cost is identical whenever it
+is paid. Nothing is foreclosed by waiting, and choosing the key-sealing
+mechanism before the unlock design exists is choosing the design.
+
+**What I would do instead**, if the user wants to move: settle measured boot
+first, because it is what makes a sealed key mean what people assume it means —
+and only then pick between a TPM-sealed trusted key and an operator passphrase.
+
 ## Risks
 
 - **The QEMU harness is the only thing that will ever boot this kernel.** A

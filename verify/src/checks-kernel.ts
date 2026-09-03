@@ -31,6 +31,18 @@
 // root this repository packed wrong, or a config from a different kernel than
 // the modules beside it -- neither of which the config check can see.
 //
+// ONE ENTRY HERE HAS NO CONSUMER, and it is marked as such rather than blended
+// in. `CONFIG_DM_CRYPT` is provisioned capability: no package in any resolution
+// opens a dm-crypt device. It is on the list for the reason the rest are not --
+// x64's config is built by subtraction, so an unnamed symbol is removed rather
+// than merely absent, and this is the assertion that a later trim cannot take
+// it out silently. Adding it changes nothing about what the two checks
+// distinguish: it is `=y` and builtin on both boards like every other entry,
+// so the config half still reads the package's `/boot/config-*` and the
+// modprobe half still reads Kbuild's `modules.builtin`, and a config that
+// claims it beside an index that does not name it is still a root packed
+// wrong. It adds a subject to both halves and makes neither vacuous.
+//
 // WHAT THE TIGHTENING COST, stated because it is a real loss. `resolveModule`'s
 // dependency-existence walk was the sharpest part of the modprobe check: a
 // module `modules.dep` lists whose object was dropped during packing. No
@@ -98,6 +110,13 @@ export const REQUIRED: readonly Requirement[] = [
   { symbol: 'CONFIG_DM_VERITY', module: 'dm-verity', what: 'the dm-verity target itself' },
   { symbol: 'CONFIG_SQUASHFS', module: 'squashfs', what: 'the root filesystem type' },
   { symbol: 'CONFIG_OVERLAY_FS', module: 'overlay', what: 'the writable overlays above an immutable root' },
+  // The disk-encryption capability, and the ONE entry on this list whose
+  // `what` names no consumer in the image. Nothing opens a dm-crypt device,
+  // the image ships no cryptsetup and nothing is encrypted at rest; this is
+  // asserted so the capability cannot be dropped unremarked from a config that
+  // is built by subtraction. boards/common/mos-required.fragment carries the
+  // argument and the condition under which the block goes away.
+  { symbol: 'CONFIG_DM_CRYPT', module: 'dm-crypt', what: 'the dm-crypt target -- capability only, with no consumer in the image' },
   { symbol: 'CONFIG_VLAN_8021Q', module: '8021q', what: 'VLAN interfaces' },
   { symbol: 'CONFIG_BRIDGE', module: 'bridge', what: 'bridge interfaces' },
   { symbol: 'CONFIG_WIREGUARD', module: 'wireguard', what: 'WireGuard tunnels' },
