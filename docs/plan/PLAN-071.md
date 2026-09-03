@@ -84,11 +84,13 @@ this plan does not add authentication — but the day a private release channel
 appears, the rule must already be written down, because the failure it prevents
 is silent. Recorded here as a constraint on any future credential support:
 **credentials configured for the update source are attached only to hosts
-same-origin with the effective `source.url`, and any additional host is an
-explicit operator list.** PLAN-070 gives that list a home now rather than
-later — `http.credentialHosts` in the baked `meta/updates/manifest.json`,
-empty in the committed `meta.example/` — so the rule and its shape exist before
-the first credential does.
+same-origin with the baked `update.source`, and any additional host is an
+explicit operator list.** The base is the baked value and not an effective one,
+because PLAN-070 §5 makes the source URL baked-only: there is no runtime layer
+that can move the origin a credential is scoped to. PLAN-070 gives that list a home now rather than
+later — `http.credentialHosts` in the baked `meta/manifest.json`, committed
+empty — so the origin a future credential is scoped to is reviewable in a diff
+before the credential exists.
 
 `allow_insecure` has no mos analogue: the TUF walk is what establishes trust,
 and `docs/design/release-signing.md` §3.1 already mirrors metadata over plain
@@ -105,21 +107,36 @@ mechanism.
 
 ### 1. The policy, restated with one enum
 
-```toml
-[update]
-policy               = "check"   # off | check | auto
-checkIntervalMinutes = 1440      # was [autoCheck].intervalMinutes
-rebootPolicy         = "manual"  # manual | window
+The document moves and changes format, per PLAN-070 §5.1: it is
+**`/mos/updates/config.json`** on DATA, it is **JSON**, and it is
+**machine-written** — mosd is its only writer and a human does not hand-edit
+it. `/var/lib/mos/update-policy.toml` goes away. The keys are today's, minus
+the two that moved up to the baked layer:
 
-[source]
-url = "…"        # unchanged; defaulted by baked meta/ (PLAN-070), see 1.1
-channel = "stable"
-# … the remaining source keys unchanged
+```json
+{
+  "schema": "mos/update-config/v1",
 
-[network]  # unchanged
-[maintenance] # unchanged in shape; see §3 for the one new validation rule
-[rebootGate]  # unchanged
+  "policy":               "check",
+  "checkIntervalMinutes": 1440,
+  "rebootPolicy":         "manual",
+
+  "source": {
+    "channel":   "stable",
+    "repoDir":   "/var/lib/mos/update/tuf-mirror",
+    "statePath": "/var/lib/mos/update/uptane-state.json",
+    "maxBytes":  500000000
+  },
+
+  "network":     { "mode": "online", "meteredAllowsFetch": false },
+  "maintenance": { "windows": [ { "days": ["mon","thu"], "start": "02:00", "end": "04:00" } ] },
+  "rebootGate":  { "blockingStatuses": ["blocking"], "overrideMaxSeconds": 3600 }
+}
 ```
+
+`source.url` and `source.rootPath` are **absent by design** — PLAN-070 bakes
+both — and `deny_unknown_fields` means writing either one back is a load error
+rather than a rule somebody has to remember.
 
 | Value | What the device does on its own |
 |---|---|
@@ -127,44 +144,37 @@ channel = "stable"
 | `check` | Metadata checks on `checkIntervalMinutes`, exactly today's `autoCheck`. Never fetches, never installs. **The default**, so the shipped behaviour is unchanged by this plan |
 | `auto` | Checks, then fetches, then installs inside a maintenance window, then reboots or does not per `rebootPolicy` — §2 |
 
-#### 1.1 Where each value comes from: baked defaults, and this file on top
+#### 1.1 Where each value comes from
 
-PLAN-070 bakes `update.source`, `update.channel`, `update.policy` and
-`update.checkIntervalMinutes` into the image at
-`/usr/share/mos/meta/updates/manifest.json`. Those are **defaults, not
-owners**, and the rule is per key:
+PLAN-070 §5.1 is the rule and this plan holds it rather than restating it:
+`meta/` bakes the update source and the trust anchors and **owns** them; it
+also bakes the **default** channel, policy and check interval; this document
+overrides those three per key; and a key it does not name takes the baked
+default, or the code default for the keys `meta/` never carries
+(`rebootPolicy`, the windows, the network mode, the reboot-gate keys).
 
-- this file names a key → that value wins;
-- this file does not name it, or does not exist → the baked value;
-- neither → the code default, **except `source.url`, which has none.** Absent
-  in both means no online source: check and fetch refuse with the reason they
-  refuse with today, and offline import remains. That absence is unchanged by
-  PLAN-070 and is the whole of the no-default-server rule as this plan sees it.
+The two consequences this plan is responsible for:
 
-**A file that exists and does not parse does not fall back to the baked
-values.** Today's fail-closed behaviour is unchanged — every restricted action
-refuses while the reboot gate keeps evaluating with defaults — and it must not
-become "revert to what was built in", because a typo would then silently move a
-device back to the server its operator was in the middle of moving it off. A
-parse error is not absence.
+- **`channel` is now genuinely the operator's.** §4's channel-change analysis
+  was written for a value an operator edits, and it stays true; what changes is
+  that the edit is an API call rather than a text editor, and that the baked
+  default is what a never-configured or freshly reset device follows.
+- **An absent document is not a malformed one.** Absent → the baked defaults.
+  Malformed → refuse every restricted action with a message naming the file,
+  keep the reboot gate evaluating with defaults, and **never** silently adopt
+  the baked channel. That is today's fail-closed split, unchanged by the move,
+  and PLAN-070 §5.1 explains why absence is only reachable as *never
+  configured* or *reset*: a DATA pool that is missing or unmounted fails the
+  workspace readiness probe first and refuses with `update-unavailable`.
 
-**Trust anchors are not on this list.** The RAUC keyring and the pinned TUF
-root are baked and no key in this file names either; PLAN-070 §5.1 is the line
-— configuration is overridable here, trust is not overridable anywhere. So a
-device whose operator has re-pointed `source.url` still verifies against the
-anchors its image shipped with, which is what keeps a policy-file edit from
-being a trust decision.
-
-The direction matters for `policy` too: `meta.example/` — the committed
-statement of the seam's shape, since PLAN-070's `meta/` is itself gitignored —
-sets `policy = "check"` and names no source, so the shipped default this plan
-preserves is preserved in the image as well as in the code.
-
-`[autoCheck]` is **retired, not migrated.** `deny_unknown_fields` means an
-existing file carrying `[autoCheck]` becomes a load error, which fails closed
-with a message naming the key — the correct behaviour for a rename on a system
-in development, and cheaper than a migration nobody will read. The record says
-so rather than leaving a reader to discover it.
+`[autoCheck]` is **retired, and the move retired it.** The earlier draft of
+this plan made it a load error on the old file so that a rename would fail
+loudly. There is no longer an old file to fail on: the STATE document goes away
+whole, and `checkIntervalMinutes` is a key in a new JSON document that mosd
+writes. Nothing migrates, because there is nothing on a device in this tree
+that this plan is obliged to carry forward — and a device that has one gets a
+document written by the first configuration write, not a parse error it has to
+be talked through.
 
 ### 2. What `auto` does, precisely
 
@@ -187,9 +197,10 @@ and now applies to an automatic fetch for the same reason.
 **Step 3 — install**, automatically, **only inside a maintenance window**, and
 with two additions the manual path does not have.
 
-- **`policy = "auto"` requires at least one maintenance window.** A policy file
-  with `auto` and zero windows is a validation error and is refused fail-closed
-  with a message naming the rule. Today zero windows means *any time*, which is
+- **`policy = "auto"` requires at least one maintenance window.** A document
+  with `auto` and zero windows is a validation error: refused at the write
+  route with a message naming the rule (§3), and refused fail-closed by the
+  reader if one reaches the disk any other way. Today zero windows means *any time*, which is
   right for a manual install (a device with no operator-set window must still
   be updatable by a human who is standing there) and wrong for an automatic
   one, where it would mean *install the moment a bundle lands*. Requiring the
@@ -253,14 +264,44 @@ and the suppressed-version record of §6.
 **Controls**: `policy`, `channel`, `checkIntervalMinutes`, the windows,
 `rebootPolicy`, and clearing a suppressed version.
 
-**Where those controls live is deliberately unchanged: the policy file.**
-`docs/design/updates.md` §2 records why the keys are a file rather than settings
-— a settings key means a schema bump plus a migration, and a concurrent
-workstream owns the next bump. That reasoning has not expired, and the
-automatic path does not need an API write surface to work. So the console
-renders the policy read-only beside the actions, and folding these keys into the
-settings tree stays the follow-up §2 already names. Anyone who wants the switch
-to be clickable is asking for that follow-up, not for this plan.
+**These controls are writable, and the earlier draft's argument that they are
+not is retired.** That draft said the keys stay a hand-edited file, the console
+renders them read-only, and the automatic path needs no write route. The
+decision that the channel is operator-selectable ends that: an operator picks a
+channel in the console, apid asks mosd, mosd writes the document. The half of
+the old argument that survives is the half about the **settings tree** —
+`docs/design/updates.md` §2's reason still holds, a settings key means a schema
+bump plus a migration and a concurrent workstream owns the next bump — but
+"not in the settings tree" never implied "not writable", and this plan stops
+treating the two as the same statement.
+
+The write route, stated so it can be built and reviewed:
+
+- **One route**, on apid, authenticated as an administrator — the same
+  authority every other management write requires, and no new one. There is no
+  unauthenticated path and no fleet-derived path to it (PLAN-072 §5).
+- **mosd owns the file and is its only writer.** apid does not write
+  `/mos/updates/config.json`; it asks. One fact, one writer, all the way down
+  to the filesystem.
+- **Validation happens on write, not at the next check.** A rejected document
+  is refused with the offending field named, and the on-disk document is never
+  replaced by one that would fail to load. §2's `auto`-requires-a-window rule
+  moves with it: the operator who selects `auto` with no window is told so in
+  the console, instead of getting a device that fails closed some hours later
+  for a reason they have to go looking for.
+- **Atomicity follows the discipline the tree already has** — one save, a temp
+  file and an atomic rename within the same directory, the shape `Store::save`
+  uses for settings. This plan invents no second discipline. A reader therefore
+  sees the old document or the new one and never a partial write; the residue
+  is a torn write below the filesystem, which is what the fail-closed reader of
+  §1.1 is for.
+- **Audited like every other management write**, carrying the same actor field
+  this section adds to the update events. *Who put this device on `beta`* is a
+  question the trail must answer.
+
+`deny_unknown_fields` still applies, and it means something different now: a
+machine writer never emits an unknown field, so an unknown field is
+hand-editing or corruption, and refusing it is right in both cases.
 
 **Audit.** Every automatic action records the same event names the manual ones
 do (`update-check`, `update-fetch`, `update-install`), distinguished by an
@@ -288,6 +329,17 @@ reason — the selected channel holds no release newer than the running system �
 rather than a bare `idle` with no candidate, because those two states differ in
 what an operator should do next and the current vocabulary cannot tell them
 apart.
+
+**And a third state joins them: the source does not publish the selected
+channel at all.** An operator can now select a channel through an API, so
+selecting one the source has never carried is reachable in a way it was not
+when the value came from a hand-edited file on a device somebody was already
+logged into. The rule is PLAN-070 §5.1's: **report that the selected channel
+holds nothing, and never fall back to the baked default.** A silent fallback
+would put the device on a channel its operator did not choose, which is the
+same defect as adopting the baked channel on a parse error. The three states
+need three sentences, because the operator's next action differs each time —
+wait; wait longer; fix the selection.
 
 **A channel change does not shortcut anything.** An install after a channel
 change is an install: same window, same gate, same re-check.
@@ -413,11 +465,18 @@ silent outcome.
   version; suppressing too little restores the reboot loop. It needs a test
   that drives a full bad-bundle cycle and asserts the second automatic pass
   selects nothing.
-- **The retired `[autoCheck]` section turns every existing policy file into a
-  load error.** That is intended and fails closed, but it means a device
-  upgraded across this change refuses check, fetch and install until the file
-  is edited — while the reboot gate keeps working, per the existing split. The
-  release note owes that sentence.
+- **The document moves tier, format and writer in one step.** STATE → DATA,
+  TOML → JSON, hand-edited → machine-written. Each is defensible on its own and
+  together they are one slice with no half-done state that is safe: a build
+  where mosd reads the new path and something still writes the old one is
+  exactly the two-files-name-the-channel defect the move exists to remove.
+  U1 and U11 ship together.
+- **A write route is a new way to break a working device.** The policy file was
+  previously changed by somebody who had already got a shell; now it is one
+  authenticated API call, and a bad channel selection is reachable in a click.
+  Validation-on-write is the mitigation and it has to be as strict as the
+  reader, or the console becomes a way to write a document the device will
+  refuse to load.
 - **Deferral reasons are the whole observability story and are easy to under-
   build.** A `deferred` fact that says only "waiting" reproduces the silence it
   was added to remove.
@@ -433,30 +492,34 @@ and automatic install with their gates; the pre-install re-check; the version
 suppression and its clearing; the deferral facts and their console rendering;
 the clock predicate; the channel-change reason; the audit actor field.
 
-Out of scope: an API write surface for the policy file (the follow-up
-`docs/design/updates.md` §2 names); update authentication and the credential
+Out of scope: folding these keys into the **settings tree** (the follow-up
+`docs/design/updates.md` §2 names, and still deferred for its schema-bump
+reason — the write route of §3 is not that follow-up); update authentication and the credential
 rule of the Context (recorded as a constraint, not built); staged or
 percentage-based fleet rollout (PLAN-072 and PLAN-054); a remote kill switch
 (rejected, §5); per-application updates (PLAN-069); the baked `meta/`
 seam that defaults `source.url` (PLAN-070 — this plan works without it, on an
-operator-edited policy file, and §1.1 is the only place the two meet).
+operator-owned document, and §1.1 is the only place the two meet).
 
 ### Implementation backlog — estimated separately from approval
 
 | # | Slice | Size | Gate |
 |---|---|---|---|
-| U1 | The `policy`/`rebootPolicy` enums, `[autoCheck]` retirement, and the `auto`-requires-a-window validation | S | a policy file with `auto` and zero windows is refused naming the rule |
+| U1 | The `policy`/`rebootPolicy` enums, `[autoCheck]` retirement, and the `auto`-requires-a-window validation, now enforced on write | S | selecting `auto` with zero windows is refused at the API naming the rule, not at the next check |
+| U11 | The document's move: `/mos/updates/config.json` in JSON, mosd as its only writer, the atomic-rename save, and the apid write route with its audit | M | the channel is readable from exactly one file; an interrupted write leaves the previous document intact |
 | U2 | The automatic driver: check → fetch → re-check → install, calling the same functions the manual routes call | L | a test asserting the automatic and manual paths meet the same gate set |
 | U3 | Reboot under `rebootPolicy`, gate-honoured, with the never-arms-the-override invariant | M | automatic path against a closed gate arms no override |
 | U4 | Version suppression on STATE, its clearing action and audit | M | a full bad-bundle cycle; the second automatic pass selects nothing |
 | U5 | Deferral facts in the lifecycle, and the channel-has-no-newer-release reason | M | each deferral reason reachable in a test |
 | U6 | mosd's own confirmed-boot fact (§7), on which `auto`'s rollback ordering depends | M | dependency, not an extra |
-| U7 | Console: make `AutomaticUpdates` real as a read surface, the deferral display, and the "already on the previous system" string | M | — |
+| U7 | Console: make `AutomaticUpdates` real — the channel selector and the policy controls as **writes**, the deferral display, the baked-versus-operator-versus-effective reading of PLAN-070 §8, and the "already on the previous system" string | M | — |
 | U8 | Audit actor field across the update events | S | — |
 | U9 | Design-doc updates: `updates.md` §2, §3, §5, §6 and `remote-management.md` §3 | M | `make docs-verify` |
 | U10 | Bench: bad bundle → automatic install → fallback → suppression, observed on serial | — | hardware; blocking for shipping `auto`, not for building it |
 
-U2 and U6 carry the risk. U10 is not optional for a release that offers `auto`.
+U2 and U6 carry the risk of the automatic path; U1 and U11 carry the risk of
+the move and must not be split. U10 is not optional for a release that offers
+`auto`.
 
 ## Approval boundary
 
@@ -469,7 +532,9 @@ agreeing that:
   unreachable from it;
 - a rolled-back version is suppressed until an operator clears it;
 - an automatic install is deferred while the clock is untrusted;
-- the policy stays a file for now.
+- the policy stays a **file** rather than a settings subtree — but a
+  machine-written JSON document under `/mos/updates/` with an authenticated,
+  audited, validated-on-write route, not a hand-edited one.
 
 Approval does not authorise the backlog. `check` remains the default after this
 plan, so approving it does not change what a shipped device does until an
@@ -516,11 +581,14 @@ operator writes `auto`.
   home. The `off | check | auto` semantics, the window rules, the
   never-arms-the-override invariant, the rolled-back-version suppression, the
   clock predicate and the backlog are unchanged.
-- 2026-09-03: PLAN-070 was revised a second time — `meta/` carries signing
-  material, so it is gitignored and only a public subset is baked. Touched here
-  only where that makes a sentence false: the baked manifest's path is
-  `/usr/share/mos/meta/updates/manifest.json`, the committed default lives in
-  `meta.example/` rather than in `meta/`, and the claim that the credential
-  host list is reviewable in a diff is withdrawn with PLAN-070 §4.2. Every
-  invariant above, including §1.1's precedence and parse-error rules, is
-  unchanged.
+- 2026-09-03: **Addendum folded in.** The channel is operator-selectable at
+  runtime, so the policy document moves to `/mos/updates/config.json` on DATA,
+  becomes JSON, and becomes machine-written; `/var/lib/mos/update-policy.toml`
+  goes away rather than keeping a subset, because two files naming the channel
+  is the defect the move exists to remove. §3's "the policy stays a
+  hand-edited file and needs no write route" argument is retired and re-argued
+  as a write route rather than deleted; §4 gains the third channel state (the
+  source does not publish the selection) with the same never-fall-back rule;
+  §1.1 defers the layering to PLAN-070 §5.1. The `off | check | auto`
+  semantics, the window rules, the never-arms-the-override invariant, the
+  suppression, the withdrawal analysis and the clock predicate are unchanged.
