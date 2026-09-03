@@ -75,7 +75,6 @@ export async function main(argv: readonly string[]): Promise<number> {
     rootfsVerityImg: join(outDir, 'rootfs-verity.img'),
     rootfsVerityEnv: join(outDir, 'rootfs-verity.env'),
     kernel: join(outDir, 'boot', 'vmlinuz'),
-    initrd: join(outDir, 'boot', 'initrd.img'),
     factoryVar: join(outDir, 'factory-var'),
     imgOut,
     grubCfgIn: options.grubCfg,

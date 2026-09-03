@@ -660,12 +660,15 @@ rather than a hypothetical one:
   composer APT resolves the local and Debian dependency closure per
   architecture. A composition that resolves correctly for amd64 and wrongly for
   arm64 produces two trees this gate never saw.
-- **Kernel and module handling**, which is not merely arch-different but
-  structurally different. x64 takes kernel, initramfs and modules from Debian's
-  `linux-image-amd64`, and `rootfs/build.sh` stages an EMPTY `modules.tar`
-  for it precisely because there is no vendor tree; cx3576 stages a vendor
-  `modules.tar` out of its BSP. The module payload path is therefore
-  UNEXERCISED on x64, not exercised at another architecture.
+- **Kernel and module handling**, which is arch-different but no longer
+  structurally different, and the gap narrowed rather than closed. Until
+  PLAN-073 x64 took kernel, initramfs and modules from Debian's
+  `linux-image-amd64` and staged an EMPTY `modules.tar`, so the module payload
+  path was UNEXERCISED on x64 rather than exercised at another architecture.
+  Both boards now build their own kernel and ship their own `modules.tar`, so
+  that path IS exercised here -- but with a different kernel version, a
+  different config and 3 loadable modules against cx3576's vendor set. What
+  stays uncovered is the arm64 payload, not the mechanism.
 - **The cx3576 board payload**: the board's `bsp/rootfs` and `bsp/firmware`
   trees, the board overlay, and the per-board rendered
   `/etc/rauc/system.conf`, whose slot model comes from that board's `board.env`.

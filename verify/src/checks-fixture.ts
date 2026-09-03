@@ -1114,7 +1114,7 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // Nothing at /etc/modules-load.d/wifi.conf on ANY board: mos-modules
   // superseded it, and the check that says so is board-unconditional.
 
-  // The kernel's own record of itself, for the networking checks.
+  // The kernel's own record of itself, for the kernel-floor checks.
   // Seeded on every board although only x64 registers those checks: the fixture
   // describes a healthy root, and a root with no /boot/config-* is not one.
   //
@@ -1125,42 +1125,55 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // fixture together and the case would stay green while the image contract
   // changed underneath it.
   //
-  // One of the symbols is BUILT IN and the rest are modules, on purpose.
-  // modprobe resolves those two ways and a fixture that exercised only one
-  // would leave the other path driven by nothing.
-  const release = '6.12.101+deb13-amd64'
+  // EVERY FLOOR SYMBOL IS =y AND EVERY FLOOR MODULE IS BUILT IN, which is what
+  // a healthy root looks like since PLAN-073: this board's kernel boots a
+  // dm-verity root from the kernel command line with no initramfs, so nothing
+  // on that list can be a module. The `module` resolution branch is still
+  // driven -- modules.dep below carries a real entry, as the shipped kernel's
+  // does -- but from the FAILING side, by the cases in checks-kernel.test.ts
+  // that plant a floor symbol as =m. A fixture that seeded one healthy `=m`
+  // would be seeding the defect.
+  const release = '6.12.107'
   file(`/boot/config-${release}`,
     '# Automatically generated file; DO NOT EDIT.\n'
-    + 'CONFIG_VLAN_8021Q=m\n'
-    + 'CONFIG_BRIDGE=m\n'
+    + 'CONFIG_BLK_DEV_DM=y\n'
+    + 'CONFIG_DM_INIT=y\n'
+    + 'CONFIG_DM_VERITY=y\n'
+    + 'CONFIG_SQUASHFS=y\n'
+    + 'CONFIG_OVERLAY_FS=y\n'
+    + 'CONFIG_VLAN_8021Q=y\n'
+    + 'CONFIG_BRIDGE=y\n'
     + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
     + 'CONFIG_WIREGUARD=y\n'
-    + 'CONFIG_VETH=m\n'
-    + 'CONFIG_NFT_FIB=m\n'
-    + 'CONFIG_NFT_FIB_INET=m\n'
-    + 'CONFIG_NFT_FIB_IPV4=m\n'
-    + 'CONFIG_NFT_FIB_IPV6=m\n')
+    + 'CONFIG_VETH=y\n'
+    + 'CONFIG_NFT_FIB=y\n'
+    + 'CONFIG_NFT_FIB_INET=y\n'
+    + 'CONFIG_NFT_FIB_IPV4=y\n'
+    + 'CONFIG_NFT_FIB_IPV6=y\n')
   const mod = `/lib/modules/${release}`
-  file(`${mod}/modules.builtin`, 'kernel/net/wireguard/wireguard.ko\n')
+  file(`${mod}/modules.builtin`,
+    'kernel/drivers/md/dm-mod.ko\n'
+    + 'kernel/drivers/md/dm-verity.ko\n'
+    + 'kernel/fs/squashfs/squashfs.ko\n'
+    + 'kernel/fs/overlayfs/overlay.ko\n'
+    + 'kernel/net/8021q/8021q.ko\n'
+    + 'kernel/net/bridge/bridge.ko\n'
+    + 'kernel/drivers/net/wireguard/wireguard.ko\n'
+    + 'kernel/drivers/net/veth.ko\n'
+    + 'kernel/net/netfilter/nft_fib.ko\n'
+    + 'kernel/net/netfilter/nft_fib_inet.ko\n'
+    + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko\n'
+    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko\n')
+  // The loadable remainder, which is small and deliberately not empty: the
+  // shipped kernel keeps a handful of =m symbols nothing boots through, and an
+  // absent modules.dep would make checks-root's own assertion about that file
+  // a question with no subject.
   file(`${mod}/modules.dep`,
-    'kernel/net/8021q/8021q.ko: kernel/net/802/mrp.ko\n'
-    + 'kernel/bridge/bridge.ko: kernel/net/802/stp.ko kernel/net/llc/llc.ko\n'
-    + 'kernel/drivers/net/veth.ko:\n'
-    + 'kernel/net/netfilter/nft_fib.ko:\n'
-    + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko: kernel/net/netfilter/nft_fib.ko\n'
-    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko: kernel/net/netfilter/nft_fib.ko\n'
-    + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/ipv4/netfilter/nft_fib_ipv4.ko kernel/net/ipv6/netfilter/nft_fib_ipv6.ko kernel/net/netfilter/nft_fib.ko\n')
+    'kernel/net/netfilter/nf_log_syslog.ko:\n'
+    + 'kernel/net/netfilter/xt_LOG.ko:\n')
   for (const object of [
-    'kernel/net/8021q/8021q.ko',
-    'kernel/net/802/mrp.ko',
-    'kernel/bridge/bridge.ko',
-    'kernel/net/802/stp.ko',
-    'kernel/net/llc/llc.ko',
-    'kernel/drivers/net/veth.ko',
-    'kernel/net/netfilter/nft_fib.ko',
-    'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko',
-    'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko',
-    'kernel/net/netfilter/nft_fib_inet.ko',
+    'kernel/net/netfilter/nf_log_syslog.ko',
+    'kernel/net/netfilter/xt_LOG.ko',
   ]) {
     file(`${mod}/${object}`, '\x7fELF\n')
   }

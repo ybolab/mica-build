@@ -1,3 +1,17 @@
-# The x64 board package: Debian's amd64 kernel and initramfs plus the rendered
-# layout files for the QEMU target.
+# The x64 board's packages: its kernel and the rendered layout files for the
+# QEMU/UEFI target.
+#
+# Two entries and not one, because they are two decisions. mos-board-x64 is the
+# layout -- /etc/fstab, the ESP mount unit, the RAUC grub configuration -- and
+# moves when boards/x64/board.env does. mos-kernel-x64 is the kernel this
+# repository builds from boards/x64/bsp, and moves when its pin or its config
+# does. It replaced Debian's linux-image-amd64, which arrived as a Depends and
+# brought an initramfs with it (PLAN-073).
+#
+# NAMED HERE ALTHOUGH mos-board-x64 ALREADY DEPENDS ON IT. A package reachable
+# only through another package's Depends is one no resolution names, so it
+# never appears in _out/<board>/rootfs-packages.txt and
+# tests/rootfs-manifest-test.sh reports it unreachable -- which is the right
+# answer for a package nothing selects and the wrong one for the kernel.
 mos-board-x64
+mos-kernel-x64

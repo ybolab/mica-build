@@ -994,15 +994,24 @@ describe("what a boot slot must contain", () => {
   })
 
   test('a grub board SKIPS the U-Boot-only group, once per slot, on one owning entry', async () => {
-    // The oracle prints ONE skip per slot naming three families -- extlinux,
-    // no-initramfs and the Image/dtb byte-compare. One line has one owner, so
-    // it is registered here and nowhere else.
-    const fx = slotFixture(x64, ['::/vmlinuz', '::/initrd.img', '::/cmdline.cfg'])
+    // ONE skip per slot naming two families -- extlinux and the Image/dtb
+    // byte-compare. It named three until PLAN-073: a grub slot carried an
+    // initrd then, so the no-initramfs rule was inverted there and travelled in
+    // this skip. x64's kernel now assembles the verity root from the command
+    // line, both boards' slots carry no initrd, and that check runs
+    // unconditionally instead -- which is why the slot listing below has no
+    // initrd.img in it either.
+    const fx = slotFixture(x64, ['::/vmlinuz', '::/cmdline.cfg'])
     try {
       const got = await resultsOf(fx.ctx, 'boot-slot-no-extlinux')
       expect(got.map(r => r.verdict)).toEqual(['skip', 'skip'])
       expect(got.map(r => r.instance)).toEqual(['BOOT-A', 'BOOT-B'])
-      expect(got[0]?.message).toContain('the extlinux, no-initramfs and Image/dtb assertions (bootloader=grub)')
+      expect(got[0]?.message).toContain('the extlinux and Image/dtb assertions (bootloader=grub)')
+      // The rule the skip stopped covering now fires here, green, on the same
+      // fixture: a skip that had quietly become a way of not asking is exactly
+      // what unscoping it was for.
+      const noInitrd = await resultsOf(fx.ctx, 'boot-slot-no-initramfs')
+      expect(noInitrd.map(r => r.verdict)).toEqual(['pass', 'pass'])
       // ...and x64's own required files still pass in the same run: the skip is
       // about the U-Boot group, not about the slot.
       for (const f of x64.bootSlotRequiredFiles ?? []) {

@@ -38,12 +38,15 @@ boards/<name>/
     └── rootfs/             # firmware drop + demo/smoke-test rootfs (NOT the product)
 ```
 
-Boards with an upstream-supported boot chain (`boards/x64`, UEFI) have no
-`bsp/` at all — board.env, grub.cfg, an overlay, and nothing that compiles a
+Boards with an upstream-supported boot chain (`boards/x64`, UEFI) compile no
 bootloader: "a UEFI machine's firmware provides the boot chain, so nothing here
-compiles a bootloader, and the kernel is a stock distro one"
-(`boards/x64/board.env`) — Debian's `linux-image-amd64`, which reaches the
-image as a `Depends` of the `mos-board-x64` package.
+compiles one" (`boards/x64/board.env`). They still build a KERNEL. x64's
+`bsp/` has exactly one target — mainline pinned by tag and source hash,
+configured by a fragment merged over `x86_64_defconfig` and recorded resolved
+(`boards/x64/bsp/kernel/`) — and it is packaged as `mos-kernel-x64`, which
+`mos-board-x64` depends on. It replaced Debian's `linux-image-amd64`, whose
+kernel has no `CONFIG_DM_INIT` and therefore ignored this board's own
+`dm-mod.create=` verity table (PLAN-073).
 
 ## 3. Artifact interface into the OS image
 
@@ -91,13 +94,13 @@ The boot path sets the floor. The root is a squashfs carrying its own dm-verity
 hash tree, described by one `dm-mod.create=` table on the kernel command line —
 "one boot contract, written once by rootfs/build.sh, read by the kernel's
 dm-init on a board whose kernel has it and by this script on a board whose kernel
-does not" (`rootfs/initramfs/scripts/mos-verity`) — above a userland that
+does not" — above a userland that
 is "Debian trixie + systemd" — the digest-pinned base
 `rootfs/compose/10-compose.Dockerfile` installs onto, with systemd arriving
-as `mos-system`'s `Depends`. A board
-that builds its own kernel therefore has to carry the §4 assertion set built in —
-`=y`, never `=m`, because nothing can load a module before the root is there;
-x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
+as `mos-system`'s `Depends`. Every board therefore
+has to carry the §4 assertion set built in — `=y`, never `=m`, because nothing
+can load a module before the root is there. Both shipped boards do, and both
+merge the same shared fragment before `olddefconfig`. Board intake tiers:
 
 | Tier | Kernel | Support |
 |---|---|---|
@@ -134,4 +137,4 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
 | Board | Arch | Boot chain | Status |
 |---|---|---|---|
 | cx3576 (CX3576-Z, RK3576) | arm64 ("MOS_ARCH=arm64", `boards/cx3576/board.env`) | U-Boot at eMMC sector 64 -> `boot.scr` -> `booti` on `Image` + `rk3576-src.dtb` (`boards/cx3576/boot.cmd`) | BSP builds `uboot-mos` and the kernel; the §4 assertion set is enforced in the kernel build, and the RAUC `BOOT_ORDER` handshake is implemented in `boards/cx3576/boot.cmd`. `CONFIG_FIT_SIGNATURE` (§5) is configured nowhere in the tree |
-| x64 (generic UEFI) | amd64 ("MOS_ARCH=amd64", `boards/x64/board.env`) | UEFI firmware -> GRUB from one static ESP -> the slot's own boot partition (`boards/x64/grub.cfg`) | QEMU/CI baseline. No `bsp/`, "by design, not by omission" (`boards/x64/board.env`) |
+| x64 (generic UEFI) | amd64 ("MOS_ARCH=amd64", `boards/x64/board.env`) | UEFI firmware -> GRUB from one static ESP -> the slot's own boot partition (`boards/x64/grub.cfg`) | QEMU/CI baseline. `bsp/` builds the kernel and nothing else; no bootloader is compiled, because the firmware is one |

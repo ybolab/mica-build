@@ -1,47 +1,60 @@
 #!/bin/sh
-# Export the kernel and initramfs for a bootloader that cannot read squashfs.
+# Export the kernel for a bootloader that cannot read squashfs.
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -eu; mkdir -p /out/boot
 if ls /rootfs/boot/vmlinuz-* >/dev/null 2>&1; then
+    kernels="$(ls /rootfs/boot/vmlinuz-* | wc -l)"
+    [ "${kernels}" = 1 ] ||
+        { echo "error: the packed root carries ${kernels} kernels in /boot, so which one this exports -- and therefore which one the bootloader launches -- would be decided by sort order" >&2; exit 1; }
     cp /rootfs/boot/vmlinuz-* /out/boot/vmlinuz
-    cp /rootfs/boot/initrd.img-* /out/boot/initrd.img
-    contents="$(lsinitramfs /out/boot/initrd.img 2>/dev/null)"
-    [ -n "${contents}" ] ||
-        { echo "error: could not read the exported initramfs at all. A Debian initrd is a CONCATENATION -- an uncompressed early cpio for microcode, then the compressed main archive -- so zcat reads the first and stops, and any check built on it reports every file as missing whatever the archive holds" >&2; exit 1; }
-    for want in usr/sbin/veritysetup scripts/local-top/mos-verity; do
-        printf '%s\n' "${contents}" | grep -qx "${want}" ||
-            { echo "error: the EXPORTED initramfs does not contain ${want}. The rootfs stage asserted it was there; if that passed and this did not, something rebuilt the initramfs afterwards -- a dpkg trigger is the usual cause. Without veritysetup the boot stops at 'ALERT! /dev/dm-0 does not exist'" >&2; exit 1; }
-    done
-    echo "boot: the exported initramfs carries veritysetup and the mos-verity script"
 
-    # RFCT-281: BusyBox is not an initramfs dependency, asserted over the
-    # archive that SHIPS rather than over the package list that produced it.
+    # NO INITRAMFS, and the assertion is the inverse of the one this script
+    # used to make.
     #
-    # mos-busybox puts /usr/bin/busybox in the root and nothing else -- in
-    # particular NOT Debian's /usr/share/initramfs-tools/hooks/zz-busybox, which
-    # copies busybox into the initrd and hard-links every applet name beside it,
-    # and NOT the conf-hooks.d fragment that sets BUSYBOXDIR and turns the hook
-    # on. Without that fragment mkinitramfs leaves BUSYBOXDIR empty, the
-    # klibc-utils hook takes its klibc branch, and the initrd is the same one
-    # this image built before the package existed.
+    # Until PLAN-073 this board ran Debian's generic kernel, which has no
+    # CONFIG_DM_INIT and so ignored the dm-mod.create= verity table on the
+    # kernel command line. An initrd re-implemented it, this script exported
+    # that initrd, and it checked the archive for veritysetup and the
+    # mos-verity local-top script -- because without them the boot stopped at
+    # "ALERT! /dev/dm-0 does not exist". mos-kernel-x64 carries the device
+    # mapper, dm-verity and squashfs built in and reads the command line
+    # itself, exactly as cx3576's kernel does, so there is no initrd to export
+    # and no archive to inspect.
     #
-    # That is a chain of three facts about somebody else's packaging, so it is
-    # asserted rather than trusted: if any link of it changes -- a dependency
-    # added, a hook shipped, initramfs-tools learning to autodetect the binary
-    # -- busybox appears in this listing and the build stops here. An emergency
-    # tool that early boot has come to depend on is no longer an emergency tool,
-    # and the failure it would otherwise cause is a device that does not boot.
+    # RFCT-281 IS NOT DROPPED HERE, IT IS RESTATED STRONGER. That clause said
+    # BusyBox must not be an initramfs dependency, and it was checked by
+    # listing the exported initrd and refusing any entry named for busybox.
+    # With no initrd that grep would search nothing and report green forever --
+    # so what is asserted instead is the fact that makes the clause
+    # unconditional: this board's early boot has no userspace at all, because
+    # there is no initramfs for one to live in. verify/src/checks-busybox.ts
+    # keeps the other half, over the /etc/initramfs-tools and
+    # /usr/share/initramfs-tools trees that a reintroduced initramfs would have
+    # to bring back with it.
     #
-    # The listing is known to be readable and populated: the two greps above
-    # found their entries in it, so a `grep -c` returning zero here is a
-    # statement about busybox and not about an archive nothing could read.
-    hits="$(printf '%s\n' "${contents}" | grep -i busybox || true)"
-    [ -z "${hits}" ] ||
-        { echo "error: the EXPORTED initramfs contains busybox: ${hits}. mos-busybox ships one binary at /usr/bin/busybox and no initramfs hook, so nothing in this image is supposed to put it in the initrd -- something now depends on it during early boot, which is the one thing RFCT-281 forbids" >&2; exit 1; }
-    echo "boot: the exported initramfs carries no busybox, so early boot depends on none ($(printf '%s\n' "${contents}" | grep -c .) entries read)"
-    echo "boot: staged $(ls /rootfs/boot/vmlinuz-* | wc -l) kernel(s) for a bootloader that cannot read squashfs"
+    # Checked in the ROOT rather than in /out, and both spellings of the name:
+    # an initrd nothing exports is still an initrd something built, and the
+    # question is whether this image grew an early userspace, not whether this
+    # script copied one.
+    initrds="$(ls /rootfs/boot/initrd.img-* /rootfs/boot/initrd-* 2>/dev/null | tr '\n' ' ')"
+    [ -z "${initrds}" ] ||
+        { echo "error: the packed root carries an initramfs: ${initrds}. This board's kernel assembles the dm-verity root from the kernel command line and the bootloader passes no initrd, so nothing here is supposed to build one -- something has reintroduced initramfs-tools and a kernel package whose postinst fires it, and early boot has grown a userspace that is neither verified nor covered by RFCT-281's BusyBox clause" >&2; exit 1; }
+
+    # The floor the absent initrd is only safe WITHOUT. Read off the config the
+    # image ships beside the kernel, so this is a statement about the artefact
+    # rather than about the build that produced it.
+    release="$(ls /rootfs/boot/vmlinuz-* | sed 's|.*/vmlinuz-||')"
+    config="/rootfs/boot/config-${release}"
+    [ -f "${config}" ] ||
+        { echo "error: the packed root has /boot/vmlinuz-${release} and no /boot/config-${release} beside it, so nothing states how the kernel this image boots was configured and the check below has nothing to read" >&2; exit 1; }
+    for option in DM_INIT BLK_DEV_DM DM_VERITY SQUASHFS; do
+        grep -q "^CONFIG_${option}=y\$" "${config}" ||
+            { echo "error: ${config} does not declare CONFIG_${option}=y. With no initramfs, everything between 'the disk exists' and 'the verity root is mounted' has to be in the kernel image; as a module it cannot be loaded, because there is nothing to load it from yet" >&2; exit 1; }
+    done
+    echo "boot: kernel ${release} carries the no-initramfs verity floor built in, and the root has no initrd"
+    echo "boot: staged ${kernels} kernel(s) for a bootloader that cannot read squashfs"
 else
     echo "boot: no /boot/vmlinuz-* in the root; this board's bootloader is given its kernel by the BSP build"
     : > /out/boot/.no-kernel-in-root

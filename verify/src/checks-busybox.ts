@@ -455,13 +455,28 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
         ...configured.map(p => `${p} (sets BUSYBOXDIR or BUSYBOX=y)`),
         ...execing.map(p => `${p} (an init file naming busybox)`),
       ]
+      // AN EMPTY initramfs SET IS THE STRONGER STATEMENT, AND IS SAID AS ONE.
+      // Since PLAN-073 neither board ships initramfs-tools: x64's kernel
+      // assembles the dm-verity root from the command line and cx3576's always
+      // did, so INITRAMFS_TREES do not exist in the packed root and the three
+      // patterns above have nothing to match. Reported as `0 path(s) carry no
+      // hook` that would read exactly like a search that found nothing in a
+      // populated tree -- the shape of a check that has quietly stopped asking.
+      // What is true instead is categorical: there is no initramfs for BusyBox
+      // to have a role in. rootfs/scripts/pack-export-boot.sh asserts that
+      // absence over the packed root and fails the build on an initrd; this
+      // says which of the two facts it is reporting.
+      const initramfsClause = initramfs.length === 0
+        ? 'no initramfs-tools tree exists in this root at all, so there is no initrd for it to '
+          + 'enter (asserted as an absence by the pack stage)'
+        : `${initramfs.length} initramfs-tools path(s) carry no hook or conf fragment named `
+          + 'for it and set no BUSYBOXDIR'
       return [verdict(
         'packed-busybox-not-early-boot',
         faults.length === 0,
         faults.length === 0
           ? 'BusyBox has no initramfs and no init role: '
-            + `${initramfs.length} initramfs-tools path(s) carry no hook or conf fragment named `
-            + `for it and set no BUSYBOXDIR, and ${init.length} unit, generator, preset and `
+            + `${initramfsClause}, and ${init.length} unit, generator, preset and `
             + '/usr/lib/mos path(s) name it in no directive'
           : `BusyBox has an initramfs or init role: ${faults.join(' ')}. A tool early boot or a `
             + 'normal service depends on is part of the boot contract, not an emergency tool, and '

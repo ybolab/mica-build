@@ -358,21 +358,23 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
     // THE assertion that keeps the A/B handshake reachable, and the entry that
     // owns the grub board's SKIP for the whole U-Boot-only group.
     //
-    // That skip line -- `BOOT-A: the extlinux, no-initramfs and Image/dtb
-    // assertions (bootloader=grub)` -- is ONE conclusion covering three
-    // families. One line can have one owner, so it is registered here and the
-    // no-initramfs check below is scoped to the U-Boot boards. The Image/dtb
-    // byte-compare against the local BSP tree is NOT ported (see the inventory
-    // in the M4d report); it is left unclaimed rather than folded in here,
-    // because a check that reads `boards/<board>/bsp/out/` is a different kind of
-    // check from one that reads the image.
+    // That skip line -- `BOOT-A: the extlinux and Image/dtb assertions
+    // (bootloader=grub)` -- is ONE conclusion covering two families. The
+    // no-initramfs check below USED to be a third: it was scoped to the U-Boot
+    // boards because a grub slot legitimately carried an initrd. It does not
+    // any more -- x64's own kernel reads the dm-mod.create= table itself -- so
+    // that check is unconditional now and this skip has stopped covering it.
+    // The Image/dtb byte-compare against the local BSP tree is NOT ported (see
+    // the inventory in the M4d report); it is left unclaimed rather than folded
+    // in here, because a check that reads `boards/<board>/bsp/out/` is a
+    // different kind of check from one that reads the image.
     id: 'boot-slot-no-extlinux',
     cardinality: 'many',
     instance: PER_SLOT,
     shell: {
       pass: 'contains no extlinux/ directory and no extlinux.conf',
       fail: 'Both U-Boot boot frameworks try extlinux BEFORE boot.scr',
-      skip: ': the extlinux, no-initramfs and Image/dtb assertions',
+      skip: ': the extlinux and Image/dtb assertions',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const out: CheckResult[] = []
@@ -410,13 +412,19 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // U-Boot only, and inverted on a grub board rather than merely
-    // inapplicable: an x64 slot MUST carry initrd-a and initrd-b. Left ungated
-    // this would fail a correct image and send someone looking for a defect in
-    // the assembler, which is why it is scoped rather than made unconditional
-    // with a special case.
+    // EVERY BOARD, and it was U-Boot-only until PLAN-073. The exemption was
+    // real while it lasted: x64 ran Debian's generic kernel, which has no
+    // CONFIG_DM_INIT and ignored the dm-mod.create= verity table, so a grub
+    // slot HAD to carry an initrd whose local-top script assembled the root
+    // instead -- and the rule was inverted there rather than absent.
+    //
+    // mos-kernel-x64 has that symbol, so both boards now boot the one contract
+    // the same way and neither slot carries an initrd. Unscoping this is the
+    // point rather than a tidy-up: an initrd reappearing in an x64 slot is
+    // exactly how a reintroduced distribution kernel would show up in the
+    // image, and while this check was gated it was the one place that could
+    // not say so.
     id: 'boot-slot-no-initramfs',
-    boards: boardsWhere(isUBoot),
     cardinality: 'many',
     instance: PER_SLOT,
     shell: {
@@ -447,10 +455,11 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
 
 /** The negative-branch sentence for boards that do not use U-Boot. */
 function uBootSlotSkipMessage(board: Board, slot: string): string {
-  return `${slot}: the extlinux, no-initramfs and Image/dtb assertions `
-    + `(bootloader=${board.get('RAUC_BOOTLOADER') ?? ''}). extlinux is a U-Boot boot framework; a `
-    + `GRUB slot legitimately CARRIES an initrd, so the no-initramfs rule is inverted here rather `
-    + `than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build`
+  return `${slot}: the extlinux and Image/dtb assertions `
+    + `(bootloader=${board.get('RAUC_BOOTLOADER') ?? ''}). extlinux is a U-Boot boot framework, and `
+    + `Image/rk3576-src.dtb are that BSP's artefact names. The no-initramfs rule is NOT skipped `
+    + `here: it applies to every board now that both build a kernel that assembles the verity root `
+    + `from the command line`
 }
 
 // the radio -- firmware set and module list

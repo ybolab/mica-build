@@ -37,8 +37,8 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 //     would be inventing, and the work directory is the one path that differs
 //     between the shell (_out/x64/.mkimage-work) and this
 //     (build/.work/mkimage-x64-*);
-//   * the boot slots take three separate `mcopy -m` calls each, in the order
-//     vmlinuz, initrd.img, cmdline.cfg, because that is the order the entries
+//   * the boot slots take one `mcopy -m` call per payload file each, in the
+//     order vmlinuz, cmdline.cfg, because that is the order the entries
 //     land in the FAT directory. The ESP takes one `mcopy -s -m` of a staged
 //     tree, because `mmd` has no source to take a time from and stamps ::/EFI
 //     with the wall clock -- measured at 18 moving bytes in the shell's header;
@@ -91,7 +91,6 @@ export interface AssemblyInputs {
   readonly rootfsVerityImg: string
   readonly rootfsVerityEnv: string
   readonly kernel: string
-  readonly initrd: string
   readonly factoryVar: string
   readonly imgOut: string
   /** Defaults to the tree's own boards/x64/grub.cfg. */
@@ -125,7 +124,7 @@ export interface AssembleResult {
 export function mountsFor(inputs: AssemblyInputs, workDir: string): string[] {
   const dirs = new Set<string>([REPO_ROOT, workDir, dirname(resolve(inputs.imgOut))])
   for (const p of [
-    inputs.rootfsVerityImg, inputs.rootfsVerityEnv, inputs.kernel, inputs.initrd, inputs.factoryVar,
+    inputs.rootfsVerityImg, inputs.rootfsVerityEnv, inputs.kernel, inputs.factoryVar,
     inputs.grubCfgIn,
   ]) {
     if (p !== undefined) dirs.add(dirname(resolve(p)))
@@ -138,14 +137,18 @@ export function mountsFor(inputs: AssemblyInputs, workDir: string): string[] {
 }
 
 /**
- * The five inputs the x64 assembly contract requires before it does anything.
+ * The four inputs the x64 assembly contract requires before it does anything.
  *
- * One sentence, five files, in the shell's order -- and the sentence names the
+ * One sentence, four files, in the shell's order -- and the sentence names the
  * script that MAKES them, because "rootfs-verity.img not found" is only
  * actionable once you know what produces it.
+ *
+ * There WAS a fifth, the initrd. This board's kernel has CONFIG_DM_INIT and
+ * assembles the dm-verity root from the cmdline, so nothing builds one and the
+ * bootloader loads none.
  */
 export function requiredInputs(inputs: AssemblyInputs, grubCfgIn: string): string[] {
-  return [inputs.rootfsVerityImg, inputs.rootfsVerityEnv, inputs.kernel, inputs.initrd, grubCfgIn]
+  return [inputs.rootfsVerityImg, inputs.rootfsVerityEnv, inputs.kernel, grubCfgIn]
 }
 
 /**
@@ -242,10 +245,10 @@ export function checkGrubenvSize(path: string, bytes: bigint): void {
  * to nothing -- there is no "nothing" to prefer -- and would then be a per-install
  * file on the one partition RAUC never installs into.
  *
- * The names come from the board (SLOT_KERNEL_NAME and friends), not from three
- * literals: the x64 assembly contract spells `vmlinuz initrd.img cmdline.cfg`, which is
- * a second copy of the same three keys, and a board that renamed one would have
- * the stray check quietly stop covering it.
+ * The names come from the board (SLOT_KERNEL_NAME and friends), not from
+ * literals: a spelled-out `vmlinuz cmdline.cfg` here would be a second copy of
+ * the same keys, and a board that renamed one would have the stray check
+ * quietly stop covering it.
  */
 export function strayEspEntries(entries: readonly string[], slotFileNames: readonly string[]): string[] {
   return slotFileNames.filter(n => entries.includes(`::/${n}`))
@@ -380,13 +383,11 @@ export async function assembleX64(
     const factoryVarStage = join(workDir, 'factory-var')
     await stageFactoryVarOnHost(inputs.factoryVar, factoryVarStage)
 
-    // --- the two per-slot payload files, copied so their mtimes can be pinned
+    // --- the per-slot payload file, copied so its mtime can be pinned
     // without writing into _out. The rootfs image is NOT copied: it is only ever
     // dd'd, and dd reads the same bytes from either path.
     const kernel = join(workDir, 'vmlinuz')
-    const initrd = join(workDir, 'initrd.img')
     copyFileSync(inputs.kernel, kernel)
-    copyFileSync(inputs.initrd, initrd)
 
     // --- grub.cfg: the BOARD constants and nothing that changes with a build,
     // with all three of its guards. Rendered on the host, where the shell's sed
@@ -473,9 +474,8 @@ export async function assembleX64(
 
     // --- nothing per-slot on the ESP.
     const kernelName = geometry.require('SLOT_KERNEL_NAME')
-    const initrdName = geometry.require('SLOT_INITRD_NAME')
     const cmdlineName = geometry.require('SLOT_CMDLINE_NAME')
-    const slotFileNames = [kernelName, initrdName, cmdlineName]
+    const slotFileNames = [kernelName, cmdlineName]
     const strays = strayEspEntries(await listFat(tb, espImg), slotFileNames)
     if (strays.length > 0) {
       throw new Error(
@@ -492,10 +492,10 @@ export async function assembleX64(
     // plus `mlabel` changes the label and leaves the volume id as A's, and mlabel
     // cannot set a volume id, so each is MADE rather than copied.
     //
-    // Pinned before the loop, not inside it: both slots copy the same three
-    // files, and touching them twice would only make the second slot's timestamps
+    // Pinned before the loop, not inside it: both slots copy the same files,
+    // and touching them twice would only make the second slot's timestamps
     // depend on the first slot's having already happened.
-    await tb.must(['touch', '-h', '-d', fileMtime, kernel, initrd, cmdlineCfg], {
+    await tb.must(['touch', '-h', '-d', fileMtime, kernel, cmdlineCfg], {
       note: `could not pin the per-slot payload files to ${fileMtime}`,
     })
     const bootSizeMib = geometry.requireInt('BOOT_SIZE_MIB')
@@ -504,9 +504,10 @@ export async function assembleX64(
       const image = join(workDir, `${p.require('LABEL')}.img`)
       await truncate(box, image, String(geometry.mibToBytes(bootSizeMib)))
       await mkfsVfat(box, { image, label: p.require('FAT_LABEL'), volumeId: p.require('FAT_VOLUME_ID') })
-      // THREE calls, in this order: it is the order the entries land in the FAT
-      // directory, and the directory's byte layout is what the gate compares.
-      for (const [source, name] of [[kernel, kernelName], [initrd, initrdName], [cmdlineCfg, cmdlineName]] as const) {
+      // One call per file, in this order: it is the order the entries land in
+      // the FAT directory, and the directory's byte layout is what the gate
+      // compares.
+      for (const [source, name] of [[kernel, kernelName], [cmdlineCfg, cmdlineName]] as const) {
         await mcopy(box, { image, sources: [source], destination: `::/${name}` })
       }
       return image

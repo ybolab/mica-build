@@ -607,8 +607,6 @@ export interface BundleInputs {
   readonly kernelImage: string
   /** U-Boot boards only. */
   readonly dtb?: string
-  /** grub boards only. */
-  readonly initrdImage?: string
   readonly rootfsVerityImg: string
   readonly rootfsVerityEnv: string
   readonly rootfsReport: string
@@ -660,7 +658,7 @@ export interface BuildBundleResult {
 export function bundleMountsFor(inputs: BundleInputs, workDir: string): string[] {
   const dirs = new Set<string>([REPO_ROOT, workDir, dirname(resolve(inputs.bundleOut))])
   for (const p of [
-    inputs.kernelImage, inputs.dtb, inputs.initrdImage,
+    inputs.kernelImage, inputs.dtb,
     inputs.rootfsVerityImg, inputs.rootfsVerityEnv, inputs.rootfsReport, inputs.raucBuildEnv,
     inputs.bootCmdlineA, inputs.bootCmdlineB,
     inputs.cert, inputs.key, inputs.keyring,
@@ -845,17 +843,13 @@ export async function buildBundle(
     } else {
       const cmdlineName = geometry.require('SLOT_CMDLINE_NAME')
       const kernelName = geometry.require('SLOT_KERNEL_NAME')
-      const initrdName = geometry.require('SLOT_INITRD_NAME')
       writeFileSync(join(workDir, cmdlineName), grubCmdlineFragment(verityEnvText, inputs.rootfsVerityEnv))
 
+      // A kernel and a cmdline, and no initrd: a grub board's slot payload
+      // stopped carrying one when its kernel gained CONFIG_DM_INIT and started
+      // reading the dm-mod.create= table on that cmdline itself.
       await tb.must(['cp', inputs.kernelImage, join(workDir, kernelName)], {
         note: `could not stage the kernel from ${inputs.kernelImage}`,
-      })
-      if (inputs.initrdImage === undefined || inputs.initrdImage === '') {
-        throw new Error(`no initrd was supplied, and a grub board's boot payload carries one`)
-      }
-      await tb.must(['cp', inputs.initrdImage, join(workDir, initrdName)], {
-        note: `could not stage the initrd from ${inputs.initrdImage}`,
       })
       await tb.must(
         ['find', workDir, '-maxdepth', '1', '-type', 'f', '-exec', 'touch', '-h', '-d', geometry.ext4.fileMtime, '{}', '+'],
@@ -868,7 +862,7 @@ export async function buildBundle(
       await mcopy(tb, {
         image: bootVfat,
         recursive: true,
-        sources: [join(workDir, kernelName), join(workDir, initrdName), join(workDir, cmdlineName)],
+        sources: [join(workDir, kernelName), join(workDir, cmdlineName)],
         destination: '::/',
       })
     }

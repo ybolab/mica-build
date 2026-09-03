@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The kernel symbols netavark needs, asserted against the cx3576 board config.
+# The kernel symbols netavark needs, asserted against every board's config.
 #
 #   bash tests/netavark-kernel-config-test.sh
 #
@@ -13,18 +13,22 @@
 # required those symbols, so the gap was invisible to every gate: the board
 # config said "not set", and that was simply accepted.
 #
-# WHAT IS PROVED HERE, AND WHAT IS NOT. This reads the COMMITTED config, which
-# is the build input, not its output. `make olddefconfig` runs after it and can
+# WHAT IS PROVED HERE, AND WHAT IS NOT. This reads the COMMITTED configs, which
+# are build inputs, not outputs. `make olddefconfig` runs after them and can
 # still drop a symbol whose dependencies are unmet -- silently, because a
 # dropped symbol simply is not in the output. That direction is proved by the
-# `for option in ...` loop in boards/cx3576/bsp/kernel/Dockerfile, which greps
-# the config AFTER olddefconfig and fails the image build. Assertion 2 below
-# therefore requires that loop to name every symbol in this list: two lists free
-# to disagree are one list that is not enforced, and the built config is the
-# only one the hardware ever sees.
+# post-olddefconfig grep loops in the board kernel Dockerfiles, which fail the
+# image build. Assertion 2 below therefore requires every symbol in this list to
+# be named by one of those loops: two lists free to disagree are one list that
+# is not enforced, and the built config is the only one the hardware ever sees.
 #
-# x64 is out of scope. It runs Debian's kernel, where these are modules the
-# distribution already ships; nothing in this tree chooses its .config.
+# EVERY BOARD, since PLAN-073. x64 used to be out of scope because it ran
+# Debian's kernel, where these are modules the distribution ships and nothing in
+# this tree chose the .config. It builds its own now, so its committed config is
+# read here too -- and the symbols themselves moved into
+# boards/common/mos-required.fragment, which both boards merge before
+# olddefconfig and both assert afterwards. That is what assertion 2 accepts as
+# the gate: the board's own loop, or the shared fragment both loops enforce.
 #
 # WHERE THE LIST COMES FROM. Every entry cites a line of netavark that programs
 # the rule needing it, read from the tag pkgs/podman/versions.env pins.
@@ -34,8 +38,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
-CONFIG="${REPO_ROOT}/boards/cx3576/bsp/kernel/config/kernel-cx3576z.config"
-DOCKERFILE="${REPO_ROOT}/boards/cx3576/bsp/kernel/Dockerfile"
+# One row per board: the committed config a build starts from, and the
+# Dockerfile that asserts the result. Discovered from neither -- written here,
+# because a board with no kernel build has no row and a glob would give it one.
+BOARD_CONFIGS="cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config x64:boards/x64/bsp/kernel/config/x64.config"
+BOARD_DOCKERFILES="cx3576:boards/cx3576/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
+FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
 VERSIONS_ENV="${REPO_ROOT}/pkgs/podman/versions.env"
 
 # The netavark the citations below were read against.
@@ -75,7 +83,9 @@ FAIL_N=0
 pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $1"; }
 fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
 
-for f in "${CONFIG}" "${DOCKERFILE}" "${VERSIONS_ENV}"; do
+# The per-board files are checked inside the loops that read them, where a
+# missing one can name its board. These are the two this file reads directly.
+for f in "${FRAGMENT}" "${VERSIONS_ENV}"; do
     [ -f "${f}" ] || { echo "error: ${f} not found; there is nothing to check" >&2; exit 1; }
 done
 
@@ -88,39 +98,84 @@ mapfile -t SYMBOLS < <(awk 'NF {print $1}' <<<"${REQUIRED}")
     exit 1
 }
 
-echo "--- 1. every symbol is =y in the committed cx3576 config"
+echo "--- 1. every symbol is =y in every board's committed config"
 # =y and not =m: boards/common/mos-required.fragment states the rule -- a
 # dm-verity root with no initramfs cannot load a module before the rootfs is up,
-# and the board Dockerfile's own loop greps for =y for the same reason.
-while IFS= read -r line; do
-    [ -n "${line}" ] || continue
-    sym="${line%% *}"
-    why="${line#"${sym}"}"
-    why="${why#"${why%%[! ]*}"}"
-    if grep -qx "CONFIG_${sym}=y" "${CONFIG}"; then
-        pass "CONFIG_${sym}=y (${why})"
-    else
-        have="$(grep -E "^(CONFIG_${sym}=.*|# CONFIG_${sym} is not set)$" "${CONFIG}" || true)"
-        fail "CONFIG_${sym} is not =y in ${CONFIG#"${REPO_ROOT}/"} (found: ${have:-nothing}). netavark needs it: ${why}"
-    fi
-done <<<"${REQUIRED}"
-
-echo
-echo "--- 2. the board Dockerfile re-asserts each one after olddefconfig"
-# The committed config is the input. This is the only check that survives
-# olddefconfig deciding a symbol's dependencies are unmet and dropping it.
-LOOP="$(awk '/for option in/ {f = 1} f {print} f && /; do/ {exit}' "${DOCKERFILE}")"
-grep -c 'for option in' <<<"${LOOP}" >/dev/null || {
-    echo "error: no \`for option in\` loop found in ${DOCKERFILE}." >&2
-    echo "       That loop is what assertion 2 reads; without it this check compares nothing." >&2
+# and each board Dockerfile's own loop greps for =y for the same reason.
+#
+# A board whose committed config is the RESOLVED one (x64 records the result of
+# merging the fragments over x86_64_defconfig) and one whose committed config is
+# the vendor INPUT (cx3576) are read the same way here: in both, a line that is
+# not `=y` is a build this tree agreed to make.
+BOARDS_CHECKED=0
+for row in ${BOARD_CONFIGS}; do
+    board="${row%%:*}"
+    cfg="${REPO_ROOT}/${row#*:}"
+    [ -f "${cfg}" ] || {
+        echo "error: ${row#*:} does not exist, so ${board}'s config would be checked by nothing." >&2
+        exit 1
+    }
+    BOARDS_CHECKED=$((BOARDS_CHECKED + 1))
+    while IFS= read -r line; do
+        [ -n "${line}" ] || continue
+        sym="${line%% *}"
+        why="${line#"${sym}"}"
+        why="${why#"${why%%[! ]*}"}"
+        if grep -qx "CONFIG_${sym}=y" "${cfg}"; then
+            pass "${board}: CONFIG_${sym}=y (${why})"
+        else
+            have="$(grep -E "^(CONFIG_${sym}=.*|# CONFIG_${sym} is not set)$" "${cfg}" || true)"
+            fail "CONFIG_${sym} is not =y in ${cfg#"${REPO_ROOT}/"} (found: ${have:-nothing}). netavark needs it: ${why}"
+        fi
+    done <<<"${REQUIRED}"
+done
+[ "${BOARDS_CHECKED}" -ge 2 ] || {
+    echo "error: only ${BOARDS_CHECKED} board config(s) were read; both shipped boards build a kernel." >&2
     exit 1
 }
-for sym in "${SYMBOLS[@]}"; do
-    if grep -qw "${sym}" <<<"${LOOP}"; then
-        pass "the built config is gated on CONFIG_${sym}=y too"
-    else
-        fail "${DOCKERFILE#"${REPO_ROOT}/"} does not name ${sym} in its post-olddefconfig loop, so olddefconfig could drop it and the image would still build"
-    fi
+
+echo
+echo "--- 2. each symbol is re-asserted after olddefconfig, on every board"
+# The committed configs are inputs. This is the only check that survives
+# olddefconfig deciding a symbol's dependencies are unmet and dropping it.
+#
+# TWO WAYS TO BE GATED, and they are equally binding. A board Dockerfile's own
+# `for option in` loop names board facts; boards/common/mos-required.fragment
+# names engine facts, and EVERY board Dockerfile greps every `=y` line of it
+# against the final .config. So a symbol in the fragment is gated on every
+# board at once, which is where these symbols live since PLAN-073 -- and the
+# check below requires the fragment's own enforcement to exist in each
+# Dockerfile before it accepts that route.
+FRAGMENT_SYMS="$(sed -n 's/^CONFIG_\([A-Z0-9_]*\)=y$/\1/p' "${FRAGMENT}")"
+[ -n "${FRAGMENT_SYMS}" ] || {
+    echo "error: ${FRAGMENT#"${REPO_ROOT}/"} yields no =y symbols, so the fragment route would gate nothing." >&2
+    exit 1
+}
+for row in ${BOARD_DOCKERFILES}; do
+    board="${row%%:*}"
+    dockerfile="${REPO_ROOT}/${row#*:}"
+    [ -f "${dockerfile}" ] || {
+        echo "error: ${row#*:} does not exist, so ${board}'s post-olddefconfig gate would be read from nothing." >&2
+        exit 1
+    }
+    # The fragment loop itself: `for line in $(sed ... /mos-required.fragment)`
+    # followed by a grep of the final .config. Without it, membership in the
+    # fragment gates nothing on this board and the route below would be a
+    # claim about a loop that is not there.
+    grep -q 'mos-required.fragment' "${dockerfile}" || {
+        echo "error: ${row#*:} does not read /mos-required.fragment, so the shared floor is not enforced on ${board}." >&2
+        exit 1
+    }
+    LOOP="$(awk '/for option in/ {f = 1} f {print} f && /; do/ {exit}' "${dockerfile}")"
+    for sym in "${SYMBOLS[@]}"; do
+        if grep -qw "${sym}" <<<"${LOOP}"; then
+            pass "${board}: the built config is gated on CONFIG_${sym}=y by the board loop"
+        elif grep -qx "${sym}" <<<"${FRAGMENT_SYMS}"; then
+            pass "${board}: the built config is gated on CONFIG_${sym}=y by the shared fragment"
+        else
+            fail "neither ${row#*:}'s post-olddefconfig loop nor boards/common/mos-required.fragment names ${sym}, so olddefconfig could drop it on ${board} and the image would still build"
+        fi
+    done
 done
 
 echo

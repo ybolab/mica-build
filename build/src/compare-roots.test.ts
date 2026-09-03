@@ -785,7 +785,12 @@ describe('the shipped ledger is self-consistent under its own rules', () => {
       '/etc/group', '/etc/group-',
       '/etc/gshadow', '/etc/gshadow-',
       '/etc/shadow-', '/usr/share/factory/etc/shadow',
-      '/boot/initrd.img-6.12.107+deb13-amd64',
+      // No /boot/initrd.img-* here since PLAN-073. It was proof material
+      // because it was the measured non-reproducible surface of the stage
+      // chain -- 182 of 183 cpio entries differing in inode number and 70 in
+      // mtime, content identical. There is no initrd in an x64 root any more,
+      // and a forbidden-to-sanction path that cannot exist forbids nothing.
+      // aux-cache below is the surviving one, so this list is not empty.
       '/usr/share/factory/var/cache/ldconfig/aux-cache',
     ]
     // NARROWED, not relaxed, and the narrowing is L1's ruling. A stanza may
@@ -816,6 +821,6 @@ describe('the shipped ledger is self-consistent under its own rules', () => {
     }
     // Counted, so that a run in which the loop above examined nothing cannot
     // reach the same green as one in which it examined everything.
-    expect(proofMaterial.length * DIFF_CLASSES.length).toBe(90)
+    expect(proofMaterial.length * DIFF_CLASSES.length).toBe(81)
   })
 })

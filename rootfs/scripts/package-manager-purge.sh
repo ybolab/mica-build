@@ -121,10 +121,15 @@ rm -f /var/log/dpkg.log /var/log/alternatives.log \
       /usr/sbin/update-rc.d /usr/sbin/dpkg-fsys-usrunmess \
       /usr/sbin/pam-auth-update /usr/sbin/pam_getenv \
       /usr/bin/linux-check-removal /usr/bin/linux-run-hooks \
-      /usr/bin/linux-update-symlinks /usr/bin/linux-version \
-      /usr/sbin/update-initramfs \
-      /usr/sbin/veritysetup /usr/sbin/cryptsetup /usr/sbin/integritysetup \
-      /etc/initramfs-tools/hooks/mos-verity
+      /usr/bin/linux-update-symlinks /usr/bin/linux-version
+# No update-initramfs, veritysetup, cryptsetup or /etc/initramfs-tools entry
+# here since PLAN-073. They were x64's, and only x64's: that board took
+# Debian's kernel, which cannot read the dm-mod.create= verity table, so an
+# initramfs re-implemented it and initramfs-tools and cryptsetup-bin came in
+# with the board package. mos-kernel-x64 assembles the root from the command
+# line itself, none of those packages is installed on either board any more,
+# and a purge of paths nothing can create is a line that reads like a
+# safeguard and is not one.
 # The by-name check on the ownership sweep above. It names the three units this
 # tree has actually seen, so it is narrower than the sweep on purpose: the sweep
 # is the general statement and this is the instance that would notice the sweep

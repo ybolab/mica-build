@@ -50,12 +50,14 @@ that is a cost worth paying where it can be seen: `make os-deb-preflight` lists
 every missing input across every producer at once, before `os-debs` starts a
 container, and says which of them the run would build for itself.
 
-cx3576 additionally needs its BSP: the kernel (`Image`, `modules.tar`,
-`rk3576-src.dtb`) and the A/B U-Boot (`u-boot-rockchip.bin`), built by
-`boards/cx3576/bsp/Makefile` into `boards/cx3576/bsp/out/`; the
-`board-cx3576` producer stages them into `mos-board-cx3576`. x64 has no BSP:
-UEFI firmware boots it and Debian's `linux-image-amd64` arrives as a `Depends`
-of `mos-board-x64`.
+Both boards additionally need a BSP build. cx3576's produces the kernel
+(`Image`, `modules.tar`, `rk3576-src.dtb`) and the A/B U-Boot
+(`u-boot-rockchip.bin`) into `boards/cx3576/bsp/out/`, and the `board-cx3576`
+producer stages them into `mos-board-cx3576`. x64's produces a kernel and
+nothing else — UEFI firmware is its boot chain, so there is no bootloader to
+compile — into `boards/x64/bsp/out/kernel/`, and the `kernel-x64` producer
+packages it as `mos-kernel-x64`. Neither pool can be completed without them,
+and `make os-deb-preflight` names whichever is missing before anything runs.
 
 Output directories carry the architecture in their name (`out-amd64`,
 `out-arm64`, `:amd64`, `:arm64`) so the two boards' inputs coexist. A build

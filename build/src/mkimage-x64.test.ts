@@ -96,7 +96,6 @@ beforeAll(async () => {
   // the live control: a gate that cannot report a difference is not a gate.
   filler(join(dir, 'rootfs-verity-other.img'), 4 * MIB, 0x67)
   filler(join(dir, 'vmlinuz'), 512 * 1024, 0x44)
-  filler(join(dir, 'initrd.img'), 256 * 1024, 0x55)
   writeFileSync(join(dir, 'rootfs-verity.env'), [
     `VERITY_ROOT_HASH=${HASH}`,
     `VERITY_SALT=${g.veritySalt}`,
@@ -121,7 +120,6 @@ beforeAll(async () => {
     rootfsVerityImg: join(dir, 'rootfs-verity.img'),
     rootfsVerityEnv: join(dir, 'rootfs-verity.env'),
     kernel: join(dir, 'vmlinuz'),
-    initrd: join(dir, 'initrd.img'),
     factoryVar: fv,
     imgOut: join(dir, 'out.img'),
   }
@@ -225,7 +223,7 @@ describe('a whole x64 image, over fabricated inputs', () => {
       '::/EFI/', '::/EFI/BOOT/', '::/EFI/BOOT/BOOTX64.EFI', '::/EFI/mos/', '::/EFI/mos/grub.cfg',
       '::/EFI/mos/grubenv',
     ].sort())
-    expect(strayEspEntries(entries, ['vmlinuz', 'initrd.img', 'cmdline.cfg'])).toEqual([])
+    expect(strayEspEntries(entries, ['vmlinuz', 'cmdline.cfg'])).toEqual([])
   }, TOOL_TIMEOUT_MS)
 
   test('and it carries exactly what ESP_REQUIRED_FILES names -- read off the board', async () => {
@@ -235,14 +233,17 @@ describe('a whole x64 image, over fabricated inputs', () => {
     expect(required.length).toBe(3)
   }, TOOL_TIMEOUT_MS)
 
-  test('both boot slots carry the three per-slot files, in mcopy order', async () => {
+  test('both boot slots carry the per-slot files, in mcopy order', async () => {
     for (const [partition, skipMib] of [['BOOT_A', 65], ['BOOT_B', 161]] as const) {
       const img = join(dir, `${partition}-readback.img`)
       await tb.must([
         'dd', `if=${join(dir, 'whole.img')}`, `of=${img}`, 'bs=1M', `skip=${skipMib}`, 'count=96',
         'status=none',
       ])
-      expect((await listFat(tb, img)).sort()).toEqual(['::/cmdline.cfg', '::/initrd.img', '::/vmlinuz'])
+      // A kernel and a cmdline, and NO initrd: the slot payload lost one when
+      // this board's kernel gained CONFIG_DM_INIT and started reading the
+      // dm-mod.create= table on that cmdline itself.
+      expect((await listFat(tb, img)).sort()).toEqual(['::/cmdline.cfg', '::/vmlinuz'])
     }
   }, TOOL_TIMEOUT_MS)
 
@@ -474,13 +475,13 @@ describe('`-a 2048` where the shell passes no alignment at all', () => {
 
 // The refusals.
 
-describe('the five inputs', () => {
+describe('the four inputs', () => {
   test('each one, absent, is refused by name and names the producer', async () => {
+    // Four, and it was five: the initrd left with the initramfs.
     const cases: [keyof AssemblyInputs, string][] = [
       ['rootfsVerityImg', 'rootfs-verity.img'],
       ['rootfsVerityEnv', 'rootfs-verity.env'],
       ['kernel', 'vmlinuz'],
-      ['initrd', 'initrd.img'],
     ]
     let driven = 0
     for (const [key] of cases) {
@@ -495,17 +496,17 @@ describe('the five inputs', () => {
       /not found\. Build the root first/,
     )
     driven += 1
-    expect(driven).toBe(5)
+    expect(driven).toBe(4)
   })
 
   test('a DIRECTORY where a file should be is refused too', async () => {
     expect(assemble({ kernel: dir })).rejects.toThrow(/not found\. Build the root first/)
   })
 
-  test('the positive control: all five present, and the assembly starts', async () => {
+  test('the positive control: all four present, and the assembly starts', async () => {
     // Without this, "every missing input is refused" is satisfied by an
     // assembler that refuses everything.
-    for (const p of [base.rootfsVerityImg, base.rootfsVerityEnv, base.kernel, base.initrd]) {
+    for (const p of [base.rootfsVerityImg, base.rootfsVerityEnv, base.kernel]) {
       expect(statSync(p).isFile()).toBe(true)
     }
     expect(statSync(join(BOARDS_DIR, 'x64', 'grub.cfg')).isFile()).toBe(true)
@@ -585,29 +586,31 @@ describe('nothing per-slot on the ESP', () => {
   // mdir gives them.
   const clean = ['::/EFI/', '::/EFI/BOOT/', '::/EFI/BOOT/BOOTX64.EFI', '::/EFI/mos/', '::/EFI/mos/grub.cfg', '::/EFI/mos/grubenv']
 
-  test('each of the three per-slot names is caught, one at a time', () => {
+  test('each of the per-slot names is caught, one at a time', () => {
     let driven = 0
-    for (const stray of ['vmlinuz', 'initrd.img', 'cmdline.cfg']) {
-      expect(strayEspEntries([...clean, `::/${stray}`], ['vmlinuz', 'initrd.img', 'cmdline.cfg']))
+    for (const stray of ['vmlinuz', 'cmdline.cfg']) {
+      expect(strayEspEntries([...clean, `::/${stray}`], ['vmlinuz', 'cmdline.cfg']))
         .toEqual([stray])
       driven += 1
     }
-    expect(driven).toBe(3)
+    expect(driven).toBe(2)
   })
 
   test('a clean ESP listing yields none -- the positive control', () => {
-    expect(strayEspEntries(clean, ['vmlinuz', 'initrd.img', 'cmdline.cfg'])).toEqual([])
+    expect(strayEspEntries(clean, ['vmlinuz', 'cmdline.cfg'])).toEqual([])
   })
 
   test('the names come from the BOARD, so a renamed one is still covered', () => {
-    // the x64 assembly contract spells `vmlinuz initrd.img cmdline.cfg` as three
-    // literals, which is a second copy of SLOT_KERNEL_NAME and friends. A board
-    // that renamed one would have the stray check quietly stop covering it.
-    const names = [
-      g.require('SLOT_KERNEL_NAME'), g.require('SLOT_INITRD_NAME'), g.require('SLOT_CMDLINE_NAME'),
-    ]
-    expect(names).toEqual(['vmlinuz', 'initrd.img', 'cmdline.cfg'])
-    expect(strayEspEntries([...clean, '::/bzImage'], ['bzImage', 'initrd.img', 'cmdline.cfg']))
+    // Spelling `vmlinuz cmdline.cfg` as literals here would be a second copy of
+    // SLOT_KERNEL_NAME and friends, and a board that renamed one would have the
+    // stray check quietly stop covering it. The list also SHRANK once, when the
+    // initrd left the slot payload, which is the same failure in the other
+    // direction: a literal list would have gone on checking for a file no image
+    // can contain.
+    const names = [g.require('SLOT_KERNEL_NAME'), g.require('SLOT_CMDLINE_NAME')]
+    expect(names).toEqual(['vmlinuz', 'cmdline.cfg'])
+    expect(() => g.require('SLOT_INITRD_NAME')).toThrow(/declares no SLOT_INITRD_NAME/)
+    expect(strayEspEntries([...clean, '::/bzImage'], ['bzImage', 'cmdline.cfg']))
       .toEqual(['bzImage'])
   })
 
