@@ -61,10 +61,14 @@ Description: mos common system policy, state mounts and operator account
  alternatives to iptables-nft, which programs the same nf_tables subsystem
  netavark writes to; the legacy xtables binaries ship in the same Debian package
  and nothing here selects them, because the alternatives group is left in auto
- mode and nft outranks legacy 20 to 10. It costs seven packages -- iptables,
- libnftnl11, libnetfilter-conntrack3, libip4tc2, libip6tc2, libnfnetlink0 and
- netbase, the last for /etc/protocols and /etc/services -- and 3012 KiB
- installed. libmnl is not among them; iproute2 already depends on it.
+ mode and nft outranks legacy 20 to 10. It costs six packages and 2768 KiB
+ installed on an image that has containers -- iptables, libip4tc2, libip6tc2,
+ libnetfilter-conntrack3, libnfnetlink0 and netbase, the last for /etc/protocols
+ and /etc/services -- measured as 450035 KiB over 208 packages before and
+ 452803 KiB over 214 after, on the composed x64 dev root. On an image that
+ declines containers it is a SEVENTH package and 3012 KiB, because libnftnl11
+ arrives with nftables and nftables arrives with mos-podman. libmnl is in
+ neither list: iproute2 already depends on it.
  .
  RAUC's runtime libraries are deliberately not here. glib, json-glib and
  libfdisk are in the image for the self-built rauc alone and belong to

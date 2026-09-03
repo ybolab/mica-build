@@ -62,6 +62,26 @@ because `iproute2` already depends on it and the base root has it; and
 `/usr/sbin/xtables-nft-multi` at 228768 bytes; the rest of the weight is the
 `/usr/lib/*/xtables/lib*.so` match and target modules.
 
+**And on the image the project actually ships, it is SIX and 2768 KiB.** The
+composed x64 dev root before this change (`/srv/mos/_out/x64/rootfs-report.txt`,
+pool stamp `git882429eb3dab-1`) carries 208 packages and 450035 KiB; the one
+composed from this branch (pool stamp `git84e54597e84d-1`) carries 214 and
+452803 KiB. `882429eb` is an ancestor of this branch and the only commit between
+the two that touches `rootfs/`, `boards/`, `pkgs/` or `build-env/` is this
+change, so the delta is attributable. The seventh package is missing from it
+because **`libnftnl11` was already there**: `nftables` depends on it and
+`nftables` arrives with `mos-podman`. Both numbers are true of different images
+-- 3012 KiB is what a container-less profile pays, 2768 KiB is what the shipped
+dev image pays -- and the package description states both.
+
+**What `nftables` in the base would cost, measured the same way**, since the
+report has to answer it: on a trixie root that already has `iptables`, adding
+`nftables` is three packages and 1339 KiB (`nftables` 185, `libnftables1` 1054,
+`libjansson4` 100), and it brings `/usr/lib/systemd/system/nftables.service`
+with it -- a unit that loads `/etc/nftables.conf` at boot, which is a
+persistence mechanism this plan's scope explicitly excludes and which would then
+need an enablement decision.
+
 **On trixie, `iptables` IS `iptables-nft`.** `update-alternatives --display
 iptables` in that root reports auto mode, `/usr/sbin/iptables-nft` at priority
 20 against `/usr/sbin/iptables-legacy` at priority 10, and the link resolving to
@@ -183,8 +203,12 @@ Seven files: one control file, three verify sources (two new), one verify test
   `nftables` also be in the base? Today it is in the image only when containers
   are, so the complete rule view (`nft list ruleset`) is available only on a
   device that runs containers, while `iptables` from this change is everywhere.
-  The recommendation is yes, in a later change: `nftables` is 1.2 MiB, it is the
-  only tool that can see netavark's tables, and an operator debugging a rule on
-  a container-less device currently has the front-end that cannot show them the
-  whole subsystem. It is one line in the same `Depends` and it is not in this
-  diff because it was not asked for.
+  The recommendation is yes, in a later change: measured at three packages and
+  1339 KiB, it is the only tool that can show netavark's tables, and an operator
+  debugging a rule on a container-less device currently has the front-end that
+  cannot show them the whole subsystem. It is NOT quite a one-line change, which
+  is the other half of the answer: the `nftables` package ships
+  `nftables.service`, a unit that loads `/etc/nftables.conf` at boot. That is a
+  persistence and policy surface, exactly what this task excludes, so putting
+  the package in the base means deciding about that unit's enablement in the
+  same change. It is not in this diff because it was not asked for.
