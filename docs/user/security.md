@@ -95,6 +95,52 @@ operation sits behind the API credential boundary.
 
 > status: shipped — evidence: `docs/design/remote-management.md`
 
+### 5.1 The firewall tool, and the firewall there is not
+
+Every image ships `iptables`. It is a dependency of the base package, so a
+build that declines containers has it too — before this it did not, because the
+only firewall front-end in the image was `nft`, and that arrives with the
+container engine. **The image ships the tool and no policy: no default rule
+set, no allow or deny list, and nothing that manages rules for you.** There is
+no API and no console surface for it; `ssh` and this command are the whole of
+it.
+
+Three things about it, because each is a surprise otherwise.
+
+**It is `iptables-nft`.** On Debian trixie the `iptables` command is a
+front-end over the same `nf_tables` kernel subsystem the container network
+driver programs — not the legacy xtables path. `iptables --version` says so
+itself, printing `(nf_tables)`. The legacy binaries (`iptables-legacy` and its
+save/restore pair, over `xtables-legacy-multi`) are in the image, because the
+same Debian package ships them, and **nothing in the image selects them**: the
+alternatives group is left in auto mode, where the nft front-end outranks the
+legacy one, and no unit, script or postinst here runs `update-alternatives`.
+Selecting legacy by hand would put your rules in a second, older kernel rule
+store that nothing else on the device reads.
+
+**With containers, two front-ends write one backend — and they do not show
+each other the same way.** `iptables -S` lists what the `iptables` front-end
+created, in the tables it owns. `nft list ruleset` lists the whole `nf_tables`
+subsystem, including the `netavark` table the container network driver writes.
+**`nft list ruleset` is the complete view**; `iptables -S` is not, and a rule
+you cannot find with the first is not evidence that it is absent. The
+container driver's tables are the container driver's: it reconciles them, so a
+rule you edit inside them by hand is a rule you are contesting with a
+reconciler, and it will be rewritten. Add your own rules in your own chains.
+(`nft` itself reaches the image only with the container engine, so on a device
+without containers `iptables -S` is the view you have.)
+
+**Nothing persists.** A rule added at runtime lives in the kernel and is gone
+at the next reboot. There is no `netfilter-persistent`, no `iptables-save`
+unit, no rule file anywhere in the image, and the root filesystem is read-only
+in any case. If you want a rule to survive a power cycle today, the route is
+your own unit: a service that reapplies the rules, installed into the writable
+unit directory `/usr/local/lib/systemd/system` like any other native
+application ([applications.md](applications.md)). That is a statement of what
+the product does now, not a recommendation of how to run a firewall.
+
+> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `verify/src/checks-iptables.ts`
+
 ## 6. Security lifecycle
 
 The lifecycle is now written down: every credential in the product with its

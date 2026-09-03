@@ -79,6 +79,44 @@ bundle 的摘要、长度和 verity 根哈希。密钥仪式、保管与轮换�
 
 > status: shipped — evidence: `docs/design/remote-management.md`
 
+### 5.1 防火墙工具，以及并不存在的那道防火墙
+
+每一个镜像都随附 `iptables`。它是基座包的依赖，所以即使一次构建放弃了容器，
+它也在。此前并非如此：镜像里唯一的防火墙前端是 `nft`，而那是随容器引擎一起
+到来的。**镜像交付的是工具，不是策略：没有默认规则集，没有放行或拒绝清单，
+也没有任何东西替你管理规则。**它没有 API，也没有控制台界面；`ssh` 加上这条
+命令就是全部。
+
+关于它有三件事，因为每一件不说清楚都会让人意外。
+
+**它是 `iptables-nft`。**在 Debian trixie 上，`iptables` 命令是同一套
+`nf_tables` 内核子系统之上的前端——容器网络驱动编程的也是这套子系统——而不是
+旧的 xtables 路径。`iptables --version` 自己会说：它打印 `(nf_tables)`。旧版
+二进制（`iptables-legacy` 及其 save/restore 一对，背后是
+`xtables-legacy-multi`）确实在镜像里，因为同一个 Debian 包就带着它们，而
+**镜像里没有任何东西选中它们**：alternatives 组保持在 auto 模式，其中 nft 前端
+的优先级高于旧版，并且这里没有任何单元、脚本或 postinst 运行
+`update-alternatives`。手工切到旧版，会把你的规则放进第二套、更老的内核规则
+存储里，而设备上没有别的东西会去读它。
+
+**有容器时，两个前端写同一个后端——而它们互相看到的并不一样。**`iptables -S`
+列出 `iptables` 前端所创建的东西，范围是它自己拥有的那几张表。`nft list
+ruleset` 列出整个 `nf_tables` 子系统，包括容器网络驱动写入的 `netavark` 表。
+**`nft list ruleset` 才是完整视图**；`iptables -S` 不是，用前者找不到的规则并
+不能作为它不存在的证据。容器驱动的表属于容器驱动：它会持续调谐这些表，所以你
+手工改动其中的规则，就是在和一个调谐器较劲，改动会被重写。要加规则，请加在你
+自己的链里。（`nft` 本身只随容器引擎进入镜像，所以在没有容器的设备上，
+`iptables -S` 就是你拥有的视图。）
+
+**没有任何东西会被持久化。**运行时添加的规则只活在内核里，下次重启就没了。
+镜像里没有 `netfilter-persistent`，没有 `iptables-save` 单元，没有任何规则
+文件，而且根文件系统本来就是只读的。如果今天你要让一条规则熬过一次断电，路径
+是你自己的单元：写一个重新施加规则的服务，像任何原生应用那样装进可写的单元
+目录 `/usr/local/lib/systemd/system`（[applications.md](applications.md)）。
+这是对产品当下行为的陈述，不是关于该如何运行防火墙的建议。
+
+> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `verify/src/checks-iptables.ts`
+
 ## 6. 安全生命周期
 
 生命周期如今被写了下来：产品里的每一份凭据，连同它的负责角色与轮换程序；

@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, libubootenv-tool, curl, passwd
+Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, iptables, libubootenv-tool, curl, passwd
 Description: mos common system policy, state mounts and operator account
  The board-independent half of a mos root filesystem: the seed and reconcile
  tools under /usr/lib/mos, their units, the STATE and DATA bind mounts
@@ -50,6 +50,21 @@ Description: mos common system policy, state mounts and operator account
  a service systemd cannot start and a wants-symlink that resolves to nothing.
  Unversioned, like systemd above: an upstream Debian package, not a pool
  member with a stamp to pin.
+ .
+ iptables IS A TOOL AND NOT A FIREWALL, and this package ships no rule, no
+ policy and nothing that would persist one. It is in Depends beside iproute2 and
+ curl for the same reason they are: base tooling every image carries whatever it
+ declines. Until it was added, the only firewall front-end in any mos image was
+ nftables, and that arrives through mos-podman's Depends alone -- netavark execs
+ `nft` off PATH -- so a board or a build that declined containers had NO way to
+ read or write a netfilter rule at all. On trixie the name resolves through
+ alternatives to iptables-nft, which programs the same nf_tables subsystem
+ netavark writes to; the legacy xtables binaries ship in the same Debian package
+ and nothing here selects them, because the alternatives group is left in auto
+ mode and nft outranks legacy 20 to 10. It costs seven packages -- iptables,
+ libnftnl11, libnetfilter-conntrack3, libip4tc2, libip6tc2, libnfnetlink0 and
+ netbase, the last for /etc/protocols and /etc/services -- and 3012 KiB
+ installed. libmnl is not among them; iproute2 already depends on it.
  .
  RAUC's runtime libraries are deliberately not here. glib, json-glib and
  libfdisk are in the image for the self-built rauc alone and belong to

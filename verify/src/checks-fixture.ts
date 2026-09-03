@@ -425,6 +425,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBusybox(root, file)
+  seedIptables(root, file)
   seedBoardShape(root, board, file)
   // LAST: it prepends an ELF header to the two daemons seeded above and writes
   // the ssh.service the shadow family also touches, so it has to see their
@@ -573,6 +574,50 @@ function seedBusybox(root: string, file: WriteFile): void {
     '# BUSYBOX: [ y | n | auto ]\n#\n# Use busybox shell and utilities.\nBUSYBOX=auto\n')
   file('/usr/share/initramfs-tools/hooks/klibc-utils',
     '#!/bin/sh\nif [ "${BUSYBOX}" = "n" ] || [ -z "${BUSYBOXDIR}" ]; then\n\tcopy_exec_klibc\nfi\n')
+}
+
+// RFCT-296: the base image's firewall tool, and the chain its name resolves by
+
+/**
+ * `iptables`, in the four-hop alternatives shape a trixie root really has it.
+ *
+ * TRANSCRIBED FROM A MEASURED ROOT and not invented: in a clean
+ * debian:trixie-slim at the pinned digest, with mos-system's Depends installed,
+ * /usr/sbin/iptables links to /etc/alternatives/iptables, which links to
+ * /usr/sbin/iptables-nft, which links to xtables-nft-multi -- the only regular
+ * file of the four. A fixture that put the binary straight at /usr/sbin/iptables
+ * would be green under a check that never followed a link, which is exactly the
+ * check this shape exists to rule out.
+ *
+ * The last hop is RELATIVE, as the package spells it, so a resolution that
+ * joined every target against the root would break on it while the three
+ * absolute hops kept working.
+ *
+ * xtables-legacy-multi is HERE, with its three iptables-legacy front-ends,
+ * because the Debian package ships it and this image removes nothing. Its
+ * presence is what makes `packed-iptables-nft-backend` green over a root that
+ * HAS the legacy binary rather than over one that happens to lack it -- a check
+ * that only ever saw the second could not tell the two apart.
+ */
+function seedIptables(root: string, file: WriteFile): void {
+  file('/usr/sbin/xtables-nft-multi', 'ELF ... xtables-nft-multi\n')
+  chmodSync(join(root, '/usr/sbin/xtables-nft-multi'), 0o755)
+  file('/usr/sbin/xtables-legacy-multi', 'ELF ... xtables-legacy-multi\n')
+  chmodSync(join(root, '/usr/sbin/xtables-legacy-multi'), 0o755)
+
+  mkdirSync(join(root, '/etc/alternatives'), { recursive: true })
+  for (const [name, variant] of [
+    ['iptables', 'iptables-nft'],
+    ['iptables-save', 'iptables-nft-save'],
+    ['iptables-restore', 'iptables-nft-restore'],
+  ] as const) {
+    symlinkSync('xtables-nft-multi', join(root, '/usr/sbin', variant))
+    symlinkSync(`/usr/sbin/${variant}`, join(root, '/etc/alternatives', name))
+    symlinkSync(`/etc/alternatives/${name}`, join(root, '/usr/sbin', name))
+  }
+  for (const name of ['iptables-legacy', 'iptables-legacy-save', 'iptables-legacy-restore']) {
+    symlinkSync('xtables-legacy-multi', join(root, '/usr/sbin', name))
+  }
 }
 
 // M4f: /home, /root, the mos account, and the STATE binds
