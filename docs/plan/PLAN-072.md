@@ -355,6 +355,38 @@ device-side design input. What survives is one device-side requirement: a device
 must be able to report **which plane it registered with**, which it can, from
 the baked `fleet.url`.
 
+### 7b. Scope decision — 2026-09-03
+
+The user was asked how far "assist" goes, in three steps, and answered: **A and
+B are both wanted; C is a later extension.**
+
+- **A — identity.** The plane knows the device exists, its board, profile and
+  version. This plan, unchanged.
+- **B — identity plus state reporting.** The device reports operating state
+  outward on a cadence: reachability, version, storage, thermal, service health.
+  This is the Victron VRM layer the user named in answer 4. **It gets its own
+  plan, PLAN-076**, and is not folded in here.
+- **C — remote configuration.** Deferred. §4 already excludes it and that
+  exclusion stands: it remains a different security question with a different
+  cost envelope, and it requires its own record rather than a patch to either
+  of the two above.
+
+**Why B is a separate plan rather than a section here.** §3's identity list ends
+with "that is the whole list", and the paragraph under it names what is
+deliberately not sent — the administrator credential, the webAdmin hash, the AP
+PSK, the device password, SSH keys, settings, anything under `/srv`. That is a
+promise about a device that states who it is, once. Telemetry changes the
+question from *who am I* to *what am I doing*, and the whole cost of B is
+deciding which fields may leave the device — the same question §3 answers for
+one short fixed list, re-asked for a set that grows every time someone wants one
+more metric. Folding B in would widen this record's promise by implication,
+which is the failure §4 exists to prevent.
+
+**What B inherits and may not renegotiate**: the switch (§2, off by default),
+the outbound-only channel with no inbound port (§3), the autonomy statement (§6,
+now a product promise per answer 4), and the enrolment shape (§7a answer 6,
+trust on first use with its two required mitigations).
+
 ## Risks
 
 - **The first outbound connection this product has ever made.** Every claim in
