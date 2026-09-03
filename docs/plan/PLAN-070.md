@@ -1920,6 +1920,33 @@ factory reset, that the selection is gone and the baked default is back
    else in this record turns on the answer, and the record deliberately does not
    retire shipped, tested tooling by implication. **This must be answered before
    F5**, because the reader's `trust` block differs between the two.
+   **ANSWERED — 2026-09-03.** The release side becomes **lode's scheme**; the
+   TUF repository `pkgs/rauc-sign` builds is not the mechanism `root.key` signs
+   with. Consequences, recorded so the reader does not have to re-derive them:
+
+   - **The baked public set stays at two files.** No signed root document
+     survives on the release side, so §1.1's allowlist does not gain a third
+     entry, and F5's `trust` block is lode's.
+   - **The image A/B chain is untouched.** RAUC bundle signing, `meta/rauc/`
+     and the keyring check are a separate mechanism and stay exactly as they
+     are. What retires is the metadata layer, not the package signature.
+   - **What is being retired was never provisioned.** `docs/user/security.md`
+     already records that the device-side TUF verifier ships and its trust
+     anchor does not — no image provisions the pinned root, so the walk has
+     never had a starting point in the field. This is not the removal of
+     working infrastructure.
+   - **One property is genuinely lost and must be replaced.** TUF's metadata
+     carries version numbers and expiry, which is what makes a rollback or
+     freeze attack detectable — a mirror serving a validly signed older release
+     forever. A plain signature cannot see it. PLAN-071 must therefore require
+     **version monotonicity** (refuse a release older than the installed one)
+     and a **manifest expiry** in lode's reader. Without those two, this
+     substitution is a net loss of a security property rather than a
+     simplification.
+   - **Still to decide, and not by this record**: whether `pkgs/rauc-sign` is
+     deleted, or kept as a release-side tool with its two device binaries
+     dropped from the image. That is the release side's own question and it
+     belongs with `docs/design/release-artifacts.md`.
 7. **How does an integrator physically perform the pour?** §5.2 designs what a
    poured document *is* and what the device does with one; it does not settle
    how the bytes arrive. Two shapes, and they differ in what an integrator's
