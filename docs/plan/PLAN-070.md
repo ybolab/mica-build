@@ -12,8 +12,9 @@
 Two revisions precede this one. The first replaced a device-side factory record
 on the META partition with a **`meta/` directory in this repository** that the
 build bakes into the image. The second made the channel operator-selectable and
-moved the operator document to `/mos/updates/config.json` on DATA (§5.1). Both
-stand.
+moved the operator document to DATA (§5.1). Both stand; the document's path
+has since been settled as `/mos/config/updates.json`, in a namespace §5.2
+establishes for every later subsystem.
 
 **This revision answers the concrete layout the user has now given**, and that
 layout invalidates two load-bearing decisions the first revision made:
@@ -23,6 +24,14 @@ meta/rauc/                    the RAUC key
 meta/updates/manifest.json    update configuration: server info, and the signing PUBLIC key
 meta/updates/root.key         the update signing PRIVATE key, used locally to sign update bundles
 ```
+
+The user has since settled what each of those keys *is*, and it is a split by
+**object** rather than by hierarchy: `meta/rauc/` carries the RAUC CA and
+signer, which gate the **A/B system image**; `meta/updates/root.key` is lode's
+key over the update **package**, which guarantees a downloaded package has not
+been tampered with. §6.2 works the custody table around that split, and §6.2 is
+also where an earlier reading of this record — that `root.key` is the TUF
+root-role key — is retired rather than defended.
 
 `meta/` is now the single directory carrying **configuration and signing
 material together**. Two consequences follow immediately, and the second is why
@@ -81,13 +90,14 @@ one does not touch it.
   every image and a file left there is a CA that arrives *by being forgotten*.
   That refusal is the shape §1 copies, and §6 is the reason it must not be
   contradicted.
-- **Four ed25519 keys, one per TUF role, stored as raw PKCS#8 named
-  `<role>.pk8`.** `docs/design/release-signing.md` §1.2 and §1.5: `root.pk8` is
-  offline and signs `root.json` at `init` and at the republish ceremonies only;
-  `targets.pk8`, `snapshot.pk8` and `timestamp.pk8` live on the release host
-  and sign every release. **These files are binary DER, not PEM** — which is
-  why the previous revision's M2, a grep for PEM private-key armour, would have
-  been blind to exactly the file the user's layout names (§1.1).
+- **The release-side signing tooling writes ed25519 keys as raw PKCS#8.**
+  `rauc-sign gen-dev-keys` produces `<name>.pk8` files, mode 0600
+  (`docs/design/release-signing.md` §1.2). **These files are binary DER, not
+  PEM** — which is why the first revision's M2, a grep for PEM private-key
+  armour, would have been blind to a package-signing key held in that format,
+  and why §1.1's detector has three tests rather than one. What that tooling's
+  role hierarchy has to do with `meta/updates/root.key` is settled in §6.2 and
+  is narrower than an earlier revision of this record assumed.
 - **A production runbook that already says the private half stays away.**
   `docs/design/release-signing.md` §2.5 provisions a build host with
   `ca.cert.pem`, `signer.cert.pem` and `signer.key.pem` and states plainly that
@@ -117,11 +127,14 @@ one does not touch it.
   that small authoritative metadata stays on STATE and only large bytes go to
   `/mos`. §5.1 moves the document anyway, and prices that contradiction rather
   than stepping around it.
-- **An update workspace on DATA, already namespaced.** `mos-data-layout`
-  creates `/mos/updates/{downloads,verified,staging}` (PLAN-063), and
-  `docs/design/recovery.md` §2.1's `[^apps-mos]` footnote already carves
-  `updates/` out of tier 2 by name. That directory is where §5.1 puts the
-  operator's layer, and the carve-out is why it can go there at all.
+- **A `/mos` layout created by name, and a reset rule that clears by
+  allowlist.** `mos-data-layout` creates `ui`, `containers`, `home`, `root`,
+  `apps` and `updates/{downloads,verified,staging}` (PLAN-063), each at a
+  declared mode; a new subtree is one more entry. `docs/design/recovery.md`
+  §2.1's `[^apps-mos]` says tier 2 clears the application-owned subtrees
+  (`apps/`, `containers/`) and opens nothing else — so a new subtree is
+  preserved by tier 2 **by default**, which §4.1 turns into a decision rather
+  than leaving as an accident.
 - **A reset taxonomy in which the root filesystem already has its answer.**
   `docs/design/recovery.md` §2.1's columns include `system slot A` and
   `system slot B`; `pkgs/mosd/mosd/src/reset.rs`'s `Roots` type reaches the
@@ -167,16 +180,15 @@ meta/rauc/ca.key.pem             RAUC CA private key            SECRET  -> never
 meta/rauc/signer.cert.pem        bundle signer certificate      public  -> host only
 meta/rauc/signer.key.pem         bundle signer private key      SECRET  -> never
 meta/updates/manifest.json       update configuration           PUBLIC  -> image
-meta/updates/root.json           pinned TUF root document       PUBLIC  -> image
-meta/updates/root.key            TUF root role private key      SECRET  -> never
-meta/updates/online/*.key        TUF targets/snapshot/timestamp SECRET  -> never
+meta/updates/root.key            package signing private key    SECRET  -> never
 meta/GENERATED                   development-grade marker       host only
 ```
 
-`ca/` is absorbed into `meta/rauc/` rather than kept beside it; §6 is the
-decision and prices the alternative. The six private keys are six different
-roles with six different blast radii, and §6.1 refuses to let one filename
-stand for several.
+Five files and one marker — the user's three lines, expanded only where an
+X.509 pair is four files rather than one. `ca/` is absorbed into `meta/rauc/`
+rather than kept beside it; §6.1 is the decision and prices the alternative.
+The three private keys sit in **two domains with two different blast radii**,
+and §6.2 is where they are told apart.
 
 **What must never appear in the *baked* set**, which is where the previous
 revision's prohibitions survive and where they now bite:
@@ -197,11 +209,11 @@ revision's prohibitions survive and where they now bite:
 
 #### 1.1 The hazard, the allowlist, and the two checks that hold it
 
-**If `meta/` were baked verbatim — which is what the previous revision
-specified — every shipped device would carry `meta/updates/root.key` and
-`meta/rauc/ca.key.pem`, the private keys that sign its own updates, so anyone
-who obtained one device could extract them and sign an update that every other
-device in the fleet verifies, installs and trusts.**
+**If `meta/` were baked verbatim — which is what the first revision specified —
+every shipped device would carry `meta/rauc/ca.key.pem` and
+`meta/updates/root.key`, the private keys behind both gates its updates pass,
+so anyone who obtained one device could extract them and sign an update that
+every other device in the fleet verifies, installs and trusts.**
 
 That is fleet-wide remote code execution reachable by buying one unit. It is
 not a consequence of a careless implementation; it is the direct reading of
@@ -212,15 +224,21 @@ not a consequence of a careless implementation; it is the direct reading of
 | File in `meta/` | Path in the image | What it is |
 |---|---|---|
 | `meta/rauc/ca.cert.pem` | `/etc/rauc/keyring.pem` | the RAUC keyring: the CA certificate devices verify bundle CMS signatures against. Unchanged from today, including the path, which RAUC's own `system.conf` names |
-| `meta/updates/root.json` | `/usr/share/mos/meta/updates/root.json` | the pinned TUF root document — public, signed, self-describing, rotatable |
-| `meta/updates/manifest.json` | `/usr/share/mos/meta/updates/manifest.json` | the §4 configuration, which by schema holds no secret |
+| `meta/updates/manifest.json` | `/usr/share/mos/meta/updates/manifest.json` | the §2 configuration, carrying the **public half** of `root.key` inline (§2.1) and by schema no secret |
 
 **The build-host-only set — everything else, and it never leaves:**
-`ca.key.pem`, `signer.key.pem`, `signer.cert.pem`, `root.key`, `online/*.key`,
-`GENERATED`, and **any file not named above**.
+`ca.key.pem`, `signer.key.pem`, `signer.cert.pem`, `root.key`, `GENERATED`,
+and **any file not named above**.
+
+**Two files, not three.** An earlier revision baked a third, a pinned TUF root
+document. §2.1 and §6.2 are why it is gone: the package-trust anchor is now the
+public key carried inside the manifest, so there is no separate document to
+ship. If the release-side mechanism turns out to need one (open question 6),
+the allowlist gains one reviewed line — which is the behaviour an allowlist
+exists to produce.
 
 **Allowlist, not denylist, and this is the whole mechanism.** The staging step
-enumerates the three public files by name and copies those. A denylist would
+enumerates the public files by name and copies those. A denylist would
 pattern-match the secrets and copy the rest, which means a file nobody
 anticipated ships **by default** — and the default is what decides the outcome
 on the day somebody adds `meta/updates/notes-for-the-release-host.txt`. Under
@@ -303,16 +321,18 @@ argument:
   `meta/rauc/` with openssl, exactly as it generates `ca/` today. The build
   cannot proceed without a keyring, so this half stays build-blocking and
   automatic.
-- **`--domain updates`**: generates `meta/updates/root.key` and
-  `meta/updates/online/*.key` with `rauc-sign gen-dev-keys`, then a development
-  `root.json` via `rauc-sign init`. **Not automatic**, for two reasons worth
-  stating rather than discovering: it needs the `rauc-sign` binary, so wiring
-  it into `--if-absent` puts a cargo build in the image path; and a TUF root
-  that anchors a repository nobody has published is ceremony without content.
-  **Absent update material is a supported steady state** — the same steady
-  state as an absent `update.source` (§7). The build says so in one line and
-  continues: *no update anchor baked; this image cannot verify an update
-  repository until `meta/updates/root.json` exists*.
+- **`--domain updates`**: generates a development `meta/updates/root.key` and
+  writes its public half into `meta/updates/manifest.json`'s
+  `trust.signingKeys`. **Not automatic**, for a reason worth stating rather
+  than discovering: a development package-signing key that no published
+  repository has signed anything with is a key that anchors nothing, and
+  generating it by default would make every fresh build claim a trust
+  relationship it does not have. **An empty `trust.signingKeys` is a supported
+  steady state** — the same steady state as an absent `update.source` (§7),
+  and consistent with it, since a device configured to reach no server has no
+  package to verify. The build says so in one line and continues: *no package
+  signing key baked; this image can verify no update package until
+  `trust.signingKeys` is populated*.
 
 **One marker, and it names what it covers.** `meta/GENERATED` replaces
 `ca/GENERATED` and keeps its whole contract: it marks material
@@ -380,8 +400,8 @@ loudly rather than silently configure nothing.
   },
 
   "trust": {
-    "tufRoot":       "updates/root.json",
-    "tufRootSha256": "<derived by the build from those bytes>"
+    "signingKeys":   ["<ed25519 public key, base64>"],
+    "signingKeyIds": ["<derived by the build: sha256 of those bytes>"]
   },
 
   "http": { "credentialHosts": [] },
@@ -402,67 +422,87 @@ this one is *local configuration*. The name is kept because it is the user's
 layout and lode's, and the disambiguation is stated once here so it does not
 have to be re-derived at every mention.
 
-#### 2.1 The public key in the manifest: a pin, not a copy
+#### 2.1 The public key in the manifest: inline, because there is nothing to point at
 
-The layout says `manifest.json` carries "the signing PUBLIC key". The public
-half of `meta/updates/root.key` is **already stated** — signed, versioned,
-threshold-bearing and expiring — inside `meta/updates/root.json`. That is what
-a TUF root document is *for*: a bare public key has no expiry, no threshold and
-no rotation rule, which is the same reason the table below declines lode's
-inline `trusted_keys` list.
+The layout says `manifest.json` carries "the signing PUBLIC key", and under the
+user's ruling that `root.key` is **lode's key over the update package** the
+answer is the plain one: **the manifest carries the public key itself**, in
+lode's `trusted_keys` shape.
 
-A second inline copy in `manifest.json` would therefore be **a second statement
-of one fact**, unsigned, with no rule for what a device does when the two
-disagree. It is dropped. What the manifest carries instead is a **pin on** that
-statement:
+**This retires the previous revision's answer, which was a pin on a separate
+document.** That answer rested on `root.key` being the TUF root-role key, whose
+public half is already stated — signed, versioned, threshold-bearing and
+expiring — inside a `root.json`; a second inline copy would then have been one
+fact stated twice with no rule for a disagreement. Under lode's model **there
+is no second statement**: the manifest is the only place the trusted key is
+declared, so the objection has nothing to object to and the indirection would
+buy nothing. `trust.tufRoot` and `trust.tufRootSha256` are gone with it.
 
-- `trust.tufRoot` — the path, so the manifest names which anchor this image is
-  built against;
-- `trust.tufRootSha256` — the digest of exactly those bytes, **derived by the
-  build**, with a hand-written mismatch failing the build. A derived value
-  cannot become a second truth, and it makes the manifest self-checking: an
-  image whose `root.json` was swapped after the manifest was written fails
-  before it ships.
+**What survives from that answer, because it was never about the indirection.**
+The properties that made the pin right still hold, and they are what the fields
+above deliver:
 
-That digest is not a new artefact. It is the same number
-`docs/design/release-signing.md` §1.5 already tells the root ceremony to record
-in its minutes and distribute out of band, so an operator comparing the two is
-performing a check the runbook already describes, with no new procedure. And a
-reader who wants the key bytes themselves has `root.json` beside it.
+- **Fixed at build, unwritable at runtime.** The key is inside the manifest,
+  the manifest is inside the read-only verity root, and no key in the operator
+  layer names it (§5.1). Baking is what makes an inline key a pin rather than a
+  copy somebody could edit.
+- **Independently checkable against the ceremony record.**
+  `trust.signingKeyIds` is the sha256 of each key's bytes, **derived by the
+  build**, with a hand-written mismatch failing the build. It is the value an
+  operator compares against the minutes and the value §8's read surface
+  exposes, so nobody has to eyeball base64.
 
-Two of those keys are **owned** by `meta/` and two are **defaults**, and the
-difference is §5's whole subject. `update.source` and everything under `trust`
-are owned: no runtime layer can override them, and the operator document of
-§5.1 has no key that names them. `update.channel`, `update.policy` and
-`update.checkIntervalMinutes` are the values a device uses **until an operator
-chooses otherwise**, and the operator can choose otherwise without a new
-image.
+**A list, not a scalar, and the rotation cost stated rather than discovered.**
+The previous revision rejected lode's inline `trusted_keys` on the ground that
+a bare key list has no rotation rule. That objection is **real and does not go
+away** — rotating the package-signing key means a new image, because its public
+half is baked. What the list form buys is the same thing concatenation buys the
+RAUC keyring in `docs/design/release-signing.md` §2.4: an **overlap window**.
+Ship an image trusting both the outgoing and incoming keys, sign with the
+incoming one, and devices that took that image follow without a flag day; a
+device that missed the window needs a new image, exactly as it does for a CA
+rollover. A scalar forecloses that for no saving, so the field is a list from
+the first day even though it will hold one key.
+
+`trust.signingKeyIds` is derived and must not be hand-written; `signingKeys` is
+the input. Two fields where one would do, because the derived one is the one a
+human reads and compares, and deriving it is what stops it becoming a second
+truth.
+
+**The mapping**, re-checked against lode's vocabulary now that `root.key` is
+lode's rather than TUF's. Two rows changed as a result and are marked; two rows
+are mos **extensions** with no lode analogue, which are marked and justified
+rather than left to look native.
 
 | lode `lode.toml` | mos `meta/updates/manifest.json` | Verdict |
 |---|---|---|
-| `[update] manifest = <url>` | `update.source` | **Adopt the role, rename the key.** Both name the one place releases are discovered; lode's is a `lode/v1` JSON feed and mos's is a TUF repository root, so the same name would mislead |
+| `[update] manifest = <url>` | `update.source` | **Adopt the role, rename the key.** Both name the one place releases are discovered; lode's is a `lode/v1` JSON feed and mos's is a package repository whose layout is the release side's (open question 6), so the same name would promise a format this key does not fix |
 | `[update] channel` | `update.channel` | **Adopt verbatim, as the default.** The operator overrides it at runtime (§5.1); lode's is an operator file to begin with, so this is the same key doing the same job one layer down |
 | `[update] policy = off \| check \| auto` | `update.policy` | **Adopt verbatim.** PLAN-071 owns the semantics |
 | `[update] check_interval` (seconds) | `update.checkIntervalMinutes` | **Adopt the key, keep mos's unit.** `update-policy.toml` is minutes today, and two units for one quantity is a defect waiting for a reader who does not notice |
 | `[update] asset` | — | **No analogue.** mos selects a whole-system bundle by board, profile, channel and a version newer than `release-identity.env`'s; there is no filename to choose |
 | `[update] keep_versions`, `pin` | — | **Structurally absent** (PLAN-071 §6): two slots, fixed by the partition table, not by a setting |
-| `[trust] trusted_keys` (inline list) | — | **Not adopted.** A bare key list has no rotation rule |
-| `[trust] trusted_keys_file` | `trust.tufRoot`, naming a file in `meta/` | **Adopt the file form.** mos's anchor is a signed TUF root with roles and its own rotation rule, which is strictly more than a key list and is the reason the list form is not adopted |
-| `[trust] require_signature` | — | **Not adoptable**, and PLAN-071's Context already argues it: lode's `off` exists because lode can install unverified artifacts; mos has no such mode, and importing the setting would mean building one in order to configure it off |
+| `[trust] trusted_keys` (inline list) | `trust.signingKeys` + derived `trust.signingKeyIds` | **Adopted — changed from the previous revision, which rejected it.** With `root.key` being lode's package key there is no signed root document to point at, so the inline list is the only statement of the trusted key rather than a duplicate of one. The rotation objection stands and is answered by the list form plus an overlap window, not by indirection (§2.1) |
+| `[trust] trusted_keys_file` | — | **Not adopted — changed from the previous revision, which adopted it.** A file beside the manifest, inside the same baked directory, covered by the same signature, is indirection with no added rotation semantics. It would be worth having only if the trusted material were a document with its own expiry and threshold, which is the reading §6.2 retires |
+| `[trust] require_signature` | — | **Not adoptable**, and now for a sharper reason than PLAN-071's Context gives: lode's `off` exists because lode can install unverified artifacts, and mos has **two** mandatory gates (§6.2) with no mode that skips either. Importing the setting would mean building an unverified path in order to configure it off |
 | `[http] headers` | — | Not built. mos does not authenticate to its update source today and this plan adds no credential |
 | `[http] credential_hosts` | `http.credentialHosts` | **Adopt the key and the rule now, empty by default** — the same-origin rule must exist before the first credential does, because the failure it prevents is silent |
-| `[http] allow_insecure` | — | **No analogue.** The TUF walk establishes trust; `docs/design/release-signing.md` §3.1 already mirrors metadata over plain HTTP deliberately and treats the mirror as unverified input |
+| `[http] allow_insecure` | — | **No analogue.** The package signature is what establishes trust; `docs/design/release-signing.md` §3.1 already mirrors metadata over plain HTTP deliberately and treats the mirror as unverified input |
 | `[global] app`, `[command]`, `[runtime]`, `[env]`, `[supervise]`, `[signals]` | — | lode launches and supervises one application; mos's supervisor is systemd and its unit of update is the whole system |
+| — | `product.vendor`, `product.model` | **mos EXTENSION.** lode's nearest thing is `[global] app`, which names the application lode supervises — a different fact. mos has no application to name and does need a place to say which product an image is, because §5's per-deployment argument turns on telling two builds apart. Justified as a label, not a selector: nothing reads it to make a decision |
+| — | `fleet.enabled`, `fleet.url` | **mos EXTENSION.** lode has no fleet plane and therefore no analogue at all. It lives here rather than in the settings tree because *may this device dial out* is a product fact with a baked default, which is the §5.2 rule for what belongs in this layer; PLAN-072 owns everything it turns on |
 
 **Where mos differs, once, so no later reader re-derives it.** lode's
 `manifest.json` is a *remote* catalog: it enumerates versions, assets, sha256
 digests and ed25519 signatures, and lode reads it over the network. mos's
-`meta/updates/manifest.json` enumerates none of that, because all of it lives in signed
-TUF `targets.json` on the server. Baking a copy of a release catalog into an
-image would freeze a moving fact at build time and produce a second, always
-staler answer to a question the update client already asks correctly. What is
-baked is the *configuration for asking* — where, which channel, under what
-policy, against which root — and nothing that the server is authoritative for.
+`meta/updates/manifest.json` enumerates none of that, because all of it is
+signed release-side metadata the server is authoritative for. Baking a copy of
+a release catalog into an image would freeze a moving fact at build time and
+produce a second, always staler answer to a question the update client already
+asks correctly. What is baked is the *configuration for asking* — where, which
+channel, under what policy, against which signing key — and nothing the server
+owns. **The name is shared with lode and the role is not**, which is the third
+manifest collision this record has to name.
 
 **The same-origin rule, and the review property that changed.** Credentials
 configured for the update source are attached only to hosts same-origin with
@@ -477,12 +517,12 @@ and that the rule exists before the first credential does.
 
 ```
 meta/rauc/ca.cert.pem         →  /etc/rauc/keyring.pem                        0644 root:root
-meta/updates/root.json        →  /usr/share/mos/meta/updates/root.json        0644 root:root
 meta/updates/manifest.json    →  /usr/share/mos/meta/updates/manifest.json    0644 root:root
 ```
 
-Three files, by name, and nothing else — §1.1 is why this is an enumeration
-rather than a directory copy.
+Two files, by name, and nothing else — §1.1 is why this is an enumeration
+rather than a directory copy, and §2.1 is why the package-trust anchor needs no
+file of its own.
 
 **Inside the read-only dm-verity root**, which is the point: the configuration
 and the anchors are covered by the same signature and the same block-level
@@ -504,13 +544,14 @@ byte-equality check over it is unchanged in contract, and
 files — no extra file, no missing file, no differing byte, and a throw rather
 than a pass when there is no `meta/` to compare against.
 
-**The consequence, taken deliberately:** `rauc-update`'s default anchor path
-moves from `/usr/share/mos/uptane/root.json` to
-`/usr/share/mos/meta/updates/root.json`. That path is `[not implemented]`
-today — no shipped mechanism delivers a root to either location — so nothing is
-broken by moving it, and the alternative (bake it *and* copy it to the old
-path) would put the same anchor in two places, which is two truths and one of
-them eventually stale.
+**The consequence, taken deliberately:** the device-side anchor stops being a
+*path* and becomes a *field*. `rauc-update` today defaults to an anchor file at
+`/usr/share/mos/uptane/root.json`; under this design it reads
+`trust.signingKeys` out of the baked manifest instead. That default is
+`[not implemented]` today — no shipped mechanism delivers an anchor to any
+location — so nothing is broken by the change, and one place holding both the
+trusted key and the source it applies to is one fewer pair that can disagree.
+Open question 6 is the one thing that would bring a file back.
 
 ### 4. What survives what — the root's answer, and no new row
 
@@ -545,47 +586,66 @@ The one sentence §2.1 gains is a clarifying note, not a new claim: the slot
 columns cover the baked update configuration and the trust anchors, because
 those are files in the root filesystem.
 
-#### 4.1 The operator layer's row, which is a different column and a real change
+#### 4.1 The reset disposition of `/mos/config/`, decided for the directory
 
-§5.1 puts the operator's own update configuration in `/mos/updates/config.json`
-on DATA. That is the `DATA (/mos)` column, which is already in the table, so
-again no row and no column is invented — but the *document moves columns*, and
-that changes which reset takes an operator's channel choice away. Stated as the
-before-and-after it is:
+§5.1 puts the operator's own update configuration in `/mos/config/updates.json`
+on DATA. That is the `DATA (/mos)` column, which is already in the table, so no
+row and no column is invented — but `/mos/config/` is a **new subtree**, it is
+not covered by `[^apps-mos]`'s carve-out (which names `updates/`), and its
+disposition is decided **for the directory** rather than inherited from
+whatever the tier-2 rule happens to produce. A configuration subtree and an
+application-data subtree are not the same claim, and the next subsystem must
+find this answered rather than reopen it.
 
-| Tier | Update policy today, on STATE | Operator layer under `/mos/updates/` |
+| Tier | `/mos/config/` | Why |
 |---|---|---|
-| 1 configuration reset | **re-seeded** — the operator's channel goes back to the default | **preserved** — the choice survives |
-| 2 application-data reset | preserved | **preserved**, via `[^apps-mos]`'s carve-out |
-| 3 full factory reset | re-seeded | **re-seeded** — the choice goes back to the baked default |
-| 4 secure wipe | cleared | cleared |
+| 1 configuration reset | **re-seeded** | Tier 1's promise is *the modelled settings back to their defaults; the device configured as it left the factory.* A subtree named `config` surviving the configuration reset is a contradiction a reader trips over, and after a tier 1 the device would still be following a channel the previous operator chose |
+| 2 application-data reset | **unaffected** | Tier 2 clears the application-owned subtrees, `apps/` and `containers/`, and opens nothing else. Configuration is not application data, which is the same reason `updates/` is left alone — stated for `config/` directly rather than borrowed from a footnote about verified bundles |
+| 3 full factory reset | **re-seeded** | Tier 3 re-seeds `/mos` wholesale; every occupant returns to its baked default, which is what first-boot state means |
+| 4 secure wipe | cleared | With everything else |
 
-**So the answer to "which reset takes the channel away" is tier 3 and tier 4,
-and it used to also be tier 1.** That is a real behaviour change with a real
-argument on each side, and the record picks rather than hiding it: a channel
-selection is not part of the modelled settings tree that tier 1 re-seeds, and
-it has never been in it, so tier 1 losing it is consistent with what tier 1
-promises. The cost is that tier 1's prose says *configured as it left the
-factory*, and after this move a tier-1 reset leaves the device on whichever
-channel the previous operator chose.
+**This re-derives the previous revision's answer, which said tier 1 preserves
+it.** That answer was written when the document lived inside `/mos/updates/`,
+and its load-bearing objection was that teaching `reset.rs` to reach one file
+inside a transactional workspace would give the applier a reach it does not
+have. **That objection does not survive the move.** `reset.rs` already reaches
+the DATA pool — its `Roots` type has the DATA pool and STATE — so tier 1
+clearing `/mos/config/` is not a new root; it is the same operation tier 2
+already performs on `apps/` and `containers/`, applied to a whole subtree
+rather than reaching inside one. What was expensive at a file granularity is
+ordinary at a directory granularity, which is a second reason the namespace is
+worth having.
 
-**The record does not answer that by special-casing tier 1.** Teaching
-`reset.rs` to reach one file inside `/mos/updates/` would give the applier a
-fourth root it does not have and would contradict `[^apps-mos]`'s framing of
-`/mos` as the system-owned namespace. Instead, *return to the baked default
-channel* is an explicit action on the update surface — clearing the operator
-layer — which is a thing the console needs regardless and which says what it
-does. A reset tier is not the place to discover it.
+**What it costs, since the table's cells are asserted cell for cell.** The
+tier-1 `DATA (/mos)` cell changes from `preserved` to `re-seeded` with its own
+footnote, in the same shape tier 2's `re-seeded [^apps-mos]` already uses: only
+`config/` is re-seeded, and `ui/`, `apps/`, `containers/`, `updates/`,
+`home/` and `root/` are untouched by tier 1 exactly as they are today. That is a
+real change to shipped, tested code and to a document whose tests assert the
+`preserved` and `unaffected` cells, and F6c carries it.
 
-**One debt this creates, and it is the kind that goes unnoticed.**
-`[^apps-mos]` currently carves `updates/` out of tier 2 with the reason *"a
-verified bundle is not application data"*. After this plan the directory also
-holds a configuration document, so the cell stays right and its stated reason
-stops covering everything it protects. The footnote owes one clause — the
-update subsystem's own state, configuration included, is not application data
-either — and F10 carries it. A table whose cells are correct for reasons that
-no longer describe their contents is how a later editor deletes the right
-answer.
+**What it buys, and it is more than tidiness.** Today `update-policy.toml` is
+on STATE and tier 1 re-seeds it, so *configuration reset returns the update
+channel to its default* is the current behaviour. The previous revision
+accepted losing that as a side effect of moving to DATA and documented the
+regression. This decision keeps the behaviour instead: **the move stops being a
+behaviour change at all**, and the operator page no longer has to explain that
+one reset used to do something and now does not.
+
+**The finer-grained action stays useful.** *Return to the baked default
+channel* remains an explicit action on the update surface — clearing the
+operator layer — because an operator who wants their channel back should not
+have to spend a whole tier-1 reset on it. A reset tier is not the place to
+discover a channel change; it is now merely also not the place where one
+silently survives.
+
+**One debt this removes.** The previous revision owed `[^apps-mos]` an extra
+clause, because with the document inside `/mos/updates/` that footnote's stated
+reason — *a verified bundle is not application data* — no longer covered
+everything the cell protected. With the document in `/mos/config/`, the
+footnote is correct as written and covers exactly what it says. `[^apps-mos]`
+instead gains `config/` in its list of subtrees tier 2 does not open, which is
+an addition to an enumeration rather than a repair of a reason.
 
 ### 5. The cost: which facts are per-build, and which the operator changes
 
@@ -597,7 +657,7 @@ than the slogan.
 
 - the update source URL (`update.source`);
 - the trust anchors — the RAUC keyring staged from `meta/rauc/ca.cert.pem`,
-  and the pinned TUF root `meta/updates/root.json`.
+  and the trusted package keys in the baked manifest's `trust.signingKeys`.
 
 **Operator-changeable, with no new image, through the layer of §5.1:**
 
@@ -663,15 +723,16 @@ consequence 4, stated above rather than discovered.
 1. **The public set baked from `meta/` at build (§1.1).** Fleet-identical,
    per-build: the source URL, the trust anchors, and the **default** channel,
    policy and check interval.
-2. **`/mos/updates/config.json`, on DATA.** Operator-owned, machine-written,
+2. **`/mos/config/updates.json`, on DATA.** Operator-owned, machine-written,
    survives every A/B update and every slot rollback because DATA is neither;
-   cleared by the reset tiers §4.1 names.
+   re-seeded by the reset tiers §4.1 names. It is the update subsystem's
+   occupant of the `/mos/config/` namespace §5.2 establishes.
 3. **The running state.** What the lifecycle actually did — `idle`, `checking`,
    `ready`, `reboot-required` and the rest. It configures nothing; it is the
    record of what happened, and it is in this list only so that a reader stops
    looking for a fourth place a channel could come from.
 
-| Key | Layer 1 baked from `meta/` | Layer 2 `/mos/updates/config.json` | Rule |
+| Key | Layer 1 baked from `meta/` | Layer 2 `/mos/config/updates.json` | Rule |
 |---|---|---|---|
 | update source URL | **owns it** | no such key | baked only; not overridable, and the schema is what says so |
 | RAUC keyring, TUF root | **own them** | no such key | baked only; not overridable |
@@ -679,26 +740,30 @@ consequence 4, stated above rather than discovered.
 | `policy`, `checkIntervalMinutes` | default | **overrides** | layer 2 wins; absent → the baked default |
 | `rebootPolicy`, windows, network mode, reboot-gate keys | not present | **owns them** | layer 2 only; absent → the code defaults |
 
-**Where layer 2 lives, and why not one letter away.** The user's request named
-`/mos/update`. `/mos/updates/` — plural — already exists as the update
-workspace, created by `mos-data-layout` and holding `downloads/`, `verified/`
-and `staging/`. Shipping a configuration path one letter from it guarantees
-somebody writes the wrong one, and the mistake would be silent in both
-directions. **The configuration goes inside the existing workspace**, at
-`/mos/updates/config.json`: one directory then owns everything the update
-subsystem keeps on DATA, the name is already carved out of tier 2 by
-`[^apps-mos]`, and the three neighbours are directories while this is a file,
-so the two cannot be confused even at a glance. **§5.2 answers the objection
-that a workspace is the wrong place for a durable document**, and converts it
-into three written rules rather than a second subtree.
+**Where layer 2 lives: `/mos/config/updates.json`, in a namespace of its
+own.** The user's request first named `/mos/update`, one letter from the
+existing `/mos/updates/` workspace — a collision that would be silent in both
+directions. An intermediate revision of this record answered that by putting
+the document *inside* the workspace, at `/mos/updates/config.json`. **That is
+superseded.** The document lives in a new subtree, `/mos/config/`, and §5.2 is
+the reason it is a namespace rather than a location for one file: later
+subsystem configuration of this kind goes there too, and the first occupant
+sets the rules the rest inherit.
+
+Three things the move buys, beyond avoiding the near-collision: a workspace
+whose discipline is *unverified leftovers are removed* is no longer asked to
+hold a durable document; the reset disposition is decided once for a directory
+that means one thing (§4.1) instead of inherited from a carve-out written about
+verified bundles; and a reader looking for *where is this device's
+configuration* has one answer rather than one per subsystem.
 
 **What becomes of `/var/lib/mos/update-policy.toml`: it goes away.** Not split,
 not kept for a subset — **moved wholesale**, because two files that both name
 the channel is the defect this campaign exists to remove, and a split with no
 overlap would still be two homes for one operator-owned concern. Layer 2 is
 today's policy document minus exactly the two keys that moved up to layer 1:
-`source.url` (per §5, now baked) and `source.rootPath` (the anchor, now
-`meta/updates/root.json`). `channel`, `repoDir`, `statePath`, `maxBytes`,
+`source.url` (per §5, now baked) and `source.rootPath` (the anchor, now the
+baked manifest's `trust.signingKeys`). `channel`, `repoDir`, `statePath`, `maxBytes`,
 `network`, the check interval, `maintenance.windows` and `rebootGate` carry
 over unchanged, re-expressed as JSON. **One fact, one writer, one file.**
 
@@ -716,9 +781,13 @@ is:
   and its workspace now share one availability domain. Today they do not —
   configuration on STATE, bundles on DATA — so a device can have readable
   policy and an unusable workspace, which is one condition reported as two
-  different refusals. After the move, the workspace readiness probe that
-  already exists gates both, and there is one answer to "can this device
-  update".
+  different refusals. After the move both are on the DATA pool, and the
+  existing readiness probe checks the **pool and its mount** rather than any
+  one directory, so it gates both and there is one answer to "can this device
+  update". **That argument is now at the pool level, not the directory level**:
+  an earlier revision put the document inside `/mos/updates/` and could say the
+  two shared a directory. Under `/mos/config/` they do not, and the probe is
+  why the conclusion survives the move.
 - **And the reset consequence is §4.1's**, priced there in the table's own
   terms rather than as an aside here.
 
@@ -749,57 +818,92 @@ rules stand and gain one case:
   absent in layer 2 still means no online source, refuse, and offline import
   remains (§7).
 
-#### 5.2 A durable document inside a workspace, and the contract that has to say so
+#### 5.2 `/mos/config/` is a namespace, and the first occupant sets its rules
 
-The objection this decision has to answer, stated in full because dismissing it
-is the failure mode: `/mos/updates/` is documented as a **workspace**, whose
-discipline is that unverified leftovers are removed rather than counted or
-trusted, and whose module contract says `downloads/` holds `<name>.part` and
-**nothing else**. A durable operator document living in a directory described
-that way is a standing invitation for a future space-reclaim sweep to delete an
-operator's channel selection.
+Update configuration is merely the first thing to live here; later
+configuration of this kind goes in the same subtree. The rules below are
+therefore written for the **namespace**, not for `updates.json`, because the
+second subsystem will otherwise arrive with TOML, a hand-editing assumption and
+its own opinion about resets — and by then the rules will be load-bearing.
 
-**The location stands**, on one fact that outweighs the objection:
-`docs/design/recovery.md` §2.1's `[^apps-mos]` already carves `updates/` out of
-reset tier 2 **by name**, so the directory already carries durable semantics
-rather than purely transient ones. A second `/mos/config/` subtree would buy a
-separation the tier table has already declined to make, at the cost of two
-homes for the update subsystem's DATA state.
+**Naming: `/mos/config/<subsystem>.json`, one flat document per subsystem.**
+The alternative, `/mos/config/<subsystem>/…`, is rejected. One document per
+subsystem means one writer, one atomic rename and one parse-error blast radius;
+a directory invites several files with **no transaction across them**, so a
+subsystem could half-apply a change and have no way to say so. A flat listing
+of `/mos/config/` is also the namespace's own index — `ls` answers *what on
+this device is configured this way*. A subsystem that genuinely needs several
+documents may take a directory, and that is a decision with a stated cost
+(atomicity stops at the file) rather than a default. Changing this rule later
+means touching every writer, which is why it is settled here.
 
-**So the objection converts into a written rule rather than a relocation**, and
-it is three debts, all of them documentation of an intent the code already
-happens to satisfy:
+**Format and write discipline, as namespace rules:**
 
-1. **The workspace module contract must state what may live at the workspace
-   root, and that it is never swept.** Today it enumerates three
-   subdirectories and says "nothing else" about `downloads/`. It must say, in
-   the same place a reader learns the layout, that `config.json` is a **durable
-   document at the root**, is not part of any transaction, is not counted
-   against the download budget, and is never removed by reconciliation. An
-   implementer who reads only the module comment must not be able to conclude
-   the file is disposable — and today that is exactly the conclusion the
-   comment supports.
-2. **The `used_bytes` exemption must be stated, not merely true.** The
-   readiness probe sums regular files under `downloads/`, `verified/` and
-   `staging/` only, so the configuration is not counted **by construction, not
-   by intent**. Write the intent down: configuration is not workspace usage. A
-   later change that walked the workspace root instead — a reasonable-looking
-   simplification — would silently make an operator's configuration compete
-   with a download budget, and the exhausted state's message already tells the
-   reader to reconcile the three directories, which is the shape that change
-   would break.
-3. **The `[^apps-mos]` clause is the third part of the same debt.** Its stated
-   reason — *a verified bundle is not application data* — no longer covers
-   everything the cell protects, because the cell now also protects an operator
-   document. §4.1 already owes that clause a rewrite; this is why it is the
-   same debt and not a separate one.
+- **JSON.** Not TOML, not YAML, not "whatever the subsystem prefers". These are
+  machine-written documents and JSON is what a machine writes without a
+  round-trip formatting problem; a mixed-format namespace also means every
+  reader guesses by extension, which is exactly the failure the `config.toml`
+  naming correction was made to avoid.
+- **Machine-written, never hand-edited.** The writing daemon owns the file's
+  shape. A human edits it through an authenticated API; if a human edits it
+  with `vi`, the next write overwrites them and that is the documented
+  behaviour, not a bug.
+- **Atomic: temp file, fsync, rename, directory fsync.** The discipline already
+  used elsewhere in the tree. An interrupted write leaves the previous document
+  intact, never a truncated one.
+- **Fail closed on a parse error, with no fallback.** A document that exists and
+  does not parse refuses the capabilities it gates and **never** silently
+  reverts to the baked layer. §5.1 argues this for updates; it is a namespace
+  rule because the argument is not update-specific — a parse error is not
+  absence, and treating it as absence configures a device the way nobody chose.
+- **No secrets.** These documents are world-readable at 0755 and are not
+  redacted. A subsystem with a credential to store needs a different home;
+  putting one here is the same defect as putting one in the baked layer (§1.4),
+  one tier down.
 
-The first two are properties of the code that are true today and undocumented,
-which is the class of fact that stops being true without anybody deciding to
-change it. They belong in the doc slice (F10) rather than in a check, because
-there is nothing here to assert that is not already asserted — the risk is a
-future author's reasonable inference, and a comment at the site is what
-addresses that.
+**One writer per document, and it is a daemon.** mosd writes; apid holds the
+authenticated route and **asks**. Stated for the namespace so that two
+processes never write one document, which no amount of atomic renaming makes
+safe. A subsystem whose daemon is not mosd owns its own document and no other.
+
+**The subtree itself.** `rootfs/overlay/usr/lib/mos/mos-data-layout` creates
+`/mos`'s subtrees by name — `ui`, `containers`, `home`, `root`, `apps`,
+`updates` — and `config` needs its own entry at **0755**: readable by any local
+reader, writable only by root, matching `updates/` and `ui/`. 0755 is safe
+precisely because of the no-secrets rule above; if that rule is ever broken the
+mode is the wrong question to fix first.
+
+**The boundary against the settings tree, as a rule a reader can apply without
+asking.** mosd already owns a schema-versioned settings tree with a migration
+chain on STATE, holding `hostname`, `network`, `access`, `provisioning`,
+`wifi`, `container`, `mqtt`, `time` and the staged reset intent. The rule is:
+
+> **A document belongs in `/mos/config/` if and only if the image bakes a
+> default for it in `meta/`.** Everything else is the settings tree's.
+
+That is mechanical, and it is why the update document moved: its channel,
+policy and interval have baked defaults and its source URL is baked outright,
+so the operator layer is the second half of a two-layer system whose first half
+is in the image. Nothing in `meta/` defaults a hostname or an IP address, so
+those stay where they are.
+
+**Two weaker lines were considered and rejected, and one of them is the obvious
+one.** *Device behaviour versus how a subsystem reaches the outside world* is
+close and reads well, but the settings tree already contains `mqtt` — broker and
+bridge policy, which is outward-reaching by definition — so a reader applying
+that line would move an existing key and be wrong. *Must survive an A/B update*
+does not discriminate at all: STATE and DATA are both separate partitions and
+both survive; the A/B slots are what is replaced. The baked-default rule is the
+one that matches the tree as it actually is, and it has the property the other
+two lack — it can be checked by looking at `meta.example/` rather than by
+judging a category.
+
+**What the rule implies for the next subsystem.** Adding a document here is
+therefore *two* changes, not one: a baked default in `meta/` and an operator
+document in `/mos/config/`. A subsystem that wants only the second has not met
+the rule and belongs in the settings tree; a subsystem that wants only the
+first is baked configuration with no operator override, which is allowed and
+needs no file here at all.
 
 ### 6. One directory, not two: `ca/` absorbed, and the six keys it now holds
 
@@ -849,58 +953,77 @@ the more expensive design, and the tree is in development, so the churn is the
 thing worth spending. **Re-openable** if the rename reaches further than the
 list above — but that list was enumerated, not estimated.
 
-#### 6.2 `meta/updates/root.key` is the TUF **root role** key, and here is what it is not
+#### 6.2 Two domains, three keys: the image chain and the package chain
 
-The layout names one key file where a release needs **six** private keys across
-**two independent hierarchies**. Letting one filename stand for several roles is
-the failure this section prevents; they have different rotation rules and
-different blast radii.
+**The split is by object, not by hierarchy**, and it is the user's ruling:
 
-| File | Hierarchy | Signs | If stolen | Rotation |
-|---|---|---|---|---|
-| `meta/rauc/ca.key.pem` | RAUC X.509 | signer certificates | mint a signer the fleet already trusts; every device installs your bundles until reflash | `release-signing.md` §2.4 rollover with an overlap window; a *compromised* CA is §2.3's uncovered case and needs a reflash |
-| `meta/rauc/signer.key.pem` | RAUC X.509 | the bundle's CMS signature | sign bundles while the certificate is valid | §2.2 reissue — cheap, needs the CA key, no fleet update, because devices trust the CA |
-| `meta/updates/root.key` | TUF | **`root.json` only — never a release** | re-anchor the whole update metadata hierarchy: bind attacker-controlled online keys and have pinned devices walk forward to them | `rotate-root` cross-signs, so a pinned device follows with nothing shipped to it; `refresh-root` for expiry alone |
-| `meta/updates/online/targets.key` | TUF | the metadata pinning each release | offer a device an attacker-chosen target | `rotate-online`, no distribution |
-| `meta/updates/online/snapshot.key` | TUF | the metadata index | freeze or mix metadata versions | `rotate-online` |
-| `meta/updates/online/timestamp.key` | TUF | freshness | withhold updates | `rotate-online` |
+- **`meta/rauc/`** — the RAUC CA and its signer. This chain gates the **A/B
+  system image**. Compromise means an attacker **installs a system**.
+- **`meta/updates/root.key`** — lode's key over the update **package**. It is
+  what guarantees a downloaded package has not been tampered with. Compromise
+  means an attacker **forges a package, not a system image**.
 
-**Why `root.key` is the root role and not the bundle signer.** The bundle
-signer already exists, is X.509, and cannot be a bare `.key` without losing the
-certificate that makes it verifiable — it is `meta/rauc/signer.key.pem`. The
-directory `updates/` is the TUF trust domain, `root` is TUF's role name, and
-§2.1's public-key field is a statement about the anchor. The user's phrase
-"used locally to sign update bundles" describes the *release flow this
-repository performs* — build a bundle, CMS-sign it, publish it into the TUF
-repository — which touches four keys, and `root.key` is the one that makes the
-repository anchorable at all. It is **not** a delegation key: `rauc-sign` has
-delegated targets roles explicitly out of scope, and `rauc-verify` refuses
-targets metadata carrying them.
+| File | Domain | Signs | Used | If stolen | Rotation |
+|---|---|---|---|---|---|
+| `meta/rauc/ca.key.pem` | image | signer certificates | at a ceremony, rarely | mint a signer the fleet already trusts, and **install a system** on every device until reflash | `release-signing.md` §2.4 rollover with an overlap window; a *compromised* CA is §2.3's uncovered case and needs a reflash |
+| `meta/rauc/signer.key.pem` | image | the bundle's CMS signature | every release | **install a system**, while the certificate is valid | §2.2 reissue — cheap, needs the CA key, no fleet update, because devices trust the CA |
+| `meta/updates/root.key` | package | the update package and its release metadata | every release, **locally** | have a device accept a forged package as authentic — download it, verify it, and then **fail to install it** | a new image, because the public half is baked; the trusted-key **list** (§2.1) is what makes an overlap window possible |
 
-**`meta/updates/online/` is an addition the layout implies rather than
-states.** `rauc-sign add` and `rauc-sign sign` load the three online keys on
-every release; without a home they would arrive from somewhere this record does
-not name. They sit under their own directory because their custody differs —
-the root key is offline material, the online keys live on the release host.
+**The blast-radius sentence, which is the point of the split.** An attacker
+holding `root.key` alone can make a device accept a package as authentic, and
+still cannot make it install anything: installation is gated by the RAUC CMS
+signature chaining to `meta/rauc/ca.cert.pem`, which they do not hold. An
+attacker holding the RAUC CA alone can build an installable bundle and cannot
+get it distributed as an authentic package. **Both gates must fall**, and they
+fall to different keys with different custody.
 
-**The production shape: `root.key` is absent.** `rauc-sign init` is the only
-command that loads it, and no image build touches it.
-`docs/design/release-signing.md` §2.5 already establishes the pattern for the
-other hierarchy: a production build host carries `signer.key.pem` and
-explicitly **not** `ca.key.pem`. The same rule applies here. A production tree
-holds `meta/rauc/{ca.cert,signer.cert,signer.key}.pem`,
-`meta/updates/{manifest.json,root.json}` and `meta/updates/online/*.key`, and
-**neither `ca.key.pem` nor `root.key`**, both of which stay on offline media
-between ceremonies. `root.key` in the tree is a development convenience, and no
-tool this plan designs may require it to be present.
+That independence holds **at install time** and not **at provisioning time**:
+the package-signing public key is baked in the image, so whoever controls the
+image signing path controls what the package gate trusts. §6.3 is that tradeoff
+stated in full, and it is the reason the two gates are not a substitute for
+keeping the image chain's keys offline.
 
-**The consequence of one directory, said plainly.** A development tree holding
-all six keys is a tree where one host compromise yields **both** hierarchies —
-the RAUC CMS gate and the TUF metadata gate, which exist precisely so that
-neither alone suffices to install code. `ca/` today already holds both RAUC
-keys, so what changes is that the TUF half joins them. That is acceptable for a
-development tree and is exactly why the paragraph above makes the two offline
-keys absent in production.
+**The reading this retires.** The previous revision concluded `root.key` was
+the **TUF root-role key** — offline, signing only a `root.json`, never a
+release. That is retired, not defended, and the user's own phrasing is what
+should have decided it the first time: *"used locally to sign update bundles"*
+means a key used on **every release, on the release host**. A TUF root key is
+never used to sign a release; that is the entire point of an offline root. The
+first revision explained the phrase away as describing a release flow that
+touches several keys, which was the weaker reading of a sentence that was
+already clear.
+
+**Three consequences of retiring it, so the change is not cosmetic:**
+
+1. **`meta/updates/online/` is gone.** It was an addition the layout did not
+   state, and it existed only because a TUF hierarchy separates its offline
+   root from three online role keys. One key that signs every release needs no
+   such separation, and the directory tree is now exactly the user's three
+   lines.
+2. **The manifest's trust block changed shape** — inline key rather than a pin
+   on a document — and §2.1 is that re-derivation, including which part of the
+   old answer survives and which of its objections had to be answered
+   differently.
+3. **The baked public set dropped from three files to two** (§1.1, §3): there
+   is no root document to ship.
+
+**The production shape: `root.key` is present, and that is the difference.**
+`meta/rauc/ca.key.pem` stays off a release host —
+`docs/design/release-signing.md` §2.5 already says so — because signing a
+release needs the *signer* key, not the CA key. `root.key` is the opposite: it
+signs every package, so a release host must hold it, and the protection it gets
+is operational (host hardening, restricted access, an audit trail) rather than
+the CA's air gap. Stating that plainly matters because a reader who has just
+read §2.5 will otherwise assume the same rule covers both keys, and it does
+not.
+
+**The consequence of one directory, said plainly.** `meta/` now holds both
+domains' private material, so one build-host compromise yields both gates —
+which is exactly the pair the split above exists to keep apart. The mitigation
+is the same one `release-signing.md` §2.5 already applies to the CA key: the
+key that does not need to be there is not there. On a release host that is
+`ca.key.pem`; a development tree that holds everything is a development tree,
+and the marker in §1.2 is what says so.
 
 #### 6.3 The two anchors: one source each
 
@@ -915,28 +1038,33 @@ OpenSSL CA file — concatenated PEMs, every one trusted — which is what
 operator wanting a two-CA image concatenates the second certificate into
 `meta/rauc/ca.cert.pem`, where the rollover procedure puts it.
 
-**The TUF root: one place, so precedence has nothing to arbitrate.** A TUF
-repository has exactly one root, which is why a union is meaningless for it —
-two pinned roots are two repositories. There is exactly one source,
-`meta/updates/root.json`; `trust.tufRoot` names a file *inside* `meta/`, and
-naming a path outside it is a build error.
+**The package anchor keeps exactly one source too**, and it is a field rather
+than a file: `trust.signingKeys` in the baked manifest (§2.1). There is nowhere
+else a trusted package key may enter — no path key naming a file, no operator
+override, no compiled-in default (§7) — so there is no precedence to arbitrate
+and no second place to look. The union case is the same shape as the keyring's
+and is served the same way: more than one entry in the list, which is what an
+overlap window is.
 
-**The tradeoff that comes with picking the image-baked candidate**, which
-`pkgs/rauc-sign/README.md` already states and which this plan accepts rather
-than restates as new: the root is exactly as trustworthy as the image carrying
-it, so first trust and re-anchoring both ride the RAUC channel, and **the TUF
-hierarchy cannot outlive a compromise of the image signing path — the two
-hierarchies stand or fall together.** What is bought is that the root does not
-have to be replaced to follow a rotation; a pinned device walks the
-cross-signed root chain forward on its own, so an image update is needed only
-to re-anchor a device whose chain is broken. §6.2's storage consequence is the
-same statement one layer down.
+**The tradeoff that comes with baking the package anchor**, which
+`pkgs/rauc-sign/README.md` already states for an image-carried anchor and which
+this plan accepts rather than restates as new: the trusted package key is
+exactly as trustworthy as the image carrying it, so first trust and any
+re-anchoring ride the RAUC channel, and **the package gate cannot outlive a
+compromise of the image signing path.** §6.2's independence claim is bounded by
+exactly this: the two gates are independent *at install time*, when both must
+pass, and dependent *at provisioning time*, because one supplies the other's
+anchor. What is bought is that there is nothing to distribute in the ordinary
+case and nothing on the device that can be rewritten to change what it trusts.
 
 **What this does not close.** The two cases `docs/design/release-signing.md`
 §2.3 names as uncovered by an image-carried keyring stay uncovered: a device
 that missed a CA rollover's overlap window, and rotation away from a CA that is
-already compromised. Both still need a reflash. Open question 2 is where a
-later device-time channel would land.
+already compromised. Both still need a reflash, and **the package key inherits
+both**, because a baked trusted-key list has the same overlap-window shape and
+the same failure when the window is missed. Both still need a reflash. Open
+question 2 is where a later device-time channel would land, and it would now
+cover two anchors rather than one.
 
 ### 7. No default server, and the check that holds it
 
@@ -965,9 +1093,9 @@ default rather than committed:
    notice, and writes `meta/GENERATED` naming the `rauc` domain.
 2. The same step instantiates `meta/updates/manifest.json` from
    `meta.example/`, so the tree's default configuration names no server.
-3. No `meta/updates/root.json` exists, so no anchor is baked and the build says
-   so in one line (§1.2). This is not an error: with no source configured there
-   is no repository to anchor to.
+3. `trust.signingKeys` is empty, so no package-signing key is baked and the
+   build says so in one line (§1.2). This is not an error: with no source
+   configured there is no package to verify.
 4. The image builds; `packed-keyring-from-meta` reports the trust root
    **development-grade**, and `packed-meta-is-the-public-set` asserts the baked
    set is exactly the manifest — the anchor's absence is a fact it states, not
@@ -1009,11 +1137,11 @@ device not update* needs to know which anchor it pinned and which configuration
 it was built with, and a digest answers both without shipping a certificate
 through an API. Because the digests are over files inside the verity root, they
 are also the cheapest available cross-check that the image is the one the
-release claims — and `trust.tufRootSha256` (§2.1) makes the anchor checkable
-against the ceremony minutes without an API call at all.
+release claims — and `trust.signingKeyIds` (§2.1) makes the package anchor
+checkable against the ceremony minutes without decoding base64 by hand.
 
 Three facts should read side by side wherever this surfaces: the **baked**
-value, the **operator** value from `/mos/updates/config.json`, and the
+value, the **operator** value from `/mos/config/updates.json`, and the
 **effective** one after §5.1's precedence. An operator looking at a device
 following a channel they do not recognise needs to see, in one place, whether
 it came from the image or from a selection somebody made — and, after a full
@@ -1039,7 +1167,7 @@ factory reset, that the selection is gone and the baked default is back
    trust arrives. Not designed here, and named so that removing the old
    mechanism does not look like removing the requirement.
 3. **Does the baked set carry anything a device could not compute?** Today it
-   carries configuration and two anchors. The pressure to add per-device values
+   carries configuration and both anchors. The pressure to add per-device values
    will come from manufacturing (`docs/design/manufacturing.md` §3 wants a
    serial in a per-device record) and from zero-touch enrolment (PLAN-054
    question 6). Both are structurally excluded by baking, and the answer must
@@ -1053,10 +1181,23 @@ factory reset, that the selection is gone and the baked default is back
    true. Not designed here; named because it is the obvious next request from
    anyone debugging a device they did not build.
 5. **Is `--domain updates` generation wanted in the default build?** §1.2 makes
-   it opt-in because it needs `rauc-sign` in the image path and produces an
-   anchor for a repository nobody has published. If a development TUF
-   repository becomes part of the standard loop, this flips and the cargo
-   dependency has to be priced.
+   it opt-in because a development package-signing key that has signed nothing
+   anchors nothing, and generating one by default would have every fresh image
+   claim a trust relationship it does not have. If a development release
+   repository becomes part of the standard loop, this flips.
+6. **What is the release-side mechanism `root.key` signs with?** The user's
+   ruling settles the key's *identity, custody and blast radius* — lode's key
+   over the package, not the image's — and this record designs all three. It
+   does not settle whether the package repository stays the TUF one
+   `pkgs/rauc-sign` builds today or becomes lode's plainer scheme, and that is
+   the release side's question, which `docs/design/release-artifacts.md`
+   already records as open. **What it changes here is exactly one thing**: if a
+   signed root document survives on the release side, the device needs it and
+   the baked public set gains a third file — one reviewed line on §1.1's
+   allowlist, which is the behaviour the allowlist exists to produce. Nothing
+   else in this record turns on the answer, and the record deliberately does not
+   retire shipped, tested tooling by implication. **This must be answered before
+   F5**, because the reader's `trust` block differs between the two.
 
 ## Risks
 
@@ -1094,17 +1235,20 @@ factory reset, that the selection is gone and the baked default is back
   factory reset, and nothing told them that would happen. The mitigation is
   documentation and the read surface of §8, and both are backlog items rather
   than good intentions.
-- **`/mos/updates/config.json` beside `downloads/`, `verified/`, `staging/`.**
-  Putting configuration inside a workspace is the right call for §5.1's naming
-  reason and §5.2's tier-table reason, and it does mean the `maxBytes` budget,
-  the workspace probe and the cleanup paths now share a directory with a file
-  that must never be deleted as scratch. The specific risk is that the
-  exemption is currently a **property of the code rather than a stated
-  intent** — `used_bytes` walks three named subdirectories, not the root — so
-  a later author simplifying it to a root walk would break an operator's
-  configuration without ever deciding to. §5.2's debts 1 and 2 are the
-  mitigation, and they are documentation because there is nothing to assert
-  here that is not already true.
+- **`/mos/config/` is a namespace with one occupant, and namespaces set by
+  their first tenant.** Every rule in §5.2 was written against a single JSON
+  document holding a channel and a switch. The second subsystem will arrive
+  with something the rules did not anticipate — a secret, a document too large
+  to rewrite atomically, a value two daemons both want to write — and the rules
+  will be load-bearing by then. That is the reason to state them now rather
+  than the reason not to; the specific mitigation is that each rule in §5.2
+  carries the failure it prevents, so a subsystem that must break one can see
+  what it is buying.
+- **Tier 1 gains a write to DATA it does not have today** (§4.1). `reset.rs`
+  already reaches the DATA pool, so this is not a new root — but it is a new
+  cell in a table whose cells are asserted cell-for-cell by tests, and the
+  failure mode of getting it wrong is a reset that clears more than its row.
+  The existing survival assertion is the control.
 - **`meta/` looks editable and is not.** It is a JSON file in a directory, in
   an image, on a read-only verity root. Somebody will edit
   `/usr/share/mos/meta/updates/manifest.json` on a running device, or try to, and
@@ -1124,31 +1268,36 @@ factory reset, that the selection is gone and the baked default is back
   the move is free — but it is exactly the kind of change that is free until
   something outside this tree has already hard-coded the old path. Worth one
   grep at implementation time rather than an assumption now.
-- **Baking the TUF root ties the two hierarchies together** (§6.3). A compromise
-  of the image signing path compromises the anchor for the TUF path as well.
-  This is the accepted cost of the candidate chosen, it is the one
-  `pkgs/rauc-sign/README.md` names, and open question 2 is where the mitigation
-  would go.
+- **Baking the package anchor ties the two gates together at provisioning
+  time** (§6.3). §6.2's independence claim — both gates must fall — holds at
+  install time and not when the image is built: whoever controls the image
+  signing path controls what the package gate trusts. This is the accepted cost
+  of the image-baked candidate, it is the one `pkgs/rauc-sign/README.md` names,
+  and open question 2 is where the mitigation would go. The risk specific to
+  this revision is that §6.2's split reads as stronger than it is if that bound
+  is skipped.
 
 ## Scope
 
 In scope: `meta/`'s layout and its split into a baked public set and a
 build-host-only set; the allowlist and the two checks that hold it; the
-absorption of `ca/`; the identity and custody of each of the six private keys;
-`meta/updates/manifest.json`'s schema, its mapping from lode's `lode.toml`, and
-the form the anchor's public half takes in it; `meta/` being gitignored, the
-committed `meta.example/`, and generation when absent; the image paths and the
-byte-equality gate; the three layers and the one precedence rule between them,
-including where the operator layer lives and what becomes of the STATE policy
-file; the no-default-server rule, the channel rules and their verifier check;
-the read surface.
+absorption of `ca/`; the two signing domains, and the identity, custody and
+blast radius of each of the three private keys; `meta/updates/manifest.json`'s
+schema, its mapping from lode's `lode.toml`, and the form the package anchor's
+public half takes in it; `meta/` being gitignored, the committed
+`meta.example/`, and generation when absent; the image paths and the
+byte-equality gate; the three layers and the one precedence rule between them;
+**the `/mos/config/` namespace and every rule a later subsystem inherits from
+it, including its reset disposition and its boundary against the settings
+tree**; what becomes of the STATE policy file; the no-default-server rule, the
+channel rules and their verifier check; the read surface.
 
 Out of scope: the update policy semantics (PLAN-071); anything the fleet switch
 turns on (PLAN-072); the per-device manufacturing record
 (`docs/design/manufacturing.md` stays `[proposed]`); a device-time trust
-channel (open question 2); hosting for the TUF repository, which
-`docs/design/release-artifacts.md` records as open; the META partition, which
-this plan does not touch.
+channel (open question 2); **the release-side package repository's mechanism
+and hosting** (open question 6), which `docs/design/release-artifacts.md`
+already records as open; the META partition, which this plan does not touch.
 
 ### Implementation backlog — estimated separately from approval
 
@@ -1164,11 +1313,12 @@ approving this plan; each becomes a task record when it is scheduled.
 | F4 | Verifier **B2**: `packed-meta-is-the-public-set` (byte-equal, nothing extra, throw on absent `meta/`) and `no-private-key-in-baked-meta` (three detectors, scoped paths, reports the file count scanned) | M | an image with an added, removed or altered file under the path fails; an image with a planted key under either scoped path fails; a tree with no `meta/` throws rather than passing |
 | F5 | The reader in mosd: parse, validate, `deny_unknown_fields`, expose as live state | M | unknown key is a build error, not a runtime one; the reader always answers with a document |
 | F6 | §5.1 precedence in `update_policy.rs`: the three layers, per-key override, and the parse-error rule that does **not** fall back | M | a layer-2 document that fails to parse refuses actions and does not silently adopt the baked channel |
-| F6b | Move the operator document: `/var/lib/mos/update-policy.toml` retired, `/mos/updates/config.json` in its place, `source.url` and `source.rootPath` dropped from its schema | M | the channel is readable from exactly one file; a document naming a source URL is a load error |
-| F7 | `rauc-update` reads `trust.tufRoot`; its default anchor path moves; `trust.tufRootSha256` derived at build time | S | a `tufRoot` naming a path outside `meta/` is a build error; a hand-edited digest that does not match `root.json` fails the build |
+| F6b | Move the operator document: `/var/lib/mos/update-policy.toml` retired, `/mos/config/updates.json` in its place, `source.url` and `source.rootPath` dropped from its schema | M | the channel is readable from exactly one file; a document naming a source URL is a load error |
+| F6c | The `/mos/config/` namespace: the `mos-data-layout` entry at 0755, the §5.2 rules written where a subsystem author meets them, and tier 1's re-seed of the subtree in `reset.rs` | M | a virgin device has the subtree at its declared mode; tier 1 returns every occupant to its baked default and leaves the rest of `/mos` alone; §2.1's table and its tests agree cell for cell |
+| F7 | `rauc-update` reads `trust.signingKeys` from the baked manifest instead of an anchor file path; `trust.signingKeyIds` derived at build time | S | an anchor supplied any other way is refused; a hand-written `signingKeyIds` that does not match `signingKeys` fails the build |
 | F8 | No-compiled-in-endpoint verifier check | S | fails a build with a planted default URL in a binary; passes with one in `meta/` |
 | F9 | `GET /api/v1/provisioning/status` extension: the document, the digests, and baked-versus-effective | S | — |
-| F10 | Design-doc updates: `recovery.md` §2.1's clarifying note **and `[^apps-mos]`'s extended reason (§4.1, §5.2 debt 3)**, **the workspace module contract's root rule and the `used_bytes` exemption (§5.2 debts 1 and 2)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` for the `docs/` half; for the workspace module contract, which is a code comment and not a document, that a reader of the comment alone can answer whether `config.json` may be swept and whether it counts against the budget |
+| F10 | Design-doc updates: `recovery.md` §2.1's clarifying note, its **new tier-1 footnote and `config/` in `[^apps-mos]`'s untouched list (§4.1)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5 **plus §6.2's custody split and the rule that `root.key` is present on a release host while `ca.key.pem` is not**, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` |
 | F11 | Operator documentation: which reset returns the device to the baked default channel (§4.1), stated where a reader meets the reset, not only in the design tree; **and the baked-only source URL's residue (§5) — that the update server is fixed at build time, that changing it needs a new image or an offline import, and what to do when the server is gone** | S | a reader who runs tier 3 was told the channel goes back; a reader whose server has moved finds the two remedies and the stranded case named, not a dead end |
 
 F3 and F4 are the pair that make §1.1's hazard mechanical rather than
@@ -1191,19 +1341,22 @@ That item does not exist here.
   and every private key a release needs, generated development-grade when
   absent by the mechanism `ca/` already uses, with `meta.example/` as the
   committed statement of its shape;
-- **only three files reach the image**, by allowlist: the RAUC CA certificate,
-  the pinned TUF root, and `manifest.json`. Every private key is
-  build-host-only, and two checks in two places — a build refusal and a
-  packed-root verdict — enforce it;
+- **only two files reach the image**, by allowlist: the RAUC CA certificate and
+  `manifest.json`. Every private key is build-host-only, and two checks in two
+  places — a build refusal and a packed-root verdict — enforce it;
 - `ca/` is absorbed into `meta/rauc/`; the RAUC keyring keeps exactly one
-  source, and the TUF root has exactly one source, `meta/updates/root.json`;
-- `meta/updates/root.key` is the **TUF root role** key, absent on a production
-  release host, and no tool may require it to be present to build an image or
-  publish a release;
-- `manifest.json` carries a **pin on** the anchor — its path plus a
-  build-derived digest — never a copy of the key;
+  source, and the package anchor has exactly one source, `trust.signingKeys`
+  in the baked manifest;
+- there are **two signing domains**: `meta/rauc/` gates the A/B system image,
+  and `meta/updates/root.key` is lode's key over the update package. Both gates
+  must fall for an attacker to install a system, and `root.key` alone forges a
+  package that will not install (§6.2);
+- `root.key` is **present** on a release host — it signs every package — while
+  `ca.key.pem` stays off it, and no image build touches either;
+- `manifest.json` carries the trusted package key **inline**, as a list, with a
+  build-derived key id beside it; there is no separate anchor document to ship;
 - the three layers of §5.1: `meta/` bakes the source URL, the anchors and the
-  channel/policy **defaults**; `/mos/updates/config.json` on DATA is the single
+  channel/policy **defaults**; `/mos/config/updates.json` on DATA is the single
   operator-owned document and overrides the defaults per key; the running state
   configures nothing;
 - the source URL and the trust anchors are **not** overridable at runtime, and
@@ -1211,13 +1364,17 @@ That item does not exist here.
 - an absent operator layer takes the baked defaults, a malformed one refuses
   the actions and never falls back, and a selected channel the source does not
   publish is reported rather than replaced;
-- tier 3 returns the channel to the baked default and tier 1 no longer does
-  (§4.1);
-- the operator document stays at `/mos/updates/config.json` — inside the
-  workspace, not in a second `/mos/config/` subtree — and the workspace's
-  contract owes three written rules for it: what may live at the workspace
-  root and that it is never swept, that configuration is not workspace usage,
-  and `[^apps-mos]`'s extended reason (§5.2);
+- reset tiers 1 and 3 both return the channel to the baked default, tier 2
+  leaves it alone, and that disposition is decided for the `/mos/config/`
+  directory rather than inherited (§4.1);
+- `/mos/config/` is the **namespace for system configuration of this kind**,
+  not a home for one file: one JSON document per subsystem at
+  `/mos/config/<subsystem>.json`, machine-written by a daemon and never
+  hand-edited, atomic on write, fail-closed on a parse error, holding no
+  secret, and re-seeded by reset tiers 1 and 3 (§5.2);
+- the boundary against the settings tree is the **baked-default rule**: a
+  document belongs in `/mos/config/` if and only if the image bakes a default
+  for it in `meta/` (§5.2);
 - absence of a server is a supported steady state and there is no default
   server;
 - open questions 1–5 are answered before the slices that depend on them
@@ -1257,7 +1414,7 @@ takes a task record and its own proposal.
    instruction was that `meta/` carries both, and a design that splits them
    back apart answers a question that was not asked. Named because the property
    it preserves is real.
-6. **Keep the TUF anchor unprovisioned and ship only the update
+6. **Keep the package anchor unprovisioned and ship only the update
    configuration.** The smallest possible version of this plan. Rejected: it
    leaves `docs/design/updates.md` §7's owed item owed and leaves
    `rauc-update`'s verifier a tool a person points at a `--root` they brought
@@ -1267,23 +1424,39 @@ takes a task record and its own proposal.
    `docs/design/updates.md` §2's unchanged reason — a settings key means a
    schema bump plus a migration, and a concurrent workstream owns the next bump
    — and for a second reason this seam adds: a settings key is per-device
-   mutable state, and the trust half of `meta/` must not be.
-8. **Keep the operator policy on STATE and read only the channel from `/mos`.**
+   mutable state, and the trust half of `meta/` must not be. §5.2 turns this
+   from a one-off rejection into the rule that decides it for every later
+   subsystem.
+8. **`/mos/config/<subsystem>/` directories instead of flat documents.**
+   Rejected in §5.2: a directory invites several files with no transaction
+   across them, so a subsystem can half-apply a change with no way to say so,
+   and a flat listing of `/mos/config/` stops being the namespace's index. A
+   subsystem that genuinely needs several documents may still take a directory,
+   at that stated cost.
+9. **Put the operator document inside `/mos/updates/`.** An intermediate
+   revision's answer, and it worked — `[^apps-mos]` gives that directory
+   durable semantics and `used_bytes` never walks the workspace root. Rejected
+   because the properties that made it safe were **accidents of the current
+   code rather than stated intent**, so keeping it meant writing three rules
+   into a workspace contract to defend one file, and because §4.1's tier-1
+   decision is ordinary for a directory and expensive for a file reached inside
+   a transactional workspace.
+10. **Keep the operator policy on STATE and read only the channel from `/mos`.**
    Rejected, and it is the option the addendum explicitly forbids: two files
    that both name the channel is the defect this campaign has spent its life
    removing. A split with no overlapping key is the weaker version of the same
    objection — one operator-owned concern in two homes, with two failure modes,
    two atomicity stories and two things to reset.
-9. **`/mos/update/` as a sibling of `/mos/updates/`.** Rejected on the name
+11. **`/mos/update/` as a sibling of `/mos/updates/`.** Rejected on the name
    alone (§5.1): one letter apart, different meanings, silent in both
    directions when somebody writes the wrong one.
-10. **Ship the operator document as TOML, matching the file it replaces.** The
+12. **Ship the operator document as TOML, matching the file it replaces.** The
    request that settled this named `config.toml` while asking for JSON. JSON is
    what was chosen — the document is machine-written state, not a hand-edited
    file — so the name follows the format and it is `config.json`. Named here
    rather than silently renamed, because a `.toml` file containing JSON fails
    at a reader that parses by extension, and it fails naming the wrong thing.
-11. **A single plan covering `meta/`, the update module and the fleet plane.**
+13. **A single plan covering `meta/`, the update module and the fleet plane.**
    Rejected; the argument is in PLAN-072's *Why three plans and not one* and is
    not duplicated here.
 
@@ -1306,7 +1479,7 @@ takes a task record and its own proposal.
   record's title changed with it; `docs/plan/index.md`'s row is owed the same
   change and is deliberately not edited here.
 - 2026-09-03: **Addendum folded in.** The update channel is operator-selectable
-  at runtime, read from `/mos/updates/config.json` on DATA. This split §5 into
+  at runtime, read from an operator document on DATA. This split §5 into
   what stays per-build (the source URL and the trust anchors) and what an
   operator changes without a new image (the channel and the rest of the
   policy), turned §5.1 into a three-layer precedence rule, and added §4.1 —
@@ -1342,15 +1515,41 @@ takes a task record and its own proposal.
   `off | check | auto` semantics and PLAN-072's outbound-only boundary. The
   title changed again with this revision; `docs/plan/index.md`'s row is owed
   the change and is deliberately not edited here.
-- 2026-09-03: **Two rulings recorded.** (1) The operator document stays at
-  `/mos/updates/config.json`. The objection — that a workspace whose discipline
-  is "unverified leftovers are removed" is the wrong home for a durable
-  document — is answered by `[^apps-mos]` already carving `updates/` out of
-  reset tier 2 by name, so the directory already has durable semantics and a
-  second subtree buys less than it costs. The objection converts into §5.2's
-  three written rules (workspace-root contract, the `used_bytes` exemption
-  stated as intent rather than left as construction, and `[^apps-mos]`'s
-  extended reason), carried on F10. (2) The source URL being baked-only is
-  accepted — which TUF repository a device walks is a trust decision and
-  belongs with the anchors — and its residue is now owed to the operator page
-  on F11 rather than living only in this record.
+- 2026-09-03: **Two rulings recorded, one of them since superseded.** The
+  source URL being baked-only is accepted — which repository a device fetches
+  from is a trust decision and belongs with the anchors — and its residue is
+  owed to the operator page on F11 rather than living only in this record. The
+  other ruling put the operator document inside `/mos/updates/` and attached
+  three written rules to make that location safe; the annotation below
+  supersedes it.
+- 2026-09-03: **Five decisions from the user folded in.** (1) `ca/` is
+  abandoned; the absorb call and its enumerated rename list stand. (2)
+  `meta/updates/root.key` is **lode's key over the update package**, not the
+  TUF root-role key this record previously called it. §6.2 is rebuilt around
+  the two domains — `meta/rauc/` gates the system image, `root.key` gates the
+  package — and states the blast-radius split: both gates must fall to install
+  a system, and `root.key` alone forges a package that will not install. Three
+  conclusions were re-derived rather than adjusted: `meta/updates/online/` is
+  gone, the manifest carries the trusted key **inline** rather than a pin on a
+  document (§2.1, including which objection had to be answered differently and
+  how), and the baked public set dropped from three files to two (§1.1, §3).
+  The mechanism the key signs with is open question 6, which this record
+  deliberately does not close by implication. (3) `manifest.json` is lode's;
+  the mapping table now marks two rows as **changed** and two mos fields as
+  **extensions** with their justification. (4) The operator document moves to
+  `/mos/config/updates.json`; the previous ruling that kept it inside the
+  workspace, and the three written rules that made that location safe, are
+  dropped with it. (5) `/mos/config/` is established as the **namespace** for
+  system configuration of this kind: flat `<subsystem>.json`, JSON,
+  machine-written by one daemon, atomic, fail-closed, secret-free, its
+  `mos-data-layout` entry at 0755, its reset disposition decided for the
+  directory (§4.1 — tier 1 now re-seeds it, which re-derives the previous
+  revision's answer and removes the behaviour regression it had accepted), and
+  a boundary against the settings tree stated as a rule a reader can apply: a
+  document belongs here **if and only if** the image bakes a default for it in
+  `meta/`. Two weaker lines are named and rejected, including the one proposed
+  in review, because the settings tree's existing `mqtt` key falsifies it.
+  Unchanged: the hazard sentence, the allowlist bake with B1/B2, the three-test
+  detector and its scoped surface, the gitignored `meta/` with `meta.example/`,
+  the withdrawn diff-review claim, the fresh-checkout behaviour, the
+  no-default-server rule, and PLAN-071/072's invariants.

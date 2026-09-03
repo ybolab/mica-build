@@ -322,7 +322,7 @@ device-side role derived from a fleet identity.
 | C2 | Registration client: outbound HTTPS, the identity payload, the claim-code display, the enrolment credential on STATE | M | payload asserted to contain nothing from the excluded list |
 | C3 | Inventory report with the monotonic counter, backoff and the `fleet` live-state entry | M | replay rejected on a non-advancing counter |
 | C4 | The autonomy assertion: a test that drives every local capability with the plane unreachable | S | §6 is a test, not a sentence |
-| C5 | The channel hint as a hint — never a policy write | S | a hint cannot change `/mos/updates/config.json` |
+| C5 | The channel hint as a hint — never a policy write | S | a hint cannot change `/mos/config/updates.json` |
 | C6 | Console: the switch, the claim code, the fleet state and its last error | M | — |
 | C7 | Design docs: `remote-management.md` §2 and §4, `security-model.md` §7, a new fleet section | M | `make docs-verify` |
 
@@ -431,3 +431,10 @@ single decision.
   and shape (b) is excluded by the baked *set* being fleet-identical rather
   than by the whole directory being so. §2's recommendation of (a), §5's threat
   model, the outbound-only boundary and the backlog are unchanged.
+- 2026-09-03: Two later decisions touch this record only in wording. The
+  operator document is `/mos/config/updates.json`, the first occupant of a
+  general `/mos/config/` namespace (PLAN-070 §5.2), so C5's gate names that
+  path. And `meta/updates/root.key` is settled as lode's package-signing key
+  rather than a TUF root key; the fleet switch is unaffected, since PLAN-070
+  §5.2's baked-default rule is what puts it in the baked manifest and that rule
+  does not depend on which signing scheme the update path uses.
