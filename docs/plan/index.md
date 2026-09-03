@@ -60,3 +60,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-071 Design the update module: off/check/auto with automatic install in a window**](PLAN-071.md) `2026-09-03`
 - [ ] [**PLAN-072 Design cloud registration: outbound-only, off by default**](PLAN-072.md) `2026-09-03`
 - [x] [**PLAN-073 Add the eBPF, firewall and bridge kernel floor, and bring both boards to it**](PLAN-073.md) `2026-09-03`
+- [ ] [**PLAN-076 Design device state reporting to the fleet plane**](PLAN-076.md) `2026-09-03`
