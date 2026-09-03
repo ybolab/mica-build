@@ -406,6 +406,26 @@ approval boundary excluded and these are the answers it asked for.
    name before `make os-debs` starts a container — but as *missing* rather than
    *warned*, because nothing in that run builds a kernel for itself.
 
+### 7b-2. The boot, which is the only thing that could have refuted this
+
+x64 booted in QEMU through OVMF and GRUB with **no initramfs**, and dm-init read
+the same `dm-mod.create=` table `rootfs/build.sh` has always written:
+
+```
+[    0.000000] Linux version 6.12.107 (mos@mos-build) ... #1 SMP PREEMPT_DYNAMIC @1577836800
+[    2.535609] device-mapper: init: waiting for all devices to be available before creating mapped devices
+[    2.854721] device-mapper: init: waiting for device PARTUUID=5ac35760-0064-4000-8000-000000000005 ...
+[    2.855451] device-mapper: init: all devices available
+[    2.862262] device-mapper: verity: sha256 using shash "sha256-generic"
+[    2.871008] device-mapper: ioctl: dm-0 (rootfs) is ready
+[    2.952924] VFS: Mounted root (squashfs filesystem) readonly on device 252:0.
+[    3.231650] Run /sbin/init as init process
+```
+
+Three seconds from power-on to `/sbin/init`, under TCG, with no userspace in
+between. The `(mos@mos-build) ... @1577836800` in the banner is the pinned build
+stamp: this kernel does not carry the wall clock or the builder's hostname.
+
 ### 7c. What the implementation changed about this plan
 
 - **§1's diff gate found its first real defect immediately**, though not in a
@@ -418,6 +438,27 @@ approval boundary excluded and these are the answers it asked for.
   bzImage is 14.9 MB against Debian's 12.1 MB vmlinuz, because the drivers are
   built in rather than modular. What collapses is everything around it: 276 KB
   of modules against 89.3 MiB, and no 35.5 MiB initrd at all.
+- **One claim in §4 was WRONG, and the measurement corrected it.** The table
+  said `checks-busybox.ts`'s initramfs-role check "keeps its meaning, because
+  the `/etc/initramfs-tools` and `/usr/share/initramfs-tools` trees it scans
+  genuinely stop existing" — and a branch was written to state that absence
+  categorically rather than report a count of zero. They do not stop existing:
+  the composed root still carries five files under
+  `/usr/share/initramfs-tools`, shipped by `udev`, `kmod` and `dmsetup`, which
+  install hooks there without depending on the package that reads them. The
+  branch was dead code justified by a false premise and was reverted; the
+  measurement is recorded at the site so the next reader does not re-derive it.
+- **A capability was lost, and it is named rather than absorbed.** The shared
+  floor's `CONFIG_LSM` list ends in `bpf`; Debian's amd64 kernel set
+  `CONFIG_BPF_LSM=y` and neither this kernel nor cx3576's vendor kernel does, so
+  the booted machine says `bpf-restrict-fs: BPF LSM hook not enabled in the
+  kernel, BPF LSM not supported` — as cx3576 always has. x64 lost a capability
+  and gained agreement with the board that ships, which is what x64 is for.
+  Nothing in this tree uses `RestrictFileSystems=`, the hook's only consumer, so
+  the cost today is one journal line. **It is not switched on**: on this board
+  alone it would re-create the divergence, and in the shared floor it would
+  require a symbol of a vendor tree this work cannot build and boot. Flagged for
+  whoever owns the LSM floor.
 - **§5's `checks-kernel.ts` rework went further than "provenance".** Requiring
   the shipped config to declare the floor `=y` *is* the provenance check --
   Debian's amd64 config has twelve of those as `=m` and `CONFIG_DM_INIT` nowhere
