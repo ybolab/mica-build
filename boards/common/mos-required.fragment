@@ -59,3 +59,59 @@ CONFIG_NFT_FIB=y
 CONFIG_NFT_FIB_IPV4=y
 CONFIG_NFT_FIB_IPV6=y
 CONFIG_NFT_FIB_INET=y
+
+# eBPF runtime. An engine fact, like the netavark block above: crun programs
+# the cgroup v2 device controller as a BPF_PROG_TYPE_CGROUP_DEVICE program
+# (crun 1.29.1 src/libcrun/ebpf.c:490,496 and cgroup-systemd.c:1482,1501), and
+# on cgroup v2 that program IS the device policy -- there is no devices
+# controller file to write instead. Debian's kernel sets all four =y, so this
+# is a floor both boards can hold. The per-symbol table is in
+# docs/design/boards.md section 4.
+CONFIG_BPF=y
+CONFIG_BPF_SYSCALL=y
+CONFIG_BPF_JIT=y
+CONFIG_CGROUP_BPF=y
+
+# Firewall: the kernel side of an nftables front-end, with iptables-nft as the
+# reference because that is the surface Debian's iptables package provides.
+# The citations into iptables 1.8.11 and the per-symbol table are in
+# docs/design/boards.md section 4. Deliberately NOT here: the legacy
+# IP_NF_* back-end, which nothing in the image uses, the per-extension xt
+# matches and targets, which are policy, and NF_NAT_MASQUERADE, which the
+# masquerade expression below already selects. (Symbol names in these comments
+# are written without the CONFIG_ prefix on purpose: merge_config.sh greps this
+# whole file for each symbol it merges, and a comment naming one is reported as
+# part of that symbol's value.)
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_IPV4=y
+CONFIG_NF_TABLES_IPV6=y
+CONFIG_NFT_COMPAT=y
+CONFIG_NETFILTER_XTABLES=y
+CONFIG_NF_CONNTRACK=y
+CONFIG_NFT_CT=y
+CONFIG_NF_NAT=y
+CONFIG_NFT_NAT=y
+CONFIG_NFT_MASQ=y
+
+# Bridge filtering. podman puts every container's veth on one Linux bridge, and
+# traffic between two containers on that bridge is switched at layer 2 -- it
+# never reaches the ip-family hooks, so a host firewall cannot see it. These
+# three are what make it visible, and nothing below them is: the per-expression
+# bridge modules and the legacy ebtables front-end are policy and are left out
+# (ebtables-nft does not need the legacy symbol; it programs the bridge family
+# through the nf_tables compat expression above, iptables 1.8.11
+# iptables/nft.c:898 NFPROTO_BRIDGE -> xtables_bridge).
+#
+# WHAT AN OPERATOR OBSERVES, and it is not the same on both boards. br_netfilter
+# defaults every one of its call-iptables/ip6tables/arptables switches to 1
+# (linux net/bridge/br_netfilter_hooks.c:1255-1257), and its hooks register once
+# a bridge exists. Built in, as it is on an in-tree board kernel, that happens
+# at the first bridge; as a module, as on Debian's, only once something loads
+# it. So on cx3576 an ip-family FORWARD policy applies to same-bridge container
+# traffic from the moment podman creates its network, and on x64 today it does
+# not. The capability is common; the default state is not, and a DROP policy
+# written against one board will not behave the same on the other.
+CONFIG_BRIDGE_NETFILTER=y
+CONFIG_NF_TABLES_BRIDGE=y
+CONFIG_NF_CONNTRACK_BRIDGE=y
