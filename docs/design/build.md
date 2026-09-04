@@ -45,8 +45,11 @@ and nothing more:
 **`bash` and `make` are orchestration by §0.1** — neither can change a byte of a
 shipped artefact — and they are named here rather than left implied, because a
 policy whose own entry point violates it is worse than no policy. `jq` and
-`curl` are reached by two paths only (§0.3) and are not needed to build an
-image.
+`curl` are deliberately not in that table: nothing on the path to an image needs
+them. `curl` is reached only by `pkgs/podman/check-pins.sh`, which asks upstream
+what the newest release is and builds nothing, and `jq` by
+`pkgs/rauc/gen-dev-keys.sh` and `tests/release-verify-test.sh` — the first of
+which is on the exemption list in §0.3 for a different reason.
 
 Anything else a build reaches for is a finding. Nothing may require host `bun`,
 host `node`, host `python3`, host `go`, host `gcc`, host `cargo`, or any
