@@ -468,6 +468,30 @@ Nothing else is disclosed. Not the hash, not its length, not when the
 credential was set, not which channel set it: those live behind §4.4's
 authenticated claim route. A refused claim is audited (§6).
 
+**Two claims that arrive at once get the same answer, and that took a fix.**
+The route reads `access` to decide the device is unclaimed and writes `access`
+to claim it, and until 2026-09-04 nothing made that pair one step: mosd
+serialises each `SetSettings` under its own write lock but offers no
+compare-and-set, so two requests that both read an unclaimed tree both wrote
+one. It was not a race that was hard to win — the window is an argon2id hash
+and two bus round trips — and it was measured on the shipped path with no test
+seam anywhere in it: against a real mosd on a real bus, two concurrent
+`POST /api/v1/setup` requests produced two 201s and two working administrator
+sessions in **200 of 200** attempts, and eight produced eight in **100 of 100**.
+The device kept whichever credential was written last and one of the API tokens
+it had already handed out, so a caller held a token that authenticated nothing
+and was never told; every browser session it issued read protected settings.
+
+It is closed by making the claim **one step**: apid takes a claim guard before
+the read and holds it past the write, so a second claimant re-reads a claimed
+tree and takes the 409 above, having written nothing. The guard is in apid and
+not in mosd because apid is the only claimant for as long as the device can be
+asked — the other writer that can create a first `webAdmin` is the document
+importer, which runs to completion before mosd requests its bus name, so no
+request can be in flight beside it. A third claimant arriving inside mosd would
+move the guard there, which is the same premise the two-writers reading above
+already rests on.
+
 #### One commit point
 
 **The claim writes the `access` subtree ONCE.** The credential, the claim
