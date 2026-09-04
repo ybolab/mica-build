@@ -55,8 +55,12 @@ runtime override of either (§6.3).
 
 **PLAN-070 open question 6, answered 2026-09-03.** The release side becomes
 lode's scheme; the TUF repository `pkgs/rauc-sign` builds is not the mechanism
-`root.key` signs with. The baked public set therefore stays at two files —
-there is no signed root document to ship.
+`root.key` signs with, so **no signed root document is shipped and the baked
+set gains no anchor file**. (An earlier form of this sentence said the public
+set "stays at two files", which §2 then made false: the development-grade
+marker is a conditional third entry. The claim that survives is about anchors,
+not about the count — RFCT-307 found the stale form and left it for this
+record's owner.)
 
 **RFCT-306, merged to main 2026-09-04.** PLAN-070 §5.3 and PLAN-071 §10: the
 update source URL and the fleet plane URL become operator-overridable through
