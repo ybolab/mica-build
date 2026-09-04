@@ -108,6 +108,29 @@ bundle-formats=verity
 # device; until one exists that last step stays documented, not tested.
 path=/etc/rauc/keyring.pem
 
+# NOTHING ELSE BELONGS IN THIS SECTION, and the absence is a decision.
+#
+# `use-bundle-signing-time` is the line that would silently undo the whole of
+# docs/design/release-signing.md §2.2's short-lived signer. Set true, RAUC stops
+# asking "is this signer valid now" and asks "was it valid at the signing time
+# the CMS carries" -- a timestamp the key holder chooses. Measured (PLAN-078
+# §M10): with it set, a bundle signed by a signer that had expired 370 days
+# earlier, with the signing host's clock rolled back, was ACCEPTED. It is not a
+# milder expiry; it is none.
+#
+# The RELEASE HOST does set it, in its own configuration file, for the single
+# operation of re-signing its own archive (§2.2's repair). That file and this
+# one are different objects and must never be copies of each other.
+#
+# `check-crl` is absent for the opposite reason: rauc 1.13 supports it and there
+# is no channel to deliver a CRL to a device that may never reach a server, so
+# turning it on would refuse every bundle.
+#
+# Neither may appear here even spelled `false`: a value is a line somebody
+# edited, and the next edit to that line is the one that says true. The image
+# verifier's `rauc-keyring-verifies-against-now` refuses a rendered config that
+# carries either key at all.
+
 # Slot groups. One group per A/B side: the rootfs slot carries the bootname the
 # U-Boot backend flips, and the boot slot hangs off it as a child so kernel+dtb
 # and the root filesystem are installed and rolled back as one unit.

@@ -41,12 +41,15 @@
 # exercises the generator's actual output, GENERATED marker and key modes
 # included. Mutating the generator's CA→signer chaining reddens case 1.
 #
-# Three files come over with it, because the generator reads them and a scratch
+# Four files come over with it, because the generator reads them and a scratch
 # tree without them is not a repository it can run in: key-algorithms.env, which
-# declares the algorithm of every key it mints, and meta.example/'s manifest,
-# which it instantiates meta/updates/manifest.json from. Copied rather than
-# stubbed, so this suite signs with the algorithm the tree actually ships and
-# a change to that value is exercised here rather than assumed harmless.
+# declares the algorithm of every key it mints, key-validity.env, which declares
+# the signer's validity window, and meta.example/'s manifest, which it
+# instantiates meta/updates/manifest.json from. Copied rather than stubbed, so
+# this suite signs with the algorithm AND the window the tree actually ships,
+# and a change to either value is exercised here rather than assumed harmless
+# -- a signer window shortened past the point where `rauc info --keyring`
+# accepts a freshly signed bundle reddens every positive case below.
 #
 # TOOLING. rauc is not on the host and pkgs/rauc/out-*/ need not be built, so
 # everything cryptographic runs in the pinned Debian trixie container
@@ -78,6 +81,7 @@ mkdir -p "${SCRATCH}/pkgs/rauc" "${SCRATCH}/meta.example/updates" "${SCRATCH}/st
 # ${SCRATCH}/meta and not into this checkout.
 cp "${REPO_ROOT}/pkgs/rauc/gen-dev-keys.sh" "${SCRATCH}/pkgs/rauc/gen-dev-keys.sh"
 cp "${REPO_ROOT}/pkgs/rauc/key-algorithms.env" "${SCRATCH}/pkgs/rauc/key-algorithms.env"
+cp "${REPO_ROOT}/pkgs/rauc/key-validity.env" "${SCRATCH}/pkgs/rauc/key-validity.env"
 cp "${REPO_ROOT}/meta.example/updates/manifest.json" "${SCRATCH}/meta.example/updates/manifest.json"
 : > "${SCRATCH}/Makefile"
 

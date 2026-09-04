@@ -441,7 +441,9 @@ settings tree, nothing is reconciled on boot, and everything observable is
 recorded in the **live-state** tree under `update`: `operation`, `last_error`,
 `progress`, a curated per-slot `slots` map, `booted_slot`, `primary`, a
 `pending_not_confirmed` flag, plus `install` (`running`/`done`/`failed`, the
-bundle path, the requesting bus name, the error text on failure) and
+bundle path, the requesting bus name, and on failure the error text together
+with a `time` object carrying the device's own clock, its
+`GET /api/v1/time/status` state and whether that clock could be the cause) and
 `last_mark`. The entry is available through management `GetState`; it is not
 projected into an item tree or MQTT.
 
@@ -452,6 +454,14 @@ projected into an item tree or MQTT.
   which RAUC completes in minutes, not milliseconds. Completion (RAUC's
   `Completed` signal, subscribed before `InstallBundle` is called so a fast
   failure cannot be missed) is recorded together with a fresh status query.
+  A **failure** additionally records the clock, because RAUC verifies a
+  signer's validity against the clock of the process doing the verifying and
+  `certificate has expired` is the same sentence whether the signer really
+  expired or this device's RTC read garbage. The facts are gathered while the
+  failure is fresh — a clock read later by a separate query is a different
+  clock — and `clock_implicated` is false when the kernel vouches for the
+  clock, so the diagnostic does not train readers to discount it
+  (`docs/design/release-signing.md` §2.2, `docs/design/time.md` §3).
 - `GetUpdateState()` runs the status queries **without the service lock**,
   merges the result into `update` field-by-field (so `install`/`last_mark`
   survive a refresh), and answers the recorded entry as JSON.
