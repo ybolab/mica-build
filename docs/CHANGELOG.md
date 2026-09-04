@@ -4,6 +4,18 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-079 — Update server and release console (2026-09-04)
+
+`update-server/` now provides a Bun/TypeScript service with a Chinese release
+console, administrator sessions, streaming RAUC artifact uploads, publication
+and withdrawal, expiring Ed25519-signed catalogs, range downloads and an audit
+trail. SQLite stores release state; a standalone executable embeds the console
+and database migration. The new protocol replaces TUF on the server side;
+the existing OS client still needs its new reader before devices can use it.
+Validation includes 36 tests, real HTTP range checks, full browser workflows
+against the executable, and a clean dependency audit. Details and run commands
+are in [PLAN-079](plan/PLAN-079.md).
+
 ## x64 builds its own kernel, and there is no initramfs (2026-09-04)
 
 x64 shipped Debian's generic amd64 kernel — 108 MB, with its own maintainer
