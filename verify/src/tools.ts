@@ -307,7 +307,15 @@ export function chooseRoute(forced: string | undefined, missing: readonly string
     )
   }
   if (forced !== undefined) return forced
-  return missing.length === 0 ? 'host' : 'container'
+  // THE PINNED CONTAINER IS THE DEFAULT, and that is a policy rather than a
+  // measurement. It used to be `missing.length === 0 ? 'host' : 'container'`,
+  // which preferred the host on any machine carrying the full toolset -- so
+  // the verdict a verifier printed was a property of that machine's debugfs
+  // and unsquashfs. docs/design/build.md section 0 calls a tool like that a
+  // JUDGE: nothing it writes ships, but two builds of it can disagree about the
+  // same image, so the pinned container is the contract and the host route is
+  // an opt-in. MOS_VERIFY_TOOLS=host is that opt-in, and it is announced.
+  return 'container'
 }
 
 /**
@@ -323,6 +331,10 @@ export function chooseRoute(forced: string | undefined, missing: readonly string
 export function routeReason(forced: string | undefined, missing: readonly string[]): string {
   if (missing.length > 0) return `no ${missing.join(', ')} on this host`
   if (forced === 'container') return 'MOS_VERIFY_TOOLS=container'
+  // The default is no longer "the host was short of something". A host that has
+  // every tool takes the container too, and the line has to say why, or a
+  // reader on such a machine is told a reason that is not the reason.
+  if (forced === undefined) return 'the pinned tools are the contract; MOS_VERIFY_TOOLS=host opts out'
   return 'asked for'
 }
 
@@ -414,8 +426,10 @@ function installExitHook(): void {
 /**
  * Pick a route, prepare it, and hand back the one function that runs a tool.
  *
- * MOS_VERIFY_TOOLS=host|container overrides the choice, which is how the two
- * routes are compared on one host.
+ * The pinned container is the default whatever this host carries;
+ * MOS_VERIFY_TOOLS=host opts out, which is how the two routes are compared on
+ * one machine. See docs/design/build.md section 0 for why the default is not a
+ * measurement.
  */
 export async function createToolRuntime(request: RuntimeRequest): Promise<ToolRuntime> {
   const log = request.log ?? ((line: string) => console.error(line))
@@ -428,10 +442,10 @@ export async function createToolRuntime(request: RuntimeRequest): Promise<ToolRu
   const route = chooseRoute(forced, missing)
 
   if (route === 'host') {
-    log(`verify: image tools on this host (${REQUIRED_TOOLS.length} of ${REQUIRED_TOOLS.length} present)`)
+    log(`verify: image tools on this host, by MOS_VERIFY_TOOLS=host (${REQUIRED_TOOLS.length} of ${REQUIRED_TOOLS.length} present)`)
     return {
       route,
-      announce: 'verify: image tools on this host',
+      announce: 'verify: image tools on this host, by MOS_VERIFY_TOOLS=host',
       run: (argv, options) => runChecked(capture, argv, options),
       dispose: async () => {},
     }

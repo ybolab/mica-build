@@ -1,12 +1,12 @@
-// The toolbox seam, on BOTH of its routes, driven from the failing side.
+// The toolbox seam, driven from the failing side.
 //
-// A SEAM WITH ONE REACHABLE ROUTE IS A SEAM NOBODY IS CHECKING, so both are
-// exercised here on the same host and in the same run: COREUTILS finds dd and
-// truncate on this machine and takes the host route, CX3576_ASSEMBLY finds
-// neither sgdisk nor mcopy nor mkimage and takes the container. Which one a
-// toolset gets is MEASURED, not configured, and the measurement is asserted
-// rather than assumed -- on a host that grew a full toolset these tests would
-// still hold, because what they assert is the rule and not this machine.
+// THERE IS ONE ROUTE NOW. This file used to open COREUTILS on the host and
+// CX3576_ASSEMBLY in a container and assert that the choice was measured; the
+// policy in docs/design/build.md section 0 removed the choice, and the cases
+// below assert the refusal instead. COREUTILS is what makes that a real
+// assertion rather than a restatement: dd and truncate ARE on this host, so a
+// refusal that fired only where the tools were missing would be a capability
+// check wearing a policy's message, and this one has to fire anyway.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
@@ -15,78 +15,64 @@ import { $ } from 'bun'
 import { makeWorkDir, REPO_ROOT } from './paths.ts'
 import { Toolbox, ToolError, type Toolset } from './toolbox.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
-import { COREUTILS, CX3576_ASSEMBLY, mke2fsCanWriteTheseLayouts } from './toolsets.ts'
+import { COREUTILS, CX3576_ASSEMBLY } from './toolsets.ts'
 
 const docker = process.env.MOS_BUILD_DOCKER || 'docker'
 
 let work = ''
-let host: Toolbox
+// Two toolboxes, two images' worth of packages, one route. `coreutils` is the
+// toolset whose tools this host HAS, and it is here so that every assertion
+// below is about the rule rather than about what happens to be installed.
+let coreutils: Toolbox
 let container: Toolbox
 const announced: string[] = []
 
 beforeAll(async () => {
   work = makeWorkDir('toolbox')
-  host = await Toolbox.open(COREUTILS, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
+  coreutils = await Toolbox.open(COREUTILS, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
   container = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
 }, OPEN_TIMEOUT_MS)
 
 afterAll(async () => {
-  await host?.close()
+  await coreutils?.close()
   await container?.close()
   if (work !== '') rmSync(work, { recursive: true, force: true })
 }, OPEN_TIMEOUT_MS)
 
-describe('the route is measured, and both of them happen here', () => {
-  test('coreutils is on this host, so that toolset runs on the host', () => {
-    expect(host.route).toBe('host')
-    expect(host.announceLine).toContain('the whole toolset is on this host')
+describe('there is one route, and it is the container', () => {
+  test('a toolset whose tools are ON this host still runs in the pinned image', async () => {
+    // THE MUTATION-PROOF CASE. dd and truncate are on every machine, this one
+    // included -- so if the route were still measured, this toolbox would be a
+    // host toolbox. It is not, and that is the policy rather than a property of
+    // this host.
+    expect((await $`sh -c ${'command -v dd >/dev/null 2>&1 && command -v truncate >/dev/null 2>&1'}`.nothrow().quiet()).exitCode)
+      .toBe(0)
+    expect(coreutils.route).toBe('container')
+    expect(coreutils.image).toMatch(/^alpine:3\.21@sha256:[0-9a-f]{64}$/)
   })
 
-  test('the assembly toolset is not, so it runs in the image images.env pins', () => {
+  test('the assembly toolset runs in the image images.env pins', () => {
     expect(container.route).toBe('container')
-    // The reason is IN the announce line, naming the tools that decided it --
-    // "no bun on this host" is verify/run.sh's version of the same sentence.
-    expect(container.announceLine).toMatch(/not on this host: .*sgdisk|cannot write these layouts/)
     expect(container.image).toMatch(/^alpine:3\.21@sha256:[0-9a-f]{64}$/)
   })
 
-  test('a route is announced exactly once per toolbox, so a run is never ambiguous', () => {
+  test('the announce line says WHY, so a run is never ambiguous about it', () => {
+    // "no bun on this host" is verify/run.sh's version of the same sentence.
+    for (const tb of [coreutils, container]) {
+      expect(tb.announceLine).toContain('every tool here writes bytes that ship')
+    }
+  })
+
+  test('a route is announced exactly once per toolbox', () => {
     expect(announced.length).toBe(2)
     expect(announced.every(l => l.startsWith('build: '))).toBe(true)
   })
 
-  test('the host probe is a capability question, not a presence one', async () => {
-    // mke2fs IS on this host's PATH and still cannot write these layouts: 1.46.5
-    // has no `-O ^orphan_file`. The cx3576 assembly contract's host_can_assemble() probes
-    // for the same reason -- "older host tools silently cannot, so probe
-    // instead of guessing".
-    // Asserted as the RULE, not as this machine: the suite runs on a host with
-    // a too-old mke2fs and also INSIDE the pinned bun container, which has none
-    // at all, and the probe has to be right about both. A first draft asserted
-    // "mke2fs is on PATH" outright and went red on the container route -- a
-    // test about the machine rather than about the behaviour.
-    const onPath = (await $`sh -c ${'command -v mke2fs >/dev/null 2>&1'}`.nothrow().quiet()).exitCode === 0
-    const probe = await mke2fsCanWriteTheseLayouts()
-    expect(typeof probe.why).toBe('string')
-    expect(probe.why.length).toBeGreaterThan(10)
-    if (!onPath) {
-      // No tool: the probe must say that, and must not claim capability.
-      expect(probe.ok).toBe(false)
-      expect(probe.why).toBe('there is no mke2fs here at all')
-    } else if (!probe.ok) {
-      // Present and INCAPABLE -- the case that makes this a probe rather than a
-      // `command -v`, and the one this campaign's host is in.
-      expect(probe.why).toMatch(/e2fsprogs >= 1\.47/)
-      expect(probe.why).toMatch(/^mke2fs [0-9]/)
-    } else {
-      expect(probe.why).toContain('writes the layouts these boards declare')
-    }
-  })
 })
 
-describe('a tool that runs, runs the same way on both routes', () => {
-  test('the same argv, the same stdout, on host and in container', async () => {
-    const a = await host.run(['truncate', '-s', '1M', join(work, 'a.img')])
+describe('a tool that runs, runs the same way in every toolbox', () => {
+  test('the same argv, the same stdout, in two toolsets', async () => {
+    const a = await coreutils.run(['truncate', '-s', '1M', join(work, 'a.img')])
     const b = await container.run(['truncate', '-s', '1M', join(work, 'b.img')])
     expect(`${a.ok} ${a.exitCode}`).toBe(`${b.ok} ${b.exitCode}`)
     expect(Bun.file(join(work, 'a.img')).size).toBe(1048576)
@@ -113,15 +99,15 @@ describe('a tool that runs, runs the same way on both routes', () => {
     // LABEL is a value out of a board definition, and the parser that read it
     // refuses shell metacharacters for the same reason this layer must.
     const nasty = 'a b; touch /tmp/PWNED'
-    for (const [name, tb] of [['host', host], ['container', container]] as const) {
+    for (const [name, tb] of [['coreutils', coreutils], ['assembly', container]] as const) {
       const r = await tb.run(['sh', '-c', 'printf "%s" "$1"', 'sh', nasty])
       expect(`${name}: ${r.stdout}`).toBe(`${name}: ${nasty}`)
     }
     expect(existsSync('/tmp/PWNED')).toBe(false)
   })
 
-  test('the environment a toolset declares reaches the tool, on both routes', async () => {
-    for (const [name, tb] of [['host', host], ['container', container]] as const) {
+  test('the environment a toolset declares reaches the tool', async () => {
+    for (const [name, tb] of [['coreutils', coreutils], ['assembly', container]] as const) {
       const r = await tb.run(['sh', '-c', 'printf "%s" "${SOME_PIN}"'], { env: { SOME_PIN: '1577836800' } })
       expect(`${name}: ${r.stdout}`).toBe(`${name}: 1577836800`)
     }
@@ -130,7 +116,7 @@ describe('a tool that runs, runs the same way on both routes', () => {
 
 describe('a failing tool is reported, never swallowed', () => {
   test('run() hands back the status and both streams and decides nothing', async () => {
-    for (const [name, tb] of [['host', host], ['container', container]] as const) {
+    for (const [name, tb] of [['coreutils', coreutils], ['assembly', container]] as const) {
       const r = await tb.run(['sh', '-c', 'echo out; echo err >&2; exit 3'])
       expect(`${name}: ${r.exitCode} ${r.ok}`).toBe(`${name}: 3 false`)
       expect(`${name}: ${r.stdout.trim()}`).toBe(`${name}: out`)
@@ -172,20 +158,22 @@ describe('a failing tool is reported, never swallowed', () => {
   })
 
   test('a tool that is not in the toolset at all fails as a tool, not as a crash', async () => {
-    const r = await container.run(['definitely-not-a-tool-xyz'])
-    expect(r.ok).toBe(false)
-    // Worth pinning: bun's own shell reports a missing binary as exit 1 with
-    // "command not found", NOT 127. A wrapper that mapped 127 to "tool missing"
-    // would never fire on the host route.
-    const h = await host.run(['definitely-not-a-tool-xyz'])
-    expect(h.ok).toBe(false)
-    expect(`${h.exitCode}`).toBe('1')
-    expect(h.stderr).toContain('command not found')
+    for (const tb of [container, coreutils]) {
+      const r = await tb.run(['definitely-not-a-tool-xyz'])
+      expect(r.ok).toBe(false)
+      // Two things worth pinning, both measured against docker 28 on
+      // 2026-09-04 and neither obvious. `docker exec` reports a missing binary
+      // as 127 -- and it writes "OCI runtime exec failed: ... executable file
+      // not found in $PATH" to STDOUT, not stderr. A wrapper that read only
+      // stderr would report a failure with no reason attached, which is why
+      // ToolError carries both streams.
+      expect(r.exitCode).toBe(127)
+      expect(`${r.stdout}${r.stderr}`).toMatch(/executable file not found/)
+    }
   })
 
-  test('an empty argv is refused, because on one route it would succeed', async () => {
-    // `$``` on the host runs nothing and reports success.
-    await expect(host.run([])).rejects.toThrow(/empty argv, which is not a tool call/)
+  test('an empty argv is refused, before docker turns it into a usage error', async () => {
+    await expect(coreutils.run([])).rejects.toThrow(/empty argv, which is not a tool call/)
     await expect(container.run([])).rejects.toThrow(/empty argv, which is not a tool call/)
   })
 })
@@ -278,18 +266,39 @@ describe('a toolbox that cannot provide its tools does not open', () => {
     await expect(Toolbox.open(bad, { route: 'container' })).rejects.toThrow(/defines no IMAGE_NOT_IN_THE_FILE/)
   })
 
-  test('a forced HOST route on a host without the tools says so, rather than failing later', async () => {
-    await expect(Toolbox.open(CX3576_ASSEMBLY, { route: 'host' }))
-      .rejects.toThrow(/does not have: .*sgdisk/)
-  })
-
-  test('the refusal explains that a toolset is taken whole or not at all', async () => {
-    // Mixing routes per tool would mean an image half written by the host's
-    // sgdisk and half by the container's mcopy, and "which tool wrote these
-    // bytes" would stop having an answer.
+  test('asking for the host route is a refusal that names the policy', async () => {
     let msg = ''
     try { await Toolbox.open(CX3576_ASSEMBLY, { route: 'host' }) } catch (e) { msg = (e as Error).message }
-    expect(msg).toContain('taken whole or not at all')
+    expect(msg).toContain('cx3576-assembly')
+    expect(msg).toContain('the caller asked for it')
+    expect(msg).toContain('docs/design/build.md section 0')
+  })
+
+  test('...and it is a policy, not a capability check that installing tools would satisfy', async () => {
+    // COREUTILS again, for the reason at the top of this file: its tools are
+    // HERE. A refusal that only fired on a missing tool would let this through.
+    let msg = ''
+    try { await Toolbox.open(COREUTILS, { route: 'host' }) } catch (e) { msg = (e as Error).message }
+    expect(msg).toContain('coreutils')
+    expect(msg).toContain('not a capability check that can be satisfied by installing the tools')
+    expect(msg).toContain('IMAGE_ALPINE_3_21')
+  })
+
+  test('MOS_BUILD_TOOLBOX=host is refused too, and says which asked', async () => {
+    // Two ways in, one rule. Honouring the environment variable while refusing
+    // the argument -- or the other way round -- would make the policy depend on
+    // how it was asked for.
+    const before = process.env.MOS_BUILD_TOOLBOX
+    process.env.MOS_BUILD_TOOLBOX = 'host'
+    try {
+      let msg = ''
+      try { await Toolbox.open(COREUTILS) } catch (e) { msg = (e as Error).message }
+      expect(msg).toContain('MOS_BUILD_TOOLBOX=host asked for it')
+      expect(msg).toContain('docs/design/build.md section 0')
+    } finally {
+      if (before === undefined) delete process.env.MOS_BUILD_TOOLBOX
+      else process.env.MOS_BUILD_TOOLBOX = before
+    }
   })
 })
 
@@ -303,12 +312,17 @@ describe('the session is torn down, and says so if used afterwards', () => {
     expect((await $`${docker} inspect ${name}`.nothrow().quiet()).exitCode).not.toBe(0)
   }, OPEN_TIMEOUT_MS)
 
+  // OPEN_TIMEOUT_MS, and it was not needed here until COREUTILS stopped taking
+  // the host route: a ~4 ms open became a ~4.6 s one, which src/testing.ts
+  // calls "the one that matters -- it is UNDER the default and it flaked
+  // against it". This test went red at exactly 5000 ms the first time the
+  // suite ran after the policy landed.
   test('a call after close names the toolbox rather than a random container id', async () => {
-    const tb = await Toolbox.open(COREUTILS, { route: 'host' })
+    const tb = await Toolbox.open(COREUTILS, { route: 'container' })
     await tb.close()
     await expect(tb.run(['true'])).rejects.toThrow(/toolbox was closed/)
     await expect(tb.run(['true'])).rejects.toThrow(/coreutils/)
-  })
+  }, OPEN_TIMEOUT_MS)
 
   test('MOS_BUILD_TOOLBOX only accepts the two routes there are', async () => {
     const before = process.env.MOS_BUILD_TOOLBOX

@@ -18,6 +18,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
+	os-host-toolchain-lint os-host-toolchain-lint-test \
 	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
 	os-install-closure-gate os-rootfs-manifest-test \
 	os-rootfs-x64-composed \
@@ -41,6 +42,8 @@ help:
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
+	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
+	@echo "  os-host-toolchain-lint-test  plant a host invocation, a stale exemption and a broken declaration; require each red"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
@@ -401,6 +404,33 @@ os-install-closure-gate:
 # pattern was found. The rationale is at the top of the script.
 os-shell-pipefail-lint:
 	bash tests/shell-pipefail-lint.sh
+
+# THE BUILD POLICY, made to fail. docs/design/build.md section 0 is the rule --
+# no toolchain on the host, no compilation on the host, no assembly on the host
+# -- and this is what goes red when a new path breaks it. That page carried the
+# claim long before anything enforced it, which is the whole reason this target
+# exists: a documented rule with no check is a sentence, not a gate.
+#
+# It scans every tracked shell script, Makefile and workflow for a producer
+# binary in command position. A file or a block that runs INSIDE an image says
+# so at the site with `# mos-build-side: container -- <why>`, and the
+# invocations that cannot move yet are registered in
+# tests/host-toolchain-exemptions with their reasons -- where an entry matching
+# NOTHING is itself a failure, so a waiver cannot outlive what it waived.
+#
+# No docker, no bun: bash, awk and git. It runs in the CI lane that says its
+# suites need neither.
+os-host-toolchain-lint:
+	bash tests/host-toolchain-lint.sh
+
+# The check on that check. Fifteen cases, each planting ONE defect in a
+# throwaway git checkout and requiring the lint to go red naming it -- plus two
+# that plant something legitimate and require green, because a rule whose
+# findings are false positives teaches people to ignore it. Among them the
+# positive control driven directly: a scan that saw no container-side producer
+# at all has not found this repository's build and must not report clean.
+os-host-toolchain-lint-test:
+	bash tests/host-toolchain-lint-test.sh
 
 # rootfs/packages/resolve.sh over every board, profile, radio set and feature
 # set this repository supports, plus the reverse direction: every package a

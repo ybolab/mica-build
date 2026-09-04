@@ -7,10 +7,188 @@
 > capabilities apart before believing an error message. `build-harness.md`
 > covers the *checks*; this page covers the *artifacts*.
 
-Everything here runs in docker. The host needs docker with buildx, bash, make
-and git, and nothing else: no toolchain is installed on the host, and every
-compiler comes out of a builder image pinned by digest in
+## 0. The rule
+
+The rule is a property of the system, and it is written as one so that it can
+be run rather than argued:
+
+> **A host with only Docker and git must be able to build and release an image,
+> completely.**
+
+From which, as an instruction:
+
+> **No toolchain on the host. No compilation on the host. No assembly on the
+> host.**
+
+Every compiler, every filesystem maker, every image assembler, every packer and
+every signing tool comes out of an image pinned by digest in
 `build-env/images.env`.
+
+This page has carried the instruction for as long as it has existed. What
+follows is the part it was missing: what "only Docker and git" has to mean in
+practice, which side of the line a given tool is on, which paths do not obey it
+yet, and what fails when a new one joins them.
+
+### 0.0 What the host is allowed to have
+
+Taken from the experiment below rather than guessed — this is what it needed
+and nothing more:
+
+| On the host | Why |
+| --- | --- |
+| `docker`, with a reachable daemon | everything else runs inside what it starts |
+| `git` | the file list every gate reads comes from `git ls-files` |
+| `bash` | every entry point here is a bash script, and bash writes no byte of any artefact |
+| `make` | the target names are the build's interface, and a recipe only decides which script runs |
+| a busybox userland — `sh`, `awk`, `sed`, `grep`, `sha256sum`, `tar` | the scripts' own arithmetic |
+
+**`bash` and `make` are orchestration by §0.1** — neither can change a byte of a
+shipped artefact — and they are named here rather than left implied, because a
+policy whose own entry point violates it is worse than no policy. `jq` and
+`curl` are deliberately not in that table: nothing on the path to an image needs
+them. `curl` is reached only by `pkgs/podman/check-pins.sh`, which asks upstream
+what the newest release is and builds nothing, and `jq` by
+`pkgs/rauc/gen-dev-keys.sh` and `tests/release-verify-test.sh` — the first of
+which is on the exemption list in §0.3 for a different reason.
+
+Anything else a build reaches for is a finding. Nothing may require host `bun`,
+host `node`, host `python3`, host `go`, host `gcc`, host `cargo`, or any
+filesystem or image tool.
+
+**Observed, 2026-09-04, not asserted.** Inside `IMAGE_DOCKER_CLI_28` — which is
+docker, git and a busybox userland, with no bash, no make, no bun, no node, no
+python, no compiler and none of sgdisk/mtools/mksquashfs — against a fresh
+clone with the daemon socket mounted:
+
+| | |
+| --- | --- |
+| `make docs-verify`, `bash …` with docker + git only | `sh: make: not found`, `sh: bash: not found` |
+| + `bash` and `make` | all five docs gates green |
+| `make os-layout-lint` | `RESULT: PASS (28/28 checks)` |
+| `make os-verify-test` | `RESULT: PASS (1270/1270 tests)`, bun from the pin |
+| `bash build/run.sh --mkimage-x64` | image assembled, 1938 MiB |
+| `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
+
+One thing a bare host still cannot do: compose the rootfs.
+`build/run.sh --build-rootfs` drives `docker buildx`, which is a CLI plugin
+`verify/Dockerfile` does not copy, and the refusal names it.
+
+### 0.1 The test, for a tool nobody listed
+
+A list of banned binaries goes stale the first time someone reaches for one
+that is not on it. The boundary is a question instead, asked of the tool:
+
+> **If this exact input were handed to a different build of this tool, could
+> the run's output differ?**
+
+| Answer | The tool is a… | Where it runs |
+| --- | --- | --- |
+| Yes, and the output is a byte that survives the run — an image, a package, a bundle, `dist/`, `out-<arch>/`, a signature, a recorded config | **producer** | In a container, pinned by digest. No probe, no host route, no fallback. |
+| Yes, and the output is a verdict — a pass or a fail somebody reads | **judge** | The pinned container is the *contract*: it is what CI runs and what a result is quoted from. A host route may exist as an opt-in for the inner loop, and must announce which route answered. |
+| No — the output is fixed by the input alone (`sha256sum`, `cmp`, `git rev-parse`), or the tool produces nothing and only decides which container runs (`docker`, `make`, `bash`, `jq`, `curl`) | **orchestration** | On the host. There is no container to run it in without it. |
+
+Two consequences, because both have been argued the other way:
+
+**Compilation is a producer even when the binary is discarded.** `cargo clippy
+--workspace -- -D warnings` keeps no artefact and its verdict is still decided
+by the toolchain — `build-harness.md` §3 records a 1.96 `rustc` ahead of the
+image's 1.98 reporting `error[E0463]: can't find crate for 'std'` against a
+workspace that was fine. A compiler is never a judge.
+
+**A digest is not a producer.** `sha256sum` writes a byte that ships, into
+`SHA256SUMS` and into `disk.img.sha256`, and no build of it can write a
+different one. The question is about the tool's freedom, not about whether the
+byte survives.
+
+Worked through for `bun`, which is the tool the question is hardest for: the
+bun that writes `_out/apid-ui/dist` (`pkgs/mosd/apid/ui/build.sh`) is a
+producer and has deliberately no host route, because a host bun produces
+different chunk hashes than the pinned one. The bun that runs a test suite
+(`verify/run.sh`, `build/run.sh`, `pkgs/mosd/tests/apid-api/spec-pins.sh`) is a
+judge, keeps its announced host route, and CI installs no bun at all so the
+pinned container is what every push exercises.
+
+### 0.2 Why — six measurements, not a principle
+
+1. **e2fsprogs.** The layouts ask for `-O ^orphan_file` and `-E hash_seed`, and
+   an e2fsprogs older than 1.47 *silently cannot* write them. This host carries
+   `mke2fs 1.46.5 (30-Dec-2021)` (*measured 2026-09-04*), which is the reason
+   the seeded-times step has always run container-side.
+2. **Which package provided the tool decides bytes.** `build/src/toolsets.ts`:
+   "which package provided mkfs.vfat or mksquashfs is exactly the kind of thing
+   that decides bytes". `BOOTX64.EFI` is only as reproducible as the
+   `grub-efi-amd64-bin` in its container, which is why the two assemblers use
+   different base images on purpose.
+3. **The apid UI.** A host `bun` produces different chunk hashes than the
+   digest-pinned `IMAGE_BUN_1`, so a `dist/` comparison run on the host reports
+   a difference that is not there.
+4. **This host's `mkfs.vfat` is BusyBox's** (*measured 2026-09-04*).
+   `command -v mkfs.vfat` answers `/build/bin/busybox/mkfs.vfat`, BusyBox
+   v1.37.0, whose usage is `mkfs.vfat [-v] [-n LABEL] BLOCKDEV [KBYTES]` and
+   which answers `--invariant` — the flag every FAT step in this tree passes —
+   with `unrecognized option: invariant`. The presence check that used to guard
+   the host route was `command -v`, and it says yes to that binary. The route
+   was not taken here only because `sgdisk` and `mcopy` are missing too: the
+   check that would have caught the wrong `mkfs.vfat` is not the one that was
+   doing the work.
+5. **The host C compiler is not the one this tree pins** (*measured
+   2026-09-04*). `gcc --version` here answers
+   `gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0`, while `build-env/c/Dockerfile`
+   asserts version floors for the gcc it ships and links a probe program to
+   prove it. The same C compiled on the host and in `mos-build-c` is compiled by
+   two different compilers, and nothing in a build log would say which.
+6. **The largest host toolchain here is one a script goes looking for**
+   (*measured 2026-09-04*). `command -v cargo` on the default PATH answers
+   nothing. The whole rustup toolchain — cargo, `rustc 1.98.0`,
+   `cargo-clippy 0.1.98`, cargo-nextest, cargo-deny, rustfmt — lives under
+   `/root/.cargo/bin`, and is reachable only because `pkgs/mosd/hack/check.sh`
+   line 8 and `pkgs/rauc-sign/hack/check.sh` line 13 put it in front of PATH.
+   The gate runs, and it ran green today: it is a working gate standing on an
+   unpinned host toolchain, which is a different thing from a broken one.
+
+### 0.3 What is exempt today, and why
+
+An exemption is allowed. An unexamined path is not. Each row below is
+registered in `tests/host-toolchain-exemptions` with its reason, and the check
+**fails when a rule there matches nothing** — so a renamed file cannot leave a
+waiver behind, and a path that stops violating the policy cannot keep one.
+
+| Site | Tool | Why it is still on the host |
+| --- | --- | --- |
+| `pkgs/mosd/hack/check.sh`, `pkgs/rauc-sign/hack/check.sh` | `cargo`, and the `$HOME` PATH prepend that makes it resolve | The Rust gate. Its container exists: `make os-rust-gate` runs both scripts **unmodified** inside `localhost/mos-build-rust-check`. What keeps them here is that CI still runs the same scripts on its runner, and a script cannot be declared container-side while one of its callers is a bare host. |
+| `.github/workflows/check.yml` | `cargo` | That runner. It installs a toolchain with `rustup`; the replacement is `make os-rust-gate`, at the cost of building the builder-image family on the runner first. |
+| `pkgs/rauc/gen-dev-keys.sh` | `openssl` (and `jq`) | A producer: the CA, the signer certificate and the Ed25519 root key it writes are baked into `meta/` and into every image, and its `jq` edits `meta/updates/manifest.json`, which reaches the image too. Closing it needs a pinned openssl image and the trust tests re-run. `jq` is not in the check's table — it is orchestration everywhere else here, and a row for it would flag fixture edits that are verdicts — so this is the one producing use of it and it moves with this row. |
+| `rootfs/build.sh` | `openssl` | A judge: `alg_of_material()` reads a certificate or key and reports its algorithm; nothing it writes survives. It parses openssl's own text output, which is version-sensitive, so the container is still worth having. |
+| `tests/repart-loader-test.sh` | `sgdisk` | A judge: five host reads of an assembled image's partition table, beside a container-side half that is already declared. |
+
+Flashing is not a build. `boards/cx3576/bsp/Makefile`'s `rkdeveloptool` targets
+write to a board over USB and need the host's bus; they are orchestration by
+§0.1 and are not exempted, because they never were in scope.
+
+### 0.4 What enforces it
+
+`make os-host-toolchain-lint` (`tests/host-toolchain-lint.sh`) scans every
+tracked shell script, `Makefile` and CI workflow for **two shapes**: a producer
+binary in command position, and a `PATH` assignment that prepends a directory
+under `$HOME`. The second is there because the first nearly missed measurement
+6 — a toolchain a script reaches for is still a host toolchain, and a worse one,
+since nothing pins it. Dockerfiles are not scanned — they *are* containers. A
+file or a block that runs inside an image says so at the site:
+
+```sh
+# mos-build-side: container -- <why>          the whole file runs in an image
+# mos-build-side: container-block -- <why>    the lines below do
+# mos-build-side: host                        ...and here they stop
+```
+
+It cannot see a binary invoked through a variable, a producer written into a
+heredoc body, a declaration that is simply wrong, or whether the criterion at
+the top of this section still holds — that one is an experiment somebody runs.
+Its header says so at greater length, and `tests/host-toolchain-lint-test.sh`
+plants a host invocation, a `$HOME` PATH prepend, a stale exemption, a removed
+declaration, an unclosed block and a heredoc named in a comment, and requires
+each to turn it red — and three legitimate shapes, which it requires to stay
+green.
 
 ## 1. What a build produces
 

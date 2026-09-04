@@ -253,22 +253,69 @@ else
         }
     fi
 
-    # The repository at its own path, and three more mounts verify has no
-    # use for. A container started from inside this one is a sibling, created by
-    # the same daemon, so every -v it passes is resolved against the host
-    # filesystem. Under a /w mount the path bun computed inside would name a
-    # different thing -- or nothing -- when the daemon read it back, and a bind
-    # mount of a path the daemon cannot see does not fail here: it succeeds and
-    # delivers an empty directory (measured on this host with /tmp). Mounted at
-    # its own path there is nothing to translate: the same bytes answer to the
-    # same name in the host, this container and its siblings.
-    MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}")
+    # --- and the same bun WITH a client, which is verify/Dockerfile's image ---
+    #
+    # THE CLIENT IS PINNED, NOT MOUNTED, and that changed on 2026-09-04 for a
+    # measured reason. This used to pass `-v "${DOCKER}:${DOCKER}:ro"`, which
+    # works only where the host's client sits at a path that also exists on the
+    # DAEMON's filesystem -- because a sibling container's -v source is resolved
+    # by the daemon, not by this process. On a host that is itself a container
+    # (the docker:28-cli image, which is exactly the "docker and git and nothing
+    # else" host docs/design/build.md section 0 is written against) the client
+    # is /usr/local/bin/docker, the daemon's host has no such path, and docker
+    # creates an EMPTY DIRECTORY there and mounts it. The run then failed at the
+    # daemon check below with a message about the socket.
+    #
+    # The preflight two paragraphs down could not see it either: it tests
+    # `[ -e "$f" ]`, and `-e` is true for a directory -- so is `-x`, since the
+    # execute bit on a directory means traversable. The mount that succeeds and
+    # carries nothing, one level deeper than the /tmp case it was written for.
+    #
+    # verify/run.sh already had the answer: two pinned FROMs and one COPY. The
+    # same file, the same build arguments and the same stamp, so the two scripts
+    # share one image and one cache rather than owning two.
+    CLI_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)" || exit 1
+    if ! "${DOCKER}" image inspect "${CLI_IMAGE}" >/dev/null 2>&1; then
+        echo "build: ${CLI_IMAGE} is not in the local image store; pulling it"
+        "${DOCKER}" pull -q "${CLI_IMAGE}" >/dev/null 2>&1 || {
+            echo "error: IMAGE_DOCKER_CLI_28=${CLI_IMAGE} could not be obtained." >&2
+            echo "       That key in build-env/images.env is this tree's record of which docker" >&2
+            echo "       client the toolbox drives on a host with no bun. The reference is well" >&2
+            echo "       formed -- from.sh just checked that -- so what failed is the lookup." >&2
+            exit 1
+        }
+    fi
 
-    # The docker CLI is a statically linked Go binary (checked with `file`), so
-    # it needs nothing from the host but itself and the socket. It is mounted at
-    # its own path for the same reason as everything else, and read-only: a
-    # container has no business writing to the client that started it.
-    MOUNTS+=(-v "${DOCKER}:${DOCKER}:ro" -v /var/run/docker.sock:/var/run/docker.sock)
+    # BOTH digests in the tag, and the same arithmetic verify/run.sh uses, so a
+    # bumped pin cannot reuse an image built from the previous one and the two
+    # scripts land on the same tag when the pins agree.
+    STAMP="$(printf '%s\n%s\n' "${BUN_IMAGE}" "${CLI_IMAGE}" | sha256sum | cut -c1-16)"
+    TOOLED_IMAGE="localhost/mos-verify-bun:${STAMP}"
+    if ! "${DOCKER}" image inspect "${TOOLED_IMAGE}" >/dev/null 2>&1; then
+        echo "build: building ${TOOLED_IMAGE} (pinned bun + pinned docker client)"
+        "${DOCKER}" build -q \
+            --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
+            --build-arg "MOS_DOCKER_CLI_IMAGE=${CLI_IMAGE}" \
+            -t "${TOOLED_IMAGE}" -f "${REPO_ROOT}/verify/Dockerfile" "${REPO_ROOT}/verify" >/dev/null || {
+            echo "error: could not build ${TOOLED_IMAGE} from verify/Dockerfile." >&2
+            echo "       It is two pinned FROMs and one COPY; nothing is installed and nothing is" >&2
+            echo "       fetched beyond those two images. Re-run without -q to see the build." >&2
+            exit 1
+        }
+    fi
+    BUN_IMAGE="${TOOLED_IMAGE}"
+    WHY="${WHY}; + the docker client pinned as IMAGE_DOCKER_CLI_28"
+
+    # The repository at its own path, and the daemon socket. A container started
+    # from inside this one is a sibling, created by the same daemon, so every -v
+    # it passes is resolved against the host filesystem. Under a /w mount the
+    # path bun computed inside would name a different thing -- or nothing -- when
+    # the daemon read it back, and a bind mount of a path the daemon cannot see
+    # does not fail here: it succeeds and delivers an empty directory (measured
+    # on this host with /tmp). Mounted at its own path there is nothing to
+    # translate: the same bytes answer to the same name in the host, this
+    # container and its siblings.
+    MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}" -v /var/run/docker.sock:/var/run/docker.sock)
 
     # The mount that succeeds and carries nothing. On this host a bind mount of
     # anything under /tmp propagates as an empty directory rather than failing,
@@ -276,7 +323,7 @@ else
     # before any of it is used. One container, and it carries the version and
     # the daemon check too, so it costs no extra start over the `bun --version`
     # the host route prints.
-    PREFLIGHT=("${HERE}/package.json" "${HERE}/src/geometry.ts" "${REPO_ROOT}/verify/src/board.ts" "${DOCKER}")
+    PREFLIGHT=("${HERE}/package.json" "${HERE}/src/geometry.ts" "${REPO_ROOT}/verify/src/board.ts")
     probe="$("${DOCKER}" run --rm "${MOUNTS[@]}" "${BUN_IMAGE}" \
         sh -c 'bun --version; for f in "$@"; do [ -e "$f" ] || printf "unseen:%s\n" "$f"; done' \
         sh "${PREFLIGHT[@]}" 2>&1)" || {
@@ -299,37 +346,39 @@ else
     # A docker CLI that is present but cannot reach the daemon from in here is
     # the failure this route adds over the host route, and it is silent without
     # this: the socket mount can succeed while the daemon refuses the caller.
-    "${DOCKER}" run --rm "${MOUNTS[@]}" --entrypoint "${DOCKER}" "${BUN_IMAGE}" \
+    "${DOCKER}" run --rm "${MOUNTS[@]}" --entrypoint docker "${BUN_IMAGE}" \
         version --format '{{.Server.Version}}' >/dev/null 2>&1 || {
-        echo "error: the docker client works on this host but not inside the pinned bun container." >&2
-        echo "       ${DOCKER} and /var/run/docker.sock are both mounted; the daemon still would not" >&2
-        echo "       answer. Every external tool this suite runs goes through a container started" >&2
-        echo "       from in there, so nothing below would work -- and each failure would name a" >&2
-        echo "       tool rather than the socket." >&2
+        echo "error: the pinned docker client cannot reach the daemon from inside ${BUN_IMAGE}." >&2
+        echo "       The client is IMAGE_DOCKER_CLI_28's, copied in at build time, and" >&2
+        echo "       /var/run/docker.sock is mounted; the daemon still would not answer. Every" >&2
+        echo "       external tool this suite runs goes through a container started from in there," >&2
+        echo "       so nothing below would work -- and each failure would name a tool rather than" >&2
+        echo "       the socket." >&2
         exit 1
     }
 fi
 
-# The one mode the container route cannot carry, and not for the reason
-# verify's --parity cannot: that image has no docker client at all, while
-# this one is given the client and the daemon socket so its toolbox can start
-# sibling containers. What it is not given is `docker buildx`, a CLI plugin
-# rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins on this
-# host and that directory is not mounted. Driven, not assumed: with the client
-# and socket mounted and MOS_BUILD_DOCKER set, the container answers
+# The one mode the container route cannot carry. The image above has the client
+# and the daemon socket, so its toolbox can start sibling containers; what it
+# does not have is `docker buildx`, which is a CLI PLUGIN and not a subcommand.
+# verify/Dockerfile copies one file, /usr/local/bin/docker, and the plugin lives
+# beside it in /usr/local/libexec/docker/cli-plugins. Driven, not assumed: the
+# container answers
 #
 #   docker: unknown command: docker buildx
 #
-# Mounting the plugin directory would close it, at the cost of a second host
-# binary inside the pinned image, and the pin exists so that what runs is a
-# recorded value. Left open and named, because --build-rootfs is reached from
-# rootfs/build.sh, which needs docker on the host anyway.
+# CLOSABLE, and measured on 2026-09-04: IMAGE_DOCKER_CLI_28 ships
+# `github.com/docker/buildx v0.29.1` in that directory, so one more COPY would
+# give this route buildx from the same pinned image -- no host binary, no second
+# pin. It is not done here because lifting this refusal is a claim about
+# composing a root, and a claim like that is worth only the run that proves it;
+# see docs/plan/PLAN-080 backlog B5. Until then the refusal names the gap.
 if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
     echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
     echo "       The suite runs in the pinned bun container; this mode cannot, because it drives" >&2
     echo "       \`docker buildx\` once per stage and buildx is a CLI PLUGIN, not a subcommand." >&2
-    echo "       ${DOCKER} and the daemon socket are both mounted into that image and work there;" >&2
-    echo "       the plugin directory (/usr/lib/docker/cli-plugins on this host) is not, so the" >&2
+    echo "       The pinned client and the daemon socket are both in that image and work there;" >&2
+    echo "       verify/Dockerfile copies the client binary and not the plugin beside it, so the" >&2
     echo "       container answers 'docker: unknown command: docker buildx'." >&2
     echo "       Install bun, or set MOS_BUILD_BUN to one." >&2
     exit 1
@@ -339,8 +388,11 @@ run_bun() {
     # The seam. Everything above and below passes an argv and reads a status,
     # and neither can tell which of the two routes answered.
     if [ "${ROUTE}" = container ]; then
+        # `docker`, not "${DOCKER}": inside the image the client is the pinned
+        # one at /usr/local/bin/docker, and the host's path is not a path in
+        # there. Passing the host's was the shape that broke.
         "${DOCKER}" run --rm "${MOUNTS[@]}" -w "${HERE}" \
-            -e "MOS_BUILD_DOCKER=${DOCKER}" "${BUN_IMAGE}" bun "$@"
+            -e "MOS_BUILD_DOCKER=docker" "${BUN_IMAGE}" bun "$@"
     else
         ( cd "${HERE}" && "${BUN}" "$@" )
     fi

@@ -155,6 +155,9 @@ RUST_IMAGE="${RUST_FROM[1]#MOS_BUILD_RUST=}"
 # reason pkgs/mosd/hack/build-target.sh gives: rustc records the paths it is
 # given, so mounting the checkout at its own path would make the binaries depend
 # on the directory the repository was cloned into.
+# mos-build-side: container-block -- the compiler is localhost/mos-build-rust's,
+# recorded in that image's /etc/mos-build/rust.env, and this block refuses an image that
+# carries no such record
 docker run --rm \
     --label ai-agent=true \
     --platform linux/amd64 \
@@ -193,6 +196,7 @@ docker run --rm \
             esac
         done
     '
+# mos-build-side: host
 
 # What this producer OWNS, checked before what it must not hold. Without this the
 # scan below would pass over a directory the build never wrote -- an "is absent"

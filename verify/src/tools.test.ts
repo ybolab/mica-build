@@ -30,12 +30,23 @@ import {
 import { REPO_ROOT } from './paths.ts'
 
 describe('the route is chosen once, and a value that is neither is refused', () => {
-  test('no host tools missing means the host route', () => {
-    expect(chooseRoute(undefined, [])).toBe('host')
+  test('a host with EVERY tool still takes the pinned container', () => {
+    // The case that makes this a policy rather than a measurement. It used to
+    // return 'host' here, so the verdict a verifier printed depended on the
+    // debugfs and unsquashfs of whatever machine ran it; the tools are judges
+    // by docs/design/build.md section 0, and the pin is the contract.
+    expect(chooseRoute(undefined, [])).toBe('container')
   })
 
-  test('one missing tool is enough for the container route', () => {
+  test('and so does a host that is missing one', () => {
     expect(chooseRoute(undefined, ['sgdisk'])).toBe('container')
+  })
+
+  test('MOS_VERIFY_TOOLS=host is the opt-out, and it is honoured when the tools are there', () => {
+    // Both routes stay reachable on one machine -- a seam with one reachable
+    // route is a seam nobody is checking -- but the host one has to be asked
+    // for by name now.
+    expect(chooseRoute('host', [])).toBe('host')
   })
 
   test('MOS_VERIFY_TOOLS=container is honoured even with every tool present', () => {
@@ -62,6 +73,13 @@ describe('the announce line says WHY, because it is the only thing that says whi
 
   test('a forced container on a tool-ful host names the variable that forced it', () => {
     expect(routeReason('container', [])).toBe('MOS_VERIFY_TOOLS=container')
+  })
+
+  test('the DEFAULT container on a tool-ful host says it is the contract, not a shortage', () => {
+    // A host with every tool takes the container now, and telling that reader
+    // "no  on this host" -- or nothing at all -- would name a reason that is
+    // not the reason.
+    expect(routeReason(undefined, [])).toContain('the pinned tools are the contract')
   })
 
   test('never an empty subject', () => {

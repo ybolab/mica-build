@@ -70,6 +70,9 @@ done
 # guest then mounts.
 SEED_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
 
+# mos-build-side: container-block -- debugfs and sgdisk read and write the disk copy
+# inside the pinned image; a loop mount on the host would need privileges a build should
+# not want
 docker run --rm -v "${WORK}:/w" -v "${OUT_DIR}/.qemu:/d" \
     -e STATE_PARTNUM="${STATE_PARTNUM}" -e STATE_SIZE_MIB="${STATE_SIZE_MIB}" \
     "${SEED_IMAGE}" bash -c '
@@ -105,4 +108,5 @@ docker run --rm -v "${WORK}:/w" -v "${OUT_DIR}/.qemu:/d" \
     e2fsck -fp state.img >/dev/null 2>&1 || true
     dd if=state.img of=/d/disk.img bs=512 seek="${start}" conv=notrunc status=none
 '
+# mos-build-side: host
 echo "STATE seeded in ${DISK##*/}"

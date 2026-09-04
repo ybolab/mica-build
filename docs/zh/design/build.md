@@ -6,9 +6,159 @@
 > 需要模拟器，以及在相信一条报错之前如何区分 arm64 的三种能力。
 > `build-harness.md` 讲的是*检查*怎么跑；本页讲的是*产物*怎么来。
 
-所有步骤都在 docker 里执行。主机只需要带 buildx 的 docker、bash、make 和
-git；主机上不安装任何工具链，每个编译器都来自 `build-env/images.env`
-里按 digest 固定的 builder 镜像。
+## 0. 规则
+
+规则写成系统的一条性质，而不是一条禁令，这样它可以被跑出来，而不是被争出来：
+
+> **一台只有 Docker 和 git 的主机，必须能完整地构建并发布一个镜像。**
+
+由此得到的祈使句：
+
+> **主机上不装工具链。主机上不做编译。主机上不做镜像装配。**
+
+每一个编译器、每一个文件系统创建工具、每一个镜像装配工具、每一个打包工具和每一个
+签名工具，都来自 `build-env/images.env` 里按 digest 固定的镜像。
+
+这条祈使句本页一直都有。下面补的是它一直缺的部分：“只有 Docker 和 git”在实践中
+到底意味着什么、某个工具属于线的哪一边、目前还有哪些路径没有遵守，以及新增一条这样
+的路径时什么会失败。
+
+### 0.0 主机上允许有什么
+
+下面这张表是从后面那次实验里量出来的，不是猜的——实验需要的就是这些，没有更多：
+
+| 主机上 | 为什么 |
+| --- | --- |
+| `docker`，且能连上 daemon | 其余一切都跑在它启动的东西里 |
+| `git` | 每一道门读的文件清单都来自 `git ls-files` |
+| `bash` | 本树每一个入口都是 bash 脚本，而 bash 不写出任何产物字节 |
+| `make` | target 名字就是构建的接口，而 recipe 只决定跑哪个脚本 |
+| 一套 busybox 用户态——`sh`、`awk`、`sed`、`grep`、`sha256sum`、`tar` | 脚本自己的算术 |
+
+**按 §0.1，`bash` 和 `make` 属于编排**——两者都改不了产物的任何一个字节——这里把它们
+明确写出来而不是默认，因为一条自己的入口就违反自己的策略，比没有策略更糟。`jq` 和 `curl`
+刻意不在这张表里：通往镜像的路径上没有任何一步需要它们。`curl` 只有
+`pkgs/podman/check-pins.sh` 会用到，那个脚本只是去问上游最新版本是多少，什么也不构建；
+`jq` 只有 `pkgs/rauc/gen-dev-keys.sh` 和 `tests/release-verify-test.sh` 会用到，前者
+因为另一个原因已经在 §0.3 的豁免表里。
+
+除此之外构建再伸手去拿别的东西，都是一个发现。任何环节都不得要求主机上的 `bun`、
+`node`、`python3`、`go`、`gcc`、`cargo`，或任何文件系统与镜像工具。
+
+**2026-09-04 实测，不是断言。** 在 `IMAGE_DOCKER_CLI_28` 里——它只有 docker、git 和
+一套 busybox 用户态，没有 bash、没有 make、没有 bun、没有 node、没有 python、没有
+编译器，也没有 sgdisk/mtools/mksquashfs——对着一份新克隆、挂上 daemon socket：
+
+| | |
+| --- | --- |
+| 只有 docker + git 时跑 `make docs-verify`、`bash …` | `sh: make: not found`、`sh: bash: not found` |
+| 加上 `bash` 和 `make` | 五道文档门全绿 |
+| `make os-layout-lint` | `RESULT: PASS (28/28 checks)` |
+| `make os-verify-test` | `RESULT: PASS (1270/1270 tests)`，bun 来自固定镜像 |
+| `bash build/run.sh --mkimage-x64` | 镜像装配完成，1938 MiB |
+| `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
+
+一台裸主机目前还做不到的一件事：合成 rootfs。`build/run.sh --build-rootfs` 要驱动
+`docker buildx`，而它是一个 CLI 插件，`verify/Dockerfile` 没有把它拷进去，那条拒绝
+会把这件事说出来。
+
+### 0.1 判定方法：对付一个清单上没有的工具
+
+禁用二进制清单会在有人伸手去拿清单外的工具那天失效。所以边界不是清单，而是对工具
+提的一个问题：
+
+> **如果把同样的输入交给这个工具的另一个构建版本，这次运行的输出会不会不同？**
+
+| 回答 | 这个工具是 | 在哪里运行 |
+| --- | --- | --- |
+| 会，而且输出是一个会留下来的字节——镜像、软件包、bundle、`dist/`、`out-<arch>/`、签名、被记录下来的 config | **生产者（producer）** | 在容器里，镜像按 digest 固定。不探测、不走主机、不回退。 |
+| 会，但输出是一个结论——给人看的通过或失败 | **裁判（judge）** | 固定镜像是*契约*：CI 跑的是它，结论也从它那里引用。为了本地快速迭代可以保留一条主机路线，但必须声明这次是哪条路线回答的。 |
+| 不会——输出完全由输入决定（`sha256sum`、`cmp`、`git rev-parse`），或者这个工具本身不产出任何东西、只决定启动哪个容器（`docker`、`make`、`bash`、`jq`、`curl`） | **编排（orchestration）** | 在主机上。没有它就没有容器可以跑。 |
+
+两个推论——这两条都有人往相反方向争过，所以写在这里：
+
+**编译属于生产者，即使产物被丢掉。** `cargo clippy --workspace -- -D warnings`
+不保留任何产物，它的结论仍然由工具链决定——`build-harness.md` 第 3 节记录过：
+PATH 上一个 1.96 的 `rustc` 排在镜像自带的 1.98 前面，对一个本来没问题的 workspace
+报出了 `error[E0463]: can't find crate for 'std'`。编译器永远不是裁判。
+
+**摘要不是生产者。** `sha256sum` 写出的字节确实会随产品发出去——写进 `SHA256SUMS`，
+写进 `disk.img.sha256`——但它的任何一个构建版本都写不出不同的值。问题问的是工具有
+没有自由度，而不是字节留不留得下来。
+
+拿 `bun` 走一遍，它是这个问题最难回答的工具：写 `_out/apid-ui/dist` 的那个 bun
+（`pkgs/mosd/apid/ui/build.sh`）是生产者，因此刻意没有主机路线——主机 bun 产出的
+chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.sh`、`build/run.sh`、
+`pkgs/mosd/tests/apid-api/spec-pins.sh`）是裁判，保留它那条会声明路线的主机路线，
+而 CI 根本不装 bun，所以每次 push 走的都是固定镜像。
+
+### 0.2 为什么——六次实测，不是一条原则
+
+1. **e2fsprogs。** layout 要求 `-O ^orphan_file` 和 `-E hash_seed`，早于 1.47 的
+   e2fsprogs *会静默地做不到*。本机是 `mke2fs 1.46.5 (30-Dec-2021)`（*实测于
+   2026-09-04*），这就是打时间戳那一步一直在容器里跑的原因。
+2. **是哪个包提供的工具，决定了字节。** `build/src/toolsets.ts`：“mkfs.vfat 或
+   mksquashfs 由哪个包提供，正是那种会决定字节的事情。”`BOOTX64.EFI` 的可复现程度
+   不会超过它所在容器里的 `grub-efi-amd64-bin`，所以两个装配器刻意用不同的基础镜像。
+3. **apid 内置 UI。** 主机 bun 产出的 chunk 哈希与按 digest 固定的 `IMAGE_BUN_1`
+   不同，于是在主机上做 `dist/` 比对会报出一个并不存在的差异。
+4. **本机的 `mkfs.vfat` 是 BusyBox 的**（*实测于 2026-09-04*）。
+   `command -v mkfs.vfat` 得到 `/build/bin/busybox/mkfs.vfat`，BusyBox v1.37.0，
+   它的用法是 `mkfs.vfat [-v] [-n LABEL] BLOCKDEV [KBYTES]`，对本树每一处 FAT 步骤
+   都要传的 `--invariant` 回答 `unrecognized option: invariant`。原先守着主机路线的
+   存在性检查就是 `command -v`，而它对这个二进制说“有”。这条路线在本机没有被走到，
+   只是因为 `sgdisk` 和 `mcopy` 也不在——本该拦下错误 `mkfs.vfat` 的那道检查，并不是
+   真正起作用的那道。
+5. **主机的 C 编译器不是本树固定的那个**（*实测于 2026-09-04*）。这里
+   `gcc --version` 答的是 `gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0`，而
+   `build-env/c/Dockerfile` 为它自带的 gcc 断言了版本下限，并链接一个探针程序来
+   证明。同一份 C 在主机上和在 `mos-build-c` 里，是被两个不同的编译器编的，而构建
+   日志里没有任何东西会说清是哪一个。
+6. **本树最大的一处主机工具链，是脚本主动去找来的**（*实测于 2026-09-04*）。默认
+   PATH 上 `command -v cargo` 什么也答不出来。整套 rustup 工具链——cargo、
+   `rustc 1.98.0`、`cargo-clippy 0.1.98`、cargo-nextest、cargo-deny、rustfmt——都在
+   `/root/.cargo/bin` 下，能被找到只是因为 `pkgs/mosd/hack/check.sh` 第 8 行和
+   `pkgs/rauc-sign/hack/check.sh` 第 13 行把它放到了 PATH 前面。这道门是跑得起来的，
+   今天还跑绿过一次：它是一道站在未固定主机工具链上的、能用的门，这和一道坏掉的门
+   是两回事。
+
+### 0.3 目前有哪些豁免，以及为什么
+
+允许豁免，不允许没被检查过的路径。下表每一行都登记在
+`tests/host-toolchain-exemptions` 里并写明理由，而且当某条规则**匹配不到任何东西时
+检查会失败**——所以改名不会留下一条孤儿豁免，某条路径修好之后也留不住它的豁免。
+
+| 位置 | 工具 | 为什么还在主机上 |
+| --- | --- | --- |
+| `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo`，以及让它能被解析出来的那次 `$HOME` PATH 前置 | Rust 门禁。它需要的容器已经有了：`make os-rust-gate` 会在 `localhost/mos-build-rust-check` 里**原封不动**地跑这两个脚本。它们还留在这里，是因为 CI 仍然在自己的 runner 上跑同样的脚本——一个脚本只要还有一个调用方是裸主机，就不能声明成容器侧。 |
+| `.github/workflows/check.yml` | `cargo` | 就是那个 runner。它用 `rustup` 装工具链；替代方案是 `make os-rust-gate`，代价是 runner 要先把 builder 镜像那一族建出来。 |
+| `pkgs/rauc/gen-dev-keys.sh` | `openssl`（还有 `jq`） | 生产者：它写出的 CA、签名者证书和 Ed25519 根密钥会被烘进 `meta/` 和每一个镜像，它的 `jq` 还会改 `meta/updates/manifest.json`，那份文件同样会进镜像。要关掉它需要一个固定的 openssl 镜像，并重跑信任相关的测试。`jq` 不在检查的工具表里——在本树的其他地方它都是编排，而给它加一行会误报那些属于结论的 fixture 编辑——所以它这一处生产者用法跟着本行一起走。 |
+| `rootfs/build.sh` | `openssl` | 裁判：`alg_of_material()` 读一份证书或密钥并报出它的算法，写出的东西不会留下。但它解析的是 openssl 自己的文本输出，而那是随版本变化的，所以放进容器仍然值得。 |
+| `tests/repart-loader-test.sh` | `sgdisk` | 裁判：对已装配镜像分区表的五次主机读取，旁边那半边容器侧的用法已经声明过了。 |
+
+烧写不是构建。`boards/cx3576/bsp/Makefile` 里的 `rkdeveloptool` 目标通过 USB 往板子
+上写，需要主机的总线；按 §0.1 它们属于编排，因此不需要豁免——它们从来就不在范围内。
+
+### 0.4 靠什么强制
+
+`make os-host-toolchain-lint`（`tests/host-toolchain-lint.sh`）扫描每一个被 git
+跟踪的 shell 脚本、`Makefile` 和 CI workflow，找**两种形态**：处于命令位置的生产者
+二进制，以及把 `$HOME` 下某个目录前置到 `PATH` 的赋值。第二种是因为第一种差点漏掉
+第 6 条实测——脚本主动去找来的工具链仍然是主机工具链，而且更糟，因为没有任何东西
+固定它。Dockerfile 不在扫描范围内——它们*就是*容器。在镜像里运行的文件或代码块，
+在原地写明：
+
+```sh
+# mos-build-side: container -- <why>          整个文件都在镜像里跑
+# mos-build-side: container-block -- <why>    以下若干行在镜像里跑
+# mos-build-side: host                        到这里为止
+```
+
+它看不见通过变量调用的二进制、写在 heredoc 里的生产者，无法验证一条声明是不是写错
+了，也答不出本节开头那条判据现在还成不成立——那一条要靠有人去跑一次实验。脚本头部把
+这些说得更细，而 `tests/host-toolchain-lint-test.sh` 会分别植入一次主机调用、一次
+`$HOME` PATH 前置、一条失效豁免、一处被删掉的声明、一个没有闭合的代码块和一句提到
+heredoc 的注释，要求每一种都让它变红——另有三种合法形态，要求它们保持绿。
 
 ## 1. 一次构建产出什么
 

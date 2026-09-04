@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+# No toolchain on the host. No compilation on the host. No assembly on the host.
+#
+# The policy is docs/design/build.md section 0, and this is what makes it fail.
+# It exists because that page has carried the claim -- "no toolchain is
+# installed on the host, and every compiler comes out of a builder image pinned
+# by digest" -- for as long as it has existed, while paths that contradict it
+# sat in the tree with nothing going red.
+#
+# WHAT IT LOOKS FOR. Two shapes. One producer binary in command position, in a
+# file that has not declared itself container-side -- and one PATH assignment
+# that prepends a directory under $HOME, which is how a script reaches for a
+# toolchain that is not on the machine's PATH at all. The second shape exists
+# because the first one nearly missed the largest violation in the tree: this
+# host has no cargo, and `pkgs/mosd/hack/check.sh` finds one only because its
+# line 8 puts $HOME/.cargo/bin in front. A producer is a tool whose own build can
+# change the bytes it writes: a compiler, a filesystem maker, an image
+# assembler, a packer, a signer. docs/design/build.md section 0 states the test
+# that decides whether a new tool belongs in the table below; this file is the
+# table, not the rule.
+#
+# WHAT IT CANNOT SEE, said here rather than discovered later:
+#
+#   - A binary invoked through a VARIABLE. `"${MKIMAGE}" -T script` is a real
+#     mkimage call and nothing here matches it; tests/handshake-test/harness.sh
+#     line 101 is exactly that shape, and it is covered only because the file
+#     declares its side. A grep cannot resolve a variable, and pretending
+#     otherwise would be worse than saying so.
+#   - A HEREDOC BODY. Bodies are skipped whole. (A comment that merely MENTIONS
+#     one does not open it: comments are looked at first, or a `# ... <<EOF` in
+#     prose would elide the rest of the file and still report it clean.) Every heredoc in this tree that
+#     carries a producer today carries a CONTAINER script -- `docker run ...
+#     <<'INNER'`, or a `cat > inner.sh` whose output is run in one -- so the
+#     elision costs nothing measured; a host build step written into one would
+#     not be seen.
+#   - A DECLARATION THAT IS WRONG. `# mos-build-side: container` is a claim by
+#     whoever wrote it. This counts the claims and refuses a run that found
+#     none; it cannot check one.
+#   - ANYTHING THAT IS NOT SHELL. The TypeScript seams -- build/src/toolbox.ts,
+#     verify/src/tools.ts -- are closed in code and held by those packages'
+#     own suites.
+#
+# DECLARING A SIDE. Two markers, both requiring a reason after `--`:
+#
+#   # mos-build-side: container -- <why>          the whole FILE runs in an image;
+#                                                 must appear before any code
+#   # mos-build-side: container-block -- <why>    the lines BELOW run in an image
+#   # mos-build-side: host                        ...and here they stop
+#
+# EXEMPTIONS live in tests/host-toolchain-exemptions, one `path<TAB>tool<TAB>reason`
+# per site, and an exemption that matches NOTHING is a failure -- a rename must
+# not leave a rule behind about a file that has moved, and a path that stops
+# violating the policy must not keep a silent waiver.
+#
+#   bash tests/host-toolchain-lint.sh            (or: make os-host-toolchain-lint)
+#   bash tests/host-toolchain-lint.sh --root DIR  scan another checkout; used by
+#                                                 tests/host-toolchain-lint-test.sh
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+    --root)
+        [ -n "${2-}" ] || { echo "error: --root takes a directory" >&2; exit 1; }
+        ROOT="$(cd "$2" && pwd)"
+        shift 2
+        ;;
+    *) echo "error: '$1' is not an option this lint takes" >&2; exit 1 ;;
+    esac
+done
+cd "${ROOT}"
+
+# THE TABLE, by kind, with the reason each kind is in it. It is not the policy
+# -- docs/design/build.md section 0 is -- but a reader adding a row should be
+# able to see which arm of that test the row belongs to.
+#
+#   toolchain   a compiler decides the bytes even when the binary is discarded:
+#               `cargo clippy -- -D warnings` turns a toolchain difference into
+#               red or green, and docs/design/build-harness.md section 3 has the
+#               measurement (a 1.96 rustc ahead of the image's 1.98 reported
+#               `can't find crate for std` against a workspace that was fine).
+#   filesystem  which e2fsprogs, which mkfs.vfat. This host's mkfs.vfat is
+#               BusyBox's and does not know `--invariant`.
+#   assembly    which sgdisk, which grub-efi-amd64-bin. BOOTX64.EFI is only as
+#               reproducible as the package in its container.
+#   package     which dpkg, which rauc. A bundle built by rauc 1.8 was refused
+#               by a device's 1.13; commit 9a43a59 records it.
+#   signing     what openssl writes into a certificate is openssl's decision.
+#
+# NOT in the table, deliberately: `cc`, `ld`, `go`, `make`, `tar`, `install`.
+# Each is either a word that appears constantly in prose and in paths, or
+# orchestration by the section-0 test. A rule whose findings are mostly false
+# positives teaches people to ignore it, which is worse than no rule --
+# tests/shell-pipefail-lint.sh states the same principle for the same reason.
+#
+# `jq` IS THE AWKWARD ONE, and it is left out with its exception named rather
+# than quietly. It is orchestration nearly everywhere here -- reading a field,
+# building a fixture -- but pkgs/rauc/gen-dev-keys.sh edits
+# meta/updates/manifest.json with it, and that file reaches the image. A row
+# for `jq` would flag tests/release-verify-test.sh's fixture edits too, which
+# are verdicts, and the table cannot tell the two apart from the binary's name.
+# So the one producing use travels with that script's existing openssl
+# exemption and its backlog item, which is where it will actually be fixed.
+TOOLS='cargo|rustc|gcc|g\+\+|tsc|bun'
+TOOLS="${TOOLS}"'|mkfs\.vfat|mkfs\.ext4|mkfs\.fat|mke2fs|mksquashfs|unsquashfs|debugfs|dumpe2fs|e2fsck|resize2fs|tune2fs'
+TOOLS="${TOOLS}"'|sgdisk|sfdisk|parted|mcopy|mmd|mkimage|mkenvimage|veritysetup|grub-mkstandalone|grub-install|grub-editenv'
+TOOLS="${TOOLS}"'|dpkg-deb|dpkg-buildpackage|dpkg-scanpackages|apt-ftparchive|rauc'
+TOOLS="${TOOLS}"'|openssl|gpg'
+
+PASS_N=0
+FAIL_N=0
+pass() { PASS_N=$((PASS_N + 1)); [ -n "${LINT_QUIET:-}" ] || echo "PASS: $1"; }
+fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
+
+# AN UNRESOLVED MERGE IS REFUSED. git ls-files lists a path once per index
+# stage, so during a conflicted merge one file is scanned up to three times and
+# every count below is inflated -- quietly, in the direction of "more files
+# clean than the tree has". tests/shell-pipefail-lint.sh declines for the same
+# reason and says so at greater length.
+mapfile -t unmerged < <(git diff --name-only --diff-filter=U | sort -u)
+if [ "${#unmerged[@]}" -gt 0 ]; then
+    echo "error: this tree has ${#unmerged[@]} unresolved merge conflict(s), so the counts below would be wrong:" >&2
+    printf '         %s\n' "${unmerged[@]}" >&2
+    exit 1
+fi
+
+# The surface. DOCKERFILES ARE NOT SCANNED and that is not an oversight: a
+# Dockerfile IS a container, and every RUN in one is already on the right side
+# of the policy. The list comes from git, so a script added to the tree is
+# covered the day it lands.
+mapfile -t files < <(git ls-files '*.sh' 'Makefile' '*/Makefile' '.github/workflows/*.yml' | sort -u)
+[ "${#files[@]}" -gt 0 ] || {
+    echo "error: no shell scripts, Makefiles or workflows found; this lint would pass by finding nothing" >&2
+    exit 1
+}
+
+# The exemption register. Absent means empty, which is the state a fixture
+# checkout is in; the matches-nothing rule below is what keeps the real one
+# honest.
+EXEMPTIONS="tests/host-toolchain-exemptions"
+declare -A EXEMPT_REASON=()
+declare -A EXEMPT_HITS=()
+EXEMPT_N=0
+if [ -f "${EXEMPTIONS}" ]; then
+    while IFS=$'\t' read -r epath etool ereason; do
+        case "${epath}" in '' | '#'*) continue ;; esac
+        [ -n "${etool}" ] && [ -n "${ereason}" ] || {
+            echo "error: ${EXEMPTIONS}: '${epath}' has no tool or no reason. An exemption without a reason is a waiver nobody can review" >&2
+            exit 1
+        }
+        EXEMPT_REASON["${epath}|${etool}"]="${ereason}"
+        EXEMPT_HITS["${epath}|${etool}"]=0
+        EXEMPT_N=$((EXEMPT_N + 1))
+    done <"${EXEMPTIONS}"
+fi
+
+SCANNED=0
+EXAMINED=0
+DECLARED_FILES=0
+DECLARED_BLOCKS=0
+ELIDED=0
+
+for f in "${files[@]}"; do
+    [ -f "${f}" ] || continue
+    SCANNED=$((SCANNED + 1))
+
+    # One awk pass per file, emitting tab-separated records the shell reads
+    # back: `hit`, `stat`, or `err`. The state machine is here rather than in
+    # bash because heredoc and declaration state are per line and bash reading
+    # a file line by line is an order of magnitude slower over 80 files.
+    mapfile -t records < <(awk -v TOOLS="${TOOLS}" '
+        function emit(kind, a, b) { print kind "\t" NR "\t" a "\t" b }
+        BEGIN { hd=""; code=0; filedecl=0; block=0; examined=0; elided=0; blockline=0 }
+        {
+            line = $0
+
+            # --- heredoc bodies, skipped whole ---
+            if (hd != "") {
+                elided++
+                if (line ~ ("^[[:space:]]*" hd "[[:space:]]*$")) hd = ""
+                next
+            }
+            # COMMENTS FIRST, and the order is load-bearing. A comment that
+            # MENTIONS a heredoc -- `# ... <<EOF ...` -- would otherwise open
+            # one here and elide every line until something matched the
+            # terminator, which is a file that silently stops being scanned and
+            # still reports clean. A real heredoc body is already handled
+            # above, so nothing is lost by looking at `#` first.
+            if (line ~ /^[[:space:]]*#/) {
+                if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:/) {
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container[[:space:]]*--[[:space:]]*[^[:space:]]/) {
+                        if (code) { emit("err", "a whole-file container declaration must come before any code; this one is after line " code, ""); next }
+                        filedecl = 1; emit("stat", "filedecl", ""); next
+                    }
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container-block[[:space:]]*--[[:space:]]*[^[:space:]]/) {
+                        if (block) { emit("err", "a container block opened at line " blockline " is still open", ""); next }
+                        block = 1; blockline = NR; emit("stat", "blockdecl", ""); next
+                    }
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*host[[:space:]]*$/) {
+                        if (!block) { emit("err", "a `mos-build-side: host` closes a container block that was never opened", ""); next }
+                        block = 0; next
+                    }
+                    # A marker with no reason is a rubber stamp; refuse it by
+                    # name rather than ignoring it, which would read as "not a
+                    # marker" to the tool and as "declared" to its author.
+                    emit("err", "malformed `mos-build-side:` marker; the forms are `container -- <why>`, `container-block -- <why>` and `host`", "")
+                }
+                next
+            }
+
+            if (line !~ /<<</ && match(line, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
+                t = substr(line, RSTART, RLENGTH)
+                sub(/^<<-?[[:space:]]*/, "", t)
+                gsub(/["\047]/, "", t)
+                hd = t
+            }
+
+            if (line ~ /^[[:space:]]*$/) next
+            if (!code && line !~ /^#!/) code = NR
+
+            if (filedecl || block) { elided++; next }
+
+            # --- what is not a command position ---
+            # A `case` label: strip up to the first `)` when nothing before it
+            # opens a substitution, so `rauc | updates) ;;` is a pattern and
+            # `x509) text=$(openssl ...)` keeps its openssl.
+            if (match(line, /^[[:space:]]*[^()$]*\)/)) line = substr(line, RSTART + RLENGTH)
+            sub(/^[[:space:]]+/, "", line)
+            # An echo/printf ARGUMENT. Prose naming a tool is not a call to it.
+            if (line ~ /^(echo|printf)[[:space:]]/) next
+
+            examined++
+
+            # THE SECOND SHAPE. A script that REACHES for a host toolchain is
+            # invisible to the table above: `pkgs/mosd/hack/check.sh` runs
+            # `cargo`, which the table does catch, but it can only find one
+            # because line 8 puts $HOME/.cargo/bin in front of PATH -- and on
+            # this host `command -v cargo` answers nothing without it. A
+            # toolchain a script goes looking for under $HOME is still a host
+            # toolchain, and it is a worse one: nothing pins it and nothing
+            # records which it was.
+            #
+            # Narrow to $HOME and ~, so that the fixture PATHs the test suites
+            # build -- `env PATH="${FAKEBIN}:$PATH"` in
+            # tests/shadow-reconcile-test.sh, `env -i PATH="$BIN:/usr/bin:/bin"`
+            # in tests/health-test.sh -- are not findings. Those point at
+            # directories the test just made; these point at a toolchain
+            # installed beside the package manager rather than by it.
+            if (line ~ /(^|[[:space:]]|;)(export[[:space:]]+)?PATH=.*(\$HOME|\$\{HOME\}|~\/)/) {
+                emit("hit", "host-toolchain-on-PATH", $0)
+            }
+
+            if (match(line, "(^|[;&|(]|&&|\\|\\|)[[:space:]]*(" TOOLS ")([[:space:]]|$)")) {
+                m = substr(line, RSTART, RLENGTH)
+                sub(/^([;&|(]|&&|\|\|)?[[:space:]]*/, "", m)
+                sub(/[[:space:]]*$/, "", m)
+                emit("hit", m, $0)
+            }
+        }
+        END {
+            if (block) emit("err", "a container block opened at line " blockline " is never closed; every line after it was skipped", "")
+            emit("stat", "examined", examined)
+            emit("stat", "elided", elided)
+        }
+    ' "${f}")
+
+    hits=0
+    for rec in ${records[@]+"${records[@]}"}; do
+        IFS=$'\t' read -r kind lineno a b <<<"${rec}"
+        case "${kind}" in
+        err)
+            fail "${f}:${lineno}: ${a}"
+            hits=$((hits + 1))
+            ;;
+        stat)
+            case "${a}" in
+            filedecl) DECLARED_FILES=$((DECLARED_FILES + 1)) ;;
+            blockdecl) DECLARED_BLOCKS=$((DECLARED_BLOCKS + 1)) ;;
+            examined) EXAMINED=$((EXAMINED + b)) ;;
+            elided) ELIDED=$((ELIDED + b)) ;;
+            esac
+            ;;
+        hit)
+            key="${f}|${a}"
+            if [ -n "${EXEMPT_REASON[${key}]+set}" ]; then
+                EXEMPT_HITS["${key}"]=$(( ${EXEMPT_HITS[${key}]} + 1 ))
+                continue
+            fi
+            hits=$((hits + 1))
+            if [ "${a}" = 'host-toolchain-on-PATH' ]; then
+                fail "${f}:${lineno}: this prepends a directory under \$HOME to PATH, which is how a script reaches a toolchain the machine's package management never installed and nothing pins. See docs/design/build.md section 0. Register it in ${EXEMPTIONS} as '${f}<TAB>host-toolchain-on-PATH<TAB><why>' if it cannot move yet."
+                continue
+            fi
+            fail "${f}:${lineno}: \`${a}\` runs on the host. Producers run in a container pinned in build-env/images.env; see docs/design/build.md section 0. If this line runs INSIDE an image, say so with \`# mos-build-side: container-block -- <why>\`; if it cannot move yet, register it in ${EXEMPTIONS} with the reason."
+            ;;
+        esac
+    done
+    [ "${hits}" -eq 0 ] && pass "${f}"
+done
+
+# --- the controls, so this cannot report clean over nothing -----------------
+
+[ "${EXAMINED}" -gt 0 ] || {
+    echo "error: ${SCANNED} file(s) were opened and not one command line was examined. The elisions above swallowed the whole tree, which is a broken scan and not a clean one" >&2
+    exit 1
+}
+
+# THE POSITIVE CONTROL. This tree assembles images and compiles Rust, so its
+# build surfaces necessarily invoke producers; the only question the policy
+# asks is on which side. A run that found no container-side declaration at all
+# has therefore not found the build -- it has found a pattern that no longer
+# matches, or a marker grammar that changed under it, and it would report the
+# same green as a tree that genuinely ran everything in containers.
+DECLARED=$((DECLARED_FILES + DECLARED_BLOCKS))
+[ "${DECLARED}" -gt 0 ] || {
+    echo "error: no container-side declaration was found in ${SCANNED} file(s). This repository builds images; a scan that sees no producer running in a container is measuring nothing" >&2
+    exit 1
+}
+
+# AN EXEMPTION THAT MATCHES NOTHING. Either the path moved and the rule was left
+# behind, or the path was fixed and the waiver outlived it. Both read as green
+# and neither is.
+EXEMPTED=0
+if [ "${EXEMPT_N}" -gt 0 ]; then
+    for key in "${!EXEMPT_HITS[@]}"; do
+        if [ "${EXEMPT_HITS[${key}]}" -eq 0 ]; then
+            fail "${EXEMPTIONS}: '${key/|/ }' matches nothing. Either the file moved and this rule was left behind, or the invocation is gone and the waiver outlived it; delete it or point it at what it means."
+        fi
+        EXEMPTED=$((EXEMPTED + EXEMPT_HITS[${key}]))
+    done
+fi
+
+# The numbers are the point, and they are separate numbers on purpose: a file
+# count alone cannot tell a clean tree from a scan whose pattern stopped
+# matching, and a finding count alone cannot tell "nothing wrong" from "nothing
+# looked at". Both, plus what was elided and what was declared.
+echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/${SCANNED} files clean, ${FAIL_N} finding(s), ${EXAMINED} command lines examined, ${ELIDED} elided, ${DECLARED_FILES} file + ${DECLARED_BLOCKS} block container declarations, ${EXEMPTED} exempted invocation(s) under ${EXEMPT_N} rule(s))"
+[ "${FAIL_N}" -eq 0 ]

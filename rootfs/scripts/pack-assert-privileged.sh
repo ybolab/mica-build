@@ -2,6 +2,8 @@
 # Diff the packed setuid/setgid inventory against the source tree it was made from.
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
+#
+# mos-build-side: container -- run by 90-pack.Dockerfile's pack stage, never on a host.
 
 set -eu
 unsquashfs -lln /out/rootfs.squashfs \
