@@ -86,6 +86,22 @@ SSH_LINK=/etc/systemd/system/multi-user.target.wants/ssh.service
     { echo "error: ${SSH_LINK} exists, so sshd would start at boot. mos-system ships /usr/lib/systemd/system-preset/50-mos-ssh.preset to stop openssh-server's postinst writing it, which only works if that postinst runs after this package's payload is unpacked -- configure openssh-server in the same apt transaction as mos-system" >&2; exit 1; }
 echo "ssh.service left DISABLED in the image (both profiles; mosd owns the lifecycle)"
 
+# The same assertion for nftables.service, and it guards a different mechanism.
+# Nothing in Debian's nftables packaging enables the unit, so this is not about
+# another package's postinst -- it is about the preset FALLBACK. No preset
+# matched nftables.service before 50-mos-nftables.preset, and an unmatched unit
+# presets to ENABLE: measured in a clean trixie root, `systemctl preset
+# nftables.service` with the stock set writes sysinit.target.wants. The unit's
+# ExecStart is `nft -f /etc/nftables.conf` and that config opens with `flush
+# ruleset`, so an enabled unit clears netavark's rules at every boot. Asserting
+# the outcome here does not arrange it -- the preset does -- but it turns the
+# link's arrival into a failed composition instead of a device that loses its
+# container network on the second boot.
+NFT_LINK=/etc/systemd/system/sysinit.target.wants/nftables.service
+[ ! -e "${NFT_LINK}" ] ||
+    { echo "error: ${NFT_LINK} exists, so nftables.service would run at boot and its ExecStart 'nft -f /etc/nftables.conf' begins with 'flush ruleset' -- it would clear the container network's rules on every boot. mos-system ships /usr/lib/systemd/system-preset/50-mos-nftables.preset to keep the unit disabled; something enabled it anyway" >&2; exit 1; }
+echo "nftables.service left DISABLED in the image (the tool ships; no ruleset is loaded at boot)"
+
 NAME=mos
 ID=1000
 HOME_DIR=/home/mos
