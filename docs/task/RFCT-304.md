@@ -1,6 +1,6 @@
 # RFCT-304 Resolve the x64/cx3576 legacy netfilter asymmetry, by measurement
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P2
 - **owner**: netfilter-legacy-asymmetry/bkd-nksjhmcu
 - **createdAt**: 2026-09-04 13:50
@@ -191,3 +191,60 @@ same board for every rule. `-m limit` and `-m iprange` are refused on both.
 - **cx3576 kernel reproducibility**, above.
 - **`docs/plan/index.md`, `docs/task/index.md`, `docs/CHANGELOG.md`** — L1 owns
   them.
+
+## Gate results
+
+Everything below ran at `06303fb6`, the merge with `main`, from artefacts
+rebuilt out of this tree: both pools, both roots, both images. Neither board is
+verified against a copied image — the cx3576 run's `factory: BOOT-A/BOOT-B
+Image matches the local BSP artifact` compares against the `Image` this
+worktree built, and x64's kernel checks read the `/boot/config-*` the image
+carries.
+
+| gate | result |
+|---|---|
+| `verify/run.sh --verify --board x64` | PASS 313/313, 0 FAIL, 22 skipped (x64/grub) |
+| `verify/run.sh --verify --board cx3576` | PASS 416/416, 0 FAIL, 3 skipped (cx3576/uboot) |
+| `tests/netavark-kernel-config-test.sh` | PASS 87/87 |
+| `cd verify && bun test` | 1264 pass, 0 fail |
+| `cd build && bun test` | 869 pass, 0 fail |
+| `make docs-verify` | 5/5 sections, 1637 checks, 0 FAIL |
+| x64 compose | 296 MB of 520 MB |
+| x64 kernel gate | all 54 mos-required options set |
+| cx3576 kernel gate | all 54 mos-required options set |
+
+The x64 image checks name the new symbols directly, which is what makes them
+more than a config diff:
+
+```
+PASS: the shipped kernel config builds in ... NETFILTER_XT_MARK, NETFILTER_XT_NAT,
+      NETFILTER_XT_MATCH_ADDRTYPE, NETFILTER_XT_MATCH_CONNTRACK,
+      NETFILTER_XT_TARGET_CHECKSUM, NETFILTER_XT_TARGET_CT,
+      NETFILTER_XT_TARGET_MASQUERADE, NETFILTER_XT_TARGET_REDIRECT ...
+PASS: modprobe resolves ... xt_mark, xt_nat, xt_addrtype, xt_conntrack,
+      xt_CHECKSUM, xt_CT, xt_MASQUERADE, xt_REDIRECT as built in ...
+      Every object named by the 4 modules.dep entry/entries this root ships is present
+```
+
+That last clause is the one to keep an eye on. Moving four symbols from `=m`
+to `=y` shrank this root's loadable-module set from 8 to 4, and the dependency
+walk's subjects with it. It is still populated, and `verify/src/checks-kernel.ts`
+now states the count so the next reduction has to notice that an empty walk
+would pass silently.
+
+## Result
+
+- complete: the shipped `iptables` now answers the same on both boards, and
+  the two halves of PLAN-074 §7h's eleven were separated by measurement rather
+  than by taste.
+
+  The `xt_*` half is floor because `nft_compat` refuses a rule whose module is
+  absent — measured on the x64 kernel itself, with the error it prints. The
+  legacy `IP_NF_*` half is not floor because `iptables-nft` never reaches it —
+  measured on the same kernel, `-t raw` succeeding natively with
+  `IP_NF_RAW` unset while `iptables-legacy -t raw` refuses.
+
+  The hypothesis under test was right, and the first instrument was wrong:
+  `nft list ruleset` renders an xt expression through libxtables' xlate
+  callback, so ten of eighteen compat rules read as native until the same run
+  was repeated against `nft --json`. Two probes disagreeing is what caught it.
