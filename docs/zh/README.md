@@ -67,7 +67,7 @@
 |---|---|---|
 | `../user/api.md` | db66fc02 | current |
 | `../user/applications.md` | 965de492 | current |
-| `../user/configuration.md` | 00a5147d | current |
+| `../user/configuration.md` | 5dfa80f9 | current |
 | `../user/doc-contract.md` | 00a5147d | current |
 | `../user/download.md` | 00a5147d | current |
 | `../user/first-run.md` | 00a5147d | current |

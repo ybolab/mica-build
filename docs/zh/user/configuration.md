@@ -82,8 +82,9 @@ WiFi 的有无取决于板卡：cx3576 带 WiFi 和蓝牙；x64 QEMU 基线没�
 `systemd-timesyncd` 已安装并静态启用，因此始终在跑：**没有任何启用、停用或
 暂停控制**——设置树里没有，API 里没有，UI 里也没有。设置只有两个，且只有两个：
 `time.ntp.servers`（一个经过校验的列表；留空表示使用镜像内置的备用池）和
-`time.timezone`。`GET /api/v1/time/status` 报告时钟是否已被驯服、哪台服务器
-应答，以及最近一次校正是阶跃还是缓变。
+`time.timezone`。`GET /api/v1/time/status` 报告内核是否已把时钟误差限定在界内
+（`synchronized`），还是仅仅有服务器在应答（`polling`）；报告那是哪台服务器，
+以及最近一次校正是阶跃还是缓变。
 
 **机器的时间永远是 UTC，时区只用于呈现。**`time.timezone` 从不被写入
 `/etc/localtime`——镜像不烘焙任何时区，构建也会拒绝一个——因为那个符号链接会

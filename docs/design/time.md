@@ -110,11 +110,31 @@ classification over live evidence from `org.freedesktop.timesync1`
 
 | status | meaning |
 | --- | --- |
-| `synchronized` | the kernel reports a disciplined clock |
-| `synchronizing` | a server is selected; the clock is not disciplined yet |
+| `synchronized` | timedate1 reports a bounded clock error (see below) |
+| `polling` | a server is selected and packets are being exchanged, and that bound is not reported |
 | `offline-degraded` | no usable server; the floor holds and retries continue on the pinned 30 s policy |
 | `invalid-source` | a server answered and its replies are unusable (leap 3, stratum 0 or ≥ 16) |
 | `unknown` | timesyncd itself is not observable on the bus |
+
+**What `synchronized` asserts, exactly.** It is timedate1's
+`NTPSynchronized` and nothing else, and that property is *not* "an NTP reply
+arrived": timedated computes it as `adjtimex().maxerror < 16 s`, the kernel's
+own bound on how wrong the clock may be. The response carries that bit as
+`synchronized` beside the state, so a reader never has to infer which signal
+was used.
+
+**Why the other state is `polling` and not `synchronizing`** (RFCT-299). The
+two claims above are legitimately different, and a device can hold a usable
+sample while failing the second one for as long as the cause lasts: timesyncd
+writes `maxerror` back down only through the `clock_adjtime` call it makes for
+a sample it *accepts*, so a reply rejected as a spike leaves the bound growing
+at the kernel's tolerance while replies keep arriving. `synchronizing` reads
+as "in progress, nearly there" and would therefore publish a prediction the
+device cannot make. `polling` names what is observed — a server is selected
+and answering — and promises nothing about where it is heading. An operator
+reading `polling` with a healthy `sample` is being told the truth: the clock
+is *not* known to be within the kernel's bound, and the evidence for both
+halves is in the same response.
 
 Nothing in the status path can stop retries — it observes, it never acts.
 The classification (`time_status::classify`) is a pure function with

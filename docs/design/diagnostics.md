@@ -127,12 +127,22 @@ carrier reads as exactly that.
 
 | Member | Content |
 |---|---|
-| `interfaces` | `count` and `entries[]`: per interface `name`, `index`, `kind`, `type`, `driver`, `mtu`; `link` (`administrativeState`, `operationalState`, `carrierState`, `carrier`, `onlineState`, `addressState`); `hardwareAddress`; `addresses[]` (`family`, `address`, `prefixLength`, `scope`, `configSource`); `dhcp`; `dns[]`; `wifi` on wireless interfaces |
+| `interfaces` | `count` and `entries[]`: per interface `name`, `index`, `kind`, `type`, `driver`, `mtu`; `link` (`administrativeState`, `operationalState`, `carrierState`, `carrier`, `onlineState`, `addressState`); `hardwareAddress`; `addresses[]` (`family`, `address`, `prefixLength`, `scope` + `scopeId`, `configSource`); `dhcp`; `dns[]`; `wifi` on wireless interfaces |
 | `interfaces[].dhcp` | networkd's DHCPv4 client `state` and its `lease` (`address`, `prefixLength`, `server`, `router`, `lifetimeSeconds`); when networkd reports no client object but an address whose `configSource` is `DHCPv4`, the lease is inferred from it and says `inferred: true`; otherwise absent with the reason |
-| `defaultRoutes` | `count` and `entries[]` of `family`, `gateway`, `interface`, `interfaceIndex`, `metric`, `protocol`, `table`, `configSource`; a count of zero is evidence ("no default route"), not absence |
+| `defaultRoutes` | `count` and `entries[]` of `family`, `gateway`, `interface`, `interfaceIndex`, `metric`, `protocol` + `protocolId`, `table` + `tableId`, `configSource`; a count of zero is evidence ("no default route"), not absence |
 | `dns` | `linkServers[]` (what networkd holds per link), `resolverServers[]` (what resolved holds), and `probe`: `name`, `reachable`, `result` (`resolved`, `failed`, `timeout`), `detail` |
 | `wifi` | `associations[]`: per wireless interface `state`, `associated`, `ssid`, `bssid`, `frequencyMhz`, `keyManagement`, `rssiDbm`, `linkSpeedMbps`; or absent with the reason (no wireless interface; wpa_supplicant's control directory absent; a socket nobody answered) |
 | `capabilities` | `wifi` (`supported`, `interfaces[]`), `bluetooth` (`supported`, `adapters[]`, adapter presence only), `cellular` (`supported: false`, `interfaces[]`) |
+
+Every rtnetlink enum on this surface is reported as a **name plus the id it
+was resolved from** (`protocol`/`protocolId`, `table`/`tableId`,
+`scope`/`scopeId`), and an id nothing names reads `unknown` rather than the
+number again. networkd's own `ProtocolString` cannot be used for the name: its
+JSON writer resolves the id against a three-entry table and then formats the
+decimal id, so an ordinary DHCP route describes itself as `"16"`. Neither
+mapping is total — protocol ids are assigned to routing daemons at runtime and
+route tables are named by configuration — so the pair is what lets a reader
+tell "this id has no name" from "this field is broken" (RFCT-298).
 
 Addresses are read from networkd's `Describe` and formatted by family;
 `hardwareAddress` is the interface's own. Wi-Fi association is read over
@@ -461,7 +471,7 @@ after the observed branch identifies the missing fact.
   - **Evidence:** `time.status` is `invalid-source`.
     - **Remediation:** verify the configured NTP sources and upstream server;
       replace a source that answers with unusable samples.
-  - **Evidence:** `time.status` is `synchronizing` and
+  - **Evidence:** `time.status` is `polling` and
     `time.sample.correction` is `step`.
     - **Remediation:** allow the initial large correction to complete, then
       recollect and require `synchronized`. Correlate events with
