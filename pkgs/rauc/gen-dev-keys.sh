@@ -39,6 +39,14 @@
 # is a value it does not know how to MINT, which is a different claim and a
 # smaller one.
 #
+# SO IS THE SIGNER'S VALIDITY WINDOW. pkgs/rauc/key-validity.env declares it in
+# days with its reason, and the mint below reads it rather than carrying a
+# literal -- the same file docs/design/release-signing.md §2.1's ceremony block
+# is held to, so the number cannot be shortened in one place and left long in
+# the other. The signer this script mints is therefore SHORT-LIVED, and a tree
+# whose meta/ has aged past the window is re-minted with --force; the bundle
+# build refuses before that point and names the date it read (PLAN-078 §S3).
+#
 # Nothing this script writes may ever be committed: meta/ is in .gitignore and
 # every private file lands 0600. A committed signing key would make every device
 # in the fleet trust anything anyone builds.
@@ -76,6 +84,7 @@ MANIFEST="${UPDATES_DIR}/manifest.json"
 MANIFEST_EXAMPLE="${REPO_ROOT}/meta.example/updates/manifest.json"
 MARKER="${METADIR}/GENERATED"
 ALG_ENV="${SCRIPT_DIR}/key-algorithms.env"
+VALIDITY_ENV="${SCRIPT_DIR}/key-validity.env"
 
 FORCE=0
 MODE=manual
@@ -119,6 +128,28 @@ for role in MOS_KEY_ALG_RAUC_CA MOS_KEY_ALG_RAUC_SIGNER MOS_KEY_ALG_PACKAGE; do
         exit 1
     }
 done
+
+# The declared signer window, sourced the same way and demanded by name for the
+# same reason. A missing row is not a default: a signer minted with whatever
+# ${MOS_RAUC_SIGNER_VALIDITY_DAYS} happened to be in the environment is a
+# window nobody chose, and an EMPTY one makes openssl's `-days` swallow the
+# next argument.
+[ -f "${VALIDITY_ENV}" ] || {
+    echo "error: ${VALIDITY_ENV} does not exist. It is where the signer's validity window is declared, with the reason for the number beside it; without it this script would fall back to a literal, which is what that file exists to remove" >&2
+    exit 1
+}
+# shellcheck source=/dev/null
+. "${VALIDITY_ENV}"
+case "${MOS_RAUC_SIGNER_VALIDITY_DAYS:-}" in
+    "" | *[!0-9]*)
+        echo "error: ${VALIDITY_ENV} declares MOS_RAUC_SIGNER_VALIDITY_DAYS='${MOS_RAUC_SIGNER_VALIDITY_DAYS:-}', which is not a whole number of days. openssl would read a non-number as the start of the next option and mint a certificate with a validity nobody chose" >&2
+        exit 1
+        ;;
+esac
+[ "${MOS_RAUC_SIGNER_VALIDITY_DAYS}" -gt 0 ] || {
+    echo "error: ${VALIDITY_ENV} declares MOS_RAUC_SIGNER_VALIDITY_DAYS=${MOS_RAUC_SIGNER_VALIDITY_DAYS}. A zero-day signer is expired the moment it is minted and no bundle signed with it verifies anywhere" >&2
+    exit 1
+}
 
 # A tool-neutral algorithm name mapped to openssl's `req` spelling.
 #
@@ -276,9 +307,17 @@ gen_rauc() {
     # ("unsuitable certificate purpose"). Constraining it further needs
     # `[keyring] check-purpose=` in system.conf, which is a production-PKI
     # decision, not a development-key one.
+    #
+    # SHORT-LIVED, from pkgs/rauc/key-validity.env and not from a literal here.
+    # The window is the whole of PLAN-078's answer to a stolen signer: there is
+    # no CRL path to devices, so a compromised signer is out-waited, and how
+    # long that takes is this number. The reason for its value lives beside it
+    # in that file, deliberately not restated here -- a reason in two places is
+    # a reason that goes stale in one of them, which is the defect the
+    # algorithm rows above already had once.
     openssl x509 -req -in "${RAUC_DIR}/signer.csr" \
         -CA "${CA_CERT}" -CAkey "${CA_KEY}" -CAcreateserial \
-        -out "${SIGNER_CERT}" -days 3650 -sha256 \
+        -out "${SIGNER_CERT}" -days "${MOS_RAUC_SIGNER_VALIDITY_DAYS}" -sha256 \
         -extfile <(printf '%s\n' \
             "basicConstraints=critical,CA:FALSE" \
             "keyUsage=critical,digitalSignature") 2>/dev/null
@@ -368,7 +407,8 @@ case "${DOMAIN}" in
         echo "                        it into the image at /etc/rauc/keyring.pem"
         echo "  rauc/ca.key.pem       CA private key             (${MOS_KEY_ALG_RAUC_CA})"
         echo "  rauc/signer.cert.pem  bundle signing certificate (rauc bundle --cert)"
-        echo "  rauc/signer.key.pem   bundle signing key         (${MOS_KEY_ALG_RAUC_SIGNER})"
+        echo "  rauc/signer.key.pem   bundle signing key         (${MOS_KEY_ALG_RAUC_SIGNER},"
+        echo "                        valid ${MOS_RAUC_SIGNER_VALIDITY_DAYS} days; re-run with --force to reissue)"
         ;;
     updates)
         echo "  updates/root.key      package signing key        (${MOS_KEY_ALG_PACKAGE})"
