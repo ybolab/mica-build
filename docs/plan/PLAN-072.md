@@ -83,29 +83,55 @@ absent case of PLAN-070 §7, unchanged.
 
 - (a) **Build only.** Simplest, and it means a device shipped without fleet
   can never join one without a new image.
-- (b) **The build bakes the URL; an authenticated administrator may turn the
-  switch on and off.** The administrator consents to enrolment but
-  cannot redirect the device to a different plane.
+- (b) **The build bakes a default URL; an authenticated administrator may turn
+  the switch on and off** — **and, since §8 (2026-09-04), may also re-point the
+  device at a different plane.** The clause that used to close this bullet said
+  *the administrator consents to enrolment but cannot redirect the device to a
+  different plane*; §8 reverses it and prices what the reversal costs.
 
 **Where the administrator's flip is recorded, under the later decision.** Shape
 (b) needs a durable per-device switch, and PLAN-070 §5.2 now makes
 `/mos/config/` the home of system configuration, so it goes in a
 `/mos/config/fleet.json` of its own rather than into `updates.json` — one
 document per reconciler is the namespace's rule, and enrolment is not the update
-policy. **The URL is not in it.** The baked value stays the only statement of
-where this device may dial, which is what §5's compromise analysis turns on, and
-a document that carries only a boolean cannot redirect anything. The namespace's
-`0700` mode is inherited and not needed: a switch is not a secret, and the
-enrolment credential it leads to stays on STATE where the per-device secrets
-already are.
+policy. The namespace's `0700` mode is inherited and not needed: a switch is not
+a secret, and the enrolment credential it leads to stays on STATE where the
+per-device secrets already are.
 
-**Recommended: (b).** The risk that matters here is *redirection* — a device
-talking to somebody else's plane — not *consent*. Baking the URL removes
-redirection entirely: it is inside the read-only verity root and nothing on the
-device can rewrite it. Leaving the switch to the administrator means a customer
+**The URL is now in it — amended 2026-09-04, and this is the substantive half of
+§8.** This paragraph read *"**The URL is not in it.** The baked value stays the
+only statement of where this device may dial, which is what §5's compromise
+analysis turns on, and a document that carries only a boolean cannot redirect
+anything."* `fleet.json` now carries `url` beside `enabled`, as an override of
+the baked default per PLAN-070 §5.1, and the claim about §5 is re-derived rather
+than assumed: §8.1 shows which part of the compromise analysis actually turned
+on the baked URL (a smaller part than the sentence implies) and what has to be
+built for the rest to keep holding.
+
+**One rule arrives with the key, and it is not optional.** The enrolment
+credential is bound to the plane that issued it. **A change to `url` is treated
+as off-then-on**: the unit stops, the credential is deleted from STATE, the
+deregistration call is attempted against the *old* address on this section's
+locally-authoritative terms, and the device re-registers at the new address as
+an unknown device. Carrying the credential across would hand one plane's
+credential to another, which is the one way a redirect could take something the
+redirector did not already have.
+
+**Recommended: (b).** Leaving the switch to the administrator means a customer
 who buys fleet management after the fact does not need a reflash to get it, and
-means the customer performs the act that starts the outbound connection. A device that dials out because of a decision its owner
-never made is the shape this product should not have.
+means the customer performs the act that starts the outbound connection. A device
+that dials out because of a decision its owner never made is the shape this
+product should not have.
+
+**This paragraph used to continue, and the continuation is reversed by §8**:
+*"The risk that matters here is redirection — a device talking to somebody
+else's plane — not consent. Baking the URL removes redirection entirely: it is
+inside the read-only verity root and nothing on the device can rewrite it."*
+That is true as mechanics and it is why §8 has to price redirection rather than
+wave at it: the user requires the URL to be changeable, so redirection stops
+being removed and starts being **bounded, visible and non-transferable**. §8 is
+the three requirements that make it so, and the sentence about consent stands
+untouched — the administrator still performs the act.
 
 **Does flipping it off deregister? Yes, and locally-authoritative.** The device
 stops the outbound connection immediately and deletes its enrolment credential
@@ -129,8 +155,9 @@ Serial number and MAC addresses are an **open question** (§7), because a fleet
 inventory genuinely wants a serial and sending one turns a device identifier
 into a hardware identifier the customer did not choose to publish.
 
-**Over what channel.** Device-initiated outbound HTTPS to the baked
-`fleet.url`. **No inbound port, ever** — that is the whole reason the channel
+**Over what channel.** Device-initiated outbound HTTPS to the **effective**
+`fleet.url` — the baked default unless an administrator overrode it (§2, §8).
+**No inbound port, ever** — that is the whole reason the channel
 is device-initiated, per `docs/design/remote-management.md` §2's *"an appliance
 whose owner has to forward a port has no support story, and one that forwards a
 port carries an attack surface its owner did not choose."*
@@ -224,11 +251,20 @@ installable payload, a configuration write, a shell, a reboot, or a rollback.
 
 The invariant that guarantees the second list, stated because collapsing it is
 the obvious cost saving: **the fleet plane never holds an update signing key
-and never serves a bundle.** The update source is the baked TUF URL and stays
-a separate hierarchy from the fleet URL *even when the same company runs both*.
+and never serves a bundle.** The update source stays a separate hierarchy from
+the fleet URL *even when the same company runs both*.
 `docs/design/remote-management.md` §4 already binds any future fleet credential
-to this; PLAN-070 keeps the two URLs separate fields, under separate keys, for
-the same reason.
+to this; PLAN-070 keeps the two URLs separate fields, under separate keys, in
+separate documents, for the same reason.
+
+**Amended 2026-09-04**: this read *"the update source is the baked TUF URL"*.
+Both URLs are now overridable defaults (PLAN-070 §5.3) and the invariant is
+untouched by that, because it was never about either value being fixed — it is
+about the two being **different fields with different roles**, and about the
+update path's authority resting on `trust.signingKeys`, which no operator
+document can name. Two overridable addresses under separate keys are as
+separate as two baked ones; one address serving both roles would be the
+collapse, and nothing here permits that.
 
 **Operator roles.** Device-side there is exactly one role today — an
 authenticated administrator on the LAN — and this plan adds none: **no
@@ -299,9 +335,15 @@ follow, so the backlog does not re-derive them.
 1. **Who runs the control plane — ANSWERED.** The **vendor by default**; an
    integrator may run their own. The server implementation is **open source**,
    which is what makes the integrator option real rather than nominal. The
-   device learns which plane it talks to from the baked `fleet.url` in `meta/`,
-   so "whose plane" is a build-time fact of that deployment's `meta/` and not a
-   runtime setting — consistent with §2's switch and with PLAN-070 §1.
+   device learns which plane it talks to from `fleet.url`. **Amended
+   2026-09-04**: that used to be *"the baked `fleet.url` in `meta/`, so 'whose
+   plane' is a build-time fact of that deployment's `meta/` and not a runtime
+   setting"*. Since §8 the baked value is the **default** and an authenticated
+   administrator may re-point the device, so "whose plane" is a build-time
+   default and a per-device fact. The answer itself is unaffected — vendor by
+   default, integrator optional, server open source — and it gets easier to
+   deliver: an integrator running their own plane no longer needs their own
+   image to point devices at it.
 
 4. **Offline tolerance — ANSWERED.** The plane **assists and never gates local
    execution**. The model the user named is **Victron VRM**: a portal a device
@@ -352,8 +394,10 @@ than this device-side record.
 who runs their own plane chooses residency by choosing where to run it; the
 vendor-default plane's residency is a vendor operational decision. Neither is a
 device-side design input. What survives is one device-side requirement: a device
-must be able to report **which plane it registered with**, which it can, from
-the baked `fleet.url`.
+must be able to report **which plane it registered with**, which it can — and
+after §8 that requirement is sharper rather than softer: the report must be the
+**effective** URL, not the baked one, or it answers about a plane the device is
+not talking to (PLAN-076 §6).
 
 ### 7b. Scope decision — 2026-09-03
 
@@ -387,6 +431,100 @@ the outbound-only channel with no inbound port (§3), the autonomy statement (§
 now a product promise per answer 4), and the enrolment shape (§7a answer 6,
 trust on first use with its two required mitigations).
 
+### 8. The fleet URL becomes overridable — amendment, 2026-09-04
+
+The user requires that the fleet control-plane URL be changeable. PLAN-070 §5.3
+is the decision and the layering; this section re-derives what it does to §5's
+compromise analysis, because §2 and Alternative 4 both asserted that the analysis
+turned on the URL being baked, and an amendment that does not check that
+assertion is an overwrite.
+
+#### 8.1 Which part of §5 actually turned on the baked URL
+
+Taken heading by heading, against a device an attacker has re-pointed at a plane
+they control:
+
+- **Tenant isolation** — made at claim time **on the plane**, and the device
+  sends nothing that names a tenant. A redirected device does not cross tenants;
+  it enrols somewhere else entirely. Untouched.
+- **Replay** — a monotonic counter the plane checks. Plane-side. Untouched.
+- **Stolen-device credentials** — already conceded in full: physical possession
+  is total control and no device-side measure changes it. A redirect needs a
+  write to `/mos/config/fleet.json`, which is strictly less than possession.
+  Untouched.
+- **A compromised control plane** — this is the one that matters, and reading it
+  back is what settles the amendment. Its *what it gets* list is the inventory,
+  the ability to lie in the channel hint, and the ability to deny service to
+  itself. Its *what it does not get* list — an installable payload, a
+  configuration write, a shell, a reboot, a rollback — **is enforced on the
+  device**, by §4's boundary, by C5's hint-is-not-a-write rule, by PLAN-076 §9's
+  exclusions and its adversarial-response test, and by the update path's
+  authority resting on `trust.signingKeys`. **None of those enforcements consult
+  the recipient's address.** A hostile plane reached by redirect therefore gets
+  exactly the compromised-plane list and nothing beyond it.
+- **Operator roles** — no fleet-derived role grants anything on the device.
+  Untouched, and it is the same sentence that makes the previous point hold.
+
+**So what did the baked URL actually buy?** One thing, precisely: it removed
+*whoever can write the DATA pool* from the set of parties who may choose the
+recipient. It never bounded **what** the recipient receives — that is §1's
+allowlist and PLAN-076 §4's containment invariant, both constants in the verity
+root, neither a property of who is listening. Alternative 4's claim that the
+baked URL "is the property that makes §5's compromise analysis hold" over-reads
+its own analysis: the analysis holds on the device's refusals and on the bounded
+payload, and the baked URL narrowed the set of attackers rather than the damage.
+
+#### 8.2 The price, stated honestly, because it is a real capability
+
+**This is not the update case and must not be argued as one.** PLAN-070 §5.3.2
+concludes that a writable update URL adds no capability, because the same writer
+could already set `policy = "off"` and because the signature check is
+unchangeable. **There is no analogous check here.** The fleet channel carries no
+installable artifact, so nothing stands behind the recipient the way
+`trust.signingKeys` stands behind the package: whoever writes the document
+chooses who receives, and the device will dial and talk.
+
+**The honest measure of what is new, though, is narrower than "the device now
+leaks".** The switch was already in the writable document before this amendment,
+so the same writer could already turn a silent device into a reporting one. What
+the amendment adds is not *whether* it reports but *to whom* — vendor plane
+versus attacker plane. That is a real and material increase, and it is the whole
+of the increase.
+
+**What leaks is bounded by PLAN-076's rule**: identity (`deviceId`, board,
+profile, version, the product labels) plus coarse state — link state with no
+interface names and no addresses, storage, aggregated thermal, service health,
+update lifecycle, enumerated failure codes. No network values, no secrets, no
+free text, nothing under `/srv`. The bound holds against any recipient because
+the allowlist is in the image; a redirect changes the destination and not the
+contents.
+
+**Three requirements make it detectable and containable, and this record does
+not accept the amendment without them:**
+
+1. **A URL change discards the enrolment credential** (§2). Without it a
+   redirect hands the previous plane's credential to the new one, which is the
+   only way this change could transfer something rather than merely re-address
+   it. C1.
+2. **`GET /api/v1/fleet/status` reports the *effective* URL**, with the baked
+   default beside it. PLAN-076 §6 says "from the baked manifest", which after
+   this amendment would report the plane the device is **not** talking to. C6
+   and PLAN-076 B9.
+3. **The off-state negative test resolves the *configured* host**, not the baked
+   one (PLAN-076 §6a). A test that watches a hostname the device was never going
+   to use passes while the device dials elsewhere — a check that cannot fail on
+   the defect it exists for. PLAN-076 B8.
+
+#### 8.3 What this amendment does not do
+
+It does not touch §1's control-channel boundary, §3's identity payload or the
+claim-code analysis, §4, §5's threat model beyond the re-derivation above, §6's
+autonomy statement, §7a's answers, or §7b's A/B/C split. It does not make the
+plane authoritative for anything. It does not put the *update* signing keys, the
+RAUC keyring or any anchor within reach of a write — PLAN-070 §5.3.5 makes
+naming one in a `/mos/config/` document a load error, which is the property this
+whole amendment rests on and the one that must never be traded for symmetry.
+
 ## Risks
 
 - **The first outbound connection this product has ever made.** Every claim in
@@ -399,6 +537,12 @@ trust on first use with its two required mitigations).
   human-carried claim code) is the one that adds friction — which is exactly
   the pressure that later produces a request for (c), trust on first use, whose
   cost is a label-readable identifier.
+- **A redirected plane is a real exfiltration path (§8.2).** Whoever can write
+  `/mos/config/fleet.json` chooses who receives the reports. The contents stay
+  bounded by an allowlist in the image, so the damage does not scale with the
+  attacker's choice of recipient — but the recipient itself is now theirs, and
+  the risk is that §8.2's three requirements are read as polish and deferred
+  behind C2 and C3. They are the amendment's price, not its finish.
 - **Increment pressure toward a control channel.** §4 exists because of it. The
   risk is not that someone argues for a control channel; it is that one arrives
   as three small additions to a registration endpoint.
@@ -426,12 +570,12 @@ device-side role derived from a fleet identity.
 
 | # | Slice | Size | Gate |
 |---|---|---|---|
-| C1 | The `fleet` switch read from the baked manifest, the administrator toggle of §2b, and the off-is-off deregistration | S | depends on PLAN-070 F5 |
+| C1 | The `fleet` switch and URL read from the baked manifest as **defaults**, `/mos/config/fleet.json` overriding both, the administrator toggle of §2b, the off-is-off deregistration, and **a URL change treated as off-then-on: credential deleted from STATE before the first dial at the new address** (§2, §8.2) | M | depends on PLAN-070 F5; a device whose URL is changed holds no credential issued by the previous plane, asserted on the store rather than on the client; the document has no key that names a trust anchor |
 | C2 | Registration client: outbound HTTPS, the identity payload, the claim-code display, the enrolment credential on STATE | M | payload asserted to contain nothing from the excluded list |
 | C3 | Inventory report with the monotonic counter, backoff and the `fleet` live-state entry | M | replay rejected on a non-advancing counter |
 | C4 | The autonomy assertion: a test that drives every local capability with the plane unreachable | S | §6 is a test, not a sentence |
-| C5 | The channel hint as a hint — never a policy write | S | a hint cannot change `/mos/config/updates.json` |
-| C6 | Console: the switch, the claim code, the fleet state and its last error | M | — |
+| C5 | The channel hint as a hint — never a policy write | S | a hint cannot change `/mos/config/updates.json`, **and specifically cannot change `source.url`**: after PLAN-070 §5.3 that document names the update server, so a plane able to write it would redirect the update path from the fleet path, which is the separation §5 exists to keep |
+| C6 | Console: the switch, the claim code, the fleet state and its last error, and **which plane the device is dialling — effective, with the baked default beside it** (§8.2) | M | a re-pointed device shows the address it is using and that it is not the baked one |
 | C7 | Design docs: `remote-management.md` §2 and §4, `security-model.md` §7, a new fleet section | M | `make docs-verify` |
 
 **Plane side** — **not this repository, not this backlog, and not estimated
@@ -447,7 +591,16 @@ device slices.
 **This plan ends at an approved device-side architecture for outbound-only
 registration.** Approval means agreeing that:
 
-- the switch is off by default and lives in the baked manifest;
+- the switch is off by default, and the manifest carries the **defaults** for
+  both the switch and the plane URL;
+- **amended 2026-09-04 (§8)** — an authenticated administrator may re-point the
+  device at a different plane through `/mos/config/fleet.json`, which reverses
+  the clause *"the administrator consents to enrolment but cannot redirect the
+  device to a different plane"*. Accepted **with** its three requirements: a URL
+  change discards the enrolment credential, the status surface reports the
+  effective URL, and the off-state test resolves the configured host. Without
+  those three the amendment is not approved, because they are what keep the leak
+  bounded, visible and non-transferable;
 - registration is outbound-only, grants no inbound command surface, and is not
   a step toward one;
 - the plane never holds an update signing key and never serves a bundle;
@@ -505,17 +658,43 @@ single decision.
    original reason, unchanged: it assumes routability and broadens device
    exposure.
 4. **Put the fleet URL in a writable store instead of the baked manifest.**
-   Rejected: it makes "where may this device dial" an installation-time setting
-   rather than a product fact, and it puts the URL somewhere a write could
-   redirect. **The rejected home used to be called "the settings tree" and that
-   name no longer picks out the right thing** — PLAN-070 §5.2 moves the settings
-   store's configuration content into `/mos/config/`, which is equally writable,
-   so the objection is to *writability*, not to a particular file. It applies
-   unchanged to a `/mos/config/fleet.json`, which is why §2 puts the switch there
-   and keeps the URL baked. The baked URL — unwritable, inside the verity root — is the
-   property that makes §5's compromise analysis hold, and it holds more
-   strongly than the previous draft's device record did, because there is now
-   no on-device write path to the value at all.
+   **Rejected twice, then TAKEN — 2026-09-04 (§8), on the user's requirement
+   that the plane URL be changeable.** The rejection is kept in full below
+   because the amendment turns on where it was right and where it over-read
+   itself, not on it having been careless:
+
+   > Rejected: it makes "where may this device dial" an installation-time
+   > setting rather than a product fact, and it puts the URL somewhere a write
+   > could redirect. **The rejected home used to be called "the settings tree"
+   > and that name no longer picks out the right thing** — PLAN-070 §5.2 moves
+   > the settings store's configuration content into `/mos/config/`, which is
+   > equally writable, so the objection is to *writability*, not to a particular
+   > file. It applies unchanged to a `/mos/config/fleet.json`, which is why §2
+   > puts the switch there and keeps the URL baked. The baked URL — unwritable,
+   > inside the verity root — is the property that makes §5's compromise
+   > analysis hold, and it holds more strongly than the previous draft's device
+   > record did, because there is now no on-device write path to the value at
+   > all.
+
+   **What was right**: the objection is to writability and not to a filename,
+   and a write can redirect. Both survive; §8.2 prices the redirect instead of
+   denying it, and calls it what it is — a real exfiltration path the baked URL
+   did not have.
+
+   **What it over-read**: *"the property that makes §5's compromise analysis
+   hold"*. §8.1 walks §5 heading by heading and finds the analysis holding on
+   the device's refusals — no payload, no configuration write, no shell, no
+   reboot, no rollback, all enforced device-side and none of them consulting the
+   recipient's address — and on a payload bounded by an allowlist in the image.
+   The baked URL narrowed the set of parties who could choose the recipient. It
+   never bounded what the recipient gets. Those are different properties and the
+   sentence merged them.
+
+   **What made the trade worth taking anyway**: PLAN-070 §5.2.1's boundary
+   (`/mos/config/` holds what an integrator sets) puts *which plane this
+   deployment dials* on the operator side by the plan's own test, and a
+   per-customer plane stops meaning a per-customer image (PLAN-054). The cost is
+   §8.2's three requirements, which are not optional and are in the backlog.
 5. **Serve update bundles from the fleet plane.** Rejected, and named because
    it is the obvious consolidation: it collapses two independent credential
    domains into one and turns a disclosure problem into a fleet-wide code-
@@ -575,3 +754,35 @@ project.
 
 C1 and C2 are therefore unblocked. Approval still does not authorise building a control
 plane, and PLAN-054 remains the parent cost gate.
+
+### Amended — 2026-09-04: the fleet plane URL becomes overridable
+
+The user requires that the fleet control-plane URL be changeable. PLAN-070 §5.3
+is the decision and the layering; §8 above is this record's half, and it exists
+because §2 and Alternative 4 both asserted that §5's compromise analysis turned
+on the URL being baked. **It does not, and §8.1 walks §5 heading by heading to
+show what it does turn on** — the device's refusals, all enforced device-side
+and none of them consulting the recipient's address, plus a payload bounded by
+an allowlist in the image. What the baked URL bought was a narrower set of
+parties who could choose the recipient, which is a real property and a different
+one.
+
+**This is not priced as the update case.** PLAN-070 §5.3.2 finds a writable
+update URL adds no capability, because the signature check is unchangeable.
+There is no analogous check on the fleet path, so §8.2 states plainly that a
+redirected plane is a real exfiltration path — narrowed only by the fact that
+the switch was already writable, so what the amendment adds is *to whom* a
+device reports rather than *whether* it reports.
+
+**The amendment is accepted with three requirements, not without them**: a URL
+change discards the enrolment credential (C1), the status surface reports the
+**effective** URL (C6, PLAN-076 B9), and the off-state negative test resolves the
+**configured** host (PLAN-076 B8). The approval boundary carries them.
+
+**Edited in place**: §2's shape (b), its recommendation paragraph and the
+document that records the flip; §3's channel; §5's separation invariant; §7a's
+answers 1 and 3; Alternative 4, which is taken after being rejected twice, with
+the rejection quoted in full; C1, C5 and C6; one approval-boundary clause; and
+one Risks entry. **Unchanged**: §1, §3's payload and claim-code recommendation,
+§4, §6, §7b, and every other slice.
+

@@ -85,12 +85,21 @@ appears, the rule must already be written down, because the failure it prevents
 is silent. Recorded here as a constraint on any future credential support:
 **credentials configured for the update source are attached only to hosts
 same-origin with the baked `update.source`, and any additional host is an
-explicit operator list.** The base is the baked value and not an effective one,
-because PLAN-070 §5 makes the source URL baked-only: there is no runtime layer
-that can move the origin a credential is scoped to. PLAN-070 gives that list a home now rather than
-later — `http.credentialHosts` in the baked `meta/updates/manifest.json`, empty
-in the committed `meta.example/` — so the rule and its shape exist before the
-first credential does.
+explicit operator list.** PLAN-070 gives that list a home now rather than later
+— `http.credentialHosts` in the baked `meta/updates/manifest.json`, empty in the
+committed `meta.example/` — so the rule and its shape exist before the first
+credential does.
+
+**The base is the baked value and not the effective one, and the reason for that
+changed on 2026-09-04.** This paragraph used to say the distinction did not
+matter — *"because PLAN-070 §5 makes the source URL baked-only: there is no
+runtime layer that can move the origin a credential is scoped to."* PLAN-070
+§5.3 creates exactly such a layer, so the sentence is false and the rule it
+protected is now the one doing real work: pinning the base to layer 1 is what
+stops an operator-written URL from re-scoping a credential to a host of its
+choosing. Same words, and they went from describing the terrain to holding a
+line — which is the shape of a rule written before the failure it prevents
+became reachable. PLAN-070 §5.3.2 owns it and F6b carries the gate.
 
 `allow_insecure` has no mos analogue: the TUF walk is what establishes trust,
 and `docs/design/release-signing.md` §3.1 already mirrors metadata over plain
@@ -155,6 +164,7 @@ only thing that distinguishes it is that its defaults come from the image
   "rebootPolicy":         "manual",
 
   "source": {
+    "url":       null,
     "channel":   "stable",
     "repoDir":   "/var/lib/mos/update/tuf-mirror",
     "statePath": "/var/lib/mos/update/uptane-state.json",
@@ -167,9 +177,22 @@ only thing that distinguishes it is that its defaults come from the image
 }
 ```
 
-`source.url` and `source.rootPath` are **absent by design** — PLAN-070 bakes
-both — and `deny_unknown_fields` means writing either one back is a load error
-rather than a rule somebody has to remember.
+**`source.url` is present and `source.rootPath` is absent, and 2026-09-04 is
+when those two parted company.** This paragraph read *both are absent by design
+— PLAN-070 bakes both — and `deny_unknown_fields` means writing either one back
+is a load error*. PLAN-070 §5.3 keeps the mechanism and moves the line it holds:
+
+- **`source.url` is an override.** `null` means *take the baked default*, which
+  is the same absent-key rule every other overridable key in this document
+  follows; a value re-points the device. It is not a fallback — an override that
+  does not answer reports the failure and the device does not revert to the
+  baked address (PLAN-070 §5.1).
+- **`source.rootPath` stays absent**, and with it every anchor-shaped key. There
+  is **no `trust` object in this schema at all**, so naming a signing key, a
+  keyring or a root path is a load error in exactly the shape the sentence above
+  described — asserted by name per key, not only by the generic unknown-key path
+  (PLAN-070 §5.3.5). The address is the operator's; what the device will accept
+  is not, and this schema is where that is enforced rather than remembered.
 
 | Value | What the device does on its own |
 |---|---|
@@ -180,13 +203,15 @@ rather than a rule somebody has to remember.
 #### 1.1 Where each value comes from
 
 PLAN-070 §5.1 is the rule and this plan holds it rather than restating it:
-`meta/` bakes the update source and the trust anchors and **owns** them; it
-also bakes the **default** channel, policy and check interval; this document
-overrides those three per key; and a key it does not name takes the baked
-default, or the code default for the keys `meta/` never carries
+`meta/` bakes the trust anchors and **owns** them; it also bakes the **defaults**
+for the source URL, the channel, the policy and the check interval; this
+document overrides those four per key; and a key it does not name takes the
+baked default, or the code default for the keys `meta/` never carries
 (`rebootPolicy`, the windows, the network mode, the reboot-gate keys).
+**Amended 2026-09-04**: the source URL moved from the owned list to the default
+list; the anchors did not, and §10 is why.
 
-The two consequences this plan is responsible for:
+The three consequences this plan is responsible for:
 
 - **`channel` is now genuinely the operator's.** §4's channel-change analysis
   was written for a value an operator edits, and it stays true; what changes is
@@ -199,6 +224,12 @@ The two consequences this plan is responsible for:
   and PLAN-070 §5.1 explains why absence is only reachable as *never
   configured* or *reset*: a DATA pool that is missing or unmounted fails the
   workspace readiness probe first and refuses with `update-unavailable`.
+- **The source is the operator's too, on the same terms as the channel
+  (2026-09-04).** Everything §4 says about a channel change — that it is a
+  deliberate act, audited, and reported rather than silently absorbed — applies
+  to an address change, and for a stronger reason: a wrong channel is a wrong
+  release, a wrong address is a different party. §10 carries what that costs and
+  what it does not.
 
 `[autoCheck]` is **retired, and the move retired it.** The earlier draft of
 this plan made it a load error on the old file so that a rename would fail
@@ -420,7 +451,7 @@ bad bundle, install, fail to confirm, fall back, check finds the same newest
 version, install it again, forever. lode's single-strike rollback is the shape
 to copy, applied to versions rather than directories:
 
-- a version whose slot rolled back is recorded, on STATE beside the policy;
+- a version whose slot rolled back is recorded **on STATE**;
 - the automatic path will not select a suppressed version again;
 - an operator clears the suppression explicitly, and the clearing is audited;
 - a *manual* install of a suppressed version is permitted — the operator has
@@ -504,7 +535,27 @@ exactly when it is needed. After an automatic install and an automatic
 fallback (§6) the installed version *is* the older one, so a floor read from
 the running system reopens the window the mechanism exists to close. The floor
 is therefore the **highest version this device has ever successfully installed**,
-persisted beside the policy on STATE, and it does not decrease on fallback.
+persisted **on STATE**, and it does not decrease on fallback.
+
+**"Beside the policy on STATE" is what this sentence said, and after PLAN-070
+F6b that phrase points at the wrong store — corrected 2026-09-04.** The policy
+document is `/mos/config/updates.json` on DATA; the floor is not, and must not
+be. Two independent reasons, either sufficient:
+
+- **The floor is not configuration.** By PLAN-070 §5.2.1's boundary,
+  `/mos/config/` holds what an integrator sets and STATE holds what the device
+  mints or observes about itself. A high-water mark of what this device has
+  installed is squarely the second — nobody sets it, the device records it.
+- **§9.3's rule would otherwise become a technicality.** Since PLAN-070 §5.3 the
+  operator document is also where the *source URL* lives, so the single write
+  that re-points a device at a hostile server would be the same write that could
+  lower the floor, if the floor lived there. *A floor a remote party can lower is
+  not a floor* — and a floor the redirect itself can lower is worse, because the
+  two halves of the attack would arrive in one atomic rename.
+
+The floor stays on STATE, it is **not** a `/mos/config/` document or a key in
+one, and lowering it stays §9.3's explicit audited operator action. That is the
+same disposition §6's suppression store has, and for the same reason.
 
 **9.2 It binds the automatic path only.** A manual install of an older bundle
 stays permitted, consistently with §5 and §6, which both keep the human path
@@ -573,6 +624,13 @@ control plane sends, may lower it. *What is newest* is the server's question;
 *what may this device accept* is the device's. A design that lets one answer
 both has no downgrade restriction, only the appearance of one.
 
+**And after PLAN-070 §5.3 the reader's subject is the *effective* source.** The
+bound is enforced against whatever server the device is actually walking, baked
+or overridden — an operator-chosen mirror that stops being re-signed reports
+stale on exactly the same terms as a vendor one, because the check is over the
+metadata and not over who served it. That is what lets §10 say the freeze attack
+stays covered whoever answers.
+
 **Stale metadata is a distinct outcome from up to date, and this is the whole
 point.** A device served frozen metadata sees every check verify green and
 simply never moves; if that renders as "no update available" it is
@@ -594,6 +652,54 @@ it transfers to it.
 must be re-signed before it expires, or fielded devices start reporting stale
 checks against a repository nobody attacked. The expiry window and the re-sign
 cadence are one decision and belong with `docs/design/release-artifacts.md`.
+
+### 10. The source URL becomes overridable — amendment, 2026-09-04
+
+The user requires that the update server address be changeable. PLAN-070 §5.3 is
+the decision and carries the argument; this section is what it costs *this*
+plan, which is the plan that owns what a device does unattended.
+
+**What moved.** `source.url` becomes a key in `/mos/config/updates.json`,
+overriding a baked default per PLAN-070 §5.1 — one more overridable key in a
+document that already had six, with no new mechanism and no new failure mode
+shape. **What did not move**: the trust anchors, which have no key in this
+schema and cannot acquire one without a red test (§1's schema note).
+
+**The reason this plan is not where the risk lands.** §9's two mechanisms were
+built against *a mirror, a cache or anything able to serve stale bytes* — that
+is, against a **substituted** source. A source the operator substitutes
+deliberately is the same input arriving by a different route, so the mechanisms
+apply unchanged and were never scoped to a baked address:
+
+- **Rollback** — §9.1's floor is local, rises only, and no value in a manifest
+  and nothing a server sends may lower it. A new server is *a remote party*, and
+  §9.3 already refuses remote parties by name.
+- **Freeze** — §9.6's bound is enforced over the metadata, not over who served
+  it (§9.6). A stale mirror reads as stale whoever chose it.
+
+**Where the amendment does reach this plan, and it is one sentence in two
+places.** §9.1's *"beside the policy on STATE"* and §6's identical phrase were
+written when the policy was on STATE. After PLAN-070 F6b the policy is on DATA
+and the phrase points at the store the redirect is written to; both are
+corrected above, and the correction is not cosmetic — it is the difference
+between a floor an attacker must attack separately and one they get for free
+with the redirect.
+
+**What the operator gains, which is why the trade is worth making here.** §9.3
+records a strand case whose only answer is a release practice: a device that took
+a bad version refuses the automatic path until a *higher* version is published,
+and the escape hatch is a manual install plus an audited clear of the floor.
+After this amendment there is a second, gentler escape for the neighbouring
+case — a device whose **server** has gone away rather than whose version is
+stuck — and it does not touch the floor at all. Those two cases look alike from
+a support queue and now have different answers, which is worth stating so
+nobody reaches for the floor's escape hatch when the address is the problem.
+
+**Not changed by this amendment**: `off | check | auto` and its gates, the
+window rules, `rebootPolicy`, the suppression store, the deferral facts, the
+clock predicate, §4's channel-change analysis (which now also describes an
+address change, §1.1), and every backlog slice except U11's gate and U7's
+console reading.
 
 ## Risks
 
@@ -650,13 +756,13 @@ operator-owned document, and §1.1 is the only place the two meet).
 | # | Slice | Size | Gate |
 |---|---|---|---|
 | U1 | The `policy`/`rebootPolicy` enums, `[autoCheck]` retirement, and the `auto`-requires-a-window validation, now enforced on write | S | selecting `auto` with zero windows is refused at the API naming the rule, not at the next check |
-| U11 | The document's move: `/mos/config/updates.json` in JSON, mosd as its only writer, the atomic-rename save, and the apid write route with its audit | M | the channel is readable from exactly one file; an interrupted write leaves the previous document intact; the document conforms to PLAN-070 §5.2's namespace rules rather than inventing its own |
+| U11 | The document's move: `/mos/config/updates.json` in JSON, mosd as its only writer, the atomic-rename save, and the apid write route with its audit; **`source.url` as an overridable key and no `trust` object in the schema** (§1, §10) | M | the channel **and the source** are each readable from exactly one file; an interrupted write leaves the previous document intact; the document conforms to PLAN-070 §5.2's namespace rules rather than inventing its own; a document naming a signing key, a keyring or a root path is a load error asserted by name; the downgrade floor and the suppression store are on STATE and neither is a key in this document |
 | U2 | The automatic driver: check → fetch → re-check → install, calling the same functions the manual routes call | L | a test asserting the automatic and manual paths meet the same gate set |
 | U3 | Reboot under `rebootPolicy`, gate-honoured, with the never-arms-the-override invariant | M | automatic path against a closed gate arms no override |
 | U4 | Version suppression on STATE, its clearing action and audit | M | a full bad-bundle cycle; the second automatic pass selects nothing |
 | U5 | Deferral facts in the lifecycle, and the channel-has-no-newer-release reason | M | each deferral reason reachable in a test |
 | U6 | mosd's own confirmed-boot fact (§7), on which `auto`'s rollback ordering depends | M | dependency, not an extra |
-| U7 | Console: make `AutomaticUpdates` real — the channel selector and the policy controls as **writes**, the deferral display, the baked-versus-operator-versus-effective reading of PLAN-070 §8, and the "already on the previous system" string | M | — |
+| U7 | Console: make `AutomaticUpdates` real — the channel selector and the policy controls as **writes**, the deferral display, the baked-versus-operator-versus-effective reading of PLAN-070 §8 **for the source address as well as the channel** (§10), and the "already on the previous system" string | M | a re-pointed device shows which address it is using and that it is not the baked one |
 | U8 | Audit actor field across the update events | S | — |
 | U9 | Design-doc updates: `updates.md` §2, §3, §5, §6 and `remote-management.md` §3 | M | `make docs-verify` |
 | U10 | Bench: bad bundle → automatic install → fallback → suppression, observed on serial | — | hardware; blocking for shipping `auto`, not for building it |
@@ -676,6 +782,10 @@ agreeing that:
   unreachable from it;
 - a rolled-back version is suppressed until an operator clears it;
 - an automatic install is deferred while the clock is untrusted;
+- **amended 2026-09-04 (§10)** — the update source address is an operator
+  override like the channel, the trust anchors are not and have no key in this
+  schema, and §9's floor and §6's suppression store stay on STATE rather than
+  moving to DATA with the policy document;
 - the policy stays a **file** rather than a settings subtree — a
   machine-written JSON document at `/mos/config/updates.json` with an
   authenticated, audited, validated-on-write route, not a hand-edited one. (This
@@ -784,3 +894,24 @@ security property rather than a simplification.
 Implementation is gated on PLAN-070's seam landing first — the policy document lives in
 the namespace that plan defines, and the reader's trust block comes from the manifest it
 bakes. That ordering is the 1.0 milestone's Gate A before Gate B (PLAN-037).
+
+### Amended — 2026-09-04: the update source address becomes an operator override
+
+The user requires that the update server address be changeable. PLAN-070 §5.3 is
+the decision; §10 above is what it costs this plan, and §9 is why the cost is
+small: both of §9's mechanisms were built against a **substituted** source, and
+an operator substituting one deliberately is that same input by another route.
+
+**Edited in place**: §1.1's Context credential rule (the base stays the baked
+value, and the reason it gave — *there is no runtime layer* — became false the
+day the layer was created, which is when the rule started doing real work);
+§1's schema, which gains `source.url` and states in terms that it has no `trust`
+object; §1.1's precedence restatement and a third consequence; §6 and §9.1,
+whose *"beside the policy on STATE"* now points at DATA and is corrected to
+STATE with two independent reasons; §9.6, which is enforced over the effective
+source; U11's and U7's gates; and one approval-boundary clause.
+
+**Not changed**: the `off | check | auto` semantics, the window and reboot
+rules, the suppression mechanism, the deferral facts, the clock predicate, §9's
+floor and freshness bound themselves, and every other backlog slice.
+
