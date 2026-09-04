@@ -195,7 +195,7 @@ boards has not been validated on hardware by this subtask; the fixture tests
 prove the parsing and the absence rules, not the boards. The record of that
 validation belongs to section 10.
 
-## 5. The snapshot schema, version 1
+## 5. The snapshot schema, version 2
 
 A snapshot is one JSON document. `schemaVersion` names its shape and is
 bumped when a member changes; a reader that does not know the version it sees
@@ -225,12 +225,17 @@ The journal excerpt is this boot's, at warning and worse, newest first when
 the caps cut. journald runs `Storage=volatile` on the image, so there is no
 previous boot to ask for; the hostname column is left out of every line.
 
-## 6. The redaction schema, version 1
+## 6. The redaction schema, version 3
 
 Redaction is a tested security boundary, and it fails closed. It is the
 management-API redaction `docs/design/security-model.md` §6 counts among the
-confidentiality that does exist. Three passes, in order, in
-`apid/src/diagnostics.rs`:
+confidentiality that does exist.
+
+This version is its own counter, not section 5's: it is bumped when the
+allowlist changes, and each snapshot records the one that produced it in
+`collection.redaction.schemaVersion`. The two numbers are expected to differ.
+
+Three passes, in order, in `apid/src/diagnostics.rs`:
 
 1. **The live denylist.** The field-name denylist every read route already
    applies (`psk`, `passwordHash`, `password_hash`, `hash`, `privateKey`)
