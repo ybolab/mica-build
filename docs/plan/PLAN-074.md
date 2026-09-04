@@ -645,6 +645,85 @@ no longer matched the local BSP artefact, which is exactly the staleness the
 check exists to catch. Building the missing arm64 inputs here (U-Boot, the
 arm64 podman binaries, seven arm64 producers) removed all 7.
 
+### 7h. The netavark gate: a defect I introduced in round 2, and why its 69/69 was not what it looked like
+
+**The defect.** `boards/x64/bsp/kernel/config/x64.config` carried
+`# CONFIG_NF_CONNTRACK_MARK is not set`. netavark sets and matches a connection
+mark on the dnat path (`src/firewall/nft.rs:286,1090` at the v2.1.0
+`pkgs/podman/versions.env` pins), so on x64's own kernel published ports would
+have broken the moment it shipped. cx3576 was unaffected: its board loop named
+the symbol.
+
+**Where it came from.** In round 2 I replaced my own 59-symbol floor with
+PLAN-073's 41-symbol one wholesale. That dropped 22 symbols my floor had named,
+and I compensated for them **only in cx3576's board loop** -- the board that
+already had them. x64, whose config is decided by subtraction, got nothing. This
+is the same failure this plan was written to fix, reintroduced by the merge that
+was supposed to consolidate it.
+
+**The fix.** `NF_CONNTRACK_MARK` and `NF_NAT_MASQUERADE` are engine facts, true
+wherever netavark runs, so both are now in `boards/common/mos-required.fragment`
+and cx3576's board loop no longer restates them. `NF_NAT_MASQUERADE` is
+selected by `NFT_MASQ` on 6.12 and was therefore already `=y`; it is named
+anyway, because a `select` is a fact about this kernel's Kconfig rather than a
+requirement this tree states, and the gate asserts that every symbol netavark
+needs is named by a floor that survives `olddefconfig` on every board.
+Regenerating x64's config moved exactly one line, plus the two symbols that
+`NF_CONNTRACK_MARK` makes visible:
+
+```
+-# CONFIG_NF_CONNTRACK_MARK is not set
++CONFIG_NF_CONNTRACK_MARK=y
++# CONFIG_NET_ACT_CONNMARK is not set
++# CONFIG_NET_ACT_CTINFO is not set
+```
+
+**Why the round-2 `69/69` cannot be reproduced, measured rather than argued.**
+Running the test against each tree with `git archive <commit> | tar -x` and
+executing it there:
+
+| tree | result |
+|---|---|
+| `9ec4facc` (round 2, before the merge with PLAN-073) | **PASS 69/69** |
+| `eeb98ca9` (round 2 head, after the rebuild) | **FAIL, 3 of 85** |
+
+The run was real; the commit I attributed it to was not the tree it ran on. Two
+things changed between them and both are visible in the number itself. The merge
+brought PLAN-073's fourth assertion, which raises the total from 69 to 85 -- so
+`69/69` is arithmetically impossible on the tree I reported it against, and the
+count was the tell. And the rebuild regenerated `x64.config`, which is when
+`NF_CONNTRACK_MARK` flipped to `is not set`. I did not re-run the gate after
+either change.
+
+**What that implies for the rest of the round-2 table**, since a wrong number
+in it is worth naming precisely: the other gates in that table read artefacts
+the commit rebuilt (`verify --board x64`, the QEMU boot, the two bun suites,
+`docs-verify`), and every one of them was re-run in round 3 and again in round 4
+against the current tree. This gate was the only one that read a *committed
+config* rather than a built artefact, and it is the only one I did not re-run
+after regenerating that config. The process fix is that it is now in the gate
+table for every round.
+
+**The rest of the netavark list, checked the same way.** With this change the
+gate is `PASS 87/87`: all 17 symbols are `=y` in both boards' committed configs
+and all 17 are named by a floor that both Dockerfiles assert after
+`olddefconfig`. Nothing else on the list is missing on either board.
+
+**Beyond the list, for the record and not fixed here.** Of the 22 symbols that
+the round-2 floor swap dropped, 11 are still weaker on x64 than on cx3576, which
+asserts them in its board loop: `NETFILTER_XT_MARK`,
+`NETFILTER_XT_MATCH_ADDRTYPE`, `NETFILTER_XT_TARGET_MASQUERADE` and `IP_NF_NAT`
+are `=m` on x64 (present, loadable once the root is up) while cx3576 builds them
+in; `IP_NF_RAW`, `IP6_NF_NAT`, `IP6_NF_RAW`, `IP6_NF_TARGET_MASQUERADE`,
+`NETFILTER_XT_TARGET_CHECKSUM`, `NETFILTER_XT_TARGET_CT` and
+`NETFILTER_XT_TARGET_REDIRECT` are absent on x64 and `=y` on cx3576. netavark
+does not use any of them -- it programs nftables directly -- so this is not the
+defect above. It is the operator-facing `iptables` front-end that differs:
+`iptables -j REDIRECT` works on cx3576 and fails on x64. PLAN-073's floor
+excludes them deliberately as policy, so the resolution belongs with the
+firewall work rather than here: either cx3576 stops asserting them or the floor
+adopts them, but the two boards should not disagree silently.
+
 ## Risks
 
 - **The QEMU harness is the only thing that will ever boot this kernel.** A

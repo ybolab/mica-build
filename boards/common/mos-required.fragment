@@ -76,9 +76,8 @@ CONFIG_CGROUP_BPF=y
 # reference because that is the surface Debian's iptables package provides.
 # The citations into iptables 1.8.11 and the per-symbol table are in
 # docs/design/boards.md section 4. Deliberately NOT here: the legacy
-# IP_NF_* back-end, which nothing in the image uses, the per-extension xt
-# matches and targets, which are policy, and NF_NAT_MASQUERADE, which the
-# masquerade expression below already selects. (Symbol names in these comments
+# IP_NF_* back-end, which nothing in the image uses, and the per-extension xt
+# matches and targets, which are policy. (Symbol names in these comments
 # are written without the CONFIG_ prefix on purpose: merge_config.sh greps this
 # whole file for each symbol it merges, and a comment naming one is reported as
 # part of that symbol's value.)
@@ -93,6 +92,29 @@ CONFIG_NFT_CT=y
 CONFIG_NF_NAT=y
 CONFIG_NFT_NAT=y
 CONFIG_NFT_MASQ=y
+
+# What netavark itself needs on top of the front-end above, and the reason both
+# lines are stated here rather than in one board:
+#
+#   NF_CONNTRACK_MARK -- netavark sets and matches a connection mark on the
+#   dnat path (src/firewall/nft.rs:286,1090 at the v2.1.0 this tree pins), so
+#   published ports depend on it. It is a plain bool that defaults to n under
+#   NETFILTER_ADVANCED, so a config that does not name it does not get it: x64
+#   silently had `is not set` while cx3576 asserted it in its own board loop,
+#   which is the board-specific floor this file exists to stop.
+#
+#   NF_NAT_MASQUERADE -- selected by the masquerade expression above, so on
+#   today's kernel it is already y. It is named anyway because a select is a
+#   fact about 6.12's Kconfig, not a requirement this tree states, and
+#   tests/netavark-kernel-config-test.sh asserts that every symbol netavark
+#   needs is named by a floor that survives olddefconfig on EVERY board. An
+#   unstated symbol that happens to be selected is exactly the shape of the
+#   gap above.
+#
+# Both were on cx3576's board loop until now; that loop no longer restates
+# them.
+CONFIG_NF_CONNTRACK_MARK=y
+CONFIG_NF_NAT_MASQUERADE=y
 
 # Bridge filtering. podman puts every container's veth on one Linux bridge, and
 # traffic between two containers on that bridge is switched at layer 2 -- it
