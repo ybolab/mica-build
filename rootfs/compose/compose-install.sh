@@ -7,8 +7,8 @@
 # SOURCE_DATE_EPOCH.
 #
 # Bind mounts this reads: /mos-debs (the whole _out/debs tree) and /mos-compose
-# (the host-staged packages.txt and meta-public/, the two files out of meta/
-# that reach the image).
+# (the host-staged packages.txt and meta-public/, the files out of meta/ that
+# reach the image).
 #
 # NOTHING IS COMPILED HERE and nothing is downloaded from a network. Every mos
 # package comes out of the pool `make os-debs` built; every Debian package comes
@@ -171,14 +171,21 @@ done
 TOTAL_N="$(dpkg-query -W -f='.\n' | grep -c .)"
 echo "compose: ${local_n} local package(s) installed, ${TOTAL_N} packages in the root"
 
-# THE PUBLIC SET OUT OF meta/ (PLAN-070 section 1.1): the two files that leave
-# the build host for the image, and nothing else. rootfs/build.sh stages them
+# THE PUBLIC SET OUT OF meta/ (PLAN-070 section 1.1): the files that leave the
+# build host for the image, and nothing else. rootfs/build.sh stages them
 # under /mos-compose/meta-public/ at the paths they take here, having first
 # refused to stage anything off its allowlist or anything carrying private key
-# material; verify checks the same two paths over the assembled image, because
+# material; verify checks the same paths over the assembled image, because
 # a file can arrive by a route the staging step cannot see.
 #
-# Neither is in any package and neither may be: rootfs/overlay is copied
+# THREE, not two. The RAUC keyring and the update configuration are REQUIRED --
+# an image without either can verify nothing -- and the development-grade
+# marker is CONDITIONAL: staged exactly when the tree's meta/GENERATED is
+# there, which is exactly when the signing material is development-grade
+# (PLAN-077 section 2). Its absence is not a gap, it is what a production image
+# says about itself.
+#
+# None of them is in any package and none may be: rootfs/overlay is copied
 # wholesale into mos-system's payload, so a keyring left there once would reach
 # every later image by being forgotten. Installed here, on the composition path,
 # one place per build, from what an operator put in meta/.
@@ -187,14 +194,81 @@ echo "compose: ${local_n} local package(s) installed, ${TOTAL_N} packages in the
 # install whatever was in the directory, which turns the allowlist in build.sh
 # into a suggestion; naming them means a third public file is a reviewed line
 # here as well as there.
+#
+# WHAT THAT COSTS, PAID ONCE ALREADY: the marker was added to build.sh's
+# META_PUBLIC and the reviewed line here was never written, so it was audited,
+# staged, copied into the build context and dropped -- and every image built
+# from a development tree reported itself production to the publication gate.
+# A line nobody writes leaves no diff for a reviewer to notice. So the named
+# set is RECONCILED against the staged tree at the end of this block: still
+# named, never walked into an install, but a staged file this script does not
+# name now stops the build here instead of surfacing as a red verify over an
+# image that has already been assembled.
+META_INSTALLED=""
+meta_install() {
+    install -D -m 0644 "/mos-compose/meta-public/$1" "/$1"
+    META_INSTALLED="${META_INSTALLED} $1"
+}
+
 [ -s /mos-compose/meta-public/etc/rauc/keyring.pem ] ||
     fail "/mos-compose/meta-public/etc/rauc/keyring.pem is missing or empty. It is staged from meta/rauc/ca.cert.pem and it is what every device flashed with this image trusts RAUC bundles from; an image without it can install no update at all"
-install -D -m 0644 /mos-compose/meta-public/etc/rauc/keyring.pem /etc/rauc/keyring.pem
+meta_install etc/rauc/keyring.pem
 
 [ -s /mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json ] ||
     fail "/mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json is missing or empty. It is staged from meta/updates/manifest.json and it is where this image says which server its updates come from, on which channel and against which package signing key; an image without it has no configuration to read and no anchor to check a package against"
-install -D -m 0644 /mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json \
-    /usr/share/mos/meta/updates/manifest.json
+meta_install usr/share/mos/meta/updates/manifest.json
+
+# THE DEVELOPMENT-GRADE MARKER, whose ABSENCE IS THE SUPPORTED STEADY STATE and
+# not an error. The two refusals above are the right shape for a required file
+# and the wrong shape for this one: "missing -> fail" here would refuse every
+# build made on production material, which is every release build.
+#
+# The condition read is the STAGED tree and nothing else. rootfs/build.sh has
+# already enforced tree -> staged (the conditional entry is staged iff meta/
+# carries it, and B1 counts what was resolved), and verify's
+# packed-meta-is-the-public-set enforces tree -> image in both directions. So
+# this step's job is staged -> image, exactly, and reading meta/ from in here
+# would be reading a directory this container cannot see.
+#
+# STAGED AND EMPTY IS STILL AN ERROR, and it is the one case worth a line:
+# build.sh treats an empty source as absent and never stages it, so a zero-byte
+# or non-regular file at this path is one that was damaged between that audit
+# and here -- and a marker that states nothing would be baked into the verity
+# root as though it stated the grade.
+#
+# BOTH DISPOSITIONS ARE ANNOUNCED. This is the only member of the set whose
+# correct behaviour includes doing nothing, and in a log a silent nothing reads
+# exactly like the line that was never written.
+META_MARKER=/mos-compose/meta-public/usr/share/mos/meta/GENERATED
+if [ -e "${META_MARKER}" ]; then
+    { [ -f "${META_MARKER}" ] && [ -s "${META_MARKER}" ]; } ||
+        fail "${META_MARKER} exists and is empty or is not a regular file. rootfs/build.sh stages meta/GENERATED only when it has content and refuses a staged path that is not a regular file, so this is not the tree it audited; the marker is what says the signing material behind this image is development-grade, and an unreadable one is baked into the dm-verity root saying nothing"
+    meta_install usr/share/mos/meta/GENERATED
+    echo "compose: /usr/share/mos/meta/GENERATED installed -- this image was built on DEVELOPMENT-GRADE signing material, it reports that grade on GET /api/v1/system/info, and the release gate refuses to publish it to candidate or stable"
+else
+    echo "compose: no /usr/share/mos/meta/GENERATED -- meta/ carries no development-grade marker, so this image states production-grade signing material by shipping none. Not an error: that is what a production build looks like"
+fi
+
+# THE NAMED SET RECONCILED AGAINST THE STAGED SET, which is the safeguard the
+# comment above costs. Every file build.sh staged was named on one of the lines
+# above or it was not, and one that was not is a public-set entry that reached
+# this build and stopped here: audited, copied, and then dropped, with every
+# build-side check still reporting it as staged.
+#
+# NOT A WALK-INSTALL. Nothing is installed because it was found; the staged
+# tree decides only whether this build STOPS. The allowlist in build.sh and the
+# named lines above remain the two reviewed places a public file passes through.
+meta_unnamed=""
+for staged in $(find /mos-compose/meta-public -mindepth 1 ! -type d | sort); do
+    rel="${staged#/mos-compose/meta-public/}"
+    case " ${META_INSTALLED} " in
+    *" ${rel} "*) ;;
+    *) meta_unnamed="${meta_unnamed} ${rel}" ;;
+    esac
+done
+[ -z "${meta_unnamed}" ] ||
+    fail "rootfs/build.sh staged public-set file(s) this script installs nowhere:${meta_unnamed}. Each member of the set is named on its own line here, so a staged file with no line is an entry that was added to META_PUBLIC and not here -- it is audited and copied into the build and then dropped, and the image ships without it while the build log reports it staged. Add the line, or take the entry out of META_PUBLIC"
+echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed from meta/ --${META_INSTALLED}"
 
 # THE DEVICE IDENTITY, /usr/share/mos/release-identity.env: the file
 # `rauc-update` reads to decide which published release is for this device
