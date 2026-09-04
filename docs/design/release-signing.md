@@ -43,8 +43,8 @@ allows, and nothing below ever merges them.
 
 **Independence, stated as facts about files rather than intent.** The two
 domains share no key material and no single file whose compromise breaks
-both. The RAUC domain's material is the repository-root `ca/` directory (RSA
-X.509, PEM: `ca.key.pem`, `ca.cert.pem`, `signer.key.pem`,
+both. The RAUC domain's material is the repository-root `meta/rauc/` directory
+(X.509, PEM: `ca.key.pem`, `ca.cert.pem`, `signer.key.pem`,
 `signer.cert.pem`) and nothing else reads or writes it but the RAUC build
 surfaces (`pkgs/rauc/gen-dev-keys.sh`, `build/src/bundle.ts`,
 `rootfs/build.sh`). The TUF domain's material is a `<role>.pk8` directory
@@ -370,12 +370,42 @@ become fleet incidents — with the three choices that distinguish production:
 a real subject, real validity horizons, and offline custody. Same machine
 discipline as §1.1. openssl is the only tool.
 
+**What the ceremony and the generator must agree on is the SET, not the
+default.** The algorithm each key role gets is a declared value in
+`pkgs/rauc/key-algorithms.env`, and the values there are development defaults;
+this block is a shell block a human copies onto an offline machine that may
+hold no checkout, so it cannot source that file and is not asked to. The
+**allowed set** for both RAUC roles is `ecdsa-p256`, `ecdsa-p384`, `rsa-3072`,
+`rsa-4096`, and it is bounded by RAUC's own verifier — OpenSSL's CMS
+implementation, which verifies RSA and EC alike, and a keyring that is an
+OpenSSL CA file either way. A production CA that differs from the development
+default is **not drift**; it is the ceremony doing its job. What is not
+permitted is a value outside the set, and that is mechanical rather than a
+sentence somebody re-checks: `rootfs/build.sh` reads the material actually
+present in `meta/` and refuses a build whose CA, signer or package key is
+outside its role's set, naming the verifier that bounds it.
+
+**The reason for the values below is production's own, and it is not the dev
+script's.** The generator used to record RSA on the ground that PKCS#1 v1.5
+signatures are deterministic, so two builds of one bundle differ only in the
+CMS `signingTime`. That reason was measured and does not hold: the bundle
+rebuild gate hashes the squashfs payload at the head of the bundle and excludes
+the signature on purpose, and byte-identical bundles are unreachable whatever
+key signs them because rauc salts the bundle's own dm-verity hash tree at
+random. Determinism is therefore not why a production CA is RSA. The reason is
+conservatism about a key that cannot be rotated cheaply: RSA-4096 is the most
+widely fielded thing an OpenSSL CMS verifier will check, on a certificate that
+has to outlive every device it signs for and that a missed rollover window
+strands until reflash. A ceremony that prefers `ecdsa-p384` for the same
+15-year horizon is inside the set and is a decision to record in the minutes,
+not a deviation to justify.
+
 ```sh
 umask 0077
 
-# The CA. RSA (deterministic PKCS#1 v1.5 signatures, same reasoning the dev
-# script records); 4096 for a key that must outlive every device it signs
-# for. CA:TRUE pathlen:0 -- it signs signer certificates and nothing below
+# The CA. RSA 4096 for a key that must outlive every device it signs for; see
+# the note above for why, and for the set this value has to be inside.
+# CA:TRUE pathlen:0 -- it signs signer certificates and nothing below
 # them. Validity 15 years: the 2.4 rollover can replace a fielded keyring,
 # but only on devices that take the overlap update -- a device that misses
 # the window keeps this CA until reflash or the (missing) 2.3 provisioning
@@ -389,7 +419,8 @@ openssl req -x509 -newkey rsa:4096 -keyout ca.key.pem -out ca.cert.pem \
 
 # The signer. Short validity (2 years) because reissuing a signer is cheap --
 # it needs the CA key, not a fleet update: devices trust the CA, so a new
-# signer chains without touching any keyring.
+# signer chains without touching any keyring. A CA and its signer may
+# legitimately differ in algorithm; both are bounded by the one set.
 openssl req -newkey rsa:3072 -keyout signer.key.pem -out signer.csr \
     -nodes -sha256 \
     -subj "/O=<the shipping organisation>/CN=mos release bundle signer"
@@ -441,21 +472,21 @@ The keyring reaches a device **in the image**, from one place. The facts:
 - `pkgs/rauc/system.conf.in` names `/etc/rauc/keyring.pem`;
   `pkgs/rauc/render-config.sh` renders the generated
   `rootfs/overlay/etc/rauc/system.conf`.
-- The repository-root `ca/` directory is the single seam by which a CA enters a
-  build: `build` signs bundles with `ca/signer.{cert,key}.pem` and
-  `rootfs/build.sh` stages `ca/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
-  the CA this runbook produces in `ca/`, build, and the image trusts it. `ca/`
+- The repository-root `meta/rauc/` directory is the single seam by which a CA enters a
+  build: `build` signs bundles with `meta/rauc/signer.{cert,key}.pem` and
+  `rootfs/build.sh` stages `meta/rauc/ca.cert.pem` to `etc/rauc/keyring.pem`. Put
+  the CA this runbook produces in `meta/rauc/`, build, and the image trusts it. `meta/rauc/`
   is gitignored, so the material is never in the history.
-- A build that finds `ca/` empty **generates a development-grade root** there,
-  says so unmissably, and continues; the generator leaves `ca/GENERATED` beside
+- A build that finds `meta/rauc/` empty **generates a development-grade root** there,
+  says so unmissably, and continues; the generator leaves `meta/GENERATED` beside
   it, and that marker is what keeps such a root recognisable on every later
   build. `rootfs/build.sh` warns off the marker. Production material is
-  placed in `ca/` without it.
+  placed in `meta/rauc/` without it.
 - The overlay is **not** a source: `rootfs/build.sh` refuses an
   `etc/rauc/keyring.pem` found there, unconditionally, because the overlay is
   copied wholesale into every image and a file left in it is a CA nobody chose.
   `verify/src/checks-root.ts` fails an image whose keyring is not byte-equal
-  to `ca/ca.cert.pem`, and `verify/src/checks-root.test.ts` proves both
+  to `meta/rauc/ca.cert.pem`, and `verify/src/checks-root.test.ts` proves both
   directions of that gate.
 - **Rotation rides the update channel, with a bounded residue.** `/etc` is a
   read-only squashfs replaced whole by every A/B update, so the keyring cannot
@@ -486,10 +517,10 @@ land:
   both directions: `rauc-keyring-path`
   (`verify/src/checks-rauc.ts`) asserts the rendered config names
   exactly `/etc/rauc/keyring.pem` (`pkgs/rauc/system.conf.in`), and
-  `packed-keyring-from-ca` (`verify/src/checks-root.ts`) asserts the
-  shipped root carries at that path a BYTE-EQUAL copy of `ca/ca.cert.pem` —
+  `packed-keyring-from-meta` (`verify/src/checks-root.ts`) asserts the
+  shipped root carries at that path a BYTE-EQUAL copy of `meta/rauc/ca.cert.pem` —
   and refuses one that carries anything else. Whether that root is
-  development-grade (`ca/GENERATED`) is stated in the verdict, not refused. So
+  development-grade (`meta/GENERATED`) is stated in the verdict, not refused. So
   the keyring RAUC reads is, by the shipped configuration, the CA the build was
   pointed at.
   Whether it is honoured end to end — `rauc install` accepting a
@@ -497,7 +528,7 @@ land:
   device; that last step stays documented, not tested.
 - **How it survives updates.** `/etc` is the read-only dm-verity squashfs,
   replaced whole by every A/B update, so the baked keyring is whatever the
-  installed image's build staged from `ca/` — which is what makes §2.4's
+  installed image's build staged from `meta/rauc/` — which is what makes §2.4's
   overlap update work, and what makes it the only writer. A *provisioned*
   keyring — the future channel — would instead live on STATE or META and
   reach `/etc/rauc/keyring.pem` the way `/etc/ssh` reaches its path — a
@@ -522,23 +553,23 @@ The procedure, one phase per fleet-visible state:
 
 1. **Mint the incoming CA** — the §2.1 ceremony, again, on the offline
    machine. The outgoing CA's media stay sealed; nothing here reads its key.
-2. **The overlap update.** On the build host, `ca/ca.cert.pem` becomes the
+2. **The overlap update.** On the build host, `meta/rauc/ca.cert.pem` becomes the
    concatenation — outgoing certificate first, incoming appended
-   (`cat old-ca.cert.pem new-ca.cert.pem > ca/ca.cert.pem`); `ca/signer.*`
+   (`cat old-ca.cert.pem new-ca.cert.pem > meta/rauc/ca.cert.pem`); `meta/rauc/signer.*`
    stay the OUTGOING signer's. Build and release as normal (§3). The bundle
    chains to the old CA, so every fielded device installs it; the image it
    installs carries the two-certificate keyring. The verifier's
-   `packed-keyring-from-ca` check is byte-equality against `ca/ca.cert.pem`,
+   `packed-keyring-from-meta` check is byte-equality against `meta/rauc/ca.cert.pem`,
    so the concatenated file flows through the build and the checks unchanged.
 3. **Switch the signer.** Once the fleet has converged on the overlap image
    — convergence is measured by whatever fleet telemetry exists, and waiting
-   is the cost of not stranding anyone — replace `ca/signer.{cert,key}.pem`
+   is the cost of not stranding anyone — replace `meta/rauc/signer.{cert,key}.pem`
    with a signer issued by the INCOMING CA (§2.1's signer step). Bundles now
    chain to the new CA; devices on the overlap keyring accept them. A device
    that missed the overlap window refuses them and is stranded — recoverable
    only by physical reflash until the out-of-image trust channel (§2.3)
    exists.
-4. **The retirement update.** `ca/ca.cert.pem` becomes the incoming
+4. **The retirement update.** `meta/rauc/ca.cert.pem` becomes the incoming
    certificate alone; build and release, signed by the new chain. Destroy or
    retire the outgoing CA key under the §1.5 custody rules, and record it.
 
@@ -559,13 +590,20 @@ Placing production material, exactly:
 
 ```sh
 # On the build host, from the §2.1 ceremony's public/host-side outputs:
-mkdir -p ca && chmod 0700 ca
-cp <media>/ca.cert.pem     ca/ca.cert.pem      # the keyring (public)
-cp <media>/signer.cert.pem ca/signer.cert.pem  # the bundle signer cert
-cp <media>/signer.key.pem  ca/signer.key.pem   # the bundle signer key
-chmod 0600 ca/signer.key.pem
-# ca/ca.key.pem does NOT exist here: the CA key never touches this host.
-# ca/GENERATED does NOT exist here: that marker means "development-grade",
+mkdir -p meta/rauc meta/updates && chmod 0700 meta meta/rauc meta/updates
+cp <media>/ca.cert.pem     meta/rauc/ca.cert.pem      # the keyring (public)
+cp <media>/signer.cert.pem meta/rauc/signer.cert.pem  # the bundle signer cert
+cp <media>/signer.key.pem  meta/rauc/signer.key.pem   # the bundle signer key
+chmod 0600 meta/rauc/signer.key.pem
+# The baked update configuration: this deployment's own, edited from the
+# committed example. It names the update server, the channel and the package
+# signing keys this image will trust, and it ships in every image.
+cp <this deployment's manifest> meta/updates/manifest.json
+# meta/rauc/ca.key.pem does NOT exist here: the CA key never touches this host.
+# meta/updates/root.key IS present on a release host if this deployment signs
+# update packages -- it signs every release, so unlike the CA key it cannot be
+# kept offline, and what protects it is host hardening rather than an air gap.
+# meta/GENERATED does NOT exist here: that marker means "development-grade",
 # and nothing may write it but pkgs/rauc/gen-dev-keys.sh.
 ```
 
@@ -573,16 +611,18 @@ What the build does with that, each step observable without hardware:
 
 - `pkgs/rauc/gen-dev-keys.sh --if-absent` (run by every build entry) finds
   the four files it checks for complete and exits silently — it generates
-  only into an empty or half-written `ca/`, and refuses to overwrite
+  only into an empty or half-written `meta/rauc/`, and refuses to overwrite
   otherwise. No development-keyring banner is printed, because the banner
-  keys off generation, not presence.
-- `rootfs/build.sh` stages `ca/ca.cert.pem` into the image at
+  keys off generation, not presence. If `meta/updates/manifest.json` is
+  absent it is instantiated from the committed `meta.example/` and the run
+  says so in one line; a manifest already there is never overwritten.
+- `rootfs/build.sh` stages `meta/rauc/ca.cert.pem` into the image at
   `/etc/rauc/keyring.pem`, and does not warn: the warning keys off
-  `ca/GENERATED`, which production material does not carry.
-- The bundle build signs with `ca/signer.{cert,key}.pem` and read-backs
+  `meta/GENERATED`, which production material does not carry.
+- The bundle build signs with `meta/rauc/signer.{cert,key}.pem` and read-backs
   through the shipped `system.conf` against the same keyring (§3).
-- `make os-verify-cx3576` passes `packed-keyring-from-ca`: the shipped keyring
-  is byte-equal to `ca/ca.cert.pem`. When a marker names that root
+- `make os-verify-cx3576` passes `packed-keyring-from-meta`: the shipped keyring
+  is byte-equal to `meta/rauc/ca.cert.pem`. When a marker names that root
   development-grade the check says so in the verdict rather than refusing, so a
   dev image cannot masquerade as production in a transcript —
   `verify/src/checks-root.test.ts` holds both readings.
@@ -790,8 +830,8 @@ deadline will one day propose:
   access a signer. The privileged lane's deep job says this in its own
   comments.
 - **No dev CA on a shipped device.** A generated trust root carries
-  `ca/GENERATED`, so the build says loudly which images trust one and the
-  verifier names the grade it read. Which material is in `ca/` is chosen before
+  `meta/GENERATED`, so the build says loudly which images trust one and the
+  verifier names the grade it read. Which material is in `meta/rauc/` is chosen before
   the build — by the release pipeline, not by a flag at verify time. No gate in
   this repository yet refuses to PUBLISH an image built on a generated root;
   that assertion belongs to the release gate and does not exist.
@@ -799,8 +839,8 @@ deadline will one day propose:
   policy; a `sign` invocation that invents a different horizon is a change
   to this document first.
 - **No `--allow-rollback` outside a recorded incident.**
-- **No keyring from anywhere but `ca/`.** The keyring in the signed root is
-  staged from `ca/` and byte-checked against it (`packed-keyring-from-ca`);
+- **No keyring from anywhere but `meta/rauc/`.** The keyring in the signed root is
+  staged from `meta/rauc/` and byte-checked against it (`packed-keyring-from-meta`);
   one found in the overlay is refused unconditionally. And no pretending the
   baked keyring solves rotation: a keyring inside the dm-verity-sealed root
   is replaced only by an image update a currently-trusted CA signed — §2.4's

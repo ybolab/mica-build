@@ -36,7 +36,7 @@ help:
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
 	@echo "  os-release-cx3576   assemble the release directory (manifest, SHA256SUMS, SBOM, provenance, licenses, notes) and gate it"
 	@echo "  os-release-gate     re-check an assembled release directory from scratch; refuses an incomplete release by name"
-	@echo "  os-devkeys          populate the gitignored repo-root ca/ with a development trust root"
+	@echo "  os-devkeys          populate the gitignored repo-root meta/ with development-grade signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
@@ -164,10 +164,12 @@ os-release-cx3576:
 os-release-gate:
 	bash build/run.sh --release gate
 
-# The MANUAL entry to the repo-root ca/, which is where every build takes its
-# trust root from. Running it is optional: a build that finds ca/ empty
-# generates the same material itself and says so loudly. This target exists for
-# doing it on purpose, ahead of a build, and for `--force` rotation.
+# The MANUAL entry to the repo-root meta/, which is where every build takes its
+# trust root and its update configuration from. Running it is optional: a build
+# that finds meta/ empty generates the same material itself and says so loudly.
+# This target exists for doing it on purpose, ahead of a build, and for
+# `--force` rotation. It runs the `rauc` domain, the same one the build runs;
+# the package signing key is `--domain updates` and stays opt-in.
 os-devkeys:
 	bash pkgs/rauc/gen-dev-keys.sh
 

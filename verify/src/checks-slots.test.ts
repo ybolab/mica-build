@@ -126,7 +126,7 @@ function slotFixture(
     tools: mtoolsFor(slots),
     workDir: dir,
     outDir: dir,
-    caDir: join(dir, 'ca'),
+    metaDir: join(dir, 'meta'),
     gpt: async () => gpt,
     partition: async () => refuse('partition lookup'),
     fatSlot: async () => refuse('GPT-derived FAT slot -- these checks take the offset from the layout'),

@@ -21,7 +21,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
-import { FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, packedRootFixture, type RootFixture } from './checks-fixture.ts'
+import { BAKED_MANIFEST_PATH, FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, packedRootFixture, type RootFixture } from './checks-fixture.ts'
 import { BUILTIN_MARKUP, ROOT_CHECKS } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import { boardEnvPath } from './paths.ts'
@@ -721,8 +721,8 @@ describe('the shipped bill of materials', () => {
   })
 })
 
-describe('the shipped keyring, which must be the one from ca/', () => {
-  // The fixture is PRODUCTION-shaped: its ca/ holds the material and no
+describe('the shipped keyring, which must be the one from meta/', () => {
+  // The fixture is PRODUCTION-shaped: its meta/ holds the material and no
   // GENERATED marker, and the packed root ships a byte-equal copy. That is the
   // released state -- an image trusting the CA its bundles are signed with --
   // so it is the baseline every mutation below departs from.
@@ -730,23 +730,23 @@ describe('the shipped keyring, which must be the one from ca/', () => {
   test('POSITIVE CONTROL: production material and matching bytes: pass', async () => {
     const fx = packedRootFixture(cx3576)
     try {
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('no GENERATED marker')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('pass')
+      expect(await messageOf(fx, 'packed-keyring-from-meta')).toContain('no GENERATED marker')
     }
     finally {
       fx.dispose()
     }
   })
 
-  test('a keyring whose BYTES are not ca/ca.cert.pem is refused', async () => {
+  test('a keyring whose BYTES are not meta/rauc/ca.cert.pem is refused', async () => {
     // The shape this catches: a CA that reached the image some other way -- left
     // in the overlay, written by a stage, edited after the build. It is still a
     // trusted signer on every device flashed with the image, and nobody chose it.
-    const fx = await mutated('packed-keyring-from-ca', root =>
+    const fx = await mutated('packed-keyring-from-meta', root =>
       writeFileSync(join(root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\nsomebody else\n'))
     try {
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('the bytes differ')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-meta')).toContain('the bytes differ')
     }
     finally {
       fx.dispose()
@@ -755,13 +755,13 @@ describe('the shipped keyring, which must be the one from ca/', () => {
 
   test('a keyring that is not shipped AT ALL is refused', async () => {
     // The direction that inverted: absence used to be the shipped state. Every
-    // image stages one from ca/ now, so an image without one verifies nothing
+    // image stages one from meta/ now, so an image without one verifies nothing
     // and `rauc install` fails closed on it forever.
-    const fx = await mutated('packed-keyring-from-ca', root =>
+    const fx = await mutated('packed-keyring-from-meta', root =>
       rmSync(join(root, 'etc/rauc/keyring.pem')))
     try {
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('ships no /etc/rauc/keyring.pem at all')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-meta')).toContain('ships no /etc/rauc/keyring.pem at all')
     }
     finally {
       fx.dispose()
@@ -773,20 +773,20 @@ describe('the shipped keyring, which must be the one from ca/', () => {
     // signed root, so it is not the absence case; it also cannot be compared,
     // so it is not the byte case. The two facts get different sentences because
     // the fixes differ.
-    const fx = await mutated('packed-keyring-from-ca', (root) => {
+    const fx = await mutated('packed-keyring-from-meta', (root) => {
       rmSync(join(root, 'etc/rauc/keyring.pem'))
       symlinkSync('/nowhere/keyring.pem', join(root, 'etc/rauc/keyring.pem'))
     })
     try {
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('dangling symlink')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-meta')).toContain('dangling symlink')
     }
     finally {
       fx.dispose()
     }
   })
 
-  test('ca/GENERATED names the SAME bytes development-grade, and says so instead of refusing', async () => {
+  test('meta/GENERATED names the SAME bytes development-grade, and says so instead of refusing', async () => {
     // Nothing about the image changes here -- the keyring is byte-identical to
     // the production case above. What changes is the marker beside the trust
     // root: it says the CA whose bundles this image will install has an
@@ -794,18 +794,18 @@ describe('the shipped keyring, which must be the one from ca/', () => {
     // build.
     //
     // Both readings PASS, and the message is the whole difference. Dev and
-    // production reach the image by one path through ca/, and which material is
+    // production reach the image by one path through meta/, and which material is
     // there is chosen before the build; a verifier that refused one of them
     // would be a build-time switch wearing a verifier's clothes. What this
     // asserts is that the verdict cannot be read as production when it is not.
     const fx = packedRootFixture(cx3576)
     try {
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).not.toContain('DEVELOPMENT-GRADE')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('pass')
+      expect(await messageOf(fx, 'packed-keyring-from-meta')).not.toContain('DEVELOPMENT-GRADE')
 
-      writeFileSync(join(fx.ctx.caDir, 'GENERATED'), 'auto-generated development trust root\n')
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('pass')
-      const marked = await messageOf(fx, 'packed-keyring-from-ca')
+      writeFileSync(join(fx.ctx.metaDir, 'GENERATED'), 'auto-generated development trust root\n')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('pass')
+      const marked = await messageOf(fx, 'packed-keyring-from-meta')
       expect(marked).toContain('DEVELOPMENT-GRADE')
       expect(marked).not.toContain('no GENERATED marker')
     }
@@ -815,30 +815,30 @@ describe('the shipped keyring, which must be the one from ca/', () => {
   })
 
   test('a development marker does NOT excuse a keyring that came from somewhere else', async () => {
-    // The marker says which material ca/ holds. It says nothing about whether
+    // The marker says which material meta/ holds. It says nothing about whether
     // the image ships that material, and the byte comparison is the one
     // property this check exists for: it must survive the marker being there.
     const fx = packedRootFixture(cx3576)
     try {
-      writeFileSync(join(fx.ctx.caDir, 'GENERATED'), 'auto-generated development trust root\n')
+      writeFileSync(join(fx.ctx.metaDir, 'GENERATED'), 'auto-generated development trust root\n')
       writeFileSync(join(fx.root, 'etc/rauc/keyring.pem'), '-----BEGIN CERTIFICATE-----\nsomebody else\n')
-      expect(await verdictOf(fx, 'packed-keyring-from-ca')).toBe('fail')
-      expect(await messageOf(fx, 'packed-keyring-from-ca')).toContain('the bytes differ')
+      expect(await verdictOf(fx, 'packed-keyring-from-meta')).toBe('fail')
+      expect(await messageOf(fx, 'packed-keyring-from-meta')).toContain('the bytes differ')
     }
     finally {
       fx.dispose()
     }
   })
 
-  test('a tree with NO ca/ca.cert.pem is REFUSED, not answered', async () => {
+  test('a tree with NO meta/rauc/ca.cert.pem is REFUSED, not answered', async () => {
     // The vacuity trap on the other input. With nothing to compare against, a
     // `pass` would be green about an image nobody checked -- on every host that
     // has not built one. It is a THROW because "this tree has no trust root" is
     // a statement about the RUN, not about the image.
     const fx = packedRootFixture(cx3576)
     try {
-      rmSync(join(fx.ctx.caDir, 'ca.cert.pem'))
-      await expect(checkNamed('packed-keyring-from-ca').run(fx.ctx))
+      rmSync(join(fx.ctx.metaDir, 'rauc', 'ca.cert.pem'))
+      await expect(checkNamed('packed-keyring-from-meta').run(fx.ctx))
         .rejects.toThrow(/nothing to compare/)
     }
     finally {
@@ -846,7 +846,7 @@ describe('the shipped keyring, which must be the one from ca/', () => {
     }
   })
 
-  test('the fixture root and the fixture ca/ carry the SAME bytes', async () => {
+  test('the fixture root and the fixture meta/ carry the SAME bytes', async () => {
     // The baseline is a pass because two files agree, so the test suite asserts
     // they do rather than trusting the seeder. A fixture that seeded two
     // different strings would make every case above red for a reason none of
@@ -854,7 +854,186 @@ describe('the shipped keyring, which must be the one from ca/', () => {
     const fx = packedRootFixture(cx3576)
     try {
       expect(readFileSync(join(fx.root, 'etc/rauc/keyring.pem'), 'utf8')).toBe(FIXTURE_CA_CERT)
-      expect(readFileSync(join(fx.ctx.caDir, 'ca.cert.pem'), 'utf8')).toBe(FIXTURE_CA_CERT)
+      expect(readFileSync(join(fx.ctx.metaDir, 'rauc', 'ca.cert.pem'), 'utf8')).toBe(FIXTURE_CA_CERT)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
+describe('the baked public set, which must be exactly the two files the build staged', () => {
+  // The hazard this stands against, stated once: if meta/ were baked verbatim
+  // every shipped device would carry meta/rauc/ca.key.pem and
+  // meta/updates/root.key -- the private keys behind both gates its updates
+  // pass -- so anyone who bought one unit could sign an update the whole fleet
+  // installs. rootfs/build.sh refuses to STAGE one; these two checks refuse an
+  // IMAGE that has one, however it got there.
+
+  test('POSITIVE CONTROL: the fixture ships exactly the set, byte-equal, and says how many', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('pass')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set'))
+        .toContain('holds exactly 1 file(s) [updates/manifest.json]')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('an ADDED file under the baked directory is refused and named', async () => {
+    // The shape this catches: a later slice that copies a directory instead of
+    // naming its files, and takes a note-for-the-release-host along with it.
+    const fx = await mutated('packed-meta-is-the-public-set', root =>
+      writeFileSync(join(root, BAKED_MANIFEST_PATH, '../notes-for-the-release-host.txt'), 'ask ops\n'))
+    try {
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set'))
+        .toContain('updates/notes-for-the-release-host.txt')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a REMOVED file is refused and named', async () => {
+    const fx = await mutated('packed-meta-is-the-public-set', root =>
+      rmSync(join(root, BAKED_MANIFEST_PATH)))
+    try {
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('is missing updates/manifest.json')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('an ALTERED file is refused: a baked document must be its source, byte for byte', async () => {
+    // A configuration edited after the build is inside the signature every
+    // device trusts and was reviewed by nobody -- an update.source pointed
+    // somewhere else is the whole compromise.
+    const fx = await mutated('packed-meta-is-the-public-set', root =>
+      writeFileSync(join(root, BAKED_MANIFEST_PATH), '{ "schema": "mos/meta/v1", "update": { "source": "https://elsewhere" } }\n'))
+    try {
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('is not the byte-for-byte copy')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a tree with NO meta/ to compare against is REFUSED, not answered', async () => {
+    // The vacuity trap this repository keeps being bitten by: a verdict of
+    // "nothing wrong found" over a directory that does not exist. It is a THROW
+    // because "this tree has no public set" is a statement about the RUN.
+    const fx = packedRootFixture(cx3576)
+    try {
+      rmSync(join(fx.ctx.metaDir, 'updates', 'manifest.json'))
+      await expect(checkNamed('packed-meta-is-the-public-set').run(fx.ctx))
+        .rejects.toThrow(/nothing to compare/)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
+describe('the private-key detector over the baked paths', () => {
+  test('POSITIVE CONTROL: the healthy fixture is clean AND says what it scanned', async () => {
+    // The count is the assertion. A green line that does not say what it looked
+    // at cannot be distinguished from a green line that looked at nothing.
+    //
+    // The expected number is READ OFF THE TREE and not written down: a literal
+    // here would go red the day the fixture grows a file under /etc/rauc, for a
+    // reason that is not about the detector.
+    const fx = packedRootFixture(cx3576)
+    try {
+      const scanned = ['/usr/share/mos/meta', '/etc/rauc']
+        .flatMap(d => readdirSync(join(fx.root, d), { recursive: true, withFileTypes: true }))
+        .filter(e => !e.isDirectory()).length
+      expect(scanned).toBeGreaterThan(1)
+      expect(await verdictOf(fx, 'no-private-key-in-baked-meta')).toBe('pass')
+      expect(await messageOf(fx, 'no-private-key-in-baked-meta')).toContain(`scanned ${scanned} file(s)`)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('PEM armour under the baked meta directory is caught', async () => {
+    const fx = await mutated('no-private-key-in-baked-meta', root =>
+      writeFileSync(join(root, BAKED_MANIFEST_PATH, '../signer.pem'),
+        '-----BEGIN EC PRIVATE KEY-----\nnope\n-----END EC PRIVATE KEY-----\n'))
+    try {
+      expect(await verdictOf(fx, 'no-private-key-in-baked-meta')).toBe('fail')
+      expect(await messageOf(fx, 'no-private-key-in-baked-meta')).toContain('PEM private-key armour')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a raw PKCS#8 DER key is caught, which an armour grep would have missed', async () => {
+    // meta/updates/root.key is raw PKCS#8 DER -- the one file the hazard is
+    // named after -- so this is the test that makes the detector a detector
+    // rather than a name for one file format. The bytes are a real ed25519
+    // PrivateKeyInfo header: SEQUENCE, INTEGER 0, then the ed25519 OID.
+    const der = Buffer.from('302e020100300506032b657004220420' + '00'.repeat(32), 'hex')
+    const fx = await mutated('no-private-key-in-baked-meta', root =>
+      writeFileSync(join(root, BAKED_MANIFEST_PATH, '../root-material'), der))
+    try {
+      expect(await verdictOf(fx, 'no-private-key-in-baked-meta')).toBe('fail')
+      expect(await messageOf(fx, 'no-private-key-in-baked-meta')).toContain('DER PKCS#8 PrivateKeyInfo header')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a key-container FILENAME is caught even when the bytes say nothing', async () => {
+    // The third test is not redundant with the first two: a `.p12` is neither
+    // PEM armour nor a PKCS#8 SEQUENCE, and a file nobody can read is still a
+    // key-shaped path in the signed root.
+    const fx = await mutated('no-private-key-in-baked-meta', root =>
+      writeFileSync(join(root, BAKED_MANIFEST_PATH, '../bundle.p12'), 'not really a keystore\n'))
+    try {
+      expect(await verdictOf(fx, 'no-private-key-in-baked-meta')).toBe('fail')
+      expect(await messageOf(fx, 'no-private-key-in-baked-meta')).toContain('key-container filename extension')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the OTHER scoped path, /etc/rauc, is scanned too', async () => {
+    // The keyring's directory is the seam's second baked path: a CA key copied
+    // in beside the certificate it belongs to is the realistic accident, and it
+    // does not go under /usr/share/mos.
+    const fx = await mutated('no-private-key-in-baked-meta', root =>
+      writeFileSync(join(root, '/etc/rauc/ca.key.pem'),
+        '-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----\n'))
+    try {
+      expect(await verdictOf(fx, 'no-private-key-in-baked-meta')).toBe('fail')
+      expect(await messageOf(fx, 'no-private-key-in-baked-meta')).toContain('/etc/rauc/ca.key.pem')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a scan that read NOTHING is red, not green', async () => {
+    // The failure this whole check is exposed to: both scoped directories gone
+    // means no file trips a detector, which is the same evidence a clean image
+    // produces. An empty search space is refused rather than reported.
+    const fx = await mutated('no-private-key-in-baked-meta', (root) => {
+      rmSync(join(root, '/usr/share/mos/meta'), { recursive: true })
+      rmSync(join(root, '/etc/rauc'), { recursive: true })
+    })
+    try {
+      expect(await verdictOf(fx, 'no-private-key-in-baked-meta')).toBe('fail')
+      expect(await messageOf(fx, 'no-private-key-in-baked-meta')).toContain('nothing was scanned')
     }
     finally {
       fx.dispose()
@@ -881,7 +1060,7 @@ describe('the vacuity traps', () => {
       }
       await expect(checkNamed('packed-builtin-no-on-disk-half').run(fx.ctx))
         .rejects.toThrow(/is empty/)
-      await expect(checkNamed('packed-keyring-from-ca').run(fx.ctx))
+      await expect(checkNamed('packed-keyring-from-meta').run(fx.ctx))
         .rejects.toThrow(/is empty/)
       await expect(checkNamed('packed-mountpoints-exist').run(fx.ctx))
         .rejects.toThrow(/is empty/)

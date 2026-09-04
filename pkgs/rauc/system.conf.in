@@ -80,20 +80,21 @@ bundle-formats=verity
 [keyring]
 # Bundle signatures are verified against this CMS keyring. It is NOT in git and
 # it is not written by this template: rootfs/build.sh stages it here from
-# the repository-root ca/ directory, the single seam by which a trust root
-# enters a build — the same ca/ build signs bundles with, which is what lets
-# an image install the releases it ships alongside. ca/ holds either production
-# material an operator put there or a development-grade root
-# pkgs/rauc/gen-dev-keys.sh generated when it found none; ca/GENERATED marks
-# the second kind, and the build warns loudly about it. A keyring found in
-# rootfs/overlay/etc/rauc/ is REFUSED — the overlay is copied wholesale
-# into every image, so a file left there is a CA nobody chose.
+# the repository-root meta/rauc/ directory, the single seam by which a trust
+# root enters a build — the same material build signs bundles with, which is
+# what lets an image install the releases it ships alongside. meta/rauc/ holds
+# either production material an operator put there or a development-grade root
+# pkgs/rauc/gen-dev-keys.sh generated when it found none; meta/GENERATED marks
+# the second kind and names the domains it covers, and the build warns loudly
+# about it. A keyring found in rootfs/overlay/etc/rauc/ is REFUSED — the overlay
+# is copied wholesale into every image, so a file left there is a CA nobody
+# chose.
 #
 # What RAUC reads is exactly the path= below, in the rendered
 # /etc/rauc/system.conf — the image verifier's rauc-keyring-path check asserts
-# the rendered config names this path, and packed-keyring-from-ca asserts the
-# keyring baked into the read-only root is byte-equal to ca/ca.cert.pem rather
-# than one that arrived from anywhere else. /etc is a
+# the rendered config names this path, and packed-keyring-from-meta asserts the
+# keyring baked into the read-only root is byte-equal to meta/rauc/ca.cert.pem
+# rather than one that arrived from anywhere else. /etc is a
 # read-only squashfs on device, so the keyring cannot be replaced in the field
 # by writing this path: ROTATION still needs a channel that survives an A/B
 # update, reaching this path the way /etc/ssh does — a STATE-backed seed plus

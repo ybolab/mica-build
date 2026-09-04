@@ -933,7 +933,7 @@ that a guard stayed quiet about an input it had no reason to complain about.
 | a `system.conf` with no `compatible=` | "no compatible= in …" |
 | `compatible=` with an empty value | the same — declared-empty is not a value here |
 | `# compatible=mos-x64 is what x64 uses` | not read as one |
-| **each of the three key files missing from the repo-root `ca/`, in turn** | "signing material not found: …" naming that file, and `make os-devkeys` |
+| **each of the three key files missing from `meta/rauc/`, in turn** | "signing material not found: …" naming that file, and `make os-devkeys` |
 | `CERT=/hsm/typo.pem` missing | "…supplied from the environment but this file does not exist", and NOT `make os-devkeys` — a different reader with a different fix |
 | `CERT=/keys-backup/c.pem` against `KEYDIR=/keys` | the environment sentence: the under-`KEYDIR` test needs the slash, and `/keys-backup` is not under `/keys` |
 | **each rootfs-side input missing, in turn** | "not found; run 'MOS_BOARD=cx3576 bash rootfs/build.sh' first" |

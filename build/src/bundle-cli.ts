@@ -9,11 +9,11 @@
 // depend on when it was built, which is what makes the rebuild gate a hash.
 //
 // Two things this file resolves that the build half only uses. The signing
-// material: caller-supplied CERT/KEY/KEYRING win, the repository-root ca/ is
-// the default, and all three are resolved and checked here so the failure names
-// the file that is missing -- an unset trio with no ca/ means `make os-devkeys`,
+// material: caller-supplied CERT/KEY/KEYRING win, meta/rauc/ is the default,
+// and all three are resolved and checked here so the failure names the file
+// that is missing -- an unset trio with no meta/rauc/ means `make os-devkeys`,
 // a caller-supplied path that does not exist is the caller's typo. An unset
-// trio normally cannot fail at all, because a missing ca/ is generated first;
+// trio normally cannot fail at all, because a missing meta/ is generated first;
 // the refusal stays because the generator can be bypassed, not because nobody
 // runs it. And the host's architecture, not the board's: the rauc writing the
 // bundle is a host binary while the image bundled for may be foreign, and both
@@ -25,8 +25,8 @@ import { join } from 'node:path'
 import { $ } from 'bun'
 import {
   buildBundle,
-  CA_DIR,
   GEN_TRUST_ROOT_SH,
+  RAUC_KEY_DIR,
   RENDER_CONFIG_SH,
   ROOTFS_PRODUCER,
   SYSTEM_CONF,
@@ -51,7 +51,7 @@ boards/<board>/bsp/out/.
   --board-dir DIR  the BSP tree (default: boards/<board>/bsp, or BOARD_DIR)
 
 environment:
-  CERT KEY KEYRING     real signing material, instead of the repo-root ca/
+  CERT KEY KEYRING     real signing material, instead of meta/rauc/
   MOS_BUILD_TOOLBOX    host|container -- force the route the tools run on
 `
 
@@ -117,13 +117,13 @@ export interface SigningMaterial {
 }
 
 /**
- * Whether this build must make sure ca/ holds a trust root.
+ * Whether this build must make sure meta/rauc/ holds a trust root.
  *
  * False only when the caller named all three paths: explicit material beats the
  * convention, and generating anyway would write an unprotected CA into the tree
- * of a build that was pointed at an HSM -- and leave ca/GENERATED behind to mark
- * every later image development-grade. A PARTIAL trio still needs ca/, because
- * the files the caller did not name come from there.
+ * of a build that was pointed at an HSM -- and leave meta/GENERATED behind to
+ * mark every later image development-grade. A PARTIAL trio still needs
+ * meta/rauc/, because the files the caller did not name come from there.
  *
  * `?? undefined` and not a truthiness test, so this agrees with
  * resolveSigningMaterial about what "supplied" means: `CERT=` reaches
@@ -138,14 +138,14 @@ export function needsGeneratedTrustRoot(env: Record<string, string | undefined>)
  * CERT/KEY/KEYRING, resolved and checked before anything runs.
  *
  * The two failures get different sentences, and the difference is the whole
- * point: a path under ca/ is missing because generation was bypassed and nobody
- * has run `make os-devkeys` either, and a path from the environment is missing
- * because the caller mistyped it. One sentence for both would send half the
- * readers to the wrong place.
+ * point: a path under meta/rauc/ is missing because generation was bypassed and
+ * nobody has run `make os-devkeys` either, and a path from the environment is
+ * missing because the caller mistyped it. One sentence for both would send half
+ * the readers to the wrong place.
  */
 export function resolveSigningMaterial(
   env: Record<string, string | undefined>,
-  keyDir: string = CA_DIR,
+  keyDir: string = RAUC_KEY_DIR,
   exists: (p: string) => boolean = existsSync,
 ): SigningMaterial {
   const material: SigningMaterial = {
@@ -300,9 +300,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   const compatible = requireCompatible(readFileSync(SYSTEM_CONF, 'utf8'), SYSTEM_CONF)
 
-  // The trust root enters the build HERE, from ca/ and nowhere else. A tree
-  // that has none gets a development-grade one and a loud notice rather than a
-  // refusal: the build proceeds, and ca/GENERATED keeps the result marked.
+  // The trust root enters the build HERE, from meta/rauc/ and nowhere else. A
+  // tree that has none gets a development-grade one and a loud notice rather
+  // than a refusal: the build proceeds, and meta/GENERATED keeps the result
+  // marked.
   // Left as a subprocess -- gen-dev-keys.sh owns that directory, and it alone
   // decides which files must be there.
   if (needsGeneratedTrustRoot(process.env)) {

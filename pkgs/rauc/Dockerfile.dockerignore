@@ -1,5 +1,5 @@
 # The build context is pkgs/rauc/, which holds the configuration templates and
-# the generator for the repo-root ca/ trust root. None of it belongs in a build
+# the generator for the repo-root meta/ signing material. None of it belongs in a build
 # context: a key that reaches a layer is a key in the image cache, and the
 # generator would invite one in. Only the version lock is copied in.
 *
