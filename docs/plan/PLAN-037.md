@@ -68,6 +68,114 @@ Each row has one acceptance boundary. A child may be approved without approving
 its siblings; implementation begins only after that child plan is explicitly
 approved and its task is claimed.
 
+### The 1.0 milestone — decided 2026-09-04
+
+**1.0 is not a feature count. It is the point at which every promise the product
+makes can be kept.** A capability that works but cannot be updated, recovered or
+trusted in the field is not part of 1.0; a capability that is absent and said to
+be absent does not block it.
+
+**Baseline, measured on 2026-09-04** across `docs/design/` and `docs/user/`:
+**101 `[implemented]`, 33 `[partial]`, 54 `[proposed]`, 29 `[not implemented]`.**
+The three documents furthest from their own claims are `recovery.md` (21 / 14 /
+4 / 7), `access.md` (13 / 4 / 0 / 10) and `api.md` (33 / 4 / 18 / 2). This
+snapshot is the thing the gates below move, and it is re-measured rather than
+remembered.
+
+Four gates block 1.0. Everything else is explicitly outside it.
+
+#### Gate A — Trust is real
+
+The largest gap, and the only one where **something already published has no
+starting point**. `release-signing.md` is 1 `[implemented]` against 4
+`[not implemented]`.
+
+- A production key ceremony is performed and recorded — RAUC CA, the signing
+  key, and their custody.
+- **A shipped image provisions its trust anchor.** `docs/user/security.md` §2
+  records that the device-side verifier ships and its anchor does not: no image
+  provisions the pinned root, so the walk has never had a starting point in the
+  field. Under PLAN-070 question 6 the release side is lode's scheme, so this
+  gate is that scheme's anchor, not TUF's.
+- **A keyring rotation path exists that does not require an image signed by the
+  key being replaced.** Recorded today as a gap in the same section.
+- **A device can state whether it trusts a development CA.** PLAN-070 question 4;
+  `meta/GENERATED` is build-host-only, so a fielded device cannot answer it.
+- **An image carrying a development keyring cannot be published.** Enforced by
+  the release gate, not by the convention that no such image should leave a desk.
+
+Without this gate, every device sold under 1.0 is a device that cannot be safely
+updated. It is the one gate with no acceptable partial form.
+
+#### Gate B — The update loop closes
+
+- PLAN-070 implemented: the `meta/` seam and the `/mos/config/` namespace, so a
+  freshly flashed device can be configured by dropping documents in.
+- PLAN-071 implemented, **including §9's downgrade floor and §9.6's freshness
+  bound** — the two properties that replace what leaving TUF gave up. A shipped
+  update path without both is a net loss of a security property.
+- **Enumerated failure codes on the update path** (PLAN-076's B4). The path
+  reports failure as free text today, so no fleet or support surface can say why
+  an update failed without shipping a string that fails the reporting rule.
+- The release side's **re-sign cadence** decided and operating, per §9.6: metadata
+  must be re-signed before it expires or fielded devices report stale checks
+  against a repository nobody attacked.
+
+#### Gate C — Recovery is honest
+
+`recovery.md` carries 14 `[partial]` and 7 `[not implemented]`; `access.md`
+carries 10 `[not implemented]`. **A device that cannot be recovered in the field
+is not a 1.0 product**, but the gate is not "implement all of it".
+
+- Every `[partial]` in `recovery.md` and `access.md` is either **completed** or
+  **restated as an explicit non-capability**. A half-built capability described
+  as if it works is the failure mode; either end state passes.
+- No customer-facing page describes as available anything the tree marks
+  `[partial]` or `[proposed]`. This is already the rule
+  (`docs/verify-status.sh` gates it); the gate is that the rule has nothing left
+  to catch in the pages 1.0 ships.
+
+#### Gate D — Exactly one board is qualified, and it is cx3576
+
+**x64 is explicitly not a 1.0 board.** The tree describes it in four places as
+the QEMU/CI baseline at bring-up tier, with no dossier and explicitly not
+mos-qualified, and PLAN-074 relied on exactly that to narrow its kernel. That
+stays true through 1.0.
+
+- cx3576's dossier complete, with **dated evidence** — the condition PLAN-037's
+  own principles already set for marketing a board as mos-qualified.
+- Boot assurance published as an evidenced **I1–I4 level**, not as "secure boot".
+- The outstanding bench measurements taken and recorded: the `eth1` DHCPv4
+  lease defect, whether a watchdog device exists at all, which UART drives the
+  display, and the input device set (`adc-keys` is `status = "disabled"` in the
+  board DTS).
+- The **arm64 verification debt** discharged on a host that can run it, rather
+  than deferred a further release.
+
+#### Explicitly outside 1.0
+
+These are not unfinished — they are **deliberately not in it**, and saying so is
+what keeps 1.0 reachable:
+
+- **The cloud plane**: PLAN-072 registration and PLAN-076 state reporting. Both
+  are off by default and assistive; a device that never contacts a plane is a
+  complete product.
+- **Encryption at rest.** PLAN-074 provisions the kernel capability; the product
+  decision stays gated, because it needs a key custody and recovery story and
+  **a key that cannot be recovered turns a full disk into a dead device.**
+- **Managed and untrusted application controls** (PLAN-069), which waits on its
+  own trigger conditions rather than on a date.
+- **A remote support channel** (PLAN-054's deferred half), excluded by
+  PLAN-072 §4 and requiring its own record.
+
+#### Order, and why it is not the current order
+
+**A → B → C → D.** Gate A first, because every signing assumption in Gate B
+rests on it. Today the sequence is inverted: the update module is being designed
+against a trust anchor that does not yet exist in any image. That inversion is
+the single largest scheduling risk in this programme, and it is the reason this
+milestone names the order rather than only the contents.
+
 ### Dependency and critical path
 
 The first pilot-critical chain is release identity and trusted time (PLAN-043,
