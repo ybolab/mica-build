@@ -93,12 +93,12 @@ ARG RAUC_VERSION=""
 # The argument is required, not defaulted: an unset one is refused by name.
 ARG SOURCE_DATE_EPOCH
 
-# The host-staged half of the context: the resolved package list and the RAUC
-# trust root. Both are per-build values that no package can carry --
-# the resolution is this build's selection, and the keyring is the CA an
-# operator put in the repository-root ca/. COPY and not a bind mount because
-# the keyring has to end up IN the image; the pool below is bound instead,
-# because 300 MB of archives must not.
+# The host-staged half of the context: the resolved package list and the public
+# set out of meta/ -- the RAUC trust root and the baked update configuration.
+# All of them are per-build values that no package can carry: the resolution is
+# this build's selection, and the two meta/ files are what an operator put
+# there. COPY and not a bind mount because they have to end up IN the image;
+# the pool below is bound instead, because 300 MB of archives must not.
 ARG COMPOSE_DIR
 COPY ${COMPOSE_DIR}/ /mos-compose/
 

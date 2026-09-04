@@ -83,16 +83,21 @@ export const MANIFEST_IN: string = join(REPO_ROOT, 'pkgs', 'rauc', 'manifest.rau
 export const SYSTEM_CONF: string = join(REPO_ROOT, 'rootfs', 'overlay', 'etc', 'rauc', 'system.conf')
 
 /**
- * The repository-root ca/ -- the one place a trust root enters a build.
+ * `meta/rauc/` -- the one place a trust root enters a build.
  *
  * Gitignored, and holding either production material an operator put there or
  * a development-grade one pkgs/rauc/gen-dev-keys.sh generated. Which of the
- * two it is is not guessed from the bytes: the generator leaves ca/GENERATED
+ * two it is is not guessed from the bytes: the generator leaves meta/GENERATED
  * beside them and that marker is what every later reader keys off.
+ *
+ * It is a subdirectory of `meta/` and not a directory beside it, because
+ * `meta/` is now gitignored, generated when absent and full of private keys --
+ * so a second directory with those same properties would have no rule saying
+ * which one a file goes in.
  */
-export const CA_DIR: string = join(REPO_ROOT, 'ca')
+export const RAUC_KEY_DIR: string = join(REPO_ROOT, 'meta', 'rauc')
 
-/** pkgs/rauc/gen-dev-keys.sh, which owns what CA_DIR contains. */
+/** pkgs/rauc/gen-dev-keys.sh, which owns what RAUC_KEY_DIR contains. */
 export const GEN_TRUST_ROOT_SH: string = join(REPO_ROOT, 'pkgs', 'rauc', 'gen-dev-keys.sh')
 
 /** pkgs/rauc/render-config.sh, which owns the shipped slot configuration. */

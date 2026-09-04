@@ -259,58 +259,304 @@ if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
     echo "error: pkgs/rauc/render-config.sh produced no system.conf to stage" >&2
     exit 1
 fi
-
 # The RAUC keyring inside the signed read-only root is a trusted signer on every
-# device flashed with this image, so it enters the build from ONE place: the
-# repository-root ca/, the same trust root build signs bundles with. That is
-# what lets a released image install the releases it is shipped alongside.
+# device flashed with this image, so it enters the build from ONE place:
+# meta/rauc/, the same trust root build signs bundles with. That is what lets a
+# released image install the releases it is shipped alongside.
 #
 # The overlay is not that place, and no flag makes it one. rootfs/overlay/
 # is copied wholesale into the root, so a keyring left there once reaches every
 # later image by being FORGOTTEN -- exactly the way a trust root must never
 # arrive. The refusal was waivable once, when dropping a file here was the only
-# way to get a development CA into a bench image; ca/ is that way now, so a
-# waiver would only reintroduce a second source.
+# way to get a development CA into a bench image; meta/rauc/ is that way now, so
+# a waiver would only reintroduce a second source.
 if [ -e "$OVERLAY_STAGE/etc/rauc/keyring.pem" ]; then
     echo "error: $OVERLAY_SRC/etc/rauc/keyring.pem exists; refusing to stage it into the image." >&2
-    echo "A keyring baked into the signed root makes every flashed device trust that CA's bundles, and the overlay is copied wholesale into every image, so a file left here is a trust root nobody chose. The image's keyring is staged from the repository-root ca/ instead -- delete this file and put the CA you want in ca/ (pkgs/rauc/gen-dev-keys.sh writes a development-grade one when ca/ is empty)." >&2
+    echo "A keyring baked into the signed root makes every flashed device trust that CA's bundles, and the overlay is copied wholesale into every image, so a file left here is a trust root nobody chose. The image's keyring is staged from the repository-root meta/rauc/ instead -- delete this file and put the CA you want in meta/rauc/ (pkgs/rauc/gen-dev-keys.sh writes a development-grade one when meta/ is empty)." >&2
     exit 1
 fi
 
-# ca/ absent is not fatal: the generator makes a development-grade trust root
-# and says so loudly, and the build carries on. --if-absent so a ca/ that is
+# --- meta/: the signing material and the update configuration (PLAN-070) ---
+#
+# meta/ is the build host's, gitignored, and holds everything a release needs to
+# be configured and signed. Exactly two of its files reach the image and every
+# private key stays here; the allowlist below is what makes that mechanical.
+META_DIR="$REPO_ROOT/meta"
+META_STAGE="$OUT_DIR/meta-public"
+KEY_ALG_ENV="$REPO_ROOT/pkgs/rauc/key-algorithms.env"
+
+# THE PER-ROLE ALLOWED SETS, and they are HERE rather than in
+# key-algorithms.env. That asymmetry is what makes the parameter safe: a set is
+# a claim about what a VERIFIER accepts, true only because of code outside this
+# repository, so making it editable beside the value would let one commit widen
+# a set and adopt the new member in the same breath -- which is precisely the
+# change that produces a fleet that cannot install its own updates. Changing an
+# algorithm is editing a value; widening a set is editing this file and the
+# claim it makes about the verifier it names.
+#
+# RAUC checks a bundle's CMS signature through OpenSSL, which verifies RSA and
+# EC alike, and the keyring is an OpenSSL CA file either way -- so the set is
+# bounded by what a fielded rauc accepts rather than by taste. ed25519 is
+# excluded deliberately: CMS over ed25519 is a signature algorithm this
+# repository has not put through rauc, and an untested member of an allowed set
+# is the hardcoded choice with extra steps. One set for both RAUC roles, two
+# values, because a CA and its signer may legitimately differ.
+RAUC_ALG_SET="ecdsa-p256 ecdsa-p384 rsa-3072 rsa-4096"
+RAUC_ALG_VERIFIER="RAUC's own verifier -- OpenSSL's CMS implementation, which is what a fielded rauc checks a bundle signature with, and which is why the set is EC-or-RSA and excludes ed25519"
+# lode's verifier is ed25519-dalek, over [trust] trusted_keys entries of the
+# form <key_id>:<base64 ed25519 public key>. It has no second algorithm, so the
+# set has no second member; it grows when that verifier does and not before.
+PACKAGE_ALG_SET="ed25519"
+PACKAGE_ALG_VERIFIER="lode's verifier -- ed25519-dalek, over [trust] trusted_keys entries of the form <key_id>:<base64 ed25519 public key>, which has no second algorithm"
+
+in_alg_set() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# Both refusals below take this shape, which is the shape the overlay-keyring
+# refusal above already uses: the offending value named, a paragraph saying what
+# would otherwise have gone wrong, the verifier that bounds the set, and exit 1.
+# NO WAIVER, for build.sh's own stated reason -- a waiver reintroduces the thing
+# the rule exists to forbid.
+alg_refusal() {
+    echo "error: $1 is '$2', which is not in the set of algorithms allowed for the $3." >&2
+    echo "       allowed: $4" >&2
+    echo "       That set is bounded by $5." >&2
+    echo "       A value outside it mints material that verifier cannot check, and the failure lands late and far away: on a device, at install time, after a download, on a fleet that already took the image. Changing an algorithm is a one-line edit to pkgs/rauc/key-algorithms.env; WIDENING the set is an edit to rootfs/build.sh and a claim about the verifier named above. There is no environment variable that softens either." >&2
+    exit 1
+}
+
+# A1 -- THE DECLARED VALUE IS IN ITS ROLE'S SET, checked BEFORE the generator
+# runs so that a refused value never mints a key. This is the cheap one: it
+# catches a typo (ecdsa-p512), a row copy-pasted onto another role, and the edit
+# that makes all three roles uniform because uniformity looks tidy.
+[ -f "$KEY_ALG_ENV" ] ||
+    { echo "error: $KEY_ALG_ENV does not exist. It is where the signature algorithm of every key this tree mints is declared, and without it pkgs/rauc/gen-dev-keys.sh would fall back to a choice compiled into itself -- the hardcoded choice that file exists to remove" >&2; exit 1; }
+key_alg() {
+    local declared
+    declared=$(sed -n "s/^$1=//p" "$KEY_ALG_ENV" | tail -n1)
+    [ -n "$declared" ] ||
+        { echo "error: $KEY_ALG_ENV declares no $1. Every key role needs one, and an empty value is not a default -- it is a row somebody deleted" >&2; exit 1; }
+    printf '%s\n' "$declared"
+}
+ALG_RAUC_CA=$(key_alg MOS_KEY_ALG_RAUC_CA)
+ALG_RAUC_SIGNER=$(key_alg MOS_KEY_ALG_RAUC_SIGNER)
+ALG_PACKAGE=$(key_alg MOS_KEY_ALG_PACKAGE)
+in_alg_set "$ALG_RAUC_CA" "$RAUC_ALG_SET" ||
+    alg_refusal "$KEY_ALG_ENV's MOS_KEY_ALG_RAUC_CA" "$ALG_RAUC_CA" "RAUC CA (meta/rauc/ca.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
+in_alg_set "$ALG_RAUC_SIGNER" "$RAUC_ALG_SET" ||
+    alg_refusal "$KEY_ALG_ENV's MOS_KEY_ALG_RAUC_SIGNER" "$ALG_RAUC_SIGNER" "RAUC bundle signer (meta/rauc/signer.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
+in_alg_set "$ALG_PACKAGE" "$PACKAGE_ALG_SET" ||
+    alg_refusal "$KEY_ALG_ENV's MOS_KEY_ALG_PACKAGE" "$ALG_PACKAGE" "package signing key (meta/updates/root.key)" "$PACKAGE_ALG_SET" "$PACKAGE_ALG_VERIFIER"
+echo "meta: declared key algorithms -- CA $ALG_RAUC_CA, signer $ALG_RAUC_SIGNER, package $ALG_PACKAGE (pkgs/rauc/key-algorithms.env)"
+
+# meta/ absent is not fatal: the generator makes development-grade material and
+# says so loudly, and the build carries on. --if-absent so a meta/ that is
 # already there -- production material or a root generated by an earlier run --
-# is left exactly as it is and prints nothing.
-CA_DIR="$REPO_ROOT/ca"
+# is left exactly as it is and prints nothing. The package signing key is NOT
+# generated here: --domain updates is opt-in, because a development key no
+# published repository has signed anything with anchors nothing.
 bash "$REPO_ROOT/pkgs/rauc/gen-dev-keys.sh" --if-absent
-if [ ! -s "$CA_DIR/ca.cert.pem" ]; then
-    echo "error: $CA_DIR/ca.cert.pem is missing or empty after pkgs/rauc/gen-dev-keys.sh --if-absent." >&2
-    echo "The image cannot be built without the CA it must trust; ca/ is the one place it comes from." >&2
+if [ ! -s "$META_DIR/rauc/ca.cert.pem" ]; then
+    echo "error: $META_DIR/rauc/ca.cert.pem is missing or empty after pkgs/rauc/gen-dev-keys.sh --if-absent." >&2
+    echo "The image cannot be built without the CA it must trust; meta/rauc/ is the one place it comes from." >&2
     exit 1
 fi
-mkdir -p "$OVERLAY_STAGE/etc/rauc"
-cp "$CA_DIR/ca.cert.pem" "$OVERLAY_STAGE/etc/rauc/keyring.pem"
-chmod 0644 "$OVERLAY_STAGE/etc/rauc/keyring.pem"
-echo "overlay: staged etc/rauc/keyring.pem from ca/ca.cert.pem"
+if ! grep -q '"signingKeys"' "$META_DIR/updates/manifest.json" 2>/dev/null; then
+    echo "error: $META_DIR/updates/manifest.json is missing, empty or carries no trust.signingKeys." >&2
+    echo "It is the update configuration baked into every image, instantiated from meta.example/ by pkgs/rauc/gen-dev-keys.sh when meta/ has none; a build cannot state where its updates come from without it." >&2
+    exit 1
+fi
 
-# Whether that CA is development-grade is not guessed from the bytes. The
-# generator leaves ca/GENERATED beside what it wrote and production material
+# The tool-neutral name for the algorithm of a piece of material that is
+# actually on disk, read out of openssl's own description of it. Three readers
+# because the three roles are encoded three ways: a PEM certificate, a PEM
+# private key, and the raw PKCS#8 DER lode's key is written as.
+alg_of_material() {
+    local text curve bits
+    case "$2" in
+    x509) text=$(openssl x509 -in "$1" -noout -text 2>/dev/null || true) ;;
+    pem) text=$(openssl pkey -in "$1" -noout -text 2>/dev/null || true) ;;
+    der) text=$(openssl pkey -inform DER -in "$1" -noout -text 2>/dev/null || true) ;;
+    esac
+    [ -n "$text" ] || return 1
+    case "$text" in
+    *ED25519*) printf 'ed25519\n'; return 0 ;;
+    esac
+    curve=$(printf '%s\n' "$text" | sed -n 's/.*NIST CURVE: *//p' | head -n1)
+    if [ -n "$curve" ]; then
+        printf 'ecdsa-%s\n' "$(printf '%s' "$curve" | tr 'A-Z' 'a-z' | tr -d '-')"
+        return 0
+    fi
+    case "$text" in
+    *RSA*)
+        bits=$(printf '%s\n' "$text" | sed -n 's/.*-Key: (\([0-9][0-9]*\) bit.*/\1/p' | head -n1)
+        [ -n "$bits" ] && { printf 'rsa-%s\n' "$bits"; return 0; }
+        ;;
+    esac
+    return 1
+}
+
+# A2 -- THE MATERIAL ACTUALLY IN meta/ IS IN ITS ROLE'S SET.
+#
+# A1 alone passes exactly the production case, which is the case that matters:
+# production material is PLACED in meta/ by an operator rather than minted by
+# the generator, so a placed RSA-2048 CA, or an ECDSA package key from a
+# well-meaning ceremony, would ship with every declared value still in range.
+# The --domain updates key is the one A1 could never have seen at all -- it is
+# not minted on the build path, so nothing A1 reads describes it.
+#
+# Each file is checked only if it is THERE: release-signing.md section 2.5
+# provisions a release host without ca.key.pem on purpose, and demanding a file
+# that rule says must be absent would refuse every production build. What stops
+# that from becoming a vacuous pass is the count below -- ca.cert.pem is
+# required above, so the search space is never empty, and the number says so.
+meta_checked=0
+check_material() {
+    local file=$1 reader=$2 role=$3 set=$4 verifier=$5 alg
+    [ -s "$file" ] || return 0
+    alg=$(alg_of_material "$file" "$reader") ||
+        { echo "error: openssl could not read $file, so the algorithm of a key this build is about to trust is unknown. A file that is present and unreadable is not the same as an absent one and must not be treated as one" >&2; exit 1; }
+    in_alg_set "$alg" "$set" || alg_refusal "$file" "$alg" "$role" "$set" "$verifier"
+    meta_checked=$((meta_checked + 1))
+}
+check_material "$META_DIR/rauc/ca.cert.pem" x509 "RAUC CA (meta/rauc/ca.cert.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
+check_material "$META_DIR/rauc/ca.key.pem" pem "RAUC CA (meta/rauc/ca.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
+check_material "$META_DIR/rauc/signer.cert.pem" x509 "RAUC bundle signer (meta/rauc/signer.cert.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
+check_material "$META_DIR/rauc/signer.key.pem" pem "RAUC bundle signer (meta/rauc/signer.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
+check_material "$META_DIR/updates/root.key" der "package signing key (meta/updates/root.key)" "$PACKAGE_ALG_SET" "$PACKAGE_ALG_VERIFIER"
+[ "$meta_checked" -gt 0 ] ||
+    { echo "error: A2 read no material at all in $META_DIR, so it proved nothing. meta/rauc/ca.cert.pem is required above and is always one of them; a zero here means this check is looking at the wrong tree" >&2; exit 1; }
+echo "meta: A2 read $meta_checked file(s) of key material in meta/; every one is in its role's allowed set"
+
+# THE PUBLIC SET: the only files that leave meta/ for the image.
+#
+# ALLOWLIST, NOT DENYLIST, and that is the whole mechanism. A denylist would
+# pattern-match the secrets and copy the rest, so a file nobody anticipated
+# ships BY DEFAULT -- and the default is what decides the outcome on the day
+# somebody adds meta/updates/notes-for-the-release-host.txt. Under an allowlist
+# a new file is invisible to the image until a line appears here, in a diff,
+# with a reviewer.
+#
+# What it prevents, stated once so nobody relaxes it by accident: if meta/ were
+# staged verbatim, every shipped device would carry meta/rauc/ca.key.pem and
+# meta/updates/root.key -- the private keys behind BOTH gates its updates pass
+# -- so anyone who bought one unit could extract them and sign an update that
+# every other device in the fleet verifies, installs and trusts.
+#
+# signer.cert.pem is public and still does not ship: RAUC takes the signer
+# certificate out of the bundle's own CMS structure and chains it to the
+# keyring, so the device never needs the file, and a file that ships for no
+# reason is a file whose removal nobody can later justify.
+#
+# "<path under meta/>|<path in the image>"
+META_PUBLIC=(
+    "rauc/ca.cert.pem|etc/rauc/keyring.pem"
+    "updates/manifest.json|usr/share/mos/meta/updates/manifest.json"
+)
+
+# WHAT "CARRIES PRIVATE KEY MATERIAL" MEANS, and the obvious spelling is wrong
+# here. A grep for PEM armour is BLIND to meta/updates/root.key, which is raw
+# PKCS#8 DER -- the one file this rule is named after. Three tests, any of which
+# is a refusal, because a detector with one test is a detector that names one
+# file format.
+private_key_material() {
+    local head16
+    # 1. PEM private-key armour, in every spelling openssl and ssh-keygen write.
+    grep -qE -- '-----BEGIN (RSA |DSA |EC |ENCRYPTED |OPENSSH )?PRIVATE KEY-----' "$1" 2>/dev/null && return 0
+    # 2. A DER PKCS#8 PrivateKeyInfo header: a SEQUENCE whose first element is
+    #    INTEGER 0, the version -- 30 <len...> 02 01 00. This is the encoding
+    #    `rauc-sign gen-dev-keys` and gen-dev-keys.sh --domain updates write.
+    head16=$(head -c 16 "$1" | od -An -v -tx1 | tr -d ' \n')
+    case "$head16" in
+    30??020100* | 3081??020100* | 3082????020100*) return 0 ;;
+    esac
+    # 3. A filename in a key-container extension.
+    case "$1" in
+    *.key | *.pk8 | *.p12 | *.pfx | *.jks) return 0 ;;
+    esac
+    return 1
+}
+
+rm -rf "$META_STAGE"
+for entry in "${META_PUBLIC[@]}"; do
+    meta_src="$META_DIR/${entry%%|*}"
+    meta_dst="$META_STAGE/${entry##*|}"
+    [ -s "$meta_src" ] ||
+        { echo "error: $meta_src is on the public set and is missing or empty, so this image would ship without it. Every file in that set is one the device reads to decide what it trusts or where its updates come from" >&2; exit 1; }
+    # B1's second trigger, over the file ABOUT TO BE staged rather than the copy:
+    # the sentence then names the file somebody has to fix, in meta/, rather
+    # than the throwaway under _out/ that this build made from it.
+    if private_key_material "$meta_src"; then
+        echo "error: $meta_src is on the public set and carries private key material; refusing to bake it into the image at /${entry##*|}." >&2
+        echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. meta/ exists to hold private keys and none of them ship; if this file is genuinely public, it is not the file its name and contents say it is." >&2
+        exit 1
+    fi
+    mkdir -p "$(dirname "$meta_dst")"
+    cp "$meta_src" "$meta_dst"
+    chmod 0644 "$meta_dst"
+done
+
+# B1 -- THE BUILD REFUSES TO STAGE A SECRET, and refuses to stage anything it
+# was not asked to. It proves the INTENT; verify's packed-meta-is-the-public-set
+# and no-private-key-in-baked-meta prove the OUTCOME over the assembled image,
+# and the two are not belt-and-braces: B1 cannot see material that arrives by a
+# route other than this staging step -- an overlay file, a package postinst, a
+# stray cp in a later slice -- and B2 does not care how it got there.
+#
+# Both refusals are unwaivable, in the shape the overlay-keyring refusal above
+# uses, and for the same reason: a waiver reintroduces the thing being forbidden.
+meta_staged=0
+while IFS= read -r staged; do
+    meta_rel=${staged#"$META_STAGE/"}
+    if [ -L "$staged" ] || [ ! -f "$staged" ]; then
+        echo "error: $staged is staged into the image at /$meta_rel and is not a regular file." >&2
+        echo "The public set is copied file by file out of meta/; a link or a device node here points at something the allowlist never looked at, and what it resolves to is decided when the image is assembled rather than when it was reviewed." >&2
+        exit 1
+    fi
+    meta_allowed=0
+    for entry in "${META_PUBLIC[@]}"; do
+        [ "$meta_rel" = "${entry##*|}" ] && meta_allowed=1
+    done
+    if [ "$meta_allowed" = 0 ]; then
+        echo "error: $staged is about to be baked into the image at /$meta_rel and is not on the public set in rootfs/build.sh." >&2
+        echo "meta/ holds every private key a release needs and only two of its files may reach a device. A path that arrived here without an allowlist entry arrived without a reviewer, which is the way a signing key ships: not by anyone deciding to ship it, but by a copy nobody read. Add the path to META_PUBLIC if it genuinely belongs in the image, or take the copy that put it here back out." >&2
+        exit 1
+    fi
+    if private_key_material "$staged"; then
+        echo "error: $staged carries private key material and is about to be baked into the image at /$meta_rel." >&2
+        echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. Private keys stay on the build host; the public set is two files and neither is one." >&2
+        exit 1
+    fi
+    meta_staged=$((meta_staged + 1))
+done < <(find "$META_STAGE" -mindepth 1 ! -type d | sort)
+[ "$meta_staged" -eq "${#META_PUBLIC[@]}" ] ||
+    { echo "error: the public set has ${#META_PUBLIC[@]} entries and $meta_staged file(s) were staged and checked. B1 has to see every file that reaches the image, so a count that does not match means it read a tree this build is not going to ship" >&2; exit 1; }
+echo "meta: staged and checked $meta_staged public file(s) from meta/ -- $(printf '%s ' "${META_PUBLIC[@]##*|}")"
+
+# Whether that material is development-grade is not guessed from the bytes. The
+# generator leaves meta/GENERATED beside what it wrote and production material
 # arrives without it, so the marker answers the question on every later build
 # and not only on the one that generated. The marker is the whole condition:
 # there is no build-time variable that declares a bench image, because dev and
-# production take the same path through ca/ and CI decides which material is
+# production take the same path through meta/ and CI decides which material is
 # there. verify reads the same marker and reports the same fact.
-if [ -e "$CA_DIR/GENERATED" ]; then
+#
+# It NAMES ITS DOMAINS, because the mixed tree is real: a production RAUC
+# ceremony's output copied in while the package signing key is still
+# development-grade is one directory holding both, and "meta/ is generated" does
+# not say which half.
+if [ -e "$META_DIR/GENERATED" ]; then
+    meta_domains=$(sed -n 's/^DOMAINS=//p' "$META_DIR/GENERATED" | tail -n1)
     echo "############################################################"
     echo "# WARNING: this image trusts a DEVELOPMENT RAUC keyring    #"
-    echo "# at etc/rauc/keyring.pem, staged from ca/ca.cert.pem.     #"
-    echo "# Every device flashed with it trusts every bundle that    #"
-    echo "# CA signs. Never flash this image onto anything that      #"
-    echo "# leaves your desk. For a release, put real production     #"
-    echo "# material in ca/ -- without ca/GENERATED beside it.       #"
+    echo "# at etc/rauc/keyring.pem, staged from                     #"
+    echo "# meta/rauc/ca.cert.pem. Every device flashed with it      #"
+    echo "# trusts every bundle that CA signs. Never flash this      #"
+    echo "# image onto anything that leaves your desk. For a         #"
+    echo "# release, put real production material in meta/ --        #"
+    echo "# without meta/GENERATED beside it.                        #"
     echo "############################################################"
+    echo "meta: GENERATED marks these domains development-grade: ${meta_domains:-(the marker names none)}"
 fi
-
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 render() {
     local src="$1" dst="$2"
@@ -587,7 +833,11 @@ fi
 
 mkdir -p "$COMPOSE_STAGE"
 printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
-cp "$OVERLAY_STAGE/etc/rauc/keyring.pem" "$COMPOSE_STAGE/keyring.pem"
+# The public set, audited above, handed to the composition context as the
+# image-relative tree it will be installed as. Copied and not bound, because
+# these two files have to end up IN the image.
+mkdir -p "$COMPOSE_STAGE/meta-public"
+cp -a "$META_STAGE/." "$COMPOSE_STAGE/meta-public/"
 echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, declined:${MOS_ROOTFS_WITHOUT:- (none)}"
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 

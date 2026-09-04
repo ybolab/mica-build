@@ -37,7 +37,7 @@ classes:
 - **The release image** — already versioned and signed
   (`docs/design/release-signing.md`); the factory flashes a named release,
   never a loose build. A development-keyring image
-  (`ca/GENERATED`-derived) must never be flashed at a factory station; the
+  (`meta/GENERATED`-derived) must never be flashed at a factory station; the
   image verifier's gate (`verify/src/checks-root.ts`) is the build-side
   teeth, and the factory-side check is §2's.
 - **Serial number pools** — issued to a factory as a bounded, versioned

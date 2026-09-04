@@ -30,11 +30,18 @@
   该检查接受「无 EKU」，却**拒绝**「有 codeSigning 而无 emailProtection」。
   要收紧就得同时改 `system.conf` 的 `[keyring] check-purpose=`，两者必须**同一个提交**。
 
-**信任根入口**：仓库根目录的 `ca/` 是 CA 进入构建的唯一入口（已 gitignore）。
-把这份 runbook 产出的 CA 放进 `ca/` 再构建，`build` 就用它签 bundle，
-`rootfs/build.sh` 把 `ca/ca.cert.pem` 放进镜像的 `/etc/rauc/keyring.pem`。
-`ca/` 为空时构建会自动生成一套开发级信任根并留下 `ca/GENERATED` 标记，
-构建据此发出醒目警告；生产材料不带这个标记。
+**信任根入口**：仓库根目录的 `meta/rauc/` 是 CA 进入构建的唯一入口（`meta/`
+已 gitignore）。把这份 runbook 产出的 CA 放进 `meta/rauc/` 再构建，`build`
+就用它签 bundle，`rootfs/build.sh` 把 `meta/rauc/ca.cert.pem` 放进镜像的
+`/etc/rauc/keyring.pem`。`meta/` 为空时构建会自动生成一套开发级信任根并留下
+`meta/GENERATED` 标记（其中写明生成了哪些域），构建据此发出醒目警告；生产材料
+不带这个标记。
+
+**算法是声明出来的值**：每个密钥角色用什么签名算法写在
+`pkgs/rauc/key-algorithms.env` 里，仪式与生成器需要一致的是**允许集合**而不是
+默认值——RAUC 两个角色的集合是 `ecdsa-p256`、`ecdsa-p384`、`rsa-3072`、
+`rsa-4096`，由 RAUC 自己的验证器（OpenSSL 的 CMS 实现）界定。`rootfs/build.sh`
+会拒绝集合以外的声明值，也会拒绝 `meta/` 里超出集合的材料。
 
 **缺口**：没有把新信任锚配备到**已部署**设备的通道。`/etc` 是只读 squashfs，
 轮换 keyring 目前只能靠重新刷写镜像。
