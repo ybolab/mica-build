@@ -76,7 +76,7 @@
 | `../user/quickstart.md` | db66fc02 | current |
 | `../user/recovery.md` | 00a5147d | current |
 | `../user/release-notes.md` | 00a5147d | current |
-| `../user/security.md` | 00a5147d | current |
+| `../user/security.md` | 4bb676ae | current |
 | `../user/storage.md` | 00a5147d | current |
 | `../user/support.md` | 00a5147d | current |
 | `../user/troubleshooting.md` | 50b85a5e | current |

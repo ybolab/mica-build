@@ -4,6 +4,44 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## The base image carries a firewall vocabulary, and keeps its unit off (2026-09-03)
+
+`mos-system` now depends on both `nftables` and `iptables`. Neither is a
+firewall: the image ships no rule set, no policy, no persistence and nothing
+that reapplies a rule after a reboot. What it gains is the ability to look and
+to act at all, on every profile — before this, a build that declined containers
+had no firewall tooling whatsoever, because `nft` reached the image only as a
+dependency of `mos-podman`.
+
+Two front-ends over one backend is supportable only if the documentation says
+which one answers which question, so it does. `nft list ruleset` is the complete
+view of the `nf_tables` subsystem, including the container network driver's own
+tables; `iptables -S` shows only what came through the iptables front-end, and
+on a device running containers, reading it as "the firewall on this box" is
+wrong. `iptables` here is `iptables-nft`, a translation layer over the same
+kernel subsystem — the legacy binaries ship in the same Debian package, the
+alternatives group is in auto mode where nft outranks legacy, and nothing in the
+tree runs `update-alternatives`. A check asserts that endpoint, because a
+flipped alternatives group leaves an executable `iptables` writing to a rule
+store nothing else on the device reads.
+
+The unit that ships with `nftables` needed a decision rather than an absence.
+`nftables.service` runs `nft -f /etc/nftables.conf`, whose first line is `flush
+ruleset` — on a device with containers that clears the container network's rules.
+It was not enabled, but only because nothing had enabled it: measured on a clean
+trixie root, **no shipped preset rule matches `nftables.service` at all, and
+systemd's fallback for an unmatched unit is enable**, so a single `systemctl
+preset-all` was enough. `mos-system` now ships `50-mos-nftables.preset` with
+`disable nftables.service`, the postinst asserts the outcome, and a verify check
+resolves the preset the way systemd does — basename masking across `/etc`,
+`/run` and `/usr/lib`, first matching rule wins — rather than grepping for the
+line it hopes is decisive.
+
+On the image this project ships the closure delta is six packages and 2768 KiB,
+because four of the ten were already present through `mos-podman`; the profile
+this decision actually changes is the container-less one, which pays ten
+packages and 4351 KiB for a firewall vocabulary it previously did not have.
+
 ## The kernel floor covers eBPF, the firewall back-end and bridge filtering (2026-09-03)
 
 `boards/common/mos-required.fragment` named the virtual link kinds and netavark's

@@ -96,6 +96,20 @@ ARG SOURCE_DATE_EPOCH
 # in network-and-ssh-units.sh -- and so stays /lib, as does fstrim.timer, which
 # overlay-install.sh writes the same way.
 #
+# nftables.service IS DISABLED BY A FILE TOO, 50-mos-nftables.preset, and for a
+# reason that is not openssh's. Nothing enables it today, and that is an ABSENCE
+# rather than a decision: no preset in this image matched the unit at all, and
+# the unmatched fallback is ENABLE. Measured in a clean trixie root with the
+# stock preset set, `systemctl preset nftables.service` CREATES
+# sysinit.target.wants/nftables.service; with `disable nftables.service` in a
+# preset file the same command writes nothing. What that would cost if it ever
+# fired: the unit's ExecStart is `nft -f /etc/nftables.conf`, and the config
+# nftables ships begins with `flush ruleset`, so an enabled unit clears
+# netavark's container-network rules at every boot. mos-system declares nftables
+# in Depends, so the unit is in every image now; a preset-all, a future preset
+# file or an upstream packaging change that adds an enable line all lead there,
+# and this file is what stops them.
+#
 # ssh.service IS DISABLED BY A FILE, 50-mos-ssh.preset, and not by leaving a
 # link out. An absence cannot survive another package's postinst: openssh-server's
 # writes multi-user.target.wants/ssh.service through deb-systemd-helper, and
@@ -189,6 +203,9 @@ RUN set -eu; \
     printf '%s\n' 'disable ssh.service' \
         >"${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
     chmod 0644 "${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
+    printf '%s\n' 'disable nftables.service' \
+        >"${R}/usr/lib/systemd/system-preset/50-mos-nftables.preset"; \
+    chmod 0644 "${R}/usr/lib/systemd/system-preset/50-mos-nftables.preset"; \
     install -d -m 0755 "${R}/srv" "${R}/mos" "${R}/mnt/data" "${R}/mnt/state" "${R}/mnt/meta" "${R}/home" \
         "${R}/usr/local/lib/systemd" "${R}/usr/local/lib/systemd/system" \
         "${R}/var/lib/mos" \

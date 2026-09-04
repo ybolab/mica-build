@@ -484,6 +484,117 @@ silent outcome.
   to bypass every device's window — a fleet-wide reboot primitive reachable
   from the release pipeline.
 
+### 9. Downgrade restriction — required, 2026-09-03
+
+The user requires a version downgrade restriction in lode's reader. This is not
+an optional hardening: PLAN-070 question 6 replaces the TUF repository with
+lode's plainer scheme, and version monotonicity is the property that
+substitution otherwise loses. A plain signature over a manifest cannot tell a
+current release from an old one — every old release was validly signed too, so
+a mirror, a cache or anything able to serve stale bytes can hold a device at a
+known-vulnerable version indefinitely, and every check will verify green.
+
+**What it is.** The automatic path refuses a candidate whose version is lower
+than the floor. Four things have to be pinned down, because each is a decision
+and not an implementation detail.
+
+**9.1 The floor is a high-water mark on STATE, not the installed version.**
+The obvious floor — "refuse anything older than what is installed" — drops back
+exactly when it is needed. After an automatic install and an automatic
+fallback (§6) the installed version *is* the older one, so a floor read from
+the running system reopens the window the mechanism exists to close. The floor
+is therefore the **highest version this device has ever successfully installed**,
+persisted beside the policy on STATE, and it does not decrease on fallback.
+
+**9.2 It binds the automatic path only.** A manual install of an older bundle
+stays permitted, consistently with §5 and §6, which both keep the human path
+open on the same reasoning: the operator has been told and is choosing, and
+that authority is already granted by `docs/design/security-model.md` §1.
+Without this the mechanism becomes its own outage — a bad release with no
+higher fix would strand every device that took it, with no route back that does
+not involve reflashing.
+
+**9.3 The strand case is real and its answer is a release practice, not code.**
+With a high-water floor, a fix published *below* the bad version — v5 is bad,
+the fix ships as v4.1 — is refused by the automatic path on every device that
+took v5. The correct response to a bad release is to publish a **higher**
+version, which is ordinary practice; the record states it so that the first
+person to hit this does not read the refusal as a defect. The escape hatch, if
+it is ever needed, is 9.2's manual install plus an audited clear of the floor —
+an operator action, never a value the plane or the manifest can set. A floor a
+remote party can lower is not a floor.
+
+**9.4 The ordering must be defined before it can be enforced.** `VERSION` in
+`release-identity.env` is of the form `0.1.0-dev.20260903`, and "lower than"
+over that string is undefined until a rule says so. Specify the comparison
+(semver, where a prerelease sorts below its release, so `0.1.0-dev.20260903` is
+lower than `0.1.0`), and specify the behaviour for two versions that do not
+compare — **refuse and say so, never guess**. A monotonic check whose ordering
+is unspecified is a check whose verdict depends on string luck.
+
+**9.5 Interaction with the suppression list (§6).** They are different
+mechanisms and both are needed. Suppression records *this specific version
+failed here*; the floor records *this device has moved past this point*.
+Suppression is per-version and operator-clearable; the floor is a single value
+that only rises. A version can be both suppressed and above the floor, and the
+automatic path must refuse it for the reason that applies — the failure message
+names which, because "refused" with no reason is the support case §6 already
+warns about.
+
+**What this does NOT cover, stated so nobody reads it as complete.** A
+downgrade restriction defeats the **rollback** attack — being served an older
+release. It does not defeat the **freeze** attack — being served the *current*
+release forever, so the device never learns a fix exists. Every check verifies
+green and the device simply never moves. Only a freshness bound catches that:
+an expiry on the manifest, after which the reader treats the metadata as stale
+and says so rather than reporting a successful check. That is a small addition
+to the same reader and it is **not yet approved**; it is recorded here as the
+remaining half of what the TUF substitution gave up.
+
+**9.6 Freshness bound — APPROVED, 2026-09-03, and the remote side is the
+authority for what is current.**
+
+The manifest carries an expiry and the reader enforces it. This closes the
+freeze attack the paragraph above leaves open, and it completes what the
+substitution of lode's scheme for TUF gave up.
+
+**The remote manifest is authoritative for "what is current."** The device does
+not compute or remember a notion of the newest release; each check re-derives
+the candidate set from the manifest it just fetched. That is not a new rule —
+§5 already states that `available` is re-derived per check and never remembered,
+so a stale candidate cannot survive into a fetch — and the freshness bound is
+what makes it safe, because re-deriving from stale metadata is re-deriving from
+whatever an attacker chose to keep serving.
+
+**What it does not mean, stated because the two questions look alike.** The
+remote side is not authoritative for the floor. §9.1 and §9.3 stand unchanged:
+the high-water mark rises locally, and no value in a manifest, and nothing the
+control plane sends, may lower it. *What is newest* is the server's question;
+*what may this device accept* is the device's. A design that lets one answer
+both has no downgrade restriction, only the appearance of one.
+
+**Stale metadata is a distinct outcome from up to date, and this is the whole
+point.** A device served frozen metadata sees every check verify green and
+simply never moves; if that renders as "no update available" it is
+indistinguishable from being current, which is exactly the attack. The reader
+reports a stale manifest as a **failed check with its own reason**, the
+automatic path installs nothing from it, and the operator-visible state says the
+metadata is stale rather than that the device is up to date.
+
+**The clock this depends on already exists and was built for it.** An expiry
+check is only as good as the device's notion of now, and this project already
+binds one: timesyncd's saved clock on STATE, so that `max(RTC, last known good)`
+holds **before TLS and TUF** (`docs/design/time.md`, and the record in
+`docs/CHANGELOG.md`). The freshness check uses that bound, not the raw RTC — a
+board with a dead RTC must neither read a valid manifest as expired nor an
+expired one as valid. Substituting lode for TUF does not strand that mechanism;
+it transfers to it.
+
+**Owed to the release side.** Publishing now has a cadence requirement: metadata
+must be re-signed before it expires, or fielded devices start reporting stale
+checks against a repository nobody attacked. The expiry window and the re-sign
+cadence are one decision and belong with `docs/design/release-artifacts.md`.
+
 ## Risks
 
 - **`auto` is the first capability that reboots a device with nobody watching.**

@@ -95,6 +95,66 @@ operation sits behind the API credential boundary.
 
 > status: shipped — evidence: `docs/design/remote-management.md`
 
+### 5.1 The firewall tools, and the firewall there is not
+
+Every image ships **both** `nft` and `iptables`. Both are dependencies of the
+base package, so a build that declines containers has both too. **The image
+ships the tools and no policy: no default rule set, no allow or deny list, and
+nothing that manages rules for you.** There is no API and no console surface for
+them; `ssh` and these two commands are the whole of it.
+
+**Reach for `nft`.** It is the complete view of what the device is actually
+doing, and it is the vocabulary any policy this product eventually ships will be
+written in. `iptables` is here as the compatibility path — for third-party
+tooling and existing scripts that cannot speak nft — and not as the equal of the
+other.
+
+Five things about them, because each is a surprise otherwise.
+
+**`nft list ruleset` is the complete view. `iptables -S` is not.** Both tools
+program one kernel subsystem, `nf_tables`. `nft list ruleset` prints all of it:
+rules you added through either tool, and the tables the container network driver
+writes for itself. `iptables -S` prints only what came through the `iptables`
+front-end, in the tables that front-end owns. On a device running containers,
+reading `iptables -S` as "the firewall on this box" is wrong — and a rule you
+cannot find with it is not evidence that the rule is absent.
+
+**`iptables` here is `iptables-nft`.** On Debian trixie the `iptables` command
+is a translation layer over that same `nf_tables` subsystem, not the legacy
+xtables path and not a second firewall; `iptables --version` says so itself,
+printing `(nf_tables)`. Rules it creates are real `nf_tables` rules in tables of
+its own. The legacy binaries (`iptables-legacy` and its save/restore pair, over
+`xtables-legacy-multi`) are in the image, because the same Debian package ships
+them, and **nothing in the image selects them**: the alternatives group is left
+in auto mode, where the nft front-end outranks the legacy one, and no unit,
+script or postinst here runs `update-alternatives`. Selecting legacy by hand
+would put your rules in a second, older kernel rule store that nothing else on
+the device reads — not `nft`, not the container driver.
+
+**The container driver's tables are the container driver's.** They are visible
+through `nft` and not through `iptables`, and the driver reconciles them: a rule
+you edit inside them by hand is a rule you are contesting with a reconciler, and
+it will be rewritten. Add your own rules in your own chains.
+
+**Nothing persists, through either tool.** A rule added at runtime lives in the
+kernel and is gone at the next reboot. There is no `netfilter-persistent`, no
+`iptables-save` unit, and nothing in the image loads a ruleset at boot. One file
+looks like it might: the `nftables` package ships `/etc/nftables.conf` and
+`nftables.service`, and **this image keeps that unit disabled on purpose**, with
+a preset it owns rather than by leaving a symlink out. That matters in both
+directions — the unit's `ExecStart` is `nft -f /etc/nftables.conf`, and that
+config begins with `flush ruleset`, so an enabled unit would clear the container
+network's rules at every boot. The file is on the read-only root, so it is not
+somewhere you can put your own rules either.
+
+**If you want a rule to survive a power cycle**, the route today is your own
+unit: a service that reapplies the rules, installed into the writable unit
+directory `/usr/local/lib/systemd/system` like any other native application
+([applications.md](applications.md)). That is a statement of what the product
+does now, not a recommendation of how to run a firewall.
+
+> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `verify/src/checks-firewall.ts`
+
 ## 6. Security lifecycle
 
 The lifecycle is now written down: every credential in the product with its
