@@ -608,6 +608,43 @@ mechanism before the unlock design exists is choosing the design.
 first, because it is what makes a sealed key mean what people assume it means —
 and only then pick between a TPM-sealed trusted key and an operator passphrase.
 
+### 7g. Gate results, both boards, after the merge with PLAN-075
+
+Everything below was run on **2026-09-04** against merge commit `8a886ccd`
+(`main` at `3e3408fb`, which added the firewall check family), from artefacts
+built out of this tree at pool stamp `0.1.0+git8a886ccd5b6d-1`. The earlier
+`307/307` and `410/410` were measured before that merge and are superseded;
+neither board is verified against a copied image any more.
+
+| gate | result |
+|---|---|
+| `verify/run.sh --verify --board x64` | PASS 311/311, 0 FAIL, 22 skipped (x64/grub) |
+| `verify/run.sh --verify --board cx3576` | PASS 414/414, 0 FAIL, 3 skipped (cx3576/uboot) |
+| `pkgs/mosd/tests/apid-api/run.sh` (QEMU boot) | PASS 142/142 |
+| `cd verify && bun test` | 1253 pass, 0 fail |
+| `cd build && bun test` | 869 pass, 0 fail |
+| `make docs-verify` | 43/43 PASS |
+| x64 compose | 296 MB of 520 MB; smoke 12/12 |
+| cx3576 compose | 384 MB of 400 MB |
+
+The x64 kernel check reads `DM_CRYPT` out of the config the **shipped package**
+carries, on the image that booted:
+
+```
+PASS: the shipped kernel config builds in BLK_DEV_DM, DM_INIT, DM_VERITY,
+      SQUASHFS, OVERLAY_FS, DM_CRYPT, VLAN_8021Q, BRIDGE, WIREGUARD, VETH, ...
+[    2.706957] device-mapper: ioctl: dm-0 (rootfs) is ready
+[    3.031721] Run /sbin/init as init process
+```
+
+**The cx3576 image is now built from this tree.** Until this round it was copied
+from the main checkout, so the board's earlier passes described that image and
+not this branch. With the encryption kernel in place the copied image failed 7
+checks -- 2 of them correctly reporting that `factory` BOOT-A/BOOT-B `Image`
+no longer matched the local BSP artefact, which is exactly the staleness the
+check exists to catch. Building the missing arm64 inputs here (U-Boot, the
+arm64 podman binaries, seven arm64 producers) removed all 7.
+
 ## Risks
 
 - **The QEMU harness is the only thing that will ever boot this kernel.** A
