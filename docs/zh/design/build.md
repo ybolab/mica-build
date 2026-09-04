@@ -8,14 +8,56 @@
 
 ## 0. 规则
 
-**主机上不装工具链。主机上不做编译。主机上不做镜像装配。**
+规则写成系统的一条性质，而不是一条禁令，这样它可以被跑出来，而不是被争出来：
 
-主机只需要带 buildx 的 docker、bash、make、git、`jq` 和 `curl`，别的都不需要。
+> **一台只有 Docker 和 git 的主机，必须能完整地构建并发布一个镜像。**
+
+由此得到的祈使句：
+
+> **主机上不装工具链。主机上不做编译。主机上不做镜像装配。**
+
 每一个编译器、每一个文件系统创建工具、每一个镜像装配工具、每一个打包工具和每一个
 签名工具，都来自 `build-env/images.env` 里按 digest 固定的镜像。
 
-这句话本页一直都有。下面补的是它一直缺的部分：某个工具到底属于线的哪一边、目前
-还有哪些路径没有遵守，以及新增一条这样的路径时什么会失败。
+这条祈使句本页一直都有。下面补的是它一直缺的部分：“只有 Docker 和 git”在实践中
+到底意味着什么、某个工具属于线的哪一边、目前还有哪些路径没有遵守，以及新增一条这样
+的路径时什么会失败。
+
+### 0.0 主机上允许有什么
+
+下面这张表是从后面那次实验里量出来的，不是猜的——实验需要的就是这些，没有更多：
+
+| 主机上 | 为什么 |
+| --- | --- |
+| `docker`，且能连上 daemon | 其余一切都跑在它启动的东西里 |
+| `git` | 每一道门读的文件清单都来自 `git ls-files` |
+| `bash` | 本树每一个入口都是 bash 脚本，而 bash 不写出任何产物字节 |
+| `make` | target 名字就是构建的接口，而 recipe 只决定跑哪个脚本 |
+| 一套 busybox 用户态——`sh`、`awk`、`sed`、`grep`、`sha256sum`、`tar` | 脚本自己的算术 |
+
+**按 §0.1，`bash` 和 `make` 属于编排**——两者都改不了产物的任何一个字节——这里把它们
+明确写出来而不是默认，因为一条自己的入口就违反自己的策略，比没有策略更糟。`jq` 和
+`curl` 只有两条路径会用到（§0.3），构建镜像并不需要它们。
+
+除此之外构建再伸手去拿别的东西，都是一个发现。任何环节都不得要求主机上的 `bun`、
+`node`、`python3`、`go`、`gcc`、`cargo`，或任何文件系统与镜像工具。
+
+**2026-09-04 实测，不是断言。** 在 `IMAGE_DOCKER_CLI_28` 里——它只有 docker、git 和
+一套 busybox 用户态，没有 bash、没有 make、没有 bun、没有 node、没有 python、没有
+编译器，也没有 sgdisk/mtools/mksquashfs——对着一份新克隆、挂上 daemon socket：
+
+| | |
+| --- | --- |
+| 只有 docker + git 时跑 `make docs-verify`、`bash …` | `sh: make: not found`、`sh: bash: not found` |
+| 加上 `bash` 和 `make` | 五道文档门全绿 |
+| `make os-layout-lint` | `RESULT: PASS (28/28 checks)` |
+| `make os-verify-test` | `RESULT: PASS (1270/1270 tests)`，bun 来自固定镜像 |
+| `bash build/run.sh --mkimage-x64` | 镜像装配完成，1938 MiB |
+| `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
+
+一台裸主机目前还做不到的一件事：合成 rootfs。`build/run.sh --build-rootfs` 要驱动
+`docker buildx`，而它是一个 CLI 插件，`verify/Dockerfile` 没有把它拷进去，那条拒绝
+会把这件事说出来。
 
 ### 0.1 判定方法：对付一个清单上没有的工具
 
@@ -47,7 +89,7 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 `pkgs/mosd/tests/apid-api/spec-pins.sh`）是裁判，保留它那条会声明路线的主机路线，
 而 CI 根本不装 bun，所以每次 push 走的都是固定镜像。
 
-### 0.2 为什么——四次实测，不是一条原则
+### 0.2 为什么——六次实测，不是一条原则
 
 1. **e2fsprogs。** layout 要求 `-O ^orphan_file` 和 `-E hash_seed`，早于 1.47 的
    e2fsprogs *会静默地做不到*。本机是 `mke2fs 1.46.5 (30-Dec-2021)`（*实测于
@@ -64,6 +106,18 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
    存在性检查就是 `command -v`，而它对这个二进制说“有”。这条路线在本机没有被走到，
    只是因为 `sgdisk` 和 `mcopy` 也不在——本该拦下错误 `mkfs.vfat` 的那道检查，并不是
    真正起作用的那道。
+5. **主机的 C 编译器不是本树固定的那个**（*实测于 2026-09-04*）。这里
+   `gcc --version` 答的是 `gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0`，而
+   `build-env/c/Dockerfile` 为它自带的 gcc 断言了版本下限，并链接一个探针程序来
+   证明。同一份 C 在主机上和在 `mos-build-c` 里，是被两个不同的编译器编的，而构建
+   日志里没有任何东西会说清是哪一个。
+6. **本树最大的一处主机工具链，是脚本主动去找来的**（*实测于 2026-09-04*）。默认
+   PATH 上 `command -v cargo` 什么也答不出来。整套 rustup 工具链——cargo、
+   `rustc 1.98.0`、`cargo-clippy 0.1.98`、cargo-nextest、cargo-deny、rustfmt——都在
+   `/root/.cargo/bin` 下，能被找到只是因为 `pkgs/mosd/hack/check.sh` 第 8 行和
+   `pkgs/rauc-sign/hack/check.sh` 第 13 行把它放到了 PATH 前面。这道门是跑得起来的，
+   今天还跑绿过一次：它是一道站在未固定主机工具链上的、能用的门，这和一道坏掉的门
+   是两回事。
 
 ### 0.3 目前有哪些豁免，以及为什么
 
@@ -85,8 +139,11 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 ### 0.4 靠什么强制
 
 `make os-host-toolchain-lint`（`tests/host-toolchain-lint.sh`）扫描每一个被 git
-跟踪的 shell 脚本、`Makefile` 和 CI workflow，找处于命令位置的生产者二进制。
-Dockerfile 不在扫描范围内——它们*就是*容器。在镜像里运行的文件或代码块，在原地写明：
+跟踪的 shell 脚本、`Makefile` 和 CI workflow，找**两种形态**：处于命令位置的生产者
+二进制，以及把 `$HOME` 下某个目录前置到 `PATH` 的赋值。第二种是因为第一种差点漏掉
+第 6 条实测——脚本主动去找来的工具链仍然是主机工具链，而且更糟，因为没有任何东西
+固定它。Dockerfile 不在扫描范围内——它们*就是*容器。在镜像里运行的文件或代码块，
+在原地写明：
 
 ```sh
 # mos-build-side: container -- <why>          整个文件都在镜像里跑
@@ -94,9 +151,11 @@ Dockerfile 不在扫描范围内——它们*就是*容器。在镜像里运行�
 # mos-build-side: host                        到这里为止
 ```
 
-它看不见通过变量调用的二进制、写在 heredoc 里的生产者，也无法验证一条声明是不是写
-错了；脚本头部把这些说得更细，而 `tests/host-toolchain-lint-test.sh` 会分别植入一次
-主机调用、一条失效豁免、一处被删掉的声明和一个没有闭合的代码块，要求每一种都让它变红。
+它看不见通过变量调用的二进制、写在 heredoc 里的生产者，无法验证一条声明是不是写错
+了，也答不出本节开头那条判据现在还成不成立——那一条要靠有人去跑一次实验。脚本头部把
+这些说得更细，而 `tests/host-toolchain-lint-test.sh` 会分别植入一次主机调用、一次
+`$HOME` PATH 前置、一条失效豁免、一处被删掉的声明、一个没有闭合的代码块和一句提到
+heredoc 的注释，要求每一种都让它变红——另有三种合法形态，要求它们保持绿。
 
 ## 1. 一次构建产出什么
 

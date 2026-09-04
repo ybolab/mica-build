@@ -7,8 +7,13 @@
 # by digest" -- for as long as it has existed, while paths that contradict it
 # sat in the tree with nothing going red.
 #
-# WHAT IT LOOKS FOR. One producer binary in command position, in a file that has
-# not declared itself container-side. A producer is a tool whose own build can
+# WHAT IT LOOKS FOR. Two shapes. One producer binary in command position, in a
+# file that has not declared itself container-side -- and one PATH assignment
+# that prepends a directory under $HOME, which is how a script reaches for a
+# toolchain that is not on the machine's PATH at all. The second shape exists
+# because the first one nearly missed the largest violation in the tree: this
+# host has no cargo, and `pkgs/mosd/hack/check.sh` finds one only because its
+# line 8 puts $HOME/.cargo/bin in front. A producer is a tool whose own build can
 # change the bytes it writes: a compiler, a filesystem maker, an image
 # assembler, a packer, a signer. docs/design/build.md section 0 states the test
 # that decides whether a new tool belongs in the table below; this file is the
@@ -225,6 +230,26 @@ for f in "${files[@]}"; do
             if (line ~ /^(echo|printf)[[:space:]]/) next
 
             examined++
+
+            # THE SECOND SHAPE. A script that REACHES for a host toolchain is
+            # invisible to the table above: `pkgs/mosd/hack/check.sh` runs
+            # `cargo`, which the table does catch, but it can only find one
+            # because line 8 puts $HOME/.cargo/bin in front of PATH -- and on
+            # this host `command -v cargo` answers nothing without it. A
+            # toolchain a script goes looking for under $HOME is still a host
+            # toolchain, and it is a worse one: nothing pins it and nothing
+            # records which it was.
+            #
+            # Narrow to $HOME and ~, so that the fixture PATHs the test suites
+            # build -- `env PATH="${FAKEBIN}:$PATH"` in
+            # tests/shadow-reconcile-test.sh, `env -i PATH="$BIN:/usr/bin:/bin"`
+            # in tests/health-test.sh -- are not findings. Those point at
+            # directories the test just made; these point at a toolchain
+            # installed beside the package manager rather than by it.
+            if (line ~ /(^|[[:space:]]|;)(export[[:space:]]+)?PATH=.*(\$HOME|\$\{HOME\}|~\/)/) {
+                emit("hit", "host-toolchain-on-PATH", $0)
+            }
+
             if (match(line, "(^|[;&|(]|&&|\\|\\|)[[:space:]]*(" TOOLS ")([[:space:]]|$)")) {
                 m = substr(line, RSTART, RLENGTH)
                 sub(/^([;&|(]|&&|\|\|)?[[:space:]]*/, "", m)
@@ -262,6 +287,10 @@ for f in "${files[@]}"; do
                 continue
             fi
             hits=$((hits + 1))
+            if [ "${a}" = 'host-toolchain-on-PATH' ]; then
+                fail "${f}:${lineno}: this prepends a directory under \$HOME to PATH, which is how a script reaches a toolchain the machine's package management never installed and nothing pins. See docs/design/build.md section 0. Register it in ${EXEMPTIONS} as '${f}<TAB>host-toolchain-on-PATH<TAB><why>' if it cannot move yet."
+                continue
+            fi
             fail "${f}:${lineno}: \`${a}\` runs on the host. Producers run in a container pinned in build-env/images.env; see docs/design/build.md section 0. If this line runs INSIDE an image, say so with \`# mos-build-side: container-block -- <why>\`; if it cannot move yet, register it in ${EXEMPTIONS} with the reason."
             ;;
         esac

@@ -217,7 +217,27 @@ track "${d}"
 expect "an exemption with no reason is refused" "${d}" red 'no tool or no reason'
 
 # ---------------------------------------------------------------------------
-# 12. A COMMENT THAT MENTIONS A HEREDOC MUST NOT OPEN ONE. This was a real
+# 12. THE SECOND SHAPE: a script that REACHES for a host toolchain. The table of
+#     binaries nearly missed the largest violation in the tree, because this
+#     host has no cargo at all -- pkgs/mosd/hack/check.sh finds one only by
+#     putting $HOME/.cargo/bin in front of PATH. And the negative half, which is
+#     what keeps the rule narrow: a fixture PATH built out of a directory the
+#     test just made is not a finding, and two suites here do exactly that.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+printf '%s\n' '#!/bin/sh' 'export PATH="$HOME/.cargo/bin:$PATH"' 'true' >"${d}/reaches.sh"
+track "${d}"
+expect "a PATH prepended with a directory under \$HOME is found" "${d}" red 'reaches.sh:2: this prepends a directory under $HOME to PATH'
+
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+printf '%s\n' '#!/bin/sh' 'FAKEBIN=$(mktemp -d)' 'env PATH="${FAKEBIN}:$PATH" some-fixture' >"${d}/fixture.sh"
+track "${d}"
+expect "a fixture PATH built from a temp dir is NOT a finding" "${d}" green 'RESULT: PASS'
+
+# ---------------------------------------------------------------------------
+# 13. A COMMENT THAT MENTIONS A HEREDOC MUST NOT OPEN ONE. This was a real
 #     defect: heredoc detection ran before the comment skip, so a line of prose
 #     containing `<<EOF` elided every line after it until something matched the
 #     terminator -- a file that silently stopped being scanned and still
@@ -236,7 +256,7 @@ track "${d}"
 expect "a heredoc named in a COMMENT does not swallow the lines after it" "${d}" red 'prose.sh:4: `mkfs.ext4` runs on the host'
 
 # ---------------------------------------------------------------------------
-# 13. THE POSITIVE CONTROL, driven directly. A tree in which the scan found no
+# 14. THE POSITIVE CONTROL, driven directly. A tree in which the scan found no
 #     producer running in a container has not found this repository's build; it
 #     has found a pattern that stopped matching. It must not report clean.
 # ---------------------------------------------------------------------------
@@ -246,7 +266,7 @@ track "${d}"
 expect "a scan that saw no container-side producer refuses to report clean" "${d}" red 'no container-side declaration was found'
 
 # ---------------------------------------------------------------------------
-# 14. And a tree with no scannable files at all.
+# 15. And a tree with no scannable files at all.
 # ---------------------------------------------------------------------------
 d="$(new_fixture)"
 rm "${d}/plain.sh"   # this is the one case that wants an EMPTY surface
