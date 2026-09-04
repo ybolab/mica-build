@@ -98,11 +98,11 @@ each with its own exit status rather than through a pipe that would mask one.
 
 | Gate | Result |
 |---|---|
-| `(cd verify && bun test)` | **green**, 1268 tests |
-| `(cd build && bun test)` | **green** |
+| `(cd verify && bun test)` | **green**, 1268 tests across 39 files |
+| `(cd build && bun test)` | **green**, 889 tests across 28 files (391 s; it drives real docker bundle end-to-end runs) |
 | `make docs-verify` | **green**, 183 + 448 + 733 + 231 + 43 |
 | `bash tests/release-verify-test.sh` | **green**, 27/27, **11 refusals proven red** through the shipped CLI, each with a message fragment no other refusal carries |
-| `cargo test --locked -p mosd -p apid` | **green** in `ai-agent/hw1jo2un-rust:amd64` (`localhost/mos-build-rust:amd64` + `dbus-daemon`) |
+| `cargo test --locked -p mosd -p apid` | **green**, 823 tests (apid 318 + 1, mosd 496 + 1 + 7), in `localhost/mos-build-rust:amd64` with `dbus-daemon` added |
 | `rootfs/build.sh`'s meta staging, both dispositions | **green**: with `meta/GENERATED` present it stages `3 of 3` public-set entries and names the baked marker; with it removed, `2 of 3` and no marker |
 | **A composed x64 image and `bash verify/run.sh --verify --board x64`** | **NOT RUN — reported, not worked around** |
 
