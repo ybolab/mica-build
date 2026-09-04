@@ -371,11 +371,11 @@ a real subject, real validity horizons, and offline custody. Same machine
 discipline as §1.1. openssl is the only tool.
 
 **What the ceremony and the generator must agree on is the SET, not the
-default.** The algorithm each key role gets is a declared value in
-`pkgs/rauc/key-algorithms.env`, and the values there are development defaults;
-this block is a shell block a human copies onto an offline machine that may
-hold no checkout, so it cannot source that file and is not asked to. The
-**allowed set** for both RAUC roles is `ecdsa-p256`, `ecdsa-p384`, `rsa-3072`,
+default — with one exception, and it is the signer's validity.** The algorithm
+each key role gets is a declared value in `pkgs/rauc/key-algorithms.env`, and
+the values there are development defaults; this block is a shell block a human
+copies onto an offline machine that may hold no checkout, so it cannot source
+that file and is not asked to. The **allowed set** for both RAUC roles is `ecdsa-p256`, `ecdsa-p384`, `rsa-3072`,
 `rsa-4096`, and it is bounded by RAUC's own verifier — OpenSSL's CMS
 implementation, which verifies RSA and EC alike, and a keyring that is an
 OpenSSL CA file either way. A production CA that differs from the development
@@ -400,6 +400,20 @@ strands until reflash. A ceremony that prefers `ecdsa-p384` for the same
 15-year horizon is inside the set and is a decision to record in the minutes,
 not a deviation to justify.
 
+**The signer's validity is the exception, and it is a VALUE this ceremony is
+held to rather than a default it may depart from.** It is declared once, in
+`pkgs/rauc/key-validity.env`, with the reason for the number beside it;
+`pkgs/rauc/gen-dev-keys.sh` mints from that declaration, and
+`build/src/signer-window.test.ts` asserts that the `-days` on the signer step
+below is the same number. That gate exists because this block cannot source the
+file: two literals that agree today are exactly the arrangement in which one of
+them moves and both go on looking correct. A ceremony that wants a different
+window changes the declaration — which moves this block, the development mint
+and the build's refusal threshold together — rather than editing the line
+below. The CA's own `-days` is deliberately **not** covered by it: the CA must
+outlive the fleet and the signer must not, and binding the two would shorten the
+baked keyring to the signer's window.
+
 ```sh
 umask 0077
 
@@ -417,10 +431,14 @@ openssl req -x509 -newkey rsa:4096 -keyout ca.key.pem -out ca.cert.pem \
     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
     -addext "keyUsage=critical,keyCertSign,cRLSign"
 
-# The signer. Short validity (2 years) because reissuing a signer is cheap --
-# it needs the CA key, not a fleet update: devices trust the CA, so a new
-# signer chains without touching any keyring. A CA and its signer may
-# legitimately differ in algorithm; both are bounded by the one set.
+# The signer. SHORT-LIVED, and the number is pkgs/rauc/key-validity.env's
+# MOS_RAUC_SIGNER_VALIDITY_DAYS -- see the note above, and that file for why the
+# value is what it is. Reissuing a signer needs the CA key and no fleet update:
+# devices trust the CA, so a new signer chains without touching any keyring.
+# What the window buys is the only revocation this design has -- there is no CRL
+# path to devices, so a stolen signer is out-waited, and the window IS the wait.
+# A CA and its signer may legitimately differ in algorithm; both are bounded by
+# the one set.
 openssl req -newkey rsa:3072 -keyout signer.key.pem -out signer.csr \
     -nodes -sha256 \
     -subj "/O=<the shipping organisation>/CN=mos release bundle signer"
@@ -433,7 +451,7 @@ openssl req -newkey rsa:3072 -keyout signer.key.pem -out signer.csr \
 # the EKU here and the system.conf line change as one commit.
 openssl x509 -req -in signer.csr \
     -CA ca.cert.pem -CAkey ca.key.pem -CAcreateserial \
-    -out signer.cert.pem -days 730 -sha256 \
+    -out signer.cert.pem -days 45 -sha256 \
     -extfile <(printf '%s\n' \
         "basicConstraints=critical,CA:FALSE" \
         "keyUsage=critical,digitalSignature")
@@ -442,28 +460,154 @@ openssl verify -CAfile ca.cert.pem signer.cert.pem
 ```
 
 Custody, mirroring §1.5: `ca.key.pem` stays offline on sealed media, two
-copies, two locations — it is needed once per signer reissue, roughly every
-two years. `signer.key.pem` and `signer.cert.pem` go to the release signing
-host. `ca.cert.pem` is public: it is the keyring, and its sha256 goes in the
+copies, two locations — it is needed once per signer reissue, which under
+PLAN-078 §4a's decision is **monthly**, eleven or so ceremonies a year rather
+than one every two years. That is the price of option (a): no intermediate CA,
+so the root itself mints every short-lived signer, and every checkout is an
+exposure and a custody-record entry. §2.2 is the recurring procedure.
+`signer.key.pem` and `signer.cert.pem` go to the release signing host.
+`ca.cert.pem` is public: it is the keyring, and its sha256 goes in the
 ceremony minutes next to root.json's.
 
 `rauc bundle` takes PEM file paths; there is no HSM/PKCS#11 wiring in the bundle
 builder today, so the signer key is a file on the release host and the host's
 hygiene is part of the trust model. Worth saying rather than implying.
 
-### 2.2 Signer reissue
+### 2.2 Signer reissue — a monthly cadence, and repairing what expires behind it
 
-With the CA media checked out under the custody record: new key + CSR as
-above, sign with the CA, carry the new pair to the release host, destroy the
-old signer key. No device is touched; the next bundle simply chains through
-the new signer. A *compromised* signer is revoked the hard way — RAUC's
-keyring model as shipped here has no CRL distribution to devices — by
-reissuing and then out-waiting the exposure: any bundle the attacker signed
-verifies until the CA itself is replaced. Replacing the CA is the §2.4
-rollover; read its compromise caveat before treating it as the remedy, because
-a rollover shipped through the update channel is signed by the very chain
-being retired. Record the incident; ship the fleet-wide mitigation through
-the update itself if one is warranted.
+The signer is **short-lived**: `pkgs/rauc/key-validity.env` declares the window
+in days with the reason for the number beside it, and §2.1's mint reads that
+declaration. What the window buys is the only revocation this design has. There
+is no CRL path to devices, so a stolen signer is not revoked, it is
+**out-waited** — and the window *is* the wait. §2.4 is a different remedy for a
+different key; read its compromise caveat before reaching for it.
+
+**The ceremony is recurring.** Under PLAN-078 §4a the shipping organisation
+took option (a), monthly root access: the root CA issues every signer directly,
+with no intermediate, and `basicConstraints` stays `pathlen:0`. So a reissue is
+a **root ceremony** — minutes, witness, sealed medium in and out — eleven or so
+times a year rather than once every two. §1.5's custody record applies to every
+one of them, and the risk that goes with the frequency is stated rather than
+hoped away: *the more often a ceremony runs, the more likely it is to be run
+casually.* A recurring-ceremony runbook saying what a monthly run may skip and
+what it may never skip is owed to PLAN-077 §7, which was written for a one-time
+event; until it exists, run the full §2.1 signer steps each time.
+
+The steps themselves are unchanged and small: with the CA media checked out
+under the custody record, new key + CSR as in §2.1, sign with the CA, carry the
+new pair to the release host, destroy the old signer key. **No device is
+touched** — devices trust the CA, so a new signer chains without any keyring
+changing anywhere.
+
+**The build is what stops a slipped calendar becoming an outage**, and it has
+two lines rather than one:
+
+- `build/src/tools/rauc.ts` passes `--keyring` at signing time, so `rauc bundle`
+  verifies what it just signed and prints *"Certificate 1 (…) will expire in
+  less than a month!"* inside rauc's own 30-day band. That warning is upstream's
+  and its threshold is not configurable here. It did not fire in this tree
+  before: `bundleArgs` passed no keyring, and `rauc info --keyring` does not
+  emit it either, so the runway the window was chosen for was runway before a
+  warning nobody received.
+- Inside `MOS_RAUC_SIGNER_REISSUE_THRESHOLD_DAYS` the build **refuses** to sign
+  at all, naming the `notAfter` it read and the file that declares the
+  threshold. It refuses rather than warning on `pkgs/rauc/versions.env`'s
+  precedent — recording a hash is an act, and so is convening a ceremony — and
+  because under option (a) a missed reissue needs a root ceremony scheduled at
+  short notice, during which nothing ships.
+
+A signer that expires with no reissue therefore stops the release line, loudly
+and before the fact rather than after it. That is the standing operational
+commitment the window buys; an organisation that cannot keep the cadence should
+lengthen the declared window deliberately rather than discover it by missing a
+date.
+
+#### What expiry costs the archive, and the repair — **[runbook]**
+
+An expired signer does not only stop new releases. RAUC 1.13 verifies a
+certificate's validity **against the current clock**, so `rauc install` of an
+**archived** `.raucb` whose signer has since expired is refused, at the
+`Verifying signature` step. Three populations, priced separately:
+
+- **A factory reflash to a known-good older release is unaffected.** A reflash
+  writes the release's `.img`, which carries no CMS signature and which RAUC
+  never verifies (`release-artifacts.md` §1). Signer expiry touches the
+  `.raucb` path only.
+- **The release side's own archive is repairable**, by the procedure below.
+- **A customer holding a downloaded `.raucb` cannot repair it** and must
+  re-download. This is the population that genuinely loses something; what they
+  lose is a stale local copy, not their device, and the current release is
+  always installable.
+
+The repair is `rauc resign` under a signer reissued from the **unchanged** CA.
+It needs one thing that looks alarming and is not, provided it stays where it
+belongs:
+
+```sh
+# ON THE RELEASE HOST, in the release host's OWN rauc configuration.
+# NEVER on a device, and never in pkgs/rauc/system.conf.in -- see the warning
+# below, which is the most important sentence in this section.
+cat > /etc/rauc/release-host.conf <<'CONF'
+[system]
+compatible=release-host
+bootloader=grub
+bundle-formats=verity
+
+[keyring]
+path=/path/to/ca.cert.pem
+use-bundle-signing-time=true
+CONF
+
+# Re-sign one archived bundle with the reissued signer. The payload is not
+# rebuilt: only the CMS signature changes.
+rauc --conf /etc/rauc/release-host.conf resign \
+    --cert signer.cert.pem --key signer.key.pem \
+    archived.raucb resigned.raucb
+```
+
+Why the setting is needed here and nowhere else: `resign` verifies the
+**incoming** signature first, against the same clock as everything else, so
+without it the repair fails for exactly the reason the repair exists. With it,
+the release host evaluates the old signature at the CMS `signingTime` — which
+is sound *for its own archive*, because the release host is the party that
+signed it and is curating its own material. The resigned bundle then installs on
+an **unchanged** device running the default semantics, and the payload is
+byte-identical: only the CMS changed. All of this is measured, in PLAN-078
+§R7–R10.
+
+> **`use-bundle-signing-time=true` MUST NEVER REACH A DEVICE.** On a device it
+> replaces "is this signer valid now" with "was it valid at the time the signer
+> claims it signed" — a timestamp the key holder chooses. Measured (PLAN-078
+> §M10): with it set, a bundle signed by a signer that had **expired 370 days
+> earlier**, with the signing host's clock rolled back into its old window, was
+> ACCEPTED. It is not a milder expiry; it is none, and it silently deletes
+> everything this section is for. The release host's configuration file and the
+> device's are **different objects and must never be copies of each other**;
+> `verify/src/checks-rauc.ts`'s `rauc-keyring-verifies-against-now` refuses an
+> image whose rendered `/etc/rauc/system.conf` sets the key at all — including
+> spelled `false`, because a config that says `false` is a config somebody
+> edited and the next edit is the one that says `true`.
+
+**A resigned bundle is a NEW release record, not an in-place edit.** Re-signing
+changes the bundle's bytes and therefore its `sha256`, which
+`release-artifacts.md` §1 pins in `SHA256SUMS` and §3 records in
+`manifest.json`'s `artifacts[]`. The publication gate must see a repaired bundle
+as a new record with a named reason. **That record is not designed yet** —
+PLAN-078 §9 carries it as a backlog item blocked on the coupling above — so
+until it is, a repair is an incident-time procedure with a written reason, not a
+routine one.
+
+**Re-signing the whole archive on a schedule is deliberately not the answer.**
+It would restore "old bundles work forever" and with it the property expiry
+exists to remove: an attacker's bundle would be re-signed along with everyone
+else's unless someone curated the list, and a curation step nobody performs is
+an audit that does not happen. Repair is **on demand, per bundle, with a named
+reason**, and the reason belongs in the release record.
+
+**What this does not cover.** A compromised **CA** is untouched by any of it: an
+attacker holding the CA key mints their own fresh signer whenever they like, and
+neither a short window nor a CRL helps when the thing being replaced is what
+signs them. That is §2.4's problem, with §2.4's caveat.
 
 ### 2.3 How the keyring reaches devices — at build time; the update channel carries rotation
 
@@ -522,7 +666,10 @@ land:
   and refuses one that carries anything else. Whether that root is
   development-grade (`meta/GENERATED`) is stated in the verdict, not refused. So
   the keyring RAUC reads is, by the shipped configuration, the CA the build was
-  pointed at.
+  pointed at. A third check, `rauc-keyring-verifies-against-now`, holds the
+  SEMANTICS beside the path: the rendered `[keyring]` may not carry
+  `use-bundle-signing-time` or `check-crl` at all, so what the device does with
+  that keyring is asserted rather than incidental (§2.2).
   Whether it is honoured end to end — `rauc install` accepting a
   production-signed bundle on hardware — is observable only on a booted
   device; that last step stays documented, not tested.

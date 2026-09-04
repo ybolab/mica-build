@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the pinned mos builder images out of build-env/images.env.
 #
-#   make build-env  -> localhost/mos-build-{base,c,deb,go,rust}:<arch>
+#   make build-env  -> localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>
 #   bash build-env/build.sh  does the same thing
 #   MOS_BUILD_PLATFORM=linux/arm64 ...  builds for another architecture
 #
@@ -50,12 +50,22 @@ command -v docker >/dev/null 2>&1 || {
 # in the local image store -- and a stale parent is invisible in the output,
 # because every assertion the child makes is about the child. The check below
 # enforces the ordering rather than trusting this comment.
+
+# rust-check is the one row whose parent is a SIBLING rather than the base, and
+# it is the shape to copy when a gate needs tools the build does not. It is FROM
+# mos-build-rust and adds clippy, rustfmt, nextest, cargo-deny and dbus-daemon
+# -- tens of megabytes that would otherwise sit in an image every Rust deb
+# producer pulls, to be used by one target. It also takes TWO prefixes: its own
+# RUSTCHECK_ pins and the RUST_ ones, because the tarball it takes clippy and
+# rustfmt out of is the same one its parent installed rustc from, and a second
+# copy of that URL and hash would be a thing that can disagree with itself.
 IMAGES=(
     "base:BASE_:IMAGE_DEBIAN_TRIXIE"
     "c:C_:LOCAL_MOS_BUILD_BASE"
     "deb:DEB_:LOCAL_MOS_BUILD_BASE"
     "go:GO_:LOCAL_MOS_BUILD_BASE"
     "rust:RUST_:LOCAL_MOS_BUILD_BASE"
+    "rust-check:RUSTCHECK_,RUST_:LOCAL_MOS_BUILD_RUST"
 )
 
 # Which platform, decided before the pins are read.

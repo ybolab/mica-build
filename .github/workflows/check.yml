@@ -123,34 +123,50 @@ jobs:
 
       # Prebuilt release binaries, not `cargo install`: compiling cargo-deny
       # from source under the workspace MSRV toolchain took minutes per run and
-      # broke whenever a transitive dependency out-raced that MSRV. Versions
-      # and sha256 sums are pinned to the exact artifacts proven against this
-      # repository on the maintainer's machine (cargo-deny 0.19.5,
-      # cargo-nextest 0.9.133); the sums were computed from the official
-      # release downloads, and both binaries were executed to confirm they
-      # report those versions. cargo-deny publishes its Linux binary only for
-      # the musl triple -- it is static, so it runs on the gnu runner as-is.
-      - name: Install cargo-nextest and cargo-deny (pinned prebuilt binaries)
+      # broke whenever a transitive dependency out-raced that MSRV.
+      #
+      # THE VERSIONS AND HASHES ARE build-env/images.env's, sourced and not
+      # repeated. They used to be four literals in this file, which was the only
+      # place that had them; then the local gate grew an image that installs the
+      # same two tools (build-env/rust-check/Dockerfile), and two pins for one
+      # tool in two files are "a second pin, in a second place, free to disagree
+      # with the first" -- this workflow's own argument, made two jobs below
+      # about bun. So RUSTCHECK_* is the single statement of what this gate runs,
+      # and a bump is one edit that moves CI and the local image together.
+      #
+      # cargo-deny publishes its Linux binary only for the musl triple, and
+      # images.env pins the musl nextest for the same reason: both are static,
+      # so they run on this gnu runner as-is.
+      #
+      # The archive's inner directory is derived from the URL rather than spelled
+      # out, so the triple appears once.
+      - name: Install cargo-nextest and cargo-deny (pinned in build-env/images.env)
         run: |
           set -euo pipefail
+          # The same comment-stripped derivation build-env/build.sh uses, so the
+          # lock means the same thing to a reader of either.
+          . <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' build-env/images.env)
+          for k in RUSTCHECK_DENY_URL_AMD64 RUSTCHECK_DENY_SHA256_AMD64 \
+                   RUSTCHECK_NEXTEST_URL_AMD64 RUSTCHECK_NEXTEST_SHA256_AMD64; do
+            [ -n "${!k:-}" ] || {
+              echo "error: build-env/images.env defines no $k, so this job would install that tool unpinned" >&2
+              exit 1
+            }
+          done
+
           mkdir -p "$HOME/.cargo/bin"
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
 
-          deny_ver=0.19.5
-          deny_sha=5ea64ae09959b5fe1072d898f95caaa89b374678ba6728d5e9ed1366745479b0
-          curl -sSfL -o "$tmp/cargo-deny.tar.gz" \
-            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${deny_ver}/cargo-deny-${deny_ver}-x86_64-unknown-linux-musl.tar.gz"
-          echo "${deny_sha}  $tmp/cargo-deny.tar.gz" | sha256sum -c -
+          curl -sSfL -o "$tmp/cargo-deny.tar.gz" "$RUSTCHECK_DENY_URL_AMD64"
+          echo "${RUSTCHECK_DENY_SHA256_AMD64}  $tmp/cargo-deny.tar.gz" | sha256sum -c -
           tar xzf "$tmp/cargo-deny.tar.gz" -C "$tmp"
-          install -m 0755 "$tmp/cargo-deny-${deny_ver}-x86_64-unknown-linux-musl/cargo-deny" \
+          install -m 0755 \
+            "$tmp/$(basename "$RUSTCHECK_DENY_URL_AMD64" .tar.gz)/cargo-deny" \
             "$HOME/.cargo/bin/cargo-deny"
 
-          nextest_ver=0.9.133
-          nextest_sha=a9f992321e8759818400d93abb9477b4b11422d18d216e8d208505bd73454103
-          curl -sSfL -o "$tmp/cargo-nextest.tar.gz" \
-            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${nextest_ver}/cargo-nextest-${nextest_ver}-x86_64-unknown-linux-gnu.tar.gz"
-          echo "${nextest_sha}  $tmp/cargo-nextest.tar.gz" | sha256sum -c -
+          curl -sSfL -o "$tmp/cargo-nextest.tar.gz" "$RUSTCHECK_NEXTEST_URL_AMD64"
+          echo "${RUSTCHECK_NEXTEST_SHA256_AMD64}  $tmp/cargo-nextest.tar.gz" | sha256sum -c -
           tar xzf "$tmp/cargo-nextest.tar.gz" -C "$tmp"
           install -m 0755 "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest"
 

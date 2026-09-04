@@ -93,86 +93,115 @@ tag it with both input digests, so bumping either pin names an image that was
 never built and there is no stale parent to find. Nothing in `make build-env`
 builds it; whichever of the two runs first pays the few seconds for it.
 
-## 3. The Rust gate: `pkgs/mosd/hack/check.sh`
+## 3. The Rust gate: `pkgs/mosd/hack/check.sh` and `pkgs/rauc-sign/hack/check.sh`
 
-The gate requires the ignored built-in UI tree before Rust: when
-`MOS_APID_UI_DIST_DIR` is absent it runs `apid/ui/build.sh`, which always uses
-the pinned Bun container with read-only source, and exports
-`_out/apid-ui/dist` as an absolute path. When the gate is run inside the
-Rust-only container, generate the tree first, mount it at
-`/build/apid-ui:ro`, and pass `MOS_APID_UI_DIST_DIR=/build/apid-ui`; the script
-then consumes it without looking for Bun or Docker in that container. Mount
-the repository itself read-only and provide a separate writable
-`CARGO_TARGET_DIR`. It next runs five
-unremarkable Rust commands — `cargo fmt --all --check` (`pkgs/mosd/hack/check.sh`),
-`cargo clippy --workspace --all-targets --locked -- -D warnings`
-(`pkgs/mosd/hack/check.sh`) and
-`cargo nextest run --workspace --locked` (`pkgs/mosd/hack/check.sh`) among
-them. **Run it unmodified.** The harness is the container it runs in, not an
-edit to the script; every trap below is fixed by how you invoke the container.
+Two scripts, one per Rust workspace, five commands each and the same five in the
+same order: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+--locked -- -D warnings`, `cargo nextest run --workspace --locked`, `cargo test
+--doc --workspace --locked` and `cargo deny check licenses bans advisories`.
+**Run them unmodified.** The harness is the container they run in, not an edit to
+the script.
 
-It runs in `localhost/mos-build-rust` with `/srv/mos-rust-tools` mounted at
-`/tools`. *Measured 2026-08-28,* four facts that each cost a failed run to learn.
+There are two because `pkgs/rauc-sign` is its own `[workspace]`: since that
+split, `cargo clippy --workspace` run from `pkgs/mosd` has not reached that
+crate at all, and the twin exists so the omission is a file somebody can see
+rather than a gap nobody can.
 
-**The image ships cargo and rustc and nothing else.** `/opt/rust/bin` holds
-`cargo`, `rustc`, `rustdoc` and the gdb/lldb wrappers; `/usr/local/cargo/bin` is
-empty. `cargo-nextest`, `cargo-clippy`, `clippy-driver`, `cargo-fmt`, `rustfmt`
-and `cargo-deny` all come from `/tools/bin`. So `/tools/bin` must be **first**
-and the PATH must be spelled out in full:
+    make os-rust-gate              both workspaces
+    bash tests/rust-gate.sh mosd   one
 
-    PATH=/tools/bin:/opt/rust/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    LD_LIBRARY_PATH=/opt/rust/lib
+That is the whole of how to invoke it. Everything this section used to say about
+PATH ordering, a `/tools` mount and which of two toolchains to put first
+described an arrangement that no longer exists; what replaced it is below.
 
-Measured: `command -v cargo-nextest` inside the image with no `/tools` on PATH
-prints nothing; `cargo --version` prints `cargo 1.98.0 (797e8a9bc 2026-08-05)`.
+### 3.1 It runs in `localhost/mos-build-rust-check`, and why that image exists
 
-**Never `bash -lc` inside this container.** `-l` sources `/etc/profile`, which
-overwrites the PATH you passed with `docker -e PATH`, and then cargo and every
-`/tools` binary vanish at once. The failure looks exactly like a broken `/tools`
-mount, which sends you to debug the wrong thing. Measured, same container, same
-`-e PATH`:
+`mos-build-rust` ships `cargo` and `rustc` and nothing else — no clippy, no
+rustfmt, no nextest, no cargo-deny — and that is deliberate rather than an
+oversight: it is the `FROM` of every Rust deb producer, so anything installed
+there is downloaded on every build. `build-env/rust-check/Dockerfile` is
+`FROM` it and adds the four tools plus `dbus-daemon`, and nothing pulls that
+image except this gate. *Measured 2026-09-04:* 1.83 GB for `mos-build-rust`,
+1.92 GB for `mos-build-rust-check` — 90 MB, paid by one target.
 
-| invocation | `$PATH` inside |
-| --- | --- |
-| `bash -lc 'echo $PATH'` | `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` |
-| `bash -c 'echo $PATH'` | `/tools/bin:/opt/rust/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` |
+clippy and rustfmt cost **no new pin**. They are in the same
+`rust-${RUST_VERSION}` tarball `RUST_SHA256_<arch>` already names, so the
+derived image re-fetches those recorded bytes through the same download cache
+and asks `install.sh` for two more component names. *Measured 2026-09-04:* on a
+host that had just built `mos-build-rust`, that stage logged `using the cached
+/var/cache/mos-fetch/rust-1.98.0-x86_64-unknown-linux-gnu.tar.xz, which already
+matches the recorded hash` — same bytes, no second download. Do not go looking
+for a `CLIPPY_SHA256`; there is none, and there should not be.
 
-Under `-lc`, `command -v cargo` prints nothing at all. Use `bash -c`, or export
-PATH inside the `-c` string.
+`cargo-nextest` and `cargo-deny` are in no Rust tarball and are pinned in full,
+`RUSTCHECK_NEXTEST_*` and `RUSTCHECK_DENY_*` in `build-env/images.env`, URL and
+sha256 per architecture, with the same PENDING bump flow every other pin has.
+The prefix is `RUSTCHECK_` and not `RUST_CHECK_` because the lock filter is
+`RUST_[A-Za-z0-9_]*`: the second spelling would put the gate's pins into the
+cache key of the image every Rust build pulls.
 
-**`/srv/mos-rust-tools` carries two toolchains; take `bin/`, never `rust96/`.**
-Measured versions: `/opt/rust/bin/rustc --version` reports
-`rustc 1.98.0 (88d9e12ae 2026-08-18)` and `/tools/bin/rustfmt --version` reports
-`rustfmt 1.9.0-stable (88d9e12ae1 2026-08-18)` — the same build, matching the
-image's cargo. The `rust96` tree is a different one:
-`/tools/rust96/bin/rustc --version` reports `rustc 1.96.0 (ac68faa20 2026-05-25)`,
-and its `bin/` holds only `cargo-fmt`, `rustfmt`, `rustc` and `rustdoc` — no
-clippy, no nextest, no deny, so it cannot run this gate at all.
+The image asserts what it holds and records it at `/etc/mos-build/rust-check.env`,
+which `tests/rust-gate.sh` prints at the top of every run, so a gate log answers
+"which clippy said that" without anyone having to know which image was current:
 
-Putting it first on PATH does not merely fail to help; it reports damage that is
-not there. Measured with `/tools/rust96/bin` ahead of `/tools/bin`, running the
-gate's own clippy line against this workspace unchanged:
+    MOS_BUILD_RUSTC=1.98.0
+    MOS_BUILD_CLIPPY=1.98.0
+    MOS_BUILD_NEXTEST=0.9.143
+    MOS_BUILD_DENY=0.19.9
+    MOS_BUILD_DBUS=1.16.2
 
-    error[E0463]: can't find crate for `std`
-    error[E0463]: can't find crate for `core`
-    error: could not compile `serde` (build script) due to 1 previous error
-    error: could not compile `libc` (build script) due to 1 previous error
-    rc=101
+**Why an image and not a directory.** Until 2026-08-29 the four tools came from
+`/srv/mos-rust-tools`, a host directory bind-mounted at `/tools`, referenced by
+no Makefile target and no script — `grep -rn 'mos-rust-tools'` over the tree
+matches nothing at all. That directory was emptied, and **nothing failed**.
 
-The 1.96 `rustc` shadows the image's 1.98 one and brings a sysroot that has no
-`std` for the target, and the cascade reads as though the workspace's
-dependencies are broken. They are not: with `/tools/bin` first,
-`cargo fmt --all --check` on the same tree, same commit, is clean.
+Read that precisely, because the useful version is narrower than "nobody ran the
+gate". CI kept running both scripts on every push (section 3.5), so the
+workspace stayed checked. What was lost was the ability to run the gate **here**,
+on the tree in front of you, before pushing it — and because no target named the
+directory, its disappearance was not a failure anywhere. A bind mount can be
+emptied out from under a build. An image cannot, and a `make` target is a thing
+whose absence somebody notices.
 
-**The image has no `dbus-daemon`, and mosd's tests need one.** `command -v
-dbus-daemon` in the image prints nothing. Several tests assert real bus
-behaviour over a private session bus and are written to fail rather than skip
-without it: "real bus behaviour over a private session bus and MUST NOT skip: install it"
+### 3.2 The built-in UI tree comes first, and from outside the container
+
+When `MOS_APID_UI_DIST_DIR` is absent, `check.sh` runs `apid/ui/build.sh`, which
+drives docker — and the Rust image carries no docker client, so that fallback
+cannot fire from inside the gate's own container. `tests/rust-gate.sh` therefore
+does what `pkgs/mosd/hack/build-target.sh` does: builds the tree on the host in
+the pinned bun container, mounts it at `/build/apid-ui:ro`, and passes
+`MOS_APID_UI_DIST_DIR=/build/apid-ui`. The repository itself is mounted
+read-only at the fixed path `/src` with a separate writable `CARGO_TARGET_DIR`,
+so the gate cannot fix what it found.
+
+### 3.3 Never `bash -lc` in this container
+
+`-l` sources `/etc/profile`, which overwrites the PATH and takes `/opt/rust/bin`
+with it, and then cargo and every tool vanish at once. The trap survived the move
+off `/tools` unchanged — it is about the shell, not about the mount — and it now
+discards the image's **own** `ENV PATH` rather than one passed with `docker -e`.
+*Measured 2026-09-04,* same image, no `-e PATH` at all:
+
+| invocation | `$PATH` inside | `command -v cargo` |
+| --- | --- | --- |
+| `bash -c 'echo $PATH'` | `/opt/rust/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` | `/opt/rust/bin/cargo` |
+| `bash -lc 'echo $PATH'` | `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` | nothing |
+
+The failure looks exactly like a broken image. Use `bash -c`, which is what
+`tests/rust-gate.sh` does.
+
+### 3.4 `dbus-daemon` is in the image now, and that is load-bearing
+
+Several of mosd's and apid's tests assert real behaviour over a private session
+bus and are written to **fail rather than skip** without a daemon: "real bus
+behaviour over a private session bus and MUST NOT skip: install it"
 (`pkgs/mosd/apid/tests/e2e.rs`), and the identical refusal is repeated in
 "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts"
-(`pkgs/mosd/mosd/tests/scan.rs`). Measured without it, the gate exits
-**`rc=100`** (the panic location below is normalized because source-line
-positions are not part of the contract):
+(`pkgs/mosd/mosd/tests/scan.rs`). Until this image existed it was installed by
+hand into the container on every run of this gate that ever happened, which is
+one `apt-get` between a green run and this, *measured 2026-08-28* on the previous
+substrate (the panic location is normalized; source-line positions are not part
+of the contract):
 
     thread 'web_flow_end_to_end' panicked in apid/tests/e2e.rs:
     dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. [...]
@@ -182,11 +211,35 @@ positions are not part of the contract):
     rc=100
 
 **Which** test surfaces it first is scheduling, not signal: `bus_roundtrip`
-(`pkgs/mosd/mosd/tests/bus.rs`) carries the same requirement, and nextest
-cancels the remaining 648 at the first failure. Read `rc=100` together with a
-`dbus-daemon was not found` panic as one fact, whatever the test name is.
-`apt-get install -y dbus` in the container before the gate is what makes it
-green; section 8 records both runs.
+(`pkgs/mosd/mosd/tests/bus.rs`) carries the same requirement, and nextest cancels
+the remainder at the first failure. Read `rc=100` together with a `dbus-daemon
+was not found` panic as one fact, whatever the test name is — and if you see it
+now, you are not in this image.
+
+### 3.5 CI runs the same two scripts, on a deliberately different compiler
+
+`.github/workflows/check.yml`'s `rust` job runs `pkgs/mosd/hack/check.sh` and
+`pkgs/rauc-sign/hack/check.sh` on every push to `main` and every pull request. It
+does **not** use this image and cannot: a GitHub runner has no
+`localhost/mos-build-*` in its image store. It installs rustup at the MSRV both
+manifests declare, adds rustfmt and clippy, and apt-installs `dbus-daemon` for
+the same tests section 3.4 is about.
+
+The two tools that are neither in a Rust tarball nor in apt — `cargo-nextest`
+and `cargo-deny` — are pinned **once**, as the `RUSTCHECK_*` keys in
+`build-env/images.env`, and that workflow sources them rather than repeating
+them. It used to carry its own four literals; the day this image started
+installing the same two tools, that became two pins per tool in two files, free
+to disagree. A bump is now one edit that moves CI and this image together.
+
+**The compiler deliberately still differs, and that is two questions rather than
+one drift.** CI checks at the MSRV — does the version this tree *promises*
+still compile and lint it — and this image checks at `RUST_VERSION`, the version
+the shipped binaries are actually built with. A clippy lint that fires on one and
+not the other is a real possibility and is a finding in both cases, not a fault
+in either runner. Do not "fix" it by making them the same; the local gate going
+green is not a statement about the MSRV, and CI going green is not a statement
+about the compiler that builds the release.
 
 ## 4. Scratch: `tmp/`, and why never `/tmp`
 
@@ -404,9 +457,44 @@ CI holds equal to what the shipped binary prints.
 
 ## 8. Verification
 
-Everything below was run on this host on 2026-08-28, in this worktree. The Rust
-gate ran in `localhost/mos-build-rust` with `/srv/mos-rust-tools` mounted at
-`/tools`, invoked with `bash -c` and the full PATH of section 3.
+### 8.1 The current substrate — measured 2026-09-04
+
+Run on this host, in this worktree, with the Rust gate in
+`localhost/mos-build-rust-check:amd64` and no `/tools` mount anywhere.
+
+| command | final line |
+| --- | --- |
+| `make build-env` | six images tagged, the new one recording `MOS_BUILD_RUSTC=1.98.0`, `MOS_BUILD_CLIPPY=1.98.0`, `MOS_BUILD_NEXTEST=0.9.143`, `MOS_BUILD_DENY=0.19.9`, `MOS_BUILD_DBUS=1.16.2` |
+| `make os-rust-gate` | `ALL CHECKS PASSED` for each workspace, then `RUST GATE PASSED (mosd rauc-sign)` |
+| `cargo fmt --all --check`, both workspaces | clean — the diff is **0 bytes**, so nothing was reformatted for this |
+| the gate's clippy line at `-D warnings`, both workspaces | **0 findings**, `Finished dev profile in 38.88s` for the seven-crate one |
+| `cargo nextest run --workspace --locked` | mosd `1023 tests run: 1023 passed, 0 skipped`; rauc-sign `62 tests run: 62 passed, 0 skipped` |
+| `cargo test --doc --workspace --locked` | green, both |
+| `cargo deny check licenses bans advisories` | `advisories ok, bans ok, licenses ok`, both |
+| `cargo test --locked -p mosd -p apid` | `823 passed` (apid 318 + 1, mosd 496 + 1 + 7), dbus-daemon from the image |
+| `make docs-verify` | `183/183`, `448/448`, `734/734`, `231/231`, `43/43` PASS |
+| `(cd verify && bun test)` | `1268 pass, 0 fail` |
+| `(cd build && bun test)` | `889 pass, 0 fail` (430 s) |
+| `bash tests/shell-pipefail-lint.sh` | `70/70 files clean` |
+
+**Zero clippy findings on a gate that had not run for a week is a claim that
+needs breaking, not celebrating.** It was: a copy of both workspaces under
+`tmp/`, one `pub fn probe(v: &Vec<u8>)` appended per crate — `clippy::ptr_arg`,
+a `style` lint inside the `clippy::all` the workspace sets to `warn` — and the
+gate's own clippy line run against the copy. Every one of the eight crates goes
+red, `rc=101`, `could not compile ... due to 1 previous error`: `busname`,
+`mosd-settings`, `ui-bundle`, `mqttd`, `mosd`, `apid`, `mos-mqtt-broker`,
+`rauc-sign`. Cargo stops at the first failing crate, so the members had to be
+driven one at a time to show that each is reached — worth knowing before reading
+a clean run as coverage. The tree was not modified; the copy was thrown away.
+
+### 8.2 The previous substrate — measured 2026-08-28, kept as the baseline
+
+**These numbers describe an arrangement that no longer exists.** The gate ran in
+`localhost/mos-build-rust` with `/srv/mos-rust-tools` mounted at `/tools`, and
+that directory was emptied on 2026-08-29. They are kept because they are the
+only record of what this gate found the last time it ran before that, and
+because the two deliberately-red rows still describe failures reachable today.
 
 | command | final line |
 | --- | --- |
@@ -416,6 +504,10 @@ gate ran in `localhost/mos-build-rust` with `/srv/mos-rust-tools` mounted at
 | `cargo fmt --all --check`, `/tools/bin` first | clean |
 | the gate's clippy line, `/tools/rust96/bin` first | `error[E0463]: can't find crate for 'std'`, `rc=101` |
 
-The full table — every command in this page with its output, including the two
-deliberately-red runs above and the bun, scratch and arm64 measurements — was
-recorded when these facts were measured and is in the repository history.
+Read across the two tables, the gate went from `705 tests` to `1023` in the week
+that no one here could run it. What merged in that week was checked locally by
+`cargo test --locked` and by nothing else — no clippy, no `cargo deny`, no
+doctests — and CI checked the rest of it at the MSRV; the 2026-09-04 run above
+is the first time the whole gate has been run on this host since the toolchain
+directory went. It found nothing, which is a fact about how the work was done
+rather than an argument that the local route did not need to exist.

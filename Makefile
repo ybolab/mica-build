@@ -22,7 +22,7 @@ BOARDS := cx3576 x64
 	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
 	os-install-closure-gate os-rootfs-manifest-test \
 	os-rootfs-x64-composed \
-	docs-verify docs-verify-test build-env
+	docs-verify docs-verify-test build-env os-rust-gate
 
 help:
 	@echo "mos build targets:"
@@ -53,7 +53,8 @@ help:
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>"
+	@echo "  os-rust-gate        run both Rust workspaces' hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
@@ -558,6 +559,26 @@ os-netavark-kernel-test:
 # tag rather than skipping.
 build-env:
 	bash build-env/build.sh
+
+# The Rust gate: `pkgs/mosd/hack/check.sh` and `pkgs/rauc-sign/hack/check.sh`,
+# UNMODIFIED, inside localhost/mos-build-rust-check. Five commands per
+# workspace -- `cargo fmt --all --check`, clippy at `-D warnings`, nextest,
+# doctests, and `cargo deny check licenses bans advisories`.
+#
+# This target exists because those scripts were unrunnable HERE. Their four
+# tools came from /srv/mos-rust-tools, a host directory mounted at /tools that
+# no Makefile target and no script referenced; it was emptied on 2026-08-29 and
+# NOTHING WENT RED. CI kept running both scripts on its own rustup toolchain,
+# so the workspace stayed checked and the local route simply stopped existing,
+# silently. A substrate that can evaporate without a single failure is one
+# nobody is told about; reachable as a target, it is at least noticeable.
+#
+# `bash tests/rust-gate.sh mosd` runs one workspace. Needs docker, and it builds
+# the built-in UI tree first because the gate embeds it; it fails loudly when
+# the image is missing rather than skipping, with `make build-env` as the
+# remedy.
+os-rust-gate:
+	bash tests/rust-gate.sh
 
 cx3576-%:
 	$(MAKE) -C boards/cx3576/bsp $*

@@ -89,18 +89,73 @@ release host (`pkgs/rauc-sign/README.md`).
   files leave `meta/` for the image at all, by allowlist, and the build
   refuses to stage anything carrying private key material while the verifier
   refuses an image that contains any.
-- **Rotation** — signer reissue is routine and touches no device
-  (`docs/design/release-signing.md` §2.2). Rotating the **device keyring**
-  is **[proposed]**: `/etc` is inside the verity root, no STATE-backed
-  keyring channel exists, and until one does an expired or replaced CA means
-  a full re-flash (`docs/design/release-signing.md` §2.3).
-- **Revocation** — a compromised signer is reissued and out-waited; there is
-  no CRL path to devices (`docs/design/release-signing.md` §2.2). A
-  compromised CA is a fleet re-anchoring event — the §2.3 gap again.
+- **Rotation** — signer reissue touches no device, and is now **recurring
+  rather than occasional**: the signer is short-lived
+  (`pkgs/rauc/key-validity.env` declares the window), so the CA media is
+  checked out roughly monthly rather than once every two years
+  (`docs/design/release-signing.md` §2.2). Every checkout is a §1.5 custody
+  entry, and the frequency is itself a risk this document names rather than
+  discounts. Rotating the **device keyring** is **[proposed]**: `/etc` is
+  inside the verity root, no STATE-backed keyring channel exists, and until
+  one does an expired or replaced CA means a full re-flash
+  (`docs/design/release-signing.md` §2.3).
+- **Revocation** — there is still **no CRL path to devices**, and none is
+  planned: a CRL needs a delivery channel an offline device does not have.
+  What replaced "reissued and out-waited" as an unbounded wait is a **bounded
+  one**. A stolen signer stays usable only until its certificate expires, and
+  that is the window declared in `pkgs/rauc/key-validity.env` rather than the
+  two years the ceremony used to mint — so out-waiting a signer compromise is
+  a support event measured in weeks. The device needs nothing delivered to
+  enforce it: RAUC compares the certificate against the current clock, which
+  `verify/src/checks-rauc.ts`'s `rauc-keyring-verifies-against-now` asserts by
+  refusing an image whose `[keyring]` sets `use-bundle-signing-time` or
+  `check-crl` at all (`docs/design/release-signing.md` §2.2).
+
+  **What the bound does not cover, stated rather than implied:**
+  - **A device whose clock is behind is not protected for as long as it is
+    behind.** The window is enforced against `docs/design/time.md` §3's
+    `max(RTC, saved clock)` floor, so a unit that has been off for a year has
+    a floor a year old and will accept signers that expired up to a year ago.
+    Ordering closes most of this — timesyncd disciplines the clock inside
+    `sysinit.target`, before the update path runs — but it does **not** close a
+    local `rauc install` from removable media on a device that never reaches a
+    server. That is the residual hole, and it is smaller than the one it
+    replaced, which was every device for two years.
+  - **A device whose clock is ahead refuses valid signers instead**, and
+    cannot update at all until it reaches a time source. The mitigation is
+    diagnostic and not cryptographic: a failed install records the device's own
+    clock and its `GET /api/v1/time/status` state beside the reason, and says
+    explicitly whether the clock could be the cause
+    (`pkgs/mosd/mosd/src/rauc.rs`, `install_failure_time_facts`).
+  - **Bundles the attacker already signed stay valid to the end of the
+    window.** Reissuing does not invalidate them; only the window running out
+    does.
+  - **A compromised CA is untouched** — an attacker holding the CA key mints
+    fresh signers at will, so this is still a fleet re-anchoring event and the
+    §2.3 gap again.
+  - **The package side inherits none of this.** The update *package* is signed
+    with lode's raw ed25519 key, whose public half is baked into
+    `meta/updates/manifest.json`'s `trust.signingKeys`
+    (`docs/design/release-artifacts.md` §3). A raw ed25519 key has no chain, no
+    validity period and no revocation list — there is nothing in that format
+    for a short-lived certificate to be short-lived *in*. Removing a
+    compromised entry from that list needs a new baked manifest, which needs a
+    new image, which is the anchor problem again. A compromised package key is
+    out-waited by an image update, not by a clock.
 - **Negative tests, by path** — `verify/src/checks-root.test.ts` proves both
   directions of the dev-keyring gate: an image carrying a `GENERATED` root
   reports the grade it read rather than failing closed on it, and a
   keyring that is not byte-equal to `meta/rauc/ca.cert.pem` is refused.
+  `verify/src/checks-rauc.test.ts` drives the asserted absence from the failing
+  side — `use-bundle-signing-time` and `check-crl` are each RED spelled `true`
+  **and** spelled `false`, a config with no `[keyring]` section at all is RED so
+  the absence is never asserted over nothing, and a commented line stays green.
+  `build/src/tools/rauc.test.ts` proves rauc's imminent-expiry warning fires for
+  a signer under a month and not for one over it, and that the build refuses
+  inside the declared threshold and proceeds outside it, on one certificate.
+  `build/src/signer-window.test.ts` holds the ceremony block in
+  `release-signing.md` §2.1 to the declared window, so the number cannot be
+  changed in one place only.
 - **The grade travels with the image, and publication is refused on it** —
   `rootfs/build.sh` bakes `meta/GENERATED` to `/usr/share/mos/meta/GENERATED`
   if and only if the tree has one, `packed-meta-is-the-public-set` refuses an

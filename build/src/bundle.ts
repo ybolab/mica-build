@@ -883,11 +883,18 @@ export async function buildBundle(
     // rauc drives mksquashfs itself; without these it stamps the payload with
     // the wall clock, the build container's uid map and a thread count.
     const epoch = geometry.ext4.sourceDateEpoch
+    // The keyring goes in at SIGNING time as well as at read-back: it is what
+    // makes rauc verify what it just wrote and print its imminent-expiry
+    // warning, which this build never saw while `bundleArgs` passed no
+    // `--keyring` (PLAN-078 §M0). raucBundle additionally refuses outright when
+    // the signer is inside the declared reissue threshold, before any bytes
+    // exist.
     await raucBundle(tb, {
       stageDir: stage,
       output: inputs.bundleOut,
       cert: inputs.cert,
       key: inputs.key,
+      keyring: inputs.keyring,
       mksquashfsArgs: `-all-root -no-xattrs -noappend -processors 1 -mkfs-time ${epoch} -all-time ${epoch}`,
     })
 

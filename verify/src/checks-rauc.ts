@@ -1,6 +1,6 @@
 // Batch 1c: the RAUC slot contract, as `/etc/rauc/system.conf` states it.
 //
-// Six checks over one generated file in the packed root -- pkgs/rauc/
+// Seven checks over one generated file in the packed root -- pkgs/rauc/
 // render-config.sh substitutes every GUID out of the board definition -- so
 // these assert the file that shipped, read back out of the squashfs the device
 // mounts, against the layout the GPT was written from. A renderer that ran with
@@ -67,6 +67,71 @@ function slotField(conf: string, slot: string, key: string): string | undefined 
     if (inSection && line.startsWith(`${key}=`)) return line.slice(key.length + 1)
   }
   return undefined
+}
+
+/**
+ * The `[keyring]` keys the rendered device configuration may not carry, and
+ * why this is asserted as an ABSENCE rather than as a value.
+ *
+ * `use-bundle-signing-time=true` switches RAUC from "is this signer valid
+ * now" to "was it valid at the signing time the CMS carries" -- a timestamp
+ * the key holder chose. PLAN-078 §M10 measured what that costs: a bundle
+ * signed by a signer that had expired 370 days earlier, with the signing
+ * host's clock rolled back into its old window, was ACCEPTED. It is not a
+ * milder expiry, it is none, and it is the single line that would silently
+ * disable short-lived signers fleet-wide.
+ *
+ * `check-crl` is here for the opposite reason: RAUC 1.13 supports it and this
+ * tree deliberately does not use it, because a CRL needs a delivery channel an
+ * offline device does not have. Turned on without one it refuses every bundle.
+ *
+ * ABSENCE, NOT `false`. A config that says `use-bundle-signing-time=false` is
+ * a config somebody edited, and the next edit to that line is the one that
+ * says `true`. A check that only rejected `true` would report green on the
+ * commit that put the setting there, and would be answering a question about
+ * a value when the property is about a line existing at all.
+ *
+ * The release HOST needs `use-bundle-signing-time=true` locally to repair its
+ * own archive (docs/design/release-signing.md §2.2). That is a different
+ * machine's config file, and this check is the reason the two can never be
+ * copies of each other.
+ */
+const KEYRING_MUST_NOT_SET = ['use-bundle-signing-time', 'check-crl'] as const
+
+/**
+ * Every assignment inside `[keyring]`, or `undefined` when the section is not
+ * there at all.
+ *
+ * The two are not the same answer and the difference is the whole point: an
+ * absence asserted over a section that does not exist is an absence asserted
+ * over nothing, and it stays green forever -- including for an image carrying
+ * no update configuration. So the reader reports "no section" separately and
+ * the check turns it into a FAIL rather than into the pass it would otherwise
+ * be entitled to.
+ *
+ * Keys are trimmed because RAUC reads this file with GKeyFile, which accepts
+ * `key = value` and leading indentation; a reader that only matched `key=`
+ * would be satisfied by a spelling RAUC honours.
+ */
+function keyringAssignments(conf: string): readonly { readonly key: string, readonly value: string }[] | undefined {
+  let inSection = false
+  let present = false
+  const out: { key: string, value: string }[] = []
+  for (const raw of conf.split('\n')) {
+    const line = raw.trim()
+    if (line.startsWith('[')) {
+      inSection = line === '[keyring]'
+      if (inSection) present = true
+      continue
+    }
+    // A commented setting is not a setting. GKeyFile takes `#` at the start of
+    // a line as a comment, and system.conf.in is mostly comments.
+    if (!inSection || line === '' || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq < 0) continue
+    out.push({ key: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() })
+  }
+  return present ? out : undefined
 }
 
 function guidOf(board: Board, layoutName: string): string {
@@ -209,6 +274,42 @@ export const RAUC_CHECKS: readonly CheckCase[] = [
         'rauc-keyring-path',
         ok,
         ok ? what : `${what} — /${SYSTEM_CONF} missing or does not match /^path=\\/etc\\/rauc\\/keyring\\.pem$/`,
+      )]
+    },
+  },
+
+  {
+    // The device verifies a signer against NOW, which is what RAUC 1.13 does by
+    // default and what this tree already ships. The whole of PLAN-078's
+    // short-lived signer rests on it, and the mechanism cost is zero -- which is
+    // exactly why it needs asserting: today the setting is absent because nobody
+    // added it, and nothing would notice the commit that added it.
+    id: 'rauc-keyring-verifies-against-now',
+    shell: { pass: 'RAUC [keyring] sets neither use-bundle-signing-time nor check-crl' },
+    run: async (ctx) => {
+      const conf = await systemConf(ctx)
+      const what = 'RAUC [keyring] sets neither use-bundle-signing-time nor check-crl, so the device '
+        + 'verifies a signer against the current clock and a short-lived signer really expires'
+      const assignments = keyringAssignments(conf)
+      if (assignments === undefined) {
+        return [verdict(
+          'rauc-keyring-verifies-against-now',
+          false,
+          `${what} — /${SYSTEM_CONF} is missing or carries no [keyring] section, so this absence `
+          + `would be an absence asserted over nothing`,
+        )]
+      }
+      const set = assignments.filter(a => (KEYRING_MUST_NOT_SET as readonly string[]).includes(a.key))
+      return [verdict(
+        'rauc-keyring-verifies-against-now',
+        set.length === 0,
+        set.length === 0
+          ? what
+          : `RAUC [keyring] sets ${set.map(a => `${a.key}=${a.value}`).join(' ')}; the device's `
+            + `configuration must not carry ${KEYRING_MUST_NOT_SET.join(' or ')} AT ALL, not even `
+            + `spelled false — a value here is a line somebody edited, and use-bundle-signing-time=true `
+            + `accepts a bundle signed by a signer that expired 370 days earlier (PLAN-078 §M10). `
+            + `use-bundle-signing-time=true belongs to the release host's own config and never to a device`,
       )]
     },
   },
