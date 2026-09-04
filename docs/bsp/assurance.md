@@ -35,9 +35,8 @@ reached is stated, with evidence, in that board's dossier.
 hash tree; any offline modification of the root is detected at read time.
 The mechanism is the verity boot path in
 [docs/design/ro-root.md](../design/ro-root.md): one `dm-mod.create=` table,
-written once by the rootfs build, read by the kernel's dm-init on boards
-whose kernel has it built in and by the initramfs script on boards whose
-kernel does not.
+written once by the rootfs build and read by the kernel's dm-init, which every
+board's kernel has built in. There is no initramfs on either shipped board.
 
 **What it does not claim.** Nothing verifies the kernel, the DTB, the verity
 parameters or the bootloader itself: a writer who can change the boot slot
@@ -47,7 +46,7 @@ Both shipped boards implement I1.
 
 > status: shipped — evidence: `rootfs/build.sh`
 
-> status: shipped — evidence: `rootfs/initramfs/scripts/mos-verity`
+> status: shipped — evidence: `boards/x64/bsp/kernel/config/x64.fragment`
 
 ## I2 — authenticated normal system update
 

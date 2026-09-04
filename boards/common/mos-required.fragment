@@ -76,9 +76,8 @@ CONFIG_CGROUP_BPF=y
 # reference because that is the surface Debian's iptables package provides.
 # The citations into iptables 1.8.11 and the per-symbol table are in
 # docs/design/boards.md section 4. Deliberately NOT here: the legacy
-# IP_NF_* back-end, which nothing in the image uses, the per-extension xt
-# matches and targets, which are policy, and NF_NAT_MASQUERADE, which the
-# masquerade expression below already selects. (Symbol names in these comments
+# IP_NF_* back-end, which nothing in the image uses, and the per-extension xt
+# matches and targets, which are policy. (Symbol names in these comments
 # are written without the CONFIG_ prefix on purpose: merge_config.sh greps this
 # whole file for each symbol it merges, and a comment naming one is reported as
 # part of that symbol's value.)
@@ -93,6 +92,29 @@ CONFIG_NFT_CT=y
 CONFIG_NF_NAT=y
 CONFIG_NFT_NAT=y
 CONFIG_NFT_MASQ=y
+
+# What netavark itself needs on top of the front-end above, and the reason both
+# lines are stated here rather than in one board:
+#
+#   NF_CONNTRACK_MARK -- netavark sets and matches a connection mark on the
+#   dnat path (src/firewall/nft.rs:286,1090 at the v2.1.0 this tree pins), so
+#   published ports depend on it. It is a plain bool that defaults to n under
+#   NETFILTER_ADVANCED, so a config that does not name it does not get it: x64
+#   silently had `is not set` while cx3576 asserted it in its own board loop,
+#   which is the board-specific floor this file exists to stop.
+#
+#   NF_NAT_MASQUERADE -- selected by the masquerade expression above, so on
+#   today's kernel it is already y. It is named anyway because a select is a
+#   fact about 6.12's Kconfig, not a requirement this tree states, and
+#   tests/netavark-kernel-config-test.sh asserts that every symbol netavark
+#   needs is named by a floor that survives olddefconfig on EVERY board. An
+#   unstated symbol that happens to be selected is exactly the shape of the
+#   gap above.
+#
+# Both were on cx3576's board loop until now; that loop no longer restates
+# them.
+CONFIG_NF_CONNTRACK_MARK=y
+CONFIG_NF_NAT_MASQUERADE=y
 
 # Bridge filtering. podman puts every container's veth on one Linux bridge, and
 # traffic between two containers on that bridge is switched at layer 2 -- it
@@ -115,3 +137,50 @@ CONFIG_NFT_MASQ=y
 CONFIG_BRIDGE_NETFILTER=y
 CONFIG_NF_TABLES_BRIDGE=y
 CONFIG_NF_CONNTRACK_BRIDGE=y
+
+# --- CAPABILITY WITHOUT A CONSUMER, and the only block here that is one ------
+#
+# READ THIS BEFORE ADDING A LINE TO IT. Every other symbol in this file names
+# something in the image that consumes it -- a reconciler, netavark, crun,
+# systemd. These three name nothing. No package in any resolution opens a
+# dm-crypt device, the image ships no cryptsetup, no LUKS header is formatted,
+# and nothing is encrypted at rest after this lands. docs/design/storage.md
+# still marks encryption unsupported and docs/design/security-model.md section
+# 6 still says at-rest encryption proceeds only through its own approved plan.
+# This is the KERNEL side, provisioned ahead of the decision above it.
+#
+# WHY AHEAD, and this is the whole argument. A kernel symbol costs a rebuild of
+# every board, and x64's kernel is now configured by subtraction: PLAN-074's
+# config drops the driver classes and filesystems nothing consumes, so a symbol
+# that is not named here is not merely absent, it is actively removed. Debian
+# shipped the crypt target as a module and the trimmed x64 config does not.
+# Naming it now costs one rebuild that was happening anyway; naming it later
+# costs two.
+#
+# HOW THE BLOCK LEAVES. Each line exits when a consumer lands in the image, and
+# moves into that consumer's justification -- at which point it is an ordinary
+# floor entry like every other. If the product decision goes the other way the
+# whole block is deleted. A block with no exit condition becomes permanent by
+# accident, so this is the condition.
+#
+# WHAT IS DERIVED, AND FROM WHAT. LUKS2's default cipher is aes-xts-plain64, so
+# the crypt target asks the crypto API for xts(aes): the XTS template and an
+# AES implementation. plain64 is generated inside the target and names no
+# symbol. SHA256 is already required above for dm-verity, and LUKS2's argon2
+# key derivation is cryptsetup's, in userspace, naming no kernel symbol.
+#
+# THREE MORE SYMBOLS ARRIVE THAT ARE NOT NAMED HERE, and they were found by
+# regenerating the config rather than predicted. The crypt target `select`s the
+# ESSIV template in 6.12, so it comes in whether or not this block asks for it
+# -- the reasoning that it is only needed for the LUKS1 aes-cbc-essiv:sha256
+# default is true and irrelevant, because the dependency is the kernel's, not
+# ours. The accelerated x86 AES likewise selects the cryptd and SIMD helpers.
+# Six built-in symbols in total on x64, measured, not three.
+#
+# GENERIC ONLY, DELIBERATELY. The accelerated AES is a different symbol on each
+# architecture -- AES_NI_INTEL on x86, AES_ARM64_CE_BLK on arm64 -- and neither
+# exists on the other, so a shared floor cannot name either. Each board config
+# carries its own, and both do.
+CONFIG_DM_CRYPT=y
+CONFIG_CRYPTO_XTS=y
+CONFIG_CRYPTO_AES=y

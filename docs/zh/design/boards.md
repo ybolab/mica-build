@@ -36,9 +36,12 @@ boards/<name>/
     └── rootfs/        # 固件投放 + 演示/冒烟测试根文件系统（**不是**产品根）
 ```
 
-启动链由上游支持的板卡（`boards/x64`，UEFI）**根本没有 `bsp/`**：只有 board.env、
-grub.cfg 和一个 overlay，没有任何编译引导程序的东西——UEFI 机器的固件就提供了启动链，
-内核直接用 Debian 的 `linux-image-amd64`，它作为 `mos-board-x64` 的 `Depends` 进入镜像。
+启动链由上游支持的板卡（`boards/x64`，UEFI）**不编译引导程序**：UEFI 机器的固件就提供了
+启动链。但它仍然构建**内核**——x64 的 `bsp/` 只有这一个目标：主线内核，用 tag 和源码
+sha256 双重钉住，配置由一个 fragment 合并到 `x86_64_defconfig` 之上、解析结果记录在树内
+（`boards/x64/bsp/kernel/`），打包为 `mos-kernel-x64`，由 `mos-board-x64` 依赖。它取代了
+Debian 的 `linux-image-amd64`——那个内核没有 `CONFIG_DM_INIT`，会静默忽略本板自己的
+`dm-mod.create=` verity 表（PLAN-074）。
 
 ## 3. 进入镜像的产物接口
 
@@ -260,4 +263,4 @@ RAUC BOOT_ORDER 握手脚本，以及一条救援路径（cx3576：恢复键 →
 | 板卡 | 架构 | 启动链 | 状态 |
 |---|---|---|---|
 | cx3576（CX3576-Z，RK3576） | arm64 | eMMC 扇区 64 上的 U-Boot -> `boot.scr` -> 对 `Image` + `rk3576-src.dtb` 执行 `booti` | BSP 构建 `uboot-mos` 与内核；第 4 节断言集在内核构建中强制执行，RAUC `BOOT_ORDER` 握手已在 `boot.cmd` 中实现。**`CONFIG_FIT_SIGNATURE`（第 5 节）在整棵树里没有任何地方配置** |
-| x64（通用 UEFI） | amd64 | UEFI 固件 -> 单一静态 ESP 上的 GRUB -> 该槽位自己的 boot 分区 | QEMU/CI 基准。没有 `bsp/`，**这是设计如此，不是遗漏** |
+| x64（通用 UEFI） | amd64 | UEFI 固件 -> 单一静态 ESP 上的 GRUB -> 该槽位自己的 boot 分区 | QEMU/CI 基准。`bsp/` 只构建内核；不编译引导程序，因为固件就是引导程序 |

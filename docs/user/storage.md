@@ -98,6 +98,15 @@ secure erase, encryption at rest and removable media are all unsupported. The
 design record carries the reason for each; promoting one is a visible change
 to that list, not a quiet new endpoint.
 
+Since PLAN-074 the KERNEL both boards ship carries the dm-crypt target and the
+cipher an encrypted volume would use. That is a build-time capability and not a
+feature: no volume is encrypted, the image ships no tool that could format or
+open one, and nothing about the answer above changes. It is provisioned early
+only because adding a kernel symbol later costs a rebuild of every board. Read
+a symbol list as what it is — encryption at rest remains unsupported, and
+promoting it is still the gated decision this page and
+`docs/design/security-model.md` section 6 describe.
+
 > status: unsupported
 
 The one storage policy that does bite an operator is the update workspace:

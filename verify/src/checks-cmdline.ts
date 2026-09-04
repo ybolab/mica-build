@@ -543,12 +543,17 @@ const ESP_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const id = 'esp-no-per-slot-file'
-      const names = ['SLOT_KERNEL_NAME', 'SLOT_INITRD_NAME', 'SLOT_CMDLINE_NAME']
-        .map(k => (ctx.board.get(k) ?? '').trim())
-      if (names.some(n => n === '')) {
+      // BOOT_SLOT_REQUIRED_FILES and not a list of SLOT_*_NAME keys spelled
+      // here. The board's own statement of what a slot carries is the same
+      // fact, and a key list in this file was a second copy of it: it named
+      // SLOT_INITRD_NAME, and when the board stopped declaring one -- x64's
+      // kernel gained CONFIG_DM_INIT and the slot payload lost its initrd --
+      // this check threw on a correct image rather than following the board.
+      const names = ctx.board.bootSlotRequiredFiles ?? []
+      if (names.length === 0 || names.some(n => n.trim() === '')) {
         throw new ToolOutputError(
-          `${ctx.board.path} declares no SLOT_KERNEL_NAME/SLOT_INITRD_NAME/SLOT_CMDLINE_NAME, so `
-          + `this check does not know which names are per-slot and would pass by looking for none.`,
+          `${ctx.board.path} declares no usable BOOT_SLOT_REQUIRED_FILES, so this check does not `
+          + `know which names are per-slot and would pass by looking for none.`,
         )
       }
       const listing = await espListing(ctx)

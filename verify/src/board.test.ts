@@ -211,7 +211,7 @@ describe('x64 — the GRUB board', () => {
   })
 
   test('the two file lists a slot and the ESP must carry', () => {
-    expect(x64.bootSlotRequiredFiles).toEqual(['vmlinuz', 'initrd.img', 'cmdline.cfg'])
+    expect(x64.bootSlotRequiredFiles).toEqual(['vmlinuz', 'cmdline.cfg'])
     expect(x64.espRequiredFiles).toEqual(['EFI/BOOT/BOOTX64.EFI', 'EFI/mos/grub.cfg', 'EFI/mos/grubenv'])
   })
 
@@ -221,11 +221,11 @@ describe('x64 — the GRUB board', () => {
     expect(x64.cmdlineArgs).toBe('console=tty0 console=ttyS0,115200 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 116 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 115 assignments', () => {
     expect(x64.faults).toEqual([])
     expect(x64.env.duplicates).toEqual([])
-    expect(x64.env.assignments.length).toBe(116)
-    expect(x64.env.values.size).toBe(116)
+    expect(x64.env.assignments.length).toBe(115)
+    expect(x64.env.values.size).toBe(115)
   })
 })
 

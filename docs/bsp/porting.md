@@ -107,9 +107,11 @@ stacking) and local fixes as an ordered patch series under
 
 > status: board-dependent — evidence: `boards/cx3576/bsp/kernel/Dockerfile`
 
-x64 builds no kernel: the image takes Debian's `linux-image-amd64` with a
-verity initramfs instead, and the fragment's guarantees are met by the
-initramfs script rather than by built-in options.
+x64 follows the same procedure over mainline rather than a vendor tree, with
+no patch series and no DTS: `boards/x64/bsp/kernel/` pins the tag and the
+sha256 of `git archive` over it, merges the shared fragment and its own on top
+of `x86_64_defconfig`, and records the resolved `.config` in-tree so the build
+can refuse one that drifted.
 
 **Exit criteria.** The kernel build passes its config assertions; `Image`,
 `modules.tar` and the `.dtb` land in the BSP output; the modules tree version

@@ -157,15 +157,14 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # they fire daily and fail daily, and nothing else in the image is wrong enough
 # to notice.
 
-# linux-base's four helpers arrive with linux-base, which x64 pulls in through
-# linux-image-amd64 and cx3576 never installs. Their callers are not all the
-# same: linux-check-removal, linux-run-hooks and linux-update-symlinks are
-# called only from the kernel package's preinst/postinst/prerm/postrm, while
-# linux-version is called by /usr/sbin/update-initramfs, a runtime tool.
-# update-initramfs goes too: on a read-only dm-verity root it cannot write an
-# initramfs anywhere that would be used -- the initrd this image boots sits on
-# the ESP, outside the verity tree, and is replaced by RAUC as part of the same
-# signed bundle as the rootfs.
+# linux-base's four helpers and update-initramfs are NOT in the purge list any
+# more, and their absence from it is the statement. They arrived with
+# linux-base, which x64 pulled in through Debian's linux-image-amd64 and cx3576
+# never installed. Since PLAN-074 x64 installs mos-kernel-x64 instead -- a
+# payload of a bzImage, its config and its modules, with no Depends and no
+# maintainer script -- so linux-base reaches neither board and there is nothing
+# to remove. A purge of paths nothing can create reads like a safeguard and is
+# not one.
 
 # /usr/share/doc is kept, deliberately, and this is where the usual "slim
 # image" recipe goes wrong: it is 2.75 MB, of which 2.06 MB is 159 `copyright`
@@ -197,9 +196,14 @@ FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
 # under `set -u` is a build failure rather than a check that silently reads "no
 # radios" on a board that has them.
 ARG BOARD_RADIOS=""
+# No initramfs-tools-core here since PLAN-074. It was installed for one
+# binary, lsinitramfs, which rootfs/scripts/pack-export-boot.sh used to list
+# the exported initrd and assert veritysetup, the mos-verity script and the
+# absence of busybox in it. There is no initrd on either board now -- x64's
+# kernel assembles the dm-verity root from the command line, as cx3576's always
+# did -- so that script asserts the absence instead and reads nothing.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin \
-        initramfs-tools-core \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=closed / /rootfs/
 
@@ -409,8 +413,10 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-verity.sh
 
 
-# The kernel and initramfs, extracted out of the root for boards whose
-# bootloader cannot read it. GRUB has no squashfs driver, so on x64 it cannot
+# The kernel, extracted out of the root for boards whose bootloader cannot read
+# it. No initramfs travels with it: this board's kernel assembles the dm-verity
+# root from the command line, and the export script asserts that the root
+# carries no initrd rather than listing one. GRUB has no squashfs driver, so on x64 it cannot
 # load a kernel from the verity-protected root -- the kernel has to sit on the
 # ESP as a plain file. That is the same arrangement cx3576 already has (Image
 # on the FAT boot partition, not inside the squashfs) and it carries the same

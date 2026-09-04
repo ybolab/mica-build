@@ -188,9 +188,10 @@ producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 - **`cx3576`** — CX3576-Z, Rockchip RK3576, arm64. Vendor kernel tree, mainline
   U-Boot built in `boards/cx3576/bsp/uboot/`, WiFi and Bluetooth. Its RAUC bootloader
   backend is `uboot`, so this is the board the `BOOT_ORDER` handshake is for.
-- **`x64`** — generic UEFI x86_64, the QEMU and CI baseline. No BSP build:
-  firmware boots it, so there is nothing to compile. Its bootloader backend is
-  `grub` and its assembler is `build/src/mkimage-x64.ts`.
+- **`x64`** — generic UEFI x86_64, the QEMU and CI baseline. Its `bsp/` builds
+  a mainline kernel and nothing else: the firmware is the boot chain, so no
+  bootloader is compiled. Its bootloader backend is `grub` and its assembler is
+  `build/src/mkimage-x64.ts`.
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared

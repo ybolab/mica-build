@@ -78,12 +78,19 @@ ARG MOS_RELEASE_COMMIT_DATE
 # REPORT. Empty is refused when mos-rauc is in the resolution.
 ARG RAUC_VERSION=""
 
-# update-initramfs reads this from the ENVIRONMENT, not from a flag, and an
-# unset one is not a broken build -- it is a working one whose initrd carries
-# the build clock and this host's inode numbers into the verity-covered root.
-# It is linux-image-amd64's own postinst that runs update-initramfs here, so
-# the value has to be in this stage's environment rather than in a script's
-# arguments.
+# The pinned instant every mtime this composition writes is set to.
+#
+# It was declared HERE, in the environment rather than in a script's arguments,
+# for a reason that has expired: Debian's linux-image-amd64 postinst ran
+# update-initramfs during this stage and read the variable from the ENVIRONMENT,
+# so an unset one produced a working build whose initrd carried the build clock
+# and this host's inode numbers into the verity-covered root. Since PLAN-074
+# there is no initramfs and no kernel maintainer script here at all.
+#
+# It stays an ARG because compose-install.sh requires it and uses it directly --
+# see the file-time work at the end of that script -- and because an
+# environment-read epoch is the shape any future maintainer script would need.
+# The argument is required, not defaulted: an unset one is refused by name.
 ARG SOURCE_DATE_EPOCH
 
 # The host-staged half of the context: the resolved package list and the RAUC

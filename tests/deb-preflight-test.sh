@@ -183,13 +183,13 @@ fi
 # would be testing this file's bookkeeping rather than the pre-flight's.
 ARTEFACT="${WANTED[0]}"
 hide "${REPO_ROOT}/pkgs/rauc/deb/rauc/prepare.sh"
-hide "${REPO_ROOT}/rootfs/initramfs"
+hide "${REPO_ROOT}/pkgs/mosd/broker/dist"
 hide "${ARTEFACT}"
 run_preflight
 if [ "${PF_RC}" -ne 0 ] &&
     [ "${PF_MISSING}" = "$((BASE_MISSING + 3))" ] &&
     says "${PF_OUT}" "pkgs/rauc/deb/rauc/prepare.sh does not exist" &&
-    says "${PF_OUT}" "rootfs/initramfs does not exist" &&
+    says "${PF_OUT}" "pkgs/mosd/broker/dist does not exist" &&
     says "${PF_OUT}" "${ARTEFACT}"; then
     pass "B2 three missing inputs across three producers, three categories, all named in ONE run (${BASE_MISSING} -> ${PF_MISSING})"
 else

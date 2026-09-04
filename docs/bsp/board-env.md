@@ -112,7 +112,7 @@ wipeable runtime residue under `/var`.
 | Key | Meaning | Legal values | Read by |
 |---|---|---|---|
 | `ESP_MOUNT` | where the static ESP mounts | absolute path (`/boot`) | overlay mount unit, RAUC grub backend |
-| `SLOT_KERNEL_NAME`, `SLOT_INITRD_NAME`, `SLOT_CMDLINE_NAME` | filenames a slot's boot partition carries and GRUB reads | filenames | assembler, bundle builder, verify |
+| `SLOT_KERNEL_NAME`, `SLOT_CMDLINE_NAME` | filenames a slot's boot partition carries and GRUB reads | filenames | assembler, bundle builder, verify |
 | `ESP_REQUIRED_FILES` | the ESP's complete content list — a per-slot file here would be one no install could replace | space-separated paths | verify |
 | `RAUC_GRUBENV` | the grubenv file RAUC edits in place | absolute path | RAUC config renderer |
 

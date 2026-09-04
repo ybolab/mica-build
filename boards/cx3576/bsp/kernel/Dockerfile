@@ -78,34 +78,57 @@ RUN cd /ksrc && \
     grep -q '^# CONFIG_WL_ROCKCHIP is not set' .config && \
     ! grep -q '^CONFIG_AP6XXX=' .config && \
     ! grep -q '^CONFIG_BCMDHD=' .config && \
+    # THE BOARD'S OWN OPTIONS, AND THE FIREWALL REMAINDER THE SHARED FLOOR
+    # DOES NOT CARRY. This loop used to restate 19 symbols that
+    # boards/common/mos-required.fragment now pins -- BRIDGE, VETH, the
+    # NF_TABLES and NFT_* core, CGROUP_BPF and the NFT_FIB family -- and the
+    # fragment loop below asserts every one of them against the same built
+    # .config, on both boards. Two lists free to disagree are one list that is
+    # not enforced, so the duplicates are gone and what is left is what the
+    # fragment deliberately does not carry:
+    #
+    #   * this hardware -- an RK3576 with a USB gadget controller and a gadget
+    #     serial console, and eMMC/USB storage. A QEMU machine has none of it.
+    #   * the arm64 accelerated AES. The shared floor carries the generic
+    #     xts(aes) the crypt target resolves through and says why that is
+    #     capability rather than a feature; CE_BLK is this architecture's fast
+    #     path for it and exists on no other, which is why the floor cannot
+    #     name it. x64 carries CRYPTO_AES_NI_INTEL for the same reason.
+    #   * the legacy IP_NF_*/IP6_NF_* back-end and the per-extension xt matches
+    #     and targets, which PLAN-073 excluded from the shared floor as policy
+    #     rather than floor. They stay asserted HERE because this board has
+    #     always had them and dropping them silently is the regression this
+    #     reduction could most easily have introduced.
     for option in \
-        USB_OTG USB_DWC3 USB_DWC3_DUAL_ROLE \
-        USB_GADGET USB_LIBCOMPOSITE USB_U_SERIAL USB_F_ACM \
-        USB_CONFIGFS USB_CONFIGFS_ACM CONFIGFS_FS \
-        USB_HID HID_GENERIC INPUT_EVDEV USB_STORAGE SCSI BLK_DEV_SD \
-        CGROUP_BPF VETH BRIDGE BRIDGE_NETFILTER \
-        NF_CONNTRACK NF_CONNTRACK_MARK NF_NAT NF_NAT_MASQUERADE \
-        NF_TABLES NF_TABLES_INET NF_TABLES_IPV4 NF_TABLES_IPV6 \
-        NFT_CT NFT_MASQ NFT_NAT NFT_COMPAT \
-        NFT_FIB NFT_FIB_IPV4 NFT_FIB_IPV6 NFT_FIB_INET \
-        NETFILTER_XTABLES NETFILTER_XT_MATCH_ADDRTYPE \
-        NETFILTER_XT_MATCH_CONNTRACK NETFILTER_XT_MARK \
-        NETFILTER_XT_TARGET_CHECKSUM NETFILTER_XT_TARGET_CT \
-        NETFILTER_XT_TARGET_MASQUERADE NETFILTER_XT_TARGET_REDIRECT \
-        IP_NF_FILTER IP_NF_MANGLE IP_NF_RAW IP_NF_NAT \
-        IP6_NF_IPTABLES IP6_NF_FILTER IP6_NF_MANGLE IP6_NF_RAW \
-        IP6_NF_NAT IP6_NF_TARGET_MASQUERADE; do \
+        BLK_DEV_SD CONFIGFS_FS HID_GENERIC INPUT_EVDEV \
+        SCSI USB_CONFIGFS USB_CONFIGFS_ACM USB_DWC3 \
+        USB_DWC3_DUAL_ROLE USB_F_ACM USB_GADGET USB_HID \
+        USB_LIBCOMPOSITE USB_OTG USB_STORAGE USB_U_SERIAL \
+        CRYPTO_AES_ARM64_CE_BLK \
+        IP6_NF_FILTER IP6_NF_IPTABLES IP6_NF_MANGLE IP6_NF_NAT \
+        IP6_NF_RAW IP6_NF_TARGET_MASQUERADE IP_NF_FILTER IP_NF_MANGLE \
+        IP_NF_NAT IP_NF_RAW NETFILTER_XT_MARK NETFILTER_XT_MATCH_ADDRTYPE \
+        NETFILTER_XT_MATCH_CONNTRACK NETFILTER_XT_TARGET_CHECKSUM NETFILTER_XT_TARGET_CT NETFILTER_XT_TARGET_MASQUERADE \
+        NETFILTER_XT_TARGET_REDIRECT; do \
         grep -q "^CONFIG_${option}=y" .config || { \
-            echo "missing Docker kernel option: CONFIG_${option}=y" >&2; \
+            echo "missing cx3576 board kernel option: CONFIG_${option}=y" >&2; \
             exit 1; \
         }; \
     done && \
+    n=0; \
     for line in $(sed -n 's/^\(CONFIG_[A-Z0-9_]*=y\)$/\1/p' /mos-required.fragment); do \
+        n=$((n + 1)); \
         grep -q "^${line}$" .config || { \
             echo "missing mos-required option: ${line}" >&2; \
             exit 1; \
         }; \
-    done
+    done; \
+    # The count, because this loop is now the ONLY assertion for the 21 symbols
+    # the board loop above stopped restating. A fragment that failed to arrive
+    # would make it iterate zero times and report nothing; an assertion over an
+    # empty list is green whatever the kernel does.
+    [ "$n" -gt 0 ] || { echo "zero =y lines were read from /mos-required.fragment; the shared floor asserted nothing" >&2; exit 1; }; \
+    echo "config: all ${n} mos-required options are set"
 
 RUN cd /ksrc && \
     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" Image modules && \

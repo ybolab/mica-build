@@ -1191,7 +1191,7 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // Nothing at /etc/modules-load.d/wifi.conf on ANY board: mos-modules
   // superseded it, and the check that says so is board-unconditional.
 
-  // The kernel's own record of itself, for the networking checks.
+  // The kernel's own record of itself, for the kernel-floor checks.
   // Seeded on every board although only x64 registers those checks: the fixture
   // describes a healthy root, and a root with no /boot/config-* is not one.
   //
@@ -1202,89 +1202,92 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // fixture together and the case would stay green while the image contract
   // changed underneath it.
   //
-  // One of the symbols is BUILT IN and the rest are modules, on purpose.
-  // modprobe resolves those two ways and a fixture that exercised only one
-  // would leave the other path driven by nothing.
+  // EVERY FLOOR SYMBOL IS =y AND EVERY FLOOR MODULE IS BUILT IN, which is what
+  // a healthy root looks like since PLAN-074: this board's kernel assembles a
+  // dm-verity root from the kernel command line with no initramfs, so nothing
+  // on the floor can be a module. This fixture used to mirror Debian's artefact
+  // -- the netfilter set =m, one lone builtin -- because the board ran Debian's
+  // kernel. It does not any more.
   //
-  // A THIRD kind is seeded too: symbols that name no module at all -- the eBPF
-  // bools and the three nf_tables family bools, which compile into the kernel
-  // image and into nf_tables.ko respectively. They are =y here with no entry in
-  // either index, which is what Debian's own artefact looks like, so the
-  // modprobe check has to skip them rather than fail on a lookup that could
-  // never succeed. The values mirror Debian's shipped config: the eBPF floor
-  // and the family bools =y, the netfilter modules =m.
-  const release = '6.12.101+deb13-amd64'
+  // THREE KINDS ARE STILL SEEDED, and the distinction is what lets the modprobe
+  // check skip a symbol without going blind. The floor modules below are in
+  // modules.builtin. The nine symbols that name NO module -- the eBPF bools,
+  // the three nf_tables family bools, the bridge family bool, and DM_INIT,
+  // which compiles into dm-mod -- are =y with no entry in either index, so a
+  // lookup for them could never succeed and the config check is their whole
+  // assertion. And modules.dep is NOT empty: this kernel still ships a few
+  // loadable modules, which are the only subjects the dependency walk has left.
+  const release = '6.12.107'
   file(`/boot/config-${release}`,
     '# Automatically generated file; DO NOT EDIT.\n'
-    + 'CONFIG_VLAN_8021Q=m\n'
-    + 'CONFIG_BRIDGE=m\n'
-    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
+    + 'CONFIG_BLK_DEV_DM=y\n'
+    + 'CONFIG_DM_INIT=y\n'
+    + 'CONFIG_DM_VERITY=y\n'
+    + 'CONFIG_SQUASHFS=y\n'
+    + 'CONFIG_OVERLAY_FS=y\n'
+    + 'CONFIG_DM_CRYPT=y\n'
+    + 'CONFIG_VLAN_8021Q=y\n'
+    + 'CONFIG_BRIDGE=y\n'
     + 'CONFIG_WIREGUARD=y\n'
-    + 'CONFIG_VETH=m\n'
-    + 'CONFIG_NFT_FIB=m\n'
-    + 'CONFIG_NFT_FIB_INET=m\n'
-    + 'CONFIG_NFT_FIB_IPV4=m\n'
-    + 'CONFIG_NFT_FIB_IPV6=m\n'
+    + 'CONFIG_VETH=y\n'
+    + 'CONFIG_NFT_FIB_INET=y\n'
+    + 'CONFIG_NFT_FIB_IPV4=y\n'
+    + 'CONFIG_NFT_FIB_IPV6=y\n'
     + 'CONFIG_BPF=y\n'
     + 'CONFIG_BPF_SYSCALL=y\n'
     + 'CONFIG_BPF_JIT=y\n'
     + 'CONFIG_CGROUP_BPF=y\n'
-    + 'CONFIG_NF_TABLES=m\n'
+    + 'CONFIG_NF_TABLES=y\n'
     + 'CONFIG_NF_TABLES_INET=y\n'
     + 'CONFIG_NF_TABLES_IPV4=y\n'
     + 'CONFIG_NF_TABLES_IPV6=y\n'
-    + 'CONFIG_NFT_COMPAT=m\n'
-    + 'CONFIG_NETFILTER_XTABLES=m\n'
-    + 'CONFIG_NF_CONNTRACK=m\n'
-    + 'CONFIG_NFT_CT=m\n'
-    + 'CONFIG_NF_NAT=m\n'
-    + 'CONFIG_NFT_NAT=m\n'
-    + 'CONFIG_NFT_MASQ=m\n'
-    + 'CONFIG_BRIDGE_NETFILTER=m\n'
-    + 'CONFIG_NF_TABLES_BRIDGE=m\n'
-    + 'CONFIG_NF_CONNTRACK_BRIDGE=m\n')
+    + 'CONFIG_NFT_COMPAT=y\n'
+    + 'CONFIG_NETFILTER_XTABLES=y\n'
+    + 'CONFIG_NF_CONNTRACK=y\n'
+    + 'CONFIG_NFT_CT=y\n'
+    + 'CONFIG_NF_NAT=y\n'
+    + 'CONFIG_NFT_NAT=y\n'
+    + 'CONFIG_NFT_MASQ=y\n'
+    + 'CONFIG_BRIDGE_NETFILTER=y\n'
+    + 'CONFIG_NF_TABLES_BRIDGE=y\n'
+    + 'CONFIG_NF_CONNTRACK_BRIDGE=y\n'
+    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n')
   const mod = `/lib/modules/${release}`
-  file(`${mod}/modules.builtin`, 'kernel/net/wireguard/wireguard.ko\n')
+  file(`${mod}/modules.builtin`,
+    'kernel/drivers/md/dm-mod.ko\n'
+    + 'kernel/drivers/md/dm-verity.ko\n'
+    + 'kernel/fs/squashfs/squashfs.ko\n'
+    + 'kernel/fs/overlayfs/overlay.ko\n'
+    + 'kernel/drivers/md/dm-crypt.ko\n'
+    + 'kernel/net/8021q/8021q.ko\n'
+    + 'kernel/net/bridge/bridge.ko\n'
+    + 'kernel/drivers/net/wireguard/wireguard.ko\n'
+    + 'kernel/drivers/net/veth.ko\n'
+    + 'kernel/net/netfilter/nft_fib_inet.ko\n'
+    + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko\n'
+    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko\n'
+    + 'kernel/net/netfilter/nf_tables.ko\n'
+    + 'kernel/net/netfilter/nft_compat.ko\n'
+    + 'kernel/net/netfilter/x_tables.ko\n'
+    + 'kernel/net/netfilter/nf_conntrack.ko\n'
+    + 'kernel/net/netfilter/nft_ct.ko\n'
+    + 'kernel/net/netfilter/nf_nat.ko\n'
+    + 'kernel/net/netfilter/nft_nat.ko\n'
+    + 'kernel/net/netfilter/nft_masq.ko\n'
+    + 'kernel/net/bridge/br_netfilter.ko\n'
+    + 'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko\n\n')
+  // The loadable remainder, small and deliberately not empty: "every object is
+  // present" over an empty modules.dep and over a full one are the same
+  // sentence, and only one of them means anything.
   file(`${mod}/modules.dep`,
-    'kernel/net/8021q/8021q.ko: kernel/net/802/mrp.ko\n'
-    + 'kernel/bridge/bridge.ko: kernel/net/802/stp.ko kernel/net/llc/llc.ko\n'
-    + 'kernel/drivers/net/veth.ko:\n'
-    + 'kernel/net/netfilter/nft_fib.ko:\n'
-    + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko: kernel/net/netfilter/nft_fib.ko\n'
-    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko: kernel/net/netfilter/nft_fib.ko\n'
-    + 'kernel/net/netfilter/nft_fib_inet.ko: kernel/net/ipv4/netfilter/nft_fib_ipv4.ko kernel/net/ipv6/netfilter/nft_fib_ipv6.ko kernel/net/netfilter/nft_fib.ko\n'
-    + 'kernel/net/netfilter/x_tables.ko:\n'
-    + 'kernel/net/netfilter/nf_conntrack.ko:\n'
-    + 'kernel/net/netfilter/nf_tables.ko: kernel/net/netfilter/nfnetlink.ko\n'
-    + 'kernel/net/netfilter/nft_compat.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/x_tables.ko\n'
-    + 'kernel/net/netfilter/nft_ct.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/nf_conntrack.ko\n'
-    + 'kernel/net/netfilter/nf_nat.ko: kernel/net/netfilter/nf_conntrack.ko\n'
-    + 'kernel/net/netfilter/nft_nat.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/nf_nat.ko\n'
-    + 'kernel/net/netfilter/nft_masq.ko: kernel/net/netfilter/nf_tables.ko kernel/net/netfilter/nf_nat.ko\n'
-    + 'kernel/net/bridge/br_netfilter.ko: kernel/bridge/bridge.ko\n'
-    + 'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko: kernel/net/netfilter/nf_conntrack.ko\n')
+    'kernel/net/netfilter/nf_log_common.ko:\n'
+    + 'kernel/net/netfilter/nf_log_syslog.ko: kernel/net/netfilter/nf_log_common.ko\n'
+    + 'kernel/net/netfilter/xt_LOG.ko: kernel/net/netfilter/nf_log_syslog.ko\n')
   for (const object of [
-    'kernel/net/8021q/8021q.ko',
-    'kernel/net/802/mrp.ko',
-    'kernel/bridge/bridge.ko',
-    'kernel/net/802/stp.ko',
-    'kernel/net/llc/llc.ko',
-    'kernel/drivers/net/veth.ko',
-    'kernel/net/netfilter/nft_fib.ko',
-    'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko',
-    'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko',
-    'kernel/net/netfilter/nft_fib_inet.ko',
-    'kernel/net/netfilter/nfnetlink.ko',
-    'kernel/net/netfilter/x_tables.ko',
-    'kernel/net/netfilter/nf_conntrack.ko',
-    'kernel/net/netfilter/nf_tables.ko',
-    'kernel/net/netfilter/nft_compat.ko',
-    'kernel/net/netfilter/nft_ct.ko',
-    'kernel/net/netfilter/nf_nat.ko',
-    'kernel/net/netfilter/nft_nat.ko',
-    'kernel/net/netfilter/nft_masq.ko',
-    'kernel/net/bridge/br_netfilter.ko',
-    'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko',
+    'kernel/net/netfilter/nf_log_common.ko',
+    'kernel/net/netfilter/nf_log_syslog.ko',
+    'kernel/net/netfilter/xt_LOG.ko',
+
   ]) {
     file(`${mod}/${object}`, '\x7fELF\n')
   }

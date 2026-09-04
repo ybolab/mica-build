@@ -49,7 +49,7 @@ help:
 	@echo "  podman              build the container engine from source into pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
-	@echo "  os-netavark-kernel-test  assert the cx3576 kernel config carries the symbols netavark programs rules against"
+	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust}:<arch>"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
@@ -61,6 +61,7 @@ help:
 	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool (needs os-debs; docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
+	@echo "  x64-<t>             delegate target <t> to boards/x64/bsp (kernel|kernel-config|clean); no bootloader is built, the firmware is one"
 
 # `make os` is retired. It keeps a recipe rather than being deleted for the
 # reason x64-% has one: with neither a recipe nor a rule, `make os` prints
@@ -524,8 +525,14 @@ build-env:
 cx3576-%:
 	$(MAKE) -C boards/cx3576/bsp $*
 
+# x64 HAS a BSP build now, and it has exactly one target: the kernel. This
+# rule used to be a refusal saying the board had none, which was true until
+# PLAN-074 -- a UEFI machine's firmware provides the boot chain, so there is
+# still no U-Boot and no vendor rootfs here, but the kernel is this
+# repository's since it stopped being Debian's. The image is still assembled
+# with `bash build/run.sh --mkimage-x64`.
 x64-%:
-	@echo "x64 has no BSP build; assemble its image with: bash build/run.sh --mkimage-x64 (board definition: boards/x64/board.env)" && false
+	$(MAKE) -C boards/x64/bsp $*
 
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
