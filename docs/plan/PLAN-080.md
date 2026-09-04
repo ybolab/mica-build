@@ -226,6 +226,10 @@ Rungs 0–2 are the `make` ruling, taken rather than argued: a host with literal
 only Docker and git runs nothing in this tree, and the smallest addition that
 changes that is bash and make.
 
+Rung 4′ was then repeated on this machine, which takes the *host* bun route
+through the same code, and produced the same verity root hash `db388c98…` and
+the same `RESULT: PASS (313/313 checks, 22 skipped)`. Two routes, one image.
+
 ### 4.3 What rung 4 found, and it is not a small thing
 
 `bash build/run.sh --mkimage-x64` failed with
