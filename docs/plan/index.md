@@ -63,3 +63,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-074 Build the x64 kernel in tree, with its own config**](PLAN-074.md) `2026-09-04`
 - [x] [**PLAN-075 Ship the firewall tools in the base image, with no policy**](PLAN-075.md) `2026-09-03`
 - [ ] [**PLAN-076 Design device state reporting to the fleet plane**](PLAN-076.md) `2026-09-03`
+- [ ] [**PLAN-077 Gate A: trust is real -- the anchor, the grade and the rotation decision**](PLAN-077.md) `2026-09-04`
