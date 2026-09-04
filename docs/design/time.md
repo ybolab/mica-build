@@ -114,7 +114,7 @@ classification over live evidence from `org.freedesktop.timesync1`
 | `polling` | a server is selected and packets are being exchanged, and that bound is not reported |
 | `offline-degraded` | no usable server; the floor holds and retries continue on the pinned 30 s policy |
 | `invalid-source` | a server answered and its replies are unusable (leap 3, stratum 0 or ≥ 16) |
-| `unknown` | timesyncd itself is not observable on the bus |
+| `unknown` | a signal the state would rest on could not be read (see below) |
 
 **What `synchronized` asserts, exactly.** It is timedate1's
 `NTPSynchronized` and nothing else, and that property is *not* "an NTP reply
@@ -135,6 +135,26 @@ and answering — and promises nothing about where it is heading. An operator
 reading `polling` with a healthy `sample` is being told the truth: the clock
 is *not* known to be within the kernel's bound, and the evidence for both
 halves is in the same response.
+
+**What `unknown` covers** (RFCT-300). It is the state for a signal that could
+not be *read* — not for one particular daemon being down. Two services feed
+the classification and either read can go missing: `timesync1` may not be on
+the bus at all, or `timedate1` may not answer `NTPSynchronized`. Three of the
+other four states rest on that second bit — `synchronized` asserts it, and
+`polling` and `offline-degraded` are only reached once it has been ruled out
+— so a read that did not answer cannot produce any of them. A device nobody
+could query is not a device that was queried and found out of sync, and
+reporting the second for the first sends an operator after a clock that may
+be perfectly disciplined. `invalid-source` is the exception and survives an
+unread bit: it rests on the sample alone, already outranks the bit, and says
+only that the source's replies are unusable, which *was* read.
+
+Nothing is inferred to fill the gap — no sample, stratum or earlier reading is
+promoted into a state. The evidence that was read is still reported (`server`
+and `sample` appear as observed), the `synchronized` member stays **absent**,
+and that absence beside `unknown` is what distinguishes "not read" from "read
+and false". `detail` names the read that went missing, since the two live in
+different services and only one of them is worth looking at.
 
 Nothing in the status path can stop retries — it observes, it never acts.
 The classification (`time_status::classify`) is a pure function with

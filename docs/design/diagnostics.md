@@ -477,8 +477,12 @@ after the observed branch identifies the missing fact.
       recollect and require `synchronized`. Correlate events with
       `boot.uptime`, not `collectedAt`, until then.
   - **Evidence:** `time.status` is `unknown`, or the section is unavailable.
+    `unknown` means a signal the state rests on could not be read, and says
+    nothing about the clock: `time.synchronized` is absent there rather than
+    false.
     - **Remediation:** preserve `time.detail` and `collection.sections.time`,
-      verify the time service is observable, and escalate persistent absence.
+      verify the service `time.detail` names is observable (timesyncd or
+      timedated), and escalate persistent absence.
 
 #### DATA full
 
