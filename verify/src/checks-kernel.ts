@@ -48,8 +48,11 @@
 // module `modules.dep` lists whose object was dropped during packing. No
 // REQUIRED symbol reaches that branch any more, because they all resolve as
 // builtin. So the walk is applied to the WHOLE of `modules.dep` instead of only
-// to the required set -- this kernel still ships three loadable modules, and
-// they are exactly the subjects the walk was built for.
+// to the required set -- this kernel still ships four loadable modules, and
+// they are exactly the subjects the walk was built for. Four and not eight
+// since RFCT-304: the xt extensions that were =m became =y, which is the
+// direction that shrinks this walk's subject set, so the count is stated
+// here rather than left to drift towards zero unremarked.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -155,6 +158,26 @@ export const REQUIRED: readonly Requirement[] = [
   { symbol: 'CONFIG_NF_NAT', module: 'nf_nat', what: 'the NAT core' },
   { symbol: 'CONFIG_NFT_NAT', module: 'nft_nat', what: 'the snat and dnat expressions' },
   { symbol: 'CONFIG_NFT_MASQ', module: 'nft_masq', what: 'the masquerade expression' },
+  // The x_tables extensions the shipped iptables cannot do without. NOT a
+  // second firewall and not the legacy back-end: iptables-nft stores every
+  // extension it is asked for as an nft_compat `xt` expression -- measured off
+  // `nft --json`, because the text renderer prints an xt expression through
+  // libxtables' xlate callback and a compat rule then reads exactly like a
+  // native one -- and nft_compat resolves that expression by loading the xt
+  // module by name. Without the module the rule is REFUSED: "Warning:
+  // Extension REDIRECT revision 0 not supported, missing kernel module?".
+  // Three of these were absent on x64 while cx3576 had them =y, so the
+  // documented compatibility path answered differently per board; RFCT-304
+  // has the run and boards/common/mos-required.fragment the argument, plus
+  // why the list is eight rather than the eleven symbols PLAN-074 listed.
+  { symbol: 'CONFIG_NETFILTER_XT_MARK', module: 'xt_mark', what: 'the MARK target -j MARK is stored as' },
+  { symbol: 'CONFIG_NETFILTER_XT_NAT', module: 'xt_nat', what: 'the SNAT and DNAT targets' },
+  { symbol: 'CONFIG_NETFILTER_XT_MATCH_ADDRTYPE', module: 'xt_addrtype', what: 'the addrtype match -m addrtype is stored as' },
+  { symbol: 'CONFIG_NETFILTER_XT_MATCH_CONNTRACK', module: 'xt_conntrack', what: 'the conntrack match -m conntrack is stored as' },
+  { symbol: 'CONFIG_NETFILTER_XT_TARGET_CHECKSUM', module: 'xt_CHECKSUM', what: 'the CHECKSUM target, which has no native nft form at all' },
+  { symbol: 'CONFIG_NETFILTER_XT_TARGET_CT', module: 'xt_CT', what: 'the CT target, -j CT --notrack included' },
+  { symbol: 'CONFIG_NETFILTER_XT_TARGET_MASQUERADE', module: 'xt_MASQUERADE', what: 'the MASQUERADE target -j MASQUERADE is stored as' },
+  { symbol: 'CONFIG_NETFILTER_XT_TARGET_REDIRECT', module: 'xt_REDIRECT', what: 'the REDIRECT target -j REDIRECT is stored as' },
   // Bridge filtering. Same-bridge container traffic is switched at layer 2 and
   // never reaches the ip-family hooks; these three are what make it visible at
   // all. NF_TABLES_BRIDGE builds no object: it is a tristate menuconfig whose

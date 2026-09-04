@@ -138,17 +138,134 @@ fragment 之前，都先对着 Debian 实际发布的配置量过——组合出
 | `CONFIG_NFT_NAT` | snat 与 dnat 表达式 | `=m` `nft_nat` |
 | `CONFIG_NFT_MASQ` | masquerade 表达式 | `=m` `nft_masq` |
 
-有三样是刻意不列的。**遗留的 `IP_NF_*` 后端**——镜像里没有任何东西用它；镜像既不带
-`iptables` 也不带 `nftables` 包，而 netavark 2.x 直接编程 nftables、根本没有 iptables 驱动
-（`tests/netavark-kernel-config-test.sh`）。**逐个扩展的 xt 匹配与目标**
-（`xt_conntrack`、`xt_MASQUERADE`、`ipt_REJECT` 等）——规则集点名哪些扩展属于**策略**，
-这道下限只让内核**有能力**，不替它决定强制什么；cx3576 为 docker 选项集所需的那些，
-仍旧断言在它自己的 Dockerfile 里。以及 `NF_NAT_MASQUERADE`，它由 `NFT_MASQ` `select`，
-写一行只是在陈述后果而不是要求。
+有两样是刻意不列的。**遗留的 `IP_NF_*` / `IP6_NF_*` 后端**——§4.2.2 实测它无法经由镜像
+所选中的任何前端抵达。以及 `NF_NAT_MASQUERADE`，它由 `NFT_MASQ` `select`，写一行只是
+在陈述后果而不是要求。
 
 两道下限是有交集的：`tests/netavark-kernel-config-test.sh` 会断言它引用的每个符号，
 只要 fragment 也提到，就必须在那里写成 `=y`——这样共享文件里的弱化说法就无法躲在
 cx3576 自己的 Dockerfile 循环后面。
+
+#### 4.2.1 x_tables 扩展，以及它们为何是下限而非策略
+
+上面那张表是前端的**内核**。它不足以让前端跑起来，而这个结论是**实测**出来的，
+不是推想出来的（RFCT-304）。
+
+**`iptables-nft` 并不把扩展原生翻译掉。**用 `nft --json` 读内核真正存下来的规则，
+前端被要求的每一个扩展都以 `nft_compat` 的 `xt` 表达式回来：
+
+| 要求的写法 | 内核实际存下的 |
+|---|---|
+| `-j MASQUERADE`、`-j REDIRECT`、`-j DNAT` | `xt target` MASQUERADE / REDIRECT / DNAT |
+| `-j CHECKSUM`、`-j CT`（含 `--notrack`）、`-j MARK` | `xt target` CHECKSUM / CT / MARK |
+| `-m addrtype`、`-m conntrack` | `xt match` addrtype / conntrack |
+| `-t raw -j ACCEPT`、`-m mark`、`-p tcp --dport` | 原生——仅裁决与内建匹配 |
+
+**要读 `--json`，不要读 `nft list ruleset`。**文本渲染器会把 `xt` 表达式再送回
+libxtables 的 `xlate` 回调去打印**翻译结果**，于是一条 compat 规则打印出来正是
+`masquerade` 或 `fib daddr type local`，与原生规则一模一样。凭文本输出分类，上表
+每一行都会判错。
+
+`nft_compat` 解析一个 `xt` 表达式的方式，是按名字加载 `xt_*` 模块。模块不在时规则
+被**拒绝**——在本树构建的 x64 内核上：
+
+```
+# iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+Warning: Extension REDIRECT revision 0 not supported, missing kernel module?
+```
+
+所以这八个是下限而非策略：它们决定 §4.2 所服务的那个工具究竟能不能用。
+
+| 符号 | 模块 | 由什么触及 |
+|---|---|---|
+| `CONFIG_NETFILTER_XT_MARK` | `xt_mark` | `-j MARK` |
+| `CONFIG_NETFILTER_XT_NAT` | `xt_nat` | `-j SNAT`、`-j DNAT` |
+| `CONFIG_NETFILTER_XT_MATCH_ADDRTYPE` | `xt_addrtype` | `-m addrtype` |
+| `CONFIG_NETFILTER_XT_MATCH_CONNTRACK` | `xt_conntrack` | `-m conntrack` |
+| `CONFIG_NETFILTER_XT_TARGET_CHECKSUM` | `xt_CHECKSUM` | `-j CHECKSUM`；它根本没有原生形式 |
+| `CONFIG_NETFILTER_XT_TARGET_CT` | `xt_CT` | `-j CT`，含 `--notrack` |
+| `CONFIG_NETFILTER_XT_TARGET_MASQUERADE` | `xt_MASQUERADE` | `-j MASQUERADE` |
+| `CONFIG_NETFILTER_XT_TARGET_REDIRECT` | `xt_REDIRECT` | `-j REDIRECT` |
+
+**这是一个被挑选出来的子集，而且只能如此。**操作者点名的约六十个 xt 扩展中的任何
+一个都需要自己的模块，镜像不会把它们全带上。这八个是那道操作者可见的分裂**本身
+由之构成**的符号——而不是听起来更整齐、但并不属实的那句"两块板子本来就都有的
+全部"：其中三个（`CHECKSUM`、`CT`、`REDIRECT`）在 x64 上是缺失的，采纳它们等于给
+x64 增加了能力。
+
+**是八个，而 PLAN-074 §7h 列的是十一个——这两份名单不是同一份。**那一份是从某次更早的
+下限替换所丢掉的符号推出来的；这一份是把规则跑一遍得出来的。十一个里有五个是 §4.2.2
+的遗留表，改走那条路退场。`NETFILTER_XT_MATCH_CONNTRACK` 在这里，是因为 cx3576 的板级
+循环不再复述它，断言总得有个落点。而 `NETFILTER_XT_NAT` 在这份名单里、却不在那一份里：
+它在 cx3576 上是 `=y`、在 x64 上是 `=m`，与紧邻的 `TARGET_MASQUERADE` 是同一种分裂；
+一条能答 `-j MASQUERADE` 却把 `-j DNAT` 留在弱一档的 nat 兼容路径，会把本节要关掉的
+缺陷继续留着。
+
+**代价是多少**，由两块内核各构建两次量得：
+
+| | 之前 | 之后 | 增量 |
+|---|---|---|---|
+| x64 `bzImage` | 14,971,904 B | 14,980,096 B | **+8,192 B，+0.055 %** |
+| x64 `modules.tar` | 337,920 B | 286,720 B | −51,200 B |
+| x64 可加载模块 | 8 | 4 | −4 |
+| cx3576 `Image` | 44,493,312 B | 44,493,312 B | **0 B** |
+
+cx3576 为零，因为它提交在树里的厂商配置本来就把八个都设成了 `=y`，fragment 合并进去的
+是已经存在的值。两个内核都是从本树构建、只让 fragment 不同，用来**给看**而不是断言。
+**这里比的是体积而不是哈希，原因值得记下来：**`boards/cx3576/bsp/kernel/Dockerfile`
+没有钉住 `KBUILD_BUILD_TIMESTAMP`、`_USER`、`_HOST` 中的任何一个（x64 的钉了），所以
+同一棵未改动的树构建两次本来就不一致——这里两个 `Image` 体积相同、sha256 不同，那个
+差异来自构建时钟而不是本次改动。让那块板的内核可复现是另一个任务，此处不做。
+x64 那个数字是 `=y` 负载——常驻内核内存，两个 A/B 槽各一份，计入 `BOOT_SIZE_MIB`——
+在 96 MiB 的引导分区面前，8 KiB 不构成任何约束。停止构建的那四个 `.ko` 就是从 `=m`
+变成 `=y` 的那四个符号，因此 `verify/src/checks-kernel.ts` 的模块那一半仍有四个主体，
+而不是零个。
+
+#### 4.2.2 遗留后端，实测
+
+`IP_NF_RAW`、`IP6_NF_RAW`、`IP6_NF_NAT`、`IP6_NF_TARGET_MASQUERADE` 与 `IP_NF_NAT`
+是与上面的 `xt_*` 模块**分开的另一个问题**，而答案是相反的。
+
+`iptables-nft` 把它的 `raw`、`nat`、`mangle`、`filter` 四张表建在 **nf_tables** 里，
+不在遗留表存储里。在设了 `# CONFIG_IP_NF_RAW is not set` 的 x64 内核上：
+
+```
+# iptables -t raw -A PREROUTING -j ACCEPT      →  接受，存为原生规则
+# iptables-legacy -t raw -L -n
+iptables v1.8.11 (legacy): can't initialize iptables table `raw':
+Table does not exist (do you need to insmod?)
+```
+
+唯一需要这些符号的前端是 `iptables-legacy`，而**本树没有任何东西选中它**：
+alternatives 组留在 auto 模式，nft 前端在其中优先级高于遗留前端，`update-alternatives`
+在这里哪儿也没被运行过。因此 cx3576 的板级循环不再断言它原先带的那十个遗留条目。
+这在 cx3576 上并不是一次配置改动——厂商配置照旧设置它们，它们仍是 `=y`——而是撤掉了
+一条把遗留物**装扮成要求**的断言。x64 保持 `x86_64_defconfig` 解析出来的样子（一个
+不完整的遗留面：两个地址族的 `filter` 与 `mangle`、仅 ip 的 `nat`、两族都没有 `raw`），
+因为裁掉它是一次要自带体积论证的减法，而无论哪个方向都没有消费者提出要求。
+
+#### 4.2.3 同一类的另外四处差异：已实测，且刻意不关
+
+把更宽的扩展集合对着重建后的 x64 内核跑一遍，又发现四处板间差异，形状与 §4.2.1
+所关闭的那类完全相同。这里只做记录、不做修复，因为每一处都需要**选定一个方向**，
+而那是关于产品兼容路径保证什么的决定，不是一次测量：
+
+| 扩展 | 符号 | x64 | cx3576 |
+|---|---|---|---|
+| `-m multiport` | `NETFILTER_XT_MATCH_MULTIPORT` | 拒绝 | 可用 |
+| `-m comment` | `NETFILTER_XT_MATCH_COMMENT` | 拒绝 | 可用 |
+| `-j CT --zone` | `NF_CONNTRACK_ZONES` | 拒绝 | 可用 |
+| `-j LOG` | `NETFILTER_XT_TARGET_LOG` | 可用（`=m`） | **拒绝** |
+
+`-j LOG` 那一行值得看两遍：它的方向是**反过来**的，所以"防火墙面更弱的那块板"
+并不是对每条规则都是同一块。`-j CT --zone` 也不是 xt 模块——`CT` 目标本身现在
+已经是下限，`--notrack` 两块板都可用；`--zone` 需要的是一个会加宽 conntrack 元组
+的连接跟踪特性，要单独定价。
+
+关闭其中任何一处，要么给缺的那块板加能力，要么把有的那块板的能力拿掉。两者都是
+关于"所保证的兼容面"的产品决定，而且它们背后的长尾很长（`-m limit` 和 `-m iprange`
+今天在**两块**板子上都被拒绝，后面还有约五十个）。一道按"最近试过哪个扩展"生长的
+下限，正是 PLAN-073 有理由拒绝顺手写下的那种策略。
 
 ### 4.3 网桥过滤
 
@@ -211,9 +328,10 @@ VLAN / veth 这几个命名空间里，cx3576 构建产物设置的 101 个符�
 所以 x64 自建内核那个任务**不从本任务继承任何符号积压**。它继承到的是约束的解除：以后往下限里
 加符号，不必再先过 Debian 那一关。
 
-**按理据放弃**——两块板都能满足，但下限不要求：遗留的 `IP_NF_*` 后端、逐扩展的 xt 匹配与目标、
+**按理据放弃**——两块板都能满足，但下限不要求：遗留的 `IP_NF_*` 后端（第 4.2.2 节实测了缘由）、
 `CONFIG_NF_NAT_MASQUERADE`（`NFT_MASQ` 的 `select`）、第 4.3 节那三个网桥符号，以及
-`CONFIG_DEBUG_INFO_BTF`（第 4.1 节，已定价）。
+`CONFIG_DEBUG_INFO_BTF`（第 4.1 节，已定价）。逐扩展的 xt 匹配与目标在这份名单写下时确实在其中，
+现在不再是了：第 4.2.1 节实测出其中七个对第 4.2 节所服务的前端是承重的，它们现在是下限。
 
 **欠账，点名而不是四舍五入。** 下限自己的 `CONFIG_LSM="…,bpf"` 点名了一个 cx3576 并没有构建的
 LSM。在 6.1 上 `BPF_LSM depends on BPF_EVENTS && BPF_SYSCALL && SECURITY && BPF_JIT`
