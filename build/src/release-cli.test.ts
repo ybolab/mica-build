@@ -15,6 +15,7 @@ import {
   parseArgs,
   requireSupplied,
   type AssembleCommand,
+  type GateCommand,
 } from './release-cli.ts'
 
 describe('the subcommand comes first, and is one of two', () => {
@@ -90,7 +91,9 @@ describe('the assemble arguments and their fallbacks', () => {
 describe('the gate arguments', () => {
   test('POSITIVE CONTROL: gate with a directory and an evidence path', () => {
     const c = parseArgs(['gate', '--dir', '/r', '--evidence', '/e.json'], {})
-    expect(c).toEqual({ cmd: 'gate', board: DEFAULT_BOARD, dir: '/r', evidence: '/e.json' })
+    expect(c).toEqual({
+      cmd: 'gate', board: DEFAULT_BOARD, dir: '/r', evidence: '/e.json', bakedMeta: undefined,
+    })
   })
 
   test('gate takes no positional argument: a stray word is not a directory', () => {
@@ -118,5 +121,35 @@ describe('the defaults name the seam the documentation names', () => {
 
   test('the release directory is _out/<board>/release', () => {
     expect(defaultReleaseDir('x64')).toBe(join(REPO_ROOT, '_out', 'x64', 'release'))
+  })
+})
+
+describe('--baked-meta: the input that says what the image trusts', () => {
+  test('it is parsed on BOTH subcommands, and MOS_BAKED_META is its fallback', () => {
+    // Both, because the gate re-measures rather than trusting the manifest,
+    // and a gate that could not be handed the image's meta/ would have to.
+    expect((parseArgs(['assemble', '--baked-meta', '/x/meta'], {}) as AssembleCommand).bakedMeta)
+      .toBe('/x/meta')
+    expect((parseArgs(['gate', '--baked-meta', '/x/meta'], {}) as GateCommand).bakedMeta)
+      .toBe('/x/meta')
+    expect((parseArgs(['assemble'], { MOS_BAKED_META: '/e/meta' }) as AssembleCommand).bakedMeta)
+      .toBe('/e/meta')
+    expect((parseArgs(['gate'], { MOS_BAKED_META: '/e/meta' }) as GateCommand).bakedMeta)
+      .toBe('/e/meta')
+    expect((parseArgs(['gate', '--baked-meta', '/f/meta'], { MOS_BAKED_META: '/e/meta' }) as GateCommand).bakedMeta)
+      .toBe('/f/meta')
+  })
+
+  test('given twice it is refused, like every other flag that takes a value', () => {
+    expect(() => parseArgs(['gate', '--baked-meta', '/a', '--baked-meta', '/b'], {}))
+      .toThrow(/--baked-meta was given twice/)
+  })
+
+  test('absent, it is refused BY NAME rather than defaulted to a path this CLI invents', () => {
+    // There is no default: meta/ is gitignored build-host material and the
+    // baked copy lives inside the image, so any path invented here would be a
+    // guess whose failure lands on the wrong file.
+    expect(() => requireSupplied(undefined, '--baked-meta', 'MOS_BAKED_META', 'because'))
+      .toThrow(/no --baked-meta was supplied \(and MOS_BAKED_META is unset\)/)
   })
 })

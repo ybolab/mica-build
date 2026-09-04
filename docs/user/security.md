@@ -32,19 +32,35 @@ length and verity root hash. The key ceremonies, custody and rotation
 procedures are written as an executable runbook,
 [../design/release-signing.md](../design/release-signing.md).
 
+What an image says about itself, and what a device can be asked:
+
+- **The image carries its own trust grade, and the device reports it.** A
+  build without provided material generates development-grade signing material
+  and marks it, and that marker is baked into the image. Ask a device with
+  `GET /api/v1/system/info`: `trust.grade` is `development` or `production`,
+  and a development image names which half of its material is development
+  — the RAUC keyring, the package signing key, or both.
+- **A development-grade image cannot be published to a customer.** The
+  publication gate refuses a `candidate` or `stable` release whose image
+  carries that marker, and names the file it found. The `development` channel,
+  which carries no promise, still accepts one. This was a convention until
+  now; it is a refusal.
+
 The named gaps:
 
-- **No production keys are provisioned anywhere yet.** A build without
-  provided material generates a development-grade trust root and marks it;
-  the image verifier fails a dev-keyring image unless explicitly waived as a
-  bench image. No image with a development keyring should leave a desk.
+- **No production keys are provisioned anywhere yet.** The ceremony that
+  produces them is written down ([../design/release-signing.md](../design/release-signing.md))
+  and has not been performed. Every image this repository has built so far is
+  development-grade, and says so.
 - **No keyring rotation channel on deployed devices** — replacing the trust
   anchor on a fielded device currently means an image signed by the very key
-  being replaced.
-- **The device-side TUF verifier ships, and its trust anchor does not.**
-  `rauc-verify` and `rauc-update` are in the image and walk release metadata
-  from a pinned root, but no image provisions that root, so the walk has
-  nothing to start from until an operator supplies one
+  being replaced. A device that missed a rollover window, and rotation away
+  from a CA that is already compromised, still need a physical reflash.
+- **The image provisions the package-trust anchor; the shipped client does not
+  read it yet.** The baked update configuration carries the trusted package
+  signing keys, and the build refuses to produce an image without it. But
+  `rauc-verify` and `rauc-update` in the image still verify TUF metadata from a
+  pinned root supplied out of band, and no image provisions one
   ([update-rollback.md](update-rollback.md)).
 
 > status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`

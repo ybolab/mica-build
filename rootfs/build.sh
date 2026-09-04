@@ -279,8 +279,9 @@ fi
 # --- meta/: the signing material and the update configuration (PLAN-070) ---
 #
 # meta/ is the build host's, gitignored, and holds everything a release needs to
-# be configured and signed. Exactly two of its files reach the image and every
-# private key stays here; the allowlist below is what makes that mechanical.
+# be configured and signed. Only the files META_PUBLIC names reach the image --
+# two required and one conditional -- and every private key stays here; the
+# allowlist below is what makes that mechanical.
 META_DIR="$REPO_ROOT/meta"
 META_STAGE="$OUT_DIR/meta-public"
 KEY_ALG_ENV="$REPO_ROOT/pkgs/rauc/key-algorithms.env"
@@ -448,10 +449,31 @@ echo "meta: A2 read $meta_checked file(s) of key material in meta/; every one is
 # keyring, so the device never needs the file, and a file that ships for no
 # reason is a file whose removal nobody can later justify.
 #
-# "<path under meta/>|<path in the image>"
+# THE MARKER IS ON THE SET, AND IT IS THE FIRST ENTRY WHOSE ABSENCE IS
+# MEANINGFUL (PLAN-077 section 2, answering PLAN-070's open question 4). Every
+# other member is required: an image without a keyring or without a manifest
+# can verify nothing. meta/GENERATED is present exactly when the material is
+# development-grade, so a production image is one that ships no marker -- and
+# "absent" is the answer a release wants rather than a defect.
+#
+# Why it ships at all: without it the grade is a fact about the BUILD HOST, and
+# two things Gate A needs are then unbuildable. A device cannot say whether it
+# trusts a development CA by reading a file on a machine it has never seen, and
+# a publication refusal that reads the host answers "was this host
+# development-grade" -- which is green on every host that has no meta/ at all,
+# including the archive-restore case the release gate's own contract names.
+# Baked, the fact travels inside the dm-verity root with the material it
+# describes.
+#
+# Verbatim, not summarised: byte-equality against the source in meta/ is the
+# assertion this seam makes everywhere else, and a derived {"grade": ...}
+# document would be one fact stated twice with no rule for a disagreement.
+#
+# "<path under meta/>|<path in the image>|required|conditional"
 META_PUBLIC=(
-    "rauc/ca.cert.pem|etc/rauc/keyring.pem"
-    "updates/manifest.json|usr/share/mos/meta/updates/manifest.json"
+    "rauc/ca.cert.pem|etc/rauc/keyring.pem|required"
+    "updates/manifest.json|usr/share/mos/meta/updates/manifest.json|required"
+    "GENERATED|usr/share/mos/meta/GENERATED|conditional"
 )
 
 # WHAT "CARRIES PRIVATE KEY MATERIAL" MEANS, and the obvious spelling is wrong
@@ -478,23 +500,53 @@ private_key_material() {
 }
 
 rm -rf "$META_STAGE"
+# What the allowlist RESOLVED to for this tree: the required entries, plus each
+# conditional one whose source is actually there. The count assertion below is
+# against this rather than against the array's length, because a conditional
+# entry that is legitimately absent is not a file that went missing.
+meta_expected=0
+meta_required=0
+meta_staged_names=""
 for entry in "${META_PUBLIC[@]}"; do
-    meta_src="$META_DIR/${entry%%|*}"
-    meta_dst="$META_STAGE/${entry##*|}"
-    [ -s "$meta_src" ] ||
-        { echo "error: $meta_src is on the public set and is missing or empty, so this image would ship without it. Every file in that set is one the device reads to decide what it trusts or where its updates come from" >&2; exit 1; }
+    IFS='|' read -r meta_rel_src meta_rel_dst meta_disposition <<<"$entry"
+    meta_src="$META_DIR/$meta_rel_src"
+    meta_dst="$META_STAGE/$meta_rel_dst"
+    [ "$meta_disposition" = required ] && meta_required=$((meta_required + 1))
+    if [ ! -s "$meta_src" ]; then
+        # A conditional entry that is not there is the tree saying something --
+        # for meta/GENERATED, that the material is production-grade -- and the
+        # image says the same thing by not shipping it. verify's
+        # packed-meta-is-the-public-set holds both directions of that, so the
+        # silence here is checked rather than trusted.
+        [ "$meta_disposition" = conditional ] && continue
+        echo "error: $meta_src is on the public set and is missing or empty, so this image would ship without it. Every required file in that set is one the device reads to decide what it trusts or where its updates come from" >&2
+        exit 1
+    fi
     # B1's second trigger, over the file ABOUT TO BE staged rather than the copy:
     # the sentence then names the file somebody has to fix, in meta/, rather
     # than the throwaway under _out/ that this build made from it.
     if private_key_material "$meta_src"; then
-        echo "error: $meta_src is on the public set and carries private key material; refusing to bake it into the image at /${entry##*|}." >&2
+        echo "error: $meta_src is on the public set and carries private key material; refusing to bake it into the image at /$meta_rel_dst." >&2
         echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. meta/ exists to hold private keys and none of them ship; if this file is genuinely public, it is not the file its name and contents say it is." >&2
         exit 1
     fi
     mkdir -p "$(dirname "$meta_dst")"
     cp "$meta_src" "$meta_dst"
     chmod 0644 "$meta_dst"
+    meta_expected=$((meta_expected + 1))
+    meta_staged_names="$meta_staged_names $meta_rel_dst"
 done
+# The floor under the count below, and it is TWO assertions because one of them
+# is the vacuity hole the conditional entry opened. B1's count is an equality
+# against meta_expected, and both sides are derived from this loop -- so an
+# allowlist whose every entry were conditional, over an empty meta/, would
+# stage nothing and pass 0 -eq 0. The set having at least one REQUIRED member
+# is what makes the equality a measurement; the second line is the ordinary
+# consistency check beside it.
+[ "$meta_required" -gt 0 ] ||
+    { echo "error: no entry in META_PUBLIC is marked required, so an empty meta/ would stage nothing and every check over the staged set would pass by finding nothing. The keyring and the update configuration are required by construction: an image without either can verify nothing" >&2; exit 1; }
+[ "$meta_expected" -ge "$meta_required" ] ||
+    { echo "error: the public set has $meta_required required entries and $meta_expected file(s) were resolved for staging. A required entry cannot be skipped, so a count below the floor means the loop above did not read the allowlist it was given" >&2; exit 1; }
 
 # B1 -- THE BUILD REFUSES TO STAGE A SECRET, and refuses to stage anything it
 # was not asked to. It proves the INTENT; verify's packed-meta-is-the-public-set
@@ -515,23 +567,29 @@ while IFS= read -r staged; do
     fi
     meta_allowed=0
     for entry in "${META_PUBLIC[@]}"; do
-        [ "$meta_rel" = "${entry##*|}" ] && meta_allowed=1
+        IFS='|' read -r _ meta_entry_dst _ <<<"$entry"
+        [ "$meta_rel" = "$meta_entry_dst" ] && meta_allowed=1
     done
     if [ "$meta_allowed" = 0 ]; then
         echo "error: $staged is about to be baked into the image at /$meta_rel and is not on the public set in rootfs/build.sh." >&2
-        echo "meta/ holds every private key a release needs and only two of its files may reach a device. A path that arrived here without an allowlist entry arrived without a reviewer, which is the way a signing key ships: not by anyone deciding to ship it, but by a copy nobody read. Add the path to META_PUBLIC if it genuinely belongs in the image, or take the copy that put it here back out." >&2
+        echo "meta/ holds every private key a release needs and only the files META_PUBLIC names may reach a device. A path that arrived here without an allowlist entry arrived without a reviewer, which is the way a signing key ships: not by anyone deciding to ship it, but by a copy nobody read. Add the path to META_PUBLIC if it genuinely belongs in the image, or take the copy that put it here back out." >&2
         exit 1
     fi
     if private_key_material "$staged"; then
         echo "error: $staged carries private key material and is about to be baked into the image at /$meta_rel." >&2
-        echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. Private keys stay on the build host; the public set is two files and neither is one." >&2
+        echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. Private keys stay on the build host; the public set is a certificate, a JSON document and a prose marker, and none of them is a key." >&2
         exit 1
     fi
     meta_staged=$((meta_staged + 1))
 done < <(find "$META_STAGE" -mindepth 1 ! -type d | sort)
-[ "$meta_staged" -eq "${#META_PUBLIC[@]}" ] ||
-    { echo "error: the public set has ${#META_PUBLIC[@]} entries and $meta_staged file(s) were staged and checked. B1 has to see every file that reaches the image, so a count that does not match means it read a tree this build is not going to ship" >&2; exit 1; }
-echo "meta: staged and checked $meta_staged public file(s) from meta/ -- $(printf '%s ' "${META_PUBLIC[@]##*|}")"
+# Against the RESOLVED count and not the array's length, because a conditional
+# entry whose source is absent was never going to be staged. What the equality
+# still catches is both directions that matter: a file staged by something
+# other than the loop above, and one that vanished between being copied and
+# being read here.
+[ "$meta_staged" -eq "$meta_expected" ] ||
+    { echo "error: the public set resolved to $meta_expected entries for this tree and $meta_staged file(s) were staged and checked. B1 has to see every file that reaches the image, so a count that does not match means it read a tree this build is not going to ship" >&2; exit 1; }
+echo "meta: staged and checked $meta_staged of ${#META_PUBLIC[@]} public-set entries from meta/ --$meta_staged_names"
 
 # NO PACKAGE SIGNING KEY IS AN ANNOUNCEMENT, NOT AN ERROR (section 1.2). An
 # empty trust.signingKeys is a supported steady state -- the same steady state
@@ -574,6 +632,7 @@ if [ -e "$META_DIR/GENERATED" ]; then
     echo "# without meta/GENERATED beside it.                        #"
     echo "############################################################"
     echo "meta: GENERATED marks these domains development-grade: ${meta_domains:-(the marker names none)}"
+    echo "meta: the marker is baked at /usr/share/mos/meta/GENERATED, so the device reports this grade on GET /api/v1/system/info and the release gate refuses to publish this image to candidate or stable"
 fi
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 render() {

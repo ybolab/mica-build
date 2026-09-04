@@ -150,14 +150,19 @@ os-bundle-cx3576:
 	bash build/run.sh --bundle
 
 # The customer-facing release directory, and the publication gate over it.
-# Release notes and the image's /usr/share/mos/manifest.tsv content have no
-# built default, so they arrive through MOS_RELEASE_NOTES and
-# MOS_PACKAGE_MANIFEST (or the --notes/--package-manifest flags of
+# Release notes, the image's /usr/share/mos/manifest.tsv content and the
+# image's extracted /usr/share/mos/meta/ directory have no built default, so
+# they arrive through MOS_RELEASE_NOTES, MOS_PACKAGE_MANIFEST and
+# MOS_BAKED_META (or the --notes/--package-manifest/--baked-meta flags of
 # `bash build/run.sh --release assemble`); the refusal for each names it.
-# The gate re-checks a release directory from scratch -- schema, sizes,
-# digests, SHA256SUMS agreement, release notes, SBOM, board evidence -- and
-# an incomplete release exits non-zero naming the gap. MOS_BOARD selects the
-# board for both; see docs/design/release-artifacts.md.
+# MOS_BAKED_META is what the trust grade is MEASURED from -- an image built on
+# development-grade signing material carries /usr/share/mos/meta/GENERATED, and
+# a release carrying such an image is refused on the candidate and stable
+# channels. The gate re-checks a release directory from scratch -- schema,
+# sizes, digests, SHA256SUMS agreement, release notes, SBOM, board evidence,
+# trust grade -- and an incomplete or unpublishable release exits non-zero
+# naming the gap. MOS_BOARD selects the board for both; see
+# docs/design/release-artifacts.md.
 os-release-cx3576:
 	bash build/run.sh --release assemble
 

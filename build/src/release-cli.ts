@@ -23,6 +23,7 @@ export const DEFAULT_BOARD = 'cx3576'
 
 const USAGE = `usage: bash build/run.sh --release assemble [VERSION] [--board B] [options]
        bash build/run.sh --release gate [--board B] [--dir DIR] [--evidence PATH]
+                                       --baked-meta DIR
 
 assemble writes the customer-facing release directory for a board -- the
 flashable image and signed RAUC bundle copied in, an SBOM, a provenance
@@ -39,6 +40,12 @@ scratch and refuses the first gap by name.
   --notes PATH          the release-notes file; REQUIRED (also MOS_RELEASE_NOTES)
   --package-manifest PATH  the image's /usr/share/mos/manifest.tsv content;
                         REQUIRED (also MOS_PACKAGE_MANIFEST)
+  --baked-meta DIR      the image's /usr/share/mos/meta/ directory as
+                        extracted; REQUIRED for BOTH commands (also
+                        MOS_BAKED_META). It is what says whether the image was
+                        built with development-grade signing material, and a
+                        release carrying such an image is refused on the
+                        candidate and stable channels
   --image PATH          the disk image (default: _out/<board>/<board>-mos-latest.img)
   --update-bundle PATH  the RAUC bundle (default: _out/<board>/mos-<board>-latest.raucb);
                         not --bundle, which run.sh reserves for its bundle MODE
@@ -59,6 +66,7 @@ export interface AssembleCommand {
   readonly image: string | undefined
   readonly bundle: string | undefined
   readonly evidence: string | undefined
+  readonly bakedMeta: string | undefined
   readonly outDir: string | undefined
 }
 
@@ -67,6 +75,7 @@ export interface GateCommand {
   readonly board: string
   readonly dir: string | undefined
   readonly evidence: string | undefined
+  readonly bakedMeta: string | undefined
 }
 
 export type CliCommand = AssembleCommand | GateCommand
@@ -95,7 +104,7 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
       process.exit(0)
     }
     if (['--board', '--channel', '--profile', '--notes', '--package-manifest',
-      '--image', '--update-bundle', '--evidence', '--out-dir', '--dir'].includes(a)) {
+      '--image', '--update-bundle', '--evidence', '--out-dir', '--dir', '--baked-meta'].includes(a)) {
       const next = rest[i + 1]
       if (next === undefined) throw new Error(`${a} needs a value\n\n${USAGE}`)
       if (flags.has(a)) throw new Error(`${a} was given twice; one of the two would silently lose\n\n${USAGE}`)
@@ -110,7 +119,13 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
   }
   const board = flags.get('--board') ?? env.MOS_BOARD ?? DEFAULT_BOARD
   if (cmd === 'gate') {
-    return { cmd, board, dir: flags.get('--dir'), evidence: flags.get('--evidence') }
+    return {
+      cmd,
+      board,
+      dir: flags.get('--dir'),
+      evidence: flags.get('--evidence'),
+      bakedMeta: flags.get('--baked-meta') ?? env.MOS_BAKED_META,
+    }
   }
   return {
     cmd,
@@ -120,6 +135,7 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
     profile: flags.get('--profile') ?? 'dev',
     notes: flags.get('--notes') ?? env.MOS_RELEASE_NOTES,
     packageManifest: flags.get('--package-manifest') ?? env.MOS_PACKAGE_MANIFEST,
+    bakedMeta: flags.get('--baked-meta') ?? env.MOS_BAKED_META,
     image: flags.get('--image'),
     bundle: flags.get('--update-bundle'),
     evidence: flags.get('--evidence'),
@@ -156,7 +172,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   if (options.cmd === 'gate') {
     const dir = options.dir ?? defaultReleaseDir(options.board)
-    const report = gateReleaseDir(dir, options.evidence ?? defaultEvidencePath(options.board))
+    const bakedMeta = requireSupplied(options.bakedMeta, '--baked-meta', 'MOS_BAKED_META',
+      'the grade of an image\'s signing material is measured from its own baked /usr/share/mos/meta/, '
+      + 'and a gate that read the build host instead would answer green on every host that never built one')
+    const report = gateReleaseDir(dir, options.evidence ?? defaultEvidencePath(options.board), bakedMeta)
     const m = report.manifest
     console.log(`release gate: PASS ${dir}`)
     console.log(
@@ -164,6 +183,11 @@ export async function main(argv: readonly string[]): Promise<number> {
       + `source ${m.source.commit}${m.source.dirty ? ' (dirty)' : ''}`,
     )
     console.log(`  boot assurance ${m.bootAssurance}, evidence: ${report.evidence.qualification}`)
+    console.log(
+      `  trust ${m.trust.grade}`
+      + `${m.trust.developmentDomains.length > 0 ? ` (development in ${m.trust.developmentDomains.join(' ')})` : ''}`
+      + `, measured from ${bakedMeta}`,
+    )
     console.log(`  ${report.artifactsChecked} artifacts, ${report.bytesTotal} bytes, every digest re-measured`)
     return 0
   }
@@ -172,6 +196,9 @@ export async function main(argv: readonly string[]): Promise<number> {
     'a release without release notes is refused by the publication gate, so it is refused here first')
   const packageManifest = requireSupplied(options.packageManifest, '--package-manifest', 'MOS_PACKAGE_MANIFEST',
     'the SBOM is derived from the image\'s /usr/share/mos/manifest.tsv and never invented')
+  const bakedMeta = requireSupplied(options.bakedMeta, '--baked-meta', 'MOS_BAKED_META',
+    'the release records the grade of the signing material its image was built from, and that is '
+    + 'measured from the image\'s own /usr/share/mos/meta/ rather than declared')
 
   // The image and bundle defaults come from the board definition, the same
   // names the assemblers point their -latest symlinks at.
@@ -209,6 +236,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     imagePath,
     bundlePath,
     packageManifestPath: packageManifest,
+    bakedMetaDir: bakedMeta,
     notesPath: notes,
     evidencePath,
     outDir: options.outDir ?? defaultReleaseDir(options.board),
@@ -221,6 +249,11 @@ export async function main(argv: readonly string[]): Promise<number> {
   console.log(
     `  ${m.release.version} (${m.release.channel}) for ${m.board.name}/${m.board.profile}, `
     + `source ${m.source.commit}${m.source.dirty ? ' (dirty)' : ''}`,
+  )
+  console.log(
+    `  trust ${m.trust.grade}`
+    + `${m.trust.developmentDomains.length > 0 ? ` (development in ${m.trust.developmentDomains.join(' ')})` : ''}`
+    + `, measured from ${bakedMeta}`,
   )
   console.log(`  ${result.gate.artifactsChecked} artifacts, ${result.gate.bytesTotal} bytes; the publication gate re-checked the directory`)
   return 0

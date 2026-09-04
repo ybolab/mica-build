@@ -21,7 +21,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
-import { BAKED_MANIFEST_PATH, FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, packedRootFixture, type RootFixture } from './checks-fixture.ts'
+import { BAKED_MANIFEST_PATH, FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, FIXTURE_META_MARKER, packedRootFixture, type RootFixture } from './checks-fixture.ts'
 import { BUILTIN_MARKUP, ROOT_CHECKS } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import { boardEnvPath } from './paths.ts'
@@ -862,7 +862,7 @@ describe('the shipped keyring, which must be the one from meta/', () => {
   })
 })
 
-describe('the baked public set, which must be exactly the two files the build staged', () => {
+describe('the baked public set, which must be exactly what the build staged', () => {
   // The hazard this stands against, stated once: if meta/ were baked verbatim
   // every shipped device would carry meta/rauc/ca.key.pem and
   // meta/updates/root.key -- the private keys behind both gates its updates
@@ -933,6 +933,79 @@ describe('the baked public set, which must be exactly the two files the build st
       rmSync(join(fx.ctx.metaDir, 'updates', 'manifest.json'))
       await expect(checkNamed('packed-meta-is-the-public-set').run(fx.ctx))
         .rejects.toThrow(/nothing to compare/)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  // The marker's biconditional (PLAN-077 §2.1). The fixture is production-
+  // shaped -- material present, no GENERATED -- so the two directions are
+  // reached by adding the marker to one side and not the other.
+
+  test('a DEVELOPMENT tree whose image ships no marker is refused: the image would call itself production', async () => {
+    // The dangerous direction, and the reason this check exists at all. The
+    // publication gate reads exactly this file to decide whether a release may
+    // go to a customer channel, so a bench image that ships no marker is one
+    // the gate would let out.
+    const fx = packedRootFixture(cx3576)
+    try {
+      // Green first, so the red below means the marker and not the fixture --
+      // `mutated`'s discipline, spelled out because the mutation is on the
+      // TREE side and that helper only reaches the packed root.
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('pass')
+      writeFileSync(join(fx.ctx.metaDir, 'GENERATED'), FIXTURE_META_MARKER)
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set'))
+        .toContain('ships no /usr/share/mos/meta/GENERATED')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a PRODUCTION tree whose image ships a marker is refused too', async () => {
+    // The other direction is not dangerous and is still wrong: nothing but
+    // pkgs/rauc/gen-dev-keys.sh may write that marker, and a stale copy inside
+    // the signed root refuses every release built from this tree.
+    const fx = await mutated('packed-meta-is-the-public-set', root =>
+      writeFileSync(join(root, '/usr/share/mos/meta/GENERATED'), FIXTURE_META_MARKER))
+    try {
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set'))
+        .toContain('does not exist, so the image calls development-grade material')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a DEVELOPMENT tree whose image ships the SAME marker passes, and the count says two', async () => {
+    // The positive control for the development branch: the biconditional is an
+    // equality, not a prohibition, so the marked case has to be green or the
+    // two red cases above would pass on a check that refuses everything.
+    const fx = packedRootFixture(cx3576)
+    try {
+      writeFileSync(join(fx.ctx.metaDir, 'GENERATED'), FIXTURE_META_MARKER)
+      writeFileSync(join(fx.root, '/usr/share/mos/meta/GENERATED'), FIXTURE_META_MARKER)
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('pass')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set'))
+        .toContain('holds exactly 2 file(s) [updates/manifest.json GENERATED]')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a marker whose baked bytes are not its source is refused as a differing file', async () => {
+    // The marker names the DOMAINS it covers, so an edited copy is an image
+    // lying about which half of its material is development-grade.
+    const fx = packedRootFixture(cx3576)
+    try {
+      writeFileSync(join(fx.ctx.metaDir, 'GENERATED'), FIXTURE_META_MARKER)
+      writeFileSync(join(fx.root, '/usr/share/mos/meta/GENERATED'), 'DOMAINS=\n')
+      expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('is not the byte-for-byte copy')
     }
     finally {
       fx.dispose()
