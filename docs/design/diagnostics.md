@@ -211,7 +211,7 @@ boards has not been validated on hardware by this subtask; the fixture tests
 prove the parsing and the absence rules, not the boards. The record of that
 validation belongs to section 10.
 
-## 5. The snapshot schema, version 2
+## 5. The snapshot schema, version 3
 
 A snapshot is one JSON document. `schemaVersion` names its shape and is
 bumped when a member changes; a reader that does not know the version it sees
@@ -219,11 +219,11 @@ should treat the members it does know as advisory.
 
 | Member | Content |
 |---|---|
-| `schemaVersion` | `2` |
+| `schemaVersion` | `3` |
 | `collectedAt` | RFC 3339 UTC as this appliance's clock had it; `time` says whether that clock is disciplined, `boot.uptime` is the monotonic reference |
 | `release` | `board`, `release`, `kernel`, as section 2 defines them |
 | `system` | the whole section 2 surface |
-| `boot` | `slot`, `uptime` (section 2), `reset` (section 4), `update` (mosd's recorded live-state `update` entry: operation, progress, per-slot status, `booted_slot`, `primary`, `pending_not_confirmed`, the last install and mark) |
+| `boot` | `slot`, `uptime` (section 2), `reset` (section 4), `update` (mosd's recorded live-state `update` entry: operation, progress, per-slot status, `booted_slot`, `primary`, `pending_not_confirmed`, the last install and mark). Version 3 added `update.install.time` — the clock, the time-status document and a `clock_implicated` reading — so a failed install's `certificate has expired` and the clock that may have caused it are read from one document |
 | `journal` | the bounded excerpt: `scope` (`current boot`), `priority` (`warning`), `lineCount`, `sourceLines`, `sourceBytes`, `truncated`, `bounds`, `lines[]` |
 | `failures` | `units` (systemd's failed units: `count`, `truncated`, `entries[]` of `name`, `description`, `loadState`, `activeState`, `subState`), `tasks[]` (apply tasks whose outcome was not success), `health` (the live-state health map) |
 | `storage` | the `GET /api/v1/storage/status` document, verbatim (storage.md section 2) |
@@ -241,7 +241,7 @@ The journal excerpt is this boot's, at warning and worse, newest first when
 the caps cut. journald runs `Storage=volatile` on the image, so there is no
 previous boot to ask for; the hostname column is left out of every line.
 
-## 6. The redaction schema, version 4
+## 6. The redaction schema, version 5
 
 Redaction is a tested security boundary, and it fails closed. It is the
 management-API redaction `docs/design/security-model.md` §6 counts among the

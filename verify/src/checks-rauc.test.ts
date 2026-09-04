@@ -136,6 +136,7 @@ const ALL = [
   'rauc-slot-devices-by-partuuid',
   'rauc-statusfile-not-on-var',
   'rauc-keyring-path',
+  'rauc-keyring-verifies-against-now',
   'rauc-bootloader-backend',
   'rauc-rootfs-bootnames',
 ] as const
@@ -145,7 +146,7 @@ describe('the shipped config satisfies every check, on both boards', () => {
     for (const id of ALL) expect((await drive(id, CX_CONF)).verdict).toBe('pass')
   })
 
-  test('x64 — a different backend and different GUIDs, the same six checks', async () => {
+  test('x64 — a different backend and different GUIDs, the same seven checks', async () => {
     for (const id of ALL) expect((await drive(id, X64_CONF, x64)).verdict).toBe('pass')
   })
 
@@ -269,6 +270,80 @@ describe('rauc-keyring-path', () => {
   })
 })
 
+describe('rauc-keyring-verifies-against-now', () => {
+  // The assertion is that the line is NOT THERE. Both values are driven,
+  // because a check written to reject `true` reports green on the commit that
+  // introduces the setting spelled the safe way -- and that commit is the one
+  // the next edit turns into the failure. PLAN-078 §M10: with
+  // use-bundle-signing-time=true a bundle signed by a signer that expired 370
+  // days earlier is ACCEPTED, so this is not a milder expiry, it is none.
+  const withKeyringLine = (line: string): string => {
+    const conf = CX_CONF.replace('path=/etc/rauc/keyring.pem', `path=/etc/rauc/keyring.pem\n${line}`)
+    expect(conf).not.toBe(CX_CONF)
+    return conf
+  }
+
+  for (const value of ['true', 'false']) {
+    test(`RED when [keyring] sets use-bundle-signing-time=${value}`, async () => {
+      const r = await drive('rauc-keyring-verifies-against-now', withKeyringLine(`use-bundle-signing-time=${value}`))
+      expect(r.verdict).toBe('fail')
+      expect(r.message).toContain(`use-bundle-signing-time=${value}`)
+      expect(r.message).toMatch(/not even\s+spelled false/)
+    })
+
+    test(`RED when [keyring] sets check-crl=${value}`, async () => {
+      const r = await drive('rauc-keyring-verifies-against-now', withKeyringLine(`check-crl=${value}`))
+      expect(r.verdict).toBe('fail')
+      expect(r.message).toContain(`check-crl=${value}`)
+    })
+  }
+
+  test('RED when both are set — the message names both, not the first one found', async () => {
+    const r = await drive(
+      'rauc-keyring-verifies-against-now',
+      withKeyringLine('use-bundle-signing-time=false\ncheck-crl=false'),
+    )
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('use-bundle-signing-time=false')
+    expect(r.message).toContain('check-crl=false')
+  })
+
+  test('GKeyFile spelling: `key = value` and an indented key are still SET', async () => {
+    // RAUC reads this file with GKeyFile, which honours both. A reader matching
+    // only `use-bundle-signing-time=` would pass an image RAUC reads as true.
+    for (const line of ['use-bundle-signing-time = true', '  use-bundle-signing-time=true']) {
+      expect((await drive('rauc-keyring-verifies-against-now', withKeyringLine(line))).verdict).toBe('fail')
+    }
+  })
+
+  test('a COMMENTED setting is not a setting', async () => {
+    const conf = withKeyringLine('#use-bundle-signing-time=true')
+    expect((await drive('rauc-keyring-verifies-against-now', conf)).verdict).toBe('pass')
+  })
+
+  test('the same line in ANOTHER section does not answer for [keyring]', async () => {
+    // RAUC honours these keys in [keyring] and nowhere else, so the reader has
+    // to stop at the next `[`. Without that it would go red for a line RAUC
+    // ignores -- a fail that is not a statement about what the device verifies.
+    const conf = CX_CONF.replace('[system]\n', '[system]\nuse-bundle-signing-time=true\n')
+    expect(conf).not.toBe(CX_CONF)
+    expect((await drive('rauc-keyring-verifies-against-now', conf)).verdict).toBe('pass')
+  })
+
+  test('RED when there is no [keyring] section at all — the absence must be over something', async () => {
+    // The vacuity guard. "No forbidden key inside [keyring]" is trivially true
+    // of a config with no [keyring], and of an image with no config: a check
+    // that answered pass there would stay green forever, including for the
+    // image that ships no update configuration at all.
+    const conf = CX_CONF.replace('[keyring]', '[keyring-disabled]')
+    expect(conf).not.toBe(CX_CONF)
+    const r = await drive('rauc-keyring-verifies-against-now', conf)
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toMatch(/absence asserted over nothing/)
+    expect((await drive('rauc-keyring-verifies-against-now', undefined)).verdict).toBe('fail')
+  })
+})
+
 describe('rauc-bootloader-backend', () => {
   test('RED when the backend is not the one the board declares', async () => {
     const conf = CX_CONF.replace('bootloader=uboot', 'bootloader=grub')
@@ -307,7 +382,7 @@ describe('rauc-rootfs-bootnames', () => {
 })
 
 describe('a packed root with no RAUC config at all', () => {
-  test('five of the six go RED, and none of them throws', async () => {
+  test('six of the seven go RED, and none of them throws', async () => {
     // Absence is a fact about the image, not a broken read, so it is answered
     // with a verdict. A throw would report "the check could not run" about an
     // image that shipped with no update configuration at all.
@@ -316,7 +391,7 @@ describe('a packed root with no RAUC config at all', () => {
     }
   })
 
-  test('the sixth passes VACUOUSLY, and the oracle does too', async () => {
+  test('the seventh passes VACUOUSLY, and the oracle does too', async () => {
     // FOUND, NOT INTRODUCED, and reproduced deliberately.
     //
     // `rauc-slot-devices-by-partuuid` asks "is any slot device NOT a
