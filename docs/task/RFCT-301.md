@@ -227,6 +227,14 @@ Implementing the `meta/` seam and its build-time and image-time enforcement.
   production's own reason for RSA-4096 (conservatism about a key a missed
   rollover window strands until reflash) instead of the dev script's.
 
+  **One line added after the PLAN-070 amendment landed.** §7's amended
+  fresh-checkout walkthrough restates §1.2's *"the build says so in one line"*
+  for an empty `trust.signingKeys`, and that line was missing. `rootfs/build.sh`
+  now prints it, and only when the list is empty: measured both directions --
+  silent with a baked key, announced on a `--domain rauc`-only tree. It is
+  output, not behaviour: no staged byte and no image byte changes with it, which
+  is why the image gates below were not re-run for it.
+
   **Gates, all green on `4da24a7b`:**
 
   - `make os-debs` (exit 0; one stamp `git4da24a7b0ae2-1` across both pools)
@@ -242,7 +250,23 @@ Implementing the `meta/` seam and its build-time and image-time enforcement.
     assertion; `bash tests/trust-domain-hygiene-test.sh` — 8/8
   - `bash tests/shell-pipefail-lint.sh` — 69/69
 
+  Re-run after the one-line addition: `bash tests/shell-pipefail-lint.sh`
+  (69/69) and `bash tests/trust-domain-hygiene-test.sh` (8/8), plus the meta
+  block of `rootfs/build.sh` in both signingKeys states. Nothing under
+  `verify/`, `build/` or `docs/` changed with it.
+
   No Rust was touched, so `cargo test` was not run.
+
+  **Checked against the 2026-09-04 amendment** (*the two URLs become
+  overridable, the anchors do not*), which reached main as `c3b61cb8` and was
+  already merged here. §2's manifest schema is unchanged by it, so the committed
+  example still matches; §7's amended walkthrough names
+  `packed-keyring-from-meta` and `packed-meta-is-the-public-set` and describes
+  the fresh-checkout path this slice produces, step for step. The five backlog
+  rows it edited are F6, F6b, F8, F9 and F11 -- none of them here. Its
+  anchor-versus-address boundary is untouched by these refusals by
+  construction: `META_PUBLIC`, `BAKED_META_DIR` and `PRIVATE_KEY_SCAN_DIRS` name
+  only baked paths, and nothing in F3, F4 or F12 reads `/mos/config/`.
 
   **Not done, and deliberately:** F5, F6, F6b, F6c, F6d, F6e, F6f, F6g, F7, F8,
   F9, F10 and F11 of PLAN-070's backlog. Open question 8 (whether the ssh pour

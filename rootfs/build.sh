@@ -360,6 +360,7 @@ if [ ! -s "$META_DIR/rauc/ca.cert.pem" ]; then
     echo "The image cannot be built without the CA it must trust; meta/rauc/ is the one place it comes from." >&2
     exit 1
 fi
+meta_manifest_flat=$(tr -d ' \t\n' < "$META_DIR/updates/manifest.json" 2>/dev/null || true)
 if ! grep -q '"signingKeys"' "$META_DIR/updates/manifest.json" 2>/dev/null; then
     echo "error: $META_DIR/updates/manifest.json is missing, empty or carries no trust.signingKeys." >&2
     echo "It is the update configuration baked into every image, instantiated from meta.example/ by pkgs/rauc/gen-dev-keys.sh when meta/ has none; a build cannot state where its updates come from without it." >&2
@@ -531,6 +532,23 @@ done < <(find "$META_STAGE" -mindepth 1 ! -type d | sort)
 [ "$meta_staged" -eq "${#META_PUBLIC[@]}" ] ||
     { echo "error: the public set has ${#META_PUBLIC[@]} entries and $meta_staged file(s) were staged and checked. B1 has to see every file that reaches the image, so a count that does not match means it read a tree this build is not going to ship" >&2; exit 1; }
 echo "meta: staged and checked $meta_staged public file(s) from meta/ -- $(printf '%s ' "${META_PUBLIC[@]##*|}")"
+
+# NO PACKAGE SIGNING KEY IS AN ANNOUNCEMENT, NOT AN ERROR (section 1.2). An
+# empty trust.signingKeys is a supported steady state -- the same steady state
+# as an absent update.source, and consistent with it, because a device
+# configured to reach no server has no package to verify. It is the state every
+# fresh checkout is in, since --domain updates is opt-in: a development
+# package-signing key that no published repository has signed anything with is a
+# key that anchors nothing, and minting one by default would make every fresh
+# build claim a trust relationship it does not have.
+#
+# Said in one line because a silence here reads the same as a key being there.
+# The whitespace is stripped first so this reads the VALUE and not the file's
+# formatting; an absent signingKeys is a different fact and the refusal above
+# already covers it.
+if [ "${meta_manifest_flat#*\"signingKeys\":[]}" != "$meta_manifest_flat" ]; then
+    echo "meta: no package signing key baked -- meta/updates/manifest.json's trust.signingKeys is empty, so this image can verify no update package until it is populated (pkgs/rauc/gen-dev-keys.sh --domain updates writes a development one). Not an error: with no key there is nothing claiming a trust relationship this build does not have."
+fi
 
 # Whether that material is development-grade is not guessed from the bytes. The
 # generator leaves meta/GENERATED beside what it wrote and production material
