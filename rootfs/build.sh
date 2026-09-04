@@ -411,11 +411,11 @@ alg_of_material() {
 # required above, so the search space is never empty, and the number says so.
 meta_checked=0
 check_material() {
-    local file=$1 reader=$2 role=$3 set=$4 verifier=$5 alg
+    local file=$1 reader=$2 role=$3 allowed=$4 verifier=$5 alg
     [ -s "$file" ] || return 0
     alg=$(alg_of_material "$file" "$reader") ||
         { echo "error: openssl could not read $file, so the algorithm of a key this build is about to trust is unknown. A file that is present and unreadable is not the same as an absent one and must not be treated as one" >&2; exit 1; }
-    in_alg_set "$alg" "$set" || alg_refusal "$file" "$alg" "$role" "$set" "$verifier"
+    in_alg_set "$alg" "$allowed" || alg_refusal "$file" "$alg" "$role" "$allowed" "$verifier"
     meta_checked=$((meta_checked + 1))
 }
 check_material "$META_DIR/rauc/ca.cert.pem" x509 "RAUC CA (meta/rauc/ca.cert.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
