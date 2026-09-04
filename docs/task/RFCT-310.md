@@ -48,9 +48,9 @@ seams, declaring the container-side sites, and landing
    for every way it could pass over nothing, and is wired as
    `make os-host-toolchain-lint` and into CI.
 3. `tests/host-toolchain-lint-test.sh` plants a host invocation, a stale
-   exemption, a removed declaration and an unclosed block and requires each to
-   turn the lint red with its own message — and requires a producer inside a
-   declared container block to stay green.
+   exemption, a removed declaration, an unclosed block and a heredoc named in a
+   comment, and requires each to turn the lint red with its own message — and
+   requires a producer inside a declared container block to stay green.
 4. The three seams of PLAN-080 §3.2 are closed: `Toolbox.open` is container-only
    and refuses a host route by name, `mke2fsCanWriteTheseLayouts` is gone with
    the route it guarded, and `verify`'s `chooseRoute` defaults to the container.
@@ -73,3 +73,9 @@ Measured cost, for the record PLAN-080 §6 asks for:
   whose container creation that file measures at anywhere from 320 ms to 101 s.
   No production path was taking the host route, so nothing outside this test
   file paid anything.
+- The cost did show once, and where `build/src/testing.ts` said it would. That
+  file records the ~4.6 s coreutils open as "the one that matters: it is UNDER
+  the default and it flaked against it". One case in `toolbox.test.ts` opened
+  a COREUTILS toolbox without a timeout override, and the first full suite run
+  after the policy landed failed it at exactly 5000.80 ms. It carries
+  `OPEN_TIMEOUT_MS` now, with the reason at the site.

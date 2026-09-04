@@ -173,8 +173,8 @@ an empty result from an unasked question; pass 2 is reproduced exactly by
 believed. Its own RESULT line, on the tree as this record lands, is the
 enumeration in one sentence:
 
-    RESULT: PASS (94/94 files clean, 0 finding(s), 8803 command lines examined,
-    3053 elided, 6 file + 7 block container declarations, 27 exempted
+    RESULT: PASS (96/96 files clean, 0 finding(s), 9044 command lines examined,
+    3068 elided, 6 file + 7 block container declarations, 27 exempted
     invocation(s) under 6 rule(s))
 
 36 of the 63 shell sites are inside the 13 declarations and 27 are under the 6
@@ -247,8 +247,11 @@ The reason this record exists is that a documented gate with nothing enforcing
 it stayed broken for a week and nothing failed. So the policy ships with a
 check, in the shape `tests/shell-pipefail-lint.sh` already uses.
 
-`tests/host-toolchain-lint.sh`, wired as `make os-host-toolchain-lint` and run
-in the CI `offline-suites` job:
+`tests/host-toolchain-lint.sh`, wired as `make os-host-toolchain-lint`. It runs
+in the CI `offline-suites` job — bash, awk and git, no docker and no bun — and
+its negative test runs there as the step after it, because a lint that is green
+because it stopped matching anything looks exactly like a lint that is green
+because the tree is clean:
 
 - **What it scans.** `git ls-files '*.sh' Makefile '*/Makefile'
   '.github/workflows/*.yml'` for 34 producer binaries in command position.
@@ -261,12 +264,24 @@ in the CI `offline-suites` job:
   is an error (the scan found no producer at all, which this tree cannot be);
   an exemption matching no line is an error; a container block left unclosed at
   EOF is an error.
-- **Its negative test**, `tests/host-toolchain-lint-test.sh`: plants a host
-  `mkfs.ext4`, a host `cargo build`, a stale exemption, a removed container
-  declaration and an unclosed block, and requires each to turn the run red with
-  its own message — and plants a producer *inside* a declared container block
-  and requires green, because a rule whose findings are false positives teaches
-  people to ignore it.
+- **Its negative test**, `tests/host-toolchain-lint-test.sh`, 16 cases: it
+  plants a host `mkfs.ext4`, a host `cargo build`, a stale exemption, an
+  exemption with no reason, a removed container declaration, an unclosed block,
+  a close with no open, a marker with no reason, a declaration placed after
+  code, an empty surface and the no-declaration control, and requires each to
+  turn the run red with *its own* message — and plants a producer *inside* a
+  declared container block, and a whole-file declaration doing its job, and
+  requires those green, because a rule whose findings are false positives
+  teaches people to ignore it.
+
+The elision order is one of the cases, and it is there because it was a real
+defect rather than a hypothetical one. Heredoc detection ran ahead of the
+comment skip in the first draft, so a line of prose containing `<<EOF` opened a
+heredoc and elided every line after it until something matched the terminator —
+a file that silently stopped being scanned and still reported clean. Fixing it
+brought back **152 command lines that had never been examined** (8892 → 9044,
+with 265 fewer elided). No finding was hiding in them, and that is luck rather
+than design: the hole was found by reading the scanner, not by anything failing.
 
 ### What it cannot catch, said at the site
 
@@ -370,8 +385,9 @@ names the requirement and exempts the two scripts until it lands.
 1. `docs/design/build.md` §0 and the zh mirror; the pointer from
    `build-harness.md`.
 2. `tests/host-toolchain-lint.sh`, its exemption register, `make
-   os-host-toolchain-lint`, the CI step, and
-   `tests/host-toolchain-lint-test.sh`.
+   os-host-toolchain-lint`, `tests/host-toolchain-lint-test.sh`, `make
+   os-host-toolchain-lint-test`, and both as steps in the CI `offline-suites`
+   job.
 3. The 13 container-side declarations of §3.1.
 4. The three seams of §3.2.
 

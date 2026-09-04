@@ -21,7 +21,9 @@
 #     line 101 is exactly that shape, and it is covered only because the file
 #     declares its side. A grep cannot resolve a variable, and pretending
 #     otherwise would be worse than saying so.
-#   - A HEREDOC BODY. Bodies are skipped whole. Every heredoc in this tree that
+#   - A HEREDOC BODY. Bodies are skipped whole. (A comment that merely MENTIONS
+#     one does not open it: comments are looked at first, or a `# ... <<EOF` in
+#     prose would elide the rest of the file and still report it clean.) Every heredoc in this tree that
 #     carries a producer today carries a CONTAINER script -- `docker run ...
 #     <<'INNER'`, or a `cat > inner.sh` whose output is run in one -- so the
 #     elision costs nothing measured; a host build step written into one would
@@ -164,6 +166,34 @@ for f in "${files[@]}"; do
                 if (line ~ ("^[[:space:]]*" hd "[[:space:]]*$")) hd = ""
                 next
             }
+            # COMMENTS FIRST, and the order is load-bearing. A comment that
+            # MENTIONS a heredoc -- `# ... <<EOF ...` -- would otherwise open
+            # one here and elide every line until something matched the
+            # terminator, which is a file that silently stops being scanned and
+            # still reports clean. A real heredoc body is already handled
+            # above, so nothing is lost by looking at `#` first.
+            if (line ~ /^[[:space:]]*#/) {
+                if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:/) {
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container[[:space:]]*--[[:space:]]*[^[:space:]]/) {
+                        if (code) { emit("err", "a whole-file container declaration must come before any code; this one is after line " code, ""); next }
+                        filedecl = 1; emit("stat", "filedecl", ""); next
+                    }
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container-block[[:space:]]*--[[:space:]]*[^[:space:]]/) {
+                        if (block) { emit("err", "a container block opened at line " blockline " is still open", ""); next }
+                        block = 1; blockline = NR; emit("stat", "blockdecl", ""); next
+                    }
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*host[[:space:]]*$/) {
+                        if (!block) { emit("err", "a `mos-build-side: host` closes a container block that was never opened", ""); next }
+                        block = 0; next
+                    }
+                    # A marker with no reason is a rubber stamp; refuse it by
+                    # name rather than ignoring it, which would read as "not a
+                    # marker" to the tool and as "declared" to its author.
+                    emit("err", "malformed `mos-build-side:` marker; the forms are `container -- <why>`, `container-block -- <why>` and `host`", "")
+                }
+                next
+            }
+
             if (line !~ /<<</ && match(line, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
                 t = substr(line, RSTART, RLENGTH)
                 sub(/^<<-?[[:space:]]*/, "", t)
@@ -171,27 +201,6 @@ for f in "${files[@]}"; do
                 hd = t
             }
 
-            # --- the side declarations ---
-            if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container[[:space:]]*--[[:space:]]*[^[:space:]]/) {
-                if (code) { emit("err", "a whole-file container declaration must come before any code; this one is after line " code, "") ; next }
-                filedecl = 1; emit("stat", "filedecl", ""); next
-            }
-            if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container-block[[:space:]]*--[[:space:]]*[^[:space:]]/) {
-                if (block) { emit("err", "a container block opened at line " blockline " is still open", "") ; next }
-                block = 1; blockline = NR; emit("stat", "blockdecl", ""); next
-            }
-            if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*host[[:space:]]*$/) {
-                if (!block) { emit("err", "a `mos-build-side: host` closes a container block that was never opened", "") ; next }
-                block = 0; next
-            }
-            # A marker with no reason is a rubber stamp; refuse it by name
-            # rather than ignoring it, which would read as "not a marker".
-            if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:/) {
-                emit("err", "malformed `mos-build-side:` marker; the forms are `container -- <why>`, `container-block -- <why>` and `host`", "")
-                next
-            }
-
-            if (line ~ /^[[:space:]]*#/) next
             if (line ~ /^[[:space:]]*$/) next
             if (!code && line !~ /^#!/) code = NR
 

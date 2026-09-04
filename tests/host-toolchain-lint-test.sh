@@ -217,7 +217,26 @@ track "${d}"
 expect "an exemption with no reason is refused" "${d}" red 'no tool or no reason'
 
 # ---------------------------------------------------------------------------
-# 12. THE POSITIVE CONTROL, driven directly. A tree in which the scan found no
+# 12. A COMMENT THAT MENTIONS A HEREDOC MUST NOT OPEN ONE. This was a real
+#     defect: heredoc detection ran before the comment skip, so a line of prose
+#     containing `<<EOF` elided every line after it until something matched the
+#     terminator -- a file that silently stopped being scanned and still
+#     reported clean. Measured on this repository when it was fixed: 152 command
+#     lines that had never been examined came back.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+cat >"${d}/prose.sh" <<'EOF'
+#!/bin/sh
+# The producer below is a real one. This comment mentions a heredoc, <<EOF,
+# because scripts explain themselves and prose talks about shell syntax.
+mkfs.ext4 -F disk.img
+EOF
+track "${d}"
+expect "a heredoc named in a COMMENT does not swallow the lines after it" "${d}" red 'prose.sh:4: `mkfs.ext4` runs on the host'
+
+# ---------------------------------------------------------------------------
+# 13. THE POSITIVE CONTROL, driven directly. A tree in which the scan found no
 #     producer running in a container has not found this repository's build; it
 #     has found a pattern that stopped matching. It must not report clean.
 # ---------------------------------------------------------------------------
@@ -227,7 +246,7 @@ track "${d}"
 expect "a scan that saw no container-side producer refuses to report clean" "${d}" red 'no container-side declaration was found'
 
 # ---------------------------------------------------------------------------
-# 13. And a tree with no scannable files at all.
+# 14. And a tree with no scannable files at all.
 # ---------------------------------------------------------------------------
 d="$(new_fixture)"
 rm "${d}/plain.sh"   # this is the one case that wants an EMPTY surface

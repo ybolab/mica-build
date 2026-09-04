@@ -312,12 +312,17 @@ describe('the session is torn down, and says so if used afterwards', () => {
     expect((await $`${docker} inspect ${name}`.nothrow().quiet()).exitCode).not.toBe(0)
   }, OPEN_TIMEOUT_MS)
 
+  // OPEN_TIMEOUT_MS, and it was not needed here until COREUTILS stopped taking
+  // the host route: a ~4 ms open became a ~4.6 s one, which src/testing.ts
+  // calls "the one that matters -- it is UNDER the default and it flaked
+  // against it". This test went red at exactly 5000 ms the first time the
+  // suite ran after the policy landed.
   test('a call after close names the toolbox rather than a random container id', async () => {
     const tb = await Toolbox.open(COREUTILS, { route: 'container' })
     await tb.close()
     await expect(tb.run(['true'])).rejects.toThrow(/toolbox was closed/)
     await expect(tb.run(['true'])).rejects.toThrow(/coreutils/)
-  })
+  }, OPEN_TIMEOUT_MS)
 
   test('MOS_BUILD_TOOLBOX only accepts the two routes there are', async () => {
     const before = process.env.MOS_BUILD_TOOLBOX
