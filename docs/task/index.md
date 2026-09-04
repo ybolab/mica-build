@@ -63,6 +63,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-009 Generate built-in UI assets during the build**](UI-009.md) `P1`
 - [x] [**RFCT-293 Ship the `docker` command name as a podman symlink**](RFCT-293.md) `P2`
 - [x] [**RFCT-294 Add eBPF, firewall and bridge symbols to the common kernel floor**](RFCT-294.md) `P1`
+- [x] [**RFCT-296 Ship the firewall tools in the base image, with no policy**](RFCT-296.md) `P1`
 - [x] [**RFCT-297 Design device state reporting to the fleet plane**](RFCT-297.md) `P1`
 - [x] [**UI-010 Isolate built-in UI build outputs**](UI-010.md) `P1`
 - [x] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
