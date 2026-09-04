@@ -99,6 +99,9 @@ IMAGE="${FROM_ARGS[1]#MOS_BUILD_DEB=}"
 
 # _out/debs/<arch> is mounted and nothing above it: this writes three files
 # beside the pool and has no business seeing the rest of the tree.
+# mos-build-side: container-block -- the index is written by the dpkg inside
+# localhost/mos-build-deb, which records its own version in /etc/mos-build/deb.env
+# and is read back by the block below
 docker run --rm \
     --label ai-agent=true \
     -v "${DIST}:/dist" \
@@ -164,6 +167,7 @@ docker run --rm \
 
         echo "repo.sh: ${#debs[@]} package(s), $(grep -c "^Package: " Packages) stanza(s) in Packages"
     '
+# mos-build-side: host
 
 echo "repo.sh: ${DIST}"
 sed 's/^/  /' "${DIST}/manifest.txt"

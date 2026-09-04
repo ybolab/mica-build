@@ -31,7 +31,7 @@ _out/${BOARD}/ and boards/${BOARD}/bsp/out/.
 environment:
   MOS_ROOTFS_SLOT_MIB  supplied AT ALL selects the frozen-geometry mode; its
                        absence selects the floor mode. Never its value.
-  MOS_BUILD_TOOLBOX    host|container -- force the route the tools run on
+  MOS_BUILD_TOOLBOX    container -- the only route there is; host is refused by name
 `
 
 export interface CliOptions {

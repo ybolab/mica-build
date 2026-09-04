@@ -12,6 +12,13 @@ No gate can check it, it can go stale under you, and it is dated for that
 reason. The host measurements below were taken on **2026-08-28** unless another
 date is given.
 
+**The rule these containers exist to keep is [`build.md`](build.md) §0** — no
+toolchain on the host, no compilation on the host, no assembly on the host —
+with the test for deciding which side a new tool is on, the exemptions that are
+still open, and `make os-host-toolchain-lint`, which fails when a new one
+appears. The Rust gate in §3 below is on that page's exemption list: it is the
+one path with no container of its own yet.
+
 ## 1. bun runs in a pinned container, and that is a decision
 
 Every bun entry resolves its runtime from the digest pinned as `IMAGE_BUN_1` in

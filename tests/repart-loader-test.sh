@@ -332,6 +332,8 @@ elif [ ! -f "${ROOTFS_SLOT}" ]; then
 else
     cp "${ROOTFS_SLOT}" "${work}/slot.squashfs"
     rm -rf "${work}/defs-shipped" "${work}/defs-prefix"
+    # mos-build-side: container-block -- unsquashfs reads /etc/repart.d out of the
+    # shipped root inside REPART_BASE; this host has no unsquashfs at all
     docker run --rm -v "${work}:/w" "${REPART_BASE}" sh -c '
         set -e
         apt-get update -qq >/dev/null 2>&1
@@ -342,6 +344,7 @@ else
         cp /w/unsq/etc/repart.d/*.conf /w/defs-shipped/
         rm -rf /w/unsq
     ' >"${work}/unpack-defs.log" 2>&1 || true
+    # mos-build-side: host
 
     # `find` on a directory the unpack failed to create exits non-zero, which
     # would abort the script under `set -o pipefail` instead of reporting.

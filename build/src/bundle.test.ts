@@ -642,17 +642,19 @@ describe('the payload digest, the bundle\'s identity', () => {
 // --- G22: the route that cannot honour the provenance claim ------------------
 
 describe('the bundle toolbox refuses a route that cannot carry the shipped rauc', () => {
-  test('the HOST route is refused when the rauc on PATH is not the one this tree built', async () => {
-    // `carry` is a `docker cp`; on the host route there is nothing to carry a
-    // binary in, so the toolset's `provenance: 'shipped'` claim would be made
-    // about whatever `rauc` PATH resolves to first.
+  test('the HOST route is refused outright, so `provenance: shipped` cannot be a claim about PATH', async () => {
+    // `carry` is a `docker cp`; on a host route there is nowhere to carry the
+    // binary to, so the toolset's `provenance: 'shipped'` claim would be made
+    // about whatever `rauc` PATH resolved to first. The refusal is the policy's
+    // (docs/design/build.md section 0) and it fires before a container starts,
+    // which is why this case needs no rauc to have been built.
     const shipped = shippedRaucPath('amd64')
     if (!existsSync(shipped)) {
       expect(() => bundleToolset({ arch: 'amd64' })).toThrow(/make os-rauc/)
       return
     }
     await expect(openBundleToolbox({ raucBin: shipped, mounts: [REPO_ROOT], route: 'host' }))
-      .rejects.toThrow(/took the HOST route|does not have: rauc/)
+      .rejects.toThrow(/docs\/design\/build\.md section 0/)
   }, OPEN_TIMEOUT_MS)
 
   test('a raucBin that is not there is refused before a container is started', () => {

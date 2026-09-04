@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# mos-build-side: container -- run.sh starts the sandbox U-Boot image and invokes this
+# with `docker run ... bash /repo/tests/handshake-test/harness.sh`; the mkimage it drives
+# is ${MKIMAGE} out of that image's cache, which no scan can resolve from the text.
 set -euo pipefail
 
 # Offline U-Boot A/B handshake harness, container side.

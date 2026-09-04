@@ -12,6 +12,10 @@
 # architecture is therefore checked below rather than trusted.
 #
 # build-env/deb/README.md is the contract this implements.
+#
+# mos-build-side: container -- every line below runs in localhost/mos-build-deb:<arch>,
+# started by a producer Dockerfile's RUN; the architecture check further down is what
+# refuses a run that reached here any other way.
 set -euo pipefail
 
 die() {

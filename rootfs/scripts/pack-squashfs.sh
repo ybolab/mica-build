@@ -3,6 +3,8 @@
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 # Build arguments read from the environment: SQUASHFS_TIME.
+#
+# mos-build-side: container -- run by 90-pack.Dockerfile's pack stage, never on a host.
 
 set -eu
 test -n "${SQUASHFS_TIME}"

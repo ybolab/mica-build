@@ -28,7 +28,7 @@ Assembles the flashable x64 A/B GPT disk image. Inputs come from _out/${BOARD}/.
   --grub-cfg FILE  the grub.cfg template (default: boards/${BOARD}/grub.cfg)
 
 environment:
-  MOS_BUILD_TOOLBOX    host|container -- force the route the tools run on
+  MOS_BUILD_TOOLBOX    container -- the only route there is; host is refused by name
 
 MOS_ROOTFS_SLOT_MIB is NOT read from the process environment. The x64 board
 definition supplies its slot floor, so x64 has one slot mode rather than the

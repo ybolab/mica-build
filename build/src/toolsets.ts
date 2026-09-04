@@ -11,51 +11,20 @@
 // debian for x64), and unifying them would change the shipped bytes.
 //
 // Every image is an images.env key, never a literal reference.
+//
+// THERE IS NO HOST PROBE HERE ANY MORE. Two of these toolsets used to carry a
+// `hostProbe` that asked whether this machine's mke2fs could write the
+// layouts, because the boards ask for `-O ^orphan_file` and `-E hash_seed` and
+// an e2fsprogs older than 1.47 "silently cannot" -- this host's is 1.46.5,
+// which was the measured reason pin_seeded_times always ran container-side. The
+// probe went with the host route it guarded (src/toolbox.ts); the measurement
+// it was made of is recorded in docs/design/build.md section 0, where a dated
+// host fact belongs.
 
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { $ } from 'bun'
-import { makeWorkDir, REPO_ROOT } from './paths.ts'
+import { REPO_ROOT } from './paths.ts'
 import type { Toolset } from './toolbox.ts'
-
-/**
- * Can THIS host's mke2fs write the filesystems these boards declare?
- *
- * `command -v mke2fs` is not the question. The cx3576 assembly contract's
- * host_can_assemble() probes instead of guessing, and its comment says why:
- * the layouts ask for `-O ^orphan_file` and `-E hash_seed`, and an e2fsprogs
- * older than 1.47 "silently cannot". This host carries 1.46.5, which is the
- * measured reason pin_seeded_times has always run container-side -- so this
- * probe is not defensive, it is the one that fires.
- *
- * `-n` so nothing is written; the file still has to exist and be big enough for
- * mke2fs to lay a superblock out on paper.
- */
-export async function mke2fsCanWriteTheseLayouts(): Promise<{ ok: boolean, why: string }> {
-  // Absent and present-but-too-old are different sentences. Rolling them
-  // together would say "cannot write these layouts" about a host that has no
-  // mke2fs at all, which sends a reader to check a version that is not there.
-  if ((await $`sh -c ${'command -v mke2fs >/dev/null 2>&1'}`.nothrow().quiet()).exitCode !== 0) {
-    return { ok: false, why: 'there is no mke2fs here at all' }
-  }
-
-  const dir = makeWorkDir('mke2fs-probe')
-  const probe = join(dir, 'probe.img')
-  try {
-    writeFileSync(probe, Buffer.alloc(16 * 1024 * 1024))
-    const r = await $`mke2fs -q -n -t ext4 -b 4096 -O ${'^orphan_file,^metadata_csum_seed'} -E ${'root_owner=0:0,hash_seed=5ac35760-0002-4000-8000-000000000107'} ${probe}`
-      .nothrow().quiet()
-    if (r.exitCode === 0) return { ok: true, why: "this host's mke2fs writes the layouts these boards declare" }
-    const v = await $`mke2fs -V`.nothrow().quiet()
-    const version = `${v.stderr.toString()}${v.stdout.toString()}`.split('\n')[0]?.trim() || 'this mke2fs'
-    return {
-      ok: false,
-      why: `${version} cannot write these layouts (-O ^orphan_file needs e2fsprogs >= 1.47)`,
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
 
 /**
  * cx3576's assembly toolset.
@@ -84,7 +53,6 @@ export const CX3576_ASSEMBLY: Toolset = {
   // labels into EPHEMERAL that the shell's image does not carry, and the only
   // thing that would have reported it is the byte-identity gate.
   tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs', 'mkimage', 'dd', 'truncate', 'cp', 'find', 'touch'],
-  hostProbe: mke2fsCanWriteTheseLayouts,
 }
 
 /**
@@ -120,7 +88,6 @@ export const X64_ASSEMBLY: Toolset = {
     'sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs',
     'grub-mkstandalone', 'grub-editenv', 'dd', 'truncate', 'cp', 'find', 'touch',
   ],
-  hostProbe: mke2fsCanWriteTheseLayouts,
 }
 
 /**
@@ -144,9 +111,12 @@ export const VERITY: Toolset = {
 /**
  * dd and truncate on their own, for the raw-placement steps.
  *
- * This one usually takes the HOST route, and it is the reason there is a host
- * route at all: every machine has coreutils. It matters that both routes stay
- * live -- a seam with one reachable route is a seam nobody is checking.
+ * It used to be the toolset that justified the host route -- every machine has
+ * coreutils, so it was the one that actually took it. That is exactly why it no
+ * longer does: alpine's dd and truncate are BusyBox's unless `coreutils` is
+ * installed, which is the same substitution this policy exists to stop, one
+ * layer down. The package list below is what makes the answer the same
+ * everywhere; the route is no longer a choice.
  */
 export const COREUTILS: Toolset = {
   key: 'coreutils',

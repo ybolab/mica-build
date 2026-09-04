@@ -52,7 +52,7 @@ boards/<board>/bsp/out/.
 
 environment:
   CERT KEY KEYRING     real signing material, instead of meta/rauc/
-  MOS_BUILD_TOOLBOX    host|container -- force the route the tools run on
+  MOS_BUILD_TOOLBOX    container -- the only route there is; host is refused by name
 `
 
 /**

@@ -16,20 +16,28 @@ import { $ } from 'bun'
 import { randomUUID } from 'node:crypto'
 import { resolveImage } from './images.ts'
 
-// The container is the normal route, not a degraded one. Both shell assemblers
-// have a route already: the cx3576 assembly contract probes the host with
-// host_can_assemble() and falls back to an alpine container; the x64 assembly contract
-// does not even probe -- "no sgdisk, no mtools and no grub-mkstandalone, and
-// requiring them would make [the build] a host-configuration problem". This
-// host has none of sgdisk, mcopy, mkimage or veritysetup, and its e2fsprogs is
-// 1.46.5, too old for `-O ^orphan_file`, which is why pin_seeded_times runs
-// container-side. The host route is the optimisation.
+// THERE IS ONE ROUTE, AND IT IS THE CONTAINER. Every tool this file runs is a
+// producer by docs/design/build.md section 0 -- sgdisk, mtools, mke2fs,
+// mkimage, veritysetup, rauc -- so its own build decides the bytes of the
+// image, and the image is what ships. A host route would make "which tool
+// wrote these bytes" a property of the machine that happened to run the build.
 //
-// The route is chosen per toolset, never per tool. Mixing would mean an image
-// assembled by the host's mke2fs and sgdisk but the container's mcopy, and
-// "which tool wrote these bytes" would stop having an answer -- the property
-// the byte-identity gates rest on. host_can_assemble() is an && chain across
-// seven binaries plus a capability probe for the same reason.
+// It used to measure the host and prefer it when the whole toolset was there.
+// Three things in the tree say why that was the wrong default, and one of them
+// is this host:
+//
+//   - `command -v mkfs.vfat` here answers /build/bin/busybox/mkfs.vfat --
+//     BusyBox v1.37.0, which does not know `--invariant`, the flag both
+//     assemblers pass to make FAT reproducible. The presence check the host
+//     route was guarded by says yes to it. (Measured 2026-09-04.)
+//   - this host's e2fsprogs is 1.46.5, too old for `-O ^orphan_file`, which is
+//     the measured reason pin_seeded_times has always run container-side.
+//   - src/toolsets.ts: "which package provided mkfs.vfat or mksquashfs is
+//     exactly the kind of thing that decides bytes".
+//
+// So `MOS_BUILD_TOOLBOX=host` and `route: 'host'` are REFUSALS now rather than
+// instructions, and they name the policy. A route that is ignored teaches
+// nothing; a route that refuses says where the rule is written.
 //
 // A toolbox is opened once -- image resolved, container started, packages
 // installed, every tool asserted present -- and each call is a `docker exec`
@@ -61,9 +69,9 @@ export interface Toolset {
   readonly manager: PackageManager
   /** Exactly the packages the shell installs today. See each toolset's note in src/toolsets.ts. */
   readonly packages: readonly string[]
-  /** Every binary this toolset must provide, asserted on BOTH routes after open(). */
+  /** Every binary this toolset must provide, asserted inside the container after open(). */
   readonly tools: readonly string[]
-  /** Host binaries copied in, e.g. the self-built rauc. Container route only. */
+  /** Host binaries copied in, e.g. the self-built rauc. */
   readonly carry?: readonly CarriedFile[]
   /** Environment every call in this toolset gets, e.g. E2FSPROGS_FAKE_TIME. */
   readonly env?: Readonly<Record<string, string>>
@@ -78,14 +86,6 @@ export interface Toolset {
    * a claim the toolset makes, not something a file path can prove.
    */
   readonly provenance?: 'shipped' | 'distro'
-  /**
-   * A host capability the tools' presence does not imply.
-   *
-   * mke2fs 1.46.5 is on this host's PATH and cannot switch orphan_file off, so
-   * `command -v mke2fs` is true and the host still cannot assemble. Returns the
-   * reason it failed, which the announce line carries.
-   */
-  readonly hostProbe?: () => Promise<{ readonly ok: boolean, readonly why: string }>
 }
 
 export interface ToolResult {
@@ -148,7 +148,10 @@ export interface OpenOptions {
    * directory.
    */
   readonly mounts?: readonly string[]
-  /** Force a route instead of measuring the host. Set by MOS_BUILD_TOOLBOX too. */
+  /**
+   * Kept so that `'host'` is a refusal that names the policy rather than a
+   * value nothing reads. `'container'` is the only route there is.
+   */
   readonly route?: RouteKind
   /** Where each call runs unless it says otherwise. */
   readonly cwd?: string
@@ -172,11 +175,6 @@ export interface RunOptions {
 /** The docker client. run.sh passes the one it checked; a bare `docker` otherwise. */
 function dockerBin(): string {
   return process.env.MOS_BUILD_DOCKER || 'docker'
-}
-
-async function onHostPath(tool: string): Promise<boolean> {
-  const r = await $`sh -c ${`command -v -- "$1" >/dev/null 2>&1`} sh ${tool}`.nothrow().quiet()
-  return r.exitCode === 0
 }
 
 export class Toolbox {
@@ -205,61 +203,21 @@ export class Toolbox {
   }
 
   /**
-   * Choose a route, make the tools available on it, and prove they are there.
+   * Start the container, install the toolset, and prove every tool is there.
    *
    * @throws Error naming the toolset and the missing tool. A toolbox that
    *   opened without its tools would hand every later failure a "command not
    *   found" attributed to the step that happened to run first.
    */
   static async open(toolset: Toolset, options: OpenOptions = {}): Promise<Toolbox> {
-    const forced = options.route ?? forcedRoute()
-    let route: RouteKind
-    let why: string
+    // Two ways to ask for the host, one refusal. Neither is ignored: a caller
+    // who set MOS_BUILD_TOOLBOX=host meant something by it, and being quietly
+    // overridden would leave them believing the host tools ran.
+    if (options.route === 'host') refuseHostRoute(toolset, 'the caller asked for it')
+    if (forcedRoute() === 'host') refuseHostRoute(toolset, 'MOS_BUILD_TOOLBOX=host asked for it')
 
-    if (forced !== undefined) {
-      route = forced
-      why = options.route !== undefined ? 'asked for' : 'MOS_BUILD_TOOLBOX'
-    } else {
-      const missing: string[] = []
-      for (const t of toolset.tools) {
-        if (!(await onHostPath(t))) missing.push(t)
-      }
-      if (missing.length > 0) {
-        route = 'container'
-        why = `not on this host: ${missing.join(', ')}`
-      } else if (toolset.hostProbe !== undefined) {
-        const probe = await toolset.hostProbe()
-        route = probe.ok ? 'host' : 'container'
-        why = probe.ok ? 'the whole toolset is on this host' : probe.why
-      } else {
-        route = 'host'
-        why = 'the whole toolset is on this host'
-      }
-    }
-
-    if (route === 'host') {
-      // Asserted even on the route that was chosen BY measuring, because a
-      // forced host route did no measuring at all -- and MOS_BUILD_TOOLBOX=host
-      // on a machine without sgdisk must say so here rather than in whichever
-      // wrapper is called first.
-      const missing: string[] = []
-      for (const t of toolset.tools) {
-        if (!(await onHostPath(t))) missing.push(t)
-      }
-      if (missing.length > 0) {
-        throw new Error(
-          `the ${toolset.key} toolset was run on the host route, and this host does not have: `
-          + `${missing.join(', ')}. Unset MOS_BUILD_TOOLBOX to let the route be measured, or install `
-          + `them -- a toolset is taken whole or not at all, because an image half-written by host `
-          + `tools and half by container tools has no answer to which tool wrote which bytes.`,
-        )
-      }
-      const line = `build: ${toolset.key} on the host (${why})`
-      options.announce?.(line)
-      return new Toolbox({
-        toolset, route, image: '(host)', container: '', defaultCwd: options.cwd, announceLine: line,
-      })
-    }
+    const route: RouteKind = 'container'
+    const why = 'every tool here writes bytes that ship'
 
     const image = await resolveImage(toolset.imageKey)
     const docker = dockerBin()
@@ -393,9 +351,9 @@ export class Toolbox {
   /**
    * Run one argv. Returns what happened; decides nothing.
    *
-   * The first element is the binary. Nothing is passed through a shell on
-   * either route: Bun.$ interpolates an array as separate arguments, and
-   * `docker exec` takes an argv. A partition label containing a space, or a
+   * The first element is the binary. Nothing is passed through a shell:
+   * `docker exec` takes an argv, and Bun.$ interpolates an array as separate
+   * arguments. A partition label containing a space, or a
    * board that ever declares one containing `;`, is an argument and not a
    * command -- which is the same property verify's parser exists to give
    * these files at rest.
@@ -403,28 +361,19 @@ export class Toolbox {
   async run(argv: readonly string[], options: RunOptions = {}): Promise<ToolResult> {
     this.refuseIfClosed(argv)
     if (argv.length === 0) {
-      // An empty argv is not a tool call. On the host route Bun.$ would run
-      // nothing and report success; through docker exec it is a usage error
-      // several sentences from the cause.
+      // An empty argv is not a tool call. Through docker exec it is a usage
+      // error several sentences from the cause.
       throw new Error(`the ${this.toolset.key} toolbox was asked to run an empty argv, which is not a tool call`)
     }
 
     const env = { ...this.toolset.env, ...options.env }
     const cwd = options.cwd ?? this.defaultCwd
 
-    let result
-    if (this.route === 'host') {
-      let cmd = $`${argv}`.nothrow().quiet()
-      if (cwd !== undefined) cmd = cmd.cwd(cwd)
-      if (Object.keys(env).length > 0) cmd = cmd.env({ ...process.env, ...env })
-      result = await cmd
-    } else {
-      const docker = dockerBin()
-      const flags: string[] = []
-      if (cwd !== undefined) flags.push('-w', cwd)
-      for (const [k, v] of Object.entries(env)) flags.push('-e', `${k}=${v}`)
-      result = await $`${docker} exec ${flags} ${this.container} ${argv}`.nothrow().quiet()
-    }
+    const docker = dockerBin()
+    const flags: string[] = []
+    if (cwd !== undefined) flags.push('-w', cwd)
+    for (const [k, v] of Object.entries(env)) flags.push('-e', `${k}=${v}`)
+    const result = await $`${docker} exec ${flags} ${this.container} ${argv}`.nothrow().quiet()
 
     return {
       argv,
@@ -451,11 +400,10 @@ export class Toolbox {
     return r
   }
 
-  /** Tear the session down. Safe to call twice; a host toolbox has nothing to tear down. */
+  /** Tear the session down. Safe to call twice. */
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
-    if (this.route !== 'container') return
     await $`${dockerBin()} rm -f ${this.container}`.nothrow().quiet()
   }
 
@@ -480,4 +428,22 @@ function forcedRoute(): RouteKind | undefined {
   if (v === undefined || v === '') return undefined
   if (v === 'host' || v === 'container') return v
   throw new Error(`MOS_BUILD_TOOLBOX=${v} is neither 'host' nor 'container'`)
+}
+
+/**
+ * The one thing this file will not do, and why, at the point of asking.
+ *
+ * @throws Error always. It takes the toolset so the message can name what was
+ *   about to be run on the host, which is more use than the rule alone.
+ */
+function refuseHostRoute(toolset: Toolset, who: string): never {
+  throw new Error(
+    `the ${toolset.key} toolset was asked to run on the host (${who}), and it will not.\n`
+    + `  Every tool in it writes bytes that ship -- ${toolset.tools.slice(0, 4).join(', ')}`
+    + `${toolset.tools.length > 4 ? ', ...' : ''} -- so its own build decides what the image\n`
+    + `  contains. The rule is docs/design/build.md section 0: no toolchain on the host, no\n`
+    + `  compilation on the host, no assembly on the host.\n`
+    + `  This is not a capability check that can be satisfied by installing the tools. The\n`
+    + `  toolset runs in ${toolset.imageKey} from build-env/images.env, and that is the only route.`,
+  )
 }

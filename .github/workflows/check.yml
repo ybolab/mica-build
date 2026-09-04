@@ -322,6 +322,23 @@ jobs:
       - name: The cx3576 kernel config carries what netavark needs
         run: make os-netavark-kernel-test
 
+      # The build policy of docs/design/build.md section 0 -- no toolchain on
+      # the host, no compilation on the host, no assembly on the host -- and
+      # the check on that check. HERE and not in the docker jobs for this
+      # job's own stated reason: it is bash, awk and git, and it needs
+      # neither bun nor docker.
+      #
+      # BOTH, in this order and as two steps. The lint alone is the shape that
+      # went unnoticed for a week elsewhere in this tree: a gate that is green
+      # because it stopped matching anything looks exactly like a gate that is
+      # green because the tree is clean. The second step is what says the first
+      # can still fail, and a failure in it names which control went quiet.
+      - name: No compiler or assembler runs on the host
+        run: make os-host-toolchain-lint
+
+      - name: ...and that check can still go red
+        run: make os-host-toolchain-lint-test
+
       - name: What this workflow does not cover
         if: always()
         run: |

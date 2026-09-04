@@ -6,9 +6,97 @@
 > 需要模拟器，以及在相信一条报错之前如何区分 arm64 的三种能力。
 > `build-harness.md` 讲的是*检查*怎么跑；本页讲的是*产物*怎么来。
 
-所有步骤都在 docker 里执行。主机只需要带 buildx 的 docker、bash、make 和
-git；主机上不安装任何工具链，每个编译器都来自 `build-env/images.env`
-里按 digest 固定的 builder 镜像。
+## 0. 规则
+
+**主机上不装工具链。主机上不做编译。主机上不做镜像装配。**
+
+主机只需要带 buildx 的 docker、bash、make、git、`jq` 和 `curl`，别的都不需要。
+每一个编译器、每一个文件系统创建工具、每一个镜像装配工具、每一个打包工具和每一个
+签名工具，都来自 `build-env/images.env` 里按 digest 固定的镜像。
+
+这句话本页一直都有。下面补的是它一直缺的部分：某个工具到底属于线的哪一边、目前
+还有哪些路径没有遵守，以及新增一条这样的路径时什么会失败。
+
+### 0.1 判定方法：对付一个清单上没有的工具
+
+禁用二进制清单会在有人伸手去拿清单外的工具那天失效。所以边界不是清单，而是对工具
+提的一个问题：
+
+> **如果把同样的输入交给这个工具的另一个构建版本，这次运行的输出会不会不同？**
+
+| 回答 | 这个工具是 | 在哪里运行 |
+| --- | --- | --- |
+| 会，而且输出是一个会留下来的字节——镜像、软件包、bundle、`dist/`、`out-<arch>/`、签名、被记录下来的 config | **生产者（producer）** | 在容器里，镜像按 digest 固定。不探测、不走主机、不回退。 |
+| 会，但输出是一个结论——给人看的通过或失败 | **裁判（judge）** | 固定镜像是*契约*：CI 跑的是它，结论也从它那里引用。为了本地快速迭代可以保留一条主机路线，但必须声明这次是哪条路线回答的。 |
+| 不会——输出完全由输入决定（`sha256sum`、`cmp`、`git rev-parse`），或者这个工具本身不产出任何东西、只决定启动哪个容器（`docker`、`make`、`bash`、`jq`、`curl`） | **编排（orchestration）** | 在主机上。没有它就没有容器可以跑。 |
+
+两个推论，因为这两条都有人往反方向argue过：
+
+**编译属于生产者，即使产物被丢掉。** `cargo clippy --workspace -- -D warnings`
+不保留任何产物，它的结论仍然由工具链决定——`build-harness.md` 第 3 节记录过：
+PATH 上一个 1.96 的 `rustc` 排在镜像自带的 1.98 前面，对一个本来没问题的 workspace
+报出了 `error[E0463]: can't find crate for 'std'`。编译器永远不是裁判。
+
+**摘要不是生产者。** `sha256sum` 写出的字节确实会随产品发出去——写进 `SHA256SUMS`，
+写进 `disk.img.sha256`——但它的任何一个构建版本都写不出不同的值。问题问的是工具有
+没有自由度，而不是字节留不留得下来。
+
+拿 `bun` 走一遍，它是这个问题最难回答的工具：写 `_out/apid-ui/dist` 的那个 bun
+（`pkgs/mosd/apid/ui/build.sh`）是生产者，因此刻意没有主机路线——主机 bun 产出的
+chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.sh`、`build/run.sh`、
+`pkgs/mosd/tests/apid-api/spec-pins.sh`）是裁判，保留它那条会声明路线的主机路线，
+而 CI 根本不装 bun，所以每次 push 走的都是固定镜像。
+
+### 0.2 为什么——四次实测，不是一条原则
+
+1. **e2fsprogs。** layout 要求 `-O ^orphan_file` 和 `-E hash_seed`，早于 1.47 的
+   e2fsprogs *会静默地做不到*。本机是 `mke2fs 1.46.5 (30-Dec-2021)`（*实测于
+   2026-09-04*），这就是打时间戳那一步一直在容器里跑的原因。
+2. **是哪个包提供的工具，决定了字节。** `build/src/toolsets.ts`：“mkfs.vfat 或
+   mksquashfs 由哪个包提供，正是那种会决定字节的事情。”`BOOTX64.EFI` 的可复现程度
+   不会超过它所在容器里的 `grub-efi-amd64-bin`，所以两个装配器刻意用不同的基础镜像。
+3. **apid 内置 UI。** 主机 bun 产出的 chunk 哈希与按 digest 固定的 `IMAGE_BUN_1`
+   不同，于是在主机上做 `dist/` 比对会报出一个并不存在的差异。
+4. **本机的 `mkfs.vfat` 是 BusyBox 的**（*实测于 2026-09-04*）。
+   `command -v mkfs.vfat` 得到 `/build/bin/busybox/mkfs.vfat`，BusyBox v1.37.0，
+   它的用法是 `mkfs.vfat [-v] [-n LABEL] BLOCKDEV [KBYTES]`，对本树每一处 FAT 步骤
+   都要传的 `--invariant` 回答 `unrecognized option: invariant`。原先守着主机路线的
+   存在性检查就是 `command -v`，而它对这个二进制说“有”。这条路线在本机没有被走到，
+   只是因为 `sgdisk` 和 `mcopy` 也不在——本该拦下错误 `mkfs.vfat` 的那道检查，并不是
+   真正起作用的那道。
+
+### 0.3 目前有哪些豁免，以及为什么
+
+允许豁免，不允许没被检查过的路径。下表每一行都登记在
+`tests/host-toolchain-exemptions` 里并写明理由，而且当某条规则**匹配不到任何东西时
+检查会失败**——所以改名不会留下一条孤儿豁免，某条路径修好之后也留不住它的豁免。
+
+| 位置 | 工具 | 为什么还在主机上 |
+| --- | --- | --- |
+| `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo` | Rust 门禁，也是**目前唯一没有容器可用**的路径：`localhost/mos-build-rust` 只带 cargo 和 rustc，rustfmt、clippy、cargo-nextest 和 cargo-deny 来自 `/srv/mos-rust-tools` 这个没有任何 pin 的主机目录。派生镜像正在建，镜像落地后这两条从登记表里摘掉。 |
+| `.github/workflows/check.yml` | `cargo` | 跑上面这两个门禁的 runner。它用 `rustup` 在主机上装工具链，镜像没有之前动不了。 |
+| `pkgs/rauc/gen-dev-keys.sh` | `openssl` | 生产者：它写出的 CA、签名者证书和 Ed25519 根密钥会被烘进 `meta/` 和每一个镜像。要关掉它需要一个固定的 openssl 镜像，并重跑信任相关的测试。 |
+| `rootfs/build.sh` | `openssl` | 裁判：`alg_of_material()` 读一份证书或密钥并报出它的算法，写出的东西不会留下。但它解析的是 openssl 自己的文本输出，而那是随版本变化的，所以放进容器仍然值得。 |
+| `tests/repart-loader-test.sh` | `sgdisk` | 裁判：对已装配镜像分区表的五次主机读取，旁边那半边容器侧的用法已经声明过了。 |
+
+烧写不是构建。`boards/cx3576/bsp/Makefile` 里的 `rkdeveloptool` 目标通过 USB 往板子
+上写，需要主机的总线；按 §0.1 它们属于编排，因此不需要豁免——它们从来就不在范围内。
+
+### 0.4 靠什么强制
+
+`make os-host-toolchain-lint`（`tests/host-toolchain-lint.sh`）扫描每一个被 git
+跟踪的 shell 脚本、`Makefile` 和 CI workflow，找处于命令位置的生产者二进制。
+Dockerfile 不在扫描范围内——它们*就是*容器。在镜像里运行的文件或代码块，在原地写明：
+
+```sh
+# mos-build-side: container -- <why>          整个文件都在镜像里跑
+# mos-build-side: container-block -- <why>    以下若干行在镜像里跑
+# mos-build-side: host                        到这里为止
+```
+
+它看不见通过变量调用的二进制、写在 heredoc 里的生产者，也无法验证一条声明是不是写
+错了；脚本头部把这些说得更细，而 `tests/host-toolchain-lint-test.sh` 会分别植入一次
+主机调用、一条失效豁免、一处被删掉的声明和一个没有闭合的代码块，要求每一种都让它变红。
 
 ## 1. 一次构建产出什么
 

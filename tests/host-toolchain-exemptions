@@ -1,0 +1,16 @@
+# Registered exemptions from the host-toolchain policy.
+#
+# docs/design/build.md section 0 is the policy; tests/host-toolchain-lint.sh is
+# what enforces it; this is the list of invocations that break it today and the
+# reason each one is still here. An exemption is allowed. An UNEXAMINED path is
+# not, and neither is a waiver that outlives what it waived: the lint fails when
+# a rule here matches nothing, so a renamed file or a fixed call site turns this
+# file red rather than leaving a rule behind about something that is gone.
+#
+# Format: path<TAB>tool<TAB>reason. One row per (file, tool) pair, not per line.
+pkgs/mosd/hack/check.sh	cargo	The Rust gate, and the one path with NO container today: localhost/mos-build-rust ships cargo and rustc only, and rustfmt, clippy, cargo-nextest and cargo-deny come from /srv/mos-rust-tools, a host directory pinned by nothing. RFCT-309 is building the derived image; when it lands this rule comes off and the lint says so by matching nothing.
+pkgs/rauc-sign/hack/check.sh	cargo	The same gate over the second cargo workspace, blocked on the same missing image. Registered separately because a --workspace that no longer spans a crate does not complain, and RFCT-309's brief names only the first script.
+.github/workflows/check.yml	cargo	The runner that runs the two gates above: it curls rustup and installs a toolchain on the host. It cannot move before the image exists and it must move with them, so it carries the same expiry.
+pkgs/rauc/gen-dev-keys.sh	openssl	A producer by docs/design/build.md section 0: the CA, the signer certificate and the Ed25519 root key it writes are baked into meta/ and into every image. PLAN-080 backlog B2, estimated at ~0.5 day; it needs an images.env key, the --if-absent path rootfs/build.sh calls on every build, and the two trust tests re-run.
+rootfs/build.sh	openssl	A judge, not a producer: alg_of_material() reads a certificate or key and reports its algorithm, and nothing it writes survives. It parses openssl's own text output, which is version-sensitive, so the container is still worth having. PLAN-080 backlog B3.
+tests/repart-loader-test.sh	sgdisk	A judge: five host reads of partition tables in an assembled image, around a container-side half that is already declared. PLAN-080 backlog B3.

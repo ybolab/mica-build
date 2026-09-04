@@ -704,21 +704,12 @@ export async function openBundleToolbox(options: {
     announce: options.log,
     ...(options.route === undefined ? {} : { route: options.route }),
   })
-  if (tb.route !== 'host') return tb
-  const which = await tb.run(['sh', '-c', 'command -v -- rauc', 'sh'])
-  const found = which.stdout.trim()
-  if (found !== resolve(options.raucBin)) {
-    await tb.close()
-    throw new Error(
-      `the bundle toolset took the HOST route, where its rauc would be ${found || '(nothing on PATH)'} `
-      + `and not ${options.raucBin}, which is the binary pkgs/rauc/build.sh produced from the `
-      + `version pinned in pkgs/rauc/versions.env. The toolset declares provenance 'shipped' and `
-      + `src/tools/rauc.ts writes a bundle only under that claim; on the host route there is nothing `
-      + `to carry the binary in, so the claim would be about a different rauc. Commit 9a43a59 records `
-      + `a bundle built by rauc 1.8 that the device's 1.13 refused. Set MOS_BUILD_TOOLBOX=container, `
-      + `or put that binary first on PATH.`,
-    )
-  }
+  // There used to be a check here for the host route, where `carry` cannot put
+  // the shipped rauc anywhere and the toolset's `provenance: 'shipped'` claim
+  // would have been about whatever `rauc` PATH resolved to first. Toolbox.open
+  // refuses that route outright now (docs/design/build.md section 0), so the
+  // check is unreachable and the claim is structural: the only rauc in this
+  // container is the one `carry` copied in.
   return tb
 }
 
