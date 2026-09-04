@@ -152,8 +152,14 @@ X64_RADIOS="$(board_radios x64)"
 # holding when they need it (RFCT-281).
 CX_DEV="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
 CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
-X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
+# mos-kernel-x64 is named by board-x64.pkgs beside mos-board-x64 rather than
+# arriving only through its Depends: a package no resolution names is one the
+# reachability check at the bottom of this file reports unreachable, which is
+# the right answer for a package nothing selects and the wrong one for the
+# kernel. cx3576 needs no counterpart -- its kernel is inside
+# mos-board-cx3576.
+X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-kernel-x64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
+X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-kernel-x64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
 CX_MINIMAL="mos-board-cx3576 mos-busybox mos-ca-trust mos-profile-dev mos-system"
 
 expect_set "cx3576 dev, radios '${CX_RADIOS}', nothing declined" "${CX_DEV}" \

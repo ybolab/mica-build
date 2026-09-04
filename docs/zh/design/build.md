@@ -43,11 +43,13 @@ Debian 包仓库，由 `make os-debs` 构建并建立索引。rootfs 构建只�
 的地方付：`make os-deb-preflight` 在 `os-debs` 启动第一个容器之前，一次性列出
 所有 producer 缺的全部输入，并说明其中哪些会由这次运行自己补上。
 
-cx3576 还需要它的 BSP：内核（`Image`、`modules.tar`、`rk3576-src.dtb`）和
-A/B 版 U-Boot（`u-boot-rockchip.bin`），由 `boards/cx3576/bsp/Makefile`
-构建到 `boards/cx3576/bsp/out/`，再由 `board-cx3576` producer staged 进
-`mos-board-cx3576`。x64 没有 BSP：UEFI 固件负责引导，Debian 的
-`linux-image-amd64` 作为 `mos-board-x64` 的 `Depends` 进入镜像。
+两块板都还需要各自的 BSP 构建。cx3576 的产出内核（`Image`、`modules.tar`、
+`rk3576-src.dtb`）和 A/B 版 U-Boot（`u-boot-rockchip.bin`）到
+`boards/cx3576/bsp/out/`，由 `board-cx3576` producer staged 进
+`mos-board-cx3576`。x64 的只产出内核——UEFI 固件就是它的启动链，没有引导程序要编
+——到 `boards/x64/bsp/out/kernel/`，由 `kernel-x64` producer 打包为
+`mos-kernel-x64`。缺了任何一个，对应的包仓库都无法建成，而
+`make os-deb-preflight` 会在任何东西开跑之前把缺失的那个点名。
 
 输出目录名里带架构（`out-amd64`、`out-arm64`、`:amd64`、`:arm64`），两块板
 的输入可以共存，构建一块板不会覆盖另一块的。

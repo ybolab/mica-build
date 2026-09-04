@@ -52,7 +52,7 @@ describe('the arguments', () => {
 })
 
 describe('the inputs it derives', () => {
-  test('all five come from the OUT DIRECTORY, and none from a BSP tree', async () => {
+  test('all four come from the OUT DIRECTORY, and none from a BSP tree', async () => {
     // The other difference from src/mkimage-cx3576-cli.ts, and it is the board's:
     // cx3576 takes its kernel and dtb from boards/cx3576/bsp/out and its U-Boot from a
     // BSP build, so it has two families of missing input and two sentences. x64
@@ -61,12 +61,12 @@ describe('the inputs it derives', () => {
     const dir = makeWorkDir('x64-cli')
     try {
       const missing = join(dir, 'nothing')
-      // Every one of the five, absent, reaches the SAME refusal.
+      // Every one of the four, absent, reaches the SAME refusal. It was five
+      // until the initrd left with the initramfs.
       await expect(assembleX64({
         rootfsVerityImg: join(missing, 'rootfs-verity.img'),
         rootfsVerityEnv: join(missing, 'rootfs-verity.env'),
         kernel: join(missing, 'boot', 'vmlinuz'),
-        initrd: join(missing, 'boot', 'initrd.img'),
         factoryVar: join(missing, 'factory-var'),
         imgOut: join(dir, 'out.img'),
       }, { log: () => {} })).rejects.toThrow(
@@ -121,7 +121,7 @@ describe('the board definition itself', () => {
       expect(bad.faults.length).toBeGreaterThan(0)
       await expect(assembleX64({
         rootfsVerityImg: '/nowhere/a', rootfsVerityEnv: '/nowhere/b', kernel: '/nowhere/c',
-        initrd: '/nowhere/d', factoryVar: '/nowhere/e', imgOut: join(dir, 'out.img'),
+        factoryVar: '/nowhere/e', imgOut: join(dir, 'out.img'),
       }, { geometry: bad, log: () => {} })).rejects.toThrow(
         /unusable value\(s\), and an assembler cannot pick one of two contradictory numbers/,
       )

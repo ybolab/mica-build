@@ -145,8 +145,8 @@ mos/
 - **`cx3576`** —— CX3576-Z，Rockchip RK3576，arm64。厂商内核树，U-Boot 用主线源码在
   `boards/cx3576/bsp/uboot/` 构建，带 WiFi 和蓝牙。它的 RAUC 引导后端是 `uboot`，
   `BOOT_ORDER` 握手就是为这块板做的。
-- **`x64`** —— 通用 UEFI x86_64，QEMU 与 CI 的基准。没有 BSP 构建：固件直接引导它，
-  没有东西要编。引导后端是 `grub`。
+- **`x64`** —— 通用 UEFI x86_64，QEMU 与 CI 的基准。它的 `bsp/` 只构建一个主线内核：
+  固件本身就是启动链，没有引导程序要编。引导后端是 `grub`。
 
 **板卡产出产物，操作系统构建消费产物**，两边都不伸手进对方的构建里。内核配置必须满足
 `boards/common/mos-required.fragment` 里的共享断言集。

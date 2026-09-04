@@ -1,28 +1,55 @@
 // The kernel symbols the shipped runtime needs, read off the image that ships
-// it: the virtual link kinds the network reconciler creates, the container
-// network, the eBPF runtime the container engine loads its cgroup device
-// filter through, and the firewall back-end including its bridge half.
+// it: the dm-verity boot floor, the virtual link kinds the network reconciler
+// creates, the container network, the eBPF runtime the container engine loads
+// its cgroup device filter through, and the firewall back-end including its
+// bridge half.
 //
-// x64 ONLY, and the scope is the point. cx3576 builds its kernel in-tree, so
-// `boards/common/mos-required.fragment` is merged before `olddefconfig` and
-// every `=y` line in it is then asserted against the final `.config`, failing
-// the build otherwise (`boards/cx3576/bsp/kernel/Dockerfile`) --
-// a symbol that fragment names cannot be missing from a cx3576 image, because
-// there is no cx3576 image. x64 has no such build: the kernel is Debian's
-// `linux-image-6.12.101+deb13-amd64`, installed whole as a package
-// (`mos-board-x64` Depends on it), and **the Debian config is
-// not in this repository**. Nothing in-tree proves what it sets. So the x64
-// half of the same guarantee has to be read off the built artefact, which is
-// what these two checks are.
+// x64 ONLY, and the scope survives PLAN-074 although its REASON changed. Both
+// boards build their kernel in-tree now, so `boards/common/mos-required.fragment`
+// is merged before `olddefconfig` and every `=y` line asserted against the final
+// `.config` on both. What still differs is what reaches the ROOT: x64's kernel
+// is packaged as `mos-kernel-x64` and installs `/boot/vmlinuz-*` with the
+// `/boot/config-*` it was built from, while cx3576's stays on the boot partition
+// and its config never enters the image. These two checks read that config, so
+// they can only run where there is one.
 //
-// `=y` OR `=m` here, unlike the fragment's `=y`-only floor. The reason is a
-// board fact rather than a relaxation: cx3576 boots dm-verity with no initramfs
-// and cannot load a module at all, while x64 ships `kmod`
-// (`mos-system` Depends on it) and a full Debian module set, so
-// `=m` there is a symbol that is genuinely available. Which is also why the
-// second check exists: `=m` in a config file is a claim about a build, not
-// about this image, and a module whose `.ko` was never packed resolves to
-// nothing at `modprobe` time with the config line still reading `=m`.
+// `=y` AND `builtin`, where this file once accepted `=y` or `=m` and "resolves".
+// That relaxation was a board fact and the board fact is gone. x64 ran Debian's
+// `linux-image-amd64` -- a full module set with `kmod` beside it, so `=m` was a
+// symbol genuinely available. `mos-kernel-x64` boots a dm-verity root from a
+// `dm-mod.create=` table with NO INITRAMFS: nothing can load a module before the
+// root exists, so `=m` for anything on this list is a kernel that hangs at
+// rootwait. Tightening it is also what makes these checks catch a distribution
+// kernel coming back -- Debian's amd64 config has twelve of these `=m` and
+// `CONFIG_DM_INIT` nowhere at all.
+//
+// WHY THERE ARE STILL TWO CHECKS, now that both want "built in". They read
+// different artefacts produced by different steps: `/boot/config-*` is what the
+// kernel was CONFIGURED with, installed by the package, and `modules.builtin` is
+// what Kbuild GENERATED during the compile and `modules_install` laid down. A
+// config that says `=y` beside a module tree that does not name the symbol is a
+// root this repository packed wrong, or a config from a different kernel than
+// the modules beside it -- neither of which the config check can see.
+//
+// ONE ENTRY HERE HAS NO CONSUMER, and it is marked as such rather than blended
+// in. `CONFIG_DM_CRYPT` is provisioned capability: no package in any resolution
+// opens a dm-crypt device. It is on the list for the reason the rest are not --
+// x64's config is built by subtraction, so an unnamed symbol is removed rather
+// than merely absent, and this is the assertion that a later trim cannot take
+// it out silently. Adding it changes nothing about what the two checks
+// distinguish: it is `=y` and builtin on both boards like every other entry,
+// so the config half still reads the package's `/boot/config-*` and the
+// modprobe half still reads Kbuild's `modules.builtin`, and a config that
+// claims it beside an index that does not name it is still a root packed
+// wrong. It adds a subject to both halves and makes neither vacuous.
+//
+// WHAT THE TIGHTENING COST, stated because it is a real loss. `resolveModule`'s
+// dependency-existence walk was the sharpest part of the modprobe check: a
+// module `modules.dep` lists whose object was dropped during packing. No
+// REQUIRED symbol reaches that branch any more, because they all resolve as
+// builtin. So the walk is applied to the WHOLE of `modules.dep` instead of only
+// to the required set -- this kernel still ships three loadable modules, and
+// they are exactly the subjects the walk was built for.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -70,6 +97,26 @@ interface ModuleRequirement extends Requirement {
  * there. `checks-kernel.test.ts` reads the fragment and requires it.
  */
 export const REQUIRED: readonly Requirement[] = [
+  // The dm-verity boot floor: everything between "the disk exists" and "the
+  // root is mounted". It is on this list rather than only in the fragment
+  // because this is the half read off the SHIPPED image, and a board with no
+  // initramfs has nothing to load a module from at the moment these are
+  // needed. CONFIG_DM_INIT names no module on purpose -- it is the
+  // dm-mod.create= parser compiled INTO dm-mod, there is no dm-init.ko, and
+  // asking modprobe about it would return UNRESOLVED for a symbol that is
+  // present.
+  { symbol: 'CONFIG_BLK_DEV_DM', module: 'dm-mod', what: 'the device mapper the verity root is built on' },
+  { symbol: 'CONFIG_DM_INIT', what: 'the dm-mod.create= command-line parser this board boots through' },
+  { symbol: 'CONFIG_DM_VERITY', module: 'dm-verity', what: 'the dm-verity target itself' },
+  { symbol: 'CONFIG_SQUASHFS', module: 'squashfs', what: 'the root filesystem type' },
+  { symbol: 'CONFIG_OVERLAY_FS', module: 'overlay', what: 'the writable overlays above an immutable root' },
+  // The disk-encryption capability, and the ONE entry on this list whose
+  // `what` names no consumer in the image. Nothing opens a dm-crypt device,
+  // the image ships no cryptsetup and nothing is encrypted at rest; this is
+  // asserted so the capability cannot be dropped unremarked from a config that
+  // is built by subtraction. boards/common/mos-required.fragment carries the
+  // argument and the condition under which the block goes away.
+  { symbol: 'CONFIG_DM_CRYPT', module: 'dm-crypt', what: 'the dm-crypt target -- capability only, with no consumer in the image' },
   { symbol: 'CONFIG_VLAN_8021Q', module: '8021q', what: 'VLAN interfaces' },
   { symbol: 'CONFIG_BRIDGE', module: 'bridge', what: 'bridge interfaces' },
   { symbol: 'CONFIG_WIREGUARD', module: 'wireguard', what: 'WireGuard tunnels' },
@@ -265,8 +312,85 @@ export function resolveModule(root: string, release: string, module: string): Re
   return { module, how: 'none', path: '', missingDeps: [] }
 }
 
-const CONFIG_ID = 'kernel-config-declares-plan022-net'
-const MODPROBE_ID = 'kernel-modules-resolve-plan022-net'
+/**
+ * How many entries `modules.builtin` has.
+ *
+ * The anti-vacuity number for the check below. Every RESOLVABLE symbol is now
+ * expected to answer `builtin`, and that answer comes from ONE file -- so a
+ * root whose `modules.builtin` is missing or empty fails every entry, which is
+ * right, while a check that only counted failures could not tell "this kernel
+ * is configured wrong" from "this root has no module index at all". The count
+ * separates them and is printed on both paths.
+ */
+export function builtinCount(root: string, release: string): number {
+  try {
+    return readFileSync(join(root, 'lib', 'modules', release, 'modules.builtin'), 'utf8')
+      .split('\n').filter(l => l !== '').length
+  }
+  catch {
+    return 0
+  }
+}
+
+/**
+ * How many loadable modules this root ships, i.e. how many subjects the
+ * dependency walk below actually has.
+ *
+ * Printed on the passing path for the same reason `builtinCount` is: "every
+ * object is present" over an empty `modules.dep` and over a full one are the
+ * same sentence, and only one of them means anything.
+ */
+export function depCount(root: string, release: string): number {
+  try {
+    return readFileSync(join(root, 'lib', 'modules', release, 'modules.dep'), 'utf8')
+      .split('\n').filter(l => l.includes(':')).length
+  }
+  catch {
+    return 0
+  }
+}
+
+/** One `modules.dep` entry whose object, or one of its dependencies, is absent. */
+export interface BrokenModule {
+  readonly module: string
+  readonly missing: readonly string[]
+}
+
+/**
+ * Every loadable module this root ships, walked for objects that are not there.
+ *
+ * THIS IS WHERE THE DEPENDENCY WALK LIVES NOW. It used to run only over the
+ * required set, and it was the sharpest thing the modprobe check did: an entry
+ * `depmod` wrote at build time whose `.ko` was dropped during packing resolves
+ * to nothing at load time while the config line still reads `=m`. Since
+ * PLAN-074 no required symbol is a module, so restricting the walk to them
+ * would be a walk with no subjects -- green forever, having stopped looking.
+ * The subjects it does have are the modules that actually ship, so it is
+ * applied to all of them.
+ */
+export function brokenModules(root: string, release: string): BrokenModule[] {
+  const modDir = join(root, 'lib', 'modules', release)
+  let lines: string[] = []
+  try {
+    lines = readFileSync(join(modDir, 'modules.dep'), 'utf8').split('\n').filter(l => l !== '')
+  }
+  catch {
+    return []
+  }
+  const broken: BrokenModule[] = []
+  for (const line of lines) {
+    const colon = line.indexOf(':')
+    if (colon === -1) continue
+    const self = line.slice(0, colon).trim()
+    const deps = line.slice(colon + 1).trim().split(/\s+/).filter(d => d !== '')
+    const missing = [self, ...deps].filter(p => !existsSync(join(modDir, p)))
+    if (missing.length > 0) broken.push({ module: moduleNameOf(self), missing })
+  }
+  return broken
+}
+
+const CONFIG_ID = 'kernel-config-floor-built-in'
+const MODPROBE_ID = 'kernel-floor-resolves-builtin'
 
 export const KERNEL_CHECKS: readonly CheckCase[] = [
   {
@@ -276,8 +400,8 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
     id: CONFIG_ID,
     boards: ['x64'],
     shell: {
-      pass: 'the shipped kernel config declares',
-      fail: 'the shipped kernel config does not declare',
+      pass: 'the shipped kernel config builds in',
+      fail: 'the shipped kernel config does not build in',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
@@ -289,7 +413,11 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
           + `eBPF runtime and the firewall back-end need ${SYMBOL_LIST}, and none of them can be read`)]
       }
       const found = configLines(root, release)
-      const bad = found.filter(f => f.value === undefined)
+      // `=y` ONLY. `=m` is still parsed apart from absent, because the two are
+      // different defects with different repairs -- a symbol built as a module was
+      // configured, one that is absent was never built -- and a message that called
+      // them the same thing sends the reader to the wrong file.
+      const bad = found.filter(f => f.value !== 'y')
       const quoted = found
         .map(f => f.line ?? `${f.symbol} (no such line; absent or "is not set")`)
         .join(', ')
@@ -298,25 +426,33 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
         CONFIG_ID,
         ok,
         ok
-          ? `the shipped kernel config declares ${SYMBOL_LIST} in `
+          ? `the shipped kernel config builds in ${SYMBOL_LIST} in `
             + `/boot/config-${release}: ${quoted}`
-          : `the shipped kernel config does not declare ${bad.map(b => b.symbol).join(', ')} as =y or `
-            + `=m in /boot/config-${release}: ${quoted}. Each one buys: `
+          : `the shipped kernel config does not build in ${bad.map(b => b.symbol).join(', ')} as =y `
+            + `in /boot/config-${release}: ${quoted}. Each one buys: `
             + `${bad.map(b => `${b.symbol} -- ${REQUIRED.find(r => r.symbol === b.symbol)?.what ?? '?'}`)
               .join('; ')}. mosd renders .netdev units for VLAN, bridge and WireGuard interfaces, `
             + `netavark needs the veth pair and the nft fib expression for every bridge network, crun `
             + `loads its cgroup v2 device filter through bpf(2), and a firewall front-end programs `
             + `nf_tables; a capability the kernel does not have is never created, while the write, the `
-            + `container start or the rule load that asked for it reports success`,
+            + `container start or the rule load that asked for it reports success. A symbol that is `
+            + `=m rather than absent is worse here than a missing one: it reads as configured, and `
+            + `on a board that assembles its root before any module can be loaded it does not boot`,
       )]
     },
   },
 
   {
-    // `=m` promises a module; this asks whether the module is THERE. The two
-    // are separate checks rather than one because they fail for unrelated
-    // reasons and the repairs differ: a missing symbol is a kernel Debian did
-    // not build, a missing object is a root this repository packed wrong.
+    // `=y` promises a symbol; this asks whether the module INDEX agrees, and
+    // whether every object this root DOES ship is present.
+    //
+    // Separate from the config check because they fail for unrelated reasons
+    // and the repairs differ: a symbol that is not built in is a kernel
+    // configured wrong, an index that does not name it is a root this
+    // repository packed wrong -- `modules_install` skipped, the tree dropped
+    // during packing, or a `/boot/config-*` left behind by a different kernel
+    // than the modules beside it. `modprobe` and everything else on the device
+    // reads the index, not the config.
     id: MODPROBE_ID,
     boards: ['x64'],
     shell: {
@@ -331,28 +467,40 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
           'no single /boot/config-* in the packed root, so there is no kernel release to resolve '
           + '/lib/modules/<release> against and no module lookup can be performed')]
       }
+      const builtins = builtinCount(root, release)
       const resolved = RESOLVABLE.map(r => resolveModule(root, release, r.module))
-      const bad = resolved.filter(r => r.how === 'none' || r.missingDeps.length > 0)
+      const notBuiltin = resolved.filter(r => r.how !== 'builtin')
+      const broken = brokenModules(root, release)
       const quoted = resolved
         .map(r => r.how === 'builtin'
           ? `${r.module}=builtin (${r.path})`
           : r.how === 'module'
-            ? `${r.module}=${r.path}${r.missingDeps.length === 0 ? '' : ` MISSING ${r.missingDeps.join(' ')}`}`
+            ? `${r.module}=MODULE ${r.path}${r.missingDeps.length === 0 ? '' : ` MISSING ${r.missingDeps.join(' ')}`}`
             : `${r.module}=UNRESOLVED`)
         .join(', ')
-      const ok = bad.length === 0
+      const ok = notBuiltin.length === 0 && broken.length === 0
       return [verdict(
         MODPROBE_ID,
         ok,
         ok
-          ? `modprobe resolves ${MODULE_LIST} against /lib/modules/${release}: ${quoted}. `
-            + `${BUILTIN_ONLY_LIST} build no object of their own and were not looked up here; the `
-            + `config check above is their whole assertion`
-          : `modprobe would not resolve ${bad.map(b => b.module).join(', ')} against `
-            + `/lib/modules/${release}: ${quoted}. A module listed in modules.dep whose object is not `
-            + `in the root fails at load time with the config line still reading =m, so the config `
-            + `check above stays green while ${RESOLVABLE.filter(r => bad.some(b => b.module === r.module))
-              .map(r => r.what).join(' and ')} cannot be created on the device`,
+          ? `modprobe resolves ${MODULE_LIST} as built in against /lib/modules/${release} `
+            + `(${builtins} entries in modules.builtin): ${quoted}. ${BUILTIN_ONLY_LIST} build no `
+            + `object of their own and were not looked up here; the config check above is their `
+            + `whole assertion. Every object named by the ${depCount(root, release)} modules.dep `
+            + `entry/entries this root ships is present`
+          : notBuiltin.length > 0
+            ? `modprobe would not resolve ${notBuiltin.map(b => b.module).join(', ')} as built in `
+              + `against /lib/modules/${release} (${builtins} entries in modules.builtin): ${quoted}. `
+              + `This board loads nothing before its root exists, so a name that resolves to a .ko `
+              + `instead of to the kernel image -- or to nothing -- means `
+              + `${RESOLVABLE.filter(r => notBuiltin.some(b => b.module === r.module)).map(r => r.what).join(' and ')} `
+              + `is unavailable at the moment it is needed. A modules.builtin with 0 entries is the `
+              + `other shape of this: the index the answer comes from is not in the root`
+            : `the module index names objects this root does not carry: `
+              + `${broken.map(b => `${b.module} MISSING ${b.missing.join(' ')}`).join(', ')}. `
+              + `depmod wrote those entries at build time and packing dropped the files, so `
+              + `modprobe fails at load time with the config line still reading =m and the `
+              + `config check above still green`,
       )]
     },
   },

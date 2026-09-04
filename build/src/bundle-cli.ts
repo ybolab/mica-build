@@ -317,22 +317,25 @@ export async function main(argv: readonly string[]): Promise<number> {
   const bootCmdlineA = join(outDir, 'boot-cmdline-a.txt')
   const bootCmdlineB = join(outDir, 'boot-cmdline-b.txt')
 
-  // Where the kernel comes from is a BOARD FACT. A BSP board builds its own and
-  // the bundle takes it from BOARD_DIR; a Debian-kernel board takes the one the
-  // rootfs build already extracted into _out, which is also the one the image
-  // assembler put on the ESP -- so the bundle and the flashed image cannot ship
-  // different kernels for the same build.
+  // Where the kernel comes from is a BOARD FACT. cx3576's boot payload is its
+  // BSP's Image plus a device tree, taken from BOARD_DIR; x64's is the single
+  // vmlinuz the rootfs build extracted into _out, which is also the one the
+  // image assembler put on the slot boot partitions -- so the bundle and the
+  // flashed image cannot ship different kernels for the same build.
+  //
+  // Both boards' kernels are now built by this repository; what still differs
+  // is where the bundle READS one from, which is why this switches on the
+  // bootloader rather than on who compiled it.
   const uboot = geometry.bootloader === 'uboot'
   const kernelImage = uboot
     ? join(options.boardDir, 'out', 'kernel', 'Image')
     : join(outDir, 'boot', 'vmlinuz')
   const dtb = uboot ? join(options.boardDir, 'out', 'kernel', 'rk3576-src.dtb') : undefined
-  const initrdImage = uboot ? undefined : join(outDir, 'boot', 'initrd.img')
 
   checkRequiredInputs({
     rootfsSide: uboot
       ? [rootfsVerityImg, rootfsVerityEnv, bootCmdlineA, bootCmdlineB]
-      : [rootfsVerityImg, rootfsVerityEnv, kernelImage, initrdImage!],
+      : [rootfsVerityImg, rootfsVerityEnv, kernelImage],
     boardSide: uboot ? [kernelImage, dtb!] : [],
   }, options.board, options.boardDir)
 
@@ -348,7 +351,6 @@ export async function main(argv: readonly string[]): Promise<number> {
     board: options.board,
     kernelImage,
     dtb,
-    initrdImage,
     rootfsVerityImg,
     rootfsVerityEnv,
     rootfsReport: join(outDir, 'rootfs-report.txt'),

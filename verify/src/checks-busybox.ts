@@ -455,6 +455,14 @@ export const BUSYBOX_CHECKS: readonly CheckCase[] = [
         ...configured.map(p => `${p} (sets BUSYBOXDIR or BUSYBOX=y)`),
         ...execing.map(p => `${p} (an init file naming busybox)`),
       ]
+      // THE initramfs SEARCH SPACE SURVIVED PLAN-074, and it was worth checking
+      // rather than assuming. Removing initramfs-tools from this board looked
+      // like it would empty INITRAMFS_TREES and leave this half searching
+      // nothing -- green forever over an absent directory. It does not:
+      // /usr/share/initramfs-tools is still populated, by udev, kmod and
+      // dmsetup, which ship hooks there without depending on the package that
+      // reads them. Measured at 5 files on the composed x64 root. So the count
+      // below is a real count and this half still asks a real question.
       return [verdict(
         'packed-busybox-not-early-boot',
         faults.length === 0,

@@ -257,29 +257,46 @@ case " ${WANT} " in
     ;;
 esac
 
-# THE INITRAMFS, asserted where the kernel and the board's hook are finally in
-# one root together. boards/x64/deb/board-x64/Dockerfile puts the assertion
-# here by name: the package ships /etc/initramfs-tools/hooks/mos-verity and the
-# local-top script, linux-image-amd64 arrives through its Depends, and it is
-# that package's own postinst that runs update-initramfs. dpkg unpacks every
-# archive before it configures any of them, so the hook is on disk when the
-# kernel's postinst runs -- but nothing in either package states that, and
-# without veritysetup in the initrd the boot stops at "ALERT! /dev/dm-0 does
-# not exist", days after the build reported success.
+# NO INITRAMFS, asserted where the kernel and the root it must mount are
+# finally in one tree together.
+#
+# This block used to assert the opposite. Until PLAN-074 x64 ran Debian's
+# generic kernel, which has no CONFIG_DM_INIT and therefore ignored the
+# dm-mod.create= verity table on the kernel command line; an initramfs
+# re-implemented it, and what was checked here was that the initrd the kernel
+# package's postinst had just built carried veritysetup and the local-top
+# script. mos-kernel-x64 carries the device mapper, dm-verity and squashfs
+# built in and reads that command line itself, so there is no initrd, no hook
+# and no postinst run to get wrong.
+#
+# WHAT REPLACES IT IS NOT NOTHING. An absence proves itself only if something
+# was there to look at, so this asserts three things rather than one: that the
+# root carries exactly one kernel and the config it was built from, that the
+# config declares the verity floor BUILT IN, and that no initrd file exists
+# beside it. The first two are what would go red if Debian's kernel ever came
+# back into this image -- its config has CONFIG_DM_INIT nowhere at all -- and
+# the third is RFCT-281's guarantee in its stronger form: BusyBox cannot be an
+# early-boot dependency of an image whose early boot has no userspace.
 #
 # Gated on a kernel being IN the root, which is an x64 fact: cx3576's kernel
-# comes from its BSP and sits on the boot partition, so there is nothing here to
-# rebuild. rootfs/scripts/pack-export-boot.sh makes the same assertion over
-# the EXPORTED initrd; this one is earlier and names the cause.
+# comes from its BSP and sits on the boot partition, so there is nothing here
+# to look at. rootfs/scripts/pack-export-boot.sh makes the same assertions over
+# what is EXPORTED; this one is earlier and names the cause.
 if ls /boot/vmlinuz-* >/dev/null 2>&1; then
-    contents="$(lsinitramfs /boot/initrd.img-*)"
-    [ -n "${contents}" ] ||
-        fail "there is a kernel in /boot and its initramfs could not be read at all. A Debian initrd is a concatenation -- an uncompressed early cpio for microcode, then the compressed main archive -- so a reader built on zcat sees only the first and reports every file as missing"
-    for want in usr/sbin/veritysetup scripts/local-top/mos-verity; do
-        printf '%s\n' "${contents}" | grep -qx "${want}" ||
-            fail "the composed initramfs does not contain ${want}. mos-board-${MOS_BOARD} ships the hook and the local-top script under /etc/initramfs-tools and linux-image arrives through its Depends, so update-initramfs ran from the kernel package's postinst BEFORE the hook was unpacked -- which is a dpkg ordering fact neither package declares. The fix belongs in the board package (a postinst that fires the update-initramfs trigger), not in a second update-initramfs run here that would hide it"
+    kernels="$(ls /boot/vmlinuz-* | wc -l)"
+    [ "${kernels}" = 1 ] ||
+        fail "the composed root carries ${kernels} kernels in /boot. Which one the bootloader launches is not a question this composition can answer, and the assertions below would be about whichever sorted first"
+    release="$(ls /boot/vmlinuz-* | sed 's|.*/vmlinuz-||')"
+    [ -f "/boot/config-${release}" ] ||
+        fail "the composed root carries /boot/vmlinuz-${release} and no /boot/config-${release} beside it. Nothing in the image then states how that kernel was configured, and the verity floor below cannot be read at all -- which is also what a distribution kernel installed by accident looks like"
+    for option in DM_INIT BLK_DEV_DM DM_VERITY SQUASHFS; do
+        grep -q "^CONFIG_${option}=y\$" "/boot/config-${release}" ||
+            fail "/boot/config-${release} does not declare CONFIG_${option}=y. This board boots root=/dev/dm-0 from a dm-mod.create= table with no initramfs, so a kernel that has this as a module -- or, as Debian's amd64 kernel has CONFIG_DM_INIT, not at all -- assembles no root and hangs at rootwait with nothing on the console explaining why"
     done
-    echo "compose: the initramfs the kernel package built carries veritysetup and the mos-verity local-top script"
+    initrds="$(ls /boot/initrd.img-* /boot/initrd-* 2>/dev/null | tr '\n' ' ')"
+    [ -z "${initrds}" ] ||
+        fail "the composed root carries an initramfs: ${initrds}. Nothing here is supposed to build one -- the board ships no initramfs-tools hook and the bootloader passes no initrd -- so something reintroduced initramfs-tools and a kernel postinst that fires it, and early boot has grown a userspace this image does not verify"
+    echo "compose: kernel ${release} carries the verity floor built in and the root has no initramfs (${kernels} kernel, 0 initrd)"
 else
     echo "compose: no kernel in /boot; this board's bootloader is given its kernel by the BSP build"
 fi
