@@ -125,7 +125,43 @@ written in. `iptables` is here as the compatibility path — for third-party
 tooling and existing scripts that cannot speak nft — and not as the equal of the
 other.
 
-Five things about them, because each is a surprise otherwise.
+Six things about them, because each is a surprise otherwise.
+
+**The `iptables` extension set is bounded, and it is the same on every board.**
+A rule that names a match or target the kernel was not built with is refused,
+by name:
+
+```
+# iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+Warning: Extension REDIRECT revision 0 not supported, missing kernel module?
+```
+
+That is not a translation failure and retrying it will not help — the
+extension is simply not in this kernel, and adding one is a kernel change
+rather than a package install.
+
+**Guaranteed on every board**, because the shared kernel floor pins it: the
+targets `MASQUERADE`, `REDIRECT`, `SNAT`, `DNAT`, `MARK`, `CHECKSUM` and `CT
+--notrack`; the matches `addrtype`, `conntrack`, `state` and `mark`; the plain
+verdicts (`ACCEPT`, `DROP`, `RETURN`, jumps) and the built-in matches (`-p`,
+`--dport`, `-i`, `-o`, `--tcp-flags`); and the four tables `filter`, `nat`,
+`mangle` and `raw` in both address families. Before 2026-09-04 `REDIRECT`,
+`CHECKSUM` and `CT` worked on the arm64 board and were refused on x64 — that
+asymmetry is what the floor replaced.
+
+**Outside that set, ask before you rely on it, and do not assume the two boards
+answer alike.** Measured on 2026-09-04, four extensions still differ, and not
+all in the same direction:
+
+| | x64 | arm64 (cx3576) |
+|---|---|---|
+| `-m multiport`, `-m comment`, `-j CT --zone` | refused | works |
+| `-j LOG` | works | **refused** |
+
+`-m limit` and `-m iprange` are refused on **both**. `-j REJECT` and
+`-j TCPMSS` work on both today but are not pinned by the floor, so treat them
+as convention rather than contract. If your scripts need any of these, say so
+— which of them the product guarantees is an open decision, not an oversight.
 
 **`nft list ruleset` is the complete view. `iptables -S` is not.** Both tools
 program one kernel subsystem, `nf_tables`. `nft list ruleset` prints all of it:
@@ -169,7 +205,7 @@ directory `/usr/local/lib/systemd/system` like any other native application
 ([applications.md](applications.md)). That is a statement of what the product
 does now, not a recommendation of how to run a firewall.
 
-> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `verify/src/checks-firewall.ts`
+> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `boards/common/mos-required.fragment`, `verify/src/checks-firewall.ts`
 
 ## 6. Security lifecycle
 
