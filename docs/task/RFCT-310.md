@@ -35,12 +35,14 @@ seams, declaring the container-side sites, and landing
 ## Dependencies
 
 - **blocked by**: (none)
-- **relates to**: RFCT-309 (the derived Rust image). It is the same policy
-  applied to one gate: PLAN-080 §5.5 exempts `pkgs/mosd/hack/check.sh` and
-  `pkgs/rauc-sign/hack/check.sh` — four rows, two for `cargo` and two for the
-  `$HOME` PATH prepend that makes it resolvable — until that image exists, and
-  those four rows are its acceptance criterion. Both touch `build-env/` and
-  `docs/design/build-harness.md`; resolved as a union.
+- **relates to**: RFCT-309 (the derived Rust image), which **landed on `main`
+  while this task was finishing**. `tests/rust-gate.sh` and `make os-rust-gate`
+  run both `hack/check.sh` unmodified inside `localhost/mos-build-rust-check` —
+  both workspaces, which is more than its brief named and is the second half
+  PLAN-080 §5.5 asked for. So the one path with no container is closed. The four
+  exemption rows stay, for a different reason now: CI still runs the same
+  scripts on its runner (PLAN-080 backlog **B7**). `tests/rust-gate.sh` passes
+  this task's check unmodified — two workstreams, one policy, no negotiation.
 
 ## Acceptance
 

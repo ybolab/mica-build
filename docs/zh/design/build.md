@@ -130,8 +130,8 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 
 | 位置 | 工具 | 为什么还在主机上 |
 | --- | --- | --- |
-| `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo` | Rust 门禁，也是**目前唯一没有容器可用**的路径：`localhost/mos-build-rust` 只带 cargo 和 rustc，rustfmt、clippy、cargo-nextest 和 cargo-deny 来自 `/srv/mos-rust-tools` 这个没有任何 pin 的主机目录。派生镜像正在建，镜像落地后这两条从登记表里摘掉。 |
-| `.github/workflows/check.yml` | `cargo` | 跑上面这两个门禁的 runner。它用 `rustup` 在主机上装工具链，镜像没有之前动不了。 |
+| `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo`，以及让它能被解析出来的那次 `$HOME` PATH 前置 | Rust 门禁。它需要的容器已经有了：`make os-rust-gate` 会在 `localhost/mos-build-rust-check` 里**原封不动**地跑这两个脚本。它们还留在这里，是因为 CI 仍然在自己的 runner 上跑同样的脚本——一个脚本只要还有一个调用方是裸主机，就不能声明成容器侧。 |
+| `.github/workflows/check.yml` | `cargo` | 就是那个 runner。它用 `rustup` 装工具链；替代方案是 `make os-rust-gate`，代价是 runner 要先把 builder 镜像那一族建出来。 |
 | `pkgs/rauc/gen-dev-keys.sh` | `openssl`（还有 `jq`） | 生产者：它写出的 CA、签名者证书和 Ed25519 根密钥会被烘进 `meta/` 和每一个镜像，它的 `jq` 还会改 `meta/updates/manifest.json`，那份文件同样会进镜像。要关掉它需要一个固定的 openssl 镜像，并重跑信任相关的测试。`jq` 不在检查的工具表里——在本树的其他地方它都是编排，而给它加一行会误报那些属于结论的 fixture 编辑——所以它这一处生产者用法跟着本行一起走。 |
 | `rootfs/build.sh` | `openssl` | 裁判：`alg_of_material()` 读一份证书或密钥并报出它的算法，写出的东西不会留下。但它解析的是 openssl 自己的文本输出，而那是随版本变化的，所以放进容器仍然值得。 |
 | `tests/repart-loader-test.sh` | `sgdisk` | 裁判：对已装配镜像分区表的五次主机读取，旁边那半边容器侧的用法已经声明过了。 |

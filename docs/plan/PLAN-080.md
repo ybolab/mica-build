@@ -376,12 +376,27 @@ one.
 
 | Site | Tool | Why exempt, and what closes it |
 | --- | --- | --- |
-| `pkgs/mosd/hack/check.sh` | `cargo` (5) + `host-toolchain-on-PATH` | The Rust gate. A producer by §3, and the one path with **no container today**: `localhost/mos-build-rust` ships cargo and rustc only, while rustfmt, clippy, cargo-nextest and cargo-deny come from an unpinned host tree. It runs and it ran green today — a working gate standing on the thing the criterion forbids. RFCT-309 is building the derived image; this exemption is its acceptance criterion |
-| `pkgs/rauc-sign/hack/check.sh` | `cargo` (5) + `host-toolchain-on-PATH` | The same gate over the second workspace, same missing image. Named separately because RFCT-309's brief names only the first, and a `--workspace` that no longer spans a crate does not complain |
-| `.github/workflows/check.yml` | `cargo` (3) | The runner that runs those two: it `curl`s rustup onto the host. It cannot move before the image exists and must move with them |
+| `pkgs/mosd/hack/check.sh` | `cargo` (5) + `host-toolchain-on-PATH` | The Rust gate. Its container **now exists** — see below — so what keeps the row is CI, which still runs the same script on the runner. A script cannot be declared container-side while one of its two callers is a bare host. Backlog **B7** |
+| `pkgs/rauc-sign/hack/check.sh` | `cargo` (5) + `host-toolchain-on-PATH` | The same gate over the second workspace, here for B7's reason and not for a missing image |
+| `.github/workflows/check.yml` | `cargo` (3) | The runner that runs those two: it `curl`s rustup onto the host, which is a host toolchain whoever owns the host. Backlog **B7** |
 | `pkgs/rauc/gen-dev-keys.sh` | `openssl` (6) | A producer: the CA, the signer certificate and the Ed25519 root key it writes are baked into `meta/` and into every image. Its host `jq`, which edits `meta/updates/manifest.json`, is the same story and travels with it. Backlog **B2** |
 | `rootfs/build.sh` | `openssl` (3) | A judge: `alg_of_material()` reads a certificate or key and reports its algorithm. It parses openssl's own text output, which is version-sensitive. Backlog **B3** |
 | `tests/repart-loader-test.sh` | `sgdisk` (5) | A judge: five host reads of an assembled image's partition table, beside a container-side half already declared. Backlog **B3** |
+
+**RFCT-309 landed while this record was being written, and it changes two of
+those rows.** `tests/rust-gate.sh` and `make os-rust-gate` run
+`pkgs/<ws>/hack/check.sh` **unmodified** inside
+`localhost/mos-build-rust-check`, both workspaces — which is more than its brief
+named, and is the second half this plan asked for in §5.5. So the Rust gate is
+no longer "a path with no container": the image exists and the local route uses
+it. What is left is CI, which still installs rustup on the runner and runs the
+two scripts there, and that is **B7** rather than a missing image. The scripts
+stay on the register and are not declared container-side, because a whole-file
+declaration would be a false claim while one of two callers is a bare host.
+
+Worth recording as agreement rather than coincidence: `tests/rust-gate.sh`
+passes this plan's check unmodified. Two workstreams, one policy, no
+negotiation needed.
 
 ### 5.6 Not builds, named so the enumeration is not narrower than it looks
 
@@ -502,13 +517,15 @@ against it". One case in `toolbox.test.ts` opened a COREUTILS toolbox with no
 timeout override and the first full suite run after the change failed it at
 5000.80 ms. It carries `OPEN_TIMEOUT_MS` now, with the reason at the site.
 
-**A path with no container today: one, and the image is not invented here.**
+**A path with no container: there was one, and it closed during this task.**
 The Rust gate. `localhost/mos-build-rust` carries cargo and rustc and nothing
-else; rustfmt, clippy, cargo-nextest and cargo-deny come from
-`/srv/mos-rust-tools` and `/root/.cargo/bin`, neither pinned by anything. Until
-a derived image exists the two `hack/check.sh` cannot move and the policy is
-unimplementable for them. RFCT-309 is building it; this plan states the
-requirement and exempts the two scripts until it lands.
+else; rustfmt, clippy, cargo-nextest and cargo-deny came from
+`/srv/mos-rust-tools` and `/root/.cargo/bin`, neither pinned by anything. That
+was the one path that made the policy unimplementable rather than merely
+unimplemented — and RFCT-309's `localhost/mos-build-rust-check` landed on `main`
+before this record did. **There is no path in the tree today with no container
+available to it.** What remains is CI still choosing the host one (B7), and the
+rootfs composition needing one `COPY` (B5).
 
 **A path the criterion still blocks: the rootfs composition.** §4.4. One `COPY`
 from a pin the tree already has, plus a run that proves it. Backlog **B5**.
@@ -549,10 +566,12 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
 
 **Out**, and waiting at the approval boundary:
 
-- **B1 — the Rust gate's container.** RFCT-309 owns it. This plan contributes
-  the requirement and the four exemption rows that come off when it lands,
-  including `pkgs/rauc-sign/hack/check.sh`, which its brief does not name.
-  *Not sized here; it is another task's.*
+- **B1 — the Rust gate's container. CLOSED during this task, by RFCT-309.**
+  `localhost/mos-build-rust-check`, `tests/rust-gate.sh` and `make os-rust-gate`
+  landed on `main`; they run both `hack/check.sh` unmodified, covering the
+  second workspace this plan asked for and its brief did not name. What this
+  plan contributed is the requirement and the rows that come off; what is left
+  of it is B7. *Not sized here; it was another task's.*
 - **B2 — `pkgs/rauc/gen-dev-keys.sh` into a pinned openssl container.** A
   producer, six `openssl` invocations plus the `jq` edit, writing material baked
   into every image. Needs an image key, the `--if-absent` path `rootfs/build.sh`
@@ -571,6 +590,13 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   clone, add bash and make, assemble and verify. It is the only thing that would
   keep the criterion true rather than dated. *~1 day, and it needs a pool or a
   cached rootfs to be worth running.*
+- **B7 — CI stops installing a toolchain.** `.github/workflows/check.yml`'s
+  `rust` job `curl`s rustup onto the runner and runs both `hack/check.sh` there.
+  With `make os-rust-gate` in the tree those two steps and the three install
+  steps above them could become one. The cost is that the runner must build the
+  `mos-build-*` family first, and it is a CI change nothing here can run to
+  prove, so it is named rather than attempted. *~0.5 day, most of it watching a
+  runner.*
 
 ## 11. Alternatives considered
 
@@ -603,7 +629,10 @@ its permitted set, the rule, the boundary test with the bun/node and `make`
 rulings, the experiment, the enumeration with a verdict on every path, the check
 with both shapes and its controls, and the documentation.
 
-**NOT approved, and not started:** B1–B6 in section 10. B1 belongs to RFCT-309
-and this plan only states the requirement. B2–B6 are estimated separately and
-need their own approval; each carries an exemption or a named refusal in the
-tree today, so the state of things is written down rather than silent.
+**NOT approved, and not started:** B2–B7 in section 10. **B1 closed during this
+task** — RFCT-309's `localhost/mos-build-rust-check` landed on `main` and
+`make os-rust-gate` runs both `hack/check.sh` unmodified inside it, so the one
+path that made the policy unimplementable no longer exists. B2–B7 are estimated
+separately and need their own approval; each carries an exemption or a named
+refusal in the tree today, so the state of things is written down rather than
+silent.
