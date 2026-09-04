@@ -91,15 +91,20 @@ statement, and the publication refusal.
   `localhost/mos-build-rust:amd64` with `dbus-daemon` installed.
 - `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
 
-## Gate results — 2026-09-04
+## Gate results — 2026-09-04, against the merged head
 
-Run in the worktree `/srv/bkd/worktrees/33z9aa5q/hw1jo2un`, on this branch,
-each with its own exit status rather than through a pipe that would mask one.
+Run in the worktree `/srv/bkd/worktrees/33z9aa5q/hw1jo2un`, on this branch after
+`main` was merged at `a41b0915` — so these numbers describe this work against a
+base that already carries PLAN-070 F1–F4/F12 (`2383f91f`) as reviewed history,
+rather than against an unreviewed copy of it. Each gate ran with its own exit
+status rather than through a pipe that would mask one.
 
 | Gate | Result |
 |---|---|
 | `(cd verify && bun test)` | **green**, 1268 tests across 39 files |
-| `(cd build && bun test)` | **green**, 889 tests across 28 files (391 s; it drives real docker bundle end-to-end runs) |
+| `(cd build && bun test)` | **green**, 889 tests across 28 files (285 s; it drives real docker bundle end-to-end runs) |
+| `bash tests/trust-domain-hygiene-test.sh` | **green**, 8 passed — its tightened exclusion re-proven in both directions below |
+| `bash tests/rauc-trust-negative-test.sh` | **green** |
 | `make docs-verify` | **green**, 183 + 448 + 733 + 231 + 43 |
 | `bash tests/release-verify-test.sh` | **green**, 27/27, **11 refusals proven red** through the shipped CLI, each with a message fragment no other refusal carries |
 | `cargo test --locked -p mosd -p apid` | **green**, 823 tests (apid 318 + 1, mosd 496 + 1 + 7), in `localhost/mos-build-rust:amd64` with `dbus-daemon` added |
@@ -122,3 +127,23 @@ What that leaves unproven is the pair G1+G2 *over an assembled image*: the
 staging is exercised directly above and the biconditional is exercised over the
 fixture root by `verify`'s own suite, but the two have not been run against each
 other on a real packed root.
+
+## The hygiene suite's exclusion, re-proven across the merge
+
+`tests/trust-domain-hygiene-test.sh` changed on both sides of the `main` merge.
+This branch never touched the file, so main's tightened form (`5f93fe80`) was
+taken **whole** and the merged file is byte-identical to main's — there was no
+assertion of this task's to re-apply on top of it.
+
+The tightening is the part that matters, and it is re-proven here rather than
+assumed to have survived:
+
+| Tree | Result |
+|---|---|
+| as committed | **green**, `RESULT: PASS (8 passed, 0 failed)` |
+| `cp "${somewhere}"/*.pk8 "${dest}"` planted in `rootfs/build.sh` | **red**, naming the planted line — the genuine glob copy the earlier substring exclusion would have swallowed |
+| the detector's key-container case arm narrowed to `*.key)` | **red** on the stale-map guard, before the grep runs, saying the exclusion now excludes nothing |
+
+The middle row is the property: a glob copy is the *more* natural way to
+bulk-move key files, not the less, so an exclusion that swallowed it would have
+let through exactly the shape somebody would actually write.
