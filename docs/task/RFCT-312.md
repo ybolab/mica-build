@@ -164,6 +164,15 @@ the whole of the winner's claim, re-reads a claimed tree, and takes the
 existing `409 already_configured` having written nothing — the same posture the
 validators already keep.
 
+**The hold is bounded, which is what makes a lock on an unauthenticated route
+acceptable.** Every call it spans is bounded: `bus_client`'s
+`MOSD_CALL_TIMEOUT` is 5 s per call and per connect, and the hash is one
+argon2id. A flood of concurrent setup POSTs therefore serialises but does not
+queue behind anything unbounded, and after the first one succeeds each
+subsequent request takes an uncontended lock, reads a claimed tree and 409s
+**before** reaching the hash — so the flood costs less CPU after the fix than
+before it, when every request paid for its own argon2id in parallel.
+
 ## 4. The test
 
 `a_factory_fresh_device_issues_one_administrator_session_to_concurrent_claimants`
@@ -297,16 +306,27 @@ also outside the coverage gate's trees — `docs/zh/verify-coverage.sh` governs
 
 ## 7. Gate results — 2026-09-04, on this branch after `main` was merged
 
+Run in the worktree `/srv/bkd/worktrees/33z9aa5q/m2oe5uj0`, on this branch after
+`main` was merged at `6a4b94f6`. Each gate carries its own exit status rather
+than going through a pipe that would mask one.
+
+The **shipped-path reproductions in §2 were taken before that merge**, and they
+describe the merged tree too: main's only change anywhere on the settings write
+path was one added RAUC install test in `mosd/src/bus.rs`, and `persist_setting`
+— the function the whole "no compare-and-set underneath" reading rests on — is
+byte-identical across the merge. Nothing main brought touches `apid`.
+
+
 | Gate | Result |
 |---|---|
-| `cargo test --locked -p mosd -p apid` | **green**, 824 tests — apid 319 + 1 e2e (318 + this task's one), mosd 496 + 1 bus + 7 scan |
+| `cargo test --locked -p mosd -p apid` | **green**, 831 tests — apid 319 + 1 e2e (318 + this task's one), mosd 503 + 1 bus + 7 scan |
 | `cargo clippy --locked -p apid --all-targets -- -D warnings` | **NOT RUN — reported, not worked around**: `localhost/mos-build-rust:amd64` ships cargo, rustc and std only, and has no `clippy` component to add offline (`error: no such command: clippy`). `cargo test --locked` is the merge floor this environment can hold; `pkgs/mosd/hack/check.sh` runs clippy where the component exists |
-| `(cd verify && bun test)` | **green**, 1268 tests across 39 files |
-| `(cd build && bun test)` | **green** — see below |
+| `(cd verify && bun test)` | **green**, 1277 tests across 39 files |
+| `(cd build && bun test)` | **green**, 919 tests across 29 files (361 s; it drives real docker bundle end-to-end runs) |
 | `make docs-verify` | **green**, 183 + 449 + 734 + 231 + 43 |
 | Shipped-path reproduction, before the fix | **red in both configurations**: 200/200 at concurrency 2, 100/100 at concurrency 8 |
 | Shipped-path reproduction, after the fix | **green**: exactly one 201 in 300 iterations, all 900 losers `409`, none with a cookie |
-| The new unit test against the unguarded handler | **red**, with the auditor's sentence |
+| The new unit test against the unguarded handler | **red**, with the auditor's sentence — re-proven by mutation against the FINAL test text, not only against the draft that first found it: the guard line was removed from `api_v1_setup`, the test failed `[201, 201]`, and the line was restored |
 
 The Rust gate ran in `ai-agent/mos-m2oe5uj0-rust-dbus` — `localhost/mos-build-rust:amd64`
 with `dbus-daemon` added — so `tests::power_bus` and `tests::settings_signal`
