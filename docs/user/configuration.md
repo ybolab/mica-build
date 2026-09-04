@@ -97,8 +97,9 @@ limits rather than omissions.
 **there is no enable, disable or pause control** — not in the settings tree,
 not in the API, not in the UI. Two settings exist and only two,
 `time.ntp.servers` (a validated list; empty means the image's fallback pool)
-and `time.timezone`. `GET /api/v1/time/status` reports whether the clock is
-disciplined, which server answered, and whether the last correction was a step
+and `time.timezone`. `GET /api/v1/time/status` reports whether the kernel
+bounds the clock's error (`synchronized`) or a server is merely answering
+(`polling`), which server that is, and whether the last correction was a step
 or a slew.
 
 **The machine's time is UTC, always, and the timezone is presentation only.**
