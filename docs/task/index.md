@@ -73,6 +73,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-305 Gate A mechanisms: the trust grade, the device surface and the publication refusal**](RFCT-305.md) `P1`
 - [x] [**RFCT-304 The shipped iptables answers the same on both boards**](RFCT-304.md) `P1`
 - [x] [**RFCT-307 The development-grade marker reaches the image**](RFCT-307.md) `P1`
+- [x] [**RFCT-308 Design short-lived signer certificates**](RFCT-308.md) `P1`
 - [x] [**RFCT-302 The snapshot schema version follows the shape it ships**](RFCT-302.md) `P1`
 - [x] [**RFCT-303 Three apid tests assert on state, not on wall-clock speed**](RFCT-303.md) `P1`
 - [x] [**RFCT-306 The update and fleet URLs become changeable, the anchors do not**](RFCT-306.md) `P1`
