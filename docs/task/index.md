@@ -69,6 +69,10 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-298 Report rtnetlink enums on the observed-network surface as names**](RFCT-298.md) `P1`
 - [x] [**RFCT-299 Say what /api/v1/time/status means by a synchronized clock**](RFCT-299.md) `P1`
 - [x] [**RFCT-300 An unreadable time signal must not report as a read one**](RFCT-300.md) `P1`
+- [x] [**RFCT-301 The meta/ seam and its enforcement (PLAN-070 F1, F1b, F2, F3, F4, F12)**](RFCT-301.md) `P1`
+- [x] [**RFCT-302 The snapshot schema version follows the shape it ships**](RFCT-302.md) `P1`
+- [x] [**RFCT-303 Three apid tests assert on state, not on wall-clock speed**](RFCT-303.md) `P1`
+- [x] [**RFCT-306 The update and fleet URLs become changeable, the anchors do not**](RFCT-306.md) `P1`
 - [x] [**UI-010 Isolate built-in UI build outputs**](UI-010.md) `P1`
 - [x] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [x] [**UI-012 Align the built-in console with the approved prototype details**](UI-012.md) `P1`

@@ -7,7 +7,8 @@
 # SOURCE_DATE_EPOCH.
 #
 # Bind mounts this reads: /mos-debs (the whole _out/debs tree) and /mos-compose
-# (the host-staged packages.txt and keyring.pem).
+# (the host-staged packages.txt and meta-public/, the two files out of meta/
+# that reach the image).
 #
 # NOTHING IS COMPILED HERE and nothing is downloaded from a network. Every mos
 # package comes out of the pool `make os-debs` built; every Debian package comes
@@ -170,16 +171,30 @@ done
 TOTAL_N="$(dpkg-query -W -f='.\n' | grep -c .)"
 echo "compose: ${local_n} local package(s) installed, ${TOTAL_N} packages in the root"
 
-# The RAUC trust root, staged from the repository-root ca/ by
-# rootfs/build.sh, which is the single seam by which a CA enters a build.
-# It is not in any package and must not be: rootfs/overlay is copied
+# THE PUBLIC SET OUT OF meta/ (PLAN-070 section 1.1): the two files that leave
+# the build host for the image, and nothing else. rootfs/build.sh stages them
+# under /mos-compose/meta-public/ at the paths they take here, having first
+# refused to stage anything off its allowlist or anything carrying private key
+# material; verify checks the same two paths over the assembled image, because
+# a file can arrive by a route the staging step cannot see.
+#
+# Neither is in any package and neither may be: rootfs/overlay is copied
 # wholesale into mos-system's payload, so a keyring left there once would reach
 # every later image by being forgotten. Installed here, on the composition path,
-# for exactly the reason build.sh stages it into the overlay on the chain
-# path -- one place, per build, chosen by whoever filled ca/.
-[ -s /mos-compose/keyring.pem ] ||
-    fail "/mos-compose/keyring.pem is missing or empty. It is staged from ca/ca.cert.pem and it is what every device flashed with this image trusts RAUC bundles from; an image without it can install no update at all"
-install -D -m 0644 /mos-compose/keyring.pem /etc/rauc/keyring.pem
+# one place per build, from what an operator put in meta/.
+#
+# EACH PATH IS NAMED rather than the staged tree being walked. A walk would
+# install whatever was in the directory, which turns the allowlist in build.sh
+# into a suggestion; naming them means a third public file is a reviewed line
+# here as well as there.
+[ -s /mos-compose/meta-public/etc/rauc/keyring.pem ] ||
+    fail "/mos-compose/meta-public/etc/rauc/keyring.pem is missing or empty. It is staged from meta/rauc/ca.cert.pem and it is what every device flashed with this image trusts RAUC bundles from; an image without it can install no update at all"
+install -D -m 0644 /mos-compose/meta-public/etc/rauc/keyring.pem /etc/rauc/keyring.pem
+
+[ -s /mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json ] ||
+    fail "/mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json is missing or empty. It is staged from meta/updates/manifest.json and it is where this image says which server its updates come from, on which channel and against which package signing key; an image without it has no configuration to read and no anchor to check a package against"
+install -D -m 0644 /mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json \
+    /usr/share/mos/meta/updates/manifest.json
 
 # THE DEVICE IDENTITY, /usr/share/mos/release-identity.env: the file
 # `rauc-update` reads to decide which published release is for this device

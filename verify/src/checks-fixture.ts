@@ -152,10 +152,10 @@ export function imageFixture(request: FixtureRequest): Fixture {
     tools,
     workDir: dir,
     outDir: dir,
-    // No check that reads the table reads the trust root; the path is inside
+    // No check that reads the table reads the baked set; the path is inside
     // the fixture so that one reaching for it finds an empty directory rather
-    // than the host's real ca/.
-    caDir: join(dir, 'ca'),
+    // than the host's real meta/.
+    metaDir: join(dir, 'meta'),
     gpt: async () => gpt,
     partition: async (nameOrNumber: string | number) => {
       const found = typeof nameOrNumber === 'number'
@@ -413,10 +413,13 @@ function seedHealthyRoot(root: string, board: Board): void {
     '',
   ].join('\n'))
 
-  // --- the RAUC keyring, byte-equal to the trust root the fixture's ca/ holds ---
-  // Present, and that is the shipped state now: rootfs/build.sh stages
-  // ca/ca.cert.pem here in every image, so an absent keyring is the mutation.
+  // --- the baked public set, byte-equal to what the fixture's meta/ holds ---
+  // Present, and that is the shipped state now: rootfs/build.sh stages exactly
+  // these two files out of meta/ into every image, so an absent one is the
+  // mutation. Nothing else may be under /usr/share/mos/meta/, which is what
+  // `packed-meta-is-the-public-set` reads this tree to say.
   file('/etc/rauc/keyring.pem', FIXTURE_CA_CERT)
+  file(BAKED_MANIFEST_PATH, FIXTURE_META_MANIFEST)
 
   seedDbus(root, file)
   seedEngine(root, board, file)
@@ -435,7 +438,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   // Nothing at /builtin and nothing under /mos/ui: absence is the shipped state
   // for both, and seeding either would make the fixture red before a test had
   // mutated anything. /etc/rauc/keyring.pem is the opposite case and is seeded
-  // above -- every image stages one from ca/, so its ABSENCE is the mutation.
+  // above -- every image stages one from meta/, so its ABSENCE is the mutation.
 }
 
 // M4f: the D-Bus policies
@@ -1319,12 +1322,30 @@ function enable(root: string, unit: string, target = 'multi-user.target.wants'):
 /**
  * The trust root's CA certificate, as the fixture spells it.
  *
- * Not a real certificate: `packed-keyring-from-ca` compares BYTES, which is
+ * Not a real certificate: `packed-keyring-from-meta` compares BYTES, which is
  * what ties an image's keyring to the one place a trust root may enter a build.
  * Nothing in that comparison parses PEM, so a real certificate here would
  * assert nothing extra and would date.
  */
 export const FIXTURE_CA_CERT = '-----BEGIN CERTIFICATE-----\nfixture trust root\n-----END CERTIFICATE-----\n'
+
+/**
+ * The baked update configuration, as the fixture spells it.
+ *
+ * The same reasoning as `FIXTURE_CA_CERT`: `packed-meta-is-the-public-set`
+ * compares BYTES against what `meta/` holds and nothing parses the JSON, so a
+ * faithful copy of `meta.example/`'s document would assert nothing extra and
+ * would go stale the day that schema grows a key.
+ *
+ * It carries no `-----BEGIN` armour, no PKCS#8 header and no key-container
+ * extension in its path, which is what makes it the NEGATIVE control for
+ * `no-private-key-in-baked-meta`: the healthy fixture is a populated search
+ * space in which the detector finds nothing.
+ */
+export const FIXTURE_META_MANIFEST = '{ "schema": "mos/meta/v1", "update": { "source": null } }\n'
+
+/** Where the baked manifest lands in the image, in the check's own spelling. */
+export const BAKED_MANIFEST_PATH = '/usr/share/mos/meta/updates/manifest.json'
 
 /** A context over a synthetic packed root. Everything that reads the IMAGE throws. */
 /**
@@ -1351,15 +1372,22 @@ export function packedRootFixture(board: Board): RootFixture {
   mkdirSync(root, { recursive: true })
   seedHealthyRoot(root, board)
 
-  // The fixture's own ca/, so the suite never reads the real one: whether THIS
-  // host has built an image, and whether its trust root happens to be a
-  // generated one, must not decide a verdict. PRODUCTION-shaped by default --
+  // The fixture's own meta/, so the suite never reads the real one: whether
+  // THIS host has built an image, and whether its material happens to be
+  // generated, must not decide a verdict. PRODUCTION-shaped by default --
   // material present, no GENERATED marker -- because that is the released state
   // the healthy fixture stands for; a test that wants the development branch
   // writes the marker itself.
-  const caDir = join(dir, 'ca')
-  mkdirSync(caDir, { recursive: true })
-  writeFileSync(join(caDir, 'ca.cert.pem'), FIXTURE_CA_CERT)
+  //
+  // Only the PUBLIC half is seeded. meta/rauc/ca.key.pem and
+  // meta/updates/root.key are absent here on purpose: they never reach an image
+  // and no check reads them, so seeding them would put private material in a
+  // fixture to prove a property about a file that does not carry it.
+  const metaDir = join(dir, 'meta')
+  mkdirSync(join(metaDir, 'rauc'), { recursive: true })
+  mkdirSync(join(metaDir, 'updates'), { recursive: true })
+  writeFileSync(join(metaDir, 'rauc', 'ca.cert.pem'), FIXTURE_CA_CERT)
+  writeFileSync(join(metaDir, 'updates', 'manifest.json'), FIXTURE_META_MANIFEST)
 
   const refuse = (what: string): never => {
     throw new ToolOutputError(`the packed-root fixture has no ${what}; this check reads more than the tree.`)
@@ -1371,7 +1399,7 @@ export function packedRootFixture(board: Board): RootFixture {
     tools: NO_TOOLS,
     workDir: dir,
     outDir: dir,
-    caDir,
+    metaDir,
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slots'),

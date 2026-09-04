@@ -84,17 +84,18 @@ export interface ImageContext {
    */
   readonly outDir: string
   /**
-   * The tree's trust root -- the repository-root `ca/`.
+   * The tree's signing material and update configuration -- the repository-root
+   * `meta/`.
    *
    * A seam for the same reason `outDir` is one, and not a second convention:
-   * `ca/` is where rootfs/build.sh takes the keyring it stages into every
-   * image, so the check that asks "did the shipped keyring come from there?"
-   * has to read it. Reading the real `ca/` from a test would make the suite
-   * pass on a host that had built once and fail on one that had not, and would
-   * make the answer depend on whether that host's trust root happened to carry
-   * `ca/GENERATED` -- so the fixture supplies its own.
+   * `meta/` is where rootfs/build.sh takes the two files it bakes into every
+   * image from, so the checks that ask "did what shipped come from there?" have
+   * to read it. Reading the real `meta/` from a test would make the suite pass
+   * on a host that had built once and fail on one that had not, and would make
+   * the answer depend on whether that host's material happened to carry
+   * `meta/GENERATED` -- so the fixture supplies its own.
    */
-  readonly caDir: string
+  readonly metaDir: string
   /** The partition table, read once. */
   gpt: () => Promise<GptTable>
   /** A partition by GPT name (`boot-a`) or number. Throws when there is none. */
@@ -290,8 +291,8 @@ export interface ContextRequest {
   readonly workDir: string
   /** Defaults to `_out/<board>`, which is where the oracle looks. */
   readonly outDir?: string
-  /** Defaults to the repository-root `ca/`, the one place a trust root enters a build. */
-  readonly caDir?: string
+  /** Defaults to the repository-root `meta/`, the one place a trust root and the baked configuration enter a build. */
+  readonly metaDir?: string
 }
 
 /**
@@ -331,7 +332,7 @@ function digestOf(file: string): string {
 export function createImageContext(request: ContextRequest): ImageContext {
   const { board, image, tools, workDir } = request
   const outDir = request.outDir ?? join(REPO_ROOT, '_out', board.name)
-  const caDir = request.caDir ?? join(REPO_ROOT, 'ca')
+  const metaDir = request.metaDir ?? join(REPO_ROOT, 'meta')
   mkdirSync(workDir, { recursive: true })
 
   let gptOnce: Promise<GptTable> | undefined
@@ -440,5 +441,5 @@ export function createImageContext(request: ContextRequest): ImageContext {
     return started
   }
 
-  return { board, image, tools, workDir, outDir, caDir, gpt, partition, fatSlot, extract, extractAt, unpackRoot }
+  return { board, image, tools, workDir, outDir, metaDir, gpt, partition, fatSlot, extract, extractAt, unpackRoot }
 }

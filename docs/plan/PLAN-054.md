@@ -79,16 +79,24 @@ them, and guessing at any one of them would design the wrong thing.
 
 1. **Who runs the control plane** — vendor, integrator, or end customer.
    Decides whether the plane is multi-tenant (and whether PLAN-072 §5's tenant
-   isolation is a hard boundary or an operational one), whether the baked fleet
-   URL is one value or one per customer — and, because it is baked, whether
-   that means one image per customer — and who carries the operating cost.
+   isolation is a hard boundary or an operational one), whether the fleet URL is
+   one value or one per customer, and who carries the operating cost.
+   **Amended 2026-09-04**: this clause continued *"— and, because it is baked,
+   whether that means one image per customer —"*. The URL is no longer baked-only
+   (PLAN-072 §8), so a per-customer plane is a per-customer **setting** and not a
+   per-customer image. The build-and-release half of this question is gone; the
+   ownership, tenancy and cost half is what remains, and it is the half that was
+   ever open.
 2. **Scale and availability** — hundreds versus hundreds of thousands of
    devices, and what the plane promises. The device side is nearly insensitive
    to this by construction (PLAN-072 §6 makes the plane non-critical); the cost
    envelope is not.
 3. **Data residency** — where inventory records live and whether a report may
-   cross a region. A per-region URL is a baked value, so this is also a build
-   and release-process question: a per-region URL is a per-region image.
+   cross a region. **Amended 2026-09-04**: this continued *"A per-region URL is a
+   baked value, so this is also a build and release-process question: a
+   per-region URL is a per-region image."* It is not, since PLAN-072 §8 — a
+   per-region URL is a per-device setting, so residency stops being a build
+   question entirely and is purely a plane-side one.
 4. **Offline tolerance as a plane-side promise** — the device's behaviour is
    settled (PLAN-072 §6: nothing degrades with time since contact). How long
    the plane waits before showing a device as *missing* rather than *absent*
@@ -180,10 +188,23 @@ The user approved this plan. Five of the seven open product questions were answe
 2026-09-03 and are recorded in full in PLAN-072 §7a; the answers apply here unchanged:
 
 1. **Who runs the control plane** — the vendor by default, an integrator may run their
-   own, and the server is open source. The device learns its plane from the baked
-   `fleet.url` in `meta/`, which answers this record's own sub-question directly:
-   **one plane per image**. A per-customer plane is a per-customer `meta/`, and a
-   per-region URL is a per-region image.
+   own, and the server is open source. The device learns its plane from
+   `fleet.url` in `meta/`.
+
+   **The clause that followed is corrected — 2026-09-04.** It read: *"which
+   answers this record's own sub-question directly: **one plane per image**. A
+   per-customer plane is a per-customer `meta/`, and a per-region URL is a
+   per-region image."* That was derived from the URL being baked-only, and the
+   user's 2026-09-04 requirement makes both addresses overridable (PLAN-070 §5.3,
+   PLAN-072 §8). **What replaces it: one baked *default* plane per image, and the
+   effective plane is per device.** A per-customer plane is a per-customer
+   **setting**; a per-region URL is a per-device setting; and a per-customer
+   `meta/` is still required only where the **trust anchors** differ, which is
+   the sharper form PLAN-070 §5 consequence 2 now carries. The answer to question
+   1 itself is unchanged — vendor by default, integrator optional, server open
+   source — and it becomes materially easier to deliver, because an integrator
+   running their own plane no longer needs their own image to point devices at
+   it.
 4. **Offline tolerance** — the plane assists and never gates local execution. The model
    the user named is Victron VRM.
 5. **Support liability** — a plane that is down does not affect the device; nothing is
@@ -198,3 +219,29 @@ The user approved this plan. Five of the seven open product questions were answe
 Neither is a device-side design input any longer — residency follows from question 1, and
 availability is not a product promise — so both are cost and commitment questions for
 whoever operates the plane, and they no longer block this record.
+
+### Amended — 2026-09-04: "one plane per image" is retired
+
+The user requires that the update server address and the fleet control-plane URL
+both be changeable. PLAN-070 §5.3 is the decision, PLAN-072 §8 prices the fleet
+half, PLAN-076 §11 carries the reporting half, and PLAN-071 §10 the update half.
+
+**This record's stake is one derived conclusion, and it was derived from a
+premise that has changed.** *One plane per image* was never an independent
+finding — it followed from the baked `fleet.url` and from nothing else. With the
+URL an overridable default, it is replaced by **one baked default plane per
+image, with the effective plane per device**: a per-customer plane is a
+per-customer setting, a per-region URL is a per-device setting, and a
+per-customer `meta/` is needed only where the **trust anchors** differ.
+
+**What this changes about the open questions.** Question 1's answer stands and
+its build-and-release sub-question disappears; question 3 (data residency) loses
+its last device-side clause and is now wholly a plane-side operational decision.
+Neither reopens. Question 2 (scale and availability) is untouched.
+
+**What it does not change.** The product decision, the boundary (this record
+still ends at an approved architecture, ownership model and cost envelope), the
+COND/* dispositions, the exclusion of the plane from this repository's backlog,
+and PLAN-072's estimate covering the device half only. The trust anchors remain
+baked and unwritable, which is the property the whole amendment rests on.
+

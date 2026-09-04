@@ -364,6 +364,33 @@ const APID_BIN = '/usr/bin/apid'
 export const BUILTIN_MARKUP = '<script type="module" crossorigin src="/_ui/assets/index-'
 const KEYRING_PATH = '/etc/rauc/keyring.pem'
 const MANIFEST_PATH = '/usr/share/mos/manifest.tsv'
+
+/** Where the baked half of `meta/` lands in the image. */
+const BAKED_META_DIR = '/usr/share/mos/meta'
+
+/**
+ * The public set under `BAKED_META_DIR`, relative to it AND to the tree's
+ * `meta/` -- one spelling, because the image mirrors the source layout there.
+ *
+ * The keyring is the seam's other public file and is NOT here: it lands at
+ * `/etc/rauc/keyring.pem`, which RAUC's own `system.conf` names, and
+ * `packed-keyring-from-meta` above is the byte comparison over it.
+ *
+ * A second entry belongs here only alongside a new line in rootfs/build.sh's
+ * `META_PUBLIC`. That is the point of an allowlist: a file reaches a device by
+ * two reviewed edits or not at all.
+ */
+const BAKED_META_SET = ['updates/manifest.json'] as const
+
+/**
+ * Where the private-key detector looks, and it is not the whole packed root.
+ *
+ * A whole-root scan would fire on Debian packages that legitimately ship
+ * key-shaped test fixtures, and a check whose findings are usually false is a
+ * check people learn to pass. These are the paths this seam creates: mos-owned,
+ * closed, and always populated.
+ */
+const PRIVATE_KEY_SCAN_DIRS = [BAKED_META_DIR, '/etc/rauc'] as const
 const PACKED_MOUNTPOINTS = [
   '/mnt/data', '/mnt/state', '/mnt/meta', '/srv', '/mos', '/var', '/home', '/root',
   '/usr/local/lib/systemd/system', '/etc/containers/systemd',
@@ -645,37 +672,37 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       )]
     },
   },
-
   {
     // A keyring inside the signed read-only root is a trusted signer on every
     // device flashed with this image, so the question is not whether one is
     // there -- rootfs/build.sh stages one into every image now -- but
-    // WHERE it came from. The repository-root ca/ is the single seam by which a
-    // trust root enters a build, and a byte comparison against ca/ca.cert.pem
-    // is what ties the image to that seam: a keyring that arrived any other way
-    // (left in the overlay, copied in by a stage, edited afterwards) does not
-    // match and is refused. That refusal is the old check's real purpose, kept
-    // through the change of what the shipped state is.
+    // WHERE it came from. `meta/rauc/` is the single seam by which a
+    // trust root enters a build, and a byte comparison against
+    // meta/rauc/ca.cert.pem is what ties the image to that seam: a keyring that
+    // arrived any other way (left in the overlay, copied in by a stage, edited
+    // afterwards) does not match and is refused. That refusal is the old
+    // check's real purpose, kept through the change of what the shipped state is.
     //
-    // ca/GENERATED still answers WHICH trust root this is -- the generator
+    // meta/GENERATED still answers WHICH material this is -- the generator
     // leaves it, production material arrives without it -- and the verdict
     // says which one it read. It is not a refusal: dev and production take the
-    // same path through ca/, and which material is there is CI's choice, made
+    // same path through meta/, and which material is there is CI's choice, made
     // before the build rather than waived after it. Nothing in this repository
     // records the grade of a published release; see the task record.
-    id: 'packed-keyring-from-ca',
-    shell: { pass: 'the shipped RAUC keyring came from ca/' },
+    id: 'packed-keyring-from-meta',
+    shell: { pass: 'the shipped RAUC keyring came from meta/' },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const what = 'the shipped RAUC keyring came from ca/'
-      const caCert = fileBytes(join(ctx.caDir, 'ca.cert.pem'))
+      const what = 'the shipped RAUC keyring came from meta/'
+      const caCertPath = join(ctx.metaDir, 'rauc', 'ca.cert.pem')
+      const caCert = fileBytes(caCertPath)
       // A THROW and not a fail, like packedRoot's own vacuity guard: "this tree
       // has no trust root to compare against" is a statement about the RUN.
       // Answering `pass` would make every image green on a host that had never
       // built one, which is the shape of green this suite exists to refuse.
       if (caCert === undefined) {
         throw new ToolOutputError(
-          `${ctx.caDir}/ca.cert.pem does not exist, so there is nothing to compare `
+          `${caCertPath} does not exist, so there is nothing to compare `
           + `${KEYRING_PATH} against. That file is the trust root every image is built to trust; `
           + `a build creates it (pkgs/rauc/gen-dev-keys.sh) before staging the keyring, so a `
           + `tree without one has not built this image.`,
@@ -685,26 +712,151 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       // DANGLING symlink is a keyring path in the signed root and cannot be
       // read, and the two facts get different sentences.
       if (entry(root, KEYRING_PATH) === undefined) {
-        return [verdict('packed-keyring-from-ca', false,
+        return [verdict('packed-keyring-from-meta', false,
           `${what}: the packed root ships no ${KEYRING_PATH} at all. Every image stages one from `
-          + `ca/ca.cert.pem, so this image can verify no bundle and rauc install fails closed on it`)]
+          + `meta/rauc/ca.cert.pem, so this image can verify no bundle and rauc install fails closed on it`)]
       }
       const shipped = fileBytes(join(root, KEYRING_PATH))
       if (shipped === undefined || !shipped.equals(caCert)) {
-        return [verdict('packed-keyring-from-ca', false,
-          `${what}: ${KEYRING_PATH} in the packed root is not ${ctx.caDir}/ca.cert.pem `
+        return [verdict('packed-keyring-from-meta', false,
+          `${what}: ${KEYRING_PATH} in the packed root is not ${caCertPath} `
           + `(${shipped === undefined ? 'it cannot be read -- a dangling symlink counts as shipped' : 'the bytes differ'}). `
-          + `ca/ is the one place a trust root may enter a build; a keyring that arrived any other `
+          + `meta/rauc/ is the one place a trust root may enter a build; a keyring that arrived any other `
           + `way is a trusted signer on every device flashed with this image and nobody chose it`)]
       }
-      const generated = existsSync(join(ctx.caDir, 'GENERATED'))
-      return [verdict('packed-keyring-from-ca', true,
-        `${what}: ${KEYRING_PATH} is ${ctx.caDir}/ca.cert.pem byte for byte, and that trust root `
+      const generated = existsSync(join(ctx.metaDir, 'GENERATED'))
+      return [verdict('packed-keyring-from-meta', true,
+        `${what}: ${KEYRING_PATH} is ${caCertPath} byte for byte, and that material `
         + (generated
-          ? `carries ${ctx.caDir}/GENERATED, so it is DEVELOPMENT-GRADE: every device flashed with `
+          ? `carries ${ctx.metaDir}/GENERATED, so it is DEVELOPMENT-GRADE: every device flashed with `
             + `this image trusts bundles signed by a key in a working tree. A release build puts `
-            + `production material in ca/ instead, and CI is what chooses which is there`
+            + `production material in meta/ instead, and CI is what chooses which is there`
           : `carries no GENERATED marker, so it is production material placed there on purpose`))]
+    },
+  },
+
+  {
+    // B2, first half: the image contains EXACTLY the public set, and the bytes
+    // are the tree's.
+    //
+    // rootfs/build.sh's B1 refuses to STAGE anything off its allowlist and
+    // proves the build's intent; this proves the OUTCOME, and the two are not
+    // belt-and-braces. B1 cannot see material that arrives by a route other
+    // than staging -- a file left in the overlay, a package postinst, a stray
+    // `cp` in a later slice -- and this check does not care how it got there.
+    //
+    // Three failures, one shape: an EXTRA file under the baked directory (the
+    // hazard: a private key that rode along), a MISSING one (an image that
+    // cannot say where its updates come from), and a DIFFERING one (a document
+    // edited after the build, which is a configuration nobody reviewed inside a
+    // signature everybody trusts).
+    id: 'packed-meta-is-the-public-set',
+    shell: { pass: 'the baked meta/ is exactly the public set' },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const what = 'the baked meta/ is exactly the public set'
+
+      // The vacuity guard, and it is a THROW for `packed-keyring-from-meta`'s
+      // recorded reason: with no meta/ to compare against, answering `pass`
+      // would make every image green on a host that had never built one --
+      // "nothing wrong found" over a directory that does not exist.
+      const sources = new Map<string, Buffer>()
+      for (const rel of BAKED_META_SET) {
+        const src = join(ctx.metaDir, rel)
+        const bytes = fileBytes(src)
+        if (bytes === undefined) {
+          throw new ToolOutputError(
+            `${src} does not exist, so there is nothing to compare ${BAKED_META_DIR}/${rel} `
+            + `against. The public set is what a build copies out of meta/ into the image; a tree `
+            + `without it has not built this image, and a verdict over an absent source would be `
+            + `green about bytes nobody read.`,
+          )
+        }
+        sources.set(rel, bytes)
+      }
+
+      const shipped = listRelative(join(root, BAKED_META_DIR))
+      const extra = shipped.filter(rel => !sources.has(rel))
+      if (extra.length > 0) {
+        return [verdict('packed-meta-is-the-public-set', false,
+          `${what}: ${BAKED_META_DIR}/ ships ${extra.length} file(s) that are not on it `
+          + `[${extra.join(' ')}]. meta/ holds every private key a release needs and only its `
+          + `public half may reach a device, so a path here that the allowlist in rootfs/build.sh `
+          + `does not name arrived without a reviewer`)]
+      }
+      const missing = [...sources.keys()].filter(rel => !shipped.includes(rel))
+      if (missing.length > 0) {
+        return [verdict('packed-meta-is-the-public-set', false,
+          `${what}: ${BAKED_META_DIR}/ is missing ${missing.join(' ')}. That is the configuration `
+          + `this image reads to decide where its updates come from and which package signing key `
+          + `it trusts; without it the image has nothing to read and no anchor to check against`)]
+      }
+      const differing = [...sources.entries()]
+        .filter(([rel, bytes]) => {
+          const got = fileBytes(join(root, BAKED_META_DIR, rel))
+          return got === undefined || !got.equals(bytes)
+        })
+        .map(([rel]) => rel)
+      if (differing.length > 0) {
+        return [verdict('packed-meta-is-the-public-set', false,
+          `${what}: ${differing.join(' ')} in the packed root is not the byte-for-byte copy of `
+          + `${ctx.metaDir}/${differing[0] as string} the build staged (either the bytes differ or the path `
+          + `cannot be read -- a dangling symlink counts as shipped). A baked document that does not `
+          + `match its source is configuration nobody reviewed, inside a signature every device trusts`)]
+      }
+      return [verdict('packed-meta-is-the-public-set', true,
+        `${what}: ${BAKED_META_DIR}/ holds exactly ${sources.size} file(s) [${[...sources.keys()].join(' ')}], `
+        + `each byte-equal to its source under ${ctx.metaDir}/ -- no extra file, no missing file, no differing byte`)]
+    },
+  },
+
+  {
+    // B2, second half: no private key reached the image by any route.
+    //
+    // SCOPED to the two paths this seam creates, and not the whole packed root.
+    // A whole-root scan would fire on Debian packages that legitimately ship
+    // key-shaped test fixtures, and a check whose findings are usually false is
+    // a check people learn to pass. These two directories are mos-owned, closed,
+    // and always populated -- a keyring and a manifest -- so the count in the
+    // verdict is a real measurement rather than a vacuous one.
+    //
+    // THE COUNT IS PART OF THE VERDICT. A green line that does not say what it
+    // looked at cannot be distinguished from a green line that looked at
+    // nothing, and a scan of zero files is refused rather than reported.
+    id: 'no-private-key-in-baked-meta',
+    shell: { pass: 'no private key material is baked into the image' },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const what = 'no private key material is baked into the image'
+      const found: string[] = []
+      let scanned = 0
+      for (const dir of PRIVATE_KEY_SCAN_DIRS) {
+        for (const rel of listRelative(join(root, dir))) {
+          const path = `${dir}/${rel}`
+          scanned += 1
+          const test = privateKeyMaterial(path, fileBytes(join(root, dir, rel)))
+          if (test !== undefined) found.push(`${path} (${test})`)
+        }
+      }
+      if (found.length > 0) {
+        return [verdict('no-private-key-in-baked-meta', false,
+          `${what}: ${found.length} of the ${scanned} file(s) under `
+          + `[${PRIVATE_KEY_SCAN_DIRS.join(' ')}] carries some -- ${found.join(', ')}. Every device `
+          + `flashed from this image carries a byte-identical copy, so a private key here is one an `
+          + `attacker gets by buying a single unit and then uses to sign an update the whole fleet `
+          + `verifies, installs and trusts`)]
+      }
+      if (scanned === 0) {
+        return [verdict('no-private-key-in-baked-meta', false,
+          `${what}: nothing was scanned. [${PRIVATE_KEY_SCAN_DIRS.join(' ')}] are mos-owned and always `
+          + `populated -- a keyring and a manifest -- so an empty search space is not a clean image, `
+          + `it is a check that read nothing and would have reported the same green whatever the `
+          + `image contained`)]
+      }
+      return [verdict('no-private-key-in-baked-meta', true,
+        `${what}: scanned ${scanned} file(s) under [${PRIVATE_KEY_SCAN_DIRS.join(' ')}] with all three `
+        + `detectors (PEM private-key armour, a DER PKCS#8 PrivateKeyInfo header, a key-container `
+        + `filename extension) and none carries any`)]
     },
   },
 ]
@@ -724,6 +876,73 @@ function fileBytes(path: string): Buffer | undefined {
   catch {
     return undefined
   }
+}
+
+/**
+ * Every file at or under `dir`, as paths relative to it, sorted. Empty when
+ * there is no such directory.
+ *
+ * Directories are recursed into and everything else is an ENTRY -- a symlink
+ * included, because a link under a baked directory is a path the image ships
+ * and the checks that read this decide separately what to say about one whose
+ * bytes cannot be read.
+ */
+function listRelative(dir: string): string[] {
+  const out: string[] = []
+  const walk = (at: string, prefix: string): void => {
+    let entries
+    try {
+      entries = readdirSync(at, { withFileTypes: true })
+    }
+    catch {
+      return
+    }
+    for (const e of entries) {
+      const rel = prefix === '' ? e.name : `${prefix}/${e.name}`
+      if (e.isDirectory()) walk(join(at, e.name), rel)
+      else out.push(rel)
+    }
+  }
+  walk(dir, '')
+  return out.sort()
+}
+
+/**
+ * Which private-key test a file trips, or undefined for none.
+ *
+ * THREE tests, and the obvious spelling alone is wrong here. The previous
+ * revision of this rule grepped for PEM armour; the package signing key is raw
+ * PKCS#8 DER, so an armour grep is blind to exactly the file the hazard is
+ * named after. A detector with one test is a detector that names one file
+ * format.
+ *
+ * The name of the test that fired is returned rather than a boolean, because
+ * "this file is a key" and "this file is NAMED like a key" want different fixes
+ * and a verdict that cannot tell them apart sends half its readers to the wrong
+ * place.
+ */
+function privateKeyMaterial(path: string, bytes: Buffer | undefined): string | undefined {
+  // 3. A filename in a key-container extension. First, because it is the one
+  //    test that answers for a path whose bytes cannot be read at all -- a
+  //    dangling symlink named `root.key` is still a key-shaped path in the
+  //    signed root.
+  if (/\.(?:key|pk8|p12|pfx|jks)$/.test(path)) return 'key-container filename extension'
+  if (bytes === undefined) return undefined
+  // 1. PEM private-key armour, in every spelling openssl and ssh-keygen write.
+  if (/-----BEGIN (?:RSA |DSA |EC |ENCRYPTED |OPENSSH )?PRIVATE KEY-----/.test(bytes.toString('latin1'))) {
+    return 'PEM private-key armour'
+  }
+  // 2. A DER PKCS#8 PrivateKeyInfo header: a SEQUENCE whose first element is
+  //    INTEGER 0, the version -- 30 <len...> 02 01 00. This is what
+  //    `rauc-sign gen-dev-keys` and `gen-dev-keys.sh --domain updates` write.
+  if (bytes.length > 0 && bytes[0] === 0x30) {
+    const lengthByte = bytes[1] ?? 0
+    const contentAt = lengthByte < 0x80 ? 2 : 2 + (lengthByte & 0x7f)
+    if (bytes[contentAt] === 0x02 && bytes[contentAt + 1] === 0x01 && bytes[contentAt + 2] === 0x00) {
+      return 'DER PKCS#8 PrivateKeyInfo header'
+    }
+  }
+  return undefined
 }
 
 /** `ls ROOT/usr/lib/modules`, in the oracle's spelling: entries, not versions. */

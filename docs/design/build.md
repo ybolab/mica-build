@@ -133,15 +133,15 @@ conflated once during this migration and corrected:
 | Seam | Owner | What it decides |
 |---|---|---|
 | `/etc/ssl/certs/ca-certificates.crt`, the anchors under `/usr/share/ca-certificates`, `/etc/ca-certificates.conf` | `mos-ca-trust` — **package payload** | the **TLS trust store**: which certificate authorities the device believes on an outbound connection |
-| `/etc/rauc/keyring.pem` | **not package-owned**; `rootfs/build.sh` stages it from `ca/ca.cert.pem` | the **RAUC trust root**: whose signed update bundles this device will install |
+| `/etc/rauc/keyring.pem` | **not package-owned**; `rootfs/build.sh` stages it from `meta/rauc/ca.cert.pem` | the **RAUC trust root**: whose signed update bundles this device will install |
 
 The keyring is per-build trust material no package may ever carry: a package is
 one artifact installed into many images, and the CA an operator put in the
-repository-root `ca/` is a decision about *this* build. So `build.sh` copies
-it into the composition context itself, **refuses** one left at
+repository-root `meta/rauc/` is a decision about *this* build. So `build.sh`
+copies it into the composition context itself, **refuses** one left at
 `rootfs/overlay/etc/rauc/keyring.pem` — the overlay is copied wholesale
 into every image, so a file there is a trust root nobody chose — and warns when
-`ca/GENERATED` beside the material marks it development-grade.
+`meta/GENERATED` beside the material marks it development-grade.
 Verify reads the same marker and names the grade in its verdict.
 
 #### Where the two paths differed, the composed one was right
@@ -195,32 +195,52 @@ family missing refuses by name (`LOCAL_MOS_BUILD_BASE resolves to
 localhost/mos-build-base:amd64, which is not in the local docker image store`)
 rather than pulling from a registry called `localhost`.
 
-**The trust root: `ca/`.** The repository-root `ca/` directory is the one place
-a signing CA enters a build, and it is gitignored. `build/run.sh --bundle`
-signs with `ca/signer.cert.pem` and `ca/signer.key.pem`; `rootfs/build.sh`
-stages `ca/ca.cert.pem` into the image at `/etc/rauc/keyring.pem`, which is what
-lets an image install the bundles built beside it.
+**The trust root: `meta/rauc/`.** The repository-root `meta/` directory holds
+everything a release needs to be configured and signed, and it is gitignored;
+`meta/rauc/` is the one place a signing CA enters a build. `build/run.sh
+--bundle` signs with `meta/rauc/signer.cert.pem` and `meta/rauc/signer.key.pem`;
+`rootfs/build.sh` stages `meta/rauc/ca.cert.pem` into the image at
+`/etc/rauc/keyring.pem`, which is what lets an image install the bundles built
+beside it.
 
-Nothing has to be run first. A build that finds `ca/` absent — or missing any of
-the four files — generates a development-grade trust root there, prints a loud
-notice, and carries on. `make os-devkeys` does the same on purpose, ahead of a
-build; `bash pkgs/rauc/gen-dev-keys.sh --force` rotates it, at the cost of
-every bundle already signed with the old key.
+Only two files leave `meta/` for the image, by an allowlist in
+`rootfs/build.sh`: that certificate and `meta/updates/manifest.json`. Every
+private key stays on the build host, and two checks hold it — the build refuses
+to stage anything off the allowlist or anything carrying private key material,
+and the image verifier refuses an assembled image that contains one however it
+got there.
 
-The generator leaves `ca/GENERATED` beside the material, and that marker is what
-distinguishes a generated root from provided production material on every later
-build, not only on the one that made it. `rootfs/build.sh` keys its "this
-image trusts a DEVELOPMENT RAUC keyring" warning off it, and nothing else: there
-is no build-time variable that declares a bench image. A production release puts
-real material in `ca/` and does not carry the marker.
+Nothing has to be run first. A build that finds `meta/` absent — or missing any
+of the four RAUC files — generates a development-grade trust root there, prints
+a loud notice, and carries on. `make os-devkeys` does the same on purpose, ahead
+of a build; `bash pkgs/rauc/gen-dev-keys.sh --force` rotates it, at the cost of
+every bundle already signed with the old key. The package signing key is the
+other domain and is **opt-in**: `bash pkgs/rauc/gen-dev-keys.sh --domain
+updates`, because a development key no published repository has signed anything
+with anchors nothing.
+
+The signature algorithm of every key the generator mints is a declared value in
+`pkgs/rauc/key-algorithms.env`, with the reason beside each; `rootfs/build.sh`
+refuses a declared value outside its role's allowed set, and refuses material in
+`meta/` outside it. Changing an algorithm is a one-line edit to that file;
+widening a set is a code change and a claim about a verifier.
+
+The generator leaves `meta/GENERATED` beside the material naming the domains it
+wrote, and that marker is what distinguishes generated material from provided
+production material on every later build, not only on the one that made it.
+`rootfs/build.sh` keys its "this image trusts a DEVELOPMENT RAUC keyring"
+warning off it, and nothing else: there is no build-time variable that declares
+a bench image. A production release puts real material in `meta/` and does not
+carry the marker.
 
 Two rules do not change. `CERT`/`KEY`/`KEYRING` still beat the convention for
-the bundle step — with all three set, nothing is generated and nothing in `ca/`
-is read. And a keyring left at `rootfs/overlay/etc/rauc/keyring.pem` is
-still refused, now unconditionally: the overlay is copied wholesale into every
-image, so a file there is a CA nobody chose, and `ca/` is the one sanctioned
-source. Since every image now ships a keyring, `make os-verify-<board>` passes
-on either grade of material and names in its verdict which one it read.
+the bundle step — with all three set, nothing is generated and nothing in
+`meta/rauc/` is read. And a keyring left at
+`rootfs/overlay/etc/rauc/keyring.pem` is still refused, now unconditionally: the
+overlay is copied wholesale into every image, so a file there is a CA nobody
+chose, and `meta/rauc/` is the one sanctioned source. Since every image now
+ships a keyring, `make os-verify-<board>` passes on either grade of material and
+names in its verdict which one it read.
 
 The keyring is the one path in a mos root that is **not** package payload, and
 it is a different seam from the TLS trust store `mos-ca-trust` ships — §1.1 has
@@ -232,7 +252,7 @@ Every step runs natively on an amd64 host. In order:
 
 ```sh
 MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh
-bash pkgs/rauc/gen-dev-keys.sh   # optional: a build with no ca/ does this itself
+bash pkgs/rauc/gen-dev-keys.sh   # optional: a build with no meta/ does this itself
 MOS_BOARD=x64 bash pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash pkgs/podman/build.sh
 make os-debs                                   # the package pool, then its index
@@ -294,7 +314,7 @@ at all. In order:
 
 ```sh
 MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh
-bash pkgs/rauc/gen-dev-keys.sh   # optional: a build with no ca/ does this itself
+bash pkgs/rauc/gen-dev-keys.sh   # optional: a build with no meta/ does this itself
 make cx3576-uboot cx3576-uboot-mos
 make cx3576-kernel
 make os-rauc

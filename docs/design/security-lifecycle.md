@@ -79,12 +79,16 @@ release host (`pkgs/rauc-sign/README.md`).
   `docs/design/release-signing.md` §2.1: CA key sealed offline, signer
   key/cert to the release host. The development generator
   (`pkgs/rauc/gen-dev-keys.sh`) writes the same shape into the gitignored
-  `ca/` seam and drops the `ca/GENERATED` marker that distinguishes a
-  development root from production material forever after.
-- **Injection** — at image build: `ca/ca.cert.pem` is staged to
+  `meta/rauc/` seam and drops the `meta/GENERATED` marker that distinguishes
+  development material from production material forever after, naming the
+  domains it wrote.
+- **Injection** — at image build: `meta/rauc/ca.cert.pem` is staged to
   `/etc/rauc/keyring.pem`; the overlay is refused as a source
   (`rootfs/build.sh`), and the shipped root must carry a byte-equal copy of
-  the CA the build was pointed at (`verify/src/checks-root.ts`).
+  the CA the build was pointed at (`verify/src/checks-root.ts`). Only two
+  files leave `meta/` for the image at all, by allowlist, and the build
+  refuses to stage anything carrying private key material while the verifier
+  refuses an image that contains any.
 - **Rotation** — signer reissue is routine and touches no device
   (`docs/design/release-signing.md` §2.2). Rotating the **device keyring**
   is **[proposed]**: `/etc` is inside the verity root, no STATE-backed
@@ -96,7 +100,7 @@ release host (`pkgs/rauc-sign/README.md`).
 - **Negative tests, by path** — `verify/src/checks-root.test.ts` proves both
   directions of the dev-keyring gate: an image carrying a `GENERATED` root
   reports the grade it read rather than failing closed on it, and a
-  keyring that is not byte-equal to `ca/ca.cert.pem` is refused.
+  keyring that is not byte-equal to `meta/rauc/ca.cert.pem` is refused.
 
 ### 1.3 Device TLS identities — owner: release owner (policy), support owner (field) — **[partial]**
 
@@ -156,7 +160,7 @@ ladder levels that would consume such keys are board-specific best effort
 
 ### 1.6 Production private material is never in git — **[implemented]** where checkable
 
-The rule, and its mechanisms: `ca/` and `pkgs/rauc-sign/.devkeys/` are
+The rule, and its mechanisms: `meta/` and `pkgs/rauc-sign/.devkeys/` are
 gitignored, both generators refuse to overwrite existing keys, the pack stage
 fails any build whose factory shadow carries a usable hash
 (`docs/design/access.md` §5.3), and a first-boot settings tree is asserted to
