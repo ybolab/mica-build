@@ -457,6 +457,56 @@ attacker's window by a factor of eight against today's 730 and keeps the
 ceremony count at four a year. It is a worse security answer and a defensible
 operational one.
 
+#### 4a. DECIDED — 2026-09-04: **(a), monthly root access**
+
+The user chose **(a)**. The root CA issues each 35-day signer directly; no
+intermediate is introduced, and `basicConstraints` stays `pathlen:0`.
+
+This plan recommended (b) and named (c) as the fallback; the decision is (a).
+Recorded with its consequences rather than re-argued.
+
+**What it removes.** The time-windowed decision disappears: §P's finding that
+`pathlen:0` forbids an intermediate, and that changing it after a production CA
+exists means a §2.4 fleet rollover, no longer gates the first ceremony. Nothing
+about the PKI shape has to be settled before production material is generated,
+and the ceremony keeps mirroring the tested `gen-dev-keys.sh` chain step for
+step — the property §2.1 relies on.
+
+**What it costs, as this section already priced it.** The root key is handled
+~11×/year instead of ~0.5×. Every handling is an exposure and a custody-record
+entry, and the risk this section named stands unchanged: *the more often a
+ceremony runs the more likely it is to be run casually.*
+
+**Two obligations that follow, and neither existed under (b).**
+
+1. **The ceremony becomes recurring, and PLAN-077 §7's runbook was written for a
+   one-time event.** Under (b) the monthly act is minting a signer from an
+   intermediate the release owner holds; under (a) it is a root ceremony —
+   minutes, witness, sealed medium in and out — eleven times a year. §7 needs a
+   recurring-ceremony section that is short enough to be followed monthly
+   without erosion, and it must say what a monthly run may skip and what it may
+   never skip. Owed to PLAN-077, not to this record.
+
+2. **The expiry warning becomes load-bearing, and it does not exist.** §M0
+   measured that `rauc bundle`'s *"will expire in less than a month!"* never
+   fires in this tree, because `build/src/tools/rauc.ts`'s `bundleArgs` passes
+   no `--keyring`, and that `rauc info --keyring` does not emit it either. Under
+   (b) a missed mint is cheap to repair; under (a) it needs a root ceremony
+   scheduled at short notice, so the fleet's releases stop until one can be
+   convened. Backlog items S2/S3 are therefore not optional hardening under this
+   decision — they are what stops a silent calendar slip from becoming an outage.
+
+**One parameter left open by this choice.** §3 set 35 days partly on ~5 days of
+runway before RAUC's under-a-month warning, on the assumption that a signer
+could be minted on demand from an intermediate. Under (a) the constraint is a
+human ceremony calendar: a 35-day certificate against a monthly ceremony leaves
+about five days of slack, and a ceremony that slips a week stops releases. The
+window may need to widen — 45 days keeps eleven ceremonies a year with a
+fortnight of slack, and costs ten days of attacker-usable time against the 35
+this plan chose. **Not decided here**; it is a parameter of the same shape §3
+already argues, and it should be settled before the first production signer is
+issued rather than after a slipped ceremony discovers it.
+
 ### 5. The clock — what is compared against what, and both directions of failure
 
 **What the device compares against.** RAUC compares the certificate's validity
