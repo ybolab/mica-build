@@ -109,12 +109,35 @@ Implementing the `meta/` seam and its build-time and image-time enforcement.
   are worth naming rather than burying:
 
   - `tests/trust-domain-hygiene-test.sh`'s "the RAUC build surfaces name no TUF
-    key directory or `.pk8` file" now excludes the GLOB spelling `*.pk8`, and
-    only that spelling. `rootfs/build.sh`'s private-key detector lists the
-    key-container extensions in order to REFUSE them, which is the opposite of
-    the RAUC side reaching for TUF material; a grep that cannot tell a refusal
-    from a read would have had exactly one finding and it would have been false.
-    A named path under the TUF key directory still counts.
+    key directory or `.pk8` file" now excludes ONE LINE, BY ITS SHAPE:
+    `rootfs/build.sh`'s private-key detector lists the key-container extensions
+    in order to REFUSE them, which is the opposite of the RAUC side reaching for
+    TUF material, and a grep that cannot tell a refusal from a read has exactly
+    one finding and it is false.
+
+    The first form of this exclusion was `grep -v '\*\.pk8'`, and it was too
+    wide: it drops any line carrying that substring, including
+    `cp "${somewhere}"/*.pk8 "${dest}"` -- a genuine reach, and a glob copy is
+    the MORE natural way to bulk-move key files rather than the less, so the
+    wider exclusion let through exactly the shape somebody would write. It is
+    now the detector's multi-extension case arm, `*.key | *.pk8 | *.p12`,
+    matched with `-F` so both greps read the `|` characters the same way; a `cp`
+    statement cannot carry that sequence. The arm is asserted to exist first,
+    this suite's own rule, so an exclusion that quietly stopped matching cannot
+    keep the negative grep green while removing nothing.
+
+    Driven four ways: green unplanted; RED on a planted
+    `cp "${somewhere}"/*.pk8 "${dest}"`; RED on a planted
+    `cp pkgs/rauc-sign/.devkeys/root.pk8 /tmp/x`; and a refusal naming the stale
+    map when the detector's arm is reduced to `*.pk8`. Each exits 1; the
+    restored tree exits 0.
+
+    **The `.devkeys` half was checked for the same hole and has none**, for a
+    structural reason rather than a lucky one: nothing on the RAUC side names
+    the TUF key directory for any purpose, refusal included, so that half of the
+    grep has no line to make an exception for and no exception to widen. The
+    planted-`.devkeys` run above is what says so rather than the absence of a
+    finding.
   - `tests/rauc-trust-negative-test.sh`'s scratch tree now also carries
     `key-algorithms.env` and `meta.example/`, because the generator reads both.
     That means the suite signs with the algorithm the tree actually ships, so a
