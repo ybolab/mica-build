@@ -90,3 +90,35 @@ statement, and the publication refusal.
 - `cargo test --locked -p mosd -p apid` green in
   `localhost/mos-build-rust:amd64` with `dbus-daemon` installed.
 - `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+
+## Gate results — 2026-09-04
+
+Run in the worktree `/srv/bkd/worktrees/33z9aa5q/hw1jo2un`, on this branch,
+each with its own exit status rather than through a pipe that would mask one.
+
+| Gate | Result |
+|---|---|
+| `(cd verify && bun test)` | **green**, 1268 tests |
+| `(cd build && bun test)` | **green** |
+| `make docs-verify` | **green**, 183 + 448 + 733 + 231 + 43 |
+| `bash tests/release-verify-test.sh` | **green**, 27/27, **11 refusals proven red** through the shipped CLI, each with a message fragment no other refusal carries |
+| `cargo test --locked -p mosd -p apid` | **green** in `ai-agent/hw1jo2un-rust:amd64` (`localhost/mos-build-rust:amd64` + `dbus-daemon`) |
+| `rootfs/build.sh`'s meta staging, both dispositions | **green**: with `meta/GENERATED` present it stages `3 of 3` public-set entries and names the baked marker; with it removed, `2 of 3` and no marker |
+| **A composed x64 image and `bash verify/run.sh --verify --board x64`** | **NOT RUN — reported, not worked around** |
+
+**Why the image gate did not run, and what it would take.** The worktree has no
+`_out`, and `make os-deb-preflight` names what is absent before anything is
+built: the four x64 kernel artefacts under `boards/x64/bsp/out/kernel/`
+(gitignored; `make -C boards/x64/bsp kernel`), and the podman binaries for both
+architectures, which the run would otherwise compile inside a packaging hook at
+roughly three quarters of an hour per architecture, arm64 under emulation. Then
+`make os-debs`, the composition, the image and the verify run. That chain is
+buildable here and is not improvised — but it is hours of shared-daemon work
+while other agents are active, and the pool stamp it produces is invalidated by
+any later commit, so it has to be the last thing done. **It is reported for a
+decision rather than started.**
+
+What that leaves unproven is the pair G1+G2 *over an assembled image*: the
+staging is exercised directly above and the biconditional is exercised over the
+fixture root by `verify`'s own suite, but the two have not been run against each
+other on a real packed root.

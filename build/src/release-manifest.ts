@@ -28,8 +28,18 @@ import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFil
 import { basename, join } from 'node:path'
 import { checkVersion } from './bundle-cli.ts'
 
-/** The manifest schema this tree writes, and the FLOOR the validator holds. */
-export const RELEASE_SCHEMA_VERSION = 1
+/**
+ * The manifest schema this tree writes, and the FLOOR the validator holds.
+ *
+ * 2 is the schema that added the required `trust` block. It is a bump and not
+ * an addition-in-place for the reason the neighbouring snapshot schema had to
+ * relearn (RFCT-302): two shapes claiming one version is the one thing a
+ * schema version exists to make impossible. A version-1 directory assembled
+ * before that block existed is refused by the equality below, saying so --
+ * rather than by a field check saying it "carries no trust block", which reads
+ * like a corrupted manifest instead of an older one.
+ */
+export const RELEASE_SCHEMA_VERSION = 2
 
 /** The channels a release may be published to. A misspelt one is refused. */
 export const RELEASE_CHANNELS = ['development', 'candidate', 'stable'] as const

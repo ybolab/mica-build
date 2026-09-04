@@ -180,8 +180,15 @@ describe('checkReleaseManifest holds the schema, field by field', () => {
 
   const cases: [string, (m: Record<string, unknown>) => unknown, RegExp][] = [
     ['not an object', () => 'nope', /is not a JSON object/],
-    ['a FUTURE schemaVersion: the floor is an equality', m => ({ ...m, schemaVersion: 2 }),
-      /holds the floor at 1/],
+    // Both directions of the equality, and the OLDER one is the case that
+    // now exists: a directory assembled before the trust block was added
+    // carries schemaVersion 1, and it is refused for being version 1 rather
+    // than for missing a field, which reads like a corrupted manifest.
+    ['a FUTURE schemaVersion: the floor is an equality',
+      m => ({ ...m, schemaVersion: RELEASE_SCHEMA_VERSION + 1 }),
+      new RegExp(`holds the floor at ${RELEASE_SCHEMA_VERSION}`)],
+    ['an OLDER schemaVersion: refused as version 1, not as a missing field',
+      m => ({ ...m, schemaVersion: 1 }), /carries schemaVersion 1 and this validator/],
     ['a channel outside the enum', m => ({ ...m, release: { version: '1.2.3', channel: 'nightly' } }),
       /release\.channel "nightly" .* is not one of development\/candidate\/stable/],
     ['a version that is not a plain version string', m => ({ ...m, release: { version: '1 2', channel: 'stable' } }),

@@ -42,7 +42,7 @@ package list comes out of the image's own bill of materials, the versions in
 it come from the mechanisms that stamped them (`build-env/deb/version.sh`,
 `pkgs/*/versions.env` upstream pins), and the source identity comes from git.
 
-## 2. The manifest schema, version 1 — **[implemented]**
+## 2. The manifest schema, version 2 — **[implemented]**
 
 `manifest.json`, validated by `checkReleaseManifest`
 (`build/src/release-manifest.ts`); `schemaVersion` is checked as an
@@ -52,7 +52,7 @@ accepting it would verify less than the writer claimed.
 
 | field | meaning |
 | --- | --- |
-| `schemaVersion` | `1` |
+| `schemaVersion` | `2` — 1 was the schema before the `trust` block below |
 | `release.version` | the release version string (same character class as a bundle version) |
 | `release.channel` | one of `development` / `candidate` / `stable` |
 | `board.name`, `board.profile` | which board this release is for, and the image profile it was built at |
@@ -246,7 +246,7 @@ In the release directory, with the standard coreutils and `jq`:
 ```sh
 sha256sum -c SHA256SUMS
 jq -r '.release.version, .release.channel, .board.name, .source.commit' manifest.json
-jq -e '.schemaVersion == 1' manifest.json
+jq -e '.schemaVersion == 2' manifest.json
 ```
 <!-- release-verify-test: end -->
 
