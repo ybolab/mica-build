@@ -401,6 +401,46 @@ Putting both on one calendar with one owner (the release owner,
 `security-lifecycle.md` §0) buys the operational convenience without buying the
 coupling.
 
+#### 3a. DECIDED — 2026-09-04: the window is **45 days**, not 35
+
+Under §4a's decision (a), the constraint on the window stopped being RAUC's
+warning band and became a **human ceremony calendar**: a signer minted at a
+monthly root ceremony, where a ceremony that slips a week must not stop
+releases. The user set the window at **45 days**.
+
+§3's three reasons were re-checked rather than assumed to carry over. All three
+survive, and one strengthens:
+
+1. **Clock drift** — unchanged in kind and better in degree. 45 days puts §5's
+   *clock-ahead* brick further out of reach of ordinary error.
+2. **Warning runway** — this is the one that improves. 35 days gave roughly five
+   days between RAUC's under-one-month warning and expiry; 45 gives roughly
+   fifteen, which is the difference between a warning that can be acted on
+   inside a monthly cadence and one that arrives with no time to convene a root
+   ceremony. **But see the caveat below: that warning does not currently exist.**
+3. **Out-waiting a compromise** — still weeks, not years. 45 days against the
+   current `-days 730` is a factor of sixteen, where 35 was twenty-one. The
+   attacker's usable time grows by ten days, and that is the whole price.
+
+**Ceremony slack, which is why the number moved.** 45 days against a monthly
+ceremony leaves about a fortnight of slack instead of about five days. Eleven
+ceremonies a year is unchanged. A slipped ceremony becomes a scheduling problem
+rather than a publishing outage.
+
+**The caveat reason 2 rests on, and it is measured.** §M0 established that
+`rauc bundle`'s *"will expire in less than a month!"* **never fires in this
+tree** — `build/src/tools/rauc.ts`'s `bundleArgs` passes no `--keyring`, and
+`rauc info --keyring` does not emit it either. So reason 2 describes runway
+before a warning nobody currently receives. The fifteen days are real; the
+warning is not, until backlog S2/S3 land. Under decision (a) those items are
+already load-bearing (§4a), and this makes them more so: **45 days of runway
+before a warning that is never printed is 45 days of nothing.**
+
+Nothing else in §3 changes. The "one calendar, two commitments" conclusion about
+PLAN-071 §9.6 is unaffected — the reasons it gives are about different keys,
+different domains and different failure visibility, none of which turn on the
+number.
+
 ### 4. Who reissues, and how often the CA key leaves its box
 
 **The tension, stated rather than resolved by assertion.** The value of an
@@ -503,9 +543,8 @@ human ceremony calendar: a 35-day certificate against a monthly ceremony leaves
 about five days of slack, and a ceremony that slips a week stops releases. The
 window may need to widen — 45 days keeps eleven ceremonies a year with a
 fortnight of slack, and costs ten days of attacker-usable time against the 35
-this plan chose. **Not decided here**; it is a parameter of the same shape §3
-already argues, and it should be settled before the first production signer is
-issued rather than after a slipped ceremony discovers it.
+this plan chose. **Decided in §3a**: the window is 45 days, settled before the first
+production signer is issued rather than after a slipped ceremony discovers it.
 
 ### 5. The clock — what is compared against what, and both directions of failure
 
