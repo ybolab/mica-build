@@ -37,9 +37,16 @@
 # THE TRUSTED CA IS MADE BY THE REAL GENERATOR. pkgs/rauc/gen-dev-keys.sh is
 # copied into a scratch tree (it anchors on the Makefile beside its
 # grandparent, so a stub Makefile makes the scratch tree a "repository") and
-# run there — the repository's own ca/ is never touched, and the suite
+# run there — the repository's own meta/ is never touched, and the suite
 # exercises the generator's actual output, GENERATED marker and key modes
 # included. Mutating the generator's CA→signer chaining reddens case 1.
+#
+# Three files come over with it, because the generator reads them and a scratch
+# tree without them is not a repository it can run in: key-algorithms.env, which
+# declares the algorithm of every key it mints, and meta.example/'s manifest,
+# which it instantiates meta/updates/manifest.json from. Copied rather than
+# stubbed, so this suite signs with the algorithm the tree actually ships and
+# a change to that value is exercised here rather than assumed harmless.
 #
 # TOOLING. rauc is not on the host and pkgs/rauc/out-*/ need not be built, so
 # everything cryptographic runs in the pinned Debian trixie container
@@ -64,11 +71,14 @@ IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
 SCRATCH="${REPO_ROOT}/tmp/rauc-trust-neg.$$"
 trap 'rm -rf "${SCRATCH}"' EXIT
 rm -rf "${SCRATCH}"
-mkdir -p "${SCRATCH}/pkgs/rauc" "${SCRATCH}/stage"
+mkdir -p "${SCRATCH}/pkgs/rauc" "${SCRATCH}/meta.example/updates" "${SCRATCH}/stage"
 
-# The scratch "repository": the real generator, anchored by a stub Makefile so
-# it writes its trust root into ${SCRATCH}/ca and not into this checkout.
+# The scratch "repository": the real generator and the two committed files it
+# reads, anchored by a stub Makefile so it writes its material into
+# ${SCRATCH}/meta and not into this checkout.
 cp "${REPO_ROOT}/pkgs/rauc/gen-dev-keys.sh" "${SCRATCH}/pkgs/rauc/gen-dev-keys.sh"
+cp "${REPO_ROOT}/pkgs/rauc/key-algorithms.env" "${SCRATCH}/pkgs/rauc/key-algorithms.env"
+cp "${REPO_ROOT}/meta.example/updates/manifest.json" "${SCRATCH}/meta.example/updates/manifest.json"
 : > "${SCRATCH}/Makefile"
 
 # A minimal verity bundle: one payload file, the format system.conf accepts.
@@ -103,7 +113,9 @@ fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
 
 # The trusted CA, from the repository's own generator.
 bash pkgs/rauc/gen-dev-keys.sh >/dev/null
-[ -f ca/GENERATED ] || { echo "error: the generator left no ca/GENERATED marker" >&2; exit 1; }
+[ -f meta/GENERATED ] || { echo "error: the generator left no meta/GENERATED marker" >&2; exit 1; }
+grep -q '^DOMAINS=.*rauc' meta/GENERATED ||
+    { echo "error: meta/GENERATED does not name the rauc domain it just wrote" >&2; exit 1; }
 
 # The foreign CA: same shape as the production ceremony in
 # docs/design/release-signing.md §2.1, keys nobody in the fixture trusts.
@@ -126,7 +138,7 @@ mkforeign() {
 mkforeign foreign-ca "attacker"
 mkforeign third-ca "bystander"
 
-rauc bundle --cert ca/signer.cert.pem --key ca/signer.key.pem stage good.raucb >/dev/null 2>&1
+rauc bundle --cert meta/rauc/signer.cert.pem --key meta/rauc/signer.key.pem stage good.raucb >/dev/null 2>&1
 rauc bundle --cert foreign-ca/signer.cert.pem --key foreign-ca/signer.key.pem stage foreign.raucb >/dev/null 2>&1
 
 # `rauc info` with signature verification on, as the bundle builder runs it.
@@ -136,7 +148,7 @@ info() { rauc info --keyring "$1" "$2" 2>&1; }
 
 # Case 1, the control the whole suite hangs off: the generator's chain
 # verifies. If this fails, every refusal below would be refusing garbage.
-if out="$(info ca/ca.cert.pem good.raucb)"; then
+if out="$(info meta/rauc/ca.cert.pem good.raucb)"; then
     pass "a bundle signed by the trusted signer verifies against the trusted keyring"
 else
     fail "the trusted chain itself does not verify: ${out}"
@@ -144,7 +156,7 @@ fi
 
 # Case 2: foreign CA refused — and refused for trust, which the second half
 # proves by showing the same bundle is fine against the keyring it chains to.
-if out="$(info ca/ca.cert.pem foreign.raucb)"; then
+if out="$(info meta/rauc/ca.cert.pem foreign.raucb)"; then
     fail "a bundle signed by a foreign CA verified against the trusted keyring"
 else
     case "${out}" in
@@ -170,7 +182,7 @@ SIGSIZE=$(od -An -tu8 --endian=big -j $((SIZE - 8)) -N8 "${BUNDLE}" | tr -d ' ')
 [ "${SIGSIZE}" -gt 0 ] && [ "${SIGSIZE}" -lt "${SIZE}" ] || {
     echo "error: implausible CMS signature size ${SIGSIZE} in ${BUNDLE}" >&2; exit 1; }
 dd if="${BUNDLE}" of=sig.der bs=1 skip=$((SIZE - 8 - SIGSIZE)) count="${SIGSIZE}" status=none
-openssl cms -verify -inform DER -in sig.der -CAfile ca/ca.cert.pem -out manifest.signed 2>/dev/null
+openssl cms -verify -inform DER -in sig.der -CAfile meta/rauc/ca.cert.pem -out manifest.signed 2>/dev/null
 VHASH="$(sed -n 's/^verity-hash=//p' manifest.signed)"
 VSALT="$(sed -n 's/^verity-salt=//p' manifest.signed)"
 VSIZE="$(sed -n 's/^verity-size=//p' manifest.signed)"
@@ -205,7 +217,7 @@ flip_byte tampered-payload.raucb 100
 cmp -s good.raucb tampered-payload.raucb && { echo "error: the payload mutation changed nothing" >&2; exit 1; }
 # Recorded, not merely tolerated: the signature layer alone accepts this file,
 # which is exactly why the verity layer below must exist and be checked.
-if info ca/ca.cert.pem tampered-payload.raucb >/dev/null; then
+if info meta/rauc/ca.cert.pem tampered-payload.raucb >/dev/null; then
     pass "recorded: rauc info alone accepts a payload flip in a verity bundle (payload is verified at install, by dm-verity)"
 else
     fail "rauc info now hashes the verity payload; this suite's layer model is stale — re-read it"
@@ -230,7 +242,7 @@ fi
 cp good.raucb tampered-sig.raucb
 flip_byte tampered-sig.raucb $((SIZE - 100))
 cmp -s good.raucb tampered-sig.raucb && { echo "error: the signature mutation changed nothing" >&2; exit 1; }
-if out="$(info ca/ca.cert.pem tampered-sig.raucb)"; then
+if out="$(info meta/rauc/ca.cert.pem tampered-sig.raucb)"; then
     fail "a bundle whose signed region was edited after signing still verifies"
 else
     case "${out}" in
@@ -244,7 +256,7 @@ fi
 # Case 5: the §2.3 rollover overlap. A keyring carrying the outgoing CA and
 # the incoming CA concatenated accepts bundles chained to either — and still
 # refuses a third party, because coexistence is not promiscuity.
-cat ca/ca.cert.pem foreign-ca/ca.cert.pem > rollover-keyring.pem
+cat meta/rauc/ca.cert.pem foreign-ca/ca.cert.pem > rollover-keyring.pem
 rauc bundle --cert third-ca/signer.cert.pem --key third-ca/signer.key.pem stage third.raucb >/dev/null 2>&1
 if info rollover-keyring.pem good.raucb >/dev/null; then
     pass "rollover keyring (old+new concatenated) accepts a bundle signed under the old CA"
@@ -273,7 +285,7 @@ docker run --rm --label ai-agent=true \
 # What the generator wrote, asserted from outside the container: the marker
 # that keeps a generated root recognisable (verify/'s packed-keyring gate keys
 # off it) and the restrictive mode on the CA key.
-[ -f "${SCRATCH}/ca/GENERATED" ] || { echo "FAIL: gen-dev-keys.sh left no GENERATED marker" >&2; exit 1; }
-KEY_MODE="$(stat -c%a "${SCRATCH}/ca/ca.key.pem")"
+[ -f "${SCRATCH}/meta/GENERATED" ] || { echo "FAIL: gen-dev-keys.sh left no GENERATED marker" >&2; exit 1; }
+KEY_MODE="$(stat -c%a "${SCRATCH}/meta/rauc/ca.key.pem")"
 [ "${KEY_MODE}" = "600" ] || { echo "FAIL: ca.key.pem mode is ${KEY_MODE}, not 600" >&2; exit 1; }
 echo "PASS: the generated trust root carries its GENERATED marker and a 0600 CA key"

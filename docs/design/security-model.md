@@ -73,8 +73,8 @@ A release is signed twice, by two unrelated hierarchies
 - **RAUC CMS** — **[implemented]** on the build/verify side: `rauc bundle`
   signs the bundle payload with an X.509 signer chained to a CA; the device
   verifies against `/etc/rauc/keyring.pem`, staged at build time from the
-  repository-root `ca/` seam. A development-grade CA is unmissably marked
-  (`ca/GENERATED`, `pkgs/rauc/gen-dev-keys.sh`) and the image verifier fails a
+  repository-root `meta/rauc/` seam. A development-grade CA is unmissably marked
+  (`meta/GENERATED`, `pkgs/rauc/gen-dev-keys.sh`) and the image verifier fails a
   marked root and names it development-grade in the verdict
   (`verify/src/checks-root.ts`, both directions proven by
   `verify/src/checks-root.test.ts`).
@@ -89,7 +89,7 @@ A release is signed twice, by two unrelated hierarchies
 
 The honest claim today: production-grade update authenticity is *buildable* —
 the tooling accepts real keys, the ceremonies are written — and *not fielded*.
-A device built from an empty `ca/` trusts a development CA and says so; a
+A device built from an empty `meta/` trusts a development CA and says so; a
 device has no TUF anchor at all. Until the anchor provisioning channel ships,
 boundary (b) protects the release pipeline's outputs, not a fielded device's
 inputs.

@@ -9,13 +9,20 @@ _out/
 pkgs/rauc/.devkeys/
 pkgs/rauc-sign/.devkeys/
 
-# The trust root the build signs bundles with and stages into the image at
-# /etc/rauc/keyring.pem -- the single seam by which a CA enters a build. It is
-# either production material an operator put there or a development-grade one
-# pkgs/rauc/gen-dev-keys.sh generated (marked by ca/GENERATED). Neither is
-# ever committed: a committed signing key would make every device trust
-# anything anyone builds, and a committed production CA cert would let this
-# repository's history decide what the fleet trusts.
+# Everything a release needs to be configured and signed: the RAUC CA and its
+# signer (meta/rauc/), the update configuration and the package signing key
+# (meta/updates/), and the GENERATED marker. It is either production material
+# an operator put there or a development-grade one pkgs/rauc/gen-dev-keys.sh
+# generated (marked by meta/GENERATED). Neither is ever committed: a committed
+# signing key would make every device trust anything anyone builds, and a
+# committed production CA cert would let this repository history decide what
+# the fleet trusts. meta.example/ is the committed statement of the shape.
+/meta/
+
+# Retired trust-root location: PLAN-070 absorbed ca/ into meta/rauc/. The entry
+# stays as a TOMBSTONE, exactly as pkgs/rauc/.devkeys/ above does, because a
+# stale ca/ on a developer machine still holds a private CA key and this is
+# what stops an absent-minded `git add -A` committing it after the move.
 /ca/
 
 # The RAUC system configuration is RENDERED from pkgs/rauc/system.conf.in and
@@ -25,7 +32,7 @@ pkgs/rauc-sign/.devkeys/
 # away from it.
 rootfs/overlay/etc/rauc/system.conf
 
-# The image's RAUC keyring is STAGED from ca/ by rootfs/build.sh, which
+# The image's RAUC keyring is STAGED from meta/rauc/ by rootfs/build.sh, which
 # refuses one found in the overlay -- the overlay is not a source of trust.
 # The entry stays so that a copy left over from before that rule can never be
 # committed into the one directory the build copies wholesale into the image.

@@ -115,14 +115,14 @@ APT 直接拒绝这次事务。这个计数是在*解析出来的集合*上做�
 | 接缝 | 归谁 | 决定什么 |
 |---|---|---|
 | `/etc/ssl/certs/ca-certificates.crt`、`/usr/share/ca-certificates` 下的锚点、`/etc/ca-certificates.conf` | `mos-ca-trust`——**包载荷** | **TLS 信任库**：设备向外发起连接时相信哪些证书颁发机构 |
-| `/etc/rauc/keyring.pem` | **不归任何包**；由 `rootfs/build.sh` 从 `ca/ca.cert.pem` staged 进去 | **RAUC 信任根**：这台设备愿意安装谁签名的更新包 |
+| `/etc/rauc/keyring.pem` | **不归任何包**；由 `rootfs/build.sh` 从 `meta/rauc/ca.cert.pem` staged 进去 | **RAUC 信任根**：这台设备愿意安装谁签名的更新包 |
 
 keyring 是任何包都不可以携带的、每次构建各自的信任材料：一个包是一份产物、装进
-很多个镜像，而操作者放进仓库根 `ca/` 的那个 CA 是关于*这一次*构建的决定。所以
-`build.sh` 自己把它复制进组合上下文，并**拒绝**留在
+很多个镜像，而操作者放进仓库根 `meta/rauc/` 的那个 CA 是关于*这一次*构建的决定。
+所以 `build.sh` 自己把它复制进组合上下文，并**拒绝**留在
 `rootfs/overlay/etc/rauc/keyring.pem` 的 keyring——overlay 会被整份复制
 进每一个镜像，留在那里的文件就是一个没人选择过的信任根——而当材料旁边的
-`ca/GENERATED` 标记它是开发级时发出警告。校验期读的是同一个标记，并把读到的
+`meta/GENERATED` 标记它是开发级时发出警告。校验期读的是同一个标记，并把读到的
 等级写进判定。
 
 #### 两条路径不一致的地方，对的是组合这一条
@@ -167,27 +167,40 @@ MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh   # 给 cx3576
 localhost/mos-build-base:amd64, which is not in the local docker image
 store`），而不是去一个叫 `localhost` 的 registry 拉取。
 
-**信任根：`ca/`。** 仓库根目录下的 `ca/` 是签名 CA 进入构建的唯一入口，已
-gitignore。`build/run.sh --bundle` 用 `ca/signer.cert.pem` 和
-`ca/signer.key.pem` 签名；`rootfs/build.sh` 把 `ca/ca.cert.pem` 放进镜像
-的 `/etc/rauc/keyring.pem`——镜像因此能安装同一批构建出来的 bundle。
+**信任根：`meta/rauc/`。** 仓库根目录下的 `meta/` 存放一次发布所需的全部配置与
+签名材料，已 gitignore；其中 `meta/rauc/` 是签名 CA 进入构建的唯一入口。
+`build/run.sh --bundle` 用 `meta/rauc/signer.cert.pem` 和
+`meta/rauc/signer.key.pem` 签名；`rootfs/build.sh` 把 `meta/rauc/ca.cert.pem`
+放进镜像的 `/etc/rauc/keyring.pem`——镜像因此能安装同一批构建出来的 bundle。
 
-不需要先跑任何东西。构建发现 `ca/` 不存在、或四个文件缺了任何一个时，会在那里
-生成一套开发级信任根，打印一条醒目的通知，然后继续。`make os-devkeys` 是同一件
-事的手动入口，可以在构建前先做；`bash pkgs/rauc/gen-dev-keys.sh --force` 用
-于轮换，代价是所有已用旧密钥签名的 bundle 都会验签失败。
+离开 `meta/` 进入镜像的只有两个文件，由 `rootfs/build.sh` 里的允许清单点名：
+上面那份证书，以及 `meta/updates/manifest.json`。所有私钥都留在构建主机上，并由
+两道检查守住——构建拒绝暂存清单以外的路径、以及任何带私钥材料的文件；镜像校验器
+则拒绝一个含有私钥的成品镜像，无论它是从哪条路径进去的。
 
-生成器会在材料旁边留下 `ca/GENERATED`。这个标记让"生成的信任根"和"提供的生产
-材料"在此后每一次构建里都可区分，而不只是在生成它的那一次。
-`rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为唯一依据:
-没有任何构建期变量可以声明一个台架镜像。生产发布把真实材料放进 `ca/`，
+不需要先跑任何东西。构建发现 `meta/` 不存在、或四个 RAUC 文件缺了任何一个时，会
+在那里生成一套开发级信任根，打印一条醒目的通知，然后继续。`make os-devkeys` 是
+同一件事的手动入口，可以在构建前先做；`bash pkgs/rauc/gen-dev-keys.sh --force`
+用于轮换，代价是所有已用旧密钥签名的 bundle 都会验签失败。更新包签名密钥属于另一
+个域，**需要显式开启**：`bash pkgs/rauc/gen-dev-keys.sh --domain updates`——一把
+没有任何已发布仓库用它签过东西的开发密钥，锚定不了任何信任关系。
+
+生成器铸造的每一把密钥用什么签名算法，是 `pkgs/rauc/key-algorithms.env` 里声明
+的值，每一行旁边写着理由；`rootfs/build.sh` 拒绝角色允许集合以外的声明值，也拒绝
+`meta/` 里超出该集合的材料。改算法是改那个文件的一行；放宽集合是改代码，并且是对
+某个验证器作出的断言。
+
+生成器会在材料旁边留下 `meta/GENERATED`，并在其中写明它生成了哪些域。这个标记让
+"生成的材料"和"提供的生产材料"在此后每一次构建里都可区分，而不只是在生成它的那
+一次。`rootfs/build.sh` 的"镜像信任的是开发 RAUC keyring"警告就以它为唯一依据:
+没有任何构建期变量可以声明一个台架镜像。生产发布把真实材料放进 `meta/`，
 并且不带这个标记。
 
 有两条规则没变。`CERT`/`KEY`/`KEYRING` 仍然优先于约定——三个都设置时不会生成
-任何东西，也不会读 `ca/` 里的任何文件。放在
+任何东西，也不会读 `meta/rauc/` 里的任何文件。放在
 `rootfs/overlay/etc/rauc/keyring.pem` 的 keyring 仍然被拒绝，而且现在是
 无条件拒绝：overlay 会被整份复制进每一个镜像，留在那里的文件就是一个没人选择过
-的 CA，而 `ca/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，
+的 CA，而 `meta/rauc/` 是唯一被认可的来源。由于现在每个镜像都带 keyring，
 `make os-verify-<board>` 对两种等级的材料都通过，并在判定里写明它读到的是哪一种。
 
 keyring 是 mos 根里唯一**不是**包载荷的路径，而且它和 `mos-ca-trust` 提供的
@@ -199,7 +212,7 @@ TLS 信任库是两条不同的接缝——1.1 节把两者并排列出。
 
 ```sh
 MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh
-bash pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
+bash pkgs/rauc/gen-dev-keys.sh   # 可选：meta/ 不存在时构建会自己生成
 MOS_BOARD=x64 bash pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash pkgs/podman/build.sh
 make os-debs                                   # 包仓库，以及它的索引
@@ -255,7 +268,7 @@ amd64 主机有三条路到达 arm64，下面每一步恰好用其中一条：
 
 ```sh
 MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh
-bash pkgs/rauc/gen-dev-keys.sh   # 可选：ca/ 不存在时构建会自己生成
+bash pkgs/rauc/gen-dev-keys.sh   # 可选：meta/ 不存在时构建会自己生成
 make cx3576-uboot cx3576-uboot-mos
 make cx3576-kernel
 make os-rauc

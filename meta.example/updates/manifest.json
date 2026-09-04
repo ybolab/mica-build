@@ -1,0 +1,21 @@
+{
+  "schema": "mos/meta/v1",
+
+  "product": { "vendor": "example", "model": "mos-appliance" },
+
+  "update": {
+    "source": null,
+    "channel": "stable",
+    "policy": "check",
+    "checkIntervalMinutes": 1440
+  },
+
+  "trust": {
+    "signingKeys": [],
+    "signingKeyIds": []
+  },
+
+  "http": { "credentialHosts": [] },
+
+  "fleet": { "enabled": false, "url": null }
+}

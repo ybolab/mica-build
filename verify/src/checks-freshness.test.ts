@@ -97,7 +97,7 @@ function world(board = x64, w: World = {}): Fixture {
     tools,
     workDir: root,
     outDir: join(out, board.name),
-    caDir: join(out, 'ca'),
+    metaDir: join(out, 'meta'),
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition lookup'),
     fatSlot: async () => refuse('FAT slot'),
