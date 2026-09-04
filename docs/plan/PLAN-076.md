@@ -34,8 +34,11 @@ the middle one:
 
 From PLAN-072, verbatim in force:
 
-- **The switch is off by default** and its enabling half is baked
-  (`fleet.enabled` and `fleet.url` in `meta/updates/manifest.json`, §2).
+- **The switch is off by default**, and `meta/updates/manifest.json` carries the
+  **defaults** for `fleet.enabled` and `fleet.url` (§2). **Amended 2026-09-04**:
+  this read *"its enabling half is baked"*. Both are now overridable in
+  `/mos/config/fleet.json` (PLAN-072 §8, PLAN-070 §5.3); §11 below is what that
+  costs this record, and it is three sentences, not a redesign.
 - **Device-initiated outbound only, no inbound port, ever** (§3).
 - **Autonomy during loss of service is a product promise** (§6, and §7a
   answer 4 — the plane *"assists and never gates local execution"*). *"There is
@@ -296,10 +299,16 @@ states.**
    switch, and then executed every cadence for the life of the device. A reason
    that rests on a choice made per bundle cannot be transplanted onto a
    standing one.
-2. **The recipient is chosen there and baked here.** §10 of the same document
-   instructs the operator to *"verify the recipient and case"* before
-   transferring a snapshot. The report's recipient is the baked `fleet.url`,
-   verified once at enrolment and never again.
+2. **The recipient is chosen per act there and standing here.** §10 of the same
+   document instructs the operator to *"verify the recipient and case"* before
+   transferring a snapshot. The report's recipient is `fleet.url`, verified once
+   at enrolment and never again. **Amended 2026-09-04**: this said *"the baked
+   `fleet.url`"*, and the value is now overridable — which strengthens the point
+   rather than weakening it. A recipient a write can change is verified *less*
+   per act than a baked one, so the snapshot rule's per-act verification is even
+   further from transplantable, and the conclusion holds a fortiori. What the
+   change does affect is §6's status route, which must report the recipient the
+   device is actually using; that is §11.
 3. **A snapshot is a moment; a report is a series.** §10 again: *"Redaction
    reduces exposure; it does not make the remaining device identity and network
    topology public."* One snapshot's topology is a moment the operator
@@ -320,9 +329,13 @@ counter would make each bump lie about the other.
 ### 5. Cadence, and what happens when the plane is unreachable
 
 **Cadence.** Default **900 seconds** (15 minutes), from `fleet.reportIntervalSeconds`
-in the same baked `meta/updates/manifest.json` block that holds `fleet.enabled`
-and `fleet.url` (PLAN-072 §2). **Baked and never plane-supplied** — a cadence
-the plane could set is a response the device acts on, which is §9. A code floor
+in the same `meta/updates/manifest.json` block that holds `fleet.enabled` and
+`fleet.url` (PLAN-072 §2). **Baked and never plane-supplied** — a cadence the
+plane could set is a response the device acts on, which is §9. **The 2026-09-04
+amendment does not move this key**: PLAN-070 §5.1's table gives `fleet.enabled`
+and `fleet.url` a layer-2 override and gives the cadence none, deliberately. An
+operator-set cadence was not asked for, and the reason it is baked is about the
+*plane* setting it, which an operator override would not change either way. A code floor
 of **60 seconds** clamps any baked value; a build that asks for less gets 60 and
 a refusal at build time.
 
@@ -417,8 +430,11 @@ starts the outbound connection at all.
 
 *Where it lives.* `/mos/config/fleet.json`, the document PLAN-072 §2 already
 creates for the administrator's switch, gaining one key. One document per
-reconciler is the namespace's rule and fleet is one reconciler. The URL stays
-baked and is still not in it.
+reconciler is the namespace's rule and fleet is one reconciler. **Amended
+2026-09-04**: this ended *"The URL stays baked and is still not in it"*. The URL
+is in it, as an override of a baked default (PLAN-072 §8), so the document now
+carries three keys — `enabled`, `reporting` and `url`. It carries no trust
+anchor and cannot: naming one is a load error (PLAN-070 §5.3.5).
 
 *The cost, named.* Two switches means four states, and one of them —
 enabled, reporting off — the plane must render as a distinct thing rather than
@@ -429,8 +445,11 @@ decision.
 **Legible on the device, without a network capture.** Two read-only routes on
 apid, both authenticated:
 
-- **`GET /api/v1/fleet/status`** — both switch states, the plane URL from the
-  baked manifest, registration state (including **registered-and-refused**,
+- **`GET /api/v1/fleet/status`** — both switch states, the **effective** plane
+  URL with the baked default beside it (**amended 2026-09-04**: this said "the
+  plane URL from the baked manifest", which after PLAN-072 §8 would report a
+  plane the device is not talking to and would make this route's whole purpose
+  false), registration state (including **registered-and-refused**,
   which PLAN-072 §7a answer 6 requires be visible), last successful report,
   last error and its class, backoff level, buffered report count, cumulative
   `gapReports`, and the report schema version.
@@ -463,8 +482,8 @@ record without a telemetry feed.
 **Not enabled means nothing happens — and "nothing" is the literal
 requirement.** The off state is not "reports are suppressed", it is **no
 outward activity of any kind**: no registration, no report, no connection
-attempt, no retry timer, no name resolution of the baked URL, and no process
-holding an enrolment credential. §7's separate `fleetd.service` is what makes
+attempt, no retry timer, no name resolution of the **configured** URL, and no
+process holding an enrolment credential. §7's separate `fleetd.service` is what makes
 this expressible rather than aspirational — off is a unit that is not running,
 which an operator confirms with `systemctl is-active` and which leaves nothing
 to audit.
@@ -472,8 +491,13 @@ to audit.
 **This is a testable claim and the backlog must treat it as one.** A negative
 test belongs beside the positive path: with the fleet switch off, over a window
 that spans more than one cadence interval and at least one boot, assert that the
-unit is inactive, that no socket to the baked host is opened and that the baked
-hostname is never resolved. A default-off feature whose off state was never
+unit is inactive, that no socket to the **configured** host is opened and that
+the **configured** hostname is never resolved. **Amended 2026-09-04**: both
+words were "baked". Against an overridable URL (PLAN-072 §8) a test that watches
+the baked hostname watches a host the device may never have intended to use, and
+passes while the device dials somewhere else — a check that cannot fail on the
+defect it exists for. The test resolves the effective value, and covers a
+re-pointed device as well as a default one. A default-off feature whose off state was never
 observed is the shape this project has already been bitten by elsewhere — an
 absence is not a decision until something checks it.
 
@@ -564,8 +588,8 @@ Retention, aggregation, the tenant model and the UI are the server project's
 and are not designed here. What is pinned is what a device in the field cannot
 change later.
 
-- **Transport.** HTTPS `POST` to a path under the baked `fleet.url`. Two
-  endpoints in total across A and B: register (PLAN-072) and report. The report
+- **Transport.** HTTPS `POST` to a path under the **effective** `fleet.url`.
+  Two endpoints in total across A and B: register (PLAN-072) and report. The report
   endpoint accepts **an array**, so a buffer flush is one request.
 - **Versioning: the device declares, the plane adapts, and there is no
   negotiation.** Every report carries `schemaVersion`. The plane must accept
@@ -620,7 +644,7 @@ Specifically excluded, and each of these is a request that will be made:
 **And the one that will not look like C at all: uploading the diagnostic
 snapshot.** It is the obvious next step once a channel exists, and it is the
 whole of §4 undone in one commit — journal lines, site addresses and the machine
-id, on a cadence, to a baked recipient, under a switch that was flipped for
+id, on a cadence, to a standing recipient, under a switch that was flipped for
 something else. If snapshot upload is wanted it is a **per-act,
 operator-initiated push** with its own consent, and that is a new record.
 
@@ -672,6 +696,60 @@ recommended against, with what replaces them.
    the NAT-traversing channel PLAN-072 §4 defers. The 60-second code floor (§5)
    is where that boundary is enforced, and **a request for anything faster is a
    new record, not a configuration change.**
+
+### 11. The plane URL becomes overridable — amendment, 2026-09-04
+
+The user requires that the fleet control-plane URL be changeable. PLAN-070 §5.3
+is the decision, PLAN-072 §8 prices the redirect; this record's share is small
+and precise, because **the boundary this plan exists to draw does not depend on
+who is listening.**
+
+**Why the rule survives untouched.** §1's four questions decide what may leave
+the device, and none of them asks about the recipient. §2's set is the answer to
+those questions. §4's containment invariant — *no field the snapshot schema drops
+or marks identifying may appear in a report, at any depth* — is checkable at the
+leaf-name level over a constant **in the image**. A redirect changes the
+destination and not one byte of the contents, so what a hostile plane learns is
+exactly what the vendor plane would have learned: identity plus coarse state, no
+network values, no secrets, no free text. **That bound is the reason PLAN-072 §8
+can price the redirect as a disclosure rather than a compromise**, and it is
+worth stating here that it holds because the allowlist was put in the image and
+not because the address was baked.
+
+**§4's second argument gets stronger, not weaker.** It contrasted the diagnostic
+snapshot's per-act recipient verification with a report's standing one. An
+overridable recipient is verified *less* per act than a baked one, so the
+contrast widens and the conclusion — that the snapshot's justification cannot be
+transplanted — holds a fortiori. The word "baked" in it was doing rhetorical
+work it did not need; §4 now says "standing", which is what the argument was
+always about.
+
+**Two things this record owes, and they are the reason the amendment is not
+free here:**
+
+1. **`GET /api/v1/fleet/status` must report the effective URL** (§6). It said
+   "from the baked manifest". A status route whose whole purpose is answering
+   *is this device talking to anyone, and to whom* must not answer with a value
+   the device is not using. Both values are reported — effective and baked —
+   because "this device is not on its default plane" is the fact an operator
+   needs and neither value states it alone. B9 carries the gate.
+2. **The off-state negative test must resolve the configured host** (§6a). This
+   is the sharper of the two: the test asserts that nothing is dialled and
+   nothing is resolved, and it names the host it watches. Watching the baked
+   host on a re-pointed device is a test that passes while the thing it forbids
+   happens. B8 carries it.
+
+**And one it inherits rather than owns**: a URL change discards the enrolment
+credential before the first dial at the new address (PLAN-072 §2 and C1). The
+credential lives on STATE and `fleetd` holds it, so this record's §7 is where
+the discard happens, but the rule belongs to the registration plan.
+
+**Not changed by this amendment**: §1's rule, §2's field set, §3's exclusion,
+§4's invariant, §5's cadence and buffer (the cadence key stays baked and is not
+given an override, §5), §6's two nested switches and their defaults, §7's
+separate `fleetd` and its privilege posture, §8's versioning rule, §9's
+exclusions and the adversarial-response test, and §10's three recommendations
+against B as asked.
 
 ## Risks
 
@@ -741,8 +819,8 @@ through those on PLAN-070 F5.
 | B5 | `fleetd`: unit, dedicated uid, hardening, the D-Bus policy change, the outbound client | M | the policy's negative test asserts fleetd's uid cannot call `GetSettings`, `ReportHealth` or `InstallUpdate` |
 | B6 | Cadence, the 60 s floor, the change-trigger set and its coalescing, jittered recovery | S | a build asking for less than 60 s is refused; a flapping component produces at most one report per minute |
 | B7 | The buffer: bounds, oldest-first drop, `gapReports`, the counter reservation | M | both bounds driven to their limit; a crash mid-send does not stall the counter; steady state performs no writes |
-| B8 | `fleet.reporting` in `/mos/config/fleet.json`, and off meaning the unit is stopped | S | reporting off with `fleet.enabled` on is a distinct, reported state |
-| B9 | `GET /api/v1/fleet/status` and `GET /api/v1/fleet/report/preview` | M | preview and sent payload come from one producer; refused registration is visible |
+| B8 | `fleet.reporting` in `/mos/config/fleet.json`, and off meaning the unit is stopped; **§6a's negative test resolves the configured host, not the baked one** (§11) | S | reporting off with `fleet.enabled` on is a distinct, reported state; the off-state test is RED on a device that dials a **re-pointed** host, not only on one that dials the baked host |
+| B9 | `GET /api/v1/fleet/status` and `GET /api/v1/fleet/report/preview`; the status route reports the **effective** plane URL with the baked default beside it (§6, §11) | M | preview and sent payload come from one producer; refused registration is visible; a re-pointed device reports the address it is dialling and that it differs from the baked default |
 | B10 | The adversarial-response test (§9) | S | an extra field, a command, a cadence and a bundle URL in a response change nothing but the counter |
 | B11 | Clock-class TLS failure classification, and `fleetd` ordered after `sysinit.target` | S | a device below the certificate floor reports a clock error, not a network error |
 | B12 | Console: reporting switch, buffer depth, last send, last error | S | — |
@@ -775,6 +853,11 @@ Approval would mean agreeing that:
   is not negotiable by the plane;
 - §6's two nested switches are worth their four-state cost, and the preview
   route is the operator's answer to "what is this device sending";
+- **amended 2026-09-04 (§11)** — the plane URL is an overridable default
+  (PLAN-072 §8), the rule and the field set are untouched by that because the
+  allowlist is in the image and not a property of the recipient, and this record
+  owes two things in exchange: the status route reports the **effective** URL,
+  and §6a's negative test resolves the **configured** host;
 - §7's separate `fleetd` is worth a third daemon, and the payload is built in
   mosd so that no process holds both the state tree and the outbound credential;
 - §9's exclusions are the boundary, enforced by the adversarial-response test;
@@ -795,7 +878,7 @@ ownership and cost gate is unchanged.
 2. **Report the whole diagnostic snapshot on a cadence.** Rejected, and named
    because it is the cheapest thing to build: it reuses a finished collector and
    a finished redaction boundary. It is wrong for the three reasons in §4 —
-   standing consent, a baked recipient, and a series rather than a moment — and
+   standing consent, a standing recipient, and a series rather than a moment — and
    §9 names it as the accretion path that will not look like C.
 3. **A denylist instead of an allowlist** — send the state tree minus a list of
    forbidden fields. Rejected: `pkgs/mosd/apid/src/redact.rs` states its own
@@ -858,3 +941,29 @@ no outward activity of any kind and is a testable claim.
 Implementation is gated on PLAN-072's C1-C3 and through those on PLAN-070's seam. B is
 outside the 1.0 milestone (PLAN-037): approving the design does not put it on the 1.0
 path.
+
+### Amended — 2026-09-04: the plane URL becomes overridable
+
+The user requires that the fleet control-plane URL be changeable. PLAN-070 §5.3
+is the decision, PLAN-072 §8 prices the redirect, and §11 above is this record's
+share.
+
+**The rule and the field set do not move**, because §1's four questions never ask
+who is listening and §4's containment invariant is checked against a constant in
+the image. A redirect changes the destination and not the contents — which is
+what lets PLAN-072 §8 price it as a bounded disclosure rather than a compromise,
+and the bound holds because the allowlist is baked, not because the address was.
+
+**Two surfaces do move, and both were checks that would have gone quietly
+wrong**: §6's status route reported "the plane URL from the baked manifest",
+which on a re-pointed device answers about a plane it is not talking to; and
+§6a's off-state negative test watched the **baked** host, which on a re-pointed
+device passes while the device dials elsewhere. B9 and B8 carry them.
+
+**Edited in place**: the inherited-facts list, §4's second argument (whose
+conclusion holds a fortiori and whose word "baked" became "standing"), §5's
+cadence note, §6's document contents and status route, §6a's off-state wording
+and its test, §8's transport, §9's and Alternative 2's "baked recipient", B8, B9
+and one approval-boundary clause. **Unchanged**: §1, §2, §3, §7, §10, and every
+other slice.
+

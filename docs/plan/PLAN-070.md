@@ -687,6 +687,24 @@ network, the Wi-Fi networks, the ssh switch, the broker policy and the time
 settings to their defaults, exactly as it does today, and it does so by clearing
 one directory instead of by rebuilding a tree field by field.
 
+**And after §5.3 the two addresses join that list, which is a recovery path and
+a footgun in the same motion — 2026-09-04.** Tiers 1 and 3 re-seed
+`/mos/config/`, so both return the update source and the fleet plane to their
+baked defaults; tier 2 leaves them; tier 4 clears them with everything else.
+**No new mechanism, and none is wanted**: the disposition was decided for the
+directory, and the addresses are occupants of it. Two things follow and F11 owes
+both to a reader:
+
+- **It is the recovery path.** An operator who re-pointed a device at a server
+  that is now wrong gets back to the shipped configuration with a tier the
+  device already has, without an image and without physical access.
+- **It is a footgun exactly where the baked default is `null`.** For an
+  integrator build whose `meta/` names no server — the committed example's state
+  (§7) — a tier-1 or tier-3 reset does not return the device to *a different*
+  server, it returns it to **no** server, and to fleet **off**. A reset that
+  silently stops a device updating is a worse support call than a reset that
+  silently changes its channel, and it is the same tier that produces both.
+
 **One shipped safety property must survive the mechanism change, and it is easy
 to drop.** `reset.rs`'s re-seeding function builds the post-reset tree from
 `Settings::default()` and then names the survivors, and its own comment states
@@ -704,7 +722,10 @@ reason for the old shape can be lost with it.
 **The finer-grained action stays useful.** *Return to the baked default
 channel* remains an explicit action on the update surface — clearing the
 operator layer — because an operator who wants their channel back should not
-have to spend a whole tier-1 reset on it. A reset tier is not the place to
+have to spend a whole tier-1 reset on it. **After §5.3 the same action covers
+the address**: clearing the operator layer per key is what returns either URL to
+its baked default, and it is the reason the reset tiers are not the only route
+back. A reset tier is not the place to
 discover a channel change; it is now merely also not the place where one
 silently survives.
 
@@ -724,37 +745,54 @@ than the slogan.
 
 **Per-build, and not changeable on a running device:**
 
-- the update source URL (`update.source`);
 - the trust anchors — the RAUC keyring staged from `meta/rauc/ca.cert.pem`,
   and the trusted package keys in the baked manifest's `trust.signingKeys`.
 
+That list held a third entry, the update source URL, until **§5.3 (2026-09-04)**
+moved it. Both addresses this record configures — `update.source` and
+`fleet.url` — are now **defaults** that layer 2 overrides, and the anchors are
+what stays behind. §5.3 is the argument; the paragraphs below are marked where
+it changed them.
+
 **Operator-changeable, with no new image, through the layer of §5.1:**
 
+- the **update source URL** and the **fleet plane URL** (§5.3);
 - the **channel**;
 - `policy` (`off | check | auto`), `checkIntervalMinutes`, `rebootPolicy`;
 - the maintenance windows, the network mode and the reboot-gate keys, which
   were never baked at all.
 
-The line is **what the device talks to and what it believes** versus **what it
-does about it**. Changing the server or an anchor is a trust decision and rides
-a release; changing the channel or the schedule is an operating decision and
-rides one authenticated API call.
+The line **used to be** *what the device talks to and what it believes* versus
+*what it does about it*, and §5.3.1 is where that phrasing is shown to bundle
+two different paths under one word. The line now falls in one place: **what
+this device will accept** — the two anchors, and nothing else — versus
+everything else, which an authenticated operator sets. Changing an anchor is a
+trust decision and rides a release; changing an address, a channel or a
+schedule is an operating decision and rides one authenticated API call.
 
 Four consequences follow from the half that stays per-build, and two of them
 are narrower than the previous draft claimed:
 
-1. **One build serves one *server*, not one fleet.** Two deployments that share
-   an update source and differ only by channel are **one image**, and the
-   difference is an operator setting on each device. Channel differentiation no
-   longer forks the build, which is the single largest thing this addendum
-   bought.
+1. **One build serves one *default* server, not one fleet.** Two deployments
+   that share an update source and differ only by channel are **one image**, and
+   the difference is an operator setting on each device. Channel differentiation
+   no longer forks the build, which is the single largest thing this addendum
+   bought. **Since §5.3 the address does not fork it either**: two deployments
+   that differ only by which server they walk are also one image, and the
+   difference is a second operator setting. What still forks a build is a
+   difference in the **anchors**, which is the sharper form of consequence 2.
 2. **The release-identity problem survives, but only where trust differs.**
    Two images differing in `meta/` still report the same `BOARD`, `PROFILE` and
    `VERSION`, and `rauc-update` selects on exactly those plus channel — so two
    deployments the update mechanism must tell apart still need distinct release
    identity, and `PROFILE` is still the field with the right shape (open
    question 1). What changed is *when* that bites: only when the source URL or
-   an anchor differs, not when a customer wants `beta`.
+   an anchor differs, not when a customer wants `beta`. **§5.3 narrows it
+   again, and does not reopen question 1's answer**: a per-deployment `meta/` is
+   now needed only where the **anchors** differ, because two deployments that
+   differ only by address are one image and each server publishes into its own
+   namespace. Where a per-deployment `meta/` is still needed, `PROFILE` is still
+   how it is told apart.
 3. **`meta/` is now out-of-band material, which trades one problem for
    another.** The previous revisions noted that a committed `meta/` publishes
    every customer endpoint to anyone with repository access, permanently. That
@@ -762,52 +800,86 @@ are narrower than the previous draft claimed:
    deployment's configuration is no longer reproducible from a checkout, and a
    build is reproducible only together with the `meta/` its build host carried.
    That belongs in the release record beside the keys, and it is the property
-   `ca/` already has.
-4. **The chicken-and-egg case is unchanged and now has no configuration
-   escape.** The server that must deliver the new image is the one being
-   changed, and after this addendum an operator cannot re-point it either. The
-   escapes are offline `rauc-update import` — a bundle on removable media,
-   verified against the baked keyring and the pinned root, needing no server at
-   all — and a reflash. A device with no operator *and* no physical access
-   whose server has gone away is stranded; that is the true residue and it is
-   not fixable by anything short of a channel this product deliberately does
-   not have. **The residue has to be visible outside this plan**: F11 owes the
-   operator page a statement that the update server is fixed at build time,
-   that changing it needs a new image or an offline import, and what to do when
-   the server is gone. A stranded device whose operator was never told is a
-   support case that reads as a defect.
+   `ca/` already has. **After §5.3 the image is no longer the whole answer
+   either**: a fielded device's effective configuration is its `meta/` plus
+   whatever `/mos/config/` holds, which is what §8's baked-versus-operator-
+   versus-effective reading is for.
+4. **The chicken-and-egg case, and the residue §5.3 removes.** The server that
+   must deliver the new image is the one being changed. **As written before
+   2026-09-04 this had no configuration escape**: the escapes were offline
+   `rauc-update import` — a bundle on removable media, verified against the
+   baked keyring and the pinned root, needing no server at all — and a reflash,
+   so a device with no operator *and* no physical access whose server had gone
+   away was stranded. That was called the true residue, and it was.
 
-**A capability is being removed, and it should be seen.** `update-policy.toml`
-lets an operator set `source.url` today. After this plan the operator document
-has no key for it, and `deny_unknown_fields` means adding one is a load error —
-so "the operator cannot re-point the update server" is enforced by the schema
-rather than by a rule somebody has to remember. That is a deliberate
-tightening: the source URL joins the anchors on the build side, because which
-TUF repository a device walks is a trust decision and one fewer writable knob
-on the trust-relevant path is worth the flexibility it costs. The price is
-consequence 4, stated above rather than discovered.
+   **§5.3 gives it a remedy.** An authenticated operator re-points the device
+   with one API call, and the two offline escapes remain for the cases that call
+   cannot reach. What is left of the residue is narrower and should be stated in
+   its new form: a device **nobody can authenticate to** — no operator, no
+   physical access — whose server has gone away is still stranded, and nothing
+   short of a channel this product deliberately does not have fixes that.
+   **The residue and its remedies both have to be visible outside this plan**:
+   F11 owes the operator page the three routes back (re-point, offline import,
+   reflash), the fact that reset tiers 1 and 3 return the address to the baked
+   default, and what that means when the baked default is `null`. A stranded
+   device whose operator was never told is a support case that reads as a
+   defect; a device silently returned to the vendor's server by a reset is the
+   same support case wearing the other face.
+
+**A capability was being removed, and it is being kept instead — 2026-09-04.**
+`update-policy.toml` lets an operator set `source.url` today. This section said,
+and the approval boundary carried: *the operator document has no key for it, and
+`deny_unknown_fields` means adding one is a load error — so "the operator cannot
+re-point the update server" is enforced by the schema rather than by a rule
+somebody has to remember. That is a deliberate tightening: the source URL joins
+the anchors on the build side, because which TUF repository a device walks is a
+trust decision and one fewer writable knob on the trust-relevant path is worth
+the flexibility it costs.* **That is reversed by §5.3**, which is kept above in
+full because the reversal turns on where its argument was right and where it
+double-counted, not on whether it was carelessly written.
+
+**The mechanism it named is not reversed; it is re-aimed.** `deny_unknown_fields`
+still makes a schema fact out of what an operator may not write. It now holds
+that line at the **anchors** rather than at the address: the operator document
+carries `source.url` and has no `trust` object at all, so naming a signing key,
+a keyring or a root path in it is a load error in exactly the shape the rest of
+the document already has (§5.3.5). The sentence that changes is which capability
+the schema forbids; the sentence about enforcement rather than remembering is
+the one worth keeping.
 
 #### 5.1 Three layers, one precedence rule
 
 1. **The public set baked from `meta/` at build (§1.1).** Fleet-identical,
-   per-build: the source URL, the trust anchors, and the **default** channel,
-   policy and check interval.
+   per-build: the trust anchors, and the **defaults** for the source URL, the
+   fleet URL, the channel, the policy and the check interval. Everything here
+   except the anchors is a default (§5.3); the anchors are the layer's only
+   value that is not.
 2. **`/mos/config/updates.json`, on DATA.** Operator-owned, machine-written,
    survives every A/B update and every slot rollback because DATA is neither;
    re-seeded by the reset tiers §4.1 names. It is the update subsystem's
-   occupant of the `/mos/config/` namespace §5.2 establishes.
+   occupant of the `/mos/config/` namespace §5.2 establishes. The fleet
+   subsystem's occupant is `/mos/config/fleet.json` (PLAN-072 §2), which carries
+   the fleet URL under the same rule.
 3. **The running state.** What the lifecycle actually did — `idle`, `checking`,
    `ready`, `reboot-required` and the rest. It configures nothing; it is the
    record of what happened, and it is in this list only so that a reader stops
    looking for a fourth place a channel could come from.
 
-| Key | Layer 1 baked from `meta/` | Layer 2 `/mos/config/updates.json` | Rule |
+| Key | Layer 1 baked from `meta/` | Layer 2 `/mos/config/` | Rule |
 |---|---|---|---|
-| update source URL | **owns it** | no such key | baked only; not overridable, and the schema is what says so |
-| RAUC keyring, TUF root | **own them** | no such key | baked only; not overridable |
-| channel | default | **overrides** | layer 2 wins; absent → the baked default |
-| `policy`, `checkIntervalMinutes` | default | **overrides** | layer 2 wins; absent → the baked default |
+| RAUC keyring, package signing keys | **own them** | **no such key exists** | baked only; not overridable, and the schema is what says so — naming one is a load error (§5.3.5) |
+| update source URL | default | **overrides**, in `updates.json` | layer 2 wins; absent → the baked default; **amended 2026-09-04 (§5.3)**, previously baked-only |
+| fleet plane URL | default | **overrides**, in `fleet.json` | layer 2 wins; absent → the baked default; **amended 2026-09-04 (§5.3)**, previously baked-only |
+| channel | default | **overrides**, in `updates.json` | layer 2 wins; absent → the baked default |
+| `policy`, `checkIntervalMinutes` | default | **overrides**, in `updates.json` | layer 2 wins; absent → the baked default |
+| `fleet.enabled` | default | **overrides**, in `fleet.json` | layer 2 wins; absent → the baked default (PLAN-072 §2) |
+| `fleet.reportIntervalSeconds` | **owns it** | no such key | baked only, and deliberately not moved by §5.3: a cadence the plane can set is PLAN-076 §9, and an operator-set one was not asked for |
 | `rebootPolicy`, windows, network mode, reboot-gate keys | not present | **owns them** | layer 2 only; absent → the code defaults |
+
+**Exactly two rows moved on 2026-09-04, and the table is the whole list.** The
+amendment is not "layer 1 becomes advisory": every other row reads as it did.
+The first row is the one that must never move, and §5.3.5 is why it cannot be
+moved by accident.
 
 **Where layer 2 lives: `/mos/config/updates.json`, in a namespace of its
 own.** The user's request first named `/mos/update`, one letter from the
@@ -860,8 +932,8 @@ is:
 - **And the reset consequence is §4.1's**, priced there in the table's own
   terms rather than as an aside here.
 
-**Absent, malformed, and a channel the source does not carry.** The existing
-rules stand and gain one case:
+**Absent, malformed, an unreachable override, and a channel the source does not
+carry.** The existing rules stand and gain two cases, the second added by §5.3:
 
 - **Layer 2 absent** → the baked defaults, which is the design: a device that
   has never been configured follows what it shipped with. This is only reachable
@@ -875,6 +947,14 @@ rules stand and gain one case:
   absence would put a device on a channel its operator did not choose.
 - **Layer 1 malformed** → impossible at runtime: it is validated at build time
   and a malformed one fails the build.
+- **The override names a server that does not answer** → the existing failure
+  behaviour of §7, and **no fallback to the baked address**. A device that
+  quietly re-pointed itself at the vendor's server because the operator's was
+  down would be talking to a host nobody selected, which is the same defect as
+  the malformed case and the unpublished-channel case, wearing a network
+  fault's clothes. The baked value is a
+  **default**, not a fallback and not a floor: it is consulted when layer 2 is
+  silent about the key, and at no other moment (§5.3.3).
 - **The selected channel is not published by the source** → report exactly
   that, and **do not fall back to the baked default**. A fallback here is a
   device quietly following a channel its operator did not choose, which is the
@@ -1282,6 +1362,232 @@ else, and because four of them changed in this revision.
 
 **The subtree itself.** `mos-data-layout` gains a `config` entry at **`0700`**,
 beside the `0700` it already creates for `/mos/root`.
+
+#### 5.3 The two URLs become overridable, the anchors do not — amendment, 2026-09-04
+
+**The decision.** `update.source` and `fleet.url` are **defaults**. An
+authenticated operator overrides either through §5.1's layer 2 — the source in
+`/mos/config/updates.json`, the plane in `/mos/config/fleet.json` — and no new
+mechanism is invented for them. **The trust anchors do not move**: the RAUC
+keyring and `trust.signingKeys` stay baked, inside the verity root, with no
+layer-2 key and no on-device write path, and naming one in an operator document
+is a load error (§5.3.5).
+
+This reverses §5's paragraph above and PLAN-072's Alternative 4. Both were
+argued positions, so what follows says what changed in the *reasoning*.
+
+##### 5.3.1 What the earlier argument got right, and where it double-counted
+
+The sentence being revised is *"the source URL joins the anchors on the build
+side, because which TUF repository a device walks is a trust decision and one
+fewer writable knob on the trust-relevant path is worth the flexibility it
+costs."*
+
+**The count is correct and the noun is not.** "The trust-relevant path" is doing
+two jobs in one phrase:
+
+- the path that decides **what installs** — a package must verify against
+  `trust.signingKeys`, a system bundle must chain to the baked RAUC keyring,
+  both inside the verity root;
+- the path that decides **where the device looks** — the URL.
+
+Removing the URL knob bought safety on the first path only to the extent that
+the two are the same path, and they are not: a redirect does not reach the
+signature check, and the check is what the whole compromise analysis in §5, §7
+and PLAN-072 §5 rests on. The earlier sentence folded the second into the first
+because a build-time value is easier to reason about than a writable one — which
+is a true statement about reasoning, not about the attacker's reach.
+
+**What is new is this plan's own boundary, written two sections later.** §5.2.1
+states the rule: *`/mos/config/` holds what an integrator sets; the settings
+store on STATE holds what the device mints or observes about itself.* Which
+repository a deployment walks and which plane it dials are the two most
+integrator-set facts in this record — a customer's own server, a customer's own
+plane. And §5.2.1's own test for which side of the boundary a fact belongs on is
+*does tier 1 clear it*, whose answer for both is plainly yes: a device returned
+to the state it left the factory in should not still be following the previous
+operator's server. Under the boundary this record adopted after §5 was written,
+the URLs were on the wrong side of it. That is **new weight on the scale**, not
+a change of taste about the same weights — and it is why the amendment needs no
+new mechanism at all.
+
+**And measured against the tree, this stops being a change and becomes a
+non-removal.** `pkgs/mosd/mosd/src/update_policy.rs` carries `source.url` today
+as `Option<String>` with no default, and refuses a check with *"no update source
+configured (source.url is unset)"* when it is unset. So the shipped device
+already lets an operator set the update server, and the paragraph above was
+proposing to **take that away**: F6b's *"a document naming a source URL is a load
+error"* would have made a working configuration into a load error on the first
+boot after the move. The amendment does not add a capability — it declines to
+remove one, which is a materially easier thing to justify and one the Risks entry
+on this section had already flagged as *"the part most likely to surprise
+somebody who knows the current file"*.
+
+**And it retires the residue F11 was told to write down.** Consequence 4 priced
+a stranded device — server gone, no remedy but a new image or an offline import
+— and called it *the true residue*, with F11 owing the operator page a
+statement of it so that "a stranded device whose operator was never told" does
+not become a support case that reads as a defect. **That is the strongest
+argument for this amendment and it is the plan's own.** The flexibility the
+earlier paragraph priced away was not a convenience; it was the only exit from
+that case, and this change is what turns it into one authenticated API call.
+
+##### 5.3.2 Does the redirect buy an attacker anything on the update path?
+
+The threat is *somebody who can write `/mos/config/updates.json`*. Nobody else
+can reach the value, so nobody else is in scope.
+
+**Denial is already theirs, in full.** The same writer sets `policy = "off"` and
+stops checking outright, or selects a channel the source does not publish, which
+§5.1 already refuses and reports. A writable URL changes **which** denial they
+can cause, not **whether**. There is no new denial capability to price.
+
+**Installing something is not theirs, and does not become theirs.** A device
+pointed at a hostile server refuses every package not signed by a key in
+`trust.signingKeys` and every bundle not chained to the baked keyring. **This is
+the clause the whole amendment rests on**: if the anchors moved with the URL, a
+redirect plus the attacker's own keys would install anything, and the protection
+would be *gone* rather than relocated. The separation is therefore not tidiness,
+it is the precondition — which is why §5.3.5 makes it mechanical.
+
+**A hostile server's three remaining moves, and what covers them:**
+
+- **Serve an older, validly signed release.** PLAN-071 §9.1's floor is the
+  highest version this device has ever installed, held on STATE, and it only
+  rises; §9.3 makes lowering it an audited operator action and says in terms
+  that *a floor a remote party can lower is not a floor*. **Sufficient — and
+  §5.3.4 records what this amendment makes newly load-bearing about it.**
+- **Freeze: serve the current release forever.** PLAN-071 §9.6's freshness bound
+  reports this as a **failed check with a stale-metadata reason**, not as "no
+  update available". **Sufficient**, and it is the half that turns a silent
+  attack into a visible one.
+- **Answer with garbage, or not at all.** §7's existing behaviour: `failed` with
+  the client's stderr tail, retry at the next scheduled check, bounded
+  subprocess timeouts. Unchanged.
+
+So: the floor and the freshness bound **are** sufficient for the integrity of
+what installs. They are not about two other things, and those are named rather
+than left to be discovered:
+
+1. **Credentials must not follow the override, and this is the one place the
+   amendment would otherwise create a capability.** §2's same-origin rule
+   attaches configured credentials to hosts same-origin with `update.source`
+   *as baked*, plus `http.credentialHosts`. Read naively against an overridable
+   source, "same-origin with `update.source`" re-anchors on the override and
+   hands the update credentials to whatever host the operator document names —
+   an exfiltration path created by this change and by nothing else. **The rule
+   is therefore pinned to layer 1**: the same-origin base is the *baked*
+   `update.source` and the *baked* `http.credentialHosts` list, both unwritable,
+   and an override moves the request but never the credential. An overridden
+   source not same-origin with the baked one is fetched **anonymously**, and a
+   deployment that wants credentials at a second host adds it to
+   `http.credentialHosts` in `meta/`, which is a build-time act. F6b carries
+   this; it is not advice.
+2. **The check itself discloses.** A check must carry enough to select a release
+   — board, profile, version, channel — so re-pointing it tells whoever answers
+   that a device of that description exists and what address it dials from. It
+   is the same class as §5.3.3 and much smaller, it is bounded by what selection
+   needs, and the operator performing the redirect is the party choosing it.
+
+##### 5.3.3 The fleet URL is not the same case, and is priced as its own
+
+**A writable fleet URL adds a capability that a writable source URL does not.**
+Whoever can write `/mos/config/fleet.json` can point registration and reporting
+at a plane they control **and turn the switch on**, and the device will then
+dial out and talk. There is no signature check standing behind this the way
+`trust.signingKeys` stands behind the update path, because the fleet channel
+carries no installable artifact — which is the property that makes PLAN-072 §5's
+compromise story a *disclosure* story, and it is exactly the property that makes
+this a real exfiltration path rather than a redirected denial.
+
+**What leaks is bounded, and by what.** PLAN-076 §1's rule and §2's set: device
+identity (`deviceId`, board, profile, version, the product labels) plus coarse
+operating state (link state with no interface names and no addresses, storage,
+aggregated thermal, service health, update lifecycle, enumerated failure codes).
+**No network values, no secrets, no free text, nothing under `/srv`**, and
+PLAN-076 §4's containment invariant — *no field the snapshot schema drops or
+marks identifying may appear in a report, at any depth* — holds regardless of
+who receives it, because the allowlist is a constant **in the image**, not a
+property of the recipient. The bound survives the redirect; that is the point of
+having put it in the image.
+
+**It is bounded and it is not nothing.** A continuous account of one device's
+identity and operating history, delivered on a cadence to a party the owner
+never chose, is a real disclosure — and `deviceId` is the value the plane keys
+enrolment on (PLAN-072 §7a answer 6), so a hostile plane also takes the
+inventory slot for that id. That is a denial of inventory plus a disclosure, not
+a compromise of the device, and it is the honest price of this half of the
+amendment.
+
+**Three things make it detectable and containable, and all three are
+requirements rather than observations:**
+
+- **`GET /api/v1/fleet/status` must report the *effective* plane URL**, with the
+  baked default beside it, in §8's baked/operator/effective shape. PLAN-076 §6
+  currently says the route reports "the plane URL from the baked manifest" —
+  under this amendment that would report the value the device is **not** using,
+  and the detection story would be false. PLAN-076's amendment corrects it and
+  B9 carries the gate.
+- **The off-state negative test must resolve the *effective* host.** PLAN-076
+  §6a requires that with the switch off "no socket to the baked host is opened
+  and the baked hostname is never resolved". Against an overridable URL that
+  test watches a hostname the device was never going to use, and passes while
+  the device dials somewhere else — a check that cannot fail on the defect it
+  exists for. It becomes the **configured** host, baked or overridden.
+- **A URL change discards the enrolment credential.** The credential is bound to
+  the plane that issued it; carrying it to a new address would hand the previous
+  plane's credential to whoever the new one belongs to. A change is treated as
+  PLAN-072 §2's off-then-on: stop, delete the credential from STATE, attempt the
+  deregistration call, and re-register at the new address as an unknown device.
+  PLAN-072 C1 carries it.
+
+**With those three, the amendment is safe as asked; without them it is not.**
+The acceptability of a writable fleet URL rests on the leak being bounded,
+visible and non-transferable — not on the URL being harmless, which it is not.
+
+##### 5.3.4 What this amendment makes newly load-bearing
+
+**PLAN-071 §9.1 says the floor is "persisted beside the policy on STATE". After
+F6b the policy is not on STATE**, so the phrase now points at DATA — beside a
+document this amendment has just made writable, and one whose writer is exactly
+the attacker §5.3.2 is about. Following the sentence literally would put the
+downgrade floor in `/mos/config/`, where the same write that re-points the
+device could also lower the floor, and §9.3's *a floor a remote party can lower
+is not a floor* would be satisfied only on a technicality.
+
+**The rule, stated here because this record owns the tiers and the namespace,
+and restated in PLAN-071's own amendment**: the downgrade floor stays on
+**STATE**, it is **not** a `/mos/config/` document or a key in one, and lowering
+it stays an explicit audited operator action rather than a document edit. The
+store separation between the address (DATA, writable) and the floor (STATE,
+written only by mosd's own accounting) was incidental before this amendment and
+is load-bearing after it.
+
+##### 5.3.5 The anchors, made mechanical rather than remembered
+
+The separation this whole amendment rests on has to be enforced in the shape the
+rest of the document already has, or it decays into a rule someone must
+remember while adding a field.
+
+- **The operator schema has no `trust` object at all** — not an empty one, not a
+  rejected one. With `deny_unknown_fields`, naming `trust`, `signingKeys`,
+  `signingKeyId`, `rootPath`, `keyring` or any anchor-shaped key in
+  `/mos/config/updates.json` or `/mos/config/fleet.json` is a **load error**,
+  identical in kind to any other unknown key.
+- **The test names the keys.** A generic unknown-key test would go green on the
+  day somebody adds a `trust` object for a benign reason, and the property would
+  evaporate with no test turning red. So the case is asserted **by name**, for
+  each anchor-shaped key, with a comment saying what the assertion is for.
+  Widening the schema to admit one is then a red test and a reviewed decision,
+  which is the same relation §6.4.4 draws between changing a value and widening
+  a set.
+- **`source.rootPath` stays dropped.** F6b already retires it with the move; it
+  is the anchor half of the old `[source]` block and it does not come back with
+  the URL. Only `source.url` carries over.
+- **This is the property that must never be traded for symmetry.** The argument
+  for a changeable address is that the signature check is unchangeable. A future
+  request to "also let the operator supply a key, for testing" is not a smaller
+  version of this amendment; it is the deletion of its premise.
 
 ### 6. One directory, not two: `ca/` absorbed, and the six keys it now holds
 
@@ -1786,9 +2092,23 @@ the key's bytes (§2.1) and is algorithm-agnostic by construction.
 none.** `meta.example/`'s `manifest.json` sets `update.source` to `null` and
 `fleet.url` to `null`, so a build from a fresh checkout produces a device that
 checks nothing until somebody either edits its own gitignored `meta/` for a
-product build or writes the operator document on the device. A device whose
-baked manifest names no server **refuses to check** and says so, rather than
+product build or writes the operator document on the device. A device with **no
+source in either layer** — absent in the baked manifest and absent in
+`/mos/config/updates.json` — **refuses to check** and says so, rather than
 falling back to a vendor host.
+
+**§5.3 does not weaken this rule; it widens where a legitimate address may
+live.** The rule was never "the address is baked", it is *the device never picks
+a host for itself*: an operator-written URL is a host somebody chose, which is
+the case the rule exists to distinguish from a vendor fallback the device
+supplies. Two consequences worth stating rather than deriving. First, the
+absent-in-layer-1 case is no longer inert — a device built from the committed
+example can be pointed at a server by an authenticated operator, so the fresh
+checkout produces a usable appliance rather than one that needs a rebuild before
+it can ever update. Second, the verifier check below is **unchanged in scope**:
+it is a check over the assembled image, an operator document does not exist at
+build time, and its subject is still binaries. `/usr/share/mos/meta/` may name a
+host, `/mos/config/` may name a host, and **no binary may**.
 
 That rule is mechanical rather than promised: a verifier check over the
 assembled image fails any build in which the update client, mosd or the
@@ -1796,8 +2116,8 @@ assembled image fails any build in which the update client, mosd or the
 or fleet endpoint. Baking `meta/` makes that check *more* necessary, not less —
 there is now a legitimate place for a URL in the image, and a compiled-in
 fallback beside it would be an easy and invisible addition. The check
-distinguishes data from code: `/usr/share/mos/meta/` may name a host, and no
-binary may.
+distinguishes data from code: **configuration may name a host, and no binary
+may.**
 
 **What a fresh checkout does, end to end**, since `meta/` is now absent by
 default rather than committed:
@@ -1822,10 +2142,12 @@ default rather than committed:
 The absent case is a supported steady state, not a degraded one.
 
 The rule is about the **source**, and §5.1's channel rules are its companion
-rather than an exception to it: a device with a baked source and an
+rather than an exception to it: a device with a configured source and an
 operator-selected channel that source does not publish refuses, and says which
-channel it was asked for. Neither an absence nor a bad selection is ever
-answered by a value the device picked for itself.
+channel it was asked for. Neither an absence, a bad selection nor an override
+that does not answer is ever settled by a value the device picked for itself —
+which after §5.3 includes the baked default, because a fallback to it would be
+the device choosing.
 
 **A server that does not answer** is the existing behaviour and no new one: the
 lifecycle records `failed` with the client's stderr tail, the next scheduled
@@ -1863,12 +2185,21 @@ rather than remembered. The two tiers are served by two different arguments and
 the endpoint must not borrow the first one for the second.
 
 Three facts should read side by side wherever this surfaces: the **baked**
-value, the **operator** value from `/mos/config/updates.json`, and the
-**effective** one after §5.1's precedence. An operator looking at a device
-following a channel they do not recognise needs to see, in one place, whether
-it came from the image or from a selection somebody made — and, after a full
-factory reset, that the selection is gone and the baked default is back
-(§4.1).
+value, the **operator** value from `/mos/config/`, and the **effective** one
+after §5.1's precedence. An operator looking at a device following a channel
+they do not recognise needs to see, in one place, whether it came from the image
+or from a selection somebody made — and, after a full factory reset, that the
+selection is gone and the baked default is back (§4.1).
+
+**After §5.3 this stops being a convenience and becomes the detection
+surface.** The two addresses are now overridable, so *where is this device
+dialling* has the same three answers as *which channel is it on*, and the
+question matters more: a wrong channel is a wrong release, a wrong address is a
+different party. The three-way reading therefore covers `update.source` and
+`fleet.url` explicitly, F9 carries it here, and PLAN-076's `GET
+/api/v1/fleet/status` carries the fleet half — where the route must report the
+**effective** URL rather than the baked one, or it answers a question nobody
+asked (§5.3.3).
 
 ### 9. Open questions — decisions with costs, not guesses
 
@@ -1994,12 +2325,25 @@ factory reset, that the selection is gone and the baked default is back
   absent from a release host — which is the rule `release-signing.md` §2.5
   already states for the first of them, but it is a rule, and rules about which
   files are *absent* are the ones nobody notices being broken.
-- **A server or anchor change costs a release, and now has no configuration
-  escape.** This is the design, not a defect, and the risk is that it is
-  discovered at the wrong moment — the first time a customer's server moves.
-  §5 prices it, and §5 also removes an ability `update-policy.toml` has today,
-  which is the part most likely to surprise somebody who knows the current
-  file.
+- **An anchor change costs a release, and has no configuration escape.** This
+  is the design, not a defect, and it is what makes §5.3's changeable address
+  safe. **Amended 2026-09-04**: this entry read *a server or anchor change*, and
+  the server half is gone — the risk it named, discovery at the wrong moment the
+  first time a customer's server moves, is the risk §5.3 removes.
+- **The address is writable and the anchor is not, and the whole safety of the
+  first rests on the second (§5.3).** The risk is not that somebody argues to
+  move an anchor; it is that a schema gains a `trust` object for a benign reason
+  and nothing turns red. §5.3.5's by-name assertions are the mitigation, and
+  they are a backlog item (F6b) rather than a good intention.
+- **A redirected fleet plane is a real exfiltration path, bounded but not
+  absent (§5.3.3).** Whoever can write `/mos/config/fleet.json` can point a
+  device at a plane they control. What leaks is bounded by an allowlist in the
+  image, so the bound survives the redirect — but the acceptability of the
+  change rests on three requirements landing: the status route reporting the
+  **effective** URL, the off-state test resolving the **configured** host, and a
+  URL change discarding the enrolment credential. All three are in PLAN-072's
+  and PLAN-076's backlogs, and a fourth possibility — that they are read as
+  polish and deferred — is the risk itself.
 - **The operator layer moved tiers, so a reset means something different.**
   §4.1 is the table. The specific risk is a support call that starts *the
   device went back to `stable` by itself*: it did, because somebody ran a full
@@ -2127,7 +2471,9 @@ role: where the declaration lives and why it must be committed, the per-role
 allowed sets and the verifiers that bound them, the two build-time refusals, the
 defaults and the measurement behind retiring the RSA determinism reason, and
 rotation across an algorithm change**; the no-default-server rule, the
-channel rules and their verifier check; the read surface.
+channel rules and their verifier check; **which values in the baked set are
+defaults an operator overrides and which are not, and the mechanism that makes
+the second list unwidenable (§5.3)**; the read surface.
 
 Out of scope: the update policy semantics (PLAN-071); anything the fleet switch
 turns on (PLAN-072); **the provisioning document, which keeps its transport, its
@@ -2154,19 +2500,19 @@ approving this plan; each becomes a task record when it is scheduled.
 | F3 | Selective staging: the §1.1 allowlist in `rootfs/build.sh`, plus refusal **B1** (off-allowlist path; private-key detector with all three tests) | S | a planted `root.key` under a staged path turns the build red and names the file; the tree as generated stays green |
 | F4 | Verifier **B2**: `packed-meta-is-the-public-set` (byte-equal, nothing extra, throw on absent `meta/`) and `no-private-key-in-baked-meta` (three detectors, scoped paths, reports the file count scanned) | M | an image with an added, removed or altered file under the path fails; an image with a planted key under either scoped path fails; a tree with no `meta/` throws rather than passing |
 | F5 | The reader in mosd: parse, validate, `deny_unknown_fields`, expose as live state | M | unknown key is a build error, not a runtime one; the reader always answers with a document |
-| F6 | §5.1 precedence in `update_policy.rs`: the three layers, per-key override, and the parse-error rule that does **not** fall back | M | a layer-2 document that fails to parse refuses actions and does not silently adopt the baked channel |
-| F6b | Move the operator document: `/var/lib/mos/update-policy.toml` retired, `/mos/config/updates.json` in its place, `source.url` and `source.rootPath` dropped from its schema | M | the channel is readable from exactly one file; a document naming a source URL is a load error |
+| F6 | §5.1 precedence in `update_policy.rs`: the three layers, per-key override including **both URLs** (§5.3), and the parse-error rule that does **not** fall back | M | a layer-2 document that fails to parse refuses actions and does not silently adopt the baked channel; an overridden source that does not answer reports the failure and does **not** fall back to the baked address |
+| F6b | Move the operator document: `/var/lib/mos/update-policy.toml` retired, `/mos/config/updates.json` in its place, `source.url` **carried over as an override** (§5.3) and `source.rootPath` dropped as the anchor half; no `trust` object in the schema; the same-origin credential base pinned to the **baked** `update.source` and `http.credentialHosts` | M | the channel and the source are each readable from exactly one file; a document naming a signing key, a keyring or a root path is a load error, asserted **by name** per key and not only by the generic unknown-key path; an overridden source that is not same-origin with the baked one is fetched with no credential attached |
 | F6c | The `/mos/config/` namespace: the `mos-data-layout` entry at **0700**, the §5.2.7 rules written where a subsystem author meets them, and tier 1's re-seed of the subtree in `reset.rs` | M | a virgin device has the subtree at its declared mode; tier 1 returns every occupant to its baked default and leaves the rest of `/mos` alone; §2.1's table and its tests agree cell for cell |
 | F6d | The settings store's move (§5.2.1–§5.2.3): the per-reconciler documents, one schema version each starting at v1, the `V0→V12` chain deleted with the document it migrated, and `Settings`'s split into the moved half and the STATE half | L | every existing settings test passes **through the dot-path API unchanged**, which is the claim §5.2.5 makes; a key written to one document leaves the others byte-identical; no migration crosses a document boundary |
 | F6e | The mode and the secrets charter (§5.2.4): the directory at 0700, every document written 0600 through the existing mode-before-rename writer, and the redactor naming rule asserted — a `/mos/config/` document's secret-bearing key names a field the redactor already carries | M | a document lands 0600 even when it replaces one that was laxer; a test enumerating the moved schema's secret-bearing field names against the redactor list is RED when a name is added to one and not the other |
 | F6f | Fail-closed on the medium (§5.2.6): `RequiresMountsFor=/mos` on mosd, and the refusal that says which mount is missing rather than starting on defaults | S | mosd with `/mos` unmounted does not start and names the mount; it does not render a default network |
 | F6g | The pour: mosd validates documents it did not write, on boot, with §5.2.7's fail-closed rule and no read-back of a poured secret | M | a hand-written document that parses and validates is adopted; one that does not refuses its subsystem and names the file; nothing a poured document carried appears in any served record |
 | F7 | `rauc-update` reads `trust.signingKeys` from the baked manifest instead of an anchor file path; `trust.signingKeyIds` derived at build time | S | an anchor supplied any other way is refused; a hand-written `signingKeyIds` that does not match `signingKeys` fails the build |
-| F8 | No-compiled-in-endpoint verifier check | S | fails a build with a planted default URL in a binary; passes with one in `meta/` |
-| F9 | `GET /api/v1/provisioning/status` extension: the document, the digests, and baked-versus-effective | S | — |
+| F8 | No-compiled-in-endpoint verifier check — **unchanged in scope by §5.3**: its subject is binaries, and an operator document does not exist at build time | S | fails a build with a planted default URL in a binary; passes with one in `meta/` |
+| F9 | `GET /api/v1/provisioning/status` extension: the document, the digests, and baked-versus-operator-versus-effective **for both URLs** (§8, §5.3) | S | a re-pointed device reports the baked address, the operator address and the effective one, and they are distinguishable |
 | F10 | Design-doc updates: `recovery.md` §2.1's clarifying note, its **new tier-1 footnote and `config/` in `[^apps-mos]`'s untouched list (§4.1)**, `updates.md` §2 (the policy file's tier, its new home and format) and §7, `release-signing.md` §2.3 and §2.5 **plus §6.2's custody split and the rule that `root.key` is present on a release host while `ca.key.pem` is not**, `provisioning.md` §4, `manufacturing.md` §1, `security-model.md` §3, and `pkgs/rauc-sign/README.md`'s anchor section | M | `make docs-verify` |
 | F12 | **The key algorithm as a declared, validated parameter** (§6.4): commit `pkgs/rauc/key-algorithms.env` carrying §6.4.5's three defaults with the reason beside each; `gen-dev-keys.sh` reads it instead of naming an algorithm inside its `openssl` invocations, and **its comment becomes a pointer to that file rather than a restatement of a reason**; refusals **A1** (a declared value outside its role's set) and **A2** (material in `meta/` outside its role's set) in `rootfs/build.sh`'s existing unwaivable shape, each naming the verifier that bounds the set; `release-signing.md` §2.1's ceremony records the **set** and production's own reason rather than the dev script's. **The comment correction is owed whether or not any value changes** — §6.4.1 found it states `signingTime` is the *only* source of variance, which the payload gate's own recorded reason contradicts | M | changing an algorithm is a one-line edit to the committed file and touches no code; a declared value outside its role's set turns the build red and names the verifier; a `meta/` holding material outside the set turns it red too, including the `--domain updates` key, which A1 alone would not have seen; no comment names a reason the code no longer follows or a fact the code contradicts; the bundle payload rebuild gate and both trust test suites pass with their meanings unchanged |
-| F11 | Operator documentation: which reset returns the device to the baked default channel (§4.1), stated where a reader meets the reset, not only in the design tree; **and the baked-only source URL's residue (§5) — that the update server is fixed at build time, that changing it needs a new image or an offline import, and what to do when the server is gone** | S | a reader who runs tier 3 was told the channel goes back; a reader whose server has moved finds the two remedies and the stranded case named, not a dead end |
+| F11 | Operator documentation: which resets return the device to the baked defaults — **the channel and, after §5.3, both addresses** — stated where a reader meets the reset, not only in the design tree; **and the residue in its amended form (§5 consequence 4): that the update server and the fleet plane are overridable by an authenticated operator, that offline import and reflash remain for the cases that call cannot reach, that tiers 1 and 3 restore the baked defaults, and that when the baked default is `null` a reset returns the device to no server and fleet off (§4.1)** | S | a reader who runs tier 1 or tier 3 was told the channel **and the addresses** go back, including the `null` case; a reader whose server has moved finds three remedies and the narrowed stranded case — no operator, no physical access — named, not a dead end |
 
 F6d, F6e and F6f are the decision-A move and they are one change, not three:
 shipping the documents without the mode publishes the Wi-Fi key, and shipping
@@ -2209,18 +2555,32 @@ That item does not exist here.
   `ca.key.pem` stays off it, and no image build touches either;
 - `manifest.json` carries the trusted package key **inline**, as a list, with a
   build-derived key id beside it; there is no separate anchor document to ship;
-- the three layers of §5.1: `meta/` bakes the source URL, the anchors and the
-  channel/policy **defaults**; `/mos/config/updates.json` on DATA is the single
-  operator-owned document and overrides the defaults per key; the running state
-  configures nothing;
-- the source URL and the trust anchors are **not** overridable at runtime, and
-  `/var/lib/mos/update-policy.toml` goes away rather than keeping a subset;
+- the three layers of §5.1: `meta/` bakes the anchors and the **defaults** for
+  the two URLs, the channel and the policy; the `/mos/config/` documents on DATA
+  are the operator-owned layer and override the defaults per key; the running
+  state configures nothing;
+- **amended 2026-09-04 (§5.3)** — the **trust anchors** are not overridable at
+  runtime, and the operator schema has no `trust` object, so naming a signing
+  key, a keyring or a root path in a `/mos/config/` document is a load error
+  asserted by name. The **update source URL and the fleet plane URL are
+  overridable**, as defaults rather than fallbacks: an override that does not
+  answer reports the failure and never reverts to the baked address. The
+  same-origin credential base stays pinned to the **baked** `update.source` and
+  `http.credentialHosts`, so an override moves the request and never the
+  credential. `/var/lib/mos/update-policy.toml` goes away rather than keeping a
+  subset;
+- **superseded 2026-09-04**, and kept because the approval it records was
+  given: this clause read *the source URL and the trust anchors are **not**
+  overridable at runtime*. §5.3 reverses its first half and strengthens its
+  second;
 - an absent operator layer takes the baked defaults, a malformed one refuses
   the actions and never falls back, and a selected channel the source does not
   publish is reported rather than replaced;
-- reset tiers 1 and 3 both return the channel to the baked default, tier 2
-  leaves it alone, and that disposition is decided for the `/mos/config/`
-  directory rather than inherited (§4.1);
+- reset tiers 1 and 3 both return the channel **and both addresses** to the
+  baked defaults, tier 2 leaves them alone, and that disposition is decided for
+  the `/mos/config/` directory rather than inherited (§4.1) — including the case
+  where a baked default is `null` and the reset therefore returns the device to
+  no server and fleet off;
 - `/mos/config/` is **the home of system configuration**, and the goal is
   flash → pour → working device: one JSON document per reconciler at
   `/mos/config/<document>.json`, machine-written by one daemon, atomic on write,
@@ -2282,7 +2642,11 @@ That item does not exist here.
   new-algorithm key as unauthentic and stays where it is; it has no unverified
   path to fall back to;
 - absence of a server is a supported steady state and there is no default
-  server;
+  server — after §5.3, absence means absent in **both** layers, and the
+  no-compiled-in-endpoint rule is unchanged: configuration may name a host and
+  no binary may;
+- the downgrade floor of PLAN-071 §9 stays on **STATE** and is not a
+  `/mos/config/` document or a key in one (§5.3.4);
 - open questions 1–8 are answered before the slices that depend on them
   (question 1 blocks the second deployment, not a slice; question 5 blocks
   nothing until a development TUF repository is wanted; questions 7 and 8 block
@@ -2627,3 +2991,39 @@ debugging a device they did not build; **question 8 (whether the ssh pour carrie
 `authorizedKeys`) blocks the ssh slice**, because it is the one place §5.2's pour and
 `provisioning.md` §4.1.4 have to agree, and a poured `ssh.json` is a way to hand somebody
 root on a device before it has ever been claimed.
+
+### Amended — 2026-09-04: the two URLs become overridable, the anchors do not
+
+The user requires that the update server address and the fleet control-plane URL
+both be changeable. §5.3 is the amendment and carries the argument; the sections
+it falsified are corrected in place and marked, rather than rewritten to look as
+though they had always said this.
+
+**What the amendment reverses**: §5's *"the source URL joins the anchors on the
+build side"* and the approval-boundary clause that carried it. §5.3.1 answers it
+on two grounds — that "the trust-relevant path" bundled *what installs* with
+*where the device looks*, and that §5.2.1's later boundary (`/mos/config/` holds
+what an integrator sets) puts both addresses on the operator side by the plan's
+own test.
+
+**What the amendment does not touch**: `trust.signingKeys`, the RAUC keyring,
+how either is baked, `fleet.reportIntervalSeconds`, the `meta/` allowlist and
+its two checks, the `/mos/config/` namespace rules, the reset tiers, the key
+algorithm parameter, and every open question's answer. Exactly two rows of
+§5.1's table moved.
+
+**What it added rather than moved**: the same-origin credential base is pinned
+to layer 1 (§5.3.2), the enrolment credential is discarded on a fleet URL change
+(§5.3.3), the fleet status route and the off-state test are re-pointed at the
+**effective** value (§5.3.3), and the downgrade floor is pinned to STATE
+(§5.3.4). The first is the only place the amendment would otherwise have created
+a capability rather than moved one.
+
+**Sections edited in place**: §4.1 (the reset tiers now restore two addresses,
+with the `null` footgun named), §5's split list and consequences 1-4, §5.1's
+layer descriptions, its precedence table and its failure cases, §7's
+no-default-server rule, §8's read surface, Scope, five backlog rows (F6, F6b,
+F8, F9, F11), three approval-boundary clauses and two Risks entries. Sibling
+records amended the same day: PLAN-071 (§9.1's store), PLAN-072 (§2, §5, §7a,
+Alternative 4, C1, C5), PLAN-076 (§4, §6, §6a, §8, §9, B8, B9) and PLAN-054
+(*one plane per image*).
