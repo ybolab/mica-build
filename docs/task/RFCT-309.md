@@ -91,6 +91,25 @@ with a build script gets one `Compiling` status for the whole package, and
 reading that as "apid was skipped" is the mistake this probe rules out. The tree
 was not modified; the copy was discarded.
 
+## Re-run at the merged head — 2026-09-04
+
+`main` was merged at `33360648` (the update-server work). No conflict: that
+commit adds a TypeScript project and touches nothing this task edits, and
+`update-server/` carries no `Cargo.toml`, so the gate's scope is unchanged. The
+conflict expected in `docs/design/build-harness.md` did not arise — PLAN-080 has
+not merged yet, so section 3 and section 8 of that page are this task's, and
+sections 1, 2, 4-7 are untouched by it.
+
+| Gate | Result at `596dc656` |
+|---|---|
+| `make build-env` | six images tagged; `frontend pin: 31 Dockerfile(s) agree with IMAGE_DOCKERFILE_FRONTEND` — the new Dockerfile is now tracked and therefore checked |
+| `make os-rust-gate` | **green**, `ALL CHECKS PASSED` twice, `RUST GATE PASSED (mosd rauc-sign)` |
+| `make docs-verify` | **green**, 183 / 449 / 734 / 231 / 43 |
+| `bash tests/shell-pipefail-lint.sh` | **green**, 70/70 files clean |
+| `(cd verify && bun test)` | **green**, 1268 pass, 0 fail |
+| `(cd build && bun test)` | **green**, 889 pass, 0 fail (359 s) |
+| `cargo test --locked -p mosd -p apid` | **green**, 823 passed, in `mos-build-rust-check:amd64` |
+
 ## Decisions
 
 **The image is a `build-env/` row, not an on-demand build.** `verify/Dockerfile`
