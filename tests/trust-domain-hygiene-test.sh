@@ -86,14 +86,38 @@ fi
 
 # ...and the RAUC side never reaches into the TUF key directory.
 #
-# The GLOB spelling `*.pk8` is excluded, and only that spelling: rootfs/build.sh's
+# ONE LINE IS EXCLUDED, AND IT IS EXCLUDED BY ITS SHAPE. rootfs/build.sh's
 # private-key detector lists the key-container extensions so that a file
 # carrying one can never be STAGED into an image, which is the opposite of the
-# RAUC side reaching for TUF material. A grep that cannot tell a refusal from a
-# read would have exactly one finding and it would be false. A named path under
-# the TUF key directory, and every other spelling, still counts.
+# RAUC side reaching for TUF material; a grep that cannot tell a refusal from a
+# read has exactly one finding and it is false.
+#
+# The exclusion is the detector's MULTI-EXTENSION case arm and not the substring
+# `*.pk8`. Excluding the substring would also drop
+#
+#     cp "${somewhere}"/*.pk8 "${dest}"
+#
+# which is a genuine reach, and a glob copy is the MORE natural way to bulk-move
+# key files rather than the less -- so the wider exclusion would have let through
+# exactly the shape somebody would actually write. A `cp` statement cannot carry
+# the arm's `*.key | *.pk8 | *.p12` sequence, so it cannot be excluded by this.
+#
+# -F, so the pattern is compared literally and the arm's `|` characters are not
+# read as alternation by one grep and as text by the other.
+#
+# The arm is asserted to EXIST first, this suite's own rule: an exclusion that
+# quietly stopped matching would keep the negative grep green while removing
+# nothing, which is the failure the positive controls above exist to prevent.
+DETECTOR_ARM='*.key | *.pk8 | *.p12'
+grep -qF -- "${DETECTOR_ARM}" rootfs/build.sh || {
+    echo "error: rootfs/build.sh no longer carries the private-key detector's key-container case arm ('${DETECTOR_ARM}'); the exclusion below now excludes nothing and this suite's map is stale" >&2
+    exit 1
+}
+# `.devkeys` gets NO exclusion, and needs none: nothing on the RAUC side names
+# the TUF key directory for any reason, refusal included, so that half of the
+# grep has no line to make an exception for and therefore no hole to widen.
 rauc_reaches_tuf="$(grep -rn "\.devkeys\|\.pk8" pkgs/rauc/*.sh pkgs/rauc/*.in rootfs/build.sh build/src/bundle.ts |
-    grep -v '\*\.pk8' || true)"
+    grep -vF -- "${DETECTOR_ARM}" || true)"
 if [ -z "${rauc_reaches_tuf}" ]; then
     pass "the RAUC build surfaces name no TUF key directory or .pk8 file"
 else
