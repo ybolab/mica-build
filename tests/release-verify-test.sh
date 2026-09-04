@@ -65,6 +65,18 @@ printf 'fixture disk image bytes\n' >"${IN}/cx3576-mos-90001.img"
 printf 'fixture bundle bytes\n' >"${IN}/mos-cx3576-90001.raucb"
 printf '#package\tversion\tarchitecture\nlibc6\t2.41-12\tarm64\nmos-system\t0.1.0+git0123456789ab-1\tarm64\nmosd\t0.1.0+git0123456789ab-1\tarm64\n' >"${IN}/manifest.tsv"
 printf '# fixture release\n\ntest material; nothing shipped.\n' >"${IN}/NOTES.md"
+# The image's baked /usr/share/mos/meta/, as an extraction would hand it over.
+# PRODUCTION-shaped: the required member present, no GENERATED marker beside
+# it, because that is the released state a customer channel accepts.
+mkdir -p "${IN}/meta/updates"
+cat >"${IN}/meta/updates/manifest.json" <<'EOF'
+{
+  "schema": "mos/meta/v1",
+  "update": { "source": null, "channel": "stable", "policy": "check", "checkIntervalMinutes": 1440 },
+  "trust": { "signingKeys": [], "signingKeyIds": [] }
+}
+EOF
+
 cat >"${IN}/evidence.json" <<'EOF'
 {
   "schemaVersion": 2,
@@ -87,6 +99,7 @@ if bash build/run.sh --release assemble 9.9.9-test --board cx3576 \
     --image "${IN}/cx3576-mos-90001.img" \
     --update-bundle "${IN}/mos-cx3576-90001.raucb" \
     --package-manifest "${IN}/manifest.tsv" \
+    --baked-meta "${IN}/meta" \
     --notes "${IN}/NOTES.md" \
     --evidence "${IN}/evidence.json" \
     --out-dir "${RELEASE}" >"${assemble_log}" 2>&1; then
@@ -111,7 +124,8 @@ done
 : >"${IN}/EMPTY-NOTES.md"
 if bash build/run.sh --release assemble 9.9.9-test --board cx3576 \
     --image "${IN}/cx3576-mos-90001.img" --update-bundle "${IN}/mos-cx3576-90001.raucb" \
-    --package-manifest "${IN}/manifest.tsv" --notes "${IN}/EMPTY-NOTES.md" \
+    --package-manifest "${IN}/manifest.tsv" --baked-meta "${IN}/meta" \
+    --notes "${IN}/EMPTY-NOTES.md" \
     --evidence "${IN}/evidence.json" --out-dir "${SCRATCH}/release-empty-notes" \
     >"${SCRATCH}/empty-notes.log" 2>&1; then
     fail "assemble ACCEPTED empty release notes"
@@ -169,11 +183,11 @@ gate_out=""
 gate_err=""
 gate_rc=0
 run_gate() {
-    local dir="$1" evidence="$2"
+    local dir="$1" evidence="$2" meta="${3:-${IN}/meta}"
     local errfile="${SCRATCH}/gate.err"
     gate_out=""
     gate_rc=0
-    if gate_out="$(bash build/run.sh --release gate --board cx3576 --dir "${dir}" --evidence "${evidence}" 2>"${errfile}")"; then
+    if gate_out="$(bash build/run.sh --release gate --board cx3576 --dir "${dir}" --evidence "${evidence}" --baked-meta "${meta}" 2>"${errfile}")"; then
         gate_rc=0
     else
         gate_rc=$?
@@ -182,6 +196,7 @@ run_gate() {
     rm -f "${errfile}"
     # The copy's directory is what differs between mutations, so it is
     # normalised out before messages are compared to each other.
+    gate_err="${gate_err//${meta}/<META>}"
     gate_err="${gate_err//${dir}/<RELEASE>}"
     gate_err="${gate_err//${SCRATCH}/<SCRATCH>}"
 }
@@ -205,13 +220,13 @@ REFUSAL_TEXTS=()
 # the fragment says which guard actually fired.
 mutate_n=0
 expect_gate_refusal() {
-    local label="$1" token="$2" evidence="$3"
-    shift 3
+    local label="$1" token="$2" evidence="$3" meta="$4"
+    shift 4
     mutate_n=$((mutate_n + 1))
     local dir="${SCRATCH}/mutant-${mutate_n}"
     cp -a "${RELEASE}" "${dir}"
     (cd "${dir}" && "$@")
-    run_gate "${dir}" "${evidence}"
+    run_gate "${dir}" "${evidence}" "${meta}"
     if [ "${gate_rc}" -eq 0 ]; then
         fail "${label}: the gate PASSED where it had to refuse"
         return
@@ -235,19 +250,19 @@ edit_channel() {
 }
 
 expect_gate_refusal "a deleted artifact (the bundle)" \
-    "mos-cx3576-90001.raucb (role bundle)" "${IN}/evidence.json" \
+    "mos-cx3576-90001.raucb (role bundle)" "${IN}/evidence.json" "${IN}/meta" \
     rm mos-cx3576-90001.raucb
 expect_gate_refusal "a flipped byte in the image" \
-    "hashes to sha256" "${IN}/evidence.json" \
+    "hashes to sha256" "${IN}/evidence.json" "${IN}/meta" \
     flip_image_byte
 expect_gate_refusal "deleted release notes" \
-    "release-notes.md (role release-notes)" "${IN}/evidence.json" \
+    "release-notes.md (role release-notes)" "${IN}/evidence.json" "${IN}/meta" \
     rm release-notes.md
 expect_gate_refusal "absent board evidence" \
-    "no board evidence at" "${SCRATCH}/no-such-evidence.json" \
+    "no board evidence at" "${SCRATCH}/no-such-evidence.json" "${IN}/meta" \
     true
 expect_gate_refusal "a channel outside the enum, edited into the manifest" \
-    "nightly" "${IN}/evidence.json" \
+    "nightly" "${IN}/evidence.json" "${IN}/meta" \
     edit_channel
 
 # The diverged file must itself be a VALID I2 claim (every I2 class present),
@@ -272,12 +287,67 @@ cat >"${IN}/evidence-diverged.json" <<'EOF'
 }
 EOF
 expect_gate_refusal "evidence that diverged from the manifest after assembly" \
-    "asserts boot-assurance 'I2'" "${IN}/evidence-diverged.json" \
+    "asserts boot-assurance 'I2'" "${IN}/evidence-diverged.json" "${IN}/meta" \
     true
 
 sed 's/"bootAssurance": "I1"/"bootAssurance": "I2"/' "${IN}/evidence.json" >"${IN}/evidence-inflated.json"
 expect_gate_refusal "a claim inflated past its evidence classes" \
-    "no evidenceRefs entry of class 'ab-fallback'" "${IN}/evidence-inflated.json" \
+    "no evidenceRefs entry of class 'ab-fallback'" "${IN}/evidence-inflated.json" "${IN}/meta" \
+    true
+
+# The trust refusals. Each needs its own meta/ extraction, because what is
+# mutated is what the IMAGE said about itself rather than the release copy.
+DEV_META="${SCRATCH}/meta-development"
+cp -a "${IN}/meta" "${DEV_META}"
+cat >"${DEV_META}/GENERATED" <<'EOF'
+This signing material was auto-generated by pkgs/rauc/gen-dev-keys.sh and is
+DEVELOPMENT-GRADE.
+
+DOMAINS=rauc
+EOF
+
+# The manifest of a release assembled on production material records
+# `production`, so pointing the gate at a development extraction is first of
+# all a divergence: the two are not from one build.
+expect_gate_refusal "a manifest whose trust block disagrees with the image" \
+    "measures trust grade 'development'" "${IN}/evidence.json" "${DEV_META}" \
+    true
+
+# The refusal Gate A is named after. The release has to be relabelled to a
+# customer channel AND its trust block set to what the development extraction
+# measures, or the divergence above fires first and this guard is never
+# reached -- which is exactly the "some OTHER refusal" case this harness
+# exists to catch.
+publish_development_image_as_stable() {
+    jq '.release.channel = "stable" | .trust = {"grade": "development", "developmentDomains": ["rauc"]}' \
+        manifest.json >manifest.json.new
+    mv manifest.json.new manifest.json
+}
+expect_gate_refusal "a development-grade image published to a customer channel" \
+    "carries /usr/share/mos/meta/GENERATED" "${IN}/evidence.json" "${DEV_META}" \
+    publish_development_image_as_stable
+
+# An extraction that does not carry the public set's required member is
+# refused rather than graded: reading "no marker here" out of a directory
+# nobody populated would report every image as production.
+EMPTY_META="${SCRATCH}/meta-empty"
+mkdir -p "${EMPTY_META}"
+expect_gate_refusal "a --baked-meta directory that is not one" \
+    "is not the /usr/share/mos/meta/ of a mos image" "${IN}/evidence.json" "${EMPTY_META}" \
+    true
+
+# The anchor that anchors nothing: a source named and no key trusted.
+UNANCHORED_META="${SCRATCH}/meta-unanchored"
+cp -a "${IN}/meta" "${UNANCHORED_META}"
+cat >"${UNANCHORED_META}/updates/manifest.json" <<'EOF'
+{
+  "schema": "mos/meta/v1",
+  "update": { "source": "https://updates.example/repo", "channel": "stable" },
+  "trust": { "signingKeys": [], "signingKeyIds": [] }
+}
+EOF
+expect_gate_refusal "an image naming an update source while trusting no key" \
+    "names an update source" "${IN}/evidence.json" "${UNANCHORED_META}" \
     true
 
 REFUSAL_N="${#REFUSAL_LABELS[@]}"

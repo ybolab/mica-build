@@ -70,7 +70,23 @@ is an object with `available`; the present shape is:
 | `daemon` | `name`, `version`, `commit` (null when the build supplied none) | what `mosd --version` prints, from the same embedded values |
 | `packages` | `count`, `mosCount`, `malformedRows`, `truncated`, `entries[]` of `name`, `version`, `architecture`, `mos` | `/usr/share/mos/manifest.tsv` |
 | `slot` | `booted`, `bootname`, `bundleVersion`, `bootStatus`, `primary` | RAUC's slot status, through the client mosd already holds |
+| `trust` | `grade` (`development`/`production`), and on a development image `developmentDomains` and `marker` | `/usr/share/mos/meta/`: the baked update configuration, and the `GENERATED` marker beside it |
 | `uptime` | `seconds` | `/proc/uptime` |
+
+`trust` is what the image says about the signing material it was built from,
+and it is not guessed from any certificate: `rootfs/build.sh` bakes
+`/usr/share/mos/meta/GENERATED` if and only if the tree's `meta/GENERATED` is
+there, and `verify`'s `packed-meta-is-the-public-set` refuses an image in which
+those two disagree in either direction. A development image names the domains
+its marker covers, so a mixed one — a production RAUC ceremony's output beside
+a development package signing key — reports which half.
+
+**Absent is not `production`.** The member reads
+`/usr/share/mos/meta/updates/manifest.json` first, because that document is a
+required member of the baked set: an image that does not carry it provisions no
+trust anchor and has no marker for a different reason than a production image
+has none. Such a root reports `available: false` with the reason rather than
+claiming a production CA it cannot see.
 
 `system.gitStamp` is the `+git<commit>[.dirty]-<rev>` stamp the mos rows of
 the manifest share: `commit`, `dirty`, `revision`, and `consistent` with the

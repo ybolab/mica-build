@@ -69,6 +69,39 @@ export interface ReleaseArtifact {
   readonly sha256: string
 }
 
+/**
+ * The grade of the signing material an image was built from. Two values, and
+ * the absence of a third is deliberate: "cannot tell" is a throw rather than a
+ * grade, because a release nobody can grade is not a release
+ * (`readBakedTrust`).
+ */
+export const TRUST_GRADES = ['development', 'production'] as const
+export type TrustGrade = (typeof TRUST_GRADES)[number]
+
+/**
+ * The channels a development-grade image may not be published to.
+ *
+ * `development` is absent on purpose, and it is the whole reason this is a
+ * list rather than a boolean: `docs/design/release-artifacts.md` §2 fixes the
+ * meanings -- `development` carries no promise, `candidate` is under
+ * qualification, `stable` is what customers deploy -- and no production
+ * material exists yet, so an unconditional refusal would make the release path
+ * unrunnable and ship this gate untested. A gate nobody can run is a gate
+ * nobody notices breaking (`docs/plan/PLAN-077.md` §4.2).
+ */
+export const CUSTOMER_CHANNELS: readonly ReleaseChannel[] = ['candidate', 'stable']
+
+/** What the baked `/usr/share/mos/meta/` of an image says about its trust. */
+export interface BakedTrust {
+  readonly grade: TrustGrade
+  /** The domains `GENERATED` names; empty on a production image. */
+  readonly developmentDomains: readonly string[]
+  /** `update.source` as the baked manifest states it; null when it names none. */
+  readonly updateSource: string | null
+  /** How many keys `trust.signingKeys` carries. */
+  readonly signingKeyCount: number
+}
+
 export interface ReleaseManifest {
   readonly schemaVersion: number
   readonly release: { readonly version: string, readonly channel: ReleaseChannel }
@@ -78,6 +111,13 @@ export interface ReleaseManifest {
   readonly build: { readonly builderImages: Readonly<Record<string, string>> }
   /** The boot-assurance level the board evidence asserts, e.g. "I1". */
   readonly bootAssurance: string
+  /**
+   * The grade of the signing material the image was built from, measured from
+   * the image's own baked `meta/` and re-measured by the gate. Recorded rather
+   * than only refused, so a `development` release directory says what it is
+   * instead of being distinguishable only by having been let through.
+   */
+  readonly trust: { readonly grade: TrustGrade, readonly developmentDomains: readonly string[] }
   readonly artifacts: readonly ReleaseArtifact[]
 }
 
@@ -239,6 +279,29 @@ export function checkReleaseManifest(value: unknown, path: string): ReleaseManif
       + `(checkBoardEvidence), and a release with none is a release nobody has qualified`,
     )
   }
+  const trustRaw = value.trust
+  if (!isRecord(trustRaw)) {
+    throw new Error(
+      `${path} carries no trust block; it records the grade of the signing material the image was `
+      + `built from, measured from the image's own /usr/share/mos/meta/, and a release that does `
+      + `not say whether it was signed with development keys is one nobody can refuse`,
+    )
+  }
+  const grade = trustRaw.grade
+  if (typeof grade !== 'string' || !(TRUST_GRADES as readonly string[]).includes(grade)) {
+    throw new Error(
+      `trust.grade ${JSON.stringify(grade)} in ${path} is not one of ${TRUST_GRADES.join('/')}`,
+    )
+  }
+  const domainsRaw = trustRaw.developmentDomains
+  if (!Array.isArray(domainsRaw) || domainsRaw.some(d => typeof d !== 'string')) {
+    throw new Error(
+      `trust.developmentDomains in ${path} is not an array of strings; a production release `
+      + `carries the empty array rather than omitting the field, so an absent one is a manifest `
+      + `written by something that did not measure`,
+    )
+  }
+  const developmentDomains = domainsRaw as string[]
 
   const artifactsRaw = value.artifacts
   if (!Array.isArray(artifactsRaw) || artifactsRaw.length === 0) {
@@ -284,8 +347,96 @@ export function checkReleaseManifest(value: unknown, path: string): ReleaseManif
     source: { commit, dirty: source.dirty },
     build: { builderImages },
     bootAssurance,
+    trust: { grade: grade as TrustGrade, developmentDomains },
     artifacts,
   }
+}
+
+/**
+ * What an image's baked `/usr/share/mos/meta/` says about the trust it ships.
+ *
+ * `dir` is that directory as EXTRACTED from the image, handed in the way
+ * `--package-manifest` already is: `docs/design/release-artifacts.md` §3
+ * records the reason -- the extraction needs the verify toolset and the
+ * extracted bytes are the same either way -- and the bound that comes with it,
+ * that a caller who hands over the wrong directory gets an answer about the
+ * wrong directory, is inherited rather than invented.
+ *
+ * **The vacuity guard is the manifest, and it is the point of this function.**
+ * A grade read as "no GENERATED marker" out of a missing or empty directory is
+ * `production` for every image ever built on a host that never extracted one.
+ * `updates/manifest.json` is a REQUIRED member of the baked public set
+ * (`rootfs/build.sh`'s `META_PUBLIC`), so its absence means the extraction is
+ * wrong or the image provisions no anchor -- and neither of those is a release.
+ * Both are a throw.
+ */
+export function readBakedTrust(dir: string): BakedTrust {
+  const manifestPath = join(dir, 'updates', 'manifest.json')
+  const st = statSync(manifestPath, { throwIfNoEntry: false })
+  if (st === undefined || !st.isFile()) {
+    throw new Error(
+      `${manifestPath} does not exist, so ${dir} is not the /usr/share/mos/meta/ of a mos image. `
+      + `That document is a required member of the baked public set, so an extraction without it `
+      + `is either the wrong directory or an image that provisions no trust anchor at all -- and `
+      + `reading "no development marker here" out of a directory nobody populated would report `
+      + `every such image as production`,
+    )
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  } catch (e) {
+    throw new Error(`${manifestPath} is not JSON: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${manifestPath} is not a JSON object; it is the baked update configuration`)
+  }
+  // Two fields, read defensively rather than a second validator: the schema is
+  // PLAN-070 F5's and mosd's reader owns it. What is refused here is a value
+  // this gate cannot READ, because "cannot tell" must never render as "fine".
+  const update = isRecord(parsed.update) ? parsed.update : {}
+  const rawSource = update.source
+  if (rawSource !== null && rawSource !== undefined && typeof rawSource !== 'string') {
+    throw new Error(
+      `update.source in ${manifestPath} is ${JSON.stringify(rawSource)}, neither a string nor `
+      + `null; this gate cannot tell whether the image names an update server`,
+    )
+  }
+  const trust = isRecord(parsed.trust) ? parsed.trust : {}
+  const keys = trust.signingKeys
+  if (!Array.isArray(keys)) {
+    throw new Error(
+      `trust.signingKeys in ${manifestPath} is ${JSON.stringify(keys)}, not an array. It is the `
+      + `image's package-trust anchor and rootfs/build.sh refuses to bake a manifest without it, `
+      + `so an image carrying none was not staged by this build`,
+    )
+  }
+
+  const markerPath = join(dir, BAKED_TRUST_MARKER)
+  const markerStat = statSync(markerPath, { throwIfNoEntry: false })
+  const marker = markerStat === undefined ? undefined : readFileSync(markerPath, 'utf8')
+  return {
+    grade: marker === undefined ? 'production' : 'development',
+    developmentDomains: marker === undefined ? [] : markerDomains(marker),
+    updateSource: typeof rawSource === 'string' ? rawSource : null,
+    signingKeyCount: keys.length,
+  }
+}
+
+/** The development-grade marker's name, in the image and in the tree's `meta/`. */
+export const BAKED_TRUST_MARKER = 'GENERATED'
+
+/**
+ * The domains a `GENERATED` marker names, from its `DOMAINS=` line.
+ *
+ * The LAST such line wins, which is `pkgs/rauc/gen-dev-keys.sh`'s own rule when
+ * it merges a second domain into an existing marker. A marker naming none is
+ * still a marker: its presence is the claim and the line only says which half.
+ */
+export function markerDomains(text: string): string[] {
+  const lines = text.split('\n').filter(l => l.startsWith('DOMAINS='))
+  const last = lines[lines.length - 1]
+  return last === undefined ? [] : last.slice('DOMAINS='.length).split(/\s+/).filter(d => d !== '')
 }
 
 /**
@@ -536,6 +687,8 @@ export interface GateReport {
   readonly evidence: BoardEvidence
   readonly artifactsChecked: number
   readonly bytesTotal: number
+  /** What the image's own baked meta/ said when the gate re-measured it. */
+  readonly trust: BakedTrust
 }
 
 /**
@@ -546,7 +699,7 @@ export interface GateReport {
  * so the same command answers "may this be published?" whether the directory
  * was written a minute ago or restored from an archive.
  */
-export function gateReleaseDir(dir: string, evidencePath: string): GateReport {
+export function gateReleaseDir(dir: string, evidencePath: string, bakedMetaDir: string): GateReport {
   const manifestPath = join(dir, 'manifest.json')
   const st = statSync(manifestPath, { throwIfNoEntry: false })
   if (st === undefined || !st.isFile()) {
@@ -643,7 +796,44 @@ export function gateReleaseDir(dir: string, evidencePath: string): GateReport {
     )
   }
 
-  return { manifest, evidence, artifactsChecked: manifest.artifacts.length, bytesTotal }
+  // The trust refusals, LAST, because they are about publication policy and
+  // everything above is about whether there is a release here at all. Telling
+  // somebody their bench image may not go to stable before telling them their
+  // SBOM is empty answers a question they have not reached yet.
+  const trust = readBakedTrust(bakedMetaDir)
+  if (trust.grade !== manifest.trust.grade
+    || trust.developmentDomains.join(' ') !== manifest.trust.developmentDomains.join(' ')) {
+    throw new Error(
+      `${bakedMetaDir} measures trust grade '${trust.grade}'`
+      + `${trust.developmentDomains.length > 0 ? ` (domains ${trust.developmentDomains.join(' ')})` : ''} `
+      + `and manifest.json records '${manifest.trust.grade}'`
+      + `${manifest.trust.developmentDomains.length > 0 ? ` (domains ${manifest.trust.developmentDomains.join(' ')})` : ''}; `
+      + `the manifest is populated FROM the image's baked meta/, so a divergence means the two are `
+      + `not from one build -- re-extract and re-assemble`,
+    )
+  }
+  if (trust.grade === 'development' && CUSTOMER_CHANNELS.includes(manifest.release.channel)) {
+    throw new Error(
+      `this release is on the '${manifest.release.channel}' channel and its image carries `
+      + `/usr/share/mos/meta/${BAKED_TRUST_MARKER}, which marks the signing material it was built `
+      + `from DEVELOPMENT-GRADE in ${trust.developmentDomains.length > 0 ? `the ${trust.developmentDomains.join(' and ')} domain(s)` : 'a domain it does not name'}. `
+      + `Every device flashed from it trusts bundles signed by a key that lives unprotected in a `
+      + `working tree, or verifies packages against one. A development image may be published to `
+      + `the '${RELEASE_CHANNELS[0]}' channel, which carries no promise; it may not be published `
+      + `to a customer. Put production material in meta/ -- without meta/${BAKED_TRUST_MARKER} `
+      + `beside it -- and rebuild (docs/design/release-signing.md §2.5)`,
+    )
+  }
+  if (trust.updateSource !== null && trust.signingKeyCount === 0) {
+    throw new Error(
+      `this release's image names an update source (${trust.updateSource}) and its `
+      + `trust.signingKeys is empty, so every device flashed from it downloads update packages it `
+      + `can never verify and reports a refusal that looks like a server fault. An empty key list `
+      + `is a supported steady state only when the image names no source at all`,
+    )
+  }
+
+  return { manifest, evidence, artifactsChecked: manifest.artifacts.length, bytesTotal, trust }
 }
 
 // Assembly.
@@ -657,6 +847,11 @@ export interface AssembleInputs {
   readonly bundlePath: string
   /** The image's /usr/share/mos/manifest.tsv content, as a file. */
   readonly packageManifestPath: string
+  /**
+   * The image's `/usr/share/mos/meta/` directory, as extracted -- the same
+   * shape as `packageManifestPath` and for the same recorded reason.
+   */
+  readonly bakedMetaDir: string
   readonly notesPath: string
   readonly evidencePath: string
   readonly outDir: string
@@ -716,6 +911,10 @@ export function assembleRelease(inputs: AssembleInputs): AssembleResult {
   requireInputFile(inputs.packageManifestPath,
     'it is the image\'s /usr/share/mos/manifest.tsv, the bill of materials the SBOM is derived from',
     'The image ships it at that path; extract it from the built rootfs (verify reads the same file)')
+  // Measured before anything is copied: a release whose grade cannot be read
+  // is refused before it exists as a directory, and readBakedTrust throws on
+  // an extraction that does not carry the public set's required member.
+  const trust = readBakedTrust(inputs.bakedMetaDir)
   requireInputFile(inputs.notesPath, 'a release without release notes is refused by the publication gate',
     'Write the notes and pass their path')
   if (statSync(inputs.notesPath).size === 0) {
@@ -757,6 +956,7 @@ export function assembleRelease(inputs: AssembleInputs): AssembleResult {
       { name: 'bundle', path: bundleReal, sha256: fileSha256(bundleReal) },
       { name: 'package-manifest', path: inputs.packageManifestPath, sha256: fileSha256(inputs.packageManifestPath) },
       { name: 'board-evidence', path: inputs.evidencePath, sha256: fileSha256(inputs.evidencePath) },
+      { name: 'baked-meta', path: inputs.bakedMetaDir, sha256: fileSha256(join(inputs.bakedMetaDir, 'updates', 'manifest.json')) },
     ],
   }, null, 2)}\n`)
 
@@ -778,11 +978,12 @@ export function assembleRelease(inputs: AssembleInputs): AssembleResult {
     source,
     build: { builderImages: inputs.builderImages },
     bootAssurance: evidence.bootAssurance,
+    trust: { grade: trust.grade, developmentDomains: trust.developmentDomains },
     artifacts,
   }
   const manifestPath = join(inputs.outDir, 'manifest.json')
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
-  const gate = gateReleaseDir(inputs.outDir, inputs.evidencePath)
+  const gate = gateReleaseDir(inputs.outDir, inputs.evidencePath, inputs.bakedMetaDir)
   return { outDir: inputs.outDir, manifestPath, gate }
 }

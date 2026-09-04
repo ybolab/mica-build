@@ -37,9 +37,14 @@ classes:
 - **The release image** — already versioned and signed
   (`docs/design/release-signing.md`); the factory flashes a named release,
   never a loose build. A development-keyring image
-  (`meta/GENERATED`-derived) must never be flashed at a factory station; the
-  image verifier's gate (`verify/src/checks-root.ts`) is the build-side
-  teeth, and the factory-side check is §2's.
+  (`meta/GENERATED`-derived) must never be flashed at a factory station. Three
+  mechanisms now stand behind that sentence: the image verifier's gate
+  (`verify/src/checks-root.ts`), the **publication gate**, which refuses a
+  `candidate` or `stable` release whose image carries
+  `/usr/share/mos/meta/GENERATED` and names the file
+  (`docs/design/release-artifacts.md` §4.1), and the **device itself**, which
+  reports `trust.grade` on `GET /api/v1/system/info` so a station can ask a
+  flashed unit what it trusts. The factory-side check is §2's.
 - **Serial number pools** — issued to a factory as a bounded, versioned
   allocation; a serial is consumed exactly once, and an exhausted or
   withdrawn pool is closed, never reused.

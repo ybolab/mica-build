@@ -25,12 +25,19 @@ meta/updates/root.key            package signing private key    SECRET  -> never
 meta/GENERATED                   development-grade marker       host only
 ```
 
-**Two files reach the image, by allowlist, and nothing else does:**
+**Only these reach the image, by allowlist, and nothing else does:**
 
-| File in `meta/` | Path in the image |
-|---|---|
-| `meta/rauc/ca.cert.pem` | `/etc/rauc/keyring.pem` |
-| `meta/updates/manifest.json` | `/usr/share/mos/meta/updates/manifest.json` |
+| File in `meta/` | Path in the image | |
+|---|---|---|
+| `meta/rauc/ca.cert.pem` | `/etc/rauc/keyring.pem` | required |
+| `meta/updates/manifest.json` | `/usr/share/mos/meta/updates/manifest.json` | required |
+| `meta/GENERATED` | `/usr/share/mos/meta/GENERATED` | **conditional** |
+
+The marker is the one entry whose absence is meaningful: it is there exactly
+when this material is development-grade, so the image ships it if and only if
+`meta/` has it. That is what lets a device say whether it trusts a development
+CA, and what the release gate reads to refuse publishing such an image to a
+customer channel.
 
 Everything else is build-host-only, **including any file not named above**.
 That is an allowlist and not a denylist on purpose: under a denylist a file

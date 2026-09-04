@@ -59,13 +59,16 @@ accepting it would verify less than the writer claimed.
 | `source.commit`, `source.dirty` | the full 40-hex git commit, and whether the tree carried uncommitted changes; a `dirty` release is one no commit reproduces |
 | `build.builderImages` | the `IMAGE_`/`LOCAL_` pins from `build-env/images.env`, transcribed verbatim — recorded, not resolved; `build-env/from.sh` stays the one resolver |
 | `bootAssurance` | the board's boot-assurance level (e.g. `"I1"`), populated **from the board-evidence file** (§4), never written by hand |
+| `trust.grade`, `trust.developmentDomains` | `development` or `production`, and on a development image the domains its marker names; populated **from the image's own baked `/usr/share/mos/meta/`** (§4.1), never written by hand |
 | `artifacts[]` | one entry per file: `filename` (plain, no path separators), `role` (§1's set), `bytes`, `sha256` |
 
 The **publication floor**: at least one artifact of every role in §1 must be
 present, every listed file must exist with the recorded size and digest,
 `SHA256SUMS` must agree with the manifest, the release notes must be
-non-empty, the SBOM must list at least one component, and the board evidence
-must be present and agree. Anything less is refused by the gate, by name.
+non-empty, the SBOM must list at least one component, the board evidence
+must be present and agree, and the trust grade must agree with the image and
+be publishable on the channel claimed. Anything less is refused by the gate,
+by name.
 
 A channel is a claim about qualification, not a directory name: `development`
 carries no promise, `candidate` is under qualification, `stable` is what
@@ -159,6 +162,47 @@ The manifest's `bootAssurance` field is populated from this file at
 assembly, and the gate re-reads the file, re-applies all of the above, and
 refuses a divergence.
 
+### 4.1 The trust grade — **[implemented]**
+
+The gate consumes one more input, the image's `/usr/share/mos/meta/`
+**directory as extracted** (`--baked-meta` / `MOS_BAKED_META`, no default).
+This is `--package-manifest`'s shape and it is that way for §3's recorded
+reason: the extraction needs the verify toolset and the extracted bytes are the
+same either way. The bound comes with it — a caller who hands over a directory
+that did not come out of the image gets an answer about that directory — and it
+is inherited rather than re-argued.
+
+What is read there:
+
+- **`updates/manifest.json` must be present**, and its absence is a **throw**
+  rather than a verdict. It is a required member of the baked public set
+  (`rootfs/build.sh`'s allowlist), so an extraction without it is either the
+  wrong directory or an image that provisions no trust anchor. Grading such a
+  directory "production" — which is what "no marker found here" means over an
+  empty directory — would pass every image ever built on a host that never
+  extracted one.
+- **`GENERATED`**, present exactly when the signing material the image was
+  built from came from `pkgs/rauc/gen-dev-keys.sh`. Its `DOMAINS=` line names
+  which half — the RAUC keyring, the package signing key, or both.
+
+Two refusals follow:
+
+1. **A development-grade image may not be published to a customer channel.**
+   `candidate` and `stable` are refused, naming the file found and the domains
+   it names; `development`, which carries no promise (§2), still accepts one,
+   and the manifest records the grade either way. Unconditional refusal was
+   rejected: no production material exists yet, so it would make the release
+   path unrunnable and ship this gate untested (`docs/plan/PLAN-077.md` §4.2).
+2. **An image naming an update source while trusting no signing key** is
+   refused: every device flashed from it downloads packages it can never verify
+   and reports a refusal that looks like a server fault. An empty
+   `trust.signingKeys` with no `update.source` is a supported steady state and
+   passes.
+
+The manifest's `trust` block is populated from this measurement and re-measured
+by the gate, which must agree — the same two-source shape §4's `bootAssurance`
+uses against the board evidence.
+
 ## 5. The publication gate — **[implemented]**
 
 ```sh
@@ -170,14 +214,17 @@ trusted from the assembly that wrote it — so the same command answers "may
 this be published?" whether the directory was written a minute ago or
 restored from an archive. Every refusal names the gap: the missing artifact
 and its role, the file whose bytes or digest moved, the empty release notes,
-the component-less SBOM, the absent or diverged board evidence. The assemble
+the component-less SBOM, the absent or diverged board evidence, the
+development-grade image on a customer channel (§4.1). The assemble
 arm ends by running the same gate over what it wrote, so a directory that
 assembles is a directory that gates.
 
 Every refusal is proven red by mutation — `build/src/release-manifest.test.ts`
-deletes an artifact, flips a byte, empties the notes, drops the evidence, and
-requires each guard to fire by name; `tests/release-verify-test.sh` drives
-the same mutations through the shipped CLI against a fixture release.
+deletes an artifact, flips a byte, empties the notes, drops the evidence,
+plants the development marker in the extraction and empties the trusted key
+list, and requires each guard to fire by name; `tests/release-verify-test.sh`
+drives the same mutations through the shipped CLI against a fixture release and
+proves, across every refusal it raised, that no two share a message fragment.
 
 ## 6. The customer procedure
 

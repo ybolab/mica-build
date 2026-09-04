@@ -101,6 +101,14 @@ release host (`pkgs/rauc-sign/README.md`).
   directions of the dev-keyring gate: an image carrying a `GENERATED` root
   reports the grade it read rather than failing closed on it, and a
   keyring that is not byte-equal to `meta/rauc/ca.cert.pem` is refused.
+- **The grade travels with the image, and publication is refused on it** —
+  `rootfs/build.sh` bakes `meta/GENERATED` to `/usr/share/mos/meta/GENERATED`
+  if and only if the tree has one, `packed-meta-is-the-public-set` refuses an
+  image where those two disagree in either direction, a device reports it as
+  `trust.grade` on `GET /api/v1/system/info`, and the publication gate refuses
+  a `candidate` or `stable` release whose image carries it, naming the file
+  (`docs/design/release-artifacts.md` §4.1). "No image with a development
+  keyring should leave a desk" was a convention; these are its teeth.
 
 ### 1.3 Device TLS identities — owner: release owner (policy), support owner (field) — **[partial]**
 

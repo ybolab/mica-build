@@ -88,7 +88,7 @@ export interface ImageContext {
    * `meta/`.
    *
    * A seam for the same reason `outDir` is one, and not a second convention:
-   * `meta/` is where rootfs/build.sh takes the two files it bakes into every
+   * `meta/` is where rootfs/build.sh takes the files it bakes into every
    * image from, so the checks that ask "did what shipped come from there?" have
    * to read it. Reading the real `meta/` from a test would make the suite pass
    * on a host that had built once and fail on one that had not, and would make

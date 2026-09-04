@@ -203,12 +203,15 @@ everything a release needs to be configured and signed, and it is gitignored;
 `/etc/rauc/keyring.pem`, which is what lets an image install the bundles built
 beside it.
 
-Only two files leave `meta/` for the image, by an allowlist in
-`rootfs/build.sh`: that certificate and `meta/updates/manifest.json`. Every
+Only the files the allowlist in `rootfs/build.sh` names leave `meta/` for the
+image: that certificate and `meta/updates/manifest.json`, both required, and
+`meta/GENERATED` conditionally — staged if and only if it is there, so the
+image says whether the material it was built from is development-grade. Every
 private key stays on the build host, and two checks hold it — the build refuses
 to stage anything off the allowlist or anything carrying private key material,
 and the image verifier refuses an assembled image that contains one however it
-got there.
+got there, and refuses one whose marker disagrees with the tree's in either
+direction.
 
 Nothing has to be run first. A build that finds `meta/` absent — or missing any
 of the four RAUC files — generates a development-grade trust root there, prints
