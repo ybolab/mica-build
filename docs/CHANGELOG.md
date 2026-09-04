@@ -4,6 +4,65 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## x64 builds its own kernel, and there is no initramfs (2026-09-04)
+
+x64 shipped Debian's generic amd64 kernel — 108 MB, with its own maintainer
+scripts, its own initramfs run during the compose, and a klibc shell script in
+the initrd that assembled the verity root. It now builds its own kernel from
+mainline `v6.12.107`, pinned by tag and verified by digest, from a reviewed
+fragment merged over `x86_64_defconfig` with the resolved config recorded in
+tree and a build that refuses a config that drifted from it.
+
+The reason was not size. `boards/common/mos-required.fragment` called itself the
+board-independent baseline and was not one: measured against the Debian config
+x64 actually shipped, of its 23 `=y` lines, 10 held, 12 were `=m`, one was absent
+and its `CONFIG_LSM` was a different string — and nothing in the tree checked any
+of it. That gap had already cost a whole-board outage: a change to the verity
+format updated two of its three consumers and missed the klibc script, so every
+x64 image was unbootable while cx3576 stayed green, because cx3576's kernel reads
+the same command line directly and never runs that code.
+
+**The initramfs is gone with it.** `rootfs/initramfs/` is deleted, initramfs-tools
+and klibc-utils are out of the root, and there is no initrd in either slot's boot
+partition, in `grub.cfg`, in the assembler or in the bundle. The kernel carries
+`DM_INIT` and `DM_VERITY` built in and GRUB's `dm-mod.create` does what the shell
+script did. Measured on the built artefacts: the kernel package drops from 108 MB
+to 15 MB, the root from 435 MB to 296 MB, the RAUC bundle from 298 MB to 132 MB,
+and 4230 modules become 8. The bzImage grows, from 11.6 MiB to 14.9 MiB, because
+the drivers are built in — that is the trade, stated rather than hidden. Both
+first-boot repartition and RAUC installation were always ordinary units after
+`/sbin/init`, so removing the initrd took nothing from either.
+
+The checks changed meaning rather than being deleted. `checks-kernel.ts` accepted
+`=y` or `=m` over 7 symbols; it now requires `=y` **and** builtin over 31, which is
+itself the provenance check — Debian's config has twelve of them `=m` and
+`CONFIG_DM_INIT` nowhere, so a distribution kernel returning goes red. The
+assertion that an x64 slot must carry an initrd was inverted rather than dropped,
+and a BusyBox clause that would have become vacuous over an archive that can no
+longer exist was restated stronger.
+
+The floor is now one floor. The container-network symbols moved out of cx3576's
+per-board loop into the shared fragment that both boards merge and assert after
+`olddefconfig`. That consolidation also introduced, and then caught, the exact
+defect the work exists to prevent: replacing a 59-symbol floor with a 41-symbol
+one dropped 22 symbols and compensated for them only on the board that already
+had them, so `CONFIG_NF_CONNTRACK_MARK` — the DNAT mark netavark sets for
+published ports — was silently absent from x64's own config. The netavark gate
+found it, and it and `NF_NAT_MASQUERADE` are named in the shared floor now.
+
+The kernel also provisions the disk-encryption capability, and that is all it
+does: `DM_CRYPT`, `CRYPTO_XTS` and `CRYPTO_AES` in a separately labelled block
+that says it is the only block whose entries name no consumer, and that carries
+its exit condition — each line leaves when a consumer lands in the image, and the
+whole block is deleted if the product decision reverses. Nothing is encrypted at
+rest; the image ships no cryptsetup, formats no LUKS header and has no unlock
+path. Derived as three symbols, measured as six, because the crypt target selects
+ESSIV in 6.12 and accelerated x86 AES pulls in cryptd and the SIMD helpers.
+`CONFIG_TRUSTED_KEYS` and `CONFIG_ENCRYPTED_KEYS` stay off: cx3576 has no TPM —
+its device tree declares none — so on that board the symbol would seal against
+nothing, and enabling them would decide by accident where a volume key lives,
+which is the first question an unlock design has to answer.
+
 ## The base image carries a firewall vocabulary, and keeps its unit off (2026-09-03)
 
 `mos-system` now depends on both `nftables` and `iptables`. Neither is a

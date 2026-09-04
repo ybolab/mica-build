@@ -63,6 +63,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-009 Generate built-in UI assets during the build**](UI-009.md) `P1`
 - [x] [**RFCT-293 Ship the `docker` command name as a podman symlink**](RFCT-293.md) `P2`
 - [x] [**RFCT-294 Add eBPF, firewall and bridge symbols to the common kernel floor**](RFCT-294.md) `P1`
+- [x] [**RFCT-295 Build the x64 kernel in tree, with its own config**](RFCT-295.md) `P1`
 - [x] [**RFCT-296 Ship the firewall tools in the base image, with no policy**](RFCT-296.md) `P1`
 - [x] [**RFCT-297 Design device state reporting to the fleet plane**](RFCT-297.md) `P1`
 - [x] [**RFCT-298 Report rtnetlink enums on the observed-network surface as names**](RFCT-298.md) `P1`
