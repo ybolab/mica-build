@@ -824,12 +824,19 @@ export function gateReleaseDir(dir: string, evidencePath: string, bakedMetaDir: 
       + `beside it -- and rebuild (docs/design/release-signing.md §2.5)`,
     )
   }
-  if (trust.updateSource !== null && trust.signingKeyCount === 0) {
+  if (CUSTOMER_CHANNELS.includes(manifest.release.channel) && trust.signingKeyCount === 0) {
     throw new Error(
-      `this release's image names an update source (${trust.updateSource}) and its `
-      + `trust.signingKeys is empty, so every device flashed from it downloads update packages it `
-      + `can never verify and reports a refusal that looks like a server fault. An empty key list `
-      + `is a supported steady state only when the image names no source at all`,
+      `this release is on the '${manifest.release.channel}' channel and its image's `
+      + `trust.signingKeys is empty, so it trusts no package signing key at all`
+      + `${trust.updateSource === null
+        ? ' and bakes no update source either'
+        : ` while baking the source ${trust.updateSource}`}. `
+      + `Under PLAN-070 §5.3 the source URL is operator-changeable, so "this image will never `
+      + `fetch a package" stopped being a fact the build can establish: an authenticated operator `
+      + `can point any device of this release at a server, and every package it then downloads is `
+      + `refused as unauthentic with no remedy but a new image. An empty key list is a supported `
+      + `steady state on the '${RELEASE_CHANNELS[0]}' channel, which carries no promise; a customer `
+      + `release carries the key a ceremony produced (docs/design/release-signing.md §2.1)`,
     )
   }
 

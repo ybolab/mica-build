@@ -58,6 +58,17 @@ lode's scheme; the TUF repository `pkgs/rauc-sign` builds is not the mechanism
 `root.key` signs with. The baked public set therefore stays at two files —
 there is no signed root document to ship.
 
+**RFCT-306, merged to main 2026-09-04.** PLAN-070 §5.3 and PLAN-071 §10: the
+update source URL and the fleet plane URL become operator-overridable through
+`/mos/config/`, **and the trust anchors do not move** — no layer-2 key, no
+on-device write path, and any anchor-shaped key in an operator document is a
+load error asserted by name (§5.3.5). This record is written against that
+amendment rather than around it, in two places: §4.3, where it turns a nicety
+into a refusal, and §6.4a, where it bounds what the rotation channel may
+become. The amendment's own premise is Gate A's subject — a changeable address
+is safe *because* the signature check is unchangeable and real — so the two
+records are load-bearing for each other.
+
 **RFCT-301, in flight on `bkd/67n9ae87` at the time of writing.** PLAN-070
 F1–F4 and F12: `meta.example/`, the generator's absorption onto `meta/`, the
 `ca/` → `meta/rauc/` rename, the staging allowlist with refusal **B1**, the
@@ -292,21 +303,49 @@ customer", and the `development` channel keeps the path exercised.
 The message names the domains rather than saying "development-grade", because
 "which half" is the first thing a release owner will ask.
 
-#### 4.3 The second refusal: an anchor that anchors nothing
+#### 4.3 The second refusal: a customer release that trusts no key
 
 With the baked `manifest.json` already in hand for §4.1's guard, one more
-incoherence is visible and worth refusing: **`update.source` names a server and
-`trust.signingKeys` is empty.** Such an image downloads packages it can never
-verify, on every device of the release, and reports a refusal that looks like
-a server problem.
+condition is visible — and **RFCT-306 is what makes it a refusal rather than a
+nicety**. PLAN-070 §5.3, approved 2026-09-04, makes `update.source` an
+operator-overridable key in `/mos/config/updates.json` while the anchors stay
+baked. The consequence for this gate is exact:
 
-- An empty `trust.signingKeys` with `update.source: null` is a **supported
-  steady state** (PLAN-070 §7) and passes: a device configured to reach no
-  server has no package to verify.
+> **"This image will never fetch a package" stopped being a fact the build can
+> establish.**
+
+Before the amendment, an image baking no source was an image that would never
+ask a server for anything, so an empty `trust.signingKeys` beside it was
+inert. After it, an authenticated operator can point **any device of that
+release** at a server, and every package it then downloads is refused as
+unauthentic — with no remedy but a new image, which is the stranded case
+PLAN-070 §5.3.1 says this amendment exists to remove.
+
+**The refusal: a `candidate` or `stable` release whose image's
+`trust.signingKeys` is empty.** Source or no source; the message names which,
+because the two look different in a support queue and are the same defect.
+
+- On `development` an empty key list stays exactly the **supported steady
+  state** PLAN-070 §7 makes it, and it has to: `gen-dev-keys.sh --domain
+  updates` is opt-in, so the tree's own builds are this shape, and refusing it
+  everywhere would make the release path unrunnable for the same reason §4.2
+  gives.
+- This **subsumes** the narrower check this section first proposed —
+  "`update.source` named and no key trusted" — which after the amendment
+  catches strictly less than the hazard, because the dangerous image is now the
+  one that bakes *no* source at all and can be pointed at one later.
 - The refusal is in the **gate** and not in the build, deliberately. A
   development tree that points at a server before anyone has run
   `--domain updates` is a legitimate state to build in; publishing that image
-  is not.
+  to a customer is not.
+
+**And this is the amendment's own premise, enforced.** PLAN-070 §5.3.2 rests
+the whole case for a changeable address on one clause: *"A device pointed at a
+hostile server refuses every package not signed by a key in
+`trust.signingKeys`."* An image whose `trust.signingKeys` is empty does not
+have that protection to fall back on — it has nothing to refuse *with*. Gate A
+is what makes the amendment true, and this refusal is where the two records
+meet.
 
 ### 5. The anchor is provisioned — by RFCT-301, and this record does not rebuild it
 
@@ -441,6 +480,42 @@ which is a race a fleet operator can win on devices they can reach.
 
 Case 1 — the missed window — is where it is unambiguously the right answer,
 and case 1 is the one that will actually happen.
+
+#### 6.4a What it must not become, given RFCT-306
+
+PLAN-070 §5.3.5, approved 2026-09-04, is the rule this design comes closest to
+and **does not touch**. Its words: the operator schema has **no `trust` object
+at all**, naming `trust`, `signingKeys`, `signingKeyId`, `rootPath` or
+`keyring` in `/mos/config/updates.json` or `/mos/config/fleet.json` is a load
+error asserted **by name, per key**, and — the sentence that matters here —
+*"A future request to 'also let the operator supply a key, for testing' is not
+a smaller version of this amendment; it is the deletion of its premise."*
+
+The rotation channel designed above is **not that request**, and the three
+properties that keep it from becoming it are requirements rather than
+observations:
+
+1. **The authority is a signature, never a write.** A new anchor is installed
+   because a statement verified against a **baked** rotation key, which no
+   operator holds and no release host holds. An authenticated operator cannot
+   install one by writing a document, and there is no API that takes a key.
+2. **It lands nowhere near `/mos/config/`.** The namespace is the integrator's
+   configuration tier and by §5.3.5 has no anchor-shaped key at any depth. The
+   rotation channel's state is mosd's own, on **STATE**, written only by the
+   verifier — the same store, and for the same recorded reason, as PLAN-070
+   §5.3.4's downgrade floor: *a floor a remote party can lower is not a floor*,
+   and an anchor a config write can replace is not an anchor.
+3. **The monotonic sequence number is STATE's too**, and by name. It is the
+   rotation channel's version floor, it only rises, and putting it beside a
+   writable document would let one write both re-anchor a device and replay an
+   older statement at it.
+
+**What this changes about §5.3.5's own test.** That amendment requires the
+anchor-shaped keys refused by name in the operator schema. If G8 is ever
+approved, the rotation channel adds no key to that schema and the by-name test
+grows no exception — the statement is a signed object arriving by its own
+transport, not a document. A design that needed the exception would be the
+wrong design, and this is the place that says so before anybody writes one.
 
 #### 6.5 Why this record stops here
 
@@ -795,9 +870,11 @@ recommendation.
 - the **release gate refuses** a `candidate` or `stable` release whose image
   carries the marker, naming the file and the domains; a `development` release
   records the grade and proceeds;
-- the gate also refuses an image whose baked manifest **names a source and
-  trusts no key**, while an empty key list with no source stays a supported
-  steady state;
+- the gate also refuses a `candidate` or `stable` release whose baked
+  `trust.signingKeys` is **empty**, source or no source, because RFCT-306 made
+  the source operator-changeable and "this image will never fetch a package"
+  stopped being a build-time fact; an empty key list stays a supported steady
+  state on `development` (§4.3);
 - the gate's fact is **measured from an extraction of the image**, handed in as
   `--baked-meta`, on `--package-manifest`'s precedent and with its bound
   stated; the reader **throws** rather than passing when the extraction does
@@ -809,6 +886,11 @@ recommendation.
   recommended shape is an offline trust-rotation key that signs nothing else, a
   monotonic signed trust statement, a STATE-backed keyring behind a bind mount,
   and two transports. **It is designed and not approved**;
+- the rotation channel is bounded by PLAN-070 §5.3.5 and does not weaken it
+  (§6.4a): the authority is a signature against a baked key rather than an
+  operator write, nothing of it lands in `/mos/config/`, its sequence floor
+  lives on STATE beside the downgrade floor for §5.3.4's recorded reason, and
+  the by-name anchor-key refusal in the operator schema grows no exception;
 - the **decision the user must take** is §6.5's: whether a device-time
   trust-rotation channel is wanted for 1.0 at the price of a third offline key
   and of PLAN-070 §6.3's immutability property. Answering "no" is a defensible
@@ -833,7 +915,7 @@ written before it merges.
 | G1 | The conditional allowlist entry in `rootfs/build.sh`: `META_PUBLIC` gains `GENERATED`, staged iff present; B1's count becomes "entries whose source was present", with the required ones still mandatory | S | a development tree bakes the marker; a tree whose marker is deleted bakes none and stays green; a required member still missing is still red |
 | G2 | `packed-meta-is-the-public-set` gains the biconditional: the image carries the marker **iff** `meta/` does, byte-equal when both | S | both directions RED — an image with a marker its tree lacks, and an image without one its tree has; the absent-`meta/` throw is unchanged |
 | G3 | The `trust` member on `system_info.rs`, its evidence field and observer read, plus the `trust` entry in apid's diagnostics redaction allowlist | M | fixture trees for all three cases; **an absent baked `meta/` tree reports `available: false`, and a test that plants exactly that is RED against a reader that answers `production`**; a snapshot carries the member |
-| G4 | The release gate: `readBakedTrust` with its throw-on-missing-manifest guard, the `trust` block in `ReleaseManifest`, the assembly measurement, the gate's agreement check, and both refusals | M | dev-grade + `stable` red naming the file and domains; dev-grade + `development` green with the grade recorded; production-grade + `stable` green; source-set-with-no-keys red; **an absent or empty `--baked-meta` throws** |
+| G4 | The release gate: `readBakedTrust` with its throw-on-missing-manifest guard, the `trust` block in `ReleaseManifest`, the assembly measurement, the gate's agreement check, and both refusals | M | dev-grade + `stable` red naming the file and domains; dev-grade + `development` green with the grade recorded; production-grade-with-a-key + `stable` green; an empty `trust.signingKeys` on a customer channel red, source or no source; the same on `development` green; **an absent or empty `--baked-meta` throws** |
 | G5 | `--baked-meta` / `MOS_BAKED_META` on `release-cli.ts`, and the Makefile documentation that names it | S | an unrecognised flag is still refused; the gate cannot be run without the input |
 | G6 | Documentation: `docs/user/security.md` §2's three bullets rewritten to what is true, `docs/design/diagnostics.md` §2's member table, `docs/design/release-artifacts.md` §2 and §5 (the schema's `trust` block, the new input, both refusals), `docs/design/security-lifecycle.md` §1.2 and `docs/design/manufacturing.md` §1 where a convention became a mechanism — each mirrored into `docs/zh/` in the same commit | M | `make docs-verify`; **nothing marked shipped that is not**, and §5's table is the wording source |
 | G7 | §7's runbook migrated into `docs/design/release-signing.md` as a new section, with §7.5's limits | S | `make docs-verify`; no restatement of §2.1's or §2.5's shell blocks |
@@ -850,3 +932,9 @@ nothing else. G8 depends on a decision.
 - 2026-09-04 19:10 UTC: Created for PLAN-037's Gate A. Answers PLAN-070 open
   question 4 (yes, with the evidence in §2), designs the rotation path and
   stops at §6.5's decision, and carries the ceremony runbook in §7.
+- 2026-09-04 21:40 UTC: Written against RFCT-306 (PLAN-070 §5.3, PLAN-071 §10).
+  §4.3's refusal is widened — a customer release must trust a package signing
+  key, because the source is now operator-changeable — and §6.4a bounds the
+  rotation channel against §5.3.5's by-name anchor refusal. Neither is a change
+  of position; both are what this record's own reasoning becomes once the
+  address moves and the anchor does not.

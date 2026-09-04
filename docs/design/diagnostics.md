@@ -241,7 +241,7 @@ The journal excerpt is this boot's, at warning and worse, newest first when
 the caps cut. journald runs `Storage=volatile` on the image, so there is no
 previous boot to ask for; the hostname column is left out of every line.
 
-## 6. The redaction schema, version 3
+## 6. The redaction schema, version 4
 
 Redaction is a tested security boundary, and it fails closed. It is the
 management-API redaction `docs/design/security-model.md` §6 counts among the

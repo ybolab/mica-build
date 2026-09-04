@@ -193,11 +193,14 @@ Two refusals follow:
    and the manifest records the grade either way. Unconditional refusal was
    rejected: no production material exists yet, so it would make the release
    path unrunnable and ship this gate untested (`docs/plan/PLAN-077.md` §4.2).
-2. **An image naming an update source while trusting no signing key** is
-   refused: every device flashed from it downloads packages it can never verify
-   and reports a refusal that looks like a server fault. An empty
-   `trust.signingKeys` with no `update.source` is a supported steady state and
-   passes.
+2. **A customer release whose image trusts no package signing key** is refused,
+   whether or not it bakes an update source. PLAN-070 §5.3 made the source
+   operator-overridable, so "this image will never fetch a package" is no
+   longer a fact the build can establish: an authenticated operator can point
+   any device of the release at a server, and every package it then downloads
+   is refused as unauthentic with no remedy but a new image. An empty
+   `trust.signingKeys` stays a supported steady state on `development`, which
+   is the shape every build in this tree has until a ceremony key exists.
 
 The manifest's `trust` block is populated from this measurement and re-measured
 by the gate, which must agree — the same two-source shape §4's `bootAssurance`

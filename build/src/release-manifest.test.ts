@@ -752,6 +752,19 @@ describe('readBakedTrust measures the grade, and refuses to guess it', () => {
 })
 
 describe('the publication gate refuses a development-grade image on a customer channel', () => {
+  /**
+   * A baked manifest carrying one trusted package key, which a customer
+   * channel requires: after PLAN-070 §5.3 made the source operator-changeable,
+   * a customer release with an empty `trust.signingKeys` is refused.
+   */
+  function anchored(meta: string): void {
+    writeFileSync(join(meta, 'updates', 'manifest.json'), JSON.stringify({
+      schema: 'mos/meta/v1',
+      update: { source: null, channel: 'stable', policy: 'check', checkIntervalMinutes: 1440 },
+      trust: { signingKeys: ['a'.repeat(43)], signingKeyIds: [] },
+    }, null, 2))
+  }
+
   function assembledWith(overrides: Partial<AssembleInputs>, mutateMeta?: (meta: string) => void):
   { dir: string, evidence: string, meta: string } {
     const inputs = fixture(overrides)
@@ -803,7 +816,7 @@ describe('the publication gate refuses a development-grade image on a customer c
   test('POSITIVE CONTROL: production-grade on STABLE passes', () => {
     // Without this the two refusals above would pass on a gate that refused
     // every stable release, which is a different check than the one claimed.
-    const { dir, evidence, meta } = assembledWith({ channel: 'stable' })
+    const { dir, evidence, meta } = assembledWith({ channel: 'stable' }, anchored)
     const report = gateReleaseDir(dir, evidence, meta)
     expect(report.manifest.trust.grade).toBe('production')
     expect(report.manifest.trust.developmentDomains).toEqual([])
@@ -816,28 +829,53 @@ describe('the publication gate refuses a development-grade image on a customer c
       .toThrow(/measures trust grade 'development'.*and manifest\.json records 'production'/s)
   })
 
-  test('an image naming an update source while trusting no key is refused', () => {
-    const inputs = fixture()
-    writeFileSync(
-      join(inputs.bakedMetaDir, 'updates', 'manifest.json'),
-      JSON.stringify({ update: { source: 'https://updates.example' }, trust: { signingKeys: [] } }),
-    )
-    expect(() => assembleRelease(inputs))
-      .toThrow(/names an update source \(https:\/\/updates\.example\) and its trust\.signingKeys is empty/)
+  test('a customer release trusting NO package signing key is refused, source or no source', () => {
+    // PLAN-070 §5.3 made the source URL operator-changeable, so "this image
+    // will never fetch a package" stopped being a fact the build can
+    // establish. Both shapes are refused on a customer channel: the one that
+    // bakes a source it cannot verify, and the one that bakes none and can be
+    // pointed at one by an authenticated operator on any device of the release.
+    for (const channel of CUSTOMER_CHANNELS) {
+      const bakesASource = fixture({ channel })
+      writeFileSync(
+        join(bakesASource.bakedMetaDir, 'updates', 'manifest.json'),
+        JSON.stringify({ update: { source: 'https://updates.example' }, trust: { signingKeys: [] } }),
+      )
+      expect(() => assembleRelease(bakesASource))
+        .toThrow(/while baking the source https:\/\/updates\.example/)
+
+      const bakesNone = fixture({ channel })
+      expect(() => assembleRelease(bakesNone)).toThrow(/and bakes no update source either/)
+      expect(() => assembleRelease(bakesNone)).toThrow(/trusts no package signing key at all/)
+    }
   })
 
-  test('a source WITH a trusted key passes, and no source with no key stays a steady state', () => {
-    const withKey = assembledWith({}, m => writeFileSync(
+  test('POSITIVE CONTROL: a customer release WITH a trusted key passes', () => {
+    // Without this the refusal above would pass on a gate that refused every
+    // customer release, which is a different check than the one claimed.
+    const withKey = assembledWith({ channel: 'stable' }, m => writeFileSync(
       join(m, 'updates', 'manifest.json'),
-      JSON.stringify({ update: { source: 'https://updates.example' }, trust: { signingKeys: ['a'.repeat(43)] } }),
+      JSON.stringify({
+        update: { source: 'https://updates.example' },
+        trust: { signingKeys: ['a'.repeat(43)] },
+      }),
     ))
     expect(gateReleaseDir(withKey.dir, withKey.evidence, withKey.meta).trust.signingKeyCount).toBe(1)
-    const noServer = assembledWith({})
-    expect(gateReleaseDir(noServer.dir, noServer.evidence, noServer.meta).trust.updateSource).toBeNull()
+  })
+
+  test('an empty key list stays a supported steady state on the development channel', () => {
+    // The tree's own builds are exactly this: gen-dev-keys.sh --domain updates
+    // is opt-in, because a development key no published repository has signed
+    // anything with anchors nothing. Refusing it everywhere would make the
+    // release path unrunnable.
+    const noServer = assembledWith({ channel: 'development' })
+    const report = gateReleaseDir(noServer.dir, noServer.evidence, noServer.meta)
+    expect(report.trust.updateSource).toBeNull()
+    expect(report.trust.signingKeyCount).toBe(0)
   })
 
   test('a gate handed a meta directory that is not one THROWS rather than grading it', () => {
-    const { dir, evidence, meta } = assembledWith({ channel: 'stable' })
+    const { dir, evidence, meta } = assembledWith({ channel: 'stable' }, anchored)
     rmSync(join(meta, 'updates', 'manifest.json'))
     expect(() => gateReleaseDir(dir, evidence, meta)).toThrow(/is not the \/usr\/share\/mos\/meta\/ of a mos image/)
   })

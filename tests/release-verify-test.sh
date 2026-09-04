@@ -336,19 +336,19 @@ expect_gate_refusal "a --baked-meta directory that is not one" \
     "is not the /usr/share/mos/meta/ of a mos image" "${IN}/evidence.json" "${EMPTY_META}" \
     true
 
-# The anchor that anchors nothing: a source named and no key trusted.
-UNANCHORED_META="${SCRATCH}/meta-unanchored"
-cp -a "${IN}/meta" "${UNANCHORED_META}"
-cat >"${UNANCHORED_META}/updates/manifest.json" <<'EOF'
-{
-  "schema": "mos/meta/v1",
-  "update": { "source": "https://updates.example/repo", "channel": "stable" },
-  "trust": { "signingKeys": [], "signingKeyIds": [] }
+# The anchor that anchors nothing. PLAN-070 5.3 made the source URL
+# operator-changeable, so an empty trust.signingKeys on a customer channel is
+# refused whether or not the image bakes a source: an authenticated operator
+# can point any device of the release at a server it can never verify.
+# The release copy is relabelled `stable` and its trust block left at what the
+# extraction measures, so the grade-divergence guard does not fire first.
+relabel_stable() {
+    jq '.release.channel = "stable"' manifest.json >manifest.json.new
+    mv manifest.json.new manifest.json
 }
-EOF
-expect_gate_refusal "an image naming an update source while trusting no key" \
-    "names an update source" "${IN}/evidence.json" "${UNANCHORED_META}" \
-    true
+expect_gate_refusal "a customer release trusting no package signing key" \
+    "trusts no package signing key at all" "${IN}/evidence.json" "${IN}/meta" \
+    relabel_stable
 
 REFUSAL_N="${#REFUSAL_LABELS[@]}"
 [ "${REFUSAL_N}" -gt 0 ] || {
