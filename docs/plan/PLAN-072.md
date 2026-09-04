@@ -1,8 +1,8 @@
 # PLAN-072 Design cloud registration: outbound-only, off by default
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-03 11:11
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 - **relatedTask**: (none — design only; task records are owed on approval)
 
 ## Context
@@ -563,3 +563,15 @@ single decision.
   the plane holds no signing key by §5's own boundary, and C5's gate is
   unchanged. §1's control-channel boundary, §3's payload, §4, §5's threat model,
   §6's autonomy claim and the C1–C7 backlog are unchanged.
+### Approved — 2026-09-04
+
+The user approved this plan. §7's questions 1, 4, 5, 6 and 7 were answered on 2026-09-03
+and are recorded in §7a; question 3 is recorded there as dissolved by the answer to
+question 1, since an integrator who runs their own plane chooses residency by choosing
+where to run it. **Question 2 (scale and availability) remains open and blocks nothing on
+the device side**: the plane is assistive and its loss is a non-event for the device, so
+availability is not a product promise and the sizing question belongs to the server
+project.
+
+C1 and C2 are therefore unblocked. Approval still does not authorise building a control
+plane, and PLAN-054 remains the parent cost gate.

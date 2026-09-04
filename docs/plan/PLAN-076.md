@@ -1,9 +1,9 @@
 # PLAN-076 Design device state reporting to the fleet plane
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-03 20:05
 - **relatedTask**: RFCT-297
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 
 ## Context
 
@@ -844,3 +844,17 @@ ownership and cost gate is unchanged.
   in §10 — a reachability field, free-text failure detail, and a cadence fast
   enough to be a monitor. Two of the five things PLAN-072 §7b names are
   therefore not delivered as stated, and the substitutes are named.
+### Approved — 2026-09-04
+
+The user approved this plan, including its three recommendations against B as literally
+asked: a reachability field cannot exist and is a plane-side inference from arrival time;
+free-text failure detail is not reported, which leaves a real day-one gap until an
+enumerated failure code lands on the update path (B4); and the cadence floor is where
+monitor-grade reporting is refused rather than negotiated.
+
+The switch defaults were confirmed separately in §6a, including that the off state means
+no outward activity of any kind and is a testable claim.
+
+Implementation is gated on PLAN-072's C1-C3 and through those on PLAN-070's seam. B is
+outside the 1.0 milestone (PLAN-037): approving the design does not put it on the 1.0
+path.

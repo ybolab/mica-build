@@ -1,8 +1,8 @@
 # PLAN-070 Design the meta/ seam and the /mos/config/ system-configuration namespace
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-03 11:11
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 - **relatedTask**: (none — design only; task records are owed on approval)
 
 ## Context
@@ -2608,3 +2608,22 @@ takes a task record and its own proposal.
   false when the decision becomes a parameter. **The title does not need
   changing** — the parameter lives inside §6, and `docs/plan/index.md`'s row is
   still owed the retitle two revisions above already recorded.
+### Approved — 2026-09-04
+
+The user approved this plan. What that settles, and what it does not:
+
+**Accepted with the plan**: every clause of the approval boundary above, plus the open
+questions where §9 states a recommendation — question 1 takes `PROFILE` as the
+per-deployment field, question 3 keeps its answer at *no* (the baked set carries nothing a
+device could not compute), question 5 leaves `--domain updates` opt-in, and question 7
+takes the boot-medium drop rather than a mounted DATA partition. Question 6 was answered
+separately on 2026-09-03.
+
+**Still open, and each names what it blocks**: question 2 (whether a device-time trust
+channel is wanted later) blocks nothing here and is recorded so that removing the old
+mechanism is not read as removing the requirement; question 4 (whether the image carries
+the development-grade marker) blocks nothing but is the obvious next request from anyone
+debugging a device they did not build; **question 8 (whether the ssh pour carries
+`authorizedKeys`) blocks the ssh slice**, because it is the one place §5.2's pour and
+`provisioning.md` §4.1.4 have to agree, and a poured `ssh.json` is a way to hand somebody
+root on a device before it has ever been claimed.

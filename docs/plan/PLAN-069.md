@@ -1,8 +1,8 @@
 # PLAN-069 Design managed and untrusted application controls
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-03
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 - **relatedTask**: (none — conditional)
 
 ## Context
@@ -92,3 +92,14 @@ stay correct for the customer they describe.
 - 2026-09-03: Created by RFCT-287 / PLAN-051 as the conditional destination for
   managed and untrusted application controls, so that the `unsupported` claims
   those documents publish cite a record.
+### Approved — 2026-09-04
+
+The user approved this plan. Approval settles the **design**; it does not start the work.
+This record is conditional by construction: implementation begins only when one of the
+trigger conditions above holds — mos promises to run an application whose publisher is not
+the device's own integrator, a customer contract requires that a release be refused rather
+than discouraged, or the managed application module is scheduled. Until then the
+trusted-integrator baseline is the product, and this plan waits on a business fact rather
+than on a date or a decision.
+
+PLAN-037 places this outside the 1.0 milestone.

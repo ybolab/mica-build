@@ -1,8 +1,8 @@
 # PLAN-037 Coordinate the embedded delivery roadmap
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-08-31 03:08
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 - **relatedTask**: [RFCT-273](../task/RFCT-273.md)
 
 ## Context
@@ -270,3 +270,13 @@ gap. Those outcomes belong to PLAN-042 through PLAN-054.
   second polling, 30-second retry and 60-second saved-clock intervals.
 - 2026-09-01 13:18 UTC: Split the monolithic proposal into independently
   approvable small plans and tasks; keep PLAN-037 as coordination only.
+### Approved — 2026-09-04
+
+The user approved this roadmap, including the 1.0 milestone above and its four gates.
+Approving the roadmap does not approve any child plan; each child carries its own boundary
+and several were approved separately on the same day.
+
+The ordering clause is the part that is easiest to lose and the most expensive to ignore:
+**Gate A before Gate B**. The update work is currently being designed against a trust
+anchor that no image provisions, and that inversion is this programme's largest scheduling
+risk.

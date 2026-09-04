@@ -1,8 +1,8 @@
 # PLAN-054 Design conditional fleet management
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-01 13:18
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 - **relatedTask**: [RFCT-290](../task/RFCT-290.md)
 
 ## Context
@@ -174,3 +174,27 @@ and unchanged by the product decision.
   only where that makes a sentence false: the seam bullet above and question 6
   now say *the baked subset* rather than the whole directory. The decision, the
   boundary, the other questions and the COND/* dispositions are unchanged.
+### Approved — 2026-09-04
+
+The user approved this plan. Five of the seven open product questions were answered on
+2026-09-03 and are recorded in full in PLAN-072 §7a; the answers apply here unchanged:
+
+1. **Who runs the control plane** — the vendor by default, an integrator may run their
+   own, and the server is open source. The device learns its plane from the baked
+   `fleet.url` in `meta/`, which answers this record's own sub-question directly:
+   **one plane per image**. A per-customer plane is a per-customer `meta/`, and a
+   per-region URL is a per-region image.
+4. **Offline tolerance** — the plane assists and never gates local execution. The model
+   the user named is Victron VRM.
+5. **Support liability** — a plane that is down does not affect the device; nothing is
+   committed beyond that.
+6. **Zero-touch enrolment** — required, keyed on `deviceId`, which selects trust on first
+   use with the two mitigations PLAN-072 §7a requires. The per-device factory credential
+   this record calls the most expensive question is **not** taken, and could not be: a
+   fleet-identical baked set cannot carry a per-device secret even in principle.
+7. **Serial and MAC in the inventory** — not required; `deviceId` is the identifier.
+
+**Still open**: question 2 (scale and availability) and question 3 (data residency).
+Neither is a device-side design input any longer — residency follows from question 1, and
+availability is not a product promise — so both are cost and commitment questions for
+whoever operates the plane, and they no longer block this record.

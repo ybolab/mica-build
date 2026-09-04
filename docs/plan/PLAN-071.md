@@ -1,8 +1,8 @@
 # PLAN-071 Design the update module: off/check/auto with automatic install in a window
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-03 11:11
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-04
 - **relatedTask**: (none — design only; task records are owed on approval)
 
 ## Context
@@ -774,3 +774,13 @@ operator writes `auto`.
   withdrawal analysis, the clock predicate, the write route and the U1–U11
   backlog are unchanged. The key-algorithm decision does not reach this plan —
   it verifies no signature itself and calls a client that does.
+### Approved — 2026-09-04
+
+The user approved this plan, including §9's downgrade restriction and §9.6's freshness
+bound, which are not optional hardening: they are the two properties that replace what
+moving off TUF gave up, and an update path shipped without both is a net loss of a
+security property rather than a simplification.
+
+Implementation is gated on PLAN-070's seam landing first — the policy document lives in
+the namespace that plan defines, and the reader's trust block comes from the manifest it
+bakes. That ordering is the 1.0 milestone's Gate A before Gate B (PLAN-037).
