@@ -134,17 +134,22 @@ Reporting an unread time signal as unread.
 
   Verified: `cargo test --locked -p mosd -p apid` green in
   `localhost/mos-build-rust:amd64` with `dbus` installed;
-  `(cd verify && bun test)` 1248 pass; `(cd build && bun test)` 869 pass;
+  `(cd verify && bun test)` 1253 pass; `(cd build && bun test)` 869 pass;
   `make docs-verify` green; `bash pkgs/mosd/apid/ui/build.sh --check` green
   (134 UI tests). `cargo fmt` and `cargo clippy` were NOT run: the image
   ships only cargo, rustc and std.
 
-  Two earlier `-p apid` runs each failed one test and passed the rest --
-  `auth::a_refused_attempt_does_not_rewrite_the_file` plus
-  `reset::a_successful_rotation_clears_the_login_guard...` in one, and
+  A pre-existing flake in `-p apid`, found on the way and not fixed here:
+  three runs each failed exactly one test and passed the other 316, a
+  different test each time and each passing on its own.
+  `auth::a_refused_attempt_does_not_rewrite_the_file` is the clearest -- one
+  failure arms a `BACKOFF_BASE` = 1 second lockout, and the test then requires
+  50 consecutive `GuardStore::begin_attempt()` calls, each of which reads and
+  compares the persisted guard file, to all land inside that one second. On a
+  loaded machine they do not, the window lapses, and the assert reads "still
+  throttled". `reset::a_successful_rotation_clears_the_login_guard...` (429
+  expected, 201 seen) and
   `settings_signal::the_settings_changed_subscription_feeds_the_access_cache`
-  in the next. A different test each time, each passing on its own, each one
-  asserting that a throttle window or a bus stream has not yet lapsed: these
-  are wall-clock-sensitive under load (the machine was running other builds),
-  not related to this change, which touches neither auth nor the settings
-  signal. The clean run above was taken at load average 1.6.
+  (a `settles()` poll on a dropped bus stream) have the same shape. None of
+  the three is near this change, which touches neither auth nor the settings
+  signal; the clean runs were taken at load average ~1.6.
