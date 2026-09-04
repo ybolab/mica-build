@@ -102,7 +102,39 @@ bundle 的摘要、长度和 verity 根哈希。密钥仪式、保管与轮换�
 使用的语汇。`iptables` 在这里是兼容路径——给那些不会说 nft 的第三方工具和既有
 脚本用的——而不是与前者对等的另一个选择。
 
-关于它们有五件事，因为每一件不说清楚都会让人意外。
+关于它们有六件事，因为每一件不说清楚都会让人意外。
+
+**`iptables` 的扩展集合是有界的，而且每块板子都一样。**一条规则若点名了内核未
+编入的匹配或目标，会被直接拒绝，并且指名道姓：
+
+```
+# iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+Warning: Extension REDIRECT revision 0 not supported, missing kernel module?
+```
+
+这不是翻译失败，重试也没有用——该扩展根本不在这个内核里；新增一个是内核改动，
+不是装个包。
+
+**每块板子都保证可用**，因为共享内核下限把它们钉住了：目标 `MASQUERADE`、
+`REDIRECT`、`SNAT`、`DNAT`、`MARK`、`CHECKSUM`、`CT --notrack`；匹配
+`addrtype`、`conntrack`、`state`、`mark`；纯裁决（`ACCEPT`、`DROP`、`RETURN`、
+跳转）与内建匹配（`-p`、`--dport`、`-i`、`-o`、`--tcp-flags`）；以及两个地址族
+各自的四张表 `filter`、`nat`、`mangle`、`raw`。在 2026-09-04 之前，`REDIRECT`、
+`CHECKSUM` 和 `CT` 在 arm64 板上可用、在 x64 上被拒绝——下限取代的正是那种不
+对称。
+
+**这个集合之外的东西，依赖它之前请先问，并且不要假设两块板子答得一样。**
+2026-09-04 实测，仍有四个扩展存在差异，而且方向并不一致：
+
+| | x64 | arm64（cx3576） |
+|---|---|---|
+| `-m multiport`、`-m comment`、`-j CT --zone` | 拒绝 | 可用 |
+| `-j LOG` | 可用 | **拒绝** |
+
+`-m limit` 与 `-m iprange` 在**两块板子上都**被拒绝。`-j REJECT` 与 `-j TCPMSS`
+今天在两块板上都可用，但下限并没有钉住它们，所以请当作惯例而非契约。如果你的
+脚本需要其中任何一个，请提出来——产品究竟保证哪些，是一个尚待决定的问题，不是
+疏漏。
 
 **`nft list ruleset` 是完整视图，`iptables -S` 不是。**两个工具编程的是同一套
 内核子系统 `nf_tables`。`nft list ruleset` 打印其中的全部：你通过任一工具添加的
@@ -139,7 +171,7 @@ auto 模式，其中 nft 前端的优先级高于旧版，并且这里没有任�
 `/usr/local/lib/systemd/system`（[applications.md](applications.md)）。这是对
 产品当下行为的陈述，不是关于该如何运行防火墙的建议。
 
-> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `verify/src/checks-firewall.ts`
+> status: shipped — evidence: `rootfs/packages-src/system/control/mos-system.control`, `boards/common/mos-required.fragment`, `verify/src/checks-firewall.ts`
 
 ## 6. 安全生命周期
 

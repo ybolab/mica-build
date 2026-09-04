@@ -162,21 +162,158 @@ because that is the compatibility surface Debian's `iptables` package provides
 | `CONFIG_NFT_NAT` | the snat and dnat expressions | `=m` `nft_nat` |
 | `CONFIG_NFT_MASQ` | the masquerade expression | `=m` `nft_masq` |
 
-Three things are deliberately absent. The **legacy `IP_NF_*` back-end** —
-nothing in the image uses it; the image ships no `iptables` and no `nftables`
-package, and netavark 2.x programs nftables directly and ships no iptables
-driver (`tests/netavark-kernel-config-test.sh`). The **per-extension xt matches
-and targets** (`xt_conntrack`, `xt_MASQUERADE`, `ipt_REJECT`, …) — which
-extensions a rule set names is policy, and this floor makes the kernel able
-rather than deciding what it enforces; the ones cx3576 needs for the docker
-option set stay asserted in its own Dockerfile. And `NF_NAT_MASQUERADE`, which
-`NFT_MASQ` selects, so a line for it would state a consequence rather than a
-requirement.
+Two things are deliberately absent. The **legacy `IP_NF_*` / `IP6_NF_*`
+back-end** — §4.2.1 measures it unreachable through anything the image selects.
+And `NF_NAT_MASQUERADE`, which `NFT_MASQ` selects, so a line for it would state
+a consequence rather than a requirement.
 
 The two floors overlap: `tests/netavark-kernel-config-test.sh` asserts that
 every symbol it cites which the fragment also states is stated there as `=y`,
 so a weaker statement in the shared file cannot hide behind cx3576's own
 Dockerfile loop.
+
+#### 4.2.1 The x_tables extensions, and why they are floor and not policy
+
+The table above is the front-end's *core*. It is not enough to run the
+front-end, and the reason was measured rather than reasoned about (RFCT-304).
+
+**`iptables-nft` does not translate extensions natively.** Read the rule the
+kernel actually stored, through `nft --json`, and every extension the front-end
+was asked for comes back as an `nft_compat` `xt` expression:
+
+| what was asked for | what the kernel stored |
+|---|---|
+| `-j MASQUERADE`, `-j REDIRECT`, `-j DNAT` | `xt target` MASQUERADE / REDIRECT / DNAT |
+| `-j CHECKSUM`, `-j CT` (`--notrack` included), `-j MARK` | `xt target` CHECKSUM / CT / MARK |
+| `-m addrtype`, `-m conntrack` | `xt match` addrtype / conntrack |
+| `-t raw -j ACCEPT`, `-m mark`, `-p tcp --dport` | native — verdict and builtin matches only |
+
+**Read `--json`, not `nft list ruleset`.** The text renderer runs an `xt`
+expression back through libxtables' `xlate` callback and prints the
+*translation*, so a compat rule prints as `masquerade` or `fib daddr type
+local` exactly as a native one would. Classifying from the text output gets
+every row of that table wrong.
+
+`nft_compat` resolves an `xt` expression by loading the `xt_*` module by name.
+With the module absent the rule is **refused**, on the x64 kernel this tree
+builds:
+
+```
+# iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+Warning: Extension REDIRECT revision 0 not supported, missing kernel module?
+```
+
+So these eight are floor, not policy — they decide whether the tool §4.2 exists
+for actually runs:
+
+| Symbol | Module | Reaches it |
+|---|---|---|
+| `CONFIG_NETFILTER_XT_MARK` | `xt_mark` | `-j MARK` |
+| `CONFIG_NETFILTER_XT_NAT` | `xt_nat` | `-j SNAT`, `-j DNAT` |
+| `CONFIG_NETFILTER_XT_MATCH_ADDRTYPE` | `xt_addrtype` | `-m addrtype` |
+| `CONFIG_NETFILTER_XT_MATCH_CONNTRACK` | `xt_conntrack` | `-m conntrack` |
+| `CONFIG_NETFILTER_XT_TARGET_CHECKSUM` | `xt_CHECKSUM` | `-j CHECKSUM`; no native form exists at all |
+| `CONFIG_NETFILTER_XT_TARGET_CT` | `xt_CT` | `-j CT`, `--notrack` included |
+| `CONFIG_NETFILTER_XT_TARGET_MASQUERADE` | `xt_MASQUERADE` | `-j MASQUERADE` |
+| `CONFIG_NETFILTER_XT_TARGET_REDIRECT` | `xt_REDIRECT` | `-j REDIRECT` |
+
+**This is a chosen subset and cannot be anything else.** Any of the ~60 xt
+extensions an operator names needs its own module and the image will not carry
+all of them. These eight are the symbols the operator-visible split was *made
+of* — and not, which would sound tidier and be false, "everything both boards
+already had": three of them (`CHECKSUM`, `CT`, `REDIRECT`) were absent on x64,
+so adopting them added capability there.
+
+**Eight, and PLAN-074 §7h listed eleven — the two lists are not the same list.**
+That one was derived from the symbols an earlier floor swap dropped; this one
+from running the rules. Five of the eleven are the legacy tables of §4.2.2 and
+leave by that route instead. `NETFILTER_XT_MATCH_CONNTRACK` is here because
+cx3576's board loop stopped restating it and the assertion had to land
+somewhere. And `NETFILTER_XT_NAT` is on this list without being on that one: it
+is `=y` on cx3576 and `=m` on x64, the same split as `TARGET_MASQUERADE` beside
+it, and a nat compatibility path that answers `-j MASQUERADE` but leaves
+`-j DNAT` one class weaker would keep the defect this section closes.
+
+**What it cost**, measured by building each kernel twice:
+
+| | before | after | delta |
+|---|---|---|---|
+| x64 `bzImage` | 14,971,904 B | 14,980,096 B | **+8,192 B, +0.055 %** |
+| x64 `modules.tar` | 337,920 B | 286,720 B | −51,200 B |
+| x64 loadable modules | 8 | 4 | −4 |
+| cx3576 `Image` | 44,493,312 B | 44,493,312 B | **0 B** |
+
+cx3576 is zero because its committed vendor config already set all eight `=y`,
+so the fragment merges values that are already there. Both kernels were built
+from this tree with only the fragment differing, to show that rather than
+assert it. **The comparison is by size, not by hash, and the reason is worth
+recording:** `boards/cx3576/bsp/kernel/Dockerfile` pins none of
+`KBUILD_BUILD_TIMESTAMP`, `_USER` or `_HOST`, which x64's does, so two builds
+of one unchanged tree already differ — the two `Image` files here have equal
+size and different sha256, and that difference is the build clock rather than
+this change. Making that board's kernel reproducible is a separate task and is
+not done here.
+The x64 figure is `=y` payload — permanent kernel RAM, in both A/B slots,
+against `BOOT_SIZE_MIB` — and 8 KiB against a 96 MiB boot partition is not a
+number that constrains anything. The four `.ko` that stopped being built are
+the same four symbols moving from `=m` to `=y`, so the modules half of
+`verify/src/checks-kernel.ts` keeps four subjects rather than none.
+
+#### 4.2.2 The legacy back-end, measured
+
+`IP_NF_RAW`, `IP6_NF_RAW`, `IP6_NF_NAT`, `IP6_NF_TARGET_MASQUERADE` and
+`IP_NF_NAT` are a **separate question** from the `xt_*` modules above, and the
+answer is the other way.
+
+`iptables-nft` builds its `raw`, `nat`, `mangle` and `filter` tables **in
+nf_tables**, not in the legacy table store. On the x64 kernel, which sets
+`# CONFIG_IP_NF_RAW is not set`:
+
+```
+# iptables -t raw -A PREROUTING -j ACCEPT      →  accepted, stored native
+# iptables-legacy -t raw -L -n
+iptables v1.8.11 (legacy): can't initialize iptables table `raw':
+Table does not exist (do you need to insmod?)
+```
+
+The only front-end that needs those symbols is `iptables-legacy`, and
+**nothing in this tree selects it**: the alternatives group is left in auto
+mode, where the nft front-end outranks the legacy one, and `update-alternatives`
+is run nowhere here. So cx3576's board loop no longer asserts the ten legacy
+entries it carried. That is not a config change on cx3576 — the vendor config
+still sets them and they stay `=y` — it is the removal of an assertion that
+made a leftover look like a requirement. x64 keeps whatever `x86_64_defconfig`
+resolves (a partial legacy surface: `filter` and `mangle` in both families,
+`nat` in ip only, `raw` in neither), because trimming it is a subtraction with
+its own size argument and no consumer asking for it either way.
+
+#### 4.2.3 Four differences of the same class, measured and NOT closed
+
+Running the wider extension set against the rebuilt x64 kernel found four more
+board differences of exactly the shape §4.2.1 closes. They are recorded here
+rather than fixed, because each needs a **direction chosen** and that is a
+decision about what the product's compatibility path guarantees, not a
+measurement:
+
+| Extension | Symbol | x64 | cx3576 |
+|---|---|---|---|
+| `-m multiport` | `NETFILTER_XT_MATCH_MULTIPORT` | refused | works |
+| `-m comment` | `NETFILTER_XT_MATCH_COMMENT` | refused | works |
+| `-j CT --zone` | `NF_CONNTRACK_ZONES` | refused | works |
+| `-j LOG` | `NETFILTER_XT_TARGET_LOG` | works (`=m`) | **refused** |
+
+`-j LOG` is the one to read twice: it runs the *other* way, so the board with
+the weaker firewall surface is not the same board for every rule. `-j CT
+--zone` is also not an xt module — the `CT` target itself is floor now and
+`--notrack` works on both; `--zone` needs a conntrack feature that widens the
+conntrack tuple and is priced separately.
+
+Closing any of them means either adding capability to the board that lacks it
+or taking it from the board that has it. Both are product decisions about the
+guaranteed compatibility surface, and the tail behind them is long
+(`-m limit` and `-m iprange` are refused on **both** boards today, and there
+are ~50 more). A floor that grew by whichever extension was tried most recently
+would be the policy PLAN-073 rightly refused to write by accident.
 
 ### 4.3 Bridge filtering
 
@@ -259,9 +396,12 @@ inherits is the removal of the constraint: a future addition to the floor no
 longer has to clear Debian's config first.
 
 **Dropped on merit** — both kernels could satisfy it and the floor does not ask
-for it: the legacy `IP_NF_*` back-end, the per-extension xt matches and targets,
+for it: the legacy `IP_NF_*` back-end (§4.2.2 measures why),
 `CONFIG_NF_NAT_MASQUERADE` (a `select` of `NFT_MASQ`), the three bridge symbols
-in §4.3, and `CONFIG_DEBUG_INFO_BTF` (§4.1, priced).
+in §4.3, and `CONFIG_DEBUG_INFO_BTF` (§4.1, priced). The per-extension xt
+matches and targets were on this list when it was written and are not any more:
+§4.2.1 measured seven of them load-bearing for the front-end §4.2 exists for,
+and they are floor now.
 
 **Owed, and named rather than rounded up.** The floor's own
 `CONFIG_LSM="…,bpf"` names an LSM cx3576 does not build. On 6.1
