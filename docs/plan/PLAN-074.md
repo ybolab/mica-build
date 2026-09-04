@@ -595,7 +595,8 @@ measure the boot chain, and nothing in this tree does: `CONFIG_FIT_SIGNATURE` is
 configured nowhere, U-Boot extends no PCR. A key sealed to an unmeasured TPM
 resists chip removal and not a modified boot chain — a materially weaker
 guarantee than "device-bound" suggests, and one an unlock design would be likely
-to over-read.
+to over-read. **Caveat (2) turned out to rest on a chip that is not
+there — see the decision below; it would apply to a board that had one.**
 
 **Why waiting is free here and was not free for dm-crypt.** That asymmetry is
 the whole argument. dm-crypt had to be decided in this task because the trimming
@@ -608,13 +609,40 @@ mechanism before the unlock design exists is choosing the design.
 first, because it is what makes a sealed key mean what people assume it means —
 and only then pick between a TPM-sealed trusted key and an operator passphrase.
 
+**DECISION — 2026-09-04: both stay off.** The user confirmed the recommendation
+above. `TRUSTED_KEYS` and `ENCRYPTED_KEYS` are absent from every fragment and
+stay absent. This is settled, not open.
+
+Two measured reasons, one of which corrects the table above:
+
+- **cx3576 has no TPM.** `boards/cx3576/bsp/kernel/dts/rk3576-cx3576z.dts` (357
+  lines) contains no TPM node: no `tpm`, `tcg`, `infineon`, `slb9` or `st33`
+  match anywhere in the file, and its one enabled I2C bus, `&i2c7`, holds an RTC
+  at `0x51` and an EEPROM at `0x50` and nothing else. The vendor config's
+  `CONFIG_TCG_TPM=y` and `CONFIG_TCG_TIS_I2C_INFINEON=y` are drivers carried by
+  the Rockchip reference configuration; a driver with no device node never
+  binds. So the "TPM stack" row above describes drivers, not hardware, and
+  neither board has a TPM. The earlier reading that cx3576 had one was wrong,
+  and the recommendation holds for a stronger reason than the one it was made
+  on.
+- **The decision belongs with the consumer.** Enabling these now would decide by
+  accident where the volume key lives, which is the first question an unlock
+  design has to answer. If that answer is a passphrase or a keyfile, neither
+  symbol is ever needed. If it is a sealed key, it is one line in x64's fragment
+  with a named consumer — and cx3576, having no chip to seal against, needs a
+  different mechanism entirely.
+
 ### 7g. Gate results, both boards, after the merge with PLAN-075
 
-Everything below was run on **2026-09-04** against merge commit `8a886ccd`
-(`main` at `3e3408fb`, which added the firewall check family), from artefacts
-built out of this tree at pool stamp `0.1.0+git8a886ccd5b6d-1`. The earlier
-`307/307` and `410/410` were measured before that merge and are superseded;
-neither board is verified against a copied image any more.
+Everything below was re-run on **2026-09-04** against `23317128`, the commit
+that puts `NF_CONNTRACK_MARK` in the shared floor (§7h), from artefacts rebuilt
+out of this tree at pool stamp `0.1.0+git23317128e1bf-1`: both kernels, both
+pools, both roots, both images. Every earlier number in this plan is superseded,
+including the `307/307` and `410/410` of the previous round; neither board is
+verified against a copied image any more.
+
+The netavark gate is in this table from now on. It was absent from the round-3
+table, and §7h is what that omission cost.
 
 | gate | result |
 |---|---|
@@ -623,9 +651,11 @@ neither board is verified against a copied image any more.
 | `pkgs/mosd/tests/apid-api/run.sh` (QEMU boot) | PASS 142/142 |
 | `cd verify && bun test` | 1253 pass, 0 fail |
 | `cd build && bun test` | 869 pass, 0 fail |
-| `make docs-verify` | 43/43 PASS |
+| `tests/netavark-kernel-config-test.sh` | PASS 87/87 |
+| `make docs-verify` | 5/5 sections, 1636 checks, 0 FAIL |
 | x64 compose | 296 MB of 520 MB; smoke 12/12 |
 | cx3576 compose | 384 MB of 400 MB |
+| cx3576 kernel gate | `config: all 46 mos-required options are set` |
 
 The x64 kernel check reads `DM_CRYPT` out of the config the **shipped package**
 carries, on the image that booted:
