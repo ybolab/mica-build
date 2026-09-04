@@ -452,6 +452,43 @@ when someone asks what the base firewall vocabulary costs: ten packages and
 4.2 MiB on an image that declines containers, and nothing at all on one that
 does not.
 
+### Verification
+
+| gate | result |
+|---|---|
+| `make os-debs`, both architectures | exit 0, 16 archives per pool |
+| `bash tests/deb-package-gate.sh` | PASS 264/264, 1390 payload paths (1388 in round 1; the preset is the two) |
+| `bash tests/install-closure-gate.sh` | PASS 99/99, 14 clean roots, 2 architectures |
+| composed x64 image + `bash verify/run.sh --verify --board x64` | PASS 311/311, 22 skipped |
+| `bash verify/run.sh` | PASS 1248/1248 |
+| `bash build/run.sh` | PASS 869/869 |
+| `make docs-verify` | PASS across all five checkers |
+
+The four conclusions on the real image:
+
+    PASS: nft is executable in the packed root: /usr/sbin/nft, mode 0755,
+      26776 bytes
+    PASS: nftables.service is disabled by a preset:
+      /usr/lib/systemd/system/nftables.service is in the root, no .wants or
+      .requires link names it, and the first preset rule that claims it is
+      'disable nftables.service' in
+      /usr/lib/systemd/system-preset/50-mos-nftables.preset. The tool ships and
+      no ruleset is loaded at boot
+    PASS: iptables is executable in the packed root: /usr/sbin/iptables ->
+      /etc/alternatives/iptables -> /usr/sbin/iptables-nft ->
+      /usr/sbin/xtables-nft-multi, mode 0755, 228768 bytes
+    PASS: the iptables alternatives group is the nf_tables front-end: all of
+      iptables, iptables-save, iptables-restore end at xtables-nft-multi ...
+
+`tests/install-closure-gate.sh` also shows the postinst assertion firing in the
+clean roots -- "nftables.service left DISABLED in the image (the tool ships; no
+ruleset is loaded at boot)", twice, once per architecture.
+
+Two gate runs were serialized rather than run together, on the finding recorded
+above: the package gate empties a producer's archives out of the pool while it
+rebuilds, and the closure gate copying the pool in that window fails on a
+missing archive.
+
 ### Still not done
 
 No rule set, no policy, no `netfilter-persistent`, no `iptables-save`/`restore`
