@@ -87,6 +87,15 @@ cd "${ROOT}"
 # orchestration by the section-0 test. A rule whose findings are mostly false
 # positives teaches people to ignore it, which is worse than no rule --
 # tests/shell-pipefail-lint.sh states the same principle for the same reason.
+#
+# `jq` IS THE AWKWARD ONE, and it is left out with its exception named rather
+# than quietly. It is orchestration nearly everywhere here -- reading a field,
+# building a fixture -- but pkgs/rauc/gen-dev-keys.sh edits
+# meta/updates/manifest.json with it, and that file reaches the image. A row
+# for `jq` would flag tests/release-verify-test.sh's fixture edits too, which
+# are verdicts, and the table cannot tell the two apart from the binary's name.
+# So the one producing use travels with that script's existing openssl
+# exemption and its backlog item, which is where it will actually be fixed.
 TOOLS='cargo|rustc|gcc|g\+\+|tsc|bun'
 TOOLS="${TOOLS}"'|mkfs\.vfat|mkfs\.ext4|mkfs\.fat|mke2fs|mksquashfs|unsquashfs|debugfs|dumpe2fs|e2fsck|resize2fs|tune2fs'
 TOOLS="${TOOLS}"'|sgdisk|sfdisk|parted|mcopy|mmd|mkimage|mkenvimage|veritysetup|grub-mkstandalone|grub-install|grub-editenv'

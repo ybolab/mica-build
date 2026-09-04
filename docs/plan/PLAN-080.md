@@ -173,8 +173,8 @@ an empty result from an unasked question; pass 2 is reproduced exactly by
 believed. Its own RESULT line, on the tree as this record lands, is the
 enumeration in one sentence:
 
-    RESULT: PASS (96/96 files clean, 0 finding(s), 9044 command lines examined,
-    3068 elided, 6 file + 7 block container declarations, 27 exempted
+    RESULT: PASS (96/96 files clean, 0 finding(s), 9048 command lines examined,
+    3073 elided, 6 file + 7 block container declarations, 27 exempted
     invocation(s) under 6 rule(s))
 
 36 of the 63 shell sites are inside the 13 declarations and 27 are under the 6
@@ -224,7 +224,7 @@ silent waiver.
 | `pkgs/mosd/hack/check.sh` | 5 | `cargo` | The Rust gate. It is a producer by §2 and it has **no container today**: `localhost/mos-build-rust` ships cargo and rustc only, and rustfmt, clippy, nextest and cargo-deny come from the unpinned host tree `/srv/mos-rust-tools`. RFCT-309 is building the derived image; this exemption is its acceptance criterion |
 | `pkgs/rauc-sign/hack/check.sh` | 5 | `cargo` | The same gate over the second workspace, same missing image. Named separately because RFCT-309's brief names only the first, and a `--workspace` that no longer spans a crate does not complain |
 | `.github/workflows/check.yml` | 3 | `cargo` | The runner that runs those two: it `curl`s rustup and installs a toolchain on the host. It cannot move before the image exists, and it must move with them |
-| `pkgs/rauc/gen-dev-keys.sh` | 6 | `openssl` | A producer: the CA, the signer certificate and the Ed25519 root key it writes are baked into `meta/` and into every image. Backlog **B2** — closing it needs a pinned openssl image and the trust-grade tests re-run, and it is not free |
+| `pkgs/rauc/gen-dev-keys.sh` | 6 | `openssl` | A producer: the CA, the signer certificate and the Ed25519 root key it writes are baked into `meta/` and into every image. Its host `jq`, which edits `meta/updates/manifest.json`, is the same story and is named in the register rather than given a table row — `jq` is orchestration everywhere else here and a row would flag `tests/release-verify-test.sh`'s fixture edits, which are verdicts. Backlog **B2** — closing it needs a pinned openssl image and the trust-grade tests re-run, and it is not free |
 | `rootfs/build.sh` | 3 | `openssl` | A judge: `alg_of_material()` reads a certificate or key and reports its algorithm; nothing it writes survives. The parse is of openssl's own text output, which is version-sensitive, so it is a judge whose container is worth having. Backlog **B3** |
 | `tests/repart-loader-test.sh` | 5 | `sgdisk` | A judge: it reads partition tables out of an assembled image to check growth. Its own container-side half is already declared (§3.1); these five are the host reads around it. Backlog **B3** |
 

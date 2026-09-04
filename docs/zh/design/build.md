@@ -30,7 +30,7 @@
 | 会，但输出是一个结论——给人看的通过或失败 | **裁判（judge）** | 固定镜像是*契约*：CI 跑的是它，结论也从它那里引用。为了本地快速迭代可以保留一条主机路线，但必须声明这次是哪条路线回答的。 |
 | 不会——输出完全由输入决定（`sha256sum`、`cmp`、`git rev-parse`），或者这个工具本身不产出任何东西、只决定启动哪个容器（`docker`、`make`、`bash`、`jq`、`curl`） | **编排（orchestration）** | 在主机上。没有它就没有容器可以跑。 |
 
-两个推论，因为这两条都有人往反方向argue过：
+两个推论——这两条都有人往相反方向争过，所以写在这里：
 
 **编译属于生产者，即使产物被丢掉。** `cargo clippy --workspace -- -D warnings`
 不保留任何产物，它的结论仍然由工具链决定——`build-harness.md` 第 3 节记录过：
@@ -75,7 +75,7 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 | --- | --- | --- |
 | `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo` | Rust 门禁，也是**目前唯一没有容器可用**的路径：`localhost/mos-build-rust` 只带 cargo 和 rustc，rustfmt、clippy、cargo-nextest 和 cargo-deny 来自 `/srv/mos-rust-tools` 这个没有任何 pin 的主机目录。派生镜像正在建，镜像落地后这两条从登记表里摘掉。 |
 | `.github/workflows/check.yml` | `cargo` | 跑上面这两个门禁的 runner。它用 `rustup` 在主机上装工具链，镜像没有之前动不了。 |
-| `pkgs/rauc/gen-dev-keys.sh` | `openssl` | 生产者：它写出的 CA、签名者证书和 Ed25519 根密钥会被烘进 `meta/` 和每一个镜像。要关掉它需要一个固定的 openssl 镜像，并重跑信任相关的测试。 |
+| `pkgs/rauc/gen-dev-keys.sh` | `openssl`（还有 `jq`） | 生产者：它写出的 CA、签名者证书和 Ed25519 根密钥会被烘进 `meta/` 和每一个镜像，它的 `jq` 还会改 `meta/updates/manifest.json`，那份文件同样会进镜像。要关掉它需要一个固定的 openssl 镜像，并重跑信任相关的测试。`jq` 不在检查的工具表里——在本树的其他地方它都是编排，而给它加一行会误报那些属于结论的 fixture 编辑——所以它这一处生产者用法跟着本行一起走。 |
 | `rootfs/build.sh` | `openssl` | 裁判：`alg_of_material()` 读一份证书或密钥并报出它的算法，写出的东西不会留下。但它解析的是 openssl 自己的文本输出，而那是随版本变化的，所以放进容器仍然值得。 |
 | `tests/repart-loader-test.sh` | `sgdisk` | 裁判：对已装配镜像分区表的五次主机读取，旁边那半边容器侧的用法已经声明过了。 |
 
