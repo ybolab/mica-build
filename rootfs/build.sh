@@ -912,7 +912,7 @@ mkdir -p "$COMPOSE_STAGE"
 printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
 # The public set, audited above, handed to the composition context as the
 # image-relative tree it will be installed as. Copied and not bound, because
-# these two files have to end up IN the image.
+# these files have to end up IN the image.
 mkdir -p "$COMPOSE_STAGE/meta-public"
 cp -a "$META_STAGE/." "$COMPOSE_STAGE/meta-public/"
 echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, declined:${MOS_ROOTFS_WITHOUT:- (none)}"
