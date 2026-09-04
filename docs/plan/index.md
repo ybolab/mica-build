@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-02
+> Updated: 2026-09-04
 
 ## Usage
 
@@ -65,3 +65,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-076 Design device state reporting to the fleet plane**](PLAN-076.md) `2026-09-03`
 - [ ] [**PLAN-077 Gate A: trust is real -- the anchor, the grade and the rotation decision**](PLAN-077.md) `2026-09-04`
 - [ ] [**PLAN-078 Short-lived signer certificates under the existing CA**](PLAN-078.md) `2026-09-04`
+- [x] [**PLAN-079 Build the update server and release console**](PLAN-079.md) `2026-09-04`
