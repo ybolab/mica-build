@@ -65,6 +65,8 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-294 Add eBPF, firewall and bridge symbols to the common kernel floor**](RFCT-294.md) `P1`
 - [x] [**RFCT-296 Ship the firewall tools in the base image, with no policy**](RFCT-296.md) `P1`
 - [x] [**RFCT-297 Design device state reporting to the fleet plane**](RFCT-297.md) `P1`
+- [x] [**RFCT-298 Report rtnetlink enums on the observed-network surface as names**](RFCT-298.md) `P1`
+- [x] [**RFCT-299 Say what /api/v1/time/status means by a synchronized clock**](RFCT-299.md) `P1`
 - [x] [**UI-010 Isolate built-in UI build outputs**](UI-010.md) `P1`
 - [x] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [x] [**UI-012 Align the built-in console with the approved prototype details**](UI-012.md) `P1`
