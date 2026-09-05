@@ -186,10 +186,10 @@ Three things moved at once and each was a decision (PLAN-070 §5.1, §5.2):
   **an absent document is a default while an absent namespace is a
   refusal** — a subsystem nobody configured versus a medium that did not
   mount.
-- **The format: TOML → JSON.** The namespace's rule is JSON, and the
-  document is machine-written now (§3.4) rather than hand-edited: JSON is
-  what `Store::save`'s discipline emits and what a write route can round-trip
-  without a serialiser that reorders an operator's comments away.
+- **The format: TOML → JSON.** The namespace's rule is JSON, for the reason
+  `mosd.md` §5.1a gives: these are machine-written documents and JSON is what
+  a machine writes without a round-trip formatting problem, while a
+  mixed-format namespace would make every reader guess by extension.
 
 It is **not** in the settings tree, and that half of the older argument
 survives the document becoming writable: a settings key means a schema
@@ -340,10 +340,12 @@ Two consequences a reader meets here rather than in the design tree:
   fleet **off**. `../user/recovery.md` and `../user/update-rollback.md` are
   where an operator is told so.
 
-The finer-grained action stays available and is the reason a reset tier is
-not the only route back: clearing one key of the operator layer returns that
-key — the channel, or the address — to its baked default without spending a
-whole reset on it.
+A reset tier is not the only route back, and the finer-grained one is per
+key: setting a key to `null` in `updates.json`, or removing it, returns
+**that** key to its baked default and leaves the rest of the document alone
+(§2.2). Until the write route of §3.4 exists that is an edit on the device
+rather than an API call, which is the practical difference between the two
+routes today — a reset needs only an authenticated request.
 
 ## 3. What the policy gates, and who may write it
 
@@ -461,24 +463,31 @@ that is what the device *is*.
 ### 3.3 A channel or address change, and what it may select
 
 `source.channel` and `source.url` are read fresh per decision, so a change
-takes effect on the next check with no restart. Three outcomes need three
-sentences, because the operator's next action differs each time:
+takes effect on the next check with no restart. What can then happen, and
+what the device says about it:
 
 - **The channel holds nothing newer.** Moving from `beta` to `stable` can
   point the device at a channel whose newest release is *older* than what it
   runs. `rauc-update`'s selection requires a version strictly newer, and the
   automatic path never passes `--allow-downgrade` — an unattended downgrade
   is an unattended rollback to code the device already moved past. The check
-  reports `no-newer-release` naming the channel, rather than a bare `idle`
-  with no candidate, because "up to date" and "nothing published here yet"
-  differ in what to do next.
-- **The source does not publish the selected channel at all.** Report that
-  the selected channel holds nothing, and **never fall back to the baked
-  default**. A silent fallback would put the device on a channel its operator
-  did not choose, which is the same defect as adopting the baked channel on a
-  parse error.
-- **The address does not answer.** Same rule, same reason: the failure is
-  reported and the baked address is not substituted.
+  records `no-newer-release` naming the channel, rather than leaving a bare
+  `idle` with no candidate, because "up to date" and "the device looked and
+  the channel does not carry it" differ in what to do next.
+- **The source does not publish the selected channel at all.** The selection
+  returns nothing compatible, exactly as above, and the device **records the
+  same `no-newer-release`** — the client reports its selection, not the
+  target list, so mosd cannot tell "this channel is empty" from "this channel
+  exists and has nothing newer". PLAN-071 §4 asks for three states and three
+  sentences, because the operator's next action differs each time (wait; wait
+  longer; fix the selection); the tree has two. Named here rather than
+  written as though it had shipped.
+- **The address does not answer.** The check fails and the reason is
+  recorded; the baked address is **not** tried instead. That is structural
+  rather than a rule somebody enforces — precedence produces one effective
+  URL and there is no second one to fall back to — and it is the same
+  property as never adopting the baked channel on a parse error: a device
+  must not silently talk to a server its operator did not choose.
 
 A change does not shortcut anything. An install after a channel or address
 change is an install: same window, same gate, same re-check.
