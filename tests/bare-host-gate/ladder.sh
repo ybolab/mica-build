@@ -92,19 +92,47 @@ mapfile -t PRODUCERS < <(bash tests/host-toolchain-lint.sh --print-tools)
     echo "       green report about nothing." >&2
     exit 1
 }
-reachable=()
+# One of them IS reachable, and finding that out is what this assertion is for.
+# Measured 2026-09-05: `command -v mkfs.vfat` answers /sbin/mkfs.vfat in this
+# image, and `readlink -f` says /bin/busybox -- the multi-call binary answers to
+# `mkdosfs` and `mkfs.vfat` as well as to sh, awk and sed. Section 1 permits a
+# busybox userland, so this is not an image that grew a toolchain; it is the one
+# binary that was already permitted, wearing another of its names.
+#
+# It is recorded rather than waived. A busybox applet is not a toolchain and
+# using it is not a route anything here can take -- section 0.1 gives every
+# producer a container with no host route, and section 0.2's first measurement
+# is precisely that this mkfs.vfat does not know `--invariant` -- but a producer
+# that is REACHABLE is worth a line in the transcript rather than silence.
+#
+# Anything reachable that is NOT busybox is fatal, and that is the assertion
+# with the teeth: a cargo, an mksquashfs, an sgdisk or an openssl in here would
+# mean the rungs below passed because of it.
+applets=()
+toolchain=()
 for t in "${PRODUCERS[@]}"; do
-    if command -v "${t}" >/dev/null 2>&1; then reachable+=("${t} at $(command -v "${t}")"); fi
+    p="$(command -v "${t}" 2>/dev/null || true)"
+    [ -n "${p}" ] || continue
+    real="$(readlink -f "${p}" 2>/dev/null || printf '%s' "${p}")"
+    if [ "$(basename "${real}")" = busybox ]; then
+        applets+=("${t} at ${p} -> ${real}")
+    else
+        toolchain+=("${t} at ${p} -> ${real}")
+    fi
 done
-if [ "${#reachable[@]}" -gt 0 ]; then
-    echo "error: this container can reach ${#reachable[@]} producer(s) that the criterion's host must not have:" >&2
-    printf '         %s\n' "${reachable[@]}" >&2
-    echo "       Whatever passes below would have passed BECAUSE of them, not despite them. Either" >&2
-    echo "       IMAGE_DOCKER_CLI_28 moved to an image that ships a toolchain, or the two packages" >&2
-    echo "       this gate adds now drag one in." >&2
+if [ "${#toolchain[@]}" -gt 0 ]; then
+    echo "error: this container can reach ${#toolchain[@]} producer(s) the criterion's host must not have:" >&2
+    printf '         %s\n' "${toolchain[@]}" >&2
+    echo "       None of them is busybox wearing another name, so this is a real toolchain, and" >&2
+    echo "       whatever passes below would have passed BECAUSE of it rather than despite it." >&2
+    echo "       Either IMAGE_DOCKER_CLI_28 moved to a fatter image, or \`apk add bash make\` now" >&2
+    echo "       drags one in." >&2
     exit 1
 fi
-echo "PASS: none of the ${#PRODUCERS[@]} producers in tests/host-toolchain-lint.sh's table is reachable"
+echo "PASS: no producer in tests/host-toolchain-lint.sh's ${#PRODUCERS[@]}-row table is reachable except as a busybox applet"
+if [ "${#applets[@]}" -gt 0 ]; then
+    printf 'NOTE: reachable, and busybox: %s\n' "${applets[@]}"
+fi
 
 # ---------------------------------------------------------------------------
 # Naming what broke.
