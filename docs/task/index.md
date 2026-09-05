@@ -79,6 +79,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-310 The host toolchain lint and the container-only build policy**](RFCT-310.md) `P1`
 - [x] [**RFCT-312 A factory-fresh device issues exactly one administrator session**](RFCT-312.md) `P1`
 - [x] [**RFCT-317 PLAN-071 U1/U2/U3: the automatic update driver**](RFCT-317.md) `P1`
+- [x] [**RFCT-320 The cx3576 kernel stamp, and two documents that said something false**](RFCT-320.md) `P2`
 - [x] [**RFCT-302 The snapshot schema version follows the shape it ships**](RFCT-302.md) `P1`
 - [x] [**RFCT-303 Three apid tests assert on state, not on wall-clock speed**](RFCT-303.md) `P1`
 - [x] [**RFCT-306 The update and fleet URLs become changeable, the anchors do not**](RFCT-306.md) `P1`
