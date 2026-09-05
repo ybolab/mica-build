@@ -219,6 +219,15 @@ The first run, before `openapi.json` was regenerated, was
 `the_committed_openapi_document_is_the_generated_one`, and `cargo test`'s
 default fail-fast meant it never reached `mosd` at all.
 
+`main` moved again while this ran (RFCT-314/RFCT-321: the settings store
+rewrite, `update_suppress.rs`, 3.8k lines across 49 files). It was merged a
+second time, without conflicts, and **every number above is from the re-run
+after that merge**, not from before it. `openapi.json` was regenerated again
+too: main had changed it by 131 lines, so the merge of two independently
+generated documents needed checking rather than assuming — it turned out
+byte-identical to what the generator produces, which is the only reason it is
+not a third commit.
+
 ## Owed execution and handoff
 
 No new test files and no new test assertions were written in either batch. L1
