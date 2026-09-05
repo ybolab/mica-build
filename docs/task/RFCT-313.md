@@ -142,3 +142,72 @@ Building the baked reader, the precedence and the operator document's move.
   `update-policy.toml`. PLAN-071 owns `rebootPolicy`, the
   `auto`-requires-a-window rule and the write route; none is in this schema,
   because a key nothing reads is worse than a key the schema refuses.
+
+- complete: the resolution is callable from outside the policy module, and
+  there is one implementation of it.
+
+  **Why it moved into the library rather than growing a getter.** RFCT-315's
+  F9 reports the effective policy on `GET /api/v1/provisioning/status`, and
+  that route is served by **apid**, which links `mosd-settings` and cannot
+  link the `mosd` binary. So a resolution private to `mosd` could only have
+  reached apid as a second implementation, which is the thing L1's constraint
+  exists to prevent. The documents, the readers and the precedence now live in
+  `mosd_settings::configuration`; `mosd/src/update_policy.rs` keeps the
+  semantics — the refusals, the window, the cadence and the reboot gate — and
+  re-exports the types so the lifecycle still names one module.
+  `mosd/src/baked_meta.rs` is gone, absorbed into the same module: the baked
+  layer is half the resolution and could not stay behind.
+
+  **The seam.** `configuration::provisioning_status() -> Result<Value,
+  ConfigError>`, the spelling RFCT-315 declared, plus
+  `provisioning_status_at(manifest, updates)` which it is the no-argument form
+  of, so the pair is testable without the production paths. It returns
+  `{operator, effective}` with `update.source`, `update.channel`,
+  `update.policy` and the baked `fleet.url`, `fleet.enabled`. The baked half
+  of the route is RFCT-315's and is not duplicated here.
+
+  **Absent and `null` are two answers, and stay two.** Every overridable key
+  is `Option<Option<T>>` behind serde's absent/present split: a key the
+  operator never wrote is `None`, a key they wrote as `null` is `Some(None)`,
+  and `resolve` flattens both to the baked default because PLAN-071 §1 says
+  `null` means *take the baked default*. `provisioning_status` reports the
+  document rather than the resolution, so the operator object omits the first
+  and carries `null` for the second.
+
+  **A layer-2 failure is `Err`, on every path, for both callers.**
+  `load_updates` returns `Ok` only for a document that read, parsed, carried
+  no anchor-shaped key and validated — and for a **missing** file, which is
+  the never-configured device and the one case that is legitimately the baked
+  defaults. `PolicyStore::load` is the only place the two callers differ: it
+  turns that `Err` into `EffectivePolicy::unknown_selection()` plus the
+  reason, because a daemon needs a policy object to keep the reboot gate
+  working. It does not build one from the baked layer, and it cannot —
+  `unknown_selection()` takes no arguments. So the status route returning
+  `Err` and the update path refusing are the same fact reaching two surfaces.
+
+  **Redaction is unnecessary rather than remembered.** The operator half is
+  built key by key from three named fields, never serialized from the
+  document, so a key the projection does not name cannot reach a caller
+  however the schema grows — the same shape PLAN-076 §4 gives the fleet
+  snapshot. A caller may still pass it through its own redactor; it will find
+  nothing to remove.
+
+  **`fleet` is the baked value, and that is not a stub.** `/mos/config/`'s
+  fleet document is PLAN-072 §2's and does not exist; nothing on the device
+  reads one either, so reporting the baked value is what the device is
+  genuinely using. Inventing its schema here would have risked refusing valid
+  documents the day that slice lands. When it does, it extends this function;
+  it does not add a second resolver.
+
+  **A layer-1 failure is deliberately not an `Err` here.** `load_manifest`
+  still always answers with a document, so `effective` reports the code
+  defaults — which are the values the device is actually running on, so the
+  two callers still agree. The baked half of the route reports the manifest's
+  own error.
+
+  Verified: `cargo clippy --workspace --all-targets -- -D warnings` and
+  `cargo fmt --all --check` green in `localhost/mos-build-rust-check:amd64`,
+  apid included. Still no tests written and no suite run. Newly owed on top of
+  the list above: the absent-versus-`null` distinction through
+  `provisioning_status_at`, and one case proving the `Err` path and the
+  `unknown_selection` path come from the same document.
