@@ -1,8 +1,9 @@
 # Configuration
 
 mos configuration is a single typed settings tree, owned by the management
-daemon (`mosd`), persisted on the STATE partition, and applied by reconcilers
-that drive the underlying system services. Every supported way to change the
+daemon (`mosd`), stored as JSON documents under `/mos/config/` on the data
+partition, and applied by reconcilers that drive the underlying system
+services. Every supported way to change the
 device converges on one validated write path; nothing edits files behind the
 daemon's back. This page covers the model, the channels, what is configurable
 today, and — just as important on an immutable system — what is not.
@@ -37,7 +38,21 @@ validated against the typed schema. A rejected write leaves the tree
 untouched, and a settings write returns a task you can observe until the
 matching reconciler has applied it.
 
-Settings persist on STATE, so they survive both a reboot and an A/B update.
+**Where settings are stored, and what that means for resets.** System
+configuration — hostname, network, WiFi, SSH, MQTT, time, the container
+switch and the update settings — is written as one JSON document per subsystem
+under `/mos/config/` on the data partition. What the device mints or observes
+about *itself* stays on STATE: the device identity, the administrator
+credential, API tokens. Both survive a reboot and an A/B update, because an
+update writes only the system slots.
+
+The split is the reset boundary rather than a storage detail: **a
+configuration reset returns everything under `/mos/config/` to the values the
+image was built with** and keeps the administrator credential, which is why
+that tier is a settings action and not a lockout. Read
+[recovery.md](recovery.md) Step 3 before running one — the update server
+address goes back too, and where the image names no server that leaves the
+device with none.
 
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`, `docs/design/mosd.md`
 
@@ -60,8 +75,16 @@ The settings tree currently models, per subtree:
   ([applications.md](applications.md));
 - **mqtt** — the local MQTT broker and application-data bridge
   ([applications.md](applications.md));
+- **time** — the time source and synchronisation policy (section 5.1);
 - **power actions and update actions** — not settings, but reachable over the
   same authenticated surface.
+
+**Update settings are not in this tree.** The update mode, channel, server
+address, maintenance windows and network mode live in their own document,
+`/mos/config/updates.json`, beside the ones above rather than inside the
+settings schema — and there is no API route that writes it yet, so changing
+them today means editing that file on the device.
+[update-rollback.md](update-rollback.md) is what each one does.
 
 The authoritative list is the API contract, not this prose: what
 `pkgs/mosd/apid/openapi.json` accepts is what the device supports.

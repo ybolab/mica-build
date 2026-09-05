@@ -298,6 +298,56 @@ holds that line from the inside rather than over the bus: it is mosd itself
 reading the file, and every value it writes goes through the same typed settings
 tree and the same validators an API write goes through.
 
+### 4.0 The pour: writing `/mos/config/` directly, and why it is not a sixth channel
+
+PLAN-070 §5.2 moved system configuration — the hostname, the network, the
+Wi-Fi networks, the ssh switch, the broker policy, the time settings and the
+update policy — into `/mos/config/` on DATA, **so that an integrator can
+flash a device, write the configuration onto it, and have it work with no
+provisioning ceremony between the two**. That is the *pour*, and it is the
+motivating case for the whole namespace. `docs/design/mosd.md` §5.1a is the
+rule list; what belongs here is where it sits relative to the five channels
+above.
+
+**It is not a channel, because it is not a document mosd reads and applies.**
+The provisioning document of §4.1 is an *input* — a file in one format at one
+fixed name, parsed and validated and then written through the settings tree.
+The pour is the settings tree itself, in its storage form: the integrator
+writes exactly the documents mosd would have written, and mosd reads them on
+the next boot as its own state rather than as somebody's request. There is
+nothing to apply, no already-claimed rule to evaluate and no status surface
+reporting what a document did, because nothing was consumed.
+
+**Three properties it inherits and does not get to choose** (PLAN-070
+§5.2.7):
+
+- **Offline only.** A pour is written onto a device that is **not running**.
+  Pouring onto a running device is not supported, for the reason §4.1.7
+  gives for having no udev trigger: nothing lets inserting media reconfigure
+  a *running* appliance.
+- **Validated on the next boot, exactly as mosd validates its own output.**
+  A poured document that parses and validates is adopted. One that does not
+  refuses the subsystem it gates and names the file — a parse error is not
+  absence, and treating it as absence configures a device the way nobody
+  chose.
+- **A poured secret is not read back.** `/mos/config/wifi.json` carries the
+  site's WPA2 pre-shared key, which is why the directory is `0700` and every
+  document `0600`. Nothing a poured document carried appears in any served
+  record, by the same rule that covers a value written over the API: a
+  secret-bearing key is spelled with a name the redactor already carries
+  (`psk`), or the change that adds the key adds the name. §4.1.7's *no way
+  to read the document back* is the same property one layer up.
+
+**Status — [partial].** The namespace, the per-reconciler documents, the
+`0700`/`0600` modes and the fail-closed medium check are shipped, and the
+store already refuses a document that exists and does not parse
+(`SettingsError::Parse`, naming the document) rather than falling back to a
+schema default — so a poured document meets the same reader mosd's own output
+meets, and a well-formed pour is adopted on the next boot. What is **not
+implemented** is PLAN-070's F6g: the boot-time pass that validates documents
+mosd did not write as a distinct act, with the refusal an integrator reads.
+`docs/design/mosd.md` §5.1a records the same boundary from the storage side.
+
 ### 4.1 The provisioning document — channels 1 and 2 (shipped)
 
 One file, one format, two transports. `pkgs/mosd/mosd/src/provisioning_doc.rs`

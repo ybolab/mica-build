@@ -78,21 +78,37 @@ A release is signed twice, by two unrelated hierarchies
   marked root and names it development-grade in the verdict
   (`verify/src/checks-root.ts`, both directions proven by
   `verify/src/checks-root.test.ts`).
-- **TUF metadata** — **[partial]**: `rauc-sign` maintains the four-role
-  repository pinning each bundle's sha256, length and verity root hash, and
+- **TUF metadata** — **[implemented]** on the device side, and the sentence
+  that used to stand here is retired. `rauc-sign` maintains the four-role
+  repository pinning each bundle's sha256, length and verity root hash;
   `rauc-verify` performs the device-side walk with persistent rollback
-  protection (`pkgs/rauc-sign/README.md`). Both are exercised offline by the
-  test suite; **no shipped mechanism delivers the trust anchor to a device,
-  and no transport fetches metadata onto one** — the provisioning candidates
-  and their tradeoffs are recorded in `pkgs/rauc-sign/README.md` and
-  `docs/design/release-signing.md` §2.3, all **[proposed]**.
+  protection; and both binaries ship in the image as `mos-rauc-update`, with
+  `rauc-update sync` as the transport that fetches metadata onto a device.
+  **The anchor is delivered**: `trust.signingKeys` is baked inline in
+  `/usr/share/mos/meta/updates/manifest.json` and the client will read one
+  from nowhere else — no environment variable, no flag, no operator document
+  (`docs/design/release-signing.md` §3.1, `docs/design/updates.md` §2.3).
 
-The honest claim today: production-grade update authenticity is *buildable* —
-the tooling accepts real keys, the ceremonies are written — and *not fielded*.
-A device built from an empty `meta/` trusts a development CA and says so; a
-device has no TUF anchor at all. Until the anchor provisioning channel ships,
-boundary (b) protects the release pipeline's outputs, not a fielded device's
-inputs.
+The honest claim today, which is narrower than "not fielded" and narrower
+than "fielded":
+
+- **The road exists and it is the image.** Both hierarchies reach a device
+  the same way, so the update trust chain is exactly as strong as the image
+  signing path that carries it: whoever controls what gets baked controls
+  what the package gate trusts. The two gates are independent **at install
+  time** — forging a package still does not install a system
+  (`release-signing.md` §2.6) — and not at provisioning time.
+- **A default build trusts nothing for packages, and says so.**
+  `pkgs/rauc/gen-dev-keys.sh` writes the RAUC domain by default and the
+  updates domain only on `--domain updates`, so an image built from a fresh
+  checkout carries an empty `trust.signingKeys` and can verify **no** update
+  package. The build prints that in one line rather than failing: with no key
+  there is nothing claiming a trust relationship the build does not have.
+- **What remains [proposed]** is a trust channel *outside* the image, for the
+  two cases the image cannot carry: a device that misses a CA rollover's
+  overlap window, and rotation away from a CA that is already compromised
+  (`release-signing.md` §2.3, §2.4). That is a keyring question now; the
+  package anchor's channel is settled.
 
 ## 4. Boundary (c): boot-chain authenticity — per board, and honest
 

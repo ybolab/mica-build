@@ -127,6 +127,19 @@ test drives a populated pool through every tier asserting what SURVIVES and not
 only what goes — a tier that cleared more than its row is the failure mode here,
 and only a survival assertion catches it.
 
+**The two slot columns cover the baked update configuration and the trust
+anchors**, because those are files in the root filesystem and have the root
+filesystem's survival profile exactly:
+`/usr/share/mos/meta/updates/manifest.json` and `/etc/rauc/keyring.pem` are
+inside the dm-verity-sealed slot. So every A/B update replaces them with the
+incoming slot's, a slot rollback restores the previous slot's along with
+everything else in it, no reset tier rewrites either, and a whole-disk
+reflash replaces them with the new image's — which *is* the configuration,
+with nothing to re-apply afterwards. That is a clarifying note about the
+columns already here, not a new row: a "baked configuration" column would
+restate the slot columns, and a table with two columns that must agree is a
+table that will one day disagree.
+
 The tier column names the *only* four resets; the whole-disk reflash is not in
 this table because it is not a reset — it replaces every partition including the
 system slots, and its semantics are `docs/design/access.md` §9.2's, not this
@@ -156,6 +169,21 @@ document's. §3 places it in the operator ordering, between tiers 3 and 4.
     rather than enumerating what is in it. The settings the tier hands back to
     first-boot provisioning are re-seeded by the STATE half in the same save,
     which is the `re-seeded [^cfg]` cell beside this one.
+    **One occupant is an address, and a reader must be told which way this
+    cell points them.** `updates.json` carries the update source URL and the
+    channel (`docs/design/updates.md` §2.4), so tier 1 — and tier 3, which
+    re-seeds `/mos` wholesale — returns **the address the device dials to the
+    value the image was built with**. That is the recovery path for a device
+    somebody re-pointed at a server that turned out to be wrong. It is a
+    footgun exactly where the baked default is `null`: for an image whose
+    `meta/` names no server, the reset returns the device to **no** server,
+    which is a device that has silently stopped updating rather than one
+    pointed somewhere else. `../user/recovery.md` is where an operator meets
+    that before running the tier. The fleet plane's URL and its on/off flag
+    are baked-only today and so are outside this cell entirely; when
+    PLAN-072 §2's `/mos/config/fleet.json` lands it is an occupant of this
+    directory and inherits this disposition with no edit here, which is the
+    whole point of deciding it for the directory.
 
 [^apps-state]: Tier 2's only write to STATE is the removal of the application
     enrolment records the application layer owns there — the Quadlet units and

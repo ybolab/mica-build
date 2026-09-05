@@ -1,9 +1,12 @@
 # Design: updates — lifecycle state, update policy and safe-to-reboot
 
-> Status: the state model, the policy file, the `/mos/updates` workspace
+> Status: the state model, the policy document, the `/mos/updates` workspace
 > contract with its readiness probe, and the reboot gate below are
-> implemented in mosd/apid/`rauc-update` and unit-tested; the fault-evidence
-> table in §6 states, per fault, exactly what is proven where and what still
+> implemented in mosd/apid/`rauc-update` and unit-tested. The **automatic
+> path** of §3.2 is implemented and **has no tests at all** — §6 says so in
+> terms rather than leaving it to an absent row — and the **write route** of
+> §3.4 is approved design that is not in the tree. The fault-evidence table
+> in §6 states, per fault, exactly what is proven where and what still
 > needs bench hardware. Companions: `release-signing.md` (trust chain and the
 > `rauc-update` client), `mosd.md` §5.4 (the bus surface this builds on),
 > `api.md` (HTTP conventions), `uboot-ab-handshake.md` (boot credits),
@@ -37,6 +40,14 @@ reason string, recorded by `pkgs/mosd/mosd/src/update_lifecycle.rs`:
 Precedence, written once in `render_entry`: `installing` over a running
 client operation over `update-unavailable` over `failed` over `ready` over
 the derived boot phase over `idle`.
+
+**Two members beside the state, and neither is a state.** `deferred` names
+why the last automatic pass did not proceed (`reason`, `detail`, `since`,
+`at`, `waitedSeconds`, `attempts`) — §3.2's fifteen reasons. `suppressed` is
+the list of versions the automatic path refuses after a rollback, with
+`suppressed_error` beside it when the store itself could not be read, because
+an unreadable store must not render as an empty one. Both describe the
+automatic path; the state beside them is still what the device *is*.
 
 ### 1.1 The workspace and its readiness probe
 
@@ -147,36 +158,73 @@ still answers every read.
 
 ## 2. The policy document
 
-> The **format, path and layering** of this section were replaced by
-> PLAN-070 §5 (the baked manifest, the operator document's move to
-> `/mos/config/updates.json`, and the per-key precedence between them).
-> PLAN-070's F10 owns the full rewrite of this document; what is below is the
-> shape the shipped reader actually parses, corrected because the example
-> that stood here was a **load error** — a device configured from it failed
-> to load its policy at all.
+### 2.1 Where it lives, and what it replaced
 
-Policy is resolved from **two documents**, per key:
+The operator document is **`/mos/config/updates.json`**: JSON, on the DATA
+pool, inside the `/mos/config/` system-configuration namespace
+(`mosd.md` §5.1a). It replaces `/var/lib/mos/update-policy.toml` — TOML, on
+STATE — and **nothing migrates**: `[autoCheck]`, `source.rootPath` and every
+other spelling of the old file are unknown keys under
+`deny_unknown_fields`, so a document still carrying one is a load error
+rather than a half-read policy. A device holding only the retired path
+follows the baked defaults, because nothing reads that path any more.
+
+Three things moved at once and each was a decision (PLAN-070 §5.1, §5.2):
+
+- **The tier: STATE → DATA.** DATA is the pool the `/mos/updates` workspace
+  already lives on, so one readiness probe (§1.1) gates the document and the
+  bundles it describes rather than two media having to agree. The property
+  STATE gave for free — *a configuration reset returns the update channel to
+  its default* — is **kept, not lost**: tier 1 re-seeds `/mos/config/` too,
+  which is `recovery.md` §2.1's tier-1 `DATA (/mos)` cell and its
+  `[^cfg-mos]` footnote. §2.4 is what that costs a reader.
+- **The home: a namespace, not a corner.** `/mos/config/` is the device's
+  system configuration; `updates.json` is one occupant beside `fleet.json`
+  and the seven documents the settings store writes. Its rules are
+  `mosd.md` §5.1a's and are not restated here: one writer per document,
+  `0700` on the directory and `0600` on every file, and the asymmetry that
+  **an absent document is a default while an absent namespace is a
+  refusal** — a subsystem nobody configured versus a medium that did not
+  mount.
+- **The format: TOML → JSON.** The namespace's rule is JSON, and the
+  document is machine-written now (§3.4) rather than hand-edited: JSON is
+  what `Store::save`'s discipline emits and what a write route can round-trip
+  without a serialiser that reorders an operator's comments away.
+
+It is **not** in the settings tree, and that half of the older argument
+survives the document becoming writable: a settings key means a schema
+version bump plus a migration, and "not in the settings tree" never implied
+"not writable" (PLAN-071 §3).
+
+### 2.2 Two layers, one precedence rule
 
 1. **Layer 1, baked**: `/usr/share/mos/meta/updates/manifest.json`, inside
-   the read-only root (`MOSD_META_MANIFEST_PATH` overrides). Read once at
-   startup, because nothing on the device can write it. Its `update` object
-   carries the product's defaults for `source`, `channel`, `policy` and
-   `checkIntervalMinutes`, and its `trust` object carries the signing
-   anchors, which no operator document may name.
-2. **Layer 2, operator**: `/mos/config/updates.json`, on the DATA pool that
-   also backs the `/mos/updates` workspace, so one readiness probe gates
-   both (`MOSD_UPDATE_POLICY_PATH` overrides, and tests point it into a
-   tempdir). Read fresh on every policy decision, so an edit takes effect on
-   the next decision with no restart and no reload verb.
+   the read-only dm-verity root (`MOSD_META_MANIFEST_PATH` overrides). Read
+   once at startup, because nothing on the device can write it. Its `update`
+   object carries the product's defaults for `source`, `channel`, `policy`
+   and `checkIntervalMinutes`, and its `trust` object carries the package
+   signing anchors, which no operator document may name (§2.3).
+2. **Layer 2, operator**: `/mos/config/updates.json`
+   (`MOSD_UPDATE_POLICY_PATH` overrides, and tests point it into a tempdir).
+   Read fresh on every policy decision, so an edit — or a write through §3.4
+   — takes effect on the next decision with no restart and no reload verb.
 
 Four keys are overridable — `policy`, `checkIntervalMinutes`, `source.url`
 and `source.channel` — and for those, an absent key and an explicit `null`
-both mean *take the baked default*. Everything else in the document is layer
-2's outright and takes a code default. Where bundles are staged is not a
-policy key at all: the workspace is `/mos/updates` (§1.1) and there is no
-setting that could point it elsewhere. There is no `source.rootPath` either
-— the trust anchor is layer 1's, which is the premise the overridable source
-URL rests on.
+both mean *take the baked default*. The two stay distinguishable on the read
+surface (`GET /api/v1/provisioning/status`) because *I cleared my override*
+and *I never set one* are different statements about a document. Everything
+else in the document is layer 2's outright and takes a code default. Where
+bundles are staged is not a policy key at all: the workspace is
+`/mos/updates` (§1.1) and there is no setting that could point it elsewhere.
+
+**The address is an operator setting; what the device will accept is not.**
+`source.url` is overridable — one deployment's devices can be re-pointed at
+another server without an image — and the trust anchors are baked, with no
+key in this schema at all. That line is PLAN-070 §5.3's and it is the whole
+of the split: changing an anchor is a trust decision and rides a release;
+changing an address, a channel or a schedule is an operating decision and
+rides one authenticated API call.
 
 **Fail-closed, and on the action rather than on the device.** A missing
 document is the baked policy. A document that exists and does not parse or
@@ -189,7 +237,7 @@ the file until it is fixed, because "unreadable" silently becoming
 gate and the maintenance windows keep evaluating on their code defaults —
 failing closed there would let a typo brick the reboot button.
 
-The operator document, with every key it accepts:
+### 2.3 The document, with every key it accepts
 
 ```json
 {
@@ -222,7 +270,7 @@ The operator document, with every key it accepts:
 - `policy` — what the device does on its own: `off` initiates nothing and
   leaves every manual route available; `check` runs metadata checks on the
   cadence and nothing else; `auto` checks, fetches, installs inside a
-  maintenance window, then reboots or does not per `rebootPolicy`.
+  maintenance window, then reboots or does not per `rebootPolicy` (§3.2).
   Overridable; the baked value applies when it is absent or `null`.
 - `checkIntervalMinutes` — `0` disables automatic checks. Overridable.
 - `rebootPolicy` — `manual` stops at `reboot-required` and waits for an
@@ -249,17 +297,57 @@ therefore a load error, which is the intended outcome — PLAN-071 §1.1
 migrates nothing, and a device that fails closed on an old document is one
 nobody has to guess about.
 
+**Six key names are refused by name, at any depth, before the schema is
+applied**: `trust`, `signingKeys`, `signingKeyId`, `signingKeyIds`,
+`rootPath` and `keyring` (`ANCHOR_KEYS` in
+`pkgs/mosd/mosd-settings/src/configuration.rs`). `deny_unknown_fields`
+already rejects every one of them today, so the by-name scan buys nothing
+against a typo — what it buys is the refusal surviving somebody *widening*
+the schema, which is how the anchors would come back. Its error says so in
+terms: *the address this device dials is yours to set; what it will accept is
+not.* `source.rootPath` is the retired half of the old `[source]` block and
+stays retired for the same reason.
+
 `policy = "auto"` with zero maintenance windows is refused. Zero windows
 means *any time*, which is right for a manual install — a device with no
 operator-set window must still be updatable by a human who is standing there
 — and wrong for an automatic one, where it would mean *install the moment a
 bundle lands*. The rule is checked twice because there are two ways in: a
-document naming `auto` with no window is a load error, and a document that
-inherits `auto` from the baked layer (which carries no windows at all) has
-its automatic *install* refused while the check cadence and every manual
-route keep working.
+document naming `auto` with no window is a load error and is refused at the
+write route with the same sentence (§3.4), and a document that inherits
+`auto` from the baked layer (which carries no windows at all) has its
+automatic *install* refused while the check cadence and every manual route
+keep working.
 
-## 3. What each policy gates
+### 2.4 What a reset does to it
+
+`/mos/config/` is re-seeded by tier 1 and by tier 3, so **both return
+`policy`, `checkIntervalMinutes`, the channel and the source address to their
+baked defaults**, along with every other document in the namespace. Tier 2
+does not open the directory; tier 4 clears it with everything else. That is
+`recovery.md` §2.1's table read from this side, and it needs no mechanism of
+its own: the disposition was decided for the directory and this document is
+an occupant of it.
+
+Two consequences a reader meets here rather than in the design tree:
+
+- **It is a recovery path.** An operator who re-pointed a device at a server
+  that is now wrong gets back to the shipped configuration with a tier the
+  device already has — no image, no physical access.
+- **It is a footgun exactly where the baked default is `null`.** For a build
+  whose `meta/` names no server, a tier-1 or tier-3 reset does not return the
+  device to *a different* server; it returns it to **no** server, and to
+  fleet **off**. `../user/recovery.md` and `../user/update-rollback.md` are
+  where an operator is told so.
+
+The finer-grained action stays available and is the reason a reset tier is
+not the only route back: clearing one key of the operator layer returns that
+key — the channel, or the address — to its baked default without spending a
+whole reset on it.
+
+## 3. What the policy gates, and who may write it
+
+### 3.1 What each key gates
 
 - **Maintenance windows** gate **installs** and only installs: the bundle is
   already local and verified, so a check or fetch outside the window costs
@@ -277,13 +365,181 @@ route keep working.
   `checkIntervalMinutes` cadence (default daily, `0` disables), production
   only, subject to the same policy refusals. `off` initiates nothing;
   `check` runs `check` and nothing else — never fetches, never installs;
-  `auto` fetches what a check named and installs it inside a maintenance
-  window, then reboots or does not per `rebootPolicy`. Every automatic step
-  calls the same function the manual route calls, so no gate here has a
-  second implementation for automation to pass through.
+  `auto` is §3.2.
 
 Policy refusals cross the bus as `AccessDenied` and reach HTTP as **409**
 `policy_refused` with the refusing rule in the message.
+
+### 3.2 What `auto` does, precisely
+
+The driver is `pkgs/mosd/mosd/src/update_auto.rs`, one task spawned by
+`main` on a production device, waking on a fixed tick because a maintenance
+window is `HH:MM`-precise and may be a single minute long. **Every automatic
+step calls the same function the manual route calls**, so no gate here has a
+second implementation for automation to pass through. Four steps:
+
+1. **Check**, on `checkIntervalMinutes`, and unchanged from the manual
+   check: the workspace probe first, then `network.mode` (`offline` refuses;
+   `metered` admits, metadata is KiB-sized). The cadence counts *attempts*,
+   not successes — a check the policy refuses must not retry every tick.
+2. **Fetch**, when a check names a candidate. Gated by `network.mode`
+   (`metered` refuses unless `meteredAllowsFetch`), the readiness probe and
+   the `maxBytes` budget — and **not** by the maintenance window, for §3.1's
+   reason: the bundle is not installed by arriving.
+3. **Install**, only inside a maintenance window, with two additions the
+   manual path does not have. `policy = "auto"` **requires** at least one
+   window (§2.3). And the driver **re-checks immediately before installing**,
+   which is the one place automation is deliberately stricter than a human:
+   an operator installing a staged bundle is making a choice; automation must
+   not install something the publisher pulled between the fetch and the
+   window. The re-check has three outcomes and they are not the same. It
+   names the staged bundle — install it. It names **nothing compatible** —
+   the bundle was withdrawn, so it is deleted from `verified/` and forgotten.
+   It names a **different** bundle — the staged one is `superseded`, not
+   provably withdrawn (a check reports the selection, not the whole target
+   list), so it is **kept** and the next pass fetches what was named.
+4. **Reboot**, per `rebootPolicy`, through the same gate `Reboot` uses (§4).
+   **Automation never arms the override.** That is structural rather than
+   remembered: the driver is written against a trait that does not carry
+   `SetRebootOverride`, so the arming path stays reachable only from the
+   authenticated apid route. When the gate is closed the driver defers — the
+   lifecycle stays `reboot-required` with the gate's reasons visible — and
+   the next window re-attempts.
+
+**An automatic install requires a clock the device believes** (`time.md`'s
+floor: timesyncd reporting synchronized, or a floor that has advanced since
+boot). A maintenance window is UTC wall-clock, so a device that does not
+believe its clock cannot honour one. Checks and fetches are unaffected:
+neither is time-keyed, and refusing them would stop a clockless device even
+discovering updates.
+
+**A version that rolled back is not selected again.** Without that, `auto` is
+a reboot loop — fetch a bad bundle, install, fail to confirm, fall back,
+find the same newest version, install it again. `update_suppress.rs` records
+the version of a slot that rolled back on STATE, with the evidence (which
+slot, when, what the boot status was); the automatic path refuses it; an
+operator clears it explicitly through `POST /api/v1/update/clear-suppression`
+and the clearing is audited. A **manual** install of a suppressed version is
+permitted — the operator has been told and is choosing. Two edges are
+deliberate: a manual `MarkUpdate bad other` also suppresses that slot's
+version, and a rolled-back slot RAUC names no `bundle_version` for cannot be
+suppressed at all, which is logged rather than guessed at. A suppression
+store that exists and does not parse reads as an error, never as "nothing is
+suppressed" — that reading is the loop the store exists to break.
+
+**Deferral is visible, not silent.** A permanently blocking application
+permanently defers the reboot, which is correct and is also
+indistinguishable from a stuck update unless the device says so. The
+lifecycle's `deferred` fact names why the last automatic pass did not
+proceed, with `since`, `at`, `waitedSeconds` and `attempts` beside it. An
+operator opening the update page after a week can see that four automatic
+attempts were refused and by what. The fifteen reasons, which are the whole
+set (`update_auto.rs`):
+
+| Step | Reasons |
+|---|---|
+| check | `check-refused`, `no-newer-release` |
+| fetch | `version-suppressed`, `suppression-unreadable`, `fetch-refused` |
+| install | `clock-untrusted`, `outside-window`, `slot-status-unknown`, `reboot-pending`, `workspace-unready`, `recheck-failed`, `recheck-refused`, `superseded`, `version-suppressed`, `suppression-unreadable`, `install-refused` |
+| reboot | `outside-window`, `reboot-gate-closed` |
+
+`version-suppressed` appears twice on purpose: the fetch step declines to
+download a version it already refuses to install, and the install step asks
+again after its re-check, which is the first point at which the version about
+to be *written* is known rather than guessed at.
+
+Clearing is deliberate rather than blanket: a step that supersedes exactly
+one fact clears exactly that reason (a check that finds a release ends
+`no-newer-release` and says nothing about the window), and everything is
+cleared only at the two points where a pass ran to its end — the install
+started, and the reboot was issued.
+
+A deferral is a fact about the automatic path, not a state of the machine:
+the lifecycle beside it still reads `ready` or `reboot-required`, because
+that is what the device *is*.
+
+### 3.3 A channel or address change, and what it may select
+
+`source.channel` and `source.url` are read fresh per decision, so a change
+takes effect on the next check with no restart. Three outcomes need three
+sentences, because the operator's next action differs each time:
+
+- **The channel holds nothing newer.** Moving from `beta` to `stable` can
+  point the device at a channel whose newest release is *older* than what it
+  runs. `rauc-update`'s selection requires a version strictly newer, and the
+  automatic path never passes `--allow-downgrade` — an unattended downgrade
+  is an unattended rollback to code the device already moved past. The check
+  reports `no-newer-release` naming the channel, rather than a bare `idle`
+  with no candidate, because "up to date" and "nothing published here yet"
+  differ in what to do next.
+- **The source does not publish the selected channel at all.** Report that
+  the selected channel holds nothing, and **never fall back to the baked
+  default**. A silent fallback would put the device on a channel its operator
+  did not choose, which is the same defect as adopting the baked channel on a
+  parse error.
+- **The address does not answer.** Same rule, same reason: the failure is
+  reported and the baked address is not substituted.
+
+A change does not shortcut anything. An install after a channel or address
+change is an install: same window, same gate, same re-check.
+
+### 3.4 The write route — **[not implemented]**
+
+**Approved design, PLAN-071 §3; not in the tree.** apid declares no write
+route for this document today (`pkgs/mosd/apid/openapi.json` carries
+`/api/v1/update` and its six action routes and no policy write), so an
+operator's only way to change the document is to edit it on the device. What
+is written here is the shape the route must have, so that the console's
+`AutomaticUpdates` controls — `policy`, `channel`, `checkIntervalMinutes`,
+the windows, `rebootPolicy`, and clearing a suppressed version — have one
+described surface behind them:
+
+- **One route**, on apid, authenticated as an administrator — the same
+  authority every other management write requires, and no new one. There is
+  no unauthenticated path and no fleet-derived path to it.
+- **mosd owns the file and is its only writer.** apid does not write
+  `/mos/config/updates.json`; it asks. One fact, one writer, all the way down
+  to the filesystem — which is `mosd.md` §5.1a's rule for the whole
+  namespace, not a rule this document invents.
+- **Validation happens on write, not at the next check.** A rejected
+  document is refused with the offending field named, and the on-disk
+  document is never replaced by one that would fail to load. §2.3's
+  `auto`-requires-a-window rule moves with it: the operator who selects
+  `auto` with no window is told so in the console instead of getting a device
+  that fails closed some hours later for a reason they have to go looking
+  for. `configuration::validate` is public for exactly this — one rule set,
+  two callers, because two spellings of one rule is how they drift.
+- **Atomicity follows the discipline the tree already has**: one save, a
+  temp file and an atomic rename within the same directory, the shape
+  `Store::save` uses for the settings documents. A reader sees the old
+  document or the new one and never a partial write; the residue is a torn
+  write below the filesystem, which is what §2.2's fail-closed reader is for.
+- **Audited like every other management write**, carrying the same actor
+  field the update events carry. *Who put this device on `beta`* is a
+  question the trail must answer.
+
+`deny_unknown_fields` means something different once there is a machine
+writer: a machine never emits an unknown field, so an unknown field is
+hand-editing or corruption, and refusing it is right in both cases.
+
+### 3.5 Who did this — attribution today, and the gap
+
+**What holds.** The driver acts under one name, `auto-update`, wherever an
+operator's bus name would go, so the `requested_by` field of
+`update.install` and `update.last_mark` distinguishes a machine's install
+from a human's without anyone having to infer it
+(`update_auto.rs`'s `SENDER`).
+
+**What does not — [not implemented].** The audit trail is apid's, and
+`update-check`, `update-fetch` and `update-install` are recorded in
+`pkgs/mosd/apid/src/update_api.rs` — on the *routes*. The automatic path does
+not pass through apid, so **an automatic check, fetch or install writes no
+audit event at all**. The trail therefore answers *did a human do this* only
+in one direction: an event means yes, and the absence of one means either no
+or nobody was asked. PLAN-071 §3 requires the automatic actions to record the
+same event names distinguished by an actor field; that is owed, and until it
+lands `requested_by` in the live-state document is the only attribution a
+support case has.
 
 ## 4. The safe-to-reboot gate
 
@@ -337,6 +593,14 @@ All routes are behind the session gate; actions are POST-only and audited.
    and the booted slot's `boot_status` `good` is a completed update
    (`lifecycle` reads `succeeded` once the health gate reports §1's
    `health.boot`; until that lands, confirm via `slots` + `booted_slot`).
+
+Under `policy = "auto"` the device walks those same steps itself, through the
+same functions and the same gates (§3.2). The operator's routes stay open
+throughout: `auto` never removes a manual action, and the one thing it adds
+that a human does not get is the re-check before the install. What to read
+when nothing appears to be happening is `lifecycle.deferred` — the automatic
+path records why every pass it declined was declined, which is the only place
+the answer exists.
 
 ### 5.2 Rollback
 
@@ -454,7 +718,6 @@ removable media. On the device (bench shell or SSH):
 
 ```sh
 rauc-update import --lockbox /media/usb/lockbox \
-  --root /usr/share/mos/uptane/root.json \
   --state /var/lib/mos/update/uptane-state.json \
   --max-bytes 500000000
 # last stdout line = verified bundle path, /mos/updates/verified/<name>
@@ -462,22 +725,75 @@ rauc-update import --lockbox /media/usb/lockbox \
 ```
 
 then `POST /api/v1/update/install` with `{"bundlePath": "<that path>"}` (or
-the bus member `InstallUpdate`). The import verifies the same pinned-root
-walk as the online path and stages through the same workspace (§1.1); there
-is no flag that skips either, and the bundle on the media itself is not an
-installable path.
+the bus member `InstallUpdate`). The import verifies against the same baked
+anchors as the online path and stages through the same workspace (§1.1);
+there is no flag that skips either, and the bundle on the media itself is not
+an installable path.
 
-### 5.4 Support data
+**There is no `--root`, and its absence is the design.** `rauc-update` and
+`rauc-verify` take the trust anchors from the baked manifest's
+`trust.signingKeys` (`pkgs/rauc-sign/src/anchor.rs`), which pins
+`/usr/share/mos/meta/updates/manifest.json` as a constant: *there is no
+environment, argument or operator-document anchor override.* An earlier
+revision of this section showed
+`--root /usr/share/mos/uptane/root.json`; that flag was removed with the
+anchor-file path it named, and an invocation carrying it fails. The reader
+starts at the earliest repository root a baked key authenticates and lets the
+TUF rotation chain carry it forward, so a rotated repository needs no new
+flag either.
+
+### 5.4 The update server has moved
+
+The device that must fetch the new image is pointed at the server being
+changed, so this case has to be answered from outside it. **Three routes
+back, in the order to try them:**
+
+1. **Re-point the device.** `source.url` is an operator key (§2.2): an
+   authenticated administrator writes the new address into
+   `/mos/config/updates.json` and the next decision uses it — no image, no
+   physical access, no reflash. This is the route that did not exist before
+   PLAN-070 §5.3.
+2. **Offline import.** A bundle on removable media, verified against the
+   baked anchors, needing no server at all (§5.3). This is the route for a
+   device whose network cannot reach any server.
+3. **Reflash.** A whole-disk write replaces the baked configuration with the
+   new image's, which *is* the configuration. It also replaces STATE, so it
+   mints a fresh `deviceId` (`access.md` §9.2) — the reason it is third.
+
+**A reset is a fourth route, and it points backwards.** Tiers 1 and 3
+re-seed `/mos/config/`, so both return the address and the channel to the
+values the image was built with (§2.4). That recovers a device an operator
+re-pointed at a server that turned out to be wrong. Where the baked default
+is `null` it does the opposite of a recovery: the device is returned to **no
+server**, and to fleet **off**, which is a device that has silently stopped
+updating.
+
+**What is left, stated in its narrowed form.** A device **nobody can
+authenticate to** — no operator credential, no physical access — whose server
+has gone away is stranded, and nothing short of a channel this product
+deliberately does not have fixes it. That residue is smaller than it was:
+before the address became an operator key, every device whose server moved
+was in it.
+
+### 5.5 Support data
 
 A support case wants: `GET /api/v1/update` (the whole document — lifecycle
-with reasons, policy as loaded, gate verdict, slots, `install`,
-`last_mark`), the audit trail (`update-check`/`update-fetch`/
-`update-install`/`update-mark`/`update-rollback`/`update-reboot-override`/
-`update-clear-suppression` events with source addresses; `update-rollback`
-records the refusal and its reason as well as the applied rollback, because
-the guard refuses inside apid and nothing else would witness it), and the
-journal (mosd logs every admission, refusal, override
-and outcome; the client's stderr tail is in `lifecycle.reason`).
+with reasons, `deferred`, `suppressed`, policy as loaded, gate verdict,
+slots, `install`, `last_mark`), the audit trail
+(`update-check`/`update-fetch`/`update-install`/`update-mark`/
+`update-rollback`/`update-reboot-override`/`update-clear-suppression` events
+with source addresses; `update-rollback` records the refusal and its reason
+as well as the applied rollback, because the guard refuses inside apid and
+nothing else would witness it), and the journal (mosd logs every admission,
+refusal, override and outcome; the client's stderr tail is in
+`lifecycle.reason`).
+
+**The trail covers operator actions only.** Audit events are recorded on
+apid's routes, and the automatic path does not pass through them (§3.5), so
+an automatic check, fetch or install is absent from the trail. For those,
+`lifecycle.deferred` and `install.requested_by` (`auto-update`) are what a
+support case reads. A quiet trail on a device running `auto` is the expected
+shape, not evidence that nothing happened.
 
 ## 6. Fault-test evidence
 
@@ -505,16 +821,60 @@ Operator docs (§5 and `../user/update-rollback.md`) claim only the left
 two columns; every bench row is an open verification item, not a shipped
 behaviour.
 
-## 7. Deployment contract still owed (outside this slice)
+**The automatic path has no rows in that table, and the reason is that it has
+no unit column to put in one.** `pkgs/mosd/mosd/src/update_auto.rs` and
+`pkgs/mosd/mosd/src/update_suppress.rs` carry **no tests**: the driver
+compiles, clippy is quiet, and not one line of the loop, the suppression
+store, the clock predicate or the deferral facts has been executed. Stated
+here rather than left to be inferred from an absent row, because `auto` is
+the first capability that reboots a device with nobody watching and the
+failure mode is a path that skips a gate — which is exactly what a test would
+catch and prose cannot.
 
-- `/usr/bin/rauc-update` in the image (a parallel subtask ships it; its
-  absence is reported per §1).
-- `/usr/share/mos/release-identity.env` (`BOARD=`/`PROFILE=`/`VERSION=`)
-  and the pinned trust anchor at `/usr/share/mos/uptane/root.json` —
-  `release-signing.md` records the anchor-provisioning decision as open.
-- Provisioning of `/var/lib/mos/update/` (metadata mirror, rollback state)
-  on STATE. The workspace itself is provisioned: `mos-data-layout` creates
-  `/mos/updates/{downloads,verified,staging}` on DATA (PLAN-063). The quota
-  behind `maxBytes` stays PLAN-049's.
+What is owed, in the order it should be written:
+
+| Behaviour | Required | Owed |
+|---|---|---|
+| The loop is closed | A bad bundle installs once: it rolls back, the version is suppressed, and the second automatic pass selects nothing | The full cycle against the trait seam — PLAN-071's own acceptance for the slice, and the one test that proves the loop cannot restart |
+| The suppression store | Record, clear, idempotence, and a store that exists and does not parse refusing rather than reading as empty | The unparseable case first: it is the branch whose failure silently restores the loop |
+| Automation never arms the override | The automatic path drives against a closed gate and no override is armed | The invariant is structural — `SetRebootOverride` is not on the driver's trait (§3.2) — and a test is what keeps the trait from growing one |
+| The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | The floor limb has never been observed against a device with no STATE bind, which is the case it exists for |
+| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | — |
+| The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | `openapi.json` documents the route; nothing drives the handler |
+| The end-to-end bench cycle | `auto` on real hardware: fetch, window, install, reboot, confirm | Blocking for shipping `auto` at all |
+
+## 7. The deployment contract
+
+**What the image now carries.** Three of this section's four items closed;
+they are recorded rather than deleted, because each was owed to a claim §1
+and §2 make and a reader checking those claims needs to find the answer.
+
+- **`/usr/bin/rauc-update` and `/usr/bin/rauc-verify`** ship in the image, as
+  the `mos-rauc-update` package. `verify/src/checks-update.ts` asserts both
+  are executable regular files in the packed root, so the absence §1 reports
+  as `client.available: false` is a fault rather than the normal state.
+- **`/usr/share/mos/release-identity.env`** (`BOARD=`/`PROFILE=`/`VERSION=`)
+  is written by `rootfs/compose/compose-install.sh`, and the same verifier
+  checks its lines parse and that `VERSION` matches the pool version carried
+  by `mos-system`.
+- **The trust anchors** are `trust.signingKeys` in
+  `/usr/share/mos/meta/updates/manifest.json`, staged by `rootfs/build.sh`'s
+  allowlist from `meta/updates/manifest.json` and inside the dm-verity root.
+  **There is no `/usr/share/mos/uptane/root.json`**, and the anchor-file path
+  this section used to name is retired with the `--root` flag that consumed
+  it (§5.3). What `release-signing.md` §2.3 still records as an open decision
+  is the *provisioning channel* — how an anchor reaches a device other than
+  by being baked into its image — not where a running device reads one.
+
+**Still owed:**
+
+- Provisioning of `/var/lib/mos/update/` (metadata mirror at `repoDir`,
+  rollback state at `statePath`) on STATE. Nothing in the image creates
+  either; the defaults in §2.3 name paths the client will have to make. The
+  workspace itself *is* provisioned: `mos-data-layout` creates
+  `/mos/updates/{downloads,verified,staging}` on DATA (PLAN-063), and the
+  quota behind `maxBytes` stays PLAN-049's.
 - `mos-health` reporting `health.boot` after its mark-good, which is what
-  lights up `validating`/`succeeded` (§1).
+  lights up `validating`/`succeeded` (§1). It reports `var` today and
+  nothing else, so a healthy converged system reads plain `idle`.
+- The write route of §3.4, and the automatic path's audit events (§3.5).
