@@ -185,28 +185,34 @@ Taking apid's log capture off `tracing`'s process-global interest cache.
   - The assertion. It is the only check that §6.1's line names both sets.
 
 
-  **Verified** on the tree this branch carries, `main` at `9b05d439` merged in:
+  **Verified** on the tree this branch carries, `main` at `e23a71a4` merged in:
 
   - `cargo test --locked -p mosd-settings -p mosd -p apid --no-fail-fast`
     green. apid 319 passed; apid `tests/e2e.rs` 1 passed; mosd 503 passed;
     mosd `tests/bus.rs` 1 passed; mosd `tests/scan.rs` 7 passed;
     mosd-settings 56 passed; `tests/settings.rs` 54 passed; doc-tests 0.
-  - `make os-rust-gate`: **`pkgs/mosd` green** — fmt, clippy at `-D warnings`,
-    nextest `988 tests run: 988 passed, 0 skipped`, doctests and cargo-deny.
-    That is the workspace this change lives in, and `--all-targets` compiles
-    the apid bin's test harness, so the added code is inside what clippy
-    linted.
-  - `make os-rust-gate` overall: **RED, on `pkgs/rauc-sign` only**, for
-    `update::the_cli_reports_readiness_with_its_own_exit_code` at
-    `tests/update.rs:1668` — exit 1 with `rauc-update: No such file or
-    directory (os error 2)` where 3 was expected. This is the defect RFCT-323
-    found on `main` two hours earlier, reported and deliberately left; it
-    reproduces on a clean detached worktree at `4fc8e839` and on a *fresh*
-    target directory, so it is neither this change nor a stale cache. Nothing
-    here touches `pkgs/rauc-sign`.
+  - `make os-rust-gate`: **`RUST GATE PASSED (mosd rauc-sign)`** — fmt, clippy
+    at `-D warnings`, doctests and cargo-deny for both workspaces, with
+    nextest `988 tests run: 988 passed, 0 skipped` for `pkgs/mosd` and
+    `62 tests run: 62 passed, 0 skipped` for `pkgs/rauc-sign`. `--all-targets`
+    compiles the apid bin's test harness, so the added code is inside what
+    clippy linted.
 
-  An earlier pass of this task also found the two gate defects RFCT-323 fixed —
-  `cargo fmt` in `apid/src/routes.rs` and `apid/src/tests/provisioning_api.rs`,
-  and `needless_borrows_for_generic_args` at `rauc-sign/src/update.rs:608` —
-  repaired them locally, then reverted the repairs when RFCT-323 landed the
-  same fixes on `main`. Those files are untouched here.
+  **The gate took three merges to reach green, and none of the three defects
+  was this change.** They were found, reproduced against a clean detached
+  worktree at `4fc8e839` with this change absent, and fixed on `main` by other
+  work while this task was in flight:
+
+  1. `cargo fmt --check` diffs in `apid/src/routes.rs` and
+     `apid/src/tests/provisioning_api.rs` — fixed by RFCT-323.
+  2. clippy `collapsible_if` at `apid/src/routes.rs:6174`, which `check.sh`
+     had been masking by failing on (1) first — fixed by RFCT-323.
+  3. `pkgs/rauc-sign`'s `update::the_cli_reports_readiness_with_its_own_exit_code`
+     at `tests/update.rs:1668`, exit 1 with `rauc-update: No such file or
+     directory (os error 2)` where 3 was expected. Reproduced on a *fresh*
+     target directory, so not a stale-cache artifact; traced to the F7/F8/F9
+     baked-anchor work — fixed by RFCT-325.
+
+  An earlier pass here repaired (1) and (2) locally and reverted the repairs
+  once RFCT-323 landed the same fixes on `main`. Those files are untouched by
+  this branch.
