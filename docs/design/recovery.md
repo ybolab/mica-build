@@ -626,10 +626,16 @@ the boot-time caller.
    route uses, also sourced to the action. An audit entry that does not name
    the mechanism cannot answer "how did this device get reset".
 
-**mosd writes the assertion; apid only ever reads it.** There is no route, no
-settings path and no line in apid that creates `/run/mos/presence`, so an API
-that could set it would have to be written first — which is the change this
-section forbids. A "presence" flag an API can set is not presence.
+**mosd writes the assertion; apid never creates one and spends the one it
+used.** There is no route, no settings path and no line in apid that creates
+`/run/mos/presence`, so an API that could set it would have to be written
+first — which is the change this section forbids. A "presence" flag an API can
+set is not presence. apid's only write to that file is its REMOVAL, by the
+credential recovery the assertion authorized (§5.4), and removing an assertion
+can only take authority away. `apid.service` carries `RuntimeDirectory=mos` for
+exactly that unlink, because `ProtectSystem=strict` otherwise leaves `/run`
+read-only; `RuntimeDirectoryPreserve=yes` keeps mosd's other runtime files when
+apid restarts.
 
 **Everything fails closed, and each closed door is recorded under its own
 outcome** so that "why did this device not enter recovery" is greppable:
@@ -916,7 +922,11 @@ corruption. The interaction is three rules:
   a remote guesser; presence is not guessable, and a device whose operator is
   standing in front of it must not be made to wait out a window an attacker
   armed. Its own bound is the mechanism: one rotation per presence assertion,
-  and the assertion is re-performed physically for the next one.
+  and the assertion is re-performed physically for the next one. That bound is
+  the marker being SPENT — the route reads the assertion and unlinks it inside
+  one guard, so the read and the spend are one step — and a request that finds
+  a spent assertion is refused 403 `presence_required` saying so, having minted,
+  published and written nothing.
 - **A successful rotation clears the guard** — counters and window both. This is
   the release path §4.3 item 2 promises, and it is what makes a hard
   `lockoutThreshold` safe to ship later.
@@ -930,6 +940,34 @@ window is gone" is exactly "a correct password is admitted again". Nothing on
 the recovery path calls `GuardStore::begin_attempt`, which is the first rule
 rather than a comment about it, and `record_success` is reached only after the
 commit, which is the third.
+
+**The one-rotation bound was a sentence before it was a mechanism** (RFCT-316's
+F3, closed by RFCT-322). The marker was read and never taken, so one assertion
+authorized rotations without limit and concurrent ones raced: measured against
+the shipped binaries — real mosd on a private session bus, real apid over real
+TLS, no barrier and no fake — a second rotation on the same marker was answered
+`200` in **100 attempts out of 100**, and two concurrent callers were **both**
+answered `200` in **100 iterations out of 100**, publishing two credentials of
+which only the last-written one authenticated: the operator reading the other
+one off the console was handed a password that works nowhere and told nothing.
+At concurrency 8 every one of 50 iterations answered eight `200`s. The spend
+plus the guard close both; the same harness then measured exactly one `200` per
+assertion, every loser `403`, and no losing credential published.
+
+**The spend happens after the commit, never before it**, which is the third
+rule read literally: an assertion cost the operator a trip to the device, and a
+rotation that aborted — a console that could not be written, a mosd that did
+not answer — leaves it standing so the retry is theirs rather than another
+walk. The cost of that ordering is bounded and stated: a rotation whose spend
+itself fails is a rotation that happened, so it answers `200` and records the
+failure in the journal rather than unsaying a commit, and the reader keeps the
+bound in memory meanwhile.
+
+**Spending the assertion also ends the presence window for §2.2's tier 3.** An
+operator who rotates the credential and then wants a full-factory reset asserts
+presence again; a board that wants both in one visit declares an action whose
+`RECOVERY_*_TIER` is that tier (§4.2 step 4), which stages it at boot without
+the API.
 
 ## 6. Both slots failed, and the non-destructive repair tier
 
