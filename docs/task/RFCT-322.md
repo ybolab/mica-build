@@ -403,5 +403,15 @@ openapi.json…"* as a `///` line — so the API document acquired a paragraph
 explaining utoipa to its readers. It is a `//` comment now. Reading the
 generated diff is what caught both; neither is visible in the source.
 
-Final state: `openapi.json` regenerated (`+2 -2`), and
-`cargo test --locked -p mosd -p apid --no-fail-fast` **green at 831 tests**.
+**The merge after that raised the same question one level up.** `main` moved
+again and brought its own `apid` changes, `openapi.json` among them, and git
+merged the generated file textually and cleanly. A clean textual merge of a
+generated artefact is not evidence that it is still the generated one — it is
+the same "self-consistent and stale" shape. So it was regenerated and compared
+rather than assumed: the merged file **already equals** what the binary
+produces, verified, and the suite re-run on the merged tree.
+
+Final state, on the merged tree: `openapi.json` regenerated and confirmed
+byte-identical to `apid --openapi`, and
+`cargo test --locked -p mosd -p apid --no-fail-fast` **green: 831 passed, 0
+failed** (apid 319 + 1 e2e, mosd 503 + 1 bus + 7 scan).
