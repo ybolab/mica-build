@@ -41,15 +41,24 @@
 # exercises the generator's actual output, GENERATED marker and key modes
 # included. Mutating the generator's CA→signer chaining reddens case 1.
 #
-# Four files come over with it, because the generator reads them and a scratch
+# Five files come over with it, because the generator reads them and a scratch
 # tree without them is not a repository it can run in: key-algorithms.env, which
 # declares the algorithm of every key it mints, key-validity.env, which declares
-# the signer's validity window, and meta.example/'s manifest, which it
-# instantiates meta/updates/manifest.json from. Copied rather than stubbed, so
+# the signer's validity window, meta.example/'s manifest, which it instantiates
+# meta/updates/manifest.json from, and build-env/{from.sh,images.env}, which is
+# how it resolves the pinned image it mints in. Copied rather than stubbed, so
 # this suite signs with the algorithm AND the window the tree actually ships,
 # and a change to either value is exercised here rather than assumed harmless
 # -- a signer window shortened past the point where `rauc info --keyring`
 # accepts a freshly signed bundle reddens every positive case below.
+#
+# AND IT RUNS OUTSIDE THE CONTAINER, which is new. The generator no longer takes
+# openssl off whatever host it is on: it mints in localhost/mos-build-openssl
+# and therefore drives docker itself, and there is no docker client inside the
+# trixie container below. So it runs here, in the scratch tree, before that
+# container starts; the material lands in ${SCRATCH}/meta either way, and the
+# container -- which mounts the scratch tree -- reads exactly what it read
+# before. `make build-env` is a prerequisite of this suite now, for that image.
 #
 # TOOLING. rauc is not on the host and pkgs/rauc/out-*/ need not be built, so
 # everything cryptographic runs in the pinned Debian trixie container
@@ -83,7 +92,24 @@ cp "${REPO_ROOT}/pkgs/rauc/gen-dev-keys.sh" "${SCRATCH}/pkgs/rauc/gen-dev-keys.s
 cp "${REPO_ROOT}/pkgs/rauc/key-algorithms.env" "${SCRATCH}/pkgs/rauc/key-algorithms.env"
 cp "${REPO_ROOT}/pkgs/rauc/key-validity.env" "${SCRATCH}/pkgs/rauc/key-validity.env"
 cp "${REPO_ROOT}/meta.example/updates/manifest.json" "${SCRATCH}/meta.example/updates/manifest.json"
+# The resolver and the pins it reads, because the generator asks them which
+# image to mint in. Copied rather than pointed at the checkout for the reason
+# everything else here is: what runs is the tree's own file, in a tree the
+# generator anchors on, so a change to either is exercised rather than bypassed.
+mkdir -p "${SCRATCH}/build-env"
+cp "${REPO_ROOT}/build-env/from.sh" "${SCRATCH}/build-env/from.sh"
+cp "${REPO_ROOT}/build-env/images.env" "${SCRATCH}/build-env/images.env"
 : > "${SCRATCH}/Makefile"
+
+# THE TRUSTED CA, from the repository's own generator, minted BEFORE the
+# container starts: it mints in localhost/mos-build-openssl and drives docker to
+# do it, and the trixie container below carries no docker client. Everything the
+# suite then reads is the file the generator wrote, exactly as before.
+( cd "${SCRATCH}" && bash pkgs/rauc/gen-dev-keys.sh >/dev/null )
+[ -f "${SCRATCH}/meta/GENERATED" ] ||
+    { echo "error: the generator left no meta/GENERATED marker" >&2; exit 1; }
+grep -q '^DOMAINS=.*rauc' "${SCRATCH}/meta/GENERATED" ||
+    { echo "error: meta/GENERATED does not name the rauc domain it just wrote" >&2; exit 1; }
 
 # A minimal verity bundle: one payload file, the format system.conf accepts.
 # The compatible string is a fixture's — trust verification does not read it,
@@ -115,11 +141,10 @@ FAIL_N=0
 pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $1"; }
 fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
 
-# The trusted CA, from the repository's own generator.
-bash pkgs/rauc/gen-dev-keys.sh >/dev/null
-[ -f meta/GENERATED ] || { echo "error: the generator left no meta/GENERATED marker" >&2; exit 1; }
-grep -q '^DOMAINS=.*rauc' meta/GENERATED ||
-    { echo "error: meta/GENERATED does not name the rauc domain it just wrote" >&2; exit 1; }
+# The trusted CA is already here: the generator ran outside this container,
+# because it mints in a pinned image and there is no docker client in here.
+[ -s meta/rauc/ca.cert.pem ] && [ -s meta/rauc/signer.key.pem ] ||
+    { echo "error: meta/rauc/ is not populated, so the generator did not run before this container started" >&2; exit 1; }
 
 # The foreign CA: same shape as the production ceremony in
 # docs/design/release-signing.md §2.1, keys nobody in the fixture trusts.

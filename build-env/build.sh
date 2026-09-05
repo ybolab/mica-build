@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the pinned mos builder images out of build-env/images.env.
 #
-#   make build-env  -> localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>
+#   make build-env  -> localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>
 #   bash build-env/build.sh  does the same thing
 #   MOS_BUILD_PLATFORM=linux/arm64 ...  builds for another architecture
 #
@@ -64,6 +64,7 @@ IMAGES=(
     "c:C_:LOCAL_MOS_BUILD_BASE"
     "deb:DEB_:LOCAL_MOS_BUILD_BASE"
     "go:GO_:LOCAL_MOS_BUILD_BASE"
+    "openssl:OPENSSL_:LOCAL_MOS_BUILD_BASE"
     "rust:RUST_:LOCAL_MOS_BUILD_BASE"
     "rust-check:RUSTCHECK_,RUST_:LOCAL_MOS_BUILD_RUST"
 )

@@ -145,88 +145,119 @@ with the reason, actions refused with the same sentence), never a panic:
 the binary is shipped by the image side (§7), and a v1 image without it
 still answers every read.
 
-## 2. The policy file
+## 2. The policy document
 
-Policy lives in `update-policy.toml` beside the settings store on STATE
-(default `/var/lib/mos/update-policy.toml`; `MOSD_UPDATE_POLICY_PATH`
-overrides, and tests point it into a tempdir). It is operator-edited and
-read fresh on every policy decision, so an edit takes effect on the next
-decision with no restart and no reload verb. STATE is the right tier for
-it: PLAN-061 keeps small authoritative metadata on STATE and sends only
-large bytes to `/mos`, and a few hundred bytes of policy whose loss would
-make the workspace ambiguous is exactly that. Where bundles are staged is
-not a policy key at all — the workspace is `/mos/updates` (§1.1) and there
-is no setting that could point it elsewhere.
+> The **format, path and layering** of this section were replaced by
+> PLAN-070 §5 (the baked manifest, the operator document's move to
+> `/mos/config/updates.json`, and the per-key precedence between them).
+> PLAN-070's F10 owns the full rewrite of this document; what is below is the
+> shape the shipped reader actually parses, corrected because the example
+> that stood here was a **load error** — a device configured from it failed
+> to load its policy at all.
 
-**Why not the settings tree.** Settings keys would mean a schema bump plus a
-migration, and a concurrent workstream owns the next bump — two bumpers
-hand the merge an unresolvable version conflict. The file is the least
-invasive storage that exists today; folding these keys into the settings
-tree later (one additive bump, one migration, the file retired) is a
-straightforward follow-up and is deliberately not done here.
+Policy is resolved from **two documents**, per key:
 
-**Fail-closed.** A missing file is the default policy. A file that exists
-but does not parse or validate is NOT the default policy: every action the
-policy could restrict (`check`, `fetch`, `install`) is refused with a
-reason naming the file until it is fixed, because "unreadable" silently
-becoming "unrestricted" is how a metered device downloads a 500 MB bundle.
-The reboot gate keeps evaluating with defaults — failing closed there would
-let a typo brick the reboot button.
+1. **Layer 1, baked**: `/usr/share/mos/meta/updates/manifest.json`, inside
+   the read-only root (`MOSD_META_MANIFEST_PATH` overrides). Read once at
+   startup, because nothing on the device can write it. Its `update` object
+   carries the product's defaults for `source`, `channel`, `policy` and
+   `checkIntervalMinutes`, and its `trust` object carries the signing
+   anchors, which no operator document may name.
+2. **Layer 2, operator**: `/mos/config/updates.json`, on the DATA pool that
+   also backs the `/mos/updates` workspace, so one readiness probe gates
+   both (`MOSD_UPDATE_POLICY_PATH` overrides, and tests point it into a
+   tempdir). Read fresh on every policy decision, so an edit takes effect on
+   the next decision with no restart and no reload verb.
 
-The full document, with its defaults. The three top-level keys come FIRST:
-TOML puts every key after a table header inside that table, so `policy`
-written below `[source]` would be `source.policy`, which
-`deny_unknown_fields` rejects.
+Four keys are overridable — `policy`, `checkIntervalMinutes`, `source.url`
+and `source.channel` — and for those, an absent key and an explicit `null`
+both mean *take the baked default*. Everything else in the document is layer
+2's outright and takes a code default. Where bundles are staged is not a
+policy key at all: the workspace is `/mos/updates` (§1.1) and there is no
+setting that could point it elsewhere. There is no `source.rootPath` either
+— the trust anchor is layer 1's, which is the premise the overridable source
+URL rests on.
 
-```toml
-# What the device does on its own: off | check | auto.
-#   off   -- initiates nothing; manual check/fetch/install stay available
-#   check -- metadata checks on the cadence below, and nothing else
-#   auto  -- checks, fetches, and installs inside a maintenance window
-policy = "check"
-checkIntervalMinutes = 1440  # 0 disables automatic checks
-# What `auto` does once a bundle is installed: manual | window.
-#   manual -- stop at `reboot-required` and wait for an operator
-#   window -- reboot inside the same window, honouring the reboot gate
-rebootPolicy = "manual"
+**Fail-closed, and on the action rather than on the device.** A missing
+document is the baked policy. A document that exists and does not parse or
+validate resolves to **no selection at all** — not the baked one, and not the
+code default: a device whose configuration is unreadable does not know which
+channel it is on, and every action that turns on the answer (`check`,
+`fetch`, `install`, and every automatic step) is refused with a reason naming
+the file until it is fixed, because "unreadable" silently becoming
+"unrestricted" is how a metered device downloads a 500 MB bundle. The reboot
+gate and the maintenance windows keep evaluating on their code defaults —
+failing closed there would let a typo brick the reboot button.
 
-[source]
-# url has no default; unset = no online source, check/fetch refused,
-# the offline import path (§5.3) remains.
-url = "http://mirror.example/tuf"
-channel = "stable"
-repoDir = "/var/lib/mos/update/tuf-mirror"
-rootPath = "/usr/share/mos/uptane/root.json"
-statePath = "/var/lib/mos/update/uptane-state.json"
-maxBytes = 500000000            # budget for /mos/updates as a whole (§1.1)
+The operator document, with every key it accepts:
 
-[network]
-mode = "online"              # online | metered | offline
-meteredAllowsFetch = false
+```json
+{
+  "schema": "mos/update-config/v1",
 
-[[maintenance.windows]]      # zero windows = installs any time;
-                             # `policy = "auto"` requires at least one
-days = ["mon", "thu"]        # empty/omitted = every day
-start = "02:00"              # HH:MM, UTC
-end = "04:00"                # end <= start wraps past midnight
+  "policy": "check",
+  "checkIntervalMinutes": 1440,
+  "rebootPolicy": "manual",
 
-[rebootGate]
-blockingStatuses = ["blocking"]
-overrideMaxSeconds = 3600    # capped at 3600 whatever the file says
+  "source": {
+    "url": "https://mirror.example/mos",
+    "channel": "stable",
+    "repoDir": "/var/lib/mos/update/tuf-mirror",
+    "statePath": "/var/lib/mos/update/uptane-state.json",
+    "maxBytes": 500000000
+  },
+
+  "network": { "mode": "online", "meteredAllowsFetch": false },
+
+  "maintenance": {
+    "windows": [
+      { "days": ["mon", "thu"], "start": "02:00", "end": "04:00" }
+    ]
+  },
+
+  "rebootGate": { "blockingStatuses": ["blocking"], "overrideMaxSeconds": 3600 }
+}
 ```
 
-Unknown keys are load errors (`deny_unknown_fields`), so a typo fails
-loudly instead of configuring nothing. `[autoCheck]` was the earlier
-spelling of `checkIntervalMinutes` and is **retired, not migrated**: a
-document still carrying that section is an unknown key and therefore a load
-error, which is the intended outcome — PLAN-071 §1.1 migrates nothing, and a
-device that fails closed on an old document is one nobody has to guess about.
+- `policy` — what the device does on its own: `off` initiates nothing and
+  leaves every manual route available; `check` runs metadata checks on the
+  cadence and nothing else; `auto` checks, fetches, installs inside a
+  maintenance window, then reboots or does not per `rebootPolicy`.
+  Overridable; the baked value applies when it is absent or `null`.
+- `checkIntervalMinutes` — `0` disables automatic checks. Overridable.
+- `rebootPolicy` — `manual` stops at `reboot-required` and waits for an
+  operator; `window` reboots inside the same window, honouring the
+  safe-to-reboot gate and never arming its override. Layer 2 only.
+- `source.url` / `source.channel` — overridable. An absent URL on both layers
+  is *no online source*: `check`/`fetch` are refused and the offline import
+  path (§5.3) remains.
+- `maintenance.windows` — zero windows means installs are allowed at any
+  time, which is right for a manual install and wrong for an automatic one.
+  `days` empty or omitted is every day; `end` at or before `start` wraps past
+  midnight; times are `HH:MM` UTC.
+- `rebootGate.overrideMaxSeconds` is capped at 3600 whatever the file says.
 
-`policy = "auto"` with zero maintenance windows is a validation error. Zero
-windows means *any time*, which is right for a manual install — a device with
-no operator-set window must still be updatable by a human who is standing
-there — and wrong for an automatic one, where it would mean *install the
-moment a bundle lands*.
+`schema` is optional — a key a document does not name is a key that takes its
+default — but it is checked when present, so a `fleet.json` poured into this
+path is refused rather than read.
+
+Unknown keys are load errors (`deny_unknown_fields`), so a typo fails loudly
+instead of configuring nothing. `[autoCheck]` was the earlier spelling of
+`checkIntervalMinutes`, from when this document was TOML on STATE, and it is
+**retired, not migrated**: a document still carrying it is an unknown key and
+therefore a load error, which is the intended outcome — PLAN-071 §1.1
+migrates nothing, and a device that fails closed on an old document is one
+nobody has to guess about.
+
+`policy = "auto"` with zero maintenance windows is refused. Zero windows
+means *any time*, which is right for a manual install — a device with no
+operator-set window must still be updatable by a human who is standing there
+— and wrong for an automatic one, where it would mean *install the moment a
+bundle lands*. The rule is checked twice because there are two ways in: a
+document naming `auto` with no window is a load error, and a document that
+inherits `auto` from the baked layer (which carries no windows at all) has
+its automatic *install* refused while the check cadence and every manual
+route keep working.
 
 ## 3. What each policy gates
 

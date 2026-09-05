@@ -202,29 +202,67 @@ finds a release ends `no-newer-release` and says nothing about the window);
 `resume(None)` clears everything and is used at the two points where a pass
 ran to its end — the install started, and the reboot was issued.
 
-## 5. The document that taught a load error
+## 5. The document that taught a load error — and it got worse mid-task
 
-`docs/design/updates.md` §2's example printed `[autoCheck] intervalMinutes`.
-`deny_unknown_fields` is on that document, so the shipped example was a load
-error and a device configured from it failed closed. The example now carries
-`policy`, `checkIntervalMinutes` and `rebootPolicy` as the three top-level
-keys, **placed above the first table header** — TOML puts every key after a
-header inside that table, so `policy` written under `[source]` would be
-`source.policy` and rejected. The retirement and the `auto`-requires-a-window
-rule are stated below the block, and §3's auto-check bullet, which named
-`intervalMinutes` and claimed nothing is ever fetched or installed
-automatically, is now the three modes. The rest of U9 (§3's full rewrite, §5,
-§6, `remote-management.md` §3) was left alone.
+`docs/design/updates.md` §2's example printed `[autoCheck] intervalMinutes`,
+which `deny_unknown_fields` makes a load error: a device configured from the
+shipped example failed closed. That was the brief.
 
-The example was extracted and parsed, and every key checked against
-`update_policy.rs`'s serde names. No `docs/zh/` mirror is owed:
+**Then main landed PLAN-070 F5/F6/F6b (RFCT-313) and the whole example
+became wrong** — not one stale key in it, but its format, its path and its
+layering. `/var/lib/mos/update-policy.toml` is retired; the operator document
+is `/mos/config/updates.json`, JSON, resolved per key over a baked
+`/usr/share/mos/meta/updates/manifest.json`, with no `source.rootPath` at
+all. RFCT-313 records `docs/design/updates.md` as owed by PLAN-070 **F10**.
+
+Fixing the `[autoCheck]` line alone would have left a TOML example for a JSON
+document at a path nothing reads — a smaller lie told more confidently. So §2
+now describes the two layers, which four keys are overridable and what an
+absent-versus-`null` key means, the fail-closed rule in its post-precedence
+form (an unreadable document resolves to **no selection**, not to the baked
+one), and the operator document with every key it accepts. A blockquote at
+the top of §2 says plainly that F10 owns the full rewrite and that what is
+there is the shape the shipped reader parses.
+
+Held to that: §3's auto-check bullet, which named `intervalMinutes` and
+claimed nothing is ever fetched or installed automatically, is now the three
+modes. Nothing else moved. `mosd.md` and `release-signing.md` still name
+`update-policy.toml` in passing and are left to F10 — neither teaches a
+configuration that fails to load, which is the line this task was told to
+cross for.
+
+Both examples were extracted and parsed (the TOML one before the merge, the
+JSON one after), and every key checked against the serde names in
+`mosd-settings/src/configuration.rs`. No `docs/zh/` mirror is owed:
 `docs/zh/verify-coverage.sh` gates `docs/{user,website,bsp}` and this file is
 under `docs/design/`.
 
 `docs/design/api.md`'s update row gained the new action, because that row is
 the enumeration of the cluster's routes.
 
-## 6. Gates, as run
+## 6. Reconciled with PLAN-070 F5/F6/F6b, which landed on main mid-task
+
+`18cf6110` brought the baked reader and the precedence in on the same files.
+Two textual conflicts and one semantic one:
+
+- **`main.rs`** — `with_update` now takes the policy store *and* the
+  suppression store, and the policy store carries the baked layer. The
+  suppression path is built from `state_dir_for(settings_path)` and not from
+  the policy path, which is what makes it survive this exact move; the
+  comment that said so was written before the move landed and is now
+  literally true.
+- **`update_lifecycle.rs`** — the import block; both sides' lines kept.
+- **The driver's channel read.** `loaded.policy.source.channel` is now
+  `loaded.policy.selection`, an `Option`, because §5.1 forbids falling back
+  to the baked channel when the operator document did not load. The
+  `no-newer-release` detail reads it through a `match` rather than an
+  `unwrap`: the unnamed arm is unreachable from there — a device with no
+  selection has no cadence either — and is written out so a later caller
+  cannot make it panic.
+
+The merge also moved the ground under §5 of this record; see it.
+
+## 7. Gates, as run
 
 This batch was dispatched with per-task verification traded for wall-clock, so
 the floor is "it compiles" and the coverage moved to L1's gate battery.
@@ -237,11 +275,16 @@ the floor is "it compiles" and the coverage moved to L1's gate battery.
 - `cargo run -p apid -- --openapi` — run, and its output committed as
   `pkgs/mosd/apid/openapi.json`, which
   `the_committed_openapi_document_is_the_generated_one` asserts byte for byte.
-- The §2 TOML example — extracted and parsed.
+  Re-generated after the merge and confirmed identical to the committed file.
+- The §2 example — extracted and parsed, and its keys checked against the
+  reader's serde names.
+- `bash docs/verify-links.sh` / `verify-index.sh` / `verify-status.sh` /
+  `docs/zh/verify-coverage.sh` — PASS (450, 183, 734, 231).
 
-All inside `localhost/mos-build-rust-check:amd64`.
+Every Rust gate was run twice: before the merge with main, and again after
+it. All inside `localhost/mos-build-rust-check:amd64`.
 
-## 7. NOT verified, and owed
+## 8. NOT verified, and owed
 
 **Nothing in this task was executed.** No test was written or run: not one
 line of the suppression store, the clock predicate or the deferral facts has
@@ -279,7 +322,7 @@ rather than surprises:
   re-cuts a bundle under the same version string is still refused, which is
   the safe direction and may surprise someone.
 
-## 8. Still open in PLAN-071 after this task
+## 9. Still open in PLAN-071 after this task
 
 - **U6** — mosd's own confirmed-boot fact, which §7 makes a dependency of
   `auto`'s rollback ordering rather than a footnote.
@@ -288,8 +331,13 @@ rather than surprises:
 - **U9** — the rest of `updates.md` (§3's full rewrite, §5, §6) and
   `remote-management.md` §3. `updates.md` §1 does not yet document the
   `deferred` or `suppressed` members this task added.
-- **U11** — the document's move to `/mos/config/updates.json` and its write
-  route. The suppression store must NOT move with it (§9.1, and §1 above).
+- **U11** — the move itself landed on main mid-task (PLAN-070 F6b); the apid
+  **write** route for the document, with its audit and its refusal of an
+  `auto` with no window, is still owed. The suppression store did not move
+  with it and must not (§9.1, and §1 above).
+- **PLAN-070 F10** — the design documents that still describe
+  `update-policy.toml`: `updates.md` beyond §2, `mosd.md` §, and
+  `release-signing.md`.
 - **§9's downgrade floor** — a separate mechanism from this one (§9.5): the
   floor records that the device has moved past a point, the suppression
   records that a specific version failed here. Neither substitutes for the
