@@ -661,11 +661,14 @@ checking, downloading, ready, installing, reboot-required, validating,
 succeeded, rolled-back, update-unavailable, failed, each with a reason;
 `update-unavailable` is the `/mos/updates` workspace's readiness verdict,
 probed before every check and fetch, and `InstallUpdate` admits only a
-verified bundle inside `/mos/updates/verified`). Policy — maintenance
-windows, metered/offline mode, auto-check cadence — lives in a fail-closed
-`update-policy.toml` on STATE, and `Reboot` is now interlocked by an
-application-aware safe-to-reboot gate with a bounded, audited
-`SetRebootOverride`. The whole design, the derivation rules and their honest
+verified bundle inside `/mos/updates/verified`). Policy — the source address,
+the channel, what the device does on its own, maintenance windows,
+metered/offline mode, the check cadence — is resolved per key from the baked
+`/usr/share/mos/meta/updates/manifest.json` and the fail-closed
+`/mos/config/updates.json` beside the other documents of §5.1a
+(`/var/lib/mos/update-policy.toml` is retired and nothing reads it), and
+`Reboot` is now interlocked by an application-aware safe-to-reboot gate with
+a bounded, audited `SetRebootOverride`. The whole design, the derivation rules and their honest
 limits, the operator procedures and the fault-evidence table are
 `docs/design/updates.md`; this section stays the record of the underlying
 install/mark surface.
