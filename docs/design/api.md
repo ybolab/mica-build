@@ -560,39 +560,34 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **12**, declared as
-`pub const SCHEMA_VERSION: u32 = 12;` (`pkgs/mosd/mosd-settings/src/model.rs`) and
-stamped into every default tree, `schema_version: SCHEMA_VERSION,`
-(`pkgs/mosd/mosd-settings/src/model.rs`). It was **4** when this section was
-first written, **9** at the last re-measure, **10** for the
-provisioning-document record, **11** for the claim record and **12** for the
-staged reset intent; the standing rule is that **whoever moves the
-constant updates this document in the same change**, because nothing gates the
-value — the index check tests membership, not content, which is how this line
-sat at 8 while the code said 9. The number moves and the API must never
-hard-code it, which is
-why `GET /api/v1/meta` reads it from `mosd_settings::SCHEMA_VERSION` at request
-time (`pkgs/mosd/apid/src/routes.rs`) rather than copying it. It is **read-only
-through the write path**: a write whose first path segment is `schema_version`
-is rejected, `if segments[0] == "schema_version" {`
-(`pkgs/mosd/mosd-settings/src/model.rs`), and a whole-tree write that would
-change it is rejected too, `if candidate.schema_version != self.schema_version {`
-(`pkgs/mosd/mosd-settings/src/model.rs`). Documents are migrated forward and
-backward through a registered chain
-(`pkgs/mosd/mosd-settings/src/migration.rs`, public entry point at
-`pub fn migrate(doc: &mut toml::Table, from: u32, to: u32) -> Result<(), SettingsError> {`
-(`pkgs/mosd/mosd-settings/src/migration.rs`)).
+**Schema version — there is no longer one for the tree.** This paragraph used
+to say `SCHEMA_VERSION` is **12**, read-only through the write path, and moved
+by a registered `V0→V12` chain. PLAN-070 §5.2.3 retired all three facts: the
+version is now **per document** and each starts at **v1**
+(`pkgs/mosd/mosd-settings/src/documents.rs`), the chain was deleted with the
+single document it migrated, and `schema_version` is **not a key of the
+addressed tree** — a path naming it is a path that names nothing, and the write
+route answers it with the 404 every other absent root gets.
+`GET /api/v1/meta`'s `settingsSchemaVersion` reports the STATE document's
+version, read from `mosd_settings` at request time
+(`pkgs/mosd/apid/src/routes.rs`) rather than copied; §2.1 says what that member
+can and cannot answer now. The standing rule survives the change: **whoever
+moves a version constant updates this document in the same change**, because
+nothing gates the value — the index check tests membership, not content.
 
-**Persistence.** TOML at
+**Persistence.** One document per reconciler as JSON under `/mos/config/` on
+DATA, plus the remainder as TOML on STATE at
 `pub const DEFAULT_PATH: &str = "/var/lib/mos/settings.toml";`
-(`pkgs/mosd/mosd-settings/src/store.rs`), written atomically through `Store` —
-*"Persist `settings` atomically: write to a temp file in the target directory,
-fsync it, rename it over the target, then fsync the directory"*
-(`pkgs/mosd/mosd-settings/src/store.rs`), implemented at
-`pkgs/mosd/mosd-settings/src/store.rs`. Every settings struct in
+(`pkgs/mosd/mosd-settings/src/store.rs`); which key lives where is
+`docs/design/mosd.md` §5.1a's table. Each document is written atomically
+through `Store` — temp file, mode set **before** the rename, fsync, rename,
+directory fsync — and a document whose bytes did not change is not rewritten,
+so a write to one leaves the others byte-identical. Every settings struct in
 `pkgs/mosd/mosd-settings/src/model.rs` carries
 `#[serde(deny_unknown_fields)]`, so an unknown key fails the load rather than
-being silently dropped.
+being silently dropped, and **an absent `/mos/config/` fails the load too**:
+that is the medium being gone, not a document that was never written, and mosd
+refuses to start on schema defaults (§5.2.6 / `docs/design/mosd.md` §5.2a).
 
 **The settings subtrees, from `pub struct Settings {`
 (`pkgs/mosd/mosd-settings/src/model.rs`):**
@@ -602,7 +597,6 @@ module remains authoritative when fields are added or renamed.
 
 | Dot-path | Type | Declared at | Contents |
 |---|---|---|---|
-| `schema_version` | `u32` | `pub schema_version: u32,` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only, value **12** — `pub const SCHEMA_VERSION: u32 = 12;` (`pkgs/mosd/mosd-settings/src/model.rs`); it was 7 when this table was written and 4 when the section was, which is the row's sixth value and the reason §2.1 serves the number rather than documenting it |
 | `hostname` | `String` | `pub hostname: String,` (`pkgs/mosd/mosd-settings/src/model.rs`) | system hostname, default `hostname: "mos".to_string(),` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `network.<iface>` | `IfaceSettings` | `pub network: BTreeMap<String, IfaceSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct IfaceSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `kind` (`physical`/`vlan`/`bridge`/`wireguard`, `pub enum IfaceKind {` (`pkgs/mosd/mosd-settings/src/model.rs`)), `dhcp: bool`, and the optional block belonging to the kind: `static` (`address`, `gateway`, `dns[]`) at `pub struct StaticConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `vlan` at `pub struct VlanConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `bridge` at `pub struct BridgeConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`), `wireguard` at `pub struct WireguardConfig {` (`pkgs/mosd/mosd-settings/src/model.rs`) with its peers at `pub struct WireguardPeer {` (`pkgs/mosd/mosd-settings/src/model.rs`) |
 | `access.webAdmin` | `Option<WebAdminSettings>` | `pub web_admin: Option<WebAdminSettings>,` (`pkgs/mosd/mosd-settings/src/model.rs`); type `pub struct WebAdminSettings {` (`pkgs/mosd/mosd-settings/src/model.rs`) | `password_hash` only; absent until first-run setup writes it |
@@ -912,12 +906,13 @@ follows is a reading of a snapshot and not a defect in it.
    `get_state("mqtt")` (`pkgs/mosd/apid/src/routes.rs`),
    the health probe `get_state(HEALTH_PROBE_PATH)` (`pkgs/mosd/apid/src/routes.rs`)
    and the passthrough `get_state(&path)` (`pkgs/mosd/apid/src/routes.rs`).
-5. **Schema version "3"** is now
-   **12** — `pub const SCHEMA_VERSION: u32 = 12;`
-   (`pkgs/mosd/mosd-settings/src/model.rs`). It was 4 when this section was
-   written, 7 at the re-measure after that and 9 at the one after that, which
-   is the fifth time this one row has gone stale and is the reason section 2.1
-   must serve the number rather than document it.
+5. **Schema version "3"** has stopped being one number at all. It read 4 when
+   this section was written, then 7, then 9, then 12 — four re-measures of one
+   row — and PLAN-070 §5.2.3 replaced the tree-wide version with one per
+   document, each at **v1**
+   (`pkgs/mosd/mosd-settings/src/documents.rs`). Which is the same lesson the
+   four corrections were already teaching: section 2.1 must serve the number
+   rather than document it.
 6. **Its section 3.6 quotes a D-Bus policy that permits any local process**
 ; the shipped policy denies the
    default context in both directions (`pkgs/mosd/dist/com.mos.mosd.conf`) and
@@ -982,7 +977,7 @@ from `const SERVED_VERSIONS: [&str; 1] = ["v1"];`
 (`pkgs/mosd/apid/src/routes.rs`) and `const CURRENT_VERSION: &str = "v1";`
 (`pkgs/mosd/apid/src/routes.rs`), and `GET /api/v1/meta` answers authenticated
 with `ApiMeta` whose `settingsSchemaVersion` is read live from
-`settings_schema_version: mosd_settings::SCHEMA_VERSION,`
+`settings_schema_version: mosd_settings::STATE_SCHEMA_VERSION,`
 (`pkgs/mosd/apid/src/routes.rs`) rather than copied. The served set is an array
 on the wire, `"versions"` typed `"type": "array"`
 (`pkgs/mosd/apid/openapi.json`), so the dual-major recommendation below has
@@ -1093,9 +1088,11 @@ Both rows ship. The first is declared as `.route(VERSIONS_PATH, get(api_versions
 `.route(V1_META_PATH, get(api_v1_meta))` (`pkgs/mosd/apid/src/routes.rs`), handled at
 `pub(crate) async fn api_v1_meta` (`pkgs/mosd/apid/src/routes.rs`). The `meta` row's
 `settingsSchemaVersion` was written as `4` here when this section was drafted,
-corrected to `6`, and is **8** today, which is the whole argument for reading
-it from `mosd_settings` at request time rather than documenting a number: the
-value in this table is an illustration and the device is the source. The `Auth`
+corrected to `6`, reached **12**, and is **1** today, which is the whole
+argument for reading it from `mosd_settings` at request time rather than
+documenting a number: the value in this table is an illustration and the device
+is the source. It went *backwards* because PLAN-070 §5.2.3 replaced the one
+tree-wide version with one per document, each starting at v1 — see below. The `Auth`
 column moved too — since M9 the credential on the second row is a bearer API
 token and a session cookie is not one (§1.4, §3.2).
 
@@ -1110,14 +1107,23 @@ with `current`, and both sections use the phrase *served set* to mean this
 array. A client that reads only `current` and ignores `versions` will conclude
 that a device it can still talk to is one it cannot.
 
-`settingsSchemaVersion` carries mosd's `SCHEMA_VERSION`
-(`pub const SCHEMA_VERSION: u32 = 12;`, `pkgs/mosd/mosd-settings/src/model.rs`;
-**9** at the last re-measure, **6** at `f7cb5ba` and **4** when this paragraph was written). **It is not the API version and the two must never
-be conflated.** The schema version is the shape of the tree on disk
-(`pkgs/mosd/mosd-settings/src/store.rs`), moved by a registered migration chain
-(`pkgs/mosd/mosd-settings/src/migration.rs`, entry point at
-`pkgs/mosd/mosd-settings/src/migration.rs`) and read-only through the write path
-(`pkgs/mosd/mosd-settings/src/model.rs`). The shipped handler
+`settingsSchemaVersion` carries the **STATE document's** version
+(`pub const STATE_SCHEMA_VERSION: u32 = 1;`,
+`pkgs/mosd/mosd-settings/src/documents.rs`; **12** before PLAN-070, **9** at an
+earlier re-measure, **6** at `f7cb5ba` and **4** when this paragraph was
+written). **It is not the API version and the two must never be conflated.**
+
+**And since PLAN-070 §5.2.3 it is no longer "the" schema version, because there
+is not one.** Settings are stored as one JSON document per reconciler under
+`/mos/config/` plus the remainder on STATE
+(`pkgs/mosd/mosd-settings/src/documents.rs`), each carrying its own
+`schema_version` and each starting at v1; the registered `V0→V12` migration
+chain was deleted with the single document it migrated, and `schema_version` is
+not a key of the addressed tree any more. This member therefore reports the one
+document that is still one document. **A client that needs to know whether it
+understands a particular subtree's body cannot get that from this number**, and
+nothing has been added to give it to them — recorded here as the honest state
+rather than papered over. The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1393,7 +1399,7 @@ destroy the credential.
 | Concern | API resource | Backing | Notes |
 |---|---|---|---|
 | System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`pkgs/mosd/mosd-settings/src/model.rs`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
-| Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`pkgs/mosd/mosd-settings/src/model.rs`) | read-only; a write to `schema_version` is rejected by mosd (`pkgs/mosd/mosd-settings/src/model.rs`) so the API does not expose one |
+| Schema version | `GET /api/v1/meta` | `STATE_SCHEMA_VERSION` (`pkgs/mosd/mosd-settings/src/documents.rs`) | one version per document since PLAN-070 §5.2.3, and this member reports the STATE document's; `schema_version` is not a key of the tree, so `/api/v1/settings/schema_version` is a **404** and there is nothing to write |
 | Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`pkgs/mosd/mosd-settings/src/model.rs`) | body is a bare JSON string; reconciled by `hostname` (`pkgs/mosd/mosd/src/reconciler/hostname.rs`) |
 | Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`pkgs/mosd/mosd-settings/src/model.rs`) | an entry's `kind` selects which of the `vlan`, `bridge` and `wireguard` blocks is meaningful; a key holding a `.` is addressed with a quoted segment (above) |
 | WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`pkgs/mosd/mosd-settings/src/model.rs`) | `psk` redacted on read |
@@ -1407,7 +1413,7 @@ destroy the credential.
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`pkgs/mosd/mosd/src/bus.rs`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
 | Apply tasks | `GET /api/v1/tasks`, `GET /api/v1/tasks/{id}` | mosd's bounded in-memory apply queue and apid's signal-fed registry | `queued`/`running` are non-terminal; `finished` carries `succeeded`, `failed`, or the apid-inferred `interrupted` after restart/history loss |
 | Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`pkgs/mosd/mosd/src/bus.rs`) | recorded *before* the action, so it survives the machine going down |
-| Updates | `GET /api/v1/update` + `POST /api/v1/update/{check,fetch,install,mark,reboot-override}` (`pkgs/mosd/apid/src/update_api.rs`) | `GetUpdateState` / `CheckUpdate` / `FetchUpdate` / `InstallUpdate` / `MarkUpdate` / `SetRebootOverride` on `com.mos.mosd1` | the lifecycle cluster of `docs/design/updates.md`; policy refusals answer **409** `policy_refused`, the one mapping the cluster adds |
+| Updates | `GET /api/v1/update` + `POST /api/v1/update/{check,fetch,install,mark,reboot-override,clear-suppression}` (`pkgs/mosd/apid/src/update_api.rs`) | `GetUpdateState` / `CheckUpdate` / `FetchUpdate` / `InstallUpdate` / `MarkUpdate` / `SetRebootOverride` / `ClearUpdateSuppression` on `com.mos.mosd1` | the lifecycle cluster of `docs/design/updates.md`; policy refusals answer **409** `policy_refused`, the one mapping the cluster adds. `clear-suppression` lifts PLAN-071 §6's automatic-install refusal on one named version — a manual install of that version was never refused |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | the `health` subtree, one key per component (`pkgs/mosd/mosd/src/bus.rs`) | the two are different questions — see §2.4 |
 | Dry-run marker | `GET /api/v1/state/dry_run` | set from `std::env::var("MOSD_DRY_RUN")` (`pkgs/mosd/mosd/src/main.rs`) and inserted at `pkgs/mosd/mosd/src/main.rs` | in that mode no reconcilers are registered at all (`pkgs/mosd/mosd/src/main.rs`), so every other state key is absent |
 
@@ -4346,12 +4352,13 @@ for a good reason — a second model drifts and nothing notices. The cost of the
 choice it made instead is that `access.ssh.authorizedKeys` is now a **public
 path in an HTTP contract**, and renaming or restructuring anything in
 `pkgs/mosd/mosd-settings/src/model.rs` is a breaking change to that contract. The
-on-disk tree has a mechanism for exactly this — `SCHEMA_VERSION` and a
-registered migration chain that walks both directions
-(`pkgs/mosd/mosd-settings/src/model.rs`, `pkgs/mosd/mosd-settings/src/migration.rs`,
-`pkgs/mosd/mosd-settings/src/migration.rs`) — and **there is no equivalent for the API's view of it**. A v4→v5
-migration moves a path a `v1` client hard-coded, and the client learns about it
-by breaking.
+on-disk tree has a mechanism for exactly this — a per-document schema version
+with an additive-bump rule and a tolerant load in the rollback direction
+(`pkgs/mosd/mosd-settings/src/documents.rs`,
+`pkgs/mosd/mosd-settings/src/store.rs`) — and **there is no equivalent for the
+API's view of it**. A v1→v2
+bump of one document moves a path a `v1` client hard-coded, and the client
+learns about it by breaking.
 
 *Partly mitigated, and the mitigation is detection rather than continuity.*
 §2.1 puts `settingsSchemaVersion` in `GET /api/v1/meta` and forbids conflating

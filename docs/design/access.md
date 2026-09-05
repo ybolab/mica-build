@@ -72,7 +72,11 @@ Implemented by `pkgs/mosd/mosd-settings/src/model.rs` (the tree),
 ### 3.1 As shipped
 
 Access policy is a subtree of the mosd settings tree (`docs/design/mosd.md` §3),
-**schema version 12**, persisted to `/var/lib/mos/settings.toml` on STATE:
+persisted since PLAN-070 §5.2 as one document per reconciler under
+`/mos/config/` on DATA plus the remainder on STATE at
+`/var/lib/mos/settings.toml`, each document carrying its own schema version
+(`docs/design/mosd.md` §5.1a says which key lives where). Addressed as one tree
+regardless:
 
 ```toml
 [access.claim]                # §4.4, schema v11; absent until the device is

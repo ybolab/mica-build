@@ -50,8 +50,8 @@ integration burden D-Bus removes for free.
 - Settings modeled as a typed Rust tree (serde), addressed by dot-paths
   (`network.eth0.dhcp`, `access.ssh.enabled`) — Venus-style addressing,
   self-documenting for UI binding.
-- Persisted as versioned TOML on STATE (`/var/lib/mos/settings.toml` +
-  `schema_version`); committed atomically (write-temp + rename).
+- Persisted as versioned documents, committed atomically (write-temp, mode,
+  fsync, rename, directory fsync).
 
   > **Correction (2026-08-19).** This line read `/state/mos/settings.toml`,
   > which is not a path that exists on any image. The real default is
@@ -59,9 +59,25 @@ integration burden D-Bus removes for free.
   > `DEFAULT_PATH`), a bind from `/mnt/state/mos` (`docs/design/ro-root.md` §4),
   > and `pkgs/mosd/mosd/src/main.rs`
   > documents the same. The doc contradicted both the code and §5.1 below.
+
+  > **Superseded in part (PLAN-070 §5.2).** "One versioned TOML on STATE" is
+  > no longer true and §5.1a below is what is. System configuration moved to
+  > `/mos/config/` on DATA as one JSON document per reconciler; what the device
+  > mints or observes about itself stays in `settings.toml` on STATE at the
+  > path the correction above names. Each document carries its own
+  > `schema_version`. The atomic-commit half of the line is unchanged.
 - Migrations: Bottlerocket migrator pattern — forward AND backward migration
   units shipped with each release (the A/B design requires the rollback
   direction to work).
+
+  > **Superseded (PLAN-070 §5.2.3).** The registry and the `V0→V12` chain were
+  > deleted with the single document they migrated: this tree is in system
+  > development and carries no fielded device holding a v12 `settings.toml`, so
+  > a split chain would have been code written to convert a document that does
+  > not exist. Each document now starts at its own v1. The *discipline* the
+  > pattern taught survives as §5.1a's version rules, and the rollback
+  > direction is carried at runtime by the tolerant load (§5.2 below), which
+  > is what actually runs on a device.
 - Reconciler contract: each subsystem reconciler watches a subtree and owns
   rendering to its executor (networkd units, sshd drop-ins, RAUC calls);
   status is published back onto the bus tree (settings vs live-state split,
@@ -82,12 +98,14 @@ tree, so a reader does not have to reconstruct it from five task records.
 
 ### 5.1 The settings tree
 
-Persisted as TOML on STATE at `/var/lib/mos/settings.toml`, addressed by
-dot-path. `Settings::default()` serializes to exactly this, which is also what a
-fresh device writes before first-boot provisioning seeds it:
+Addressed by dot-path, and **stored in several documents** — §5.1a is where
+each key lives and why. `Settings::default()` serializes to exactly the tree
+below, which is also what a fresh device holds before first-boot provisioning
+seeds it. It is shown as one document because that is how every reader
+addresses it; the `schema_version` line is gone from it because after
+PLAN-070 §5.2.3 there is no tree-wide version to show.
 
 ```toml
-schema_version = 4
 hostname = "mos"
 
 [network]                        # keyed by interface name, individually addressable
@@ -139,51 +157,211 @@ is load-bearing rather than tidy — see provisioning.md §3.1.
 `deny_unknown_fields` is on every struct, so a document carrying a key this
 version does not know fails to load rather than silently dropping it.
 
-### 5.2 Migration, and what a rollback costs
+### 5.1a `/mos/config/`: where system configuration lives, and the rules a subsystem inherits
 
-The Bottlerocket pattern held: `MigrateV2ToV3` is registered alongside
-`MigrateV0ToV1` and `MigrateV1ToV2`, so `Store::load` walks a v0, v1 or v2
-document all the way to v3 on first read. `up` stamps the version and inserts the
-empty `provisioning` and `wifi` tables; it does not touch `access` at all,
-because the v3-only keys inside it are supplied by serde defaults — which is what
-keeps `access.webAdmin` byte-identical through the upgrade.
+**PLAN-070 §5.2 decided that system configuration lives in `/mos/config/` on
+DATA**, so that an integrator can flash a device, pour the configuration in,
+and have it work with no provisioning ceremony between the two. This section is
+the rule list a subsystem author meets, restated here rather than left in the
+plan record, because an author who needs it will be reading this file.
 
-**Rolling back to v2 loses three things, deliberately and irreversibly:** the SSH
-policy, the console shell policy, and the device credential hash with its
-generation counter. v2 software has no reconciler for any of them, and
-`deny_unknown_fields` means keeping the keys would produce a document v2 cannot
-deserialize at all. A rolled-back device falls back to v2 behaviour, and rolling
-forward again restores the v3 *defaults*, not the values that were there before.
+**Where each key lives.** The boundary is not a judgement, it is the tier-1
+reset partition (`docs/design/recovery.md` §2.1): *`/mos/config/` holds what an
+integrator sets; the settings store on STATE holds what the device mints or
+observes about itself, the credential material derived from it, and the intents
+it is carrying out.* Tier 1 clears what an integrator set, so the set it clears
+**is** the set that lives here — and "is this a document or a settings key?"
+is answered by asking whether tier 1 clears it.
 
-The rule that follows: **anything that must survive a rollback cannot live in a
-v3-only key.**
+| Document | Settings subtree it carries | Reconciler |
+|---|---|---|
+| `/mos/config/system.json` | `hostname`, `access.console` | hostname |
+| `/mos/config/network.json` | `network` | network |
+| `/mos/config/wifi.json` | `wifi` | wifiAp, wifiClient |
+| `/mos/config/ssh.json` | `access.ssh` | sshd |
+| `/mos/config/mqtt.json` | `mqtt` | mqtt |
+| `/mos/config/time.json` | `time` | time |
+| `/mos/config/container.json` | `container` | container |
+| `/var/lib/mos/settings.toml` | `provisioning`, `access.webAdmin`, `access.device`, `access.claim`, `access.apiTokens`, the staged `reset` intent | — |
 
-**v4 adds `MigrateV3ToV4`**, which inserts an empty `access.ssh.authorizedKeys`
-array and stamps the version. Rolling back to v3 **discards the key list**,
-deliberately: v3 has no code that renders keys into an `authorized_keys` file,
-so carrying them would be a v3 device promising an access path it cannot serve
-— and v3's `deny_unknown_fields` would refuse to load the document at all. The
-same rule applies, with a sharper consequence: **a rolled-back device loses
-every authorized key, which is the only persistent way in.**
+The unit is the subtree the apply engine already dispatches on, not the
+subsystem as a reader might name it, so a write's blast radius is one document
+and its apply is one reconciler run. `wifi.json` carries both Wi-Fi reconcilers
+because `wifiAp` declares the whole `wifi` subtree rather than `wifi.ap` — a
+narrowing that was tried, measured to hide a cross-subtree dependency from the
+overlap test, and reverted. Grouping by reconciler keeps that coupling inside
+one atomic write.
 
-**How the rollback is actually carried (2026-08-21).** The costs
-above were written as if the down-migrations run on the device. They do not
-and cannot: a rolled-back-to binary cannot carry the down-step a future schema
-needs, and until later `Store::load` refused any newer `schema_version`
-outright — so the priced, deliberate losses above were in practice a mosd
-crash loop (`docs/design/api.md` §10.3 item 5). What runs instead is the
-tolerant load: on a newer document, `Store::load_with_report` strips the keys
-this schema does not know — mechanically the same loss this section already
-prices — and parses the rest; the next save persists the stripped document at
-this schema version. A future schema that **reshapes** an existing key
-defeats stripping, and the load then falls back to `Settings::default()` with
-an `error!`-level report: every setting including the admin credential is
-abandoned and the device re-enters setup mode. **That loss is accepted in
-writing here**, priced against the crash-loop alternative, and it binds
-schema authors: prefer additive bumps; a reshaping bump forfeits settings on
-rollback and its migration must say so. The registered down-migrations remain
-for staged-downgrade tooling; they are no longer the (unreachable) rollback
-story.
+**The staged `reset` intent stays on STATE and that is not a technicality.**
+Tiers 1 and 3 clear `/mos/config/`; put the record that asks for a reset inside
+it and the tier would clear the thing that tells it to run, halfway through
+running.
+
+**Addressing does not change.** `GET`/`PUT /api/v1/settings/<dot.path>` works
+exactly as before: the dot-path selects the document and then the key inside
+it. The six-entry write allowlist, the shape check behind it, the refusal
+sentence, the redactor, the subtree-overlap dispatch and the task queue all key
+on dot-paths and are untouched. Two consequences that are not free:
+
+- **`access` is split across the boundary**, so `GET /api/v1/settings/access`
+  no longer names one file — it composes the two stores, because the read
+  surface is addressing rather than storage.
+- **`schema_version` is no longer a key of the tree.** There is no tree-wide
+  version left; `GET /api/v1/meta`'s `settingsSchemaVersion` reports the STATE
+  document's.
+
+**The rules a later subsystem inherits.**
+
+- **Naming: `/mos/config/<document>.json`, one flat document per reconciler.**
+  A directory per subsystem is rejected: one document means one writer, one
+  atomic rename and one parse-error blast radius, while a directory invites
+  several files with **no transaction across them**, so a subsystem could
+  half-apply a change and have no way to say so. A flat listing of
+  `/mos/config/` is also the namespace's own index. A subsystem that genuinely
+  needs several documents may take a directory, at that stated cost.
+- **JSON.** These are machine-written documents and JSON is what a machine
+  writes without a round-trip formatting problem; a mixed-format namespace
+  means every reader guesses by extension.
+- **Machine-written, never hand-edited.** The writing daemon owns the file's
+  shape. A human edits it through an authenticated API; if a human edits it
+  with `vi`, the next write overwrites them and that is documented behaviour,
+  not a bug. The pour is the one exception and it is bounded: an integrator
+  writes these files onto a device that is **not running**, and mosd validates
+  what it finds on the next boot exactly as it validates its own output. A pour
+  onto a running device is not supported, for the reason
+  `docs/design/provisioning.md` gives for having no udev trigger — inserting
+  media must not reconfigure a running appliance.
+- **Atomic: temp file, mode set before the rename, fsync, rename, directory
+  fsync.** An interrupted write leaves the previous document intact, never a
+  truncated one.
+- **Fail closed on a parse error, with no fallback.** A document that exists
+  and does not parse refuses rather than reverting to a schema default. A parse
+  error is not absence, and treating it as absence configures a device the way
+  nobody chose. **An absent document is a default; an absent
+  `/mos/config/` is not** — that is the medium being gone, and mosd refuses to
+  start and names the mount (§5.2a).
+- **`0700` on the directory, `0600` on every document, and the namespace is
+  credential material.** `mos-data-layout` establishes the mode;
+  `Store::save` sets each document's mode **before** the rename, so a document
+  is never reachable under its final name at a laxer mode. The failure this
+  prevents is concrete: an unprivileged local process reading
+  `/mos/config/wifi.json` and recovering the site's WPA2 pre-shared key, which
+  is offline-crackable from a captured handshake and is a credential the device
+  was *given* rather than one it minted. A directory an integrator copies onto
+  a device is credential material on the integrator's laptop too, and
+  `docs/design/provisioning.md` §4.1.6 already settled what the device owes
+  there: `0700`/`0600` on arrival, no read-back, and no value the document
+  carried copied into any served record — and nothing about the laptop, because
+  claiming that would buy the appearance of erasure.
+- **A secret-bearing key is spelled with a name the redactor already carries,
+  or the change that adds it adds the name.** The redactor
+  (`pkgs/mosd/apid/src/redact.rs`) is a denylist of field names and is
+  fail-open by design. The moved schema satisfies the rule with nothing added:
+  its only secret-bearing keys are `wifi.ap.psk` and
+  `wifi.client.networks[].psk`, both spelled `psk`. The rule exists because the
+  alternative is an author who picks `sharedSecret`, ships it, and finds out
+  from a support case.
+- **One version per document, additive bumps, and no migration that moves a key
+  between documents.** §5.2 below is the whole of it.
+- **One writer per document, and it is a daemon.** mosd writes; apid holds the
+  authenticated route and **asks**. Two processes never write one document,
+  which no amount of atomic renaming makes safe.
+- **Reset disposition is the directory's.** Tiers 1 and 3 re-seed
+  `/mos/config/`, tier 2 leaves it alone, tier 4 clears it with everything else
+  (`docs/design/recovery.md` §2.1).
+
+### 5.2 Schema versions, and what a rollback costs
+
+**One version per document, not one for the namespace** (PLAN-070 §5.2.3).
+A namespace-wide version is refused on a specific failure: a bump would rewrite
+every document, and several atomic renames have **no transaction across them**,
+so a power loss halfway would leave documents at mixed versions — a third
+state, which is exactly what the staged-intent design of `ResetSettings` exists
+to refuse. Per document, each migrates alone under its own rename, so a power
+loss leaves each document either old or new.
+
+Every document starts at **v1**, including the STATE remainder: it is a
+document too and is not exempt for being what is left over.
+
+**The `V0→V12` chain is not ported; it was deleted with the document it
+migrated.** There is no fielded device holding a v12 `settings.toml`, so a
+split chain would have been code written to convert a document that does not
+exist. What carries forward is the discipline, which is the part that was ever
+load-bearing:
+
+- a bump is **additive**, and `skip_serializing_if` keeps a new optional table
+  out of a document that does not use it, so two adjacent versions of one
+  document differ by the version integer alone;
+- every migration has a `down` as well as an `up`, and the `down` states what
+  it discards;
+- the reason for both is **A/B rollback survivability**: the system slot can go
+  backwards and the configuration on DATA does not, so an older binary must be
+  able to read a newer document;
+- **no migration may move a key from one document to another**, because that is
+  the migration with no transaction. A key that has to move is a new key in the
+  destination and a deprecation in the source — two independent additive bumps,
+  either of which is survivable alone. The same constraint from the other side:
+  do not write a validation rule that spans two documents.
+
+**What was lost, named rather than glossed.** The twelve steps of the deleted
+chain carried twelve recorded arguments about what a bump may do and what a
+`down` may discard. The four rules above are the extract; they are not the
+whole of it. That is the price of not writing a migration for a device that
+does not exist, and it was paid deliberately.
+
+**How the rollback is actually carried (2026-08-21, per document since
+PLAN-070).** The costs above are not paid by down-migrations running on the
+device: a rolled-back-to binary cannot carry the down-step a future schema
+needs. What runs instead is the tolerant load. On a document whose
+`schema_version` is newer than this build writes, `Store::load_with_report`
+strips the keys this schema does not know — recursively, by the names serde's
+`deny_unknown_fields` rejections give — and parses the rest; the next save
+persists the stripped document at this build's version. A future schema that
+**reshapes** an existing key defeats stripping, and that document alone falls
+back to its schema default with an `error!`-level report naming it.
+
+**The blast radius of that loss is now one document**, which is the second
+thing the per-document version buys. Before the split, a reshaped key anywhere
+abandoned every setting including the admin credential and put the device back
+in setup mode on its LAN. Now a reshaped `wifi.json` costs the Wi-Fi settings
+and leaves the network configuration, the ssh policy and the management
+credential alone. **The loss is still accepted in writing**, priced against the
+crash-loop alternative — refusing the document makes mosd exit, and under
+`Restart=on-failure` the rolled-back-to slot becomes a crash loop that also
+fails its health gate — and it still binds schema authors: prefer additive
+bumps; a reshaping bump forfeits its document's settings on rollback and must
+say so.
+
+### 5.2a Fail closed on the medium
+
+System configuration is on DATA, so **a device whose DATA pool does not mount
+has no configuration** — and it must not render a different one. PLAN-070
+§5.2.6 measured the differential first: STATE and DATA are two partitions on
+one medium, so a DATA fault is not an independent failure domain, and apid's
+unit already carries `RequiresMountsFor=/var/lib/mos /mos`. What a DATA fault
+already costs is the management API and the container and update workspaces;
+what the move would additionally cost is the configured network.
+
+The rule: **mosd fails closed.** Its unit carries `RequiresMountsFor=/mos`, and
+`Store::load` refuses when `/mos/config/` is not there rather than composing a
+tree out of schema defaults — DHCP on every interface, sshd off — which would
+be unreachable by anyone relying on the static address they configured, while
+looking fine. The refusal names the mount, because that is the fact an operator
+at the serial console needs. The recovery route is
+`docs/design/recovery.md`'s: the serial console and the reset tiers, not a
+silently degraded network.
+
+Note the asymmetry with the paragraph above it, and it is deliberate: **an
+absent document is a default, an absent namespace is a refusal.** A document
+that was never written is a subsystem that was never configured; a namespace
+that is not there is a medium that did not mount.
+
+The alternative — keeping `network` and `hostname` on STATE so a DATA fault
+leaves a device reachable on its configured address — is rejected because it
+re-creates two homes for configuration and makes "which tier does this
+subsystem take" a judgement call rather than a measured boundary. It is
+re-openable, and the thing that would re-open it is evidence that a DATA-only
+fault is a real failure mode on this hardware rather than a theoretical one.
 
 ### 5.3 Reconcilers registered today
 
