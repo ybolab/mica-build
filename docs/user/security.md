@@ -45,6 +45,13 @@ What an image says about itself, and what a device can be asked:
   carries that marker, and names the file it found. The `development` channel,
   which carries no promise, still accepts one. This was a convention until
   now; it is a refusal.
+- **The device reads its package-trust anchor from the image.** `rauc-update`
+  and `rauc-verify` authenticate repository root metadata with
+  `trust.signingKeys` in `/usr/share/mos/meta/updates/manifest.json` before the
+  TUF walk. Neither device binary accepts a root-file argument, and the mosd
+  policy has no anchor-path setting. The build derives `trust.signingKeyIds`
+  from the raw public-key bytes and refuses a supplied value that disagrees.
+  An empty key list permits no package verification.
 
 The named gaps:
 
@@ -56,12 +63,6 @@ The named gaps:
   anchor on a fielded device currently means an image signed by the very key
   being replaced. A device that missed a rollover window, and rotation away
   from a CA that is already compromised, still need a physical reflash.
-- **The image provisions the package-trust anchor; the shipped client does not
-  read it yet.** The baked update configuration carries the trusted package
-  signing keys, and the build refuses to produce an image without it. But
-  `rauc-verify` and `rauc-update` in the image still verify TUF metadata from a
-  pinned root supplied out of band, and no image provisions one
-  ([update-rollback.md](update-rollback.md)).
 
 > status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`
 

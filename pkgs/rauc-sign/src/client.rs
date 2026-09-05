@@ -1,8 +1,9 @@
 //! Device-side Uptane/TUF metadata verifier.
 //!
 //! Verifies a LOCAL copy of the repository that [`crate::repo`] publishes,
-//! starting from a pinned trusted `root.json` that reached the device out of
-//! band. The walk is the TUF client workflow, delegated to `tough`: the root
+//! starting from root metadata authenticated by the baked signing keys on a
+//! device. Release-host callers can also supply a pinned root file. The walk
+//! is the TUF client workflow, delegated to `tough`: the root
 //! chain from the pinned version upward (`<n+1>.root.json` until absent —
 //! today the signer only ever writes version 1, so the chain is depth one),
 //! then timestamp → snapshot → targets, enforcing per-role signature
@@ -24,8 +25,8 @@
 //!   through the metadata (sha256 and length pinned) and the verified local
 //!   file path is returned, which is what an installer wants to hand to RAUC.
 //!
-//! Transport — how metadata and the pinned root reach the device — is
-//! deliberately absent; see this crate's README for the provisioning story.
+//! Transport is separate. Device entry points bootstrap the walk through
+//! `anchor`, which reads the immutable baked manifest at its fixed path.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -79,6 +80,19 @@ pub async fn verify_and_open(repo: &Path, trusted_root: &Path, state: &Path) -> 
     Ok(repository)
 }
 
+/// Device entry point: the image manifest is the only source of trust.
+pub async fn verify_baked(repo: &Path, state: &Path) -> Result<Repository> {
+    let repository = load_bytes(repo, &crate::anchor::root_bytes(repo)?).await?;
+    enforce_and_record(&repository, state)?;
+    Ok(repository)
+}
+
+/// Verify a device target against the baked anchor and persistent role floors.
+pub async fn verify_baked_target(repo: &Path, state: &Path, name: &str) -> Result<PathBuf> {
+    let repository = verify_baked(repo, state).await?;
+    target_path(repo, &repository, name).await
+}
+
 /// Verifies the repository's metadata (as [`verify_repository`]), then reads
 /// `name`'s bytes back through the metadata — sha256 and length pinned — and
 /// returns the verified local path of the target file.
@@ -91,6 +105,10 @@ pub async fn verify_target(
     let repository = load(repo, trusted_root).await?;
     enforce_and_record(&repository, state)?;
 
+    target_path(repo, &repository, name).await
+}
+
+async fn target_path(repo: &Path, repository: &Repository, name: &str) -> Result<PathBuf> {
     let target_name =
         TargetName::new(name).with_context(|| format!("invalid target name {name:?}"))?;
     let Some(target) = repository.targets().signed.targets.get(&target_name) else {
@@ -130,6 +148,10 @@ pub async fn verify_target(
 async fn load(repo: &Path, trusted_root: &Path) -> Result<Repository> {
     let root_bytes = fs::read(trusted_root)
         .with_context(|| format!("read trusted root {}", trusted_root.display()))?;
+    load_bytes(repo, &root_bytes).await
+}
+
+async fn load_bytes(repo: &Path, root_bytes: &[u8]) -> Result<Repository> {
     let repository = RepositoryLoader::new(
         &root_bytes,
         dir_url(&metadata_dir(repo))?,

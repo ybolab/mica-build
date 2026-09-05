@@ -917,7 +917,7 @@ describe('the baked public set, which must be exactly what the build staged', ()
       writeFileSync(join(root, BAKED_MANIFEST_PATH), '{ "schema": "mos/meta/v1", "update": { "source": "https://elsewhere" } }\n'))
     try {
       expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
-      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('is not the byte-for-byte copy')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('does not match')
     }
     finally {
       fx.dispose()
@@ -1005,7 +1005,7 @@ describe('the baked public set, which must be exactly what the build staged', ()
       writeFileSync(join(fx.ctx.metaDir, 'GENERATED'), FIXTURE_META_MARKER)
       writeFileSync(join(fx.root, '/usr/share/mos/meta/GENERATED'), 'DOMAINS=\n')
       expect(await verdictOf(fx, 'packed-meta-is-the-public-set')).toBe('fail')
-      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('is not the byte-for-byte copy')
+      expect(await messageOf(fx, 'packed-meta-is-the-public-set')).toContain('does not match')
     }
     finally {
       fx.dispose()

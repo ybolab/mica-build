@@ -1332,19 +1332,58 @@ function enable(root: string, unit: string, target = 'multi-user.target.wants'):
 export const FIXTURE_CA_CERT = '-----BEGIN CERTIFICATE-----\nfixture trust root\n-----END CERTIFICATE-----\n'
 
 /**
- * The baked update configuration, as the fixture spells it.
+ * The baked update configuration, as the fixture spells it: the WHOLE document
+ * `meta.example/updates/manifest.json` ships, not the fields a check happens to
+ * read.
  *
- * The same reasoning as `FIXTURE_CA_CERT`: `packed-meta-is-the-public-set`
- * compares BYTES against what `meta/` holds and nothing parses the JSON, so a
- * faithful copy of `meta.example/`'s document would assert nothing extra and
- * would go stale the day that schema grows a key.
+ * **It used to be two keys, and the reasoning that allowed that is dead.** The
+ * comment here said `packed-meta-is-the-public-set` compares BYTES and nothing
+ * parses the JSON, so a faithful copy would assert nothing extra. That stopped
+ * being true when the manifest row grew a derivation: the check now hands these
+ * bytes to `derivedManifest`, which requires the committed schema and a `trust`
+ * object, and a two-key document throws before any check can conclude.
+ *
+ * **`signingKeys` is populated on purpose.** An empty array satisfies
+ * `derivedManifest` — it derives an empty id list, which matches — and it does
+ * so *vacuously*: the per-key validation and the SHA-256 never run, and the
+ * positive control's own verdict line ("manifest signingKeyIds derived from key
+ * bytes") would be asserting a derivation that did not happen. One real
+ * 32-byte value in canonical base64, with the id it actually hashes to, is what
+ * makes that verdict a measurement. `meta.example` carries empty arrays because
+ * no ceremony stands behind an example; a released image's manifest does not,
+ * and the device anchor reader refuses one that does.
+ *
+ * The key is bytes 1..32 — recognisably a fixture, and no real key ever has to
+ * be rotated out of this file.
  *
  * It carries no `-----BEGIN` armour, no PKCS#8 header and no key-container
  * extension in its path, which is what makes it the NEGATIVE control for
  * `no-private-key-in-baked-meta`: the healthy fixture is a populated search
- * space in which the detector finds nothing.
+ * space in which the detector finds nothing. A base64 PUBLIC key in a JSON
+ * string trips none of the three detectors, which is the point.
  */
-export const FIXTURE_META_MANIFEST = '{ "schema": "mos/meta/v1", "update": { "source": null } }\n'
+export const FIXTURE_META_MANIFEST = `{
+  "schema": "mos/meta/v1",
+
+  "product": { "vendor": "example", "model": "mos-appliance" },
+
+  "update": {
+    "source": null,
+    "channel": "stable",
+    "policy": "check",
+    "checkIntervalMinutes": 1440
+  },
+
+  "trust": {
+    "signingKeys": ["AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="],
+    "signingKeyIds": ["ae216c2ef5247a3782c135efa279a3e4cdc61094270f5d2be58c6204b7a612c9"]
+  },
+
+  "http": { "credentialHosts": [] },
+
+  "fleet": { "enabled": false, "url": null }
+}
+`
 
 /**
  * `meta/GENERATED` as `pkgs/rauc/gen-dev-keys.sh` writes it: prose, then the
