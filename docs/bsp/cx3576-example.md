@@ -259,8 +259,7 @@ Per [assurance.md](assurance.md), for CX3576-Z as shipped from this tree:
 > status: shipped — evidence: `build/src/bundle.ts`, `docs/design/updates.md`
 
   What is missing on this board is operational, not mechanical: production
-  key custody is a runbook nobody has performed, and no image provisions the
-  pinned root anchor the client would start from, so with development keys
+  key custody is a runbook nobody has performed, so with development keys
   this is a tested mechanism only.
 
 > status: unsupported
