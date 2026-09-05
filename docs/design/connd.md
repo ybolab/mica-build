@@ -34,8 +34,13 @@ and BT are the board layer's.
 
 ## 2. Settings model
 
-Both subtrees live in the mosd settings tree (`docs/design/mosd.md` §3), schema
-version 3, persisted to `/var/lib/mos/settings.toml` on STATE.
+Both subtrees live in the mosd settings tree (`docs/design/mosd.md` §3) and are
+persisted since PLAN-070 §5.2 in `/mos/config/wifi.json` on DATA, at that
+document's own schema version (`docs/design/mosd.md` §5.1a). Both Wi-Fi
+reconcilers share the one document, because `wifiAp` declares the whole `wifi`
+subtree. The document is `0600` inside a `0700` directory: it carries the site's
+WPA2 pre-shared key, and the namespace's charter is that it is credential
+material.
 
 ```toml
 [wifi.client]

@@ -110,7 +110,7 @@ Every cell is exactly one of four words, and they are not synonyms:
 
 | Tier | device identity | calibration data | STATE | DATA (`/mos`) | DATA (`/srv`) | META | system slot A | system slot B |
 |---|---|---|---|---|---|---|---|---|
-| 1 configuration reset | preserved | preserved | re-seeded [^cfg] | preserved | preserved | unaffected | unaffected | unaffected |
+| 1 configuration reset | preserved | preserved | re-seeded [^cfg] | re-seeded [^cfg-mos] | preserved | unaffected | unaffected | unaffected |
 | 2 application-data reset | preserved | preserved | preserved [^apps-state] | re-seeded [^apps-mos] | cleared | unaffected | unaffected | unaffected |
 | 3 full factory reset | preserved [^identity] | preserved [^identity] | re-seeded | re-seeded | cleared | preserved [^meta] | unaffected [^slots] | unaffected [^slots] |
 | 4 secure wipe | cleared | cleared | cleared | cleared | cleared | cleared | cleared | cleared [^wipe] |
@@ -135,10 +135,27 @@ document's. §3 places it in the operator ordering, between tiers 3 and 4.
 [^cfg]: Tier 1 re-seeds the modelled settings tree and keeps three things on
     STATE that are not configuration: the identity record, the apid management
     credential (`access.webAdmin`), and the per-device secrets
-    (`docs/design/provisioning.md` §3.2). A reset that dropped the credential
+    (`docs/design/provisioning.md` §3.2). Since PLAN-070 §5.2 the survivor list
+    is exactly what STATE still holds, because everything tier 1 used to clear
+    moved to `/mos/config/` and is cleared by the cell beside this one. A reset that dropped the credential
     would be a lockout dressed as a settings action, and it would also be a
     remote credential-clearing primitive — §5 is where a credential is
     deliberately replaced, under §4's authority and nowhere else.
+
+[^cfg-mos]: **Only `config/`**, and the rest of `/mos` is untouched by tier 1
+    exactly as it was before: `ui/`, `apps/`, `containers/`, `updates/`,
+    `home/` and `root/` are not opened. `/mos/config/` holds the device's
+    system configuration (PLAN-070 §5.2, `docs/design/mosd.md` §5.1a), and a
+    subtree named `config` surviving the *configuration* reset would be a
+    contradiction a reader trips over — after a tier 1 the device would still
+    be following a channel the previous operator chose. The disposition is
+    decided **for the directory** rather than per document, which is what keeps
+    the shipped safety property working after the mechanism changed: a document
+    added to `/mos/config/` by any subsystem is cleared by default, including
+    one this daemon does not model, because the tier empties the directory
+    rather than enumerating what is in it. The settings the tier hands back to
+    first-boot provisioning are re-seeded by the STATE half in the same save,
+    which is the `re-seeded [^cfg]` cell beside this one.
 
 [^apps-state]: Tier 2's only write to STATE is the removal of the application
     enrolment records the application layer owns there — the Quadlet units and
@@ -151,9 +168,10 @@ document's. §3 places it in the operator ordering, between tiers 3 and 4.
 
 [^apps-mos]: `/mos` is the system-owned namespace and tier 2 does not empty it.
     It clears the application-owned subtrees (`apps/`, `containers/`) and lets
-    `mos-data-layout` recreate them at their declared modes. `ui/`, `updates/`
-    (a verified bundle is not application data) and the `home/`/`root/` backing
-    directories are not opened. `/srv` is `cleared` rather than `re-seeded`
+    `mos-data-layout` recreate them at their declared modes. `ui/`, `config/`
+    (system configuration is not application data), `updates/` (a verified
+    bundle is not application data) and the `home/`/`root/` backing directories
+    are not opened. `/srv` is `cleared` rather than `re-seeded`
     because the product gives that namespace to the operator: mos recreates the
     mount point, never its contents.
 
