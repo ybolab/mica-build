@@ -23,7 +23,7 @@ fail() { echo "FAIL $*" >&2; exit 1; }
 
 new_case fresh
 run_layout
-for name in ui containers home root; do
+for name in ui config containers home root; do
     [ -d "$DATA/mos/$name" ] || fail "$name canonical directory"
     [ ! -L "$DATA/mos/$name" ] || fail "$name canonical directory is a link"
 done
@@ -39,6 +39,9 @@ done
 [ "$(stat -c %a "$DATA/mos/containers")" = 711 ] || fail "container root mode"
 [ "$(stat -c %a "$DATA/mos/home")" = 755 ] || fail "home backing mode"
 [ "$(stat -c %a "$DATA/mos/root")" = 700 ] || fail "root backing mode"
+# The configuration namespace is credential material (PLAN-070 section 5.2.4):
+# 0700 here, 0600 on every document mosd writes into it.
+[ "$(stat -c %a "$DATA/mos/config")" = 700 ] || fail "config namespace mode"
 
 # Existing content in either final namespace is preserved, and initialization
 # is idempotent.
