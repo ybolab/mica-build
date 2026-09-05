@@ -318,7 +318,7 @@ the line that runs the container.
 
 | Producer | Builds | Verified at |
 | --- | --- | --- |
-| `build-env/build.sh` | `localhost/mos-build-{base,c,deb,go,rust}:<arch>` | `docker buildx build "${BUILDER_ARGS[@]}"`, line 538 |
+| `build-env/build.sh` | `localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>` | `docker buildx build "${BUILDER_ARGS[@]}"`, line 538 |
 | `build-env/deb/build.sh` | one producer's `.deb`, per architecture | `docker buildx build --builder "${BUILDER}"`, line 448 |
 | `build-env/deb/pack.sh` | the archive itself, `dpkg-deb --build` | runs *inside* `localhost/mos-build-deb:<arch>` from a producer Dockerfile's `RUN`; its own header says so and it checks the container architecture rather than trusting it |
 | `build-env/deb/repo.sh` | `Packages`, `SHA256SUMS`, `manifest.txt` | `docker run --rm`, line 105 |

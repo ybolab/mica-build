@@ -228,7 +228,7 @@ step further out:
 
 | Input | Built by | Lands in |
 |---|---|---|
-| builder images `localhost/mos-build-{base,c,go,rust}:<arch>` | `build-env/build.sh` | the local docker image store |
+| builder images `localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>` | `build-env/build.sh` | the local docker image store |
 | APID built-in UI asset tree | `pkgs/mosd/apid/ui/build.sh`, invoked before every repository-owned APID Cargo build in the pinned Bun container with read-only source | ignored `_out/apid-ui/dist/`, mounted read-only into the Rust builder, supplied to `apid/build.rs` and embedded in the binary |
 | RAUC | `pkgs/rauc/build.sh`, driven by the `rauc` producer's `PREPARE` hook | `pkgs/rauc/out-<arch>/`, packed as `mos-rauc` |
 | podman and its six companions | `pkgs/podman/build.sh`, driven by the `podman` producer's hook | `pkgs/podman/out-<arch>/`, packed as `mos-podman` |

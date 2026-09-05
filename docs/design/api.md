@@ -31,11 +31,23 @@
   built-in UI without deleting installed files. A generation can be deleted
   only while inactive. `/_ui/` remains reachable regardless of custom-bundle
   state and cannot be shadowed.
-- `GET /api/v1/network` combines configured intent with an on-demand,
-  normalized `systemd-networkd` observation obtained by mosd over D-Bus. It
-  reports the observed interface count and per-interface operational, carrier,
-  address-family, address, DNS and route details. Observation failure is
-  explicit and does not hide readable configuration.
+- `GET /api/v1/network` combines configured intent with an on-demand
+  `systemd-networkd` observation obtained by mosd over D-Bus. The observation
+  is normalized **at the top level only**. mosd reduces networkd's `Describe`
+  document to an interface count and, per interface, a fixed allowlist of
+  members — index, name, kind, type, driver, the administrative, operational,
+  carrier, address, per-family address and online states, MTU and hardware
+  address — renamed into this API's camelCase vocabulary; every other per-link
+  member networkd reports is dropped, and apid types what is left. The
+  per-interface `addresses`, `dns` and `routes` arrays are **passed through
+  verbatim**: only the array's own key is renamed, and its elements keep
+  networkd's key names (`Family`, `Address`, `PrefixLength`, `Destination`,
+  `Gateway`, `ProtocolString`, ...) and networkd's values, so a route whose
+  protocol networkd cannot name reads `ProtocolString: "16"` there. That is
+  deliberate: a reader of those arrays is reading systemd's document, not this
+  API's vocabulary, and naming those members here would be a second vocabulary
+  for the same facts — a design decision, not a normalization. Observation
+  failure is explicit and does not hide readable configuration.
 - The built-in SPA uses root-relative `/api/...` requests and stores no session
   or bearer credential in browser storage. Its ignored `_out/apid-ui/dist`
   output is generated in the pinned Bun container before Rust checks and
