@@ -370,6 +370,15 @@ become fleet incidents — with the three choices that distinguish production:
 a real subject, real validity horizons, and offline custody. Same machine
 discipline as §1.1. openssl is the only tool.
 
+**One mechanical difference, so a reader diffing the two does not read it as
+drift.** Since 2026-09-05 the dev script mints inside
+`localhost/mos-build-openssl` rather than with whatever openssl is on the host
+(PLAN-080 §0.1: the material it writes is baked into every image, which makes
+openssl a producer there). A container cannot see the calling shell's file
+descriptors, so the signer's `-extfile` is a real file in the script and stays a
+`<(...)` here — the same two lines, the same certificate. The ceremony machine
+is offline and outside the build; its openssl is the operator's, as it must be.
+
 **What the ceremony and the generator must agree on is the SET, not the
 default — with one exception, and it is the signer's validity.** The algorithm
 each key role gets is a declared value in `pkgs/rauc/key-algorithms.env`, and

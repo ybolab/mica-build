@@ -18,7 +18,7 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-verify-test os-build-test \
-	os-host-toolchain-lint os-host-toolchain-lint-test \
+	os-host-toolchain-lint os-host-toolchain-lint-test os-bare-host-gate \
 	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
 	os-install-closure-gate os-rootfs-manifest-test \
 	os-rootfs-x64-composed \
@@ -44,6 +44,7 @@ help:
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
 	@echo "  os-host-toolchain-lint-test  plant a host invocation, a stale exemption and a broken declaration; require each red"
+	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
@@ -53,7 +54,7 @@ help:
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
 	@echo "  os-rust-gate        run both Rust workspaces' hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
@@ -431,6 +432,25 @@ os-host-toolchain-lint:
 # at all has not found this repository's build and must not report clean.
 os-host-toolchain-lint-test:
 	bash tests/host-toolchain-lint-test.sh
+
+# THE CRITERION ITSELF, RUN. `os-host-toolchain-lint` above reads the tree and
+# says whether it looks compliant; this one takes a host that IS the criterion's
+# host -- the pinned docker-cli image, docker and git and a busybox userland,
+# plus the bash and make PLAN-080 section 1 permits -- clones HEAD into it, and
+# climbs. It exists because section 9 named the absence of it as that record's
+# largest risk: section 4 was run by hand once, nothing re-ran it, and the next
+# path that needs a host tool would pass every static check and break the
+# criterion silently.
+#
+# The ceiling is rungs 1-3: the docs gates, the policy lint, the board layout
+# lint and the 1270-test verify suite, all with no bun on the host. It does NOT
+# assemble an image -- that is rung 4 and it needs the amd64 package pool.
+# tests/bare-host-gate/ladder.sh names what the lower ceiling stops covering.
+#
+# Needs docker and the network: it pulls the pin if it is absent and adds bash
+# and make into the running container with apk.
+os-bare-host-gate:
+	bash tests/bare-host-gate/gate.sh
 
 # rootfs/packages/resolve.sh over every board, profile, radio set and feature
 # set this repository supports, plus the reverse direction: every package a

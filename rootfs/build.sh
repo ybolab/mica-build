@@ -368,6 +368,91 @@ if ! grep -q '"signingKeys"' "$META_DIR/updates/manifest.json" 2>/dev/null; then
     exit 1
 fi
 
+# THE OPENSSL BELOW IS THE PINNED ONE, not the host's.
+#
+# A2 is a JUDGE by docs/design/build.md section 0 -- it writes nothing that
+# survives the run -- and it is still the judge most worth moving, because what
+# it reads is openssl's own TEXT rendering of a key: `NIST CURVE: P-256`, the
+# word ED25519, the `-Key: (2048 bit)` shape. Those are strings one openssl
+# version chose to print, and a machine whose openssl prints them differently
+# does not report a different algorithm, it reports NONE -- which reaches
+# check_material as "openssl could not read this file" and refuses a build over
+# material that is fine. Measured 2026-09-05: this host has OpenSSL 3.0.2 and
+# localhost/mos-build-openssl has trixie's 3.5.7.
+#
+# Resolved here, in the main shell, rather than on first use inside
+# alg_of_material's command substitution: a refusal there would be swallowed by
+# the `|| true` that reader carries and would surface as an unreadable file.
+# ca.cert.pem is required above, so this is always reached with work to do.
+command -v docker >/dev/null || {
+    echo "error: docker is required: the algorithm of the material in $META_DIR is read with the openssl in localhost/mos-build-openssl rather than with the host's, because the text it parses is version-sensitive (docs/design/build.md section 0)" >&2
+    exit 1
+}
+case "$(uname -m)" in
+x86_64) OPENSSL_IMAGE_ARCH=amd64 ;;
+aarch64 | arm64) OPENSSL_IMAGE_ARCH=arm64 ;;
+*)
+    echo "error: $(uname -m) is not an architecture build-env/images.env pins mos-build-openssl for" >&2
+    exit 1
+    ;;
+esac
+OPENSSL_IMAGE="$(bash "$REPO_ROOT/build-env/from.sh" --arch="$OPENSSL_IMAGE_ARCH" --ref LOCAL_MOS_BUILD_OPENSSL)" || {
+    echo "error: localhost/mos-build-openssl:$OPENSSL_IMAGE_ARCH could not be resolved (see the message above). Build it: make build-env" >&2
+    exit 1
+}
+
+# meta/ mounted READ-ONLY at its own path, which is both the simplest thing and
+# an assertion: a reader that cannot write cannot repair what it was asked to
+# judge. Every file A2 reads is under it. --user so the 0600 private keys are
+# readable as the uid that owns them rather than because the container is root.
+openssl() {
+    docker run --rm \
+        --label ai-agent=true \
+        --user "$(id -u):$(id -g)" \
+        -v "$META_DIR:$META_DIR:ro" \
+        -w "$META_DIR" \
+        --entrypoint openssl \
+        "$OPENSSL_IMAGE" "$@"
+}
+
+# THE BAKED MANIFEST NAMES THE COMMITTED KEY SET, AND ONLY IT.
+# An unknown key is a BUILD error and not a runtime one (PLAN-070 §2): the
+# document is baked inside the read-only dm-verity root, so a mistyped key is
+# both unreachable and unfixable on a device, and mosd's reader -- which parses
+# it with deny_unknown_fields and gives no field a serde default -- would
+# refuse the whole configuration on a machine nobody can edit. Refused in both
+# directions, because the schema carries no implicit defaults: an unknown key
+# configures nothing, a missing one leaves a value unstated.
+#
+# The allowed set is READ OUT of meta.example/updates/manifest.json rather than
+# listed here. That file is the committed statement of the shape
+# (meta.example/README.md) and pkgs/rauc/gen-dev-keys.sh instantiates meta/
+# from it, so reading it is one fact with one home; a list written into this
+# script would be a second copy that agrees with nothing on the day the schema
+# grows a key.
+META_MANIFEST_EXAMPLE="$REPO_ROOT/meta.example/updates/manifest.json"
+[ -f "$META_MANIFEST_EXAMPLE" ] ||
+    { echo "error: $META_MANIFEST_EXAMPLE does not exist. It is the committed statement of what meta/updates/manifest.json may contain, and this check reads the allowed key set out of it rather than carrying a copy" >&2; exit 1; }
+# Key positions only: `"name":`. A quote inside a value would have to be
+# backslash-escaped to appear this way, and no value this document carries --
+# labels, a URL, a channel, an enum, integers, base64 keys, hostnames -- can
+# hold one.
+manifest_keys() {
+    grep -o '"[A-Za-z][A-Za-z0-9_]*"[[:space:]]*:' "$1" | sed 's/[^A-Za-z0-9_]//g' | sort -u
+}
+manifest_unknown=$(comm -23 <(manifest_keys "$META_DIR/updates/manifest.json") <(manifest_keys "$META_MANIFEST_EXAMPLE") | tr '\n' ' ')
+manifest_missing=$(comm -13 <(manifest_keys "$META_DIR/updates/manifest.json") <(manifest_keys "$META_MANIFEST_EXAMPLE") | tr '\n' ' ')
+if [ -n "${manifest_unknown// /}" ]; then
+    echo "error: $META_DIR/updates/manifest.json names key(s) the schema does not have: ${manifest_unknown% }" >&2
+    echo "meta.example/updates/manifest.json is the committed shape and pkgs/mosd/mosd-settings/src/configuration.rs is the reader; a key in neither would be baked into a read-only root and refused there, where nobody can edit it. Add it to both, or fix the spelling." >&2
+    exit 1
+fi
+if [ -n "${manifest_missing// /}" ]; then
+    echo "error: $META_DIR/updates/manifest.json does not name: ${manifest_missing% }" >&2
+    echo "The schema has no implicit defaults -- every value it configures is stated -- so a missing key is a value this build would leave unsaid. meta.example/updates/manifest.json shows the full shape." >&2
+    exit 1
+fi
+
 # The tool-neutral name for the algorithm of a piece of material that is
 # actually on disk, read out of openssl's own description of it. Three readers
 # because the three roles are encoded three ways: a PEM certificate, a PEM
@@ -375,9 +460,12 @@ fi
 alg_of_material() {
     local text curve bits
     case "$2" in
+    # mos-build-side: container-block -- openssl() above is a wrapper around
+    #   localhost/mos-build-openssl; all three readers run in it
     x509) text=$(openssl x509 -in "$1" -noout -text 2>/dev/null || true) ;;
     pem) text=$(openssl pkey -in "$1" -noout -text 2>/dev/null || true) ;;
     der) text=$(openssl pkey -inform DER -in "$1" -noout -text 2>/dev/null || true) ;;
+    # mos-build-side: host
     esac
     [ -n "$text" ] || return 1
     case "$text" in
