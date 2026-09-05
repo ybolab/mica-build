@@ -226,3 +226,91 @@ in a page the change made a reader more likely to open:
 - **`docs/user/security.md`'s named gaps** were read and left: they are
   correct as written.
 - **The `docs/zh/design/` lag** of §3, which needs its own pass.
+
+## 7. Round two — U6 landed, and §5.2 was its ground
+
+`bkd/eeme30d5` merged as `79fa2fe6`; U6 merged beside it as `fdd11c01`.
+Round one left `updates.md` §5.2 alone and named it U6's; this round corrects
+it against the merged tree, reading
+`pkgs/mosd/mosd/src/{confirmed_boot.rs,rauc.rs,bus.rs,main.rs}` rather than a
+report of them. **Two files, no others.** `make docs-verify` green:
+183/183, 456/456, 738/738, 231/231, 43/43.
+
+**`docs/design/updates.md`**
+
+- **§5.2's rule sentence** — the target must be the strictly older install
+  *by mosd's confirmed-boot record where it has observed both installs run,
+  and by `installed.timestamp` only where it has not*, with the guard's own
+  step quoted:
+  `boots.older_install(target, booted).or_else(|| older_install(target, booted))`.
+  The guard is no longer described as pure over two arguments; it takes three.
+- **§5.2a (new)** — the record itself: `/var/lib/mos/update/confirmed-boots.json`
+  on STATE (path confirmed at `main.rs:438`, `state_dir_for(…)/update/` plus
+  `confirmed_boot::DEFAULT_FILE_NAME`); one entry per slot, written when mosd
+  observes itself running from it; a minted `sequence` as the ordering key so
+  it reads no clock; `firstSeenAt` recorded and never compared. Four
+  properties that decide what it can answer: entry identity is the install
+  (`is_about` compares slot **plus** bundle version **plus** install
+  timestamp), first sighting wins, `None` rather than a guess, and neither an
+  unparseable store nor a failed write is fatal or destructive.
+- **§5.2's `install_order_unknown` row** — now *neither* source could order
+  the two, not just the timestamps. The factory-flash case still refuses, and
+  the row says why the record cannot rescue it: nothing ever booted the
+  alternate.
+- **§5.2's honest limit** — replaced. The clock gap is **narrowed, not
+  closed**, in the form that names which device you have: a device that has
+  taken at least one update under this code is on the strong story; a device
+  whose only history predates it falls back to exactly the story it had.
+  Making *mosd never saw the target run* a refusal of its own would close it
+  and is deliberately not done — PLAN-071 §7 does not make that decision.
+
+**`docs/design/recovery.md` §3 node 2** — the same three sentences in its
+*Precondition*, *What the guard actually checks* and premise bullets. The
+premise bullet is split in two: the record (`[implemented]`) and the premise
+the fallback still stands on. Node 2 stays `[partial]`: the bench evidence it
+was partial for is unchanged.
+
+### The over-claim I nearly made, and the one I caught
+
+**Not written:** that the record retires the RAUC-invariant derivation. It
+does not. Concluding *the target is the older install* from *mosd saw it
+running first* uses the same invariant — an install is written into the slot
+the device is not running from and is booted after it is written
+(`confirmed_boot.rs`'s "Why first-boot order IS install order"). What the
+record removes is the dependency on a **clock**; what it additionally answers
+is `recovery.md` §3 node 2's precondition **directly** rather than by
+implication, because the entry exists only because mosd ran there. Both
+documents now say exactly that, in both directions.
+
+**Caught in review:** a first draft cited `recovery.md` §4.1 as where the
+health gate owns PENDING_CONFIRM → CONFIRMED. §4.1 is the *physical presence*
+gate. Corrected to name `rootfs/overlay/usr/lib/mos/mos-health` directly.
+
+### Verified unchanged, and left alone
+
+- `pending_not_confirmed` and its honest limit; the health gate's ownership of
+  the confirm edge; equal timestamps still refusing as `install_order_unknown`
+  (`older_install` returns `None` on equality, so the fallback refuses and the
+  record has no entry to rescue it with).
+- **The record surfaces no new live-state member.** `merge_into` takes
+  `&ConfirmedBoots` and uses it only for `rollback`'s verdict, so
+  `updates.md` §1's state model needed no change. Checked rather than assumed.
+- **`updates.md` §3.4's `[not implemented]` marker and §3.5's audit-gap
+  paragraph** — U11/U8 (`43mhi8ru`) still running, untouched per L1.
+- **`provisioning.md` §4.0's `[partial]`** — F6g (`kl4k8pgb`) still running,
+  untouched per L1.
+
+### `docs/zh/` — zero work owed, and why
+
+Neither file has a Chinese mirror: `docs/zh/design/` holds no `recovery.md`
+and no `updates.md`. The coverage gate does not reach `docs/design/` either.
+The `docs/zh/design/{mosd,api,access,connd,provisioning}.md` lag of §3 is
+unchanged by this round.
+
+### Still owed after round two
+
+- **The record's own tests exist; the auto path's still do not.**
+  `confirmed_boot.rs` carries 7 `#[test]` functions and `rauc.rs` 27, so U6
+  arrived with evidence. `update_auto.rs` and `update_suppress.rs` still carry
+  **zero**, so §6's table stands verbatim.
+- The unobserved-alternate refusal, if PLAN-071 §7 is ever reopened.

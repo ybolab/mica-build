@@ -631,23 +631,81 @@ The vocabulary stays `validate_mark`'s — `good`/`bad` on `booted`/`other` —
 and there is no second slot state machine anywhere in the path.
 
 Whether it is permitted at all is `rollback_eligibility` in the same module, a
-pure function over the slot list and the primary slot. Its central rule is
-that **a rollback goes backward**: the target must be the strictly OLDER of
-the two installs, by `installed.timestamp`.
+pure function over the slot list, the primary slot and mosd's confirmed-boot
+record. Its central rule is that **a rollback goes backward**: the target must
+be the strictly OLDER of the two installs — **by mosd's own confirmed-boot
+record where it has observed both installs run, and by `installed.timestamp`
+only where it has not.** The step is literally
+`boots.older_install(target, booted).or_else(|| older_install(target, booted))`,
+and in the fallback the verdict is bit-for-bit what it was before §5.2a
+existed.
 
-That rule is how `recovery.md` §3 node 2's precondition — "the other slot
-holds a system that booted successfully before" — is enforced, by DERIVATION
-rather than by reading it. The property is not observable directly: RAUC v1.13
-(pinned in `pkgs/rauc/versions.env`) persists no mark history — its slot status
-file holds bundle metadata, an install-progress `status`, a checksum and
-`installed.*`/`activated.*`, `mark-good` writes none of it, and `boot-status`
-over D-Bus is the attempt counter read as exhausted-or-not. What makes the
-derivation valid is RAUC's invariant that **an install never writes the running
-slot**: a booted slot installed after the target means the device was running
-the target at that moment. **If that invariant ever stops holding — a future
-install path able to target the booted slot, or an out-of-band flash that also
-rewrites `installed.timestamp` — the derivation does not**, and nothing in this
-tree goes red, because the invariant is RAUC's and not ours.
+#### 5.2a mosd's own confirmed-boot record
+
+`pkgs/mosd/mosd/src/confirmed_boot.rs` keeps
+`/var/lib/mos/update/confirmed-boots.json` on STATE — one entry per slot,
+written when mosd observes **itself running from that slot**. STATE and not
+`/mos/config/`, because "mosd ran here" is what the device observes about
+itself rather than what an integrator sets, and an operator document able to
+rewrite the order of this device's own boots would be an order nobody
+observed.
+
+**The ordering key reads no clock.** It is a `sequence` the store mints — one
+higher than any it already holds — so the order of two installs is decided by
+mosd's succession of observations. A wrong clock cannot move it, a clock that
+jumps backward cannot invert it, and network time arriving later cannot
+rewrite it. `firstSeenAt` sits beside it as evidence for a human and is
+**never compared**; nothing in the module compares two `installedTimestamp`s
+either, which is why they are recorded only as part of an install's identity.
+
+Four properties that decide what it can and cannot answer:
+
+- **An entry is about an install, not about a slot name.** It matches only
+  while the slot still carries the same bundle version and install timestamp,
+  so an entry about the system a slot used to hold is never read as an
+  observation of the one it holds now.
+- **First sighting wins.** An install already recorded is left exactly as it
+  was; re-stamping it on every poll would walk its sequence forward past
+  installs that really are newer.
+- **It answers `None` rather than guessing.** Either install unobserved, or
+  two equal sequences (which this store never mints, so equal means something
+  else wrote the file) — and the caller falls back to the install clock.
+- **Nothing here is fatal and nothing here is overwritten.** A store that does
+  not parse is left intact for a fixed parser to read later, and a write that
+  fails is logged; the guard falls back either way. A daemon that refused to
+  serve update state because it could not write a note about its own boot
+  would be the worse failure.
+
+**What it does not do: it does not confirm a slot.** The boot health gate owns
+the PENDING_CONFIRM → CONFIRMED edge and `rauc status mark-good` with it;
+nothing here marks anything and nothing here is read by the bootloader. The
+record changes what mosd *knows* about ordering, not who acts on it. It is
+also strictly weaker than that gate's verdict — mosd running is necessary for
+the gate to pass, not sufficient — which is the same strength the derivation
+below had.
+
+**What the record closes, and what it leaves standing.** `recovery.md` §3 node
+2's precondition — "the other slot holds a system that booted successfully
+before" — was enforced by DERIVATION rather than by reading it, because the
+property was not observable: RAUC v1.13 (pinned in `pkgs/rauc/versions.env`)
+persists no mark history — its slot status file holds bundle metadata, an
+install-progress `status`, a checksum and `installed.*`/`activated.*`,
+`mark-good` writes none of it, and `boot-status` over D-Bus is the attempt
+counter read as exhausted-or-not. **Where the record holds an entry for the
+target, that precondition is now read rather than derived**: the entry exists
+only because mosd ran there.
+
+**The premise it does not retire.** Concluding *the target is the older
+install* from *mosd saw the target's system running first* still uses RAUC's
+invariant that **an install never writes the running slot** — an install is
+written into a slot the device is not running from and is booted after it is
+written, which is what makes first-boot order the same order as install order.
+So the derivation's premise survives the record; what the record removes is
+the dependency on a **clock**, and it answers the precondition directly rather
+than by implication. **If that invariant ever stops holding — a future install
+path able to target the booted slot, or an out-of-band flash that also
+rewrites `installed.timestamp` — neither ordering source is sound**, and
+nothing in this tree goes red, because the invariant is RAUC's and not ours.
 
 How well that premise is established: RAUC's target-selection code has been
 read at the pinned v1.13, so the premise is now a **conjunction with both
@@ -695,14 +753,23 @@ that says no:
 | `alternate_never_installed` | the alternate carries no bundle version and no install timestamp; nothing was ever written there to fall back to |
 | `alternate_marked_bad` | the alternate's boot-status is `bad` — the bootloader has already condemned it |
 | `alternate_is_newer` | the alternate was installed MORE recently than the running system: a pending or skipped update, not a rollback target — switching to it applies the untested thing |
-| `install_order_unknown` | the two install timestamps cannot be ordered (one absent, one unparseable, or equal), so nothing establishes that the alternate is the older system. Equal stamps are the shape of a factory flash that wrote both slots at once, where the alternate has never run. The guard fails CLOSED here on purpose: it refuses a rollback it cannot justify rather than permitting one |
+| `install_order_unknown` | **neither** ordering source could order the two: mosd has not observed both installs running (§5.2a), and the install timestamps are absent, unparseable or equal. Nothing establishes that the alternate is the older system. Equal stamps are the shape of a factory flash that wrote both slots at once, where the alternate has never run — and that case still refuses, because the record has no entry for a slot nothing ever booted. The guard fails CLOSED here on purpose: it refuses a rollback it cannot justify rather than permitting one |
 | `booted_slot_not_confirmed` | the booted slot is itself pending-not-confirmed; that window belongs to the attempt counter, and a manual rollback inside it races the boot credit already being spent |
 
-The install-order rule is also only as good as the clock at install time. Time
-is UTC everywhere (`docs/design/time.md`), but a device that installed with a
-wrong clock can record an order that did not happen. Closing either gap needs
-mosd to record its own confirmed-boot fact; that is a separate design and is
-named here rather than approximated.
+**The clock gap is narrowed, not closed, and the difference is which device
+you have.** Where mosd has observed both installs run, the ordering reads no
+clock at all and a wrong clock at install time cannot move it (§5.2a). Where
+it has not — an alternate whose install this daemon never saw running — the
+install timestamps decide, exactly as they did before, and a device that
+installed under a wrong clock can still record an order that did not happen.
+So: **a device that has taken at least one update under this code is on the
+strong story; a device whose only history predates it falls back to exactly
+the story it had.**
+
+Making *mosd never saw the target run* a refusal of its own would close the
+gap outright. It is deliberately not done: that is a new rule about devices
+whose history predates this record, and PLAN-071 §7 does not make that
+decision. What is left is named here rather than approximated.
 
 **The reboot contract: this route does not reboot.** A rollback is a boot-order
 change; the reboot that realises it is `POST /api/v1/actions/reboot` and goes

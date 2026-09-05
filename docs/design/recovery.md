@@ -306,9 +306,10 @@ everything below it destroys something that was on the device.**
 
 **2. Guarded manual rollback** — **[partial]**
 - *Precondition:* the device boots, the operator can authenticate, and the
-  *other* slot holds a system that booted successfully before. The guard
-  enforces that last one by derivation rather than by reading it; the bullet
-  below states the premise that derivation stands on.
+  *other* slot holds a system that booted successfully before. Since PLAN-071
+  §7's U6 the guard **reads** that last one where mosd has observed the
+  target's system running, and derives it otherwise; the two bullets below
+  are the record and the premise the derivation still stands on.
 - *Fixes:* a bad update — a slot that boots but misbehaves, which the automatic
   attempt-counter fallback never catches because the slot does boot.
 - *Costs:* one reboot, and the condemned slot stops being a rollback target.
@@ -333,29 +334,57 @@ everything below it destroys something that was on the device.**
   `GET /api/v1/update` answer as `slots`, `booted_slot`, `primary` and
   `pending_not_confirmed`, so the state and the offer cannot disagree.
 - *What the guard actually checks:* that **a rollback goes backward** — the
-  target must be the strictly OLDER of the two installs, by
-  `installed.timestamp`. It refuses a newer target (`alternate_is_newer`: a
-  pending or skipped update, not a rollback target) and every case it cannot
-  order at all (`install_order_unknown`: absent, unparseable or equal
-  timestamps, the last being a factory flash that wrote both slots at once).
-  It fails CLOSED on the unorderable case.
-- *How the precondition is derived, and THE PREMISE it stands on:* "booted
-  successfully before" is not observable directly — RAUC v1.13 (the version
-  `pkgs/rauc/versions.env` pins) reports `boot-status` as the bootloader's
-  attempt counter read as exhausted-or-not, and persists no mark history: its
-  slot status file holds bundle metadata, an install-progress `status`, a
-  checksum and `installed.*`/`activated.*`, and `mark-good` writes none of it
-  — it touches the bootloader and an event log only. So the backward-only
-  refusal *derives* the precondition from RAUC's invariant that **an install
-  never writes the running slot**: a booted slot installed after the target
-  means the device was running the target at that moment, which is a
-  successful boot of it. **If that invariant ever stops holding — a future
-  install path able to target the booted slot, or an out-of-band flash that
-  also rewrites `installed.timestamp` — the derivation does not.** The
-  invariant is RAUC's and the image pipeline's, not this tree's, so nothing
-  here goes red if it changes; this bullet is the warning, and deliberately
-  not a check. A direct confirmed-boot record would remove the dependency and
-  is a separate design.
+  target must be the strictly OLDER of the two installs, **by mosd's own
+  confirmed-boot record where it has observed both installs run, and by
+  `installed.timestamp` only where it has not**
+  (`boots.older_install(…).or_else(|| older_install(…))`). It refuses a newer
+  target (`alternate_is_newer`: a pending or skipped update, not a rollback
+  target) and every case **neither** source can order
+  (`install_order_unknown`: mosd has not seen both installs run, and the
+  timestamps are absent, unparseable or equal — the last being a factory
+  flash that wrote both slots at once, which the record cannot order either
+  because nothing ever booted the alternate). It fails CLOSED on the
+  unorderable case.
+- *The confirmed-boot record, which is now the FIRST source —* **[implemented]**:
+  `pkgs/mosd/mosd/src/confirmed_boot.rs` keeps
+  `/var/lib/mos/update/confirmed-boots.json` on STATE, one entry per slot,
+  written when mosd observes **itself running from that slot**. The ordering
+  key is a `sequence` the store mints rather than any clock, so a wrong clock
+  cannot move it and a clock that jumps backward cannot invert it; the
+  `firstSeenAt` beside it is evidence for a human and is never compared. An
+  entry matches only while the slot still carries the same bundle version and
+  install timestamp, so it is about an install and not about a slot name.
+  Where it holds an entry for both installs, **this precondition is read
+  rather than derived** — the entry exists only because mosd ran there.
+  `docs/design/updates.md` §5.2a is the full account. Two limits stated here
+  because they decide which device you have: the record does **not** confirm a
+  slot — the boot health gate
+  (`rootfs/overlay/usr/lib/mos/mos-health`) owns the PENDING_CONFIRM →
+  CONFIRMED edge and `rauc status mark-good` with it, and mosd running is
+  necessary for that gate to pass rather than sufficient — and it answers
+  `None`, falling back to the clock, for any install this daemon never saw
+  running.
+- *THE PREMISE the fallback still stands on, and the record does not retire:*
+  "booted successfully before" is not observable from RAUC — v1.13 (the
+  version `pkgs/rauc/versions.env` pins) reports `boot-status` as the
+  bootloader's attempt counter read as exhausted-or-not, and persists no mark
+  history: its slot status file holds bundle metadata, an install-progress
+  `status`, a checksum and `installed.*`/`activated.*`, and `mark-good` writes
+  none of it — it touches the bootloader and an event log only. So where the
+  record cannot answer, the backward-only refusal still *derives* the
+  precondition from RAUC's invariant that **an install never writes the
+  running slot**: a booted slot installed after the target means the device
+  was running the target at that moment, which is a successful boot of it.
+  **And the record does not escape that invariant either** — concluding *the
+  target is the older install* from *mosd saw it running first* uses the same
+  fact, that an install is written into the slot the device is not running
+  from and booted after it is written. What the record removes is the
+  dependency on a **clock**, not on the invariant. **If the invariant ever
+  stops holding — a future install path able to target the booted slot, or an
+  out-of-band flash that also rewrites `installed.timestamp` — neither source
+  is sound.** The invariant is RAUC's and the image pipeline's, not this
+  tree's, so nothing here goes red if it changes; this bullet is the warning,
+  and deliberately not a check.
 - *How well the premise is established — the conjunction it has become:*
   RAUC's target-selection code has now been read at the pinned v1.13, and the
   premise survives as a **conjunction with both halves verified**, not as a
