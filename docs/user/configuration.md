@@ -82,8 +82,9 @@ The settings tree currently models, per subtree:
 **Update settings are not in this tree.** The update mode, channel, server
 address, maintenance windows and network mode live in their own document,
 `/mos/config/updates.json`, beside the ones above rather than inside the
-settings schema — and there is no API route that writes it yet, so changing
-them today means editing that file on the device.
+settings schema. They have their own route —
+`POST /api/v1/update/config`, which takes only the keys you are changing —
+and the built-in UI's automatic-updates panel drives it.
 [update-rollback.md](update-rollback.md) is what each one does.
 
 The authoritative list is the API contract, not this prose: what

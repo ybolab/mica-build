@@ -144,9 +144,9 @@ this tier re-seeds and more. **Step 4 does not touch these settings** — an
 application-data reset leaves the update configuration alone.
 
 **If it is only the address you want back, you do not need this tier.**
-Clearing your override of that one key returns it to the built-in default and
-leaves everything else configured. There is no API route for it yet, so today
-that means editing `/mos/config/updates.json` on the device — see
+`POST /api/v1/update/config` with `{"source": {"url": null}}` returns that one
+key to the built-in default and leaves everything else configured — a reset
+spends every setting to recover one. See
 [update-rollback.md](update-rollback.md).
 
 ### Step 4 — Application-data reset — IRREVERSIBLE

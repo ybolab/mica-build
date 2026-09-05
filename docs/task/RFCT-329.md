@@ -314,3 +314,127 @@ unchanged by this round.
   arrived with evidence. `update_auto.rs` and `update_suppress.rs` still carry
   **zero**, so §6's table stands verbatim.
 - The unobserved-alternate refusal, if PLAN-071 §7 is ever reopened.
+
+## 8. Round three — U11/U8/U7 and F6g landed; the documents and the tree agree
+
+Merged `main` at `88db4ae9` (past `39d67210` U11/U8/U7 and `f7b2429e` F6g)
+before reading anything, and again before reporting. Every claim below was
+checked in `configuration.rs`, `update_api.rs`, `bus_client.rs`, `audit.rs`,
+`store.rs`, `documents.rs`, `bus.rs` and `automatic-updates-panel.tsx`, not
+from L1's message. `make docs-verify` green: 183/183, 458/458, 738/738,
+231/231, 43/43.
+
+### The six L1 named
+
+1. **`updates.md` §3.4 — marker off, section rewritten.**
+   `POST /api/v1/update/config`, administrator-authenticated, driving the
+   console's `AutomaticUpdates` panel. Three subsections, because three things
+   a reader cannot infer: **it takes a patch** and why the read side forces
+   that (a console reads the *resolved* policy; sending it back writes the
+   image's defaults into the operator's layer and the device stops following
+   its image) — with `UpdatesSourcePatch`'s two-key shape as the same argument
+   in the schema; **the order is the property**, the seven steps of
+   `write_updates` with the note that every refusal precedes every write, so
+   *never replaced by one that would fail to load* is a shape rather than a
+   promise; and **three refusals, three answers** as a table — 422 the patch,
+   409 the document on the device, 500 the disk — with the reason a corrupt
+   document is not blind-overwritten and that the way out is the reset of
+   §2.4.
+2. **`updates.md` §2.4** — the *until the write route exists* clause is gone;
+   the per-key route back is now `{"source": {"url": null}}` and the contrast
+   with a reset is stated (a reset spends every key to recover one).
+3. **`updates.md` §3.5 — rewritten around the actor field**, three values in
+   a table, with `device` given the paragraph it earns: it was not in the plan,
+   and recording an action nobody asked for as an *operator's* would be the
+   exact lie the field exists to prevent. Also here: one ring, two daemons,
+   one `O_APPEND` writer; `actor` is deliberately not a session id.
+   **The test shape is stated, not rounded up** — a test asserts the writer
+   emits `actor: policy` under the shared event-name constants; that the
+   driver *reaches* the recorder at each step is read from `update_auto.rs`.
+   Counted precisely: four call sites, three event names, `update-check`
+   twice because the pre-install re-check is also a check.
+4. **`api.md`'s route table** — the row named six action routes; it now names
+   eight, adds `SetUpdateConfig` to the bus list, and says what makes `config`
+   different from the seven beside it. `rollback` was missing from that row
+   too, which L1 did not name.
+5. **`provisioning.md` §4.0 → `[implemented]`**, with what F6g delivers in its
+   own terms: adopted whole, per-document refusal that names the file, and
+   **the change to previously shipped behaviour said plainly** — before F6g a
+   mistyped `wifi.json` took the daemon and the network reconciler with it.
+   Both things that still refuse to start are named as *different rules*: the
+   missing medium (F6f) and the STATE document, with the `ensure_provisioned`
+   reason for the second. **Q8 is answered at §4.1.4**, where the
+   already-claimed rule lives, as the bound the pour does **not** inherit —
+   with the back-door argument and physical custody named as the authority.
+6. **`mosd.md` §5.1a — says *what* is refused.** The old bullet was true and
+   under-specified. Now: the reconcilers that document configures are skipped,
+   the tree says why in their place and at `configuration.refused` (the only
+   form that reports a document with no reconciler behind it), the bytes are
+   left alone, and every other subsystem runs. The cover is `DOCUMENT_SUBTREES`
+   matched by dot-path **overlap** rather than equality, which is what makes
+   `wifi.json` gate `wifi.client`.
+
+### The parser-echo rule, added as L1 suggested
+
+A second `mosd.md` §5.1a bullet, because it is a rule a later subsystem author
+needs and not a fact about updates: **a refusal an operator can read is not
+the parser's sentence.** serde prints `invalid type: string "…", expected a
+boolean` *with the value in it*, so `message` names the file plus one of three
+closed classes and quotes nothing, and `detail` is the parser's words and is
+journal only. Written with its reason — the redactor keys on **field names**
+and had no reason to inspect one called `message`, so a poured `mqtt.json`
+reading `"enabled": "<site secret>"` would have published that secret through
+its own refusal. Verified against the code: `publish_refusals` serves
+`document`, `path`, `message`, `subtrees`; `detail` reaches no served record.
+
+### Five more I found stale that L1 did not name
+
+Each is my own sentence from an earlier round, made false by these two merges.
+
+- **`updates.md`'s header blockquote** still called the write route "approved
+  design that is not in the tree".
+- **`updates.md` §7's owed list** still owed the write route and the audit
+  events. Both now recorded as closed rather than deleted.
+- **`remote-management.md` §3** still said the write route was owed and that
+  an operator's only way to set `policy` was to edit the file.
+- **`docs/user/configuration.md`** and **`docs/user/recovery.md`** both said
+  there is no API route yet. `recovery.md`'s now gives the one-key patch.
+- **`docs/user/update-rollback.md` §2 and §5** — §2 gains the route, the
+  patch-not-document rule in operator words, and the three refusals; §5's *no
+  way to change the settings over the API* bullet is replaced by **how much of
+  the audit trail is proven**, which is the honest successor rather than a
+  deletion.
+
+### One thing I added to §6 that L1 did not ask for
+
+A row to the owed-tests table: **a clock seam on the driver.**
+`AutoDriver`'s cadence is keyed on `std::time::Instant`, which has no seam and
+which `tokio::time::pause` does not move, so the driver cannot be ticked in a
+test at all. That is the blocker *under* every other row in that table, and
+without it those rows read as work nobody has got to rather than work nobody
+can start. §6's table is otherwise verbatim: `update_auto.rs` and
+`update_suppress.rs` still carry **zero** `#[test]` functions, re-counted on
+merged main.
+
+### `docs/zh/`
+
+**Gated**: `zh/user/{configuration,recovery,update-rollback}.md` translated
+for every changed passage, coverage rows moved to `88db4ae9`.
+`zh/user/security.md` needed nothing this round.
+
+**Ungated, mirrored anyway**: `zh/design/{provisioning,remote-management}.md`.
+The zh `provisioning.md` is a condensed translation that carries no §4.1.4 at
+all, so Q8's paragraph went into its §4.0 instead of into a section that does
+not exist there — noted because a later mirror pass will find it in a
+different place than the English.
+
+**Ungated, still lagging**: `zh/design/{mosd,api,access,connd}.md`, unchanged
+from round one and now also behind §5.1a's two rewritten bullets and api.md's
+route row. `updates.md` and `recovery.md` still have no Chinese mirror.
+
+### Still owed after round three
+
+- **`update_auto.rs` and `update_suppress.rs`: zero tests**, and the reason is
+  now recorded rather than left as an absence — the clock seam.
+- **U10**, the bench cycle, hardware-blocked and unchanged.
+- The `docs/zh/design/` lag above.

@@ -234,12 +234,43 @@ on dot-paths and are untouched. Two consequences that are not free:
 - **Atomic: temp file, mode set before the rename, fsync, rename, directory
   fsync.** An interrupted write leaves the previous document intact, never a
   truncated one.
-- **Fail closed on a parse error, with no fallback.** A document that exists
-  and does not parse refuses rather than reverting to a schema default. A parse
-  error is not absence, and treating it as absence configures a device the way
-  nobody chose. **An absent document is a default; an absent
+- **Fail closed on a parse error, with no fallback — and what is refused is
+  the document's own subsystem, not the daemon.** A document that exists and
+  does not parse is never reverted to a schema default: a parse error is not
+  absence, and treating it as absence configures a device the way nobody
+  chose. *What* the refusal costs stopped being obvious the moment there were
+  two possible answers, so it is stated. The reconcilers that document
+  configures are **skipped**; the live-state tree carries the refusal in their
+  place, and at `configuration.refused` as well, which is the only form that
+  reports a document with no reconciler behind it; and the bytes on disk are
+  left alone, so a later write to an unrelated document does not overwrite
+  them. Every other subsystem runs. **The exact cover is `DOCUMENT_SUBTREES`**
+  (`mosd-settings/src/documents.rs`), matched by dot-path *overlap* rather
+  than equality — which is what makes `wifi.json` gate `wifi.client` as well
+  as `wifi`, and a match by equality would have missed it. Before this rule,
+  any document's parse error aborted the load, so a mistyped `wifi.json` took
+  the network reconciler down with it.
+  **Two things still refuse to start**, because they are different rules and
+  not this one applied twice: **an absent document is a default; an absent
   `/mos/config/` is not** — that is the medium being gone, and mosd refuses to
-  start and names the mount (§5.2a).
+  start and names the mount (§5.2a) — and the **STATE** document, which is not
+  in this namespace, cannot be poured, and carries the device identity and the
+  administrator credential, so degrading it would let first-boot provisioning
+  mint fresh ones over real ones that merely failed to parse.
+- **A refusal an operator can read is not the parser's sentence.** A parser
+  echoes what it choked on: serde prints
+  `invalid type: string "…", expected a boolean` **with the value in it**. So
+  a refusal has two halves and only one of them may leave the device.
+  `message` names the file plus one of three closed classes — did not parse,
+  at a schema version this build has no migration for, could not be read — and
+  quotes nothing; it is what the live-state tree serves. `detail` is the
+  parser's own words and is **journal only**. This is the redactor rule below
+  meeting a field it did not anticipate: the redactor keys on *field names*
+  and has no reason to inspect one called `message`, so a poured `mqtt.json`
+  reading `"enabled": "<site secret>"` would otherwise have published that
+  secret through its own refusal. A subsystem author adding a refusal path
+  inherits the split; this bullet is the reason, so it does not have to be
+  rediscovered.
 - **`0700` on the directory, `0600` on every document, and the namespace is
   credential material.** `mos-data-layout` establishes the mode;
   `Store::save` sets each document's mode **before** the rename, so a document

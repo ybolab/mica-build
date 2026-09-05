@@ -112,6 +112,22 @@ action it could restrict, rather than becoming "unrestricted" and
 downloading a bundle over a metered link. A refusal names the rule that
 refused it.
 
+**Changing them is `POST /api/v1/update/config`**, authenticated as an
+administrator, and the built-in UI's automatic-updates panel is a client of
+it. **Send only the keys you are changing** — the route takes a patch, not a
+whole document. Sending back what you read would be actively wrong: what you
+read is the *resolved* policy, so returning it would freeze the image's
+built-in defaults into your own settings and the device would stop following
+its image the next time that image changed. To drop an override, send that
+key as `null`.
+
+Three ways it can refuse, and they mean different things: **422** your patch
+is wrong (an unknown key, a signing key under any name, `auto` with no
+window); **409** the document already on the device does not load, so there is
+nothing to change and nothing was written; **500** the device could not store
+it. A corrupt document is never blindly overwritten — the way out is the
+configuration reset that re-seeds it ([recovery.md](recovery.md) Step 3).
+
 `GET /api/v1/provisioning/status` reports the built-in value, your override
 and the effective value separately, which is the answer to *why is this
 device on that channel*.
@@ -241,14 +257,20 @@ list and says so — such an image can verify no update package at all. See
 - **`auto` has no tests.** The automatic path is implemented and not one line
   of it has been executed by a test, nor run on a board. It is the first
   capability that reboots a device with nobody watching, so this is the item
-  on this list with the most behind it.
+  on this list with the most behind it — and the reason is now known: the
+  driver's timer cannot be advanced in a test at all, so nobody can make it
+  take its next step. Fixing that comes before every test in this bullet.
+- **How much of the audit trail is proven.** Every update action now carries
+  an `actor` naming who took it — `operator` for a human through the API,
+  `policy` for the device's own automatic driver, and `device` for what the
+  device did that nobody asked for. A test proves the recorder writes
+  `policy`; that the automatic driver *reaches* the recorder at each of its
+  steps is read from the code, not proven, for the same reason as above. Said
+  plainly because this is the field you would rely on during exactly the
+  incident it exists for.
 - **The metadata directory on STATE** is provisioning no image performs: the
   client's defaults name `/var/lib/mos/update/` for its metadata mirror and
   rollback state and nothing creates it. The trust anchor is no longer on
   this list — it is baked (section 4).
-- **No way to change the update settings over the API.** They are one
-  document on the device; reading them is a route, writing them is not yet,
-  so setting `auto` or a maintenance window today means editing the file on
-  the device.
 
 > status: unsupported
