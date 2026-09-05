@@ -605,7 +605,7 @@ fn stage_import(
     // directory ever holds an unverified file under a final name — the same
     // invariant the download path keeps.
     let mut hasher = digest::Context::new(&digest::SHA256);
-    let mut input = fs::File::open(&verified)
+    let mut input = fs::File::open(verified)
         .with_context(|| format!("open verified bundle {}", verified.display()))?;
     let mut out =
         fs::File::create(&part_path).with_context(|| format!("create {}", part_path.display()))?;

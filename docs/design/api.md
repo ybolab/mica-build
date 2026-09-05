@@ -1080,7 +1080,7 @@ answer different questions.
 | Route | Auth | Response | Answers |
 |---|---|---|---|
 | `GET /api/versions` | **none** | `{"versions":["v1"],"current":"v1"}` | "which major versions does this device serve?" |
-| `GET /api/v1/meta` | bearer API token | `{"api":"v1","settingsSchemaVersion":8,"daemon":"apid"}` | "what am I talking to, in detail?" |
+| `GET /api/v1/meta` | bearer API token | `{"api":"v1","settingsSchemaVersion":1,"daemon":"apid"}` | "what am I talking to, in detail?" |
 
 Both rows ship. The first is declared as `.route(VERSIONS_PATH, get(api_versions))`
 (`pkgs/mosd/apid/src/routes.rs`) and handled at `pub(crate) async fn api_versions`
