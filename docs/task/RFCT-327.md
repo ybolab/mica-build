@@ -1,6 +1,6 @@
 # RFCT-327 PLAN-071 U11/U8/U7: the write route, the actor, the console
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P1
 - **owner**: plan071-write-route/bkd-43mhi8ru
 - **createdAt**: 2026-09-05 13:30
@@ -247,14 +247,15 @@ two apid bus tests correctly refuse to skip rather than passing vacuously.
 
 - `cargo fmt --all -- --check` — clean.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` — clean.
-- `cargo test --locked -p mosd -p apid` — **839 passed, 0 failed**: apid 322
-  unit + 1 e2e, mosd 508 unit + 1 bus + 7 scan. That count includes
-  `the_committed_openapi_document_is_the_generated_one`, so the regenerated
-  `openapi.json` is byte-equal to what this tree produces.
+- `cargo test --locked -p mosd -p apid` — **852 passed, 0 failed** on the
+  merged tree: apid 322 unit + 1 e2e, mosd 521 unit + 1 bus + 7 scan. That
+  count includes `the_committed_openapi_document_is_the_generated_one`, so the
+  regenerated `openapi.json` is byte-equal to what this tree produces.
 - `bash pkgs/mosd/apid/ui/run.sh` — `bun run lint`, `bun run typecheck` and
   `bun run test` inside the bun pinned as `IMAGE_BUN_1`, then the dist build:
-  `APID UI CHECKS PASSED`. Run in the pinned image and not on the host, whose
-  bun produces different chunk hashes.
+  **24 test files, 142 tests, all passing**, `APID UI CHECKS PASSED`. Run in
+  the pinned image and not on the host, whose bun produces different chunk
+  hashes, so a dist diff taken there would lie.
 
 **Not run, and not runnable in this batch**: no image composition, no
 `verify/run.sh`, no bench. §4 names what that leaves owed.
