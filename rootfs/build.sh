@@ -619,7 +619,11 @@ for entry in "${META_PUBLIC[@]}"; do
         exit 1
     fi
     mkdir -p "$(dirname "$meta_dst")"
-    cp "$meta_src" "$meta_dst"
+    if [ "$meta_rel_src" = updates/manifest.json ]; then
+        bash "$REPO_ROOT/rootfs/scripts/derive-signing-key-ids.sh" "$meta_src" > "$meta_dst"
+    else
+        cp "$meta_src" "$meta_dst"
+    fi
     chmod 0644 "$meta_dst"
     meta_expected=$((meta_expected + 1))
     meta_staged_names="$meta_staged_names $meta_rel_dst"

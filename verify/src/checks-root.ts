@@ -23,6 +23,8 @@
 
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, type Stats } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
+import { derivedManifest } from './manifest-keys.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
@@ -841,19 +843,29 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       const differing = [...sources.entries()]
         .filter(([rel, bytes]) => {
           const got = fileBytes(join(root, BAKED_META_DIR, rel))
+          if (rel === 'updates/manifest.json') {
+            const expected = derivedManifest(bytes, join(ctx.metaDir, rel))
+            if (got === undefined) return true
+            try {
+              return !isDeepStrictEqual(JSON.parse(got.toString('utf8')), expected)
+            }
+            catch {
+              return true
+            }
+          }
           return got === undefined || !got.equals(bytes)
         })
         .map(([rel]) => rel)
       if (differing.length > 0) {
         return [verdict('packed-meta-is-the-public-set', false,
-          `${what}: ${differing.join(' ')} in the packed root is not the byte-for-byte copy of `
+          `${what}: ${differing.join(' ')} in the packed root does not match `
           + `${ctx.metaDir}/${differing[0] as string} the build staged (either the bytes differ or the path `
           + `cannot be read -- a dangling symlink counts as shipped). A baked document that does not `
           + `match its source is configuration nobody reviewed, inside a signature every device trusts`)]
       }
       return [verdict('packed-meta-is-the-public-set', true,
         `${what}: ${BAKED_META_DIR}/ holds exactly ${sources.size} file(s) [${[...sources.keys()].join(' ')}], `
-        + `each byte-equal to its source under ${ctx.metaDir}/ -- no extra file, no missing file, no differing byte`)]
+        + `matching sources under ${ctx.metaDir}/ (manifest signingKeyIds derived from key bytes; other files byte-equal)`)]
     },
   },
 
@@ -928,6 +940,17 @@ function fileBytes(path: string): Buffer | undefined {
 /**
  * Every file at or under `dir`, as paths relative to it, sorted. Empty when
  * there is no such directory.
+ *
+ * **Empty and not a throw, because both callers already refuse the empty case
+ * and say more about it than a stack trace can.**
+ * `packed-meta-is-the-public-set` reports the missing paths by name;
+ * `no-private-key-in-baked-meta` owns the vacuity rule outright -- its
+ * `scanned === 0` branch is a red verdict explaining that these directories are
+ * always populated, so an empty search space is a check that read nothing
+ * rather than a clean image. Throwing here pre-empts that verdict with a bare
+ * ENOENT and makes the branch unreachable in exactly the case its test drives.
+ * "An absent scan input cannot prove absence" is right; it is enforced one
+ * level up, where the check can name what it means.
  *
  * Directories are recursed into and everything else is an ENTRY -- a symlink
  * included, because a link under a baked directory is a path the image ships

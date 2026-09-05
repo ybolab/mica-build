@@ -5,7 +5,7 @@
 //!
 //! - `sync`: mirror the repository's metadata over plain HTTP into a local
 //!   directory. Unverified input to the verified walk, never a substitute.
-//! - `check`: verify the mirrored repository from the pinned root and select
+//! - `check`: verify the mirrored repository from the baked signing keys and select
 //!   the newest target compatible with this device's board, profile, channel,
 //!   schema floor and running version. Prints `selected ...` or `none`, with
 //!   the reason per rejected candidate; exit 2 when nothing is compatible.
@@ -57,7 +57,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Mirror the repository's metadata over plain HTTP into a local
-    /// directory (unverified; `check` verifies from the pinned root).
+    /// directory (unverified; `check` verifies from the baked signing keys).
     Sync {
         /// Base URL of the published repository (the directory holding
         /// metadata/ and targets/).
@@ -109,9 +109,6 @@ enum Command {
         /// by `rauc-sign lockbox` (e.g. mounted USB/SD media).
         #[arg(long)]
         lockbox: PathBuf,
-        /// Pinned trusted root metadata, provisioned out of band.
-        #[arg(long)]
-        root: PathBuf,
         /// Persistent per-role version state (see `rauc-verify --state`).
         #[arg(long)]
         state: PathBuf,
@@ -132,9 +129,6 @@ struct RepoArgs {
     /// targets/), e.g. the directory `sync` mirrors into.
     #[arg(long)]
     repo: PathBuf,
-    /// Pinned trusted root metadata, provisioned out of band.
-    #[arg(long)]
-    root: PathBuf,
     /// Persistent per-role version state (see `rauc-verify --state`).
     #[arg(long)]
     state: PathBuf,
@@ -271,9 +265,8 @@ async fn run() -> Result<ExitCode> {
         }
         Command::Check { repo, selection } => {
             let identity = selection.identity()?;
-            let outcome = update::check(
+            let outcome = update::check_baked(
                 &repo.repo,
-                &repo.root,
                 &repo.state,
                 &identity,
                 &selection.channel,
@@ -313,9 +306,8 @@ async fn run() -> Result<ExitCode> {
             install: do_install,
         } => {
             let identity = selection.identity()?;
-            let outcome = update::check(
+            let outcome = update::check_baked(
                 &repo.repo,
-                &repo.root,
                 &repo.state,
                 &identity,
                 &selection.channel,
@@ -347,16 +339,14 @@ async fn run() -> Result<ExitCode> {
         }
         Command::Import {
             lockbox,
-            root,
             state,
             selection,
             max_bytes,
             install: do_install,
         } => {
             let identity = selection.identity()?;
-            let outcome = update::check(
+            let outcome = update::check_baked(
                 &lockbox,
-                &root,
                 &state,
                 &identity,
                 &selection.channel,
@@ -368,8 +358,7 @@ async fn run() -> Result<ExitCode> {
             };
             let workspace = Workspace::from_env()?;
             let report =
-                update::import_selected(&lockbox, &root, &state, candidate, &workspace, max_bytes)
-                    .await?;
+                update::import_baked(&lockbox, &state, candidate, &workspace, max_bytes).await?;
             println!("{}", report.path.display());
             if do_install {
                 install(&workspace, &report.path)?;
