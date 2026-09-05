@@ -272,12 +272,11 @@ pointer to the declaration.
 Named rather than written, on the user's instruction for this batch. L1 owns the
 independent gate battery on this branch.
 
-- **`cargo test --locked -p mosd -p apid` was NOT run.** The compile floor was:
-  `cargo check --workspace --all-targets --locked`, green in
-  `localhost/mos-build-rust-check:amd64` (rustc 1.98.0) on the merged tree.
-  `--all-targets` covers the test targets, so `FakePresence`'s new `spend` and
-  every existing recovery test compile; whether they still PASS was not
-  established here.
+- **`cargo test --locked -p mosd -p apid` was not run at first report, and L1's
+  gate found what that cost** — see §8. It has since been run and is **green**:
+  831 tests, apid 319 + 1 e2e, mosd 503 + 1 bus + 7 scan, 0 failed, in
+  `localhost/mos-build-rust-check:amd64` (rustc 1.98.0). `cargo check
+  --workspace --all-targets --locked` is green on the same tree.
 - **A unit test for the bound.** The property measured in §2 belongs in
   `pkgs/mosd/apid/src/tests/reset.rs` beside
   `an_interrupted_rotation_writes_nothing_and_the_retry_leaves_one_credential`:
@@ -366,3 +365,43 @@ with paths.
 available on this evidence — extend `clear_application_state` to the named
 directories, or change the cell and say plainly that a factory reset is not a
 handover operation and §7's reflash is — and the brief reserves that call.
+
+## 8. The gate `cargo check` cannot see, and what the diff said
+
+L1's battery ran `cargo test --locked -p mosd -p apid --no-fail-fast` and got
+one red out of 831: `the_committed_openapi_document_is_the_generated_one`.
+`pkgs/mosd/apid/openapi.json` is asserted byte-for-byte against
+`apid --openapi`, and `utoipa` builds that document out of the handler's
+`#[utoipa::path(responses(...))]` **and its rustdoc**. Both moved in this
+change, so the committed document was stale. **`cargo check` cannot see this**
+— the crate compiles either way — and this branch was the third this week to
+land on it, so L1 has put "regenerate `openapi.json`" in the dispatch preamble.
+
+Regenerated, and the diff read before committing. It is **two fields on one
+operation**: the `403` description, and the operation description. And the
+second one was the finding L1 said to look for.
+
+**A handler's rustdoc is published API text, and I had put a defect report in
+it.** The paragraph I added ended with *"Before this guard existed the marker
+was read and never taken … one assertion answered two rotations in 100 attempts
+out of 100, and two concurrent callers were both answered 200 in 100 iterations
+out of 100"* — which is true, useful, and belongs nowhere near a document a
+client generates a stub from. An OpenAPI description states the contract a
+caller must satisfy today, not the history of the bug that used to break it.
+Worse, that sentence was also the one place still carrying the pre-final
+phrasing "only the last-written credential authenticated", which §2's finished
+measurement had already refined.
+
+So the published paragraph is now four sentences of contract — one rotation per
+assertion, a second request is refused `403` `presence_required` having written
+nothing, the next rotation needs presence asserted again — and the whole
+measurement moved into the comment at the guard, which `utoipa` does not read.
+
+**And then the same mistake once more, one layer down.** The first fix left a
+note reading *"This paragraph is PUBLISHED: utoipa copies it into
+openapi.json…"* as a `///` line — so the API document acquired a paragraph
+explaining utoipa to its readers. It is a `//` comment now. Reading the
+generated diff is what caught both; neither is visible in the source.
+
+Final state: `openapi.json` regenerated (`+2 -2`), and
+`cargo test --locked -p mosd -p apid --no-fail-fast` **green at 831 tests**.
