@@ -237,8 +237,10 @@ JSON one after), and every key checked against the serde names in
 `docs/zh/verify-coverage.sh` gates `docs/{user,website,bsp}` and this file is
 under `docs/design/`.
 
-`docs/design/api.md`'s update row gained the new action, because that row is
-the enumeration of the cluster's routes.
+`docs/design/api.md`'s update row and `updates.md` §5.4's audit-event list
+each gained the new action. Both are enumerations, and an enumeration that
+omits an event this task shipped is a defect this task introduced — repairing
+that is not U9's slice.
 
 ## 6. Reconciled with PLAN-070 F5/F6/F6b, which landed on main mid-task
 

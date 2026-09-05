@@ -472,10 +472,11 @@ installable path.
 A support case wants: `GET /api/v1/update` (the whole document — lifecycle
 with reasons, policy as loaded, gate verdict, slots, `install`,
 `last_mark`), the audit trail (`update-check`/`update-fetch`/
-`update-install`/`update-mark`/`update-rollback`/`update-reboot-override`
-events with source addresses; `update-rollback` records the refusal and its
-reason as well as the applied rollback, because the guard refuses inside apid
-and nothing else would witness it), and the journal (mosd logs every admission, refusal, override
+`update-install`/`update-mark`/`update-rollback`/`update-reboot-override`/
+`update-clear-suppression` events with source addresses; `update-rollback`
+records the refusal and its reason as well as the applied rollback, because
+the guard refuses inside apid and nothing else would witness it), and the
+journal (mosd logs every admission, refusal, override
 and outcome; the client's stderr tail is in `lifecycle.reason`).
 
 ## 6. Fault-test evidence
