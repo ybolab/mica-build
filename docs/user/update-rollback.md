@@ -7,9 +7,9 @@ automatically if the new slot cannot prove itself healthy. There is no
 on-device package manager and no partial update — that is a design position,
 not a missing feature.
 
-Configuration and data are never part of an update: the settings tree lives on
-STATE and application data on DATA, and the installer writes only the rootfs
-and boot slots ([storage.md](storage.md)).
+Configuration and data are never part of an update: system configuration and
+application data live on DATA, while identity and device state remain on STATE.
+The installer writes only the rootfs and boot slots ([storage.md](storage.md)).
 
 ## 1. The pieces
 
@@ -51,7 +51,7 @@ every step is a route on the management API with the whole state one `GET
    device's own update workspace on DATA. A partial download stays a partial:
    a bundle becomes installable only once its digest and length match the
    signed metadata and it has been renamed into the verified directory.
-3. `POST /api/v1/update/install` — hands the staged bundle to RAUC, which
+3. `POST /api/v1/update/install` with JSON `{}` — hands the staged bundle to RAUC, which
    verifies its CMS signature and writes the inactive slot group. Nothing
    outside the verified directory is an installable path, an operator's
    explicit `bundlePath` included, and the refusal is the same three times
@@ -96,8 +96,9 @@ binds automation, not you.
 
 > status: shipped — evidence: `pkgs/mosd/mosd/src/update_auto.rs`, `docs/design/updates.md`
 
-`auto` is implemented and **has no automated tests** and no bench run on real
-hardware. Treat it as untried on a device you cannot reach.
+`auto` has automated state-machine tests. These do not establish real-board
+installation, reboot, or power-loss acceptance; that hardware validation remains
+separate from the repository test results.
 
 ### Where the settings live, and what a reset does to them
 

@@ -2,7 +2,7 @@
 
 > [English](../../design/mosd.md) | 中文
 >
-> 本文按**当前代码**（schema v8）写。英文侧那份保留了 M2 以来的分期决策记录与逐次修订说明，
+> 本文按**当前代码**（各配置文档独立版本化，目前均为 v1）写。英文侧那份保留了 M2 以来的分期决策记录与逐次修订说明，
 > 篇幅更长；两边冲突时以英文为准。
 
 ## 1. mosd 是什么
@@ -35,7 +35,7 @@ RAUC、wpa_supplicant、bluez 全都以 D-Bus 暴露接口。两边说同一条�
   而不是把它悄悄丢掉。
 - **点路径就是接口。** apid 通过总线按点路径读写，所以路径的稳定性是对外契约的一部分。
 
-## 4. 设置树（schema v8）
+## 4. 设置树（各文档独立版本化）
 
 顶层分支及其归属：
 
@@ -57,7 +57,7 @@ RAUC、wpa_supplicant、bluez 全都以 D-Bus 暴露接口。两边说同一条�
 
 ## 5. 今天注册的协调器
 
-`reconciler::all()` 返回**七个**，按此顺序：
+`reconciler::all()` 返回**八个**，按此顺序：
 
 | 协调器 | 子树 | 执行者 |
 |---|---|---|
@@ -67,7 +67,8 @@ RAUC、wpa_supplicant、bluez 全都以 D-Bus 暴露接口。两边说同一条�
 | `WifiClientReconciler` | `wifi.client` | wpa_supplicant 配置 + networkd + `wpa_supplicant@<if>.service` |
 | `WifiApReconciler` | `wifi.ap`（读 `wifi.client` 做冲突检查） | hostapd 配置 + networkd + `hostapd@<if>.service` |
 | `ContainerReconciler` | `container` | podman / Quadlet unit |
-| `MqttReconciler` | `mqtt` | `mos-mqttd` |
+| `MqttReconciler` | `mqtt` | `mos-mqtt-broker` 与 `mos-mqttd` |
+| `TimeReconciler` | `time` | 时区、NTP 与 systemd 时间服务 |
 
 **`SshdReconciler` 不再驱动 `/etc/shadow`**，它只看 `access.ssh`。
 

@@ -63,10 +63,10 @@ to reach a named, credentialled, configurable state.
 
 Seeding happens into a **private clone** of the settings tree; the single
 `Store::save` is the commit point, and only after it returns is the live tree
-replaced. Any failure before that — CSPRNG unavailable, secrets directory
-uncreatable, settings file unwritable — leaves both STATE and the running tree
-exactly as they were, and the device stays `pending` so the next boot retries
-from scratch.
+replaced. Persistence uses the undo journal described in §4.1.3. A failed save
+restores the prior settings; an interrupted or blocked rollback must finish
+before startup can consume them. The device remains `pending` after a failed
+seeding attempt, so the next boot retries.
 
 The failure this defends against is specific: a tree on disk saying
 `state = "complete"` but carrying no `deviceId` and no `passwordHash` would be
@@ -490,14 +490,22 @@ the status route can confirm a guess at the WHOLE document by hashing their
 guess. That reader is an administrator who can already read the settings the
 document wrote.
 
-**Atomicity** is §2's argument, unchanged and for the same reason. The apply
-commits through exactly ONE `Store::save`: everything before it mutates a
-private clone, `Store::save` writes a temporary file, fsyncs it, renames it
-over the target and fsyncs the directory, and the rename is the commit point.
-A power loss therefore leaves either the old settings file or the new one and
-never a blend; a failure at any step before the rename leaves STATE and the
-running tree exactly as they were, and the next boot is offered the same
-document again. **Never half-configured, in either direction.**
+**Atomicity** covers the complete settings import across DATA and STATE.
+The importer validates the document and changes a private clone before calling
+`Store::save`. The store first persists a mode-0600 undo journal at
+`/var/lib/mos/settings.transaction.json`, containing the previous bytes or
+absence of every document it will replace. It writes each replacement with a
+file and directory fsync, then removes and fsyncs the journal to commit.
+
+A write failure rolls back the prior documents before returning. If rollback
+cannot finish, the journal remains and the store refuses further use until
+recovery succeeds. After interruption, startup restores a pending transaction
+before loading settings or starting reconcilers. The applied-document marker on
+STATE participates in the same transaction, so configuration and import status
+cannot be accepted from different commits. Unchanged documents and deliberately
+preserved invalid configuration files are not rewritten. Independent filesystem
+readers can observe intermediate renames; the guarantee applies to the settings
+store and its consumers after commit or recovery, not concurrent raw-file reads.
 
 **Applying a document does not touch Layer 1's rules.** It regenerates no
 credential and never moves `provisioning.seededGeneration` — neither is a field

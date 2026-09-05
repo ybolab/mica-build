@@ -241,7 +241,7 @@ by a check somebody has to remember to write.
 
 **The route list itself is not reproduced here.** The surface under `/api` is
 specified by `pkgs/mosd/apid/openapi.json`, which CI holds equal to what the
-shipped binary prints and diffs against the base branch for breaking changes. A
+shipped binary prints. Development builds do not promise backward compatibility. A
 prose table of routes is a second copy that drifts away from the first; the
 schema is the copy that cannot.
 
@@ -986,9 +986,9 @@ somewhere to land without a schema change.
 **What does not ship.** The served set has exactly one member, so no device
 serves two majors today and the dual-major recommendation is untested. There is
 no `/api/v2` router. The breaking/additive lists below are a rule for future
-changes and not a mechanism inside the daemon: what enforces them is CI, where
-a pinned `oasdiff breaking … --fail-on ERR` run diffs this document's generated
-spec against the base branch's (`.github/workflows/check.yml`).
+changes under a future compatibility commitment, not current development
+requirements. CI verifies the generated specification against the binary; it
+does not reject changes for breaking compatibility with the base branch.
 
 The clause that stood here — that **"JSON in" does not ship**, no route under
 the prefix accepting a request body of any kind — is false as of M4 and was
@@ -1055,7 +1055,10 @@ safe default is to refuse, which turns a forgotten parameter into an error on a
 path that otherwise looks correct. An unknown path prefix is a 404 that names
 itself.
 
-**What a version bump means.** `v1` → `v2` happens only on a change that can
+**Historical versioning proposal; not required during system development.**
+Backward compatibility is required only when explicitly requested. The following
+classification records the earlier proposal and does not mandate a version bump
+or an adapter for current changes. Under that proposal, `v1` → `v2` happens on a change that can
 break a *correct* v1 client, and the two lists are exhaustive:
 
 - **Breaking, bumps the version:** removing a route; removing a response field;
@@ -1156,7 +1159,7 @@ the shipped response carries a version list and nothing else: not the hostname,
 not the device identity (`pkgs/mosd/mosd-settings/src/model.rs`), not a
 build string.
 
-**What apid promises across a patch release versus an A/B image update.** The
+**Historical cross-release proposal; not a current compatibility promise.** The
 honest starting point is that **there is no apid patch release independent of an
 image update.** The binary is `ExecStart=/usr/bin/apid`
 (`pkgs/mosd/dist/apid.service`), and `/` is a verity-protected squashfs

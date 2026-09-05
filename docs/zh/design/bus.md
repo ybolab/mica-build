@@ -129,6 +129,14 @@ mosd 另行观察其他 `com.mos.*` 服务，供运维诊断使用。注册表�
 `ForgetService`。注册表描述所有 `com.mos.*` 服务，而 MQTT 仍只接纳准确登记的
 应用服务。
 
+启用 MQTT 认证时，先在 `/var/lib/mos/mqtt-broker-users.toml` 的 `[users]` 表登记账号，
+再把同一账号与密码写入 `/var/lib/mos/mqttd-credentials.json`，格式为
+`{"username":"bridge","password":"<已登记的密码>"}`。Broker 的账号文件需保持对
+`mos-mqtt-broker` 可读；桥接 JSON 文件应归 `mos-mqttd:mos-mqttd` 所有，权限为 `0600`。
+修改后重启桥接服务。文件不存在时使用匿名连接；格式错误、符号链接或对其他用户可读时
+拒绝启动。密码不会进入进程参数或 MQTT 应用数据。CLI 可用 `--credentials-file` 指定
+另一个私有文件。
+
 ## 7. Sparkplug B
 
 Sparkplug B 当前未实现。未来若增加独立发布器，也必须复用同一套“准确登记、明确

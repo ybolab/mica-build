@@ -23,6 +23,9 @@ configuration once, atomically, before anything else consumes it:
   match for wired `eth*` interfaces, so a fresh device acquires an address on
   any DHCP network without mosd guessing interface names.
 
+A durable undo journal covers the DATA configuration documents and STATE identity
+record. A pending rollback must finish before the next startup can consume them
+([provisioning.md](../design/provisioning.md#413-idempotence-and-atomicity)).
 A failed seed aborts loudly and the next boot retries from scratch; a
 half-provisioned device that looks provisioned is the failure this design
 refuses. SSH host keys are generated on the device on first boot, and DATA

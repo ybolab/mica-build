@@ -39,6 +39,8 @@ sync -f "$PROBE"
 rm -f "$PROBE"
 
 ensure_dir "$SYSTEM_ROOT/ui" 0755
+# Diagnostic snapshots are served through the authenticated management API.
+ensure_dir "$SYSTEM_ROOT/diagnostics" 0700
 # 0700, not 0755: /mos/config holds system configuration and the namespace is
 # credential material (PLAN-070 section 5.2.4). wifi.json carries the site's
 # WPA2 pre-shared key, and 0755 would publish it to every process on the

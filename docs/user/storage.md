@@ -9,8 +9,8 @@ what an operator or integrator needs from this page.
 
 | Tier | Mounted at | Holds | Grows? | Lost when |
 |---|---|---|---|---|
-| **STATE** | `/mnt/state` (with binds into `/etc` and `/var/lib`) | configuration and identity: settings, credentials, SSH host keys, WiFi configs, pairings | no — small and fixed | reflash only |
-| **DATA** | system-owned `/mos` and operator-owned `/srv` | application data, container storage, UI/update artifacts, operator files | **yes** — fills the disk on first boot | reflash only |
+| **STATE** | `/mnt/state` (with binds into `/etc` and `/var/lib`) | device identity and state, administrator credentials, API tokens, SSH host keys and pairings | no — small and fixed | reflash only |
+| **DATA** | system-owned `/mos` and operator-owned `/srv` | system configuration under `/mos/config/`, application data, container storage, UI/update artifacts, operator files | **yes** — fills the disk on first boot | reflash only |
 | **META** | `/mnt/meta` | update and appliance metadata (RAUC slot status) | no | reflash only |
 | **EPHEMERAL** | `/var` | disposable runtime residue: logs, caches | no — fixed size | reflash, **and** routine cleanup |
 

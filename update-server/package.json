@@ -9,7 +9,7 @@
     "assets": "bun scripts/assets.ts",
     "dev": "bun run assets && nsl run -n mos-updates -- bun --watch src/index.ts",
     "start": "bun run assets && bun src/index.ts",
-    "lint": "eslint . --cache",
+    "lint": "bun --bun ./node_modules/eslint/bin/eslint.js . --cache",
     "typecheck": "tsc --noEmit",
     "test": "bun test src",
     "test:coverage": "bun test src --coverage",

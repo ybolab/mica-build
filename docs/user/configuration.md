@@ -4,8 +4,8 @@ mos configuration is a single typed settings tree, owned by the management
 daemon (`mosd`), stored as JSON documents under `/mos/config/` on the data
 partition, and applied by reconcilers that drive the underlying system
 services. Every supported way to change the
-device converges on one validated write path; nothing edits files behind the
-daemon's back. This page covers the model, the channels, what is configurable
+device converges on the typed schema. Online changes use the authenticated API;
+offline files are validated at startup. This page covers the model, the channels, what is configurable
 today, and — just as important on an immutable system — what is not.
 
 ## 1. The model: three layers
@@ -17,23 +17,24 @@ configuration as three layers:
 1. **Layer 1 — first-boot self-provisioning.** From empty STATE the device
    seeds identity, hostname, secrets and defaults, offline, exactly once.
    Shipped; described in [first-run.md](first-run.md).
-2. **Layer 2 — local configuration channels.** The ways an operator changes
-   settings. Today exactly one is implemented: the authenticated HTTPS API
-   (with the built-in UI as its client). The designed offline channels
-   (boot-medium provisioning file, signed USB drop, captive portal, HDMI
-   wizard, serial wizard) are ordered intent, not code.
-3. **Layer 3 — build-time embedded configuration.** Does not exist,
-   deliberately: no mechanism bakes fleet configuration or credentials into an
-   image, and the build asserts the credential half of that.
+2. **Layer 2 — local configuration channels.** The authenticated HTTPS API
+   and built-in UI support live changes. A validated provisioning document on
+   the boot medium or removable media configures an unclaimed device offline.
+   An integrator can also prepare the documented `/mos/config/` files while
+   the device is stopped; startup validates them before applying them.
+3. **Layer 3 — build-time defaults.** The image manifest supplies update and
+   fleet defaults and immutable trust material. Operator documents override
+   the supported configuration keys; they cannot replace the signing keys.
+   This is not a general factory credential-injection toolchain.
 
 > status: shipped — evidence: `docs/design/provisioning.md`, `pkgs/mosd/mosd/`
 
-## 2. The channel that exists: the API and the built-in UI
+## 2. Online configuration: the API and the built-in UI
 
-All configuration reads and writes go over HTTPS to apid — through the
+Online configuration reads and writes go over HTTPS to apid — through the
 built-in UI at `/_ui/` or the JSON API under `/api/v1` (contract:
-`pkgs/mosd/apid/openapi.json`, see [api.md](api.md)). apid holds no state of
-its own; it forwards to mosd over the local system bus, where the write is
+`pkgs/mosd/apid/openapi.json`, see [api.md](api.md)). apid owns browser sessions and API support state; it forwards settings
+changes to mosd over the local system bus, where the write is
 validated against the typed schema. A rejected write leaves the tree
 untouched, and a settings write returns a task you can observe until the
 matching reconciler has applied it.
@@ -161,8 +162,8 @@ Two of the five channels the design lists still do not exist: the AP captive
 portal has its transport and not the portal, and the serial wizard was never
 built. Neither has factory injection — versioned inputs, verification at
 injection and a per-device record are described in
-[manufacturing.md](manufacturing.md) and have no tooling. Beyond the
-provisioning document, configuration is individual API writes over an existing
-network.
+[manufacturing.md](manufacturing.md) and have no tooling. Offline preparation of
+the documented `/mos/config/` files requires a stopped device; live changes use
+the authenticated API over an existing network.
 
 > status: unsupported

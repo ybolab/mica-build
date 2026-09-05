@@ -7,7 +7,7 @@
 >
 > Sections 1-4 are the original decision record and are kept as reasoning.
 > Section 5 states where the design stands now: the settings tree is at
-> **schema v8**, seven reconcilers are registered, and the bus carries the
+> independently versioned documents (currently v1), eight reconcilers are registered, and the bus carries the
 > update-orchestration and WireGuard-rotation members alongside the original
 > settings, state and power surface.
 >

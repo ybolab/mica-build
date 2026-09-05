@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-09-04
+> Updated: 2026-09-05
 
 ## Usage
 
@@ -103,3 +103,4 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-012 Align the built-in console with the approved prototype details**](UI-012.md) `P1`
 - [x] [**UI-013 Complete the built-in console against the prototype information architecture**](UI-013.md) `P1`
 - [x] [**FEAT-001 Build the update server and release console**](FEAT-001.md) `P1`
+- [x] [**RFCT-330 Resolve the September repository audit findings**](RFCT-330.md) `P1`

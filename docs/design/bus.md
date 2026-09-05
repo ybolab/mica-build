@@ -243,6 +243,22 @@ unprivileged `mos-mqttd` account. Broker connection settings come from the
 optional STATE-backed `/var/lib/mos/mqttd.env`; the default bridge mode is
 `read-only`.
 
+For authenticated MQTT, enroll a broker account in the existing
+`/var/lib/mos/mqtt-broker-users.toml` `[users]` table, then provision the same
+username and password in `/var/lib/mos/mqttd-credentials.json`:
+
+```json
+{"username":"bridge","password":"<the enrolled password>"}
+```
+
+The broker account file must remain readable by `mos-mqtt-broker`. Own the
+bridge JSON file by `mos-mqttd:mos-mqttd` with mode `0600`, then restart the
+bridge after changing it. The bridge reads this optional file at startup;
+absence selects anonymous MQTT, while malformed, symlinked, or publicly readable
+files refuse startup. Credentials are never passed as process arguments or
+published as application items. The CLI accepts `--credentials-file` when a
+different private file is required.
+
 ## 7. mosd's service registry
 
 The management daemon separately observes every other `com.mos.*` service for

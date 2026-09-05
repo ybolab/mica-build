@@ -5,8 +5,8 @@ mos 的更新是整镜像、事务性的：操作系统、其服务和所有原�
 自己健康时自动回滚。没有设备上的包管理器，没有部分更新——这是设计立场，
 不是缺失的功能。
 
-配置和数据从不属于更新的一部分：设置树在 STATE 上，应用数据在 DATA 上，
-安装器只写 rootfs 和 boot 槽（[storage.md](storage.md)）。
+配置和数据从不属于更新的一部分：系统配置和应用数据在 DATA 上，设备身份与状态
+留在 STATE 上。安装器只写 rootfs 和 boot 槽（[storage.md](storage.md)）。
 
 ## 1. 组成部分
 
@@ -40,7 +40,7 @@ mos 的更新是整镜像、事务性的：操作系统、其服务和所有原�
 2. `POST /api/v1/update/fetch` —— 有上限、可续传的下载，落在设备自己位于
    DATA 上的更新工作区里。部分下载始终只是部分：只有摘要与长度同签名元数据
    相符、并被改名进 verified 目录之后，一个 bundle 才成为可安装的。
-3. `POST /api/v1/update/install` —— 把暂存的 bundle 交给 RAUC，由它验证 CMS
+3. `POST /api/v1/update/install`，JSON 请求体为 `{}` —— 把暂存的 bundle 交给 RAUC，由它验证 CMS
    签名并写入不活动的槽组。verified 目录之外的任何路径都不是可安装路径，操作
    员显式给出的 `bundlePath` 也不例外，而且这条拒绝在三处各做一次。
 4. `POST /api/v1/actions/reboot` —— 激活新槽。安装进行中，以及某个应用报告
@@ -74,8 +74,8 @@ mos 的更新是整镜像、事务性的：操作系统、其服务和所有原�
 
 > status: shipped — evidence: `pkgs/mosd/mosd/src/update_auto.rs`, `docs/design/updates.md`
 
-`auto` 已经实现，但**没有任何自动化测试**，也没有在真实硬件上跑过台架。对于一
-台你够不着的设备，请把它当作未经验证的功能。
+`auto` 已有状态机自动化测试。这些测试不能证明真实板卡上的安装、重启或断电恢复
+已经通过验收；硬件验证仍需单独完成。
 
 ### 设置存在哪里，以及复位对它们做什么
 

@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-04
+> Updated: 2026-09-05
 
 ## Usage
 
@@ -67,3 +67,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-078 Short-lived signer certificates under the existing CA**](PLAN-078.md) `2026-09-04`
 - [x] [**PLAN-080 Every build and assembly runs in a container, none on the host**](PLAN-080.md) `2026-09-04`
 - [x] [**PLAN-079 Build the update server and release console**](PLAN-079.md) `2026-09-04`
+- [x] [**PLAN-081 Resolve the September repository audit findings**](PLAN-081.md) `2026-09-05`

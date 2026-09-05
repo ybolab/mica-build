@@ -368,6 +368,64 @@ if ! grep -q '"signingKeys"' "$META_DIR/updates/manifest.json" 2>/dev/null; then
     exit 1
 fi
 
+# Validate the package pool before resolving the OpenSSL inspection container.
+POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
+pool_refusal() {
+    echo "error: $1" >&2
+    echo "       The rootfs composer installs from _out/debs/<arch>; it does not build a package." >&2
+    echo "       Build the pool and its index with: make os-debs" >&2
+    exit 1
+}
+[ -d "$POOL_DIR" ] ||
+    pool_refusal "$POOL_DIR does not exist, so there is no $MOS_ARCH package pool to compose from."
+for f in Packages SHA256SUMS manifest.txt; do
+    [ -s "$POOL_DIR/$f" ] ||
+        pool_refusal "$POOL_DIR/$f is missing or empty, so the pool carries no usable index. APT takes an empty Packages file without complaint, so this would install none of this repository's own packages and report success."
+done
+[ -d "$POOL_DIR/pool" ] ||
+    pool_refusal "$POOL_DIR/pool does not exist, so the index beside it describes archives that are not there."
+pool_debs=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' | wc -l)
+[ "$pool_debs" -gt 0 ] ||
+    pool_refusal "$POOL_DIR/pool holds no .deb at all."
+
+# STALE, sense 1: the index does not describe the archives beside it.
+# build-env/deb/repo.sh writes SHA256SUMS over exactly the pool it
+# indexed, so a mismatch means an archive was rebuilt or removed afterwards
+# and the Packages APT would read describes a different set of bytes.
+( cd "$POOL_DIR" && sha256sum --quiet -c SHA256SUMS ) >/dev/null 2>&1 ||
+    pool_refusal "$POOL_DIR/SHA256SUMS does not verify against the archives beside it, so the index and the pool have come apart."
+indexed=$(grep -c '^' "$POOL_DIR/SHA256SUMS")
+[ "$indexed" -eq "$pool_debs" ] ||
+    pool_refusal "$POOL_DIR/pool holds $pool_debs archive(s) and SHA256SUMS lists $indexed. sha256sum -c only checks the listed ones, so an archive the index has never seen would be installable and unrecorded."
+
+# STALE, sense 2: an archive is newer than the index over it. `find -newer`
+# rather than a timestamp comparison, because that is the question --
+# is there any archive repo.sh has not seen.
+newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DIR/manifest.txt" -printf '%f ')
+[ -z "$newer" ] ||
+    pool_refusal "these archives are newer than $POOL_DIR/manifest.txt, so the pool was rebuilt without being re-indexed: $newer"
+
+# STALE, sense 3: the pool was not built from THIS tree. Versions are per
+# package -- an upstream repack carries its upstream number in front -- but
+# every archive ends in the one `+git<commit><dirty>-<rev>` STAMP
+# build-env/deb/version.sh printed when it was built, and
+# tests/deb-package-gate.sh asserts that stamp over the built pool. A pool
+# whose stamp is not this tree's resolves, installs, and composes an image out
+# of some other commit's packages while every check downstream reports on the
+# tree in front of it.
+pool_stamps=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sed 's/^.*+//' | sort -u | tr '\n' ' ')
+pool_stamp=${pool_stamps% }
+case "$pool_stamp" in
+*' '*)
+    pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
+    ;;
+esac
+tree_version=$(bash "$REPO_ROOT/build-env/deb/version.sh")
+tree_stamp=${tree_version##*+}
+[ "$pool_stamp" = "$tree_stamp" ] ||
+    pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and this tree is '$tree_stamp'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
+echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
+
 # THE OPENSSL BELOW IS THE PINNED ONE, not the host's.
 #
 # A2 is a JUDGE by docs/design/build.md section 0 -- it writes nothing that
@@ -838,63 +896,7 @@ rm -rf "$COMPOSE_STAGE"
 # would describe the package set of an image this run did not produce, and a
 # run that dies before the record is written would leave it looking current.
 rm -f "$PACKAGES_RECORD"
-POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
 COMPOSE_RAUC_VERSION=""
-pool_refusal() {
-    echo "error: $1" >&2
-    echo "       The rootfs composer installs from _out/debs/<arch>; it does not build a package." >&2
-    echo "       Build the pool and its index with: make os-debs" >&2
-    exit 1
-}
-[ -d "$POOL_DIR" ] ||
-    pool_refusal "$POOL_DIR does not exist, so there is no $MOS_ARCH package pool to compose from."
-for f in Packages SHA256SUMS manifest.txt; do
-    [ -s "$POOL_DIR/$f" ] ||
-        pool_refusal "$POOL_DIR/$f is missing or empty, so the pool carries no usable index. APT takes an empty Packages file without complaint, so this would install none of this repository's own packages and report success."
-done
-[ -d "$POOL_DIR/pool" ] ||
-    pool_refusal "$POOL_DIR/pool does not exist, so the index beside it describes archives that are not there."
-pool_debs=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' | wc -l)
-[ "$pool_debs" -gt 0 ] ||
-    pool_refusal "$POOL_DIR/pool holds no .deb at all."
-
-# STALE, sense 1: the index does not describe the archives beside it.
-# build-env/deb/repo.sh writes SHA256SUMS over exactly the pool it
-# indexed, so a mismatch means an archive was rebuilt or removed afterwards
-# and the Packages APT would read describes a different set of bytes.
-( cd "$POOL_DIR" && sha256sum --quiet -c SHA256SUMS ) >/dev/null 2>&1 ||
-    pool_refusal "$POOL_DIR/SHA256SUMS does not verify against the archives beside it, so the index and the pool have come apart."
-indexed=$(grep -c '^' "$POOL_DIR/SHA256SUMS")
-[ "$indexed" -eq "$pool_debs" ] ||
-    pool_refusal "$POOL_DIR/pool holds $pool_debs archive(s) and SHA256SUMS lists $indexed. sha256sum -c only checks the listed ones, so an archive the index has never seen would be installable and unrecorded."
-
-# STALE, sense 2: an archive is newer than the index over it. `find -newer`
-# rather than a timestamp comparison, because that is the question --
-# is there any archive repo.sh has not seen.
-newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DIR/manifest.txt" -printf '%f ')
-[ -z "$newer" ] ||
-    pool_refusal "these archives are newer than $POOL_DIR/manifest.txt, so the pool was rebuilt without being re-indexed: $newer"
-
-# STALE, sense 3: the pool was not built from THIS tree. Versions are per
-# package -- an upstream repack carries its upstream number in front -- but
-# every archive ends in the one `+git<commit><dirty>-<rev>` STAMP
-# build-env/deb/version.sh printed when it was built, and
-# tests/deb-package-gate.sh asserts that stamp over the built pool. A pool
-# whose stamp is not this tree's resolves, installs, and composes an image out
-# of some other commit's packages while every check downstream reports on the
-# tree in front of it.
-pool_stamps=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sed 's/^.*+//' | sort -u | tr '\n' ' ')
-pool_stamp=${pool_stamps% }
-case "$pool_stamp" in
-*' '*)
-    pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
-    ;;
-esac
-tree_version=$(bash "$REPO_ROOT/build-env/deb/version.sh")
-tree_stamp=${tree_version##*+}
-[ "$pool_stamp" = "$tree_stamp" ] ||
-    pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and this tree is '$tree_stamp'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
-echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
 
 # THE SOURCE COMMIT'S DATE, for /usr/share/mos/release-identity.env and from
 # there for mosd's system-information surface.

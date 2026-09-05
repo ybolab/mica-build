@@ -15,7 +15,7 @@ mos/
 ├── docs/            project docs: PMA plans (docs/plan/), tasks (docs/task/), designs (docs/design/)
 ├── boards/          one directory per supported board — cx3576 (Rockchip RK3576,
 │                    arm64: U-Boot, kernel, firmware) and x64 (generic x86_64 UEFI,
-│                    the QEMU/CI baseline, no BSP build)
+│                    the QEMU/CI baseline, with its own kernel build)
 ├── pkgs/            the compiled components: podman, RAUC, the mosd Rust workspace
 │                    (mosd, apid and the MQTT broker; its workspace-level tests live
 │                    under pkgs/mosd/tests/), and TUF release signing

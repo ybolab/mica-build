@@ -41,11 +41,12 @@ persistent backoff and audited ([security.md](security.md)).
 
 ## 3. Versioning
 
-The API is versioned in the path (`/api/v1/...`), and the OpenAPI document in
-the repository is diffed in CI against the base branch so a breaking change
-is a visible act rather than an accident. Consume the contract from the
-release you target; the document is versioned with the tree, like every other
-artifact ([doc-contract.md](doc-contract.md)).
+The API currently uses `/api/v1/...`. During system development, backward
+compatibility across builds is not guaranteed unless explicitly requested.
+Consume the OpenAPI contract from the image you target; CI verifies that the
+committed document matches the binary. Breaking changes do not require a
+second version router or an adapter under this development policy
+([doc-contract.md](doc-contract.md)).
 
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`, `docs/design/api.md`
 

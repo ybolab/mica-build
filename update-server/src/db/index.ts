@@ -1,6 +1,6 @@
+import { Database } from 'bun:sqlite'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import migration from '../../drizzle/0000_initial.sql' with { type: 'text' }

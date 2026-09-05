@@ -4,6 +4,20 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-081 — Repository audit repairs (2026-09-05)
+
+Closed stale-password session issuance, partial settings persistence, invalid UI
+installation requests, diagnostics sandbox permissions, stale update/session UI
+state, authenticated MQTT bridge connections and the package preflight regression.
+Settings now use a private recoverable undo journal across DATA and STATE. CI adds
+preflight, DATA layout and update-server checks, keeps generated OpenAPI equality,
+and removes mandatory backward-compatibility enforcement during development.
+English and Chinese current-state documentation is reconciled. Verification passed
+1,047 mosd workspace tests, 149 UI tests, 920 build tests, 1,279 image-verifier tests,
+25 preflight cases, 36 update-server tests and an isolated systemd sandbox probe.
+Board and power-cut acceptance remain separate. See [PLAN-081](plan/PLAN-081.md) and
+the [audit resolution record](audit/2026-09-05-repository-audit.md).
+
 ## PLAN-079 — Update server and release console (2026-09-04)
 
 `update-server/` now provides a Bun/TypeScript service with a Chinese release

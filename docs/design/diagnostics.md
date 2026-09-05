@@ -327,8 +327,10 @@ rootfs update; `/var` is disposable and would lose it. Ids are a sequence
 (`1`, `2`, ...) and the newest id is one past the highest present. Before a
 publish, the oldest snapshots are removed until the count and the total are
 under the caps with the newcomer counted. `DELETE` is the explicit
-operation; there is no other write path into the store, and the root is
-created on the first publish, never at start-up.
+operation. `mos-data-layout` creates the store directory at boot with mode
+`0700`. The shipped `apid.service` grants it a specific `ReadWritePaths`
+exception under `ProtectSystem=strict`; unrelated DATA paths remain read-only.
+The publisher also creates the directory if absent when run outside that unit.
 
 **Offline.** Collection reads the local bus and the local filesystem only.
 The DNS probe inside the network section is the single network touch, and

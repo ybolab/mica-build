@@ -36,9 +36,9 @@ apid 在 443 端口提供 HTTPS（80 端口重定向），`/api` 是完整的管
 
 ## 3. 版本化
 
-API 在路径中带版本（`/api/v1/...`），仓库中的 OpenAPI 文档在 CI 里与基线
-分支做 diff，因此破坏性变更是一个可见的行为而不是意外。从你所面向的
-发布版消费契约；该文档与树一起版本化，如同其他所有产物
+API 当前使用 `/api/v1/...`。系统开发阶段默认不保证不同构建之间的兼容性，除非明确
+要求。请使用目标镜像对应的 OpenAPI 契约；CI 校验仓库中的契约与二进制输出一致。
+当前策略不要求为破坏性变更添加第二套版本路由或兼容适配器
 （[doc-contract.md](doc-contract.md)）。
 
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`, `docs/design/api.md`
