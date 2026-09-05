@@ -211,3 +211,45 @@ Building the baked reader, the precedence and the operator document's move.
   the list above: the absent-versus-`null` distinction through
   `provisioning_status_at`, and one case proving the `Err` path and the
   `unknown_selection` path come from the same document.
+
+- complete: reconciled with PLAN-071 U1/U2/U3, which landed on main mid-task.
+
+  `759d014f` brought the automatic driver in on the same two files. The two
+  slices had independently retired `[autoCheck]` and added the `policy` key,
+  so the merge was a real reconciliation rather than a text conflict. What
+  moved where:
+
+  - **U1's enums are the library's now.** `UpdateMode` — with its
+    `#[default] Check`, its `as_str()` and its one-enum-not-three-booleans
+    reasoning — and `RebootPolicy` moved into `mosd_settings::configuration`
+    beside the documents they are keys of. `rebootPolicy` is a layer-2-only
+    key on PLAN-070 §5.1's table, so it is on the document and on
+    `EffectivePolicy` and takes no baked default.
+  - **`auto` requires a window, and precedence created a second way in.**
+    U1's rule is document-local: a document *naming* `auto` with no window is
+    a load error. Under layering the mode can also be *inherited* from a baked
+    `auto`, and layer 1 carries no windows at all — they are layer 2's
+    outright — so a product baking `auto` would have got an
+    install-the-moment-a-bundle-lands device with no document to refuse.
+    `AUTO_NEEDS_A_WINDOW` is now one sentence with two callers: `validate()`
+    for the document-local case, and `EffectivePolicy::auto_window_refusal()`
+    for the inherited one, which the driver honours by refusing the automatic
+    install and nothing else. PLAN-071 §2 was written before that case
+    existed; this is where it is answered, and it is worth a look at merge.
+  - **The driver reads the selection.** `update_auto::tick` guarded on
+    `loaded.error.is_some()` and then read a mode "the defaults answer beside
+    the error". Under this branch there is no mode to read at all, which is
+    the stronger form of the same intent, so the guard is now a `let Some(
+    selection) = …` and its comment says which. `check_if_due` calls
+    `LoadedPolicy::auto_check_minutes()` rather than re-deriving `off` /
+    zero / did-not-load.
+  - `admit_check` and `admit_fetch` answer `EffectivePolicy` instead of the
+    retired `UpdatePolicy`, and the lifecycle entry reports U1's `policy`,
+    `checkIntervalMinutes` and `rebootPolicy` keys — the first two from the
+    resolved selection and `null` when it did not load, the third from layer 2
+    directly, since it answers even when the selection does not.
+
+  Verified after the merge: `cargo clippy --workspace --all-targets -- -D
+  warnings` and `cargo fmt --all --check` green, apid and the driver included.
+  Still no suite run — and U2/U3's own tests have not been executed against
+  this branch's schema, which is the merge's largest unverified surface.
