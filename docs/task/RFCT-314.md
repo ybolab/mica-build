@@ -352,3 +352,36 @@ in 4's output above, naming the path it could not read — which is the closest
 thing to evidence for F6f that exists today, and it is an accident rather than
 an assertion. §6 lists that assertion as owed.
 
+## 9. The collision with F6b, found by the second merge
+
+While this branch was in the gate, main landed
+`pkgs/mosd/mosd-settings/src/configuration.rs` — PLAN-070 **F6b**, the
+`/mos/config/updates.json` reader and the three-layer resolution above it — in
+the same crate. Two slices now write into one namespace, which is the
+arrangement §5.2.7 designed for, and the merge conflict was one line.
+
+Kept both, with the distinction stated at the declaration: `configuration` is
+`pub` because **two processes** read the update document (mosd resolves policy,
+apid reports it on the status route), and `documents` is private because only
+`Store` reads or writes its seven. That is §5.2.7's *one writer per document*
+rule showing up as a visibility difference.
+
+**One thing the merge created and the merge had to answer.**
+`configuration::DEFAULT_UPDATES_PATH` is the literal `"/mos/config/updates.json"`
+and `DEFAULT_CONFIG_DIR` is now the literal `"/mos/config"`: two spellings of
+one directory that agree today and would not survive a relocation. A `const
+&str` cannot be concatenated from another `const` without a macro crate, so
+they cannot be made to agree by construction; the coupling is written at
+`DEFAULT_UPDATES_PATH` instead. A one-line test asserting
+`DEFAULT_UPDATES_PATH.starts_with(DEFAULT_CONFIG_DIR)` would close it properly
+and is the smallest item on RFCT-323's list.
+
+**One thing to notice rather than change.** `configuration::load_updates`
+treats a missing `/mos/config/updates.json` as the baked defaults, which is
+§5.1's decision and is right for that layer. It is *not* what the settings
+store does with a missing `/mos/config/` **directory** — that is a refusal
+(§4). The two are consistent because mosd no longer starts at all without the
+mount, so the update reader can never see an unmounted DATA; if that ordering
+ever changes, F6b's absent-is-default rule becomes reachable with DATA gone and
+would need the same medium check.
+
