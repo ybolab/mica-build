@@ -42,11 +42,13 @@ it cost exactly the subsystem it configures.
 
 ## Acceptance
 
-`bash pkgs/mosd/hack/check.sh` in `localhost/mos-build-rust-check:amd64` —
-**ALL CHECKS PASSED**. That is `cargo fmt --all --check`, `cargo clippy
---workspace --all-targets --locked -- -D warnings`, `cargo nextest run
---workspace --locked`, workspace doctests, and `cargo deny check licenses bans
-advisories`.
+`bash tests/rust-gate.sh mosd` — which runs `pkgs/mosd/hack/check.sh`
+unmodified in `localhost/mos-build-rust-check:amd64` — **RUST GATE PASSED**,
+**ALL CHECKS PASSED**, run twice: once on this branch and once on the tree
+after `main` was merged into it. That is `cargo fmt --all --check`, `cargo
+clippy --workspace --all-targets --locked -- -D warnings`, `cargo nextest run
+--workspace --locked` (**1018 tests run: 1018 passed, 0 skipped**), workspace
+doctests, and `cargo deny check licenses bans advisories`.
 
 Per package, `cargo test --locked`, each green:
 
@@ -384,12 +386,22 @@ rather than written into a file another agent is editing.
 
 **Owed:**
 
-1. **`docs/design/mosd.md` §5.1a** — RFCT-314 wrote §5.2.7's rules where a
-   subsystem author meets them; the per-document refusal, the
-   `configuration.refused` live-state entry and `Store::preserving`'s rule
-   belong in the same place. Not written here because it is a design document
-   and the instruction was explicit; it is a documentation edit with no
-   behaviour behind it.
+1. **`docs/design/mosd.md` §5.1a** — and this one is now **under-specified
+   rather than merely incomplete**, so it is named precisely. The bullet reads:
+
+   > **Fail closed on a parse error, with no fallback.** A document that exists
+   > and does not parse **refuses** rather than reverting to a schema default.
+
+   Nothing in that sentence is false after this change, and that is the
+   problem: it no longer says *what* is refused, and the answer stopped being
+   obvious the moment there were two possible answers. It has to say that the
+   document's **subsystems** are refused while the rest of the device runs, that
+   the medium and the STATE document keep the start refusal, that the refusal
+   is readable at `configuration.refused` and under the reconciler, and that
+   `Store::preserving` keeps the refused bytes until an authenticated write
+   repairs them. Not written here because design documents were explicitly out
+   of scope and `main` moved this file at `a59d0e9c` while this branch was
+   open; it is a documentation edit with no behaviour behind it.
 2. **`provisioning.md` §4.1.4** — §5.2's answer to question 8, above, in the
    document the plan says it has to agree with.
 3. **Question 7's shape (b)**, if it is wanted: the boot-medium transport. It is
