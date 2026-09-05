@@ -1,6 +1,6 @@
 # RFCT-315 Read the baked package anchor and report effective provisioning
 
-- **status**: in-progress (F7/F8/F9 delivered and compiled; five route tests owed)
+- **status**: in-progress (F7/F8/F9 delivered; suite green; operator/effective content assertions owed)
 - **priority**: P1
 - **owner**: bkd/2o9qieqh
 - **createdAt**: 2026-09-05 01:50
@@ -18,7 +18,18 @@ Implement the approved F7/F8/F9 batch. The dispatch grants implementation approv
 
 ## Verification boundary
 
-No new tests, test suites, verifier execution, image builds, deb pools, or compose runs are authorized. Runtime positive/negative gates are owed to L1. Merge main before final reporting.
+The dispatch traded per-task verification for wall-clock: no new tests, no test
+suites, no verifier execution, image builds, deb pools or compose runs, with
+compilation as the one floor.
+
+**Amended by L1 after the first report.** *Do not write tests* is outranked by
+*main stays green*, so existing tests this branch's own commits turned red had
+to be repaired here — repairing them is finishing an incomplete change, not
+writing coverage. The amendment authorises a test seam in the baked reader (a
+seam is not behaviour) and following the data on an assertion whose subject
+changed. It does **not** authorise new assertions about new behaviour, and none
+were written. Image builds, deb pools, compose runs and verifier execution stay
+unauthorised; runtime gates are still owed to L1.
 
 ## Delivered slice
 
@@ -65,20 +76,42 @@ there is no operator layer to read and nothing on the device reads one either.
 When that slice lands it extends the library's resolver rather than adding a
 second one in this route.
 
-### Why `operator` does not go through `crate::redact`
+### Decision: `operator` does not go through `crate::redact`, and must not be given it later
 
-The first batch's seam note asked for it. It is deliberately not done, and the
-module doc now carries the argument instead. PLAN-070 §8's last paragraph
-forbids the endpoint from borrowing the baked tier's "allowlisted, so return it
-whole" argument for `/mos/config/`, which is credential material. The projection
-is a *different* argument, not that one: three named fields, built key by key,
-so a key the projection does not name cannot reach a caller however the schema
-grows. That is stronger than `redact`, whose list is fail-open by its own
-module doc. It also has no honest `path` argument to pass — `redact(value, path)`
-reads a settings dot-path, and this value was not read from one.
+**Settled, not pending.** The first batch's seam note asked for the redactor;
+L1 reviewed the argument below and ratified leaving it out. It is written here
+because the shape of this code invites a well-meaning "safety" patch that adds
+the call back, and that patch would be a regression in reasoning even though it
+changes no output.
 
-This is a judgement call and it is cheap to overrule: one `redact::redact` call
-in the handler removes nothing today and would keep the older wording true.
+Two reasons, and the second is the one that matters:
+
+1. `redact(value, path)` has **no honest `path` to be given**. The argument is a
+   settings dot-path, read so that a request naming a secret leaf directly
+   (`GET /api/v1/settings/access.webAdmin.password_hash`) is caught when the
+   response is a bare string with no field name left to key on. The
+   operator projection was not read from a settings dot-path. Any value passed
+   would be decoration.
+
+2. The projection is a **stronger guarantee than the redactor**, not a weaker
+   one that wants topping up. `redact`'s `SECRET_FIELDS` is a denylist and its
+   own module doc calls it fail-open: a secret-bearing field under a name it
+   does not carry is served. The operator half is built key by key over
+   `update.source`, `update.channel` and `update.policy` — a key the projection
+   does not name cannot reach a caller however `/mos/config/updates.json`'s
+   schema grows. Adding a fail-open list behind an allowlist adds nothing and
+   suggests the allowlist was the weaker of the two.
+
+This is also what PLAN-070 §8's last paragraph requires. It forbids the
+endpoint from borrowing the baked tier's "allowlisted and checked twice, so
+return it whole" argument for `/mos/config/`, which is credential material. The
+projection is a *different* argument — allowlisted **by construction, per key**,
+on a document that is never served whole — and not the borrowed one. The module
+doc in `provisioning_api.rs` carries this so the next reader meets it before the
+code.
+
+If `operator` ever stops being a projection and starts being a serialization of
+the document, this decision expires with it.
 
 ## Continuation batch: the dead fixtures, and the merge that made the seam real
 
@@ -117,38 +150,59 @@ command `the_committed_openapi_document_is_the_generated_one` names for exactly
 this. It was already stale from the first batch's `baked`/`bakedDigests`; the
 route fields added here made it staler.
 
-### Owed rather than written: five route tests
+### The five route tests, finished
 
-Removing `--root` cannot make `tests/update.rs` pass and was never going to:
-`anchor::root_bytes` reads `/usr/share/mos/meta/updates/manifest.json` at a
-fixed path with no environment override, by design and by its own comment, so a
-device binary invoked on a build host now fails before it reaches the flag. That
-is F7's design, not a defect in the fixture.
+L1 overruled the deferral, and the ruling is the same one this branch already
+took once: **removing a flag and leaving its callers naming it is an incomplete
+change, not a deferred test.** The first batch added a filesystem read to a
+route and left four existing route tests unable to reach the route. That is the
+change being incomplete. `main` stays green outranks *do not write tests*.
 
-The same fixed path is why five `apid` route tests fail, and none of them can be
-repaired mechanically:
+**The seam is an `AppState` field, not an environment variable.** L1 offered
+`MOSD_META_MANIFEST_PATH`'s shape as the fallback if the honest way needed an
+override; it does not. apid already has this exact seam for this exact
+situation — `with_bundle_root`, `with_diagnostics_root`, and a `diagnostics`
+field whose doc reads "`/mos/diagnostics` on a device, a temporary directory in
+tests". `with_meta_manifest` joins them. An env var would also have been the
+wrong instrument here: apid's tests run in parallel threads in one process and
+none of them calls `set_var`, so a process-global path would have been a race
+between tests.
 
-- `the_status_reports_the_applied_document_and_requires_a_credential`
-- `a_device_no_document_reached_reports_nulls_and_unclaimed`
-- `a_refused_document_is_reported_with_its_key_path_and_no_value`
-- `the_status_serves_no_secret_from_either_subtree_it_reads`
+**It is addressed by the manifest, and the tree is derived from it.** That is
+the shape `MOSD_META_MANIFEST_PATH` gives the mosd side, and it closes a defect
+the seam exposed: the route read layer 1 **twice** — once to digest the baked
+tree, once through `configuration::provisioning_status()` for the effective
+policy — from two independently spelled paths. On a device they are the same
+file, so nothing was wrong in production; under a test that moves one of them,
+the response would have reported one tree's manifest beside another tree's
+digests. The route now takes `provisioning_status_at(manifest, …)` with the
+same path the digest walk derives its root from, so they cannot diverge. The
+default is `configuration::DEFAULT_MANIFEST_PATH` itself rather than a second
+spelling of that literal.
 
-  All four now get the 500 envelope, because `baked_configuration()` reads
-  `/usr/share/mos/meta` and a build host has no such directory. Making them
-  pass needs either a test seam in that reader — which is extending F7/F8, and
-  this dispatch forbids it — or a fixture that materialises the baked tree,
-  which is a new assertion about new behaviour.
+The operator document keeps its production path. Nothing overrides it and
+nothing needs to: a missing `/mos/config/updates.json` is the absent case, not
+an error, which is the state every one of these tests is in.
 
-- `the_openapi_document_covers_the_provisioning_status_route`
+**The fixture is a real tree, in the production shape.** `provisioning_app()`
+writes `updates/manifest.json` into a `TempDir` and nothing beside it —
+`meta/GENERATED` is conditional on a device, staged only for development-grade
+material, so one file is what a shipped image carries. The content is
+`meta.example/updates/manifest.json` in full, because `BakedManifest` carries no
+serde defaults: a shortened fixture would fail to parse, `load_manifest` would
+fall back to the code defaults, and the test would pass without the reader
+having parsed anything.
 
-  Asserts `ProvisioningStatus` carries **exactly four** members. It carries
-  eight. Changing `4` to `8` and naming the new members *is* the new assertion,
-  so it is named here rather than written.
+`the_provisioning_surface_is_read_only` keeps plain `test_app`: its 405s and
+404s never reach the handler, so a baked tree would be scenery.
 
-None of these five was introduced by connecting the effective half:
-`provisioning_status()` treats a missing `/mos/config/updates.json` as the
-absent case and a missing manifest as layer 1's own answer, so it returns `Ok`
-on a bare host. They are the first batch's baked half reaching a test host.
+**The member count follows the data: four to eight.** `baked`, `bakedDigests`,
+`operator` and `effective` are named in the loop and the count says eight.
+**No assertion about their contents was added** — that was L1's line and it
+stays. What those four fields *say* is still owed, and it is the interesting
+half: nothing yet checks that `operator` distinguishes absent from `null`, that
+a malformed layer-2 document is refused rather than answered with the baked
+value, or that `effective` is the resolved value and not the baked one.
 
 ## Compilation and syntax evidence
 
@@ -174,59 +228,37 @@ All in `localhost/mos-build-rust-check:amd64`, source mounted read-only:
 - `bash -n rootfs/build.sh rootfs/scripts/derive-signing-key-ids.sh
   pkgs/rauc/gen-dev-keys.sh`, and `git diff --check`.
 
-`cargo test --locked -p mosd -p apid` was run because the dispatch asked for it
-by name, against the batch's general "do not run test suites". Verbatim, after
-`openapi.json` was regenerated and with `--no-fail-fast` so the run did not stop
-at the first red binary:
+`cargo test --locked -p mosd -p apid --no-fail-fast`, after L1 ruled the five
+route tests had to be finished before this merges. `--no-fail-fast` because the
+default stops at the first red binary and never reaches `mosd` at all:
 
 | binary | result |
 | --- | --- |
-| `apid` unittests | **FAILED. 314 passed; 5 failed** |
+| `apid` unittests | ok. **319 passed; 0 failed** |
 | `apid` `tests/e2e.rs` | ok. 1 passed |
 | `mosd` unittests | ok. 503 passed |
 | `mosd` `tests/bus.rs` | ok. 1 passed |
 | `mosd` `tests/scan.rs` | ok. 7 passed |
 
-The five, and the one line that explains four of them:
+**831 passed, 0 failed, no `failures:` block anywhere in the run.**
 
-```
----- tests::provisioning_api::the_status_reports_the_applied_document_and_requires_a_credential stdout ----
-assertion `left == right` failed
-  left: 500
- right: 200
+`openapi.json` needed no third regeneration: the seam changed only how the
+route reaches its inputs, not what it documents, and
+`the_committed_openapi_document_is_the_generated_one` is green.
 
----- tests::provisioning_api::the_status_serves_no_secret_from_either_subtree_it_reads stdout ----
-{"error":{"code":"baked_configuration_unavailable","message":"No such file or directory (os error 2)","source":"mosd"}}
-
----- tests::provisioning_api::a_device_no_document_reached_reports_nulls_and_unclaimed stdout ----
-assertion `left == right` failed: with no admin credential the device is still claimable
-  left: Null
- right: true
-
----- tests::provisioning_api::a_refused_document_is_reported_with_its_key_path_and_no_value stdout ----
-assertion `left == right` failed
-  left: Null
- right: "rejected"
-
----- tests::provisioning_api::the_openapi_document_covers_the_provisioning_status_route stdout ----
-assertion `left == right` failed: the status must carry exactly the four documented members
-  left: 8
- right: 4
-```
-
-The first run, before `openapi.json` was regenerated, was
+For the record, the runs before the fix. First:
 `FAILED. 313 passed; 6 failed` — the sixth was
-`the_committed_openapi_document_is_the_generated_one`, and `cargo test`'s
-default fail-fast meant it never reached `mosd` at all.
+`the_committed_openapi_document_is_the_generated_one`, and fail-fast meant
+`mosd` never ran. After regenerating the document:
+`FAILED. 314 passed; 5 failed`, the five route tests.
 
-`main` moved again while this ran (RFCT-314/RFCT-321: the settings store
-rewrite, `update_suppress.rs`, 3.8k lines across 49 files). It was merged a
-second time, without conflicts, and **every number above is from the re-run
-after that merge**, not from before it. `openapi.json` was regenerated again
-too: main had changed it by 131 lines, so the merge of two independently
-generated documents needed checking rather than assuming — it turned out
-byte-identical to what the generator produces, which is the only reason it is
-not a third commit.
+`main` moved twice under this branch while this ran (RFCT-313 first, then
+RFCT-314/RFCT-321: the settings store rewrite, `update_suppress.rs`, 3.8k lines
+across 49 files). **Every number above is from after the last merge.**
+`openapi.json` was regenerated after the second merge too, because main had
+changed it by 131 lines and a textual merge of two independently generated
+documents is exactly where a plausible-looking wrong document appears; it came
+out byte-identical to the generator, which is why it is not a separate commit.
 
 ## Owed execution and handoff
 
@@ -236,13 +268,16 @@ rotation and offline import), alternate-anchor refusal, malformed/empty keys,
 build-time ID mismatch/derivation, planted binary endpoints versus allowed
 configuration URLs, and missing scan inputs.
 
-**Never executed, in either batch.** The F9 effective half has been *compiled*
-and never *run*: no test reaches `provisioning_status()` through the route,
-because every route test dies earlier on the baked reader. So the three
-properties this task carries — absent-versus-null, `Err` rather than a baked
-fallback, and the key-by-key projection — are the library's guarantees plus a
-call site that type-checks, and nothing on this branch demonstrates them end to
-end. The five named route tests are what would.
+**Executed, but shallowly.** The route is now reached: four tests drive
+`api_v1_provisioning_status` against a real baked tree and get 200 with the
+document they expect, so the effective half is no longer compile-only. What
+they do **not** do is look at what `operator` and `effective` say — L1 drew that
+line and it holds. So the three properties this task carries remain
+**unexercised**: nothing checks that an absent operator field stays absent while
+an explicit `null` stays `null`, that a malformed `/mos/config/updates.json` is
+refused rather than answered with the baked value, or that `effective` is the
+resolved value rather than the baked one. Those are the assertions worth having
+and they are still owed.
 
 The second batch merged `main` (two real conflicts, resolved above), started
 containers under the `ai-agent-nl59gfwo-` name prefix and removed them by that
