@@ -85,6 +85,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-321 PLAN-071 U4/U5 and the clock predicate**](RFCT-321.md) `P1`
 - [x] [**RFCT-315 PLAN-070 F7/F8/F9: the client reads the baked anchor**](RFCT-315.md) `P1`
 - [x] [**RFCT-322 Recovery rotation serialization and the factory-reset residue list**](RFCT-322.md) `P1`
+- [x] [**RFCT-323 Restore what the settings move deleted, and run the tolerant load**](RFCT-323.md) `P1`
 - [x] [**RFCT-313 PLAN-070 F5/F6/F6b: the reader, the precedence, the document move**](RFCT-313.md) `P1`
 - [x] [**RFCT-318 PLAN-080 B2/B3: the last producer and two judges into containers**](RFCT-318.md) `P1`
 - [x] [**RFCT-319 PLAN-080 B6: the docker-and-git experiment is a gate**](RFCT-319.md) `P1`
