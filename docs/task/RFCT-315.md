@@ -1,6 +1,6 @@
 # RFCT-315 Read the baked package anchor and report effective provisioning
 
-- **status**: in-progress (F7/F8/F9 delivered; suite green; operator/effective content assertions owed)
+- **status**: in-progress (F7/F8/F9 delivered; Rust, verify and build suites green; operator/effective content assertions owed)
 - **priority**: P1
 - **owner**: bkd/2o9qieqh
 - **createdAt**: 2026-09-05 01:50
@@ -250,6 +250,15 @@ than byte for byte — and two tests still named the old string.
 
 `manifest-keys.ts` was not weakened. It is enforcing the committed schema and it
 is the thing that caught this.
+
+Both TypeScript suites, run on this worktree:
+
+- `bash verify/run.sh` — **PASS, 1279/1279**, 39 files. Same total as main, so
+  no test was added or removed to reach it.
+- `bash build/run.sh` — **PASS, 920/920**, 29 files, 352 s. Never run by this
+  branch before either; green unchanged.
+
+Both include their own `tsc --noEmit` typecheck.
 
 ## Compilation and syntax evidence
 
