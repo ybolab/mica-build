@@ -155,11 +155,21 @@ fi
 # ALSO located by a command-position grep over the tracked surface -- the same
 # match shape tests/host-toolchain-lint.sh uses, which is why a hit here reads
 # the way a hit there does.
+#
+# AND THE TRANSCRIPT IS READ ON THE GREEN PATH TOO, which is not symmetry for
+# its own sake. Measured 2026-09-05, by planting `jq -r .version package.json`
+# into docs/verify-index.sh above its `set -euo pipefail`: busybox printed
+# `docs/verify-index.sh: line 30: jq: not found`, the script carried on, the
+# rung exited 0 and the gate reported PASS. A gate that watched only exit codes
+# would have called a new host dependency green -- so a tool named in the output
+# of a rung that SUCCEEDED is a finding as well, and it says which of the two
+# shapes it is.
 # ---------------------------------------------------------------------------
 ere_quote() { printf '%s' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g'; }
 
-diagnose() {
-    local log="$1" rung="$2" cmd="$3"
+# 0 when it found nothing to say, 1 when it named at least one tool.
+report_missing() {
+    local log="$1" rung="$2" cmd="$3" mode="$4"
 
     mapfile -t records < <(awk '
         # bash and busybox sh, when a SCRIPT was running: the file and the line
@@ -181,19 +191,30 @@ diagnose() {
         }
     ' "${log}" | sort -u)
 
-    echo >&2
     if [ "${#records[@]}" -eq 0 ]; then
-        echo "error: rung ${rung} failed -- \`${cmd}\` -- and nothing in its output looks like a" >&2
-        echo "       missing host tool. As far as this gate can tell that is a broken build rather" >&2
-        echo "       than a broken criterion, and the transcript above is the evidence either way." >&2
-        echo "       If it IS a host tool in a shape diagnose() cannot read, that shape belongs in" >&2
-        echo "       tests/bare-host-gate/ladder.sh beside the four it already knows." >&2
+        if [ "${mode}" = failed ]; then
+            echo >&2
+            echo "error: rung ${rung} failed -- \`${cmd}\` -- and nothing in its output looks like a" >&2
+            echo "       missing host tool. As far as this gate can tell that is a broken build rather" >&2
+            echo "       than a broken criterion, and the transcript above is the evidence either way." >&2
+            echo "       If it IS a host tool in a shape this cannot read, that shape belongs beside" >&2
+            echo "       the four signatures above." >&2
+        fi
         return 0
     fi
 
-    echo "error: rung ${rung} went red on a MISSING HOST TOOL, which is the criterion breaking and" >&2
-    echo "       not merely a build breaking. \`${cmd}\` needs something PLAN-080 section 1 does not" >&2
-    echo "       permit on the host." >&2
+    echo >&2
+    if [ "${mode}" = failed ]; then
+        echo "error: rung ${rung} went red on a MISSING HOST TOOL, which is the criterion breaking and" >&2
+        echo "       not merely a build breaking. \`${cmd}\` needs something PLAN-080 section 1 does not" >&2
+        echo "       permit on the host." >&2
+    else
+        echo "error: rung ${rung} REPORTED SUCCESS while reaching for a host tool that is not there." >&2
+        echo "       \`${cmd}\` exited 0 -- the absence was tolerated, by a command ahead of \`set -e\`" >&2
+        echo "       or a probe whose failure something swallowed -- so its status says nothing about" >&2
+        echo "       this. The criterion is broken either way: a path here wants a tool PLAN-080" >&2
+        echo "       section 1 does not permit on the host, and only the transcript shows it." >&2
+    fi
 
     local seen="" tool file line q hits
     for rec in "${records[@]}"; do
@@ -212,7 +233,10 @@ diagnose() {
         hits="$(git grep -n -E "(^|[;&|(]|&&|\|\|)[[:space:]]*${q}([[:space:]]|\$)" -- '*.sh' 'Makefile' '*/Makefile' '.github/workflows/*.yml' 2>/dev/null | head -8 || true)"
         if [ -n "${hits}" ]; then
             echo "       in command position in the tree:" >&2
-            printf '         %s\n' "${hits}" >&2
+            # Piped through sed rather than `printf '   %s\n'`: hits is ONE
+            # multi-line string, so a printf format indents its first line and
+            # leaves the rest flush against the margin.
+            printf '%s\n' "${hits}" | sed 's/^/         /' >&2
         else
             echo "       no call site in command position; it is reached through a variable, a" >&2
             echo "       recipe, or a file this grep does not read." >&2
@@ -227,6 +251,12 @@ diagnose() {
     echo "         - if it really is orchestration -- it produces nothing and only decides which" >&2
     echo "           container runs -- widen section 1's permitted set and substrate.sh's PERMITTED" >&2
     echo "           list with it, which is a decision that leaves a record." >&2
+
+    # 1, and explicitly rather than by falling off the end: without this the
+    # function returns the last echo's status, which is 0, and run_step's
+    # `|| exit 1` never fires -- a finding printed and then walked past. That is
+    # not hypothetical; it is what the first run of the green-path scan did.
+    return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -238,14 +268,18 @@ run_step() {
     shift
     STEP=$((STEP + 1))
     local log="${LOGDIR}/step-${STEP}.log"
+    local rc=0
     echo
     echo "--- rung ${rung}: $* ---"
-    if "$@" 2>&1 | tee "${log}"; then
-        echo "--- rung ${rung}: PASS ---"
-        return 0
+    "$@" 2>&1 | tee "${log}" || rc=$?
+
+    if [ "${rc}" != 0 ]; then
+        report_missing "${log}" "${rung}" "$*" failed || true
+        exit 1
     fi
-    diagnose "${log}" "${rung}" "$*"
-    exit 1
+    # Exit 0 is not the end of the question -- see the note above the signatures.
+    report_missing "${log}" "${rung}" "$*" green || exit 1
+    echo "--- rung ${rung}: PASS ---"
 }
 
 # Rung 1. One gate, run by bash, with make still unreachable to it -- section
