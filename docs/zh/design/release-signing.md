@@ -24,8 +24,16 @@
   `CA:TRUE pathlen:0`，它只签签名者证书，不签更下面的东西。
   **有效期 15 年**：烤进现场设备的 keyring 在缺少配备通道的情况下现实中永不更换，
   所以 CA 必须比整个机队活得久——**一个过期的烤入 keyring 会同时让每一台设备的更新变砖**。
-- **签名者**：短有效期（2 年），因为重签一个签名者很便宜——它只需要 CA 密钥，
-  不需要一次机队更新：设备信任的是 CA，所以新签名者的链不必碰任何 keyring。
+- **签名者**：短有效期 **45 天**（PLAN-078 §3a，2026-09-04 决定；此前是 730 天）。
+  重签一个签名者很便宜——它只需要 CA 密钥，不需要一次机队更新：设备信任的是 CA，
+  所以新签名者的链不必碰任何 keyring。窗口之所以短：没有到设备的 CRL 通道，
+  被偷走的签名者只能**等它过期**，不能吊销。
+  **这个数字只声明一处**——`pkgs/rauc/key-validity.env` 的
+  `MOS_RAUC_SIGNER_VALIDITY_DAYS`，理由写在它旁边；`pkgs/rauc/gen-dev-keys.sh`
+  按它铸造，`build/src/signer-window.test.ts` 把英文版 §2.1 仪式块里签名者那一步的
+  `-days` 钉在同一个数上。仪式块被抄到离线机器上时无法 source 这个文件，
+  所以它靠这个 gate 而不是靠人复查；要换窗口就改声明，不要改仪式块里那一行。
+  CA 的 `-days` **不**受此约束：CA 必须比机队活得久，签名者必须不。
 - **刻意不设 `extendedKeyUsage`**：RAUC 通过 OpenSSL 的 S/MIME 用途检查来验证，
   该检查接受「无 EKU」，却**拒绝**「有 codeSigning 而无 emailProtection」。
   要收紧就得同时改 `system.conf` 的 `[keyring] check-purpose=`，两者必须**同一个提交**。
