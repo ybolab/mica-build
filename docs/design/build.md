@@ -73,6 +73,13 @@ One thing a bare host still cannot do: compose the rootfs.
 `build/run.sh --build-rootfs` drives `docker buildx`, which is a CLI plugin
 `verify/Dockerfile` does not copy, and the refusal names it.
 
+**That observation is now re-runnable: `make os-bare-host-gate`.** It clones
+`HEAD` into `IMAGE_DOCKER_CLI_28`, measures the surface, adds `bash` and `make`,
+and climbs the first four rows of the table above — the docs gates, the policy
+lint, `os-layout-lint` and `os-verify-test`. It stops there. The last two rows
+assemble an image, which needs the amd64 package pool, so those stay a dated
+observation; §0.4 says what that ceiling does and does not cover.
+
 ### 0.1 The test, for a tool nobody listed
 
 A list of banned binaries goes stale the first time someone reaches for one
@@ -182,13 +189,37 @@ file or a block that runs inside an image says so at the site:
 ```
 
 It cannot see a binary invoked through a variable, a producer written into a
-heredoc body, a declaration that is simply wrong, or whether the criterion at
-the top of this section still holds — that one is an experiment somebody runs.
-Its header says so at greater length, and `tests/host-toolchain-lint-test.sh`
-plants a host invocation, a `$HOME` PATH prepend, a stale exemption, a removed
-declaration, an unclosed block and a heredoc named in a comment, and requires
-each to turn it red — and three legitimate shapes, which it requires to stay
-green.
+heredoc body, or a declaration that is simply wrong. Its header says so at
+greater length, and `tests/host-toolchain-lint-test.sh` plants a host
+invocation, a `$HOME` PATH prepend, a stale exemption, a removed declaration, an
+unclosed block and a heredoc named in a comment, and requires each to turn it
+red — and three legitimate shapes, which it requires to stay green.
+
+**`make os-bare-host-gate`** (`tests/bare-host-gate/gate.sh`) answers the one
+question the lint cannot: whether the criterion at the top of this section still
+holds. It is not a description of a constrained host, it *is* one — a clone of
+`HEAD` inside `IMAGE_DOCKER_CLI_28`, whose surface it measures before using:
+`substrate.sh` requires the permitted set to be present and `bash` and `make` to
+be absent, and after adding those two it requires every producer in the lint's
+own table to still be unreachable, reading that table from
+`tests/host-toolchain-lint.sh --print-tools` rather than keeping a second copy.
+When a rung goes red it names the **tool** and the **file**, from the shell's own
+`command not found` and from a command-position grep, so the finding is one
+invocation rather than a broken build.
+
+The two checks divide the surface between them, and neither covers it alone:
+
+| | reads | executes | sees |
+| --- | --- | --- | --- |
+| `os-host-toolchain-lint` | every tracked script, including the assembly path | nothing | a producer's *name* in command position |
+| `os-bare-host-gate` | nothing | rungs 1–3 on a real constrained host | anything a run of those rungs actually reaches for, whatever its name |
+
+The gate's ceiling is rung 3. It does **not** assemble an image (rung 4 needs
+the amd64 package pool), does not run `os-build-test`, and does not lift
+`--build-rootfs`'s `buildx` refusal. So a new host dependency reachable *only*
+from the assembly path is caught by the lint's static shape and not by the
+gate's execution — which is the reason the gate runs the lint from inside itself
+at rung 2.
 
 ## 1. What a build produces
 
