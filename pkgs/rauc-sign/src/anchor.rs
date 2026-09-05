@@ -15,14 +15,22 @@ const MANIFEST: &str = "/usr/share/mos/meta/updates/manifest.json";
 /// Repository metadata is untrusted until a baked key authenticates its root.
 /// There is no environment, argument or operator-document anchor override.
 pub(crate) fn root_bytes(repo: &Path) -> Result<Vec<u8>> {
+    // Every stat here names its path. A bare `?` on an `io::Error` reaches the
+    // operator as "No such file or directory (os error 2)" and nothing else --
+    // true, useless, and indistinguishable between the two directories and the
+    // manifest.
     for directory in ["/usr/share/mos/meta", "/usr/share/mos/meta/updates"] {
         ensure!(
-            fs::symlink_metadata(directory)?.is_dir(),
+            fs::symlink_metadata(directory)
+                .with_context(|| format!("stat baked anchor directory {directory}"))?
+                .is_dir(),
             "baked anchor directory must be a real directory: {directory}"
         );
     }
     ensure!(
-        fs::symlink_metadata(MANIFEST)?.is_file(),
+        fs::symlink_metadata(MANIFEST)
+            .with_context(|| format!("stat baked manifest {MANIFEST}"))?
+            .is_file(),
         "baked manifest must be a regular file, not an alternate anchor link"
     );
     let manifest: Value =
@@ -75,8 +83,10 @@ pub(crate) fn root_bytes(repo: &Path) -> Result<Vec<u8>> {
     // each rotation. A freshly baked incoming key may start later in the chain.
     let metadata = repo.join("metadata");
     let mut roots = Vec::new();
-    for entry in fs::read_dir(&metadata).context("read repository metadata directory")? {
-        let entry = entry?;
+    for entry in fs::read_dir(&metadata)
+        .with_context(|| format!("read repository metadata directory {}", metadata.display()))?
+    {
+        let entry = entry.with_context(|| format!("read an entry of {}", metadata.display()))?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if let Some(version) = name
