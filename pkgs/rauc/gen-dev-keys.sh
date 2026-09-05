@@ -409,8 +409,17 @@ gen_rauc() {
         -out "${SIGNER_CERT}" -days "${MOS_RAUC_SIGNER_VALIDITY_DAYS}" -sha256 \
         -extfile "${RAUC_DIR}/signer.ext" 2>/dev/null
     # mos-build-side: host
-    rm -f "${RAUC_DIR}/signer.csr" "${RAUC_DIR}/signer.ext" \
-        "${RAUC_DIR}/ca.srl" "${CA_CERT}.srl"
+    # THE SERIAL FILE IS DELETED BY PATTERN, because openssl versions disagree
+    # about its name and this was measured rather than anticipated: with
+    # `-CA ca.cert.pem -CAcreateserial`, OpenSSL 3.0.2 writes `ca.cert.pem.srl`
+    # (it appends) and 3.5.7 writes `ca.cert.srl` (it replaces the extension).
+    # The named forms below caught the first and not the second, so moving the
+    # mint into the pinned image left a stray 0600 file in the tree's trust
+    # directory -- nothing ships it, since the image takes only the allowlist in
+    # rootfs/build.sh, and nothing was red, since meta/ is gitignored and
+    # tests/trust-domain-hygiene-test.sh only refuses a TRACKED .srl. A glob
+    # cannot be outgrown by the next version's spelling.
+    rm -f "${RAUC_DIR}/signer.csr" "${RAUC_DIR}/signer.ext" "${RAUC_DIR}"/*.srl
 
     chmod 0600 "${CA_KEY}" "${SIGNER_KEY}"
     chmod 0644 "${CA_CERT}" "${SIGNER_CERT}"

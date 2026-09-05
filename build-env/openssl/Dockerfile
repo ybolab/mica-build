@@ -38,8 +38,14 @@ FROM ${MOS_BASE_IMAGE} AS final
 # prefix convention.
 COPY images.lock /etc/mos-build/images.env
 
-# The whole list. `openssl` is the command-line tool -- the base already carries
-# libssl through ca-certificates, and a library is not what mints a certificate.
+# The whole list, and `openssl` is on it although the parent already HAS one.
+# Measured 2026-09-05 while building this image: mos-build-base carries
+# `OpenSSL 3.5.6` because ca-certificates depends on the openssl package, and
+# the apt run below reported `Unpacking openssl (3.5.7-1~deb13u2) over
+# (3.5.6-1~deb13u2)`. Naming it here is the difference between an openssl that
+# is present as a side effect of an unrelated dependency -- unfloored,
+# unrecorded, free to move whenever ca-certificates' chain does -- and one this
+# file declares, floors and writes down. `jq` is not in the parent at all.
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-openssl,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-mos-build-openssl,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \

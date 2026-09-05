@@ -390,7 +390,7 @@ edit went with it; `rootfs/build.sh`'s `alg_of_material()` reads the material
 back through the same image; `tests/repart-loader-test.sh` runs every `sgdisk`
 in the pinned alpine tool image rather than only when the host has none. The
 register is five rules now, and the check re-run reads `RESULT: PASS (97/97
-files clean, 0 finding(s), 9214 command lines examined, 3095 elided, 6 file + 18
+files clean, 0 finding(s), 9213 command lines examined, 3095 elided, 6 file + 18
 block container declarations, 15 exempted invocation(s) under 5 rule(s))`. The
 table above is left as it was measured; what closed is said here rather than
 edited into it.

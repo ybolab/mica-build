@@ -62,6 +62,15 @@ seven `IMAGE_` pins carries the openssl *command* except `IMAGE_BUN_1`, and none
 carries `jq` at all — `alpine:3.21`, `debian:trixie-slim`, `debian:bookworm-slim`,
 `ubuntu:24.04`, `alpine:3.24.1` and `docker:28-cli` all answer `none` to both.
 
+**And not `mos-build-base` plus `jq`, though that was closer than the first
+draft of this file claimed.** Building the image disproved its own comment: the
+parent *does* carry an openssl command — `OpenSSL 3.5.6`, because
+ca-certificates depends on the openssl package, and the apt run reported
+`Unpacking openssl (3.5.7-1~deb13u2) over (3.5.6-1~deb13u2)`. What the separate
+row buys is therefore not "an openssl at all" but a *declared* one: floored,
+recorded, and not free to move whenever an unrelated dependency chain does.
+`jq` is genuinely absent from the parent.
+
 Floors, in `images.env`, measured by installing both into `IMAGE_DEBIAN_TRIXIE`:
 `OPENSSL_FLOOR_OPENSSL_MIN=3.5` (trixie has `openssl 3.5.7-1~deb13u2`) and
 `OPENSSL_FLOOR_JQ_MIN=1.7` (`jq 1.7.1-6+deb13u3`, which prints `jq-1.7` — it
@@ -118,11 +127,46 @@ Nothing else about the mint changed: the same `openssl req -x509` /
 signer, ed25519 for the package key, a 45-day signer), the same
 `-CAcreateserial`, the same modes and the same `GENERATED` marker text.
 
-**What was NOT verified: that openssl 3.5.7 and openssl 3.0.2 mint the same
-shape.** Nothing was executed this batch. Encoding, extension ordering and
-serial generation are exactly the three places a version difference could show,
-and the honest statement is that the code path is right and the byte comparison
-is owed — §5 says who owes it.
+### 2.2 The minted shape, measured — and the one difference it found
+
+The batch rule was later relaxed to permit running the generator itself, so this
+is measured rather than owed. Two scratch repositories under `tmp/`, one running
+the **pre-change** script on host **OpenSSL 3.0.2**, one running the shipped
+script in the image's **3.5.7**, both domains minted in each, everything read
+back by the *same* openssl so a difference is about the material and not about
+the renderer.
+
+| Property | old (3.0.2) | new (3.5.7) |
+| --- | --- | --- |
+| `x509 -text`, both certs, randomness normalised | version, sig alg, subject/issuer, validity, curve, **extension order and criticality** | **identical** |
+| DER outline (`asn1parse`, types and nesting) | 52 nodes | **52 nodes, identical** |
+| Serial size, CA and signer | 20 bytes | **20 bytes** |
+| Private key encoding | PKCS#8 `BEGIN PRIVATE KEY`, 241 B, 0600 | **same** |
+| `updates/root.key` | 48 B raw PKCS#8 DER, 0600 | **same** |
+| `meta/GENERATED` | — | **byte-identical** |
+| `manifest.json` written by jq 1.6 vs **jq 1.7.1** | — | **structurally identical**; only the random key value differs |
+
+The only per-field differences in the certificate text are the Subject and
+Authority Key Identifiers, which are hashes of a freshly random key in each run.
+
+**`ca.cert.pem` came out 700 bytes old and 696 new, and that is not a version
+difference.** Five fresh mints with one script and one openssl gave 696, 696,
+696, 696, 700 — ECDSA signature DER length varies run to run. The number was
+broken before it was believed.
+
+**THE DIFFERENCE, and it was a defect: openssl versions disagree about the name
+of the `-CAcreateserial` file.** With `-CA ca.cert.pem`, 3.0.2 writes
+`ca.cert.pem.srl` (it appends) and **3.5.7 writes `ca.cert.srl` (it replaces the
+extension)**. The cleanup named `${RAUC_DIR}/ca.srl` and `${CA_CERT}.srl`, which
+caught the first spelling and not the second — so the containerised mint left a
+stray 0600 `ca.cert.srl` in `meta/rauc/` that the host mint never left.
+
+Nothing would have gone red. The image takes only `rootfs/build.sh`'s allowlist,
+so it does not ship; `meta/` is gitignored, and
+`tests/trust-domain-hygiene-test.sh` refuses a **tracked** `*.srl`, which this
+is not. Fixed by deleting the serial by pattern — `"${RAUC_DIR}"/*.srl` — which
+no future version's spelling can outgrow, and re-minting then gives byte-for-byte
+the same file set as the host route.
 
 ## 3. B3 — the two judges
 
@@ -167,7 +211,7 @@ Five rules remain, all matching: the two `hack/check.sh` `cargo` rows, their two
 `make os-host-toolchain-lint` after the change:
 
 ```
-RESULT: PASS (97/97 files clean, 0 finding(s), 9214 command lines examined,
+RESULT: PASS (97/97 files clean, 0 finding(s), 9213 command lines examined,
 3095 elided, 6 file + 18 block container declarations, 15 exempted
 invocation(s) under 5 rule(s))
 ```
@@ -178,8 +222,11 @@ still this shell's, and the markers say so rather than claiming the whole line.
 
 ## 5. What was not verified, and what is owed
 
-Verification was traded for wall-clock by explicit instruction: no suite was
-run, no image was built, nothing was composed. What ran is in §6. What is owed:
+Verification was traded for wall-clock by instruction, then relaxed one line:
+the generator itself could be run, because minting keys is cheap and is how a
+difference in what it produces would be seen. Nothing was followed into a
+compose, a pool or `rauc-trust-negative-test.sh`. §2.2 is what that bought — one
+real defect, found and fixed. What is still owed:
 
 - **`tests/rauc-trust-negative-test.sh`** — and it needed a source change, which
   makes it the largest owed item. It used to run the generator **inside** its
@@ -191,12 +238,16 @@ run, no image was built, nothing was composed. What ran is in §6. What is owed:
   prerequisite of it now. **Not run.**
 - **`make os-repart-test`** — needs privileged docker and an assembled image.
   **Not run.**
-- **`make build-env`** — `build-env/openssl/Dockerfile` has never been built.
-  Its floor expressions and its `openssl dgst` liveness check are unexecuted.
-- **A byte comparison of material minted by 3.0.2 and by 3.5.7**, per §2.1.
-- **`rootfs/build.sh`'s A2 against the container reader** — the three text
-  patterns are unchanged, and whether 3.5.7 prints `NIST CURVE:` and `ED25519`
-  the way 3.0.2 did was not observed.
+- **The full `make build-env`.** The `openssl` row was built on its own, exactly
+  as `build.sh` builds it (filtered `OPENSSL_` lock, `MOS_BASE_IMAGE=
+  localhost/mos-build-base:amd64`, `--platform linux/amd64`, `--load`), and its
+  floors passed — `ok openssl 3.5.7 (floor 3.5)`, `ok jq 1.7 (floor 1.7)` — with
+  the record read back out of the image the way `build.sh` reads it. What has
+  **not** run is `build.sh` itself over the seven-row table, so the row's
+  position in the ordering check and its lock derivation are exercised by hand
+  rather than by the driver.
+- **arm64.** Everything here is amd64. The image's `TARGETARCH` assertion is
+  unexecuted for the cross case.
 
 ## 6. Documents touched
 
@@ -225,7 +276,12 @@ the English and `pkgs/rauc/key-validity.env` say 45 days.
 | Check | Result |
 | --- | --- |
 | `bash -n` on all five changed shell files | **green** |
-| `docker buildx build --check` on `build-env/openssl/Dockerfile` | **green**, `Check complete, no warnings found` — instructions only, against a resolvable base; the image itself was never built |
+| `docker buildx build --check` on `build-env/openssl/Dockerfile` | **green**, `Check complete, no warnings found` |
+| `localhost/mos-build-openssl:amd64` built (the row alone) | **green**; floors `ok openssl 3.5.7 (floor 3.5)`, `ok jq 1.7 (floor 1.7)`; record read back: `MOS_BUILD_OPENSSL=3.5.7-1~deb13u2`, `MOS_BUILD_JQ=1.7.1-6+deb13u3` |
+| `gen-dev-keys.sh`, both domains, pre-change script on host 3.0.2 vs shipped script in the image | **ran**; §2.2 is the comparison, and it found the `.srl` defect |
+| Same script, same openssl, five fresh mints | the control that showed the 696/700 size difference is signature variance |
+| `alg_of_material()`'s three readers, both openssls, all five files of both trees | **ten reads each, all agreeing**: `ecdsa-p256` ×4 and `ed25519` |
+| The repart `sgdisk()` wrapper's invocation | **well-formed**: `sgdisk 1.0.10` answers, a path under `_out` resolves identically inside the container and is read, and a path outside the mount fails — so the positive is not a container that reads anything anywhere |
 | `bash tests/host-toolchain-lint.sh` | **green**, the RESULT in §4 |
 | `make docs-verify` | **green** |
 | Image-content probe of all seven `IMAGE_` pins for `openssl`/`jq` | six carry neither; `IMAGE_BUN_1` carries openssl 3.5.6 and no jq |
