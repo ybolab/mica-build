@@ -361,11 +361,14 @@ EXISTING settings path:
 | `wifi` | `wifi.client` | the typed `WifiClientSettings`, `is_wpa_quotable`, `validate_wifi_psk` |
 | `time` | `time` | the typed `TimeSettings`, `validate_ntp_servers`, `validate_timezone_name` |
 
-**`version` is the DOCUMENT's own schema version and is independent of the
-settings `SCHEMA_VERSION`.** A document format revision does not reshape the
-settings tree, and a settings bump does not invalidate a document an operator
-already wrote onto a card. This build applies version `1` and refuses any
-other.
+**`version` is the DOCUMENT's own schema version and is independent of every
+settings document's.** A document format revision does not reshape the settings
+tree, and a settings bump does not invalidate a document an operator already
+wrote onto a card. This build applies version `1` and refuses any other.
+
+Since PLAN-070 §5.2.3 the settings side is also per document and also starts at
+`1`, so the two numbers now coincide by accident. **They are still unrelated**,
+and nothing may derive one from the other.
 
 **There is no certificate section, and no hostname.** PLAN-046 lists
 certificates among the things a provisioning document should carry; there is no

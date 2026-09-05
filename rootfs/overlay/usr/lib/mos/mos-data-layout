@@ -39,6 +39,14 @@ sync -f "$PROBE"
 rm -f "$PROBE"
 
 ensure_dir "$SYSTEM_ROOT/ui" 0755
+# 0700, not 0755: /mos/config holds system configuration and the namespace is
+# credential material (PLAN-070 section 5.2.4). wifi.json carries the site's
+# WPA2 pre-shared key, and 0755 would publish it to every process on the
+# device -- a container under /mos/containers, an operator application under
+# /srv. The security model grants the physical holder of the medium
+# everything; it does not grant an operator's own container the site Wi-Fi key.
+# Every document inside is 0600, written that way by mosd before the rename.
+ensure_dir "$SYSTEM_ROOT/config" 0700
 ensure_dir "$SYSTEM_ROOT/containers" 0711
 ensure_dir "$SYSTEM_ROOT/home" 0755
 ensure_dir "$SYSTEM_ROOT/root" 0700
