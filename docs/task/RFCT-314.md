@@ -43,20 +43,30 @@ refusal.
 
 ## Acceptance
 
-Per the dispatch, this batch trades per-task verification for wall-clock: **no
-tests were written and no test suite was run.** The floor that stands is that
-the code compiles.
+The first pass wrote no tests and ran none; L1's gate turned that into one red
+and three suites that never got to run. Both are closed. **No new test was
+written**; `openapi.json` was regenerated (a build output) and four harnesses
+were finished (§7).
 
-- `cargo check --offline --locked --all-targets` green for the whole
-  `pkgs/mosd` workspace in `localhost/mos-build-rust:amd64` — lib, bins and
-  every test target, warning-free.
+- `bash pkgs/mosd/hack/check.sh` in `localhost/mos-build-rust-check:amd64` —
+  `ALL CHECKS PASSED`: `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets --locked -- -D warnings`, `cargo nextest run --workspace
+  --locked` (**976 tests run: 976 passed, 0 skipped**), workspace doctests, and
+  `cargo deny check licenses bans advisories`.
+- `cargo test --locked` per package, each green:
+  `mosd-settings` 56 + 42 + 0 doc; `mosd` 503 + 1 (`tests/bus.rs`) + 7
+  (`tests/scan.rs`); `apid` 319 + 1 (`tests/e2e.rs`).
+- `pkgs/mosd/apid/openapi.json` regenerated from `apid --openapi`; the diff is
+  one description string (§7).
 - `bash -n` green on `rootfs/overlay/usr/lib/mos/mos-data-layout`,
   `tests/mos-data-layout-test.sh` and `boards/cx3576/board.env`.
-- `docs/verify-index.sh`, `docs/verify-links.sh`, `docs/verify-status.sh` green
-  (read-only doc lints, not a suite).
+- `docs/verify-index.sh`, `docs/verify-links.sh`, `docs/verify-status.sh` green.
 - `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
 
-**Owed, and named rather than quietly skipped** — see §6.
+Not run here: `bash tests/mos-data-layout-test.sh` (shell, needs a writable
+DATA root) and anything that composes an image.
+
+**Still owed** — the deleted properties, now RFCT-323's — see §6.
 
 ## 1. The shape: one addressed tree, several documents
 
@@ -213,17 +223,36 @@ The reason is now at `CONFIG_DIR` in `reset.rs` and in `recovery.md`'s new
 of subtrees tier 2 does not open. PLAN-070 §4.1 assigns that cell to F6c in
 terms (*"F6c carries it"*), which is why it is here and not left to F10.
 
-## 6. What was NOT verified, and what is owed
+## 6. What the suites do and do not cover
 
-**Nothing in this task was executed.** `cargo check --all-targets` compiles
-every test target; it runs none of them. The store's read and write paths, the
-tier-1 sweep, the mode on a written document and the refusal's message have
-been **compiled and never run**.
+The store split now has evidence: `mosd-settings`'s 42 integration tests run
+through the real `Store` against a temporary `/mos/config/`, and `mosd`'s 503
+unit tests include `reset.rs`'s tier table and `provisioning.rs`'s seeding, both
+of which save and reload through the split store. Three daemons-in-a-process
+harnesses — `mosd/tests/bus.rs`, `mosd/tests/scan.rs`, `apid/tests/e2e.rs` —
+start a real mosd against a real session bus, so the startup path including the
+medium check is executed.
 
-**Tests deleted with their subject** — 25 of the 60 in
-`pkgs/mosd/mosd-settings/tests/settings.rs`, every one of them about the
-`V0→V12` chain or about a whole-document TOML fixture stamped with a tree-wide
-version. Naming the coverage that went with them, because two of these were
+**What is still not executed**, because nothing asserts it:
+
+- the tolerant newer-schema load (`load_newer`). It was ported and generalised
+  over `serde_json` and **not one line of it has run**; the tests that covered
+  its predecessor were deleted with the tree-wide version they were stamped
+  with. This is the highest-consequence gap in the change.
+- the fail-closed parse error for a document that exists and does not parse.
+- `ensure_config_medium`'s refusal *message*. The refusal itself is executed
+  every time a harness starts — and was executed by accident three times in
+  L1's gate run, which is how the missing `MOSD_CONFIG_DIR` in the three
+  harnesses was found — but no assertion reads the text or checks that `/mos`
+  is named in it.
+- the `0600` mode on a written document, and the mode-before-rename ordering.
+- "a key written to one document leaves the others byte-identical".
+
+**Tests deleted with their subject** — counted properly now that they have been
+run: `pkgs/mosd/mosd-settings/tests/settings.rs` went from **67 `#[test]`
+functions to 42**, and `migration.rs` took **29** unit tests with it when it was
+deleted. Every one of the 54 was about the `V0→V12` chain or about a
+whole-document TOML fixture stamped with a tree-wide version. Naming the coverage that went with them, because two of these were
 about properties that still hold and now have no test:
 
 - `v3_document_with_unknown_key_fails_to_load` — the fail-closed rule for a
@@ -266,3 +295,60 @@ the subtree. Their assertions say what they said before.
   not one of `docs/zh/verify-coverage.sh`'s gated trees, so nothing goes red;
   the lag is real all the same.
 - `docs/plan/index.md`, `docs/task/index.md`, `docs/CHANGELOG.md` — L1's.
+
+## 7. The gate's red, and what regenerating the API document actually showed
+
+`tests::the_committed_openapi_document_is_the_generated_one` was red.
+`pkgs/mosd/apid/openapi.json` is the bytes `apid --openapi` prints, kept under
+version control so a wire change cannot happen silently; it was regenerated and
+the diff read before committing.
+
+**The diff is one line, and the surprise is what is NOT in it.** The only
+change is `/api/v1/meta`'s `description`, which is the doc comment on
+`api_v1_meta` — prose, generated from the source. Nothing about the document's
+*shape* moved: no path, no schema, no status code, no required field.
+
+In particular **the 409 → 404 change on `/api/v1/settings/schema_version` is
+invisible here**, and it is worth saying why rather than treating the small
+diff as reassurance. The route is `/api/v1/settings/{path}` with a generic path
+parameter, and it already documents `404`, `409` and `422` side by side for
+every path; which concrete dot-path falls into which bucket is not in the
+document at all. So a client reading `openapi.json` cannot tell that
+`schema_version` moved buckets — the gate that caught this change is
+`apid/src/tests.rs`'s route tests, not the API document, and the API document
+would not have caught it alone.
+
+`settingsSchemaVersion` is likewise unchanged in the document: its schema is
+`integer`, and only the value it reports at runtime moved (12 → 1).
+
+## 8. Four harnesses that were incomplete, and one of them is the fail-closed rule working
+
+`cargo test -p apid` stopped at the openapi red, so three suites had never run.
+Once they did, four failures surfaced. **None was a defect in the move; all
+four were harnesses I had adapted incompletely, and the last three are the same
+omission three times.**
+
+1. `mosd/tests/bus.rs:223` — *"settings.toml should contain the new hostname"*.
+   `hostname` is carried by `/mos/config/system.json` now. The claim (a write
+   reached the medium, not only the in-memory tree) is unchanged; it reads the
+   address that holds it. I had updated the store construction and the spawn
+   environment in this file and missed the assertion below them.
+2. `mosd/tests/bus.rs:389` — *"the password reached settings.toml"*, a negative
+   assertion. Reading one file is now too narrow: a leak into `system.json` or
+   `wifi.json` would have passed it. It now reads **every** document, STATE and
+   `/mos/config/` alike, which is a widening the split forced and the split had
+   better not have made easier to get wrong.
+3. `mosd/tests/scan.rs` — all 7 tests, *"mosd never claimed com.mos.mosd on the
+   private bus"*.
+4. `apid/tests/e2e.rs` — *"Error: load settings from /tmp/…/settings.toml and
+   /mos/config"*.
+
+**3 and 4 are `ensure_config_medium` doing exactly its job.** Both harnesses
+spawn a real mosd with `MOSD_SETTINGS_PATH` and no `MOSD_CONFIG_DIR`, so mosd
+looked at the real `/mos/config`, did not find it, and refused to start rather
+than come up on schema defaults. Each got the namespace and the variable, the
+same three lines `tests/bus.rs` already had. The refusal's message is visible
+in 4's output above, naming the path it could not read — which is the closest
+thing to evidence for F6f that exists today, and it is an accident rather than
+an assertion. §6 lists that assertion as owed.
+
