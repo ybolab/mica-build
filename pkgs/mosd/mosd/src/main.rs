@@ -62,6 +62,7 @@ mod transient;
 mod update_auto;
 mod update_lifecycle;
 mod update_policy;
+mod update_suppress;
 mod wgkeys;
 
 use std::path::{Path, PathBuf};
@@ -385,11 +386,26 @@ async fn serve() -> anyhow::Result<()> {
             |_| PathBuf::from(update_policy::DEFAULT_POLICY_PATH),
             PathBuf::from,
         );
+        // PLAN-071 §6's suppression store, and it is on STATE deliberately.
+        // §9.1 settles the same question for the downgrade floor: the policy
+        // document moves to `/mos/config/` on DATA, and a refusal an operator
+        // document can lift is not a refusal. Derived from the state
+        // directory rather than from the policy path so that the move cannot
+        // take it along.
+        let suppression_path = std::env::var("MOSD_UPDATE_SUPPRESSION_PATH").map_or_else(
+            |_| {
+                state_dir_for(&settings_path)
+                    .join("update")
+                    .join(update_suppress::DEFAULT_FILE_NAME)
+            },
+            PathBuf::from,
+        );
         service = service.with_update(
             Arc::new(update_lifecycle::SubprocessClient::new(PathBuf::from(
                 update_bin,
             ))),
             update_policy::PolicyStore::at(policy_path).with_baked(meta.manifest.update.clone()),
+            update_suppress::SuppressionStore::at(suppression_path),
         );
     }
     if let Some(registry) = &registry {
