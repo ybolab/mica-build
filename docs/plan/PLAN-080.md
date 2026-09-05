@@ -463,8 +463,13 @@ anything failing.
   one.
 - **Anything that is not shell.** The four seams of §5.4 are closed in code and
   held by `build`'s and `verify`'s own suites.
-- **Whether the criterion still holds.** That is §4's experiment, and nothing
-  runs it automatically. Backlog **B6**.
+- **Whether the criterion still holds.** That is §4's experiment. **B6 closed
+  it**: `tests/bare-host-gate/gate.sh`, wired as `make os-bare-host-gate`, is
+  that climb on demand — a clone of `HEAD` inside `IMAGE_DOCKER_CLI_28`, with
+  the substrate measured before it is used and every producer in the table above
+  required to stay unreachable after `bash` and `make` arrive. Its ceiling is
+  rung 3, so what it does *not* execute is still covered only by the shape this
+  check reads. §10 B6 records both halves.
 
 ## 7. Documentation
 
@@ -544,10 +549,14 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   reads its image with alpine's. That is the point, but it is a behaviour change
   on a gate, so `MOS_VERIFY_TOOLS=host` keeps the old route one variable away
   and both routes stay exercised by `verify`'s own suite.
-- **The criterion decays silently.** §4 was run by hand. Nothing re-runs it, so
-  the next path that requires a host tool will pass every check in §6 and break
-  the criterion. **B6** is the only real answer; until it exists, this record is
-  a dated observation like any other.
+- **The criterion decays silently.** §4 was run by hand. **Closed by B6**
+  (RFCT-319): `make os-bare-host-gate` re-climbs it, and a rung that goes red
+  names the tool and the file rather than reporting a broken build. What decays
+  now is narrower and worth stating in its place: the gate's ceiling is rung 3,
+  so a host tool that only the *assembly* path reaches is caught by §6's static
+  shape and not by execution. The gate runs §6's lint from inside itself at rung
+  2 for exactly that reason, and rung 4 stays a dated observation until a pool
+  is cheap enough to stand behind it.
 - **RFCT-309 collides in `build-harness.md` and `build-env/`.** Expected; the
   two are the same policy at different scopes. Resolved as a union.
 
@@ -586,10 +595,25 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   into `verify/Dockerfile`, lifting `--build-rootfs`'s refusal, plus the run
   that proves it — which needs the amd64 package pool. *~1 day, most of it the
   proof.*
-- **B6 — make §4 a gate.** The ladder as a script: start the pinned CLI image,
-  clone, add bash and make, assemble and verify. It is the only thing that would
-  keep the criterion true rather than dated. *~1 day, and it needs a pool or a
-  cached rootfs to be worth running.*
+- **B6 — make §4 a gate. CLOSED by RFCT-319.**
+  `tests/bare-host-gate/{gate.sh,substrate.sh,ladder.sh}` and
+  `make os-bare-host-gate`: the pinned CLI image, a `--depth 1` clone of `HEAD`
+  mounted at a daemon-resolvable path, `apk add bash make`, and rungs 1–3. The
+  sizing above was right about the pool, so the **ceiling is rung 3** and the
+  record says so rather than implying a full climb: it runs the five docs gates,
+  `make os-host-toolchain-lint`, `make os-layout-lint` and `make os-verify-test`,
+  and it does **not** assemble an image, does not run `os-build-test` (§8 priced
+  two of its files at ~118 s; the whole suite was not measured), and does not
+  lift `--build-rootfs`'s refusal — that is still B5.
+  Two things make it more than a re-run of §4. The substrate is *measured*, not
+  described: `substrate.sh` requires the permitted set present and `bash`/`make`
+  absent before either is added, and `ladder.sh` then requires every producer in
+  §6's table — read out of `tests/host-toolchain-lint.sh --print-tools`, one
+  table with two readers — to still be unreachable. And a red rung is diagnosed:
+  four measured failure signatures (bash's `command not found`, busybox's `not
+  found`, make's `No such file or directory`, and this tree's own `is required
+  and not on PATH`) name the tool, and the file comes from the message where the
+  shell put it there and from a command-position grep where it did not.
 - **B7 — CI stops installing a toolchain.** `.github/workflows/check.yml`'s
   `rust` job `curl`s rustup onto the runner and runs both `hack/check.sh` there.
   With `make os-rust-gate` in the tree those two steps and the three install
@@ -629,7 +653,10 @@ its permitted set, the rule, the boundary test with the bun/node and `make`
 rulings, the experiment, the enumeration with a verdict on every path, the check
 with both shapes and its controls, and the documentation.
 
-**NOT approved, and not started:** B2–B7 in section 10. **B1 closed during this
+**NOT approved, and not started:** B2–B5 and B7 in section 10. **B6 closed by
+RFCT-319** — `make os-bare-host-gate` runs §4's ladder to rung 3, which is the
+answer to the largest risk in section 9; the rungs above that ceiling are named
+in section 10 rather than implied. **B1 closed during this
 task** — RFCT-309's `localhost/mos-build-rust-check` landed on `main` and
 `make os-rust-gate` runs both `hack/check.sh` unmodified inside it, so the one
 path that made the policy unimplementable no longer exists. B2–B7 are estimated

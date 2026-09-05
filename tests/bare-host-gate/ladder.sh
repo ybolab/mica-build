@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# tests/bare-host-gate/gate.sh runs this inside the pinned IMAGE_DOCKER_CLI_28
+# plus `apk add bash make`; it IS the constrained host, so every command below
+# is a host command by construction. No `# mos-build-side: container` marker for
+# the reason substrate.sh states: nothing here is a producer, and declaring a
+# file elides it from the lint's scan rather than exempting anything.
+#
+# RUNGS 1-3 of PLAN-080 section 4.2's ladder, re-climbed on demand.
+#
+# THE CEILING, and it is below section 4's. This climbs:
+#
+#   rung 1  bash docs/verify-index.sh              -- bash alone runs a gate
+#   rung 2  make docs-verify                       -- make alone runs five
+#           make os-host-toolchain-lint            -- and the policy's own check
+#   rung 3  make os-layout-lint                    -- bun, out of a container
+#           make os-verify-test                    -- 1270 tests, no host bun
+#
+# It does NOT climb rung 4 -- `bash build/run.sh --mkimage-x64` and then
+# `bash verify/run.sh --verify --board x64`, which section 4 ran by hand to
+# `PASS (313/313)`. Assembling an image needs the amd64 package pool and a
+# composed rootfs; a fresh clone has neither and making them costs tens of
+# minutes. PLAN-080 section 10 predicted exactly this when it sized B6: it
+# "needs a pool or a cached rootfs to be worth running". A cheap gate that runs
+# beats an exhaustive one somebody turns off, so the ceiling is here and the
+# rungs above it are named rather than implied.
+#
+# WHAT THE LOWER CEILING STOPS COVERING -- the part that must not be left to be
+# discovered:
+#
+#   - Every host tool reachable only from the assembly path. rootfs/build.sh,
+#     build/src/toolbox.ts's toolsets, pkgs/*/build.sh, build-env/deb/*, the
+#     board bsp Makefiles: nothing here EXECUTES any of them.
+#   - `bash build/run.sh --build-rootfs`, which section 4.4 measured as still
+#     refusing on the container route for want of one COPY of the buildx plugin
+#     into verify/Dockerfile. That is backlog B5. This gate does not lift it and
+#     does not test it; the refusal stays the thing that names the gap.
+#   - `make os-build-test`, the first rung above this ceiling and the one worth
+#     adding next: it opens the assemblers' toolboxes for real, which is the
+#     closest thing to rung 4 that needs no pool. Section 8 measured two of its
+#     files alone at ~118 s, so it is affordable but not free, and it is left
+#     out rather than added without the run that prices the whole suite.
+#
+# The half of that gap which can be closed WITHOUT executing anything is closed
+# at rung 2, and that is the reason the lint runs in here rather than only on
+# the host: tests/host-toolchain-lint.sh reads every tracked script, including
+# all the ones this ladder never runs, so a producer that starts reaching for a
+# host tool inside rootfs/build.sh is still a finding. What neither half sees is
+# section 6's own stated residue -- a binary behind a variable, a heredoc body,
+# and a `# mos-build-side: container` declaration that is simply wrong.
+set -euo pipefail
+
+CLONE="${MOS_BARE_HOST_CLONE:?the gate passes the clone path in; without it the paths below are guesses}"
+cd "${CLONE}"
+
+LOGDIR="$(mktemp -d)"
+trap 'rm -rf "${LOGDIR}"' EXIT
+
+# ---------------------------------------------------------------------------
+# The surface, re-measured after the two packages arrived.
+#
+# substrate.sh asserted this image carries the permitted set and neither bash
+# nor make. This asserts that the add did what it said and NOTHING ELSE: `apk
+# add bash make` pulls dependencies, and a gate whose constraint quietly widened
+# because a dependency dragged a compiler in would keep reporting green while
+# testing a host nobody described.
+# ---------------------------------------------------------------------------
+echo "=== rungs 1-3: the constrained host, measured before it is used ==="
+for t in bash make; do
+    p="$(command -v "${t}" 2>/dev/null || true)"
+    [ -n "${p}" ] || {
+        echo "error: ${t} is still not on PATH after \`apk add --no-cache bash make\`." >&2
+        echo "       Rungs 1 and 2 exist to run it; there is nothing to climb." >&2
+        exit 1
+    }
+    # `awk NR==1` and not `head -1`: head closes the pipe at the first line and
+    # this script runs under pipefail, so a version banner longer than the pipe
+    # buffer would come back as a SIGPIPE failure on a line that is only saying
+    # which bash arrived.
+    ver="$("${t}" --version 2>/dev/null | awk 'NR==1')"
+    echo "PASS: added and present: ${t} at ${p} (${ver})"
+done
+
+# The forbidden set is NOT a list kept here. It is
+# tests/host-toolchain-lint.sh's producer table, read out of the tree under
+# test -- one table, two readers. A second copy would agree with the first
+# right up until somebody added a row to one of them, and then this gate would
+# be checking a policy the tree had already moved past.
+mapfile -t PRODUCERS < <(bash tests/host-toolchain-lint.sh --print-tools)
+[ "${#PRODUCERS[@]}" -gt 0 ] || {
+    echo "error: tests/host-toolchain-lint.sh --print-tools listed no producers." >&2
+    echo "       Every absence assertion below would then pass over an empty set, which is a" >&2
+    echo "       green report about nothing." >&2
+    exit 1
+}
+reachable=()
+for t in "${PRODUCERS[@]}"; do
+    if command -v "${t}" >/dev/null 2>&1; then reachable+=("${t} at $(command -v "${t}")"); fi
+done
+if [ "${#reachable[@]}" -gt 0 ]; then
+    echo "error: this container can reach ${#reachable[@]} producer(s) that the criterion's host must not have:" >&2
+    printf '         %s\n' "${reachable[@]}" >&2
+    echo "       Whatever passes below would have passed BECAUSE of them, not despite them. Either" >&2
+    echo "       IMAGE_DOCKER_CLI_28 moved to an image that ships a toolchain, or the two packages" >&2
+    echo "       this gate adds now drag one in." >&2
+    exit 1
+fi
+echo "PASS: none of the ${#PRODUCERS[@]} producers in tests/host-toolchain-lint.sh's table is reachable"
+
+# ---------------------------------------------------------------------------
+# Naming what broke.
+#
+# "The build failed on a bare host" is a dated observation with the date taken
+# off. What a reader needs is the tool and the file, so a rung that goes red
+# reads as a finding about ONE invocation instead of a report that something,
+# somewhere, needs something.
+#
+# Four signatures, all of them measured in this image on 2026-09-05 rather than
+# recalled:
+#
+#   bash        /tmp/b.sh: line 3: nosuchtool: command not found   <- file AND line
+#   busybox sh  /tmp/s.sh: line 2: nosuchtool: not found
+#               /bin/sh: nosuchtool: not found
+#   make        make: nosuchtool: No such file or directory
+#   this tree   error: <tool> is required and not on PATH          <- ten scripts
+#
+# The first two carry the file themselves. The last two do not, so every tool is
+# ALSO located by a command-position grep over the tracked surface -- the same
+# match shape tests/host-toolchain-lint.sh uses, which is why a hit here reads
+# the way a hit there does.
+# ---------------------------------------------------------------------------
+ere_quote() { printf '%s' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g'; }
+
+diagnose() {
+    local log="$1" rung="$2" cmd="$3"
+
+    mapfile -t records < <(awk '
+        # bash and busybox sh, when a SCRIPT was running: the file and the line
+        # are already in the message.
+        /^[^ ]+: line [0-9]+: [^ :]+: (command )?not found$/ {
+            n = split($0, p, ": "); sub(/^line /, "", p[2])
+            print p[3] "\t" p[1] "\t" p[2]; next
+        }
+        # busybox sh at top level: `/bin/sh: <tool>: not found`.
+        /^[^ ]+: [^ :]+: not found$/ { split($0, p, ": "); print p[2] "\t\t"; next }
+        # make resolves a recipe first word itself and reports it its own way.
+        /^make(\[[0-9]+\])?: [^ :]+: (No such file or directory|Command not found)$/ {
+            split($0, p, ": "); print p[2] "\t\t"; next
+        }
+        # And this tree guards for itself in ten scripts, in one phrasing.
+        /error: [^ ]+ is required and not on PATH/ {
+            line = $0; sub(/^.*error: /, "", line); split(line, q, " ")
+            print q[1] "\t\t"; next
+        }
+    ' "${log}" | sort -u)
+
+    echo >&2
+    if [ "${#records[@]}" -eq 0 ]; then
+        echo "error: rung ${rung} failed -- \`${cmd}\` -- and nothing in its output looks like a" >&2
+        echo "       missing host tool. As far as this gate can tell that is a broken build rather" >&2
+        echo "       than a broken criterion, and the transcript above is the evidence either way." >&2
+        echo "       If it IS a host tool in a shape diagnose() cannot read, that shape belongs in" >&2
+        echo "       tests/bare-host-gate/ladder.sh beside the four it already knows." >&2
+        return 0
+    fi
+
+    echo "error: rung ${rung} went red on a MISSING HOST TOOL, which is the criterion breaking and" >&2
+    echo "       not merely a build breaking. \`${cmd}\` needs something PLAN-080 section 1 does not" >&2
+    echo "       permit on the host." >&2
+
+    local seen="" tool file line q hits
+    for rec in "${records[@]}"; do
+        IFS=$'\t' read -r tool file line <<<"${rec}"
+        [ -n "${tool}" ] || continue
+        case " ${seen} " in *" ${tool} "*) ;; *) seen="${seen} ${tool}" ;; esac
+        echo >&2
+        echo "       tool: ${tool}" >&2
+        if [ -n "${file}" ]; then
+            echo "       named by the run: ${file}:${line}" >&2
+        fi
+        q="$(ere_quote "${tool}")"
+        # Command position, the shape tests/host-toolchain-lint.sh matches. `|| true`
+        # because a tool with no call site in the tree is a real answer -- it means
+        # something reached for it through a variable, or a Makefile recipe did.
+        hits="$(git grep -n -E "(^|[;&|(]|&&|\|\|)[[:space:]]*${q}([[:space:]]|\$)" -- '*.sh' 'Makefile' '*/Makefile' '.github/workflows/*.yml' 2>/dev/null | head -8 || true)"
+        if [ -n "${hits}" ]; then
+            echo "       in command position in the tree:" >&2
+            printf '         %s\n' "${hits}" >&2
+        else
+            echo "       no call site in command position; it is reached through a variable, a" >&2
+            echo "       recipe, or a file this grep does not read." >&2
+        fi
+    done
+
+    echo >&2
+    echo "       PLAN-080 section 1 permits docker, git, bash, make and a busybox userland on the" >&2
+    echo "       host and nothing else. Two ways out, and they are not the same decision:" >&2
+    echo "         - move the invocation into a container, which is what section 3's boundary test" >&2
+    echo "           asks of anything that can change a byte it writes; or" >&2
+    echo "         - if it really is orchestration -- it produces nothing and only decides which" >&2
+    echo "           container runs -- widen section 1's permitted set and substrate.sh's PERMITTED" >&2
+    echo "           list with it, which is a decision that leaves a record." >&2
+}
+
+# ---------------------------------------------------------------------------
+# The climb.
+# ---------------------------------------------------------------------------
+STEP=0
+run_step() {
+    local rung="$1"
+    shift
+    STEP=$((STEP + 1))
+    local log="${LOGDIR}/step-${STEP}.log"
+    echo
+    echo "--- rung ${rung}: $* ---"
+    if "$@" 2>&1 | tee "${log}"; then
+        echo "--- rung ${rung}: PASS ---"
+        return 0
+    fi
+    diagnose "${log}" "${rung}" "$*"
+    exit 1
+}
+
+# Rung 1. One gate, run by bash, with make still unreachable to it -- section
+# 4.2's `183/183 PASS`. It is the smallest statement the ladder makes: this
+# tree's entry points are bash scripts and a bash script can run one.
+run_step 1 bash docs/verify-index.sh
+
+# Rung 2. The target names are the build's interface, so make running five gates
+# is a different claim from bash running one; and the policy's own check is
+# here because it is what covers everything above this ladder's ceiling.
+run_step 2 make docs-verify
+run_step 2 make os-host-toolchain-lint
+
+# Rung 3. Both of these reach for bun, which this host does not have and must
+# not need: verify/run.sh takes its container route, and what runs is the bun
+# pinned as IMAGE_BUN_1. This is the rung that proves a judge's container route
+# is sufficient on its own -- PLAN-080 section 3.1's ruling, executed.
+run_step 3 make os-layout-lint
+run_step 3 make os-verify-test
+
+echo
+echo "rungs 1-3: ${STEP} steps, all green, on a host with docker, git, bash, make and busybox."
+echo "NOT climbed, and stated so the record is not read as more than it is: rung 4 --"
+echo "  \`bash build/run.sh --mkimage-x64\` and \`bash verify/run.sh --verify --board x64\` --"
+echo "  needs the amd64 package pool; \`--build-rootfs\` still refuses for PLAN-080 B5's one COPY."
