@@ -72,7 +72,7 @@ producer in `tests/host-toolchain-lint.sh`'s table to still be unreachable. That
 table is read with the new `--print-tools` flag rather than copied: one table,
 two readers, so a row added to the lint is a row this gate checks.
 
-*A red rung is diagnosed.* Four failure signatures, measured inside the image on
+*A red rung is diagnosed, and so is a green one.* Four failure signatures, measured inside the image on
 2026-09-05 rather than recalled — bash's `<file>: line N: <tool>: command not
 found`, busybox's `not found`, make's `<tool>: No such file or directory`, and
 this tree's own `error: <tool> is required and not on PATH` — yield the tool.
@@ -81,9 +81,25 @@ command-position grep in the shape the lint uses where it did not. The failure
 then reads as one invocation, with the two ways out named: containerise it, or
 widen §0.0's permitted set, which is a decision that leaves a record.
 
-**Owed, and not done here.** There is no negative test. `tests/host-toolchain-
-lint-test.sh` plants a defect per case and requires its own message back, and
-this gate deserves the same: a planted host-tool need at each rung, required to
-turn it red naming that tool and that file. The diagnosis was driven red by hand
-against a mutated clone (see the report) but nothing re-runs that, which is the
-same shape of debt B6 existed to pay off one level up.
+**Two things the first runs found.** Neither was predicted, and both changed the
+implementation:
+
+- `mkfs.vfat` is reachable inside `IMAGE_DOCKER_CLI_28` and resolves to
+  `/bin/busybox`. One of the 35 rows in the lint's table is the permitted
+  userland wearing another name. It prints as a `NOTE`; anything reachable that
+  is not busybox is still fatal, and a planted `cargo` was required to prove it.
+- A missing tool need not turn a rung red. `jq` planted above
+  `docs/verify-index.sh`'s `set -euo pipefail` printed `line 30: jq: command not
+  found`, the script carried on and the rung exited 0 — the first version of
+  this gate called that PASS. The transcript is now read on the green path as
+  well, with its own wording.
+
+**Owed, and not done here.** There is no negative test.
+`tests/host-toolchain-lint-test.sh` plants a defect per case and requires its
+own message back, and this gate deserves the same. Four defects were planted by
+hand against a mutated clone on 2026-09-05 and each turned it red with its own
+message — a `jq` above `set -euo pipefail` (rung 1, green-path shape), an
+`mkimage` in the `docs-verify` recipe (rung 2, make's shape), a planted `cargo`
+on `PATH` (the producer assertion) and a `bash` planted in the bare image (the
+substrate control). Nothing re-runs any of that, which is the same shape of debt
+B6 existed to pay off one level up.

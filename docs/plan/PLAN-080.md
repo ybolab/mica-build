@@ -467,9 +467,10 @@ anything failing.
   it**: `tests/bare-host-gate/gate.sh`, wired as `make os-bare-host-gate`, is
   that climb on demand — a clone of `HEAD` inside `IMAGE_DOCKER_CLI_28`, with
   the substrate measured before it is used and every producer in the table above
-  required to stay unreachable after `bash` and `make` arrive. Its ceiling is
-  rung 3, so what it does *not* execute is still covered only by the shape this
-  check reads. §10 B6 records both halves.
+  required to stay unreachable — except as a busybox applet, which `mkfs.vfat`
+  turns out to be, and §10 B6 has the measurement. Its ceiling is rung 3, so
+  what it does *not* execute is still covered only by the shape this check
+  reads. §10 B6 records both halves.
 
 ## 7. Documentation
 
@@ -614,6 +615,20 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   found`, make's `No such file or directory`, and this tree's own `is required
   and not on PATH`) name the tool, and the file comes from the message where the
   shell put it there and from a command-position grep where it did not.
+  Two things the first runs found, recorded because neither was predicted:
+  - **One of the 35 producers IS reachable in the pinned image.** `mkfs.vfat` at
+    `/sbin/mkfs.vfat`, and `readlink -f` says `/bin/busybox` — the multi-call
+    binary answers to `mkdosfs` and `mkfs.vfat` as well as to `sh`, `awk` and
+    `sed`, so it is the userland §1 already permits wearing another name, not an
+    image that grew a toolchain. It is printed as a NOTE rather than waived;
+    anything reachable that is *not* busybox stays fatal, and a planted `cargo`
+    was required to turn it red.
+  - **A missing host tool does not always turn a rung red.** `jq -r .version`
+    planted into `docs/verify-index.sh` above its `set -euo pipefail` printed
+    `line 30: jq: command not found`, the script carried on, the rung exited 0
+    and the first version of the gate reported PASS. So the transcript is read on
+    the green path too, and that finding is worded as what it is: the criterion
+    broken while the exit status says nothing about it.
 - **B7 — CI stops installing a toolchain.** `.github/workflows/check.yml`'s
   `rust` job `curl`s rustup onto the runner and runs both `hack/check.sh` there.
   With `make os-rust-gate` in the tree those two steps and the three install
