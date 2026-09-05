@@ -55,11 +55,20 @@
 #   bash tests/host-toolchain-lint.sh            (or: make os-host-toolchain-lint)
 #   bash tests/host-toolchain-lint.sh --root DIR  scan another checkout; used by
 #                                                 tests/host-toolchain-lint-test.sh
+#   bash tests/host-toolchain-lint.sh --print-tools
+#                                                 the table below, one tool per
+#                                                 line, and nothing else; used by
+#                                                 tests/bare-host-gate/ladder.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PRINT_TOOLS=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
+    --print-tools)
+        PRINT_TOOLS=1
+        shift
+        ;;
     --root)
         [ -n "${2-}" ] || { echo "error: --root takes a directory" >&2; exit 1; }
         ROOT="$(cd "$2" && pwd)"
@@ -106,6 +115,18 @@ TOOLS="${TOOLS}"'|mkfs\.vfat|mkfs\.ext4|mkfs\.fat|mke2fs|mksquashfs|unsquashfs|d
 TOOLS="${TOOLS}"'|sgdisk|sfdisk|parted|mcopy|mmd|mkimage|mkenvimage|veritysetup|grub-mkstandalone|grub-install|grub-editenv'
 TOOLS="${TOOLS}"'|dpkg-deb|dpkg-buildpackage|dpkg-scanpackages|apt-ftparchive|rauc'
 TOOLS="${TOOLS}"'|openssl|gpg'
+
+# ONE TABLE, TWO READERS. tests/bare-host-gate/ladder.sh asserts that none of
+# these is reachable inside the container standing in for the criterion's host,
+# and it reads them from here rather than keeping its own list. A second copy
+# would agree with this one exactly until somebody added a row to one of them,
+# and then the gate would be measuring a policy the tree had already moved past.
+# The alternation is an ERE, so the backslashes come back out: `g\+\+` is `g++`
+# and `mkfs\.vfat` is `mkfs.vfat`, which is what `command -v` needs to be asked.
+if [ "${PRINT_TOOLS}" = 1 ]; then
+    printf '%s\n' "${TOOLS}" | tr '|' '\n' | sed 's/\\//g'
+    exit 0
+fi
 
 PASS_N=0
 FAIL_N=0

@@ -47,6 +47,17 @@
 # whose meta/ has aged past the window is re-minted with --force; the bundle
 # build refuses before that point and names the date it read (PLAN-078 §S3).
 #
+# OPENSSL AND JQ COME OUT OF A PINNED IMAGE, NOT OFF THE HOST. Everything below
+# mints material that survives the run -- the CA and the signer are staged into
+# every image's keyring, and the package key's public half is written into
+# meta/updates/manifest.json, which the build bakes in -- so both tools are
+# PRODUCERS by docs/design/build.md section 0, and a producer has no host route.
+# They run in localhost/mos-build-openssl (build-env/openssl/Dockerfile), which
+# records the openssl that minted a keyring so the question is answerable later.
+# The gap is not theoretical: this host carries OpenSSL 3.0.2 and that image
+# carries trixie's 3.5.7 (measured 2026-09-05), and which of the two wrote a
+# certificate decided its encoding, its extension ordering and its serial.
+#
 # Nothing this script writes may ever be committed: meta/ is in .gitignore and
 # every private file lands 0600. A committed signing key would make every device
 # in the fleet trust anything anyone builds.
@@ -105,11 +116,6 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
-
-if ! command -v openssl >/dev/null; then
-    echo "error: openssl not found; it is the only tool the rauc domain needs" >&2
-    exit 1
-fi
 
 # The declared algorithms. Sourced rather than parsed, which is what the
 # `KEY=value`-only shape of key-algorithms.env buys, and every role is demanded
@@ -171,6 +177,72 @@ openssl_newkey_args() {
             ;;
     esac
 }
+
+# THE PINNED TOOLING, resolved LAZILY -- at the first mint and not before.
+#
+# The common call is `--if-absent` over a meta/ that is already complete, which
+# mints nothing and exits below without opening anything. A build on a tree that
+# already has its trust root must not start needing a builder image in order to
+# discover that it has nothing to do.
+CRYPTO_IMAGE=""
+crypto_open() {
+    [ -n "${CRYPTO_IMAGE}" ] && return 0
+    command -v docker >/dev/null || {
+        echo "error: docker is required. The material below is minted by the openssl in localhost/mos-build-openssl rather than by whatever openssl is on this machine, because what a certificate ends up containing is the minting openssl's decision and this material is baked into every image (docs/design/build.md section 0)" >&2
+        exit 1
+    }
+    local arch
+    case "$(uname -m)" in
+        x86_64) arch=amd64 ;;
+        aarch64 | arm64) arch=arm64 ;;
+        *)
+            echo "error: $(uname -m) is not an architecture build-env/images.env pins mos-build-openssl for" >&2
+            exit 1
+            ;;
+    esac
+    CRYPTO_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --arch="${arch}" --ref LOCAL_MOS_BUILD_OPENSSL)" || {
+        echo "error: localhost/mos-build-openssl:${arch} could not be resolved (see the message above). Build it: make build-env" >&2
+        exit 1
+    }
+    # The mount source, created before the daemon can create it: a bind mount
+    # whose source does not exist on the daemon's side becomes an empty
+    # directory owned by root, and every key below would be written into it and
+    # vanish with the container.
+    mkdir -p "${METADIR}"
+}
+
+# openssl and jq, run in that image over meta/.
+#
+# IDENTITY MOUNT: meta/ is at the same absolute path inside the container as
+# outside, so every path in this script is the path the tool is handed and
+# nothing has to be rewritten for the container. Every file these two touch --
+# the keys, the certificates, the CSR, the signer's extension file and
+# manifest.json -- is under it, which is what makes one mount enough.
+#
+# --user is what keeps the material the caller's. Files a container writes into
+# a bind mount are owned by the uid that wrote them, and a root-owned meta/ in a
+# developer's checkout could not be rotated with --force without sudo.
+#
+# umask 0077 is set INSIDE, because the umask this script sets applies to the
+# shell it runs in and not to a process in another container's namespace. The
+# private keys must never exist as 0644, not even for the moment between
+# openssl writing one and the chmod below.
+crypto_run() {
+    docker run --rm \
+        --label ai-agent=true \
+        --user "$(id -u):$(id -g)" \
+        -v "${METADIR}:${METADIR}" \
+        -w "${METADIR}" \
+        --entrypoint /bin/sh \
+        "${CRYPTO_IMAGE}" -c 'umask 0077; exec "$@"' -- "$@"
+}
+
+# Named for the tools they replace, so the mints below read as what they are and
+# the diff that moved them is a diff about WHERE they run. `# mos-build-side:
+# container-block` marks each call site for tests/host-toolchain-lint.sh, which
+# matches on the binary's name and cannot see through a function.
+openssl() { crypto_run openssl "$@"; }
+jq() { crypto_run jq "$@"; }
 
 banner() {
     echo "############################################################"
@@ -276,6 +348,9 @@ MARKER_TEXT
 
 gen_rauc() {
     local ca_args signer_args
+    # Before a single byte is written: a tree with no mos-build-openssl is told
+    # so with meta/ untouched, rather than half a trust root and an error.
+    crypto_open
     mapfile -t ca_args < <(openssl_newkey_args "${MOS_KEY_ALG_RAUC_CA}")
     mapfile -t signer_args < <(openssl_newkey_args "${MOS_KEY_ALG_RAUC_SIGNER}")
     # mapfile cannot fail, so the mapper's refusal reaches here as an EMPTY
@@ -291,6 +366,8 @@ gen_rauc() {
     # MOS_KEY_ALG_RAUC_SIGNER, and the reason for each value is recorded beside
     # it there. Deliberately not restated here: a reason in two places is a
     # reason that goes stale in one of them, and this one already had.
+    # mos-build-side: container-block -- openssl() above runs the pinned
+    #   localhost/mos-build-openssl over meta/; these two mints happen in it
     openssl req -x509 "${ca_args[@]}" -keyout "${CA_KEY}" -out "${CA_CERT}" \
         -days 3650 -nodes -sha256 \
         -subj "/O=mos development/CN=mos development CA" \
@@ -300,6 +377,7 @@ gen_rauc() {
     openssl req "${signer_args[@]}" -keyout "${SIGNER_KEY}" -out "${RAUC_DIR}/signer.csr" \
         -nodes -sha256 \
         -subj "/O=mos development/CN=mos development bundle signer" 2>/dev/null
+    # mos-build-side: host
 
     # No extendedKeyUsage on the signer: RAUC verifies the CMS signature through
     # OpenSSL's S/MIME-signing purpose check, which accepts a certificate with no
@@ -315,18 +393,41 @@ gen_rauc() {
     # in that file, deliberately not restated here -- a reason in two places is
     # a reason that goes stale in one of them, which is the defect the
     # algorithm rows above already had once.
+    # The extensions as a FILE and not a process substitution. `<(...)` is a
+    # /dev/fd path belonging to this shell, and the openssl that has to read it
+    # now runs in a container that cannot see this shell's file descriptors --
+    # it would report a missing extension file and mint nothing. Same two lines,
+    # same certificate; removed with the CSR below.
+    printf '%s\n' \
+        "basicConstraints=critical,CA:FALSE" \
+        "keyUsage=critical,digitalSignature" > "${RAUC_DIR}/signer.ext"
+
+    # mos-build-side: container-block -- the same wrapper; the signer certificate
+    #   is issued by the pinned openssl, which is what decides its encoding
     openssl x509 -req -in "${RAUC_DIR}/signer.csr" \
         -CA "${CA_CERT}" -CAkey "${CA_KEY}" -CAcreateserial \
         -out "${SIGNER_CERT}" -days "${MOS_RAUC_SIGNER_VALIDITY_DAYS}" -sha256 \
-        -extfile <(printf '%s\n' \
-            "basicConstraints=critical,CA:FALSE" \
-            "keyUsage=critical,digitalSignature") 2>/dev/null
-    rm -f "${RAUC_DIR}/signer.csr" "${RAUC_DIR}/ca.srl" "${CA_CERT}.srl"
+        -extfile "${RAUC_DIR}/signer.ext" 2>/dev/null
+    # mos-build-side: host
+    # THE SERIAL FILE IS DELETED BY PATTERN, because openssl versions disagree
+    # about its name and this was measured rather than anticipated: with
+    # `-CA ca.cert.pem -CAcreateserial`, OpenSSL 3.0.2 writes `ca.cert.pem.srl`
+    # (it appends) and 3.5.7 writes `ca.cert.srl` (it replaces the extension).
+    # The named forms below caught the first and not the second, so moving the
+    # mint into the pinned image left a stray 0600 file in the tree's trust
+    # directory -- nothing ships it, since the image takes only the allowlist in
+    # rootfs/build.sh, and nothing was red, since meta/ is gitignored and
+    # tests/trust-domain-hygiene-test.sh only refuses a TRACKED .srl. A glob
+    # cannot be outgrown by the next version's spelling.
+    rm -f "${RAUC_DIR}/signer.csr" "${RAUC_DIR}/signer.ext" "${RAUC_DIR}"/*.srl
 
     chmod 0600 "${CA_KEY}" "${SIGNER_KEY}"
     chmod 0644 "${CA_CERT}" "${SIGNER_CERT}"
 
+    # mos-build-side: container-block -- the same wrapper; the chain is checked by
+    #   the openssl that just issued it
     openssl verify -CAfile "${CA_CERT}" "${SIGNER_CERT}" >/dev/null
+    # mos-build-side: host
     mark_generated rauc
 }
 
@@ -336,10 +437,11 @@ gen_updates() {
         echo "rootfs/build.sh's A1 is what refuses a value outside the role's allowed set, and it names the verifier that bounds it." >&2
         exit 1
     }
-    command -v jq >/dev/null || {
-        echo "error: jq not found. The package signing key's public half is written into ${MANIFEST}, which is JSON an operator may already have edited; --domain updates will not rewrite it with sed" >&2
-        exit 1
-    }
+    # The pinned openssl AND the pinned jq: the public half of this key is
+    # written into ${MANIFEST}, which is JSON an operator may already have
+    # edited and which the build bakes into every image, so the tool that
+    # rewrites it is a producer too and does not come off the host either.
+    crypto_open
 
     mkdir -p "${UPDATES_DIR}"
     chmod 0700 "${METADIR}" "${UPDATES_DIR}"
@@ -348,7 +450,10 @@ gen_updates() {
     # Raw PKCS#8 DER, which is the encoding lode's tooling writes and reads --
     # and the reason section 1.1's private-key detector carries a DER test
     # rather than only a grep for PEM armour.
+    # mos-build-side: container-block -- openssl() above runs the pinned
+    #   localhost/mos-build-openssl over meta/
     openssl genpkey -algorithm ED25519 -outform DER -out "${ROOT_KEY}"
+    # mos-build-side: host
     chmod 0600 "${ROOT_KEY}"
 
     instantiate_manifest
@@ -356,7 +461,10 @@ gen_updates() {
     # lode's trusted_keys shape: base64 over the RAW 32-byte public half, which
     # is the tail of the 44-byte SubjectPublicKeyInfo DER.
     local pub
+    # mos-build-side: container-block -- only the openssl is in the image; the
+    #   tail/base64/tr after the pipe is this shell's, over its stdout
     pub="$(openssl pkey -inform DER -in "${ROOT_KEY}" -pubout -outform DER | tail -c 32 | base64 | tr -d '\n')"
+    # mos-build-side: host
     [ -n "${pub}" ] || { echo "error: could not derive the public half of ${ROOT_KEY}" >&2; exit 1; }
 
     # signingKeyIds is omitted on purpose: it is derived by the build from
