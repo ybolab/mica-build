@@ -15,17 +15,12 @@ use rauc_sign::client;
 #[derive(Debug, Parser)]
 #[command(
     name = "rauc-verify",
-    about = "Verify a local mos TUF repository from a pinned trusted root"
+    about = "Verify a local mos TUF repository from the baked signing keys"
 )]
 struct Cli {
     /// Repository directory (containing metadata/ and targets/).
     #[arg(long)]
     repo: PathBuf,
-    /// Pinned trusted root metadata, provisioned out of band. Required for
-    /// the same reason `rauc-sign verify` requires it: checking a repository
-    /// against its own metadata/root.json proves only internal consistency.
-    #[arg(long)]
-    root: PathBuf,
     /// JSON file recording the highest verified version per role. Created on
     /// first use; must live on persistent storage, because it is what makes
     /// rollback protection hold across restarts.
@@ -40,18 +35,18 @@ struct Cli {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match &cli.target {
-        Some(name) => client::verify_target(&cli.repo, &cli.root, &cli.state, name)
+        Some(name) => client::verify_baked_target(&cli.repo, &cli.state, name)
             .await
             .map(|path| path.display().to_string()),
-        None => client::verify_repository(&cli.repo, &cli.root, &cli.state)
+        None => client::verify_baked(&cli.repo, &cli.state)
             .await
             .map(|report| {
                 format!(
                     "OK root v{} targets v{} snapshot v{} timestamp v{}",
-                    report.root_version,
-                    report.targets_version,
-                    report.snapshot_version,
-                    report.timestamp_version
+                    report.root().signed.version,
+                    report.targets().signed.version,
+                    report.snapshot().signed.version,
+                    report.timestamp().signed.version
                 )
             }),
     };

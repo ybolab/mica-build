@@ -167,6 +167,18 @@ pub async fn check(
     select(&repository, identity, channel, allow_downgrade)
 }
 
+/// Device selection after authenticating metadata with the baked signing keys.
+pub async fn check_baked(
+    repo: &Path,
+    state: &Path,
+    identity: &DeviceIdentity,
+    channel: &str,
+    allow_downgrade: bool,
+) -> Result<Selection> {
+    let repository = client::verify_baked(repo, state).await?;
+    select(&repository, identity, channel, allow_downgrade)
+}
+
 /// The selection pass over verified targets metadata.
 fn select(
     repository: &Repository,
@@ -544,6 +556,27 @@ pub async fn import_selected(
         .await
         .with_context(|| format!("verify {} inside the lockbox", candidate.name))?;
 
+    stage_import(&verified, candidate, workspace, max_bytes)
+}
+
+/// Offline device import uses the same baked keys as online selection.
+pub async fn import_baked(
+    lockbox: &Path,
+    state: &Path,
+    candidate: &Candidate,
+    workspace: &Workspace,
+    max_bytes: u64,
+) -> Result<FetchReport> {
+    let verified = client::verify_baked_target(lockbox, state, &candidate.name).await?;
+    stage_import(&verified, candidate, workspace, max_bytes)
+}
+
+fn stage_import(
+    verified: &Path,
+    candidate: &Candidate,
+    workspace: &Workspace,
+    max_bytes: u64,
+) -> Result<FetchReport> {
     let file_name = plain_file_name(&candidate.name)?;
     let final_path = workspace.verified().join(&file_name);
     let part_name = format!("{file_name}.part");

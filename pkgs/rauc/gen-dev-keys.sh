@@ -359,12 +359,12 @@ gen_updates() {
     pub="$(openssl pkey -inform DER -in "${ROOT_KEY}" -pubout -outform DER | tail -c 32 | base64 | tr -d '\n')"
     [ -n "${pub}" ] || { echo "error: could not derive the public half of ${ROOT_KEY}" >&2; exit 1; }
 
-    # signingKeyIds is left EMPTY on purpose: it is derived by the build from
+    # signingKeyIds is omitted on purpose: it is derived by the build from
     # signingKeys, and a value written here would be a second truth for a fact
     # that has one source.
     local tmp
     tmp="$(mktemp)"
-    jq --arg k "${pub}" '.trust.signingKeys = [$k] | .trust.signingKeyIds = []' "${MANIFEST}" > "${tmp}"
+    jq --arg k "${pub}" '.trust.signingKeys = [$k] | del(.trust.signingKeyIds)' "${MANIFEST}" > "${tmp}"
     cat "${tmp}" > "${MANIFEST}"
     rm -f "${tmp}"
     chmod 0644 "${MANIFEST}"

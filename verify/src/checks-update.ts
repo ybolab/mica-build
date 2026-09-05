@@ -25,9 +25,37 @@ import { readProfileContract } from './checks-system.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { verdict } from './verdict.ts'
+import { ToolOutputError } from './tools.ts'
 
 /** The two binaries `mos-rauc-update` ships, at the paths its Dockerfile installs. */
 const CLIENT_BINARIES = ['/usr/bin/rauc-update', '/usr/bin/rauc-verify'] as const
+
+/** Update consumers and the baked-meta status reader, all required ELF files. */
+const ENDPOINT_BINARIES = [...CLIENT_BINARIES, '/usr/bin/mosd', '/usr/bin/apid'] as const
+
+// These literals are identifiers/diagnostics, not connection defaults. Keep
+// exceptions at exact strings, never entire hosts or a blanket localhost rule.
+const NON_ENDPOINT_LITERALS = [
+  'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd',
+  'https://dbus.freedesktop.org/doc/dbus-specification.html#addresses',
+  'https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus',
+  'https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error',
+  'https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface',
+  'https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member',
+  'https://github.com/clap-rs/clap/issues',
+  'https://docs.rs/getrandom#nodejs-es-module-support',
+  'https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof',
+  'http://www.w3.org/1998/Math/MathML',
+  'http://www.w3.org/1999/xlink',
+  'http://www.w3.org/2000/svg',
+  'http://www.w3.org/XML/1998/namespace',
+  'https://base-ui.com/production-error',
+  'https://react.dev/errors/',
+  'https://tailwindcss.com',
+  // TanStack Router's synthetic origin for relative URL parsing, scoped to
+  // its expression in embedded UI code. A standalone localhost URL still fails.
+  'window?.origin&&window.origin!==`null`?window.origin:`http://localhost`',
+] as const
 
 /** The release-side signing tool. No device may carry it. */
 const SIGNER_BINARY = '/usr/bin/rauc-sign'
@@ -131,6 +159,37 @@ function manifestVersion(root: string, pkg: string): string | undefined {
 }
 
 export const UPDATE_CHECKS: readonly CheckCase[] = [
+  {
+    id: 'no-compiled-in-endpoint',
+    shell: { pass: 'no update or fleet endpoint is compiled into a binary' },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      if (!entry(root, '/usr/bin')?.isDirectory()) {
+        throw new ToolOutputError(`${root}/usr/bin is absent; no endpoint binary scan is possible`)
+      }
+      const found: string[] = []
+      let scannedBytes = 0
+      for (const path of ENDPOINT_BINARIES) {
+        if (!entry(root, path)?.isFile()) {
+          throw new ToolOutputError(`${root}${path} is not a regular file; refusing an incomplete endpoint scan`)
+        }
+        const bytes = readFileSync(join(root, path))
+        if (bytes.length < 64 || !bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+          throw new ToolOutputError(`${root}${path} is not an ELF binary; refusing to report a binary scan over other data`)
+        }
+        scannedBytes += bytes.length
+        let text = bytes.toString('latin1')
+        for (const literal of NON_ENDPOINT_LITERALS) text = text.replaceAll(literal, '')
+        const urls = text.match(/(?:https?|wss?|mqtts?):\/\/(?:[a-z0-9][a-z0-9._-]*|\[[a-f0-9:]+\])(?::[0-9]+)?/gi) ?? []
+        for (const url of new Set(urls)) found.push(`${path}: ${url}`)
+      }
+      return [verdict('no-compiled-in-endpoint', found.length === 0,
+        `no update or fleet endpoint is compiled into a binary: scanned ${ENDPOINT_BINARIES.length} ELF files `
+        + `[${ENDPOINT_BINARIES.join(' ')}] under ${root}, ${scannedBytes} bytes; `
+        + `meta/ and operator documents are data and are outside this scan; `
+        + (found.length ? `found ${found.join('; ')}` : 'no endpoint literals found after exact diagnostic/namespace exclusions'))]
+    },
+  },
   {
     // Both halves and the signer's absence in ONE verdict, because they are one
     // statement about one package: `mos-rauc-update` ships exactly these two
