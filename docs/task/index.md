@@ -81,6 +81,8 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-317 PLAN-071 U1/U2/U3: the automatic update driver**](RFCT-317.md) `P1`
 - [x] [**RFCT-320 The cx3576 kernel stamp, and two documents that said something false**](RFCT-320.md) `P2`
 - [x] [**RFCT-316 Gate C triage: 35 partial and unimplemented claims ruled on**](RFCT-316.md) `P1`
+- [x] [**RFCT-314 PLAN-070 F6c-F6f: the /mos/config namespace and the settings move**](RFCT-314.md) `P1`
+- [x] [**RFCT-321 PLAN-071 U4/U5 and the clock predicate**](RFCT-321.md) `P1`
 - [x] [**RFCT-313 PLAN-070 F5/F6/F6b: the reader, the precedence, the document move**](RFCT-313.md) `P1`
 - [x] [**RFCT-318 PLAN-080 B2/B3: the last producer and two judges into containers**](RFCT-318.md) `P1`
 - [x] [**RFCT-319 PLAN-080 B6: the docker-and-git experiment is a gate**](RFCT-319.md) `P1`
