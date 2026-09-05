@@ -559,8 +559,11 @@ os-netavark-kernel-test:
 # mos-build-base carries only the language-independent floor -- ca-certificates,
 # git, file, binutils, xz -- and ASSERTS that floor from inside itself, so an apt
 # archive that moved backwards fails the build rather than the component two
-# images above it. mos-build-{c,go,rust} are FROM it and each keeps its OWN apt
-# list: one shared list is one cache key for unrelated compilers.
+# images above it. mos-build-{c,deb,go,rust} are FROM it and each keeps its OWN
+# apt list: one shared list is one cache key for unrelated compilers.
+# mos-build-rust-check is the one image FROM a sibling rather than the base --
+# mos-build-rust plus the tools the Rust gate runs -- and build-env/build.sh
+# orders the rows so that parent is built first.
 #
 # WHAT EACH ONE ASSERTS, AND WHY THE TWO KINDS DIFFER. mos-build-c's gcc comes
 # from apt against live deb.debian.org, which no digest here pins, so it asserts
@@ -568,11 +571,16 @@ os-netavark-kernel-test:
 # mos-build-go and mos-build-rust install tarballs pinned by sha256, so they
 # assert EXACT versions: there the version is a fact the tree owns.
 #
-# All four assert by USE as well as by number: each compiles and links a program
-# and reads the architecture back out of the ELF, because a version string
-# answers on an image with no libc headers, no linker and no std for its target.
-# mos-build-go and mos-build-rust also link for the OTHER architecture, which is
-# what the device builds actually need.
+# deb asserts its dpkg tools by running `--version` against floors, and
+# rust-check asserts clippy against rustc's own release and nextest and deny
+# exactly, each from inside itself (build-env/deb/Dockerfile,
+# build-env/rust-check/Dockerfile).
+#
+# base, c, go and rust assert by USE as well as by number: each compiles and
+# links a program and reads the architecture back out of the ELF, because a
+# version string answers on an image with no libc headers, no linker and no std
+# for its target. mos-build-go and mos-build-rust also link for the OTHER
+# architecture, which is what the device builds actually need.
 #
 # Needs docker. MOS_BUILD_PLATFORM=linux/<arch> cross-builds it; the default is
 # the host. It fails loudly when a pin is missing, unresolved or written as a
