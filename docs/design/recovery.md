@@ -491,7 +491,7 @@ everything below it destroys something that was on the device.**
   factory reset for the same symptom.
 - *What ships:* the whole flow — `POST /api/v1/recovery/credential`
   (`pkgs/mosd/apid/src/routes.rs`), every §5.1 rule asserted, §5.4's guard
-  release included.
+  release and its one-rotation-per-assertion bound included.
 - **What is missing, and it is why this step is not `[implemented]`:** the flow
   is gated on a §4 presence assertion, the system side that produces one from a
   board-declared physical action ships, and **neither shipped board declares an
@@ -842,8 +842,9 @@ be a third channel that can claim a device, which
 2. **The new credential is returned exactly once**, on the channel that proved
    presence (printed at the local console; or written to the boot medium the
    operator supplied), never over the network and never a second time. If the
-   operator loses it, they run the flow again — which is cheap, because it is
-   non-destructive.
+   operator loses it, they run the flow again — which costs no data, because it
+   is non-destructive, and costs one fresh presence assertion, because §5.4's
+   bound spends the one that authorized the rotation they lost.
 3. **The previous secret is invalidated at the same commit that publishes the
    new one.** Not before (a crash between the two would be a self-inflicted
    lockout), not after (a window where both work is a window where the old one
@@ -961,16 +962,26 @@ commit, which is the third.
 
 **The one-rotation bound was a sentence before it was a mechanism** (RFCT-316's
 F3, closed by RFCT-322). The marker was read and never taken, so one assertion
-authorized rotations without limit and concurrent ones raced: measured against
+authorized rotations without limit and concurrent ones raced. Measured against
 the shipped binaries — real mosd on a private session bus, real apid over real
-TLS, no barrier and no fake — a second rotation on the same marker was answered
-`200` in **100 attempts out of 100**, and two concurrent callers were **both**
-answered `200` in **100 iterations out of 100**, publishing two credentials of
-which only the last-written one authenticated: the operator reading the other
-one off the console was handed a password that works nowhere and told nothing.
-At concurrency 8 every one of 50 iterations answered eight `200`s. The spend
-plus the guard close both; the same harness then measured exactly one `200` per
-assertion, every loser `403`, and no losing credential published.
+TLS, real HTTP, no barrier and no fake:
+
+- a **second rotation on the same marker** was answered `200` in **100 attempts
+  out of 100**;
+- **two concurrent callers were both answered `200` in 100 iterations out of
+  100**, and at concurrency 8 every one of 50 iterations answered **eight**
+  `200`s — 400 rotations from 50 assertions;
+- every one of those rotations printed a credential on the console and exactly
+  one of them authenticated, so at concurrency 8 the device published 400
+  credentials of which 50 worked. Worse than a count: the credential published
+  LAST was not always the one whose write landed last, in 5 of the 100
+  concurrency-2 iterations, so an operator could not tell which console line was
+  real by reading down.
+
+The spend plus the guard close both. The same harness against the fixed
+binaries: **exactly one `200` per assertion** in all 250 iterations, every one
+of the 550 losing requests `403`, every published credential authenticating, and
+the marker gone afterwards in every iteration.
 
 **The spend happens after the commit, never before it**, which is the third
 rule read literally: an assertion cost the operator a trip to the device, and a
