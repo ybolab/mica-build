@@ -183,7 +183,7 @@ Debian 包仓库，由 `make os-debs` 构建并建立索引。rootfs 构建只�
 
 | 输入 | 由谁构建 | 落在哪 |
 |---|---|---|
-| builder 镜像 `localhost/mos-build-{base,c,go,rust}:<arch>` | `build-env/build.sh` | 本地 docker 镜像库 |
+| builder 镜像 `localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>` | `build-env/build.sh` | 本地 docker 镜像库 |
 | APID 内置 UI 资源树 | `pkgs/mosd/apid/ui/build.sh`，以只读源码挂载在锁定的 Bun 容器中运行，并由仓库维护的每个 APID Cargo 构建入口预先调用 | 被忽略的 `_out/apid-ui/dist/`，只读挂载进 Rust 构建容器，传给 `apid/build.rs` 后嵌入二进制 |
 | RAUC | `pkgs/rauc/build.sh`，由 `rauc` producer 的 `PREPARE` 钩子驱动 | `pkgs/rauc/out-<arch>/`，打包成 `mos-rauc` |
 | podman 及其六个配套二进制 | `pkgs/podman/build.sh`，由 `podman` producer 的钩子驱动 | `pkgs/podman/out-<arch>/`，打包成 `mos-podman` |
