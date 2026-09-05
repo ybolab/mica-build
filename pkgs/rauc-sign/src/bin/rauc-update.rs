@@ -17,13 +17,23 @@
 //!   `<status> <kind>: <detail>` with status `unavailable` (not mounted, not
 //!   the pool) or `degraded` (read-only, exhausted, probe failed); exit 3
 //!   for either.
-//! - `fetch`: `check`, then probe, then download the selected bundle
+//! - `fetch`: probe, then `check`, then download the selected bundle
 //!   resumably (HTTP range requests) into `downloads/` under a byte budget,
 //!   verifying sha256 and length against the signed metadata before one
 //!   same-filesystem rename lands it in `verified/` and its path is printed.
-//! - `import`: the offline path — the same selection and verification over a
-//!   "lockbox" directory (full metadata plus bundle, `rauc-sign lockbox`),
-//!   then the same probe, budget, staging copy and rename into `verified/`.
+//! - `import`: the offline path — the same probe, then the same selection and
+//!   verification over a "lockbox" directory (full metadata plus bundle,
+//!   `rauc-sign lockbox`), then the budget, staging copy and rename into
+//!   `verified/`.
+//!
+//! Both acquiring subcommands answer in that order deliberately: the
+//! invocation is validated, then the device, then the repository. Readiness is
+//! a device fact that does not depend on the repository, and asking it last
+//! makes exit 3 unreachable whenever the metadata walk fails first — a device
+//! with a read-only `/mos` would report the repository's error and never its
+//! own state. The price is that a degraded workspace answers 3 where an
+//! up-to-date device would have answered 2; `check` still answers that
+//! question without touching the workspace.
 //!
 //! No flag skips metadata or digest verification; there is none to add. No
 //! flag moves the workspace off `/mos/updates` either: an unready workspace
@@ -86,7 +96,7 @@ enum Command {
         #[arg(long)]
         need: Option<u64>,
     },
-    /// Select, probe the workspace, then download the bundle resumably into
+    /// Probe the workspace, select, then download the bundle resumably into
     /// downloads/ and move it into verified/ once it verifies against the
     /// signed metadata.
     Fetch {
@@ -103,7 +113,8 @@ enum Command {
         #[arg(long)]
         install: bool,
     },
-    /// Select, verify and stage a bundle from an offline lockbox directory.
+    /// Probe the workspace, then select, verify and stage a bundle from an
+    /// offline lockbox directory.
     Import {
         /// Lockbox directory: full TUF metadata plus bundle(s), as produced
         /// by `rauc-sign lockbox` (e.g. mounted USB/SD media).
@@ -306,6 +317,20 @@ async fn run() -> Result<ExitCode> {
             install: do_install,
         } => {
             let identity = selection.identity()?;
+            let workspace = Workspace::from_env()?;
+            // A reserve directory outside downloads/ is a wrong invocation and
+            // is refused before the device is consulted, so it stays exit 1
+            // whatever state the workspace is in. `update::fetch` resolves it
+            // again for its own use; this call is the argument check.
+            workspace.reserve_dir(reserve.reserve_dir.as_deref())?;
+            // Readiness before the metadata walk — this is what makes
+            // EXIT_UNREADY reachable here at all (see the module doc). The
+            // probe inside `update::fetch` re-asks with the exact number of
+            // bytes still needed once the candidate is known; this one asks
+            // the unspent-budget question `probe` asks.
+            workspace
+                .probe(reserve.max_bytes, None)
+                .map_err(anyhow::Error::new)?;
             let outcome = update::check_baked(
                 &repo.repo,
                 &repo.state,
@@ -317,7 +342,6 @@ async fn run() -> Result<ExitCode> {
             let Some(candidate) = report_selection(&outcome) else {
                 return Ok(ExitCode::from(EXIT_NONE));
             };
-            let workspace = Workspace::from_env()?;
             let report = update::fetch(
                 &url,
                 candidate,
@@ -345,6 +369,13 @@ async fn run() -> Result<ExitCode> {
             install: do_install,
         } => {
             let identity = selection.identity()?;
+            let workspace = Workspace::from_env()?;
+            // The same ordering as `fetch`, for the same reason: `import` had
+            // the identical hole, with the lockbox walk standing in for the
+            // repository one.
+            workspace
+                .probe(max_bytes, None)
+                .map_err(anyhow::Error::new)?;
             let outcome = update::check_baked(
                 &lockbox,
                 &state,
@@ -356,7 +387,6 @@ async fn run() -> Result<ExitCode> {
             let Some(candidate) = report_selection(&outcome) else {
                 return Ok(ExitCode::from(EXIT_NONE));
             };
-            let workspace = Workspace::from_env()?;
             let report =
                 update::import_baked(&lockbox, &state, candidate, &workspace, max_bytes).await?;
             println!("{}", report.path.display());
