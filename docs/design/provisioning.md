@@ -338,15 +338,27 @@ reporting what a document did, because nothing was consumed.
   (`psk`), or the change that adds the key adds the name. §4.1.7's *no way
   to read the document back* is the same property one layer up.
 
-**Status — [partial].** The namespace, the per-reconciler documents, the
-`0700`/`0600` modes and the fail-closed medium check are shipped, and the
-store already refuses a document that exists and does not parse
-(`SettingsError::Parse`, naming the document) rather than falling back to a
-schema default — so a poured document meets the same reader mosd's own output
-meets, and a well-formed pour is adopted on the next boot. What is **not
-implemented** is PLAN-070's F6g: the boot-time pass that validates documents
-mosd did not write as a distinct act, with the refusal an integrator reads.
-`docs/design/mosd.md` §5.1a records the same boundary from the storage side.
+**Status — [implemented].** A hand-poured namespace is **adopted whole**:
+documents written into `/mos/config/` before mosd exists are validated on the
+next boot exactly as mosd validates its own output, and the addressed tree
+comes back carrying them. A document that does **not** parse refuses its own
+subsystem, names the file, and costs nothing else —
+`docs/design/mosd.md` §5.1a is the rule and the per-document cover behind it.
+
+**That last part is a change to previously shipped behaviour and is worth
+saying plainly.** Before F6g, a parse error in *any* document aborted the
+load, so a mistyped `wifi.json` took the daemon down and the **network**
+reconciler with it — a device off the air for a mistake in an unrelated
+subsystem. Two things deliberately still refuse to start, because they are
+different rules and not the same one applied twice:
+
+- **the missing `/mos` medium** (F6f) — a device that cannot reach its
+  configuration must not render a different one;
+- **the STATE document.** It is not in this namespace, it cannot be poured,
+  and it carries the device identity and the administrator credential.
+  Degrading it to a per-document refusal would let first-boot provisioning
+  mint a fresh identity and credential *over* real ones that merely failed to
+  parse, which is worse than not starting.
 
 ### 4.1 The provisioning document — channels 1 and 2 (shipped)
 
@@ -509,6 +521,27 @@ signature (§4.1.7), so without this rule a stick pushed into a fielded device
 would reconfigure it, administrator password included. The digest
 short-circuit is checked FIRST, so a device claimed BY the document being
 offered reports `unchanged` rather than looking like an attack on every reboot.
+
+**The pour does NOT inherit this bound, and should not.** A poured
+`ssh.json` carries `access.ssh` whole, `authorizedKeys` included, and it is
+adopted on a claimed device. That is not an oversight; the two channels rest
+on different authority:
+
+- **The provisioning document** arrives on removable media inserted into a
+  **running** device by whoever is standing next to it. The already-claimed
+  refusal is what stops a stranger with a stick from reconfiguring a deployed
+  appliance — the same reason §4.1.7 gives for having no udev trigger.
+- **The pour** is a write to the DATA partition of a device that is **not
+  running**, by somebody holding the storage medium. That person can equally
+  write `/var/lib/mos/settings.toml` and set `access.webAdmin`'s password hash
+  to one of their choosing. A claim gate on `ssh.json` would bolt the front
+  door of a house whose back door is the same partition.
+
+**The authority that bounds the pour is physical custody of the medium** —
+the same authority `docs/design/access.md` §7 already gives possession of the
+boot medium and `docs/design/recovery.md` gives the serial console. It is not
+a weaker bound than §4.1.4's; it is the bound §4.1.4's exists to *substitute
+for* when the device is running and nobody is holding it.
 
 #### 4.1.5 The two transports
 

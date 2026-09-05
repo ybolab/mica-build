@@ -2,12 +2,11 @@
 
 > Status: the state model, the policy document, the `/mos/updates` workspace
 > contract with its readiness probe, and the reboot gate below are
-> implemented in mosd/apid/`rauc-update` and unit-tested. The **automatic
-> path** of §3.2 is implemented and **has no tests at all** — §6 says so in
-> terms rather than leaving it to an absent row — and the **write route** of
-> §3.4 is approved design that is not in the tree. The fault-evidence table
-> in §6 states, per fault, exactly what is proven where and what still
-> needs bench hardware. Companions: `release-signing.md` (trust chain and the
+> implemented in mosd/apid/`rauc-update` and unit-tested, and the **write
+> route** of §3.4 now ships with them. The **automatic path** of §3.2 is
+> implemented and **has no tests at all** — §6 says so in terms rather than
+> leaving it to an absent row. The fault-evidence table in §6 states, per
+> fault, exactly what is proven where and what still needs bench hardware. Companions: `release-signing.md` (trust chain and the
 > `rauc-update` client), `mosd.md` §5.4 (the bus surface this builds on),
 > `api.md` (HTTP conventions), `uboot-ab-handshake.md` (boot credits),
 > `../plan/PLAN-061.md` and `../plan/PLAN-063.md` (the `/mos` namespace and
@@ -343,9 +342,9 @@ Two consequences a reader meets here rather than in the design tree:
 A reset tier is not the only route back, and the finer-grained one is per
 key: setting a key to `null` in `updates.json`, or removing it, returns
 **that** key to its baked default and leaves the rest of the document alone
-(§2.2). Until the write route of §3.4 exists that is an edit on the device
-rather than an API call, which is the practical difference between the two
-routes today — a reset needs only an authenticated request.
+(§2.2), and §3.4's route is how an operator sends it: a patch naming that one
+key with the value `null`. A reset spends every key to recover one; the patch
+spends one.
 
 ## 3. What the policy gates, and who may write it
 
@@ -492,63 +491,132 @@ what the device says about it:
 A change does not shortcut anything. An install after a channel or address
 change is an install: same window, same gate, same re-check.
 
-### 3.4 The write route — **[not implemented]**
+### 3.4 The write route
 
-**Approved design, PLAN-071 §3; not in the tree.** apid declares no write
-route for this document today (`pkgs/mosd/apid/openapi.json` carries
-`/api/v1/update` and its six action routes and no policy write), so an
-operator's only way to change the document is to edit it on the device. What
-is written here is the shape the route must have, so that the console's
-`AutomaticUpdates` controls — `policy`, `channel`, `checkIntervalMinutes`,
-the windows, `rebootPolicy`, and clearing a suppressed version — have one
-described surface behind them:
+**`POST /api/v1/update/config`**, on apid, authenticated as an administrator
+— the same authority every other management write takes, and no new one.
+There is no unauthenticated path and no fleet-derived path to it. It is what
+the console's `AutomaticUpdates` panel drives: `policy`, `channel`, the source
+URL, `checkIntervalMinutes`, `rebootPolicy` and the windows.
 
-- **One route**, on apid, authenticated as an administrator — the same
-  authority every other management write requires, and no new one. There is
-  no unauthenticated path and no fleet-derived path to it.
-- **mosd owns the file and is its only writer.** apid does not write
-  `/mos/config/updates.json`; it asks. One fact, one writer, all the way down
-  to the filesystem — which is `mosd.md` §5.1a's rule for the whole
-  namespace, not a rule this document invents.
-- **Validation happens on write, not at the next check.** A rejected
-  document is refused with the offending field named, and the on-disk
-  document is never replaced by one that would fail to load. §2.3's
-  `auto`-requires-a-window rule moves with it: the operator who selects
-  `auto` with no window is told so in the console instead of getting a device
-  that fails closed some hours later for a reason they have to go looking
-  for. `configuration::validate` is public for exactly this — one rule set,
-  two callers, because two spellings of one rule is how they drift.
-- **Atomicity follows the discipline the tree already has**: one save, a
-  temp file and an atomic rename within the same directory, the shape
-  `Store::save` uses for the settings documents. A reader sees the old
-  document or the new one and never a partial write; the residue is a torn
-  write below the filesystem, which is what §2.2's fail-closed reader is for.
-- **Audited like every other management write**, carrying the same actor
-  field the update events carry. *Who put this device on `beta`* is a
-  question the trail must answer.
+**mosd owns the file and is its only writer.** apid does not write
+`/mos/config/updates.json`; it asks. That is `mosd.md` §5.1a's rule for the
+whole namespace, not one this document invents, and it is why the validation
+the route runs is literally the reader's own `configuration::validate` — one
+rule set, two callers, because two spellings of one rule is how they drift.
 
-`deny_unknown_fields` means something different once there is a machine
+#### It takes a patch, not a document, and the read side is why
+
+A caller sends **only the keys it is changing**. `null` clears an override so
+the baked default applies again (§2.2); a value sets one; an absent key is
+left exactly as it was.
+
+The alternative — read the document, edit, send it back — is unsafe here for
+a reason particular to this schema: a console reads the **resolved** policy,
+and sending that back would write the *image's defaults* into the operator's
+layer as if the operator had chosen them. The device would then stop
+following its image on the day the image changed. A patch cannot do that, and
+an emptied field in the panel sends `null`, which PLAN-071 §1 already defines
+as *take the baked default*. `UpdatesSourcePatch` carries **only** `url` and
+`channel` for the same reason: the three workspace values under `source` are
+layer 2's outright and no patch shape offers them.
+
+#### The order is the property
+
+`configuration::write_updates` is the whole route in one function, and the
+sequence is what makes the guarantee structural rather than a convention two
+callers have to keep:
+
+1. parse the patch as JSON;
+2. **refuse an anchor-shaped key by name, at any depth** — the six of §2.3,
+   before deserialisation, because the write route is the surface where
+   somebody would *try*;
+3. deserialise it against the patch schema (`deny_unknown_fields`);
+4. load what is on the disk;
+5. merge the patch over it;
+6. validate — §2.3's `auto`-requires-a-window rule fires **here**, at the
+   API, rather than hours later at a check the operator would have to go
+   looking for;
+7. and only then save, atomically: a temp sibling, the mode set before the
+   rename, fsync, rename, directory fsync — `store::write_atomically`, the
+   same discipline the settings documents beside it use.
+
+Every refusal happens **before** anything is written. So *the on-disk document
+is never replaced by one that would fail to load* is a shape of the function
+rather than a promise about it, and a reader sees the old document or the new
+one and never a partial write.
+
+#### Three refusals, three answers
+
+The split exists because the same parse error means opposite things on either
+side of it, and a route that answered both alike would tell an operator their
+input was wrong about a document they never sent.
+
+| What failed | Status | Meaning |
+|---|---|---|
+| the patch — not JSON, an unknown key, an anchor, or a value the reader would refuse | **422** `validation_failed` (**400** `request_invalid` when the body is not JSON at all) | your request is wrong |
+| the document already on the device did not load | **409** `policy_refused` | *this device's* configuration is unreadable, so there is no base to merge over. **Nothing was written** |
+| it validated and the device could not store it | **500** `mosd_failed` | the disk |
+
+**A corrupt document is not blind-overwritten**, and that is a decision rather
+than an omission: merging over a base nobody can read would keep or drop keys
+the operator cannot see. The way out is the configuration reset that re-seeds
+the namespace (§2.4), not a write that guesses.
+
+`deny_unknown_fields` means something different now that there is a machine
 writer: a machine never emits an unknown field, so an unknown field is
 hand-editing or corruption, and refusing it is right in both cases.
 
-### 3.5 Who did this — attribution today, and the gap
+### 3.5 Who did this — the actor field
 
-**What holds.** The driver acts under one name, `auto-update`, wherever an
-operator's bus name would go, so the `requested_by` field of
-`update.install` and `update.last_mark` distinguishes a machine's install
-from a human's without anyone having to infer it
-(`update_auto.rs`'s `SENDER`).
+**An audit line has five members and never a sixth**, and the fifth is
+`actor` (`pkgs/mosd/mosd-settings/src/audit.rs`). It exists because the same
+event names are recorded whether an operator asked or the automatic driver
+did, so without it an update trail cannot answer *did a human do this* — and
+an event set that cannot is a support tool that lies during exactly the
+incident it exists for.
 
-**What does not — [not implemented].** The audit trail is apid's, and
-`update-check`, `update-fetch` and `update-install` are recorded in
-`pkgs/mosd/apid/src/update_api.rs` — on the *routes*. The automatic path does
-not pass through apid, so **an automatic check, fetch or install writes no
-audit event at all**. The trail therefore answers *did a human do this* only
-in one direction: an event means yes, and the absence of one means either no
-or nobody was asked. PLAN-071 §3 requires the automatic actions to record the
-same event names distinguished by an actor field; that is owed, and until it
-lands `requested_by` in the live-state document is the only attribution a
-support case has.
+**Three values, and there is deliberately no fourth:**
+
+| `actor` | Who | Where |
+|---|---|---|
+| `operator` | an authenticated human, through the management API | every event apid records; the whole surface is behind the credential extractor, so it is a constant there rather than a parameter threaded through fifty call sites |
+| `policy` | the automatic driver | `update-check`, `update-fetch`, `update-install` — the same three names apid uses, as constants in the crate **both** binaries link, so the two halves of one trail cannot drift into two |
+| `device` | what the device did that **nobody asked for** | the boot-time recovery action, and apid's start-up pick-up of a staged UI bundle |
+
+`device` is the value worth pausing on, because it was not in the plan and it
+is the one a later author will be tempted to collapse: recording an action no
+operator requested as an *operator's* would be precisely the lie the field
+exists to prevent. `actor` is also deliberately not a session identifier — a
+cookie is a credential and has no place in this file, the peer address is
+already the line's `source`, and *did a human do this* is a question two
+values answer and a session id does not answer better.
+
+**Both daemons append to one ring**, the same file, through one writer whose
+single `O_APPEND` write is what makes two processes on it safe. A failed
+write is logged and swallowed on every side: refusing to update a device
+because its audit ring is unwritable is a lockdown decision this campaign
+does not take.
+
+**What is asserted, and what is read off the source.** A test asserts that
+the writer emits `actor: policy` under the same event-name constants apid
+uses. It does **not** drive `AutomaticUpdates`' loop to get there:
+`AutoDriver`'s cadence is keyed on `std::time::Instant`, which has no seam and
+which `tokio::time::pause` does not move, so the driver cannot be ticked in a
+test at all (§6). That the driver calls the recorder at each of its steps —
+four call sites, three event names, `update-check` twice because the
+pre-install re-check is also a check — is read from `update_auto.rs`, not
+proven by a test. The distinction matters for exactly the incident this field
+exists for, so it is stated rather than rounded up.
+
+**Beside it, unchanged:** the driver acts under one name, `auto-update`,
+wherever an operator's bus name would go, so `requested_by` on
+`update.install` and `update.last_mark` names the same actor with the same
+word the audit line uses.
+
+`update-config` is the event the write route records, and it is only ever an
+operator's: mosd is the file's writer and no automatic path asks it to write
+one.
 
 ## 4. The safe-to-reboot gate
 
@@ -914,6 +982,7 @@ What is owed, in the order it should be written:
 | The loop is closed | A bad bundle installs once: it rolls back, the version is suppressed, and the second automatic pass selects nothing | The full cycle against the trait seam — PLAN-071's own acceptance for the slice, and the one test that proves the loop cannot restart |
 | The suppression store | Record, clear, idempotence, and a store that exists and does not parse refusing rather than reading as empty | The unparseable case first: it is the branch whose failure silently restores the loop |
 | Automation never arms the override | The automatic path drives against a closed gate and no override is armed | The invariant is structural — `SetRebootOverride` is not on the driver's trait (§3.2) — and a test is what keeps the trait from growing one |
+| A clock seam on the driver | `AutoDriver` can be ticked in a test at all | **This is the blocker under every row above.** The cadence is keyed on `std::time::Instant`, which has no seam and which `tokio::time::pause` does not move, so no test can advance the driver to its next pass. Nothing above is written until this is |
 | The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | The floor limb has never been observed against a device with no STATE bind, which is the case it exists for |
 | The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | — |
 | The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | `openapi.json` documents the route; nothing drives the handler |
@@ -953,4 +1022,5 @@ and §2 make and a reader checking those claims needs to find the answer.
 - `mos-health` reporting `health.boot` after its mark-good, which is what
   lights up `validating`/`succeeded` (§1). It reports `var` today and
   nothing else, so a healthy converged system reads plain `idle`.
-- The write route of §3.4, and the automatic path's audit events (§3.5).
+The write route of §3.4 and the automatic path's audit events (§3.5) were on
+this list and are not any more.

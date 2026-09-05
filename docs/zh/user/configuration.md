@@ -66,7 +66,8 @@ SSH、MQTT、时间、容器开关和更新设置——按子系统各写成一�
 
 **更新设置不在这棵树里。**更新模式、渠道、服务器地址、维护窗口和网络模式住在
 它们自己的文档 `/mos/config/updates.json` 里，与上面那些并列，而不在设置 schema
-之内——而且目前还没有写它的 API 路由，所以今天要改它们只能在设备上编辑那个文件。
+之内。它们有自己的路由——`POST /api/v1/update/config`，只收你要改的那些键——内置
+UI 的自动更新面板就是驱动它的。
 [update-rollback.md](update-rollback.md) 讲每一项各自做什么。
 
 权威清单是 API 契约，不是这段散文：`pkgs/mosd/apid/openapi.json` 接受什么，

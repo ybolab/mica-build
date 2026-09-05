@@ -120,12 +120,17 @@ default** — tiers 1 and 3 both — so a support case that begins "the device
 stopped updating after a factory reset" has a known cause
 (`docs/design/recovery.md` §2.1).
 
+**And an operator can now set all of it from the console — [implemented].**
+`POST /api/v1/update/config` takes a patch of the operator document under the
+same administrator authority as every other management write, and the
+built-in UI's `AutomaticUpdates` panel drives it (`updates.md` §3.4). Every
+action, automatic or human, lands in one audit ring with an `actor` field
+naming which it was (`updates.md` §3.5).
+
 **What does not exist — [not implemented].** No remote trigger and no fleet
-plane: nothing outside the device can start an update, because nothing
-outside the device can reach it (§2). The write route that would let a
-console change the update policy is likewise owed (`updates.md` §3.4), so an
-operator's only way to set `policy` today is to edit the document on the
-device.
+plane: nothing outside the device can start an update or change its policy,
+because nothing outside the device can reach it (§2). Every route above is
+LAN-inbound to apid, behind §1's credential boundary.
 
 **The constraint on any future trigger.** Whatever triggers an update — a
 policy pull, a remote trigger over section 2's channel, a local one — converges
