@@ -48,8 +48,11 @@ policy whose own entry point violates it is worse than no policy. `jq` and
 `curl` are deliberately not in that table: nothing on the path to an image needs
 them. `curl` is reached only by `pkgs/podman/check-pins.sh`, which asks upstream
 what the newest release is and builds nothing, and `jq` by
-`pkgs/rauc/gen-dev-keys.sh` and `tests/release-verify-test.sh` — the first of
-which is on the exemption list in §0.3 for a different reason.
+`tests/release-verify-test.sh`, whose edits are fixtures a verdict is read from.
+The one *producing* use of `jq` — `pkgs/rauc/gen-dev-keys.sh` rewriting
+`meta/updates/manifest.json`, a file that reaches the image — no longer happens
+on the host: it runs in `localhost/mos-build-openssl` beside the openssl that
+mints the keys, which is why neither appears here.
 
 Anything else a build reaches for is a finding. Nothing may require host `bun`,
 host `node`, host `python3`, host `go`, host `gcc`, host `cargo`, or any
@@ -157,9 +160,18 @@ waiver behind, and a path that stops violating the policy cannot keep one.
 | --- | --- | --- |
 | `pkgs/mosd/hack/check.sh`, `pkgs/rauc-sign/hack/check.sh` | `cargo`, and the `$HOME` PATH prepend that makes it resolve | The Rust gate. Its container exists: `make os-rust-gate` runs both scripts **unmodified** inside `localhost/mos-build-rust-check`. What keeps them here is that CI still runs the same scripts on its runner, and a script cannot be declared container-side while one of its callers is a bare host. |
 | `.github/workflows/check.yml` | `cargo` | That runner. It installs a toolchain with `rustup`; the replacement is `make os-rust-gate`, at the cost of building the builder-image family on the runner first. |
-| `pkgs/rauc/gen-dev-keys.sh` | `openssl` (and `jq`) | A producer: the CA, the signer certificate and the Ed25519 root key it writes are baked into `meta/` and into every image, and its `jq` edits `meta/updates/manifest.json`, which reaches the image too. Closing it needs a pinned openssl image and the trust tests re-run. `jq` is not in the check's table — it is orchestration everywhere else here, and a row for it would flag fixture edits that are verdicts — so this is the one producing use of it and it moves with this row. |
-| `rootfs/build.sh` | `openssl` | A judge: `alg_of_material()` reads a certificate or key and reports its algorithm; nothing it writes survives. It parses openssl's own text output, which is version-sensitive, so the container is still worth having. |
-| `tests/repart-loader-test.sh` | `sgdisk` | A judge: five host reads of an assembled image's partition table, beside a container-side half that is already declared. |
+
+**Three rows came off on 2026-09-05**, and they are recorded here because a
+table of exemptions is only readable if what leaves it is visible.
+`pkgs/rauc/gen-dev-keys.sh` — the producer that mints the RAUC CA, the bundle
+signer and the ed25519 package key — now mints in `localhost/mos-build-openssl`
+(`build-env/openssl/Dockerfile`), and its `jq` edit of
+`meta/updates/manifest.json` travelled with it. `rootfs/build.sh`'s
+`alg_of_material()` reads the material back through that same image.
+`tests/repart-loader-test.sh` runs all five of its `sgdisk` reads in the pinned
+alpine tool image unconditionally, where it previously used one only when the
+host had no `sgdisk`. What remains above is the Rust gate and its runner, which
+is backlog **B7**.
 
 Flashing is not a build. `boards/cx3576/bsp/Makefile`'s `rkdeveloptool` targets
 write to a board over USB and need the host's bus; they are orchestration by

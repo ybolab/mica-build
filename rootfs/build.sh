@@ -368,6 +368,53 @@ if ! grep -q '"signingKeys"' "$META_DIR/updates/manifest.json" 2>/dev/null; then
     exit 1
 fi
 
+# THE OPENSSL BELOW IS THE PINNED ONE, not the host's.
+#
+# A2 is a JUDGE by docs/design/build.md section 0 -- it writes nothing that
+# survives the run -- and it is still the judge most worth moving, because what
+# it reads is openssl's own TEXT rendering of a key: `NIST CURVE: P-256`, the
+# word ED25519, the `-Key: (2048 bit)` shape. Those are strings one openssl
+# version chose to print, and a machine whose openssl prints them differently
+# does not report a different algorithm, it reports NONE -- which reaches
+# check_material as "openssl could not read this file" and refuses a build over
+# material that is fine. Measured 2026-09-05: this host has OpenSSL 3.0.2 and
+# localhost/mos-build-openssl has trixie's 3.5.7.
+#
+# Resolved here, in the main shell, rather than on first use inside
+# alg_of_material's command substitution: a refusal there would be swallowed by
+# the `|| true` that reader carries and would surface as an unreadable file.
+# ca.cert.pem is required above, so this is always reached with work to do.
+command -v docker >/dev/null || {
+    echo "error: docker is required: the algorithm of the material in $META_DIR is read with the openssl in localhost/mos-build-openssl rather than with the host's, because the text it parses is version-sensitive (docs/design/build.md section 0)" >&2
+    exit 1
+}
+case "$(uname -m)" in
+x86_64) OPENSSL_IMAGE_ARCH=amd64 ;;
+aarch64 | arm64) OPENSSL_IMAGE_ARCH=arm64 ;;
+*)
+    echo "error: $(uname -m) is not an architecture build-env/images.env pins mos-build-openssl for" >&2
+    exit 1
+    ;;
+esac
+OPENSSL_IMAGE="$(bash "$REPO_ROOT/build-env/from.sh" --arch="$OPENSSL_IMAGE_ARCH" --ref LOCAL_MOS_BUILD_OPENSSL)" || {
+    echo "error: localhost/mos-build-openssl:$OPENSSL_IMAGE_ARCH could not be resolved (see the message above). Build it: make build-env" >&2
+    exit 1
+}
+
+# meta/ mounted READ-ONLY at its own path, which is both the simplest thing and
+# an assertion: a reader that cannot write cannot repair what it was asked to
+# judge. Every file A2 reads is under it. --user so the 0600 private keys are
+# readable as the uid that owns them rather than because the container is root.
+openssl() {
+    docker run --rm \
+        --label ai-agent=true \
+        --user "$(id -u):$(id -g)" \
+        -v "$META_DIR:$META_DIR:ro" \
+        -w "$META_DIR" \
+        --entrypoint openssl \
+        "$OPENSSL_IMAGE" "$@"
+}
+
 # The tool-neutral name for the algorithm of a piece of material that is
 # actually on disk, read out of openssl's own description of it. Three readers
 # because the three roles are encoded three ways: a PEM certificate, a PEM
@@ -375,9 +422,12 @@ fi
 alg_of_material() {
     local text curve bits
     case "$2" in
+    # mos-build-side: container-block -- openssl() above is a wrapper around
+    #   localhost/mos-build-openssl; all three readers run in it
     x509) text=$(openssl x509 -in "$1" -noout -text 2>/dev/null || true) ;;
     pem) text=$(openssl pkey -in "$1" -noout -text 2>/dev/null || true) ;;
     der) text=$(openssl pkey -inform DER -in "$1" -noout -text 2>/dev/null || true) ;;
+    # mos-build-side: host
     esac
     [ -n "$text" ] || return 1
     case "$text" in

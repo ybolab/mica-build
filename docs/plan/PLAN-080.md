@@ -383,6 +383,18 @@ one.
 | `rootfs/build.sh` | `openssl` (3) | A judge: `alg_of_material()` reads a certificate or key and reports its algorithm. It parses openssl's own text output, which is version-sensitive. Backlog **B3** |
 | `tests/repart-loader-test.sh` | `sgdisk` (5) | A judge: five host reads of an assembled image's partition table, beside a container-side half already declared. Backlog **B3** |
 
+**B2 and B3 landed on 2026-09-05 (RFCT-318), and three of those rows are
+gone.** `pkgs/rauc/gen-dev-keys.sh` mints in `localhost/mos-build-openssl` — a
+new `build-env/` row, `openssl` and `jq`, floored and recorded — and its `jq`
+edit went with it; `rootfs/build.sh`'s `alg_of_material()` reads the material
+back through the same image; `tests/repart-loader-test.sh` runs every `sgdisk`
+in the pinned alpine tool image rather than only when the host has none. The
+register is five rules now, and the check re-run reads `RESULT: PASS (97/97
+files clean, 0 finding(s), 9214 command lines examined, 3095 elided, 6 file + 18
+block container declarations, 15 exempted invocation(s) under 5 rule(s))`. The
+table above is left as it was measured; what closed is said here rather than
+edited into it.
+
 **RFCT-309 landed while this record was being written, and it changes two of
 those rows.** `tests/rust-gate.sh` and `make os-rust-gate` run
 `pkgs/<ws>/hack/check.sh` **unmodified** inside
@@ -572,12 +584,22 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   second workspace this plan asked for and its brief did not name. What this
   plan contributed is the requirement and the rows that come off; what is left
   of it is B7. *Not sized here; it was another task's.*
-- **B2 — `pkgs/rauc/gen-dev-keys.sh` into a pinned openssl container.** A
-  producer, six `openssl` invocations plus the `jq` edit, writing material baked
-  into every image. Needs an image key, the `--if-absent` path `rootfs/build.sh`
-  calls on every build, and the two trust tests re-run. *~0.5 day.*
-- **B3 — the two judges.** `rootfs/build.sh`'s `alg_of_material()` and
-  `tests/repart-loader-test.sh`'s five host `sgdisk` reads. *~0.5 day together.*
+- **B2 — `pkgs/rauc/gen-dev-keys.sh` into a pinned openssl container. CLOSED
+  2026-09-05 by RFCT-318.** `localhost/mos-build-openssl` is a new `build-env/`
+  row carrying openssl and jq, floored in `build-env/images.env` and recording
+  the exact openssl in `/etc/mos-build/openssl.env`; the generator resolves it
+  lazily, so `--if-absent` over a complete `meta/` still opens nothing. One
+  shape change fell out and is recorded rather than absorbed: the signer's
+  extensions moved from a `<(...)` process substitution to a real file, because
+  a `/dev/fd` path belongs to the calling shell and the container cannot see it.
+  Same two lines, same certificate. *The two trust tests were NOT re-run —
+  owed.*
+- **B3 — the two judges. CLOSED 2026-09-05 by RFCT-318.**
+  `rootfs/build.sh`'s `alg_of_material()` reads through the same pinned image,
+  resolved in the main shell so a refusal cannot be swallowed by the reader's
+  own `|| true`; `tests/repart-loader-test.sh` takes the container route for all
+  five `sgdisk` reads unconditionally, where it used to take it only on a host
+  without `sgdisk`. *Neither suite was run — owed.*
 - **B4 — extend the scan past shell.** The four seams are closed in code and
   nothing stops a fifth from being written. A check over `build/src` and
   `verify/src` for `Bun.$` against a producer binary is possible. *~0.5 day.*

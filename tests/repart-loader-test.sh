@@ -63,31 +63,39 @@ command -v docker >/dev/null || { echo "error: docker is required" >&2; exit 1; 
 work="$(mktemp -d "${REPO_ROOT}/_out/repart-test.XXXXXX")"
 trap 'rm -rf "${work}"' EXIT
 
-# sgdisk runs on the host at several sites below (partition-table reads, and
-# one entry delete on a scratch copy), but the host is not required to carry
-# it: this test already cannot run without docker, so a missing sgdisk
-# resolves to a same-named function running in a one-time alpine tool image.
-# Every path this script hands sgdisk lives under ${REPO_ROOT}/_out — the
-# shipped images and ${work} both — so mounting _out at itself makes every
-# argument resolve identically and keeps the output byte-identical to a host
-# run. build/src/toolbox.ts holds the same rule, for the same reason: a
-# missing host tool must not read as a FAIL that indicts the image.
-if ! command -v sgdisk >/dev/null 2>&1; then
-    # The base, from build-env/images.env -- IMAGE_ALPINE_3_21, the same key
-    # build/src/toolsets.ts assembles from and verify/src/tools.ts verifies
-    # from, so the sgdisk that reads a GPT here is the sgdisk that wrote it. The
-    # heredoc is unquoted so ${TOOL_BASE} expands; nothing else in the body is a
-    # shell expansion.
-    TOOL_BASE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
-    TOOL_IMAGE="$(docker build -q - <<EOF
+# sgdisk reads an assembled image's partition table at four sites below and
+# deletes one entry on a scratch copy at a fifth. ALL FIVE RUN IN A CONTAINER,
+# unconditionally, and that is a change from a route that took the host's sgdisk
+# whenever the host had one.
+#
+# The verdict is what makes it worth doing. sgdisk is a judge by
+# docs/design/build.md section 0 -- nothing here keeps what it writes except one
+# scratch copy that is deleted -- but a judge's contract is the pinned
+# container: it is what a result is quoted from, and a host route that silently
+# takes over whenever /usr/sbin/sgdisk exists makes "p1 covers LBA 64" a
+# statement about the machine that ran the test as much as about the image.
+# Which sgdisk PARSES a GPT is the same kind of question as which one writes
+# one, and this suite's whole output is parsed text.
+#
+# Every path this script hands sgdisk lives under ${REPO_ROOT}/_out -- the
+# shipped images and ${work} both -- so mounting _out at itself makes every
+# argument resolve identically, and the container's answers are the answers a
+# host run gave.
+#
+# The base, from build-env/images.env -- IMAGE_ALPINE_3_21, the same key
+# build/src/toolsets.ts assembles from and verify/src/tools.ts verifies from, so
+# the sgdisk that reads a GPT here is the sgdisk that wrote it. The heredoc is
+# unquoted so ${TOOL_BASE} expands; nothing else in the body is a shell
+# expansion.
+TOOL_BASE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
+TOOL_IMAGE="$(docker build -q - <<EOF
 FROM ${TOOL_BASE}
 RUN apk add --no-cache -q sgdisk
 EOF
-    )"
-    [ -n "${TOOL_IMAGE}" ] || { echo "error: could not build the sgdisk tool image" >&2; exit 1; }
-    sgdisk() { docker run --rm -v "${REPO_ROOT}/_out:${REPO_ROOT}/_out" "${TOOL_IMAGE}" sgdisk "$@"; }
-    echo "host has no sgdisk; using container image ${TOOL_IMAGE} for it"
-fi
+)"
+[ -n "${TOOL_IMAGE}" ] || { echo "error: could not build the sgdisk tool image" >&2; exit 1; }
+sgdisk() { docker run --rm -v "${REPO_ROOT}/_out:${REPO_ROOT}/_out" "${TOOL_IMAGE}" sgdisk "$@"; }
+echo "sgdisk runs in ${TOOL_IMAGE}, built from IMAGE_ALPINE_3_21"
 
 # The stopgap must not exist. Protection comes from the partition entry; a
 # --discard=no drop-in is the other approach, and carrying both would hide a
@@ -132,9 +140,14 @@ mkdefs() {
     local img="$1" dir="$2" n=0 i part_count type
     rm -rf "${dir}"
     mkdir -p "${dir}"
+    # mos-build-side: container-block -- sgdisk() above is a wrapper around the
+    #   pinned tool image; only the grep after the pipe is this shell's
     part_count="$(sgdisk -p "${img}" | grep -cE '^[[:space:]]+[0-9]+[[:space:]]')"
+    # mos-build-side: host
     for i in $(seq 1 "${part_count}"); do
+        # mos-build-side: container-block -- the same wrapper; the sed/awk is this shell's
         type="$(sgdisk -i "${i}" "${img}" | sed -n 's/^Partition GUID code: //p' | awk '{print $1}')"
+        # mos-build-side: host
         if [ "${type^^}" = "${TYPECODE_LINUX^^}" ]; then
             n=$((n + 1))
         fi
@@ -213,7 +226,9 @@ for IMAGE in "${IMAGES[@]}"; do
 
     # The property under test, stated as a fact about the GPT rather than about
     # a flag: some partition entry covers LBA 64.
+    # mos-build-side: container-block -- the same wrapper; the sed/awk is this shell's
     loader_first="$(sgdisk -i "${LOADER_PARTNUM}" "${IMAGE}" | sed -n 's/^First sector: //p' | awk '{print $1}')"
+    # mos-build-side: host
     if [ "${loader_first}" = "${LOADER_START_SECTOR}" ]; then
         pass "${tag}: p${LOADER_PARTNUM} covers LBA ${LOADER_START_SECTOR}"
     else
@@ -248,7 +263,10 @@ for IMAGE in "${IMAGES[@]}"; do
     # which is exactly the state this task changed. If the loader survives this,
     # the positive case above was protecting nothing.
     cp "${IMAGE}" "${work}/no-loader-${tag}.img"
+    # mos-build-side: container-block -- the same wrapper; the one entry delete
+    #   lands on a scratch copy under _out, which is mounted at its own path
     sgdisk -d "${LOADER_PARTNUM}" "${work}/no-loader-${tag}.img" >/dev/null
+    # mos-build-side: host
     if [ "$(loader_magic_of "${work}/no-loader-${tag}.img")" != "${LOADER_MAGIC_HEX}" ]; then
         fail "${tag}: deleting the partition entry already destroyed LBA ${LOADER_START_SECTOR}; the negative case cannot attribute anything to repart"
     else
@@ -292,7 +310,9 @@ ROOTFS_SLOT="${REPO_ROOT}/_out/cx3576/rootfs-verity.img"
 
 # Size of a partition in the image's GPT, in sectors.
 part_sectors_of() {
+    # mos-build-side: container-block -- the same wrapper; the sed/awk is this shell's
     sgdisk -i "$2" "$1" 2>/dev/null | sed -n 's/^Partition size: //p' | awk '{print $1}'
+    # mos-build-side: host
 }
 
 # Runs a real systemd-repart over a fresh copy grown to GROWN_SIZE, tolerating

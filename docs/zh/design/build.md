@@ -39,8 +39,10 @@
 明确写出来而不是默认，因为一条自己的入口就违反自己的策略，比没有策略更糟。`jq` 和 `curl`
 刻意不在这张表里：通往镜像的路径上没有任何一步需要它们。`curl` 只有
 `pkgs/podman/check-pins.sh` 会用到，那个脚本只是去问上游最新版本是多少，什么也不构建；
-`jq` 只有 `pkgs/rauc/gen-dev-keys.sh` 和 `tests/release-verify-test.sh` 会用到，前者
-因为另一个原因已经在 §0.3 的豁免表里。
+`jq` 现在只有 `tests/release-verify-test.sh` 会用到，它改的是 fixture、读出来的是结论。
+`jq` 唯一一处**生产者**用法——`pkgs/rauc/gen-dev-keys.sh` 改写会进镜像的
+`meta/updates/manifest.json`——已经不在主机上跑了：它和铸造密钥的 openssl 一起，跑在
+`localhost/mos-build-openssl` 里，所以两者都不在这张表中。
 
 除此之外构建再伸手去拿别的东西，都是一个发现。任何环节都不得要求主机上的 `bun`、
 `node`、`python3`、`go`、`gcc`、`cargo`，或任何文件系统与镜像工具。
@@ -132,9 +134,15 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 | --- | --- | --- |
 | `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo`，以及让它能被解析出来的那次 `$HOME` PATH 前置 | Rust 门禁。它需要的容器已经有了：`make os-rust-gate` 会在 `localhost/mos-build-rust-check` 里**原封不动**地跑这两个脚本。它们还留在这里，是因为 CI 仍然在自己的 runner 上跑同样的脚本——一个脚本只要还有一个调用方是裸主机，就不能声明成容器侧。 |
 | `.github/workflows/check.yml` | `cargo` | 就是那个 runner。它用 `rustup` 装工具链；替代方案是 `make os-rust-gate`，代价是 runner 要先把 builder 镜像那一族建出来。 |
-| `pkgs/rauc/gen-dev-keys.sh` | `openssl`（还有 `jq`） | 生产者：它写出的 CA、签名者证书和 Ed25519 根密钥会被烘进 `meta/` 和每一个镜像，它的 `jq` 还会改 `meta/updates/manifest.json`，那份文件同样会进镜像。要关掉它需要一个固定的 openssl 镜像，并重跑信任相关的测试。`jq` 不在检查的工具表里——在本树的其他地方它都是编排，而给它加一行会误报那些属于结论的 fixture 编辑——所以它这一处生产者用法跟着本行一起走。 |
-| `rootfs/build.sh` | `openssl` | 裁判：`alg_of_material()` 读一份证书或密钥并报出它的算法，写出的东西不会留下。但它解析的是 openssl 自己的文本输出，而那是随版本变化的，所以放进容器仍然值得。 |
-| `tests/repart-loader-test.sh` | `sgdisk` | 裁判：对已装配镜像分区表的五次主机读取，旁边那半边容器侧的用法已经声明过了。 |
+
+**2026-09-05 下掉了三行**，这里把它们记下来，是因为一张豁免表只有在“什么离开了它”也
+看得见的时候才读得懂。`pkgs/rauc/gen-dev-keys.sh`——铸造 RAUC CA、bundle 签名者和
+ed25519 包签名密钥的那个生产者——现在在 `localhost/mos-build-openssl`
+（`build-env/openssl/Dockerfile`）里铸造，它对 `meta/updates/manifest.json` 的那次 `jq`
+改写也跟着一起进了容器；`rootfs/build.sh` 的 `alg_of_material()` 用同一个镜像把材料读
+回来；`tests/repart-loader-test.sh` 的五次 `sgdisk` 读取现在无条件跑在固定的 alpine 工具
+镜像里，而以前只有主机没有 `sgdisk` 时才会用它。表里剩下的是 Rust 门禁和跑它的 runner，
+那是待办 **B7**。
 
 烧写不是构建。`boards/cx3576/bsp/Makefile` 里的 `rkdeveloptool` 目标通过 USB 往板子
 上写，需要主机的总线；按 §0.1 它们属于编排，因此不需要豁免——它们从来就不在范围内。

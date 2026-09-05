@@ -53,7 +53,7 @@ help:
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,rust,rust-check}:<arch>"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
 	@echo "  os-rust-gate        run both Rust workspaces' hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
