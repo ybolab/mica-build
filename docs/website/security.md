@@ -62,11 +62,14 @@ site does the same:
 
 > status: shipped — evidence: `pkgs/rauc/system.conf.in`, `docs/design/release-signing.md`
 
-- **The device-side update client ships without its trust anchor.** A device
+- **The device-side update client ships with its trust anchor.** A device
   discovers, downloads with resume, verifies and installs an update on its
-  own, and refuses anything the signed metadata does not cover. What no image
-  provisions is the pinned root that walk starts from, so the online path is
-  inert until an operator supplies one.
+  own, and refuses anything the signed metadata does not cover. The keys that
+  walk authenticates from are baked into the same image and neither device
+  binary accepts a root-file argument, so the anchor cannot be substituted —
+  and cannot outlive a compromise of the image signing path either. What the
+  online path still needs is a server to point at: an image built with no
+  update source configured checks nothing until an operator sets one.
 
 > status: shipped — evidence: `docs/design/updates.md`, `pkgs/rauc-sign/`
 

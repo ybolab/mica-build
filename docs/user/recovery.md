@@ -120,6 +120,35 @@ that boot. An interrupted reset is replayable: the next boot finishes it.
 - **How:** `POST /api/v1/reset` with `{"tier": "configuration"}`,
   authenticated, no physical presence needed.
 
+**Read this before you run it: the update settings go back too.** A
+configuration reset returns the **update channel** and the **update server
+address** to the values your device's image was built with, discarding any
+change an operator made. Which is a recovery route or a surprise depending on
+what those built-in values are, and there are only two cases:
+
+- **The image names a server.** The device goes back to that server and that
+  channel. If somebody re-pointed the device at a server that turned out to
+  be wrong, this is how you undo it without a reflash and without physical
+  access.
+- **The image names no server** — which is the case for a build whose
+  integrator left the address to be set later. The reset does not move the
+  device to a *different* server; it moves it to **no server**. The device
+  stops checking for updates, silently, and the only routes left are the
+  offline import and a reflash. **Check `GET /api/v1/provisioning/status`
+  before the reset**: it reports the built-in address, the operator's
+  override and the effective value separately, so you can see which case you
+  are in.
+
+The same applies to Step 6 (full factory reset), which re-seeds everything
+this tier re-seeds and more. **Step 4 does not touch these settings** — an
+application-data reset leaves the update configuration alone.
+
+**If it is only the address you want back, you do not need this tier.**
+Clearing your override of that one key returns it to the built-in default and
+leaves everything else configured. There is no API route for it yet, so today
+that means editing `/mos/config/updates.json` on the device — see
+[update-rollback.md](update-rollback.md).
+
 ### Step 4 — Application-data reset — IRREVERSIBLE
 
 - **Fixes:** an application whose own state wedges it or the device, a full
@@ -161,6 +190,10 @@ that boot. An interrupted reset is replayable: the next boot finishes it.
 - **Preserves, by design:** the device identity, calibration data, the update
   metadata on META and both system slots. A reset resets *state*, not the
   installed software version.
+- **Also goes back:** the update channel and the update server address, to
+  the values the image was built with — Step 3's warning applies here
+  unchanged, including the case where the built-in address is *none* and the
+  device is left with no update server at all.
 - **Does not recover:** a device that cannot boot, since nothing in-band runs;
   a corrupted system slot.
 - **How, on paper:** the reset route with `{"tier": "full-factory"}`, gated on

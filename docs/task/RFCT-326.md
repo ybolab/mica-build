@@ -136,10 +136,10 @@ The first save is not an operator action. It is `provisioning::ensure_provisione
 minting the device identity, **on the very boot that finds the pour**.
 
 `Store::preserving(&[…])` is the answer, and it is on the store rather than an
-argument to `save` because `save` has five callers on the boot path
-(`provisioning`, `reset`, `recovery`, the provisioning document, the bus) and a
-rule that has to be remembered at five call sites is a rule with four places to
-forget it. `main.rs` narrows the store once, immediately after the load; every
+argument to `save` because five modules on the boot path call `save`
+(`provisioning`, `reset`, `recovery`, `provisioning_doc`, the bus) across six
+call sites, and a rule that has to be remembered at six call sites is a rule
+with five places to forget it. `main.rs` narrows the store once, immediately after the load; every
 later holder inherits it.
 
 Two bounds on it, each with a test:

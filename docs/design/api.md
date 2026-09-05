@@ -3725,10 +3725,10 @@ checkable.**
    holding and a signature starts buying a real difference. Note the cost of
    that path: scopes need the per-method D-Bus allowlist that
    `pkgs/mosd/dist/com.mos.mosd.conf` deliberately deferred.
-4. **The on-device Uptane client is implemented.** `pkgs/rauc-sign/README.md`
-   puts the device side in phase 2 and records that nothing ships it to a device
-   yet. Once a device verifies TUF metadata for one
-   artifact class, extending it to a second is incremental rather than novel.
+4. **The on-device Uptane client is implemented and shipped**, verifying from
+   anchors baked into the image (`pkgs/rauc-sign/README.md`). Once a device
+   verifies TUF metadata for one artifact class, extending it to a second is
+   incremental rather than novel.
 
 **And what signing would cost, priced now so that the decision is not
 re-litigated from zero.** If it is adopted:

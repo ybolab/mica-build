@@ -45,11 +45,12 @@ bundle 的摘要、长度和 verity 根哈希。密钥仪式、保管与轮换�
 - **已部署设备上没有密钥环轮换渠道**——替换在役设备上的信任锚，目前
   意味着一个由正被替换的那把密钥签名的镜像。错过轮换重叠窗口的设备，
   以及从已被攻陷的 CA 轮换出去，仍然需要物理重刷。
-- **镜像预置了软件包信任锚；已发布的客户端还没有读它。**烘焙进去的更新
-  配置携带受信任的软件包签名密钥，构建会拒绝产出没有它的镜像。但镜像里的
-  `rauc-verify` 与 `rauc-update` 仍然从带外提供的固定根验证 TUF 元数据，
-  而没有任何镜像预置那样一个根
-  （[update-rollback.md](update-rollback.md)）。
+- **设备从镜像里读取它的软件包信任锚。**`rauc-update` 与 `rauc-verify` 在
+  开始 TUF 验证之前，用 `/usr/share/mos/meta/updates/manifest.json` 里的
+  `trust.signingKeys` 认证仓库的 root 元数据。两个设备侧二进制都不接受根文件
+  参数，mosd 的策略里也没有任何指定锚路径的设置。构建从公钥原始字节推导
+  `trust.signingKeyIds`，并拒绝与之不符的给定值。空密钥列表则不允许验证任何
+  软件包。
 
 > status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`
 

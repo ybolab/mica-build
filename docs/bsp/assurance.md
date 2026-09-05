@@ -64,8 +64,8 @@ promise.
 
 The tooling ships and is exercised in the build, and so does the delivery half
 it used to be waiting on: the image carries a client that walks signed release
-metadata from a pinned root, downloads with resume, and refuses anything the
-metadata does not cover.
+metadata from anchors baked into that same image, downloads with resume, and
+refuses anything the metadata does not cover.
 
 > status: shipped — evidence: `build/src/bundle.ts`
 
@@ -73,8 +73,8 @@ metadata does not cover.
 
 What remains is operational rather than mechanical, and it is what keeps I2
 from being a production claim: owning production keys is an act written down
-as a runbook and not yet performed, and no image provisions the pinned root
-anchor the client verifies against.
+as a runbook and not yet performed, so every image built here is
+development-grade and says so.
 
 > status: unsupported
 

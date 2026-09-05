@@ -67,20 +67,20 @@
 |---|---|---|
 | `../user/api.md` | db66fc02 | current |
 | `../user/applications.md` | 965de492 | current |
-| `../user/configuration.md` | 5dfa80f9 | current |
+| `../user/configuration.md` | 9243aeea | current |
 | `../user/doc-contract.md` | 00a5147d | current |
 | `../user/download.md` | 00a5147d | current |
 | `../user/first-run.md` | 00a5147d | current |
 | `../user/install.md` | 00a5147d | current |
 | `../user/manufacturing.md` | 00a5147d | current |
 | `../user/quickstart.md` | db66fc02 | current |
-| `../user/recovery.md` | 00a5147d | current |
+| `../user/recovery.md` | 9243aeea | current |
 | `../user/release-notes.md` | 00a5147d | current |
-| `../user/security.md` | dcb64c7a | current |
+| `../user/security.md` | 9243aeea | current |
 | `../user/storage.md` | 00a5147d | current |
 | `../user/support.md` | 00a5147d | current |
 | `../user/troubleshooting.md` | 50b85a5e | current |
-| `../user/update-rollback.md` | 00a5147d | current |
+| `../user/update-rollback.md` | 9243aeea | current |
 | `../website/contract.md` | db66fc02 | not-translated |
 | `../website/documentation.md` | db66fc02 | not-translated |
 | `../website/downloads.md` | db66fc02 | not-translated |

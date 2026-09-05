@@ -65,9 +65,24 @@ classes:
 - **Keys** — any board boot keys (I3/I4 boards,
   `docs/design/security-lifecycle.md` §1.5) arrive as versioned public
   material plus a fusing procedure; private halves never travel to a
-  factory. Production trust anchors (RAUC keyring, TUF root), when their
-  provisioning channel exists, are versioned public inputs with their
-  sha256 checked at injection.
+  factory. The production trust anchors are **not** a factory input today:
+  both the RAUC keyring and the package signing keys ride inside the image
+  (`docs/design/release-signing.md` §2.3, §2.5), so the versioned input that
+  carries them is the release image above and the factory injects nothing.
+  A provisioning channel for the keyring is still open; if one ships, the
+  file it delivers becomes a versioned public input here with its sha256
+  checked at injection.
+- **The build host's `meta/` directory** — not a factory input, and named
+  here because it is the input a recall would otherwise fail to reach.
+  `meta/` holds the RAUC CA certificate, the bundle signer, the package
+  signing key and this deployment's `updates/manifest.json` — the update
+  server address, the channel and the trusted keys the image is built to
+  believe. It is **gitignored**, so a deployment's configuration is not
+  reproducible from a checkout: a build is reproducible only together with
+  the `meta/` its build host carried, and that pairing belongs in the release
+  record beside the keys. Two images can report the same `BOARD`, `PROFILE`
+  and `VERSION` and differ in what they trust; where they do, `PROFILE` is
+  the field that has to tell them apart (`release-signing.md` §2.6).
 
 ## 2. Injection, and verification at injection — **[proposed]**
 

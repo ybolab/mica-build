@@ -93,18 +93,58 @@ unconfirmed slot spends boot credits until *"a slot that cannot complete a boot
 is guaranteed to exhaust its credits"*
 (`docs/design/uboot-ab-handshake.md`) and the bootloader falls back.
 
-**What does not exist — [not implemented].** No on-device pull: the device-side
-verifier is built and tested on the host, and *"nothing ships it to a device
-yet"* (`pkgs/rauc-sign/README.md`). apid declares no update route
-(`pkgs/mosd/apid/src/routes.rs`), so it offers no local check/apply button
-either; earlier text here claiming one described a surface that is not there.
+**The on-device pull now exists — [implemented], and the sentence that stood
+here is retired.** `rauc-update` and `rauc-verify` ship in the image as
+`mos-rauc-update`, verifying against anchors baked in the same image
+(`docs/design/release-signing.md` §3.1), and apid declares
+`/api/v1/update` with `check`, `fetch`, `install`, `mark`, `rollback`,
+`reboot-override` and `clear-suppression` beside it — all session-gated,
+POST-only and audited. The earlier text here said apid declares no update
+route; it does, and the local check/apply surface is those routes.
+
+**And the device now initiates on its own — [implemented], untested.**
+`policy = "auto"` in `/mos/config/updates.json` makes mosd check, fetch,
+install inside a maintenance window and reboot per `rebootPolicy`
+(`docs/design/updates.md` §3.2). That is the first capability that reboots a
+device with nobody watching, and it carries **no tests**; `updates.md` §6
+says so and what it owes. Nothing about it is a remote trigger: the schedule
+is the device's own and the policy that sets it is local.
+
+**Where the update address comes from — [implemented].** The update server's
+URL is a **default** baked from the build host's `meta/`, overridden per key
+by an authenticated write to `/mos/config/updates.json`
+(`docs/design/updates.md` §2.2). Two consequences for this document. Devices
+can be re-pointed at another server without an image, which is the recovery
+path for a server that moved. And a **reset returns the address to the baked
+default** — tiers 1 and 3 both — so a support case that begins "the device
+stopped updating after a factory reset" has a known cause
+(`docs/design/recovery.md` §2.1).
+
+**What does not exist — [not implemented].** No remote trigger and no fleet
+plane: nothing outside the device can start an update, because nothing
+outside the device can reach it (§2). The write route that would let a
+console change the update policy is likewise owed (`updates.md` §3.4), so an
+operator's only way to set `policy` today is to edit the document on the
+device.
 
 **The constraint on any future trigger.** Whatever triggers an update — a
 policy pull, a remote trigger over section 2's channel, a local one — converges
 on the one update path with its verification, health gate and rollback. A
 trigger is a way *into* that path, never a bypass of it: an endpoint that could
 hand a device an installable payload directly would make compromise of the
-endpoint equal to compromise of every device it reaches.
+endpoint equal to compromise of every device it reaches. **The automatic path
+is the first test of that rule and it holds**: every step it takes calls the
+function the manual route calls, and the one capability it is denied —
+arming the reboot-gate override — is denied structurally, by not being on the
+driver's interface at all, rather than by a rule somebody has to remember.
+
+**And the same rule constrains what a fleet plane could set.** An address is
+an operating decision and may travel over a management channel; a **trust
+anchor** is not and may not. The operator document has no key for one and
+refuses six anchor-shaped key names outright (`updates.md` §2.3), so a fleet
+plane that could write that document still could not tell a device what to
+trust. That is the credential-domain invariant of §4 applied to the one
+document a fleet plane would most want to reach.
 
 ## 4. Security posture
 

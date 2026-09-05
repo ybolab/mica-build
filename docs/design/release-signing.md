@@ -654,12 +654,31 @@ The keyring reaches a device **in the image**, from one place. The facts:
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
 enrolment) rather than relying on the image to carry it — is the trust-anchor
-provisioning story, designed together with the TUF root anchor from §1.5,
-which has the same shape and should ship through the same channel. Until that
-channel ships, the image IS the road (§2.5), the update channel carries
-rotation (§2.4), and the two cases the image cannot carry — missed overlap
-windows and CA compromise — are named where they arise instead of gestured
-past.
+provisioning story. Until that channel ships, the image IS the road (§2.5),
+the update channel carries rotation (§2.4), and the two cases the image
+cannot carry — missed overlap windows and CA compromise — are named where
+they arise instead of gestured past.
+
+**The package anchor took the other road, and it is settled.** The TUF side
+of this question is no longer open: the trusted package signing keys are
+baked **inline**, as `trust.signingKeys` in
+`/usr/share/mos/meta/updates/manifest.json`, with build-derived
+`trust.signingKeyIds` beside them, and there is no separate anchor document
+to ship and no `--root` to point at one (§3.1). So the two hierarchies now
+reach a device by the same road — the image — and the honest consequence is
+worth stating rather than leaving as an inference: **the TUF hierarchy
+cannot outlive a compromise of the image signing path**, because whoever
+controls what gets baked controls what the package gate trusts. That
+independence is real at install time (§6.2's split) and not at provisioning
+time, which is why keeping the RAUC CA's key offline still carries the
+weight it does.
+
+Two things follow for this section's remaining question. The open decision is
+now about the **RAUC keyring only**; the candidates and their tradeoffs
+recorded in `pkgs/rauc-sign/README.md` are read as candidates for that file.
+And an anchor channel that exists would help both hierarchies, because the
+baked-inline answer is a decision about *where the key lives*, not a claim
+that no better channel could deliver one.
 
 What is pinned down today, so the eventual decision has a fixed place to
 land:
@@ -783,14 +802,58 @@ What the build does with that, each step observable without hardware:
   dev image cannot masquerade as production in a transcript —
   `verify/src/checks-root.test.ts` holds both readings.
 
-The TUF half of provisioning — pinning the production `root.json` on the
-device — has no tooling road yet: the anchor is distributed out of band
-(§1.5) and `rauc-verify --root` consumes wherever an integrator placed it.
-The candidate channels and their tradeoffs are recorded in
-`pkgs/rauc-sign/README.md` (image-baked, STATE/META provisioning file,
-signed USB import), all **[not implemented]**; choosing one is the same
-product decision as the keyring channel above, and this runbook does not
-pre-empt it.
+**The TUF half of provisioning is answered, and the answer is `meta/`.** The
+production package anchors are `trust.signingKeys` in
+`meta/updates/manifest.json` on this host; `rootfs/build.sh` stages that file
+to `/usr/share/mos/meta/updates/manifest.json` by the same two-file
+allowlist that stages the keyring, and the device reads its anchors from
+there and from nowhere else (§3.1). There is no `root.json` to pin, no
+out-of-band anchor copy for a device to receive, and no `--root` on either
+device binary. What §2.3 leaves open is the **keyring's** provisioning
+channel; the candidates in `pkgs/rauc-sign/README.md` (STATE/META
+provisioning file, signed USB import) are candidates for that file, and
+image-baked is what both anchors do today.
+
+### 2.6 Two domains, three keys, and why one of them lives on the release host
+
+The split is **by object, not by hierarchy** (PLAN-070 §6.2), and it is what
+makes `root.key`'s custody different from everything else in this document:
+
+- **`meta/rauc/`** — the RAUC CA and its signer. This chain gates the **A/B
+  system image**. Compromise means an attacker **installs a system**.
+- **`meta/updates/root.key`** — the ed25519 key over the update **package**
+  and its release metadata. It is what guarantees a downloaded package has
+  not been tampered with. Compromise means an attacker **forges a package,
+  not a system image**.
+
+| File | Domain | Signs | Used | If stolen | Rotation |
+|---|---|---|---|---|---|
+| `meta/rauc/ca.key.pem` | image | signer certificates | at a ceremony, rarely | mint a signer the fleet already trusts, and **install a system** on every device until reflash | §2.4's rollover, with an overlap window; a *compromised* CA is §2.3's uncovered case and needs a reflash |
+| `meta/rauc/signer.key.pem` | image | the bundle's CMS signature | every release | **install a system**, while the certificate is valid | §2.2 reissue — cheap, needs the CA key, no fleet update, because devices trust the CA |
+| `meta/updates/root.key` | package | the update package and its release metadata | every release, **locally** | have a device accept a forged package as authentic — download it, verify it, and then **fail to install it** | a new image, because the public half is baked; `trust.signingKeys` is a **list**, which is what makes an overlap window possible |
+
+**Both gates must fall.** An attacker holding `root.key` alone can make a
+device accept a package as authentic and still cannot make it install
+anything: installation is gated by the RAUC CMS signature chaining to
+`meta/rauc/ca.cert.pem`, which they do not hold. An attacker holding the RAUC
+CA alone can build an installable bundle and cannot get it distributed as an
+authentic package. The two gates fall to different keys with different
+custody — which is the value of the split, and it holds **at install time**,
+not at provisioning time (§2.3's last paragraph).
+
+**The custody rule, which is the asymmetry a reader will otherwise get
+backwards.** `meta/rauc/ca.key.pem` is **not present** on a release host and
+never touches one: signing a release needs the *signer* key, not the CA key,
+so the CA key stays sealed under §1.5's custody. `meta/updates/root.key` is
+the opposite: it signs **every** package, on the release host, so it **is
+present** there and cannot be kept offline. What protects it is operational —
+host hardening, restricted access, an audit trail — rather than the CA's air
+gap, and that is a weaker protection deliberately accepted for a key whose
+compromise buys a forged package rather than an installed system.
+`pkgs/rauc/gen-dev-keys.sh --domain updates` writes a development-grade one
+and marks it in `meta/GENERATED`; that marker names the domains it wrote,
+because a complete `meta/rauc/` says nothing about whether
+`meta/updates/root.key` is there.
 
 ## 3. Signing a release bundle — **[runbook]**
 
@@ -848,22 +911,43 @@ will do; range requests are the one feature the device client uses.
 ### 3.1 The device-side update client — **[runbook]**; shipped in the image and driven by mosd
 
 `rauc-update` (same crate) consumes what §3 publishes. Its verification is
-`rauc-verify`'s walk — pinned root, persistent rollback state — with
+`rauc-verify`'s walk — baked anchors, persistent rollback state — with
 transport and policy on top, and no flag on any subcommand skips metadata or
-digest verification. The operator sequence on a device (or a bench shell):
+digest verification.
+
+**Where the anchor comes from, because it is no longer an argument.** Both
+device binaries read `trust.signingKeys` from
+`/usr/share/mos/meta/updates/manifest.json`, which
+`pkgs/rauc-sign/src/anchor.rs` pins as a constant: *there is no environment,
+argument or operator-document anchor override.* The reader refuses a
+`trust` object carrying any key but `signingKeys` and `signingKeyIds`,
+refuses an empty key list, refuses a `signingKeyIds` that does not match the
+sha256 of the keys beside it, and then starts the TUF walk at **the earliest
+repository root one of those keys authenticates**, letting the rotation chain
+carry it forward from there — so a freshly baked incoming key that only
+signs later roots still works and a rotation needs no new flag. **The
+`--root` flag is gone from `rauc-update` and from `rauc-verify`**; earlier
+revisions of this section and of `updates.md` §5.3 showed it, and an
+invocation carrying it fails. `rauc-sign verify --root` is unaffected: that
+is the host-side tool and its anchor is an out-of-band copy an operator
+holds (§1.5).
+
+The operator sequence on a device (or a bench shell):
 
 ```sh
 # 1. Mirror the metadata over plain HTTP (or rsync the repo and skip this).
 #    The mirror is unverified input; step 2 is what trusts or refuses it.
 rauc-update sync --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
 
-# 2. Verify from the pinned anchor and select the newest compatible target:
+# 2. Verify from the BAKED anchors and select the newest compatible target:
 #    board+profile (identity below), channel (default stable), manifest
 #    schema floor (equality with 1), version strictly newer than running.
 #    Prints every rejected candidate with its reason; "none" exits 2.
 #    A downgrade needs --allow-downgrade and is logged to stderr.
+#    There is no --root: the anchors are trust.signingKeys in the baked
+#    manifest, and no argument can substitute one (below).
 rauc-update check \
-  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json>
+  --repo /var/lib/mos/tuf-mirror --state <state.json>
 
 # 3. Probe the /mos/updates workspace (DATA mounted, writable, not
 #    exhausted — exit 3 and a `<status> <kind>: ...` line otherwise), then
@@ -873,7 +957,7 @@ rauc-update check \
 #    verified bundle is renamed into /mos/updates/verified and that path is
 #    the last stdout line. There is no flag that stages anywhere else.
 rauc-update fetch \
-  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --repo /var/lib/mos/tuf-mirror --state <state.json> \
   --url http://mirror.example/tuf --max-bytes <n>
 
 # 4. Hand off. The orchestrated route is mosd's D-Bus member:
@@ -914,8 +998,11 @@ decision as choosing where the release version enters the image build.
 
 Nothing above waits for an operator any more: mosd drives this client. Its
 update lifecycle runs `rauc-update probe`/`sync`/`check`/`fetch` as bounded
-subprocesses and a policy file (`/var/lib/mos/update-policy.toml`) sets the
-auto-check cadence (`docs/design/updates.md`). Where the bytes go is not a
+subprocesses; the cadence, the channel and the source address come from
+`/usr/share/mos/meta/updates/manifest.json`'s defaults with
+`/mos/config/updates.json` overriding them per key
+(`docs/design/updates.md` §2). `/var/lib/mos/update-policy.toml` is retired
+and nothing reads it. Where the bytes go is not a
 flag but PLAN-061's contract on PLAN-063's layout: partial downloads only
 in `/mos/updates/downloads`, a verified bundle moved into
 `/mos/updates/verified` by one same-filesystem rename, transaction-local
@@ -926,11 +1013,16 @@ symlink substitution, not read-only, a private probe file written and
 removed, the pool's free space against the budget) and refuses with a named
 `unavailable`/`degraded` verdict instead of writing anywhere else
 (`updates.md` §1.1). What is still owed is the rest of the image-side
-contract: **[not implemented]** the pinned `root.json` is provisioned by
-nothing (§2.5's last paragraph), nothing provisions the `/var/lib/mos/update/`
+contract: **[not implemented]** nothing provisions the `/var/lib/mos/update/`
 tree that policy defaults to for the metadata mirror and rollback state, and
 `mos-health` does not report `health.boot` — the entry that lifts the
-lifecycle past `validating`. How many bytes `--max-bytes` may promise of the
+lifecycle past `validating`. **The package anchor is no longer on that
+list**: it is baked, and `verify`'s `packed-meta-is-the-public-set` and
+`no-private-key-in-baked-meta` hold the image side of it. What §2.3 records
+as open is the *provisioning channel* for the RAUC keyring — a way for an
+anchor to reach a device other than by riding an image — which is a
+different question from where a running device reads one. How many bytes
+`--max-bytes` may promise of the
 pool is a storage-policy decision owned outside this crate (PLAN-049); the
 client refuses to exceed the budget or start a download the pool visibly
 cannot hold, and that is its whole side of the bargain.
@@ -955,11 +1047,11 @@ On the device, with the media mounted:
 
 ```sh
 rauc-update import \
-  --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
+  --lockbox /media/usb/lockbox --state <state.json> \
   --max-bytes <n>
 ```
 
-`import` verifies exactly as online — same pinned anchor, same rollback
+`import` verifies exactly as online — same baked anchors, same rollback
 state, same selection, same digest gate, same workspace probe — then copies
 the bundle through `/mos/updates/staging` into `/mos/updates/verified`,
 which is the path to install (the file on the media itself is never one). A
@@ -978,8 +1070,13 @@ deadline will one day propose:
 - **No private key is ever committed**, to this repository or any other. The
   dev-key directories are gitignored and the generators refuse overwrite;
   production keys never enter a checkout at all.
-- **The root key and the CA key never touch a networked machine.** Not for a
-  "quick re-sign", not in CI, not on the release host.
+- **The TUF root-role key and the RAUC CA key never touch a networked
+  machine.** Not for a "quick re-sign", not in CI, not on the release host.
+  **This does not cover `meta/updates/root.key`, and the name is why**: that
+  key signs every update package, locally, so a release host must hold it
+  (§2.6). One sentence covering both would have been false in one direction
+  or the other; the two are named separately because their custody genuinely
+  differs.
 - **No production key on a build machine, and no signing in CI.** CI builds
   with dev keys (`make os-devkeys`) and proves the pipeline; a runner that
   held production material would make every person and plugin with runner
@@ -1003,3 +1100,19 @@ deadline will one day propose:
   overlap makes that sound for a scheduled rotation and says plainly that it
   cannot recover from CA compromise, which is what the provisioning-time
   trust channel (§2.3) remains owed for.
+- **No package anchor from anywhere but the baked manifest.** The device
+  reads `trust.signingKeys` from
+  `/usr/share/mos/meta/updates/manifest.json` and there is no environment
+  variable, no command-line flag and no operator document that can name one
+  (§3.1). The operator document refuses `trust`, `signingKeys`,
+  `signingKeyId`, `signingKeyIds`, `rootPath` and `keyring` **by name** and
+  not merely as unknown keys (`docs/design/updates.md` §2.3), so widening
+  that schema cannot quietly reopen the road. The **address** a device dials
+  is an operator setting; what it will accept is not.
+- **No private key baked into an image.** Exactly two files reach the image
+  from `meta/`, by allowlist: `rauc/ca.cert.pem` and
+  `updates/manifest.json`. `rootfs/build.sh` refuses an off-allowlist staged
+  path and runs a private-key detector over what it stages, and the image
+  verifier asserts the same set from the other end
+  (`packed-meta-is-the-public-set`, `no-private-key-in-baked-meta`). Two
+  checks in two places, because a build that meant well is not evidence.

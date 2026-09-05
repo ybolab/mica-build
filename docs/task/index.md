@@ -86,6 +86,8 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-315 PLAN-070 F7/F8/F9: the client reads the baked anchor**](RFCT-315.md) `P1`
 - [x] [**RFCT-322 Recovery rotation serialization and the factory-reset residue list**](RFCT-322.md) `P1`
 - [x] [**RFCT-323 Restore what the settings move deleted, and run the tolerant load**](RFCT-323.md) `P1`
+- [x] [**RFCT-328 mosd records its own confirmed boot, and the guard orders by it**](RFCT-328.md) `P1`
+- [x] [**RFCT-329 PLAN-070 F10/F11 and PLAN-071 U9: the documents**](RFCT-329.md) `P1`
 - [x] [**RFCT-325 rauc-update names the missing anchor file, and exit 3 is reachable**](RFCT-325.md) `P1`
 - [x] [**RFCT-324 A log-capture race turned main red in parallel**](RFCT-324.md) `P1`
 - [x] [**RFCT-313 PLAN-070 F5/F6/F6b: the reader, the precedence, the document move**](RFCT-313.md) `P1`
