@@ -52,7 +52,44 @@
 会拒绝集合以外的声明值，也会拒绝 `meta/` 里超出集合的材料。
 
 **缺口**：没有把新信任锚配备到**已部署**设备的通道。`/etc` 是只读 squashfs，
-轮换 keyring 目前只能靠重新刷写镜像。
+轮换 keyring 目前只能靠重新刷写镜像。**这个缺口现在只关乎 keyring**：软件包
+信任锚已经定了，以内联形式（`trust.signingKeys`）烤在
+`/usr/share/mos/meta/updates/manifest.json` 里，没有单独的锚文档要交付，两个
+设备侧二进制也都没有 `--root`。诚实的后果值得写出来而不是留给读者推断：两套
+体系现在走同一条路——镜像——所以 **TUF 体系无法在镜像签名路径被攻破之后继续存
+活**，因为掌握「烤什么进去」的人就掌握了软件包这道门信任什么。它们在**安装时刻**
+仍然互相独立（见 §2.6），这正是把 RAUC CA 密钥留在离线状态依然分量十足的原因。
+
+### 2.6 两个域、三把密钥，以及其中一把为什么住在发布主机上
+
+划分**按对象、而不是按层级**（PLAN-070 §6.2），这也是 `root.key` 的保管方式与
+本文档其他一切都不同的原因：
+
+- **`meta/rauc/`** —— RAUC CA 及其签名者。这条链把守 **A/B 系统镜像**。被攻破
+  意味着攻击者能**装上一个系统**。
+- **`meta/updates/root.key`** —— 覆盖更新**软件包**及其发布元数据的密钥。它保证
+  下载到的包没有被篡改。被攻破意味着攻击者能**伪造一个包，而不是一个系统镜像**。
+
+| 文件 | 域 | 签什么 | 何时用 | 被偷走会怎样 | 轮换 |
+|---|---|---|---|---|---|
+| `meta/rauc/ca.key.pem` | 镜像 | 签名者证书 | 仪式上，极少 | 铸一个机队已经信任的签名者，然后在每台设备上**装上一个系统**，直到重刷 | §2.4 的重叠窗口滚动；**已被攻破**的 CA 是 §2.3 未覆盖的情形，只能重刷 |
+| `meta/rauc/signer.key.pem` | 镜像 | bundle 的 CMS 签名 | 每次发布 | 在证书有效期内**装上一个系统** | §2.2 重签——便宜，需要 CA 密钥，不需要机队更新，因为设备信任的是 CA |
+| `meta/updates/root.key` | 软件包 | 更新包及其发布元数据 | 每次发布，**在本地** | 让设备把一个伪造的包当作可信——下载它、验证它，然后**装不上去** | 一次新镜像，因为公钥半边是烤入的；`trust.signingKeys` 是一个**列表**，这正是重叠窗口成为可能的原因 |
+
+**两道门必须同时倒下。**只握有 `root.key` 的攻击者能让设备接受一个包为可信，仍
+然装不上任何东西：安装由链到 `meta/rauc/ca.cert.pem` 的 RAUC CMS 签名把守，而
+那把密钥不在他们手上。只握有 RAUC CA 的攻击者能造出可安装的 bundle，却无法把它
+作为可信的包分发出去。两道门倒在不同的密钥上，保管方式也不同——这就是划分的价值，
+而且它成立于**安装时刻**，不是配备时刻。
+
+**保管规则，也就是读者最容易搞反的那个不对称。**`meta/rauc/ca.key.pem` **不在**
+发布主机上，也永远不碰它：签一次发布需要的是*签名者*密钥，不是 CA 密钥，所以 CA
+密钥按 §1.5 的保管规则封存。`meta/updates/root.key` 恰好相反：它签**每一个**包，
+就在发布主机上，所以它**在**那里，而且无法离线保管。保护它的是运维手段——主机加固、
+限制访问、留痕——而不是 CA 那样的物理隔离；这是对一把「被攻破只换来一个伪造包、
+而不是一个装上去的系统」的密钥，刻意接受的较弱保护。
+`pkgs/rauc/gen-dev-keys.sh --domain updates` 会写一把开发级的，并在 `meta/GENERATED`
+里记下域名——因为一个完整的 `meta/rauc/` 并不能说明 `meta/updates/root.key` 在不在。
 
 ## 3. 签名一次发布
 
@@ -70,21 +107,36 @@
 ### 3.1 设备侧更新客户端 —— **[runbook]**；已随镜像交付并由 mosd 驱动
 
 `rauc-update`（同一 crate）消费第 3 节发布的内容。它沿用
-`rauc-verify` 的验证流程——固定的 root、持久化的回滚状态——并在其上增加传输与策略；
-任何子命令都没有跳过元数据或摘要验证的选项。设备上的操作顺序（也可用于工作台 shell）如下：
+`rauc-verify` 的验证流程——烤入的信任锚、持久化的回滚状态——并在其上增加传输与策略；
+任何子命令都没有跳过元数据或摘要验证的选项。
+
+**信任锚从哪里来——因为它已经不是一个参数了。**两个设备侧二进制都从
+`/usr/share/mos/meta/updates/manifest.json` 读取 `trust.signingKeys`，这个路径由
+`pkgs/rauc-sign/src/anchor.rs` 钉成常量：*不存在任何环境变量、参数或操作员文档能
+覆盖信任锚。*读取器会拒绝含有 `signingKeys`/`signingKeyIds` 之外任何键的 `trust`
+对象、拒绝空密钥列表、拒绝与密钥不匹配的 `signingKeyIds`，然后从**最早的、能被某
+把烤入密钥认证的仓库 root** 开始走 TUF 链并逐级前滚——所以一把只签了后续 root 的新
+烤入密钥同样能引导，轮换也不需要新参数。**`rauc-update` 和 `rauc-verify` 的
+`--root` 已经删除**；本节和 `updates.md` §5.3 的旧版本还写着它，带上它的调用会失败。
+`rauc-sign verify --root` 不受影响：那是发布主机侧的工具，它的锚是操作员带外持有
+的副本（§1.5）。
+
+设备上的操作顺序（也可用于工作台 shell）如下：
 
 ```sh
 # 1. 通过普通 HTTP 镜像元数据（也可用 rsync 同步仓库并跳过此步）。
 #    镜像内容是不可信输入；第 2 步负责信任或拒绝它。
 rauc-update sync --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
 
-# 2. 从固定的信任锚验证，并选择最新的兼容目标：
+# 2. 从烤入的信任锚验证，并选择最新的兼容目标：
 #    board+profile（身份见下文）、channel（默认 stable）、manifest
 #    schema floor（必须等于 1）、版本必须严格高于正在运行的版本。
 #    每个被拒绝的候选都会打印原因；没有候选时以 2 退出。
 #    降级必须传 --allow-downgrade，并记录到 stderr。
+#    没有 --root：信任锚是烤入 manifest 里的 trust.signingKeys，
+#    任何参数都替代不了它（见下文）。
 rauc-update check \
-  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json>
+  --repo /var/lib/mos/tuf-mirror --state <state.json>
 
 # 3. 探测 /mos/updates 工作区（DATA 已挂载、可写且未耗尽；否则以 3 退出，
 #    并输出一行 `<status> <kind>: ...`），然后用 HTTP range request 断点续传到
@@ -92,7 +144,7 @@ rauc-update check \
 #    --max-bytes；摘要不匹配会删除部分文件；验证后的 bundle 会重命名到
 #    /mos/updates/verified，且其路径是 stdout 的最后一行。不存在改用其他暂存位置的选项。
 rauc-update fetch \
-  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --repo /var/lib/mos/tuf-mirror --state <state.json> \
   --url http://mirror.example/tuf --max-bytes <n>
 
 # 4. 交接安装。编排路径是 mosd 的 D-Bus 成员：
@@ -125,18 +177,22 @@ manifest 中的发布版本在构建 bundle 时才选定，镜像输入中没有
 发布版本仍有待完成，并且与决定发布版本从哪里进入镜像构建是同一个问题。
 
 以上流程已不再等待操作员触发：mosd 驱动该客户端。更新生命周期以有界子进程执行
-`rauc-update probe`/`sync`/`check`/`fetch`，策略文件
-`/var/lib/mos/update-policy.toml` 设置自动检查周期（`docs/design/updates.md`）。
+`rauc-update probe`/`sync`/`check`/`fetch`；周期、渠道与源地址来自
+`/usr/share/mos/meta/updates/manifest.json` 里的默认值，由
+`/mos/config/updates.json` 逐键覆盖（`docs/design/updates.md` §2）。
+`/var/lib/mos/update-policy.toml` 已经退役，没有任何东西再读它。
 数据去向不是可选参数，而是 PLAN-061 在 PLAN-063 布局上的约定：部分下载只能位于
 `/mos/updates/downloads`，完整验证的 bundle 通过同文件系统的一次重命名进入
 `/mos/updates/verified`，事务临时文件位于 `/mos/updates/staging`，RAUC 只能接收
 `verified/` 中的路径。`mos-data-layout` 在 DATA pool 上创建工作区；客户端会在写入第一个
 字节前探测它（挂载源解析到 `/mnt/data`、无符号链接替换、非只读、私有探测文件完成写入
 和删除、pool 空间满足预算），不满足时返回具名的 `unavailable`/`degraded` 结论，
-绝不写入其他位置（`updates.md` §1.1）。镜像侧仍欠三项契约：没有机制配备固定的
-`root.json`（见 §2.5 最后一段）；没有机制配备策略默认用于元数据镜像和回滚状态的
-`/var/lib/mos/update/` 树；`mos-health` 尚未报告 `health.boot`，所以生命周期无法越过
-`validating`。`--max-bytes` 能从 pool 承诺多少空间属于 PLAN-049 的存储策略决策；客户端
+绝不写入其他位置（`updates.md` §1.1）。镜像侧仍欠两项契约：没有机制配备策略默认
+用于元数据镜像和回滚状态的 `/var/lib/mos/update/` 树；`mos-health` 尚未报告
+`health.boot`，所以生命周期无法越过 `validating`。**软件包信任锚已经不在这份清单
+上了**：它是烤进去的，镜像侧由 `packed-meta-is-the-public-set` 与
+`no-private-key-in-baked-meta` 两项校验把关。§2.3 记为未决的是**密钥环的配备通道**
+——让信任锚不靠镜像抵达设备的那条路——这与运行中的设备从哪里读锚是两个问题。`--max-bytes` 能从 pool 承诺多少空间属于 PLAN-049 的存储策略决策；客户端
 只负责拒绝超过预算或 pool 明显无法容纳的下载。
 
 传输刻意采用普通 HTTP：完整性与真实性来自签名元数据（恶意镜像只会导致拒绝），
@@ -156,11 +212,11 @@ rauc-sign lockbox --repo <repo> --out /media/usb/lockbox \
 
 ```sh
 rauc-update import \
-  --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
+  --lockbox /media/usb/lockbox --state <state.json> \
   --max-bytes <n>
 ```
 
-`import` 与在线路径执行完全相同的验证——同一个固定信任锚、同一个回滚状态、
+`import` 与在线路径执行完全相同的验证——同一批烤入的信任锚、同一个回滚状态、
 同一套目标选择、摘要门和工作区探测——然后经 `/mos/updates/staging` 复制 bundle，
 再放入 `/mos/updates/verified`；后者才是可安装路径，绝不直接安装介质上的文件。
 携带陈旧元数据的 lockbox 会被状态文件拒绝，遭篡改的 bundle 会被摘要拒绝，
@@ -172,3 +228,20 @@ rauc-update import \
 
 一次发布由**两套互不相关的体系各签一次**，这种分离正是要点：
 **TUF 的在线密钥签不了 bundle，bundle 的密钥也签不了元数据。**
+
+- **TUF 的 root 角色密钥和 RAUC CA 密钥绝不碰联网机器。**不为了「快速重签一下」，
+  不在 CI 里，也不在发布主机上。**这句话不覆盖 `meta/updates/root.key`，而名字就是
+  原因**：那把密钥在本地签每一个更新包，所以发布主机必须持有它（§2.6）。一句话同时
+  覆盖两者，必然在某一个方向上是假的。
+- **软件包信任锚只来自烤入的 manifest。**设备从
+  `/usr/share/mos/meta/updates/manifest.json` 读 `trust.signingKeys`，没有任何环境
+  变量、命令行参数或操作员文档能指定另一把（§3.1）。操作员文档会**按名字**拒绝
+  `trust`、`signingKeys`、`signingKeyId`、`signingKeyIds`、`rootPath`、`keyring`
+  六个键，而不只是把它们当作未知键（`docs/design/updates.md` §2.3），所以放宽那份
+  schema 也无法悄悄把这条路重新打开。设备**拨向哪里**是操作员的设置；它**愿意接受
+  什么**不是。
+- **绝不把私钥烤进镜像。**从 `meta/` 进入镜像的文件恰好两个，按白名单：
+  `rauc/ca.cert.pem` 和 `updates/manifest.json`。`rootfs/build.sh` 拒绝白名单之外
+  的暂存路径并对暂存内容跑私钥探测；镜像校验器从另一端断言同一个集合
+  （`packed-meta-is-the-public-set`、`no-private-key-in-baked-meta`）。两处两道检查，
+  因为「构建时是好意的」不是证据。

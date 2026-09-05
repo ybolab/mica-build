@@ -7,15 +7,15 @@ halves of the TUF trust model because they share one metadata format:
   device, and its output is static content — a directory that any HTTP server
   or object store can serve unchanged;
 - the **device side**: `rauc-verify` (phase 2, first half) verifies a
-  LOCAL copy of that directory from a pinned trusted root, with persistent
-  rollback protection, and `rauc-update` (phase 2, second half) adds the
+  LOCAL copy of that directory from the anchors baked into the image, with
+  persistent rollback protection, and `rauc-update` (phase 2, second half) adds the
   transport on top of the same walk — compatibility selection from signed
   release metadata, resumable download into the `/mos/updates` DATA workspace
   (probed for readiness first), and the offline "lockbox" import. Both are
   exercised offline by the test suite
-  and both are SHIPPED, as `mos-rauc-update` (see "Packaging" below); what is
-  still owed is the trust anchor they verify from and the thing that runs
-  them (see the provisioning section below).
+  and both are SHIPPED, as `mos-rauc-update` (see "Packaging" below), with
+  the anchor they verify from baked beside them ("Trust anchors" below) and
+  mosd as the thing that runs them (`docs/design/updates.md`).
 
 ## Contents
 
@@ -27,8 +27,8 @@ so each binary's name is the thing that declares it:
   manifest beside them (`add --manifest`), and produces offline lockboxes
   (`lockbox`). Named by the package, with `src/main.rs`.
 - `rauc-verify` — the device-side metadata and target verifier
-  (phase 2 first half). Walks the metadata from a pinned root and
-  prints a verified local target path for an installer to consume. Named by
+  (phase 2 first half). Walks the metadata from the image's baked signing
+  keys and prints a verified local target path for an installer to consume. Named by
   its own filename, `src/bin/rauc-verify.rs`.
 - `rauc-update` — the device-side update client (phase 2 second half):
   `sync`/`check`/`fetch`/`import`, the section below. Named by its own
@@ -100,7 +100,8 @@ The operator-facing procedures — media, minutes, key disposition, distribution
 
 `rauc-verify` is the client the phase-1 attacker tests were modelled
 against. It performs the TUF client walk over a local repository directory —
-root chain from the pinned trusted root, then timestamp → snapshot → targets —
+root chain from the earliest root a baked key authenticates, then
+timestamp → snapshot → targets —
 enforcing per-role signature thresholds, expiries, version pins, and metadata
 hash/length pins, and refusing shapes the signer never produces (a root
 missing one of the four roles, targets metadata with delegated roles).
@@ -117,18 +118,24 @@ any other exit means not verified with a one-line reason on stderr:
 
 ```sh
 # verify the metadata walk; records/enforces per-role versions in the state file
-rauc-verify --repo <dir> --root <pinned root.json> --state <state.json>
+rauc-verify --repo <dir> --state <state.json>
 # OK root v1 targets v2 snapshot v2 timestamp v2
 
 # additionally verify one target's bytes (sha256 + length) and print its
 # verified local path, ready to hand to an installer
-rauc-verify --repo <dir> --root <pinned root.json> --state <state.json> \
-  --target update-1.0.0.raucb
+rauc-verify --repo <dir> --state <state.json> --target update-1.0.0.raucb
 # <dir>/targets/<sha256>.update-1.0.0.raucb
 ```
 
-What phase 2 still owes after `rauc-update` (below): the mosd orchestration
-that drives this client and RAUC, and the provisioning below.
+**There is no `--root`.** The trusted root is whichever repository root one of
+the image's baked package signing keys authenticates; see *Trust anchors*
+below.
+
+The orchestration phase 2 used to owe is shipped: mosd runs this client and
+RAUC from `/mos/config/updates.json` over the baked defaults
+(`docs/design/updates.md` §2). What is still owed is image-side and listed
+there: the `/var/lib/mos/update/` tree the client's defaults point at, and
+`mos-health` reporting `health.boot`.
 
 ## Phase 2, second half: the update client
 
@@ -145,8 +152,8 @@ and no flag skips any of that. Four subcommands, same scriptable contract
   substitute for it; every file is capped at 1 MiB, so a hostile mirror
   cannot buffer-exhaust the device before verification runs. A deployment
   can equally rsync the repository and skip `sync` entirely.
-- `check --repo <dir> --root <pinned> --state <state>` verifies from the
-  pinned root (advancing the same persistent rollback state `rauc-verify`
+- `check --repo <dir> --state <state>` verifies from the baked anchors
+  (advancing the same persistent rollback state `rauc-verify`
   keeps), then selects the newest target compatible with this device: board,
   profile, channel (`--channel`, default `stable`), manifest schema floor
   (equality with 1, the same rule the release gate holds), and version
@@ -221,47 +228,75 @@ USB/SD "lockbox": the complete `metadata/` set plus the named targets' files
 (all targets when none is named; a named bundle brings its pinned manifest
 along). The output is itself a repository directory, which is the point —
 `rauc-update import` and `rauc-verify` walk it exactly as an online mirror,
-pinned root, rollback state and all. The metadata is carried verbatim (the
+baked anchors, rollback state and all. The metadata is carried verbatim (the
 signing keys are not present and not wanted), so a partial lockbox still
 lists every published target; `import` verifies exactly the target it
 selects, and `rauc-sign verify` passes only on a full lockbox.
 
-## Trust anchor provisioning
+## Trust anchors
 
-The honest state: **the verifier exists and is exercised offline; no shipped
-mechanism delivers the pinned `root.json` to a device.** Verification is only
-as trustworthy as the channel that delivered the root, so this is a decision
-to be made deliberately, not defaulted. Candidate paths, none implemented:
+**Settled: the anchors are baked, inline, and there is no way to supply one.**
+Both device binaries read `trust.signingKeys` — base64 ed25519 public keys —
+from `/usr/share/mos/meta/updates/manifest.json`, a path `src/anchor.rs` pins
+as a constant. *There is no environment, argument or operator-document anchor
+override.* The `--root` flag both binaries used to carry is gone with the
+`root.json` file it named: there is no separate anchor document to ship.
 
-- **Image-baked** `/usr/share/mos/uptane/root.json` **[not implemented]** —
-  the root ships inside the (dm-verity protected, RAUC-signed) OS image.
-  Simplest and the strongest binding: the root is exactly as trustworthy as
-  the image that carries it. The baked anchor does not have to be replaced to
-  follow a rotation — the device walks the cross-signed root chain forward from
-  whatever version it holds — so an image update is needed only to re-anchor a
-  device whose chain has been broken. Tradeoff: first trust, and that recovery,
-  ride the RAUC channel, so the TUF hierarchy cannot outlive a compromise of
-  the image signing path — the two hierarchies stand or fall together.
+What the reader refuses, before it looks at any repository:
+
+- a `trust` object carrying any key but `signingKeys` and `signingKeyIds` —
+  *alternate anchors are refused*, by shape rather than by convention;
+- an empty `signingKeys` — no package key is trusted, so nothing is;
+- a `signingKeyIds` that is not the sha256 of the keys beside it, which is
+  how a hand-written manifest fails the build rather than the device;
+- a `/usr/share/mos/meta` or `/usr/share/mos/meta/updates` that is not a real
+  directory, or a manifest that is not a regular file — an alternate anchor
+  planted as a symbolic link is refused by name.
+
+**Rotation needs no new flag.** The walk starts at the **earliest**
+repository root one of the baked keys authenticates and lets `tough` verify
+each rotation forward from there, so a freshly baked incoming key that only
+signs later roots still bootstraps, and a device whose chain has moved on is
+not stranded on the version it was built with.
+
+**The tradeoff, stated rather than left as an inference.** The anchor is
+exactly as trustworthy as the image that carries it, which is the strongest
+binding available and also means the TUF hierarchy **cannot outlive a
+compromise of the image signing path** — the two hierarchies stand or fall
+together at provisioning time. They remain independent at *install* time,
+which is the property worth having: forging a package still does not install
+a system, because installation is gated by the RAUC CMS chain
+(`docs/design/release-signing.md` §2.6).
+
+**Baking is per build host, not per checkout.** `meta/` is gitignored, so a
+deployment's anchors and its update server address are not reproducible from
+a checkout; a build is reproducible only together with the `meta/` its build
+host carried. `pkgs/rauc/gen-dev-keys.sh --domain updates` writes a
+development-grade key and records the domain in `meta/GENERATED`; a build
+that finds no key bakes an empty list and says so, and such an image can
+verify no update package at all.
+
+**The two alternatives, kept because they are still the alternatives for the
+RAUC keyring** (`docs/design/release-signing.md` §2.3), which has the same
+shape and no answer yet:
+
 - **Provisioning file** on STATE/META, written at factory or first-boot
-  provisioning **[not implemented]** — decouples the trust anchor from the
-  image, allowing per-fleet or per-customer roots. Tradeoff: the provisioning
-  flow becomes security-critical, the anchor lives on mutable storage (so it
-  needs its own integrity story, e.g. only ever replaced via a root chain the
-  verifier already walks), and a device that loses STATE loses its anchor.
-- **Signed USB import** **[not implemented]** — an operator carries
-  `root.json` (or a full lockbox) on removable media; the device accepts a new
-  root only if it chains from the currently pinned one (the TUF root rotation
-  rule), or on explicit physical-presence action for first provisioning.
-  Fits the offline "lockbox" story; tradeoff: first-time trust still has to
-  come from somewhere (factory default or physical ceremony), and the import
-  path is an attack surface that must enforce the chain rule strictly.
+  provisioning **[not implemented]** — decouples the anchor from the image,
+  allowing per-fleet or per-customer trust. Tradeoff: the provisioning flow
+  becomes security-critical, the anchor lives on mutable storage (so it needs
+  its own integrity story), and a device that loses STATE loses its anchor.
+- **Signed USB import** **[not implemented]** — an operator carries the
+  material on removable media; the device accepts it only if it chains from
+  what is currently trusted, or on explicit physical-presence action for
+  first provisioning. Tradeoff: first-time trust still has to come from
+  somewhere, and the import path is an attack surface that must enforce the
+  chain rule strictly.
 
-Until one of these is chosen and built, `rauc-verify` and `rauc-update` are
-tools a person with a shell (or, later, mosd) points at a directory and a
-`--root` they provided themselves — that is the whole truth of their
-deployment status. What HAS changed is the two smaller halves: the binaries
-are in the image, and the device identity file they default to
-(`/usr/share/mos/release-identity.env`) is written by the composition.
+The rest of the deployment story is closed: the binaries are in the image
+(`mos-rauc-update`), the device identity file they default to
+(`/usr/share/mos/release-identity.env`) is written by the composition, and
+mosd drives them from `/mos/config/updates.json` over the baked defaults
+(`docs/design/updates.md` §2).
 
 ## Repository layout produced
 
@@ -288,7 +323,7 @@ Four ed25519 keys, one per role, stored as raw PKCS#8 documents named
 `root` is an **offline** key. It signs `root.json` at `init` time and at the
 ceremonies that republish it (`rotate-root`, `refresh-root`); `add` and `sign`
 only load the `targets`, `snapshot` and `timestamp` keys. The device side handles public material only: it reads
-metadata and a pinned root, never a `.pk8`.
+metadata and the baked `trust.signingKeys`, never a `.pk8`.
 
 Generate throwaway development keys:
 
@@ -351,9 +386,9 @@ cargo run -p rauc-sign -- rotate-online \
 # release-side offline verification against a trusted root
 cargo run -p rauc-sign -- verify --repo _out/tuf --root <trusted root.json> [--datastore _out/tuf-trusted]
 
-# device-side verification (pinned root + persistent version state)
+# device-side verification (baked anchors + persistent version state)
 cargo run -p rauc-sign --bin rauc-verify -- \
-  --repo _out/tuf --root <pinned root.json> --state _out/uptane-state.json \
+  --repo _out/tuf --state _out/uptane-state.json \
   [--target update-1.0.0.raucb]
 
 # produce an offline lockbox (no keys involved; static file copies)
@@ -364,15 +399,15 @@ cargo run -p rauc-sign -- lockbox --repo _out/tuf --out /media/usb/lockbox \
 cargo run -p rauc-sign --bin rauc-update -- sync \
   --url http://mirror.example/tuf --repo /var/lib/mos/tuf-mirror
 cargo run -p rauc-sign --bin rauc-update -- check \
-  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --repo /var/lib/mos/tuf-mirror --state <state.json> \
   [--identity /usr/share/mos/release-identity.env | --board cx3576 --profile prod --current-version 1.0.0] \
   [--channel stable] [--allow-downgrade]
 cargo run -p rauc-sign --bin rauc-update -- probe --max-bytes 500000000
 cargo run -p rauc-sign --bin rauc-update -- fetch \
-  --repo /var/lib/mos/tuf-mirror --root <pinned root.json> --state <state.json> \
+  --repo /var/lib/mos/tuf-mirror --state <state.json> \
   --url http://mirror.example/tuf --max-bytes 500000000 [--install]
 cargo run -p rauc-sign --bin rauc-update -- import \
-  --lockbox /media/usb/lockbox --root <pinned root.json> --state <state.json> \
+  --lockbox /media/usb/lockbox --state <state.json> \
   --max-bytes 500000000 [--install]
 ```
 
