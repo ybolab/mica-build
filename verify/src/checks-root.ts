@@ -938,8 +938,19 @@ function fileBytes(path: string): Buffer | undefined {
 }
 
 /**
- * Every file at or under `dir`, as paths relative to it, sorted. A missing or
- * unreadable directory throws: an absent scan input cannot prove absence.
+ * Every file at or under `dir`, as paths relative to it, sorted. Empty when
+ * there is no such directory.
+ *
+ * **Empty and not a throw, because both callers already refuse the empty case
+ * and say more about it than a stack trace can.**
+ * `packed-meta-is-the-public-set` reports the missing paths by name;
+ * `no-private-key-in-baked-meta` owns the vacuity rule outright -- its
+ * `scanned === 0` branch is a red verdict explaining that these directories are
+ * always populated, so an empty search space is a check that read nothing
+ * rather than a clean image. Throwing here pre-empts that verdict with a bare
+ * ENOENT and makes the branch unreachable in exactly the case its test drives.
+ * "An absent scan input cannot prove absence" is right; it is enforced one
+ * level up, where the check can name what it means.
  *
  * Directories are recursed into and everything else is an ENTRY -- a symlink
  * included, because a link under a baked directory is a path the image ships
@@ -949,7 +960,13 @@ function fileBytes(path: string): Buffer | undefined {
 function listRelative(dir: string): string[] {
   const out: string[] = []
   const walk = (at: string, prefix: string): void => {
-    const entries = readdirSync(at, { withFileTypes: true })
+    let entries
+    try {
+      entries = readdirSync(at, { withFileTypes: true })
+    }
+    catch {
+      return
+    }
     for (const e of entries) {
       const rel = prefix === '' ? e.name : `${prefix}/${e.name}`
       if (e.isDirectory()) walk(join(at, e.name), rel)

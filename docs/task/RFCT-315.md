@@ -204,6 +204,53 @@ half: nothing yet checks that `operator` distinguishes absent from `null`, that
 a malformed layer-2 document is refused rather than answered with the baked
 value, or that `effective` is the resolved value and not the baked one.
 
+### The TypeScript suites, which this branch had never run
+
+L1 caught `verify` red: **1268 pass, 11 fail** against main's 1279/0. The first
+batch added `manifest-keys.ts` and the manifest derivation in `checks-root.ts`
+and never ran the suite; the second batch ran neither. This is that TypeScript
+work meeting its fixture for the first time, the same shape as the four apid
+route tests meeting a test host.
+
+**Ten of the eleven were one stale fixture.**
+`FIXTURE_META_MANIFEST` was `{ "schema": "mos/meta/v1", "update": { "source":
+null } }` — no `trust` object, so `derivedManifest` threw before any check could
+conclude, taking the positive controls and *"a scan that read NOTHING is red,
+not green"* down with them. It now carries the **whole**
+`meta.example/updates/manifest.json`. Its doc comment claimed "nothing parses
+the JSON, so a faithful copy would assert nothing extra"; that reasoning died
+when the manifest row grew a derivation, and the comment now says so.
+
+**`signingKeys` is populated rather than copied empty**, which is the one place
+this departs from "take it from `meta.example`". An empty array *passes*
+`derivedManifest` — it derives an empty id list, which matches — and passes
+vacuously: the per-key base64/length validation and the SHA-256 never run, so
+the positive control's own verdict line, "manifest signingKeyIds derived from
+key bytes", would assert a derivation that did not happen. The fixture carries
+one canonical 32-byte value (bytes 1..32) and the id it actually hashes to.
+`meta.example` has empty arrays because no ceremony stands behind an example; a
+released image's does not, and `anchor.rs` refuses one that does.
+
+**The eleventh was not the fixture**, and L1's one-line root cause did not cover
+it. The first batch also made `listRelative` **throw** on a missing directory.
+Both of its callers already refuse the empty case and say more about it than a
+stack trace can: `packed-meta-is-the-public-set` names the missing paths, and
+`no-private-key-in-baked-meta` owns the vacuity rule outright — its
+`scanned === 0` branch is a red verdict explaining that these directories are
+always populated. The throw pre-empted that verdict with a bare `ENOENT` and
+made the branch unreachable in exactly the case its test drives. Reverted to
+main's behaviour, with the reasoning in the doc comment. "An absent scan input
+cannot prove absence" is right; it is enforced one level up, where the check can
+name what it means.
+
+Two more assertions followed the data: the first batch changed the differing-file
+verdict from "is not the byte-for-byte copy" to "does not match" — correct,
+because the manifest row is now compared structurally after derivation rather
+than byte for byte — and two tests still named the old string.
+
+`manifest-keys.ts` was not weakened. It is enforcing the committed schema and it
+is the thing that caught this.
+
 ## Compilation and syntax evidence
 
 Passed on this worktree:
