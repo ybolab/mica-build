@@ -224,7 +224,8 @@ the English and `pkgs/rauc/key-validity.env` say 45 days.
 
 | Check | Result |
 | --- | --- |
-| `bash -n` on all four changed shell files | **green** |
+| `bash -n` on all five changed shell files | **green** |
+| `docker buildx build --check` on `build-env/openssl/Dockerfile` | **green**, `Check complete, no warnings found` — instructions only, against a resolvable base; the image itself was never built |
 | `bash tests/host-toolchain-lint.sh` | **green**, the RESULT in §4 |
 | `make docs-verify` | **green** |
 | Image-content probe of all seven `IMAGE_` pins for `openssl`/`jq` | six carry neither; `IMAGE_BUN_1` carries openssl 3.5.6 and no jq |
