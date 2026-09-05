@@ -173,9 +173,23 @@ becoming "unrestricted" is how a metered device downloads a 500 MB bundle.
 The reboot gate keeps evaluating with defaults — failing closed there would
 let a typo brick the reboot button.
 
-The full document, with its defaults:
+The full document, with its defaults. The three top-level keys come FIRST:
+TOML puts every key after a table header inside that table, so `policy`
+written below `[source]` would be `source.policy`, which
+`deny_unknown_fields` rejects.
 
 ```toml
+# What the device does on its own: off | check | auto.
+#   off   -- initiates nothing; manual check/fetch/install stay available
+#   check -- metadata checks on the cadence below, and nothing else
+#   auto  -- checks, fetches, and installs inside a maintenance window
+policy = "check"
+checkIntervalMinutes = 1440  # 0 disables automatic checks
+# What `auto` does once a bundle is installed: manual | window.
+#   manual -- stop at `reboot-required` and wait for an operator
+#   window -- reboot inside the same window, honouring the reboot gate
+rebootPolicy = "manual"
+
 [source]
 # url has no default; unset = no online source, check/fetch refused,
 # the offline import path (§5.3) remains.
@@ -190,10 +204,8 @@ maxBytes = 500000000            # budget for /mos/updates as a whole (§1.1)
 mode = "online"              # online | metered | offline
 meteredAllowsFetch = false
 
-[autoCheck]
-intervalMinutes = 1440       # 0 disables; checks only, never fetch/install
-
-[[maintenance.windows]]      # zero windows = installs any time
+[[maintenance.windows]]      # zero windows = installs any time;
+                             # `policy = "auto"` requires at least one
 days = ["mon", "thu"]        # empty/omitted = every day
 start = "02:00"              # HH:MM, UTC
 end = "04:00"                # end <= start wraps past midnight
@@ -204,7 +216,17 @@ overrideMaxSeconds = 3600    # capped at 3600 whatever the file says
 ```
 
 Unknown keys are load errors (`deny_unknown_fields`), so a typo fails
-loudly instead of configuring nothing.
+loudly instead of configuring nothing. `[autoCheck]` was the earlier
+spelling of `checkIntervalMinutes` and is **retired, not migrated**: a
+document still carrying that section is an unknown key and therefore a load
+error, which is the intended outcome — PLAN-071 §1.1 migrates nothing, and a
+device that fails closed on an old document is one nobody has to guess about.
+
+`policy = "auto"` with zero maintenance windows is a validation error. Zero
+windows means *any time*, which is right for a manual install — a device with
+no operator-set window must still be updatable by a human who is standing
+there — and wrong for an automatic one, where it would mean *install the
+moment a bundle lands*.
 
 ## 3. What each policy gates
 
@@ -220,10 +242,14 @@ loudly instead of configuring nothing.
   detected: mosd has no metering signal to read.
 - **`mode = "offline"`** is import-only: `check` and `fetch` are refused
   and updates arrive by lockbox (§5.3).
-- **Auto-check** runs `check` every `intervalMinutes` (default daily,
-  `0` disables), production only, subject to the same policy refusals.
-  Checks only — nothing is ever fetched or installed automatically; both
-  stay operator actions behind their own gates.
+- **`policy`** decides what the device initiates, on the
+  `checkIntervalMinutes` cadence (default daily, `0` disables), production
+  only, subject to the same policy refusals. `off` initiates nothing;
+  `check` runs `check` and nothing else — never fetches, never installs;
+  `auto` fetches what a check named and installs it inside a maintenance
+  window, then reboots or does not per `rebootPolicy`. Every automatic step
+  calls the same function the manual route calls, so no gate here has a
+  second implementation for automation to pass through.
 
 Policy refusals cross the bus as `AccessDenied` and reach HTTP as **409**
 `policy_refused` with the refusing rule in the message.
