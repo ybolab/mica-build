@@ -415,6 +415,44 @@ openssl() {
         "$OPENSSL_IMAGE" "$@"
 }
 
+# THE BAKED MANIFEST NAMES THE COMMITTED KEY SET, AND ONLY IT.
+# An unknown key is a BUILD error and not a runtime one (PLAN-070 §2): the
+# document is baked inside the read-only dm-verity root, so a mistyped key is
+# both unreachable and unfixable on a device, and mosd's reader -- which parses
+# it with deny_unknown_fields and gives no field a serde default -- would
+# refuse the whole configuration on a machine nobody can edit. Refused in both
+# directions, because the schema carries no implicit defaults: an unknown key
+# configures nothing, a missing one leaves a value unstated.
+#
+# The allowed set is READ OUT of meta.example/updates/manifest.json rather than
+# listed here. That file is the committed statement of the shape
+# (meta.example/README.md) and pkgs/rauc/gen-dev-keys.sh instantiates meta/
+# from it, so reading it is one fact with one home; a list written into this
+# script would be a second copy that agrees with nothing on the day the schema
+# grows a key.
+META_MANIFEST_EXAMPLE="$REPO_ROOT/meta.example/updates/manifest.json"
+[ -f "$META_MANIFEST_EXAMPLE" ] ||
+    { echo "error: $META_MANIFEST_EXAMPLE does not exist. It is the committed statement of what meta/updates/manifest.json may contain, and this check reads the allowed key set out of it rather than carrying a copy" >&2; exit 1; }
+# Key positions only: `"name":`. A quote inside a value would have to be
+# backslash-escaped to appear this way, and no value this document carries --
+# labels, a URL, a channel, an enum, integers, base64 keys, hostnames -- can
+# hold one.
+manifest_keys() {
+    grep -o '"[A-Za-z][A-Za-z0-9_]*"[[:space:]]*:' "$1" | sed 's/[^A-Za-z0-9_]//g' | sort -u
+}
+manifest_unknown=$(comm -23 <(manifest_keys "$META_DIR/updates/manifest.json") <(manifest_keys "$META_MANIFEST_EXAMPLE") | tr '\n' ' ')
+manifest_missing=$(comm -13 <(manifest_keys "$META_DIR/updates/manifest.json") <(manifest_keys "$META_MANIFEST_EXAMPLE") | tr '\n' ' ')
+if [ -n "${manifest_unknown// /}" ]; then
+    echo "error: $META_DIR/updates/manifest.json names key(s) the schema does not have: ${manifest_unknown% }" >&2
+    echo "meta.example/updates/manifest.json is the committed shape and pkgs/mosd/mosd-settings/src/configuration.rs is the reader; a key in neither would be baked into a read-only root and refused there, where nobody can edit it. Add it to both, or fix the spelling." >&2
+    exit 1
+fi
+if [ -n "${manifest_missing// /}" ]; then
+    echo "error: $META_DIR/updates/manifest.json does not name: ${manifest_missing% }" >&2
+    echo "The schema has no implicit defaults -- every value it configures is stated -- so a missing key is a value this build would leave unsaid. meta.example/updates/manifest.json shows the full shape." >&2
+    exit 1
+fi
+
 # The tool-neutral name for the algorithm of a piece of material that is
 # actually on disk, read out of openssl's own description of it. Three readers
 # because the three roles are encoded three ways: a PEM certificate, a PEM
