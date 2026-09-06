@@ -64,5 +64,13 @@ if [ "$COMMAND" = install ]; then
     mkdir -p "$ROOT"
     mounts+=(-v "$(host_path "$ROOT"):/target")
     args+=(--root /target)
+    run "$COMMAND" "${args[@]}"
+    # `install` unpacks and stages; the root still has to be ENTERED for dpkg to
+    # configure it. Here that is a chroot, which is exactly what this route can
+    # afford: run.sh has already refused a non-native architecture, so nothing
+    # in the root goes through an emulator. The composition cannot use it and
+    # does not -- see rootfs/compose/10-compose.Dockerfile.
+    run configure --root /target
+    exit 0
 fi
 run "$COMMAND" "${args[@]}"
