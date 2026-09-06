@@ -98,6 +98,7 @@
 | `../bsp/porting.md` | db66fc02 | not-translated |
 | `../bsp/qualification.md` | db66fc02 | not-translated |
 | `../bsp/support-tiers.md` | db66fc02 | not-translated |
+| `../bsp/virt-arm64.md` | 2b443f42 | not-translated |
 
 `docs/design/` 下的每一篇都有中文对应。中文版是**面向当前版本的概览**，
 不是逐行翻译：英文版里可直接执行的命令序列、完整配置清单和逐块数据来源表格不在这里重复，
