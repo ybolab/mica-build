@@ -95,10 +95,15 @@ release host (`pkgs/rauc-sign/README.md`).
   checked out roughly monthly rather than once every two years
   (`docs/design/release-signing.md` §2.2). Every checkout is a §1.5 custody
   entry, and the frequency is itself a risk this document names rather than
-  discounts. Rotating the **device keyring** is **[proposed]**: `/etc` is
-  inside the verity root, no STATE-backed keyring channel exists, and until
-  one does an expired or replaced CA means a full re-flash
-  (`docs/design/release-signing.md` §2.3).
+  discounts. Rotating the **device keyring** is **[proposed]** as a
+  *provisioning channel*: `/etc` is inside the verity root and no STATE-backed
+  keyring channel exists. What that absence costs is now decided rather than
+  open, and the two cases differ (`docs/design/release-signing.md` §2.4a): a
+  device that missed a rollover window is recovered by an **update** on a
+  rescue channel signed by the retained outgoing chain, and rotation away from
+  an **already-compromised** CA is a **re-flash**, chosen with its price
+  rather than owed as a channel. Whether that second answer changes is
+  `docs/plan/PLAN-077.md` §6's open question and is not this document's.
 - **Revocation** — there is still **no CRL path to devices**, and none is
   planned: a CRL needs a delivery channel an offline device does not have.
   What replaced "reissued and out-waited" as an unbounded wait is a **bounded
