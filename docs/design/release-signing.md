@@ -22,6 +22,13 @@ own, because a runbook's sections are neither `[implemented]` code nor
 - **[not implemented]** — the tooling for this step does not exist. Prose
   only, kept here so the gap is on the same page as the procedure that runs
   into it.
+- **[decided absent]** — no tooling exists for this step and none is owed at
+  this level: its answer is the physical one, chosen with the reason recorded
+  beside it. It is spelled differently from `[not implemented]` because the
+  two are read differently — one is a debt a reader may reasonably expect to
+  be paid, the other is a product position they have to plan a fleet around.
+  §2.4a is the only instance, and it names the one open decision that would
+  turn it back into a debt.
 
 **The two trust chains.** A mos release is signed twice, by two unrelated key
 hierarchies, and conflating them is the first mistake this document exists to
@@ -102,6 +109,19 @@ rauc-sign init \
 the three online keys. All expirations are explicit — nothing in `rauc-sign`
 reads the wall clock, so what a ceremony *signs* is reproducible from its
 inputs. The file's bytes are not; see §1.6, step 3.
+
+**Run `init` twice: a production repository and a rescue repository.** The
+second is the same command with a different `--repo`, rooted at the same root
+key, and it stays empty until §2.4a case 1 needs it — a repository holding one
+old-chain release is what recovers a device that missed a keyring rollover,
+and it must be rooted at the root the fleet's baked `trust.signingKeys`
+already name. Because `init` is the only command that touches `root.pk8`,
+creating it later is an offline root-key checkout during an incident; creating
+it now, while the key is already out of its envelope, costs one command. Its
+standing cost is that it joins the re-sign cadence (§1.4, and
+`docs/plan/PLAN-071.md` §9.6's freshness bound) like any other repository — a
+rescue repository whose timestamp has expired is refused as stale by the
+device it exists to rescue.
 
 `--threshold` applies to every role, and today it must be `1`:
 `rauc-sign` holds exactly one key per role, and since a threshold
@@ -366,7 +386,7 @@ the new root and accepts only metadata the incoming keys sign;
 succeeds, and metadata the revoked keys sign afterwards is refused by signer
 and client alike.
 
-## 2. The RAUC production CA — **[runbook]** for the ceremony, with a named gap
+## 2. The RAUC production CA — **[runbook]** for the ceremony; the gap it names is now decided
 
 ### 2.1 The offline CA ceremony
 
@@ -651,19 +671,26 @@ The keyring reaches a device **in the image**, from one place. The facts:
   read-only squashfs replaced whole by every A/B update, so the keyring cannot
   be edited in place — but it CAN be replaced by the update itself, and the
   keyring is a CA *file*, not a single certificate, so old and new can coexist
-  in it during a rollover. §2.4 is that procedure. What it cannot cover —
-  devices that miss the overlap window, and rotation away from a CA that is
-  already compromised — still needs a trust channel outside the image (the
-  STATE-backed seed plus bind mount, the way `/etc/ssh` is handled), which
-  does not exist yet.
+  in it during a rollover. §2.4 is that procedure. The two states it cannot
+  reach — a device that missed the overlap window, and rotation away from a CA
+  that is already compromised — are **§2.4a**, which says what the answer is
+  for each rather than leaving them as an absence. One of the two is an update
+  and needs nothing this tree does not ship; the other is a reflash, and that
+  is a decision rather than an omission.
 
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
 enrolment) rather than relying on the image to carry it — is the trust-anchor
-provisioning story. Until that channel ships, the image IS the road (§2.5),
-the update channel carries rotation (§2.4), and the two cases the image
-cannot carry — missed overlap windows and CA compromise — are named where
-they arise instead of gestured past.
+provisioning story, and **no such channel exists or is owed for 1.0**. The
+image IS the road (§2.5), the update channel carries rotation (§2.4), and
+§2.4a records what happens in the two cases the image cannot carry. The
+reason that is a position rather than a shrug is worth having here as well as
+there: authority to replace an anchor comes either from a key the device
+already holds that is not the one being replaced, or from a human standing at
+the device, and there is no third source. The first is a second baked anchor —
+`docs/plan/PLAN-077.md` §6's open question, held by the user and not decided
+by this document. So until that question is answered, the physical route is
+the answer, and §2.4a names it as one.
 
 **The package anchor took the other road, and it is settled.** The TUF side
 of this question is no longer open: the trusted package signing keys are
@@ -720,7 +747,10 @@ land:
   file (STATE/META provisioning file, factory step, first-boot enrolment —
   the same candidates as the TUF root anchor above), and who holds,
   rotates and revokes the signing CA, are product decisions about key
-  custody that this repository records and does not make.
+  custody that this repository records and does not make. What is NOT open
+  any more is what a fleet owner does in the meantime: §2.4a is that, for
+  both cases, and it is written so that answering the open decision one way
+  supersedes exactly one half of it and leaves the other standing.
 
 ### 2.4 CA rollover: old and new coexist in one keyring — **[runbook]**, with a compromise caveat
 
@@ -742,28 +772,244 @@ The procedure, one phase per fleet-visible state:
    installs carries the two-certificate keyring. The verifier's
    `packed-keyring-from-meta` check is byte-equality against `meta/rauc/ca.cert.pem`,
    so the concatenated file flows through the build and the checks unchanged.
-3. **Switch the signer.** Once the fleet has converged on the overlap image
-   — convergence is measured by whatever fleet telemetry exists, and waiting
-   is the cost of not stranding anyone — replace `meta/rauc/signer.{cert,key}.pem`
-   with a signer issued by the INCOMING CA (§2.1's signer step). Bundles now
-   chain to the new CA; devices on the overlap keyring accept them. A device
-   that missed the overlap window refuses them and is stranded — recoverable
-   only by physical reflash until the out-of-image trust channel (§2.3)
-   exists.
-4. **The retirement update.** `meta/rauc/ca.cert.pem` becomes the incoming
-   certificate alone; build and release, signed by the new chain. Destroy or
-   retire the outgoing CA key under the §1.5 custody rules, and record it.
+3. **Switch the signer, once convergence is measured rather than assumed.**
+   Replace `meta/rauc/signer.{cert,key}.pem` with a signer issued by the
+   INCOMING CA (§2.1's signer step). Bundles now chain to the new CA; devices
+   on the overlap keyring accept them, and devices still on the old-only
+   keyring refuse them.
+
+   **What "converged" means, concretely, because a step nothing can perform is
+   not a step.** A device answers `GET /api/v1/system/info`; the booted slot's
+   `bundleVersion` is the version RAUC recorded from the bundle that installed
+   the slot it is running, so a device reporting the overlap release or newer
+   is holding the two-certificate keyring. Three limits belong with it, and
+   none of them is small.
+
+   - **It reads only if §3 step 2's version rule was followed.** The recorded
+     string is whatever the bundle build was given; if it is not the release
+     version, this comparison has nothing to compare.
+   - **A device that has never taken an update reports no bundle version at
+     all** — it is running what it was flashed with. It is converged only if it
+     was flashed with an image built at or after phase 2, which is a build-host
+     fact about that batch and not something the device can answer.
+   - **There is no fleet-wide reading of this today.** The reporting plane is
+     PLAN-076's and is not shipped, so at 1.0 this is one device at a time
+     through its API. That bounds how large a fleet this procedure is
+     practical for, and it is the honest reason to run a rollover early rather
+     than late.
+
+   **A device that missed the window is stranded, and that is now a decision
+   with a remedy rather than an accident.** Waiting is the cost of not
+   stranding anyone; a device that never answers is exactly the case this step
+   is about, and the absence of an answer is the answer — do not switch until
+   stranding it is a choice somebody made. When it is made, §2.4a case 1 is the
+   route back, and it is an update rather than a reflash.
+4. **The retirement update, and the key that must NOT be destroyed with it.**
+   `meta/rauc/ca.cert.pem` becomes the incoming certificate alone; build and
+   release, signed by the new chain.
+
+   **Retire the outgoing CA key; do not destroy it here.** Seal it under the
+   §1.5 custody rules and keep it until the deployment decides §2.4a's rescue
+   route is no longer offered — it is the only authority that can sign
+   anything a device left behind by phase 3 will accept, and §2.2's expiry
+   arithmetic reaches it: the shipped `[keyring]` carries no
+   `use-bundle-signing-time` at all (`verify/src/checks-rauc.ts`'s
+   `rauc-keyring-verifies-against-now` refuses an image that sets it), so RAUC
+   checks the signer against the current clock and an *archived* overlap
+   bundle stops installing on its own once its short-lived signer expires.
+   Reissuing that signer needs this key. Destroying it at this phase therefore
+   converts every device that missed the window from recoverable into a
+   reflash, permanently and silently — the bundles are all still on the
+   release host and none of them installs.
+
+   The cost of the retention is real and is the reason it is bounded rather
+   than indefinite: a sealed key is a key that can still be stolen, and every
+   month it is held is a month in which its theft would matter. Record the
+   destruction under §1.5 when it is finally performed, and record the
+   decision to stop offering the rescue route as the thing that permits it.
 
 **The compromise caveat, stated plainly.** Every update in this procedure is
 signed by a chain the device already trusts, so a *scheduled* rotation is
 sound. Rotation away from a **compromised** CA is not: the attacker holds the
 same signing power the rollover update uses, and can race it or sign a
-"rollover" of their own. Recovery from CA compromise therefore needs a trust
-channel the CA does not control — the provisioning-time channel of §2.3,
-which does not exist yet. Until it does, CA compromise means physical
-re-provisioning, and this runbook says so rather than implying the rollover
-covers it. **[not implemented]** — the out-of-image channel only; every step
-above it is executable today.
+"rollover" of their own. Recovery from CA compromise therefore needs authority
+the CA does not control, and this runbook says what that is rather than
+implying the rollover covers it — §2.4a, immediately below. Every phase above
+is executable today.
+
+### 2.4a The two states the rollover cannot reach — the answer for each, decided
+
+§2.4 names two states and, until now, answered both with "still needs a trust
+channel outside the image". That is a description of an absence, not a
+procedure, and a fleet owner planning against it has nothing to plan against.
+This section is the answer. The two states are **not** the same case and do
+not get the same answer, which is the substance of it.
+
+**The constraint, stated once so neither answer reads as arbitrary.**
+Replacing what a device trusts requires authority, and there are exactly two
+places authority can come from: a key the device already holds that is *not*
+the one being replaced, or a human standing at the device. There is no third —
+that is what "not authorised by the key being replaced" means, and
+`docs/plan/PLAN-077.md` §6.2 is where it is argued rather than asserted. The
+first is a **second baked anchor**, which is PLAN-077 §6's open question, is a
+product decision about key custody, and is **not decided by this document**.
+So what follows is what the anchors this image already carries can be made to
+buy, and the exact point where the physical route takes over.
+
+#### Case 1 — a device that missed the overlap window: an update, not a reflash
+
+It trusts the outgoing CA and nothing else, and the release side has moved on.
+The route back uses no mechanism this tree does not already ship:
+
+1. **Publish the overlap release into the rescue repository**, still signed by
+   the OUTGOING chain. The bundle is the one phase 2 already built; §3's steps
+   3 and 4, with `--repo` naming the rescue repository. If its short-lived
+   signer has expired in the meantime, reissue one from the **retained**
+   outgoing CA (§2.2, and phase 4 above for why the key is still there) and
+   re-sign the archived bundle — the CMS signature changes and the payload is
+   not rebuilt.
+
+   **It has to be a separate repository, and not a separate channel.** A
+   channel would be the obvious answer and the tooling refuses it:
+   `build/src/release-manifest.ts` holds `development`/`candidate`/`stable` as
+   a closed set and rejects an invented name, on the stated ground that a
+   channel is a promise about qualification. `development` is the wrong one to
+   borrow — a device parked there selects the *newest* target it finds, which
+   on that channel is by definition something nobody qualified. And the
+   production repository's own `stable` cannot carry it either: a device
+   selects the highest version there, so an old-chain bundle published above
+   the retirement release is one every converged device downloads and then
+   refuses. A repository containing only the overlap release has none of these
+   problems, because selection has exactly one candidate.
+
+   **Initialize that repository at the §1.3 ceremony, not when it is needed.**
+   It must be rooted at the SAME TUF root the fleet's baked
+   `trust.signingKeys` name, and `init` is the only command that loads
+   `root.pk8` — so creating one later is an offline root-key checkout at the
+   worst possible moment. One more `rauc-sign init` while the root key is
+   already out costs nothing; the repository then sits empty until it is
+   wanted. It joins the re-sign cadence (`docs/plan/PLAN-071.md` §9.6's
+   freshness bound is enforced against it like any other), which is its only
+   standing cost: a rescue repository whose timestamp expired is refused as
+   stale by the very device it exists to rescue.
+
+2. **Deliver it, by whichever of the two routes the device's situation
+   allows.** Both are shipped:
+
+   - **Reachable on a network** — serve the rescue repository over HTTP and
+     override the device's `source.url`: `POST /api/v1/update/config`, the
+     administrator-authenticated write that
+     `pkgs/mosd/apid/src/update_api.rs` serves. apid asks; mosd, the only
+     writer of `/mos/config/updates.json`, performs it. This is layer 2 of
+     PLAN-070 §5.1 used for exactly the case §5.3.1 made it overridable for —
+     *the only exit from a device stranded by an address*. The rescue host
+     will not be same-origin with the baked source, so it is fetched
+     anonymously (§5.3.2); nothing needs a credential.
+   - **No network route at all** — §3.2's lockbox, exported from the rescue
+     repository rather than the production one, and `rauc-update import
+     --lockbox` on the device. Same anchors, same selection, same digest gate.
+     The rescue repository is what makes the lockbox usable here: a lockbox
+     cut from the production repository carries metadata listing the
+     retirement release, `import` would select that newest target, and it is
+     not in the lockbox.
+
+3. **The device recovers itself.** It selects the overlap release — the only
+   candidate, and a higher version than the one it is running, so
+   `docs/plan/PLAN-071.md` §9.1's downgrade floor is not in the way and no
+   `--allow-downgrade` is involved — RAUC verifies the bundle against the
+   outgoing CA it still holds, and it installs. It is now on the two-certificate keyring. Clear the
+   `source.url` override and it takes the retirement release from the
+   production repository normally, arriving where the rest of the fleet
+   already is.
+
+**Why this is not a second trust-anchor path, which is the thing it must not
+be.** PLAN-070 §5.3 forbids a layer-2 key, an on-device write path for an
+anchor, and even *naming* an anchor in an operator document. Nothing above
+does any of those. The only thing that moves is **where the device looks**;
+what it trusts is unchanged, still baked, still inside the verity root, and
+the bundle it installs is one its own existing keyring verifies. The route
+used is the same one whose 422 refuses a trust anchor **by name** — §5.3.5
+gives the operator schema no `trust` object at all, and `source.rootPath`
+stayed dropped when the URL carried over — so the write that performs the
+rescue is mechanically incapable of naming a key. This is PLAN-070 §5.3's
+split (the addresses move, the anchors do not) used exactly as drawn, and it
+is the reason case 1 needs no decision from anybody.
+
+**What it costs, said without flattering it.** The two delivery routes have
+different prices and only the first avoids a visit. Over the network it is one
+authenticated call and nothing else. By lockbox it is a site visit — but a
+site visit carrying a USB stick, not a factory image: the device installs
+through its normal update path, DATA is untouched, and nothing is
+disassembled. That is the whole improvement over case 2, and it is a real one.
+
+A device reachable by **neither** route is not helped by this, and is not
+helped by any remote channel either — including the one PLAN-077 §6.3 designs,
+whose update transport has exactly the same precondition. Case 1 also costs
+phase 4's retention rule, whose price is stated there, and an `import` run as
+root on the device (a serial or SSH session; there is no API route that
+imports a lockbox).
+
+**And it is bounded in time by the outgoing CA certificate, not only by its
+key.** RAUC verifies against the current clock, so once the outgoing CA's own
+certificate expires no bundle chained to it installs anywhere, however well
+the key was retained and however recently the signer was reissued. §2.1 mints
+the CA for 15 years for exactly this reason — the comment there says the CA
+must outlive the fleet — and that date is the hard end of this route. Past it,
+a device that never converged has case 2's answer whether or not anything was
+compromised.
+
+#### Case 2 — rotation away from an already-compromised CA — **[decided absent]**
+
+**The answer is physical re-provisioning, and it is chosen.** The attacker
+holds the authority every remote path in this document runs on. There is no
+bundle the defender can sign that the attacker cannot also sign, no channel
+the defender can publish on that the attacker cannot publish on, and no
+version number the defender can reach that the attacker cannot exceed. Case
+1's route does not help: it rests on the outgoing CA still being trustworthy,
+and here it is precisely what is not.
+
+A reflash is not a fallback in this case, it is the mechanism. Flashing writes
+the device's storage whole; RAUC is not involved and no CMS signature is
+verified against the old keyring, so it is the one rotation path in this
+document that **does not require an image signed by the key being replaced**.
+That is the property PLAN-037's Gate A asks for, and physical presence is what
+supplies it.
+
+The price is named rather than left to be discovered: one site visit per
+device, and the reflash this document means writes the storage whole, so DATA
+does not survive it unless the operator arranged its own copy first. A
+fleet-wide CA compromise is therefore a fleet-wide reflash. That is the cost
+of keeping the CA key offline being
+the only thing standing between the fleet and this case — which is why §1.5's
+custody rules and §2.1's air gap carry the weight they do, and why they are
+the mitigation for case 2 rather than any mechanism on the device.
+
+#### What would change this, and what would not
+
+The only thing that changes case 2's answer is `docs/plan/PLAN-077.md` §6's
+open question: a **third offline key** that signs trust statements and nothing
+else, baked as a second anchor beside the CA. The decision is the user's and
+neither this document nor PLAN-077 takes it. Both outcomes are written down
+here so that the answer above is complete under either:
+
+- **If it is declined**, this section is the 1.0 answer as written. §2.3's
+  provisioning channel is not owed, `docs/design/security-lifecycle.md` §1.2's
+  `[proposed]` keyring rotation stays prose, and the marker on case 2 stays
+  `[decided absent]` rather than becoming a debt.
+- **If it is approved**, it is its own plan and its own task, it lands before
+  Gate B's update work depends on it, and it supersedes **case 2 only**: the
+  defender can then re-anchor a reachable device without racing the attacker
+  on version numbers (PLAN-077 §6.4), which turns "no remote answer exists"
+  into "a remote answer exists for devices you can reach". It would also cost
+  the property PLAN-070 §6.3 bought — *nothing on the device can be rewritten
+  to change what it trusts* — which is the trade that makes it a decision
+  rather than an improvement.
+
+**Case 1 is unchanged under either choice.** Its route needs no new key, no
+new anchor and no new device code, and a third key would not make it shorter.
+That is worth stating because the two cases are easy to bundle: the case that
+will actually happen is already answered, and what the open decision is really
+pricing is CA compromise alone.
 
 ### 2.5 Production provisioning: the operator steps, and what the build then does — **[runbook]** host-side
 
@@ -880,6 +1126,15 @@ MOS_PROFILE=prod make os-rootfs-cx3576
 #    script's own read-back verification (rauc info against the shipped
 #    system.conf), so passing the production ca.cert.pem here is also the
 #    first end-to-end check of the chain.
+#
+#    THE VERSION STRING HERE AND --release-version IN STEP 3 MUST BE THE SAME.
+#    Nothing enforces it: the bundle version is whatever this caller passes and
+#    the TUF target's release version is whatever step 3 passes. The example
+#    below says 1.2.3 twice on purpose. RAUC records the bundle's version in
+#    the slot it installs, and that recorded value is the ONLY thing a fielded
+#    device can be asked about a release it is running -- it is what makes
+#    2.4 phase 3's convergence reading possible, and two different strings
+#    here make that reading impossible rather than merely awkward.
 CERT=/path/to/signer.cert.pem \
 KEY=/path/to/signer.key.pem \
 KEYRING=/path/to/ca.cert.pem \
@@ -1018,15 +1273,22 @@ probes it before the first byte (mount source resolves to `/mnt/data`, no
 symlink substitution, not read-only, a private probe file written and
 removed, the pool's free space against the budget) and refuses with a named
 `unavailable`/`degraded` verdict instead of writing anywhere else
-(`updates.md` §1.1). What is still owed is the rest of the image-side
-contract: **[not implemented]** nothing provisions the `/var/lib/mos/update/`
-tree that policy defaults to for the metadata mirror and rollback state, and
-`mos-health` does not report `health.boot` — the entry that lifts the
-lifecycle past `validating`. **The package anchor is no longer on that
-list**: it is baked, and `verify`'s `packed-meta-is-the-public-set` and
-`no-private-key-in-baked-meta` hold the image side of it. What §2.3 records
-as open is the *provisioning channel* for the RAUC keyring — a way for an
-anchor to reach a device other than by riding an image — which is a
+(`updates.md` §1.1). What is still owed of the image-side contract is one
+thing, not two: **[not implemented]** `mos-health` does not report
+`health.boot` — the entry that lifts the lifecycle past `validating`, and
+whose absence `pkgs/mosd/mosd/src/update_lifecycle.rs` records at the site
+that needs it. **The `/var/lib/mos/update/` tree is no longer on that list**:
+both halves of it are provisioned on demand by the client that uses them —
+`sync_metadata` creates the mirror's `metadata/` and `targets/`
+(`pkgs/rauc-sign/src/update.rs`) and `save_state` creates the state file's
+parent before its atomic write (`pkgs/rauc-sign/src/client.rs`) — and mosd
+passes both paths in from the effective policy (`--repo`, `--state`). Nothing
+has to lay the tree down first. **The package anchor is not on it either**: it
+is baked, and `verify`'s `packed-meta-is-the-public-set` and
+`no-private-key-in-baked-meta` hold the image side of it. And what §2.3
+records as open — the *provisioning channel* for the RAUC keyring, a way for
+an anchor to reach a device other than by riding an image — is not on it in
+the sense this list means: §2.4a decides it rather than owing it, and it is a
 different question from where a running device reads one. How many bytes
 `--max-bytes` may promise of the
 pool is a storage-policy decision owned outside this crate (PLAN-049); the
