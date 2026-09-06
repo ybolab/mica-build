@@ -226,6 +226,13 @@ if ! chroot "$ROOT" /bin/true 2>/dev/null; then
     done
     echo "debian-base: interpreters binfmt_misc names: $(binfmt_interpreters | tr '\n' ' ')" >&2
     echo "debian-base: this process runs under: $(tr '\0' ' ' </proc/self/cmdline 2>/dev/null)" >&2
+    echo "debian-base: /bin/true in the root: $(ls -la "$ROOT/bin/true" 2>&1)" >&2
+    # The decisive one. If the staged interpreter runs INSIDE the chroot, the
+    # interpreter is resolvable and the failure is something else; if it does
+    # not, staging is not enough and the emulated route needs a different shape.
+    for e in "${EMULATORS[@]}"; do
+        echo "debian-base: interpreter inside the chroot: $(chroot "$ROOT" "${e#"$ROOT"}" -version 2>&1 | head -2)" >&2
+    done
 fi
 env -u DEBOOTSTRAP_DIR ARCH_ALL_SUPPORTED=0 chroot "$ROOT" /debootstrap/debootstrap --second-stage ||
     fail "dpkg configuration failed; inspect $ROOT/debootstrap/debootstrap.log"
