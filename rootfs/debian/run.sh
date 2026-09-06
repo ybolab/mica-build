@@ -214,6 +214,19 @@ bash "$BOOTSTRAP" --arch="$ARCH" --variant=minbase --exclude=apt --no-check-gpg 
     --unpack-tarball="$WORK/base.tar" --foreign "$SUITE" "$ROOT" "$MIRROR" ||
     fail "bootstrap extraction failed; inspect $ROOT/debootstrap/debootstrap.log"
 stage_emulators
+# The chroot below fails as `No such file or directory` for a file that is
+# demonstrably present whenever the interpreter cannot be resolved inside the
+# new root, so a bare failure here sends a reader after the wrong file. Probe
+# the cheapest possible exec first and report what the root actually holds.
+if ! chroot "$ROOT" /bin/true 2>/dev/null; then
+    echo "debian-base: a trivial exec inside $ROOT failed; this is the interpreter, not /debootstrap/debootstrap" >&2
+    echo "debian-base: /bin/sh in the root: $(ls -la "$ROOT/bin/sh" 2>&1)" >&2
+    for e in "${EMULATORS[@]}"; do
+        echo "debian-base: staged interpreter: $(ls -la "$e" 2>&1)" >&2
+    done
+    echo "debian-base: interpreters binfmt_misc names: $(binfmt_interpreters | tr '\n' ' ')" >&2
+    echo "debian-base: this process runs under: $(tr '\0' ' ' </proc/self/cmdline 2>/dev/null)" >&2
+fi
 env -u DEBOOTSTRAP_DIR ARCH_ALL_SUPPORTED=0 chroot "$ROOT" /debootstrap/debootstrap --second-stage ||
     fail "dpkg configuration failed; inspect $ROOT/debootstrap/debootstrap.log"
 mkdir "$ROOT/.debian-extra"
