@@ -38,9 +38,12 @@ verification tooling and the production key ceremony runbook exist today.
 
 **Management access.** The HTTPS API authenticates with an argon2id password
 hash, keeps persistent login-backoff counters and an audit ring. SSH ships
-off by default; persistent access is by public key. Production images are
-build-time sealed: the `prod` profile lives inside the verity root and cannot
-be edited into a `dev` one.
+off by default; persistent access is by public key. The `prod` profile lives
+inside the verity root and cannot be edited into a `dev` one. **That is not a
+shell-free image:** prod carries OpenSSH and an emergency BusyBox binary, both
+inert until an administrator enables SSH, and a `sealed` build where the absence
+of a shell is part of the signed image identity is not implemented and not
+planned.
 
 > status: shipped — evidence: `docs/design/access.md`, `rootfs/packages-src/profile`
 

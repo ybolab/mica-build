@@ -158,11 +158,15 @@ configuring a device that has never had a network.
 
 > status: shipped — evidence: `docs/design/provisioning.md`, `pkgs/mosd/mosd/src/provisioning_doc.rs`
 
-Two of the five channels the design lists still do not exist: the AP captive
-portal has its transport and not the portal, and the serial wizard was never
-built. Neither has factory injection — versioned inputs, verification at
-injection and a per-device record are described in
-[manufacturing.md](manufacturing.md) and have no tooling. Offline preparation of
+**Three of the five channels the design lists do not exist**, and each is an
+absence to plan around rather than work in progress: the AP captive portal has
+its transport and not the portal, the HDMI local setup wizard has a browser
+client and no kiosk or input chain to run it on a device's own screen, and the
+serial console wizard was never built. Nor does the shipped removable-media path
+verify a signature or import on hotplug — media are consulted once, at boot.
+Factory injection is absent too: versioned inputs, verification at injection and
+a per-device record are described in [manufacturing.md](manufacturing.md) and
+have no tooling. Offline preparation of
 the documented `/mos/config/` files requires a stopped device; live changes use
 the authenticated API over an existing network.
 
