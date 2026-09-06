@@ -71,4 +71,5 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-082 Cache the Debian runtime base and install it with dpkg**](PLAN-082.md) `2026-09-06`
 - [x] [**PLAN-083 Lock and layer Debian packages and validate the composed system**](PLAN-083.md) `2026-09-06`
 - [x] [**PLAN-084 Store Debian pins in per-package JSON manifests**](PLAN-084.md) `2026-09-06`
+- [x] [**PLAN-085 A generic virtual arm64 board, bootable in QEMU**](PLAN-085.md) `2026-09-06`
 - [ ] [**PLAN-086 Compose a minimal MOS runtime from explicit payloads**](PLAN-086.md) `2026-09-06`
