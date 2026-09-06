@@ -213,7 +213,16 @@ pub const DEFER_INSTALL_REFUSED: &str = "install-refused";
 pub const DEFER_REBOOT_GATE_CLOSED: &str = "reboot-gate-closed";
 
 /// PLAN-071 §2's deferral vocabulary, the whole set.
-const DEFERRALS: [&str; 15] = [
+///
+/// Public, unlike [`WORKSPACE_KINDS`], because one caller has to read the
+/// whole set rather than one word: this module's rule is that *a code that no
+/// test can produce is a code nobody has seen*, and for these fifteen that was
+/// unenforceable while `AutoDriver` could not be ticked in a test.
+/// [`crate::update_auto::Cadence`] closed that, and `update_auto`'s
+/// `every_deferral_reason_the_driver_can_mint_is_reachable` now drives a pass
+/// for each word here and fails on a sixteenth nothing produces. A list
+/// written out in the test would only assert what its author remembered.
+pub const DEFERRALS: [&str; 15] = [
     DEFER_CHECK_REFUSED,
     DEFER_NO_NEWER_RELEASE,
     DEFER_VERSION_SUPPRESSED,

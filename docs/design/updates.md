@@ -29,8 +29,8 @@ reason string, recorded by `pkgs/mosd/mosd/src/update_lifecycle.rs`:
 | `downloading` | machine | `rauc-update fetch` running; resumable, byte-budgeted. |
 | `ready` | machine | A verified bundle is staged; `bundle` is the path `rauc-update` printed — the only path this module ever records, and it must be a bundle inside `/mos/updates/verified` (§1.1). |
 | `installing` | mirrored | mosd's existing `InstallUpdate` background task is writing the other slot. |
-| `update-unavailable` | machine | The `/mos/updates` workspace refused the acquisition before it started (§1.1): `reason` is the probe's verdict, `<status> <kind>: <detail>`, with status `unavailable` (`/mos` not mounted, or not the DATA pool) or `degraded` (the pool, but read-only, exhausted, or the probe failed); `workspace` carries the same fields, and `code` is the `kind` (§1.2). Entered by the probe that runs before every check and fetch; cleared by the next probe that passes. |
-| `failed` | machine | The last check/fetch failed; `reason` carries the client's stderr tail and `code` names the class (§1.2). Cleared when the next operation starts. |
+| `update-unavailable` | machine | The `/mos/updates` workspace refused the acquisition before it started (§1.1): `reason` is the probe's verdict, `<status> <kind>: <detail>`, with status `unavailable` (`/mos` not mounted, or not the DATA pool) or `degraded` (the pool, but read-only, exhausted, or the probe failed); `workspace` carries the same fields. Entered by the probe that runs before every check and fetch; cleared by the next probe that passes. |
+| `failed` | machine | The last check/fetch failed; `reason` carries the client's stderr tail. Cleared when the next operation starts. |
 | `reboot-required` | derived | The bootloader's first pick (`primary`) is not the booted slot: an installed, activated bundle awaits its first boot. |
 | `validating` | derived | Booted, and the boot health gate has reported this boot as not (yet) confirmed. |
 | `succeeded` | derived | Booted, and the boot health gate reported `ok`. |
@@ -42,8 +42,7 @@ the derived boot phase over `idle`.
 
 **Two members beside the state, and neither is a state.** `deferred` names
 why the last automatic pass did not proceed (`reason`, `detail`, `since`,
-`at`, `waitedSeconds`, `attempts`) — §3.2's fifteen reasons, and `reason` is
-one of them or `unknown` (§1.2), never a sentence. `suppressed` is
+`at`, `waitedSeconds`, `attempts`) — §3.2's fifteen reasons. `suppressed` is
 the list of versions the automatic path refuses after a rollback, with
 `suppressed_error` beside it when the store itself could not be read, because
 an unreadable store must not render as an empty one. Both describe the
@@ -155,75 +154,6 @@ its `.part`). Its absence is a reported state (`client.available: false`
 with the reason, actions refused with the same sentence), never a panic:
 the binary is shipped by the image side (§7), and a v1 image without it
 still answers every read.
-
-### 1.2 The failure vocabulary
-
-**Every failure this path reports carries an enumerated code, and a failure
-the device has no code for is reported as `unknown` — never as its text**
-(PLAN-076 B4). The vocabulary is `pkgs/mosd/mosd/src/update_codes.rs`; it is
-published in `openapi.json` under the routes that serve it, and this section
-is where a support engineer looks a code up.
-
-Why closed. A sentence is only usable to a human reading one device. Anything
-else — a fleet dashboard grouping failures, an alert on one class, a support
-tool — has to match on the text, and the day the text changes upstream every
-one of them goes quiet without going red. A code set with a "…otherwise pass
-the original string through" fallback does not fix that: a consumer that saw a
-code once cannot tell whether the next value is a code or a sentence, so it
-goes back to matching text. The fallback therefore **loses information on
-purpose**. Nothing a support case needs is destroyed: the words go to the
-journal at the point the mapping happens, and the document keeps the
-human-readable member (`reason`, `detail`, `error`) beside the code. What no
-consumer ever receives is a code it has never seen.
-
-Codes are minted where a failure is *constructed*, not recognised later from
-its words — recognising mos's own sentences would only move the fragility
-inside the daemon. Exactly two mappings classify text, and they are the two
-places the text comes from a process mos does not own: `rauc-update`'s
-workspace verdict, and RAUC's `LastError`. Those are the two places `unknown`
-is reachable.
-
-| Member | When | Codes |
-|---|---|---|
-| `lifecycle.code` | `state: failed` | `client-spawn-failed` (the subprocess could not be run to completion — spawn failed, or the bound expired), `client-exit-failure` (it ran and exited with a status that is not one of its contract's; `reason` carries its stderr tail), `client-output-unparseable` (it exited successfully without printing its contract — version skew or a client bug, never an update fault), `unverified-bundle-path` (a fetch named a path that is not a bundle directly inside `verified/`), `no-source-configured`, `policy-not-loaded` |
-| `lifecycle.code` | `state: update-unavailable` | the workspace verdict, equal to `lifecycle.workspace.kind`: `mount-missing`, `not-data`, `read-only`, `exhausted`, `probe-failed`, or **`unknown`** for a verdict word this daemon does not know |
-| `lifecycle.last_refusal_code` | beside `lifecycle.last_refusal` | `policy-invalid`, `policy-not-loaded`, `network-offline`, `no-source-configured`, `network-metered`, `client-unavailable` — plus `bundle-discarded` and `suppression-cleared`, the two notes that share the member and are not refusals |
-| `lifecycle.deferred.reason` | an automatic pass did not proceed | itself a code: §3.2's fifteen, or **`unknown`** |
-| `lifecycle.reboot_gate.codes` | the gate is closed | `install-in-flight`, `health-blocking` — one entry per `reboot_gate.reasons` entry, same order (§4) |
-| `last_error_code`, `install.error_code` | RAUC failed | `signature-invalid`, or **`unknown`** |
-| `rollback.reason` | a rollback is refused | already a code before this: `no_alternate_slot`, `alternate_is_booted_slot`, `alternate_never_installed`, `alternate_marked_bad`, `alternate_is_newer`, `install_order_unknown`, `booted_slot_not_confirmed` (§5.2) |
-
-**Three failure facts carry no code, because the member IS the enumeration**:
-`client.available: false` (a boolean), and the presence of `policy_error` or
-`suppressed_error` (a member that exists only when that one thing went wrong).
-Adding a code beside them would be a second spelling of a fact already stated.
-
-**RAUC's set has one member on purpose.** `LastError` is RAUC's vocabulary,
-not this project's, and mos cannot enumerate it. So exactly one class is
-claimed — the signature refusal, whose message PLAN-078 §5 measured from five
-separate refusals and `tests/rauc-trust-negative-test.sh` asserts on — and
-every other install failure reads `unknown` with RAUC's sentence beside it.
-That is the shape rather than a gap: the set grows when a failure is
-*measured*, one code per measurement. A set grown any other way claims to have
-classified a failure nobody has seen.
-
-**The health path has its own three.** `GET /api/v1/health` answers 200 in
-every state, and an unreachable answer now carries `code` beside its
-free-text `detail`: `mosd_unreachable` (the call could not be made or was
-refused), `mosd_timeout` (the bounded call expired), `mosd_bad_answer` (mosd
-replied with something that is not the documented shape). The class is decided
-from the error's *type*, not from the sentence it renders to. These are the
-API error envelope's `snake_case` and not the state document's `kebab-case`,
-because they are `ApiError`-family codes on an apid route rather than mosd's
-own vocabulary.
-
-**What the support bundle carries.** `last_error_code` and
-`install.error_code` are on the diagnostics allowlist beside their sentences
-(§5.5) — a code dropped there while its sentence is kept would answer this
-gate on the API and not on the surface a support case actually reads. The
-`lifecycle` subtree is deliberately *not* on that allowlist, here as before:
-it carries `policy.sourceUrl`, an operator-typed URL whose userinfo can hold a
-credential, which is the same reason mosd refuses to log the document.
 
 ## 2. The policy document
 
@@ -505,8 +435,7 @@ lifecycle's `deferred` fact names why the last automatic pass did not
 proceed, with `since`, `at`, `waitedSeconds` and `attempts` beside it. An
 operator opening the update page after a week can see that four automatic
 attempts were refused and by what. The fifteen reasons, which are the whole
-set (`update_auto.rs`) and which the recording site clamps to — a sixteenth
-word is recorded as `unknown` and logged, never published (§1.2):
+set (`update_auto.rs`):
 
 | Step | Reasons |
 |---|---|
@@ -716,12 +645,7 @@ sides — apid records the event in its audit trail and mosd logs who armed
 it and until when. There is deliberately no member that disarms the gate
 permanently. The gate's verdict, reasons and any active override are in
 `update.lifecycle.reboot_gate`, so a UI can show *why* reboot is refused
-before anyone presses the button. `reboot_gate.codes` carries one code per
-reason, in the same order: `install-in-flight` for the first block and
-`health-blocking` for the second (§1.2). One code for every component and not
-one per component — `ReportHealth`'s component names are an open set, so a
-per-component code would be the open vocabulary again with extra steps, and
-*which* component reported is in the reason beside it.
+before anyone presses the button.
 
 ## 5. Operator procedures
 
@@ -1006,11 +930,7 @@ with source addresses; `update-rollback` records the refusal and its reason
 as well as the applied rollback, because the guard refuses inside apid and
 nothing else would witness it), and the journal (mosd logs every admission,
 refusal, override and outcome; the client's stderr tail is in
-`lifecycle.reason`). Read the **codes** first and the sentences second: every
-failure in that document carries one (§1.2), so "which class of thing went
-wrong" is answerable without parsing anyone's prose, and `unknown` is the
-honest answer that the device met a failure it has no name for — the words
-for that one are in the journal.
+`lifecycle.reason`).
 
 **The trail covers operator actions only.** Audit events are recorded on
 apid's routes, and the automatic path does not pass through them (§3.5), so
@@ -1045,28 +965,55 @@ Operator docs (§5 and `../user/update-rollback.md`) claim only the left
 two columns; every bench row is an open verification item, not a shipped
 behaviour.
 
-**The automatic path has no rows in that table, and the reason is that it has
-no unit column to put in one.** `pkgs/mosd/mosd/src/update_auto.rs` and
-`pkgs/mosd/mosd/src/update_suppress.rs` carry **no tests**: the driver
-compiles, clippy is quiet, and not one line of the loop, the suppression
-store, the clock predicate or the deferral facts has been executed. Stated
-here rather than left to be inferred from an absent row, because `auto` is
-the first capability that reboots a device with nobody watching and the
-failure mode is a path that skips a gate — which is exactly what a test would
-catch and prose cannot.
+**The automatic path now has a unit column, and this is what is in it.**
+`pkgs/mosd/mosd/src/update_auto.rs` and
+`pkgs/mosd/mosd/src/update_suppress.rs` carried **no tests** through
+RFCT-317 and RFCT-321, and the reason was mechanical rather than neglect:
+`AutoDriver`'s cadence was keyed on `std::time::Instant`, which has no seam
+and which `tokio::time::pause` does not move, so the driver could not be
+ticked in a test at all and every row below sat under that one blocker.
+RFCT-341 added the seam — `update_auto::Cadence`, a **monotonic** clock and
+nothing else — and wrote the rows.
 
-What is owed, in the order it should be written:
+It also closed the gap RFCT-339 named when it landed §1.2's vocabulary: that
+work could assert what the *recording site* will carry, but not which code the
+driver **chooses** for a given failure, because the driver could not be
+reached. `update_codes`'s own rule is that *a code that no test can produce is
+a code nobody has seen*, and for the fifteen deferral codes that is now
+checked against the array rather than against a list somebody wrote out.
 
-| Behaviour | Required | Owed |
-|---|---|---|
-| The loop is closed | A bad bundle installs once: it rolls back, the version is suppressed, and the second automatic pass selects nothing | The full cycle against the trait seam — PLAN-071's own acceptance for the slice, and the one test that proves the loop cannot restart |
-| The suppression store | Record, clear, idempotence, and a store that exists and does not parse refusing rather than reading as empty | The unparseable case first: it is the branch whose failure silently restores the loop |
-| Automation never arms the override | The automatic path drives against a closed gate and no override is armed | The invariant is structural — `SetRebootOverride` is not on the driver's trait (§3.2) — and a test is what keeps the trait from growing one |
-| A clock seam on the driver | `AutoDriver` can be ticked in a test at all | **This is the blocker under every row above.** The cadence is keyed on `std::time::Instant`, which has no seam and which `tokio::time::pause` does not move, so no test can advance the driver to its next pass. Nothing above is written until this is |
-| The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | The floor limb has never been observed against a device with no STATE bind, which is the case it exists for |
-| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | Half done. `update_lifecycle.rs`'s `every_deferral_reaches_the_document_as_a_code_and_nothing_else_does` drives all fifteen plus a rejected word through the recording site and asserts `attempts`, so what the wire may carry is proven. Which reason the driver *chooses* for a given failure is not, and cannot be until the clock seam above lands |
-| The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | `openapi.json` documents the route; nothing drives the handler |
-| The end-to-end bench cycle | `auto` on real hardware: fetch, window, install, reboot, confirm | Blocking for shipping `auto` at all |
+The seam is deliberately narrow. It answers an `Instant`, which names no
+date, so nothing downstream of it can turn a test's clock into a window
+verdict or into a claim that the device believes its clock: PLAN-071 §7's
+predicate still reads `AutoRoutes::clock` over `time.md`'s floor, and the
+maintenance-window verdict is still computed at `Utc::now()`. A seam that
+answered a time of day would be a way to install outside a window on a clock
+nobody vouched for, which is the refusal §7 exists to make.
+
+| Behaviour | Required | Proven today (unit) | Owed |
+|---|---|---|---|
+| The same gate set | The automatic path meets every gate the manual path meets, refused by the same rule in the same words | `bus.rs`: `the_automatic_and_manual_paths_meet_the_same_gate_set` drives the operator route and the **real `BusRoutes`** against one daemon for the check policy refusal, the unreadable document, the metered fetch, the maintenance window, the `verified/` rule and both reboot-gate blocks; `an_automatic_pass_records_the_gates_own_refusal_and_reaches_nothing_behind_it` drives a whole pass through them | The `InterfaceRef::get()` hop (`ServedDaemon`), which needs a live bus connection; it is one line per route |
+| The loop is closed | A bad bundle installs once: it rolls back, the version is suppressed, and the second automatic pass selects nothing | `update_auto.rs`: `a_bad_bundle_cycle_ends_with_the_second_pass_selecting_nothing` — install, reboot, rollback record written through the real store, then two refused passes, both consultation sites, and the operator's clearing | — |
+| The suppression store | Record, clear, idempotence, and a store that exists and does not parse refusing rather than reading as empty | `update_suppress.rs`: six tests, the unparseable case first — it refuses the write as well as the read, so an unreadable store is never truncated | — |
+| Automation never arms the override | The automatic path drives against a closed gate and no override is armed | `bus.rs`: `the_automatic_path_against_a_closed_gate_arms_no_override` against the real gate, which renders an armed override as a member of `update.lifecycle.reboot_gate` — and arms one by hand afterwards, so "no override" is a measurement rather than an empty tree; `update_auto.rs`: `a_closed_reboot_gate_defers_and_the_driver_takes_no_way_around_it` | The invariant stays structural: `SetRebootOverride` is not on `AutoRoutes` (§3.2) |
+| A clock seam on the driver | `AutoDriver` can be ticked in a test at all | `update_auto::Cadence`, and `the_cadence_seam_advances_the_driver_without_sleeping` asserts the cadence is attempt-based across it | — |
+| The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | `time_status.rs`: `the_saved_floor_advances_only_when_the_file_moved_after_this_boot` (no STATE bind, bound but not writing, alive) and `the_clock_is_believed_on_either_limb_and_the_refusal_names_both`; `update_auto.rs`: `an_untrusted_clock_defers_the_install_and_leaves_the_check_and_fetch_alone` | — |
+| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | `update_auto.rs`: `every_deferral_reason_the_driver_can_mint_is_reachable` drives eighteen scripted passes and compares the reasons they produced against **§1.2's closed vocabulary itself** (`update_codes::DEFERRALS`), so a sixteenth code nothing produces fails the test rather than reaching `openapi.json` unseen; `update_lifecycle.rs`: `every_deferral_reaches_the_document_as_a_code_and_nothing_else_does` for what the recording site may carry, and `a_repeated_deferral_counts_its_attempts_and_a_changed_reason_starts_over` for the replacement path | `since` is rendered to the second, so a same-second repeat cannot distinguish "kept" from "reset" on its own; the attempt counter is what pins it |
+| The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | The store half is covered above (`clearing_answers_the_record_and_a_typo_clears_nothing`) and `UpdateLifecycle::clear_suppression` refuses a typo with `Invalid` | **Owed.** `openapi.json` documents the route and `apid/src/tests/update_api.rs` has no case for it; nothing drives the handler |
+| The end-to-end bench cycle | `auto` on real hardware: fetch, window, install, reboot, confirm | — | **Owed to bench hardware** (U10), and blocking for shipping `auto` at all. No seam retires this one: what it verifies is the bootloader spending real boot credits and a real slot falling back, which is the half of the loop no test on this host observes |
+
+**How much of that is a guard and how much is decoration** was measured
+rather than asserted: eight mutations, one at a time, each compiled and each
+red at the test level — the automatic install route ceasing to call
+`InstallUpdate`; the driver dropping its own window check; the manual install
+route dropping the window gate; the automatic reboot route arming the
+override to get through; the driver reading a closed gate as an open one;
+each of the two suppression consultations removed; and a sixteenth deferral
+code added to §1.2's array that no pass produces. A guard whose removal
+changes no test is not a guard, and the two consultations were kept honest
+this way: removing the pre-install one at first reddened only the deferral
+table, because the earlier consultation refused before the pass reached it,
+so the cycle test was extended to exercise the pre-install site on its own.
 
 ## 7. The deployment contract
 

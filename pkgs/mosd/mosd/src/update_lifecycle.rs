@@ -2954,4 +2954,67 @@ mod tests {
                 .contains("not present")
         );
     }
+
+    /// PLAN-071 §2's `since`/`attempts`, the half a code vocabulary does not
+    /// settle: an unbroken refusal must keep its first instant and count its
+    /// attempts, and a DIFFERENT refusal must not inherit the clock of the one
+    /// it replaced.
+    ///
+    /// `every_deferral_reaches_the_document_as_a_code_and_nothing_else_does`
+    /// covers what the recording site may carry and the clearing-by-code
+    /// rules; what is here is the replacement path it resumes past. `since` is
+    /// rendered to the second, so a same-second repeat cannot distinguish
+    /// "kept" from "reset" on its own — the attempt counter is what pins it.
+    #[tokio::test]
+    async fn a_repeated_deferral_counts_its_attempts_and_a_changed_reason_starts_over() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy = policy_file(&dir, r#"{"source": {"url": "http://mirror/tuf"}}"#);
+        let host = TestHost::new();
+        let (lifecycle, _) = lifecycle(MockClient::new(vec![]), policy, Arc::clone(&host));
+
+        lifecycle
+            .defer(
+                update_codes::DEFER_REBOOT_GATE_CLOSED,
+                "exporter reports blocking",
+            )
+            .await;
+        let first = host.last();
+        assert_eq!(first["deferred"]["attempts"], 1);
+        assert_eq!(first["deferred"]["since"], first["deferred"]["at"]);
+
+        lifecycle
+            .defer(
+                update_codes::DEFER_REBOOT_GATE_CLOSED,
+                "exporter still reports blocking",
+            )
+            .await;
+        let again = host.last();
+        assert_eq!(
+            again["deferred"]["attempts"], 2,
+            "the same reason again extends the fact rather than replacing it"
+        );
+        assert_eq!(again["deferred"]["since"], first["deferred"]["since"]);
+        assert_eq!(
+            again["deferred"]["detail"], "exporter still reports blocking",
+            "the newest wording of the refusing rule is the one an operator reads"
+        );
+        assert!(again["deferred"]["waitedSeconds"].is_number());
+
+        // A different reason is a different refusal, and inheriting the first
+        // one's clock would report a wait that never happened. No `resume`
+        // between the two: this is the replacement path, not the cleared one.
+        lifecycle
+            .defer(
+                update_codes::DEFER_OUTSIDE_WINDOW,
+                "outside every configured maintenance window",
+            )
+            .await;
+        let changed = host.last();
+        assert_eq!(
+            changed["deferred"]["reason"],
+            update_codes::DEFER_OUTSIDE_WINDOW
+        );
+        assert_eq!(changed["deferred"]["attempts"], 1);
+        assert_eq!(changed["deferred"]["since"], changed["deferred"]["at"]);
+    }
 }
