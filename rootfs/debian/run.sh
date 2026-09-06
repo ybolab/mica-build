@@ -149,17 +149,44 @@ stage_emulators() {
     for interp in $(binfmt_interpreters) /dev/.buildkit_qemu_emulator; do
         [ -f "$interp" ] || continue
         [ ! -e "$ROOT$interp" ] || continue
-        mkdir -p "$ROOT$(dirname "$interp")"
-        cp "$interp" "$ROOT$interp" || fail "could not stage the binfmt interpreter $interp into $ROOT"
-        EMULATORS+=("$ROOT$interp")
+        stage_file "$interp" || fail "could not stage the binfmt interpreter $interp into $ROOT"
         staged=$((staged + 1))
         echo "debian-base: staged the binfmt interpreter $interp into the root for the chroot"
+        # AND ITS SHARED LIBRARIES. The interpreter is a HOST-architecture
+        # binary; if it is dynamically linked, exec'ing it inside the chroot
+        # fails when its loader is missing -- as ENOENT for the interpreter
+        # itself, one layer down from the ENOENT this whole function exists to
+        # explain. Measured on this host: staging the file alone left
+        # `chroot $ROOT /dev/.buildkit_qemu_emulator` reporting No such file or
+        # directory about a file `ls -la` showed in place.
+        #
+        # A static interpreter takes none of this: ldd says so and the loop
+        # stages nothing more.
+        local lib
+        for lib in $(interpreter_libraries "$interp"); do
+            [ -e "$ROOT$lib" ] && continue
+            stage_file "$lib" || fail "could not stage $lib, which $interp needs, into $ROOT"
+            echo "debian-base:   plus $lib, which it is dynamically linked against"
+        done
     done
     # Silence is not a result. A run that staged nothing says so, so that the
     # next confusing chroot ENOENT can be read against a line that states
     # whether this ran and found nothing or never looked.
     [ "$staged" -gt 0 ] ||
         echo "debian-base: no binfmt interpreter to stage; the chroot runs natively"
+}
+stage_file() {
+    local src=$1
+    mkdir -p "$ROOT$(dirname "$src")" || return 1
+    cp "$src" "$ROOT$src" || return 1
+    EMULATORS+=("$ROOT$src")
+}
+# The absolute paths ldd resolves for a binary, loader included, or nothing at
+# all when it is static. `|| true` because ldd exits non-zero on a static
+# binary, which is a valid answer here and not a failure.
+interpreter_libraries() {
+    command -v ldd >/dev/null 2>&1 || return 0
+    ldd "$1" 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) { print $i; break } }' || true
 }
 binfmt_interpreters() {
     local reg
