@@ -39,6 +39,7 @@
   - [`native-applications.md`](../design/native-applications.md) — 原生交付路径的集成商指南：`.deb` producer、单元与启动、专用账户、可写状态、健康闸、具名设备、资源上限（仅英文）
   - [`provisioning.md`](design/provisioning.md) — 无网络配置：三层模型与凭据模型
   - [`release-signing.md`](design/release-signing.md) — 生产密钥仪式：TUF root、RAUC CA、签名 runbook
+  - [`key-delivery.md`](../design/key-delivery.md) — 密钥交付：仪式产出什么、什么可以流转而什么绝不流转、本仓库尚未定义的交付形式、接收方在构建前跑的检查（仅英文）
   - [`remote-management.md`](design/remote-management.md) — 远程管理的现状与缺口
   - [`ro-root.md`](design/ro-root.md) — 只读根：squashfs + dm-verity，以及写入去哪里
   - [`uboot-ab-handshake.md`](design/uboot-ab-handshake.md) — U-Boot / RAUC / 健康闸之间的 A/B 启动契约
