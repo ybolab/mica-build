@@ -408,6 +408,57 @@ builder.
 And the EFI binary needs neither: `grub-mkstandalone --format=arm64-efi` is an
 amd64 binary reading arm64 data, measured above as working and reproducible.
 
+### 10. What transfers from virt-arm64 to cx3576, and what does not
+
+This is the section to read before citing a green `virt-arm64` run as evidence
+about the device, and it exists because the most likely way this board gets
+misused is somebody signing off a cx3576 bench item on the strength of one.
+
+**Why anything transfers at all.** The two boards do not merely share source —
+they install *the same `.deb` files out of the same arm64 pool*. Of the mos
+packages in `_out/debs/arm64/pool/`, exactly one is board-specific for cx3576
+(`mos-board-cx3576`) and one pair is board-specific for this board
+(`mos-board-virt-arm64`, `mos-kernel-virt-arm64`, the latter having no cx3576
+counterpart because that board's kernel lives inside its board package). Every
+other package — mosd, apid, podman, rauc, rauc-update, mqttd, mqtt-broker,
+busybox, system, wifi, wifi-ap, bluetooth, ca-trust and the two profiles — is
+byte-identical between them. A `virt-arm64` guest therefore runs *the same
+aarch64 binaries a cx3576 runs*, not a second compilation of the same source,
+and not a different architecture's build of it. (Measured on the composed pool;
+the numbers are in the Annotations.)
+
+**Transfers.** Anything above the boot chain, because it is the same binary on
+the same architecture:
+
+- every daemon behaviour and the whole apid API surface;
+- the update state machine — install, mark, confirm, rollback bookkeeping;
+- network reconciliation, the .netdev/.network rendering, container start;
+- **PLAN-071 U10's bad-bundle cycle** — bad bundle, automatic install,
+  fallback, suppression — as far as RAUC's own decisions and mosd's reaction to
+  them are concerned. This is the item the board was built to unblock.
+
+**Does not transfer.** Everything the boot chain owns, which is precisely what
+the two boards do *not* share:
+
+- the **U-Boot A/B handshake** and its attempt counters. cx3576 counts attempts
+  in a redundant U-Boot environment; this board cannot, because RAUC refuses
+  boot-attempts under the grub backend at all. A fallback observed here is
+  GRUB's `ORDER`/`_OK`/`_TRY` contract, not U-Boot's.
+- **SPL and the loader at sector 64**, the maskrom recovery path, and every
+  consequence of the raw-blob partition. This board has no loader partition.
+- the **device tree**, and everything reached through it: the Rockchip UART at
+  `ttyFIQ0`, the AIC8800 radios, CAN, the USB gadget, the burned MAC, the
+  status LED, the watchdog.
+- **firmware and vendor blobs.** cx3576 boots through a vendor chain; this
+  board boots through AAVMF, which is the emulator's.
+- **timing and any real-time claim.** A TCG guest with no KVM is not a
+  measurement of anything the device does per second.
+
+The rule that falls out: a `virt-arm64` result is evidence about **mos**, and a
+cx3576 bench result is evidence about **the board**. Where a qualification row
+names a boot-chain or peripheral fact, `virt-arm64` cannot close it and the
+dossier's own row must stay `not tested` until hardware says otherwise.
+
 ## Risks
 
 - **The assembler rename is wide.** Mitigated by making slice 2 behaviour-free
