@@ -1,0 +1,23 @@
+{
+  "name": "bsdutils",
+  "targets": {
+    "amd64": {
+      "version": "1:2.41-5",
+      "architecture": "amd64",
+      "sha256": "4548718c2fd4152486be0de7cab16027caef5678e52e200e51ded265fca89629",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/bsdutils_2.41-5_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "1:2.41-5",
+      "architecture": "arm64",
+      "sha256": "a96b13485499f2c764b23fddac21397f79c104b4140838a8daebb1e6c6e8fec8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/bsdutils_2.41-5_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

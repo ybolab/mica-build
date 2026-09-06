@@ -1061,7 +1061,7 @@ trap 'rm -f "$log"' EXIT
 # manifest -- the check pkgs/podman/build.sh needs is about localhost tags, which
 # carry exactly one architecture, and this file uses none.
 mapfile -t FROM_ARGS < <("$REPO_ROOT/build-env/from.sh" \
-    MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE \
+    MOS_IMAGE_BUN=IMAGE_BUN_1 \
     MOS_IMAGE_DEBIAN_BOOKWORM=IMAGE_DEBIAN_BOOKWORM)
 # mapfile cannot fail, so its status says nothing about the process inside the
 # substitution; an empty array is what a refusal looks like from here, and it
@@ -1130,6 +1130,8 @@ DRIVER_ARGS=(
 # and it refuses an argument no file declares rather than letting docker warn
 # about it.
 echo "rootfs: composing $MOS_BOARD"
+bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MOS_ARCH" \
+    --packages "$COMPOSE_STAGE/packages.txt"
 if ! bash "$REPO_ROOT/build/run.sh" --build-rootfs \
         "${DRIVER_ARGS[@]}" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then

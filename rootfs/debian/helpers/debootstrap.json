@@ -1,0 +1,7 @@
+{
+  "name": "debootstrap",
+  "version": "1.0.141",
+  "architecture": "all",
+  "sha256": "8c02cb8ad712eb67afb0d23fab175c562804cc97eda70b70cb0f3bc2a21732d7",
+  "url": "https://deb.debian.org/debian/pool/main/d/debootstrap/debootstrap_1.0.141_all.deb"
+}

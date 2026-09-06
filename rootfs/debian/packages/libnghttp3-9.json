@@ -1,0 +1,23 @@
+{
+  "name": "libnghttp3-9",
+  "targets": {
+    "amd64": {
+      "version": "1.8.0-1",
+      "architecture": "amd64",
+      "sha256": "388e4c33b72829cbf0d098afdc8539fa5ba7458eddb077f5538fdb4d5538716b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1.8.0-1",
+      "architecture": "arm64",
+      "sha256": "26bfb8d1bead043f57d95663bab02f7611e7078fb7cf71383fa480c4b4c24d81",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

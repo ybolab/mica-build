@@ -1,0 +1,41 @@
+{
+  "name": "libselinux1",
+  "targets": {
+    "amd64": {
+      "version": "3.8.1-1",
+      "architecture": "amd64",
+      "sha256": "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-board-x64",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "3.8.1-1",
+      "architecture": "arm64",
+      "sha256": "fc13da4c7783b8f4361d92ef1045931f298d1b0ac78ed1a85c2232615f49fc6f",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libs/libselinux/libselinux1_3.8.1-1_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-board-cx3576",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

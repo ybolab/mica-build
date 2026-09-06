@@ -1,6 +1,6 @@
-# rootfs — Debian systemd arm64 rootfs (cx3576)
+# rootfs — locked Debian runtime composition
 
-Builds a minimal Debian trixie + systemd root filesystem for the cx3576 board
+Builds a Debian trixie + systemd root filesystem for x64 and cx3576
 as a squashfs + dm-verity slot image, ready to be written into an A/B rootfs
 slot by the assembly step.
 
@@ -10,9 +10,57 @@ image profile, mosd and the board hardware-init layer.
 
 ## Package allowlist
 
-Only: systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
-iproute2 bluez rfkill wpasupplicant hostapd (plus their hard dependencies). Do
-not add packages without updating this list.
+`debian/packages/<name>.json` records one upstream package per file. Its `name`
+and `targets.amd64` / `targets.arm64` variants specify exact versions,
+architectures, SHA256 checksums, download URLs and local package consumers.
+The bootstrap helper has its own `debian/helpers/debootstrap.json` record.
+The `base` consumer is the 68-package minimal bootstrap floor.
+The resolved local package selection adds only its declared upstream dependency
+closures; radio and other optional packages are absent unless selected.
+
+The pins come from the authenticated Debian trixie snapshot at
+`20260905T000000Z`. Builds download the named archives directly and verify both
+their hashes and control metadata. They do not refresh indexes or resolve newer
+versions. Changing a pin or consumer mapping requires reviewing its dependency
+closure and rerunning the system acceptance tests.
+
+```bash
+MOS_ARCH=amd64 make os-debian-cache
+MOS_ARCH=amd64 make os-debian-verify
+MOS_ARCH=amd64 MOS_ROOT=/path/to/empty-root make os-debian-install
+
+# Add the upstream dependencies of the common mos package set.
+MOS_ARCH=amd64 MOS_DEBIAN_PACKAGES=rootfs/packages/common.pkgs make os-debian-cache
+
+# After editing packages/libc6.json, fetch or verify only its amd64 archive.
+bash rootfs/debian/docker.sh cache --arch amd64 --package libc6
+bash rootfs/debian/docker.sh verify --arch amd64 --package libc6
+```
+
+A single-package operation reads only that package's JSON record and excludes
+the bootstrap helper and minimal base. Changing its version, URL and SHA256
+downloads only the missing archive; other JSON files and cached archives stay
+untouched. A package can point at a newer Debian snapshot independently.
+Review any changed dependency requirements and adjust the affected pins and
+consumer mappings before rebuilding. `--package` prepares cache inputs; it
+cannot install an incomplete dependency set. Full system builds still validate
+the complete selected closure and require QEMU/end-to-end acceptance.
+
+These commands run in the existing digest-pinned Bun container. The persistent
+host directory `_out/debian-base/debs/` stores archives by SHA256 and is mounted
+read-only during installation. `debian/docker.sh` also accepts `--cache-dir`
+and `--all`. Installation runs with Docker networking disabled; it requires a
+native target architecture and an empty destination.
+
+`build.sh` populates the cache for its resolved package set. The composer first
+bootstraps the minimal root, then uses dpkg to install selected upstream and
+local packages without network access. Bun validates JSON in the build container
+and renders temporary installation rows; the target verifies hashes and archive
+metadata again without installing a JSON interpreter. Debian's pinned debootstrap helper
+handles bootstrap and pre-dependency ordering. All remaining payloads are
+unpacked before configuration, so mos service presets precede OpenSSH setup.
+The runtime composition never invokes APT. Compiler and packing tool images
+remain separate build dependencies.
 
 bluez and rfkill exist for the board hardware-init layer (btattach + rfkill
 unblock in `mos-bt`); with their new dependencies (libglib2.0-0, libdw1,
@@ -170,9 +218,9 @@ read it before changing anything here.
 `compose/` holds two Dockerfiles, built in numeric order, the second `FROM` the
 local image tag the first was written to:
 
-- **`10-compose.Dockerfile`** — the whole device root in **one APT
-  transaction**, against the local package pool `make os-debs` builds under
-  `_out/debs/<arch>/`, on the digest-pinned Debian trixie base.
+- **`10-compose.Dockerfile`** — a minimal locked Debian root, followed by
+  selected upstream dependencies and the local package pool under
+  `_out/debs/<arch>/`. Both installation steps run offline with dpkg.
 - **`90-pack.Dockerfile`** — the finalizer: close the root, tree surgery,
   whole-tree assertions, squashfs, dm-verity, and the two export surfaces.
 
@@ -183,10 +231,9 @@ local image tag the first was written to:
 wiring, the four feature stages and the board are `mos-system`, `mos-ca-trust`,
 one of `mos-profile-{dev,prod}`, the three radio packages, `mos-podman`,
 `mos-rauc`, `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` and one
-`mos-board-<board>`. **What decides the order they are configured in is their
-own `Depends`, not a number in a filename**, and one apt transaction is atomic
-by construction — so there is nothing here for a stage boundary to sit between,
-and this directory holds two files rather than nine.
+`mos-board-<board>`. Debian's bootstrap helper handles `Pre-Depends`, then dpkg
+configures the unpacked package set according to `Depends`. A failed install
+fails the build; only a fully configured root reaches the finalizer.
 
 **Declining a feature is naming fewer packages.** `MOS_ROOTFS_WITHOUT`, into
 which `build.sh` folds the historical `WITH_CONTAINERS=0` and `WITH_MOSD=0`,
@@ -523,6 +570,10 @@ What a developer actually gets on mos:
   supported long-term path; every authorized key is a root key.
 
 ## Determinism, and what it took to get there
+
+The measurements below record the earlier APT-based composer. The current
+composer uses locked archives and dpkg; its package order is recorded in
+`dpkg.log`, and it produces no APT transaction logs.
 
 Two cache-hot `make os-rootfs-cx3576` runs produce a byte-identical
 `rootfs-verity.img`. sshd host keys are **not** baked into the image — they

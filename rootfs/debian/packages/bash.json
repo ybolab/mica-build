@@ -1,0 +1,23 @@
+{
+  "name": "bash",
+  "targets": {
+    "amd64": {
+      "version": "5.2.37-2+b9",
+      "architecture": "amd64",
+      "sha256": "03571d298ed24c615641d54dec4eb023ef5710a2b8cb9304acb66e372cab9c46",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/b/bash/bash_5.2.37-2+b9_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "5.2.37-2+b9",
+      "architecture": "arm64",
+      "sha256": "f9b0e4eb4ae81b3934a3211d755de26fa03881af3f159eb582437d3e8f55d9eb",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/b/bash/bash_5.2.37-2+b9_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "debconf",
+  "targets": {
+    "amd64": {
+      "version": "1.5.91",
+      "architecture": "all",
+      "sha256": "1ddc7e6c5925f748eefb7ca811d98e049f18c158bb21fbc7e122262ce6011e49",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/debconf/debconf_1.5.91_all.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1.5.91",
+      "architecture": "all",
+      "sha256": "1ddc7e6c5925f748eefb7ca811d98e049f18c158bb21fbc7e122262ce6011e49",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/debconf/debconf_1.5.91_all.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-board-cx3576",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

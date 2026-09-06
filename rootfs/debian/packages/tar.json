@@ -1,0 +1,23 @@
+{
+  "name": "tar",
+  "targets": {
+    "amd64": {
+      "version": "1.35+dfsg-3.1",
+      "architecture": "amd64",
+      "sha256": "214c02e1aa291076a3147b8a4c4cae02fadf4c67df629186e3e313726faef1de",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/t/tar/tar_1.35+dfsg-3.1_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "1.35+dfsg-3.1",
+      "architecture": "arm64",
+      "sha256": "c460a8294202ca3802b7c703b0bd70dd8bda1f2fc8785839595cf9d5e060d71b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/t/tar/tar_1.35+dfsg-3.1_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

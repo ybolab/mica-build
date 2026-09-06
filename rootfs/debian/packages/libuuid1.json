@@ -1,0 +1,27 @@
+{
+  "name": "libuuid1",
+  "targets": {
+    "amd64": {
+      "version": "2.41-5",
+      "architecture": "amd64",
+      "sha256": "10247744737c1bb574f9667b3f06a3b43a5055c67bdfcc1945803451cc036db3",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/libuuid1_2.41-5_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-rauc",
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "2.41-5",
+      "architecture": "arm64",
+      "sha256": "85b7d04605f9d423d5699b3c07f027e8380649fd164a51e0712cded0cc56eced",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/libuuid1_2.41-5_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-rauc",
+        "mos-system"
+      ]
+    }
+  }
+}

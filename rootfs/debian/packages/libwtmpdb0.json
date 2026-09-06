@@ -1,0 +1,23 @@
+{
+  "name": "libwtmpdb0",
+  "targets": {
+    "amd64": {
+      "version": "0.73.0-3+deb13u1",
+      "architecture": "amd64",
+      "sha256": "8d6bc1c961d734da58b2d4c35b0a3cd6ad2fe81655bd982c655a97c2255b1c9b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/w/wtmpdb/libwtmpdb0_0.73.0-3+deb13u1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "0.73.0-3+deb13u1",
+      "architecture": "arm64",
+      "sha256": "6c1e8bcf1192048b0c4d4fcff83debda41b609a0917017aa3faeb47401b1a62e",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/w/wtmpdb/libwtmpdb0_0.73.0-3+deb13u1_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

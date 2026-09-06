@@ -1,0 +1,39 @@
+{
+  "name": "libcrypt1",
+  "targets": {
+    "amd64": {
+      "version": "1:4.4.38-1",
+      "architecture": "amd64",
+      "sha256": "0ebc144d662e3197982d1bf3a7b8b35ca845e54c68811de0328b1f0d7c67585c",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libx/libxcrypt/libcrypt1_4.4.38-1_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1:4.4.38-1",
+      "architecture": "arm64",
+      "sha256": "b9aaa808aa3812b3de3e54eb5dfb16762c1779db032604abef2354c02fdc29b8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libx/libxcrypt/libcrypt1_4.4.38-1_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

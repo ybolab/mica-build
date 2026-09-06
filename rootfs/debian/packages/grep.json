@@ -1,0 +1,23 @@
+{
+  "name": "grep",
+  "targets": {
+    "amd64": {
+      "version": "3.11-4",
+      "architecture": "amd64",
+      "sha256": "2d78ed07d86a530ebf538f05cb2415f37c8daf908596bc32fc2563cc7e88c55a",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/g/grep/grep_3.11-4_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "3.11-4+b1",
+      "architecture": "arm64",
+      "sha256": "6f7257fbec0197bd54b2347861ff01e2c4e8411790b0df20242483615324fe66",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/g/grep/grep_3.11-4+b1_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "libsemanage-common",
+  "targets": {
+    "amd64": {
+      "version": "3.8.1-1",
+      "architecture": "all",
+      "sha256": "65375d886749c236bd1da4d9990b7c2469d2fe66019a28e5614f6814376d3dcb",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libs/libsemanage/libsemanage-common_3.8.1-1_all.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "3.8.1-1",
+      "architecture": "all",
+      "sha256": "65375d886749c236bd1da4d9990b7c2469d2fe66019a28e5614f6814376d3dcb",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libs/libsemanage/libsemanage-common_3.8.1-1_all.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

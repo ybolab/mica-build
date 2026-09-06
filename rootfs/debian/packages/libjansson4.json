@@ -1,0 +1,25 @@
+{
+  "name": "libjansson4",
+  "targets": {
+    "amd64": {
+      "version": "2.14-2+b3",
+      "architecture": "amd64",
+      "sha256": "60707a62fe6c1228c3389b12a13ca4efd76defc5532473e547a29e99cf7d2a6e",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/j/jansson/libjansson4_2.14-2+b3_amd64.deb",
+      "consumers": [
+        "mos-podman",
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "2.14-2+b3",
+      "architecture": "arm64",
+      "sha256": "7938472b1ddfa8b0c8f58d5f44406ae7a77a342dbb502a02f6bf292b4f853ab0",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/j/jansson/libjansson4_2.14-2+b3_arm64.deb",
+      "consumers": [
+        "mos-podman",
+        "mos-system"
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "libunistring5",
+  "targets": {
+    "amd64": {
+      "version": "1.3-2",
+      "architecture": "amd64",
+      "sha256": "6dd3490bef06ea1096f32d10766b7e016cf579bfae8451d1b7df15ce05b8aa46",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libu/libunistring/libunistring5_1.3-2_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1.3-2",
+      "architecture": "arm64",
+      "sha256": "4847467a0e47039837895e88f5a99a4a86a3d8266be40c3c896fc7c10d552dc7",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libu/libunistring/libunistring5_1.3-2_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

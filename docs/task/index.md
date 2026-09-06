@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-09-05
+> Updated: 2026-09-06
 
 ## Usage
 
@@ -104,3 +104,6 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**UI-013 Complete the built-in console against the prototype information architecture**](UI-013.md) `P1`
 - [x] [**FEAT-001 Build the update server and release console**](FEAT-001.md) `P1`
 - [x] [**RFCT-330 Resolve the September repository audit findings**](RFCT-330.md) `P1`
+- [x] [**RFCT-331 Cache the Debian runtime base and install it with dpkg**](RFCT-331.md) `P1`
+- [x] [**RFCT-332 Lock and layer Debian packages and validate the composed system**](RFCT-332.md) `P1`
+- [x] [**RFCT-333 Store Debian pins in per-package JSON manifests**](RFCT-333.md) `P1`

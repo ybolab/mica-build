@@ -241,6 +241,9 @@ jobs:
       - name: Health gate, machine-id oneshot, and their overlay copies
         run: make os-health-test
 
+      - name: Debian runtime cache integrity and offline reuse
+        run: make os-debian-test
+
       - name: Package build preflight and DATA directory initialization
         run: |
           set -euo pipefail

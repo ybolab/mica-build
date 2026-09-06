@@ -1,0 +1,26 @@
+{
+  "name": "kmod",
+  "targets": {
+    "amd64": {
+      "version": "34.2-2",
+      "architecture": "amd64",
+      "sha256": "d56f9311beb17cd15447d11d91fd4de94d23a47d4619e8806b1b807b40c72e53",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/k/kmod/kmod_34.2-2_amd64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "34.2-2",
+      "architecture": "arm64",
+      "sha256": "fd7300fcb8b93cc5f77aa439ee539ceb8050f5cf1d22d86e85179d04f7de5b6f",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/k/kmod/kmod_34.2-2_arm64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-board-cx3576",
+        "mos-system"
+      ]
+    }
+  }
+}

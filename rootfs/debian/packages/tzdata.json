@@ -1,0 +1,23 @@
+{
+  "name": "tzdata",
+  "targets": {
+    "amd64": {
+      "version": "2026b-0+deb13u1",
+      "architecture": "all",
+      "sha256": "306013b77311e875620e89f43c447765a6c72b7b398e0baa8e5721bcbbdf66cf",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/t/tzdata/tzdata_2026b-0+deb13u1_all.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "2026b-0+deb13u1",
+      "architecture": "all",
+      "sha256": "306013b77311e875620e89f43c447765a6c72b7b398e0baa8e5721bcbbdf66cf",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/t/tzdata/tzdata_2026b-0+deb13u1_all.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

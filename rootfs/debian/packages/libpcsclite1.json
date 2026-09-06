@@ -1,0 +1,23 @@
+{
+  "name": "libpcsclite1",
+  "targets": {
+    "amd64": {
+      "version": "2.3.3-1",
+      "architecture": "amd64",
+      "sha256": "a8bc4725549060d1e696d358e32a3699d947d5381871553a290389830bebccbd",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/p/pcsc-lite/libpcsclite1_2.3.3-1_amd64.deb",
+      "consumers": [
+        "mos-wifi"
+      ]
+    },
+    "arm64": {
+      "version": "2.3.3-1",
+      "architecture": "arm64",
+      "sha256": "e406cfd8f918cbe868c14a9d0dfbc0967f98861e679bcb0f30df6a49d80936f1",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/p/pcsc-lite/libpcsclite1_2.3.3-1_arm64.deb",
+      "consumers": [
+        "mos-wifi"
+      ]
+    }
+  }
+}

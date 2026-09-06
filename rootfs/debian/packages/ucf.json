@@ -1,0 +1,23 @@
+{
+  "name": "ucf",
+  "targets": {
+    "amd64": {
+      "version": "3.0052",
+      "architecture": "all",
+      "sha256": "ab5a6d5a621ad07034ce29d0c2587e6e267ecd2975458b2c8a7d0ada77dcb95b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/ucf/ucf_3.0052_all.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "3.0052",
+      "architecture": "all",
+      "sha256": "ab5a6d5a621ad07034ce29d0c2587e6e267ecd2975458b2c8a7d0ada77dcb95b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/ucf/ucf_3.0052_all.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

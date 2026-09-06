@@ -1,0 +1,31 @@
+{
+  "name": "libtinfo6",
+  "targets": {
+    "amd64": {
+      "version": "6.5+20250216-2",
+      "architecture": "amd64",
+      "sha256": "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-podman",
+        "mos-system",
+        "mos-wifi"
+      ]
+    },
+    "arm64": {
+      "version": "6.5+20250216-2",
+      "architecture": "arm64",
+      "sha256": "2a747f7fff3c2347c357387a7133df997410f07ba1b1df1a1461a97bd7fbc2fc",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/ncurses/libtinfo6_6.5+20250216-2_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-podman",
+        "mos-system",
+        "mos-wifi"
+      ]
+    }
+  }
+}

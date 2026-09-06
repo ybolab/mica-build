@@ -1,0 +1,29 @@
+{
+  "name": "libffi8",
+  "targets": {
+    "amd64": {
+      "version": "3.4.8-2",
+      "architecture": "amd64",
+      "sha256": "0ebdc340de33333639c3c63874cd4b15ac2e83dfa1ef3053b7eefaf4919f4f68",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "3.4.8-2",
+      "architecture": "arm64",
+      "sha256": "d84a783b818f2386627604e64b793eb4ac5bb9ea1ba321a194a1c9c82fe09a01",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libf/libffi/libffi8_3.4.8-2_arm64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system"
+      ]
+    }
+  }
+}

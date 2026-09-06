@@ -1,0 +1,25 @@
+{
+  "name": "libsystemd-shared",
+  "targets": {
+    "amd64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "amd64",
+      "sha256": "2d349824e57f88507e2a33360610d8afc143a4ad5e80ee4bf8f37b826d6f37f9",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/libsystemd-shared_257.13-1~deb13u1_amd64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "arm64",
+      "sha256": "b48df445566ff6c39395c9fc571524c9e03803bc2e434d7869fc21e723c64b4d",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/libsystemd-shared_257.13-1~deb13u1_arm64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-system"
+      ]
+    }
+  }
+}

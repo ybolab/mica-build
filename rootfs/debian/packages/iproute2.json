@@ -1,0 +1,24 @@
+{
+  "name": "iproute2",
+  "targets": {
+    "amd64": {
+      "version": "6.15.0-1",
+      "architecture": "amd64",
+      "sha256": "7b2dcade4a83ded723fcab21c5a53c47f29352c9c5e1661a089a1e481b3fb48a",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/i/iproute2/iproute2_6.15.0-1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "6.15.0-1",
+      "architecture": "arm64",
+      "sha256": "6750637e683afeef92690c7a136bace6c277066d644aa0da0adc08e2d6785af6",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/i/iproute2/iproute2_6.15.0-1_arm64.deb",
+      "consumers": [
+        "mos-board-cx3576",
+        "mos-system"
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "dbus-daemon",
+  "targets": {
+    "amd64": {
+      "version": "1.16.2-2",
+      "architecture": "amd64",
+      "sha256": "c91558cbd019bd5ec3e9fde0084976d5f61977f4ef0a9ed1ff48fe3a129b91d4",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/dbus/dbus-daemon_1.16.2-2_amd64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-rauc",
+        "mos-system",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1.16.2-2",
+      "architecture": "arm64",
+      "sha256": "74650cdf706f6a782f9bb486237c210454a39ebf840e3260492e557013931739",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/dbus/dbus-daemon_1.16.2-2_arm64.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-rauc",
+        "mos-system",
+        "mosd"
+      ]
+    }
+  }
+}

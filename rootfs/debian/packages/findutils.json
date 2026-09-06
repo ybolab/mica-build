@@ -1,0 +1,23 @@
+{
+  "name": "findutils",
+  "targets": {
+    "amd64": {
+      "version": "4.10.0-3",
+      "architecture": "amd64",
+      "sha256": "3edf02b016456b6a98cefdbab99c5ce6f829b786f63affe970badea221aecfc7",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/f/findutils/findutils_4.10.0-3_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "4.10.0-3",
+      "architecture": "arm64",
+      "sha256": "c8b505ce907c293031095b3a237cb231967963b1d5aa8b1699aff45ccec3158a",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/f/findutils/findutils_4.10.0-3_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "libtext-charwidth-perl",
+  "targets": {
+    "amd64": {
+      "version": "0.04-11+b4",
+      "architecture": "amd64",
+      "sha256": "3a1d44df306e0252e8a16df07eba457bc9f2ef736ee890a1c35ffdfd548eafa0",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libt/libtext-charwidth-perl/libtext-charwidth-perl_0.04-11+b4_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "0.04-11+b4",
+      "architecture": "arm64",
+      "sha256": "72a9c2131b8dc3a124b778d1e7a606201388bf20203f12b571f4ea58ee362880",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libt/libtext-charwidth-perl/libtext-charwidth-perl_0.04-11+b4_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

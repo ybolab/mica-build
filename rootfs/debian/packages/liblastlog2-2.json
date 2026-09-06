@@ -1,0 +1,23 @@
+{
+  "name": "liblastlog2-2",
+  "targets": {
+    "amd64": {
+      "version": "2.41-5",
+      "architecture": "amd64",
+      "sha256": "ff6a315b41873de9730b2c1d02b3463e1518f2ea0eb790d72adce8427ce88dd7",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/liblastlog2-2_2.41-5_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "2.41-5",
+      "architecture": "arm64",
+      "sha256": "2aabc6ee5bcd7867c4da38e8348f4a1ec6ca5ff4f37944dc7b056bd9f45156c7",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/liblastlog2-2_2.41-5_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

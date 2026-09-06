@@ -1,0 +1,39 @@
+{
+  "name": "libaudit-common",
+  "targets": {
+    "amd64": {
+      "version": "1:4.0.2-2",
+      "architecture": "all",
+      "sha256": "b6edcd7aa36a2a5a1abd2c52966d69a99eebdb69c8f5cb33cbf415b0875775e3",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/audit/libaudit-common_4.0.2-2_all.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1:4.0.2-2",
+      "architecture": "all",
+      "sha256": "b6edcd7aa36a2a5a1abd2c52966d69a99eebdb69c8f5cb33cbf415b0875775e3",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/audit/libaudit-common_4.0.2-2_all.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

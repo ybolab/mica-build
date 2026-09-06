@@ -1,0 +1,23 @@
+{
+  "name": "libjson-glib-1.0-common",
+  "targets": {
+    "amd64": {
+      "version": "1.10.6+ds-2",
+      "architecture": "all",
+      "sha256": "2c6352e0b10b3bf2fe184eeaa5f4e8cfa69b82053dc2e5ef137f951ba59315c8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/j/json-glib/libjson-glib-1.0-common_1.10.6+ds-2_all.deb",
+      "consumers": [
+        "mos-rauc"
+      ]
+    },
+    "arm64": {
+      "version": "1.10.6+ds-2",
+      "architecture": "all",
+      "sha256": "2c6352e0b10b3bf2fe184eeaa5f4e8cfa69b82053dc2e5ef137f951ba59315c8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/j/json-glib/libjson-glib-1.0-common_1.10.6+ds-2_all.deb",
+      "consumers": [
+        "mos-rauc"
+      ]
+    }
+  }
+}

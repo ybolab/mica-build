@@ -1,0 +1,39 @@
+{
+  "name": "libmd0",
+  "targets": {
+    "amd64": {
+      "version": "1.1.0-2+b1",
+      "architecture": "amd64",
+      "sha256": "7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1.1.0-2+b1",
+      "architecture": "arm64",
+      "sha256": "772e86842fd3fa1816a0cfee4833a73996aaa550461491543b886b9c8f999052",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libm/libmd/libmd0_1.1.0-2+b1_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

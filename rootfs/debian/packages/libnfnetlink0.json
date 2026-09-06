@@ -1,0 +1,23 @@
+{
+  "name": "libnfnetlink0",
+  "targets": {
+    "amd64": {
+      "version": "1.0.2-3",
+      "architecture": "amd64",
+      "sha256": "5e4c3c40a04ffdb4139e4bef1136585e151a8eb8c71efa6c7250b636b3c0d1b1",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libn/libnfnetlink/libnfnetlink0_1.0.2-3_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1.0.2-3",
+      "architecture": "arm64",
+      "sha256": "327e3137c7a454a1fcd0eb1369745a94c3170dc075ff9d0d438d9470526ee298",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libn/libnfnetlink/libnfnetlink0_1.0.2-3_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

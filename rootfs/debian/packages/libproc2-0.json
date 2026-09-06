@@ -1,0 +1,23 @@
+{
+  "name": "libproc2-0",
+  "targets": {
+    "amd64": {
+      "version": "2:4.0.4-9",
+      "architecture": "amd64",
+      "sha256": "c9d61caab1b2ddfc3f17edb95be31b9809fcb2daf27d853dff615bc4ebd08b4b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/p/procps/libproc2-0_4.0.4-9_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "2:4.0.4-9",
+      "architecture": "arm64",
+      "sha256": "e81069b58fe82223c71fcd74c760cb0fd3b0e61792fbaf2e5675fd948dc16dba",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/p/procps/libproc2-0_4.0.4-9_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

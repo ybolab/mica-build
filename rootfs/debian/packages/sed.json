@@ -1,0 +1,23 @@
+{
+  "name": "sed",
+  "targets": {
+    "amd64": {
+      "version": "4.9-2+deb13u1",
+      "architecture": "amd64",
+      "sha256": "7071270ed4f6adda55bc4f926347fb847bacaffbdee3dff917bc6006ed7e3775",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/sed/sed_4.9-2+deb13u1_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "4.9-2+deb13u1",
+      "architecture": "arm64",
+      "sha256": "c654fa045de8cc722855b8db59990b703cb7299c897c6e187bf949d42df82b62",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/sed/sed_4.9-2+deb13u1_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

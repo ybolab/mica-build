@@ -1,0 +1,37 @@
+{
+  "name": "passwd",
+  "targets": {
+    "amd64": {
+      "version": "1:4.17.4-2",
+      "architecture": "amd64",
+      "sha256": "c5eaef41c6947d2888fa3462f787a7e02158b997bd0119154283f425ba57b8b8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/shadow/passwd_4.17.4-2_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1:4.17.4-2",
+      "architecture": "arm64",
+      "sha256": "a6863055a3d53bf805dd0048b836e4b7a3d14a899b832a50d577b047da4202d8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/shadow/passwd_4.17.4-2_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

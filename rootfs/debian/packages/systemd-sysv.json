@@ -1,0 +1,23 @@
+{
+  "name": "systemd-sysv",
+  "targets": {
+    "amd64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "amd64",
+      "sha256": "3bed48042b6e40f8a3c439e79b4a4ed6a12102eb3ab66123dc43aa18f0416729",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/systemd-sysv_257.13-1~deb13u1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "arm64",
+      "sha256": "af3c883fabc97850c7afe9489a9e1808b4db2d9cfdc4dc1639da9e1b0356c97b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/systemd-sysv_257.13-1~deb13u1_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

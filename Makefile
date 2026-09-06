@@ -26,6 +26,10 @@ BOARDS := cx3576 x64
 
 help:
 	@echo "mos build targets:"
+	@echo "  os-debian-cache     cache the fixed Debian runtime base (MOS_ARCH=amd64|arm64)"
+	@echo "  os-debian-verify    verify the runtime cache without network access"
+	@echo "  os-debian-install   install the cached base with dpkg (MOS_ROOT=<empty directory>)"
+	@echo "  os-debian-test      test the Debian runtime cache boundary"
 	@echo "  os                  RETIRED; use the os-*-cx3576 targets"
 	@echo "image (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
 	@echo "  os-rootfs-cx3576 build the squashfs+dm-verity rootfs slot image"
@@ -667,3 +671,17 @@ os-apid-api-test:
 .PHONY: os-apid-api-spec-pins
 os-apid-api-spec-pins:
 	bash pkgs/mosd/tests/apid-api/spec-pins.sh
+
+.PHONY: os-debian-cache os-debian-verify os-debian-install os-debian-test
+os-debian-cache:
+	bash rootfs/debian/docker.sh cache --arch '$(MOS_ARCH)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
+
+os-debian-verify:
+	bash rootfs/debian/docker.sh verify --arch '$(MOS_ARCH)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
+
+os-debian-install:
+	bash rootfs/debian/docker.sh install --arch '$(MOS_ARCH)' --root '$(MOS_ROOT)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
+
+os-debian-test:
+	bash tests/debian-base-test.sh
+	bash tests/debian-lock-test.sh

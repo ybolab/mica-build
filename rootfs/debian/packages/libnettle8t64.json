@@ -1,0 +1,23 @@
+{
+  "name": "libnettle8t64",
+  "targets": {
+    "amd64": {
+      "version": "3.10.1-1",
+      "architecture": "amd64",
+      "sha256": "1b03d4a9cd9c8143ba50fe6396f36937e901a317d492d179f4596862c1731cfe",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/nettle/libnettle8t64_3.10.1-1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "3.10.1-1",
+      "architecture": "arm64",
+      "sha256": "16107ce5a7b522da021fa8aba42d42af9c5e90ddabfcda3710aff6ea95808ee0",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/nettle/libnettle8t64_3.10.1-1_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

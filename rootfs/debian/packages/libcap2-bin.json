@@ -1,0 +1,24 @@
+{
+  "name": "libcap2-bin",
+  "targets": {
+    "amd64": {
+      "version": "1:2.75-10+deb13u1+b1",
+      "architecture": "amd64",
+      "sha256": "4abf33b256068c1621c9e5bca99b47a506e11f34ebc20a220404f3c256a057ca",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libc/libcap2/libcap2-bin_2.75-10+deb13u1+b1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1:2.75-10+deb13u1+b1",
+      "architecture": "arm64",
+      "sha256": "0717912b3dc3bb1fd0011d662da9d95c1ec08ac23cea951d3c7cb3ed1437d6b0",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libc/libcap2/libcap2-bin_2.75-10+deb13u1+b1_arm64.deb",
+      "consumers": [
+        "mos-board-cx3576",
+        "mos-system"
+      ]
+    }
+  }
+}

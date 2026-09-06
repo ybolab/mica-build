@@ -1,0 +1,23 @@
+{
+  "name": "gzip",
+  "targets": {
+    "amd64": {
+      "version": "1.13-1",
+      "architecture": "amd64",
+      "sha256": "c98b1130f08ef6ac3932972c56be84cfc308ce1afa37105cb06aaf47ced2d078",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/g/gzip/gzip_1.13-1_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "1.13-1",
+      "architecture": "arm64",
+      "sha256": "cd46c9482fd3b96d4ecf282b01185ef9341b0ffcd40816372141f73037ce2c36",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/g/gzip/gzip_1.13-1_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

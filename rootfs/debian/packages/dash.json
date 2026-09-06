@@ -1,0 +1,23 @@
+{
+  "name": "dash",
+  "targets": {
+    "amd64": {
+      "version": "0.5.12-12",
+      "architecture": "amd64",
+      "sha256": "a8902cb6d8650134764a25fb80aec8589d858ef71ece1680a62e84816c37bb04",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/dash/dash_0.5.12-12_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "0.5.12-12",
+      "architecture": "arm64",
+      "sha256": "ce4c8688a1a3ea510186ba95aba74d4c49863094e47e1effc0b602839e840c04",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/dash/dash_0.5.12-12_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

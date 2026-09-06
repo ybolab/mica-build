@@ -1,0 +1,29 @@
+{
+  "name": "dbus-session-bus-common",
+  "targets": {
+    "amd64": {
+      "version": "1.16.2-2",
+      "architecture": "all",
+      "sha256": "98bd27836c7170839ed9c84b00daad9ed7155bd3d42e3f0ec3faf497aafa5f5f",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/dbus/dbus-session-bus-common_1.16.2-2_all.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-rauc",
+        "mos-system",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1.16.2-2",
+      "architecture": "all",
+      "sha256": "98bd27836c7170839ed9c84b00daad9ed7155bd3d42e3f0ec3faf497aafa5f5f",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/d/dbus/dbus-session-bus-common_1.16.2-2_all.deb",
+      "consumers": [
+        "mos-bluetooth",
+        "mos-rauc",
+        "mos-system",
+        "mosd"
+      ]
+    }
+  }
+}

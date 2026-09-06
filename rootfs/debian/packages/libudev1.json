@@ -1,0 +1,28 @@
+{
+  "name": "libudev1",
+  "targets": {
+    "amd64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "amd64",
+      "sha256": "5d41c284f5a93b05bc7d648b61a02dd2bb9ff05b2261ad1a8b7d96044a0cfa88",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/libudev1_257.13-1~deb13u1_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-board-x64",
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "arm64",
+      "sha256": "459b1c9c17cc3c586e90d13d2a991715d498c6eed6c046cabf321021167bc380",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/libudev1_257.13-1~deb13u1_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-system"
+      ]
+    }
+  }
+}

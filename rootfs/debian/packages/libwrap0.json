@@ -1,0 +1,23 @@
+{
+  "name": "libwrap0",
+  "targets": {
+    "amd64": {
+      "version": "7.6.q-36",
+      "architecture": "amd64",
+      "sha256": "cde12afa15d6b1556c5e0564d22edf3b99e6b8fa94c59ccd8b8eebbb62dc19ec",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/t/tcp-wrappers/libwrap0_7.6.q-36_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "7.6.q-36",
+      "architecture": "arm64",
+      "sha256": "fd2e54582a07fba9c8a6f78c68dcc6d3c8cf1c70632a68124394bde4dccf52ea",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/t/tcp-wrappers/libwrap0_7.6.q-36_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

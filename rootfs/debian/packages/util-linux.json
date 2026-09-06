@@ -1,0 +1,23 @@
+{
+  "name": "util-linux",
+  "targets": {
+    "amd64": {
+      "version": "2.41-5",
+      "architecture": "amd64",
+      "sha256": "47fc393fed410642889c86164928219c039e5b43d823aa32e1dbb341eef1d9c5",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/util-linux_2.41-5_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "2.41-5",
+      "architecture": "arm64",
+      "sha256": "d336901e4c1aedf268837d41a4e1004faa9b7ad4f1e6763f01711b487a4c18ce",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/util-linux_2.41-5_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

@@ -1057,16 +1057,14 @@ describe('the assembly this tree actually ships', () => {
     expect(stages.find((s) => s.name === '90-pack')!.path).toBe(entry)
   })
 
-  test('every file but the first is linked, and only the first names a distro image', () => {
+  test('later files are linked and external tool images are declared explicitly', () => {
     stages.forEach((s, i) => {
       expect(s.declaresPrev).toBe(i > 0)
     })
     const withBase = stages.filter((s) =>
-      s.declaredArgs.some((a) => a.startsWith('MOS_IMAGE_DEBIAN_')),
+      s.declaredArgs.some((a) => a.startsWith('MOS_IMAGE_')),
     )
-    // 10-compose names trixie, 90-pack names bookworm, and nothing else names a
-    // base image at all -- a file that does not name one cannot be built
-    // against the wrong one.
+    // Bun runs the locked dpkg bootstrap; bookworm supplies packing tools.
     expect(withBase.map((s) => s.name)).toEqual(['10-compose', '90-pack'])
   })
 

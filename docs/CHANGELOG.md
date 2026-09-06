@@ -4,6 +4,32 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-084 — Per-package JSON manifests and independent cache updates (2026-09-06)
+
+Debian runtime pins now live in 172 individual JSON files with explicit target
+variants, plus a separate bootstrap-helper record. All 342 previous target pins
+and consumer mappings are preserved. `--package NAME` refreshes or verifies one
+archive without processing unrelated package records; a real empty-cache run
+fetched one archive and passed disconnected verification. The Bun builder renders
+temporary installation records, keeping JSON tooling out of the target system.
+Validation passed 40 archive checks, both-architecture selection checks, 920 build
+tests, 1,279 verifier tests, 315 applicable image checks, 12 executable smoke
+checks and all eight QEMU E2E phases with 137 assertions and no failures or skips.
+See [PLAN-084](plan/PLAN-084.md).
+
+## PLAN-083 — Locked Debian runtime packages and QEMU acceptance (2026-09-06)
+
+Runtime package manifests now pin versions, architectures, URLs and SHA256
+checksums. Docker mounts a reusable archive cache; composition starts with 68
+bootstrap packages and adds selected dependencies using dpkg without network
+access or APT. The x64 system contains 159 upstream and 13 local packages.
+Validation passed 920 build tests, 1,279 verifier tests, 315 applicable image
+checks, 12 executable smoke checks and all eight QEMU/API E2E phases with 137
+assertions, zero failures and zero skips. The guest tests now create a managed
+WireGuard tunnel to exercise permissions on a real daemon-generated key.
+Arm64 archives are verified; physical board acceptance remains separate.
+See [PLAN-083](plan/PLAN-083.md).
+
 ## PLAN-081 — Repository audit repairs (2026-09-05)
 
 Closed stale-password session issuance, partial settings persistence, invalid UI

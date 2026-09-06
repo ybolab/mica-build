@@ -1,0 +1,23 @@
+{
+  "name": "hostname",
+  "targets": {
+    "amd64": {
+      "version": "3.25",
+      "architecture": "amd64",
+      "sha256": "9c2a27e5d4d87137211fe46631b05b2ee8892ec76aae926304e4485ba02e1015",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/h/hostname/hostname_3.25_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "3.25",
+      "architecture": "arm64",
+      "sha256": "04d1ff24cb605788b59ed30d0052c1039c8bce2fb44c01c3c4b0c6edd4ea7ccc",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/h/hostname/hostname_3.25_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "libbz2-1.0",
+  "targets": {
+    "amd64": {
+      "version": "1.0.8-6",
+      "architecture": "amd64",
+      "sha256": "cba4cda04244b5e481bb15524bc3c983a7d1b6f330013b9b381706a2fcb65310",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/b/bzip2/libbz2-1.0_1.0.8-6_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "1.0.8-6",
+      "architecture": "arm64",
+      "sha256": "3537fe4fc577a60c8a9568873cd577db7ebc135eb8bb1825f18caf8972d9d2f2",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/b/bzip2/libbz2-1.0_1.0.8-6_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

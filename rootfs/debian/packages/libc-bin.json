@@ -1,0 +1,23 @@
+{
+  "name": "libc-bin",
+  "targets": {
+    "amd64": {
+      "version": "2.41-12+deb13u3",
+      "architecture": "amd64",
+      "sha256": "0105bbe1f317d8992bd73217ea9f3dd63e7f1195841f6aca346c570566628fb8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/g/glibc/libc-bin_2.41-12+deb13u3_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "2.41-12+deb13u3",
+      "architecture": "arm64",
+      "sha256": "02f366115bea79b87fe26c7dec4dc444f9fdcc76440905d88cc26dbef075511b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/g/glibc/libc-bin_2.41-12+deb13u3_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

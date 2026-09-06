@@ -1,0 +1,23 @@
+{
+  "name": "ncurses-base",
+  "targets": {
+    "amd64": {
+      "version": "6.5+20250216-2",
+      "architecture": "all",
+      "sha256": "190e775260a38973c415a36ae99f33ad1b37ea6ca99929d7c5d53843fc23e914",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/ncurses/ncurses-base_6.5+20250216-2_all.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "6.5+20250216-2",
+      "architecture": "all",
+      "sha256": "190e775260a38973c415a36ae99f33ad1b37ea6ca99929d7c5d53843fc23e914",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/ncurses/ncurses-base_6.5+20250216-2_all.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

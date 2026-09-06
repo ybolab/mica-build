@@ -1,0 +1,23 @@
+{
+  "name": "libnetfilter-conntrack3",
+  "targets": {
+    "amd64": {
+      "version": "1.1.0-1",
+      "architecture": "amd64",
+      "sha256": "ffbac5d06fbe432d5171f2eb5b2504968377f27be133f72c81e71250a9957506",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libn/libnetfilter-conntrack/libnetfilter-conntrack3_1.1.0-1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1.1.0-1",
+      "architecture": "arm64",
+      "sha256": "25593af074c89564f903aa34acb7828a47171e232dfb4ea3457f5319c98d0a4c",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libn/libnetfilter-conntrack/libnetfilter-conntrack3_1.1.0-1_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "libjson-c5",
+  "targets": {
+    "amd64": {
+      "version": "0.18+ds-1",
+      "architecture": "amd64",
+      "sha256": "4fbd5fb4d54c626f05d68abf38a31533fbf1bf4a87068696abe041ee9c974fe0",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/j/json-c/libjson-c5_0.18+ds-1_amd64.deb",
+      "consumers": [
+        "mos-podman"
+      ]
+    },
+    "arm64": {
+      "version": "0.18+ds-1",
+      "architecture": "arm64",
+      "sha256": "f631829107005b15c2ca5c48ac74bc2df437c7eb608756eb865b147985f7bb45",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/j/json-c/libjson-c5_0.18+ds-1_arm64.deb",
+      "consumers": [
+        "mos-podman"
+      ]
+    }
+  }
+}

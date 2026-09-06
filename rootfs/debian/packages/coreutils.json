@@ -1,0 +1,23 @@
+{
+  "name": "coreutils",
+  "targets": {
+    "amd64": {
+      "version": "9.7-3",
+      "architecture": "amd64",
+      "sha256": "1299ab6f9389a288eb2f5f3dd222c26cc777b9a2d5ecb6ee4cbd340cebcdada2",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/c/coreutils/coreutils_9.7-3_amd64.deb",
+      "consumers": [
+        "base"
+      ]
+    },
+    "arm64": {
+      "version": "9.7-3",
+      "architecture": "arm64",
+      "sha256": "99b2531e8d16e4f2d3f239ae3cb57913ec1f43764d2d6cd5c69154cbb1e57f3e",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/c/coreutils/coreutils_9.7-3_arm64.deb",
+      "consumers": [
+        "base"
+      ]
+    }
+  }
+}

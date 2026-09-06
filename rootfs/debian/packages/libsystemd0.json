@@ -1,0 +1,39 @@
+{
+  "name": "libsystemd0",
+  "targets": {
+    "amd64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "amd64",
+      "sha256": "ab0d4127b5e46e6f8c015a1db15a62ba9ae274cdefa150083adf90ada0600ea1",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/libsystemd0_257.13-1~deb13u1_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    },
+    "arm64": {
+      "version": "257.13-1~deb13u1",
+      "architecture": "arm64",
+      "sha256": "d2f63c408549c29eaefb6f4c948393edce99f45ee8e43c991391bef63fb7d54b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/s/systemd/libsystemd0_257.13-1~deb13u1_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-mqtt-broker",
+        "mos-mqttd",
+        "mos-podman",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mosd"
+      ]
+    }
+  }
+}

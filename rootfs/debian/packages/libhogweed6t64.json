@@ -1,0 +1,23 @@
+{
+  "name": "libhogweed6t64",
+  "targets": {
+    "amd64": {
+      "version": "3.10.1-1",
+      "architecture": "amd64",
+      "sha256": "b059ed155115ac09da295322de48ee1ed58ef5fa45edcc9e12ff0e94636ef25f",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/nettle/libhogweed6t64_3.10.1-1_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "3.10.1-1",
+      "architecture": "arm64",
+      "sha256": "cb92d5a51c4fd6c7b7cbb62aaa60c7af830d0bea5b410fb1f47ee685e26944d1",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/n/nettle/libhogweed6t64_3.10.1-1_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

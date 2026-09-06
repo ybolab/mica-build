@@ -1,0 +1,23 @@
+{
+  "name": "wpasupplicant",
+  "targets": {
+    "amd64": {
+      "version": "2:2.10-24",
+      "architecture": "amd64",
+      "sha256": "99f50410baddebd421497703ad9b6d0e05deb3dfda99a96b2814f630d9b84498",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/w/wpa/wpasupplicant_2.10-24_amd64.deb",
+      "consumers": [
+        "mos-wifi"
+      ]
+    },
+    "arm64": {
+      "version": "2:2.10-24",
+      "architecture": "arm64",
+      "sha256": "d9ab216060c4c66cddcd53030f1a38c57e93a25cb9e0abefa6fe8f36b686f9ae",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/w/wpa/wpasupplicant_2.10-24_arm64.deb",
+      "consumers": [
+        "mos-wifi"
+      ]
+    }
+  }
+}

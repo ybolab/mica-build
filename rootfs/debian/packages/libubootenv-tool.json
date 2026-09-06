@@ -1,0 +1,23 @@
+{
+  "name": "libubootenv-tool",
+  "targets": {
+    "amd64": {
+      "version": "0.3.5-0.1+b2",
+      "architecture": "amd64",
+      "sha256": "cced582480fc7ee77c324dde40d5eb5a70f41e6e125c9e58bd386d22cdd0a56b",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libu/libubootenv/libubootenv-tool_0.3.5-0.1+b2_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "0.3.5-0.1+b2",
+      "architecture": "arm64",
+      "sha256": "8a01328023abedaa45f8ed30be05c0ae351f413589e7ecc57695ba89d6cfada8",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libu/libubootenv/libubootenv-tool_0.3.5-0.1+b2_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

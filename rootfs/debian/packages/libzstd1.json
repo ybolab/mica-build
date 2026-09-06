@@ -1,0 +1,34 @@
+{
+  "name": "libzstd1",
+  "targets": {
+    "amd64": {
+      "version": "1.5.7+dfsg-1",
+      "architecture": "amd64",
+      "sha256": "2f6a2aeacfc925eba8b00ac9139bc4bfccf8cacb09eb93de067074b26948eef9",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mos-wifi-ap"
+      ]
+    },
+    "arm64": {
+      "version": "1.5.7+dfsg-1",
+      "architecture": "arm64",
+      "sha256": "924540bd59fdbfa77a0604360efdaca54411a43daf11c7e002a3c64791b67448",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_arm64.deb",
+      "consumers": [
+        "base",
+        "mos-bluetooth",
+        "mos-board-cx3576",
+        "mos-rauc",
+        "mos-system",
+        "mos-wifi",
+        "mos-wifi-ap"
+      ]
+    }
+  }
+}

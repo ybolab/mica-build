@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-05
+> Updated: 2026-09-06
 
 ## Usage
 
@@ -68,3 +68,6 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-080 Every build and assembly runs in a container, none on the host**](PLAN-080.md) `2026-09-04`
 - [x] [**PLAN-079 Build the update server and release console**](PLAN-079.md) `2026-09-04`
 - [x] [**PLAN-081 Resolve the September repository audit findings**](PLAN-081.md) `2026-09-05`
+- [x] [**PLAN-082 Cache the Debian runtime base and install it with dpkg**](PLAN-082.md) `2026-09-06`
+- [x] [**PLAN-083 Lock and layer Debian packages and validate the composed system**](PLAN-083.md) `2026-09-06`
+- [x] [**PLAN-084 Store Debian pins in per-package JSON manifests**](PLAN-084.md) `2026-09-06`
