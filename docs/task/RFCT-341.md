@@ -78,19 +78,31 @@ Added the cadence seam and the tests it unblocks
   dependency change for a test's benefit.
 
 - **U5 is a criterion rather than a list.**
-  `every_deferral_reason_the_driver_can_mint_is_reachable` scans
-  `include_str!("update_auto.rs")` for the reasons `self.defer(...)` mints and
-  compares that set against the set eighteen scripted passes produced. A new
-  call site with a new reason fails the test until a case covers it, which a
-  hand-written list of fifteen would not.
+  `every_deferral_reason_the_driver_can_mint_is_reachable` compares the set
+  eighteen scripted passes produced against `update_codes::DEFERRALS` — the
+  closed vocabulary itself. A sixteenth code fails the test until a pass
+  produces it, which a hand-written list of fifteen would not.
 
-- **Seven mutations, each compiled and each red at the test level**, re-run
-  against the final tree: the automatic install route ceasing to call
+- **RFCT-339 landed first, and its named gap is closed rather than
+  duplicated.** Its `feat(update): enumerated failure codes` reached main at
+  `baa16afb` while this branch was in flight, and `docs/design/updates.md` §6
+  recorded the limit in terms: *"Which reason the driver chooses for a given
+  failure is not [proven], and cannot be until the clock seam above lands."*
+  After merging main, the U5 test asserts against RFCT-339's vocabulary rather
+  than against strings of its own, so the two halves meet — its test proves
+  what the recording site may carry, this one proves which code the driver
+  picks. `update_codes::DEFERRALS` became `pub` for it, with the reason
+  written at the array. The overlapping half of this branch's lifecycle test
+  was cut back to the replacement path RFCT-339's test resumes past.
+
+- **Eight mutations, each compiled and each red at the test level**, re-run
+  against the merged tree: the automatic install route ceasing to call
   `InstallUpdate` (3 tests red); the driver dropping its own window check (2);
   the manual install route dropping the window gate (3); the automatic reboot
   route arming the override to get through (2); the driver reading a closed
-  reboot gate as an open one (2); and each of the two suppression
-  consultations removed (2 each). The pre-install consultation initially
+  reboot gate as an open one (2); each of the two suppression consultations
+  removed (2 each); and a sixteenth deferral code no pass produces (3). The
+  pre-install consultation initially
   reddened only the deferral table — the earlier consultation refused before
   the pass reached it — so the bad-bundle cycle test was extended to exercise
   that site on its own rather than leave a guard nothing measured.
@@ -107,7 +119,7 @@ Added the cadence seam and the tests it unblocks
 - **Verification.** In `localhost/mos-build-rust-check:amd64`, source mounted
   at `/src`: `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets --locked -- -D warnings`,
-  `cargo test --locked -p mosd -p apid` (apid 323, mosd 546 unit + 1
+  `cargo test --locked -p mosd -p apid` (apid 324, mosd 558 unit + 1
   `bus_roundtrip` + 7 scan), `cargo test --doc --workspace --locked` and
-  `cargo deny check licenses bans advisories` — all green. mosd's unit count
-  rose from 525 to 546.
+  `cargo deny check licenses bans advisories` — all green after merging main.
+  mosd's unit count rose from 537 (main, post-RFCT-339) to 558.

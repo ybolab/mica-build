@@ -60,9 +60,17 @@ The named gaps:
   and has not been performed. Every image this repository has built so far is
   development-grade, and says so.
 - **No keyring rotation channel on deployed devices** — replacing the trust
-  anchor on a fielded device currently means an image signed by the very key
-  being replaced. A device that missed a rollover window, and rotation away
-  from a CA that is already compromised, still need a physical reflash.
+  anchor on a fielded device means an image signed by the very key being
+  replaced. The two cases that leaves behind have different answers, and both
+  are decided rather than open. A device that **missed a rollover window** is
+  recovered by an update, not a reflash: the previous release is republished
+  into a rescue repository, still signed by the outgoing key, and the device
+  is pointed at it by the same authenticated call that sets any other update
+  setting — or handed it on removable media if it has no network route at all.
+  What moves is where the device looks, never what it trusts.
+  Rotation away from a CA that is **already compromised** has no remote answer
+  at all and means a physical reflash, because the attacker holds the same
+  signing authority every remote path runs on.
 
 > status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`
 

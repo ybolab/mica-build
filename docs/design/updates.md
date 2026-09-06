@@ -975,6 +975,13 @@ ticked in a test at all and every row below sat under that one blocker.
 RFCT-341 added the seam — `update_auto::Cadence`, a **monotonic** clock and
 nothing else — and wrote the rows.
 
+It also closed the gap RFCT-339 named when it landed §1.2's vocabulary: that
+work could assert what the *recording site* will carry, but not which code the
+driver **chooses** for a given failure, because the driver could not be
+reached. `update_codes`'s own rule is that *a code that no test can produce is
+a code nobody has seen*, and for the fifteen deferral codes that is now
+checked against the array rather than against a list somebody wrote out.
+
 The seam is deliberately narrow. It answers an `Instant`, which names no
 date, so nothing downstream of it can turn a test's clock into a window
 verdict or into a claim that the device believes its clock: PLAN-071 §7's
@@ -991,17 +998,18 @@ nobody vouched for, which is the refusal §7 exists to make.
 | Automation never arms the override | The automatic path drives against a closed gate and no override is armed | `bus.rs`: `the_automatic_path_against_a_closed_gate_arms_no_override` against the real gate, which renders an armed override as a member of `update.lifecycle.reboot_gate` — and arms one by hand afterwards, so "no override" is a measurement rather than an empty tree; `update_auto.rs`: `a_closed_reboot_gate_defers_and_the_driver_takes_no_way_around_it` | The invariant stays structural: `SetRebootOverride` is not on `AutoRoutes` (§3.2) |
 | A clock seam on the driver | `AutoDriver` can be ticked in a test at all | `update_auto::Cadence`, and `the_cadence_seam_advances_the_driver_without_sleeping` asserts the cadence is attempt-based across it | — |
 | The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | `time_status.rs`: `the_saved_floor_advances_only_when_the_file_moved_after_this_boot` (no STATE bind, bound but not writing, alive) and `the_clock_is_believed_on_either_limb_and_the_refusal_names_both`; `update_auto.rs`: `an_untrusted_clock_defers_the_install_and_leaves_the_check_and_fetch_alone` | — |
-| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | `update_auto.rs`: `every_deferral_reason_the_driver_can_mint_is_reachable` compares the reasons a pass produced against the reasons **read out of the driver's own source**, so a new `defer` site fails until a case covers it; `update_lifecycle.rs`: `a_repeated_deferral_counts_its_attempts_and_a_changed_reason_starts_over` | `since` is rendered to the second, so a same-second repeat cannot distinguish "kept" from "reset" on its own; the attempt counter is what pins it |
+| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | `update_auto.rs`: `every_deferral_reason_the_driver_can_mint_is_reachable` drives eighteen scripted passes and compares the reasons they produced against **§1.2's closed vocabulary itself** (`update_codes::DEFERRALS`), so a sixteenth code nothing produces fails the test rather than reaching `openapi.json` unseen; `update_lifecycle.rs`: `every_deferral_reaches_the_document_as_a_code_and_nothing_else_does` for what the recording site may carry, and `a_repeated_deferral_counts_its_attempts_and_a_changed_reason_starts_over` for the replacement path | `since` is rendered to the second, so a same-second repeat cannot distinguish "kept" from "reset" on its own; the attempt counter is what pins it |
 | The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | The store half is covered above (`clearing_answers_the_record_and_a_typo_clears_nothing`) and `UpdateLifecycle::clear_suppression` refuses a typo with `Invalid` | **Owed.** `openapi.json` documents the route and `apid/src/tests/update_api.rs` has no case for it; nothing drives the handler |
 | The end-to-end bench cycle | `auto` on real hardware: fetch, window, install, reboot, confirm | — | **Owed to bench hardware** (U10), and blocking for shipping `auto` at all. No seam retires this one: what it verifies is the bootloader spending real boot credits and a real slot falling back, which is the half of the loop no test on this host observes |
 
 **How much of that is a guard and how much is decoration** was measured
-rather than asserted: seven mutations, one at a time, each compiled and each
+rather than asserted: eight mutations, one at a time, each compiled and each
 red at the test level — the automatic install route ceasing to call
 `InstallUpdate`; the driver dropping its own window check; the manual install
 route dropping the window gate; the automatic reboot route arming the
-override to get through; the driver reading a closed gate as an open one; and
-each of the two suppression consultations removed. A guard whose removal
+override to get through; the driver reading a closed gate as an open one;
+each of the two suppression consultations removed; and a sixteenth deferral
+code added to §1.2's array that no pass produces. A guard whose removal
 changes no test is not a guard, and the two consultations were kept honest
 this way: removing the pre-install one at first reddened only the deferral
 table, because the earlier consultation refused before the pass reached it,
