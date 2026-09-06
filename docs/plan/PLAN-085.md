@@ -414,50 +414,107 @@ This is the section to read before citing a green `virt-arm64` run as evidence
 about the device, and it exists because the most likely way this board gets
 misused is somebody signing off a cx3576 bench item on the strength of one.
 
-**Why anything transfers at all.** The two boards do not merely share source —
-they install *the same `.deb` files out of the same arm64 pool*. Of the mos
-packages in `_out/debs/arm64/pool/`, exactly one is board-specific for cx3576
-(`mos-board-cx3576`) and one pair is board-specific for this board
-(`mos-board-virt-arm64`, `mos-kernel-virt-arm64`, the latter having no cx3576
-counterpart because that board's kernel lives inside its board package). Every
-other package — mosd, apid, podman, rauc, rauc-update, mqttd, mqtt-broker,
-busybox, system, wifi, wifi-ap, bluetooth, ca-trust and the two profiles — is
-byte-identical between them. A `virt-arm64` guest therefore runs *the same
-aarch64 binaries a cx3576 runs*, not a second compilation of the same source,
-and not a different architecture's build of it. (Measured on the composed pool;
-the numbers are in the Annotations.)
+Every row below is re-derivable. The package split is one `resolve.sh` call; the
+kernel rows are the two `versions.env` files and cx3576's
+`bsp/kernel/Dockerfile`.
 
-**Transfers.** Anything above the boot chain, because it is the same binary on
-the same architecture:
+#### The package resolution, which is not the pool
 
-- every daemon behaviour and the whole apid API surface;
-- the update state machine — install, mark, confirm, rollback bookkeeping;
-- network reconciliation, the .netdev/.network rendering, container start;
+A board installs its RESOLUTION, not the pool. The pool is what is available;
+the resolution is what `rootfs/packages/resolve.sh` selects for a board, and the
+two differ by exactly the thing this section is about. Measured at prod profile,
+each board with its own declared `BOARD_RADIOS`:
+
+```console
+$ bash rootfs/packages/resolve.sh --board cx3576     --profile prod --radios "wifi bluetooth" --without ""
+$ bash rootfs/packages/resolve.sh --board virt-arm64 --profile prod --radios ""               --without ""
+```
+
+| | count | packages |
+|---|---|---|
+| **shared** | **11** | `mosd` `mos-apid` `mos-podman` `mos-rauc` `mos-rauc-update` `mos-mqttd` `mos-mqtt-broker` `mos-busybox` `mos-system` `mos-ca-trust` `mos-profile-prod` |
+| **cx3576 only** | **4** | `mos-board-cx3576`, `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` |
+| **virt-arm64 only** | **2** | `mos-board-virt-arm64`, `mos-kernel-virt-arm64` |
+
+cx3576 resolves 15 packages, virt-arm64 13. The shared 11 are the same `.deb`
+files out of the same arm64 pool — the same aarch64 binaries, not a second
+compilation of the same source.
+
+The three radio packages are selected by `BOARD_RADIOS`, which cx3576 declares
+as `"wifi bluetooth"` and this board declares empty. **That declaration is
+correct and is not to be changed**: a QEMU `virt` machine has no radio, and
+inventing one would be a false statement in a board definition. The consequence
+is simply that the radio path is outside what this board can test.
+
+#### The kernels are NOT the same, and the pairing is not the one architecture suggests
+
+| board | kernel source | version |
+|---|---|---|
+| **cx3576** | `github.com/armbian/linux-rockchip.git` @ `c6157104418d012823413c02f9222f3fe123dd25` — a **vendor tree**, plus the two patches in `boards/cx3576/bsp/kernel/patches/` | **6.1.115** (`KERNEL_EXPECT` in its Dockerfile) |
+| **x64** | mainline stable, built in tree | **v6.12.107** |
+| **virt-arm64** | mainline stable, built in tree | **v6.12.107**, the same tag *and* the same `KERNEL_SHA256` (`ee126cabb1ce…`) as x64 |
+
+So on the kernel axis **virt-arm64 and x64 are the twins and cx3576 is the
+outlier** — same architecture as this board, eleven stable series away
+(6.1 → 6.12) and from a different tree entirely. "Same architecture" does not
+imply "same kernel-facing behaviour", and nothing here should be read as if it
+did.
+
+**This is a fact to document, not a defect to close.** The obvious reaction is
+to make this board track cx3576's 6.1 vendor tree so the comparison is closer;
+that would be wrong. A mainline kernel is what a QEMU `virt` machine is for, it
+is what `CONFIG_DM_INIT` and the no-initrd boot contract need, and matching
+x64's pin keeps the two in-tree kernel builds on one tag — which is what
+`versions.env`'s one-thing-at-a-time rule asks for.
+
+#### Transfers
+
+The userspace behaviour of the shared 11. These are the same aarch64 binaries
+and they talk POSIX and systemd rather than kernel internals:
+
+- the whole apid API surface, and mosd's reconcilers other than the radios;
+- the update state machine — install, mark, confirm, rollback bookkeeping —
+  and RAUC's install and mark path;
+- **wired** networking reconciliation, and the MQTT broker;
+- the container path as far as userspace drives it;
 - **PLAN-071 U10's bad-bundle cycle** — bad bundle, automatic install,
-  fallback, suppression — as far as RAUC's own decisions and mosd's reaction to
+  fallback, suppression — as far as RAUC's decisions and mosd's reaction to
   them are concerned. This is the item the board was built to unblock.
 
-**Does not transfer.** Everything the boot chain owns, which is precisely what
-the two boards do *not* share:
+#### Does not transfer, in three groups
 
-- the **U-Boot A/B handshake** and its attempt counters. cx3576 counts attempts
-  in a redundant U-Boot environment; this board cannot, because RAUC refuses
-  boot-attempts under the grub backend at all. A fallback observed here is
-  GRUB's `ORDER`/`_OK`/`_TRY` contract, not U-Boot's.
-- **SPL and the loader at sector 64**, the maskrom recovery path, and every
-  consequence of the raw-blob partition. This board has no loader partition.
-- the **device tree**, and everything reached through it: the Rockchip UART at
-  `ttyFIQ0`, the AIC8800 radios, CAN, the USB gadget, the burned MAC, the
-  status LED, the watchdog.
-- **firmware and vendor blobs.** cx3576 boots through a vendor chain; this
-  board boots through AAVMF, which is the emulator's.
-- **timing and any real-time claim.** A TCG guest with no KVM is not a
-  measurement of anything the device does per second.
+**1. The boot chain.** The U-Boot A/B handshake and its attempt counters
+(cx3576 counts attempts in a redundant U-Boot environment; this board cannot,
+because RAUC refuses boot-attempts under the grub backend at all), SPL and the
+loader at sector 64, maskrom recovery, the device tree, the `ttyFIQ0` serial
+console, and the watchdog. A fallback observed here is GRUB's
+`ORDER`/`_OK`/`_TRY` contract, not U-Boot's.
 
-The rule that falls out: a `virt-arm64` result is evidence about **mos**, and a
-cx3576 bench result is evidence about **the board**. Where a qualification row
-names a boot-chain or peripheral fact, `virt-arm64` cannot close it and the
-dossier's own row must stay `not tested` until hardware says otherwise.
+**2. The radio path.** `mos-wifi`, `mos-wifi-ap` and `mos-bluetooth` are **not
+in this board's resolution at all**, so nothing about them is exercised here:
+not `wifi_ap.rs` or `wifi_client.rs`, not their atomic config writes, not the
+key store, not the permission `systemd-network` needs to read it, and not the
+AIC8800 firmware load. This is the group whose failures are least visible from a
+unit test, which is exactly why it is named rather than left implied.
+
+**3. Anything whose behaviour is the kernel's.** dm-verity, overlayfs, squashfs,
+netfilter/nftables, cgroup v2, and the container runtime's kernel interface.
+This board demonstrates them on **mainline 6.12.107**; the device runs
+**6.1.115 from a vendor tree**. A green here is evidence about 6.12.
+
+The example worth spelling out, because it is the one that looks like it
+transfers: `make os-netavark-kernel-test` passes 121/121 **with this board
+included**. That gate reads kernel *configuration* — it asserts symbols are
+`=y`. It is not runtime evidence, and two kernels that both satisfy the same
+`=y` floor can still differ in behaviour across eleven stable series and a
+vendor patch set. A configuration assertion is not a behavioural one.
+
+#### The rule
+
+A `virt-arm64` result is evidence about **mos**; a cx3576 bench result is
+evidence about **the board and its kernel**. Where a qualification row names a
+boot-chain fact, a radio, or a kernel behaviour, `virt-arm64` cannot close it,
+and the dossier's row stays `not tested` until hardware says otherwise.
 
 ## Risks
 

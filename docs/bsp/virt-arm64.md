@@ -114,9 +114,14 @@ dm-verity root from `dm-mod.create=` and mounts `/dev/dm-0`.
 
 ## Artifact digests
 
-- **None recorded.** No image has been assembled for this board: PLAN-085 slice
-  4 is gated on the arm64 compose work landing, and this dossier is not going to
-  carry a digest for an artifact that does not exist.
+- The verity root hash of the composed rootfs, which is the digest the boot
+  chain actually anchors to:
+  `a9061bc8dac995aba1cce922f92febc684c72011b1534c2d0afc8b8644e6cab0`
+  (composed 2026-09-06 from the pool at tree stamp `661063a3b305`).
+- The image itself is NOT given a digest here. It carries an epoch in its
+  filename and `_out/` is per-checkout, so a hash recorded in this file would
+  describe one machine's build rather than the board. The verity root hash
+  above is the reproducible one: it is a function of the composed root.
 - What IS pinned and checkable today: the kernel source
   (`KERNEL_SHA256=ee126cabb1ce...` over `git archive` of `v6.12.107`), the
   builder image (`IMAGE_UBUNTU_2404`), the assembly image
@@ -126,8 +131,16 @@ dm-verity root from `dm-mod.create=` and mounts `/dev/dm-0`.
 
 ## Known limitations
 
-- **Nothing has been booted.** The board builds; no image has been assembled and
-  no suite has run against one. Every runtime row below is `not tested`.
+- **Nothing has been booted yet.** The board composes, assembles and passes the
+  image contract; what has not happened is a boot. Every row that needs a
+  running guest is still `not tested`.
+- **It is the largest of the three roots: 430 MB, against cx3576's 379 and
+  x64's 292.** Almost all of the difference is one package —
+  `mos-kernel-virt-arm64` at 119.5 MB against roughly 25 MB for x64's. arm64
+  has a single `defconfig` covering every arm64 platform, so it resolves 1134
+  modules; this machine loads virtio and nothing else. Trimming the module set
+  is a kernel-configuration change with its own review and is deliberately not
+  folded into the change that first composed the board.
 - **No KVM, ever, on this host class.** arm64 guests here run under TCG, so this
   board is materially slower than x64 and is not a substitute for it where speed
   matters. The apid-api harness's timeouts for this board are to be set from a
@@ -176,9 +189,9 @@ as a runtime `pass`.
 | Kernel builds from the pinned source and recorded config | pass | 2026-09-06 | `make virt-arm64-kernel` — the config diff, the `=y` floor over both fragments, and the compiled-tree verity check |
 | Container-network kernel floor | pass | 2026-09-06 | `make os-netavark-kernel-test` — 121/121, this board included |
 | Package set resolves and leaks no other board's packages | pass | 2026-09-06 | `make os-rootfs-manifest-test` — 44/44 |
-| Root composes | not tested | — | blocked: arm64 compose is owned by RFCT-334 (PLAN-085 slice 4) |
-| Image assembles | not tested | — | needs the composed root |
-| Image contract (`verify --board virt-arm64`) | not tested | — | needs the assembled image |
+| Root composes | pass | 2026-09-06 | `MOS_BOARD=virt-arm64 bash rootfs/build.sh` — 430 MB installed, 13 packages resolved, verity payload 123 MiB |
+| Image assembles | pass | 2026-09-06 | `bash build/run.sh --mkimage-uefi --board virt-arm64` — 1938 MiB, 9 partitions, ESP 129021 FAT32 clusters |
+| Image contract (`verify --board virt-arm64`) | pass | 2026-09-06 | `bash verify/run.sh --verify --board virt-arm64` — 313/313, 22 skipped (each named; the U-Boot-only assertions) |
 | Cold boot to userspace in QEMU | not tested | — | needs the assembled image (PLAN-085 slice 5) |
 | apid answers over a real socket | not tested | — | needs the assembled image; the harness is board-parameterised in PLAN-085 slice 5 |
 | A/B switch and update | not tested | — | needs the assembled image; no suite in this tree exercises A/B fallback through the GRUB path on any board |
