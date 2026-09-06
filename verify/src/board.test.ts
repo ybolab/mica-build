@@ -129,13 +129,13 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.cmdlineArgs).toBe('console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 142 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 143 assignments', () => {
     expect(cx3576.faults).toEqual([])
     expect(cx3576.env.duplicates).toEqual([])
     // If this number moves, the board definition gained or lost a key. That is
     // a deliberate act; update it deliberately.
-    expect(cx3576.env.assignments.length).toBe(142)
-    expect(cx3576.env.values.size).toBe(142)
+    expect(cx3576.env.assignments.length).toBe(143)
+    expect(cx3576.env.values.size).toBe(143)
   })
 })
 
@@ -221,11 +221,11 @@ describe('x64 — the GRUB board', () => {
     expect(x64.cmdlineArgs).toBe('console=tty0 console=ttyS0,115200 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 115 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 116 assignments', () => {
     expect(x64.faults).toEqual([])
     expect(x64.env.duplicates).toEqual([])
-    expect(x64.env.assignments.length).toBe(115)
-    expect(x64.env.values.size).toBe(115)
+    expect(x64.env.assignments.length).toBe(116)
+    expect(x64.env.values.size).toBe(116)
   })
 })
 
@@ -323,9 +323,10 @@ describe('the model reports, and the parser refuses', () => {
 
 describe('loading every board at once, which is what a lint does', () => {
   test('loadBoards reads them in the order it is given, each with its own identity', () => {
-    const both = loadBoards(BOARDS_DIR, ['cx3576', 'x64'])
-    expect(both.map(b => b.name)).toEqual(['cx3576', 'x64'])
-    expect(both.map(b => b.partitions.length)).toEqual([11, 9])
+    const both = loadBoards(BOARDS_DIR, ['cx3576', 'virt-arm64', 'x64'])
+    expect(both.map(b => b.name)).toEqual(['cx3576', 'virt-arm64', 'x64'])
+    // 11 for the U-Boot board (loader + the uenv pair), 9 for each UEFI one.
+    expect(both.map(b => b.partitions.length)).toEqual([11, 9, 9])
     // Separate models, not one environment that let the first board's keys
     // satisfy the second's -- which is why the retired shell lint sourced each
     // one in its own subshell, and why loadBoard() shares no state between files.

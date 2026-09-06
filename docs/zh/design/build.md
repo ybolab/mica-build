@@ -57,7 +57,7 @@
 | 加上 `bash` 和 `make` | 五道文档门全绿 |
 | `make os-layout-lint` | `RESULT: PASS (28/28 checks)` |
 | `make os-verify-test` | `RESULT: PASS (1270/1270 tests)`，bun 来自固定镜像 |
-| `bash build/run.sh --mkimage-x64` | 镜像装配完成，1938 MiB |
+| `bash build/run.sh --mkimage-uefi --board x64` | 镜像装配完成，1938 MiB |
 | `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
 
 一台裸主机目前还做不到的一件事：合成 rootfs。`build/run.sh --build-rootfs` 要驱动
@@ -195,7 +195,7 @@ ed25519 包签名密钥的那个生产者——现在在 `localhost/mos-build-op
 
 | 产物 | 由谁生成 | 是什么 |
 |---|---|---|
-| `<board>-mos-<epoch>.img` 与 `<board>-mos-latest.img` | `bash build/run.sh --mkimage-cx3576`（cx3576）或 `--mkimage-x64` | 可直接烧写的整盘 A/B 镜像 |
+| `<board>-mos-<epoch>.img` 与 `<board>-mos-latest.img` | `bash build/run.sh --mkimage-cx3576`（cx3576）或 `--mkimage-uefi --board x64` | 可直接烧写的整盘 A/B 镜像 |
 | `rootfs-verity.img` + `rootfs-verity.env` | `rootfs/build.sh` | 一个 rootfs 槽：squashfs 加 dm-verity 哈希树，以及内核命令行需要的参数 |
 | RAUC 更新包 | `bash build/run.sh --bundle --board <board>` | 给已经在跑 mos 的设备用的签名更新 |
 
@@ -398,7 +398,7 @@ MOS_BOARD=x64 bash pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash pkgs/podman/build.sh
 make os-debs                                   # 包仓库，以及它的索引
 MOS_BOARD=x64 bash rootfs/build.sh       # 等价于 make os-rootfs-x64-composed
-bash build/run.sh --mkimage-x64
+bash build/run.sh --mkimage-uefi --board x64
 bash verify/run.sh --verify --board x64
 bash build/run.sh --bundle --board x64
 ```

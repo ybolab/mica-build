@@ -191,7 +191,7 @@ producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 - **`x64`** — generic UEFI x86_64, the QEMU and CI baseline. Its `bsp/` builds
   a mainline kernel and nothing else: the firmware is the boot chain, so no
   bootloader is compiled. Its bootloader backend is `grub` and its assembler is
-  `build/src/mkimage-x64.ts`.
+  `build/src/mkimage-uefi.ts`.
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared

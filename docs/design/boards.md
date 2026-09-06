@@ -464,7 +464,7 @@ merge the same shared fragment before `olddefconfig`. Board intake tiers:
    `build/src/stages-cli.ts`, which "decides the order and the tags"
    (`build/src/stages-cli.ts`)); the board's own content ships as
    `mos-board-<name>`. Image assembled by
-   `bash build/run.sh --mkimage-cx3576` or `--mkimage-x64`, green against
+   `bash build/run.sh --mkimage-cx3576` or `--mkimage-uefi --board x64`, green against
    `bash verify/run.sh --verify --board <name>`, then apid liveness on
    hardware — `/healthz`, which proves only that the apid process is listening,
    not that mosd or any other service on the board is healthy.

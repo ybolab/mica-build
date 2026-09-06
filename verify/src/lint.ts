@@ -82,6 +82,7 @@ export const REQUIRED_BOARD_KEYS = [
   'BOARD_CMDLINE_ARGS',
   'BOARD_SIZE_BUDGET_MB',
   'BOARD_HAS_STATUS_LED',
+  'BOARD_RELEASE_TARGET',
   'MOS_ARCH',
 ] as const
 
@@ -427,7 +428,22 @@ function lintBoardKeys(r: Recorder, b: Board): void {
     r.fail(`BOARD_HAS_STATUS_LED is '${led}'; it must be 0 or 1`)
   }
 
-  if (ok) r.pass(`declares all ${REQUIRED_BOARD_KEYS.length} board-level keys, and BOARD_HAS_STATUS_LED is 0 or 1`)
+  // BOARD_RELEASE_TARGET decides whether the release path serves this board
+  // at all, so a third value is not a shrug -- it is a board whose release
+  // status nothing can act on. Refused here rather than read as truthy by
+  // whichever consumer looks at it first.
+  const rel = b.releaseTarget
+  if (rel !== undefined && rel !== '' && rel !== '0' && rel !== '1') {
+    ok = false
+    r.fail(`BOARD_RELEASE_TARGET is '${rel}'; it must be 0 (a test target) or 1 (has a release path)`)
+  }
+
+  if (ok) {
+    r.pass(
+      `declares all ${REQUIRED_BOARD_KEYS.length} board-level keys, and BOARD_HAS_STATUS_LED `
+      + 'and BOARD_RELEASE_TARGET are each 0 or 1',
+    )
+  }
 }
 
 /**

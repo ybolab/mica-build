@@ -56,38 +56,177 @@ export const CX3576_ASSEMBLY: Toolset = {
 }
 
 /**
- * x64's assembly toolset.
+ * The three facts that differ between one UEFI board and another, keyed on the
+ * board's MOS_ARCH.
  *
- * The package list is the x64 assembly contract's, verbatim:
+ * A TABLE AND NOT A `case`, and only three rows' worth of content, because
+ * these are the entire architecture-dependence of the UEFI assembler. Everything
+ * else it does -- the partition arithmetic, the FAT staging, the mtime pinning,
+ * the grubenv contract -- is read from the board definition and is identical on
+ * both boards. src/mkimage-uefi.ts asserts that a board's own
+ * ESP_REQUIRED_FILES names the same `efiFile` this table does, so the two
+ * statements cannot drift: a board declaring MOS_ARCH=arm64 alongside
+ * BOOTX64.EFI is refused rather than assembled into an image the firmware
+ * will not boot.
+ *
+ * The amd64 row is the x64 assembly contract's package list, VERBATIM:
  *   apt-get install -y -qq --no-install-recommends gdisk dosfstools mtools \
  *       e2fsprogs grub-efi-amd64-bin grub-common
- * A different base image from cx3576's ON PURPOSE: that script's header records
- * that BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in its
- * container, and grub-efi-amd64-bin is a Debian package.
+ * It is spelled out rather than derived from the arm64 row because that
+ * verbatim-ness is what the byte-identity gate rests on: BOOTX64.EFI is only as
+ * reproducible as the grub-efi-amd64-bin in its container.
+ *
+ * The arm64 row substitutes exactly one package. grub-efi-arm64-bin is
+ * `Architecture: arm64` and therefore not in an amd64 index, so the assembly
+ * image adds the foreign architecture before installing it -- see
+ * `aptPreamble` below. That works because the package is DATA: 234 module
+ * files under /usr/lib/grub/arm64-efi and no executable. The tool that reads
+ * them, grub-mkstandalone, is the host's own amd64 binary out of grub-common,
+ * and it produced a byte-identical BOOTAA64.EFI across two runs when this was
+ * measured (PLAN-085).
  */
-export const X64_ASSEMBLY: Toolset = {
-  key: 'x64-assembly',
-  imageKey: 'IMAGE_DEBIAN_TRIXIE',
-  manager: 'apt',
-  packages: ['gdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'grub-efi-amd64-bin', 'grub-common'],
-  // grub-editenv sits beside grub-mkstandalone because the x64 assembly contract runs
-  // both, from different packages -- grub-mkstandalone from grub-common, the
-  // EFI target from grub-efi-amd64-bin -- so "grub is installed" is not one
-  // fact. A grubenv never created is a 0-byte file the size guard catches; an
-  // absent grub-editenv is "command not found" against whichever step ran first.
-  //
-  // cp, find and touch are asserted for the reason they are in CX3576_ASSEMBLY,
-  // but the two assemblers stage different things: the x64 assembly contract runs
-  // `cp -a` of the factory /var on the host (line 161, outside its docker run)
-  // and `cp`, `find ... -exec touch` and the seed stamp inside; the cx3576 assembly contract
-  // runs all of it inside. src/mkimage-x64.ts keeps each on its own shell's side
-  // because `cp -a` is `--preserve=all`, xattrs included, mke2fs -d copies
-  // xattrs into the image, and this host runs SELinux while neither container
-  // does; moving that step changes EPHEMERAL's bytes, caught only by that gate.
-  tools: [
-    'sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs',
-    'grub-mkstandalone', 'grub-editenv', 'dd', 'truncate', 'cp', 'find', 'touch',
-  ],
+export interface UefiArch {
+  /** grub-mkstandalone's --format. */
+  readonly grubFormat: string
+  /** The removable-media path's leaf name, which the board also declares. */
+  readonly efiFile: string
+  /** The package carrying that target's module tree. */
+  readonly grubPackage: string
+  /** Foreign architecture to enable before apt runs, when the package needs one. */
+  readonly foreignArch?: string
+}
+
+export const UEFI_ARCHES: Readonly<Record<string, UefiArch>> = {
+  amd64: {
+    grubFormat: 'x86_64-efi',
+    efiFile: 'BOOTX64.EFI',
+    grubPackage: 'grub-efi-amd64-bin',
+  },
+  arm64: {
+    grubFormat: 'arm64-efi',
+    // Qualified `:arm64` explicitly rather than left to apt's resolution. With
+    // the foreign architecture enabled there is no amd64 candidate and apt
+    // would pick the arm64 one anyway -- but "would anyway" is a resolution
+    // that can change, and the qualifier states which architecture's module
+    // tree the EFI binary is built from. That is the one input the byte
+    // identity of BOOTAA64.EFI rests on.
+    grubPackage: 'grub-efi-arm64-bin:arm64',
+    efiFile: 'BOOTAA64.EFI',
+    foreignArch: 'arm64',
+  },
+}
+
+/** A row of UEFI_ARCHES with the key it was found under. */
+export interface ResolvedUefiArch extends UefiArch {
+  readonly name: string
+}
+
+/**
+ * The architecture facts for a board, checked against what the board itself says.
+ *
+ * TWO STATEMENTS, MADE TO AGREE, rather than one derived from the other. The
+ * table above knows that arm64 means BOOTAA64.EFI; the board declares the same
+ * file in ESP_REQUIRED_FILES, because that key is also what the image contract
+ * asserts against the assembled ESP. Deriving either from the other would
+ * remove the disagreement this catches: a board copied from x64 and switched to
+ * MOS_ARCH=arm64 while still declaring BOOTX64.EFI assembles an image whose ESP
+ * holds an aarch64 binary under the x86 removable-media name, which no firmware
+ * boots and no check in this tree notices -- the same shape as the
+ * ESP_START_SECTOR/ESP_START_MIB agreement verify/src/lint.ts enforces.
+ *
+ * Structural parameter rather than an import of Geometry: this module is
+ * imported BY the assemblers and importing their geometry back would be a
+ * cycle for the sake of one field.
+ */
+export function uefiArchFor(geometry: {
+  readonly path: string
+  readonly board: {
+    readonly name: string
+    readonly arch: string | undefined
+    readonly espRequiredFiles: readonly string[] | undefined
+  }
+}): ResolvedUefiArch {
+  const { name: boardName, arch, espRequiredFiles } = geometry.board
+  if (arch === undefined || arch === '') {
+    throw new Error(
+      `${geometry.path} declares no MOS_ARCH, so the UEFI assembler has no grub target and no EFI `
+      + 'file name for it. The architecture is a board fact and is not derived from the board name.',
+    )
+  }
+  const spec = UEFI_ARCHES[arch]
+  if (spec === undefined) {
+    throw new Error(
+      `board '${boardName}' declares MOS_ARCH=${arch}, which the UEFI arch table does not know; `
+      + `known: ${Object.keys(UEFI_ARCHES).sort().join(', ')}`,
+    )
+  }
+  const wanted = `EFI/BOOT/${spec.efiFile}`
+  if (espRequiredFiles === undefined) {
+    throw new Error(
+      `board '${boardName}' declares no ESP_REQUIRED_FILES, so nothing states which EFI binary its `
+      + `firmware boots and the assembler's ${spec.efiFile} would go unchecked`,
+    )
+  }
+  if (!espRequiredFiles.includes(wanted)) {
+    throw new Error(
+      `board '${boardName}' is MOS_ARCH=${arch}, whose removable-media path is ${wanted}, but its `
+      + `ESP_REQUIRED_FILES says ${JSON.stringify(espRequiredFiles.join(' '))}. One of the two is `
+      + 'wrong, and an image built past this disagreement carries an EFI binary under a name the '
+      + 'firmware does not look for -- which presents as a machine that boots to a UEFI shell.',
+    )
+  }
+  return { ...spec, name: arch }
+}
+
+/**
+ * The UEFI assembly toolset for one architecture.
+ *
+ * A FUNCTION rather than one toolset carrying both grub targets: adding
+ * grub-efi-arm64-bin to the container that builds BOOTX64.EFI would change the
+ * package set behind an artifact under a byte-identity gate, for no reason
+ * other than saving a parameter. Each board's assembly container installs the
+ * one grub target it uses.
+ *
+ * A different base image from cx3576's ON PURPOSE, on both architectures: the
+ * grub EFI target is a Debian package and the reproducibility of the EFI binary
+ * is the reproducibility of that package.
+ */
+export function uefiAssembly(arch: string): Toolset {
+  const spec = UEFI_ARCHES[arch]
+  if (spec === undefined) {
+    throw new Error(
+      `no UEFI assembly toolset for MOS_ARCH '${arch}'; known: ${Object.keys(UEFI_ARCHES).sort().join(', ')}. `
+      + 'A board whose architecture is not in this table has no grub target and no EFI file name, '
+      + 'so the assembler would guess both.',
+    )
+  }
+  return {
+    key: `uefi-assembly-${arch}`,
+    imageKey: 'IMAGE_DEBIAN_TRIXIE',
+    manager: 'apt',
+    foreignArch: spec.foreignArch,
+    packages: ['gdisk', 'dosfstools', 'mtools', 'e2fsprogs', spec.grubPackage, 'grub-common'],
+    // grub-editenv sits beside grub-mkstandalone because the assembler runs
+    // both, from different packages -- grub-mkstandalone from grub-common, the
+    // EFI target from the grub-efi-<arch>-bin above -- so "grub is installed"
+    // is not one fact. A grubenv never created is a 0-byte file the size guard
+    // catches; an absent grub-editenv is "command not found" against whichever
+    // step ran first.
+    //
+    // cp, find and touch are asserted for the reason they are in
+    // CX3576_ASSEMBLY, but the two assemblers stage different things: this one
+    // runs `cp -a` of the factory /var on the HOST (outside its docker run) and
+    // `cp`, `find ... -exec touch` and the seed stamp inside; the cx3576
+    // assembly contract runs all of it inside. src/mkimage-uefi.ts keeps each
+    // on its own shell's side because `cp -a` is `--preserve=all`, xattrs
+    // included, mke2fs -d copies xattrs into the image, and this host runs
+    // SELinux while neither container does; moving that step changes
+    // EPHEMERAL's bytes, caught only by the byte-identity gate.
+    tools: [
+      'sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs',
+      'grub-mkstandalone', 'grub-editenv', 'dd', 'truncate', 'cp', 'find', 'touch',
+    ],
+  }
 }
 
 /**

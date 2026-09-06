@@ -101,6 +101,14 @@ export interface Board {
   readonly grubenv: string | undefined
   readonly bootAttemptsDefault: number | undefined
   readonly hasStatusLed: string | undefined
+  /**
+   * Whether this board has a release path (`BOARD_RELEASE_TARGET`).
+   *
+   * Kept as the raw string, like `hasStatusLed`: the model reports what
+   * the file says, and the lint decides whether it is one of the two
+   * values a reader may act on.
+   */
+  readonly releaseTarget: string | undefined
   readonly sizeBudgetMb: number | undefined
   readonly cmdlineArgs: string | undefined
   readonly firmwareFiles: readonly string[] | undefined
@@ -240,6 +248,7 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
     grubenv: get('RAUC_GRUBENV'),
     bootAttemptsDefault: int('BOOT_ATTEMPTS_DEFAULT'),
     hasStatusLed: get('BOARD_HAS_STATUS_LED'),
+    releaseTarget: get('BOARD_RELEASE_TARGET'),
     sizeBudgetMb: int('BOARD_SIZE_BUDGET_MB'),
     cmdlineArgs: get('BOARD_CMDLINE_ARGS'),
     firmwareFiles: list('BOARD_FIRMWARE_FILES'),

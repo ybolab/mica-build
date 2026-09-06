@@ -24,7 +24,7 @@ Who reads it:
 
 | Consumer | What it reads |
 |---|---|
-| `build/src/mkimage-cx3576.ts`, `build/src/mkimage-x64.ts` | the whole layout: partitions, offsets, boot-slot content, naming |
+| `build/src/mkimage-cx3576.ts`, `build/src/mkimage-uefi.ts` | the whole layout: partitions, offsets, boot-slot content, naming |
 | `rootfs/build.sh` | `MOS_ARCH`, `BOARD_CMDLINE_ARGS`, `BOARD_RADIOS`, `VERITY_SALT`, `FILE_MTIME`, partition GUIDs, `BOARD_SIZE_BUDGET_MB` |
 | `pkgs/rauc/render-config.sh` + `pkgs/rauc/system.conf.in` | slot devices, `RAUC_BOOTLOADER`, boot-attempt limits |
 | `rootfs/overlay/etc/fw_env.config.in` | `UENV_*_OFFSET_BYTES`, `UENV_SIZE_BYTES` (U-Boot env access from Linux) |

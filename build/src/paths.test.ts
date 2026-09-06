@@ -76,11 +76,11 @@ describe('every ascent is anchored, and the neighbours miss', () => {
 })
 
 describe('the boards are discovered, not written down', () => {
-  test('both shipped boards are found, and by reading the directory', () => {
+  test('every shipped board is found, and by reading the directory', () => {
     const found = shippedBoards()
     // Asserted as a SET rather than as ">= 2": a discovery that returned the
     // right count of the wrong names would satisfy a count.
-    expect(found).toEqual(['cx3576', 'x64'])
+    expect(found).toEqual(['cx3576', 'virt-arm64', 'x64'])
     for (const board of found) {
       expect(`${board}: ${existsSync(boardEnvPath(board))}`).toBe(`${board}: true`)
     }

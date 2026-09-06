@@ -16,6 +16,7 @@ import {
   builderImagesFrom,
   gateReleaseDir,
   RELEASE_CHANNELS,
+  requireReleaseTarget,
 } from './release-manifest.ts'
 
 /** The board a release is cut for when nothing says otherwise, as in bundle-cli. */
@@ -168,7 +169,12 @@ export function defaultReleaseDir(board: string): string {
 
 export async function main(argv: readonly string[]): Promise<number> {
   const options = parseArgs(argv, process.env)
-  requireBoardEnv(options.board)
+  const boardEnv = requireBoardEnv(options.board)
+  // BEFORE either subcommand, and before any path is resolved: a board with
+  // no release path has no release directory to assemble and none to gate,
+  // and the refusal should name that rather than surface as a missing
+  // evidence file three steps later.
+  requireReleaseTarget(options.board, loadGeometry(options.board).board.releaseTarget, boardEnv)
 
   if (options.cmd === 'gate') {
     const dir = options.dir ?? defaultReleaseDir(options.board)

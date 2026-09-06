@@ -63,7 +63,7 @@ done
 # The VALUES, not `-e NAME`. Layout keys are set, not exported, so the bare
 # form passes nothing and the container fails on an unbound variable while
 # forty-nine others are equally absent. Same trap as the x64 assembler's
-# (build/src/mkimage-x64.ts).
+# (build/src/mkimage-uefi.ts).
 # The base, from build-env/images.env, resolved the way every container in
 # this tree resolves one. This one writes INTO the STATE partition of a disk
 # image with mke2fs and debugfs, so which e2fsprogs it gets decides what the

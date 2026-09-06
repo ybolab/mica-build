@@ -1,27 +1,36 @@
-// X64 board (amd64 industrial PC, UEFI firmware) A/B GPT disk-image assembler:
-// the A/B layout, nine partitions.
+// The UEFI A/B GPT disk-image assembler: nine partitions, for any board whose
+// firmware finds an ESP and hands over to GRUB.
 //
 // One static ESP that GRUB is loaded from, a FAT32 boot partition per slot, two
 // raw squashfs+dm-verity rootfs slots and the meta/state/ephemeral/data ext4
-// partitions. Every layout constant comes from boards/x64/board.env through
-// verify's typed model and this package's geometry; nothing is duplicated
-// here and nothing re-reads that file.
+// partitions. Every layout constant comes from boards/<board>/board.env through
+// verify's typed model and this package's geometry; nothing is duplicated here
+// and nothing re-reads that file.
 //
-// This is intentionally not src/mkimage-cx3576.ts with a board parameter. The
-// cx3576 assembler is U-Boot-specific: it has a
-// loader partition at a fixed sector, a redundant environment pair, a compiled
-// boot.scr and geometry assertions about all three, none of which exists on a
-// UEFI machine, and threading conditionals through it would put a second
-// board's boot chain inside the first board's assertions. What the two do share
-// is shared as files and modules -- boards/*/board.env, src/geometry.ts,
-// src/pin-seeded-times.ts, src/tools/ -- and not as a `case`.
+// NAMED FOR WHAT IT IS RATHER THAN FOR ONE BOARD. This was src/mkimage-x64.ts
+// while x64 was the only UEFI board. virt-arm64 shares it exactly, differing in
+// three facts -- the grub target, the removable-media file name and the package
+// carrying the module tree -- which src/toolsets.ts holds as a table keyed on
+// MOS_ARCH and checks against the board's own ESP_REQUIRED_FILES. A second copy
+// of this file would have been two copies of one assembler, free to agree with
+// each other while the product moved past both.
+//
+// This is still intentionally not src/mkimage-cx3576.ts with a board parameter,
+// and that is a different question with a different answer. The cx3576
+// assembler is U-Boot-specific: it has a loader partition at a fixed sector, a
+// redundant environment pair, a compiled boot.scr and geometry assertions about
+// all three, none of which exists on a UEFI machine, and threading conditionals
+// through it would put a second board's boot chain inside the first board's
+// assertions. What THOSE two share is shared as files and modules --
+// boards/*/board.env, src/geometry.ts, src/pin-seeded-times.ts, src/tools/ --
+// and not as a `case`. What the two UEFI boards share is this file.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { $ } from 'bun'
 import { loadGeometry, type Geometry } from './geometry.ts'
-import { cmdlineFacts, earlyCfg, GRUB_MODULES, renderGrubCfg, verityFactsFrom, type VerityFacts } from './grub-x64.ts'
-import { decideSlot, deriveLayout, gptSpecFor, placementMib, type DerivedLayout, type SlotDecision } from './layout-x64.ts'
+import { cmdlineFacts, earlyCfg, GRUB_MODULES, renderGrubCfg, verityFactsFrom, type VerityFacts } from './grub-uefi.ts'
+import { decideSlot, deriveLayout, gptSpecFor, placementMib, type DerivedLayout, type SlotDecision } from './layout-uefi.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { pinSeededTimes } from './pin-seeded-times.ts'
 
@@ -29,14 +38,14 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 // decision that reaches the output bytes is fixed:
 //
 //   * the same pinned debian (IMAGE_DEBIAN_TRIXIE) out of the same apt package
-//     list -- BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in
-//     that image, the header note the x64 assembly contract opens with;
+//     list -- the EFI binary is only as reproducible as the grub-efi-<arch>-bin
+//     in that image, the header note the x64 assembly contract opens with;
 //   * grub-mkstandalone and grub-editenv run with the work directory as cwd and
 //     relative filenames, exactly as the shell's `cd /w` gives them. An
 //     absolute path handed to grub-mkstandalone is a string this assembler
 //     would be inventing, and the work directory is the one path that differs
 //     between the shell (_out/x64/.mkimage-work) and this
-//     (build/.work/mkimage-x64-*);
+//     (build/.work/mkimage-uefi-*);
 //   * the boot slots take one `mcopy -m` call per payload file each, in the
 //     order vmlinuz, cmdline.cfg, because that is the order the entries
 //     land in the FAT directory. The ESP takes one `mcopy -s -m` of a staged
@@ -53,7 +62,7 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 //   * sizes go to sgdisk in sectors, with `-a 2048` passed explicitly.
 //     `+131072S` and `+64M` are byte-identical at 512-byte sectors, and the
 //     alignment is x64's own GPT_ALIGN_SECTORS and the number sgdisk defaults
-//     to, which src/mkimage-x64.test.ts re-measures against a real sgdisk.
+//     to, which src/mkimage-uefi.test.ts re-measures against a real sgdisk.
 //
 // The determinism controls are board.env's -- fixed GPT GUIDs, fixed FAT volume
 // ids, fixed ext4 fs UUIDs, `mkfs.vfat --invariant`, every FAT entry staged
@@ -64,36 +73,47 @@ import { pinSeededTimes } from './pin-seeded-times.ts'
 // atime and ctime and no control over mke2fs touches them. Without them, two
 // assemblies of this image four minutes apart differ in nine MiB.
 import { Toolbox } from './toolbox.ts'
-import { X64_ASSEMBLY } from './toolsets.ts'
+import { uefiArchFor, uefiAssembly } from './toolsets.ts'
 import { dd, truncate } from './tools/dd.ts'
 import { mke2fs } from './tools/e2fsprogs.ts'
 import { FAT32_MIN_CLUSTERS, listFat, mcopy, mkfsVfat, readFatClusters } from './tools/mtools.ts'
 import { readPartition, verifyGpt, writeGpt, type GptPartitionInfo, type GptSpec } from './tools/sgdisk.ts'
 
-/** The board this assembler is for. One board, like the script it replaces. */
-export const BOARD = 'x64'
-
 /**
  * The producer of the rootfs-side inputs, named in every message about one.
  *
- * The BOARD IS A LITERAL in that sentence, not `${MOS_BOARD}`. Interpolating a
- * variable no board.env sets makes the one case with an actionable message die
- * on the unbound variable instead of printing it -- and a `${MOS_BOARD:-x64}`
- * default is wrong too, because a cx3576 left in the environment would name
- * the wrong board to build.
+ * A FUNCTION OF THE BOARD, not `${MOS_BOARD}` read from the environment. The
+ * board is decided by the caller and passed down, so a message never names a
+ * board other than the one being assembled -- a cx3576 left in the environment
+ * used to be able to do exactly that, which is why the predecessor spelled the
+ * board as a literal here. Parameterising it keeps that property while letting
+ * a second UEFI board exist.
  */
-export const ROOTFS_PRODUCER = `MOS_BOARD=${BOARD} bash rootfs/build.sh`
+export function rootfsProducer(board: string): string {
+  return `MOS_BOARD=${board} bash rootfs/build.sh`
+}
 
 /** The stamp that keeps mos-seed-var from racing every other unit that writes /var. */
 export const SEED_STAMP = '.mos-var-seeded'
 
 export interface AssemblyInputs {
+  /**
+   * Which UEFI board is being assembled.
+   *
+   * REQUIRED, with no default. Two boards use this assembler and a default
+   * would be one of them: a caller that forgot the field would silently
+   * build the other board's layout under this board's output name. The
+   * predecessor avoided that by hardcoding one board, and parameterising it
+   * without requiring the field would reintroduce exactly what the hardcode
+   * was protecting.
+   */
+  readonly board: string
   readonly rootfsVerityImg: string
   readonly rootfsVerityEnv: string
   readonly kernel: string
   readonly factoryVar: string
   readonly imgOut: string
-  /** Defaults to the tree's own boards/x64/grub.cfg. */
+  /** Defaults to the tree's own boards/<board>/grub.cfg. */
   readonly grubCfgIn?: string
 }
 
@@ -137,7 +157,7 @@ export function mountsFor(inputs: AssemblyInputs, workDir: string): string[] {
 }
 
 /**
- * The four inputs the x64 assembly contract requires before it does anything.
+ * The four inputs the UEFI assembly contract requires before it does anything.
  *
  * One sentence, four files, in the shell's order -- and the sentence names the
  * script that MAKES them, because "rootfs-verity.img not found" is only
@@ -186,7 +206,7 @@ export async function stageFactoryVarOnHost(source: string, destination: string)
  * total clusters. On a filesystem nothing has been copied into, free is total
  * minus the root directory's one cluster, so the comparison is conservative by
  * exactly one and correct where it stands -- and only there. Measured on a
- * 64 MiB ESP (src/mkimage-x64.test.ts re-measures it): free 129021 and total
+ * 64 MiB ESP (src/mkimage-uefi.test.ts re-measures it): free 129021 and total
  * 129022 immediately after mkfs.vfat, free 117119 once the ESP tree is staged.
  * Moving this after the mcopy -- the natural tidy-up during a port -- silently
  * turns a FAT-type check into a free-space check: it would refuse a valid FAT32
@@ -285,7 +305,7 @@ export function bootSlotFault(aList: readonly string[], bList: readonly string[]
  * the lesson src/mkimage-cx3576.ts records for cx3576.
  *
  * On this board a wrong alignment does not announce itself. Measured
- * (src/mkimage-x64.test.ts): `-a 4096` over the real x64 geometry moves the ESP
+ * (src/mkimage-uefi.test.ts): `-a 4096` over the real x64 geometry moves the ESP
  * from sector 2048 to 4096, prints "Information: Moved requested sector", and
  * exits 0, where on cx3576 the same flag makes sgdisk refuse the table with
  * exit 4 -- the relocation there would push uenv-b into boot-a and there is no
@@ -315,9 +335,9 @@ export function partitionFaults(spec: GptSpec, got: readonly GptPartitionInfo[])
   return faults
 }
 
-function requireFile(path: string): void {
+function requireFile(path: string, board: string): void {
   if (!existsSync(path) || !statSync(path).isFile()) {
-    throw new Error(`${path} not found. Build the root first: ${ROOTFS_PRODUCER}`)
+    throw new Error(`${path} not found. Build the root first: ${rootfsProducer(board)}`)
   }
 }
 
@@ -328,12 +348,21 @@ function requireFile(path: string): void {
  * comparing the two should be able to run the same broken input through both and
  * get the same sentence first.
  */
-export async function assembleX64(
+export async function assembleUefi(
   inputs: AssemblyInputs,
   options: AssembleOptions = {},
 ): Promise<AssembleResult> {
   const log = options.log ?? ((line: string) => console.log(line))
-  const geometry = options.geometry ?? loadGeometry(BOARD)
+  const geometry = options.geometry ?? loadGeometry(inputs.board)
+  // THE NAME COMES FROM inputs, THE NUMBERS FROM geometry, and they are allowed
+  // to disagree. `options.geometry` is an override -- the suite loads a board
+  // definition from a temp path with one value mutated, to drive a guard from
+  // the failing side -- so its board name is that temp directory's, not a
+  // board's. Deriving the identity from it sent the grub.cfg lookup to
+  // boards/<tempdir>/grub.cfg and turned the ESP cluster-floor case into a
+  // missing-input failure, which is a green-looking red: the assembly still
+  // threw, just not for the reason under test.
+  const board = inputs.board
   if (geometry.faults.length > 0) {
     throw new Error(
       `${geometry.path} has ${geometry.faults.length} unusable value(s), and an assembler cannot pick `
@@ -341,10 +370,12 @@ export async function assembleX64(
       + geometry.faults.map(f => `  ${f.key}=${JSON.stringify(f.value)} ${f.reason}`).join('\n'),
     )
   }
-  const grubCfgIn = inputs.grubCfgIn ?? join(BOARDS_DIR, BOARD, 'grub.cfg')
+  const grubCfgIn = inputs.grubCfgIn ?? join(BOARDS_DIR, board, 'grub.cfg')
+  // The architecture's three facts, and the board's own agreement with them.
+  const arch = uefiArchFor(geometry)
 
   // --- the five inputs, before anything is created.
-  for (const f of requiredInputs(inputs, grubCfgIn)) requireFile(f)
+  for (const f of requiredInputs(inputs, grubCfgIn)) requireFile(f, board)
 
   const verity = verityFactsFrom(readFileSync(inputs.rootfsVerityEnv, 'utf8'), inputs.rootfsVerityEnv)
   if (verity.salt.toLowerCase() !== geometry.veritySalt.toLowerCase()) {
@@ -357,18 +388,18 @@ export async function assembleX64(
     // current inputs carry the pinned salt.
     throw new Error(
       `${inputs.rootfsVerityEnv} salt '${verity.salt}' does not match the pinned VERITY_SALT `
-      + `'${geometry.veritySalt}' in ${geometry.path}; fix ${ROOTFS_PRODUCER}`,
+      + `'${geometry.veritySalt}' in ${geometry.path}; fix ${rootfsProducer(board)}`,
     )
   }
 
-  // --- geometry, from the payload's BYTE count. See src/layout-x64.ts on why
+  // --- geometry, from the payload's BYTE count. See src/layout-uefi.ts on why
   // this is not a MiB count.
   const payloadBytes = BigInt(statSync(inputs.rootfsVerityImg).size)
   const slot = decideSlot(geometry, payloadBytes)
   const layout = deriveLayout(geometry, slot.slotMib)
   const starts = placementMib(geometry, layout)
 
-  const workDir = makeWorkDir(`mkimage-${BOARD}`)
+  const workDir = makeWorkDir(`mkimage-${board}`)
   const ownToolbox = options.toolbox === undefined
   let tb: Toolbox | undefined
   try {
@@ -377,7 +408,7 @@ export async function assembleX64(
     if (!existsSync(inputs.factoryVar) || !statSync(inputs.factoryVar).isDirectory()) {
       throw new Error(
         `${inputs.factoryVar || '<unset>'} not found. The rootfs build exports it; run `
-        + `'${ROOTFS_PRODUCER}' first`,
+        + `'${rootfsProducer(board)}' first`,
       )
     }
     const factoryVarStage = join(workDir, 'factory-var')
@@ -411,7 +442,7 @@ export async function assembleX64(
     // than deciding which tools care. src/tools/e2fsprogs.ts also passes it per
     // mke2fs call, and the two agree because both read geometry.ext4.fakeTime.
     tb = options.toolbox ?? await Toolbox.open(
-      { ...X64_ASSEMBLY, env: { E2FSPROGS_FAKE_TIME: geometry.ext4.fakeTime } },
+      { ...uefiAssembly(arch.name), env: { E2FSPROGS_FAKE_TIME: geometry.ext4.fakeTime } },
       { mounts: mountsFor(inputs, workDir), cwd: workDir, announce: log },
     )
 
@@ -433,11 +464,11 @@ export async function assembleX64(
     writeFileSync(join(workDir, 'early.cfg'), earlyCfg(espFatLabel))
     await tb.must([
       'grub-mkstandalone',
-      '--format=x86_64-efi',
-      '--output=BOOTX64.EFI',
+      `--format=${arch.grubFormat}`,
+      `--output=${arch.efiFile}`,
       `--modules=${GRUB_MODULES.join(' ')}`,
       'boot/grub/grub.cfg=early.cfg',
-    ], { cwd: workDir, note: 'grub-mkstandalone could not build BOOTX64.EFI' })
+    ], { cwd: workDir, note: `grub-mkstandalone could not build ${arch.efiFile}` })
 
     await tb.must(['grub-editenv', 'grubenv', 'create'], { cwd: workDir, note: 'grub-editenv could not create grubenv' })
     await tb.must(['grub-editenv', 'grubenv', 'set', 'ORDER=A B'], { cwd: workDir, note: 'grub-editenv could not set ORDER' })
@@ -457,8 +488,8 @@ export async function assembleX64(
     const espStage = join(workDir, 'esp-stage')
     mkdirSync(join(espStage, 'EFI', 'BOOT'), { recursive: true })
     mkdirSync(join(espStage, 'EFI', 'mos'), { recursive: true })
-    await tb.must(['cp', join(workDir, 'BOOTX64.EFI'), join(espStage, 'EFI', 'BOOT', 'BOOTX64.EFI')], {
-      note: 'could not stage BOOTX64.EFI',
+    await tb.must(['cp', join(workDir, arch.efiFile), join(espStage, 'EFI', 'BOOT', arch.efiFile)], {
+      note: `could not stage ${arch.efiFile}`,
     })
     await tb.must(['cp', grubCfg, join(espStage, 'EFI', 'mos', 'grub.cfg')], { note: 'could not stage grub.cfg' })
     await tb.must(['cp', grubenv, join(espStage, 'EFI', 'mos', 'grubenv')], { note: 'could not stage grubenv' })

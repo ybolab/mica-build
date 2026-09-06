@@ -28,6 +28,7 @@
         "base",
         "mos-bluetooth",
         "mos-board-cx3576",
+        "mos-board-virt-arm64",
         "mos-mqtt-broker",
         "mos-mqttd",
         "mos-podman",

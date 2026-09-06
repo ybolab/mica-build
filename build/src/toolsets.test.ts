@@ -22,11 +22,12 @@ import {
   distroRaucToolset,
   shippedRaucPath,
   VERITY,
-  X64_ASSEMBLY,
+  uefiAssembly,
+  UEFI_ARCHES,
 } from './toolsets.ts'
 
 /** Every toolset that can be opened without an artifact a build has to produce first. */
-const OPENABLE: Toolset[] = [COREUTILS, CX3576_ASSEMBLY, X64_ASSEMBLY, VERITY, distroRaucToolset()]
+const OPENABLE: Toolset[] = [COREUTILS, CX3576_ASSEMBLY, uefiAssembly('amd64'), uefiAssembly('arm64'), VERITY, distroRaucToolset()]
 
 const opened: Toolbox[] = []
 afterAll(async () => {
@@ -34,8 +35,15 @@ afterAll(async () => {
 }, OPEN_TIMEOUT_MS)
 
 describe('the declarations themselves', () => {
-  test('the list this file iterates is not empty, and covers both assemblers', () => {
-    expect(OPENABLE.map(t => t.key)).toEqual(['coreutils', 'cx3576-assembly', 'x64-assembly', 'verity', 'rauc-distro'])
+  test('the list this file iterates is not empty, and covers every assembler', () => {
+    // Both UEFI architectures, not only the one this host assembles today. A
+    // list naming amd64 alone would leave the arm64 row unopened, and the
+    // arm64 row is the one with a step the other does not have: its grub
+    // package is foreign to this image and arrives through
+    // dpkg --add-architecture.
+    expect(OPENABLE.map(t => t.key)).toEqual(
+      ['coreutils', 'cx3576-assembly', 'uefi-assembly-amd64', 'uefi-assembly-arm64', 'verity', 'rauc-distro'],
+    )
   })
 
   test('every image is an images.env KEY, never a literal reference', () => {
@@ -57,9 +65,9 @@ describe('the declarations themselves', () => {
     // the x64 assembly contract's header: BOOTX64.EFI is only as reproducible as the
     // grub-efi-amd64-bin in its container, and that is a Debian package.
     expect(CX3576_ASSEMBLY.imageKey).toBe('IMAGE_ALPINE_3_21')
-    expect(X64_ASSEMBLY.imageKey).toBe('IMAGE_DEBIAN_TRIXIE')
+    expect(uefiAssembly('amd64').imageKey).toBe('IMAGE_DEBIAN_TRIXIE')
     expect(CX3576_ASSEMBLY.manager).toBe('apk')
-    expect(X64_ASSEMBLY.manager).toBe('apt')
+    expect(uefiAssembly('amd64').manager).toBe('apt')
   })
 
   test('the package lists are the shell\'s, not a merged one', () => {
@@ -67,7 +75,7 @@ describe('the declarations themselves', () => {
     // milestone whose gate is that nothing changed.
     expect(CX3576_ASSEMBLY.packages.join(' '))
       .toBe('bash coreutils sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra u-boot-tools')
-    expect(X64_ASSEMBLY.packages.join(' '))
+    expect(uefiAssembly('amd64').packages.join(' '))
       .toBe('gdisk dosfstools mtools e2fsprogs grub-efi-amd64-bin grub-common')
   })
 })
@@ -90,11 +98,25 @@ describe('every toolset opens and provides what it claims', () => {
     }, OPEN_TIMEOUT_MS)
   }
 
-  test('x64-assembly really carries grub-mkstandalone, which is why it is a Debian image', async () => {
-    const tb = opened.find(t => t.toolset.key === 'x64-assembly')
-    expect(tb).toBeDefined()
-    const r = await tb!.must(['grub-mkstandalone', '--version'])
-    expect(r.stdout).toContain('grub-mkstandalone')
+  test('each UEFI assembly carries grub-mkstandalone AND its own target tree', async () => {
+    // Two claims per architecture, because they come from different packages
+    // and either can be absent on its own: grub-mkstandalone from grub-common,
+    // and the module tree it compiles against from grub-efi-<arch>-bin.
+    //
+    // The arm64 case is the one that earns its keep. Its package is foreign to
+    // this amd64 image and reaches it only through dpkg --add-architecture, so
+    // a container where that step silently did nothing would still answer
+    // `grub-mkstandalone --version` and would fail at the first
+    // --format=arm64-efi, during an image assembly rather than here.
+    for (const arch of ['amd64', 'arm64']) {
+      const tb = opened.find(t => t.toolset.key === `uefi-assembly-${arch}`)
+      expect(tb).toBeDefined()
+      const r = await tb!.must(['grub-mkstandalone', '--version'])
+      expect(r.stdout).toContain('grub-mkstandalone')
+      const target = UEFI_ARCHES[arch]!.grubFormat
+      const mods = await tb!.must(['ls', `/usr/lib/grub/${target}`])
+      expect(mods.stdout).toContain('.mod')
+    }
   }, OPEN_TIMEOUT_MS)
 
   test('cx3576-assembly carries the mke2fs these layouts need, which this host does not', async () => {

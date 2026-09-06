@@ -41,8 +41,8 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 # One row per board: the committed config a build starts from, and the
 # Dockerfile that asserts the result. Discovered from neither -- written here,
 # because a board with no kernel build has no row and a glob would give it one.
-BOARD_CONFIGS="cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config x64:boards/x64/bsp/kernel/config/x64.config"
-BOARD_DOCKERFILES="cx3576:boards/cx3576/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
+BOARD_CONFIGS="cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config virt-arm64:boards/virt-arm64/bsp/kernel/config/virt-arm64.config x64:boards/x64/bsp/kernel/config/x64.config"
+BOARD_DOCKERFILES="cx3576:boards/cx3576/bsp/kernel/Dockerfile virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
 FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
 VERSIONS_ENV="${REPO_ROOT}/pkgs/podman/versions.env"
 

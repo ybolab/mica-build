@@ -21,6 +21,7 @@
       "consumers": [
         "base",
         "mos-bluetooth",
+        "mos-board-virt-arm64",
         "mos-system"
       ]
     }

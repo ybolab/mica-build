@@ -12,7 +12,7 @@ step actually ran.
     bash build/run.sh -t "sgdisk"
     bash build/run.sh --build-rootfs       # the rootfs stage chain
     bash build/run.sh --mkimage-cx3576         # assemble the cx3576 image
-    bash build/run.sh --mkimage-x64        # assemble the x64 image
+    bash build/run.sh --mkimage-uefi --board x64        # assemble the x64 image
     bash build/run.sh --bundle             # build and sign the RAUC bundle
 
 ---
@@ -20,14 +20,14 @@ step actually ran.
 ## 1. The modes
 
 Each mode is recognised only in first position, so none can be mistaken for a
-`bun test` filter. `bash build/run.sh filter --mkimage-x64` exits 1 by name.
+`bun test` filter. `bash build/run.sh filter --mkimage-uefi --board x64` exits 1 by name.
 
 | mode | what it runs |
 |---|---|
 | *(none)* | the suite |
 | `--build-rootfs` | the numbered-Dockerfile driver, pointed at `rootfs/compose/` — `10-compose` then `90-pack`, the second `FROM` the local image tag the first was written to. `rootfs/build.sh` calls it with the build arguments it computed |
 | `--mkimage-cx3576` | the cx3576 image assembler |
-| `--mkimage-x64` | the x64 image assembler |
+| `--mkimage-uefi --board x64` | the x64 image assembler |
 | `--bundle [--board NAME]` | the RAUC update bundle, built and signed |
 
 The two assemblers are separate arms rather than one arm taking a board, because
@@ -64,10 +64,10 @@ Per-operation, which is where the design decisions came from:
 | one `docker exec` into an open toolbox | ~40 ms |
 | one `docker run --rm` — what a session avoids | ~320 ms |
 | `bash build/run.sh --mkimage-cx3576` | ~55 s |
-| `bash build/run.sh --mkimage-x64` | ~27 s |
+| `bash build/run.sh --mkimage-uefi --board x64` | ~27 s |
 | `bash build/run.sh --bundle` | ~22 s |
 | `src/mkimage-cx3576.test.ts` (seven full assemblies, fabricated inputs) | ~45 s |
-| `src/mkimage-x64.test.ts` (three full assemblies) | ~70 s |
+| `src/mkimage-uefi.test.ts` (three full assemblies) | ~70 s |
 | `src/bundle.test.ts` (six real bundles) | ~32 s |
 
 A toolbox is one container held open for the run, with each call a `docker exec`
@@ -394,12 +394,12 @@ out.replaceAll(`@${name}@`, () => value)
 
 An escape list enumerating `$&`, `` $` ``, `$'`, `$$` and `$n` is a list that
 can go stale; a function cannot. The rule holds at `src/bundle.ts`'s
-`renderManifest` and at `src/grub-x64.ts`'s fragment renderer — the second has
+`renderManifest` and at `src/grub-uefi.ts`'s fragment renderer — the second has
 the freer input, since `BOARD_CMDLINE_ARGS` is arbitrary board text and a
 cmdline containing `$&` would otherwise be silently rewritten into the
 `grub.cfg` that boots the machine.
 
-Driven from the failing side in `src/bundle.test.ts` and `src/grub-x64.test.ts`.
+Driven from the failing side in `src/bundle.test.ts` and `src/grub-uefi.test.ts`.
 With the replacer functions reverted to string replacements, four of six and
 four of five cases go red — **and the ones that do not are the controls**: a
 bare `&` lands literally in JavaScript either way, and `$1` with no capture
@@ -640,7 +640,7 @@ control** beside it in the same file.
 | # | refused | in | driven red by |
 |---|---|---|---|
 | 1 | five inputs absent | `requiredInputs`/`requireFile` | each of the five, absent; plus a DIRECTORY where a file belongs |
-| 2 | `FACTORY_VAR` not a directory | `assembleX64` | absent, and a FILE in its place |
+| 2 | `FACTORY_VAR` not a directory | `assembleUefi` | absent, and a FILE in its place |
 | 3 | unrendered placeholder | `unrenderedPlaceholders` | an unknown `@NOT_A_KEY@`; and a substitution REMOVED from the map |
 | 4 | literal hash on a linux line | `literalHashLines` | a 64-hex hash spliced onto both linux lines |
 | 5 | fragment variable unused | `unusedFragmentVars` | each of the five, `replaceAll`'d away |
@@ -648,7 +648,7 @@ control** beside it in the same file.
 | 7 | grubenv not 1024 bytes | `checkGrubenvSize` | 0, 1023 and 1025 |
 | 8 | per-slot file on the ESP | `strayEspEntries` | each of the three names, one at a time |
 | 9 | the two boot slots differ | `bootSlotFault` | a listing with one entry dropped |
-| 10 | factory `/var` has no `lib/` | `assembleX64` | a staged tree with only `cache/` |
+| 10 | factory `/var` has no `lib/` | `assembleUefi` | a staged tree with only `cache/` |
 | 11 | inode geometry unreadable | `dumpe2fsHeader` | `src/pin-seeded-times.test.ts` |
 | 12 | inode count cross-check | `refuseUnlessCountsAgree` | the same, with a truncated listing |
 | 13 | debugfs stderr | `debugfsApply` | the same, with a renamed `sif` |
@@ -703,7 +703,7 @@ is silent.
 So it runs immediately after `mkfs.vfat` and before anything is copied in.
 
 **minfo prints no total at all** — only `free clusters=` in its Infosector
-block. That is *why* free is what gets read. `src/mkimage-x64.test.ts` derives
+block. That is *why* free is what gets read. `src/mkimage-uefi.test.ts` derives
 the total from the BPB (`(big size − reserved − fats × Big fatlen) / cluster
 size`) purely to MEASURE the relationship; the shipped check still reads free.
 
@@ -736,13 +736,13 @@ the ESP, it truncates it to stop at boot-a's original start. The two boards'
 third alignment case is a **different failure**, and the shape depends on the
 geometry rather than on the flag.
 
-Which is why `src/mkimage-x64.ts` reads the assembled table back and compares
+Which is why `src/mkimage-uefi.ts` reads the assembled table back and compares
 every partition against the spec (`partitionFaults`). On this board a wrong
 alignment does not announce itself at all, so the read-back is the only thing
 that would report it. Driven red against a real `-a 4096` table and green
 against the one the assembler writes.
 
-### How layout-x64.ts differs from layout-cx3576.ts
+### How layout-uefi.ts differs from layout-cx3576.ts
 
 Three differences, each of which changes a number or a behaviour, which is why
 they are two files:
@@ -760,7 +760,7 @@ they are two files:
    *before* the board file is read, so an environment pin selects the
    frozen-geometry mode. x64 reads the board's 512 first, which has already
    overwritten anything the environment said. x64 has one mode, the floor, and
-   `layout-x64.ts` has one too.
+   `layout-uefi.ts` has one too.
 3. **The partition set and the alignment.** Nine partitions against eleven, no
    loader and no uenv pair, and no `checkLoaderLanded` because there is no
    loader to land — replaced by the whole-table read-back above.
@@ -770,7 +770,7 @@ What they DO share is shared as modules and not copied: `src/geometry.ts`,
 
 ### The derived chain, against bash
 
-`src/layout-x64.test.ts` drives `decideSlot` against a bash `$(( ))` oracle over
+`src/layout-uefi.test.ts` drives `decideSlot` against a bash `$(( ))` oracle over
 13 payloads — one byte either side of the floor (416074957/416074958) and of two
 alignment steps (429496730/429496731, 442918503/442918504), plus 1 byte, 1 MiB,
 2 GiB and 4 GiB − 1.
@@ -801,7 +801,7 @@ runs outside the container is visible as such, with the reason travelling with
 it. `cp -a`, not node's `cpSync`: node preserves neither ownership nor xattrs
 and would produce a different filesystem while reporting success.
 
-`cp`, `find` and `touch` are still declared in `X64_ASSEMBLY.tools`, because the
+`cp`, `find` and `touch` are still declared in `uefiAssembly(<arch>).tools`, because the
 assembly runs all three **inside** the container — `cp` for the ESP staging,
 `find … -exec touch` for the mtimes, `touch` for the seed stamp and the per-slot
 payload.
@@ -966,7 +966,7 @@ identical bytes. That is a property of the assemblers, not of the rootfs build �
 a cold rootfs build does **not** reproduce itself, so a rootfs hash committed as
 an expectation is a check that looks like coverage and is not.
 
-`src/mkimage-cx3576.test.ts` and `src/mkimage-x64.test.ts` each carry the control
+`src/mkimage-cx3576.test.ts` and `src/mkimage-uefi.test.ts` each carry the control
 that makes "byte-identical" mean something: one changed input — a different
 U-Boot blob, a different rootfs payload — and the images must compare **unequal**.
 `src/bundle.test.ts` carries the same pair over a fabricated payload and a

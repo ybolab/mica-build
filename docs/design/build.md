@@ -69,7 +69,7 @@ clone with the daemon socket mounted:
 | + `bash` and `make` | all five docs gates green |
 | `make os-layout-lint` | `RESULT: PASS (28/28 checks)` |
 | `make os-verify-test` | `RESULT: PASS (1270/1270 tests)`, bun from the pin |
-| `bash build/run.sh --mkimage-x64` | image assembled, 1938 MiB |
+| `bash build/run.sh --mkimage-uefi --board x64` | image assembled, 1938 MiB |
 | `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
 
 One thing a bare host still cannot do: compose the rootfs.
@@ -239,7 +239,7 @@ A board build ends with three artifacts under `_out/<board>/`:
 
 | Artifact | Made by | What it is |
 |---|---|---|
-| `<board>-mos-<epoch>.img` and `<board>-mos-latest.img` | `bash build/run.sh --mkimage-cx3576` (cx3576) or `--mkimage-x64` | the whole-disk A/B image to flash |
+| `<board>-mos-<epoch>.img` and `<board>-mos-latest.img` | `bash build/run.sh --mkimage-cx3576` (cx3576) or `--mkimage-uefi --board x64` | the whole-disk A/B image to flash |
 | `rootfs-verity.img` + `rootfs-verity.env` | `rootfs/build.sh` | one rootfs slot: squashfs with its dm-verity tree, and the parameters the kernel command line needs |
 | the RAUC bundle | `bash build/run.sh --bundle --board <board>` | the signed update for a device already running mos |
 
@@ -481,7 +481,7 @@ MOS_BOARD=x64 bash pkgs/rauc/build.sh
 MOS_ARCH=amd64 bash pkgs/podman/build.sh
 make os-debs                                   # the package pool, then its index
 MOS_BOARD=x64 bash rootfs/build.sh       # == make os-rootfs-x64-composed
-bash build/run.sh --mkimage-x64
+bash build/run.sh --mkimage-uefi --board x64
 bash verify/run.sh --verify --board x64
 bash build/run.sh --bundle --board x64
 ```

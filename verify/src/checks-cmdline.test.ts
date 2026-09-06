@@ -713,8 +713,11 @@ describe('the ESP and the GRUB boot chain', () => {
     const r = one(await drive('esp-boot-chain', cxWorld()))
     expect(r.verdict).toBe('skip')
     expect(r.message).toContain('the ESP assertions (bootloader=uboot)')
-    expect(checkNamed('esp-no-per-slot-file').boards).toEqual(['x64'])
-    expect(checkNamed('esp-grub-cfg-no-hash').boards).toEqual(['x64'])
+    // Every GRUB board, derived from RAUC_BOOTLOADER rather than named here:
+    // the ESP assertions are about the boot chain, and a second UEFI board
+    // gets them for the same reason the first one did.
+    expect(checkNamed('esp-no-per-slot-file').boards).toEqual(['virt-arm64', 'x64'])
+    expect(checkNamed('esp-grub-cfg-no-hash').boards).toEqual(['virt-arm64', 'x64'])
   })
 
   test('green: no RAUC slot points at the ESP, and the boot slots are the boot partitions', async () => {

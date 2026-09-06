@@ -14,7 +14,7 @@
 # docs/design/access.md section 4.1.
 
 # Outputs (all under _out/<board>/). The first four are consumed by the image
-# assembler, build/src/mkimage-cx3576.ts and mkimage-x64.ts:
+# assembler, build/src/mkimage-cx3576.ts and mkimage-uefi.ts:
 #   rootfs-verity.img: squashfs-zstd with the verity hash tree appended,
 #     padded to a whole MiB
 #   rootfs-verity.env: verity parameters, strict KEY=value
@@ -51,25 +51,39 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # MOS_BOARD selects the layout, the output directory and the architecture.
-# cx3576 is the default and its path is unchanged; x64 is the QEMU target, and
-# it exists so that the two things the arm64 build CANNOT prove -- a container
-# actually starting, and containers.conf's values taking effect -- have
-# somewhere to be proven before hardware.
+# cx3576 is the default and its path is unchanged; x64 and virt-arm64 are the
+# QEMU targets -- x64 so that the two things an arm64 build could not prove (a
+# container actually starting, and containers.conf's values taking effect) have
+# somewhere to be proven before hardware, and virt-arm64 so that the proving can
+# happen on the ARCHITECTURE THE DEVICE RUNS rather than beside it.
 MOS_BOARD=${MOS_BOARD:-cx3576}
-case "$MOS_BOARD" in
-cx3576)
-    MOS_ARCH=arm64
-    ;;
-x64)
-    MOS_ARCH=amd64
-    ;;
-*)
-    echo "error: MOS_BOARD is '$MOS_BOARD'; known boards are cx3576 and x64" >&2
-    exit 1
-    ;;
-esac
-DOCKER_PLATFORM="linux/${MOS_ARCH}"
 LAYOUT_ENV="$REPO_ROOT/boards/${MOS_BOARD}/board.env"
+
+# THE BOARD IS ITS DEFINITION FILE, and the refusal says so.
+#
+# This used to be a `case` mapping each board name to an architecture, whose
+# default arm named the known boards in prose. Two things were wrong with it.
+# The list was a second place to add a board, and the tree has a standing rule
+# against those -- verify/src/paths.ts discovers boards by listing boards/*/
+# for exactly this reason, because a literal is what a new board gets left out
+# of. And the architecture it assigned was a SECOND STATEMENT of a fact
+# boards/<board>/board.env already makes: the file sourced below sets MOS_ARCH
+# itself, to the same value, so the two agreed only because nobody had changed
+# one of them.
+#
+# What the `case` also did, and what is kept, is REFUSE AN UNKNOWN BOARD BY
+# NAME. Without it a typo becomes a missing-file error much later, about a path
+# rather than about the board, in a state the reader then has to reconstruct.
+# The refusal now asks the question that actually decides the answer -- is
+# there a definition for this board -- and lists what it found.
+if [ ! -f "$LAYOUT_ENV" ]; then
+    known=$(cd "$REPO_ROOT/boards" && for d in */; do
+        [ -f "${d}board.env" ] && printf '%s ' "${d%/}"
+    done)
+    echo "error: MOS_BOARD is '$MOS_BOARD', and $LAYOUT_ENV does not exist." >&2
+    echo "       A board IS its board.env; boards with one here: ${known:-(none)}" >&2
+    exit 1
+fi
 BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/boards/${MOS_BOARD}/bsp"}
 OUT_DIR="$REPO_ROOT/_out/${MOS_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
@@ -153,12 +167,24 @@ MOS_PROFILE=${MOS_PROFILE:-dev}
 # are Debian packages now. What is left is not a chain of nine files with an
 # order to defend -- it is one transaction and one finalizer.
 
-if [ ! -f "$LAYOUT_ENV" ]; then
-    echo "error: $LAYOUT_ENV not found" >&2
-    exit 1
-fi
+# Existence was already refused, by name and with the board list, right after
+# MOS_BOARD was read -- a second check here would be a second message for one
+# condition, and the earlier one is the better message.
 # shellcheck source=../boards/cx3576/board.env
 . "$LAYOUT_ENV"
+
+# The architecture, from the board definition and from nowhere else.
+#
+# There is no fallback and no `case` behind this: the board file is the one
+# statement of its architecture (see the refusal above), so a layout that does
+# not make it has to say so here rather than be assigned one. Everything
+# downstream -- the package pool it composes from, the docker platform it
+# builds for, the emulation it may need -- follows from this line.
+if [ -z "${MOS_ARCH:-}" ]; then
+    echo "error: $LAYOUT_ENV sets no MOS_ARCH. The architecture is a board fact and is deliberately not derived from the board name -- 'virt-arm64' and 'cx3576' are both arm64 and 'x64' is amd64, so a name-based guess would be a guess. Without it this build would choose a package pool and a docker platform for a board that has not said which it is" >&2
+    exit 1
+fi
+DOCKER_PLATFORM="linux/${MOS_ARCH}"
 
 # Board console facts. These describe a board's serial console, not its
 # partition layout, so each boards/<board>/board.env carries its own
@@ -867,12 +893,28 @@ render "$OVERLAY_STAGE/etc/fstab.in" "$OVERLAY_STAGE/etc/fstab" \
     VAR_OPTS "$VAR_OPTS" \
     DATA_LINE "$DATA_LINE"
 
-# fw_env.config is U-Boot's environment configuration and it is NOT rendered on
-# x64: there is no U-Boot there, and the file names two partitions the QEMU
-# layout does not create. Shipping it anyway would put a configuration file in
-# the image describing storage that does not exist -- readable, plausible, and
-# wrong, which is the shape of defect this repo keeps finding.
-if [ "$MOS_ARCH" = "amd64" ]; then
+# fw_env.config is U-Boot's environment configuration, and it is rendered only
+# on a board whose bootloader IS U-Boot. The file names the two uenv partitions
+# and a UEFI layout creates neither; shipping it anyway would put a
+# configuration file in the image describing storage that does not exist --
+# readable, plausible, and wrong, which is the shape of defect this repo keeps
+# finding.
+#
+# THE QUESTION IS THE BOOTLOADER, NOT THE ARCHITECTURE. This asked
+# `[ "$MOS_ARCH" = amd64 ]` while x64 was the only UEFI board, where the two
+# questions happened to have the same answer. They come apart on virt-arm64,
+# which is arm64 AND has no U-Boot: the architecture test sends it down the
+# render branch, where UENV_A_GUID is a variable its layout does not define --
+# so the failure is `UENV_A_GUID: unbound variable` under `set -u`, a message
+# about a shell variable rather than about a board that has no U-Boot
+# environment to configure. RAUC_BOOTLOADER is the board's own statement of
+# which backend drives its A/B handshake, and it is the fact this branch is
+# actually about.
+if [ -z "${RAUC_BOOTLOADER:-}" ]; then
+    echo "error: $LAYOUT_ENV sets no RAUC_BOOTLOADER, so which bootloader owns this board's A/B handshake is undeclared. fw_env.config would then be rendered or skipped by a guess, and both guesses are wrong on some board" >&2
+    exit 1
+fi
+if [ "$RAUC_BOOTLOADER" != "uboot" ]; then
     rm -f "$OVERLAY_STAGE/etc/fw_env.config.in"
 else
     render "$OVERLAY_STAGE/etc/fw_env.config.in" "$OVERLAY_STAGE/etc/fw_env.config" \

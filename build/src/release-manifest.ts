@@ -461,6 +461,49 @@ export function markerDomains(text: string): string[] {
  * prose unless the claim is an evidenced I3/I4 -- the class floor for which
  * has, by that point in this function, already been enforced.
  */
+/**
+ * Refuse a board that declares it has no release path.
+ *
+ * `BOARD_RELEASE_TARGET` is the board's own statement of whether a release is a
+ * thing it HAS: an assembled directory, an SBOM, provenance, release notes, and
+ * an evidence file held to the assurance ladder. x64 and cx3576 declare 1;
+ * virt-arm64 declares 0, because it exists so that arm64 code can be run rather
+ * than so that an artifact can be shipped.
+ *
+ * WHY THIS IS A CHECK AND NOT A CONVENTION. Before it, "virt-arm64 is outside
+ * the release set" was true only in prose. `bash build/run.sh --release
+ * assemble --board virt-arm64` would have been accepted -- release-cli takes
+ * any board with a board.env -- and it would have assembled a release for a
+ * board with no dossier, no SBOM and no evidence file, failing much later and
+ * somewhere else, or not at all. An exclusion nothing can see is not an
+ * exclusion.
+ *
+ * The message names the key rather than the board, so a board promoted to a
+ * product target is told exactly what to change.
+ */
+export function requireReleaseTarget(
+  board: string,
+  releaseTarget: string | undefined,
+  boardEnvPathForMessage: string,
+): void {
+  if (releaseTarget === '1') return
+  if (releaseTarget === undefined || releaseTarget === '') {
+    throw new Error(
+      `${boardEnvPathForMessage} declares no BOARD_RELEASE_TARGET, so whether '${board}' has a `
+      + 'release path is unstated. A release assembled past this point would carry whatever '
+      + 'evidence, SBOM and notes happened to exist. Declare 1 (has a release path) or 0 (a test '
+      + 'target).',
+    )
+  }
+  throw new Error(
+    `board '${board}' declares BOARD_RELEASE_TARGET=${releaseTarget}, so it has no release path and `
+    + 'no release may be assembled or gated for it. It is a TEST target: it exists so that code can '
+    + 'be run on its architecture, and it ships no evidence file, no SBOM and no release notes. If '
+    + `that has changed, ${boardEnvPathForMessage} is where it is changed -- and the board then owes `
+    + 'an evidence.json that satisfies the assurance ladder.',
+  )
+}
+
 export function checkBoardEvidence(value: unknown, path: string, board: string): BoardEvidence {
   if (!isRecord(value)) {
     throw new Error(`${path} is not a JSON object`)
