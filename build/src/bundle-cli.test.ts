@@ -108,7 +108,14 @@ describe('the compatible string, read out of the rendered system.conf', () => {
     // not -- and neither is a skip.
     if (existsSync(SYSTEM_CONF)) {
       const got = requireCompatible(readFileSync(SYSTEM_CONF, 'utf8'), SYSTEM_CONF)
-      expect(got).toMatch(/^mos-[a-z0-9]+$/)
+      // Hyphenated segments, because a board name may carry one: `virt-arm64`
+      // does, and this pattern refused it while cx3576 and x64 passed. Nothing
+      // in production checks this format -- the string is rendered, not
+      // declared -- so this test is the only statement of it, and a pattern
+      // narrower than the board names the tree ships is a statement about the
+      // boards that existed when it was written. Degenerate forms stay
+      // refused: `mos-`, `mos--x` and `mos-x-` do not match.
+      expect(got).toMatch(/^mos-[a-z0-9]+(-[a-z0-9]+)*$/)
     } else {
       expect(() => requireCompatible('', SYSTEM_CONF)).toThrow(/no compatible= in/)
     }
