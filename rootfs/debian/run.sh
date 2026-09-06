@@ -116,6 +116,50 @@ fi
 for tool in dpkg chroot flock tar; do need "$tool"; done
 [ "$(id -u)" -eq 0 ] || fail 'installation requires root'
 [ "$(dpkg --print-architecture)" = "$ARCH" ] || fail "installation requires a native $ARCH host"
+# EMULATED CROSS-BUILDS CHROOT INTO A ROOT THE INTERPRETER IS NOT IN.
+#
+# `dpkg --print-architecture` above answers the CONTAINER's architecture, which
+# under buildx is the target one -- so an arm64 stage on this amd64 host passes
+# the native check and is in fact running every binary through an interpreter
+# registered in binfmt_misc, at a path outside the root about to be chrooted
+# into (buildkit's is /dev/.buildkit_qemu_emulator). The kernel then cannot open
+# the interpreter and reports ENOENT for the BINARY, so the failure reads
+# `chroot: failed to run command '/debootstrap/debootstrap': No such file or
+# directory` about a file that is demonstrably there.
+#
+# Staging the interpreter inside the root for the duration of the chroot is the
+# whole fix. Registrations carrying binfmt_misc's `F` flag need none of this --
+# the kernel holds the interpreter open -- so this stages only what exists and
+# is a no-op on a native host, where no registration names an interpreter the
+# root is missing.
+EMULATORS=()
+stage_emulators() {
+    [ -d /proc/sys/fs/binfmt_misc ] || return 0
+    local reg interp
+    for reg in /proc/sys/fs/binfmt_misc/*; do
+        [ -f "$reg" ] || continue
+        case "$reg" in */register | */status) continue ;; esac
+        interp=$(awk '/^interpreter /{print $2; exit}' "$reg" 2>/dev/null) || continue
+        [ -n "$interp" ] && [ -f "$interp" ] || continue
+        [ ! -e "$ROOT$interp" ] || continue
+        mkdir -p "$ROOT$(dirname "$interp")"
+        cp "$interp" "$ROOT$interp" || fail "could not stage the binfmt interpreter $interp into $ROOT"
+        EMULATORS+=("$ROOT$interp")
+        echo "debian-base: staged the binfmt interpreter $interp into the root for the chroot"
+    done
+}
+unstage_emulators() {
+    [ "${#EMULATORS[@]}" -gt 0 ] || return 0
+    rm -f "${EMULATORS[@]}"
+    EMULATORS=()
+}
+# Both, in one handler: the EXIT trap set at the top of this file cleans $WORK,
+# and a second `trap ... EXIT` REPLACES it rather than adding to it. A staged
+# interpreter that outlived this script would be copied into the image by the
+# Dockerfile stage that consumes $ROOT, so it has to come off here -- and the
+# temp directory still has to go.
+trap 'unstage_emulators; [ -z "$WORK" ] || rm -rf "$WORK"' EXIT
+
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/debian-base-install.XXXXXX")
 dpkg-deb -x "$CACHE_DIR/debs/$helper_sha.deb" "$WORK/helper"
 export DEBOOTSTRAP_DIR=$WORK/helper/usr/share/debootstrap
@@ -147,6 +191,7 @@ flock -n 8 || fail "another installation is using $ROOT"
 bash "$BOOTSTRAP" --arch="$ARCH" --variant=minbase --exclude=apt --no-check-gpg \
     --unpack-tarball="$WORK/base.tar" --foreign "$SUITE" "$ROOT" "$MIRROR" ||
     fail "bootstrap extraction failed; inspect $ROOT/debootstrap/debootstrap.log"
+stage_emulators
 env -u DEBOOTSTRAP_DIR ARCH_ALL_SUPPORTED=0 chroot "$ROOT" /debootstrap/debootstrap --second-stage ||
     fail "dpkg configuration failed; inspect $ROOT/debootstrap/debootstrap.log"
 mkdir "$ROOT/.debian-extra"
