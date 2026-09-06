@@ -40,10 +40,12 @@ Planning a generic virtual arm64 board bootable in QEMU
 
 ## Dependencies
 
-- **blocked by**: RFCT-334 (arm64 compose) — for the *implementation* slices
-  that need an arm64 root to exist. The plan itself is not blocked, and the
-  source-level slices (board definition, assembler generalisation, kernel,
-  deb producers, dossier) are not blocked either.
+- **blocked by**: RFCT-334 (arm64 compose) — approved 2026-09-06 to move
+  `debootstrap --second-stage` off `chroot` onto a Docker stage boundary, but
+  not yet landed. Only the *implementation* slices that need an arm64 root to
+  exist wait on it (slice 4, and slice 5 through slice 4's image). The plan
+  itself is not blocked, and neither are the source-level slices (board
+  definition, assembler generalisation, kernel, deb producers, dossier).
 - **blocks**: PLAN-071 U10 and every other arm64 runtime assertion currently
   owed to a bench.
 

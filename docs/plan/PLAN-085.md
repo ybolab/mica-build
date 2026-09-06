@@ -347,10 +347,43 @@ fallback (a phase subset via the existing `APID_PHASES`) already exists.
 
 ### 9. The two constraints, addressed explicitly
 
-**arm64 compose is broken and RFCT-334 owns it.** This plan is written against
-the tree as it should be, and nothing here attempts to fix it or work around it.
-The backlog is ordered so that every slice which does *not* need an arm64 root
-comes first; slices 4 and 5 are gated on RFCT-334 landing and say so.
+**arm64 compose is broken; RFCT-334 owns it and is now approved.** This plan is
+written against the tree as it will be once that lands, and nothing here
+attempts to fix it or work around it. The backlog is ordered so that every slice
+which does *not* need an arm64 root comes first; slices 4 and 5 are gated on
+RFCT-334 landing and say so.
+
+The approved fix is worth naming, because its shape decides how much this board
+inherits. Today `rootfs/debian/run.sh:264` runs `debootstrap --second-stage`
+through `chroot "$ROOT"`. Under an emulated arm64 buildx stage, buildkit injects
+its interpreter at `/dev/.buildkit_qemu_emulator` — a path *outside* the root
+about to be chrooted — so the chroot cannot find it and dies as
+`chroot: failed to run command '/debootstrap/debootstrap': No such file or
+directory`, a message about the binary rather than about the interpreter. Main's
+last five commits (`544a1f38`…`0332da84`) are the record of trying to stage that
+interpreter, and then its shared libraries, into the root. RFCT-334 is approved
+to stop doing that and **restructure the second stage onto a Docker stage
+boundary** instead — the root becomes a stage and the work becomes a `RUN`, so
+buildkit's emulation applies natively and there is no chroot to smuggle an
+interpreter into.
+
+Two consequences for this plan, both good:
+
+- **`virt-arm64` inherits the fix with no board-specific work.** Once the second
+  stage is a stage boundary, composing an arm64 root is the same mechanism as
+  composing an amd64 one, and this board's slice 4 is an ordinary
+  `MOS_BOARD=virt-arm64 bash rootfs/build.sh`. Nothing in slices 1–3 or 6
+  touches that path at all.
+- **Slice 4 is an independent check on RFCT-334.** `virt-arm64` would be the
+  first arm64 root composed for a board other than cx3576, so it exercises the
+  restructured stage against a different board definition rather than against
+  the one it was debugged on.
+
+And it changes nothing about the boot. The chroot/binfmt problem is entirely on
+the **build-time, user-mode** side of the distinction drawn immediately below;
+the guest boot is system emulation and never touched `binfmt_misc` to begin
+with. RFCT-334 therefore has no bearing on slice 5's boot path — only on
+slice 4 producing a root for it to boot.
 
 **This host cannot exec arm64 outside buildx** — `docker run --platform
 linux/arm64` answers `exec format error`. That constraint does **not** apply to
@@ -401,19 +434,26 @@ amd64 binary reading arm64 data, measured above as working and reproducible.
 - **Pool contention.** `make os-debs` empties a producer's archives mid-run;
   the package and closure gates must not run concurrently, and no commit may
   land between building the pool and verifying it.
+- **Slice 4 is the first non-cx3576 consumer of RFCT-334's restructured second
+  stage.** If it surfaces a defect there, that defect is RFCT-334's to fix and
+  not this plan's — slice 4 reports it and waits rather than patching around it.
+  The reverse is the more likely outcome and is a benefit, not a risk: a second
+  board is a better test of that restructuring than the board it was debugged
+  against.
 
 ## Scope
 
 Six slices, each with the gate that decides it. Slices 1–3 and 6 are unblocked
-today; 4 and 5 wait on RFCT-334.
+today; 4 and 5 wait for RFCT-334 to land — approved, mechanism known (§9), but
+not yet in the tree.
 
 | # | Slice | Gate |
 | --- | --- | --- |
 | 1 | `boards/virt-arm64/board.env`, `grub.cfg`, `evidence.json`, `overlay/` | `bash verify/run.sh --lint` → 3 boards, PASS, and the new board's line count matches x64's role-by-role |
 | 2 | Rename the assembler trio to `*-uefi`, arch table in `toolsets.ts`, `build/run.sh --mkimage-uefi --board` | `bash build/run.sh --build-test` green **and** `x64-mos-latest.img` byte-identical to its pre-rename build |
 | 3 | `boards/virt-arm64/bsp/kernel` (+ fragment, recorded config), the two deb producers, `rootfs/packages/board-virt-arm64.pkgs`, the 10 pool `consumers` entries, `rootfs/build.sh` dispatch | `make virt-arm64-kernel`; `make os-netavark-kernel-test`; `make os-rootfs-manifest-test`; `build-env/deb/build.sh --producer board-virt-arm64 --arch arm64` |
-| 4 | Compose the root, assemble the image, verify it **(blocked: RFCT-334)** | `MOS_BOARD=virt-arm64 bash rootfs/build.sh`; `bash build/run.sh --mkimage-uefi --board virt-arm64`; `bash verify/run.sh --verify --board virt-arm64` |
-| 5 | Board-parameterise `pkgs/mosd/tests/apid-api/` **(blocked: RFCT-334)** | x64 suite still green through the parameterised path, **then** one measured arm64 boot to `APID_LISTENING`, with the number recorded and the timeouts set from it |
+| 4 | Compose the root, assemble the image, verify it **(waits for RFCT-334 to land)** | `MOS_BOARD=virt-arm64 bash rootfs/build.sh`; `bash build/run.sh --mkimage-uefi --board virt-arm64`; `bash verify/run.sh --verify --board virt-arm64` |
+| 5 | Board-parameterise `pkgs/mosd/tests/apid-api/` **(needs slice 4's image; not otherwise coupled to RFCT-334)** | x64 suite still green through the parameterised path, **then** one measured arm64 boot to `APID_LISTENING`, with the number recorded and the timeouts set from it |
 | 6 | `docs/bsp/virt-arm64.md` dossier; `Makefile` `BOARDS` and BSP delegation | `make docs-verify` — `verify-board.sh` reports 2 dossiers and all 13 headings in order, with honest qualification rows |
 
 Slice 6's dossier makes this board the **second** dossier in the tree and the
@@ -467,6 +507,11 @@ change to a shared script and approval should see it.
 ## Annotations
 
 - 2026-09-06: Drafted. Awaiting approval; no implementation has been written.
+- 2026-09-06 (L1): RFCT-334 is approved to fix the arm64 compose by moving
+  `debootstrap --second-stage` off `chroot` and onto a Docker stage boundary.
+  §9 now names that mechanism and this plan is written against the tree it
+  produces; §Scope and §Risks updated. Implementation still waits for it to
+  land, and this task does not attempt it.
 - Disclosure: producing this plan created `verify/node_modules/` (gitignored, a
   side effect of `bash verify/run.sh --lint`) and ran four throwaway
   `ai-agent-y6gfy207-*` containers, all `--rm`. No tracked file outside
