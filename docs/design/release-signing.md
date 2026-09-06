@@ -56,6 +56,12 @@ on every run — no tracked key material, both directories ignored, neither
 domain's tooling naming the other's files — so the separation is enforced,
 not remembered.
 
+**The handover is a different document.** Everything below is written for the
+person standing in the room. [`key-delivery.md`](key-delivery.md) picks up
+where each ceremony stops: what may travel and what never does, how material
+reaches a recipient, what that recipient checks before building anything, and
+which refusal fires when the material is wrong.
+
 ## 1. The TUF root ceremony — **[runbook]**
 
 ### 1.1 Where it runs

@@ -22,6 +22,7 @@
   - `bsp-cx3576-sync.md` — cx3576 upstream BSP: source repo, synced commit, deviation register
   - `bus.md` — management/application boundary, package-enrolled `com.mos.Item1` applications, D-Bus policy and MQTT grammar
   - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
+  - `key-delivery.md` — key handover: what the ceremonies produce, what may travel and what never does, the delivery form this tree does not define, and the checks a recipient runs before building
   - `updates.md` — device update lifecycle: state model, update policy file, maintenance/metered/offline rules, safe-to-reboot gate, operator procedures, fault-test evidence
   - `recovery.md` — recovery design: the four reset tiers and what each clears, the data-preserving-first decision tree, the physical-presence contract, credential rotation rather than disclosure, both-slots-failed and the non-destructive repair tier
   - `release-artifacts.md` — the release directory: manifest schema, SHA256SUMS/SBOM/provenance/licenses, publication gate, customer verification procedure
