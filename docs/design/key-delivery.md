@@ -484,35 +484,49 @@ window deliberately — which moves the ceremony block, the development mint and
 the build's threshold together — rather than discover the number by missing a
 date.
 
-## 7. The gap §2 names, carried here
+## 7. The gap §2 named, and the answer it now carries
 
-`release-signing.md` §2's own header says **"[runbook] for the ceremony, with a
-named gap"**. A reader should not have to find it three subsections deep, so it
-is carried here: the gap is in §2.3, and it is that **there is no
-provisioning-time channel that puts `ca.cert.pem` on a device.**
+`release-signing.md` §2's own header used to say **"with a named gap"**. The
+gap is real and unchanged — **there is no provisioning-time channel that puts
+`ca.cert.pem` on a device** — but it is no longer only an absence: §2.4a
+decides what happens instead, and a recipient planning a fleet is entitled to
+that answer here rather than three subsections deep in a runbook.
 
 The image is the only road. A device trusts the CA that was baked into the
 image it was flashed with, `/etc` is a read-only dm-verity squashfs replaced
 whole by every A/B update, and the keyring is therefore replaced only by an
 update that a currently-trusted CA signed. §2.4's rollover makes that sound for
 a *scheduled* rotation — old and new CA coexist in one keyring during an
-overlap window — and names the two cases it cannot cover:
+overlap window — and it cannot reach two states. **They have different
+answers, and bundling them is the mistake this section exists to prevent:**
 
-- a device that **misses the overlap window**, and
-- rotation away from a CA that is **already compromised**.
+- **A device that misses the overlap window** — an **update**, not a reflash.
+  The overlap release is republished into a *rescue repository*, still signed
+  by the outgoing chain, and the device is pointed at it — over the network by
+  an administrator-authenticated `source.url` override, or by a §3.2 lockbox
+  when it has no route at all. It then installs a bundle its own keyring
+  already trusts and rejoins the fleet. Nothing new is invented for this: what
+  moves is where the device looks, never what it trusts. §2.4a case 1 has the
+  steps, and §1.3 has the one thing a ceremony must do in advance for them to
+  work — initialize that second repository while the root key is out.
+- **Rotation away from a CA that is already compromised** — a **reflash**, and
+  that is a decision rather than an omission. The attacker holds the same
+  signing authority every remote path runs on, so no remote answer exists at
+  all; physical re-provisioning is the mechanism, not a fallback. §2.4a case 2
+  records it with its price.
 
-Both end in a reflash. What would cover them is a trust channel outside the
-image — a STATE- or META-backed provisioning file, a factory step, a first-boot
-enrolment, a signed USB import — and none of those exists; creating the bind
-mount for one is part of choosing the channel, so no such bind exists either,
-deliberately.
-
-For a delivery, that translates into two sentences a recipient planning a fleet
-needs before they flash anything: **changing this CA later is an update every
-device must take inside a window**, and **a compromised CA is a reflash, not an
-update.** Which channel should deliver the file, and who holds, rotates and
-revokes the signing CA, are product decisions this repository records and does
-not make.
+For a delivery, that translates into three sentences a recipient needs before
+they flash anything: **changing this CA later is an update every device must
+take inside a window**; **a device that misses the window is recoverable, but
+only if you can still reach it and only if the outgoing CA key was retained
+rather than destroyed** (`release-signing.md` §2.4 phase 4 — the rule is
+retain-sealed, and a recipient who destroys it early converts a recoverable
+device into a reflash permanently); and **a compromised CA is a reflash, not
+an update.** Which channel should one day deliver the file, and who holds,
+rotates and revokes the signing CA, are product decisions this repository
+records and does not make; the one open question that would change any of the
+above is `docs/plan/PLAN-077.md` §6's third offline key, and it would change
+only the compromise case.
 
 Two smaller absences belong beside it, so they are named rather than met by
 surprise:
