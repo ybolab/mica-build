@@ -134,18 +134,40 @@ for tool in dpkg chroot flock tar; do need "$tool"; done
 # root is missing.
 EMULATORS=()
 stage_emulators() {
-    [ -d /proc/sys/fs/binfmt_misc ] || return 0
-    local reg interp
-    for reg in /proc/sys/fs/binfmt_misc/*; do
-        [ -f "$reg" ] || continue
-        case "$reg" in */register | */status) continue ;; esac
-        interp=$(awk '/^interpreter /{print $2; exit}' "$reg" 2>/dev/null) || continue
-        [ -n "$interp" ] && [ -f "$interp" ] || continue
+    local interp staged=0
+    # Two sources, because neither alone covers this project's two routes.
+    #
+    # binfmt_misc names the interpreter on a host that registered one -- but it
+    # is not mounted inside a buildkit step, so scanning only this finds
+    # nothing and finds it SILENTLY, which is how the first version of this
+    # function shipped a no-op and the chroot failed exactly as before.
+    #
+    # buildkit injects its own emulator at a fixed path into the step's rootfs
+    # instead, and that is the route this repository actually cross-builds
+    # through: the docker daemon here cannot exec arm64 at all, so arm64 stages
+    # run in the `mos-arm64` docker-container builder, which bundles it.
+    for interp in $(binfmt_interpreters) /dev/.buildkit_qemu_emulator; do
+        [ -f "$interp" ] || continue
         [ ! -e "$ROOT$interp" ] || continue
         mkdir -p "$ROOT$(dirname "$interp")"
         cp "$interp" "$ROOT$interp" || fail "could not stage the binfmt interpreter $interp into $ROOT"
         EMULATORS+=("$ROOT$interp")
+        staged=$((staged + 1))
         echo "debian-base: staged the binfmt interpreter $interp into the root for the chroot"
+    done
+    # Silence is not a result. A run that staged nothing says so, so that the
+    # next confusing chroot ENOENT can be read against a line that states
+    # whether this ran and found nothing or never looked.
+    [ "$staged" -gt 0 ] ||
+        echo "debian-base: no binfmt interpreter to stage; the chroot runs natively"
+}
+binfmt_interpreters() {
+    local reg
+    [ -d /proc/sys/fs/binfmt_misc ] || return 0
+    for reg in /proc/sys/fs/binfmt_misc/*; do
+        [ -f "$reg" ] || continue
+        case "$reg" in */register | */status) continue ;; esac
+        awk '/^interpreter /{print $2; exit}' "$reg" 2>/dev/null || true
     done
 }
 unstage_emulators() {
