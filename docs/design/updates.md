@@ -965,28 +965,47 @@ Operator docs (§5 and `../user/update-rollback.md`) claim only the left
 two columns; every bench row is an open verification item, not a shipped
 behaviour.
 
-**The automatic path has no rows in that table, and the reason is that it has
-no unit column to put in one.** `pkgs/mosd/mosd/src/update_auto.rs` and
-`pkgs/mosd/mosd/src/update_suppress.rs` carry **no tests**: the driver
-compiles, clippy is quiet, and not one line of the loop, the suppression
-store, the clock predicate or the deferral facts has been executed. Stated
-here rather than left to be inferred from an absent row, because `auto` is
-the first capability that reboots a device with nobody watching and the
-failure mode is a path that skips a gate — which is exactly what a test would
-catch and prose cannot.
+**The automatic path now has a unit column, and this is what is in it.**
+`pkgs/mosd/mosd/src/update_auto.rs` and
+`pkgs/mosd/mosd/src/update_suppress.rs` carried **no tests** through
+RFCT-317 and RFCT-321, and the reason was mechanical rather than neglect:
+`AutoDriver`'s cadence was keyed on `std::time::Instant`, which has no seam
+and which `tokio::time::pause` does not move, so the driver could not be
+ticked in a test at all and every row below sat under that one blocker.
+RFCT-341 added the seam — `update_auto::Cadence`, a **monotonic** clock and
+nothing else — and wrote the rows.
 
-What is owed, in the order it should be written:
+The seam is deliberately narrow. It answers an `Instant`, which names no
+date, so nothing downstream of it can turn a test's clock into a window
+verdict or into a claim that the device believes its clock: PLAN-071 §7's
+predicate still reads `AutoRoutes::clock` over `time.md`'s floor, and the
+maintenance-window verdict is still computed at `Utc::now()`. A seam that
+answered a time of day would be a way to install outside a window on a clock
+nobody vouched for, which is the refusal §7 exists to make.
 
-| Behaviour | Required | Owed |
-|---|---|---|
-| The loop is closed | A bad bundle installs once: it rolls back, the version is suppressed, and the second automatic pass selects nothing | The full cycle against the trait seam — PLAN-071's own acceptance for the slice, and the one test that proves the loop cannot restart |
-| The suppression store | Record, clear, idempotence, and a store that exists and does not parse refusing rather than reading as empty | The unparseable case first: it is the branch whose failure silently restores the loop |
-| Automation never arms the override | The automatic path drives against a closed gate and no override is armed | The invariant is structural — `SetRebootOverride` is not on the driver's trait (§3.2) — and a test is what keeps the trait from growing one |
-| A clock seam on the driver | `AutoDriver` can be ticked in a test at all | **This is the blocker under every row above.** The cadence is keyed on `std::time::Instant`, which has no seam and which `tokio::time::pause` does not move, so no test can advance the driver to its next pass. Nothing above is written until this is |
-| The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | The floor limb has never been observed against a device with no STATE bind, which is the case it exists for |
-| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | — |
-| The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | `openapi.json` documents the route; nothing drives the handler |
-| The end-to-end bench cycle | `auto` on real hardware: fetch, window, install, reboot, confirm | Blocking for shipping `auto` at all |
+| Behaviour | Required | Proven today (unit) | Owed |
+|---|---|---|---|
+| The same gate set | The automatic path meets every gate the manual path meets, refused by the same rule in the same words | `bus.rs`: `the_automatic_and_manual_paths_meet_the_same_gate_set` drives the operator route and the **real `BusRoutes`** against one daemon for the check policy refusal, the unreadable document, the metered fetch, the maintenance window, the `verified/` rule and both reboot-gate blocks; `an_automatic_pass_records_the_gates_own_refusal_and_reaches_nothing_behind_it` drives a whole pass through them | The `InterfaceRef::get()` hop (`ServedDaemon`), which needs a live bus connection; it is one line per route |
+| The loop is closed | A bad bundle installs once: it rolls back, the version is suppressed, and the second automatic pass selects nothing | `update_auto.rs`: `a_bad_bundle_cycle_ends_with_the_second_pass_selecting_nothing` — install, reboot, rollback record written through the real store, then two refused passes, both consultation sites, and the operator's clearing | — |
+| The suppression store | Record, clear, idempotence, and a store that exists and does not parse refusing rather than reading as empty | `update_suppress.rs`: six tests, the unparseable case first — it refuses the write as well as the read, so an unreadable store is never truncated | — |
+| Automation never arms the override | The automatic path drives against a closed gate and no override is armed | `bus.rs`: `the_automatic_path_against_a_closed_gate_arms_no_override` against the real gate, which renders an armed override as a member of `update.lifecycle.reboot_gate` — and arms one by hand afterwards, so "no override" is a measurement rather than an empty tree; `update_auto.rs`: `a_closed_reboot_gate_defers_and_the_driver_takes_no_way_around_it` | The invariant stays structural: `SetRebootOverride` is not on `AutoRoutes` (§3.2) |
+| A clock seam on the driver | `AutoDriver` can be ticked in a test at all | `update_auto::Cadence`, and `the_cadence_seam_advances_the_driver_without_sleeping` asserts the cadence is attempt-based across it | — |
+| The clock predicate | Both limbs, and the `clock-untrusted` deferral they produce | `time_status.rs`: `the_saved_floor_advances_only_when_the_file_moved_after_this_boot` (no STATE bind, bound but not writing, alive) and `the_clock_is_believed_on_either_limb_and_the_refusal_names_both`; `update_auto.rs`: `an_untrusted_clock_defers_the_install_and_leaves_the_check_and_fetch_alone` | — |
+| The deferral facts | Each of §3.2's reasons reachable; `since`/`attempts` surviving a repeat while a changed reason resets them | `update_auto.rs`: `every_deferral_reason_the_driver_can_mint_is_reachable` compares the reasons a pass produced against the reasons **read out of the driver's own source**, so a new `defer` site fails until a case covers it; `update_lifecycle.rs`: `a_repeated_deferral_counts_its_attempts_and_a_changed_reason_starts_over` | `since` is rendered to the second, so a same-second repeat cannot distinguish "kept" from "reset" on its own; the attempt counter is what pins it |
+| The clearing route | The 200, the 422 for a version that is not suppressed, and the audit event | The store half is covered above (`clearing_answers_the_record_and_a_typo_clears_nothing`) and `UpdateLifecycle::clear_suppression` refuses a typo with `Invalid` | **Owed.** `openapi.json` documents the route and `apid/src/tests/update_api.rs` has no case for it; nothing drives the handler |
+| The end-to-end bench cycle | `auto` on real hardware: fetch, window, install, reboot, confirm | — | **Owed to bench hardware** (U10), and blocking for shipping `auto` at all. No seam retires this one: what it verifies is the bootloader spending real boot credits and a real slot falling back, which is the half of the loop no test on this host observes |
+
+**How much of that is a guard and how much is decoration** was measured
+rather than asserted: seven mutations, one at a time, each compiled and each
+red at the test level — the automatic install route ceasing to call
+`InstallUpdate`; the driver dropping its own window check; the manual install
+route dropping the window gate; the automatic reboot route arming the
+override to get through; the driver reading a closed gate as an open one; and
+each of the two suppression consultations removed. A guard whose removal
+changes no test is not a guard, and the two consultations were kept honest
+this way: removing the pre-install one at first reddened only the deferral
+table, because the earlier consultation refused before the pass reached it,
+so the cycle test was extended to exercise the pre-install site on its own.
 
 ## 7. The deployment contract
 
