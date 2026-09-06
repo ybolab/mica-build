@@ -52,6 +52,15 @@ const NON_ENDPOINT_LITERALS = [
   'https://base-ui.com/production-error',
   'https://react.dev/errors/',
   'https://tailwindcss.com',
+  // i18next's useSuspense diagnostic, in the same class as the three above:
+  // documentation a library points at when it throws. This check had never
+  // executed against a composed image until 2026-09-05; the first run that did
+  // found TWO unregistered literals, and only this one is a library's
+  // documentation. The other was an example update address in the console's own
+  // source field, which was removed from the UI rather than registered here --
+  // an update-shaped URL is this check's subject and does not belong in its
+  // exception list.
+  'https://react.i18next.com/latest/usetranslation-hook',
   // TanStack Router's synthetic origin for relative URL parsing, scoped to
   // its expression in embedded UI code. A standalone localhost URL still fails.
   'window?.origin&&window.origin!==`null`?window.origin:`http://localhost`',
