@@ -32,7 +32,7 @@ import {
   verityFactsFrom,
   VERITY_KEYS,
   type VerityFacts,
-} from './grub-x64.ts'
+} from './grub-uefi.ts'
 import { BOARDS_DIR } from './paths.ts'
 
 const g = loadGeometry('x64')

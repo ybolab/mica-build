@@ -371,7 +371,7 @@ RAUC BOOT_ORDER 握手脚本，以及一条救援路径（cx3576：恢复键 →
    改为为 ESP 提供一份 `grub.cfg`。
 4. **先走冒烟路径**——用现成或厂商镜像——把硬件带起来验证过，再去做完整镜像。
 5. 根文件系统从包仓库组合出来（`rootfs/compose/`），板卡自己的内容作为
-   `mos-board-<name>` 交付；镜像用 `bash build/run.sh --mkimage-cx3576`（或 `--mkimage-x64`）装配，
+   `mos-board-<name>` 交付；镜像用 `bash build/run.sh --mkimage-cx3576`（或 `--mkimage-uefi --board x64`）装配，
    对 `bash verify/run.sh --verify --board <name>` 跑绿，然后在硬件上验 apid 存活。
    注意 `/healthz` **只证明 apid 进程在监听**，不证明 mosd 或板上任何其他服务是健康的。
 6. **断电试验台跑过之后**，这块板才能被称为受支持。

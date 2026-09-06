@@ -42,7 +42,7 @@ usage() {
 usage: bash build/run.sh [--help] [bun-test-args...]
        bash build/run.sh --build-rootfs [driver-args...]
        bash build/run.sh --mkimage-cx3576 [assembler-args...]
-       bash build/run.sh --mkimage-x64 [assembler-args...]
+       bash build/run.sh --mkimage-uefi --board B [assembler-args...]
        bash build/run.sh --bundle [bundle-args...]
        bash build/run.sh --release [release-args...]
        bash build/run.sh --compare-roots [comparator-args...]
@@ -62,12 +62,15 @@ With --mkimage-cx3576 FIRST, it assembles the cx3576 image instead. Its remainin
 arguments are the assembler's own; try --mkimage-cx3576 --help. The same
 first-position rule applies, for the same reason.
 
-With --mkimage-x64 FIRST, it assembles the x64 image. Same shape, same
-first-position rule; try --mkimage-x64 --help. It is a fourth arm rather than a
-board argument to the third because the two assemblers share a board format and
-a slot model and nothing else: one writes a U-Boot loader at a fixed sector and
-the other builds a standalone EFI binary, and a mistake in either would
-otherwise be a mistake in both.
+With --mkimage-uefi FIRST, it assembles a UEFI board's image -- x64 or
+virt-arm64 -- and --board says which. Same shape, same first-position rule; try
+--mkimage-uefi --board x64 --help.
+
+It is a fourth arm rather than a --board on the third because the U-Boot and
+UEFI assemblers share a board format and a slot model and nothing else: one
+writes a U-Boot loader at a fixed sector and the other builds a standalone EFI
+binary, and a mistake in either would otherwise be a mistake in both. --board
+sits INSIDE this arm because the two UEFI boards share the assembler exactly.
 
 With --bundle FIRST, it builds and SIGNS the RAUC update bundle. Same shape,
 same first-position rule; try --bundle --help. Unlike the two assemblers this
@@ -110,14 +113,24 @@ USAGE
 # Six modes rather than one, and they stay six: they arrived from different
 # milestones (M5b, M6b, M6c, M6d, PLAN-036 and PLAN-043) and share only the preamble above
 # and run_bun below. Nothing about any of them is a version of another -- in
-# particular --mkimage-x64 is an ARM of this dispatch and not a `--board` flag
-# on --mkimage-cx3576, for the reason the usage text gives.
+# particular --mkimage-uefi is an ARM of this dispatch and not a `--board` flag
+# on --mkimage-cx3576, for the reason the usage text gives. Its own --board
+# selects between the UEFI boards and is handled by the assembler, not here.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --build-rootfs) MODE=build-rootfs; shift ;;
 --mkimage-cx3576) MODE=mkimage-cx3576; shift ;;
---mkimage-x64) MODE=mkimage-x64; shift ;;
+--mkimage-uefi) MODE=mkimage-uefi; shift ;;
+# The spelling this replaced, refused BY NAME rather than falling through to
+# `bun test` as an unknown filter. It worked until PLAN-085 and the tree carries
+# no compatibility shims, so the one thing owed to whoever types it is the new
+# spelling -- not a bare "unknown option", and not a green suite.
+--mkimage-x64)
+    echo "error: --mkimage-x64 no longer exists; it is now '--mkimage-uefi --board x64'." >&2
+    echo "       That assembler serves every UEFI board (x64, virt-arm64), so the board is" >&2
+    echo "       named rather than baked into the flag. See PLAN-085." >&2
+    exit 1 ;;
 --bundle) MODE=bundle; shift ;;
 --release) MODE=release; shift ;;
 --compare-roots) MODE=compare-roots; shift ;;
@@ -139,10 +152,20 @@ for arg in "$@"; do
 done
 
 for arg in "$@"; do
-    case "${arg}" in --mkimage-x64) ;; *) continue ;; esac
-    echo "error: --mkimage-x64 has to be the FIRST argument; here it came after '$1'." >&2
+    case "${arg}" in --mkimage-uefi) ;; *) continue ;; esac
+    echo "error: --mkimage-uefi has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
     echo "       a green suite in answer to a request to assemble an image." >&2
+    exit 1
+done
+
+# The retired spelling, in any position. First position is already answered by
+# the case above; this catches `bash build/run.sh filter --mkimage-x64`, which
+# would otherwise reach `bun test` as an unknown filter and pass.
+for arg in "$@"; do
+    case "${arg}" in --mkimage-x64) ;; *) continue ;; esac
+    echo "error: --mkimage-x64 no longer exists; it is now '--mkimage-uefi --board x64'." >&2
+    echo "       See PLAN-085. It must also be the FIRST argument." >&2
     exit 1
 done
 
@@ -457,15 +480,19 @@ if [ "${MODE}" = mkimage-cx3576 ]; then
     exit "${rc}"
 fi
 
-# The x64 assembler. Everything the block above says applies unchanged: it
+# The UEFI assembler. Everything the block above says applies unchanged: it
 # produces a FILE and reads the assembled partition table back out of it before
 # it will rename it into place, so there is no shape of "ran and asserted
 # nothing" for a count to guard against; and it needs docker but not `docker
 # buildx`, so the container route carries it.
-if [ "${MODE}" = mkimage-x64 ]; then
-    echo "build: assembling the x64 image"
+#
+# The board is NOT echoed into the announce line from this script's own reading
+# of "$@": the assembler refuses a missing --board with the list of UEFI boards
+# it found on the tree, and a second parser here could disagree with it.
+if [ "${MODE}" = mkimage-uefi ]; then
+    echo "build: assembling a UEFI board image"
     rc=0
-    run_bun run src/mkimage-x64-cli.ts "$@" || rc=$?
+    run_bun run src/mkimage-uefi-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 

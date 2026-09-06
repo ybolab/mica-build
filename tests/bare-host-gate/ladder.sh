@@ -15,7 +15,7 @@
 #   rung 3  make os-layout-lint                    -- bun, out of a container
 #           make os-verify-test                    -- 1270 tests, no host bun
 #
-# It does NOT climb rung 4 -- `bash build/run.sh --mkimage-x64` and then
+# It does NOT climb rung 4 -- `bash build/run.sh --mkimage-uefi --board x64` and then
 # `bash verify/run.sh --verify --board x64`, which section 4 ran by hand to
 # `PASS (313/313)`. Assembling an image needs the amd64 package pool and a
 # composed rootfs; a fresh clone has neither and making them costs tens of
@@ -303,5 +303,5 @@ run_step 3 make os-verify-test
 echo
 echo "rungs 1-3: ${STEP} steps, all green, on a host with docker, git, bash, make and busybox."
 echo "NOT climbed, and stated so the record is not read as more than it is: rung 4 --"
-echo "  \`bash build/run.sh --mkimage-x64\` and \`bash verify/run.sh --verify --board x64\` --"
+echo "  \`bash build/run.sh --mkimage-uefi --board x64\` and \`bash verify/run.sh --verify --board x64\` --"
 echo "  needs the amd64 package pool; \`--build-rootfs\` still refuses for PLAN-080 B5's one COPY."

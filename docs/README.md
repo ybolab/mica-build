@@ -65,6 +65,7 @@
   - `board-env.md` — `board.env` key reference: the board definition contract
   - `board-template.md` — board dossier template: the thirteen validated sections
   - `cx3576-example.md` — the filled dossier instance for the cx3576 board
+  - `virt-arm64.md` — board dossier: the QEMU aarch64 virt machine, a test target with no release path
   - `qualification.md` — field-reliability qualification: the matrix and its binding rules
   - `assurance.md` — boot assurance ladder (I1–I4) and what each level requires
   - `support-tiers.md` — board support tiers: claims about evidence and ownership

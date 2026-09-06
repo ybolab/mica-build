@@ -27,7 +27,7 @@ In order, from the repository root:
 MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh   # builder images
 make os-debs                                             # the package pool
 MOS_BOARD=x64 bash rootfs/build.sh                       # the rootfs slot
-bash build/run.sh --mkimage-x64                          # the A/B disk image
+bash build/run.sh --mkimage-uefi --board x64                          # the A/B disk image
 bash verify/run.sh --verify --board x64                  # the image contract
 ```
 

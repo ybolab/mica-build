@@ -72,10 +72,11 @@ Under `set -u` a shell says `BOOT_A_START_MIB: unbound variable` and names
 neither; a consumer reading `${X:-}` instead says nothing at all.
 
 What it does **not** do: the derived layout. That depends on the rootfs that was
-actually built and it differs per board, so each board has its own
-`src/layout-<board>.ts` rather than a `case` in this one.
+actually built, and its arithmetic differs per BOOT CHAIN rather than per board:
+`src/layout-cx3576.ts` for the U-Boot board, `src/layout-uefi.ts` for the UEFI
+ones. Not a `case` in this file either way.
 
-Both shipped boards read clean — 0 geometry faults, 0 model faults — and the
+Every shipped board reads clean — 0 geometry faults, 0 model faults — and the
 per-board assertions are spelled out with the values copied from the files.
 **Anything that passes on cx3576 alone is half tested**: the parser once passed
 cx3576 141/141 while x64 was wholly unreadable.
@@ -166,11 +167,18 @@ Sizes go to sgdisk in sectors throughout. `+NS` and `+NM` are byte-identical at
 512-byte sectors, and the suite re-runs that comparison rather than trusting the
 sentence.
 
-## The x64 assembler
+## The UEFI assembler
 
-`src/mkimage-x64.ts`, with `src/layout-x64.ts`, `src/grub-x64.ts` and the same
-`src/pin-seeded-times.ts` under it and `src/mkimage-x64-cli.ts` over it. Fourteen
+`src/mkimage-uefi.ts`, with `src/layout-uefi.ts`, `src/grub-uefi.ts` and the same
+`src/pin-seeded-times.ts` under it and `src/mkimage-uefi-cli.ts` over it. Fourteen
 refusals, each driven from the failing side with a positive control beside it.
+
+It serves BOTH UEFI boards -- x64 and virt-arm64 -- which differ in three facts:
+the grub target, the removable-media file name, and the package carrying the
+module tree. `src/toolsets.ts` holds them as a table keyed on `MOS_ARCH` and
+checks each board's own `ESP_REQUIRED_FILES` against it, so a board declaring
+`MOS_ARCH=arm64` beside `BOOTX64.EFI` is refused rather than assembled into an
+image no firmware boots.
 
 ### Why this is not `mkimage-cx3576.ts` with a board parameter
 
@@ -180,7 +188,7 @@ it exists on a UEFI machine. What the two share is shared as **modules and
 files** (`src/geometry.ts`, `src/pin-seeded-times.ts`, `src/tools/`, the board
 definitions) and not as a `case`.
 
-`src/layout-x64.ts` sits beside `src/layout-cx3576.ts` for the same reason, and
+`src/layout-uefi.ts` sits beside `src/layout-cx3576.ts` for the same reason, and
 the difference is arithmetic rather than style: x64 applies its headroom
 percentage to the payload's **byte count** and ceilings to MiB afterwards, where
 cx3576 ceilings first. Measured — the two agree on all 2048 whole-MiB payloads
@@ -282,7 +290,7 @@ The bundle's two branches differ only in what a boot slot holds — a compiled
 `boot.scr` plus both slots' verity env files on U-Boot, the kernel, the initrd
 and a GRUB cmdline fragment on grub — and that is a board fact. So this is one
 module with one branch on `RAUC_BOOTLOADER`, and `--bundle` takes a board where
-`--mkimage-cx3576` and `--mkimage-x64` are separate arms. The grub branch's refusals
+`--mkimage-cx3576` and `--mkimage-uefi` are separate arms. The grub branch's refusals
 are driven from the failing side; **no x64 bundle has been built**, because this
 tree has no x64 rootfs to bundle.
 
@@ -337,7 +345,7 @@ images on purpose.
 | toolset | image key | provides |
 |---|---|---|
 | `cx3576-assembly` | `IMAGE_ALPINE_3_21` | sgdisk, mkfs.vfat, mcopy, mdir, minfo, mke2fs, dumpe2fs, debugfs, mkimage, dd, truncate |
-| `x64-assembly` | `IMAGE_DEBIAN_TRIXIE` | the same, plus grub-mkstandalone, minus mkimage |
+| `uefi-assembly-<arch>` | `IMAGE_DEBIAN_TRIXIE` | the same, plus grub-mkstandalone, minus mkimage |
 | `verity` | `IMAGE_ALPINE_3_21` | veritysetup |
 | `coreutils` | `IMAGE_ALPINE_3_21` | dd, truncate — usually the **host** route |
 | `bundle` | `IMAGE_DEBIAN_TRIXIE` | rauc (carried in), mksquashfs, mcopy, mkimage, jq |
@@ -407,8 +415,8 @@ bash build/run.sh src/geometry.test.ts   # extra arguments go to `bun test`
 
 bash build/run.sh --mkimage-cx3576           # assemble the cx3576 image
 bash build/run.sh --mkimage-cx3576 --help
-bash build/run.sh --mkimage-x64          # assemble the x64 image
-bash build/run.sh --mkimage-x64 --help
+bash build/run.sh --mkimage-uefi --board x64          # assemble the x64 image
+bash build/run.sh --mkimage-uefi --board x64 --help
 bash build/run.sh --bundle               # build and SIGN the update bundle
 bash build/run.sh --bundle 1.2.3         # ... at a version
 bash build/run.sh --bundle --help
@@ -435,11 +443,11 @@ and `MOS_ROOTFS_WITHOUT` into one list and hands it to
 `rootfs/packages/resolve.sh`, which refuses an unmatched feature name for the
 same reason this flag did.
 
-`--mkimage-cx3576`, `--mkimage-x64` and `--bundle` are **modes**, each recognised
+`--mkimage-cx3576`, `--mkimage-uefi --board x64` and `--bundle` are **modes**, each recognised
 only in first position: anywhere else one would be forwarded to `bun test`,
 which ignores an unknown flag and reports a green suite in answer to a request
 to assemble an image. That is `verify/run.sh`'s rule, and it is driven here
-for all four modes — `bash build/run.sh filter --mkimage-x64` exits 1 by name,
+for all four modes — `bash build/run.sh filter --mkimage-uefi --board x64` exits 1 by name,
 as do the other three.
 
 The two assemblers are two arms of one dispatch rather than one arm with a
@@ -500,10 +508,10 @@ src/boot-cx3576.ts         boot.cmd's guards and the per-slot verity env, both p
 src/pin-seeded-times.ts    which inode timestamps are data and which are the assembler's noise
 src/mkimage-cx3576.ts          the cx3576 assembler
 src/mkimage-cx3576-cli.ts      the host half: where the inputs are, and the -latest symlink
-src/layout-x64.ts          x64's DERIVED layout -- a second arithmetic, not a second spelling
-src/grub-x64.ts            grub.cfg's three guards and the per-slot cmdline fragment, all pure
-src/mkimage-x64.ts         the x64 assembler
-src/mkimage-x64-cli.ts     its host half
+src/layout-uefi.ts         the UEFI DERIVED layout -- a second arithmetic, not a second spelling
+src/grub-uefi.ts           grub.cfg's three guards and the per-slot cmdline fragment, all pure
+src/mkimage-uefi.ts        the UEFI assembler: x64 and virt-arm64, three facts apart
+src/mkimage-uefi-cli.ts    its host half; --board says which UEFI board
 src/bundle.ts              the signed RAUC update bundle, both bootloaders
 src/bundle-cli.ts          its host half: the signing material, the epoch name, -latest
 src/stages.ts              a directory of numbered Dockerfiles -> order, tags, args, and what is declined

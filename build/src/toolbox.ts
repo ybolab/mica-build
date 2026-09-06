@@ -67,6 +67,21 @@ export interface Toolset {
   /** The build-env/images.env key naming the base image. Never a literal reference. */
   readonly imageKey: string
   readonly manager: PackageManager
+  /**
+   * A dpkg foreign architecture to enable before apt runs, when a package this
+   * toolset needs is not in the base image's own index.
+   *
+   * apt only, and there is exactly one caller: the arm64 UEFI assembly needs
+   * grub-efi-arm64-bin, which is `Architecture: arm64` and therefore absent
+   * from an amd64 index. The package is DATA -- a tree of grub modules, no
+   * executable -- so installing it foreign is not emulation and nothing from it
+   * is ever run; the tool that reads it is the base image's own
+   * grub-mkstandalone.
+   *
+   * Undefined on every other toolset, and that is the statement: a toolset that
+   * does not name one installs from its base image's index alone.
+   */
+  readonly foreignArch?: string
   /** Exactly the packages the shell installs today. See each toolset's note in src/toolsets.ts. */
   readonly packages: readonly string[]
   /** Every binary this toolset must provide, asserted inside the container after open(). */
@@ -242,12 +257,19 @@ export class Toolbox {
 
     try {
       if (toolset.packages.length > 0) {
+        // BEFORE `apt-get update`, not after: the foreign architecture has to
+        // be enabled while the indexes are fetched or apt fetches only the
+        // native one and the package is reported unavailable rather than
+        // missing an architecture.
+        const addArch = toolset.foreignArch === undefined
+          ? ''
+          : `dpkg --add-architecture ${toolset.foreignArch} && `
         const install = toolset.manager === 'apk'
           ? ['sh', '-c', `apk add --no-cache -q ${toolset.packages.join(' ')}`]
           : [
               'sh',
               '-c',
-              'apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq '
+              `${addArch}apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq `
               + `--no-install-recommends ${toolset.packages.join(' ')} >/dev/null`,
             ]
 

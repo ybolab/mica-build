@@ -309,8 +309,8 @@ tag that is present it answers `pull access denied, repository does not exist`,
 about a registry. `docs/design/build.md` §4.1 records both modes.
 
 Outputs to `_out/<board>/`. The first four are consumed by the image assembler
--- `build/src/mkimage-cx3576.ts` and `mkimage-x64.ts`, entered through
-`bash build/run.sh --mkimage-cx3576|--mkimage-x64`. The last three are **not**:
+-- `build/src/mkimage-cx3576.ts` and `mkimage-uefi.ts`, entered through
+`bash build/run.sh --mkimage-cx3576|--mkimage-uefi --board x64`. The last three are **not**:
 they are read by the smoke runner, and nothing copies any of them into the
 image.
 

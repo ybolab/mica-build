@@ -1,7 +1,7 @@
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
 
-BOARDS := cx3576 x64
+BOARDS := cx3576 virt-arm64 x64
 
 # The <board>-% delegation rules are NOT listed here: .PHONY does not accept
 # patterns, so an entry like `cx3576-%` matches nothing and silently declares
@@ -71,6 +71,7 @@ help:
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-<t>             delegate target <t> to boards/x64/bsp (kernel|kernel-config|clean); no bootloader is built, the firmware is one"
+	@echo "  virt-arm64-<t>      delegate target <t> to boards/virt-arm64/bsp (kernel|kernel-config|clean); the QEMU aarch64 board, same shape as x64"
 
 # `make os` is retired. It keeps a recipe rather than being deleted for the
 # reason x64-% has one: with neither a recipe nor a rule, `make os` prints
@@ -620,9 +621,20 @@ cx3576-%:
 # PLAN-074 -- a UEFI machine's firmware provides the boot chain, so there is
 # still no U-Boot and no vendor rootfs here, but the kernel is this
 # repository's since it stopped being Debian's. The image is still assembled
-# with `bash build/run.sh --mkimage-x64`.
+# with `bash build/run.sh --mkimage-uefi --board x64`.
 x64-%:
 	$(MAKE) -C boards/x64/bsp $*
+
+# virt-arm64, the QEMU aarch64 board, has the same one BSP target for the same
+# reason x64 does: its firmware is AAVMF and provides the boot chain, so nothing
+# here compiles a bootloader. The kernel IS built, and not by preference -- the
+# boot contract is `dm-mod.create=` with no initrd, which needs CONFIG_DM_INIT,
+# and Debian's linux-image-arm64 does not set it. See boards/virt-arm64/board.env.
+#
+# The stem cannot collide with x64-%: a target has to begin `x64-` to match
+# that rule, and `virt-arm64-kernel` does not.
+virt-arm64-%:
+	$(MAKE) -C boards/virt-arm64/bsp $*
 
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the

@@ -40,7 +40,7 @@ export const OPEN_TIMEOUT_MS = 300_000
  * the daemon kept degrading during the measurement itself: in the worst case a
  * first exec was still outstanding after five minutes. So nothing here is a
  * bound. 300 s is SIZED -- it covers the largest measured creation plus the
- * work with margin, and takes the observed 120,001 ms failure (an mkimage-x64
+ * work with margin, and takes the observed 120,001 ms failure (an mkimage-uefi
  * sgdisk case, whose exact mechanism is not pinned: it execs against an
  * already-open toolbox, so creation cost alone does not explain it) as a lower
  * bound. If a test still trips this ceiling under load, that is evidence

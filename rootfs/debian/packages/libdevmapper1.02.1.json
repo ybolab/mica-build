@@ -9,6 +9,15 @@
       "consumers": [
         "mos-board-x64"
       ]
+    },
+    "arm64": {
+      "version": "2:1.02.205-2",
+      "architecture": "arm64",
+      "sha256": "4d783b235eb9857ec96fabd0f161a84426706d079ec82ef5a91cbbf9dd644904",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/l/lvm2/libdevmapper1.02.1_1.02.205-2_arm64.deb",
+      "consumers": [
+        "mos-board-virt-arm64"
+      ]
     }
   }
 }

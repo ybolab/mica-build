@@ -145,6 +145,7 @@ board_radios() {
 
 CX_RADIOS="$(board_radios cx3576)"
 X64_RADIOS="$(board_radios x64)"
+VIRT_ARM64_RADIOS="$(board_radios virt-arm64)"
 
 # mos-busybox is in EVERY set below, including CX_MINIMAL, and that is what
 # rootfs/packages/common.pkgs holding it means: the emergency binary is not
@@ -160,6 +161,13 @@ CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mq
 # mos-board-cx3576.
 X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-kernel-x64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
 X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-kernel-x64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
+# virt-arm64 is x64's set with its own board and kernel packages: the two
+# boards differ in architecture and firmware, not in what userland the image
+# carries, and BOARD_RADIOS is empty on both. Spelled out rather than derived
+# from X64_DEV by substitution -- a set computed from another set agrees with
+# it by construction and would not notice the day they stop agreeing.
+VA_DEV="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-kernel-virt-arm64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
+VA_PROD="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-kernel-virt-arm64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
 CX_MINIMAL="mos-board-cx3576 mos-busybox mos-ca-trust mos-profile-dev mos-system"
 
 expect_set "cx3576 dev, radios '${CX_RADIOS}', nothing declined" "${CX_DEV}" \
@@ -170,23 +178,39 @@ expect_set "x64 dev, radios '${X64_RADIOS}', nothing declined" "${X64_DEV}" \
     "${PACKAGES_DIR}" --board x64 --profile dev --radios "${X64_RADIOS}" --without ""
 expect_set "x64 prod, radios '${X64_RADIOS}', nothing declined" "${X64_PROD}" \
     "${PACKAGES_DIR}" --board x64 --profile prod --radios "${X64_RADIOS}" --without ""
+expect_set "virt-arm64 dev, radios '${VIRT_ARM64_RADIOS}', nothing declined" "${VA_DEV}" \
+    "${PACKAGES_DIR}" --board virt-arm64 --profile dev --radios "${VIRT_ARM64_RADIOS}" --without ""
+expect_set "virt-arm64 prod, radios '${VIRT_ARM64_RADIOS}', nothing declined" "${VA_PROD}" \
+    "${PACKAGES_DIR}" --board virt-arm64 --profile prod --radios "${VIRT_ARM64_RADIOS}" --without ""
 
-# The x64 set carries no cx3576 content. Asserted as its own check and not left
-# to the literal above, because the failure it guards against -- a board's
-# packages leaking into the other board's image -- is one an updated expectation
-# would absorb without anyone reading it.
-run_resolve "${PACKAGES_DIR}" --board x64 --profile dev --radios "${X64_RADIOS}" --without ""
-leaked=""
-for pkg in ${resolve_out}; do
-    case "${pkg}" in
-    mos-board-cx3576 | mos-wifi | mos-wifi-ap | mos-bluetooth) leaked="${leaked}${pkg} " ;;
-    esac
+# A radio-less board carries no OTHER board's package and no radio package.
+# Asserted as its own check and not left to the literals above, because the
+# failure it guards against -- one board's packages leaking into another
+# board's image -- is one an updated expectation would absorb without anyone
+# reading it.
+#
+# Run over BOTH radio-less boards. With one board it could not distinguish
+# "the resolver keeps boards apart" from "x64 happens to be the one the
+# resolver was written around", and virt-arm64 is the second board with an
+# empty BOARD_RADIOS.
+for va_pair in "x64:${X64_RADIOS}" "virt-arm64:${VIRT_ARM64_RADIOS}"; do
+    va_board="${va_pair%%:*}"
+    va_radios="${va_pair#*:}"
+    run_resolve "${PACKAGES_DIR}" --board "${va_board}" --profile dev --radios "${va_radios}" --without ""
+    leaked=""
+    for pkg in ${resolve_out}; do
+        case "${pkg}" in
+        mos-wifi | mos-wifi-ap | mos-bluetooth) leaked="${leaked}${pkg} " ;;
+        mos-board-*)
+            [ "${pkg}" = "mos-board-${va_board}" ] || leaked="${leaked}${pkg} " ;;
+        esac
+    done
+    if [ -z "${leaked}" ]; then
+        pass "${va_board} dev carries no other board package and no radio package"
+    else
+        fail "${va_board} dev carries foreign content: ${leaked% }. It declares BOARD_RADIOS='' and has its own board package"
+    fi
 done
-if [ -z "${leaked}" ]; then
-    pass "x64 dev carries no cx3576 board package and no radio package"
-else
-    fail "x64 dev carries cx3576 content: ${leaked% }. x64 declares BOARD_RADIOS='' and has its own board package"
-fi
 
 # Declining ONE radio keeps the other: wifi and bluetooth are independent
 # decline tokens, which is the whole point of the split -- the retired umbrella

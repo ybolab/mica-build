@@ -445,10 +445,12 @@ describe('the shipped layouts', () => {
     const run = lintPaths(shippedBoardPaths())
     expect(run.ok).toBe(true)
     expect(run.failed).toBe(0)
-    // BOTH boards contributed. A run whose second file died mid-parse would
+    // EVERY board contributed. A run whose second file died mid-parse would
     // still report PASS on a total that is merely non-zero -- which is exactly
-    // what the shell predecessor did when x64 referenced a renamed key.
-    expect(run.boards.map(b => b.board)).toEqual(['cx3576', 'x64'])
+    // what the shell predecessor did when x64 referenced a renamed key. Named
+    // rather than counted, because a count of the wrong boards is still the
+    // right count.
+    expect(run.boards.map(b => b.board)).toEqual(['cx3576', 'virt-arm64', 'x64'])
     for (const b of run.boards) expect(b.checks.length).toBeGreaterThan(0)
     expect(run.passed).toBe(run.checks.length)
   })
@@ -654,9 +656,14 @@ describe('the role schema', () => {
     }
   })
 
-  test('the board-level required keys are the four the shell pair checked', () => {
+  test('the board-level required keys are the four the shell pair checked, plus the release flag', () => {
+    // BOARD_RELEASE_TARGET is the one this pair did not have. It was added
+    // when a board arrived that has NO release path (virt-arm64): before it,
+    // whether a board was releasable was a fact only prose carried, and the
+    // release gate would assemble for any board with a board.env.
     expect([...REQUIRED_BOARD_KEYS]).toEqual([
-      'BOARD_CMDLINE_ARGS', 'BOARD_SIZE_BUDGET_MB', 'BOARD_HAS_STATUS_LED', 'MOS_ARCH',
+      'BOARD_CMDLINE_ARGS', 'BOARD_SIZE_BUDGET_MB', 'BOARD_HAS_STATUS_LED',
+      'BOARD_RELEASE_TARGET', 'MOS_ARCH',
     ])
   })
 })

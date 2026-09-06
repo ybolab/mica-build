@@ -21,7 +21,7 @@ import type { GptSpec } from './tools/sgdisk.ts'
 //      is `(payload_mib * pct + 99) / 100`, ceiling first. Those are not the
 //      same function: they agree whenever the payload is a whole MiB (which
 //      the cx3576 assembly contract refuses to proceed without and the x64 assembly contract never
-//      checks) and diverge otherwise -- layout-x64.test.ts drives both
+//      checks) and diverge otherwise -- layout-uefi.test.ts drives both
 //      spellings over the same payloads, agreeing on all 2048 whole-MiB ones
 //      and disagreeing on thousands of others.
 //   2. There is no pinned mode. The cx3576 assembly contract captures
@@ -193,7 +193,7 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
  *
  * The alignment is passed explicitly -- the board's GPT_ALIGN_SECTORS, 2048 --
  * rather than left to sgdisk's default, which is the same number. The two are
- * byte-identical (mkimage-x64.test.ts writes both tables with a real sgdisk
+ * byte-identical (mkimage-uefi.test.ts writes both tables with a real sgdisk
  * over the real x64 geometry and compares the bytes); spelling it out keeps the
  * board the single source of truth for its own geometry, since an assembler
  * that ignored it would agree with the file only while the file agreed with
@@ -202,7 +202,7 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
  * There is no loader read-back here, deliberately: cx3576 needs one because its
  * loader starts at sector 64 and sgdisk silently relocates a non-2048-aligned
  * start, while every x64 start is a whole MiB, which is 2048 sectors. Even so,
- * checkPartitionsLanded in src/mkimage-x64.ts reads the assembled table back,
+ * checkPartitionsLanded in src/mkimage-uefi.ts reads the assembled table back,
  * because "no start here is relocatable" is a claim about the board file and
  * not about the table sgdisk wrote.
  */

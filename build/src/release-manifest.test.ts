@@ -13,9 +13,10 @@
 // reddens its case, which is what makes the table evidence.
 
 import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { makeWorkDir } from './paths.ts'
+import { loadGeometry } from './geometry.ts'
+import { makeWorkDir, shippedBoards } from './paths.ts'
 import {
   ARTIFACT_ROLES,
   assembleRelease,
@@ -34,6 +35,7 @@ import {
   packageRows,
   readBakedTrust,
   RELEASE_CHANNELS,
+  requireReleaseTarget,
   RELEASE_SCHEMA_VERSION,
   REQUIRED_ROLES,
   sbomFromRows,
@@ -406,9 +408,31 @@ describe('checkBoardEvidence refuses unsupported-claim wording below I3/I4', () 
 })
 
 describe('the COMMITTED board evidence is valid and honest to this tree', () => {
-  for (const board of ['cx3576', 'x64']) {
+  // THE BOARDS ARE DISCOVERED AND THEN SPLIT BY THEIR OWN DECLARATION, not
+  // listed here. This loop was `for (const board of ['cx3576', 'x64'])`, which
+  // is the literal every board added to boards/ gets left out of: a third board
+  // landed with the list untouched and its evidence file -- or its absence --
+  // was covered by nothing, while this suite went on reporting green about the
+  // two boards someone had remembered.
+  const boards = shippedBoards()
+  const releaseTargets = boards.filter(b => loadGeometry(b).board.releaseTarget === '1')
+  const testTargets = boards.filter(b => loadGeometry(b).board.releaseTarget === '0')
+  const evidencePath = (board: string): string =>
+    join(import.meta.dir, '..', '..', 'boards', board, 'evidence.json')
+
+  test('the split is populated on both sides, so neither loop below is vacuous', () => {
+    // A release set that came back empty would make the first loop assert
+    // nothing while still passing, and an empty test set would do the same to
+    // the second. Both are asserted non-empty BY NAME, because a count of the
+    // wrong boards satisfies a count.
+    expect(releaseTargets).toEqual(['cx3576', 'x64'])
+    expect(testTargets).toEqual(['virt-arm64'])
+    expect([...releaseTargets, ...testTargets].sort()).toEqual([...boards].sort())
+  })
+
+  for (const board of releaseTargets) {
     test(`boards/${board}/evidence.json passes its own validator at schema ${EVIDENCE_SCHEMA_VERSION}`, () => {
-      const path = join(import.meta.dir, '..', '..', 'boards', board, 'evidence.json')
+      const path = evidencePath(board)
       const e = checkBoardEvidence(JSON.parse(readFileSync(path, 'utf8')), path, board)
       // No negative-update suite exists in this tree, so no board may claim
       // I2 or above; cx3576 additionally must never claim I3/I4 while
@@ -416,6 +440,53 @@ describe('the COMMITTED board evidence is valid and honest to this tree', () => 
       expect(e.bootAssurance).toBe('I1')
     })
   }
+
+  for (const board of testTargets) {
+    test(`boards/${board} declares BOARD_RELEASE_TARGET=0 and ships NO evidence.json`, () => {
+      // The absence is the statement, and this is what makes it one. The
+      // assurance ladder starts at I1 and I1's floor requires a verity-root
+      // evidence ref, which only a suite run against an assembled image can
+      // produce. A test target that has never been assembled therefore cannot
+      // write an honest evidence file -- so it writes none, and a file
+      // appearing here would be a claim nothing backs.
+      expect(existsSync(evidencePath(board))).toBe(false)
+    })
+  }
+})
+
+describe('a board with no release path is REFUSED by the release contract', () => {
+  const boardEnv = '/b/board.env'
+
+  test('POSITIVE CONTROL: a test target pushed at the release path goes red', () => {
+    // The check that matters, driven from the failing side. An exclusion
+    // asserted only over boards that are already excluded is green forever and
+    // tests nothing: this is the case where the thing IS in the set.
+    expect(() => requireReleaseTarget('virt-arm64', '0', boardEnv))
+      .toThrow(/BOARD_RELEASE_TARGET=0, so it has no release path/)
+    expect(() => requireReleaseTarget('virt-arm64', '0', boardEnv))
+      .toThrow(/TEST target/)
+  })
+
+  test('and the real board declares exactly that, so the control is not hypothetical', () => {
+    // The positive control above passes a literal '0'. This is what says the
+    // shipped board actually has that value -- without it the control would
+    // prove the function works on an input nothing produces.
+    expect(loadGeometry('virt-arm64').board.releaseTarget).toBe('0')
+  })
+
+  test('a release target passes', () => {
+    expect(() => requireReleaseTarget('x64', '1', boardEnv)).not.toThrow()
+    expect(() => requireReleaseTarget('cx3576', '1', boardEnv)).not.toThrow()
+  })
+
+  test('an UNDECLARED release target is refused too, and differently', () => {
+    // Absent is not 0. A board that never said gets a message telling it to
+    // say, rather than one asserting a decision it did not make.
+    expect(() => requireReleaseTarget('newboard', undefined, boardEnv))
+      .toThrow(/declares no BOARD_RELEASE_TARGET/)
+    expect(() => requireReleaseTarget('newboard', '', boardEnv))
+      .toThrow(/declares no BOARD_RELEASE_TARGET/)
+  })
 })
 
 // The SBOM inputs and derivations.

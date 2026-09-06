@@ -9,7 +9,7 @@
 //
 // One thing these tests are for that layout-cx3576.test.ts is not: proving that
 // the two boards' slot arithmetic really is two arithmetics. The claim in
-// src/layout-x64.ts's header -- that x64 applies its headroom to a byte count
+// src/layout-uefi.ts's header -- that x64 applies its headroom to a byte count
 // where cx3576 applies it to a MiB count, a difference in numbers rather than in
 // spelling -- is measured below rather than asserted.
 
@@ -18,7 +18,7 @@ import { $ } from 'bun'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadGeometry, loadGeometryFromPath } from './geometry.ts'
-import { decideSlot, deriveLayout, gptSpecFor, placementMib } from './layout-x64.ts'
+import { decideSlot, deriveLayout, gptSpecFor, placementMib } from './layout-uefi.ts'
 import { boardEnvPath, makeWorkDir } from './paths.ts'
 import { writeGptArgs } from './tools/sgdisk.ts'
 
@@ -27,7 +27,7 @@ const MIB = 1048576n
 
 /** A board.env with lines appended; a later assignment wins, as in a shell. */
 function mutated(appended: string): { path: string, cleanup: () => void } {
-  const dir = makeWorkDir('layout-x64')
+  const dir = makeWorkDir('layout-uefi')
   const path = join(dir, 'board.env')
   writeFileSync(path, `${readFileSync(boardEnvPath('x64'), 'utf8')}\n${appended}\n`)
   return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
@@ -151,7 +151,7 @@ describe('the slot is sized from the payload BYTE count', () => {
 })
 
 describe('the headroom is applied to BYTES, and that is a different function', () => {
-  // The claim in src/layout-x64.ts's header, measured. cx3576's spelling is
+  // The claim in src/layout-uefi.ts's header, measured. cx3576's spelling is
   // `(payloadMib * pct + 99) / 100` over a payload already ceilinged to MiB;
   // x64's is `(payloadBytes * pct) / 100` ceilinged to MiB afterwards.
   const alignUp = (n: bigint) => ((n + 15n) / 16n) * 16n

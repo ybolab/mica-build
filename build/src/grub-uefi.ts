@@ -187,7 +187,7 @@ export function linuxLines(rendered: string): { line: number, text: string }[] {
  *
  * (A GUID has 32 hex digits, but they arrive in five dash-separated groups; the
  * longest unbroken run is 12. That is why this is `{32,}` and not `{12,}`, and
- * it is asserted from both sides in grub-x64.test.ts.)
+ * it is asserted from both sides in grub-uefi.test.ts.)
  */
 export function literalHashLines(rendered: string): { line: number, text: string }[] {
   return linuxLines(rendered).filter(l => /[0-9a-f]{32,}/.test(l.text))

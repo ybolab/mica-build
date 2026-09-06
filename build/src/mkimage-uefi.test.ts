@@ -24,9 +24,9 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadGeometry, loadGeometryFromPath, type Geometry } from './geometry.ts'
-import { deriveLayout, gptSpecFor } from './layout-x64.ts'
+import { deriveLayout, gptSpecFor } from './layout-uefi.ts'
 import {
-  assembleX64,
+  assembleUefi,
   bootSlotFault,
   checkEspIsFat32,
   checkGrubenvSize,
@@ -36,11 +36,11 @@ import {
   SEED_STAMP,
   strayEspEntries,
   type AssemblyInputs,
-} from './mkimage-x64.ts'
+} from './mkimage-uefi.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
 import { Toolbox } from './toolbox.ts'
-import { X64_ASSEMBLY } from './toolsets.ts'
+import { uefiAssembly } from './toolsets.ts'
 import { truncate } from './tools/dd.ts'
 import { FAT32_MIN_CLUSTERS, listFat, mcopy, mkfsVfat, readFatClusters } from './tools/mtools.ts'
 import { readPartition, writeGpt, writeGptArgs, type GptSpec } from './tools/sgdisk.ts'
@@ -90,7 +90,7 @@ function sha256(path: string): string {
 }
 
 beforeAll(async () => {
-  dir = makeWorkDir('mkimage-x64-test')
+  dir = makeWorkDir('mkimage-uefi-test')
   filler(join(dir, 'rootfs-verity.img'), 4 * MIB, 0x66)
   // A second payload that differs in exactly one byte's worth of content, for
   // the live control: a gate that cannot report a difference is not a gate.
@@ -117,6 +117,7 @@ beforeAll(async () => {
   mkdirSync(join(dir, 'factory-var-nolib', 'cache'), { recursive: true })
 
   base = {
+    board: 'x64',
     rootfsVerityImg: join(dir, 'rootfs-verity.img'),
     rootfsVerityEnv: join(dir, 'rootfs-verity.env'),
     kernel: join(dir, 'vmlinuz'),
@@ -124,7 +125,7 @@ beforeAll(async () => {
     imgOut: join(dir, 'out.img'),
   }
 
-  tb = await Toolbox.open(X64_ASSEMBLY, { mounts: [REPO_ROOT] })
+  tb = await Toolbox.open(uefiAssembly('amd64'), { mounts: [REPO_ROOT] })
   // Every input pinned to FILE_MTIME, the instant the assembler pins its own
   // staged files to. mke2fs -d copies the SOURCE inode's times in, so a fixture
   // built at wall-clock time would make the rebuild comparison below measure
@@ -144,13 +145,13 @@ afterAll(async () => {
 async function assemble(
   overrides: Partial<AssemblyInputs> = {},
   geometry?: Geometry,
-): Promise<Awaited<ReturnType<typeof assembleX64>>> {
-  return assembleX64({ ...base, ...overrides }, { toolbox: tb, geometry, log: () => {} })
+): Promise<Awaited<ReturnType<typeof assembleUefi>>> {
+  return assembleUefi({ ...base, ...overrides }, { toolbox: tb, geometry, log: () => {} })
 }
 
 /** A board.env with lines appended; a later assignment wins, as in a shell. */
 function mutatedBoard(appended: string): { geometry: Geometry, cleanup: () => void } {
-  const d = makeWorkDir('mkimage-x64-board')
+  const d = makeWorkDir('mkimage-uefi-board')
   const path = join(d, 'board.env')
   writeFileSync(path, `${readFileSync(join(BOARDS_DIR, 'x64', 'board.env'), 'utf8')}\n${appended}\n`)
   return { geometry: loadGeometryFromPath(path), cleanup: () => rmSync(d, { recursive: true, force: true }) }
@@ -159,7 +160,7 @@ function mutatedBoard(appended: string): { geometry: Geometry, cleanup: () => vo
 // The assembly.
 
 describe('a whole x64 image, over fabricated inputs', () => {
-  let out: Awaited<ReturnType<typeof assembleX64>>
+  let out: Awaited<ReturnType<typeof assembleUefi>>
 
   beforeAll(async () => {
     out = await assemble({ imgOut: join(dir, 'whole.img') })
@@ -669,18 +670,18 @@ describe('the toolset and the mounts', () => {
     // mtimes, `touch` for the seed stamp and the per-slot payload. A toolset that
     // did not declare them would surface the gap as "cp: not found" forty steps
     // into an assembly.
-    for (const t of ['cp', 'find', 'touch']) expect(X64_ASSEMBLY.tools).toContain(t)
+    for (const t of ['cp', 'find', 'touch']) expect(uefiAssembly('amd64').tools).toContain(t)
   })
 
   test('grub-editenv is declared beside grub-mkstandalone', () => {
-    expect(X64_ASSEMBLY.tools).toContain('grub-editenv')
-    expect(X64_ASSEMBLY.tools).toContain('grub-mkstandalone')
+    expect(uefiAssembly('amd64').tools).toContain('grub-editenv')
+    expect(uefiAssembly('amd64').tools).toContain('grub-mkstandalone')
   })
 
   test('the package list is the x64 assembly contract\'s, verbatim', () => {
-    expect(X64_ASSEMBLY.packages.join(' '))
+    expect(uefiAssembly('amd64').packages.join(' '))
       .toBe('gdisk dosfstools mtools e2fsprogs grub-efi-amd64-bin grub-common')
-    expect(X64_ASSEMBLY.imageKey).toBe('IMAGE_DEBIAN_TRIXIE')
+    expect(uefiAssembly('amd64').imageKey).toBe('IMAGE_DEBIAN_TRIXIE')
   })
 
   test('the mounts cover every input directory, and none nests inside another', () => {

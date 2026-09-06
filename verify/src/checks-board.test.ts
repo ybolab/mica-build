@@ -32,11 +32,24 @@ import {
   type RootFixture,
 } from './checks-fixture.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
-import { boardEnvPath } from './paths.ts'
+import { boardEnvPath, requireShippedBoards } from './paths.ts'
 import type { CheckResult, Verdict } from './parity.ts'
 
 const cx3576 = loadBoard(boardEnvPath('cx3576'))
 const x64 = loadBoard(boardEnvPath('x64'))
+
+/**
+ * Every shipped board, in the order the registry builds its checks in.
+ *
+ * DISCOVERED, not the two fixtures above. The derivation cases below
+ * compare a check's `boards` list against what the definitions declare, and
+ * comparing it against a hand-written pair only ever proved that the pair
+ * was right -- the moment a third board landed, the registry knew about it
+ * and the oracle did not, so the test failed for the one reason it must
+ * not: the tree grew. The two named fixtures above stay, because the cases
+ * that drive a specific board's behaviour need a specific board.
+ */
+const SHIPPED_BOARDS: readonly Board[] = requireShippedBoards().map(b => loadBoard(boardEnvPath(b)))
 
 function checkNamed(id: string): CheckCase {
   const found = BOARD_CHECKS.find(c => c.id === id)
@@ -114,7 +127,7 @@ describe('the register batch 3 adds', () => {
       const b = new Set(checkNamed(skipper).boards ?? [])
       const overlap = [...a].filter(n => b.has(n))
       expect(`${item}/${skipper} overlap: ${overlap.join(',')}`).toBe(`${item}/${skipper} overlap: `)
-      expect(new Set([...a, ...b])).toEqual(new Set(['cx3576', 'x64']))
+      expect(new Set([...a, ...b])).toEqual(new Set(SHIPPED_BOARDS.map(b2 => b2.name)))
     }
   })
 
@@ -123,11 +136,16 @@ describe('the register batch 3 adds', () => {
     // rather than against two names written here, so a third board added to
     // boards/ widens this test with the tree instead of pinning it.
     expect(checkNamed('loader-size-matches-uboot-max').boards)
-      .toEqual([cx3576, x64].filter(b => b.bootloader === 'uboot').map(b => b.name))
+      .toEqual(SHIPPED_BOARDS.filter(b => b.bootloader === 'uboot').map(b => b.name))
     expect(checkNamed('bt-btattach').boards)
-      .toEqual([cx3576, x64].filter(b => (b.radios ?? []).includes('bluetooth')).map(b => b.name))
+      .toEqual(SHIPPED_BOARDS.filter(b => (b.radios ?? []).includes('bluetooth')).map(b => b.name))
     expect(checkNamed('status-led-absent').boards)
-      .toEqual([cx3576, x64].filter(b => b.hasStatusLed !== '1').map(b => b.name))
+      .toEqual(SHIPPED_BOARDS.filter(b => b.hasStatusLed !== '1').map(b => b.name))
+    // The derivations above are only evidence if the sets they produce are
+    // not all the same set. With one bootloader, one radio answer and one
+    // LED answer across the tree, three `filter`s would agree by accident.
+    expect(SHIPPED_BOARDS.length).toBeGreaterThan(2)
+    expect(new Set(SHIPPED_BOARDS.map(b => b.bootloader)).size).toBeGreaterThan(1)
   })
 
   test('one check is generated per (board, slot, required file), with @SLOT@ substituted', () => {
@@ -142,9 +160,13 @@ describe('the register batch 3 adds', () => {
     // kernels and copies it, so each slot legitimately contains both.
     expect(ids).toContain('boot-slot-file-x64-BOOT-A-vmlinuz')
     expect(ids).toContain('boot-slot-file-x64-BOOT-B-vmlinuz')
-    // Two boards, two slots, four + three declared files.
-    expect(ids.length).toBe(2 * ((cx3576.bootSlotRequiredFiles ?? []).length)
-      + 2 * ((x64.bootSlotRequiredFiles ?? []).length))
+    // Every board, two slots, however many files each one declares -- summed
+    // over the discovered set rather than over the two named above, so a board
+    // added to boards/ widens the expectation with the registry instead of
+    // making this line the reason the suite goes red.
+    expect(ids.length).toBe(
+      SHIPPED_BOARDS.reduce((n, b) => n + 2 * ((b.bootSlotRequiredFiles ?? []).length), 0),
+    )
   })
 
   test('no matcher in this batch is the bare ` contains ` or ` is a regular file`', () => {
@@ -222,8 +244,12 @@ describe('check_status_led, BOARD_HAS_STATUS_LED=0 (x64)', () => {
     }
   })
 
-  test('it is registered for x64 and NOT for cx3576, from the definitions themselves', () => {
-    expect(checkNamed('status-led-absent').boards).toEqual(['x64'])
+  test('it is registered for every LED-less board and NOT for cx3576, from the definitions', () => {
+    // Derived from BOARD_HAS_STATUS_LED, so the list grows with the tree: both
+    // UEFI boards declare 0 (neither emulated machine has /sys/class/leds) and
+    // cx3576 declares 1. Named rather than counted -- a list of the wrong
+    // boards is still a list of the right length.
+    expect(checkNamed('status-led-absent').boards).toEqual(['virt-arm64', 'x64'])
   })
 })
 

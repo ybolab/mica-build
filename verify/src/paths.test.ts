@@ -51,9 +51,9 @@ describe('every ascent is anchored, and the neighbours miss', () => {
 })
 
 describe('the board definitions the package reads', () => {
-  test('boards/ holds both, at the names the Makefile uses', () => {
+  test('boards/ holds every shipped board, at the names the Makefile uses', () => {
     expect(BOARDS_DIR).toBe(join(REPO_ROOT, 'boards'))
-    for (const board of ['cx3576', 'x64']) {
+    for (const board of ['cx3576', 'virt-arm64', 'x64']) {
       expect(`${board}: ${existsSync(boardEnvPath(board))}`).toBe(`${board}: true`)
     }
   })
