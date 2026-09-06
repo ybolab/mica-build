@@ -131,9 +131,12 @@ dm-verity root from `dm-mod.create=` and mounts `/dev/dm-0`.
 
 ## Known limitations
 
-- **Nothing has been booted yet.** The board composes, assembles and passes the
-  image contract; what has not happened is a boot. Every row that needs a
-  running guest is still `not tested`.
+- **The boot is proven; the API phase suite is not.** The board composes,
+  assembles, passes the image contract, boots to userspace and reaches
+  `APID_LISTENING`. What has NOT been run against it is the apid phase suite
+  itself — the session-, management- and update-phase assertions — so no claim
+  about apid's behaviour on this board is supported yet, only that it starts
+  and listens.
 - **It is the largest of the three roots: 430 MB, against cx3576's 379 and
   x64's 292.** Almost all of the difference is one package —
   `mos-kernel-virt-arm64` at 119.5 MB against roughly 25 MB for x64's. arm64
@@ -141,10 +144,11 @@ dm-verity root from `dm-mod.create=` and mounts `/dev/dm-0`.
   modules; this machine loads virtio and nothing else. Trimming the module set
   is a kernel-configuration change with its own review and is deliberately not
   folded into the change that first composed the board.
-- **No KVM, ever, on this host class.** arm64 guests here run under TCG, so this
-  board is materially slower than x64 and is not a substitute for it where speed
-  matters. The apid-api harness's timeouts for this board are to be set from a
-  measured boot rather than from x64's numbers.
+- **No KVM, ever, on this host class** — arm64 guests here run under TCG. The
+  cost was measured rather than predicted, and it is smaller than expected:
+  95 s to `APID_LISTENING` against x64's 75 s on the same host, both under TCG,
+  i.e. **1.27x**. Not an order of magnitude. The harness's 900 s readiness
+  deadline is therefore left alone for this board, with 9.5x headroom.
 - **The firmware is not digest-pinned.** AAVMF is apt-installed at run time
   inside the digest-pinned base image — the same arrangement, and the same
   weakness, as x64's OVMF. Tightening it is an x64 problem first.
@@ -192,8 +196,9 @@ as a runtime `pass`.
 | Root composes | pass | 2026-09-06 | `MOS_BOARD=virt-arm64 bash rootfs/build.sh` — 430 MB installed, 13 packages resolved, verity payload 123 MiB |
 | Image assembles | pass | 2026-09-06 | `bash build/run.sh --mkimage-uefi --board virt-arm64` — 1938 MiB, 9 partitions, ESP 129021 FAT32 clusters |
 | Image contract (`verify --board virt-arm64`) | pass | 2026-09-06 | `bash verify/run.sh --verify --board virt-arm64` — 313/313, 22 skipped (each named; the U-Boot-only assertions) |
-| Cold boot to userspace in QEMU | not tested | — | needs the assembled image (PLAN-085 slice 5) |
-| apid answers over a real socket | not tested | — | needs the assembled image; the harness is board-parameterised in PLAN-085 slice 5 |
+| Cold boot to userspace in QEMU | pass | 2026-09-06 | AAVMF 2025.02-8+deb13u1 -> BOOTAA64.EFI -> GRUB 2.12-9+deb13u2 -> Linux 6.12.107 -> dm-verity (`sha256-ce`) -> root on `/dev/dm-0` -> login on ttyAMA0. No failed units. Graceful ACPI power-off completes. |
+| apid reaches APID_LISTENING | pass | 2026-09-06 | 95 s wall clock, 57.8 s guest, fresh disk, `MOS_BOARD=virt-arm64` through the board-parameterised harness; `mos-health` probes mosd and apid both OK |
+| Full apid API phase suite | not tested | — | the boot and the readiness signal are measured; the phase suite itself has not been run against this board |
 | A/B switch and update | not tested | — | needs the assembled image; no suite in this tree exercises A/B fallback through the GRUB path on any board |
 | Power-cut during update | N/A | — | no power-cut rig applies to an emulated machine; the host can only kill the process, which is a different failure |
 | Storage growth/health | not tested | — | needs the assembled image |
