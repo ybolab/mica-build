@@ -19,13 +19,17 @@ normal path and [update-rollback.md](update-rollback.md) describes it.
 
 > status: shipped — evidence: `docs/design/uboot-ab-handshake.md`, `rootfs/overlay/usr/lib/mos/mos-health`
 
-## 2. Both slots failing: the device reboots in a loop
+## 2. Both slots failing: what you actually see
 
 When neither slot has credits left, the cx3576 boot script refills all
 counters and resets; x64's GRUB boots in order anyway rather than sitting at a
-menu. Either way the device **reboots repeatedly rather than halting**, and
-that loop is the operator-visible symptom of two bad slots. It is not bricked
-and it is not idle.
+menu. Neither loader halts at a prompt, so **repeated boots are the expected
+symptom on cx3576** — but do not treat one shape as diagnostic. **What a
+particular failure looks like depends on the failure:** a missing boot payload,
+a loader error, or a kernel that hangs after the loader handed off can end as
+repeated boots, as a stopped loader, or as a stalled boot with nothing further
+on the console. The device is neither bricked nor idle, and **no rescue
+environment ships**, so there is nothing on the device to boot into instead.
 
 Nothing in-band runs in this state, so the evidence that survives is only what
 the bootloader keeps and what the console prints: the slot order and both
@@ -39,16 +43,22 @@ at all. Then go to step 7.
 
 ## 3. The decision tree
 
-| # | Step | Reversible? | What it costs |
-|---|---|---|---|
-| 1 | read-only diagnosis | yes | nothing |
-| 2 | guarded manual rollback | yes | one reboot; the condemned slot stops being a rollback target |
-| 3 | configuration reset | **no** | every modelled setting |
-| 4 | application-data reset | **no** | all operator data in `/srv` and every application's data under `/mos` |
-| 5 | credential recovery | **no** | the previous credential and every API token |
-| 6 | full factory reset | **no** | settings, credentials, applications and operator data together |
-| 7 | whole-disk reflash | **no** | every partition, **and the device's identity** |
-| 8 | secure wipe | **terminal** | the device, as a configured unit |
+| # | Step | Available today? | Reversible? | What it costs |
+|---|---|---|---|---|
+| 1 | read-only diagnosis | yes | yes | nothing |
+| 2 | guarded manual rollback | yes | yes | one reboot; the condemned slot stops being a rollback target |
+| 3 | configuration reset | yes | **no** | every modelled setting the tier reaches |
+| 4 | application-data reset | yes | **no** | all operator data in `/srv` and every application's data under `/mos` |
+| 5 | credential recovery | **no** — unsupported in the field | **no** | the previous credential and every API token |
+| 6 | full factory reset | **no** — unsupported in the field | **no** | settings, credentials, applications and operator data together |
+| 7 | whole-disk reflash | yes, with physical access | **no** | every partition, **and the device's identity** |
+| 8 | secure wipe | **no** — unsupported, and not planned | **terminal** | the device, as a configured unit |
+
+**Five of the eight are steps you can take.** Steps 5 and 6 are gated on a
+physical presence assertion that **no shipped board can produce**, so both are
+refused on every fielded device; step 8 has no implementation at all. Section 7
+states each absence and what to do instead. A device whose operator has lost
+the credential and every key is recovered by step 7 and by nothing else.
 
 **The line is between steps 2 and 3.** Everything above it can be undone by
 rebooting. Everything below it destroys something that was on the device, and
@@ -174,11 +184,13 @@ spends every setting to recover one. See
 - **How, on paper:** `POST /api/v1/recovery/credential`, authorised by
   physical presence and by nothing else. An authenticated caller is refused
   and told to use `POST /api/v1/actions/change-password` instead.
-- **Why you cannot do it:** section 7. The flow is implemented and tested and
-  **nothing in the tree writes the presence assertion it requires**, so on a
-  fielded device it is refused, every time.
+- **Why you cannot do it:** section 7. The flow is implemented and tested, and
+  **no shipped board declares a physical recovery action**, so on a fielded
+  device it is refused, every time. Treat it as absent when you plan: an
+  operator who has lost the administrator credential and every authorized key
+  reflashes the whole disk (step 7) and receives a new device identity.
 
-> status: shipped — evidence: `pkgs/mosd/apid/src/routes.rs`, `docs/design/recovery.md`
+> status: unsupported
 
 ### Step 6 — Full factory reset — IRREVERSIBLE, and not reachable today
 
@@ -198,9 +210,10 @@ spends every setting to recover one. See
   a corrupted system slot.
 - **How, on paper:** the reset route with `{"tier": "full-factory"}`, gated on
   the same physical presence as step 5 — and refused for the same reason,
-  today, on every board.
+  today, on every board. Plan around its absence: a device that has to be
+  handed over clean is reflashed (step 7), and the new identity is the price.
 
-> status: shipped — evidence: `pkgs/mosd/mosd/src/reset.rs`, `docs/design/recovery.md`
+> status: unsupported
 
 ### A factory reset does not make a device anonymous
 
@@ -280,8 +293,9 @@ a recovery that does not exist.
   system side that produces an assertion: a board declares the physical
   recovery actions it has — a bootloader menu entry, a button pattern, a USB
   event — and the device maps the one the operator took into an assertion and,
-  where the action says so, a reset tier. **Neither shipped board declares
-  one**, because neither has an implemented physical action, so the gate
+  where the action says so, a reset tier. **No shipped board declares one** —
+  not cx3576, not x64, not virt-arm64 — because none has an implemented
+  physical action, so the gate
   refuses every request a fielded device can make of it — `403`, with
   `presence_required`, audited, nothing staged, and the refusal says the board
   declares none rather than that nobody is standing at the device. What closes
@@ -295,13 +309,18 @@ a recovery that does not exist.
   enable SSH, add a key or set a password, and it needs the credential; SSH is
   off or keyless; the serial console shows a login prompt with no account that
   accepts one. That is the position `docs/design/access.md` section 9.1
-  records, and it is still the shipped truth on both boards. The way back is
+  records, and it is still the shipped truth on every board. The way back is
   the whole-disk reflash, paying the device's identity for a forgotten
   password.
 - **Secure wipe does not exist**, per step 8.
-- **There is no offline repair tier.** No recovery environment ships, so there
-  is no supported way to run a filesystem repair on an unmounted tier. The
-  boot-time check that runs automatically is what exists.
+- **There is no repair tier at all, offline or otherwise.** mos has no
+  dedicated non-destructive repair operation: no repair route, no repair flow,
+  no rescue boot entry and no recovery environment. What exists on a device that
+  still boots is the boot-time layout convergence and filesystem check that run
+  by themselves, and ordinary verified updates — which can also reinstall a
+  corrupted *inactive* slot. A device that cannot be restored that way needs a
+  service host with its filesystems unmounted, or step 7; **mos does not promise
+  that damaged data survives either route.**
 
 > status: unsupported
 

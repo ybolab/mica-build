@@ -3,8 +3,10 @@
 > English | [中文](../zh/design/access.md)
 >
 > Shell/SSH/console access for an immutable appliance — configuration-driven,
-> auditable, lockable, and absent from production images. Companion to
-> architecture.md §5.
+> auditable, and disabled by default on every profile. **Not absent from
+> production images:** since the 2026-08-17 decision the prod image carries
+> OpenSSH and an emergency BusyBox binary, both off and unused until an
+> administrator turns SSH on (§5.3). Companion to architecture.md §5.
 >
 
 ## 0. How to read the status markers
@@ -29,6 +31,17 @@ control exists. One section below — §5.2 — is exactly that, and is marked
 accordingly; §6 was the other until later moved two of its four intents
 into code, and it now names which two per intent.
 
+**No section of this document carries [partial] any more, and that is a
+decision.** RFCT-316 triaged every marker here and in
+`docs/design/recovery.md` against the code, and PLAN-037's Gate C requires each
+to end as either the capability it claims or an explicit non-capability, because
+a half-built capability described as if it works is exactly the prose control
+this section warns about. Where a section held one, it now names the part that
+ships under **[implemented]** and the part that does not under
+**[not implemented]**, with what an operator does instead. `[partial]` stays
+defined above for a mechanism that later earns it honestly — some of it existing
+and the missing half named.
+
 Sections without a marker (§1, §7, §9's reasoning, §11) state principles,
 preferences or history rather than a mechanism.
 
@@ -52,16 +65,19 @@ preferences or history rather than a mechanism.
 |---|---|---|---|
 | Network wizard (tty2 TUI; AP captive portal; HDMI local wizard via kiosk) | whitelisted network resources only; no secrets, no exec, no raw logs | per-device PIN | **not implemented** |
 | SSH (**OpenSSH**, driven by mosd) | root (see §4.1: `mos` is not a lesser privilege level) | SSH public key, persistent; optionally a **transient** root password | **prod and dev** — **shipped**, and **off by default on both** |
-| Console shell (tty3) | root | same as SSH | `access.console.shellEnabled` exists in the schema with **no reconciler consuming it** — **not implemented** |
+| Console shell (tty3) | root | same as SSH | **not implemented.** `access.console.shellEnabled` exists in the schema with **no reconciler consuming it**, so a managed tty3 shell is unsupported and setting the flag changes nothing on the device. Use SSH explicitly enabled with an enrolled key, or a boot-time provisioning document for initial setup |
 | Serial console (`serial-getty@ttyFIQ0`) | login prompt only | `/etc/shadow`, i.e. nothing by default | **present** — spawned by systemd's getty-generator from the kernel `console=` parameter on both profiles. It has no account that will accept a credential; see §9 |
-| Rescue (all-slots-failed FIT entry) | chroot repair environment | physical access (cmdline / boot failure) | **not implemented** |
+| Rescue (all-slots-failed FIT entry) | chroot repair environment | physical access (cmdline / boot failure) | **not implemented.** There is no rescue boot entry and no offline repair environment; the emergency BusyBox binary lives in the same root that would be damaged and is deliberately not one (`docs/design/recovery.md` §6.3). An unbootable device needs an external service host or a whole-disk reflash, which replaces its data and its identity |
 | Factory (rockusb / SoC loader mode) | full reflash | physical access | hardware-level; see §9.2 |
 
 **One policy source.** The image carries **OpenSSH**, and mosd renders the only
 drop-in that configures it and drives `ssh.service` (§3). That ownership is what
 keeps sshd's policy in one place: there is no second, operator-edited
-`sshd_config` for the settings tree to drift against. busybox is not shipped;
-the debug profile uses the base image's shell.
+`sshd_config` for the settings tree to drift against. Every profile ships one
+`/usr/bin/busybox` as an emergency binary with no applet links, no PATH entry
+and nothing on the device depending on it (`docs/design/recovery.md` §6.3); it
+is not a rescue environment and not a login channel, and the debug profile's
+shell is the base image's.
 
 ## 3. Configuration model — **[implemented]**
 
@@ -191,8 +207,18 @@ that showed only one of them would be lying in one direction or the other.
 
 `idleTimeout`, `autoDisableAfter`, the `bruteForce` block and the one-way
 `lockdown` bit are **not in the schema**. They remain the design intent of §5
-and §6 and need a schema change when they land. The original YAML sketch is
-retained below as the record of that intent:
+and §6 and need a schema change when they land.
+
+**Read as capabilities: SSH idle timeout, timed SSH auto-disable, a
+configurable brute-force policy and META lockdown are unsupported settings, and
+an operator should not plan around any of them arriving.** An opened shell stays
+open until somebody closes it: **disable SSH explicitly when you are finished**,
+which is the reversible runtime switch of §5.1. The absence of a *configurable*
+brute-force block does not mean there is no rate limit — apid applies a fixed,
+bounded, persistent login backoff that no setting turns off or tunes (§6).
+
+The original YAML sketch is retained below as the record of that intent, and it
+is a record rather than a roadmap:
 
 ```yaml
 # NOT SHIPPED — design intent for later phases
@@ -334,6 +360,17 @@ oversight.
   shared secrets, works with the device fully offline.
 - Optional at any phase: `requirePhysicalPresence` (GPIO/jumper/boot-window)
   because "local console" is routinely bridged over serial servers.
+
+**Read as capabilities: derived-PIN setup, offline challenge-response shell
+access and a general physical-presence access switch are unsupported**, and
+none of them is what a locked-out operator is waiting for. There is already a
+supported remote management path: normal authenticated management over the API,
+and SSH explicitly enabled with an enrolled key (§4.1). After total credential
+loss the answer is §9 — whole-disk reflash — and not one of these phases. The
+narrow presence mechanism that *does* exist is recovery-specific
+(`docs/design/recovery.md` §4) and is a different contract from this shell
+protocol; it is also unreachable on every shipped board, so it does not change
+this answer either.
 
 Both later phases authenticate **directly against mosd** — a derived PIN checked
 against a stored hash, and a signature verified against a compiled-in public
@@ -537,20 +574,36 @@ self-serviceable, "un-lock the shell" is not.
 `.conf` in this repository returns nothing outside `docs/`. There is no one-way
 bit, nothing that reads one, and no reset that preserves one.
 
-**And factory reset itself is not implemented either.** Nothing in the tree
-performs one. The only mention in code is a doc comment in
-`pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
-device to first boot. So this paragraph describes a reset nobody can invoke,
-preserving a bit nobody can set — which is precisely why §0's marker discipline
-exists. Whether the lockdown is built at all is an open product decision.
+**Read as a capability: META lockdown is unsupported, and nothing else in the
+product substitutes for it.** SSH is disabled *reversibly*, through the runtime
+setting of §5.1 and by nothing stronger; **do not describe that switch as a
+one-way state**, because an administrator who can reach the API can turn it back
+on. There is no irreversible shell disablement on this device, and a deployment
+whose requirement is that no shell can ever be re-enabled is a deployment mos
+does not serve today. Whether the lockdown is ever built is an open product
+decision.
 
-### 5.3 Image profile — **[partial]**
+**A correction this section used to carry the other way.** It said factory reset
+itself was not implemented. That is no longer true: `ResetTier::FullFactory`
+exists and `pkgs/mosd/mosd/src/reset.rs` executes it
+(`docs/design/recovery.md` §2). What remains true is the operator-facing answer —
+**field full-factory reset is unsupported**, because the tier is presence-gated
+and no shipped board declares a physical recovery action, so no fielded device
+can invoke it (`docs/design/recovery.md` §4). And the internal executor is not
+an irreversible-lockdown mechanism either, which is the only thing this section
+needed from it.
+
+### 5.3 Image profile — the two profiles **[implemented]**, a sealed image **[not implemented]**
 
 Decision 2026-08-17: prod ships SSH. **Two** profiles ship today, selected at
-build time and recorded in the image.
+build time and recorded in the image, and that pair is complete rather than half
+of a third.
 
 `/usr/lib/mos/profile.conf` carries `MOS_PROFILE=dev` or `MOS_PROFILE=prod`,
-mode 0444, written by `rootfs/build.sh`. It is under `/usr/lib` and not
+mode 0444, written by the profile package
+(`rootfs/packages-src/profile/Dockerfile`, selected as `mos-profile-dev` or
+`mos-profile-prod`) rather than by `rootfs/build.sh` directly. It is under
+`/usr/lib` and not
 `/etc` because it describes the *image* rather than the device — and that also
 puts it inside the read-only verity root, where a production device cannot be
 edited into a development one.
@@ -574,19 +627,34 @@ is therefore unbuildable, dev profile included. Dev root access on mos is §4.1'
 transient password set at runtime through mosd, plus the serial console, whose
 root account stays locked until that password is set.
 
-**Missing (hence *partial*):** `sealed` — the fully shell-free build where "no
-shell" is part of the signed image identity — is **not implemented**. It remains
-the design intent for high-security deployments.
+**A sealed image is unsupported.** `sealed` — the fully shell-free build where
+"no shell" is part of the signed image identity — is **[not implemented]**, and
+it is an absence rather than a build waiting to be wired up: **only dev and prod
+exist, and both carry OpenSSH and the emergency BusyBox binary with SSH disabled
+by default.** A deployment whose requirement is that a shell be *absent from the
+signed image* is one mos should not be selected for; a deployment that needs the
+shell off in practice uses the runtime disablement of §5.1 and key-only
+persistent authentication, and accepts that both are reversible by whoever holds
+the management credential.
 
 Trade-off accepted with the prod decision: for `prod`, compile-time absence
 no longer protects SSH; the effective defenses are default-off config, key-only
 persistent auth (§4.1), and — when they exist — META lockdown (§5.2) and audit
 (§6).
 
-## 6. Brute force & audit — **[partial]**
+## 6. Brute force & audit — two intents **[implemented]**, two **[not implemented]**
 
 Four intents were stated here. Two now have code and tests; two do not, and
 saying which is which is the point of this section.
+
+**As one sentence, because the pair is what an operator has to plan around:**
+mos provides a bounded, persistent apid login backoff and a best-effort local
+audit ring. It provides **no permanent lockout, no comprehensive shell or
+session audit, and no automatic audit upload.** A legitimate administrator who
+has armed the backoff waits out the window — it is capped, never permanent — and
+an investigator collects the local audit files through authorized access,
+reading them as a record of the events §6 lists below and not as a complete
+history of who was on the device.
 
 **[implemented] Failure counters and backoff state persist across a restart.**
 `GuardStore` (`pkgs/mosd/apid/src/auth.rs`) wraps the in-RAM `LoginGuard` and
@@ -643,27 +711,52 @@ makes a login fail.
 
 **[not implemented] A hard lockout (`lockoutThreshold`) releasable only with
 physical presence.** Not shipped, and not merely unfinished: the curve is
-deliberately *never permanent* (`the_lockout_is_never_permanent`), because
-there is no physical-presence mechanism to release one with — §9 records that
-an operator locked out of apid has no software path back in. A permanent
-lockout without a release path is a brick, so the threshold waits on the
-presence work in §7.
+deliberately *never permanent* (`the_lockout_is_never_permanent`), because there
+is no physical-presence mechanism to release one with — §9 records that an
+operator locked out of apid has no software path back in. A permanent lockout
+without a release path is a brick.
 
-**[not implemented] Session lifecycle events, and upload.** The trail records
-attempts and power actions, not session open/close/duration/presence-check,
-and nothing uploads it when connectivity exists. The stronger claim this
+**Read as a capability: permanent login lockout is unsupported, and it is not
+waiting on a schema change.** A valid administrator who trips the guard retries
+after the bounded window, which is capped at 300 seconds however many attempts
+preceded it. An operator who has lost the credential *and* every usable key is
+not throttled but locked out, and their answer is §9.2's whole-disk reflash,
+with the loss of data and of the device identity. The release path the threshold
+would need does exist in code — a successful presence-gated credential rotation
+clears the guard (`docs/design/recovery.md` §5.4) — and is unreachable on every
+shipped board, which is why arming the threshold would strand operators rather
+than protect them.
+
+**[not implemented] Session lifecycle events, and upload.** **Read as a
+capability: complete session-lifetime and SSH-session histories, and automatic
+audit upload, are unsupported.** What IS recorded is not nothing, and the list
+above is the whole of it: browser login and explicit logout are audited, as are
+setup completion, the two power actions, transient-password events, UI changes
+and the recovery outcomes `docs/design/recovery.md` §5.3 names. What is absent
+is session duration and expiry, SSH session open and close, presence-check
+history, and any exporter at all. **Collect the local audit files through
+authorized access and do not read them as a complete record of who was on the
+device.** The trail records attempts and power actions, not session
+open/close/duration/presence-check, and nothing uploads it when connectivity
+exists. The stronger claim this
 section made — *no audit trail ⇒ no shell* — is **not** taken: a failed audit
 write is logged and swallowed rather than refusing to serve management.
 Refusing management when the disk fails is a lockdown decision with the same
 brick risk as the paragraph above, and it is not this campaign's to take.
 
-## 7. Provisioning paths (ordered by preference) — **[partial]**
+## 7. Provisioning paths — paths 1-2 **[implemented]**, paths 3-5 **[not implemented]**
 
-**Paths 1 and 2 are built.** Both are one provisioning document read from an
-offline medium at boot; `docs/design/provisioning.md` §4.1 is the mechanism and
-this list is only the preference order it came from. Paths 3, 4 and 5 are not
-built and are the ordering a later campaign should follow. Apart from the two
-offline documents, the only path in is apid over an existing network.
+**Paths 1 and 2 are built, and they are a complete boot-time document transport
+rather than two fifths of a feature.** Both are one provisioning document read
+from an offline medium at boot; `docs/design/provisioning.md` §4.1 is the
+mechanism and this list is only the preference order it came from.
+
+**Read as a capability: provision a device through a boot-time TOML document on
+the boot medium or on attached removable media, or through browser setup over a
+reachable network. Signed import, hotplug import, captive setup, HDMI local
+setup and the tty2 wizard are all unsupported**, and paths 3 to 5 are an
+ordering a later campaign might follow rather than work in progress. Apart from
+the two offline documents, the only path in is apid over an existing network.
 
 1. **[implemented]** BOOT-partition provisioning file (edit on SD/USB with any
    reader; physical possession of the boot medium already implies full
@@ -681,11 +774,27 @@ offline documents, the only path in is apid over an existing network.
      anything is listening. A stick pushed into a running appliance is a
      next-boot document; there is deliberately no rule by which inserting media
      reconfigures a live device.
-3. **[not implemented]** AP-mode captive setup (connd + apid).
+3. **[not implemented]** AP-mode captive setup (connd + apid). **Captive-portal
+   setup is unsupported**, and AP connectivity is not evidence that it is
+   nearly here: the AP itself is real — `WifiApReconciler` renders hostapd and
+   the DHCP configuration and operates the service — but nothing intercepts or
+   redirects a client's first request, and the restricted PIN wizard this entry
+   promised does not exist. Configure initial connectivity with a boot-time
+   provisioning document, then open the normal management UI over a reachable
+   network, including over an AP that has already been configured.
 4. **[not implemented]** HDMI local setup: kiosk display renders the apid
-   wizard with USB keyboard/touch input (design/display.md).
+   wizard with USB keyboard/touch input (design/display.md). **HDMI
+   keyboard/touch setup is unsupported.** The browser client exists; no shipped
+   kiosk launcher, display chain or USB-input setup flow connects it to a
+   board's own screen, and displaying a web client is a product integration
+   rather than a page to point at. Use a provisioning document, or a browser on
+   another machine with network access to the device.
 5. **[not implemented]** Console wizard (tty2) as the no-display, no-WiFi
-   fallback.
+   fallback. **There is no tty2 provisioning wizard**, and the serial login
+   prompt is not one: there is no TUI, no restricted resource dispatcher and no
+   PIN verifier anywhere in the tree. For a device with neither display nor
+   Wi-Fi, use a boot-time provisioning document, and wired management
+   connectivity where the deployment has it.
 
 ## 8. Phasing & campaign mapping
 
@@ -694,7 +803,8 @@ offline documents, the only path in is apid over an existing network.
 | 1 | `access.ssh` / `access.console` / `access.device` subtrees + `SshdReconciler`; OpenSSH driven by mosd; `dev`/`prod` image profile | M5 | **shipped 2026-08-19**, with the credential model **superseded** the same day (§4.2) |
 | 1 | key-based access (schema v4 `authorizedKeys`), transient root password, SSH off and root passwordless on both profiles, `/home` and `/root` on DATA | campaign `sshweb` | **shipped 2026-08-19** (locally verified; every on-device behaviour is the user's hardware acceptance) |
 | 1 | brute-force counters (persistent) + bounded audit trail | audit work | **shipped 2026-08-23** — on STATE, not META (§6 records the deviation) |
-| 1 | tty3 console shell; META lockdown; hard lockout + physical presence; session/upload audit; factory reset | — | **not implemented** (§5.2, §6) |
+| 1 | tty3 console shell; META lockdown; hard lockout + physical presence; session/upload audit | — | **not implemented** (§5.2, §6) |
+| 1 | reset tiers 1-3 and presence-gated credential recovery | PLAN-048 | **code shipped, field entry not implemented** — the tiers and the flow exist and are tested; no board declares a physical recovery action, so tier 3 and credential recovery are unsupported in the field (`docs/design/recovery.md` §4) |
 | 2 | wizard TUI + derived PIN + provisioning file/USB import | with connd P2 | not started |
 | 3 | challenge-response, physical presence, variant split enforcement in CI | hardening campaign | not started |
 
@@ -738,10 +848,14 @@ is credential **rotation**, not disclosure, and it is not a permanent shell — 
 authenticated session is refused and told to use section 4.1's change-password
 path instead.
 
-**What that does not change: 9.1 above is still the shipped truth on both
-boards.** The gate is one seam keyed by the board capability
-`recovery.presence`, and nothing in the tree yet WRITES the assertion it reads
-— `docs/design/recovery.md` section 4 names that missing half and section 8
+**What that does not change: 9.1 above is still the shipped truth on every
+board.** The gate is one seam keyed by the board capability
+`recovery.presence`, and the system side that writes the assertion ships too —
+mosd maps a board-declared physical action into one at boot. What is missing is
+the board half: **cx3576, x64 and virt-arm64 all declare
+`BOARD_RECOVERY_ACTIONS` empty**, so no fielded device can produce an assertion
+and **field credential recovery is unsupported** —
+`docs/design/recovery.md` section 4 names that missing half and section 8
 carries it as bench-dependent per board. Until a board has it, an operator who
 has lost the credential and every key still reaches section 9.2, and the
 successful-rotation release of the brute-force guard that section 6 records as

@@ -75,19 +75,26 @@ maskROM USB loader path can be reflashed whole when nothing else answers.
 > status: shipped — evidence: `docs/design/uboot-ab-handshake.md`
 > status: board-dependent — evidence: `docs/design/access.md`
 
-The recovery ladder above that is built and ordered least-destructive first:
+The recovery ladder above that is designed and ordered least-destructive first:
 read-only diagnosis, a guarded manual rollback that refuses any switch it
 cannot prove goes backward, a configuration reset, an application-data reset,
 credential recovery, a full factory reset, and the reflash. Every tier names
-what it costs before it is offered.
+what it costs before it is offered. **Five of those seven rungs are operations
+an operator can perform; the two named below are not.**
 
 > status: shipped — evidence: `docs/design/recovery.md`, `pkgs/mosd/mosd/src/reset.rs`
 
 **Two rungs of that ladder cannot be climbed on any board that exists.**
 Credential recovery and the full factory reset are gated on a physical-presence
-assertion, and nothing in the tree writes one, so a fielded device refuses both
-— an operator who has lost the administrator credential still pays the device's
-identity for a reflash. Secure wipe is not implemented at all.
+assertion. The OS side that produces one from a board-declared physical action
+ships; **no board declares such an action** — not cx3576, not x64, not
+virt-arm64 — so a fielded device refuses both, and an operator who has lost the
+administrator credential still pays the device's identity for a reflash. Secure
+wipe is not implemented at all, and no reset or reflash sanitizes the medium:
+disposal under an unrecoverability requirement means destroying it. There is
+also no rescue environment and no repair operation — a device that cannot be
+restored by its own boot-time checks and ordinary updates goes to a service host
+or gets reflashed.
 
 > status: unsupported
 

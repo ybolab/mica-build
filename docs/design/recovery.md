@@ -28,20 +28,31 @@ the point:** PLAN-048 is explicit that reset modes are built only after their
 tier semantics are agreed, so §2, §4 and §5 fixed the semantics first and the
 implementation followed them. What now ships is §2's tiers 1-3, §4's gate and
 §5's credential recovery, each marked at its own section with what is still
-missing named. The *repair tier* (§6.2) is still [proposed], and §4's own half
-— a BOARD with an implemented physical recovery action to declare — is the gap
-§4 names and §8 carries as bench-dependent.
+missing named. The *repair tier* (§6.2) is **[not implemented]** as an operator
+step, and §4's own half — a BOARD with an implemented physical recovery action
+to declare — is the gap §4 names and §8 carries as bench-dependent.
 
-Sections without a marker (§1, §6, §7) state principles and limits rather than
-one mechanism — §6's subsections carry their own.
+**No section of this document carries [partial] any more, and that is a
+decision rather than an accident.** RFCT-316 triaged every marker here and in
+`docs/design/access.md` against the code, and PLAN-037's Gate C requires each to
+end as either the capability it claims or an explicit non-capability — a
+half-built capability described as if it works is the failure this discipline
+exists to prevent. Every section that held a capability an operator cannot reach
+now reads **[not implemented]** and names what to do instead. `[partial]` stays
+defined above because a future mechanism may earn it honestly, some of it
+existing and the missing half named; it is not a place to park a decision.
+
+Sections without a marker (§1, §3, §6, §7) state principles, orderings and limits
+rather than one mechanism — §3's steps and §6's subsections carry their own.
 
 ## 1. The boundary this design inherits, and what recovery may therefore claim
 
 `docs/design/security-model.md` §1 states the axiom — physical possession of
 the boot medium implies full control — and §5 defines the I1–I4 ladder that
-says when it weakens. **Both mos boards stand at I1** (§5), so the axiom holds
-in full on every board that exists: the person holding the hardware can already
-rewrite the rootfs, read STATE and reflash the medium.
+says when it weakens. **No mos board stands above I1** — cx3576 and x64 are I1,
+and virt-arm64 makes no assurance claim at all (`docs/bsp/virt-arm64.md`) — so
+the axiom holds in full on every board that exists: whoever holds the hardware
+can already rewrite the rootfs, read STATE and reflash the medium.
 
 Two consequences run through everything below, and no section may quietly
 contradt them:
@@ -63,9 +74,11 @@ It owns neither an interactive rescue distribution nor backup contents
 does not restate the update lifecycle, the storage layout or the slot state
 machine — it cites them.
 
-## 2. The reset tier taxonomy — **[partial]**
+## 2. The reset tier taxonomy — **[implemented]** for the tiers that exist
 
-**Tiers 1, 2 and 3 are [implemented]; tier 4 is [not implemented].** The
+**Tiers 1 and 2 are [implemented] and reachable; tier 3 is [implemented] and
+unreachable in the field, because it is presence-gated and no shipped board
+declares a physical recovery action (§4); tier 4 is [not implemented].** The
 vocabulary is `pub enum ResetTier {` in
 `pkgs/mosd/mosd-settings/src/model.rs`, which has exactly three members, so
 no spelling of secure wipe is a request this device can accept — the absence
@@ -77,6 +90,16 @@ cell for cell, including the `preserved` and `unaffected` ones.
 **Four tiers, and no fifth.** A device operation that destroys operator state
 is one of these four or it is not offered; "reset" without a tier name is not
 a supported request.
+
+**Two of the four are operations an operator can run, and the list below is a
+taxonomy rather than a menu.** mos supports staging a configuration or an
+application-data reset and then rebooting explicitly. **Field full-factory reset
+and secure wipe are unsupported:** tier 3 is refused on every shipped board for
+§4's reason, and tier 4 has no implementation to refuse with. An operator locked
+out of a device recovers it by whole-disk reflash, paying the operator's data
+and the device's identity for it (§3 step 7); an operator disposing of a device
+under a requirement that its data not be recoverable destroys the medium,
+because no tier and no reflash sanitizes it (§7).
 
 1. **Configuration reset** — return the modelled settings to their schema
    defaults. The device is the same device, running the same software, holding
@@ -265,7 +288,14 @@ prose §0 warns about.
   runs last, so a power loss leaves the record staged and the next boot
   finishes the job. Both halves are asserted — an interrupted tier replayed
   over its own half-done output is driven against the uninterrupted path and
-  must produce the same device.
+  must produce the same device. **The bound on that promise, stated because it
+  is a claim about durability and not only about call order:** the deletions on
+  DATA are not flushed to their own filesystem before the record is durably
+  cleared on STATE, and mosd logs a failed apply and continues booting. Replay
+  after an *interrupted* apply is asserted; survival of a *sudden power loss*
+  across two filesystems is not, and this document does not claim it. After an
+  interruption, inspect the device and re-stage the tier if it did not take —
+  and never read this rule as a sanitization or complete-handover guarantee.
 - **A tier never widens under failure.** If a tier cannot complete its own
   scope it fails and says so; it does not escalate to the next tier because the
   next tier's delete happened to succeed. The applier returns the error, leaves
@@ -278,13 +308,19 @@ prose §0 warns about.
   without an assertion — 403 and `presence_required`, audited, nothing staged —
   and the refusal is asserted rather than promised.
 
-## 3. The recovery decision tree, data-preserving first — **[partial]**
+## 3. The recovery decision tree, data-preserving first
 
 The *ordering* is this document's contribution and is normative; the nodes are
-not uniformly new, so each carries its own marker — steps 1, 2 and 7 exist in
-some form today and steps 3 to 6 and 8 do not. Least destructive first, and an
-operator who reaches step *n* has established that steps 1..*n*-1 were
-insufficient. The line after step 2 is the important
+not uniformly available, so each carries its own marker. **Steps 1, 2, 3, 4 and
+7 are operations an operator can run today; steps 5, 6 and 8 are not, and each
+says so at its own heading.** The available sequence is therefore: diagnose;
+roll back under the guard and reboot; then, while authenticated, reset
+configuration or application data and reboot. **Data-preserving lockout
+recovery, field full-factory reset, offline repair and secure wipe are
+unavailable**, which leaves step 7's whole-disk reflash as the lockout fallback,
+at the cost of the operator's data and the device's identity. Least destructive
+first, and an operator who reaches step *n* has established that steps 1..*n*-1
+were insufficient. The line after step 2 is the important
 one in this document: **everything above it can be undone by rebooting;
 everything below it destroys something that was on the device.**
 
@@ -304,7 +340,7 @@ everything below it destroys something that was on the device.**
   (`docs/design/updates.md` §5.4, `docs/design/storage.md` §2–3,
   `docs/design/diagnostics.md`).
 
-**2. Guarded manual rollback** — **[partial]**
+**2. Guarded manual rollback** — **[implemented]**, as an explicitly two-action workflow
 - *Precondition:* the device boots, the operator can authenticate, and the
   *other* slot holds a system that booted successfully before. Since PLAN-071
   §7's U6 the guard **reads** that last one where mosd has observed the
@@ -488,14 +524,21 @@ everything below it destroys something that was on the device.**
     `r_installer_handle_install_bundle` (`src/service.c`). Confirm
     `pkgs/rauc/Dockerfile` still builds `-Dservice=true`, since that is what
     keeps the override off the install command.
-- *What does not ship, which is why this is still **[partial]**:* the reboot.
-  The route changes the boot order and stops; realising it is a second,
-  explicit `POST /api/v1/actions/reboot` through the safe-to-reboot gate
-  (`docs/design/updates.md` §4), and nothing sequences the two. And the
-  install-order rule is only as good as the clock at install time: a device
-  that installed with a wrong clock can record an order that did not happen.
-  That the bootloader then actually falls back is bench evidence, §6.1's, not
-  a claim made here.
+- *The second action is deliberate, and it is why this is not one click:* the
+  route changes the boot order and stops. **Request guarded rollback, then
+  request reboot** — an explicit `POST /api/v1/actions/reboot` through the
+  safe-to-reboot gate (`docs/design/updates.md` §4). The route returns that
+  call as its `nextStep` and the panel says the same in as many words, so the
+  workflow is stated to the operator rather than left to be inferred; nothing
+  sequences the two, because a route that rebooted the device it was asked to
+  reconfigure would take the timing decision away from whoever is watching it.
+  That is the whole capability and it is complete. **What is not claimed:**
+  one-click rollback, and any qualification of the automatic fallback. Two
+  limits stay with it — where the confirmed-boot record cannot answer, the
+  install-order rule is only as good as the clock at install time, so a device
+  that installed with a wrong clock can record an order that did not happen;
+  and that the bootloader then actually falls back is bench evidence, §6.1's,
+  not a claim made here.
 
 ---
 
@@ -506,10 +549,15 @@ everything below it destroys something that was on the device.**
   survives a reboot and a rollback, and looks like configuration.
 - *Fixes:* an unreachable device that is unreachable because of its own network,
   access or policy settings, and any settings state too tangled to unpick.
-- *Costs irreversibly:* every modelled setting. Network, access, time, update
-  policy, application settings — all of them, at once; there is no per-subtree
-  reset, because a partial reset leaves an operator unsure which half they are
-  debugging.
+- *Costs irreversibly:* every modelled setting the tier reaches. Network,
+  access policy, time, update policy, application settings — all of them, at
+  once; there is no per-subtree reset, because a partial reset leaves an
+  operator unsure which half they are debugging. **What it does not reach, and
+  a reader must not round this up to "everything":** the device identity, the
+  per-device secrets, and the management credential with its claim record and
+  API tokens all survive by design (footnote [^cfg]). This tier restores
+  configuration defaults; it does not cure a lockout, and it does nothing at
+  all until the explicit reboot below.
 - *Does not recover:* a lost credential (§5 does that, and tier 1 keeps the
   credential on purpose — footnote [^cfg]), application data, a broken slot.
 - *What ships, and it is reachable today:* `POST /api/v1/reset` with
@@ -534,7 +582,7 @@ everything below it destroys something that was on the device.**
   `{"tier": "application-data"}`, on step 3's terms exactly — authenticated, no
   presence, staged and applied on the next boot.
 
-**5. Credential recovery — DESTRUCTIVE (the old credential)** — **[partial]**
+**5. Credential recovery — DESTRUCTIVE (the old credential)** — **[not implemented]** as a field operation
 - *Precondition:* §4 physical presence. Nothing else, ever.
 - *Fixes:* the lockout `docs/design/access.md` §9.1 describes — no webAdmin
   password and no authorized key — without losing a byte of operator data.
@@ -549,16 +597,20 @@ everything below it destroys something that was on the device.**
 - *What ships:* the whole flow — `POST /api/v1/recovery/credential`
   (`pkgs/mosd/apid/src/routes.rs`), every §5.1 rule asserted, §5.4's guard
   release and its one-rotation-per-assertion bound included.
-- **What is missing, and it is why this step is not `[implemented]`:** the flow
-  is gated on a §4 presence assertion, the system side that produces one from a
-  board-declared physical action ships, and **neither shipped board declares an
-  action**. An operator standing at a device today cannot take this step. Until
-  a board declares one and its BSP implements it, the lockout §9.1 of
-  `docs/design/access.md` describes is still answered by step 7 and not by this
-  one — which is the ordering cost this step exists to avoid, and the reason
-  §4's missing half is the highest bench priority in this document.
+- **Why this step is `[not implemented]` rather than a flow with a missing
+  half:** it is gated on a §4 presence assertion, the system side that produces
+  one from a board-declared physical action ships, and **no shipped board
+  declares an action** — not cx3576, not x64, not virt-arm64. **Field
+  credential recovery is therefore unsupported.** An operator who has lost the
+  management credential and every usable SSH key must reflash the whole disk,
+  losing the operator's data and receiving a new device identity (step 7); the
+  lockout §9.1 of `docs/design/access.md` describes is answered by that step and
+  not by this one. A board declaring an action is what would change the answer,
+  which is why §4's missing half is the highest bench priority in this
+  document — but until one does, this is an absence a reader should plan
+  around rather than a capability that is nearly here.
 
-**6. Full factory reset — DESTRUCTIVE (everything but identity)** — **[partial]**
+**6. Full factory reset — DESTRUCTIVE (everything but identity)** — **[not implemented]** as a field operation
 - *Precondition:* §4 physical presence, and a decision that the device's whole
   mutable state is to be abandoned — decommissioning from one operator,
   handover, or a fault that survived steps 3–5.
@@ -570,11 +622,17 @@ everything below it destroys something that was on the device.**
 - *What ships:* the tier itself, executed and tested cell for cell against §2.1
   row 3 (`pkgs/mosd/mosd/src/reset.rs`), staged by step 3's route with
   `{"tier": "full-factory"}`.
-- **What is missing:** step 5's missing half, for step 5's reason. This tier is
-  presence-gated (§2.2), the assertion nothing writes gates it, and the request
-  is refused — 403, `presence_required`, audited, nothing staged. An operator
-  who needs a factory reset on a device today takes step 7 instead, and pays
-  the device's identity for it.
+- **Why this step is `[not implemented]` as a field operation:** step 5's
+  reason exactly. The tier is presence-gated (§2.2), no shipped board declares
+  an action that could assert presence, and the request is refused — 403,
+  `presence_required`, audited, nothing staged. **Field full-factory reset is
+  unsupported on every shipped board.** An operator who needs a fresh
+  installation takes step 7 and accepts the loss of the operator's data and of
+  the device's identity. What the executor does when it *is* reached is §2.1
+  row 3; what a full-factory reset actually leaves behind on STATE was measured
+  in RFCT-322 §5 and the retain-or-wipe decision per entry is still open, so
+  read that row as the tier's declared scope and not as a handover
+  guarantee.
 
 **7. Whole-disk reflash — DESTRUCTIVE (every partition, new identity)** — **[implemented]**
 - *Precondition:* physical access to the board's loader transport (§8) and a
@@ -589,15 +647,19 @@ everything below it destroys something that was on the device.**
 - *Does not recover:* nothing software-wise — but see §7, it does **not** erase:
   blocks beyond the flashed extent survive unreferenced.
 
-**8. Secure wipe — TERMINAL** — **[not implemented]**, bench-dependent
+**8. Secure wipe — TERMINAL** — **[not implemented]**
+- **Secure wipe is unsupported.** There is no tier, no route and no erase
+  implementation to reach, and neither a reset nor a reflash supplies the
+  guarantee: for disposal that requires the data to be unrecoverable,
+  **physically destroy the medium** (§7). A board could earn this tier only
+  with device-level erase evidence on file (footnote [^wipe]), and none has.
 - *Precondition:* the device is leaving the operator's control, and the board
-  has device-level erase evidence on file (footnote [^wipe]). Without that
-  evidence there is no software step here at all; §7 states the alternative.
+  has that evidence. Without it there is no software step here at all.
 - *Fixes:* nothing. It is a disposal operation, not a repair.
 - *Costs irreversibly:* the device, as a configured unit — identity included.
 - *Does not recover:* anything. There is no step 9.
 
-## 4. The physical-presence contract — **[partial]**
+## 4. The physical-presence contract — schema and gate **[implemented]**, field entry **[not implemented]**
 
 **What ships is the gate, the interface behind it, and the mapping that joins
 them; what does not ship is any board's physical action.** Every
@@ -623,17 +685,27 @@ of §4.2. No board name, no bootloader and no console device appears anywhere in
 it, which is the property that keeps a per-board mechanism from becoming a
 per-board flow.
 
-**What is missing, and it is named rather than implied: neither shipped board
-declares an action.** `boards/cx3576/board.env` and `boards/x64/board.env` both
-declare `BOARD_RECOVERY_ACTIONS` empty (§4.4), because neither board has an
-implemented physical action to declare. So §5's credential recovery and §2's
-tier 3 are **implemented, tested and still unreachable on a fielded device** —
-and the refusal now says *this board declares no physical recovery action*
-rather than *presence is not asserted*, which are different sentences sending
-an operator to different places. What closes the gap is BSP work on a named
-board, not a system-layer change: §3's steps 5 and 6 stay `[partial]`, §8's
-rows stay bench-dependent, and this section's marker stays `[partial]` until a
-board declares and implements one.
+**What is missing, and it is named rather than implied: no shipped board
+declares an action.** `boards/cx3576/board.env`, `boards/x64/board.env` and
+`boards/virt-arm64/board.env` all declare `BOARD_RECOVERY_ACTIONS` empty (§4.4),
+because none of them has an implemented physical action to declare. So §5's
+credential recovery and §2's tier 3 are **implemented, tested and unreachable on
+every device this product ships** — and the refusal says *this board declares no
+physical recovery action* rather than *presence is not asserted*, which are
+different sentences sending an operator to different places.
+
+**Read as a capability, therefore: asserting recovery presence is
+unsupported.** Presence-gated credential recovery and presence-gated
+full-factory reset are unavailable in the field. An operator uses authenticated
+maintenance while the device still admits it, and whole-disk reflash for total
+lockout, at the cost of the operator's data and the device's identity. §3's
+steps 5 and 6 are `[not implemented]` as field operations for this reason, §8's
+rows stay bench-dependent, and this section's field half stays
+`[not implemented]` until a board declares and implements an action. **What a
+first board owes is now the mechanism, its declaration and §8's qualification
+evidence, and no longer a system-layer contract gap:** the one-use bound this
+section used to owe alongside them is closed, measured and asserted (§5.4,
+RFCT-322).
 
 **The board's DEBUG serial console is NOT a product surface, and no unit may
 own, reconfigure or depend on it.** On cx3576 that console is `ttyFIQ0`;
@@ -652,7 +724,7 @@ today.
 ### 4.1 What the gate is, and what it is not
 
 `docs/design/security-model.md` §1 and §5 settle this before it is designed:
-both boards are **I1**, so physical possession is already full control, and a
+no board is above **I1**, so physical possession is already full control, and a
 presence gate does not raise a wall against anyone holding the board. **The
 gate exists so that a supported, audited, non-destructive path exists for the
 legitimate operator who is standing at the device** — the alternative today is
@@ -712,10 +784,16 @@ exactly that unlink, because `ProtectSystem=strict` otherwise leaves `/run`
 read-only; `RuntimeDirectoryPreserve=yes` keeps mosd's other runtime files when
 apid restarts.
 
-**Everything fails closed, and each closed door is recorded under its own
-outcome** so that "why did this device not enter recovery" is greppable:
+**Everything fails closed, and each ENUMERATED closed door is recorded under
+its own outcome** so that "why did this device not enter recovery" is greppable:
 `refused-board-declares-none`, `refused-unknown-intent`,
-`refused-declaration-unreadable`, `refused-malformed-intent`. A command line
+`refused-declaration-unreadable`, `refused-malformed-intent`. **The exception is
+named rather than left to be discovered:** an infrastructure failure — the
+marker cannot be written, or the tier cannot be staged — returns the error
+without a recovery audit line, and a tier stage that fails comes *after* the
+marker was written. Those are failures of the machine rather than doors the
+policy closed, and this is why §5.1 rule 4 says best-effort rather than
+complete. A command line
 carrying the parameter twice, or carrying it empty, is a mechanism that did not
 do what it meant to, and guessing which occurrence was meant is how a
 mechanism ends up selecting a tier nobody asked for. A declaration this build
@@ -760,7 +838,10 @@ Three operations, and adding a fourth is a change to this section:
    than a second route that would have to prove it again.
 3. **Tiers 3 and 4** (§2.2), the resets an authenticated session may not reach.
    Tier 3 is **[implemented]**; tier 4 is **[not implemented]** and is not a
-   request this device can express.
+   request this device can express. **Presence grants no secure-wipe operation,
+   because there is none to grant** — disposing of a device under an
+   unrecoverability requirement means physically destroying the medium (§7),
+   and no assertion by anyone changes that.
 
 What presence must **never** authorize, and each of these is a specific
 mistake worth naming:
@@ -782,7 +863,7 @@ mistake worth naming:
   root walk and the same `/mos/updates/verified` workspace
   (`docs/design/updates.md` §5.3).
 
-### 4.4 How a board declares its actions — schema **[implemented]**, actions **[not implemented]** on both boards
+### 4.4 How a board declares its actions — schema **[implemented]**, actions **[not implemented]** on every shipped board
 
 A board declares its physical recovery actions where its other facts live, in
 `boards/<board>/board.env`, and the layout lint holds the declaration to a
@@ -807,10 +888,12 @@ The declaration reaches the device as `/usr/lib/mos/recovery-actions.conf`,
 which is those same lines and nothing else. **Rendering it is part of
 implementing a board's action** and belongs to the board's package alongside
 the mechanism itself; a board with no action ships no file, and an absent file
-reads as "this board declares none". Both shipped boards are in that state.
+reads as "this board declares none". Every shipped board is in that state.
 
-**Both shipped boards declare NONE, and that is the honest state rather than a
-placeholder:**
+**Every shipped board declares NONE, so neither credential recovery nor
+full-factory reset is supported in the field on any of them.** That is the
+honest state rather than a placeholder, and the remedy on a locked-out device is
+the whole-disk reflash, with the loss of data and identity it costs:
 
 - **cx3576** — the recovery button is a *loader* entry (`PREBOOT` → rockusb,
   `docs/design/uboot-ab-handshake.md` §5.2) and its `adc-keys` node is
@@ -821,6 +904,11 @@ placeholder:**
   A GRUB menu entry appending `mos.recovery=` is the shape this board would
   most likely take, and the firmware and GRUB configuration are the platform
   owner's rather than facts mos can assert on their behalf.
+- **virt-arm64** — a virtual board, with no device to stand at. Its recovery
+  path is rewriting the disk image on the host, and a host that can do that
+  already holds everything a presence assertion would protect
+  (`docs/bsp/virt-arm64.md`). It has nothing to declare, and unlike the two
+  above it is not waiting to acquire something.
 
 **What a board that declares none does, exactly.** The flows refuse as they do
 today — same seam, same status, same envelope — and the refusal says the board
@@ -868,11 +956,15 @@ no tier.
 ## 5. Credential recovery: rotate, never reveal — **[implemented]**
 
 `POST /api/v1/recovery/credential` (`pkgs/mosd/apid/src/routes.rs`). The flow
-itself is complete and every rule below is asserted; it is reachable on a
-device only once that board has a way to WRITE the §4 assertion, which §4
-records as the missing half and §8 as bench-dependent. That dependency is the
-honest shape of "implemented": the code is here and named, and the door it sits
-behind is not yet cut.
+itself is complete and every rule below is asserted; it is reachable on a device
+only once that board has a way to WRITE the §4 assertion, which §4 records as
+the missing half and §8 as bench-dependent. That dependency is the honest shape
+of "implemented": the code is here and named, and the door it sits behind is not
+yet cut. **[implemented] is a statement about this flow and not about the
+product's answer to a locked-out operator** — as a field operation credential
+recovery is `[not implemented]` (§3 step 5), because no shipped board declares
+an action, and the answer to total credential loss remains whole-disk reflash
+with the loss of the operator's data and of the device identity.
 
 **The route takes no credential extractor.** §5.2 says an authenticated
 session may not run this flow, so a caller presenting a working bearer token or
@@ -908,8 +1000,15 @@ be a third channel that can claim a device, which
    still works). One atomic replacement, with the same
    write-temp-set-mode-rename discipline STATE credentials already use
    (`docs/design/provisioning.md` §3.4).
-4. **Every attempt is audited — success and failure alike.** A refused attempt
-   is the more interesting record.
+4. **Every attempt is audited — success and failure alike**, on a best-effort
+   basis. A refused attempt is the more interesting record. **Two limits, so
+   that "every" is not read as a transaction guarantee:** an infrastructure
+   failure before the flow reaches an outcome of its own — a settings read that
+   does not answer — returns without a recovery audit event, and the audit
+   writer deliberately swallows its own write failures rather than refusing to
+   serve management (`docs/design/access.md` §6). This is an audited flow, not
+   a complete audited recovery transaction, and accounting for those branches
+   is part of what a first board's enablement owes.
 5. **The rotation counter moves.** `access.device.generation` is the revision
    counter anything derived from a credential keys off
    (`docs/design/provisioning.md` §3.2); a rotation increments the
@@ -973,17 +1072,21 @@ The record for a recovery is therefore:
 | timestamp | RFC 3339 UTC, as every line |
 | event | names the flow **and the presence mechanism** — `credential-recovery-console`, `credential-recovery-button`, `credential-recovery-medium`, `credential-recovery-factory` |
 | outcome | `success`, `refused` (presence not established), `aborted` (established, not completed) |
-| source | the local mechanism, not a peer — this flow has no network peer by construction |
+| source | the requesting peer, where the connection supplies one, and `unknown` where it does not. Recovery is an HTTP request that a board presence assertion authorizes, not a console-local call: what is local by construction is the *publication* of the minted credential, on the channel that proved presence, and never the request |
 
 The mechanism rides in the event name rather than in a new field, deliberately:
 the implemented line shape has exactly four members, and one enumerated event
 per mechanism keeps the trail's grammar unchanged while making "which door was
 used" greppable.
 
-**One of those four names exists in code**, `credential-recovery-console`
-(`pkgs/mosd/apid/src/routes.rs`), and its three siblings deliberately do not: a
-constant for a door this build cannot open would be a claim §8's board table
-does not support. All three outcomes are reachable and asserted — `success`,
+**The event name is composed, not enumerated:** the suffix is the mechanism the
+board's own declaration named, formatted at the point of record
+(`credential_recovery_event` in `pkgs/mosd/mosd-settings/src/recovery.rs`), so
+the four names above are examples of the shape rather than a fixed set of
+constants. The one fixed name is the bare `credential-recovery` used for a
+refusal taken *before* presence establishes a mechanism, which is the only
+moment there is no door to name. All three outcomes are reachable and
+asserted — `success`,
 `refused` when presence is not established or the caller is authenticated, and
 `aborted` when presence was established and the flow did not complete, which is
 what a console that cannot be written produces.
@@ -1057,10 +1160,17 @@ the API.
 
 ## 6. Both slots failed, and the non-destructive repair tier
 
-### 6.1 Both slots failed — **[partial]**
+### 6.1 Both slots failed — loader behaviour **[implemented]**, on-device rescue **[not implemented]**
 
-**What the bootloader does today**, per board, and it is not a hang in either
-case:
+**There is no on-device rescue environment when both slots fail.** What exists
+is the loaders' own slot-selection and retry policy, below, and the evidence
+they leave behind. Recovery from that state is capturing the loader and console
+evidence and then reflashing the whole disk physically — accepting the loss of
+the operator's data and of the device's identity (§3 step 7) — or taking the
+medium to a service host. Retry is not recovery, and this section does not
+promise that a device recovers itself.
+
+**What the bootloader does today**, per board:
 
 - **cx3576** — `boards/cx3576/boot.cmd` walks `BOOT_ORDER` for a slot with
   credits; with none anywhere it refills both counters, persists them and
@@ -1075,8 +1185,15 @@ case:
   helped by a prompt. **[implemented]**
 
 The consequence an operator must be told, because it is the visible symptom:
-**a device with two unbootable slots reboots in a loop.** It is not bricked and
-it is not idle; the loop is the design, and the evidence is on the console.
+**a device with two unbootable slots does not sit quietly at a prompt.** On
+cx3576 the refill-and-`reset` path above makes repeated boots the expected
+shape. **What is actually seen is failure-dependent and this document promises
+one symptom for neither board:** a missing payload, a loader error, or a kernel
+that hangs after the loader handed off can end as repeated boots, as a stopped
+loader, or as a stalled boot — and the x64 GRUB path contains no unconditional
+reboot instruction at all, only the fallback selection above. The device is
+neither bricked nor idle; capture the console evidence and read the table below,
+rather than inferring the fault from the symptom.
 
 **The minimum failure record that must survive**, and the constraint that
 shapes it: a both-slots-failed device may have a corrupted writable filesystem,
@@ -1096,34 +1213,49 @@ is on a writable tier and is **best effort** in this state. What is
 the boot-decision evidence off the bootloader-visible stores onto a writable
 tier, because that is the store this failure mode may have destroyed.
 
-### 6.2 The non-destructive repair tier — **[partial]**
+### 6.2 The non-destructive repair tier — **[not implemented]**
 
 Between "reboot it" and "reset it" there is a tier with no name today, and
 naming it is what keeps operators from reaching for tier 3 to fix a dirty
 filesystem. **Repair fixes a store's structure; it never removes an operator's
-content.**
+content.** This section states what such a tier would be allowed to touch. It
+does not describe an operation the product offers.
 
-**Three of the four capabilities below have shipped code and one does not, and
-none of them is reachable as a repair STEP.** That split is the whole of this
-marker, so each bullet carries its own: what exists arrived under other names —
-the layout script, a fail-open daemon, the update lifecycle — and what is
-missing is (a) offline repair, which needs a recovery environment nobody has
-built, and (b) the tier itself as a named, ordered operator step with a route
-and an audit event. An operator today reaches these capabilities by knowing
-they exist, which is precisely the discovery problem §0 warns about.
+**mos provides no dedicated non-destructive repair operation.** There is no
+repair route, no repair flow and no repair audit event, and three unrelated
+primitives that arrived under other names do not add up to one. What an operator
+has instead, on a device that still boots, is **boot-time layout convergence and
+ordinary verified updates** — both listed below under the names they actually
+ship as. A device that cannot be restored that way needs service-host diagnosis
+with its filesystems unmounted, or a whole-disk reflash with the loss of data
+and identity that costs (§3 step 7). Two things are missing rather than one:
+(a) offline repair, which needs a recovery environment nobody has built, and
+(b) the tier itself as a named, ordered operator step. An operator today reaches
+the surviving primitives by knowing they exist, which is precisely the discovery
+problem §0 warns about — and naming the absence here is the answer to it,
+because a tier that will be discovered as missing should be discovered on this
+page rather than on a wedged device.
 
 What repair **may** touch:
 
 - **An unmounted writable tier**, offline — **[not implemented]**: a filesystem
   consistency pass on
-  STATE, DATA or META from a recovery context. `docs/design/storage.md` §7 is
-  unambiguous about the two halves of this — the boot-time `systemd-fsck` pass
-  is automatic repair and exists, while deliberate offline repair is
-  `unsupported` because the image ships no recovery environment and running
-  `fsck` on a *mounted* tier from a management API is a way to corrupt it. This
-  tier therefore depends on a recovery environment (`docs/design/access.md`
-  §2's rescue entry, **[not implemented]**), and no part of it may be exposed
-  as a management route that operates on a mounted tier.
+  STATE, DATA or META from a recovery context. **Offline filesystem repair is
+  not supported by the device.** `docs/design/storage.md` §7 is unambiguous
+  about the two halves of this — the boot-time `systemd-fsck` pass is automatic
+  repair and exists, while deliberate offline repair is `unsupported` because
+  the image ships no recovery environment and running `fsck` on a *mounted* tier
+  from a management API is a way to corrupt it. An operator meeting a damaged
+  writable tier stops using the medium and arranges service-host diagnosis with
+  its filesystems unmounted, or reflashes and accepts the loss of data and
+  identity; **mos guarantees no route by which the damaged data is preserved.**
+  **There is likewise no rescue boot entry and no recovery environment to run
+  such a pass in** (`docs/design/access.md` §2's rescue entry,
+  **[not implemented]**), and §6.3's emergency BusyBox binary in the damaged
+  root is deliberately not one. No part of this may ever be exposed as a
+  management route operating on a mounted tier: an API that implied it could
+  safely repair its own live stores would be the worst reading of this
+  absence.
 - **The layout skeleton** — **[implemented]**, under another name: recreating
   missing directories under `/mos` and
   their modes, which is `mos-data-layout`'s idempotent job already, and the
@@ -1256,12 +1388,20 @@ identity because a replacement board mints one
 validated procedure. An operator asking "can I keep my data" gets a plain no
 today, and this document does not soften it.
 
-## 8. Per-board recovery level — **[partial]**
+## 8. Per-board recovery level — presence entry **[not implemented]** on every board
+
+**No board has a qualified software recovery-presence path.** Source
+availability is not a recovery level: the table records each board's transports
+and declarations, not what anyone has restored a unit with. **Physical reflash
+is the available fallback everywhere**, at the cost of the operator's data and
+the device's identity, and a board's per-revision recovery acceptance has to be
+recorded and dated before any path here is described as field-proven.
 
 | Board | Bootloader access | Reflash transport | Physical-presence entry mechanism | Both-slots-failed evidence path | Recovery level, honestly |
 |---|---|---|---|---|---|
-| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it**, and its `adc-keys` node is `status = "disabled"` in the board DTS. The board declares `BOARD_RECOVERY_ACTIONS` EMPTY (§4.4): it has no implemented physical action, so every presence-gated flow refuses on it saying so — **bench-dependent**, and what it waits on is BSP work rather than a system-layer change | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[partial]`. The dossier's Recovery row is `not tested` — **bench-dependent** |
+| **cx3576** (RK3576) | U-Boot console over the serial console on `ttyFIQ0`; the loader prompt is reachable when a loader boots at all | rockusb over USB, driven by `rkdeveloptool`; maskrom when the loader area itself is unbootable — the path of last resort and the factory flash path | adc-keys recovery button (`PREBOOT` → rockusb) **[implemented]** as a *loader* entry; **no software recovery flow reads it**, and its `adc-keys` node is `status = "disabled"` in the board DTS. The board declares `BOARD_RECOVERY_ACTIONS` EMPTY (§4.4): it has no implemented physical action, so every presence-gated flow refuses on it saying so — **bench-dependent**, and what it waits on is BSP work rather than a system-layer change | serial console transcript plus `BOOT_ORDER`/`BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (§6.1) | **I1** (`docs/design/security-model.md` §5). Physical reflash recovery exists and is `[implemented]`; §2's tiers 1-3, §4's gate and §5's recovery are code (§2, §4, §5) with no field evidence, and §6.2's repair step is `[not implemented]` — cx3576 has no dedicated repair operation, so a device that still runs uses boot-time convergence and verified updates, and one that does not goes to a service host or a reflash. The dossier's Recovery row is `not tested` — **bench-dependent** |
 | **x64** (generic UEFI) | the platform owner's firmware setup and the GRUB console; mos configures neither | remove the medium and write the full-disk image from another machine; there is no in-band loader mode | none defined by mos — presence is the machine's own console/firmware or possession of the medium — **bench-dependent**, and it is a claim about a chassis mos does not specify. The board declares `BOARD_RECOVERY_ACTIONS` EMPTY (§4.4); a GRUB menu entry appending `mos.recovery=` is the shape it would most likely take, and that configuration is the platform owner's | attached console output plus `ORDER`/`A_TRY`/`B_TRY` read from `grubenv` on the ESP (§6.1) | **I1**. QEMU/CI evidence only; no field evidence exists; §2's tiers, §4's gate and §5's recovery are code that no x64 unit has run — **bench-dependent** |
+| **virt-arm64** (QEMU virt) | the QEMU console and the GRUB console on the emulated machine | rewrite the disk image file on the host | none, and none is possible: there is no device to stand at. The board declares `BOARD_RECOVERY_ACTIONS` EMPTY (§4.4), and a host that can rewrite the image already holds everything an assertion would protect (`docs/bsp/virt-arm64.md`) | the emulated console output plus `grubenv` read from the image file | **no assurance claim** — `BOARD_RELEASE_TARGET=0` and no evidence file, so this board is not a release target and its recovery level is not a product claim |
 
 **Who must prove each bench-dependent row.** The qualification owner named in
 the board's dossier, against `docs/bsp/qualification.md` row 12 (Recovery):
@@ -1273,8 +1413,8 @@ exists on a named board revision, no release material may describe these paths
 as proven — a board's recovery claim is bounded by its evidence, exactly as its
 assurance level is.
 
-Both rows say I1 and neither says more. A board that closes its loader
-transport to raise that level is making an I4-class decision and owes the
+No row claims more than I1, and one claims nothing. A board that closes its
+loader transport to raise that level is making an I4-class decision and owes the
 validation `docs/design/manufacturing.md` §7 requires — closing the recovery
 path without a validated replacement destroys the device class rather than
 hardening it, which is the warning `docs/design/security-model.md` §7 already
