@@ -13,6 +13,7 @@ usage() {
     cat <<'USAGE'
 usage: bash rootfs/debian/run.sh cache|verify|select|install --arch amd64|arm64
        [--cache-dir PATH] [--packages FILE | --all | --package NAME] [--root PATH]
+       bash rootfs/debian/run.sh configure --root PATH
 
 The default selection is the minimal Debian bootstrap floor. --packages names
 local mos packages whose locked upstream dependencies are added to that floor.
@@ -20,8 +21,12 @@ local mos packages whose locked upstream dependencies are added to that floor.
 package for cache, verify or select; it excludes the base and bootstrap helper.
 select prints temporary installation rows generated from the JSON manifests.
 cache downloads only missing archives and verifies their SHA256 and metadata.
-verify and install require no network. install requires root, a native target
-architecture and an empty destination. No command invokes APT.
+verify, install and configure require no network. install requires root, a
+native target architecture and an empty destination; it unpacks the bootstrap
+floor and stages .debian-extra/configure.sh, which finishes the installation
+FROM INSIDE the root. configure enters a prepared root with chroot and runs
+that script, which only a native host can do; the composition instead runs it
+in a build stage whose rootfs IS the root. No command invokes APT.
 
 Default cache: _out/debian-base/debs/<sha256>.deb. Version, architecture, URL,
 SHA256 and package consumers are recorded in rootfs/debian/packages/<name>.json.
@@ -31,7 +36,7 @@ USAGE
 COMMAND=${1:---help}
 case "$COMMAND" in
 --help|-h) usage; exit 0 ;;
-cache|verify|select|install) shift ;;
+cache|verify|select|install|configure) shift ;;
 *) fail "unknown command: $COMMAND" ;;
 esac
 ARCH= ROOT= PACKAGE_FILE= PACKAGE= ALL=0
@@ -49,14 +54,20 @@ while [ "$#" -gt 0 ]; do
     *) fail "unknown option: $1" ;;
     esac
 done
-[ -n "$ARCH" ] || fail '--arch is required'
-case "$ARCH" in amd64|arm64) ;; *) fail "unsupported architecture: $ARCH" ;; esac
+# configure takes no --arch: it runs against a root that already IS one
+# architecture, and a flag it would ignore is a flag that could disagree.
+if [ "$COMMAND" = configure ]; then
+    [ -z "$ARCH" ] || fail '--arch is not used by configure; the prepared root is already one architecture'
+else
+    [ -n "$ARCH" ] || fail '--arch is required'
+    case "$ARCH" in amd64|arm64) ;; *) fail "unsupported architecture: $ARCH" ;; esac
+fi
 selection_count=$ALL
 [ -z "$PACKAGE_FILE" ] || selection_count=$((selection_count + 1))
 [ -z "$PACKAGE" ] || selection_count=$((selection_count + 1))
 [ "$selection_count" -le 1 ] || fail '--all, --packages and --package are mutually exclusive'
 [ "$COMMAND" != install ] || [ -z "$PACKAGE" ] || fail '--package cannot be used with install; select a complete system closure'
-[ "$COMMAND" = install ] || [ -z "$ROOT" ] || fail '--root is only valid with install'
+case "$COMMAND" in install | configure) ;; *) [ -z "$ROOT" ] || fail '--root is only valid with install and configure' ;; esac
 CACHE_DIR=$(realpath -m -- "$CACHE_DIR")
 [ "$CACHE_DIR" != / ] || fail 'cache directory cannot be the host root'
 if [ "$COMMAND" = install ]; then
@@ -68,6 +79,38 @@ if [ "$COMMAND" = install ]; then
     fi
     case "$CACHE_DIR/" in "$ROOT/"*) fail 'installation root cannot contain the cache' ;; esac
     case "$ROOT/" in "$CACHE_DIR/"*) fail 'installation root cannot be inside the cache' ;; esac
+fi
+if [ "$COMMAND" = configure ]; then
+    [ -n "$ROOT" ] || fail 'configure requires --root'
+    ROOT=$(realpath -m -- "$ROOT")
+    [ "$ROOT" != / ] || fail 'configuration cannot target the host root'
+    [ -f "$ROOT/.debian-extra/configure.sh" ] ||
+        fail "$ROOT has no .debian-extra/configure.sh, so it is not a root that install prepared"
+    need chroot
+    [ "$(id -u)" -eq 0 ] || fail 'configuration requires root'
+    # THE ONE CHROOT LEFT, and the failure it has is worth naming. A chroot
+    # reports `No such file or directory` for a file that is demonstrably
+    # present whenever the new root cannot execute anything at all, so a bare
+    # failure below sends a reader after the wrong file. Probe the cheapest
+    # possible exec first, and say what the root holds.
+    if ! chroot "$ROOT" /bin/true 2>/dev/null; then
+        echo "debian-base: a trivial exec inside $ROOT failed, so this is the root itself and not /.debian-extra/configure.sh" >&2
+        echo "debian-base: /bin/sh in the root: $(ls -la "$ROOT/bin/sh" 2>&1)" >&2
+        echo "debian-base: /bin/true in the root: $(ls -la "$ROOT/bin/true" 2>&1)" >&2
+        echo "debian-base: this process runs under: $(tr '\0' ' ' </proc/self/cmdline 2>/dev/null)" >&2
+        echo "debian-base: PID 1 here runs: $(readlink /proc/1/exe 2>&1)" >&2
+        # The measured cause, so the next reader does not spend a day on the
+        # file name in the message. If PID 1 above is a qemu emulator, this
+        # process is emulated: buildkit runs a foreign-architecture step by
+        # prepending that emulator, and the emulator implements execve by
+        # re-executing itself through /proc/self/exe. chroot puts an empty
+        # $ROOT/proc under that path, the re-exec fails, and the kernel
+        # reports ENOENT for the BINARY. Staging the emulator inside the root
+        # does not help; only /proc does, and a RUN step has no CAP_SYS_ADMIN
+        # to mount it. Enter the root as a build stage instead of chrooting.
+        echo "debian-base: if PID 1 is a qemu emulator, nothing can be chrooted into from here; run /.debian-extra/configure.sh in a build stage whose rootfs IS the root" >&2
+    fi
+    exec chroot "$ROOT" /bin/sh /.debian-extra/configure.sh
 fi
 . "$HERE/sources.env"
 need bun
@@ -113,101 +156,13 @@ if [ "$COMMAND" = verify ]; then
     echo "debian-base: verified $(printf '%s\n' "$SELECTED" | wc -l) packages in $CACHE_DIR"
     exit 0
 fi
-for tool in dpkg chroot flock tar; do need "$tool"; done
+for tool in dpkg flock tar; do need "$tool"; done
 [ "$(id -u)" -eq 0 ] || fail 'installation requires root'
+# The architecture of the CONTAINER, which under buildx is the target one -- an
+# arm64 stage on this amd64 host answers arm64 and passes. That is correct for
+# what follows: nothing here executes a target binary, and the step that does
+# (configure.sh) runs where the root is already `/`.
 [ "$(dpkg --print-architecture)" = "$ARCH" ] || fail "installation requires a native $ARCH host"
-# EMULATED CROSS-BUILDS CHROOT INTO A ROOT THE INTERPRETER IS NOT IN.
-#
-# `dpkg --print-architecture` above answers the CONTAINER's architecture, which
-# under buildx is the target one -- so an arm64 stage on this amd64 host passes
-# the native check and is in fact running every binary through an interpreter
-# registered in binfmt_misc, at a path outside the root about to be chrooted
-# into (buildkit's is /dev/.buildkit_qemu_emulator). The kernel then cannot open
-# the interpreter and reports ENOENT for the BINARY, so the failure reads
-# `chroot: failed to run command '/debootstrap/debootstrap': No such file or
-# directory` about a file that is demonstrably there.
-#
-# Staging the interpreter inside the root for the duration of the chroot is the
-# whole fix. Registrations carrying binfmt_misc's `F` flag need none of this --
-# the kernel holds the interpreter open -- so this stages only what exists and
-# is a no-op on a native host, where no registration names an interpreter the
-# root is missing.
-EMULATORS=()
-stage_emulators() {
-    local interp staged=0
-    # Two sources, because neither alone covers this project's two routes.
-    #
-    # binfmt_misc names the interpreter on a host that registered one -- but it
-    # is not mounted inside a buildkit step, so scanning only this finds
-    # nothing and finds it SILENTLY, which is how the first version of this
-    # function shipped a no-op and the chroot failed exactly as before.
-    #
-    # buildkit injects its own emulator at a fixed path into the step's rootfs
-    # instead, and that is the route this repository actually cross-builds
-    # through: the docker daemon here cannot exec arm64 at all, so arm64 stages
-    # run in the `mos-arm64` docker-container builder, which bundles it.
-    for interp in $(binfmt_interpreters) /dev/.buildkit_qemu_emulator; do
-        [ -f "$interp" ] || continue
-        [ ! -e "$ROOT$interp" ] || continue
-        stage_file "$interp" || fail "could not stage the binfmt interpreter $interp into $ROOT"
-        staged=$((staged + 1))
-        echo "debian-base: staged the binfmt interpreter $interp into the root for the chroot"
-        # AND ITS SHARED LIBRARIES. The interpreter is a HOST-architecture
-        # binary; if it is dynamically linked, exec'ing it inside the chroot
-        # fails when its loader is missing -- as ENOENT for the interpreter
-        # itself, one layer down from the ENOENT this whole function exists to
-        # explain. Measured on this host: staging the file alone left
-        # `chroot $ROOT /dev/.buildkit_qemu_emulator` reporting No such file or
-        # directory about a file `ls -la` showed in place.
-        #
-        # A static interpreter takes none of this: ldd says so and the loop
-        # stages nothing more.
-        local lib
-        for lib in $(interpreter_libraries "$interp"); do
-            [ -e "$ROOT$lib" ] && continue
-            stage_file "$lib" || fail "could not stage $lib, which $interp needs, into $ROOT"
-            echo "debian-base:   plus $lib, which it is dynamically linked against"
-        done
-    done
-    # Silence is not a result. A run that staged nothing says so, so that the
-    # next confusing chroot ENOENT can be read against a line that states
-    # whether this ran and found nothing or never looked.
-    [ "$staged" -gt 0 ] ||
-        echo "debian-base: no binfmt interpreter to stage; the chroot runs natively"
-}
-stage_file() {
-    local src=$1
-    mkdir -p "$ROOT$(dirname "$src")" || return 1
-    cp "$src" "$ROOT$src" || return 1
-    EMULATORS+=("$ROOT$src")
-}
-# The absolute paths ldd resolves for a binary, loader included, or nothing at
-# all when it is static. `|| true` because ldd exits non-zero on a static
-# binary, which is a valid answer here and not a failure.
-interpreter_libraries() {
-    command -v ldd >/dev/null 2>&1 || return 0
-    ldd "$1" 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) { print $i; break } }' || true
-}
-binfmt_interpreters() {
-    local reg
-    [ -d /proc/sys/fs/binfmt_misc ] || return 0
-    for reg in /proc/sys/fs/binfmt_misc/*; do
-        [ -f "$reg" ] || continue
-        case "$reg" in */register | */status) continue ;; esac
-        awk '/^interpreter /{print $2; exit}' "$reg" 2>/dev/null || true
-    done
-}
-unstage_emulators() {
-    [ "${#EMULATORS[@]}" -gt 0 ] || return 0
-    rm -f "${EMULATORS[@]}"
-    EMULATORS=()
-}
-# Both, in one handler: the EXIT trap set at the top of this file cleans $WORK,
-# and a second `trap ... EXIT` REPLACES it rather than adding to it. A staged
-# interpreter that outlived this script would be copied into the image by the
-# Dockerfile stage that consumes $ROOT, so it has to come off here -- and the
-# temp directory still has to go.
-trap 'unstage_emulators; [ -z "$WORK" ] || rm -rf "$WORK"' EXIT
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/debian-base-install.XXXXXX")
 dpkg-deb -x "$CACHE_DIR/debs/$helper_sha.deb" "$WORK/helper"
@@ -240,49 +195,21 @@ flock -n 8 || fail "another installation is using $ROOT"
 bash "$BOOTSTRAP" --arch="$ARCH" --variant=minbase --exclude=apt --no-check-gpg \
     --unpack-tarball="$WORK/base.tar" --foreign "$SUITE" "$ROOT" "$MIRROR" ||
     fail "bootstrap extraction failed; inspect $ROOT/debootstrap/debootstrap.log"
-stage_emulators
-# The chroot below fails as `No such file or directory` for a file that is
-# demonstrably present whenever the interpreter cannot be resolved inside the
-# new root, so a bare failure here sends a reader after the wrong file. Probe
-# the cheapest possible exec first and report what the root actually holds.
-if ! chroot "$ROOT" /bin/true 2>/dev/null; then
-    echo "debian-base: a trivial exec inside $ROOT failed; this is the interpreter, not /debootstrap/debootstrap" >&2
-    echo "debian-base: /bin/sh in the root: $(ls -la "$ROOT/bin/sh" 2>&1)" >&2
-    for e in "${EMULATORS[@]}"; do
-        echo "debian-base: staged interpreter: $(ls -la "$e" 2>&1)" >&2
-    done
-    echo "debian-base: interpreters binfmt_misc names: $(binfmt_interpreters | tr '\n' ' ')" >&2
-    echo "debian-base: this process runs under: $(tr '\0' ' ' </proc/self/cmdline 2>/dev/null)" >&2
-    echo "debian-base: /bin/true in the root: $(ls -la "$ROOT/bin/true" 2>&1)" >&2
-    # The decisive one. If the staged interpreter runs INSIDE the chroot, the
-    # interpreter is resolvable and the failure is something else; if it does
-    # not, staging is not enough and the emulated route needs a different shape.
-    for e in "${EMULATORS[@]}"; do
-        echo "debian-base: interpreter inside the chroot: $(chroot "$ROOT" "${e#"$ROOT"}" -version 2>&1 | head -2)" >&2
-    done
-fi
-env -u DEBOOTSTRAP_DIR ARCH_ALL_SUPPORTED=0 chroot "$ROOT" /debootstrap/debootstrap --second-stage ||
-    fail "dpkg configuration failed; inspect $ROOT/debootstrap/debootstrap.log"
 mkdir "$ROOT/.debian-extra"
-extras=()
+cp "$HERE/configure.sh" "$HERE/install.sh" "$ROOT/.debian-extra/"
+cp "$CACHE_DIR/debs/$helper_sha.deb" "$ROOT/.debian-extra/helper.deb"
+: >"$ROOT/.debian-extra/extras.list"
+extras=0
 while IFS=$'\t' read -r name version arch sha url consumers; do
     case ",$consumers," in *,base,*) continue ;; esac
     cp "$CACHE_DIR/debs/$sha.deb" "$ROOT/.debian-extra/$sha.deb"
-    extras+=("/.debian-extra/$sha.deb")
+    printf '/.debian-extra/%s.deb\n' "$sha" >>"$ROOT/.debian-extra/extras.list"
+    extras=$((extras + 1))
 done <<<"$SELECTED"
-if [ "${#extras[@]}" -gt 0 ]; then
-    printf '#!/bin/sh\nexit 101\n' >"$ROOT/usr/sbin/policy-rc.d"
-    chmod 755 "$ROOT/usr/sbin/policy-rc.d"
-    cp "$HERE/install.sh" "$ROOT/.debian-extra/install.sh"
-    cp "$CACHE_DIR/debs/$helper_sha.deb" "$ROOT/.debian-extra/helper.deb"
-    chroot "$ROOT" bash /.debian-extra/install.sh /.debian-extra/helper.deb "${extras[@]}"
-    rm "$ROOT/usr/sbin/policy-rc.d"
-fi
-rm -rf "$ROOT/.debian-extra"
-audit=$(chroot "$ROOT" dpkg --audit 2>&1) || fail "dpkg --audit failed: $audit"
-[ -z "$audit" ] || fail "dpkg --audit reported: $audit"
-chroot "$ROOT" dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n' | sort >"$WORK/installed.tsv"
-awk -F '\t' 'BEGIN { OFS="\t" } { print $1,$2,$3,"installed" }' <<<"$SELECTED" | sort >"$WORK/expected.tsv"
-diff -u "$WORK/expected.tsv" "$WORK/installed.tsv" || fail 'installed package set differs from the lock'
-[ ! -e "$ROOT/usr/bin/apt" ] && [ ! -e "$ROOT/usr/bin/apt-get" ] || fail 'APT was installed unexpectedly'
-echo "debian-base: installed $(wc -l <"$WORK/installed.tsv") locked packages into $ROOT using dpkg"
+# The inventory configure.sh will hold the finished root to, written here
+# because this is where the lock is: nothing inside the root can re-derive it
+# without a JSON runtime, which is the whole reason manifest.ts stays out here.
+awk -F '\t' 'BEGIN { OFS="\t" } { print $1,$2,$3,"installed" }' <<<"$SELECTED" |
+    sort >"$ROOT/.debian-extra/expected.tsv"
+echo "debian-base: unpacked the bootstrap floor into $ROOT and staged $extras further archive(s)"
+echo "debian-base: the root is NOT configured yet -- run /.debian-extra/configure.sh inside it (\`run.sh configure --root $ROOT\`, or a build stage whose rootfs is this tree)"

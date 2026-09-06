@@ -41,8 +41,9 @@ and removes mandatory backward-compatibility enforcement during development.
 English and Chinese current-state documentation is reconciled. Verification passed
 1,047 mosd workspace tests, 149 UI tests, 920 build tests, 1,279 image-verifier tests,
 25 preflight cases, 36 update-server tests and an isolated systemd sandbox probe.
-Board and power-cut acceptance remain separate. See [PLAN-081](plan/PLAN-081.md) and
-the [audit resolution record](audit/2026-09-05-repository-audit.md).
+Board and power-cut acceptance remain separate. See [PLAN-081](plan/PLAN-081.md);
+the audit resolution record it was written beside was a temporary document and
+has been removed.
 
 ## PLAN-079 — Update server and release console (2026-09-04)
 

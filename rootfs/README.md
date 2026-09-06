@@ -52,6 +52,18 @@ read-only during installation. `debian/docker.sh` also accepts `--cache-dir`
 and `--all`. Installation runs with Docker networking disabled; it requires a
 native target architecture and an empty destination.
 
+`install` unpacks the bootstrap floor and stages `.debian-extra/configure.sh`
+inside the destination. That script finishes the installation — dpkg
+configuration, the remaining archives, the inventory check — and it runs with
+the new root as `/`, because maintainer scripts have to. There are two ways in:
+`docker.sh install` chroots, which is why it refuses a non-native architecture,
+and the composition runs the same script in a build stage whose rootfs IS the
+root. The composition cannot chroot: buildkit runs a foreign-architecture step
+by prepending its own emulator, that emulator re-executes itself through
+`/proc/self/exe` for every child, and a chroot leaves an empty `/proc` under
+that path — so every exec inside the new root fails as `No such file or
+directory`, naming the binary rather than the interpreter that was missing.
+
 `build.sh` populates the cache for its resolved package set. The composer first
 bootstraps the minimal root, then uses dpkg to install selected upstream and
 local packages without network access. Bun validates JSON in the build container

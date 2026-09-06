@@ -16,8 +16,25 @@ RUN --network=none \
     bash /mos/rootfs/debian/run.sh select --arch "$MOS_ARCH" --packages /selected.pkgs >/upstream.tsv && \
     bun /mos/rootfs/debian/manifest.ts helper >/helper.tsv
 
-FROM scratch AS composed
+# THE ROOT, ENTERED RATHER THAN CHROOTED INTO. `install` above only unpacks the
+# bootstrap floor and stages /.debian-extra/configure.sh; dpkg configuration
+# runs maintainer scripts and therefore needs the new root to be `/`. This stage
+# makes it `/` -- and that is what makes an emulated cross-build work at all,
+# because buildkit runs a foreign-architecture step by prepending its own
+# emulator, and that emulator re-executes itself through /proc/self/exe for
+# every child it spawns. A chroot puts an empty $ROOT/proc under that path, so
+# every exec inside the new root fails as ENOENT and the message names whatever
+# binary was being run rather than the interpreter that could not be found.
+# rootfs/debian/configure.sh carries the measurement.
+FROM scratch AS base
 COPY --from=bootstrap /target/ /
+RUN --network=none sh /.debian-extra/configure.sh
+
+# FROM scratch and a whole-tree COPY rather than `FROM base`: the stage above
+# deletes /.debian-extra, and inheriting it would carry those archives into the
+# layer this Dockerfile hands the finalizer as dead weight under a whiteout.
+FROM scratch AS composed
+COPY --from=base / /
 ARG MOS_ARCH
 ARG MOS_BOARD
 ARG MOS_PROFILE

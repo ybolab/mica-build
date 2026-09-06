@@ -57,6 +57,10 @@ mkdir "$WORK/root"
 printf 'preserve\n' >"$WORK/root/sentinel"
 reject 'must be empty' bash "$ENTRY" install --arch amd64 --root "$WORK/root"
 test "$(cat "$WORK/root/sentinel")" = preserve
+reject 'configure requires --root' bash "$ENTRY" configure
+reject 'not used by configure' bash "$ENTRY" configure --arch amd64 --root "$WORK/root"
+reject 'no .debian-extra/configure.sh' bash "$ENTRY" configure --root "$WORK/root"
+test "$(cat "$WORK/root/sentinel")" = preserve
 reject 'cache is missing' bash "$ENTRY" verify --arch amd64 --cache-dir "$WORK/cache"
 test ! -e "$WORK/cache"
 reject 'cache is missing' bash "$ENTRY" install --arch amd64 --root "$WORK/new-root" --cache-dir "$WORK/cache"
