@@ -15,7 +15,7 @@ temporary installation records, keeping JSON tooling out of the target system.
 Validation passed 40 archive checks, both-architecture selection checks, 920 build
 tests, 1,279 verifier tests, 315 applicable image checks, 12 executable smoke
 checks and all eight QEMU E2E phases with 137 assertions and no failures or skips.
-See [PLAN-084](plan/PLAN-084.md).
+See PLAN-084.
 
 ## PLAN-083 — Locked Debian runtime packages and QEMU acceptance (2026-09-06)
 
@@ -28,7 +28,7 @@ checks, 12 executable smoke checks and all eight QEMU/API E2E phases with 137
 assertions, zero failures and zero skips. The guest tests now create a managed
 WireGuard tunnel to exercise permissions on a real daemon-generated key.
 Arm64 archives are verified; physical board acceptance remains separate.
-See [PLAN-083](plan/PLAN-083.md).
+See PLAN-083.
 
 ## PLAN-081 — Repository audit repairs (2026-09-05)
 
@@ -41,7 +41,7 @@ and removes mandatory backward-compatibility enforcement during development.
 English and Chinese current-state documentation is reconciled. Verification passed
 1,047 mosd workspace tests, 149 UI tests, 920 build tests, 1,279 image-verifier tests,
 25 preflight cases, 36 update-server tests and an isolated systemd sandbox probe.
-Board and power-cut acceptance remain separate. See [PLAN-081](plan/PLAN-081.md);
+Board and power-cut acceptance remain separate. See PLAN-081;
 the audit resolution record it was written beside was a temporary document and
 has been removed.
 
@@ -55,7 +55,7 @@ and database migration. The new protocol replaces TUF on the server side;
 the existing OS client still needs its new reader before devices can use it.
 Validation includes 36 tests, real HTTP range checks, full browser workflows
 against the executable, and a clean dependency audit. Details and run commands
-are in [PLAN-079](plan/PLAN-079.md).
+are in PLAN-079.
 
 ## x64 builds its own kernel, and there is no initramfs (2026-09-04)
 

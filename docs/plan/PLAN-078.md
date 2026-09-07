@@ -2,7 +2,7 @@
 
 - **status**: proposed
 - **createdAt**: 2026-09-04 20:45
-- **relatedTask**: [RFCT-308](../task/RFCT-308.md)
+- **relatedTask**: RFCT-308
 - **relatedPlans**: [PLAN-077](PLAN-077.md) (Gate A, the anchor and the rotation decision), [PLAN-070](PLAN-070.md) (the `meta/` seam and the two anchors), [PLAN-071](PLAN-071.md) (the freshness bound and the clock it rests on)
 
 ## Context
@@ -863,7 +863,8 @@ S9 on a design that does not exist yet.
 
 ## Annotations
 
-- The measurement above is reproducible from `docs/task/RFCT-308.md`'s record
+- The measurement above is reproducible from RFCT-308's record (deleted on
+  completion; recover it with `git log --diff-filter=D -- docs/task/`)
   of what was run. No part of it was taken from memory or from RAUC's
   documentation; every verdict quoted is a captured exit status.
 - The first `rauc install` attempt (M11) produced three identical answers

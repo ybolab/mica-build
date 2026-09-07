@@ -56,6 +56,22 @@ ref_exists() {
     esac
 }
 
+# A `> status:` line inside a fenced block is the GRAMMAR SPECIMEN in
+# doc-contract.md teaching what the four statuses look like, not a claim about
+# the product. Asserting it means the illustrative `proposed` example must name
+# a plan that exists forever -- and completed plans are deleted from
+# `docs/plan/` (both index files say so), so the specimen broke the moment
+# PLAN-051 was pruned. verify-links.sh already excludes the two index format
+# specimens for this reason and says why in its header: a gate that fails on an
+# example teaching the format is reporting prose as a defect. Fences are
+# tracked, not stripped, so a real status line is still read anywhere else.
+status_lines() {
+    awk '
+        /^[[:space:]]*```/ { fence = !fence; next }
+        !fence && /^> status:/ { print }
+    ' "$1"
+}
+
 check_status_line() {
     local file=$1 line=$2 status evidence refs_ok plan_ok ref
     local rest=${line#> status: }
@@ -125,7 +141,7 @@ for tree in "${TREES[@]}"; do
         while IFS= read -r line; do
             tree_lines=$((tree_lines + 1))
             check_status_line "$f" "$line"
-        done < <(grep -E '^> status:' "$f" || true)
+        done < <(status_lines "$f")
     done
     if [ "$tree_lines" -eq 0 ]; then
         fail "$tree/ contains zero status lines; the taxonomy gate would pass vacuously"

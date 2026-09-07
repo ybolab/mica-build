@@ -82,7 +82,7 @@ backticks, multiple references separated by `, `:
 ```
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`
 > status: board-dependent — evidence: `boards/cx3576/board.env`
-> status: proposed — evidence: `docs/plan/PLAN-051.md`
+> status: proposed — evidence: `docs/plan/PLAN-054.md`
 > status: unsupported
 ```
 
