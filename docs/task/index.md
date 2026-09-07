@@ -107,6 +107,7 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-331 Cache the Debian runtime base and install it with dpkg**](RFCT-331.md) `P1`
 - [x] [**RFCT-332 Lock and layer Debian packages and validate the composed system**](RFCT-332.md) `P1`
 - [x] [**RFCT-333 Store Debian pins in per-package JSON manifests**](RFCT-333.md) `P1`
+- [x] [**RFCT-344 Prune the completed plans**](RFCT-344.md) `P1`
 - [x] [**RFCT-342 Fetch the pinned Debian archives from a mirror**](RFCT-342.md) `P1`
 - [x] [**RFCT-341 A clock seam for the automatic driver, and its tests**](RFCT-341.md) `P1`
 - [x] [**RFCT-339 PLAN-076 B4: enumerated failure codes**](RFCT-339.md) `P1`
