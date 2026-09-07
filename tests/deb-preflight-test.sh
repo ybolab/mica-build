@@ -512,26 +512,73 @@ fi
 
 echo "== F. a warning-only run is GREEN, and says what it will cost =="
 
-# THE ABSOLUTE CASE, and the only one here that is not a delta. Everything in
-# section B compares against a baseline, so a pre-flight that failed on
-# warnings would move the baseline with it and every one of those cases would
-# still pass. This one fixes the state instead of measuring it: BOTH podman
-# output directories are moved aside, so the count is 7 binaries x 2
-# architectures on every host, whatever was built here.
+# THE WARNED COUNT IS ABSOLUTE; THE EXIT CODE CANNOT BE. Everything in section B
+# compares against a baseline, so a pre-flight that failed on warnings would
+# move the baseline with it and every one of those cases would still pass. This
+# case fixes what it can: BOTH podman output directories are moved aside, so the
+# warned count is 7 binaries x 2 architectures on every host, whatever was built
+# here.
 #
-# What it asserts is the ruling: an input the run makes for itself does not
-# fail the run, is counted in its own column, and the cost is on the terminal
-# before anything starts.
+# It used to demand `exit 0` outright, and that was a hidden assumption about
+# the host rather than an assertion about the code. The pre-flight exits
+# non-zero whenever ANYTHING is missing, so `PF_RC -eq 0` silently required
+# BASE_MISSING to be 0 -- true only on a machine that has built every board's
+# BSP. It went red on a machine that had built cx3576 and not x64, with the
+# counts agreeing exactly and only the status differing, which reads as a defect
+# in the code under test and is not one. RFCT-343 moved the BSP outputs, which
+# changed WHICH hosts tripped it and is how it surfaced; the assumption predates
+# that move.
+#
+# WHY THE FIXTURE ROUTE IS NOT AVAILABLE, since section A uses it. BOARD_DIR and
+# BSP_OUT redirect the board-cx3576 producer, and A2 fills both. They cannot
+# redirect boards/{x64,virt-arm64}/deb/kernel-*/stage.sh, which read
+# ${REPO_ROOT}/_out/boards/<board>/kernel and honour no variable ON PURPOSE --
+# one global read by several producers would make `BOARD_DIR=<a cx3576 tree>`
+# mean two things in the aggregate run this file drives. So those inputs are
+# host state that no fixture can supply, and BASE_MISSING is host state with
+# them.
+#
+# What it asserts is therefore the ruling, in the form that holds on any host:
+# an input the run makes for itself does not CHANGE the exit code, is counted in
+# its own column and not among the missing, and the cost is on the terminal
+# before anything starts. On a host whose baseline is already green the stronger
+# absolute form -- exit 0 -- is required as well, so nothing is lost where it
+# can be checked.
+#
+# WHAT THE WEAKER FORM DOES NOT BIND, measured by mutating the pre-flight rather
+# than reasoned about. Two mutations, each run against both host states:
+#
+#   * `WARNED_N` accumulated into `MISSING_N` (warnings counted as missing):
+#     caught on BOTH hosts, by the warned/missing comparison.
+#   * `exit 1` when `WARNED_N > 0` (warnings fail the run): caught on a complete
+#     host, NOT caught on a partial one -- the run is already non-zero for an
+#     unrelated reason, so the status cannot witness it.
+#
+# That gap is irreducible here, not an oversight: on a host where something is
+# genuinely missing, no observation of this pre-flight's exit code can show that
+# warnings alone would have been green. It is written down because a reader
+# comparing a green F1 on a partial host against a green F1 on a complete one is
+# otherwise entitled to think they mean the same thing.
 for d in "${REPO_ROOT}/pkgs/podman/out-amd64" "${REPO_ROOT}/pkgs/podman/out-arm64"; do
     [ ! -d "${d}" ] || hide "${d}"
 done
 run_preflight
-if [ "${PF_RC}" -eq 0 ] && [ "${PF_WARNED}" = "$((${#BINARIES[@]} * 2))" ] &&
+# The absolute half is only demanded where the host can show it. `BASE_MISSING`
+# is 0 on a machine with every board's BSP built and non-zero otherwise; when it
+# is 0 the run must be GREEN, and when it is not, the most this case can say is
+# that warnings did not move the status either way.
+F1_WANT_RC="${BASE_RC}"
+[ "${BASE_MISSING}" -eq 0 ] && F1_WANT_RC=0
+if [ "${PF_RC}" = "${F1_WANT_RC}" ] && [ "${PF_WARNED}" = "$((${#BINARIES[@]} * 2))" ] &&
     [ "${PF_MISSING}" = "${BASE_MISSING}" ] &&
     says "${PF_OUT}" "BUILT BY THE RUN ITSELF" && says "${PF_OUT}" "three quarters of an hour"; then
-    pass "F1 ${PF_WARNED} producible inputs warn, are counted apart from the ${PF_MISSING} missing, and do NOT fail the run"
+    if [ "${BASE_MISSING}" -eq 0 ]; then
+        pass "F1 ${PF_WARNED} producible inputs warn, are counted apart from the ${PF_MISSING} missing, and do NOT fail the run (exit 0)"
+    else
+        pass "F1 ${PF_WARNED} producible inputs warn, are counted apart from the ${BASE_MISSING} missing, and do not change the exit code (${BASE_RC}); the green form needs a host with every board's BSP built"
+    fi
 else
-    fail "F1 expected exit 0 with $((${#BINARIES[@]} * 2)) warned and ${BASE_MISSING} missing; got exit ${PF_RC}, warned ${PF_WARNED}, missing ${PF_MISSING}"
+    fail "F1 expected exit ${F1_WANT_RC} with $((${#BINARIES[@]} * 2)) warned and ${BASE_MISSING} missing; got exit ${PF_RC}, warned ${PF_WARNED}, missing ${PF_MISSING}"
 fi
 restore_all
 
