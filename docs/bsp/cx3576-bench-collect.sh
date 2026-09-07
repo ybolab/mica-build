@@ -797,14 +797,23 @@ stage_inventory() {
     cap rtc-time    -- timedatectl
     cap i2c-devices -- ls -l /sys/bus/i2c/devices/
     cap rtc-dmesg   -- dmesg
+    # EXPECTED TO BE PRESENT. kernel/configure.sh does `scripts/config --enable
+    # RTC_DRV_HYM8563` and then `require '^CONFIG_RTC_DRV_HYM8563=y'`, so the
+    # kernel cannot build without the driver the DTS node's second compatible
+    # (haoyu,hym8563) binds. Absence is the finding here, not presence.
     if [ -e /dev/rtc0 ] || [ -e /dev/rtc ]; then
         measure RTC-PRESENT "an RTC character device EXISTS: $(ls /sys/class/rtc 2>/dev/null | tr '\n' ' ')"
+        # Index, not identity: RTC_HCTOSYS_DEVICE="rtc0" binds by index. One
+        # driver is built and one node enabled, so this should be the AT8563 --
+        # confirmed rather than assumed, because it is one read.
+        measure RTC-RTC0-NAME "$(cat /sys/class/rtc/rtc0/name 2>/dev/null || echo 'not collected: /sys/class/rtc/rtc0/name unreadable')"
     else
-        measure RTC-PRESENT "NO /dev/rtc. Predicted: the shipped kernel builds no RTC driver at all (every CONFIG_RTC_DRV_* is 'is not set', CONFIG_RTC_DRV_HYM8563 included) while CONFIG_RTC_CLASS=y and CONFIG_RTC_HCTOSYS_DEVICE=\"rtc0\" are set. If this is what the board says, the dossier's 'RTC presence unrecorded' resolves to: declared in the device tree, absent from the running system."
+        measure RTC-PRESENT "NO /dev/rtc, and that is a DEFECT rather than the expected state: kernel/configure.sh enables RTC_DRV_HYM8563 and asserts it in the resolved config, and the DTS declares an AT8563 at i2c7 0x51 whose second compatible is haoyu,hym8563. Capture evidence/$STAGE/rtc-dmesg.txt and evidence/$STAGE/i2c-devices.txt and report it."
     fi
-    # The consequence to check while the boot journal still exists.
+    # The chain behind the radio, captured while the boot journal still exists.
+    # journald is Storage=volatile, so this is gone after the next reboot.
     cap sdio-pwrseq -- sh -c "dmesg | grep -iE 'pwrseq|deferred|mmc[0-9]|aic8800'"
-    measure RTC-SDIO "the DTS gives /sdio-pwrseq clocks = <&at8563> and CONFIG_PWRSEQ_SIMPLE=y is built; a clock provider that never registers makes the SDIO host (mmc@2a320000, where the AIC8800D80 sits) defer forever. Evidence in evidence/$STAGE/sdio-pwrseq.txt; the verdict is stage 'network'."
+    measure RTC-SDIO "the DTS gives /sdio-pwrseq clocks = <&at8563> and CONFIG_PWRSEQ_SIMPLE=y is built, so a bound RTC driver registers the clock and the SDIO host (mmc@2a320000, where the AIC8800D80 sits) should probe. Expected to work; this capture is the first place to look if the radio does not. Evidence in evidence/$STAGE/sdio-pwrseq.txt; the verdict is stage 'network'."
 
     # --- row 10 baseline ----------------------------------------------------
     cap reset-baseline -- journalctl --list-boots --no-pager

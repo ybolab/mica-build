@@ -260,25 +260,52 @@ root** — measured, not assumed, by listing the image's `bin` directories — s
 the collector's `hwclock -r` probe records `TOOL-ABSENT` and the reading comes
 from `timedatectl` and sysfs.
 
-This one has a sharp off-hardware prediction and the bench exists to falsify
-it: **the shipped kernel configuration builds no RTC driver at all.** Every one
-of its 76 `CONFIG_RTC_DRV_*` lines is `is not set`, `CONFIG_RTC_DRV_HYM8563`
-included, while `CONFIG_RTC_CLASS=y`, `CONFIG_RTC_HCTOSYS=y` and
-`CONFIG_RTC_HCTOSYS_DEVICE="rtc0"` are set. If that reads on hardware the way
-it reads in the file, there is no `/dev/rtc0`, the AT8563 the DTS declares is
-an unbound i2c node, and the dossier's "RTC presence unrecorded" limitation
-resolves to *declared in the device tree, absent from the running system*.
+**The driver is built, and the expectation is that this works.** The board's
+own configuration step enables the AT8563's driver and then asserts it —
+`scripts/config --enable RTC_DRV_HYM8563` followed by `require
+'^CONFIG_RTC_DRV_HYM8563=y'` — so the kernel cannot build without it, and
+`haoyu,hym8563` is the second compatible on the DTS node that binds it. With
+`CONFIG_RTC_CLASS=y`, `CONFIG_RTC_HCTOSYS=y` and
+`CONFIG_RTC_HCTOSYS_DEVICE="rtc0"`, **an `rtc0` should be present and should be
+the AT8563.** A stage that finds otherwise has found a defect, and that is the
+useful sentence — not a prediction of absence.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/config/kernel-cx3576z.config`, `boards/cx3576/bsp/kernel/dts/rk3576-cx3576z.dts`
+> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/configure.sh`, `boards/cx3576/bsp/kernel/dts/rk3576-cx3576z.dts`
 
-**The consequence to check while reading it.** The DTS gives `/sdio-pwrseq` a
-`clocks = <&at8563>`, and `CONFIG_PWRSEQ_SIMPLE=y` is built. A clock provider
-that never registers makes `mmc-pwrseq-simple` defer, and the SDIO host the
-AIC8800D80 sits behind is `mmc@2a320000`. So the same absent driver predicts
-**Wi-Fi does not come up**, and the evidence for it is one command:
-`dmesg | grep -iE 'pwrseq|deferred|mmc[0-9]'`. Stage 4 is where the prediction
-is confirmed or killed; stage 2 captures the boot-time evidence for it while it
-is still in the journal.
+**Read the resolved configuration, never the committed one.** The vendor config
+at `boards/cx3576/bsp/kernel/config/kernel-cx3576z.config` carries
+`# CONFIG_RTC_DRV_HYM8563 is not set`; `configure.sh` flips it before
+`olddefconfig`, and the file's own header says the assertions are "on the
+RESOLVED config and not on the committed input". The resolved config is what
+ships as `/boot/config-<release>` and what `verify/src/checks-kernel.ts` reads
+back out of the packed root — **so that is the file a claim about this kernel is
+made against.** An earlier draft of this page predicted the opposite of the
+truth here by reading the input, and the two files differ in exactly this one
+symbol out of every one this page cites.
+
+**What is genuinely open, and it is not the driver.** Two things a config
+cannot answer:
+
+- **Index, not identity.** `RTC_HCTOSYS_DEVICE="rtc0"` binds by index. Exactly
+  one RTC driver is built in the resolved config and exactly one RTC node is
+  enabled — the SoC reference design's `hym8563@51` on `i2c@2ac50000` is
+  explicitly `status = "disabled"` by the board DTS — so `rtc0` being the
+  AT8563 is near-certain rather than doubtful. It is still one command to
+  confirm rather than assume: `cat /sys/class/rtc/rtc0/name`.
+- **The backup cell.** Whether the chip keeps time across a power-off depends
+  on a battery or supercap being fitted and charged, which no symbol and no
+  device-tree node states. The dossier already records that neither the driver
+  nor the backup cell has been exercised on a unit; **the cell is the half this
+  session actually settles**, in stage 3's ten unpowered minutes.
+
+**The SDIO chain, now that its first link holds.** The DTS gives
+`/sdio-pwrseq` a `clocks = <&at8563>`, `CONFIG_PWRSEQ_SIMPLE=y` is built, and
+the SDIO host the AIC8800D80 sits behind is `mmc@2a320000`. A driver that binds
+registers the clock, so the power sequence **should** resolve and the radio
+**should** come up. The chain is worth knowing anyway, because it is the first
+thing to check if the radio does not: a deferring `mmc-pwrseq-simple` would
+name itself in `dmesg | grep -iE 'pwrseq|deferred|mmc[0-9]'`. Stage 2 captures
+that while it is still in the journal; stage 4 is where the radio is judged.
 
 **Row 10 readout (reset cause).** Whatever M2 found, plus
 `journalctl --list-boots`, `/proc/uptime`, and the console's own record of the
@@ -294,17 +321,23 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
   whether the clock moved backwards.
 - **Pass — row 2 (Warm boot).** Three reboots from a running system, each
   reaching the health gate green with no failed units.
-- **Pass — row 8 (RTC).** One of two honest outcomes, and the row records
-  which:
-  - the board has a working battery-backed RTC → after ten unpowered minutes
-    the wall clock is within a minute of true time before any network sync; or
-  - it does not → the clock comes back at the saved floor (`max(RTC, saved
-    clock)` per [../design/time.md](../design/time.md) §3), monotonically, and
-    the documented resync behaviour is what carried it. Per
+- **Pass — row 8 (RTC).** The driver is built and the node is enabled, so the
+  chip should be there; **what this stage settles is the backup cell.** One of
+  two honest outcomes, and the row records which:
+  - the cell is fitted and charged → after ten unpowered minutes the wall clock
+    is within a minute of true time before any network sync; or
+  - it is not, or the chip is not keeping time → the clock comes back at the
+    saved floor (`max(RTC, saved clock)` per
+    [../design/time.md](../design/time.md) §3), monotonically, and the
+    documented resync behaviour is what carried it. Per
     [qualification.md](qualification.md) row 8 this second outcome is a `pass`,
     because the row's claim is "time survives power-off **or** the absence is
     handled". It is a `fail` only if the clock goes backwards or the device
     comes up believing a time it should not.
+
+  Record which, and record `cat /sys/class/rtc/rtc0/name` beside it: "the
+  clock survived" and "the AT8563 survived" are the same sentence only once
+  something has confirmed what `rtc0` is.
 
 ### Stage 4 — `network` (row 6)
 
@@ -319,9 +352,11 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
 - **Pass — row 6.** Ethernet and each named radio module associate and transfer
   under the shipped stack. **`eth1` failing to take a DHCPv4 lease is a `fail`
   for this row, not a footnote**, and M1's evidence is what the defect report
-  is written from. A Wi-Fi failure traced to the deferred SDIO power sequence is
-  likewise a `fail` with a named cause, which is more useful than a `not
-  tested`.
+  is written from. The radio is **expected to work** — the driver behind
+  `/sdio-pwrseq`'s clock is built and asserted at build time — so a Wi-Fi
+  failure is a `fail`, and the SDIO power sequence is the first place to look
+  for its cause rather than the predicted one. A `fail` with a named cause is
+  worth more than a `not tested` either way.
 
 > status: board-dependent — evidence: `boards/cx3576/board.env`
 

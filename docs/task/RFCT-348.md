@@ -85,16 +85,49 @@ page says so at the row rather than in a footnote:
 Read out of the tree while writing it, each with the command that settles it on
 the bench:
 
-- **The shipped kernel builds no RTC driver.** All 76 `CONFIG_RTC_DRV_*` lines
-  are `is not set`, `CONFIG_RTC_DRV_HYM8563` included, while `CONFIG_RTC_CLASS`,
-  `CONFIG_RTC_HCTOSYS` and `CONFIG_RTC_HCTOSYS_DEVICE="rtc0"` are set and the
-  DTS declares an AT8563 at `i2c7` `0x51`.
-- **And that predicts a radio failure.** The DTS gives `/sdio-pwrseq`
-  `clocks = <&at8563>` and `CONFIG_PWRSEQ_SIMPLE=y` is built, so a clock
-  provider that never registers defers the SDIO host the AIC8800D80 sits
-  behind. Stage `network` is where that is confirmed or killed.
 - The watchdog node is `okay` and `CONFIG_DW_WATCHDOG=y`, so a missing
   `/dev/watchdog0` is a defect to report rather than an absence to accept.
+- `# CONFIG_WATCHDOG_SYSFS is not set` gates the class attributes, so row 10's
+  "the reset cause is readable afterwards" half may have no sysfs source. That
+  makes such a run a `fail` on the second half with the first half stated —
+  not a `pass`, because the row claims both.
+- `# CONFIG_WATCHDOG_NOWAYOUT is not set`, so closing `/dev/watchdog` with a
+  magic `V` disarms it, which is what makes stage 7 safe to arm and safe to
+  abort.
+- **The RTC works, and the page now says so.** `kernel/configure.sh` does
+  `scripts/config --enable RTC_DRV_HYM8563` and then `require
+  '^CONFIG_RTC_DRV_HYM8563=y'`, so `rtc0` should be present and should be the
+  AT8563 the DTS declares. What the bench actually settles for row 8 is the
+  **backup cell**, which no symbol states.
+
+### A wrong finding, and the method error under it
+
+An earlier draft of this page carried the **opposite** of that last item —
+"the shipped kernel builds no RTC driver at all", plus a predicted Wi-Fi
+failure derived from it through `/sdio-pwrseq`'s `clocks = <&at8563>`. L1
+caught it. Recorded because the mistake is reusable:
+
+- **The claim was read off the wrong file.** `boards/cx3576/bsp/kernel/config/
+  kernel-cx3576z.config` is the committed **vendor input**, and it really does
+  say `# CONFIG_RTC_DRV_HYM8563 is not set`. `configure.sh` flips that symbol
+  before `olddefconfig` and then asserts the result, and its own header says
+  the assertions are "on the RESOLVED config and not on the committed input".
+  The resolved config ships as `/boot/config-<release>`.
+- **Checked afterwards: it was the only one.** Every other kconfig symbol this
+  page cites is identical in the committed input and in the resolved config, so
+  the remaining findings stand on either file. `RTC_DRV_HYM8563` is the single
+  symbol that differs — which is exactly why reading the input looked like it
+  worked.
+- **The count was the tell and it was not pulled.** "All 76 lines are `is not
+  set`" is a whole kconfig family with no member enabled. That is unusual
+  enough to deserve one `grep -c '=y'` against the built artefact before it
+  becomes a premise, and a premise two findings then leaned on.
+- **A wrong expectation is worse than none.** An operator arriving with
+  "the radio will not come up" would have gone looking for why it worked. The
+  page now states the expectation in the direction the evidence supports and
+  says that a stage finding otherwise has found a defect.
+- The page also now carries the rule that caused it, at the point of use:
+  **read the resolved configuration, never the committed one.**
 
 ### The tool inventory, measured rather than assumed
 
