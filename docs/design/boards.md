@@ -466,7 +466,7 @@ merge the same shared fragment before `olddefconfig`. Board intake tiers:
    "the board-definition schema lint" (`verify/run.sh`).
 2. Kernel: vendor tree + `boards/common/mos-required.fragment` merged before
    olddefconfig, every `=y` line then asserted against the built `.config` — a
-   "missing mos-required option" (`boards/cx3576/bsp/kernel/Dockerfile`)
+   "missing mos-required option" (`boards/cx3576/bsp/kernel/configure.sh`)
    fails the build.
 3. U-Boot: §5 config; verified boot keys enrolled. A UEFI board has none of it
    and ships a `grub.cfg` for the ESP instead.

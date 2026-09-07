@@ -87,7 +87,7 @@ One entry today.
 | **Upstream has** | `bootdev-order = "mmc1", "mmc0", "usb";` — SD first, so an inserted SD card overrides eMMC |
 | **We have** | `bootdev-order = "mmc0", "mmc1", "usb";` — eMMC first, SD second, USB last |
 | **Reason** | The user decided it, 2026-08-20. |
-| **Guard** | `boards/cx3576/bsp/uboot/Dockerfile` asserts `test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb"` on the compiled device tree |
+| **Guard** | `boards/cx3576/bsp/uboot/build.sh` asserts `[ "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" ]` on the compiled device tree, and `build-mos.sh` repeats it because that stage rebuilds `u-boot.dtb` |
 
 SD is retained as a fallback, not removed: a rescue SD still boots when eMMC is
 unbootable, but it cannot override an eMMC that boots.
@@ -116,8 +116,9 @@ above still passes.
 clearing the variable before anything reads the order. The clear is per-boot and
 non-destructive: it takes no value and issues no `saveenv`, so it does not
 rewrite the stored environment. Each stage's exact `BOOTCOMMAND` string is
-asserted separately in `boards/cx3576/bsp/uboot/Dockerfile`, so dropping the clear
-cannot pass silently.
+asserted separately in `boards/cx3576/bsp/uboot/build.sh` and
+`boards/cx3576/bsp/uboot/build-mos.sh`, so dropping the clear cannot pass
+silently.
 
 This is a mechanism note, not a second deviation: upstream carries the same
 `setenv boot_targets` (upstream `b28504b`). It is recorded here because the

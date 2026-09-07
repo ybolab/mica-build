@@ -58,19 +58,23 @@ It is not. It clones U-Boot from
 `ARG UBOOT_COMMIT=ece349ade2973e220f524ce59e59711cc919263f`
 (`boards/cx3576/bsp/uboot/Dockerfile`) -- v2026.07, per the file's own
 header -- and builds `make "${BOARD}_defconfig"`
-(`boards/cx3576/bsp/uboot/Dockerfile`)
+(`boards/cx3576/bsp/uboot/build.sh`, which the Dockerfile hands the board name)
 [V]. The only vendor content is:
 
 - Rockchip **binary blobs** from `rockchip-linux/rkbin` — DDR init
   `rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin` and TF-A
-  `rk3576_bl31_v1.24.elf` (`Dockerfile,41-42`) [V];
+  `rk3576_bl31_v1.24.elf` (`boards/cx3576/bsp/uboot/Dockerfile`, the
+  `DDR_BLOB`/`BL31_BLOB` args) [V];
 - one local patch, `patches/0001-rockchip-usb-rockusb-loader-mode-and-maskrom-reboot.patch`,
   which sets `bcdUSB=0x0201` so Rockchip host tools see a *loader* rather than a
   maskrom device, and implements `rkusb_set_reboot_flag()` for `K_FW_RESET`
   subcodes 3/6 [V];
-- a device-tree append done inside the Dockerfile (adc-keys recovery button on
-  saradc ch1 with a 17 mV threshold, plus `vdd-microvolts = <1800000>` so the
-  mainline `rockchip-saradc` driver probes at all) (`boards/cx3576/bsp/uboot/Dockerfile`) [V].
+- a device-tree append (adc-keys recovery button on saradc ch1 with a 17 mV
+  threshold, plus `vdd-microvolts = <1800000>` so the mainline `rockchip-saradc`
+  driver probes at all). It was a `printf >>` inside the Dockerfile when this was
+  written and is
+  `boards/cx3576/bsp/uboot/patches/0007-rk3576-generic-cx3576z-recovery-key-saradc.patch`
+  since RFCT-345 [V].
 
 **Consequence for this task**: the "pivot to mainline" is mostly already done.
 What the user is really deciding is whether to keep carrying these three
@@ -117,9 +121,9 @@ files [V]. Putting the old names in a defconfig is silently ignored.
 
 ### 1.3 Boot flow today: bootstd, not `distro_bootcmd`
 
-`CONFIG_BOOTCOMMAND` is set by the Dockerfile to
+`CONFIG_BOOTCOMMAND` is set by the debug variant's build script to
 `"setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"`
-(`boards/cx3576/bsp/uboot/Dockerfile`) [V], and the resulting config has [V]:
+(`boards/cx3576/bsp/uboot/build.sh`) [V], and the resulting config has [V]:
 
 ```
 CONFIG_BOOTSTD=y
@@ -233,9 +237,10 @@ Known gaps / vendor-only pieces, i.e. what mainline does **not** give you:
    exact blob versions**; this is the highest-risk item in the whole pivot.
 2. **The recovery button does not work out of the box.** Mainline's
    `rockchip-saradc` fails to probe without a `vdd` supply, and the generic
-   board DT has no PMIC — hence the Dockerfile's `vdd-microvolts = <1800000>`
-   append (`boards/cx3576/bsp/uboot/Dockerfile`) [V]. Without it there is no ADC, so no
-   `button recovery`, so no `PREBOOT` rockusb entry.
+   board DT has no PMIC — hence the `vdd-microvolts = <1800000>` the saradc
+   patch adds (`boards/cx3576/bsp/uboot/patches/0007-rk3576-generic-cx3576z-recovery-key-saradc.patch`)
+   [V]. Without it there is no ADC, so no `button recovery`, so no `PREBOOT`
+   rockusb entry.
 3. **Rockusb reports as maskrom, not loader**, without patch 0001 [V]. Rockchip
    host tools then speak the 0x471/0x472 maskrom protocol the gadget does not
    implement.
@@ -518,8 +523,8 @@ this bootmeth reads the counter with `env_get_ulong(..., 10, ...)`
 exhausted. It does **not** need U-Boot-resident logic: the "reset all counters
 and `reset`" behaviour of §4.2 keeps the device alive, and the actual rescue
 entry is the existing `PREBOOT` recovery-button path into rockusb
-(`boards/cx3576/bsp/uboot/Dockerfile`) plus the `bootcmd` tail that enters rockusb
-when boot fails (`boards/cx3576/bsp/uboot/Dockerfile`) [V]. Both are already in the current tree and
+(`boards/cx3576/bsp/uboot/build.sh`) plus the `bootcmd` tail that enters rockusb
+when boot fails (`boards/cx3576/bsp/uboot/build.sh`) [V]. Both are already in the current tree and
 must be preserved in the custom build — that is the rescue path, and it is
 U-Boot-resident for the right reason (it must work when no slot is readable).
 

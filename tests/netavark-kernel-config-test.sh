@@ -17,10 +17,18 @@
 # are build inputs, not outputs. `make olddefconfig` runs after them and can
 # still drop a symbol whose dependencies are unmet -- silently, because a
 # dropped symbol simply is not in the output. That direction is proved by the
-# post-olddefconfig grep loops in the board kernel Dockerfiles. Assertion 2
+# post-olddefconfig grep loops in each board's kernel CONFIGURE STEP. Assertion 2
 # below therefore requires every symbol in this list to be named by one of those
 # loops: two lists free to disagree are one list that is not enforced, and the
 # built config is the only one the hardware ever sees.
+#
+# WHERE THAT STEP LIVES IS PER BOARD, which is why the rows below name a file
+# each rather than deriving one. x64 and virt-arm64 still run it inside their
+# kernel Dockerfile; cx3576's moved to boards/cx3576/bsp/kernel/configure.sh
+# under RFCT-345, when that board's build logic came out of its Dockerfile. It is
+# the same loop and this file reads it the same way -- a row still pointing at
+# the Dockerfile after the move would have found no `for option in` and no
+# fragment, and refused by name, which is the behaviour that matters.
 #
 # THOSE LOOPS FAIL THE KERNEL BUILD, NOT THE IMAGE BUILD, and the difference is
 # what RFCT-343 found. `_out/boards/<board>/kernel/` is an INPUT to image assembly: a tree
@@ -50,11 +58,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
-# One row per board: the committed config a build starts from, and the
-# Dockerfile that asserts the result. Discovered from neither -- written here,
+# One row per board: the committed config a build starts from, and the file that
+# asserts the result after olddefconfig. Discovered from neither -- written here,
 # because a board with no kernel build has no row and a glob would give it one.
 BOARD_CONFIGS="cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config virt-arm64:boards/virt-arm64/bsp/kernel/config/virt-arm64.config x64:boards/x64/bsp/kernel/config/x64.config"
-BOARD_DOCKERFILES="cx3576:boards/cx3576/bsp/kernel/Dockerfile virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
+BOARD_CONFIG_GATES="cx3576:boards/cx3576/bsp/kernel/configure.sh virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
 FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
 VERSIONS_ENV="${REPO_ROOT}/pkgs/podman/versions.env"
 
@@ -151,34 +159,34 @@ echo "--- 2. each symbol is re-asserted after olddefconfig, on every board"
 # The committed configs are inputs. This is the only check that survives
 # olddefconfig deciding a symbol's dependencies are unmet and dropping it.
 #
-# TWO WAYS TO BE GATED, and they are equally binding. A board Dockerfile's own
+# TWO WAYS TO BE GATED, and they are equally binding. A board's own
 # `for option in` loop names board facts; boards/common/mos-required.fragment
-# names engine facts, and EVERY board Dockerfile greps every `=y` line of it
-# against the final .config. So a symbol in the fragment is gated on every
+# names engine facts, and EVERY board's configure step greps every `=y` line of
+# it against the final .config. So a symbol in the fragment is gated on every
 # board at once, which is where these symbols live since PLAN-074 -- and the
-# check below requires the fragment's own enforcement to exist in each
-# Dockerfile before it accepts that route.
+# check below requires the fragment's own enforcement to exist in each board's
+# gate file before it accepts that route.
 FRAGMENT_SYMS="$(sed -n 's/^CONFIG_\([A-Z0-9_]*\)=y$/\1/p' "${FRAGMENT}")"
 [ -n "${FRAGMENT_SYMS}" ] || {
     echo "error: ${FRAGMENT#"${REPO_ROOT}/"} yields no =y symbols, so the fragment route would gate nothing." >&2
     exit 1
 }
-for row in ${BOARD_DOCKERFILES}; do
+for row in ${BOARD_CONFIG_GATES}; do
     board="${row%%:*}"
-    dockerfile="${REPO_ROOT}/${row#*:}"
-    [ -f "${dockerfile}" ] || {
+    gate="${REPO_ROOT}/${row#*:}"
+    [ -f "${gate}" ] || {
         echo "error: ${row#*:} does not exist, so ${board}'s post-olddefconfig gate would be read from nothing." >&2
         exit 1
     }
-    # The fragment loop itself: `for line in $(sed ... /mos-required.fragment)`
+    # The fragment loop itself: `for line in $(sed ... mos-required.fragment)`
     # followed by a grep of the final .config. Without it, membership in the
     # fragment gates nothing on this board and the route below would be a
     # claim about a loop that is not there.
-    grep -q 'mos-required.fragment' "${dockerfile}" || {
-        echo "error: ${row#*:} does not read /mos-required.fragment, so the shared floor is not enforced on ${board}." >&2
+    grep -q 'mos-required.fragment' "${gate}" || {
+        echo "error: ${row#*:} does not read mos-required.fragment, so the shared floor is not enforced on ${board}." >&2
         exit 1
     }
-    LOOP="$(awk '/for option in/ {f = 1} f {print} f && /; do/ {exit}' "${dockerfile}")"
+    LOOP="$(awk '/for option in/ {f = 1} f {print} f && /; do/ {exit}' "${gate}")"
     for sym in "${SYMBOLS[@]}"; do
         if grep -qw "${sym}" <<<"${LOOP}"; then
             pass "${board}: the built config is gated on CONFIG_${sym}=y by the board loop"
