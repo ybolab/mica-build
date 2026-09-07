@@ -1,6 +1,6 @@
 # PLAN-078 Short-lived signer certificates: expiry the device enforces alone
 
-- **status**: proposed
+- **status**: completed
 - **createdAt**: 2026-09-04 20:45
 - **relatedTask**: RFCT-308
 - **relatedPlans**: [PLAN-077](PLAN-077.md) (Gate A, the anchor and the rotation decision), [PLAN-070](PLAN-070.md) (the `meta/` seam and the two anchors), [PLAN-071](PLAN-071.md) (the freshness bound and the clock it rests on)
@@ -872,3 +872,17 @@ S9 on a design that does not exist yet.
   served later cases at the earlier clock. That run was discarded and each case
   re-run in its own container. It is recorded because the failure is silent:
   the client prints a normal-looking refusal either way.
+
+- 2026-09-07: Completed for the scope that was approved. S1 through S7
+  shipped under RFCT-311: the `[keyring]` absence assertion, `--keyring` on
+  `bundleArgs` so the imminent-expiry warning can fire at all, the build's
+  refusal inside the reissue threshold, the diagnosis that does not blame a
+  clock that is fine, the single declared validity in
+  `pkgs/rauc/key-validity.env` (45 days per §3a), and the two documents.
+
+  Two rows are deliberately not delivered, and neither is a debt. **S8** was
+  conditional on §4(b); §4a chose option (a), monthly root access, so
+  `pathlen:0` stands and there is no intermediate CA to build. **S9** waits
+  on a design that does not exist — the resigned-bundle release record — and
+  is named rather than half-built. The signer window itself is now documented
+  for a recipient in `docs/design/key-delivery.md` §6.

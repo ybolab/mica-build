@@ -1,6 +1,6 @@
 # PLAN-085 A generic virtual arm64 board, bootable in QEMU
 
-- **status**: draft
+- **status**: completed
 - **createdAt**: 2026-09-06 08:20
 - **approvedAt**: (pending)
 - **relatedTask**: RFCT-335
@@ -624,3 +624,18 @@ change to a shared script and approval should see it.
   side effect of `bash verify/run.sh --lint`) and ran four throwaway
   `ai-agent-y6gfy207-*` containers, all `--rm`. No tracked file outside
   `docs/plan/PLAN-085.md` and `docs/task/RFCT-335.md` was touched.
+
+- 2026-09-07: Completed. All six slices landed under RFCT-335, plus the
+  release-target assertion added at review. `virt-arm64` is on main: layout
+  lint 41/41 over three boards, the UEFI assembler renamed with
+  `x64-mos-latest.img` byte-identical across the rename, the board composed
+  and its image verified at 313/313, the boot harness parameterised and one
+  measured boot to `APID_LISTENING` at 95 s against x64's 75 s, and the
+  dossier making this the tree's second and first non-example one. The record
+  said `draft` for a day after all of that shipped, which is the drift
+  RFCT-344 found across seven records and why the marker is set from the
+  status head rather than the other way round.
+
+  Not delivered and not owed: `virt-arm64` is a test target, asserted so by
+  `BOARD_RELEASE_TARGET=0` with a positive control, and x64's missing dossier
+  stays out of scope as this plan already recorded.
