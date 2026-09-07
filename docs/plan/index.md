@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-06
+> Updated: 2026-09-07
 
 ## Usage
 
@@ -21,55 +21,48 @@ Each plan is a single line linking to its detail file. All detailed information 
 
 ### Rules
 
-- Only update the checkbox marker; never delete the line.
 - New plans append to the end.
 - See each `PLAN-NNN.md` for full details.
+- **A completed plan's record is deleted, and its line goes with it.** This
+  index is a list of what is left, not a history of what was done. A finished
+  plan lives in git history: `git log --diff-filter=D -- docs/plan/` lists
+  every record that has left, and `git show <commit>^:docs/plan/PLAN-NNN.md`
+  prints one back. `docs/verify-index.sh` and `docs/verify-links.sh` both
+  exclude this directory, and say so in their own headers, so a deleted record
+  breaks no gate.
+- **The record's own `status` head is authoritative; the marker summarises it.**
+  Where the two disagreed, the record won. Check both before deleting anything:
+  PLAN-080 (`implementing`) and PLAN-085 (`draft`) were each marked `[x]` here,
+  and deleting on the marker alone would have destroyed two live designs.
+- **A citation to a deleted plan stays as text, not as a link** --
+  `PLAN-049`, not `[PLAN-049](PLAN-049.md)`. The name survives so the reason
+  can be found in history; the link does not, because it would point at
+  nothing. This is already the house style: before this change 234 of the 239
+  `PLAN-NNN` mentions in the shipped trees were bare names.
+
+Until 2026-09-07 this section read "Only update the checkbox marker; never
+delete the line". It was inherited verbatim from the PMA skill's
+`plan-format.md` and had already been contradicted by five prune commits
+(`ab0e650c`, `32f6a453`, `7c78a89a`, `1b31a6c0`, `3a5e52c3`); `1b31a6c0` put
+the real norm plainly -- "Completed records leave the tree, as PLAN-001..029
+did before them". It was removed rather than reworded because a rule the tree
+disobeys on sight teaches a reader the wrong thing about the tree.
 
 ---
 
 ## Plans
 
 - [ ] [**PLAN-037 Coordinate the embedded delivery roadmap**](PLAN-037.md) `2026-08-31`
-- [x] [**PLAN-043 Publish release identity and supply-chain artifacts**](PLAN-043.md) `2026-09-01`
-- [x] [**PLAN-044 Add RTC, NTP and timezone management**](PLAN-044.md) `2026-09-01`
-- [x] [**PLAN-045 Add the unexpanded BusyBox emergency binary**](PLAN-045.md) `2026-09-01`
-- [x] [**PLAN-046 Deliver install, onboarding and provisioning**](PLAN-046.md) `2026-09-01`
-- [x] [**PLAN-047 Deliver authenticated system updates**](PLAN-047.md) `2026-09-01`
-- [x] [**PLAN-048 Deliver recovery and credential access recovery**](PLAN-048.md) `2026-09-01`
-- [x] [**PLAN-049 Add storage status and data lifecycle management**](PLAN-049.md) `2026-09-01`
-- [x] [**PLAN-051 Document native and container application delivery**](PLAN-051.md) `2026-09-01`
-- [x] [**PLAN-052 Add diagnostics and operational network state**](PLAN-052.md) `2026-09-01`
-- [x] [**PLAN-053 Define security and manufacturing lifecycle**](PLAN-053.md) `2026-09-01`
 - [ ] [**PLAN-054 Design conditional fleet management**](PLAN-054.md) `2026-09-01`
-- [x] [**PLAN-055 Define the built-in UI development guide**](PLAN-055.md) `2026-09-01`
-- [x] [**PLAN-056 Design a managed application catalog and lifecycle**](PLAN-056.md) `2026-09-01`
-- [x] [**PLAN-057 Define the built-in UI product-design guide**](PLAN-057.md) `2026-09-01`
-- [x] [**PLAN-058 Add built-in UI localization and Spectrum themes**](PLAN-058.md) `2026-09-01`
-- [x] [**PLAN-059 Embed isolated UI asset trees**](PLAN-059.md) `2026-09-01`
-- [x] [**PLAN-060 Move the built-in UI to `/_ui/`**](PLAN-060.md) `2026-09-01`
-- [x] [**PLAN-061 Establish the `/mos` persistent system namespace**](PLAN-061.md) `2026-09-02`
-- [x] [**PLAN-062 Add uploadable versioned custom UI packages**](PLAN-062.md) `2026-09-02`
-- [x] [**PLAN-063 Adopt the direct development-stage DATA layout**](PLAN-063.md) `2026-09-02`
-- [x] [**PLAN-064 Recreate the built-in UI from the approved prototype**](PLAN-064.md) `2026-09-02`
-- [x] [**PLAN-065 Generate built-in UI assets during the build**](PLAN-065.md) `2026-09-02`
-- [x] [**PLAN-066 Isolate built-in UI build outputs**](PLAN-066.md) `2026-09-02`
-- [x] [**PLAN-067 Align the built-in console with the approved prototype details**](PLAN-067.md) `2026-09-02`
-- [x] [**PLAN-068 Complete the built-in console against the prototype information architecture**](PLAN-068.md) `2026-09-02`
 - [ ] [**PLAN-069 Design managed and untrusted application controls**](PLAN-069.md) `2026-09-03`
 - [ ] [**PLAN-070 Design the meta/ seam and the /mos/config/ system-configuration namespace**](PLAN-070.md) `2026-09-03`
 - [ ] [**PLAN-071 Design the update module: off/check/auto with automatic install in a window**](PLAN-071.md) `2026-09-03`
 - [ ] [**PLAN-072 Design cloud registration: outbound-only, off by default**](PLAN-072.md) `2026-09-03`
-- [x] [**PLAN-073 Add the eBPF, firewall and bridge kernel floor, and bring both boards to it**](PLAN-073.md) `2026-09-03`
-- [x] [**PLAN-074 Build the x64 kernel in tree, with its own config**](PLAN-074.md) `2026-09-04`
-- [x] [**PLAN-075 Ship the firewall tools in the base image, with no policy**](PLAN-075.md) `2026-09-03`
 - [ ] [**PLAN-076 Design device state reporting to the fleet plane**](PLAN-076.md) `2026-09-03`
 - [ ] [**PLAN-077 Gate A: trust is real -- the anchor, the grade and the rotation decision**](PLAN-077.md) `2026-09-04`
 - [ ] [**PLAN-078 Short-lived signer certificates under the existing CA**](PLAN-078.md) `2026-09-04`
-- [x] [**PLAN-080 Every build and assembly runs in a container, none on the host**](PLAN-080.md) `2026-09-04`
-- [x] [**PLAN-079 Build the update server and release console**](PLAN-079.md) `2026-09-04`
-- [x] [**PLAN-081 Resolve the September repository audit findings**](PLAN-081.md) `2026-09-05`
-- [x] [**PLAN-082 Cache the Debian runtime base and install it with dpkg**](PLAN-082.md) `2026-09-06`
-- [x] [**PLAN-083 Lock and layer Debian packages and validate the composed system**](PLAN-083.md) `2026-09-06`
-- [x] [**PLAN-084 Store Debian pins in per-package JSON manifests**](PLAN-084.md) `2026-09-06`
-- [x] [**PLAN-085 A generic virtual arm64 board, bootable in QEMU**](PLAN-085.md) `2026-09-06`
+- [-] [**PLAN-080 Every build and assembly runs in a container, none on the host**](PLAN-080.md) `2026-09-04`
+- [ ] [**PLAN-085 A generic virtual arm64 board, bootable in QEMU**](PLAN-085.md) `2026-09-06`
 - [ ] [**PLAN-086 Compose a minimal MOS runtime from explicit payloads**](PLAN-086.md) `2026-09-06`
+
+- [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`

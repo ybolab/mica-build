@@ -53,13 +53,13 @@ Work is labelled consistently in every child plan:
 | PLAN-042 / RFCT-278 (completed) | User documentation contract and official website content | DOC | P0 | 3-4 engineer-weeks | Verified claims from all shipped capabilities |
 | PLAN-043 / RFCT-279 (completed) | Release identity, artifacts, SBOM and supply-chain publication | SW/OPS/DOC | P0 | 2-3 weeks | Existing build, TUF and RAUC tooling |
 | PLAN-044 / RFCT-280 (completed) | RTC, always-running NTP and timezone management | SW/INT/DOC | P0 | 2-3 weeks plus board validation | mosd/apid/UI settings and board RTC support |
-| [PLAN-045](PLAN-045.md) / [RFCT-281](../task/RFCT-281.md) | One unexpanded `/usr/bin/busybox` emergency binary | SW/DOC | P2 | 0.5-1 week | Base rootfs composition |
+| PLAN-045 / RFCT-281 | One unexpanded `/usr/bin/busybox` emergency binary | SW/DOC | P2 | 0.5-1 week | Base rootfs composition |
 | PLAN-046 / RFCT-282 (completed) | Installation, first-run onboarding and provisioning | SW/INT/DOC | P0 | 3-5 weeks | Release artifacts and board installation paths |
 | PLAN-047 / RFCT-283 (completed) | Authenticated, resumable system update delivery | SW/OPS/DOC | P0 | 5-8 weeks | Release metadata, trusted time and RAUC/TUF keys |
 | PLAN-048 / RFCT-284 (completed) | Manual recovery, access recovery and reset contracts | SW/INT/DOC | P0 | 4-6 weeks | Slot/update state and storage reset decisions |
 | PLAN-049 / RFCT-285 (completed) | Storage status, media health and data lifecycle | SW/INT/DOC | P0 | 4-7 weeks | Board media capabilities and recovery policy |
 | PLAN-050 / RFCT-286 (completed) | BSP porting manual and field-reliability qualification | INT/DOC | P0 | 2-3 weeks for framework; 1-3 per board | Vendor inputs and physical hardware |
-| [PLAN-051](PLAN-051.md) / [RFCT-287](../task/RFCT-287.md) | Native/image and custom-container application delivery | DOC/INT, COND controls | P1 | 2-3 weeks | Stable update, persistence and API contracts |
+| PLAN-051 / RFCT-287 | Native/image and custom-container application delivery | DOC/INT, COND controls | P1 | 2-3 weeks | Stable update, persistence and API contracts |
 | PLAN-052 / RFCT-288 (completed) | Diagnostics bundle and operational network state | SW/DOC | P0 | 4-6 weeks | Storage, time and redaction rules |
 | PLAN-053 / RFCT-289 (completed) | Security boundary and manufacturing lifecycle | SW/INT/OPS/DOC | P0 | 4-7 weeks | Board assurance, release keys and provisioning |
 | [PLAN-054](PLAN-054.md) / [RFCT-290](../task/RFCT-290.md) | Conditional fleet-management architecture | COND | P2 | 3-5 weeks design only | A product decision to sell fleet operation |
@@ -187,8 +187,8 @@ feeds every public hardware claim.
 
 Documentation and website structure (PLAN-042) can start early, but capability
 pages remain explicitly proposed until their software, integration and
-operations evidence passes. BusyBox ([PLAN-045](PLAN-045.md)) is independent.
-Application guidance ([PLAN-051](PLAN-051.md)) and diagnostics (PLAN-052) use
+operations evidence passes. BusyBox (PLAN-045) is independent.
+Application guidance (PLAN-051) and diagnostics (PLAN-052) use
 the stable platform contracts. Fleet management ([PLAN-054](PLAN-054.md)) stays
 conditional and outside the pilot critical path unless product scope changes.
 
