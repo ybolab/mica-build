@@ -69,6 +69,7 @@ thing about the tree. Both indexes now say the same thing.
 - [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [-] [**RFCT-335 Add a generic virtual arm64 board, bootable in QEMU**](RFCT-335.md) `P1`
 - [x] [**RFCT-343 cx3576: reproducible kernel and U-Boot, and the config the contract reads**](RFCT-343.md) `P1`
+- [x] [**RFCT-348 cx3576 bench test plan and its collection script**](RFCT-348.md) `P1`
 - [x] [**RFCT-346 PLAN-086 S1+S4: the runtime baseline, and no static hwdb**](RFCT-346.md) `P1`
 - [x] [**RFCT-345 Extract the cx3576 BSP build steps into files**](RFCT-345.md) `P1`
 - [x] [**RFCT-344 Delete the completed plan and task records, and remove the rule that forbade it**](RFCT-344.md) `P1`
