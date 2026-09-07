@@ -117,8 +117,17 @@ Pruning the settled plan records and rewriting the rule that forbade it
   citations already use -- releases all four in a one-line change per link.
   `docs/user/doc-contract.md:85` pins PLAN-051 behind a stale `proposed` claim.
 
+- **The retention set is load-bearing, proved by mutation.** A retention rule
+  that is never exercised is superstition, so both legs were driven red in the
+  archive. Pruning PLAN-079 as well: `verify-links.sh` 1 FAILED, 472 passed --
+  "docs/CHANGELOG.md links to 'plan/PLAN-079.md', but docs/plan/PLAN-079.md
+  does not exist". Pruning PLAN-051 as well: `verify-status.sh` 2 FAILED, 732
+  passed -- the dead evidence ref and the `proposed`-needs-a-plan rule, each in
+  its own assertion. Each retained record is held by a check that fails without
+  it.
+
 - **Verification.** `make docs-verify` green from a `git archive` of this
-  branch into an empty directory: `verify-index.sh` 60/60, `verify-links.sh`
-  478/478, `verify-status.sh` 224/224, `zh/verify-coverage.sh` 40/40,
-  `bsp/verify-board.sh` 84/84. Run from the archive, not the worktree, so the
+  branch into an empty directory: `verify-index.sh` 189/189, `verify-links.sh`
+  473/473, `verify-status.sh` 734/734, `zh/verify-coverage.sh` 237/237,
+  `bsp/verify-board.sh` 97/97. Run from the archive, not the worktree, so the
   deleted files could not satisfy a link from disk.
