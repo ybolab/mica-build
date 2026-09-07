@@ -555,9 +555,10 @@ package producer at prebuilt BSP artefacts; `BOARD_DIR=/path/to/bsp` still names
 the bsp SOURCE tree (committed vendor firmware, `containers.env`). RFCT-343 split
 the two: outputs live under `_out/boards/<board>/` with everything else this
 repository builds, so pointing at prebuilt artefacts no longer also repoints the
-firmware. The older spelling points the rootfs build at
-prebuilt BSP artifacts (a directory holding `out/kernel/` and
-`out/uboot-mos/`), so a kernel built once can serve many rootfs builds.
+firmware. `BSP_OUT` is what lets a kernel built once serve many rootfs
+builds. The pre-split spelling, a `BOARD_DIR` holding `out/kernel/` and
+`out/uboot-mos/`, is retired rather than aliased: a tree still using it gets
+a refusal naming the artefact it could not find, not a silent miss.
 
 ### 4.1 How the rootfs composition reaches arm64 without the host
 

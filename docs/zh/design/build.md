@@ -464,10 +464,10 @@ make os-bundle-cx3576
 `BSP_OUT=/path/to/_out/boards/<board>` 可以让拼装器和板卡包 producer 使用预构建的
 BSP 产物；`BOARD_DIR=/path/to/bsp` 仍然指 bsp **源码**目录（提交在树里的厂商固件、
 `containers.env`）。RFCT-343 把两者拆开了：产物和本仓库其它构建产物一起放在
-`_out/boards/<board>/` 下，所以指向预构建产物不会再顺带把固件也指走。旧的写法让
-rootfs 构建使用预构建的 BSP 产物
-（目录下有 `out/kernel/` 和 `out/uboot-mos/`），内核编一次就能服务多次
-rootfs 构建。
+`_out/boards/<board>/` 下，所以指向预构建产物不会再顺带把固件也指走。
+`BSP_OUT` 正是让内核编一次就能服务多次 rootfs 构建的那个变量。拆分前的写法
+（`BOARD_DIR` 下有 `out/kernel/` 和 `out/uboot-mos/`）是**退休**而不是别名：
+仍在用它的树会得到一条指名缺失产物的拒绝，而不是静默地找不到。
 
 ### 4.1 rootfs 组合如何不靠主机到达 arm64
 
