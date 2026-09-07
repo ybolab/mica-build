@@ -1,6 +1,6 @@
 # PLAN-086 Compose a minimal MOS runtime from explicit payloads
 
-- **status**: draft
+- **status**: approved
 - **createdAt**: 2026-09-06 10:54
 - **approvedAt**: (pending)
 - **relatedTask**: RFCT-336
@@ -140,3 +140,11 @@ Reference material consulted during investigation: [mmdebstrap variants](https:/
 - 2026-09-06: The user requested a plan for review. Implementation approval is pending.
 - 2026-09-06: Backward compatibility is not a requirement unless explicitly requested. Actual boot, update, persistence and selected application behavior remain acceptance requirements.
 - 2026-09-06: Following the user's clarification about a minimal BusyBox-based system, replace the initial keep-then-filter hwdb proposal with a runtime containing udev and required rules but no static hwdb. This does not remove runtime udev state or kernel-module indexes, and does not switch device management to BusyBox mdev. Implementation approval remains pending.
+- 2026-09-07: Implementation approved by the user. Dispatched as two tranches
+  rather than one: S1 and S4 first — S1 because every later slice states its
+  result as a delta against a baseline that does not exist yet, and S4 because
+  it is the slice the approval was asked about and the one whose 22 MiB is
+  removed by exclusion rather than by altering a binary. S2, S3, S5 and S6
+  follow once a baseline exists to measure them against; S2 in particular
+  changes shipped bytes, and claiming a saving against an unmeasured tree is
+  the shape this plan's own S1 exists to prevent.
