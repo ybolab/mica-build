@@ -2,7 +2,7 @@
 // status-LED device tree, the compiled boot script, the verity env pair, and
 // the regions that must ship zero-filled.
 //
-// Six families in one module, because every one reads either `boards/<board>/bsp/out/`
+// Six families in one module, because every one reads either `_out/boards/<board>/`
 // or a file mcopy'd out of a boot slot, and three share the five SKIP lines a
 // grub board prints in their place.
 //
@@ -14,7 +14,9 @@
 // once per slot). So in each group one entry applies to every board and owns the
 // skip, and the rest are scoped by `boardsWhere(isUBoot)` or `hasLed`.
 //
-// `boards/cx3576/bsp/out/` is not populated in a checkout, so the oracle's own run is
+// `_out/boards/cx3576/` is not populated in a checkout (it was
+// `boards/cx3576/bsp/out/` until RFCT-343 moved every BSP output under `_out/`
+// with the rest of what this repository builds), so the oracle's own run is
 // `RESULT FAIL (387/395)` with eight conclusions reading `... compare source not
 // found`. The Scope section puts `board/` BSP builds outside this
 // campaign -- "No change to ... `board/` BSP builds (digest pins only)" -- so
@@ -54,17 +56,24 @@ const LED = boardsWhere(hasLed)
 const NOT_LED = boardsWhere(b => !hasLed(b))
 
 /**
- * `${BOARD_DIR}` -- where this board's BSP build puts its artefacts.
+ * `${BSP_OUT}` -- where this board's BSP build puts its artefacts.
+ *
+ * `_out/boards/<board>/` since RFCT-343, which is where every other build
+ * product in this repository already lived. It used to be `<BOARD_DIR>/out/`,
+ * i.e. inside the bsp SOURCE tree, and the two are separate variables now
+ * because they are separate things: BOARD_DIR still names committed content
+ * (vendor firmware, containers.env) and BSP_OUT names what a build wrote.
  *
  * The environment variable first, because that is how the oracle's own
- * container re-exec supplies it (`-e BOARD_DIR=/board`) and a run made
- * that way must read the same tree. Otherwise `boards/<board>/bsp/`, derived from
- * the board's name; see the header for the literal the oracle defaults to.
+ * container re-exec supplies it and a run made that way must read the same
+ * tree. No `BOARD_DIR` fallback: this repository does not carry compatibility
+ * shims during development, and two spellings for one directory is how the
+ * verifier comes to read a different tree than the producers wrote.
  */
-function boardDir(board: Board): string {
-  const fromEnv = process.env['BOARD_DIR']
+function bspOut(board: Board): string {
+  const fromEnv = process.env['BSP_OUT']
   if (fromEnv !== undefined && fromEnv.trim() !== '') return fromEnv
-  return join(REPO_ROOT, 'boards', board.name, 'bsp')
+  return join(REPO_ROOT, '_out', 'boards', board.name)
 }
 
 function key(board: Board, name: string): string {
@@ -98,7 +107,7 @@ function intKey(board: Board, name: string): number {
  * the first about which branch was taken.
  */
 function ubootSourceSize(board: Board): { src: string, size: number } {
-  const src = join(boardDir(board), 'out', key(board, 'UBOOT_VARIANT_DIR'), key(board, 'UBOOT_BIN_NAME'))
+  const src = join(bspOut(board), key(board, 'UBOOT_VARIANT_DIR'), key(board, 'UBOOT_BIN_NAME'))
   return { src, size: existsSync(src) ? statSync(src).size : 0 }
 }
 
@@ -180,7 +189,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
         ],
       },
       run: async (ctx: ImageContext): Promise<readonly CheckResult[]> => {
-        const src = join(boardDir(ctx.board), 'out', debugDir, key(ctx.board, 'UBOOT_BIN_NAME'))
+        const src = join(bspOut(ctx.board), debugDir, key(ctx.board, 'UBOOT_BIN_NAME'))
         if (!existsSync(src)) {
           return [verdict(notDebugId, false,
             `u-boot debug-variant compare source not found: ${src}; the ${variant}/${debugDir} `
@@ -265,7 +274,7 @@ const RAW_BLOB_SKIP: readonly CheckCase[] = [
  *
  * Derived, not named: every entry of this board's own BOOT_SLOT_REQUIRED_FILES
  * that is neither the compiled boot script nor a per-slot verity env is a BSP
- * artefact, and lives at `${BOARD_DIR}/out/kernel/<name>`. On cx3576 that is
+ * artefact, and lives at `${BSP_OUT}/kernel/<name>`. On cx3576 that is
  * exactly `Image` and `rk3576-src.dtb`, the literal pair required by the
  * verification contract.
  */
@@ -281,7 +290,7 @@ export function bootSlotDtb(board: Board): string | undefined {
 }
 
 function bspSource(board: Board, file: string): string {
-  return join(boardDir(board), 'out', 'kernel', file)
+  return join(bspOut(board), 'kernel', file)
 }
 
 /** `${TMP}/boot-${letter}-${f}` -- one copy per slot per file, as the oracle names it. */

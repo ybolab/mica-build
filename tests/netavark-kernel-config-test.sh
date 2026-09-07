@@ -17,10 +17,22 @@
 # are build inputs, not outputs. `make olddefconfig` runs after them and can
 # still drop a symbol whose dependencies are unmet -- silently, because a
 # dropped symbol simply is not in the output. That direction is proved by the
-# post-olddefconfig grep loops in the board kernel Dockerfiles, which fail the
-# image build. Assertion 2 below therefore requires every symbol in this list to
-# be named by one of those loops: two lists free to disagree are one list that
-# is not enforced, and the built config is the only one the hardware ever sees.
+# post-olddefconfig grep loops in the board kernel Dockerfiles. Assertion 2
+# below therefore requires every symbol in this list to be named by one of those
+# loops: two lists free to disagree are one list that is not enforced, and the
+# built config is the only one the hardware ever sees.
+#
+# THOSE LOOPS FAIL THE KERNEL BUILD, NOT THE IMAGE BUILD, and the difference is
+# what RFCT-343 found. `_out/boards/<board>/kernel/` is an INPUT to image assembly: a tree
+# that already has one does not rebuild it, so neither this file nor those loops
+# runs, and both stay green over a kernel compiled before the fragment they are
+# checking. Measured on cx3576 -- an Image from 2026-08-31 rode every image built
+# for the next week while the fragment gained dm-crypt, the eBPF/firewall/bridge
+# floor and NF_CONNTRACK_MARK/NF_NAT_MASQUERADE. The half that sees THAT is
+# verify/src/checks-kernel.ts, which reads the `/boot/config-*` the image
+# actually ships; since RFCT-343 every board exports its resolved config and that
+# check runs on all of them. This file and that one are the two ends: inputs
+# here, shipped artefact there, and neither substitutes for the other.
 #
 # EVERY BOARD, since PLAN-074. x64 used to be out of scope because it ran
 # Debian's kernel, where these are modules the distribution ships and nothing in

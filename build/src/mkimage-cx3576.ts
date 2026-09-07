@@ -185,7 +185,7 @@ export function magicHex(path: string, bytes = 4): string {
  *
  * Every path handed to a tool is a HOST path and the toolbox mounts by identity,
  * so nothing is translated across the boundary. The mount set is derived from
- * the inputs rather than fixed at the repository root: BOARD_DIR is overridable
+ * the inputs rather than fixed at the repository root: BSP_OUT is overridable
  * and a BSP outside the tree is a normal thing to have.
  */
 export function mountsFor(inputs: AssemblyInputs, workDir: string): string[] {

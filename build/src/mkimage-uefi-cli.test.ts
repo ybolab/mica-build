@@ -81,7 +81,7 @@ describe('the arguments', () => {
 describe('the inputs it derives', () => {
   test('all four come from the OUT DIRECTORY, and none from a BSP tree', async () => {
     // The other difference from src/mkimage-cx3576-cli.ts, and it is the board's:
-    // cx3576 takes its kernel and dtb from boards/cx3576/bsp/out and its U-Boot from a
+    // cx3576 takes its kernel and dtb from _out/boards/cx3576 and its U-Boot from a
     // BSP build, so it has two families of missing input and two sentences. x64
     // has one family -- everything is produced by the rootfs build -- so it has
     // one sentence, and this is what says the second family does not exist.

@@ -224,9 +224,9 @@ Debian 包仓库，由 `make os-debs` 构建并建立索引。rootfs 构建只�
 
 两块板都还需要各自的 BSP 构建。cx3576 的产出内核（`Image`、`modules.tar`、
 `rk3576-src.dtb`）和 A/B 版 U-Boot（`u-boot-rockchip.bin`）到
-`boards/cx3576/bsp/out/`，由 `board-cx3576` producer staged 进
+`_out/boards/cx3576/`，由 `board-cx3576` producer staged 进
 `mos-board-cx3576`。x64 的只产出内核——UEFI 固件就是它的启动链，没有引导程序要编
-——到 `boards/x64/bsp/out/kernel/`，由 `kernel-x64` producer 打包为
+——到 `_out/boards/x64/kernel/`，由 `kernel-x64` producer 打包为
 `mos-kernel-x64`。缺了任何一个，对应的包仓库都无法建成，而
 `make os-deb-preflight` 会在任何东西开跑之前把缺失的那个点名。
 
@@ -461,7 +461,11 @@ make os-verify-cx3576
 make os-bundle-cx3576
 ```
 
-`BOARD_DIR=/path/to/bsp` 可以让 rootfs 构建和拼装器使用预构建的 BSP 产物
+`BSP_OUT=/path/to/_out/boards/<board>` 可以让拼装器和板卡包 producer 使用预构建的
+BSP 产物；`BOARD_DIR=/path/to/bsp` 仍然指 bsp **源码**目录（提交在树里的厂商固件、
+`containers.env`）。RFCT-343 把两者拆开了：产物和本仓库其它构建产物一起放在
+`_out/boards/<board>/` 下，所以指向预构建产物不会再顺带把固件也指走。旧的写法让
+rootfs 构建使用预构建的 BSP 产物
 （目录下有 `out/kernel/` 和 `out/uboot-mos/`），内核编一次就能服务多次
 rootfs 构建。
 
@@ -547,7 +551,7 @@ sudo systemctl restart systemd-binfmt
 | `note: the 'default' builder cannot reach linux/arm64 on this host; using the docker-container builder 'mos-arm64'` | 不是错误：rootfs 组合正在走 layout 模式 | 不用处理；想要更快的 tag 模式再在主机上注册模拟器（第 5 节） |
 | 构建过程中的 `exec /bin/sh: exec format error` | 要么没有模拟器，**要么**在 `--platform` 下用了单架构的 `localhost/` 基础镜像（标签没有索引可选，buildkit 直接用它持有的那份且不套模拟器） | 先检查 daemon（第 5 节）；能执行的话就是该阶段的基础镜像架构不对——见 `build-harness.md` 5.1 节 |
 | `docker-container` builder 报 `pull access denied ... localhost/...` | 把本地标签交给了读不到镜像库的 builder | 改用 `default` builder，或把镜像以 OCI layout 交过去（`build-env/from.sh --contexts=`） |
-| `modules.tar not found` | cx3576 内核没构建，或 `BOARD_DIR` 指错了 | `make cx3576-kernel`，或设置 `BOARD_DIR` |
+| `modules.tar not found` | cx3576 内核没构建，或 `BSP_OUT` 指错了 | `make cx3576-kernel`，或设置 `BSP_OUT` |
 | `pkgs/rauc/out-<arch>/rauc not found` / `pkgs/podman/out-<arch>/podman not found` | 组件构建的是另一架构，或根本没构建 | `MOS_BOARD=<board> make os-rauc`、`MOS_ARCH=<arch> make podman` |
 | `_out/debs/<arch> does not exist` / `... holds no .deb at all` / `... carries no usable index` | 那个架构没有包仓库，或者 `repo.sh` 从没为它建过索引 | `make os-debs` |
 | `the <arch> pool was built at version '...' and this tree is '...'` | 仓库是另一个提交的，或者某一侧因为有未提交改动带上了 `.dirty` | 先提交，再重跑 `make os-debs`——否则会把另一棵树的包装进一个之后每项检查都会算在本树头上的镜像 |

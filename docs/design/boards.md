@@ -246,13 +246,25 @@ it, and a nat compatibility path that answers `-j MASQUERADE` but leaves
 cx3576 is zero because its committed vendor config already set all eight `=y`,
 so the fragment merges values that are already there. Both kernels were built
 from this tree with only the fragment differing, to show that rather than
-assert it. **The comparison is by size, not by hash, and the reason is worth
-recording:** `boards/cx3576/bsp/kernel/Dockerfile` pins none of
-`KBUILD_BUILD_TIMESTAMP`, `_USER` or `_HOST`, which x64's does, so two builds
-of one unchanged tree already differ — the two `Image` files here have equal
-size and different sha256, and that difference is the build clock rather than
-this change. Making that board's kernel reproducible is a separate task and is
-not done here.
+assert it. **The comparison was by size, not by hash, and the reason is worth
+keeping now that it has been repaired:** at the time
+`boards/cx3576/bsp/kernel/Dockerfile` pinned none of `KBUILD_BUILD_TIMESTAMP`,
+`_USER` or `_HOST`, which x64's did, so two builds of one unchanged tree already
+differed — the two `Image` files here have equal size and different sha256, and
+that difference was the build clock rather than this change.
+
+RFCT-320 added those three pins and RFCT-343 then ran the experiment nobody had:
+two `--no-cache` builds of the kernel target, same tree, back to back. **The
+Image still differed, by 24 bytes at equal size.** Five of them were `__DATE__`
+and `__TIME__` compiled into the vendor Mali driver, which no `KBUILD_BUILD_*`
+reaches — they are cpp builtins reading the wall clock, and mainline's
+`-Werror=date-time` does not cover a vendor tree. The other nineteen were the
+GNU build-id, a hash OF the linked image, which moved only because the five did.
+`modules.tar` differed for an unrelated reason: every member was byte-identical
+and every tar header carried the build's mtime, a packaging defect the same line
+gave x64 and virt-arm64. `SOURCE_DATE_EPOCH` pins the first and
+`--sort=name --mtime --numeric-owner` the second; **all three boards' kernels are
+byte-reproducible now and may be compared by sha256.**
 The x64 figure is `=y` payload — permanent kernel RAM, in both A/B slots,
 against `BOOT_SIZE_MIB` — and 8 KiB against a 96 MiB boot partition is not a
 number that constrains anything. The four `.ko` that stopped being built are

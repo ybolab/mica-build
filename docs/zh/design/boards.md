@@ -212,10 +212,20 @@ x64 增加了能力。
 
 cx3576 为零，因为它提交在树里的厂商配置本来就把八个都设成了 `=y`，fragment 合并进去的
 是已经存在的值。两个内核都是从本树构建、只让 fragment 不同，用来**给看**而不是断言。
-**这里比的是体积而不是哈希，原因值得记下来：**`boards/cx3576/bsp/kernel/Dockerfile`
-没有钉住 `KBUILD_BUILD_TIMESTAMP`、`_USER`、`_HOST` 中的任何一个（x64 的钉了），所以
-同一棵未改动的树构建两次本来就不一致——这里两个 `Image` 体积相同、sha256 不同，那个
-差异来自构建时钟而不是本次改动。让那块板的内核可复现是另一个任务，此处不做。
+**当时比的是体积而不是哈希，原因已经修好，但值得保留：**那时
+`boards/cx3576/bsp/kernel/Dockerfile` 没有钉住 `KBUILD_BUILD_TIMESTAMP`、`_USER`、
+`_HOST` 中的任何一个（x64 的钉了），所以同一棵未改动的树构建两次本来就不一致——
+这里两个 `Image` 体积相同、sha256 不同，那个差异来自构建时钟而不是本次改动。
+
+RFCT-320 加上了那三个钉，RFCT-343 随后跑了没人跑过的实验：对内核 target 连续
+做两次 `--no-cache` 构建，同一棵树。**Image 仍然不同，体积相等而差 24 个字节。**
+其中五个是编进厂商 Mali 驱动的 `__DATE__` 和 `__TIME__`，任何 `KBUILD_BUILD_*` 都到不了
+那里——它们是读壁钟的 cpp 内置宏，而 mainline 的 `-Werror=date-time` 管不到厂商树。
+另外十九个是 GNU build-id——已链接镜像的哈希，它变只是因为那五个变了。
+`modules.tar` 差异的原因无关：每个成员都字节相同，而每个 tar 头都带着构建的 mtime——
+这是打包缺陷，x64 和 virt-arm64 的同一行也有。`SOURCE_DATE_EPOCH` 钉住前者，
+`--sort=name --mtime --numeric-owner` 钉住后者；**三块板的内核现在都是字节可复现的，
+可以按 sha256 比。**
 x64 那个数字是 `=y` 负载——常驻内核内存，两个 A/B 槽各一份，计入 `BOOT_SIZE_MIB`——
 在 96 MiB 的引导分区面前，8 KiB 不构成任何约束。停止构建的那四个 `.ko` 就是从 `=m`
 变成 `=y` 的那四个符号，因此 `verify/src/checks-kernel.ts` 的模块那一半仍有四个主体，

@@ -240,36 +240,36 @@ describe('a missing meta/rauc/ makes the build generate one, unless the caller n
 
 describe('the two families of missing input get different sentences', () => {
   const rootfsSide = ['/out/rootfs-verity.img', '/out/rootfs-verity.env']
-  const boardSide = ['/bsp/out/kernel/Image', '/bsp/out/kernel/rk3576-src.dtb']
+  const boardSide = ['/bsp-out/kernel/Image', '/bsp-out/kernel/rk3576-src.dtb']
 
   test('POSITIVE CONTROL: with every input present, nothing is refused', () => {
-    expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp', only(...rootfsSide, ...boardSide)))
+    expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only(...rootfsSide, ...boardSide)))
       .not.toThrow()
   })
 
   test('EACH rootfs-side input names the producer you can run', () => {
     for (const absent of rootfsSide) {
       const present = [...rootfsSide, ...boardSide].filter(p => p !== absent)
-      expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp', only(...present)))
+      expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only(...present)))
         .toThrow(new RegExp(`${absent} not found; run 'MOS_BOARD=cx3576 bash ${ROOTFS_PRODUCER}' first`))
     }
   })
 
-  test('EACH board-side input names BOARD_DIR and its current value instead', () => {
-    // A different action: build the BSP, or point BOARD_DIR somewhere else.
+  test('EACH board-side input names BSP_OUT and its current value instead', () => {
+    // A different action: build the BSP, or point BSP_OUT somewhere else.
     // Rolling the two into one sentence sends half the readers to the wrong
     // script.
     for (const absent of boardSide) {
       const present = [...rootfsSide, ...boardSide].filter(p => p !== absent)
-      expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp', only(...present)))
-        .toThrow(new RegExp(`${absent} not found; build the BSP or set BOARD_DIR \\(currently: /bsp\\)`))
+      expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only(...present)))
+        .toThrow(new RegExp(`${absent} not found; build the BSP or set BSP_OUT \\(currently: /bsp-out\\)`))
     }
   })
 
   test('the rootfs side is checked FIRST, as the shell checks it first', () => {
     // Same order, so a tree missing both gets the same first sentence out of
     // either implementation.
-    expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp', only()))
+    expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only()))
       .toThrow(new RegExp(`${ROOTFS_PRODUCER}' first`))
   })
 
@@ -338,7 +338,7 @@ describe('the arguments, and the defaults they fall back to', () => {
       board: DEFAULT_BOARD,
       version: '0.0.0-dev',
       outDir: join(REPO_ROOT, '_out', DEFAULT_BOARD),
-      boardDir: join(REPO_ROOT, 'boards', DEFAULT_BOARD, 'bsp'),
+      bspOut: join(REPO_ROOT, '_out', 'boards', DEFAULT_BOARD),
     })
   })
 
@@ -360,7 +360,7 @@ describe('the arguments, and the defaults they fall back to', () => {
     const o = parseArgs([], { MOS_BOARD: 'x64' })
     expect(o.board).toBe('x64')
     expect(o.outDir).toBe(join(REPO_ROOT, '_out', 'x64'))
-    expect(o.boardDir).toBe(join(REPO_ROOT, 'boards', 'x64', 'bsp'))
+    expect(o.bspOut).toBe(join(REPO_ROOT, '_out', 'boards', 'x64'))
   })
 
   test('--board beats MOS_BOARD, and is not read as a version', () => {
@@ -369,9 +369,9 @@ describe('the arguments, and the defaults they fall back to', () => {
     expect(o.version).toBe('0.0.0-dev')
   })
 
-  test('BOARD_DIR is honoured, because a BSP outside the tree is a normal thing to have', () => {
-    expect(parseArgs([], { BOARD_DIR: '/elsewhere/bsp' }).boardDir).toBe('/elsewhere/bsp')
-    expect(parseArgs(['--board-dir', '/other'], { BOARD_DIR: '/elsewhere/bsp' }).boardDir).toBe('/other')
+  test('BSP_OUT is honoured, because a BSP built elsewhere is a normal thing to have', () => {
+    expect(parseArgs([], { BSP_OUT: '/elsewhere/bsp-out' }).bspOut).toBe('/elsewhere/bsp-out')
+    expect(parseArgs(['--bsp-out', '/other'], { BSP_OUT: '/elsewhere/bsp-out' }).bspOut).toBe('/other')
   })
 
   test('--out-dir moves both the inputs and the output, together', () => {
@@ -379,7 +379,7 @@ describe('the arguments, and the defaults they fall back to', () => {
   })
 
   test('a flag with no value is refused rather than swallowing the next argument', () => {
-    for (const flag of ['--board', '--out-dir', '--board-dir']) {
+    for (const flag of ['--board', '--out-dir', '--bsp-out']) {
       expect(() => parseArgs([flag], {})).toThrow(new RegExp(`${flag} needs a value`))
     }
   })

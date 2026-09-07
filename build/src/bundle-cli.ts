@@ -38,17 +38,17 @@ import { shippedRaucPath } from './toolsets.ts'
 /** The board a bundle is built for when nothing says otherwise, as in the shell. */
 export const DEFAULT_BOARD = 'cx3576'
 
-const USAGE = `usage: bash build/run.sh --bundle [VERSION] [--board B] [--out-dir DIR] [--board-dir DIR]
+const USAGE = `usage: bash build/run.sh --bundle [VERSION] [--board B] [--out-dir DIR] [--bsp-out DIR]
 
 Builds the signed RAUC update bundle. Inputs come from _out/<board>/ and
-boards/<board>/bsp/out/.
+_out/boards/<board>/.
 
   VERSION          the bundle version string; also MOS_BUNDLE_VERSION
                    (default: 0.0.0-dev)
   --board B        the board to bundle for (default: ${DEFAULT_BOARD}, or MOS_BOARD)
   --out-dir DIR    where the rootfs-side inputs are and the bundle is written
                    (default: _out/<board>)
-  --board-dir DIR  the BSP tree (default: boards/<board>/bsp, or BOARD_DIR)
+  --bsp-out DIR    the BSP build products (default: _out/boards/<board>, or BSP_OUT)
 
 environment:
   CERT KEY KEYRING     real signing material, instead of meta/rauc/
@@ -208,7 +208,7 @@ export function requireHostRauc(arch: string, exists: (p: string) => boolean = e
 export interface RequiredInputs {
   /** Produced by the rootfs build; the message names it. */
   readonly rootfsSide: readonly string[]
-  /** Produced by a BSP build, or found through BOARD_DIR; a different message. */
+  /** Produced by a BSP build, or found through BSP_OUT; a different message. */
   readonly boardSide: readonly string[]
 }
 
@@ -216,13 +216,13 @@ export interface RequiredInputs {
  * Every input that must exist, split by WHO produces it.
  *
  * The two families get different sentences in the shell and keep them here:
- * one is made by a script you can run, the other by a BSP build or a BOARD_DIR
+ * one is made by a script you can run, the other by a BSP build or a BSP_OUT
  * pointed somewhere else.
  */
 export function checkRequiredInputs(
   inputs: RequiredInputs,
   board: string,
-  boardDir: string,
+  bspOut: string,
   exists: (p: string) => boolean = existsSync,
 ): void {
   for (const input of inputs.rootfsSide) {
@@ -232,7 +232,7 @@ export function checkRequiredInputs(
   }
   for (const input of inputs.boardSide) {
     if (!exists(input)) {
-      throw new Error(`${input} not found; build the BSP or set BOARD_DIR (currently: ${boardDir})`)
+      throw new Error(`${input} not found; build the BSP or set BSP_OUT (currently: ${bspOut})`)
     }
   }
 }
@@ -241,14 +241,14 @@ export interface CliOptions {
   readonly board: string
   readonly version: string
   readonly outDir: string
-  readonly boardDir: string
+  readonly bspOut: string
 }
 
 export function parseArgs(argv: readonly string[], env: Record<string, string | undefined>): CliOptions {
   const board = env.MOS_BOARD ?? DEFAULT_BOARD
   let version: string | undefined
   let outDir: string | undefined
-  let boardDir: string | undefined
+  let bspOut: string | undefined
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
     const next = argv[i + 1]
@@ -256,10 +256,10 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
       console.log(USAGE)
       process.exit(0)
     }
-    if (a === '--board' || a === '--out-dir' || a === '--board-dir') {
+    if (a === '--board' || a === '--out-dir' || a === '--bsp-out') {
       if (next === undefined) throw new Error(`${a} needs a value\n\n${USAGE}`)
       if (a === '--out-dir') outDir = next
-      else if (a === '--board-dir') boardDir = next
+      else if (a === '--bsp-out') bspOut = next
       i += 1
       continue
     }
@@ -275,7 +275,7 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
     board: chosen,
     version: checkVersion(version ?? env.MOS_BUNDLE_VERSION ?? '0.0.0-dev'),
     outDir: outDir ?? join(REPO_ROOT, '_out', chosen),
-    boardDir: boardDir ?? env.BOARD_DIR ?? join(REPO_ROOT, 'boards', chosen, 'bsp'),
+    bspOut: bspOut ?? env.BSP_OUT ?? join(REPO_ROOT, '_out', 'boards', chosen),
   }
 }
 
@@ -319,7 +319,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const bootCmdlineB = join(outDir, 'boot-cmdline-b.txt')
 
   // Where the kernel comes from is a BOARD FACT. cx3576's boot payload is its
-  // BSP's Image plus a device tree, taken from BOARD_DIR; x64's is the single
+  // BSP's Image plus a device tree, taken from BSP_OUT; x64's is the single
   // vmlinuz the rootfs build extracted into _out, which is also the one the
   // image assembler put on the slot boot partitions -- so the bundle and the
   // flashed image cannot ship different kernels for the same build.
@@ -329,16 +329,16 @@ export async function main(argv: readonly string[]): Promise<number> {
   // bootloader rather than on who compiled it.
   const uboot = geometry.bootloader === 'uboot'
   const kernelImage = uboot
-    ? join(options.boardDir, 'out', 'kernel', 'Image')
+    ? join(options.bspOut, 'kernel', 'Image')
     : join(outDir, 'boot', 'vmlinuz')
-  const dtb = uboot ? join(options.boardDir, 'out', 'kernel', 'rk3576-src.dtb') : undefined
+  const dtb = uboot ? join(options.bspOut, 'kernel', 'rk3576-src.dtb') : undefined
 
   checkRequiredInputs({
     rootfsSide: uboot
       ? [rootfsVerityImg, rootfsVerityEnv, bootCmdlineA, bootCmdlineB]
       : [rootfsVerityImg, rootfsVerityEnv, kernelImage],
     boardSide: uboot ? [kernelImage, dtb!] : [],
-  }, options.board, options.boardDir)
+  }, options.board, options.bspOut)
 
   const arch = hostArchFor(osArch())
   const raucBin = requireHostRauc(arch)

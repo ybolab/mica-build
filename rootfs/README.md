@@ -345,13 +345,14 @@ refactor it claims to be.
 ```sh
 # the package pool comes first; the composer installs from it and builds no component:
 make os-debs
-# needs boards/cx3576/bsp/out/kernel/modules.tar (make -C boards/cx3576/bsp kernel),
-# or point BOARD_DIR at prebuilt BSP artifacts:
-BOARD_DIR=/srv/ai/mos/boards/cx3576/bsp make os-rootfs-cx3576   # rootfs only
-BOARD_DIR=/srv/ai/mos/boards/cx3576/bsp make os-image-cx3576    # rootfs + full mos image
+# needs _out/boards/cx3576/kernel/modules.tar (make -C boards/cx3576/bsp kernel),
+# or point BSP_OUT at prebuilt BSP artifacts (RFCT-343: outputs moved under
+# _out/, and BSP_OUT is now separate from BOARD_DIR, which names the SOURCE tree):
+BSP_OUT=/srv/mos/_out/boards/cx3576 make os-rootfs-cx3576   # rootfs only
+BSP_OUT=/srv/mos/_out/boards/cx3576 make os-image-cx3576    # rootfs + full mos image
 ```
 
-`make os-debs` runs the BSP-consuming producer too, so `BOARD_DIR` matters there
+`make os-debs` runs the BSP-consuming producer too, so `BSP_OUT` matters there
 as well; `make os-deb-preflight` names every missing producer input at once,
 before the first container starts.
 

@@ -273,10 +273,10 @@ container, and says which of them the run would build for itself.
 
 Both boards additionally need a BSP build. cx3576's produces the kernel
 (`Image`, `modules.tar`, `rk3576-src.dtb`) and the A/B U-Boot
-(`u-boot-rockchip.bin`) into `boards/cx3576/bsp/out/`, and the `board-cx3576`
+(`u-boot-rockchip.bin`) into `_out/boards/cx3576/`, and the `board-cx3576`
 producer stages them into `mos-board-cx3576`. x64's produces a kernel and
 nothing else — UEFI firmware is its boot chain, so there is no bootloader to
-compile — into `boards/x64/bsp/out/kernel/`, and the `kernel-x64` producer
+compile — into `_out/boards/x64/kernel/`, and the `kernel-x64` producer
 packages it as `mos-kernel-x64`. Neither pool can be completed without them,
 and `make os-deb-preflight` names whichever is missing before anything runs.
 
@@ -550,7 +550,12 @@ make os-verify-cx3576
 make os-bundle-cx3576
 ```
 
-`BOARD_DIR=/path/to/bsp` points the rootfs build and the assembler at
+`BSP_OUT=/path/to/_out/boards/<board>` points the assembler and the board
+package producer at prebuilt BSP artefacts; `BOARD_DIR=/path/to/bsp` still names
+the bsp SOURCE tree (committed vendor firmware, `containers.env`). RFCT-343 split
+the two: outputs live under `_out/boards/<board>/` with everything else this
+repository builds, so pointing at prebuilt artefacts no longer also repoints the
+firmware. The older spelling points the rootfs build at
 prebuilt BSP artifacts (a directory holding `out/kernel/` and
 `out/uboot-mos/`), so a kernel built once can serve many rootfs builds.
 
@@ -645,7 +650,7 @@ which is why image verification and the bundle build run on any host.
 | `note: the 'default' builder cannot reach linux/arm64 on this host; using the docker-container builder 'mos-arm64'` | not an error: the rootfs composition is taking layout mode | nothing; register emulation on the host (section 5) only if you want the faster tag mode |
 | `exec /bin/sh: exec format error` inside a build | either no emulator, **or** a single-architecture `localhost/` base under `--platform` (the tag has no index to select from, so buildkit serves what it holds and applies no emulator) | check the daemon (section 5); if it executes, the stage's base is the wrong architecture — `build-harness.md` section 5.1 |
 | `pull access denied ... localhost/...` from a `docker-container` builder | a local tag handed to a builder that cannot read the image store | use the `default` builder, or hand the image over as an OCI layout (`build-env/from.sh --contexts=`) |
-| `modules.tar not found` | the cx3576 kernel was not built, or `BOARD_DIR` points elsewhere | `make cx3576-kernel`, or set `BOARD_DIR` |
+| `modules.tar not found` | the cx3576 kernel was not built, or `BSP_OUT` points elsewhere | `make cx3576-kernel`, or set `BSP_OUT` |
 | `pkgs/rauc/out-<arch>/rauc not found` / `pkgs/podman/out-<arch>/podman not found` | the component was built for the other architecture, or not at all | `MOS_BOARD=<board> make os-rauc`, `MOS_ARCH=<arch> make podman` |
 | `_out/debs/<arch> does not exist` / `... holds no .deb at all` / `... carries no usable index` | there is no package pool for that architecture, or `repo.sh` never indexed it | `make os-debs` |
 | `the <arch> pool was built at version '...' and this tree is '...'` | the pool is another commit's, or one side carries `.dirty` from uncommitted changes | commit, then `make os-debs` again — composing would install another tree's packages into an image every later check would attribute to this one |

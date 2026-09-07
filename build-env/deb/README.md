@@ -112,7 +112,8 @@ also run with `MOS_DEB_PREFLIGHT=1`, `MOS_DEB_ARCH` and the producer/repo
 variables, and **no** `MOS_DEB_STAGE`: there is nothing to stage into yet. Two
 producers do:
 
-- `board-cx3576` picks its BSP artefacts through `BOARD_DIR`, which is chosen at
+- `board-cx3576` picks its BSP artefacts through `BSP_OUT` and its committed
+  firmware through `BOARD_DIR`, both of which are chosen at
   run time and so cannot be a fixed path in `producer.env`.
 - `podman` reuses `pkgs/podman/out-<arch>`, and reports whether it exists, is
   complete and carries a stamp matching `versions.env` -- see
@@ -153,7 +154,7 @@ would do its full work instead. A pre-flight that compiles is not a pre-flight -
 and PLAN-036 section 4 already says composition does not compile a component.
 
 `tests/deb-preflight-test.sh` drives all of it: the aggregate over a
-baseline, `BOARD_DIR` in both directions, and each half of the count contract
+baseline, `BOARD_DIR` and `BSP_OUT` in both directions, and each half of the count contract
 mutated until the run goes red.
 
 ### Adding one
@@ -259,10 +260,10 @@ per build.
 
 **A complete pool has a prerequisite that is not in the tree: the cx3576 board
 producer's BSP inputs.** `board-cx3576` stages a kernel, a device tree, the
-kernel modules and U-Boot out of `boards/cx3576/bsp/out/`, which is
+kernel modules and U-Boot out of `_out/boards/cx3576/`, which is
 gitignored, so a fresh worktree does not have them and its `PREPARE` hook
 refuses by name -- naming `make -C boards/cx3576/bsp <target>`, or pointing
-`BOARD_DIR` at a bsp tree that already carries them. The part worth knowing
+`BSP_OUT` at a tree that already carries them. The part worth knowing
 before you meet it is the consequence for the aggregate rather than for that one
 producer: `make os-debs` walks the producers in the order `producers.sh` prints
 them and stops at the first that fails, and `board-cx3576` sorts first. So
