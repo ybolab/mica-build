@@ -41,7 +41,15 @@ command -v docker >/dev/null || fail 'docker is required'
 IMAGE=$(bash "$REPO_ROOT/build-env/from.sh" --ref IMAGE_BUN_1)
 network=none
 cache_mode=ro
-if [ "$COMMAND" = cache ]; then mkdir -p "$CACHE"; network=traefik; cache_mode=rw; fi
+# MOS_DEBIAN_MIRROR crosses into the container ONLY here. Every other command
+# runs with --network none and could not fetch through a mirror if it wanted
+# to; not handing it the variable says so at the boundary rather than relying
+# on run.sh reading it in one branch.
+docker_env=()
+if [ "$COMMAND" = cache ]; then
+    mkdir -p "$CACHE"; network=traefik; cache_mode=rw
+    [ -z "${MOS_DEBIAN_MIRROR:-}" ] || docker_env+=(-e "MOS_DEBIAN_MIRROR=$MOS_DEBIAN_MIRROR")
+fi
 [ -d "$CACHE" ] || [ "$COMMAND" = select ] || fail "cache is missing: $CACHE"
 mounts=(-v "$(host_path "$HERE"):/mos/rootfs/debian:ro")
 [ ! -d "$CACHE" ] || mounts+=(-v "$(host_path "$CACHE"):/cache:$cache_mode")
@@ -55,7 +63,8 @@ fi
 [ "$ALL" = 0 ] || args+=(--all)
 [ -z "$PACKAGE" ] || args+=(--package "$PACKAGE")
 run() {
-    docker run --rm --label ai-agent=true --network "$network" "${mounts[@]}" \
+    docker run --rm --label ai-agent=true --network "$network" \
+        ${docker_env[@]+"${docker_env[@]}"} "${mounts[@]}" \
         "$IMAGE" /bin/bash /mos/rootfs/debian/run.sh "$@"
 }
 if [ "$COMMAND" = install ]; then
