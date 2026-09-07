@@ -348,6 +348,38 @@ printf '%s\n' 'export const answer = 42' >"${d}/quiet.ts"
 track "${d}"
 expect "TypeScript scanned with no launch site at all is refused" "${d}" red 'not one process launch was found'
 
+# ---------------------------------------------------------------------------
+# 21. PROSE INSIDE A QUOTED ARGUMENT IS NOT A COMMAND -- AND A COMMAND
+#     SUBSTITUTION INSIDE ONE STILL IS. The first half is a defect this lint
+#     carried rather than fixed: `operator_step "install the GOOD bundle (rauc
+#     install <bundle>), ..."` in docs/bsp/cx3576-bench-collect.sh is one
+#     English sentence, and its `(` read as a command separator to a scan that
+#     did not track quoting. It was registered as a false positive, and every
+#     false positive spends some of what makes a rule worth reading.
+#
+#     The second half is what the first must not cost. The distinction is
+#     COMMAND SUBSTITUTION versus LITERAL PAREN, not quoted versus unquoted:
+#     `"$(cargo build)"` compiles on this host and stays a finding. Without this
+#     case the cheapest way to pass the first half is to drop every quoted span,
+#     which would take a real invocation with it.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+cat >"${d}/prose-arg.sh" <<'EOF'
+#!/bin/sh
+step ab-update \
+    "install the GOOD bundle (rauc install <bundle>), reboot, then confirm" \
+    'and the same in single quotes (mkfs.ext4 -F disk.img) is prose too'
+EOF
+track "${d}"
+expect "a producer named in prose inside a quoted argument is NOT a finding" "${d}" green 'RESULT: PASS'
+
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+printf '%s\n' '#!/bin/sh' 'ver="$(cargo build --release)"' >"${d}/subst.sh"
+track "${d}"
+expect "a command substitution inside a double-quoted string is still a finding" "${d}" red 'subst.sh:2: `cargo` runs on the host'
+
 echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/$((PASS_N + FAIL_N)) cases)"
 [ "${PASS_N}" -gt 0 ] || { echo "error: no case ran; this test would report the same green having asserted nothing" >&2; exit 1; }
 [ "${FAIL_N}" -eq 0 ]

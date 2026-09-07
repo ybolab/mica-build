@@ -165,6 +165,7 @@ mirror_url() {
 }
 if [ "$COMMAND" = cache ]; then
     need flock
+    need timeout
     # THE ONLY COMMAND THAT DOWNLOADS, and therefore the only one that reads
     # MOS_DEBIAN_MIRROR. A mirror is a fetch-time detail and never a fact about
     # a package: it rewrites the PREFIX of a record's URL and leaves the record
@@ -181,6 +182,34 @@ if [ "$COMMAND" = cache ]; then
         esac
         MIRROR_BASE=${MIRROR_BASE%/}
     fi
+    # THE CEILING THAT CAN ACTUALLY FIRE, and it is OUT OF PROCESS on purpose.
+    # fetch.ts budgets 180 s an attempt and three attempts through an
+    # AbortController, and that bound is real for everything the network can do
+    # to a download -- but it is a TIMER, and a timer runs on the very event
+    # loop it is there to interrupt. Measured by RFCT-347 on 2026-09-07 while
+    # populating the amd64 pool: one pin sat for TEN MINUTES at 100% CPU with
+    # frozen network I/O and the abort never fired, so the nine-minute ceiling
+    # fetch.ts states never applied to it. A `Promise.race` against a timer
+    # would have been exactly as dead -- same loop, same tick that never comes.
+    # Only another process can end a wedged one, and `-k` makes the second
+    # signal a SIGKILL, which no handler inside bun can defer.
+    #
+    # 600 is fetch.ts's own worst case with room: three attempts at 180 s plus
+    # 3 s of backoff is 543. Seconds and unsuffixed, because busybox `timeout`
+    # takes no suffix. It is overridable for ONE reason -- a ten-minute ceiling
+    # cannot be demonstrated in a test otherwise, and tests/debian-base-test.sh
+    # drives a stalled mirror against it. Nothing in this repository sets it.
+    FETCH_DEADLINE=${MOS_DEBIAN_FETCH_DEADLINE:-600}
+    # 124 is how GNU coreutils reports the timeout; busybox reports the signal
+    # it sent instead, so both spellings are the same event.
+    fetch_to() { # url destination -> 0, or 44 when that host does not have it
+        local status=0
+        timeout -k 10 "$FETCH_DEADLINE" bun "$HERE/fetch.ts" "$1" "$2" || status=$?
+        case "$status" in
+        124 | 137 | 143) fail "download exceeded the ${FETCH_DEADLINE}s ceiling and was killed: $1" ;;
+        esac
+        return "$status"
+    }
     mkdir -p "$CACHE_DIR/debs"
     exec 9>"$CACHE_DIR/.lock"
     flock -x 9
@@ -191,7 +220,7 @@ if [ "$COMMAND" = cache ]; then
             need bun
             source_url= status=0
             if [ -n "$MIRROR_KIND" ] && mirror=$(mirror_url "$url"); then
-                bun "$HERE/fetch.ts" "$mirror" "$WORK/$sha.deb" || status=$?
+                fetch_to "$mirror" "$WORK/$sha.deb" || status=$?
                 case "$status" in
                 0) source_url=$mirror; from_mirror=$((from_mirror + 1)) ;;
                 # A pin the mirror does not carry. Expected, not an error --
@@ -202,7 +231,7 @@ if [ "$COMMAND" = cache ]; then
             fi
             if [ -z "$source_url" ]; then
                 status=0
-                bun "$HERE/fetch.ts" "$url" "$WORK/$sha.deb" || status=$?
+                fetch_to "$url" "$WORK/$sha.deb" || status=$?
                 [ "$status" = 0 ] || fail "download failed for $name: $url"
                 source_url=$url
                 from_pin=$((from_pin + 1))

@@ -37,6 +37,15 @@
 #     <<'INNER'`, or a `cat > inner.sh` whose output is run in one -- so the
 #     elision costs nothing measured; a host build step written into one would
 #     not be seen.
+#   - A STRING THAT SPANS LINES. What a quoted string makes literal is not a
+#     command position, so quoted spans are blanked before a producer is looked
+#     for -- `"install the GOOD bundle (rauc install <bundle>), ..."` is one
+#     English sentence and not a call. That is done a line at a time, so a quote
+#     opened on one line and closed on another leaves the first line unbalanced,
+#     and an unbalanced line is matched exactly as it came -- which is what this
+#     lint did everywhere until 2026-09-07, so the cost is a false positive and
+#     never a missed one. A COMMAND SUBSTITUTION IS NOT LITERAL and stays
+#     visible wherever it sits: `"$(cargo build)"` is a finding.
 #   - A DECLARATION THAT IS WRONG. `# mos-build-side: container` is a claim by
 #     whoever wrote it. This counts the claims and refuses a run that found
 #     none; it cannot check one.
@@ -282,8 +291,9 @@ for f in "${files[@]}"; do
                 emit("hit", "host-toolchain-on-PATH", $0)
             }
 
-            if (match(line, "(^|[;&|(]|&&|\\|\\|)[[:space:]]*(" TOOLS ")([[:space:]]|$)")) {
-                m = substr(line, RSTART, RLENGTH)
+            cmd = code_only(line)
+            if (match(cmd, "(^|[;&|(]|&&|\\|\\|)[[:space:]]*(" TOOLS ")([[:space:]]|$)")) {
+                m = substr(cmd, RSTART, RLENGTH)
                 sub(/^([;&|(]|&&|\|\|)?[[:space:]]*/, "", m)
                 sub(/[[:space:]]*$/, "", m)
                 emit("hit", m, $0)
@@ -293,6 +303,67 @@ for f in "${files[@]}"; do
             if (block) emit("err", "a container block opened at line " blockline " is never closed; every line after it was skipped", "")
             emit("stat", "examined", examined)
             emit("stat", "elided", elided)
+        }
+
+        # WHAT A QUOTED STRING MAKES LITERAL IS NOT A COMMAND POSITION. This
+        # returns the line with those spans blanked to `Q`, so the match above
+        # reads only what the shell would run. It exists because
+        # `operator_step "install the GOOD bundle (rauc install <bundle>), ..."`
+        # -- one English sentence, in docs/bsp/cx3576-bench-collect.sh -- was a
+        # finding: the `(` read as a command separator. That was carried as a
+        # registered false positive, and a false positive spends the credibility
+        # this rule needs to be worth having.
+        #
+        # A COMMAND SUBSTITUTION IS STILL CODE, wherever it sits. `"$(cargo
+        # build)"` compiles inside a double-quoted string and stays a finding, so
+        # the distinction drawn here is substitution versus literal and NOT
+        # quoted versus unquoted: `$( )` and backticks are handed back to the
+        # scan untouched, including from inside a double-quoted string, and a
+        # `'...'` span is blanked whole because nothing expands in one.
+        #
+        # A LINE THAT ENDS INSIDE A QUOTE IS RETURNED AS IT CAME. A string
+        # opening on one line and closing on another cannot be resolved by a
+        # reader that sees one line at a time, and guessing at it would cost
+        # findings; the unmasked line is what this lint has always matched, so
+        # that case keeps today behaviour rather than acquiring a blind spot.
+        function code_only(s,   out, i, n, c, st, top, stack) {
+            if (index(s, "\"") == 0 && index(s, "\047") == 0) return s
+            n = length(s); out = ""; top = 0
+            for (i = 1; i <= n; i++) {
+                c = substr(s, i, 1)
+                st = (top > 0) ? stack[top] : ""
+                if (st == "\047") {
+                    out = out "Q"
+                    if (c == "\047") top--
+                    continue
+                }
+                if (c == "\\") {
+                    out = out ((st == "\"") ? "QQ" : substr(s, i, 2))
+                    i++
+                    continue
+                }
+                if (c == "$" && substr(s, i + 1, 1) == "(") {
+                    stack[++top] = "("
+                    out = out "$("
+                    i++
+                    continue
+                }
+                if (c == "`") {
+                    if (st == "`") top--; else stack[++top] = "`"
+                    out = out "`"
+                    continue
+                }
+                if (st == "(" && c == ")") { top--; out = out ")"; continue }
+                if (st == "\"") {
+                    out = out "Q"
+                    if (c == "\"") top--
+                    continue
+                }
+                if (c == "\"" || c == "\047") { stack[++top] = c; out = out "Q"; continue }
+                out = out c
+            }
+            if (top > 0) return s
+            return out
         }
     ' "${f}")
 
