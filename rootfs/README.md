@@ -52,6 +52,62 @@ read-only during installation. `debian/docker.sh` also accepts `--cache-dir`
 and `--all`. Installation runs with Docker networking disabled; it requires a
 native target architecture and an empty destination.
 
+### Fetching through a mirror
+
+`MIRROR` in `debian/sources.env` is **not** what fetches, and reading it as a
+download source is the easy mistake to make here. `run.sh` uses it twice, both
+times after every archive is already local: to spell debootstrap's `apt_dest`
+index filename, and as debootstrap's own mirror argument on a run whose download
+phases are all disabled. What fetches is each record's absolute `url`.
+
+`MOS_DEBIAN_MIRROR` rewrites the prefix of that URL at fetch time. The record is
+left alone — it stays the provenance statement, naming which snapshot and which
+pool path the pin came from — and the mirror is a property of one build host.
+There is none in the committed defaults: unset, a build downloads exactly what
+it downloaded before.
+
+| Value | The URL becomes | For |
+|---|---|---|
+| `<base>` or `pool:<base>` | `<base>/pool/<path>` | a mirror serving Debian's live pool: `https://deb.debian.org/debian`, an `apt-mirror`, a caching proxy |
+| `snapshot:<base>` | `<base>/archive/debian/<SNAPSHOT>/pool/<path>` | a mirror of snapshot.debian.org, which keeps each record's own snapshot |
+
+```bash
+MOS_DEBIAN_MIRROR=https://deb.debian.org/debian MOS_ARCH=amd64 make os-debian-cache
+MOS_DEBIAN_MIRROR=snapshot:https://snapshot-cloudflare.debian.org \
+    bash rootfs/debian/docker.sh cache --arch amd64 --package hostname
+```
+
+**The mirror is tried first and the record's own URL is the fallback.** The two
+shapes fail differently, and that is the reason both exist. A pool mirror
+carries the *current* pool while these pins are a *snapshot*, so every pin some
+newer upload has superseded is simply not there; a 404 is normal, and the older
+the snapshot the more archives take the fallback. A snapshot mirror preserves
+each record's snapshot, so nothing is missing — except the bootstrap helper,
+whose URL names deb.debian.org and has no snapshot in it to rewrite, so that one
+archive always falls back under `snapshot:`.
+
+Because falling back is silent per archive, `cache` reports the split —
+`downloaded 69 archives (69 from the mirror, 0 from the pinned URL)` — and warns
+when a configured mirror served none of them. Without it, a mirror that is doing
+nothing looks exactly like one that works.
+
+**The committed SHA256 is the anchor, not the host.** It is checked at the
+download whichever host answered, and `verify.sh` then compares `dpkg-deb -W`'s
+name, version and architecture against the record, so a mirror can neither serve
+different bytes nor substitute a different package. That is what makes fetching
+from anywhere sound — and it is why a mirror whose bytes do not match is a
+failure naming that mirror, never a reason to quietly try somewhere else.
+
+`cache` is the only command that reads the variable, and `debian/docker.sh` only
+passes it to `cache`; `verify`, `select`, `install` and `configure` run with
+`--network none` and stay offline. The mirror base must be `https://` — `fetch.ts`
+requires it of the mirror exactly as it does of a pin, including after redirects.
+
+There is no path in this tree that *refreshes* the pins: nothing regenerates
+`packages/*.json` for a newer snapshot, so the next base bump is still a hand
+edit of 172 records. A mirror does not change that, and the fallback above is
+what keeps a live-pool mirror useful as those pins age.
+
 `install` unpacks the bootstrap floor and stages `.debian-extra/configure.sh`
 inside the destination. That script finishes the installation — dpkg
 configuration, the remaining archives, the inventory check — and it runs with

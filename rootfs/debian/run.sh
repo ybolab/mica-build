@@ -21,6 +21,12 @@ local mos packages whose locked upstream dependencies are added to that floor.
 package for cache, verify or select; it excludes the base and bootstrap helper.
 select prints temporary installation rows generated from the JSON manifests.
 cache downloads only missing archives and verifies their SHA256 and metadata.
+It is the only command that touches the network. Set MOS_DEBIAN_MIRROR to an
+https:// base to fetch through a mirror -- `<base>` or `pool:<base>` for a
+mirror serving /pool, `snapshot:<base>` for a mirror of snapshot.debian.org.
+The mirror is tried first and each record's own URL is the fallback; a 404 from
+the mirror is normal, the committed SHA256 is checked either way, and cache
+reports how many archives came from each.
 verify, install and configure require no network. install requires root, a
 native target architecture and an empty destination; it unpacks the bootstrap
 floor and stages .debian-extra/configure.sh, which finishes the installation
@@ -131,24 +137,96 @@ if [ -n "$HELPER" ]; then ARCHIVES=$(printf '%s\n%s' "$HELPER" "$SELECTED"); fi
 verify_cache() {
     bash "$HERE/verify.sh" "$CACHE_DIR" <<<"$ARCHIVES"
 }
+# The two mirror layouts, which cut the canonical URL at different points.
+# Prints the mirror URL for a record, or returns 1 when this mirror has no URL
+# for it and the pin must be fetched as written.
+#   pool     a live Debian mirror serving /pool -- <base>/pool/<path>. It
+#            carries the CURRENT pool, so a pin some newer upload has
+#            superseded is simply not in it. That 404 is the entire reason the
+#            fallback exists, and the older the snapshot the more pins take it.
+#   snapshot a mirror of snapshot.debian.org, which keeps /archive/debian/
+#            <SNAPSHOT>/ -- only the host is replaced, each record's own
+#            snapshot is preserved, and every pin resolves. The bootstrap
+#            helper is the one exception either way: its URL names
+#            deb.debian.org and carries no snapshot, so a snapshot-shaped
+#            mirror has nothing to rewrite and it falls back, once.
+mirror_url() {
+    case "$MIRROR_KIND" in
+    pool) case "$1" in
+        */pool/*) printf '%s/pool/%s' "$MIRROR_BASE" "${1#*/pool/}" ;;
+        *) return 1 ;;
+        esac ;;
+    snapshot) case "$1" in
+        https://snapshot.debian.org/*) printf '%s/%s' "$MIRROR_BASE" "${1#https://snapshot.debian.org/}" ;;
+        *) return 1 ;;
+        esac ;;
+    *) return 1 ;;
+    esac
+}
 if [ "$COMMAND" = cache ]; then
     need flock
+    # THE ONLY COMMAND THAT DOWNLOADS, and therefore the only one that reads
+    # MOS_DEBIAN_MIRROR. A mirror is a fetch-time detail and never a fact about
+    # a package: it rewrites the PREFIX of a record's URL and leaves the record
+    # alone, so packages/<name>.json keeps stating which snapshot and which pool
+    # path the pin came from. There is no mirror in the committed defaults;
+    # unset, everything below is what it has always been.
+    MIRROR_KIND= MIRROR_BASE=
+    if [ -n "${MOS_DEBIAN_MIRROR:-}" ]; then
+        case "$MOS_DEBIAN_MIRROR" in
+        pool:https://*) MIRROR_KIND=pool; MIRROR_BASE=${MOS_DEBIAN_MIRROR#pool:} ;;
+        snapshot:https://*) MIRROR_KIND=snapshot; MIRROR_BASE=${MOS_DEBIAN_MIRROR#snapshot:} ;;
+        https://*) MIRROR_KIND=pool; MIRROR_BASE=$MOS_DEBIAN_MIRROR ;;
+        *) fail "MOS_DEBIAN_MIRROR must be an https:// base, optionally prefixed with pool: or snapshot: -- got $MOS_DEBIAN_MIRROR" ;;
+        esac
+        MIRROR_BASE=${MIRROR_BASE%/}
+    fi
     mkdir -p "$CACHE_DIR/debs"
     exec 9>"$CACHE_DIR/.lock"
     flock -x 9
     WORK=$(mktemp -d "$CACHE_DIR/.download.XXXXXX")
-    downloaded=0
+    downloaded=0 from_mirror=0 from_pin=0
     while IFS=$'\t' read -r name version arch sha url consumers; do
         if [ ! -e "$CACHE_DIR/debs/$sha.deb" ]; then
             need bun
-            bun "$HERE/fetch.ts" "$url" "$WORK/$sha.deb"
-            [ "$(sha256sum "$WORK/$sha.deb" | cut -d' ' -f1)" = "$sha" ] || fail "SHA256 mismatch downloading $name"
+            source_url= status=0
+            if [ -n "$MIRROR_KIND" ] && mirror=$(mirror_url "$url"); then
+                bun "$HERE/fetch.ts" "$mirror" "$WORK/$sha.deb" || status=$?
+                case "$status" in
+                0) source_url=$mirror; from_mirror=$((from_mirror + 1)) ;;
+                # A pin the mirror does not carry. Expected, not an error --
+                # see mirror_url. The pin itself still has to be satisfied.
+                44) ;;
+                *) fail "mirror download failed for $name: $mirror" ;;
+                esac
+            fi
+            if [ -z "$source_url" ]; then
+                status=0
+                bun "$HERE/fetch.ts" "$url" "$WORK/$sha.deb" || status=$?
+                [ "$status" = 0 ] || fail "download failed for $name: $url"
+                source_url=$url
+                from_pin=$((from_pin + 1))
+            fi
+            # THE ANCHOR, and it sits here whichever host answered. That is the
+            # whole reason fetching from anywhere is sound. A mirror whose bytes
+            # do not match the pin is a WRONG MIRROR, not a reason to quietly go
+            # somewhere else: this fails, and the message names the URL that
+            # produced the bytes.
+            [ "$(sha256sum "$WORK/$sha.deb" | cut -d' ' -f1)" = "$sha" ] || fail "SHA256 mismatch downloading $name from $source_url"
             mv "$WORK/$sha.deb" "$CACHE_DIR/debs/$sha.deb"
             downloaded=$((downloaded + 1))
         fi
     done <<<"$ARCHIVES"
     verify_cache
-    echo "debian-base: verified $(printf '%s\n' "$SELECTED" | wc -l) packages; downloaded $downloaded archives; cache $CACHE_DIR"
+    split=
+    # A configured mirror reports its split unconditionally, including 0/0.
+    # Falling back is silent per archive by design, and a run that reported only
+    # a total could not tell a working mirror from a decorative one.
+    [ -z "$MIRROR_KIND" ] || split=" ($from_mirror from the mirror, $from_pin from the pinned URL)"
+    echo "debian-base: verified $(printf '%s\n' "$SELECTED" | wc -l) packages; downloaded $downloaded archives$split; cache $CACHE_DIR"
+    if [ -n "$MIRROR_KIND" ] && [ "$from_mirror" = 0 ] && [ "$from_pin" -gt 0 ]; then
+        echo "debian-base: warning: $MIRROR_BASE served none of the $from_pin archive(s) downloaded; it is configured and doing nothing" >&2
+    fi
     exit 0
 fi
 verify_cache
