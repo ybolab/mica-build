@@ -10,9 +10,19 @@ if (!url || !destination || !url.startsWith("https://")) {
 // so it must not be retried -- 172 pins against a live pool would otherwise
 // spend three attempts and six seconds each re-proving the same thing.
 const ABSENT = 44;
+// THE DEADLINE COVERS THE BODY, NOT ONLY THE HANDSHAKE. `AbortSignal.timeout`
+// passed to `fetch` alone stops governing the moment the response headers
+// arrive: `Bun.write(destination, response)` then streams the body with no
+// bound at all. Measured 2026-09-06: a cache run against snapshot.debian.org
+// sat for EIGHT HOURS with an empty `.download.*` directory and not one byte
+// written -- the retry loop never ran, because the first attempt never
+// finished failing. One controller, aborted on a timer, covers both halves.
+const DEADLINE_MS = 180_000;
 for (let attempt = 1; ; attempt++) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), DEADLINE_MS);
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(180_000) });
+    const response = await fetch(url, { signal: controller.signal });
     if (response.status === 404) process.exit(ABSENT);
     if (!response.ok || !response.url.startsWith("https://")) {
       throw new Error(`download failed: ${response.status} ${url}`);
@@ -22,5 +32,7 @@ for (let attempt = 1; ; attempt++) {
   } catch (error) {
     if (attempt === 3) throw error;
     await Bun.sleep(1_000 * attempt);
+  } finally {
+    clearTimeout(deadline);
   }
 }
