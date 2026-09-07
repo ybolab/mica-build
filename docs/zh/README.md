@@ -94,6 +94,7 @@
 | `../bsp/assurance.md` | db66fc02 | not-translated |
 | `../bsp/board-env.md` | db66fc02 | not-translated |
 | `../bsp/board-template.md` | db66fc02 | not-translated |
+| `../bsp/cx3576-bench.md` | 452289a3 | not-translated |
 | `../bsp/cx3576-example.md` | db66fc02 | not-translated |
 | `../bsp/intake.md` | db66fc02 | not-translated |
 | `../bsp/porting.md` | db66fc02 | not-translated |

@@ -122,6 +122,40 @@ RUN install -d -m 0755 /usr/share/mos && \
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/package-manager-logs-capture.sh
 
+# The static hardware database, out of the root (PLAN-086 S4).
+#
+# 22.9 MB on cx3576 -- 13.5 MB of compiled /usr/lib/udev/hwdb.bin and 9.3 MB of
+# the .hwdb sources it is compiled from -- for a device whose hardware is fixed
+# at manufacture. What that database supplies is descriptive: vendor and model
+# strings, input-device quirks, autosuspend hints for laptop peripherals. None
+# of it is a device this board has, and none of it is read by anything mos runs.
+#
+# HERE, IN `closed`, and not in `pack` below, for the reason the purge under it
+# is here: this is a decision about the DEVICE ROOT rather than about the
+# assembled tree, and TOTAL_MB is measured further down over the root that
+# ships, so a removal after that point would leave the budget gate weighing
+# bytes the image does not carry. Before the purge because the purge takes
+# /var/lib/dpkg with it and the survivor checks want a root that is still a
+# Debian system.
+#
+# THE RULE EDITS ARE THE CAREFUL PART. Thirteen shipped rule files query hwdb
+# and almost all of them do something else in the same rule --
+# 50-udev-default.rules assigns the tty, input and disk groups on lines that
+# also import from it, 60-serial.rules builds /dev/serial/by-id, and
+# 75-net-description.rules ends at IMPORT{builtin}="net_id". So the script
+# removes CLAUSES, token by token, and then asserts by name that the actions
+# sharing those lines are still there. A rule left with no action at all is
+# dropped rather than shipped, because udev logs "takes no effect" for those.
+#
+# WHY NOT LEAVE THE RULES AND JUST DELETE THE DATABASE: a missing hwdb.bin does
+# not make an IMPORT disappear, it makes it FAIL -- 33 failing builtin calls per
+# matching uevent, forever. It also arms systemd-hwdb-update.service, whose
+# conditions include `ConditionPathExists=|!/usr/lib/udev/hwdb.bin`: deleting
+# the database is exactly what makes that unit start running, against a
+# read-only /usr, on every boot. The unit and its enablement go with the data.
+RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/hwdb-remove.sh
+
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and
 # updates arrive as whole RAUC slots, so apt, dpkg and the perl-base dpkg
