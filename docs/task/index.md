@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-09-06
+> Updated: 2026-09-07
 
 ## Usage
 
@@ -115,3 +115,5 @@ one lock and rejects a transition when their current states do not match.
 - [x] [**RFCT-337 Key delivery: produce, hand over, place, verify**](RFCT-337.md) `P1`
 - [x] [**RFCT-335 Add a generic virtual arm64 board, bootable in QEMU**](RFCT-335.md) `P1`
 - [-] [**RFCT-336 Compose a minimal MOS runtime from explicit payloads**](RFCT-336.md) `P1`
+
+- [-] [**cx3576-reproducible-bsp-20260907T1356Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1356Z.md) `P1`

@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-06
+> Updated: 2026-09-07
 
 ## Usage
 
@@ -73,3 +73,5 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-084 Store Debian pins in per-package JSON manifests**](PLAN-084.md) `2026-09-06`
 - [x] [**PLAN-085 A generic virtual arm64 board, bootable in QEMU**](PLAN-085.md) `2026-09-06`
 - [ ] [**PLAN-086 Compose a minimal MOS runtime from explicit payloads**](PLAN-086.md) `2026-09-06`
+
+- [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`
