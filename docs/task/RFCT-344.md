@@ -6,8 +6,9 @@
 - **createdAt**: 2026-09-07 00:00
 
 > The index line in `docs/task/index.md` is written by L1, not by this task.
-> `scripts/task-state.sh claim` was deliberately not used: it edits the index
-> under a lock, and this branch must not touch it.
+> The `scripts/task-state.sh claim` step that recent records cite does not
+> exist in this tree -- there is no `scripts/` directory. Seven records and
+> `docs/task/index.md` describe it as if it did; see the note below.
 
 ## Description
 
@@ -125,6 +126,18 @@ Pruning the settled plan records and rewriting the rule that forbade it
   passed -- the dead evidence ref and the `proposed`-needs-a-plan rule, each in
   its own assertion. Each retained record is held by a check that fails without
   it.
+
+- **`scripts/task-state.sh` does not exist**, and is cited as a working tool by
+  `docs/task/index.md` and by RFCT-335, 337, 339, 340, 341 and 342 -- the
+  index says it "updates the record and index under one lock and rejects a
+  transition when their current states do not match". There is no `scripts/`
+  directory in this tree. That absent serializer is very likely *why*
+  PLAN-080's and PLAN-085's markers drifted from their status heads: the
+  agreement everyone believes is enforced is enforced by nothing, and no gate
+  covers it either (`verify-index.sh` excludes `docs/plan/` and `docs/task/`
+  by design). Left uncorrected here -- it is six records plus L1's index, and
+  the honest fix is either writing the script or dropping the claim, which is
+  a decision rather than a cleanup.
 
 - **Verification.** `make docs-verify` green from a `git archive` of this
   branch into an empty directory: `verify-index.sh` 189/189, `verify-links.sh`
