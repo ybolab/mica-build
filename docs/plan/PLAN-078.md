@@ -2,7 +2,7 @@
 
 - **status**: proposed
 - **createdAt**: 2026-09-04 20:45
-- **relatedTask**: [RFCT-308](../task/RFCT-308.md)
+- **relatedTask**: RFCT-308
 - **relatedPlans**: [PLAN-077](PLAN-077.md) (Gate A, the anchor and the rotation decision), [PLAN-070](PLAN-070.md) (the `meta/` seam and the two anchors), [PLAN-071](PLAN-071.md) (the freshness bound and the clock it rests on)
 
 ## Context

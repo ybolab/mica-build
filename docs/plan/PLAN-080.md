@@ -4,7 +4,7 @@
 - **createdAt**: 2026-09-04 21:30
 - **approvedAt**: 2026-09-04 21:30
 - **relatedTask**: [RFCT-310](../task/RFCT-310.md)
-- **relatedPlans**: [PLAN-074](PLAN-074.md) (the x64 kernel, the last board artifact to move into a container)
+- **relatedPlans**: PLAN-074 (the x64 kernel, the last board artifact to move into a container)
 
 ## Context
 
