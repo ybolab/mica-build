@@ -394,6 +394,61 @@ immediately if it changed what is compiled. Doing the extraction first would
 have meant refactoring two builds whose output nobody could compare, which is
 the wrong order and the reason it is not started here.
 
+### The move needs each machine to move or rebuild its artefacts
+
+`_out/boards/<board>/` is a build product, so nothing in git carries it and
+every existing checkout still has its BSP outputs at `boards/<board>/bsp/out/`.
+The first run after this change therefore sees them as absent until they are
+moved or rebuilt. L1's battery hit exactly that: on a checkout that had built
+x64's and virt-arm64's kernels into the old location, `deb-preflight-test.sh`
+reported eight missing inputs and F1 went red.
+
+Moving them is enough and takes no build:
+
+```sh
+mkdir -p _out/boards
+for b in cx3576 x64 virt-arm64; do
+    [ -d "boards/$b/bsp/out" ] && mv "boards/$b/bsp/out" "_out/boards/$b"
+done
+```
+
+### `deb-preflight-test.sh` F1 asserted a host state, not the code
+
+L1's battery found this and it is the class named in this record's own negative
+section: **a green that was measuring the machine.** F1 demanded `exit 0`
+outright while comparing the missing count against a BASELINE that can be
+non-zero. The pre-flight exits non-zero whenever anything is missing, so
+`PF_RC -eq 0` silently required `BASE_MISSING` to be 0 -- true only on a host
+that has built every board's BSP. The counts agreed exactly and only the status
+differed, which reads as a defect in the code under test and is not one.
+
+**The assumption predates this task**: the same `[ "${PF_RC}" -eq 0 ]` is at
+line 522 of `11dbaea6`. What the move changed is WHICH hosts trip it, by
+relocating the path whose absence sets the baseline -- so it surfaced now and on
+every checkout at once.
+
+**Why section A's fixture route does not fix it.** `BOARD_DIR` and `BSP_OUT`
+redirect the board-cx3576 producer and A2 fills both. They cannot redirect
+`boards/{x64,virt-arm64}/deb/kernel-*/stage.sh`, which read
+`${REPO_ROOT}/_out/boards/<board>/kernel` and honour no variable ON PURPOSE --
+one global read by several producers would make `BOARD_DIR=<a cx3576 tree>` mean
+two things in the aggregate run this file drives, which is the property those
+hooks' own comments protect. Those inputs are host state no fixture can supply.
+
+F1 now asserts the delta it can assert anywhere -- warnings do not CHANGE the
+exit code, the warned count is 14 absolutely, and warnings are not counted among
+the missing -- and additionally demands `exit 0` on a host whose baseline is
+green, so nothing is lost where it can be checked. Verified in both host states,
+reproducing L1's exactly (8 missing of 80, exit 1).
+
+**And mutated, because a test that was measuring the host might now be measuring
+nothing.** `WARNED_N` accumulated into `MISSING_N` reddens F1 on both hosts;
+`exit 1` when `WARNED_N > 0` reddens it on a complete host and **not** on a
+partial one -- on a host where something is genuinely missing, no observation of
+this exit code can show that warnings alone would have been green. That gap is
+irreducible and is written into the file, because a green F1 on a partial host
+and a green F1 on a complete one do not mean the same thing.
+
 ### Considered and scoped out: binding `bsp/out/` to its inputs
 
 A stamp over the kernel build's inputs (patches, config, fragment,
