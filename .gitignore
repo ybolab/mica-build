@@ -51,3 +51,15 @@ pkgs/rauc/versions.lock
 # and because the harness measurements quote paths like /srv/bkd/runtime/bun
 # that have nothing to do with this one.
 tmp/
+
+# The SECOND scratch name, and it is here because two conventions meet in this
+# repository rather than because one of them is wrong. `tmp/` above is this
+# tree's own; `.tmp/` is what the agent sandbox convention creates for a
+# project-scoped throwaway directory (`<project>/.tmp/ai-agent-<id>`), so it
+# appears whenever an agent follows that convention here.
+#
+# Unanchored, matching `tmp/` above: an agent working in a subdirectory makes
+# one there too, and a rule that only covered the root would leave exactly the
+# case nobody is watching. Observed 2026-09-07 as an untracked
+# `.tmp/ai-agent-31fp8utl/`, which `git add -A` would have committed.
+.tmp/
