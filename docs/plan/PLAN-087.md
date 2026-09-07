@@ -1,9 +1,9 @@
 # PLAN-087 Make the CX3576 BSP reproducible, and move its build logic into files
 
-- **status**: draft
+- **status**: completed
 - **createdAt**: 2026-09-07 15:02
 - **approvedAt**: (pending)
-- **relatedTask**: RFCT-343
+- **relatedTask**: RFCT-343, RFCT-345
 
 ## Context
 
@@ -104,7 +104,7 @@ one place every other artefact lives and the one place a clean clears, and a BSP
 output hiding outside it is how the stale kernel above went unnoticed for a week.
 All three boards, because two conventions in one tree is worse than either.
 
-### 4. Extract the inline scripts, configuration and patches into files
+### 4. Extract the inline scripts, configuration and patches into files -- LANDED under RFCT-345
 
 The draft's file list is adopted for the kernel and U-Boot components: each
 component gets its own `build.sh`, the shared dependency-install / source-fetch /
@@ -114,6 +114,17 @@ redirection inside the Dockerfiles become ordinary patches under an explicit
 
 Verification is byte identity against the pre-extraction artefacts, not merely a
 green build: an extraction that changes what is compiled is not an extraction.
+
+Landed as `bsp/scripts/{apt-install,fetch-source,apply-patches}.sh`,
+`bsp/kernel/{configure,build}.sh`, `bsp/uboot/{build,build-mos}.sh` and a
+`series` in each patch directory; the U-Boot `printf >>` device-tree append is
+`uboot/patches/0007`. The Dockerfiles went from 253 and 255 lines to 127 and 97.
+All eleven artefacts came back byte-identical under `--no-cache`. Two parts of
+the draft's file list were NOT adopted and RFCT-345 says why: the `scripts/config`
+runs did not become kconfig fragments, because that changes the route by which
+the resolved `.config` -- itself one of the eleven controlled artefacts -- is
+produced, and the two patch appliers were not unified, because `patch`'s default
+fuzz and `git apply`'s strictness are not the same tool.
 
 ### 5. Deferred, with reasons
 
@@ -177,5 +188,7 @@ package composition, and source-version upgrades.
   scripts and patches must move into files with no file editing in Dockerfiles.
 - User: `boards/cx3576/bsp` build output should go to `_out/boards/cx3576` so
   artefacts are managed in one place.
-- Sections 1 and 2 landed under RFCT-343. Sections 3 and 4 are in progress there.
-  Section 5 is not approved and not started.
+- Sections 1, 2 and 3 landed under RFCT-343; section 4 under RFCT-345. Section 5
+  is not approved and not started, and stays that way: this plan is complete for
+  the scope that was approved, and section 5's three deferrals keep their reasons
+  in this record's history.

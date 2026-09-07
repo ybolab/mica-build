@@ -72,10 +72,10 @@ the debug blob. Encode the boot script from the board's `boot.cmd`, following
 the handshake contract in
 [docs/design/uboot-ab-handshake.md](../design/uboot-ab-handshake.md). Assert
 every load-bearing configuration fact inside the build itself (cx3576 asserts
-its `bootdev-order` and both stages' `BOOTCOMMAND` strings in the Dockerfile),
-so a regression fails at build time, not on a bench.
+its `bootdev-order` and both stages' `BOOTCOMMAND` strings in the build scripts
+its Dockerfile drives), so a regression fails at build time, not on a bench.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/uboot/Dockerfile`
+> status: board-dependent — evidence: `boards/cx3576/bsp/uboot/build.sh`, `boards/cx3576/bsp/uboot/build-mos.sh`
 
 A UEFI board skips all of this: x64 ships a `grub.cfg` for one static ESP and
 compiles nothing, "by design, not by omission".
@@ -103,9 +103,9 @@ the built `.config` — the cx3576 kernel build fails on a missing mos-required
 option rather than producing a kernel that cannot boot the root. Maintain the
 board DTS in-tree under `bsp/kernel/dts/` (open-source route, no overlay
 stacking) and local fixes as an ordered patch series under
-`bsp/kernel/patches/`.
+`bsp/kernel/patches/`, listed in that directory's `series` file.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/Dockerfile`
+> status: board-dependent — evidence: `boards/cx3576/bsp/kernel/configure.sh`, `boards/cx3576/bsp/kernel/patches/series`
 
 x64 follows the same procedure over mainline rather than a vendor tree, with
 no patch series and no DTS: `boards/x64/bsp/kernel/` pins the tag and the
