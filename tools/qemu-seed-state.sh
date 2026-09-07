@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write files into the STATE partition of the x64 disk image before booting it.
+# Write files into the STATE partition of a board's disk image before booting it.
 #
 #   bash tools/qemu-seed-state.sh <local-file> <path-inside-state> [...]
 #   bash tools/qemu-seed-state.sh ./app.container /quadlet/app.container
@@ -13,8 +13,8 @@
 # privileges a build should not want, and would also mean the harness could
 # corrupt the host if it got a path wrong.
 #
-# The image itself is never touched: this edits _out/x64/.qemu/disk.img, the
-# copy the boot engine boots. Run it AFTER that copy has been made -- which the
+# The image itself is never touched: this edits _out/<board>/.qemu/disk.img, the
+# copy the boot engine boots. MOS_BOARD selects the board; x64 is the default. Run it AFTER that copy has been made -- which the
 # prepare step does at the start of every run, so the order is:
 #
 #   bun run src/qemu.ts --prepare-only           (makes the copy, boots nothing)
@@ -28,8 +28,22 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-OUT_DIR="${REPO_ROOT}/_out/x64"
-. "${REPO_ROOT}/boards/x64/board.env"
+# WHICH BOARD, read from the environment the way pkgs/mosd/tests/apid-api/run.sh
+# reads it, and defaulting the same way. That harness has been board-
+# parameterised since PLAN-085 slice 5 and calls this script with no board
+# argument, so a hard-coded x64 here made `MOS_BOARD=virt-arm64` seed the x64
+# disk: the run then booted a guest whose STATE had no guest script in it, and
+# the phase that reads the script's console lines reported "the smoke never
+# ran" -- true, and about the wrong disk. STATE_PARTNUM and STATE_SIZE_MIB below
+# come from the layout, so seeding the wrong board also means dd-ing at another
+# board's offsets.
+MOS_BOARD="${MOS_BOARD:-x64}"
+BOARD_ENV="${REPO_ROOT}/boards/${MOS_BOARD}/board.env"
+[ -f "${BOARD_ENV}" ] ||
+    { echo "error: MOS_BOARD is '${MOS_BOARD}' and ${BOARD_ENV} does not exist; a board IS its board.env" >&2; exit 1; }
+OUT_DIR="${REPO_ROOT}/_out/${MOS_BOARD}"
+# shellcheck source=/dev/null  # a data file of assignments, resolved at runtime
+. "${BOARD_ENV}"
 DISK="${OUT_DIR}/.qemu/disk.img"
 
 if [ ! -f "${DISK}" ]; then

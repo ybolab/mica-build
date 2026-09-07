@@ -2,7 +2,7 @@
 
 - **status**: approved
 - **createdAt**: 2026-09-06 10:54
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-07
 - **relatedTask**: RFCT-336
 
 ## Context
@@ -25,6 +25,56 @@ Read-only measurements on 2026-09-06:
 | udev hardware database and source data, approximately MiB | 22 | 22 |
 
 Evidence is in `_out/<board>/rootfs-report.txt`, `rootfs-verity.env`, and the extracted roots under `_out/verify/<board>/`. Both current rootfs images matched the corresponding verified slot prefixes. ELF measurements include a small amount of kernel-module symbol data; that data is not a user-space stripping target. These are occupied bytes, not promised compressed savings, and package Installed-Size values are not used as removal estimates.
+
+### S1 baseline, measured 2026-09-07 (RFCT-346)
+
+The table above is confirmed on cx3576 and superseded by this one. It is
+reproduced with `bash tools/measure-rootfs.sh --board <board>`, which reads
+`_out/<board>/factory-root.oci` -- the packed root the build exports, i.e. the
+byte-for-byte input to mksquashfs -- and counts each inode once. Tree
+`0.1.0+git4845a0b31124.dirty`, both pools at that same stamp.
+
+| Measurement | cx3576 | virt-arm64 |
+|---|---:|---:|
+| Upstream / local packages shipped | 170 / 15 | 159 / 13 |
+| `TOTAL_MB` in the build report | 380 | 430 |
+| Regular-file payload, hard links counted once, bytes | 385,524,283 | 435,604,278 |
+| The same, in MiB | 367.66 | 415.42 |
+| Regular files / distinct inodes / symlinks | 3,145 / 3,145 / 786 | 4,068 / 4,068 / 739 |
+| Squashfs bytes | 118,685,696 | 127,582,208 |
+| Rootfs image bytes, including verity and MiB padding | 120,586,240 | 128,974,848 |
+| User-space ELF debug and static symbol sections, bytes | 44,804,825 | 44,804,825 |
+| Kernel-module symbol data, bytes (NOT a stripping target) | 736,766 | 10,854,802 |
+| Boot inputs retained inside rootfs, bytes | 54,464,989 | 53,535,273 |
+| udev hardware database and source data, bytes | 22,863,740 | 22,863,740 |
+| Kernel module indexes, bytes | 333,062 | 2,476,993 |
+
+Four findings from that measurement, each of which changes what a later slice
+should expect:
+
+- **There are no hard links in either root.** The deduplicated and naive sums
+  are equal to the byte on both boards, so "counting hard links once" is a
+  guard here rather than a correction, and a slice that reports a saving cannot
+  attribute any part of it to link accounting.
+- **The 42.73 MiB of user-space debug data is 13 files, and they are the same
+  13 on both arm64 boards** -- `podman` (19,305,340 B), `netavark`, `apid`,
+  `mosd`, `crun`, `mos-mqttd`, `mos-mqtt-broker`, `rauc-update` and five more,
+  every one of them built by this repository. All 1,009 other user-space ELF
+  files carry zero: Debian ships its binaries stripped. So S2's user-space
+  target is this repository's own build outputs, not the shipped package set,
+  and the identical totals on two different roots are that fact and not a
+  measurement error.
+- **The cx3576 column of the 2026-09-06 table reproduces within 0.1% on every
+  row.** The residual differences -- payload +0.31 MiB, squashfs +104 KiB,
+  image +1 MiB -- are the cx3576 kernel that landed in RFCT-343 after that
+  measurement; the image row moves by a whole MiB because the pack pads to a
+  MiB boundary and the squashfs crossed one.
+- **The x64 column is NOT reproduced here.** `snapshot.debian.org` returned
+  HTTP 503 for the whole amd64 base cache while this ran, so no x64 root could
+  be composed. virt-arm64 is measured in its place; it is a UEFI board with the
+  same feature selection and its package counts match the x64 column's 159/13,
+  but it is a different architecture and is not a substitute for that column.
+  x64 remains outstanding for S1.
 
 Specific findings that affect the design:
 
@@ -76,10 +126,10 @@ This proposal supersedes PLAN-045's unexpanded emergency-only BusyBox policy. It
 
 | Step | Work | Verification required before proceeding |
 |---|---|---|
-| S1: Establish the baseline and runtime roots | Capture current source/input hashes, feature selections, build inventory, actual file sizes, ELF dependencies and non-ELF consumers. Record required commands/resources for each selected component. | Reproduce both architecture selections and verify artifact identity. Account for current boot, debug and hwdb bytes without double-counting hard links. |
+| S1: Establish the baseline and runtime roots | Capture current source/input hashes, feature selections, build inventory, actual file sizes, ELF dependencies and non-ELF consumers. Record required commands/resources for each selected component. | Reproduce both architecture selections and verify artifact identity. Account for current boot, debug and hwdb bytes without double-counting hard links. **SHIPPED (RFCT-346, 2026-09-07):** `tools/measure-rootfs.sh` and the baseline table above. cx3576 and virt-arm64 measured and verified (`--verify` green on both, 419/419 and 314/314 before this task's own checks). Both architecture selections resolve -- `make os-rootfs-manifest-test`, 44/44 over 384 resolutions. **OUTSTANDING:** the x64 column; `snapshot.debian.org` was HTTP 503 for the entire amd64 base cache, so no x64 root could be composed. |
 | S2: Separate debug and boot artifacts | Strip user-space debug/static symbol sections with target-aware tools; export matching debug files outside rootfs. Export boot files from the selected packages before runtime filtering. Make image and bundle assembly consume that same export, including cx3576. | Match debug files to shipped binaries; smoke-test executables. Assert boot/kernel/module identity, boot-slot contents and bundle consistency. Reject boot blobs and removable user-space debug sections in the packed root. Preserve module symbols needed for loading. |
 | S3: Compose the explicit runtime | Add runtime lists and dependency/resource validation, preserving generated configuration and filesystem metadata. Copy only the selected tree into the scratch runtime stage. Replace path-based package-manager sweeping where selection makes it obsolete. | Add failing fixtures for a missing interpreter/library/helper, missing generated state, escaping links, broken links and lost capabilities. Pass positive offline composition and executable smoke checks for both architectures. |
-| S4: Remove static hardware databases | Exclude `/usr/lib/udev/hwdb.d`, `/etc/udev/hwdb.d` and both locations of `hwdb.bin` from the runtime. Remove hwdb update machinery and query clauses without deleting unrelated actions from the same udev rule. Keep ordinary device rules, runtime udev state and module indexes. Express a demonstrated board-specific requirement as a small explicit rule rather than restoring a general hardware database. | Assert that no static hwdb ships and no active rule or unit still requires it. Verify coldplug/hotplug, network identity/naming, storage and required USB/input devices. Check that rule edits preserve permissions, symlinks, module loading and service activation. |
+| S4: Remove static hardware databases | Exclude `/usr/lib/udev/hwdb.d`, `/etc/udev/hwdb.d` and both locations of `hwdb.bin` from the runtime. Remove hwdb update machinery and query clauses without deleting unrelated actions from the same udev rule. Keep ordinary device rules, runtime udev state and module indexes. Express a demonstrated board-specific requirement as a small explicit rule rather than restoring a general hardware database. | Assert that no static hwdb ships and no active rule or unit still requires it. Verify coldplug/hotplug, network identity/naming, storage and required USB/input devices. Check that rule edits preserve permissions, symlinks, module loading and service activation. **SHIPPED (RFCT-346, 2026-09-07):** `rootfs/scripts/hwdb-remove.sh`, called from 90-pack's `closed` stage, removes the compiled database, 34 source files, `systemd-hwdb`, the update unit and its enablement, the `After=` naming it, and 33 query clauses plus 4 `ENV{.HAVE_HWDB_PROPERTIES}` flags across 13 rule files -- token by token, so 41/42 rule files still ship and 14 preserved actions are asserted by name. Payload falls 22,935,607 B on both boards (367.66 -> 345.79 MiB on cx3576, 415.42 -> 393.55 on virt-arm64); squashfs -3.34 MiB, image -4 MiB; `TOTAL_MB` 380 -> 358 and 430 -> 408. Four checks in the image contract (`verify/src/checks-hwdb.ts`) with 28 negative tests; cx3576 423/423 and virt-arm64 318/318, and three of the four go red on the pre-removal image. **No board-specific rule was needed:** nothing on these boards reads a hwdb property. **OUTSTANDING:** physical cx3576 acceptance. Coldplug, hotplug, naming and storage are verified on a booted virt-arm64 guest, which is a different board and a different kernel (6.12 mainline against cx3576's 6.1.115 vendor tree); PLAN-085's transfer boundary says driver and boot-chain behaviour does not carry across it. |
 | S5: Reduce shell and network tools | Introduce explicit BusyBox applets; convert seeding, health and board scripts. Add apid health-check mode. Remove superseded tools, outbound SSH and unused protocol branches. Review selected PAM/NSS/crypto modules before pruning their libraries. | Write failing behavior tests first. Exercise repeated first-boot seeding, ownership/modes, interruption-sensitive storage paths, shadow reconciliation, SSH/SFTP, HTTPS failure/timeout handling and container networking. The health gate must fail, not skip, if its required probe is absent. |
 | S6: Reconcile inventories and acceptance | Generate shipped-file provenance and final size reports from the selected tree. Update affected image contracts and current build documentation. Build and test the final images with the complete selected feature set. | Pass the acceptance matrix below and compare actual uncompressed, squashfs and verity-image bytes against S1. Remove temporary experiments and obsolete code introduced by this change. |
 

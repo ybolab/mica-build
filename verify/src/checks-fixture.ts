@@ -431,6 +431,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   seedMqtt(root, file)
   seedBusybox(root, file)
   seedFirewall(root, file)
+  seedUdev(root, file)
   seedBoardShape(root, board, file)
   // LAST: it prepends an ELF header to the two daemons seeded above and writes
   // the ssh.service the shadow family also touches, so it has to see their
@@ -907,6 +908,70 @@ function seedSystem(root: string, board: Board, file: WriteFile): void {
  * locally defined function, and a wrapper call. Each of those is a stage of the
  * extractor and each has a case beside it.
  */
+/**
+ * The device-management surface, in the state PLAN-086 S4 leaves it in.
+ *
+ * checks-hwdb.ts asserts four negatives -- no compiled database, no sources, no
+ * update unit, no query clause -- and a negative passes by finding nothing, so
+ * the fixture's job here is to be a root where finding nothing MEANS something:
+ * udevd is present, the rules directory is populated, and the rules carry the
+ * IMPORT{builtin} vocabulary a scanner has to be able to see.
+ *
+ * The rule bodies are the POST-REMOVAL shape of the Debian originals, abridged
+ * to the actions the survivor table names. They are transcribed rather than read
+ * out of a real image on purpose: a fixture built from the artifact under test
+ * would agree with it whatever either one became.
+ *
+ * systemd-udevd.service is seeded with `After=systemd-sysusers.service` and
+ * nothing else on that line. That is the line rootfs/scripts/hwdb-remove.sh
+ * edits, and it is what `packed-hwdb-update-machinery-absent` uses to know its
+ * walk reached the unit trees at all.
+ */
+function seedUdev(root: string, file: WriteFile): void {
+  file('/usr/lib/systemd/systemd-udevd')
+  file('/usr/bin/udevadm')
+  file('/usr/lib/systemd/system/systemd-udevd.service',
+    '[Unit]\nDescription=Rule-based Manager for Device Events and Files\n'
+    + 'After=systemd-sysusers.service\n[Service]\nType=notify\n')
+
+  const rules: ReadonlyArray<readonly [string, string]> = [
+    ['50-udev-default.rules',
+      'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", IMPORT{builtin}="usb_id"\n'
+      + 'SUBSYSTEM=="net", IMPORT{builtin}="net_driver"\n'
+      + 'SUBSYSTEM=="tty", KERNEL=="ptmx", GROUP="tty", MODE="0666"\n'
+      + 'SUBSYSTEM=="block", GROUP="disk"\n'
+      + 'KERNEL=="tun", MODE="0666", OPTIONS+="static_node=net/tun"\n'],
+    ['60-input-id.rules',
+      'SUBSYSTEM=="input", ENV{ID_INPUT}=="", IMPORT{builtin}="input_id"\n'],
+    ['60-persistent-storage.rules',
+      'ENV{ID_FS_UUID_ENC}=="?*", SYMLINK+="disk/by-uuid/$env{ID_FS_UUID_ENC}"\n'],
+    ['60-serial.rules',
+      'SUBSYSTEMS=="usb", IMPORT{builtin}="usb_id"\n'
+      + 'IMPORT{builtin}="path_id"\n'
+      + 'ENV{ID_PATH}=="?*", SYMLINK+="serial/by-path/$env{ID_PATH}"\n'
+      + 'ENV{ID_BUS}=="?*", SYMLINK+="serial/by-id/$env{ID_BUS}-$env{ID_SERIAL}"\n'],
+    ['71-seat.rules',
+      'SUBSYSTEM=="drm", KERNEL=="card[0-9]*", TAG+="seat", TAG+="master-of-seat"\n'],
+    ['75-net-description.rules',
+      'SUBSYSTEM!="net", GOTO="net_end"\n'
+      + 'SUBSYSTEMS=="usb", IMPORT{builtin}="usb_id"\n'
+      + 'IMPORT{builtin}="net_id"\n'
+      + 'LABEL="net_end"\n'],
+    ['78-sound-card.rules',
+      'KERNEL!="card*", GOTO="sound_end"\n'
+      + 'ENV{SOUND_INITIALIZED}="1"\n'
+      + 'IMPORT{builtin}="path_id"\n'
+      + 'LABEL="sound_end"\n'],
+    ['80-drivers.rules',
+      'ENV{MODALIAS}=="?*", RUN{builtin}+="kmod load"\n'],
+    ['90-iocost.rules',
+      'ENV{IOCOST_SOLUTIONS}!="", RUN+="iocost apply $env{DEVNAME}"\n'],
+    ['99-systemd.rules',
+      'SUBSYSTEM=="block", TAG+="systemd"\n'],
+  ]
+  for (const [name, body] of rules) file(`/usr/lib/udev/rules.d/${name}`, body)
+}
+
 function seedBootScripts(root: string, file: WriteFile): void {
   for (const c of [
     'awk', 'cat', 'chmod', 'chown', 'cp', 'grep', 'head', 'mkdir',
