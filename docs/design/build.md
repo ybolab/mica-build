@@ -72,16 +72,27 @@ clone with the daemon socket mounted:
 | `bash build/run.sh --mkimage-uefi --board x64` | image assembled, 1938 MiB |
 | `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
 
-One thing a bare host still cannot do: compose the rootfs.
-`build/run.sh --build-rootfs` drives `docker buildx`, which is a CLI plugin
-`verify/Dockerfile` does not copy, and the refusal names it.
+**It can also compose the rootfs, since 2026-09-07.** That row used to read
+"the one thing a bare host cannot do": `build/run.sh --build-rootfs` drives
+`docker buildx`, a CLI plugin `verify/Dockerfile` did not copy, and the mode
+refused the container route outright rather than failing once per stage.
+`verify/Dockerfile` now copies the plugin from the same pinned client image the
+`docker` binary comes from, and the whole chain was run on that route
+(*measured 2026-09-07, `MOS_BUILD_CONTAINER=1` throughout*):
+
+| | |
+| --- | --- |
+| `MOS_BOARD=x64 rootfs/build.sh` | composed; `tag mode on builder default (docker driver)`, 2 stages, squashfs 114819072 B + verity → 116391936 B, smoke `PASS (12 pass, of 12)` |
+| `bash build/run.sh --mkimage-uefi --board x64` | `assembled 1938 MiB, 512 MiB per rootfs slot` |
+| `bash verify/run.sh --verify --board x64` | `RESULT: PASS (315/315 checks, 22 skipped)` |
 
 **That observation is now re-runnable: `make os-bare-host-gate`.** It clones
 `HEAD` into `IMAGE_DOCKER_CLI_28`, measures the surface, adds `bash` and `make`,
 and climbs the first four rows of the table above — the docs gates, the policy
-lint, `os-layout-lint` and `os-verify-test`. It stops there. The last two rows
-assemble an image, which needs the amd64 package pool, so those stay a dated
-observation; §0.4 says what that ceiling does and does not cover.
+lint, `os-layout-lint` and `os-verify-test`. It stops there. The rows below
+assemble an image, which needs the amd64 package pool — and since the buildx
+COPY landed, that pool is the *only* thing between the gate and them; §0.4 says
+what that ceiling does and does not cover.
 
 ### 0.1 The test, for a tool nobody listed
 
@@ -237,12 +248,13 @@ The two checks divide the surface between them, and neither covers it alone:
 | `os-host-toolchain-lint` | every tracked script and every tracked `.ts` file, including the assembly path | nothing | a producer's *name* in command position, or named by a TypeScript process launch |
 | `os-bare-host-gate` | nothing | rungs 1–3 on a real constrained host | anything a run of those rungs actually reaches for, whatever its name |
 
-The gate's ceiling is rung 3. It does **not** assemble an image (rung 4 needs
-the amd64 package pool), does not run `os-build-test`, and does not lift
-`--build-rootfs`'s `buildx` refusal. So a new host dependency reachable *only*
-from the assembly path is caught by the lint's static shape and not by the
-gate's execution — which is the reason the gate runs the lint from inside itself
-at rung 2.
+The gate's ceiling is rung 3. It does **not** assemble an image and does not run
+`os-build-test`. Rung 4 needs the amd64 package pool, and that is now the whole
+of what stops it: `--build-rootfs`'s `buildx` refusal is gone, so the ceiling is
+a cost decision rather than a missing capability. A new host dependency
+reachable *only* from the assembly path is therefore still caught by the lint's
+static shape and not by the gate's execution — which is the reason the gate runs
+the lint from inside itself at rung 2.
 
 ## 1. What a build produces
 

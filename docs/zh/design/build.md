@@ -60,9 +60,18 @@
 | `bash build/run.sh --mkimage-uefi --board x64` | 镜像装配完成，1938 MiB |
 | `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
 
-一台裸主机目前还做不到的一件事：合成 rootfs。`build/run.sh --build-rootfs` 要驱动
-`docker buildx`，而它是一个 CLI 插件，`verify/Dockerfile` 没有把它拷进去，那条拒绝
-会把这件事说出来。
+**从 2026-09-07 起，它也能合成 rootfs 了。** 这一条以前写的是"裸主机唯一做不到的
+事"：`build/run.sh --build-rootfs` 要驱动 `docker buildx`，而它是一个 CLI 插件，
+`verify/Dockerfile` 没有把它拷进去，于是这个模式干脆拒绝容器路线，而不是每个 stage
+失败一次。现在 `verify/Dockerfile` 从 `docker` 二进制所在的那同一个固定客户端镜像里
+把插件也拷了进来，整条链都在这条路线上跑过了（*实测 2026-09-07，全程
+`MOS_BUILD_CONTAINER=1`*）：
+
+| | |
+| --- | --- |
+| `MOS_BOARD=x64 rootfs/build.sh` | 合成完成；`tag mode on builder default (docker driver)`，2 个 stage，squashfs 114819072 B + verity → 116391936 B，smoke `PASS (12 pass, of 12)` |
+| `bash build/run.sh --mkimage-uefi --board x64` | `assembled 1938 MiB, 512 MiB per rootfs slot` |
+| `bash verify/run.sh --verify --board x64` | `RESULT: PASS (315/315 checks, 22 skipped)` |
 
 ### 0.1 判定方法：对付一个清单上没有的工具
 
@@ -193,10 +202,11 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 | `os-host-toolchain-lint` | 全部被跟踪的脚本和全部被跟踪的 `.ts` 文件，含装配路径 | 不执行 | 命令位置上生产者的*名字*，或被一处 TypeScript 进程启动点名的生产者 |
 | `os-bare-host-gate` | 不读 | 在真实受限主机上跑第 1–3 级 | 这几级真正伸手去要的任何东西，不论叫什么 |
 
-网关的天花板是第 3 级：它**不**装配镜像（第 4 级需要 amd64 软件包池），不跑
-`os-build-test`，也不解除 `--build-rootfs` 的 `buildx` 拒绝。因此，只在装配路径上
-才会被触及的新主机依赖，靠 lint 的静态形态发现，而不是靠网关执行发现——这也正是网关
-在第 2 级把那条 lint 放进自己内部跑一遍的原因。
+网关的天花板是第 3 级：它**不**装配镜像，也不跑 `os-build-test`。第 4 级需要 amd64
+软件包池，而现在挡路的就只剩这一样了：`--build-rootfs` 的 `buildx` 拒绝已经解除，所以
+这个天花板是一个成本取舍，而不是一项缺失的能力。因此，只在装配路径上才会被触及的新
+主机依赖，仍然靠 lint 的静态形态发现，而不是靠网关执行发现——这也正是网关在第 2 级把
+那条 lint 放进自己内部跑一遍的原因。
 
 ## 1. 一次构建产出什么
 
