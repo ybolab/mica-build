@@ -366,7 +366,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
     // that check is unconditional now and this skip has stopped covering it.
     // The Image/dtb byte-compare against the local BSP tree is NOT ported (see
     // the inventory in the M4d report); it is left unclaimed rather than folded
-    // in here, because a check that reads `boards/<board>/bsp/out/` is a
+    // in here, because a check that reads `_out/boards/<board>/` is a
     // different kind of check from one that reads the image.
     id: 'boot-slot-no-extlinux',
     cardinality: 'many',

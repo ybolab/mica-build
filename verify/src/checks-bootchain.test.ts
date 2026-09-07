@@ -6,9 +6,9 @@
 // and the parity harness still calls it a clean divergence.
 //
 // The BSP compare is driven in both directions here and in neither in the field.
-// `boards/cx3576/bsp/out/` is not populated in a checkout, so on the real image both
+// `_out/boards/cx3576/` is not populated in a checkout, so on the real image both
 // verifiers say `compare source not found` and the byte-compare's passing
-// direction is never taken. These cases take it: a temporary BOARD_DIR with a
+// direction is never taken. These cases take it: a temporary BSP_OUT with a
 // matching artefact, one with a differing artefact, and one with none.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
@@ -162,7 +162,7 @@ interface World {
   fdt: FdtTable
   /** Bytes written into the image at absolute offsets, over a sparse zero file. */
   poke?: ReadonlyArray<readonly [number, Buffer]>
-  /** `${BOARD_DIR}/out/...` contents; absent means the compare source is missing. */
+  /** `${BSP_OUT}/...` contents; absent means the compare source is missing. */
   bsp?: Record<string, Buffer>
 }
 
@@ -264,10 +264,10 @@ function checkNamed(id: string): CheckCase {
   return found
 }
 
-/** Run one check, with `${BOARD_DIR}` pointed at this world's BSP tree if it has one. */
+/** Run one check, with `${BSP_OUT}` pointed at this world's BSP tree if it has one. */
 async function drive(id: string, world: World): Promise<readonly CheckResult[]> {
   const fx = fixture(world)
-  const saved = process.env['BOARD_DIR']
+  const saved = process.env['BSP_OUT']
   if (world.bsp !== undefined) {
     const dir = join(scratch(), `bsp${seq}`)
     for (const [rel, bytes] of Object.entries(world.bsp)) {
@@ -276,19 +276,19 @@ async function drive(id: string, world: World): Promise<readonly CheckResult[]> 
       writeFileSync(at, bytes)
     }
     mkdirSync(dir, { recursive: true })
-    process.env['BOARD_DIR'] = dir
+    process.env['BSP_OUT'] = dir
   }
   else {
     // No BSP tree at all -- which is what a checkout is, and what makes the
     // oracle's own cx3576 run RESULT FAIL (387/395).
-    process.env['BOARD_DIR'] = join(scratch(), 'no-such-bsp-tree')
+    process.env['BSP_OUT'] = join(scratch(), 'no-such-bsp-tree')
   }
   try {
     return await checkNamed(id).run(fx.ctx)
   }
   finally {
-    if (saved === undefined) delete process.env['BOARD_DIR']
-    else process.env['BOARD_DIR'] = saved
+    if (saved === undefined) delete process.env['BSP_OUT']
+    else process.env['BSP_OUT'] = saved
     fx.dispose()
   }
 }
@@ -323,8 +323,8 @@ describe('the mutation helper refuses a no-op', () => {
 
 const UBOOT_AT = 64 * 512
 const UBOOT_BLOB = Buffer.from('RKNSU-BOOT-BLOB-BYTES-0123456789')
-const UBOOT_SRC = 'out/uboot-mos/u-boot-rockchip.bin'
-const UBOOT_DEBUG_SRC = 'out/uboot/u-boot-rockchip.bin'
+const UBOOT_SRC = 'uboot-mos/u-boot-rockchip.bin'
+const UBOOT_DEBUG_SRC = 'uboot/u-boot-rockchip.bin'
 
 describe('uboot-blob-matches-variant', () => {
   const id = 'uboot-blob-matches-variant-cx3576'
@@ -356,7 +356,7 @@ describe('uboot-blob-matches-variant', () => {
     const r = one(await drive(id, world({ poke: [[UBOOT_AT, UBOOT_BLOB]] })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('u-boot compare source not found')
-    expect(r.message).toContain('out/uboot-mos/u-boot-rockchip.bin')
+    expect(r.message).toContain('uboot-mos/u-boot-rockchip.bin')
   })
 
   test('the skip belongs to a DIFFERENT entry, and this one does not exist on x64', async () => {
@@ -452,7 +452,7 @@ describe('the per-slot BSP byte-compare', () => {
 
   test('green when the slot matches the local BSP artifact', async () => {
     const r = one(await drive('bsp-compare-cx3576-BOOT-A-Image', world({
-      bsp: { 'out/kernel/Image': Buffer.from('KERNEL-IMAGE-BYTES') },
+      bsp: { 'kernel/Image': Buffer.from('KERNEL-IMAGE-BYTES') },
     })))
     expect(r.verdict).toBe('pass')
     expect(r.message).toContain('factory: BOOT-A Image matches the local BSP artifact')
@@ -460,7 +460,7 @@ describe('the per-slot BSP byte-compare', () => {
 
   test('RED when the slot carries a DIFFERENT kernel from the one in the tree', async () => {
     const r = one(await drive('bsp-compare-cx3576-BOOT-A-Image', world({
-      bsp: { 'out/kernel/Image': Buffer.from('A-DIFFERENT-KERNEL') },
+      bsp: { 'kernel/Image': Buffer.from('A-DIFFERENT-KERNEL') },
     })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('factory: BOOT-A Image differs from the local BSP artifact')
@@ -472,7 +472,7 @@ describe('the per-slot BSP byte-compare', () => {
     delete (a as Record<string, Buffer | undefined>)['Image']
     const r = one(await drive('bsp-compare-cx3576-BOOT-A-Image', world({
       slots: { a, b: slots.b },
-      bsp: { 'out/kernel/Image': Buffer.from('KERNEL-IMAGE-BYTES') },
+      bsp: { 'kernel/Image': Buffer.from('KERNEL-IMAGE-BYTES') },
     })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toBe('BOOT-A Image missing or unreadable')
@@ -482,7 +482,7 @@ describe('the per-slot BSP byte-compare', () => {
     const r = one(await drive('bsp-compare-cx3576-BOOT-B-rk3576-src.dtb', world()))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('BOOT-B rk3576-src.dtb compare source not found:')
-    expect(r.message).toContain('out/kernel/rk3576-src.dtb')
+    expect(r.message).toContain('kernel/rk3576-src.dtb')
   })
 
   test('the SLOT is part of the identity: B\'s entry reads B\'s copy', async () => {
@@ -491,7 +491,7 @@ describe('the per-slot BSP byte-compare', () => {
     const slots = healthySlots()
     const r = one(await drive('bsp-compare-cx3576-BOOT-B-Image', world({
       slots: { a: slots.a, b: { ...slots.b, 'Image': Buffer.from('B-HAS-A-DIFFERENT-KERNEL') } },
-      bsp: { 'out/kernel/Image': Buffer.from('KERNEL-IMAGE-BYTES') },
+      bsp: { 'kernel/Image': Buffer.from('KERNEL-IMAGE-BYTES') },
     })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('BOOT-B Image differs')

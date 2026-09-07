@@ -1197,8 +1197,10 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   // superseded it, and the check that says so is board-unconditional.
 
   // The kernel's own record of itself, for the kernel-floor checks.
-  // Seeded on every board although only x64 registers those checks: the fixture
-  // describes a healthy root, and a root with no /boot/config-* is not one.
+  // Seeded on every board because the fixture describes a healthy root and a
+  // root with no /boot/config-* is not one -- which was true while only x64
+  // registered the config check, and is now what that check reads on every
+  // board (RFCT-343). The modprobe check is still x64's alone.
   //
   // The symbol names, the module names and the index format are written out
   // HERE as independent literals rather than imported from checks-kernel.ts.

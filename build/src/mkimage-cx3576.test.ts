@@ -593,9 +593,9 @@ describe('a whole assembly, and what is actually in it', () => {
 
 describe('the mounts an assembly asks the toolbox for', () => {
   test('the repository, and the directory of every input outside it', () => {
-    const m = mountsFor({ ...base, kernelImage: '/opt/bsp/out/kernel/Image' }, join(dir, 'w'))
+    const m = mountsFor({ ...base, kernelImage: '/opt/bsp-out/kernel/Image' }, join(dir, 'w'))
     expect(m).toContain(REPO_ROOT)
-    expect(m).toContain('/opt/bsp/out/kernel')
+    expect(m).toContain('/opt/bsp-out/kernel')
   })
 
   test('a directory already inside another mount is dropped', () => {

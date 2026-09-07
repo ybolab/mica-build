@@ -113,7 +113,7 @@ PF_WARNED=""
 PF_OUT=""
 run_preflight() {
     PF_RC=0
-    PF_OUT="$(BOARD_DIR="${BSP_FIXTURE}" bash "${PREFLIGHT}" "$@" 2>&1)" || PF_RC=$?
+    PF_OUT="$(BOARD_DIR="${BSP_FIXTURE}" BSP_OUT="${BSP_OUT_FIXTURE}" bash "${PREFLIGHT}" "$@" 2>&1)" || PF_RC=$?
     PF_EXAMINED="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: [0-9]* of \([0-9]*\) examined.*/\1/p' | tail -1)"
     PF_MISSING="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: \([0-9]*\) of [0-9]* examined inputs are missing.*/\1/p' | tail -1)"
     PF_WARNED="$(printf '%s\n' "${PF_OUT}" | sed -n 's/^preflight: a further \([0-9]*\) of [0-9]* are absent.*/\1/p' | tail -1)"
@@ -121,24 +121,30 @@ run_preflight() {
     [ -n "${PF_WARNED}" ] || PF_WARNED=0
 }
 
-echo "== A. BOARD_DIR: still the escape, in both directions =="
+echo "== A. BOARD_DIR and BSP_OUT: still the escape, in both directions =="
 
-# An empty BOARD_DIR. The escape is threaded through to the hook, so every BSP
-# refusal must NAME this directory -- which is deterministic on every host,
-# whatever the real boards/cx3576/bsp/out holds.
+# TWO fixtures, because RFCT-343 split one variable into two things that were
+# never the same: BOARD_DIR is the bsp SOURCE tree (committed vendor firmware)
+# and BSP_OUT is where a build put its artefacts (kernel, U-Boot). Both are
+# threaded through to the hook, so every BSP refusal must NAME one of these
+# directories -- which is deterministic on every host, whatever the real
+# _out/boards/cx3576 happens to hold. Setting only one would leave the other
+# half of the inputs read from the real tree, and this test would then pass on
+# a machine that had built a kernel and fail on one that had not.
 BSP_FIXTURE="${TMP}/bsp"
-mkdir -p "${BSP_FIXTURE}"
+BSP_OUT_FIXTURE="${TMP}/bsp-out"
+mkdir -p "${BSP_FIXTURE}" "${BSP_OUT_FIXTURE}"
 run_preflight --producer board-cx3576
 # The paths it asked for, read out of its own report -- NOT a list written
 # here. A second list of the BSP inputs in this file is one that stops matching
 # board.env the day the board declares another, and stops matching silently, by
 # testing yesterday's set.
 mapfile -t WANTED < <(printf '%s\n' "${PF_OUT}" |
-    sed -n "s|^error: \(${BSP_FIXTURE}/[^ ]*\) not found.*|\1|p;s|^error: .* and \(${BSP_FIXTURE}/[^ ]*\) does not exist.*|\1|p")
+    sed -n "s|^error: \(${BSP_FIXTURE}/[^ ]*\) not found.*|\1|p;s|^error: .* and \(${BSP_FIXTURE}/[^ ]*\) does not exist.*|\1|p;s|^error: \(${BSP_OUT_FIXTURE}/[^ ]*\) not found.*|\1|p;s|^error: .* and \(${BSP_OUT_FIXTURE}/[^ ]*\) does not exist.*|\1|p")
 if [ "${PF_RC}" -ne 0 ] && [ "${#WANTED[@]}" -gt 1 ]; then
-    pass "A1 BOARD_DIR is honoured: ${#WANTED[@]} inputs are demanded under the directory it names, in one run"
+    pass "A1 BOARD_DIR and BSP_OUT are honoured: ${#WANTED[@]} inputs are demanded under the directories they name, in one run"
 else
-    fail "A1 expected exit!=0 and more than one input demanded under BOARD_DIR; got exit ${PF_RC}, ${#WANTED[@]} paths"
+    fail "A1 expected exit!=0 and more than one input demanded under BOARD_DIR/BSP_OUT; got exit ${PF_RC}, ${#WANTED[@]} paths"
 fi
 
 # The same directory, filled with exactly the paths the code just asked for.
@@ -150,7 +156,7 @@ for p in ${WANTED[@]+"${WANTED[@]}"}; do
 done
 run_preflight --producer board-cx3576
 if [ "${PF_RC}" -eq 0 ] && [ -n "${PF_EXAMINED}" ] && [ "${PF_EXAMINED}" -gt "${#WANTED[@]}" ]; then
-    pass "A2 the same BOARD_DIR, filled with what it asked for, is green over ${PF_EXAMINED} inputs"
+    pass "A2 the same two directories, filled with what they asked for, are green over ${PF_EXAMINED} inputs"
 else
     fail "A2 expected exit 0 and more than ${#WANTED[@]} inputs examined; got exit ${PF_RC}, examined '${PF_EXAMINED}'"
 fi
@@ -233,10 +239,11 @@ cp "${TMP}/render.sh.orig" "${RENDER}"
 
 # The failing side. Without the missing count, one producer's whole report is
 # counted as a single missing input however many files it names -- so this is
-# driven against a BOARD_DIR with nothing in it, where the hook does fail.
+# driven against a BOARD_DIR and a BSP_OUT with nothing in them, where the hook
+# does fail.
 sed -i '/^        echo "preflight-missing: ${#MISSING\[@\]}" >&2$/d' "${RENDER}"
 C_RC=0
-C_OUT="$(BOARD_DIR="${TMP}/bsp-nothing" bash "${PREFLIGHT}" --producer board-cx3576 2>&1)" || C_RC=$?
+C_OUT="$(BOARD_DIR="${TMP}/bsp-nothing" BSP_OUT="${TMP}/bsp-out-nothing" bash "${PREFLIGHT}" --producer board-cx3576 2>&1)" || C_RC=$?
 if [ "${C_RC}" -ne 0 ] && says "${C_OUT}" "did not print a usable preflight-missing count"; then
     pass "C3 a FAILING hook that omits its missing count is refused"
 else

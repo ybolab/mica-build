@@ -3,7 +3,7 @@
 // the cx3576 assembly contract gives a missing rootfs input and a missing BSP input
 // DIFFERENT sentences, and the difference is the whole value of the check: one
 // is produced by a script you can run in a minute, the other by a BSP build or a
-// BOARD_DIR pointed somewhere else. Collapsing them into "not found" would be a
+// BSP_OUT pointed somewhere else. Collapsing them into "not found" would be a
 // message that is true and does not tell you what to do.
 //
 // Nothing here assembles. main() is driven only as far as its preconditions,
@@ -24,17 +24,17 @@ describe('the arguments', () => {
   test('the defaults are _out/cx3576 and boards/cx3576/bsp', () => {
     expect(parseArgs([], {})).toEqual({
       outDir: join(REPO_ROOT, '_out', 'cx3576'),
-      boardDir: join(REPO_ROOT, 'boards', 'cx3576', 'bsp'),
+      bspOut: join(REPO_ROOT, '_out', 'boards', 'cx3576'),
     })
   })
 
-  test('BOARD_DIR from the environment wins, as it does in the shell', () => {
-    expect(parseArgs([], { BOARD_DIR: '/opt/bsp' }).boardDir).toBe('/opt/bsp')
+  test('BSP_OUT from the environment wins, as it does in the shell', () => {
+    expect(parseArgs([], { BSP_OUT: '/opt/bsp-out' }).bspOut).toBe('/opt/bsp-out')
   })
 
   test('both directories can be given explicitly, and the flag beats the environment', () => {
-    expect(parseArgs(['--out-dir', '/o', '--board-dir', '/b'], { BOARD_DIR: '/opt/bsp' }))
-      .toEqual({ outDir: '/o', boardDir: '/b' })
+    expect(parseArgs(['--out-dir', '/o', '--bsp-out', '/b'], { BSP_OUT: '/opt/bsp-out' }))
+      .toEqual({ outDir: '/o', bspOut: '/b' })
   })
 
   test('an unknown argument is refused rather than ignored', () => {
@@ -58,12 +58,12 @@ describe('the two families of missing input', () => {
   test('a missing rootfs input names the producer to RUN', async () => {
     const e = emptyOut()
     try {
-      await expect(main(['--out-dir', join(e.dir, 'out'), '--board-dir', join(e.dir, 'board')]))
+      await expect(main(['--out-dir', join(e.dir, 'out'), '--bsp-out', join(e.dir, 'board')]))
         .rejects.toThrow(/rootfs-verity\.img not found; run 'bash rootfs\/build\.sh' first/)
     } finally { e.cleanup() }
   })
 
-  test('a missing BSP input names BOARD_DIR and says what it currently is', async () => {
+  test('a missing BSP input names BSP_OUT and says what it currently is', async () => {
     // The rootfs side has to be satisfied first, or the other message wins --
     // which is itself the order the shell checks in.
     const e = emptyOut()
@@ -72,8 +72,8 @@ describe('the two families of missing input', () => {
       for (const f of ['rootfs-verity.img', 'rootfs-verity.env', 'boot-cmdline-a.txt', 'boot-cmdline-b.txt']) {
         writeFileSync(join(out, f), '')
       }
-      await expect(main(['--out-dir', out, '--board-dir', '/opt/nowhere']))
-        .rejects.toThrow(/Image not found; build the BSP or set BOARD_DIR \(currently: \/opt\/nowhere\)/)
+      await expect(main(['--out-dir', out, '--bsp-out', '/opt/nowhere']))
+        .rejects.toThrow(/Image not found; build the BSP or set BSP_OUT \(currently: \/opt\/nowhere\)/)
     } finally { e.cleanup() }
   })
 
@@ -85,10 +85,10 @@ describe('the two families of missing input', () => {
       for (const f of ['rootfs-verity.img', 'rootfs-verity.env', 'boot-cmdline-a.txt', 'boot-cmdline-b.txt']) {
         writeFileSync(join(out, f), '')
       }
-      mkdirSync(join(board, 'out', 'kernel'), { recursive: true })
-      writeFileSync(join(board, 'out', 'kernel', 'Image'), '')
-      writeFileSync(join(board, 'out', 'kernel', 'rk3576-src.dtb'), '')
-      await expect(main(['--out-dir', out, '--board-dir', board]))
+      mkdirSync(join(board, 'kernel'), { recursive: true })
+      writeFileSync(join(board, 'kernel', 'Image'), '')
+      writeFileSync(join(board, 'kernel', 'rk3576-src.dtb'), '')
+      await expect(main(['--out-dir', out, '--bsp-out', board]))
         .rejects.toThrow(/build it with 'make -C boards\/cx3576\/bsp uboot-mos'/)
     } finally { e.cleanup() }
   })

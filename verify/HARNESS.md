@@ -193,10 +193,10 @@ On a host with nothing but docker:
     make os-verify-cx3576        RESULT: FAIL (387/395 checks, 3 skipped)   rc=1
 
 cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
-not carry: `boards/cx3576/bsp/out/` is not populated by a clone, so eight conclusions
-read `… compare source not found: …/boards/cx3576/bsp/out/…` and `u-boot is 0 bytes`. The
+not carry: `_out/boards/cx3576/` is not populated by a clone, so eight conclusions
+read `… compare source not found: …/_out/boards/cx3576/…` and `u-boot is 0 bytes`. The
 verifier **expresses that absence rather than populating the tree**: a
-populated `boards/<b>/bsp/out/` would turn those eight FAILs into passes, which changes the
+populated `_out/boards/<b>/` would turn those eight FAILs into passes, which changes the
 measurement rather than making it. Both directions have fixtures, so the
 byte-compare's passing side is driven even though no shipped tree takes it.
 

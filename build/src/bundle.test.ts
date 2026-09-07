@@ -666,8 +666,8 @@ describe('the bundle toolbox refuses a route that cannot carry the shipped rauc'
 describe('the mount set is derived from the inputs, and nests nothing', () => {
   const inputs = {
     board: 'cx3576',
-    kernelImage: '/elsewhere/bsp/out/kernel/Image',
-    dtb: '/elsewhere/bsp/out/kernel/rk3576-src.dtb',
+    kernelImage: '/elsewhere/bsp-out/kernel/Image',
+    dtb: '/elsewhere/bsp-out/kernel/rk3576-src.dtb',
     rootfsVerityImg: join(REPO_ROOT, '_out/cx3576/rootfs-verity.img'),
     rootfsVerityEnv: join(REPO_ROOT, '_out/cx3576/rootfs-verity.env'),
     rootfsReport: join(REPO_ROOT, '_out/cx3576/rootfs-report.txt'),
@@ -680,10 +680,10 @@ describe('the mount set is derived from the inputs, and nests nothing', () => {
   }
 
   test('a BSP and a key directory outside the tree are both mounted', () => {
-    // The shell bind-mounts BOARD_DIR and each of the three key files; real
+    // The shell bind-mounts BSP_OUT and each of the three key files; real
     // signing material lives outside the repository and must keep working.
     const mounts = bundleMountsFor(inputs, join(REPO_ROOT, 'build/.work/bundle-x'))
-    expect(mounts).toContain('/elsewhere/bsp/out/kernel')
+    expect(mounts).toContain('/elsewhere/bsp-out/kernel')
     expect(mounts).toContain('/secrets')
     expect(mounts).toContain(REPO_ROOT)
   })

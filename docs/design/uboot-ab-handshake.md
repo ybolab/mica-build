@@ -171,7 +171,7 @@ SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
 
 **No collision with the A/B layout**: the actual artifact
-`boards/cx3576/bsp/out/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
+`_out/boards/cx3576/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
 so written at sector 64 it occupies 0.031 MiB … 8.989 MiB, leaving 7.01 MiB of
 headroom before `uenv-a` at 16 MiB. The custom U-Boot must
 keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
@@ -1132,7 +1132,7 @@ Ordered by how badly each could sink the approach.
 > **Status update — items 1-3 are RESOLVED.** The user landed a second U-Boot
 > variant as commit `8b24f9d` ("board(cx3576): add uboot-mos A/B variant
 > alongside the debug build"). `make -C boards/cx3576/bsp uboot-mos` builds into
-> `boards/cx3576/bsp/out/uboot-mos/` and implements this contract: the redundant
+> `_out/boards/cx3576/uboot-mos/` and implements this contract: the redundant
 > environment pair at `0x1000000` / `0x1100000`, `setexpr` / `source` /
 > `importenv` / `fs_generic` / `fat` / `booti` / `part`, `LEGACY_IMAGE_FORMAT`,
 > `HUSH_PARSER`, `bootmeth order` pinned to `script`, and the rockusb rescue

@@ -105,16 +105,21 @@ async function withHealthyRoot(body: (fx: RootFixture) => Promise<void>): Promis
 }
 
 describe('the register entries', () => {
-  test('both checks are scoped to x64 and to no other board', () => {
-    // Both boards assert the floor at BUILD time -- the fragment's =y lines are
-    // grepped against the built .config and the build fails otherwise. What
-    // scopes these to x64 is that only x64's kernel package puts its config IN
-    // THE ROOT; cx3576's stays on the boot partition, so there is nothing here
-    // to read.
+  test('the config check runs on every board and the modprobe check only on x64', () => {
+    // Every board asserts the floor at BUILD time -- the fragment's =y lines are
+    // grepped against the built .config and the build fails otherwise. That
+    // proves nothing about an IMAGE, because the BSP kernel output is an input to
+    // assembly and a stale one skips the build entirely; reading the shipped
+    // /boot/config-* is the half that sees it, and since RFCT-343 every board
+    // ships one. An UNDEFINED `boards` is what "every board" spells, so this
+    // asserts the absence rather than a list that would have to be edited for a
+    // fourth board.
     expect(KERNEL_CHECKS.map(c => c.id).sort()).toEqual([CONFIG_ID, MODPROBE_ID].sort())
-    for (const check of KERNEL_CHECKS) {
-      expect(check.boards).toEqual(['x64'])
-    }
+    expect(KERNEL_CHECKS.find(c => c.id === CONFIG_ID)?.boards).toBeUndefined()
+    // The modprobe check keeps its scope, for the reason checks-kernel.ts gives:
+    // its dependency walk covers the whole of modules.dep, which is four entries
+    // on this board and a vendor tree's worth on cx3576.
+    expect(KERNEL_CHECKS.find(c => c.id === MODPROBE_ID)?.boards).toEqual(['x64'])
   })
 })
 

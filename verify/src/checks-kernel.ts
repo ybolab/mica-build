@@ -4,14 +4,29 @@
 // its cgroup device filter through, and the firewall back-end including its
 // bridge half.
 //
-// x64 ONLY, and the scope survives PLAN-074 although its REASON changed. Both
-// boards build their kernel in-tree now, so `boards/common/mos-required.fragment`
-// is merged before `olddefconfig` and every `=y` line asserted against the final
-// `.config` on both. What still differs is what reaches the ROOT: x64's kernel
-// is packaged as `mos-kernel-x64` and installs `/boot/vmlinuz-*` with the
-// `/boot/config-*` it was built from, while cx3576's stays on the boot partition
-// and its config never enters the image. These two checks read that config, so
-// they can only run where there is one.
+// THE CONFIG CHECK IS UNCONDITIONAL SINCE RFCT-343, and the scoping it lost is
+// worth recording because the hole it left was real. Every shipped board builds
+// its kernel in-tree, so `boards/common/mos-required.fragment` is merged before
+// `olddefconfig` and every `=y` line asserted against the final `.config` on all
+// of them -- but that runs at KERNEL-BUILD time, and `_out/boards/<board>/kernel/` is an
+// INPUT to the image, not something assembling one rebuilds. x64 and virt-arm64
+// packaged the resolved config into `/boot/config-*`, so this check read the
+// floor back off the artefact for them; cx3576 exported none, so its floor was
+// enforced only by a build that a stale BSP output skips entirely. Measured:
+// that board's `Image` sat at its 2026-08-31 build for a week while the
+// fragment gained dm-crypt, the eBPF/firewall/bridge floor and
+// NF_CONNTRACK_MARK/NF_NAT_MASQUERADE, every image in that window shipped a
+// kernel predating them, and nothing went red. cx3576 exports and ships the
+// config now, so all three do and there is no list to keep.
+//
+// THE MODPROBE CHECK BELOW IS STILL x64 ONLY, deliberately and not by
+// oversight. It walks the WHOLE of `modules.dep`, and what makes that walk
+// affordable on x64 is that this kernel ships four loadable modules. cx3576 runs
+// a vendor tree with a couple of hundred, and it KEEPS the dangling
+// `build`/`source` symlinks that its board package documents at length -- so
+// extending the walk there is a judgement about that board's module tree, with
+// its own measurement to do, rather than a `boards:` entry. RFCT-343 scoped it
+// out rather than half-doing it.
 //
 // `=y` AND `builtin`, where this file once accepted `=y` or `=m` and "resolves".
 // That relaxation was a board fact and the board fact is gone. x64 ran Debian's
@@ -418,10 +433,10 @@ const MODPROBE_ID = 'kernel-floor-resolves-builtin'
 export const KERNEL_CHECKS: readonly CheckCase[] = [
   {
     // The config file the running kernel was built from, as the image carries
-    // it. Debian installs it beside the kernel it describes, which is what
-    // makes this readable at all -- the source config is not in this tree.
+    // it. Every board's kernel package installs it beside the kernel it
+    // describes, which is what makes this readable at all -- the resolved
+    // config is an output of the BSP build and is in this tree nowhere.
     id: CONFIG_ID,
-    boards: ['x64'],
     shell: {
       pass: 'the shipped kernel config builds in',
       fail: 'the shipped kernel config does not build in',

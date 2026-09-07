@@ -19,14 +19,14 @@ import { assembleCx3576, BOARD, ROOTFS_PRODUCER, ubootMissingError } from './mki
 import { slotPinFromEnv } from './layout-cx3576.ts'
 import { REPO_ROOT } from './paths.ts'
 
-const USAGE = `usage: bash build/run.sh --mkimage-cx3576 [--out-dir DIR] [--board-dir DIR]
+const USAGE = `usage: bash build/run.sh --mkimage-cx3576 [--out-dir DIR] [--bsp-out DIR]
 
 Assembles the flashable cx3576 A/B GPT disk image. Inputs come from
-_out/${BOARD}/ and boards/${BOARD}/bsp/out/.
+_out/${BOARD}/ and _out/boards/${BOARD}/.
 
   --out-dir DIR    where the rootfs-side inputs are and the image is written
                    (default: _out/${BOARD})
-  --board-dir DIR  the BSP tree (default: boards/${BOARD}/bsp, or BOARD_DIR)
+  --bsp-out DIR    the BSP build products (default: _out/boards/${BOARD}, or BSP_OUT)
 
 environment:
   MOS_ROOTFS_SLOT_MIB  supplied AT ALL selects the frozen-geometry mode; its
@@ -36,19 +36,19 @@ environment:
 
 export interface CliOptions {
   readonly outDir: string
-  readonly boardDir: string
+  readonly bspOut: string
 }
 
 export function parseArgs(argv: readonly string[], env: Record<string, string | undefined>): CliOptions {
   let outDir = join(REPO_ROOT, '_out', BOARD)
-  let boardDir = env.BOARD_DIR ?? join(REPO_ROOT, 'boards', BOARD, 'bsp')
+  let bspOut = env.BSP_OUT ?? join(REPO_ROOT, '_out', 'boards', BOARD)
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
     const next = argv[i + 1]
-    if (a === '--out-dir' || a === '--board-dir') {
+    if (a === '--out-dir' || a === '--bsp-out') {
       if (next === undefined) throw new Error(`${a} needs a directory\n\n${USAGE}`)
       if (a === '--out-dir') outDir = next
-      else boardDir = next
+      else bspOut = next
       i += 1
       continue
     }
@@ -58,7 +58,7 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
     }
     throw new Error(`unknown argument ${JSON.stringify(a)}\n\n${USAGE}`)
   }
-  return { outDir, boardDir }
+  return { outDir, bspOut }
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -66,20 +66,20 @@ export async function main(argv: readonly string[]): Promise<number> {
   const geometry = loadGeometry(BOARD)
 
   const outDir = options.outDir
-  const boardDir = options.boardDir
+  const bspOut = options.bspOut
   const rootfsVerityImg = join(outDir, 'rootfs-verity.img')
   const rootfsVerityEnv = join(outDir, 'rootfs-verity.env')
   const bootCmdlineA = join(outDir, 'boot-cmdline-a.txt')
   const bootCmdlineB = join(outDir, 'boot-cmdline-b.txt')
-  const kernelImage = join(boardDir, 'out', 'kernel', 'Image')
-  const dtb = join(boardDir, 'out', 'kernel', 'rk3576-src.dtb')
+  const kernelImage = join(bspOut, 'kernel', 'Image')
+  const dtb = join(bspOut, 'kernel', 'rk3576-src.dtb')
   const ubootBin = geometry.require('UBOOT_BIN_NAME')
-  const uboot = join(boardDir, 'out', geometry.require('UBOOT_VARIANT_DIR'), ubootBin)
-  const ubootDebug = join(boardDir, 'out', geometry.require('UBOOT_DEBUG_VARIANT_DIR'), ubootBin)
+  const uboot = join(bspOut, geometry.require('UBOOT_VARIANT_DIR'), ubootBin)
+  const ubootDebug = join(bspOut, geometry.require('UBOOT_DEBUG_VARIANT_DIR'), ubootBin)
 
   // The two families of missing input get DIFFERENT sentences, as they do in the
   // shell: one is produced by a script you can run, the other by a BSP build or
-  // a BOARD_DIR that is pointed somewhere else.
+  // a BSP_OUT that is pointed somewhere else.
   for (const input of [rootfsVerityImg, rootfsVerityEnv, bootCmdlineA, bootCmdlineB]) {
     if (!existsSync(input)) {
       throw new Error(`${input} not found; run 'bash ${ROOTFS_PRODUCER}' first`)
@@ -87,11 +87,11 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   for (const input of [kernelImage, dtb]) {
     if (!existsSync(input)) {
-      throw new Error(`${input} not found; build the BSP or set BOARD_DIR (currently: ${boardDir})`)
+      throw new Error(`${input} not found; build the BSP or set BSP_OUT (currently: ${bspOut})`)
     }
   }
   if (!existsSync(uboot)) {
-    console.error(`note: BOARD_DIR is currently ${boardDir}`)
+    console.error(`note: BSP_OUT is currently ${bspOut}`)
     throw ubootMissingError(uboot, geometry.require('UBOOT_DEBUG_VARIANT_DIR'))
   }
 
