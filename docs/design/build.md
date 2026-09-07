@@ -174,10 +174,14 @@ registered in `tests/host-toolchain-exemptions` with its reason, and the check
 **fails when a rule there matches nothing** — so a renamed file cannot leave a
 waiver behind, and a path that stops violating the policy cannot keep one.
 
-**Nothing is exempt. The register is empty**, and `make os-host-toolchain-lint`
-reports `0 exempted invocation(s) under 0 rule(s)` — a number worth reading,
-because the rule above means an empty register is a state the lint agrees with
-rather than a file that stopped being maintained.
+**No build is exempt.** Every row this section was written to explain is gone;
+`make os-host-toolchain-lint` reports `2 exempted invocation(s) under 1 rule(s)`,
+and that one rule is not a build at all. It is
+`docs/bsp/cx3576-bench-collect.sh`, which is copied ONTO A DEVICE and run there
+over the serial console — §5.6's "not builds" category, needing a row for the
+first time because the lint scans every tracked `.sh` and has no marker for
+"runs on the device". The register itself says which of its two hits is a real
+device-side `rauc status` and which is prose inside a quoted argument.
 
 It held six rows when this section was written, and they are recorded here
 because a table of exemptions is only readable if what leaves it is visible:
@@ -216,8 +220,8 @@ a producer — `` $`mksquashfs …` `` with bun's shell tag, or
 not "no `` $` ``": the tag is used 21 times here and every one is legitimate, so
 the rule asks only what the **first word** is, which leaves a producer handed to
 `docker run` as an argument — the entire toolbox — green. The scan reports what
-it examined (35 launch sites, 19 naming a command and 16 resolving through a
-variable at runtime) rather than only a colour, and a `.ts` file whose scan does
+it examined (35 launch sites over 226 files, 19 naming a command and 16
+resolving through a variable at runtime) rather than only a colour, and a `.ts` file whose scan does
 not end back in code state is a finding, not a clean file.
 
 It cannot see a binary invoked through a variable — in either language — a

@@ -69,7 +69,7 @@ this task can say.
 
 | Check | Result |
 | --- | --- |
-| `bash tests/host-toolchain-lint.sh` | **green**. `342/342 files clean, 0 finding(s), 9890 shell command lines examined, 4092 elided, 35 TypeScript launch sites examined in 224 file(s) (19 naming a command, 16 through a variable), 19 file + 20 block container declarations, 0 exempted invocation(s) under 0 rule(s)` — from 15 exempted under 5 rules |
+| `bash tests/host-toolchain-lint.sh` | **green**. `347/347 files clean, 0 finding(s), 10983 shell command lines examined, 4167 elided, 35 TypeScript launch sites examined in 226 file(s) (19 naming a command, 16 through a variable), 19 file + 20 block container declarations, 2 exempted invocation(s) under 1 rule(s)` — from 15 exempted under 5 rules; the 2 that remain arrived with the merge and are not a build (see below) |
 | `bash tests/host-toolchain-lint-test.sh` | **green**, `RESULT: PASS (23/23 cases)`, up from 15 |
 | a fifth seam planted in `build/src/toolbox.ts` | **red at both call sites, by name**, and the RESULT line moved to `37 TypeScript launch sites … 21 naming a command` |
 | the scanner under **busybox awk** in `IMAGE_ALPINE_3_21` | output identical to the host awk, which is what `tests/bare-host-gate/ladder.sh` needs |
@@ -111,6 +111,34 @@ own filename**, staged and moved atomically. The compose then reported
 own digest is indistinguishable from one the step fetched, which is what makes
 this sound rather than a shortcut around the pin; it does mean the container
 fetch path went unexercised by this run.
+
+### The merge arrived red, and the two rows in the register are why
+
+`main` at `f6c63613` **fails its own `tests/host-toolchain-lint.sh`** — measured
+by running main's copy of the lint against a `git archive` of main, so this is
+not something the TypeScript surface introduced:
+
+```
+FAIL: docs/bsp/cx3576-bench-collect.sh:497: `rauc` runs on the host.
+FAIL: docs/bsp/cx3576-bench-collect.sh:1058: `rauc` runs on the host.
+RESULT: FAIL (120/121 files clean, 2 finding(s), ...)
+```
+
+Neither is a policy violation. That file is a **device-side** qualification
+collector — its own header says "IT NEEDS NOTHING FROM THE REPOSITORY" and lists
+`rauc` among what a shipped root carries. Line 497 is `rauc status
+--output-format=shell`, a read on the booted device; line 1058 is prose inside a
+double-quoted argument, `"install the GOOD bundle (rauc install <bundle>), …"`,
+where the `(` reads as a command separator to a scanner that does not track
+quoting — a false positive, recorded as one.
+
+Two register rows with that reasoning make this branch green. **Nothing in
+`docs/bsp/` was edited**, so this cannot conflict with whichever task owns that
+file. What was deliberately *not* done, because it is somebody's decision and
+not this task's: give the lint a `mos-build-side: device` marker. A
+`container` marker would be a false claim — the lint says at its own head that it
+cannot check a declaration — and inventing a third grammar for one file is the
+kind of rule nobody maintains.
 
 ### Inputs copied in rather than built
 

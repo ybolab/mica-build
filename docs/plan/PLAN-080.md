@@ -668,7 +668,7 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   — so a grep would have been half false positives, which is the outcome §11
   and `tests/shell-pipefail-lint.sh` both refuse. What is there instead is a
   60-line scanner tracking string, template, comment and regex state, and it
-  gets the number exactly right: **35 launch sites across 224 files, 19 naming a
+  gets the number exactly right: **35 launch sites across 226 files, 19 naming a
   command and 16 resolving through a variable at runtime.** Those 19 are `bash`,
   `git`, `cp`, `sh`, `tar`, `docker`, `setcap` and `getcap` — no producer, which
   is the finding.
@@ -760,7 +760,7 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   a green tick names the image that produced it.
   **THE MEASURABLE OUTCOME IS THE REGISTER, and it is now empty.**
   `tests/host-toolchain-exemptions` went from **15 exempted invocations under 5
-  rules to 0 under 0** — the four `hack/check.sh` rows (`cargo` and
+  rules to nil on the build side** — the four `hack/check.sh` rows (`cargo` and
   `host-toolchain-on-PATH` each) plus the workflow's own `cargo` row. Both
   scripts now carry a whole-file `# mos-build-side: container` declaration,
   which §5.5 said could not honestly be written while one of two callers was a
