@@ -213,11 +213,20 @@ const dir = process.env.MIRROR_DIR!;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
+  // 0 disables the idle close, so /stall below is a request that genuinely
+  // never ends rather than one the server hangs up on after ten seconds.
+  idleTimeout: 0,
   tls: { cert: Bun.file(`${dir}/cert.pem`), key: Bun.file(`${dir}/key.pem`) },
   fetch(request) {
-    if (new URL(request.url).pathname === "/debian/pool/libmirror.deb") {
+    const path = new URL(request.url).pathname;
+    if (path === "/debian/pool/libmirror.deb") {
       return new Response(Bun.file(process.env.MIRROR_DEB!));
     }
+    // A mirror that accepts the request and never answers it. The connection
+    // stays open and no byte of a response ever arrives, which is the shape
+    // fetch.ts's own deadline exists for and the shape run.sh's ceiling has to
+    // survive whether that deadline fires or not.
+    if (path.startsWith("/stall")) return new Promise(() => {});
     return new Response("not on this mirror", { status: 404 });
   },
 });
@@ -243,6 +252,28 @@ rm "$WORK/fixture-cache/debs/$mirror_hash.deb"
 export MOS_DEBIAN_MIRROR=https://127.0.0.1:$MIRROR_PORT/absent
 reject 'download failed for libmirror: https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/libmirror.deb' \
     "${FIXTURE_ENTRY[@]}" cache "${FIXTURE_ARGS[@]}" --package libmirror
+# A DOWNLOAD THAT NEVER ENDS IS ENDED FROM OUTSIDE. The mirror above accepts
+# this request and answers nothing, so the run would sit there; run.sh puts
+# every fetch under `timeout -k`, which is a different process and therefore the
+# only bound that survives an event loop that has stopped turning. RFCT-347
+# measured that case -- ten minutes at 100% CPU on one pin, with fetch.ts's
+# 180 s AbortController never firing -- and this is the ceiling it was owed.
+#
+# The elapsed time is the assertion, not decoration: the ceiling is what makes
+# this three seconds instead of the 543 s fetch.ts would spend on its own three
+# attempts, so an outer `timeout 60` is what goes red if the wrapper is ever
+# taken back off. MOS_DEBIAN_FETCH_DEADLINE exists for this line.
+export MOS_DEBIAN_MIRROR=https://127.0.0.1:$MIRROR_PORT/stall
+stall_start=$(date +%s)
+reject 'download exceeded the 3s ceiling and was killed: https://127.0.0.1:'"$MIRROR_PORT"'/stall/pool/libmirror.deb' \
+    env MOS_DEBIAN_FETCH_DEADLINE=3 timeout 60 "${FIXTURE_ENTRY[@]}" cache "${FIXTURE_ARGS[@]}" --package libmirror
+stall_elapsed=$(($(date +%s) - stall_start))
+[ "$stall_elapsed" -lt 30 ] || {
+    echo "FAIL: the stalled download took ${stall_elapsed}s to be refused; the 3s ceiling did not hold it" >&2
+    exit 1
+}
+test ! -e "$WORK/fixture-cache/debs/$mirror_hash.deb"
+PASS=$((PASS + 1))
 unset NODE_TLS_REJECT_UNAUTHORIZED
 kill "$MIRROR_PID" 2>/dev/null || true
 MIRROR_PID=

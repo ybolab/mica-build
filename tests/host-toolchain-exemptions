@@ -18,14 +18,14 @@
 # themselves container-side at the top of each file, which they could not
 # honestly do while one of their two callers was a bare host.
 #
-# WHAT IS LEFT IS NOT A BUILD, which is a different thing and is why the two
-# rows below read the way they do. PLAN-080 section 5.6 already named this
+# WHAT IS LEFT IS NOT A BUILD, which is a different thing and is why the row
+# below reads the way it does. PLAN-080 section 5.6 already named this
 # category in prose -- rkdeveloptool flashing a board over USB, the dbus policy
 # test, the QEMU suite's socat -- and this is the first time it has needed a row.
 # A `mos-build-side: container` marker would be the wrong instrument: it claims
 # the file runs in an IMAGE, and the lint says at its own head that it cannot
 # check a declaration, so a false one is worse than a registered reason.
-docs/bsp/cx3576-bench-collect.sh	rauc	NOT A BUILD, and not this repository's host. This script is copied ONTO A DEVICE and run there over the serial console -- its own header says "IT NEEDS NOTHING FROM THE REPOSITORY" and lists rauc among what a shipped root already carries. Line 497 is `rauc status --output-format=shell`, a READ of the booted slot by the qualification collector; it writes no artefact and PLAN-080 section 0.1's test puts it outside the boundary rather than inside it with a waiver. The row exists because the lint scans every tracked *.sh and has no marker for "runs on the device", and inventing one for a single file is a grammar nobody would maintain. Line 1058 is caught by the same rule for a different reason worth naming separately: it is PROSE inside a double-quoted argument to operator_step -- `"install the GOOD bundle (rauc install <bundle>), reboot, ..."` -- where the `(` reads as a command separator to a scanner that does not track quoting. That one is a false positive, and it is recorded as one here rather than silently absorbed.
+docs/bsp/cx3576-bench-collect.sh	rauc	NOT A BUILD, and not this repository's host. This script is copied ONTO A DEVICE and run there over the serial console -- its own header says "IT NEEDS NOTHING FROM THE REPOSITORY" and lists rauc among what a shipped root already carries. Line 497 is `rauc status --output-format=shell`, a READ of the booted slot by the qualification collector; it writes no artefact and PLAN-080 section 0.1's test puts it outside the boundary rather than inside it with a waiver. The row exists because the lint scans every tracked *.sh and has no marker for "runs on the device", and inventing one for a single file is a grammar nobody would maintain.
 #
 # Keep the file even when it empties again. The lint reads it when it is here
 # and treats its absence as empty, so deleting it would change nothing that day

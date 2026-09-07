@@ -17,6 +17,15 @@ const ABSENT = 44;
 // sat for EIGHT HOURS with an empty `.download.*` directory and not one byte
 // written -- the retry loop never ran, because the first attempt never
 // finished failing. One controller, aborted on a timer, covers both halves.
+//
+// AND IT IS STILL A TIMER, which is the half this file cannot close. It fires
+// on the event loop it is meant to interrupt, so it bounds everything the
+// NETWORK can do to a download and nothing that wedges the loop itself.
+// Measured by RFCT-347 on 2026-09-07: one pin sat for TEN MINUTES at 100% CPU
+// with frozen network I/O and this abort never fired. A `Promise.race` against
+// a second timer would have been exactly as dead, and adding one would only
+// look like a fix. The enforcing ceiling is therefore OUT OF PROCESS -- run.sh
+// runs this file under `timeout -k`, whose SIGKILL nothing here can defer.
 const DEADLINE_MS = 180_000;
 for (let attempt = 1; ; attempt++) {
   const controller = new AbortController();

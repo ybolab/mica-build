@@ -175,13 +175,15 @@ registered in `tests/host-toolchain-exemptions` with its reason, and the check
 waiver behind, and a path that stops violating the policy cannot keep one.
 
 **No build is exempt.** Every row this section was written to explain is gone;
-`make os-host-toolchain-lint` reports `2 exempted invocation(s) under 1 rule(s)`,
+`make os-host-toolchain-lint` reports `1 exempted invocation(s) under 1 rule(s)`,
 and that one rule is not a build at all. It is
 `docs/bsp/cx3576-bench-collect.sh`, which is copied ONTO A DEVICE and run there
 over the serial console — §5.6's "not builds" category, needing a row for the
 first time because the lint scans every tracked `.sh` and has no marker for
-"runs on the device". The register itself says which of its two hits is a real
-device-side `rauc status` and which is prose inside a quoted argument.
+"runs on the device". Its single hit is a real device-side `rauc status`. The
+row carried a second one until RFCT-349: prose inside a quoted argument, where
+a `(` read as a command separator. That was a false positive, and the scanner
+was fixed rather than the waiver widened.
 
 It held six rows when this section was written, and they are recorded here
 because a table of exemptions is only readable if what leaves it is visible:
@@ -224,14 +226,23 @@ it examined (35 launch sites over 226 files, 19 naming a command and 16
 resolving through a variable at runtime) rather than only a colour, and a `.ts` file whose scan does
 not end back in code state is a finding, not a clean file.
 
-It cannot see a binary invoked through a variable — in either language — a
+What a quoted string makes literal is not a command position, so quoted spans
+are blanked before the shell scan looks for a producer — a `(` inside an English
+sentence is not a separator — while a command substitution stays visible
+wherever it sits, `"$(cargo build)"` included. That is done a line at a time, so
+it cannot see a producer named inside a string that opens on one line and closes
+on another, nor one written into a quoted script argument -- `bash -c 'cd x &&
+cargo build'` is invisible for the same reason a heredoc body is, since nothing
+distinguishes it from `docker run … sh -c 'mkfs.ext4 …'`, which is the toolbox.
+Nor a binary invoked through a variable — in either language — a
 producer written into a heredoc body, or a declaration that is simply wrong. Its
 header says so at greater length, and `tests/host-toolchain-lint-test.sh` plants
 a host invocation, a `$HOME` PATH prepend, a stale exemption, a removed
-declaration, an unclosed block, a heredoc named in a comment, a producer behind
-bun's shell tag, a producer behind `Bun.spawnSync`, an unterminated template and
-a TypeScript surface with no launch site at all, and requires each to turn it
-red — and four legitimate shapes, which it requires to stay green.
+declaration, an unclosed block, a heredoc named in a comment, a command
+substitution inside a double-quoted string, a producer behind bun's shell tag, a
+producer behind `Bun.spawnSync`, an unterminated template and a TypeScript
+surface with no launch site at all, and requires each to turn it red — and five
+legitimate shapes, which it requires to stay green.
 
 **`make os-bare-host-gate`** (`tests/bare-host-gate/gate.sh`) answers the one
 question the lint cannot: whether the criterion at the top of this section still
