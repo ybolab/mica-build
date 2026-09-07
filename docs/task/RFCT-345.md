@@ -1,6 +1,6 @@
 # RFCT-345 Extract the inline scripts and patches out of the cx3576 BSP Dockerfiles
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P2
 - **owner**: bkd/zj256dt3
 - **createdAt**: 2026-09-07 20:30
@@ -161,6 +161,71 @@ uboot-mos  -> uboot-mos
 
 `uboot` still does not match the `uboot-mos` recipe; the trailing space is what
 separates them and it is still there.
+
+### The result: all eleven artefacts unchanged
+
+Three `--no-cache` builds on a private buildx builder (`ai-agent-zj256dt3`, so
+nothing shared a cache with a concurrent session), then the same three driven
+through `make -C boards/cx3576/bsp` to prove the recipes and the new
+`--build-context bsp-scripts=scripts` wiring reach the same bytes. Every output
+file's mtime is from this run; none is a leftover.
+
+```
+IDENTICAL kernel/config                  5f4395802419ebbc70e2d5a2f78ef3d3d93f1234b11c929c5b68f7ed20616bc3
+IDENTICAL kernel/Image                   72510d5fb154d36b39b6322957d20b7fadc0d113a02ba779780dccce22ce19c9
+IDENTICAL kernel/kernel.release          157ec590c0eeaa193c9f22b60379c343d9b60e12adf52db15932995c4001444e
+IDENTICAL kernel/modules.tar             4222947791e03311954f0a35ec2e5b96b1617ab06ba8f5e5ebceb97b93fa08f1
+IDENTICAL kernel/rk3576-src.dtb          9c9979092f1e7cb8524e8989e71862fe48fb03d1f0016f23e0c1bf1e0ea1fcac
+IDENTICAL uboot/u-boot-rockchip.bin      83c28e92329c8ebe4d7dbc5e99ce009fa962e66fce165660855f4017c0cf9aa5
+IDENTICAL uboot/u-boot-spl.bin           fe295d51f37c50f0336f6b6330c4f7f1a0b2754f34dc1296cd1c36a9c2b57f52
+IDENTICAL uboot/u-boot.itb               8f162ef50f5ac404509554c83d53e9ca196bf8f1b93d4a9ccca8e5ceafd08b32
+IDENTICAL uboot-mos/u-boot-rockchip.bin  989f4c0035428ab0cc2942d11c3a6a8149104e1881ed902d3dcbb7cad2d23065
+IDENTICAL uboot-mos/u-boot-spl.bin       fe295d51f37c50f0336f6b6330c4f7f1a0b2754f34dc1296cd1c36a9c2b57f52
+IDENTICAL uboot-mos/u-boot.itb           98f01757cfcb277ec9e30e5569c2153a34f71b78ac5b25031c43f97f36460005
+```
+
+`u-boot.itb` is the one worth pointing at: it embeds the compiled device tree, so
+the `adc-keys` node moving from a `printf >>` into `patches/0007` had to land at
+the same bytes in the same place, and it did -- on both variants.
+
+No baseline rebuild was needed to interpret this. A baseline was budgeted in case
+something differed, to separate "my refactor" from "this host"; a match needs no
+such separation.
+
+### The gates
+
+- `bash verify/run.sh --verify --board cx3576` -- **419/419**, 3 skipped
+  (`cx3576/uboot`: the ESP assertions and the image-dating one). The check this
+  refactor feeds is "the shipped kernel config builds in ... in
+  `/boot/config-6.1.115`", and it reads the `config` above.
+- `bash tests/deb-preflight-test.sh` -- **23/23**. HOST STATE: the ABSOLUTE
+  green form of F1, not the partial one. `build-env/deb/preflight.sh` reported
+  `66 of 80 examined inputs are present` and **0 missing** before the suite ran,
+  so `BASE_MISSING` was 0 and F1 demanded exit 0 rather than only "warnings did
+  not move the status". Getting there needed all three boards' BSP kernel outputs
+  in this worktree: cx3576's are this task's own builds, and x64's and
+  virt-arm64's were copied from the main checkout, which is what a fresh worktree
+  never has.
+- `bash tests/netavark-kernel-config-test.sh` -- 121/121.
+- `bash tests/shell-pipefail-lint.sh` -- 83/83; `bash tests/host-toolchain-lint.sh`
+  -- 111/111, with the five new scripts declaring `mos-build-side: container`.
+- `make docs-verify` from a `git archive HEAD` into an empty directory -- green
+  (189 + 469 + 725 + 237 + 97).
+- `docker buildx build --check` on both Dockerfiles -- the pre-existing
+  `InvalidDefaultArgInFrom` on the `FROM ${MOS_IMAGE_UBUNTU_2404}` line and
+  nothing else, on each.
+
+### Found, not fixed: `make -C boards/cx3576/bsp image` is broken
+
+Out of scope and reported rather than repaired. `Dockerfile.alpine` still
+`COPY`s `out/uboot/u-boot-rockchip.bin`, `out/kernel/Image`,
+`out/kernel/rk3576-src.dtb` and `out/rootfs/rootfs.img`, and
+`Dockerfile.alpine.dockerignore` allowlists the same four paths -- but RFCT-343
+moved those outputs to `_out/boards/cx3576/`, which is outside that target's
+build context. There is no `boards/cx3576/bsp/out/` in the tree, so the Alpine
+demo image target cannot have built since that move. PLAN-087 puts the Alpine
+demo Dockerfiles out of scope and the user named cx3576's kernel and U-Boot, so
+this is left alone.
 
 ### Where PLAN-087 section 4 was not followed, and why
 
