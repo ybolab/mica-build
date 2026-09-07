@@ -38,6 +38,7 @@ import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
 import { EXT4_CHECKS } from './checks-ext4.ts'
 import { HOME_CHECKS } from './checks-home.ts'
 import { FIREWALL_CHECKS } from './checks-firewall.ts'
+import { HWDB_CHECKS } from './checks-hwdb.ts'
 import { KERNEL_CHECKS } from './checks-kernel.ts'
 import { FRESHNESS_CHECKS } from './checks-freshness.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
@@ -153,6 +154,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...ROOT_CHECKS,
   ...BUSYBOX_CHECKS,
   ...FIREWALL_CHECKS,
+  ...HWDB_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
   ...MQTT_CHECKS,
