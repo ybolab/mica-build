@@ -274,6 +274,80 @@ printf 'not a script\n' >"${d}/README.md"
 track "${d}"
 expect "an empty surface is a failure, not a pass" "${d}" red 'would pass by finding nothing'
 
+# ---------------------------------------------------------------------------
+# 16 and 17. THE SECOND SURFACE: a producer launched from TypeScript, in both
+#     shapes the harness could use. Two cases and not one, because bun's shell
+#     tag and an argv-taking spawn are resolved by different code and a scanner
+#     that lost one of them would still pass the other.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+cat >"${d}/pack.ts" <<'EOF'
+import { $ } from 'bun'
+export async function pack(root: string, out: string) {
+  await $`mksquashfs ${root} ${out} -comp zstd`
+}
+EOF
+track "${d}"
+expect "a producer launched from a bun shell template is found" "${d}" red 'pack.ts:3: this launches `mksquashfs` on the host'
+
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+cat >"${d}/part.ts" <<'EOF'
+export function part(img: string) {
+  return Bun.spawnSync(['/usr/sbin/sgdisk', '--clear', img], { stdout: 'pipe' })
+}
+EOF
+track "${d}"
+expect "a producer launched through Bun.spawnSync is found, path and all" "${d}" red 'part.ts:2: this launches `sgdisk` on the host'
+
+# ---------------------------------------------------------------------------
+# 18. THE FALSE-POSITIVE CONTROL FOR THAT SURFACE, and it carries the weight
+#     here: `$` is used 21 times in this tree and every one is legitimate. Two
+#     shapes that must stay green -- a producer handed to `docker` as an
+#     ARGUMENT, which is what the whole toolbox is, and a regex anchor sitting
+#     immediately before a template's closing backtick, which a grep for `$`
+#     followed by a backtick reads as a shell call and which this tree has 22
+#     of. Without this case the cheapest way to pass 16 and 17 is a rule that
+#     flags the character.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+cat >"${d}/toolbox.ts" <<'EOF'
+import { $ } from 'bun'
+export const re = (name: string) => new RegExp(`^${name}=(.*)$`, 'gm')
+export async function pack(docker: string, root: string, out: string) {
+  await $`${docker} run --rm alpine mksquashfs ${root} ${out}`
+  Bun.spawn(['docker', 'exec', 'c', 'mkfs.ext4', '-F', '/w/disk.img'])
+}
+EOF
+track "${d}"
+expect "a producer passed to docker, and a regex anchor, are NOT findings" "${d}" green 'RESULT: PASS'
+
+# ---------------------------------------------------------------------------
+# 19. THE SCANNER'S CONTROL ON ITSELF. An unterminated template means the
+#     scanner's state machine and the file disagree, and everything after the
+#     opening quote was read as string content -- the same silent-elision shape
+#     case 13 fixed for heredocs. It must be a finding, not a clean file.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+printf '%s\n' 'export const oops = `an unterminated template' >"${d}/broken.ts"
+track "${d}"
+expect "a TypeScript file that does not scan back to code state is a finding" "${d}" red 'did not scan back to code state'
+
+# ---------------------------------------------------------------------------
+# 20. AND THE VACUITY CONTROL. TypeScript files scanned, no launch site found:
+#     either the tree genuinely launches nothing, or the scanner stopped
+#     recognising the language. The two look identical from the outside, so the
+#     scan refuses rather than reporting the second as the first.
+# ---------------------------------------------------------------------------
+d="$(new_fixture)"
+printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
+printf '%s\n' 'export const answer = 42' >"${d}/quiet.ts"
+track "${d}"
+expect "TypeScript scanned with no launch site at all is refused" "${d}" red 'not one process launch was found'
+
 echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/$((PASS_N + FAIL_N)) cases)"
 [ "${PASS_N}" -gt 0 ] || { echo "error: no case ran; this test would report the same green having asserted nothing" >&2; exit 1; }
 [ "${FAIL_N}" -eq 0 ]

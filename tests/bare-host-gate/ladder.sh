@@ -30,10 +30,14 @@
 #   - Every host tool reachable only from the assembly path. rootfs/build.sh,
 #     build/src/toolbox.ts's toolsets, pkgs/*/build.sh, build-env/deb/*, the
 #     board bsp Makefiles: nothing here EXECUTES any of them.
-#   - `bash build/run.sh --build-rootfs`, which section 4.4 measured as still
-#     refusing on the container route for want of one COPY of the buildx plugin
-#     into verify/Dockerfile. That is backlog B5. This gate does not lift it and
-#     does not test it; the refusal stays the thing that names the gap.
+#   - `bash build/run.sh --build-rootfs`. Section 4.4 measured it refusing on
+#     the container route for want of one COPY of the buildx plugin into
+#     verify/Dockerfile; RFCT-347 landed that COPY, so the refusal is gone and
+#     the mode composes there -- an x64 root, then an image, then
+#     `verify --verify` at 315/315, all with bun out of the pinned image. What
+#     stops THIS gate climbing to it is unchanged and is the pool, not the
+#     plugin: a `--depth 1` clone inside the CLI image has no _out/debs, and
+#     building one is the tens of minutes the ceiling exists to avoid.
 #   - `make os-build-test`, the first rung above this ceiling and the one worth
 #     adding next: it opens the assemblers' toolboxes for real, which is the
 #     closest thing to rung 4 that needs no pool. Section 8 measured two of its
@@ -304,4 +308,5 @@ echo
 echo "rungs 1-3: ${STEP} steps, all green, on a host with docker, git, bash, make and busybox."
 echo "NOT climbed, and stated so the record is not read as more than it is: rung 4 --"
 echo "  \`bash build/run.sh --mkimage-uefi --board x64\` and \`bash verify/run.sh --verify --board x64\` --"
-echo "  needs the amd64 package pool; \`--build-rootfs\` still refuses for PLAN-080 B5's one COPY."
+echo "  needs the amd64 package pool, and that is now the ONLY thing in the way: PLAN-080 B5's"
+echo "  COPY landed, so \`--build-rootfs\` no longer refuses the pinned-container route."

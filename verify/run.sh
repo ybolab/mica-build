@@ -320,16 +320,25 @@ else
         # which image it ran in beyond the announce line below -- so a stale
         # parent would be invisible. Bump either pin and there is nothing stale
         # to find, because the tag names something that was never built.
-        STAMP="$(printf '%s\n%s\n' "${BUN_IMAGE}" "${CLI_IMAGE}" | sha256sum | cut -c1-16)"
+        #
+        # AND THE DOCKERFILE, for the reason build/run.sh states at greater
+        # length: the image has three inputs and the tag used to name two, so an
+        # edit to the file itself -- PLAN-080 backlog B5 adding the buildx plugin
+        # -- left every host that had already built the image reusing one without
+        # it. The two scripts must derive the SAME stamp or they build two images
+        # for one set of inputs, so this arithmetic is a copy on purpose and both
+        # copies moved together.
+        STAMP="$(printf '%s\n%s\n%s\n' "${BUN_IMAGE}" "${CLI_IMAGE}" \
+            "$(sha256sum "${HERE}/Dockerfile" | cut -d' ' -f1)" | sha256sum | cut -c1-16)"
         VERIFY_IMAGE="localhost/mos-verify-bun:${STAMP}"
         if ! docker image inspect "${VERIFY_IMAGE}" >/dev/null 2>&1; then
-            echo "verify: building ${VERIFY_IMAGE} (pinned bun + pinned docker client)"
+            echo "verify: building ${VERIFY_IMAGE} (pinned bun + pinned docker client and buildx)"
             docker build -q \
                 --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
                 --build-arg "MOS_DOCKER_CLI_IMAGE=${CLI_IMAGE}" \
                 -t "${VERIFY_IMAGE}" -f "${HERE}/Dockerfile" "${HERE}" >/dev/null || {
                 echo "error: could not build ${VERIFY_IMAGE} from verify/Dockerfile." >&2
-                echo "       It is two pinned FROMs and one COPY; nothing is installed and nothing is" >&2
+                echo "       It is two pinned FROMs and two COPYs; nothing is installed and nothing is" >&2
                 echo "       fetched beyond those two images. Re-run without -q to see the build." >&2
                 exit 1
             }

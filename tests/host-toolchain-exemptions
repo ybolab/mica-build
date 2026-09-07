@@ -8,8 +8,25 @@
 # file red rather than leaving a rule behind about something that is gone.
 #
 # Format: path<TAB>tool<TAB>reason. One row per (file, tool) pair, not per line.
-pkgs/mosd/hack/check.sh	cargo	The Rust gate. The container it needed now EXISTS -- RFCT-309 landed `make os-rust-gate` / tests/rust-gate.sh, which runs this script UNMODIFIED inside localhost/mos-build-rust-check -- so the path is no longer unimplementable. What keeps the row here is .github/workflows/check.yml, which still runs the same script directly on the runner with a rustup toolchain it installs; the script cannot be declared container-side while one of its two callers is a bare host. Comes off with PLAN-080 backlog B7.
-pkgs/rauc-sign/hack/check.sh	cargo	The same gate over the second cargo workspace. tests/rust-gate.sh covers it -- it takes both workspaces, which is more than RFCT-309's brief named -- and CI still runs it on the runner, so it stays for B7's reason and not for a missing image.
-.github/workflows/check.yml	cargo	The runner that runs the two gates above: it curls rustup and installs a toolchain on the host, which is a host toolchain whoever owns the host. Now that tests/rust-gate.sh exists these steps could become `make os-rust-gate` -- PLAN-080 backlog B7 -- but that makes the runner build the mos-build-* family first, and it is a CI change nothing here can run to prove. Estimated and left.
-pkgs/mosd/hack/check.sh	host-toolchain-on-PATH	Line 8 puts $HOME/.cargo/bin in front of PATH, and on a HOST that is the only reason the cargo above resolves: measured 2026-09-04, `command -v cargo` on this container's default PATH answers nothing, while /root/.cargo/bin holds rustup's cargo, rustc 1.98.0, cargo-clippy 0.1.98, cargo-nextest, cargo-deny, rustfmt, miri and audit. Inside localhost/mos-build-rust-check the prepend finds nothing and the image's own PATH answers, which is why tests/rust-gate.sh can run the script unmodified. Comes off with the cargo row above.
-pkgs/rauc-sign/hack/check.sh	host-toolchain-on-PATH	Line 13, the same prepend for the same reason over the second workspace. Comes off with its cargo row.
+#
+# EVERY BUILD-SIDE ROW IS GONE. It held six when PLAN-080 section 5.5 opened it.
+# RFCT-318 took three off by moving gen-dev-keys.sh and the two judges into
+# pinned containers. PLAN-080 backlog B7 took the last three -- the two
+# hack/check.sh scripts and the workflow that ran them -- by making
+# .github/workflows/check.yml reach the Rust gate through tests/rust-gate.sh
+# instead of a rustup toolchain it installed. Those scripts now declare
+# themselves container-side at the top of each file, which they could not
+# honestly do while one of their two callers was a bare host.
+#
+# WHAT IS LEFT IS NOT A BUILD, which is a different thing and is why the two
+# rows below read the way they do. PLAN-080 section 5.6 already named this
+# category in prose -- rkdeveloptool flashing a board over USB, the dbus policy
+# test, the QEMU suite's socat -- and this is the first time it has needed a row.
+# A `mos-build-side: container` marker would be the wrong instrument: it claims
+# the file runs in an IMAGE, and the lint says at its own head that it cannot
+# check a declaration, so a false one is worse than a registered reason.
+docs/bsp/cx3576-bench-collect.sh	rauc	NOT A BUILD, and not this repository's host. This script is copied ONTO A DEVICE and run there over the serial console -- its own header says "IT NEEDS NOTHING FROM THE REPOSITORY" and lists rauc among what a shipped root already carries. Line 497 is `rauc status --output-format=shell`, a READ of the booted slot by the qualification collector; it writes no artefact and PLAN-080 section 0.1's test puts it outside the boundary rather than inside it with a waiver. The row exists because the lint scans every tracked *.sh and has no marker for "runs on the device", and inventing one for a single file is a grammar nobody would maintain. Line 1058 is caught by the same rule for a different reason worth naming separately: it is PROSE inside a double-quoted argument to operator_step -- `"install the GOOD bundle (rauc install <bundle>), reboot, ..."` -- where the `(` reads as a command separator to a scanner that does not track quoting. That one is a false positive, and it is recorded as one here rather than silently absorbed.
+#
+# Keep the file even when it empties again. The lint reads it when it is here
+# and treats its absence as empty, so deleting it would change nothing that day
+# and would remove the format documented above on the day somebody needs a row.

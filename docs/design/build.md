@@ -72,16 +72,27 @@ clone with the daemon socket mounted:
 | `bash build/run.sh --mkimage-uefi --board x64` | image assembled, 1938 MiB |
 | `bash verify/run.sh --verify --board x64` | `RESULT: PASS (313/313 checks, 22 skipped)` |
 
-One thing a bare host still cannot do: compose the rootfs.
-`build/run.sh --build-rootfs` drives `docker buildx`, which is a CLI plugin
-`verify/Dockerfile` does not copy, and the refusal names it.
+**It can also compose the rootfs, since 2026-09-07.** That row used to read
+"the one thing a bare host cannot do": `build/run.sh --build-rootfs` drives
+`docker buildx`, a CLI plugin `verify/Dockerfile` did not copy, and the mode
+refused the container route outright rather than failing once per stage.
+`verify/Dockerfile` now copies the plugin from the same pinned client image the
+`docker` binary comes from, and the whole chain was run on that route
+(*measured 2026-09-07, `MOS_BUILD_CONTAINER=1` throughout*):
+
+| | |
+| --- | --- |
+| `MOS_BOARD=x64 rootfs/build.sh` | composed; `tag mode on builder default (docker driver)`, 2 stages, squashfs 114819072 B + verity → 116391936 B, smoke `PASS (12 pass, of 12)` |
+| `bash build/run.sh --mkimage-uefi --board x64` | `assembled 1938 MiB, 512 MiB per rootfs slot` |
+| `bash verify/run.sh --verify --board x64` | `RESULT: PASS (315/315 checks, 22 skipped)` |
 
 **That observation is now re-runnable: `make os-bare-host-gate`.** It clones
 `HEAD` into `IMAGE_DOCKER_CLI_28`, measures the surface, adds `bash` and `make`,
 and climbs the first four rows of the table above — the docs gates, the policy
-lint, `os-layout-lint` and `os-verify-test`. It stops there. The last two rows
-assemble an image, which needs the amd64 package pool, so those stay a dated
-observation; §0.4 says what that ceiling does and does not cover.
+lint, `os-layout-lint` and `os-verify-test`. It stops there. The rows below
+assemble an image, which needs the amd64 package pool — and since the buildx
+COPY landed, that pool is the *only* thing between the gate and them; §0.4 says
+what that ceiling does and does not cover.
 
 ### 0.1 The test, for a tool nobody listed
 
@@ -158,27 +169,27 @@ pinned container is what every push exercises.
 
 ### 0.3 What is exempt today, and why
 
-An exemption is allowed. An unexamined path is not. Each row below is
+An exemption is allowed. An unexamined path is not. Every exemption is
 registered in `tests/host-toolchain-exemptions` with its reason, and the check
 **fails when a rule there matches nothing** — so a renamed file cannot leave a
 waiver behind, and a path that stops violating the policy cannot keep one.
 
-| Site | Tool | Why it is still on the host |
-| --- | --- | --- |
-| `pkgs/mosd/hack/check.sh`, `pkgs/rauc-sign/hack/check.sh` | `cargo`, and the `$HOME` PATH prepend that makes it resolve | The Rust gate. Its container exists: `make os-rust-gate` runs both scripts **unmodified** inside `localhost/mos-build-rust-check`. What keeps them here is that CI still runs the same scripts on its runner, and a script cannot be declared container-side while one of its callers is a bare host. |
-| `.github/workflows/check.yml` | `cargo` | That runner. It installs a toolchain with `rustup`; the replacement is `make os-rust-gate`, at the cost of building the builder-image family on the runner first. |
+**No build is exempt.** Every row this section was written to explain is gone;
+`make os-host-toolchain-lint` reports `2 exempted invocation(s) under 1 rule(s)`,
+and that one rule is not a build at all. It is
+`docs/bsp/cx3576-bench-collect.sh`, which is copied ONTO A DEVICE and run there
+over the serial console — §5.6's "not builds" category, needing a row for the
+first time because the lint scans every tracked `.sh` and has no marker for
+"runs on the device". The register itself says which of its two hits is a real
+device-side `rauc status` and which is prose inside a quoted argument.
 
-**Three rows came off on 2026-09-05**, and they are recorded here because a
-table of exemptions is only readable if what leaves it is visible.
-`pkgs/rauc/gen-dev-keys.sh` — the producer that mints the RAUC CA, the bundle
-signer and the ed25519 package key — now mints in `localhost/mos-build-openssl`
-(`build-env/openssl/Dockerfile`), and its `jq` edit of
-`meta/updates/manifest.json` travelled with it. `rootfs/build.sh`'s
-`alg_of_material()` reads the material back through that same image.
-`tests/repart-loader-test.sh` runs all five of its `sgdisk` reads in the pinned
-alpine tool image unconditionally, where it previously used one only when the
-host had no `sgdisk`. What remains above is the Rust gate and its runner, which
-is backlog **B7**.
+It held six rows when this section was written, and they are recorded here
+because a table of exemptions is only readable if what leaves it is visible:
+
+| Rows | Closed by | How |
+| --- | --- | --- |
+| `pkgs/rauc/gen-dev-keys.sh` `openssl`, `rootfs/build.sh` `openssl`, `tests/repart-loader-test.sh` `sgdisk` | RFCT-318, 2026-09-05 | The producer that mints the RAUC CA, the bundle signer and the ed25519 package key mints in `localhost/mos-build-openssl` (`build-env/openssl/Dockerfile`), and its `jq` edit of `meta/updates/manifest.json` travelled with it. `alg_of_material()` reads the material back through that same image. The repart suite takes the pinned alpine tool image for all five `sgdisk` reads unconditionally, where it previously used it only when the host had no `sgdisk`. |
+| `pkgs/mosd/hack/check.sh` and `pkgs/rauc-sign/hack/check.sh`, `cargo` and the `$HOME` PATH prepend each; `.github/workflows/check.yml` `cargo` | backlog **B7**, 2026-09-07 | The two scripts were never the problem — `make os-rust-gate` has run both **unmodified** inside `localhost/mos-build-rust-check` since RFCT-309. What held all five rows open was the second caller: `.github/workflows/check.yml` curled `rustup` onto the runner and ran them there, and a script cannot be declared container-side while one of its callers is a bare host. The workflow now runs `make build-env` and `make os-rust-gate`, both scripts carry a whole-file `# mos-build-side: container` declaration, and the `--openapi` flag check that was the runner's other `cargo` moved into `pkgs/mosd/hack/check.sh`, where it runs in the image with the rest of the gate. |
 
 Flashing is not a build. `boards/cx3576/bsp/Makefile`'s `rkdeveloptool` targets
 write to a board over USB and need the host's bus; they are orchestration by
@@ -200,12 +211,27 @@ file or a block that runs inside an image says so at the site:
 # mos-build-side: host                        ...and here they stop
 ```
 
-It cannot see a binary invoked through a variable, a producer written into a
-heredoc body, or a declaration that is simply wrong. Its header says so at
-greater length, and `tests/host-toolchain-lint-test.sh` plants a host
-invocation, a `$HOME` PATH prepend, a stale exemption, a removed declaration, an
-unclosed block and a heredoc named in a comment, and requires each to turn it
-red — and three legitimate shapes, which it requires to stay green.
+**And a third shape, on a second surface: TypeScript.** `build/src` and
+`verify/src` are where a build harness written in this tree reaches for a tool,
+and the four toolbox seams being closed in code does not stop a fifth from being
+written. So every tracked `.ts` file is scanned for a process launch that *names*
+a producer — `` $`mksquashfs …` `` with bun's shell tag, or
+`Bun.spawn(['sgdisk', …])` — against the same table the shell scan uses. It is
+not "no `` $` ``": the tag is used 21 times here and every one is legitimate, so
+the rule asks only what the **first word** is, which leaves a producer handed to
+`docker run` as an argument — the entire toolbox — green. The scan reports what
+it examined (35 launch sites over 226 files, 19 naming a command and 16
+resolving through a variable at runtime) rather than only a colour, and a `.ts` file whose scan does
+not end back in code state is a finding, not a clean file.
+
+It cannot see a binary invoked through a variable — in either language — a
+producer written into a heredoc body, or a declaration that is simply wrong. Its
+header says so at greater length, and `tests/host-toolchain-lint-test.sh` plants
+a host invocation, a `$HOME` PATH prepend, a stale exemption, a removed
+declaration, an unclosed block, a heredoc named in a comment, a producer behind
+bun's shell tag, a producer behind `Bun.spawnSync`, an unterminated template and
+a TypeScript surface with no launch site at all, and requires each to turn it
+red — and four legitimate shapes, which it requires to stay green.
 
 **`make os-bare-host-gate`** (`tests/bare-host-gate/gate.sh`) answers the one
 question the lint cannot: whether the criterion at the top of this section still
@@ -223,15 +249,16 @@ The two checks divide the surface between them, and neither covers it alone:
 
 | | reads | executes | sees |
 | --- | --- | --- | --- |
-| `os-host-toolchain-lint` | every tracked script, including the assembly path | nothing | a producer's *name* in command position |
+| `os-host-toolchain-lint` | every tracked script and every tracked `.ts` file, including the assembly path | nothing | a producer's *name* in command position, or named by a TypeScript process launch |
 | `os-bare-host-gate` | nothing | rungs 1–3 on a real constrained host | anything a run of those rungs actually reaches for, whatever its name |
 
-The gate's ceiling is rung 3. It does **not** assemble an image (rung 4 needs
-the amd64 package pool), does not run `os-build-test`, and does not lift
-`--build-rootfs`'s `buildx` refusal. So a new host dependency reachable *only*
-from the assembly path is caught by the lint's static shape and not by the
-gate's execution — which is the reason the gate runs the lint from inside itself
-at rung 2.
+The gate's ceiling is rung 3. It does **not** assemble an image and does not run
+`os-build-test`. Rung 4 needs the amd64 package pool, and that is now the whole
+of what stops it: `--build-rootfs`'s `buildx` refusal is gone, so the ceiling is
+a cost decision rather than a missing capability. A new host dependency
+reachable *only* from the assembly path is therefore still caught by the lint's
+static shape and not by the gate's execution — which is the reason the gate runs
+the lint from inside itself at rung 2.
 
 ## 1. What a build produces
 
