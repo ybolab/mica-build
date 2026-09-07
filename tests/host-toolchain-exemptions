@@ -8,8 +8,17 @@
 # file red rather than leaving a rule behind about something that is gone.
 #
 # Format: path<TAB>tool<TAB>reason. One row per (file, tool) pair, not per line.
-pkgs/mosd/hack/check.sh	cargo	The Rust gate. The container it needed now EXISTS -- RFCT-309 landed `make os-rust-gate` / tests/rust-gate.sh, which runs this script UNMODIFIED inside localhost/mos-build-rust-check -- so the path is no longer unimplementable. What keeps the row here is .github/workflows/check.yml, which still runs the same script directly on the runner with a rustup toolchain it installs; the script cannot be declared container-side while one of its two callers is a bare host. Comes off with PLAN-080 backlog B7.
-pkgs/rauc-sign/hack/check.sh	cargo	The same gate over the second cargo workspace. tests/rust-gate.sh covers it -- it takes both workspaces, which is more than RFCT-309's brief named -- and CI still runs it on the runner, so it stays for B7's reason and not for a missing image.
-.github/workflows/check.yml	cargo	The runner that runs the two gates above: it curls rustup and installs a toolchain on the host, which is a host toolchain whoever owns the host. Now that tests/rust-gate.sh exists these steps could become `make os-rust-gate` -- PLAN-080 backlog B7 -- but that makes the runner build the mos-build-* family first, and it is a CI change nothing here can run to prove. Estimated and left.
-pkgs/mosd/hack/check.sh	host-toolchain-on-PATH	Line 8 puts $HOME/.cargo/bin in front of PATH, and on a HOST that is the only reason the cargo above resolves: measured 2026-09-04, `command -v cargo` on this container's default PATH answers nothing, while /root/.cargo/bin holds rustup's cargo, rustc 1.98.0, cargo-clippy 0.1.98, cargo-nextest, cargo-deny, rustfmt, miri and audit. Inside localhost/mos-build-rust-check the prepend finds nothing and the image's own PATH answers, which is why tests/rust-gate.sh can run the script unmodified. Comes off with the cargo row above.
-pkgs/rauc-sign/hack/check.sh	host-toolchain-on-PATH	Line 13, the same prepend for the same reason over the second workspace. Comes off with its cargo row.
+#
+# THE REGISTER IS EMPTY, and that is a state worth recording rather than a file
+# nobody got round to deleting. It held six rows when PLAN-080 section 5.5
+# opened it. RFCT-318 took three off by moving gen-dev-keys.sh and the two
+# judges into pinned containers. PLAN-080 backlog B7 took the last three --
+# the two hack/check.sh scripts and the workflow that ran them -- by making
+# .github/workflows/check.yml reach the Rust gate through tests/rust-gate.sh
+# instead of a rustup toolchain it installed. Those scripts now declare
+# themselves container-side at the top of each file, which they could not
+# honestly do while one of their two callers was a bare host.
+#
+# Keep the file. The lint reads it when it is here and treats its absence as
+# empty, so deleting it would change nothing today and would remove the format
+# documented above on the day somebody needs a row.

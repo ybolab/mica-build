@@ -271,9 +271,11 @@ function refuseUnreadable(builder: string | undefined, detail: string): string {
     '       The driver decides how the chain is linked -- by tag in the image store on the',
     '       `docker` driver, by OCI layout on any other -- so this is decided before the first',
     '       stage rather than discovered mid-build.',
-    '       If this is the pinned-bun container route: that image is given the docker CLI and the',
-    '       daemon socket, but `docker buildx` is a CLI PLUGIN and the plugin directory is not',
-    '       mounted, so buildx is absent there. Run --build-rootfs on a host with bun.',
+    '       If this is the pinned-bun container route: that image carries the docker CLI, the',
+    '       daemon socket and -- since PLAN-080 backlog B5 -- the buildx plugin copied out of the',
+    '       same pinned client image, so an absent buildx is no longer the expected answer here.',
+    '       run.sh asserts `docker buildx version` in that image before this code runs, so if it',
+    '       is missing, the image predates that COPY: remove localhost/mos-verify-bun:* and re-run.',
   ].join('\n')
 }
 

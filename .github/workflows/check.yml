@@ -30,64 +30,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # cargo fmt --check, clippy -D warnings, nextest, and cargo-deny -- all four
-  # via the script, in the order it fixes.
+  # cargo fmt --check, clippy -D warnings, nextest, doctests, cargo-deny and the
+  # `--openapi` flag path -- all six via the two hack/check.sh scripts, in the
+  # order those scripts fix, over BOTH cargo workspaces.
+  #
+  # THIS JOB INSTALLS NO RUST. It used to curl rustup onto the runner, install a
+  # toolchain resolved from the workspace MSRVs, drop two prebuilt binaries into
+  # ~/.cargo/bin and then run both scripts there -- five steps whose only product
+  # was a toolchain, and the last host toolchain anywhere in this repository's CI.
+  # That was PLAN-080 backlog B7, and this is it closed: `make os-rust-gate`
+  # (tests/rust-gate.sh) runs the same two scripts, UNMODIFIED, inside
+  # localhost/mos-build-rust-check -- which is where a developer running
+  # `make os-rust-gate` has run them since RFCT-309. One route, not two.
+  #
+  # WHAT IT COSTS, stated rather than discovered: the runner now builds the
+  # mos-build-* family first, because rust-check is FROM mos-build-rust which is
+  # FROM mos-build-base. That is minutes of image build, in exchange for a gate
+  # whose rustc, clippy, rustfmt, nextest and cargo-deny are the values
+  # build-env/images.env records rather than whatever rustup resolved that
+  # morning -- and for the four rows in tests/host-toolchain-exemptions that
+  # this job was the sole reason for.
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # The runner label promises an OS, not a toolchain: `ring` in Cargo.lock
-      # compiles C, so a missing cc would fail deep inside a cargo build with a
-      # far worse message than this step's. No `|| true`: a runner that cannot
-      # install its own build deps must go red here, not green later.
-      #
-      # `dbus-daemon` is a TEST dependency, listed here for the same reason as
-      # the compiler. Three suites in the nextest run below -- pkgs/mosd/mosd/tests/bus.rs,
-      # pkgs/mosd/mosd/tests/scan.rs and pkgs/mosd/mosd/tests/tree.rs -- stand up a private
-      # `dbus-daemon --session`, and scan.rs and bus.rs panic by name rather
-      # than skip when it is absent. Provisioning it is what makes those suites
-      # actually run here; without it they would either go red (scan.rs, bus.rs)
-      # or report green while asserting nothing (tree.rs). The package name is
-      # `dbus-daemon`: on Ubuntu 24.04+ `dbus-bin` ships dbus-send and
-      # dbus-monitor but NOT /usr/bin/dbus-daemon, which was verified against
-      # the ubuntu 22.04, 24.04 and 26.04 images before this line was written.
-      - name: Install build dependencies
+      # bash, make and git only. NOT build-essential and NOT dbus-daemon: both
+      # were here because the compile and the bus tests ran on this runner, and
+      # both now live in the image. mos-build-rust-check installs dbus-daemon
+      # for exactly the three suites that stand up a private session bus, and
+      # its parent carries the C toolchain `ring` needs. A package installed
+      # here for a process that no longer runs here is a claim nothing tests.
+      - name: Install suite dependencies
         run: |
           set -euo pipefail
           SUDO=""
           [ "$(id -u)" -eq 0 ] || SUDO="sudo"
           $SUDO apt-get update
-          $SUDO apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git make bash dbus-daemon
+          $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git
 
-      # The install above is a claim; this is the proof. A runner whose image
-      # already carried a different dbus, or whose package silently shipped no
-      # daemon, would otherwise surface as a confusing failure inside a Rust
-      # test rather than here.
-      - name: Prove dbus-daemon can start a session bus
-        run: |
-          set -euo pipefail
-          command -v dbus-daemon
-          dbus-daemon --version | head -1
-          address=$(dbus-daemon --session --print-address=1 --fork | head -1)
-          [ -n "$address" ] || { echo "dbus-daemon printed no session address" >&2; exit 1; }
-          echo "session bus address: $address"
-
-      # Pinned to the workspace manifests rather than to a literal: the MSRV
-      # lives in each Cargo.toml, and a second copy here could disagree with it.
-      # Reading it back is also the only thing that makes `rust-version` an
-      # enforced claim rather than documentation.
+      # Read out of the manifests rather than written here: the MSRV lives in
+      # each Cargo.toml, and a second copy in this file could disagree with it.
       #
-      # There are TWO manifests since split rauc-sign into its own
-      # workspace, and this job installs ONE toolchain. So the two MSRVs are not
-      # merely read, they are required to AGREE: taking the higher of the two
-      # would silently let a crate claim an MSRV this job never actually proves,
-      # and taking the first would let the other drift unnoticed. If they should
-      # ever legitimately differ, that is the point at which this job needs two
-      # toolchains, and this check is what says so.
-      - name: Resolve the toolchain from the workspace MSRVs
-        id: msrv
+      # STILL TWO MANIFESTS AND STILL ONE COMPILER, so this survives the change
+      # above unaltered in substance -- only what PROVIDES the compiler moved.
+      # tests/rust-gate.sh takes both workspaces into one image and that image
+      # carries one rustc. Taking the higher of the two MSRVs would let a crate
+      # claim one this gate never proves, and taking the first would let the
+      # other drift unnoticed. If they should ever legitimately differ, that is
+      # the point at which the gate needs two images, and this is what says so.
+      - name: The two workspaces agree about the MSRV, because one image runs both
         run: |
           set -euo pipefail
           read_msrv() {
@@ -102,119 +94,43 @@ jobs:
             echo "error: the two workspaces disagree about the MSRV." >&2
             echo "       pkgs/mosd/Cargo.toml:         $mosd_msrv" >&2
             echo "       pkgs/rauc-sign/Cargo.toml:    $sign_msrv" >&2
-            echo "       This job installs one toolchain and runs both gates on it, so it" >&2
-            echo "       cannot honour two MSRVs. Reconcile them, or split this job." >&2
+            echo "       tests/rust-gate.sh runs both gates in ONE image, which carries one" >&2
+            echo "       rustc, so it cannot honour two MSRVs. Reconcile them, or split the gate." >&2
             exit 1
           }
-          echo "version=$mosd_msrv" >>"$GITHUB_OUTPUT"
           echo "workspace MSRV (both manifests agree): $mosd_msrv"
 
-      # `--component` is repeated once per component: rustup-init treats one
-      # flag with two space-separated words as a component literally named
-      # "rustfmt clippy", which it resolves to nothing without failing loudly.
-      - name: Install Rust ${{ steps.msrv.outputs.version }}
-        run: |
-          set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal \
-                --default-toolchain "${{ steps.msrv.outputs.version }}" \
-                --component rustfmt --component clippy
-          echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+      # The images the gate runs in. build-env/build.sh builds the whole table
+      # in dependency order; rust-check is the last row and the one this job
+      # needs, and it cannot be built on its own because its FROM is a sibling
+      # tag the same run produces.
+      - name: The builder images, from the pins in build-env/images.env
+        run: make build-env
 
-      # Prebuilt release binaries, not `cargo install`: compiling cargo-deny
-      # from source under the workspace MSRV toolchain took minutes per run and
-      # broke whenever a transitive dependency out-raced that MSRV.
+      # The gate itself. `tee` and then grep the announce line rather than
+      # trusting the exit status alone -- the os-verify job below makes the same
+      # move for the same reason: a pass proves the gate ran, and this proves
+      # WHICH image ran it. The reference comes from build-env/from.sh, the one
+      # resolver, so the assertion cannot drift from the pin the way a literal
+      # in this file would.
       #
-      # THE VERSIONS AND HASHES ARE build-env/images.env's, sourced and not
-      # repeated. They used to be four literals in this file, which was the only
-      # place that had them; then the local gate grew an image that installs the
-      # same two tools (build-env/rust-check/Dockerfile), and two pins for one
-      # tool in two files are "a second pin, in a second place, free to disagree
-      # with the first" -- this workflow's own argument, made two jobs below
-      # about bun. So RUSTCHECK_* is the single statement of what this gate runs,
-      # and a bump is one edit that moves CI and the local image together.
-      #
-      # cargo-deny publishes its Linux binary only for the musl triple, and
-      # images.env pins the musl nextest for the same reason: both are static,
-      # so they run on this gnu runner as-is.
-      #
-      # The archive's inner directory is derived from the URL rather than spelled
-      # out, so the triple appears once.
-      - name: Install cargo-nextest and cargo-deny (pinned in build-env/images.env)
+      # BOTH workspaces are named. `tests/rust-gate.sh` with no argument takes
+      # both; a future default that quietly took one would leave the second
+      # crate shipping unchecked with this job still green, which is the exact
+      # failure the separate rauc-sign step here used to guard against.
+      - name: The Rust gate, both workspaces, in localhost/mos-build-rust-check
         run: |
           set -euo pipefail
-          # The same comment-stripped derivation build-env/build.sh uses, so the
-          # lock means the same thing to a reader of either.
-          . <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' build-env/images.env)
-          for k in RUSTCHECK_DENY_URL_AMD64 RUSTCHECK_DENY_SHA256_AMD64 \
-                   RUSTCHECK_NEXTEST_URL_AMD64 RUSTCHECK_NEXTEST_SHA256_AMD64; do
-            [ -n "${!k:-}" ] || {
-              echo "error: build-env/images.env defines no $k, so this job would install that tool unpinned" >&2
+          image="$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST_CHECK)"
+          make os-rust-gate 2>&1 | tee /tmp/rust-gate.log
+          for w in mosd rauc-sign; do
+            grep -qF "=== rust gate: pkgs/${w} in ${image} ===" /tmp/rust-gate.log || {
+              echo "error: the gate passed, but nothing said pkgs/${w} ran in ${image}." >&2
+              echo "       tests/rust-gate.sh prints one such line per workspace, and it is the" >&2
+              echo "       only thing that says which image produced the result." >&2
               exit 1
             }
           done
-
-          mkdir -p "$HOME/.cargo/bin"
-          tmp=$(mktemp -d)
-          trap 'rm -rf "$tmp"' EXIT
-
-          curl -sSfL -o "$tmp/cargo-deny.tar.gz" "$RUSTCHECK_DENY_URL_AMD64"
-          echo "${RUSTCHECK_DENY_SHA256_AMD64}  $tmp/cargo-deny.tar.gz" | sha256sum -c -
-          tar xzf "$tmp/cargo-deny.tar.gz" -C "$tmp"
-          install -m 0755 \
-            "$tmp/$(basename "$RUSTCHECK_DENY_URL_AMD64" .tar.gz)/cargo-deny" \
-            "$HOME/.cargo/bin/cargo-deny"
-
-          curl -sSfL -o "$tmp/cargo-nextest.tar.gz" "$RUSTCHECK_NEXTEST_URL_AMD64"
-          echo "${RUSTCHECK_NEXTEST_SHA256_AMD64}  $tmp/cargo-nextest.tar.gz" | sha256sum -c -
-          tar xzf "$tmp/cargo-nextest.tar.gz" -C "$tmp"
-          install -m 0755 "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest"
-
-          cargo deny --version
-          cargo nextest --version
-
-      # The gates themselves. Nothing above this line asserts anything about the
-      # code; nothing below it is a check this file invented.
-      - name: pkgs/mosd/hack/check.sh
-        run: bash pkgs/mosd/hack/check.sh
-
-      # The SECOND cargo workspace, and the reason it needs its own step: until
-      # Before the split, this crate was a member of the mosd workspace, reached by a
-      # `../` entry in pkgs/mosd/Cargo.toml's members list, so the `--workspace` flags
-      # inside the script above covered it. The extraction ended that. A `--workspace`
-      # that no longer spans a crate does not complain -- it simply checks less
-      # and still exits 0 -- so without this step the crate would ship
-      # unchecked with this whole job still green.
-      - name: pkgs/rauc-sign/hack/check.sh
-        run: bash pkgs/rauc-sign/hack/check.sh
-
-      # The gate above already runs the in-tree test that compares the
-      # committed document against the generated one, so this step catches no
-      # drift that test misses. What it adds is the `--openapi` FLAG PATH: the
-      # argv handling in `main()`, above daemon initialisation, which the test
-      # bypasses by calling the generator function directly. A flag that
-      # stopped printing the document, or started reaching for the bus before
-      # it did, leaves that test green and the documented regeneration command
-      # broken.
-      #
-      # `pkgs/mosd/hack/check.sh` cds into `pkgs/mosd/`; this step runs from the
-      # repository root, hence `--manifest-path`.
-      - name: The committed OpenAPI document is what the shipped flag prints
-        run: |
-          set -euo pipefail
-          tmp=$(mktemp -d)
-          trap 'rm -rf "$tmp"' EXIT
-          MOS_APID_UI_DIST_DIR="$PWD/_out/apid-ui/dist" \
-            cargo run --locked --manifest-path pkgs/mosd/Cargo.toml -p apid -- --openapi \
-            >"$tmp/openapi.json"
-          diff -u pkgs/mosd/apid/openapi.json "$tmp/openapi.json" || {
-            echo "error: pkgs/mosd/apid/openapi.json is not what apid --openapi prints." >&2
-            echo "       Regenerate it from pkgs/mosd/:" >&2
-            echo "         bash apid/ui/build.sh" >&2
-            echo '         MOS_APID_UI_DIST_DIR="$PWD/../../_out/apid-ui/dist" cargo run -p apid -- --openapi > apid/openapi.json' >&2
-            exit 1
-          }
-          echo "pkgs/mosd/apid/openapi.json matches apid --openapi"
 
   # Offline suites without Docker; DATA initialization also runs as root.
   # Each one fails loudly when it

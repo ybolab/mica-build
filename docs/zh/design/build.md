@@ -126,23 +126,21 @@ chunk 哈希与固定镜像不同。跑测试套件的那个 bun（`verify/run.s
 
 ### 0.3 目前有哪些豁免，以及为什么
 
-允许豁免，不允许没被检查过的路径。下表每一行都登记在
+允许豁免，不允许没被检查过的路径。每一条豁免都登记在
 `tests/host-toolchain-exemptions` 里并写明理由，而且当某条规则**匹配不到任何东西时
 检查会失败**——所以改名不会留下一条孤儿豁免，某条路径修好之后也留不住它的豁免。
 
-| 位置 | 工具 | 为什么还在主机上 |
-| --- | --- | --- |
-| `pkgs/mosd/hack/check.sh`、`pkgs/rauc-sign/hack/check.sh` | `cargo`，以及让它能被解析出来的那次 `$HOME` PATH 前置 | Rust 门禁。它需要的容器已经有了：`make os-rust-gate` 会在 `localhost/mos-build-rust-check` 里**原封不动**地跑这两个脚本。它们还留在这里，是因为 CI 仍然在自己的 runner 上跑同样的脚本——一个脚本只要还有一个调用方是裸主机，就不能声明成容器侧。 |
-| `.github/workflows/check.yml` | `cargo` | 就是那个 runner。它用 `rustup` 装工具链；替代方案是 `make os-rust-gate`，代价是 runner 要先把 builder 镜像那一族建出来。 |
+**一条豁免都没有了。登记表是空的**，`make os-host-toolchain-lint` 报
+`0 exempted invocation(s) under 0 rule(s)`——这个数字值得一读：因为上面那条规则，
+空登记表是 lint 认可的一种状态，而不是一份没人维护的文件。
 
-**2026-09-05 下掉了三行**，这里把它们记下来，是因为一张豁免表只有在“什么离开了它”也
-看得见的时候才读得懂。`pkgs/rauc/gen-dev-keys.sh`——铸造 RAUC CA、bundle 签名者和
-ed25519 包签名密钥的那个生产者——现在在 `localhost/mos-build-openssl`
-（`build-env/openssl/Dockerfile`）里铸造，它对 `meta/updates/manifest.json` 的那次 `jq`
-改写也跟着一起进了容器；`rootfs/build.sh` 的 `alg_of_material()` 用同一个镜像把材料读
-回来；`tests/repart-loader-test.sh` 的五次 `sgdisk` 读取现在无条件跑在固定的 alpine 工具
-镜像里，而以前只有主机没有 `sgdisk` 时才会用它。表里剩下的是 Rust 门禁和跑它的 runner，
-那是待办 **B7**。
+本节写下时它有六行。这里把它们记下来，是因为一张豁免表只有在"什么离开了它"也看得见
+的时候才读得懂：
+
+| 行 | 由谁关掉 | 怎么关的 |
+| --- | --- | --- |
+| `pkgs/rauc/gen-dev-keys.sh` `openssl`、`rootfs/build.sh` `openssl`、`tests/repart-loader-test.sh` `sgdisk` | RFCT-318，2026-09-05 | 铸造 RAUC CA、bundle 签名者和 ed25519 包签名密钥的那个生产者，现在在 `localhost/mos-build-openssl`（`build-env/openssl/Dockerfile`）里铸造，它对 `meta/updates/manifest.json` 的那次 `jq` 改写也跟着一起进了容器；`alg_of_material()` 用同一个镜像把材料读回来；repart 那套无条件用固定的 alpine 工具镜像做全部五次 `sgdisk` 读取，而以前只有主机没有 `sgdisk` 时才会用它。 |
+| `pkgs/mosd/hack/check.sh` 和 `pkgs/rauc-sign/hack/check.sh` 各自的 `cargo` 与 `$HOME` PATH 前置；`.github/workflows/check.yml` 的 `cargo` | 待办 **B7**，2026-09-07 | 这两个脚本从来就不是问题——自 RFCT-309 起，`make os-rust-gate` 就在 `localhost/mos-build-rust-check` 里**原封不动**地跑它们。撑着这五行不放的是第二个调用方：`.github/workflows/check.yml` 用 `rustup` 把工具链拉到 runner 上再在那里跑它们，而一个脚本只要还有一个调用方是裸主机，就不能声明成容器侧。现在 workflow 跑的是 `make build-env` 和 `make os-rust-gate`，两个脚本各带一条整文件级的 `# mos-build-side: container` 声明，runner 上另一处 `cargo`——`--openapi` 那道检查——也搬进了 `pkgs/mosd/hack/check.sh`，跟门禁的其余部分一起在镜像里跑。 |
 
 烧写不是构建。`boards/cx3576/bsp/Makefile` 里的 `rkdeveloptool` 目标通过 USB 往板子
 上写，需要主机的总线；按 §0.1 它们属于编排，因此不需要豁免——它们从来就不在范围内。
@@ -162,11 +160,22 @@ ed25519 包签名密钥的那个生产者——现在在 `localhost/mos-build-op
 # mos-build-side: host                        到这里为止
 ```
 
-它看不见通过变量调用的二进制、写在 heredoc 里的生产者，也无法验证一条声明是不是写
-错了。脚本头部把这些说得更细，而 `tests/host-toolchain-lint-test.sh` 会分别植入一次
-主机调用、一次 `$HOME` PATH 前置、一条失效豁免、一处被删掉的声明、一个没有闭合的代
-码块和一句提到 heredoc 的注释，要求每一种都让它变红——另有三种合法形态，要求它们保
-持绿。
+**还有第三种形态，在第二个面上：TypeScript。** `build/src` 和 `verify/src` 正是这棵树
+里用 TypeScript 写的构建工具伸手去要工具的地方，四处 toolbox 接缝在代码里关掉了，并
+不妨碍有人写出第五处。所以每一个被跟踪的 `.ts` 文件都会被扫一遍，找那种把生产者*点名*
+写出来的进程启动——用 bun 的 shell 标签写的 `` $`mksquashfs …` ``，或者
+`Bun.spawn([sgdisk, …])`——比对的是 shell 那一半用的同一张表。它不是"禁止 `` $` ``"：
+这个标签在本树用了 21 次，每一次都合法，所以规则只问**第一个词**是什么，于是作为参数
+交给 `docker run` 的生产者——也就是整个 toolbox——仍然是绿的。这一遍会报出自己看了多少
+（35 处启动点，19 处点名了命令，16 处要到运行时才解析），而不是只报一个颜色；而某个
+`.ts` 文件如果扫完没有回到代码状态，那是一条发现，不是一个干净文件。
+
+它看不见通过变量调用的二进制——两种语言都一样——写在 heredoc 里的生产者，也无法验证
+一条声明是不是写错了。脚本头部把这些说得更细，而 `tests/host-toolchain-lint-test.sh`
+会分别植入一次主机调用、一次 `$HOME` PATH 前置、一条失效豁免、一处被删掉的声明、一个
+没有闭合的代码块、一句提到 heredoc 的注释、一处藏在 bun shell 标签后面的生产者、一处
+藏在 `Bun.spawnSync` 后面的生产者、一个没有闭合的模板字符串，以及一个一处启动点都没有
+的 TypeScript 面，要求每一种都让它变红——另有四种合法形态，要求它们保持绿。
 
 **`make os-bare-host-gate`**（`tests/bare-host-gate/gate.sh`）回答那条 lint 答不出
 的问题：本节开头的判据现在还成不成立。它不是"对受限主机的描述"，它*就是*一台受限
@@ -181,7 +190,7 @@ ed25519 包签名密钥的那个生产者——现在在 `localhost/mos-build-op
 
 | | 读 | 执行 | 能看见 |
 | --- | --- | --- | --- |
-| `os-host-toolchain-lint` | 全部被跟踪的脚本，含装配路径 | 不执行 | 命令位置上生产者的*名字* |
+| `os-host-toolchain-lint` | 全部被跟踪的脚本和全部被跟踪的 `.ts` 文件，含装配路径 | 不执行 | 命令位置上生产者的*名字*，或被一处 TypeScript 进程启动点名的生产者 |
 | `os-bare-host-gate` | 不读 | 在真实受限主机上跑第 1–3 级 | 这几级真正伸手去要的任何东西，不论叫什么 |
 
 网关的天花板是第 3 级：它**不**装配镜像（第 4 级需要 amd64 软件包池），不跑

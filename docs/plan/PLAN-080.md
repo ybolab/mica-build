@@ -602,17 +602,54 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
   shape change fell out and is recorded rather than absorbed: the signer's
   extensions moved from a `<(...)` process substitution to a real file, because
   a `/dev/fd` path belongs to the calling shell and the container cannot see it.
-  Same two lines, same certificate. *The two trust tests were NOT re-run —
-  owed.*
+  Same two lines, same certificate. ~~*The two trust tests were NOT re-run —
+  owed.*~~ **Run 2026-09-07 by RFCT-347, and they pass.**
+  `bash tests/rauc-trust-negative-test.sh` is `RESULT: PASS (10 passed, 0
+  failed)` plus its GENERATED-marker check, and it is the one that matters here:
+  it mints a trust root with the real generator — through the container, in a
+  scratch tree — and then drives the chain from the attacker's side, so the
+  signer certificate the moved `-extfile` produces is the one that signs the
+  bundles and the one `rauc info --keyring` accepts and refuses. A shape change
+  that had broken `basicConstraints` or `keyUsage` would have reddened case 1.
+  `bash tests/trust-domain-hygiene-test.sh` is `RESULT: PASS (8 passed, 0
+  failed)`: no key material tracked, both directories ignored, neither domain's
+  tooling naming the other's. **The debt is closed and nothing was found.**
 - **B3 — the two judges. CLOSED 2026-09-05 by RFCT-318.**
   `rootfs/build.sh`'s `alg_of_material()` reads through the same pinned image,
   resolved in the main shell so a refusal cannot be swallowed by the reader's
   own `|| true`; `tests/repart-loader-test.sh` takes the container route for all
   five `sgdisk` reads unconditionally, where it used to take it only on a host
   without `sgdisk`. *Neither suite was run — owed.*
-- **B4 — extend the scan past shell.** The four seams are closed in code and
-  nothing stops a fifth from being written. A check over `build/src` and
-  `verify/src` for `Bun.$` against a producer binary is possible. *~0.5 day.*
+- **B4 — extend the scan past shell. CLOSED 2026-09-07 by RFCT-347.**
+  `tests/host-toolchain-lint.sh` now scans every tracked `.ts` file for a
+  process launch that NAMES a producer, against the same `TOOLS` table the shell
+  scan uses — one table, now three readers. Two shapes: bun's shell tag
+  (`` $`mksquashfs …` ``) and an argv-taking spawn
+  (`Bun.spawn(['sgdisk', …])`, `Bun.spawnSync`, `execFile`, and the
+  `{ cmd: [...] }` form). A literal path is reduced to its basename, so
+  `/usr/sbin/sgdisk` is `sgdisk`.
+  **The sizing said `Bun.$` and the tree does not spell it that way**, which is
+  worth recording because it changed the implementation. `Bun.$` appears twice
+  here, both in comments; the executor is `$` imported from `bun`, used 21
+  times. A grep for a `$` before a backtick finds 43 of those, and 22 are
+  regex anchors at the end of a template — `` new RegExp(`^${k}=(.*)$`, 'm') ``
+  — so a grep would have been half false positives, which is the outcome §11
+  and `tests/shell-pipefail-lint.sh` both refuse. What is there instead is a
+  60-line scanner tracking string, template, comment and regex state, and it
+  gets the number exactly right: **35 launch sites across 224 files, 19 naming a
+  command and 16 resolving through a variable at runtime.** Those 19 are `bash`,
+  `git`, `cp`, `sh`, `tar`, `docker`, `setcap` and `getcap` — no producer, which
+  is the finding.
+  Four controls, all in `tests/host-toolchain-lint-test.sh` (23 cases now, up
+  from 15): a producer behind the shell tag goes red; a producer behind
+  `Bun.spawnSync` goes red; a producer handed to `docker run` as an ARGUMENT
+  plus a regex anchor stay **green**; and two vacuity guards — a file that does
+  not scan back to code state is a finding rather than a clean file, and a
+  TypeScript surface with zero launch sites is refused outright.
+  Driven on the real tree as well as on fixtures: a fifth seam planted in
+  `build/src/toolbox.ts` reddened at both call sites by name. The scanner is
+  POSIX awk and was run under busybox awk in `IMAGE_ALPINE_3_21` to identical
+  output, because `tests/bare-host-gate/ladder.sh` runs this lint in there.
 - **B5 — buildx in the pinned bun image, and the rootfs composition on a bare
   host.** One `COPY` of `/usr/local/libexec/docker/cli-plugins/docker-buildx`
   into `verify/Dockerfile`, lifting `--build-rootfs`'s refusal, plus the run
@@ -651,13 +688,35 @@ from a pin the tree already has, plus a run that proves it. Backlog **B5**.
     and the first version of the gate reported PASS. So the transcript is read on
     the green path too, and that finding is worded as what it is: the criterion
     broken while the exit status says nothing about it.
-- **B7 — CI stops installing a toolchain.** `.github/workflows/check.yml`'s
-  `rust` job `curl`s rustup onto the runner and runs both `hack/check.sh` there.
-  With `make os-rust-gate` in the tree those two steps and the three install
-  steps above them could become one. The cost is that the runner must build the
-  `mos-build-*` family first, and it is a CI change nothing here can run to
-  prove, so it is named rather than attempted. *~0.5 day, most of it watching a
-  runner.*
+- **B7 — CI stops installing a toolchain. CLOSED 2026-09-07 by RFCT-347.**
+  The `rust` job's five toolchain steps — apt, the dbus-daemon proof, the rustup
+  install and the two prebuilt-binary installs — are gone, replaced by
+  `make build-env` and `make os-rust-gate`. The two `hack/check.sh` steps and the
+  separate `rauc-sign` step collapse into that one target, which takes both
+  workspaces; the job asserts the announce line **per workspace** rather than
+  trusting the exit status, the way the `os-verify` job already does for bun, so
+  a green tick names the image that produced it.
+  **THE MEASURABLE OUTCOME IS THE REGISTER, and it is now empty.**
+  `tests/host-toolchain-exemptions` went from **15 exempted invocations under 5
+  rules to 0 under 0** — the four `hack/check.sh` rows (`cargo` and
+  `host-toolchain-on-PATH` each) plus the workflow's own `cargo` row. Both
+  scripts now carry a whole-file `# mos-build-side: container` declaration,
+  which §5.5 said could not honestly be written while one of two callers was a
+  bare host; file declarations went 17 → 19.
+  **A sixth step had to move for the fifth row to come off**, and it was not in
+  the sizing: the workflow also ran `cargo run -p apid -- --openapi` to check
+  the flag path, which the in-tree test bypasses by calling the generator
+  directly. It is now the last thing `pkgs/mosd/hack/check.sh` does, so it runs
+  wherever the gate runs — in the image, on both callers, and for the first time
+  on a developer's machine. Deleting the step rather than containerising it
+  separately keeps this file's own rule: one definition of "checked", in the
+  tree.
+  **The CI change is still unrun** — that part of the sizing was right, nothing
+  here can drive a GitHub runner. What IS run is the thing the runner will do:
+  `bash tests/rust-gate.sh` green on both workspaces in
+  `localhost/mos-build-rust-check:amd64`, `rustc 1.98.0 / clippy 1.98.0 /
+  rustfmt 1.9.0-stable / nextest 0.9.143 / deny 0.19.9`, 1081 tests, ending
+  `apid/openapi.json matches apid --openapi` — the moved step, in the image.
 
 ## 11. Alternatives considered
 

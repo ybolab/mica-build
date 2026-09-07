@@ -7,10 +7,14 @@
 # by digest" -- for as long as it has existed, while paths that contradict it
 # sat in the tree with nothing going red.
 #
-# WHAT IT LOOKS FOR. Two shapes. One producer binary in command position, in a
-# file that has not declared itself container-side -- and one PATH assignment
-# that prepends a directory under $HOME, which is how a script reaches for a
-# toolchain that is not on the machine's PATH at all. The second shape exists
+# WHAT IT LOOKS FOR. Three shapes over two surfaces. In shell: one producer
+# binary in command position, in a file that has not declared itself
+# container-side -- and one PATH assignment that prepends a directory under
+# $HOME, which is how a script reaches for a toolchain that is not on the
+# machine's PATH at all. In TypeScript: one producer binary NAMED by a process
+# launch -- a bun shell template or an argv-taking spawn -- which is the shape
+# `build/run.sh` and `verify/run.sh` would take if a fifth toolbox seam were
+# written past the four that are closed. The second shape exists
 # because the first one nearly missed the largest violation in the tree: this
 # host has no cargo, and `pkgs/mosd/hack/check.sh` finds one only because its
 # line 8 puts $HOME/.cargo/bin in front. A producer is a tool whose own build can
@@ -36,9 +40,16 @@
 #   - A DECLARATION THAT IS WRONG. `# mos-build-side: container` is a claim by
 #     whoever wrote it. This counts the claims and refuses a run that found
 #     none; it cannot check one.
-#   - ANYTHING THAT IS NOT SHELL. The TypeScript seams -- build/src/toolbox.ts,
-#     verify/src/tools.ts -- are closed in code and held by those packages'
-#     own suites.
+#   - A TYPESCRIPT LAUNCH THROUGH A VARIABLE. The second scan below reads every
+#     tracked `.ts` file, but it can only report the command a call site NAMES:
+#     `$`${docker} exec ...`` and `Bun.spawn(argv)` resolve at runtime, and 16
+#     of this tree's 35 launch sites are that shape. They are counted and
+#     reported as unresolved rather than passed over silently.
+#   - A TYPESCRIPT `mos-build-side:` MARKER. There is none, deliberately: every
+#     producer this tree's TypeScript runs goes through `docker`, so no `.ts`
+#     file is itself a container's script, and a marker grammar nothing uses is
+#     a grammar nobody maintains. A TypeScript finding that must stand is
+#     registered in the exemption file like any other.
 #
 # DECLARING A SIDE. Two markers, both requiring a reason after `--`:
 #
@@ -319,12 +330,219 @@ for f in "${files[@]}"; do
     [ "${hits}" -eq 0 ] && pass "${f}"
 done
 
+# --- the second surface: TypeScript -----------------------------------------
+#
+# The four toolbox seams are closed in code and nothing stops a fifth from being
+# written. `build/src` and `verify/src` drive every external tool they need
+# through `docker`, and the shape a regression would take is a call site that
+# names a producer directly instead: `$`mksquashfs ...`` where `$` is bun's
+# shell tag, or `Bun.spawn(['sgdisk', ...])`. Both name the binary in the source,
+# which is what makes them findable at all.
+#
+# THE TABLE IS THE SAME TABLE. A TypeScript-only list of producers would agree
+# with the shell one exactly until somebody added a row to one of them.
+#
+# AND IT IS NOT "no `$`". The tag is used 21 times in this tree and every one of
+# them is legitimate -- `git`, `bash`, `cp`, `sh` and `${docker}`. A rule whose
+# findings are mostly false positives teaches people to ignore it; this one asks
+# only what the FIRST WORD is, so a producer handed to `docker run` as an
+# argument -- which is the entire toolbox -- is not a finding.
+mapfile -t tsfiles < <(git ls-files '*.ts' | sort -u)
+TS_FILES=0
+TS_SITES=0
+TS_NAMED=0
+TS_VARIABLE=0
+
+for f in ${tsfiles[@]+"${tsfiles[@]}"}; do
+    [ -f "${f}" ] || continue
+    TS_FILES=$((TS_FILES + 1))
+
+    # A small scanner rather than a grep, because the distinguishing feature is
+    # WHERE a backtick sits. `new RegExp(`^${k}=(.*)$`, 'm')` ends a template
+    # with a regex anchor immediately before the closing backtick, and a grep
+    # for `$` followed by a backtick calls that a bun shell call: 43 matches in
+    # this tree, 21 of them real. Tracking string, template, comment and regex
+    # state instead costs 60 lines and gets the number exactly right.
+    #
+    # A FILE THAT DOES NOT SCAN BACK TO CODE STATE IS A FINDING. That is the
+    # control on the scanner itself: an unterminated template or a regex the
+    # heuristic below misread would otherwise swallow the rest of the file and
+    # report it clean, which is the failure mode the heredoc elision above had.
+    mapfile -t records < <(awk '
+        BEGIN { RS = "\001" }
+        {
+            s = $0
+            n = length(s)
+            st = "code"          # code | lc | bc | sq | dq | tpl | re
+            depth = 0            # brace nesting inside a ${ } substitution
+            top = 0              # the stack of templates a ${ } interrupted
+            prev = ""            # last significant code character, for the / ambiguity
+            line = 1
+            i = 1
+            while (i <= n) {
+                c = substr(s, i, 1)
+                if (c == "\n") line++
+
+                if (st == "lc") { if (c == "\n") st = "code"; i++; continue }
+                if (st == "bc") { if (c == "*" && substr(s, i + 1, 1) == "/") { st = "code"; i += 2; continue } i++; continue }
+                if (st == "sq" || st == "dq" || st == "re") {
+                    if (c == "\\") { i += 2; continue }
+                    if (st == "re" && c == "[") { inclass = 1; i++; continue }
+                    if (st == "re" && c == "]") { inclass = 0; i++; continue }
+                    if (st == "sq" && c == "\047") { st = "code"; prev = "\047" }
+                    else if (st == "dq" && c == "\"") { st = "code"; prev = "\"" }
+                    else if (st == "re" && c == "/" && !inclass) { st = "code"; prev = "/" }
+                    i++; continue
+                }
+                if (st == "tpl") {
+                    if (c == "\\") { i += 2; continue }
+                    # A ${ } is CODE again, and `prev` is reset with it: without
+                    # that, `$`cp -a ${`${a}/.`}`` reads the inner template as a
+                    # second tagged call, because the tag`s own $ is still the
+                    # last code character seen.
+                    if (c == "$" && substr(s, i + 1, 1) == "{") { stack[++top] = "tpl"; st = "code"; depth = 0; prev = ""; i += 2; continue }
+                    if (c == "`") { st = "code"; prev = "`"; i++; continue }
+                    i++; continue
+                }
+
+                # --- code ---
+                if (c == " " || c == "\t" || c == "\n" || c == "\r") { i++; continue }
+                if (c == "/") {
+                    d = substr(s, i + 1, 1)
+                    if (d == "/") { st = "lc"; i += 2; continue }
+                    if (d == "*") { st = "bc"; i += 2; continue }
+                    # Regex or division, decided by what came before -- the
+                    # standard rule. It matters because a regex may hold `//`,
+                    # which read as a comment would elide the rest of the line.
+                    if (prev == "" || index("([{,;:=!&|?+-*%~^<>", prev) > 0) { st = "re"; inclass = 0; i++; continue }
+                    prev = "/"; i++; continue
+                }
+                if (c == "\047") { st = "sq"; i++; continue }
+                if (c == "\"") { st = "dq"; i++; continue }
+                if (c == "{") { if (top > 0) depth++; prev = "{"; i++; continue }
+                if (c == "}") {
+                    if (top > 0 && depth == 0) { st = stack[top--]; prev = "}"; i++; continue }
+                    if (top > 0) depth--
+                    prev = "}"; i++; continue
+                }
+                if (c == "`") {
+                    if (prev == "$") emit_tpl(i + 1, line)     # bun`s shell tag
+                    st = "tpl"; i++; continue
+                }
+                if (c == "$") { prev = "$"; i++; continue }
+
+                if (c == "s" || c == "e" || c == "B") {
+                    rest = substr(s, i, 40)
+                    if (match(rest, /^(Bun\.)?(spawnSync|spawn|execFileSync|execFile)[ \t\n]*\(/)) {
+                        # `.spawn` as a method on something else is not one of
+                        # these; `Bun.spawn` is, and says so.
+                        if (prev != "." || substr(rest, 1, 4) == "Bun.") {
+                            emit_spawn(i + RLENGTH, line)
+                            i += RLENGTH; prev = "("; continue
+                        }
+                    }
+                }
+                prev = c
+                i++
+            }
+            if (st != "code" || top > 0)
+                print "err\t" line "\tthis file did not scan back to code state (ended in \047" st "\047), so the scan cannot claim to have read it"
+        }
+
+        # The first word of a bun shell template, from just past the backtick.
+        function emit_tpl(p, ln,   j, w, c) {
+            j = p
+            while (j <= n && (substr(s, j, 1) == " " || substr(s, j, 1) == "\t")) j++
+            if (substr(s, j, 2) == "${") { print "site\t" ln "\t"; return }
+            w = ""
+            while (j <= n) {
+                c = substr(s, j, 1)
+                if (c == " " || c == "\t" || c == "\n" || c == "`" || c == "\\") break
+                w = w c
+                j++
+            }
+            print "site\t" ln "\t" w
+        }
+
+        # The command an argv-taking launcher names, from just past its paren.
+        # Three argument shapes: an array, a bare string, and { cmd: [...] }.
+        function emit_spawn(p, ln,   j, c, q, w) {
+            j = p
+            while (j <= n && (substr(s, j, 1) ~ /[ \t\n\r]/)) j++
+            c = substr(s, j, 1)
+            if (c == "{") {
+                if (!match(substr(s, j, 400), /cmd[ \t\n]*:[ \t\n]*\[/)) { print "site\t" ln "\t"; return }
+                j = j + RSTART + RLENGTH - 2
+                c = "["
+            }
+            if (c == "[") {
+                j++
+                while (j <= n && (substr(s, j, 1) ~ /[ \t\n\r]/)) j++
+                c = substr(s, j, 1)
+            }
+            if (c != "\047" && c != "\"" && c != "`") { print "site\t" ln "\t"; return }
+            q = c; j++
+            w = ""
+            while (j <= n) {
+                c = substr(s, j, 1)
+                if (c == "\\") { j += 2; continue }
+                if (c == q) break
+                if (c == "$" && q == "`") { print "site\t" ln "\t"; return }
+                w = w c
+                j++
+            }
+            print "site\t" ln "\t" w
+        }
+    ' "${f}")
+
+    hits=0
+    for rec in ${records[@]+"${records[@]}"}; do
+        IFS=$'\t' read -r kind lineno a <<<"${rec}"
+        case "${kind}" in
+        err)
+            fail "${f}:${lineno}: ${a}"
+            hits=$((hits + 1))
+            ;;
+        site)
+            TS_SITES=$((TS_SITES + 1))
+            if [ -z "${a}" ]; then
+                TS_VARIABLE=$((TS_VARIABLE + 1))
+                continue
+            fi
+            TS_NAMED=$((TS_NAMED + 1))
+            # A path is still the binary it ends in.
+            tool="${a##*/}"
+            [[ "${tool}" =~ ^(${TOOLS})$ ]] || continue
+            key="${f}|${tool}"
+            if [ -n "${EXEMPT_REASON[${key}]+set}" ]; then
+                EXEMPT_HITS["${key}"]=$(( ${EXEMPT_HITS[${key}]} + 1 ))
+                continue
+            fi
+            hits=$((hits + 1))
+            fail "${f}:${lineno}: this launches \`${tool}\` on the host. build/src and verify/src reach every producer through a container -- build/src/toolbox.ts and verify/src/tools.ts are the seams -- so a call site that names one directly is a fifth seam nobody declared. See docs/design/build.md section 0."
+            ;;
+        esac
+    done
+    [ "${hits}" -eq 0 ] && pass "${f}"
+    SCANNED=$((SCANNED + 1))
+done
+
 # --- the controls, so this cannot report clean over nothing -----------------
 
 [ "${EXAMINED}" -gt 0 ] || {
-    echo "error: ${SCANNED} file(s) were opened and not one command line was examined. The elisions above swallowed the whole tree, which is a broken scan and not a clean one" >&2
+    echo "error: ${#files[@]} shell file(s) were opened and not one command line was examined. The elisions above swallowed the whole tree, which is a broken scan and not a clean one" >&2
     exit 1
 }
+
+# THE SAME CONTROL FOR THE SECOND SURFACE. This tree's TypeScript launches
+# processes -- that is what a build harness written in it does -- so a scan that
+# opened .ts files and found no launch site at all has not found a clean tree.
+# It has found a scanner whose state machine stopped agreeing with the language,
+# and it would report the same green as a tree that launched nothing.
+if [ "${TS_FILES}" -gt 0 ] && [ "${TS_SITES}" -eq 0 ]; then
+    echo "error: ${TS_FILES} TypeScript file(s) were scanned and not one process launch was found. build/src and verify/src drive docker; a scan that sees none of it is measuring nothing" >&2
+    exit 1
+fi
 
 # THE POSITIVE CONTROL. This tree assembles images and compiles Rust, so its
 # build surfaces necessarily invoke producers; the only question the policy
@@ -355,5 +573,5 @@ fi
 # count alone cannot tell a clean tree from a scan whose pattern stopped
 # matching, and a finding count alone cannot tell "nothing wrong" from "nothing
 # looked at". Both, plus what was elided and what was declared.
-echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/${SCANNED} files clean, ${FAIL_N} finding(s), ${EXAMINED} command lines examined, ${ELIDED} elided, ${DECLARED_FILES} file + ${DECLARED_BLOCKS} block container declarations, ${EXEMPTED} exempted invocation(s) under ${EXEMPT_N} rule(s))"
+echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/${SCANNED} files clean, ${FAIL_N} finding(s), ${EXAMINED} shell command lines examined, ${ELIDED} elided, ${TS_SITES} TypeScript launch sites examined in ${TS_FILES} file(s) (${TS_NAMED} naming a command, ${TS_VARIABLE} through a variable), ${DECLARED_FILES} file + ${DECLARED_BLOCKS} block container declarations, ${EXEMPTED} exempted invocation(s) under ${EXEMPT_N} rule(s))"
 [ "${FAIL_N}" -eq 0 ]

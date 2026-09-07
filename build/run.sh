@@ -312,16 +312,26 @@ else
     # BOTH digests in the tag, and the same arithmetic verify/run.sh uses, so a
     # bumped pin cannot reuse an image built from the previous one and the two
     # scripts land on the same tag when the pins agree.
-    STAMP="$(printf '%s\n%s\n' "${BUN_IMAGE}" "${CLI_IMAGE}" | sha256sum | cut -c1-16)"
+    #
+    # AND THE DOCKERFILE ITSELF, which the first two spellings of this line left
+    # out. The tag is a cache key and the image is built from three inputs, not
+    # two: PLAN-080 backlog B5 added a COPY of the buildx plugin and changed
+    # nothing about either pin, so on every host that had already built this
+    # image the tag was unchanged, `image inspect` succeeded, and the new COPY
+    # silently never applied -- an image that satisfies its own name while the
+    # file it is built from has moved. Hashing the Dockerfile makes the edit part
+    # of the identity.
+    STAMP="$(printf '%s\n%s\n%s\n' "${BUN_IMAGE}" "${CLI_IMAGE}" \
+        "$(sha256sum "${REPO_ROOT}/verify/Dockerfile" | cut -d' ' -f1)" | sha256sum | cut -c1-16)"
     TOOLED_IMAGE="localhost/mos-verify-bun:${STAMP}"
     if ! "${DOCKER}" image inspect "${TOOLED_IMAGE}" >/dev/null 2>&1; then
-        echo "build: building ${TOOLED_IMAGE} (pinned bun + pinned docker client)"
+        echo "build: building ${TOOLED_IMAGE} (pinned bun + pinned docker client and buildx)"
         "${DOCKER}" build -q \
             --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
             --build-arg "MOS_DOCKER_CLI_IMAGE=${CLI_IMAGE}" \
             -t "${TOOLED_IMAGE}" -f "${REPO_ROOT}/verify/Dockerfile" "${REPO_ROOT}/verify" >/dev/null || {
             echo "error: could not build ${TOOLED_IMAGE} from verify/Dockerfile." >&2
-            echo "       It is two pinned FROMs and one COPY; nothing is installed and nothing is" >&2
+            echo "       It is two pinned FROMs and two COPYs; nothing is installed and nothing is" >&2
             echo "       fetched beyond those two images. Re-run without -q to see the build." >&2
             exit 1
         }
@@ -381,30 +391,35 @@ else
     }
 fi
 
-# The one mode the container route cannot carry. The image above has the client
-# and the daemon socket, so its toolbox can start sibling containers; what it
-# does not have is `docker buildx`, which is a CLI PLUGIN and not a subcommand.
-# verify/Dockerfile copies one file, /usr/local/bin/docker, and the plugin lives
-# beside it in /usr/local/libexec/docker/cli-plugins. Driven, not assumed: the
-# container answers
+# THE MODE THE CONTAINER ROUTE USED TO REFUSE. `--build-rootfs` drives
+# `docker buildx` once per stage, and buildx is a CLI PLUGIN rather than a
+# subcommand: the image above carried the client and the daemon socket but not
+# the plugin beside it, so every stage would have ended at
 #
 #   docker: unknown command: docker buildx
 #
-# CLOSABLE, and measured on 2026-09-04: IMAGE_DOCKER_CLI_28 ships
-# `github.com/docker/buildx v0.29.1` in that directory, so one more COPY would
-# give this route buildx from the same pinned image -- no host binary, no second
-# pin. It is not done here because lifting this refusal is a claim about
-# composing a root, and a claim like that is worth only the run that proves it;
-# see docs/plan/PLAN-080 backlog B5. Until then the refusal names the gap.
+# and run.sh refused the whole mode instead, naming the gap. PLAN-080 backlog B5
+# closed it. verify/Dockerfile now copies the plugin out of the SAME pinned
+# client image -- no host binary and no second pin -- and asserts
+# `docker buildx version` at build time, so an image that reached this point
+# without it does not exist.
+#
+# ASSERTED HERE AS WELL, and not left to the Dockerfile alone. MOS_BUILD_BUN can
+# name a bun and MOS_BUILD_CONTAINER can force this route, but the image this
+# route runs is resolved above and could in principle be an older one still in
+# the local store; a stage failing with `unknown command` three steps into a
+# compose is a far worse message than this one. One `docker run`, once per
+# invocation of this mode, against the image that will actually do the work.
 if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
-    echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
-    echo "       The suite runs in the pinned bun container; this mode cannot, because it drives" >&2
-    echo "       \`docker buildx\` once per stage and buildx is a CLI PLUGIN, not a subcommand." >&2
-    echo "       The pinned client and the daemon socket are both in that image and work there;" >&2
-    echo "       verify/Dockerfile copies the client binary and not the plugin beside it, so the" >&2
-    echo "       container answers 'docker: unknown command: docker buildx'." >&2
-    echo "       Install bun, or set MOS_BUILD_BUN to one." >&2
-    exit 1
+    "${DOCKER}" run --rm --entrypoint docker "${BUN_IMAGE}" buildx version >/dev/null 2>&1 || {
+        echo "error: --build-rootfs is taking the pinned-container route (${WHY}), and ${BUN_IMAGE}" >&2
+        echo "       has no \`docker buildx\`. This mode drives buildx once per stage, so nothing" >&2
+        echo "       below would work and each failure would name a stage rather than the plugin." >&2
+        echo "       verify/Dockerfile copies it from IMAGE_DOCKER_CLI_28 alongside the client;" >&2
+        echo "       an image built before that COPY landed is still in this host's image store." >&2
+        echo "       Remove it (docker rmi ${BUN_IMAGE}) and re-run, or install bun on this host." >&2
+        exit 1
+    }
 fi
 
 run_bun() {
