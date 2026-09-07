@@ -231,7 +231,10 @@ are blanked before the shell scan looks for a producer — a `(` inside an Engli
 sentence is not a separator — while a command substitution stays visible
 wherever it sits, `"$(cargo build)"` included. That is done a line at a time, so
 it cannot see a producer named inside a string that opens on one line and closes
-on another; nor a binary invoked through a variable — in either language — a
+on another, nor one written into a quoted script argument -- `bash -c 'cd x &&
+cargo build'` is invisible for the same reason a heredoc body is, since nothing
+distinguishes it from `docker run … sh -c 'mkfs.ext4 …'`, which is the toolbox.
+Nor a binary invoked through a variable — in either language — a
 producer written into a heredoc body, or a declaration that is simply wrong. Its
 header says so at greater length, and `tests/host-toolchain-lint-test.sh` plants
 a host invocation, a `$HOME` PATH prepend, a stale exemption, a removed

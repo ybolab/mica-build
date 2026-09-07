@@ -46,6 +46,14 @@
 #     lint did everywhere until 2026-09-07, so the cost is a false positive and
 #     never a missed one. A COMMAND SUBSTITUTION IS NOT LITERAL and stays
 #     visible wherever it sits: `"$(cargo build)"` is a finding.
+#   - A SCRIPT WRITTEN INTO A QUOTED ARGUMENT, for the same reason and with the
+#     same answer as a heredoc body above: `bash -c 'cd x && cargo build'` runs
+#     cargo on this host and is not seen, because nothing here can tell it from
+#     `docker run ... sh -c 'mkfs.ext4 ...'`, which is the toolbox. There is no
+#     such site in the tree -- the change that blanked quoted spans moved the
+#     finding count by exactly one, the sentence at
+#     docs/bsp/cx3576-bench-collect.sh:1058 -- and a `-c` special case would buy
+#     nothing present at the price of flagging every container's script.
 #   - A DECLARATION THAT IS WRONG. `# mos-build-side: container` is a claim by
 #     whoever wrote it. This counts the claims and refuses a run that found
 #     none; it cannot check one.

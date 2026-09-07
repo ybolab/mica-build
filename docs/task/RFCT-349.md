@@ -164,6 +164,19 @@ substitution, and still a finding. Line 1058 is the sentence.
 | the new red case | `subst.sh:2: \`cargo\` runs on the host`, red before and after |
 | `bash tests/host-toolchain-lint.sh` | **green**, `2 exempted invocation(s) under 1 rule(s)` -> **`1 exempted invocation(s) under 1 rule(s)`** |
 | `bash tests/shell-pipefail-lint.sh` | **green**, `92/92 files clean` |
+| `bash tests/bare-host-gate/gate.sh` | **`BARE HOST GATE PASSED`**, rungs 1-3, five steps. Rung 2 is this lint under alpine 3.21's busybox awk on a host with no bash until `apk add`, and it printed the RESULT line above **character for character** |
+
+**What blanking a quoted span gives up, said here because this task is what
+gave it up.** `bash -c 'cd x && cargo build'` runs cargo on this host and is now
+invisible, where the `&&` inside the quotes used to make it a finding by
+accident. Nothing can tell that line from `docker run ... sh -c 'mkfs.ext4 ...'`,
+which is the toolbox and the thing the policy asks for -- so it joins the
+heredoc body in the header's list of what the lint cannot see, rather than
+acquiring a `-c` special case that would flag every container's script. There is
+no such site in the tree: the before/after above moved the finding count by
+exactly one, and a grep for a producer inside a single-line `-c '...'` finds
+nothing. **The function is not a no-op** -- 5850 of the 11030 command lines are
+re-read after masking, and exactly one finding changed.
 
 **The register keeps its row and loses half its reason.** The row is one
 `(file, tool)` pair covering both hits, so there was no row to delete: line
