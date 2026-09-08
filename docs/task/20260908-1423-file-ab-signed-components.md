@@ -37,3 +37,11 @@ Awaiting implementation approval for the completed file-based A/B proposal.
 - unclaim: Unified DATA plan amendment is complete; implementation remains pending approval.
 
 - unclaim: Selective writable-path plan correction is complete; implementation remains pending approval.
+
+- 2026-09-08 17:14: P1 dispatched as two L3 tasks with disjoint files. P1-A
+  (boot/trust primitives: signed verity on x64 and cx3576 kernels, cx3576
+  signed FIT, UEFI shared-UKI Type #1 entries) is BKD `ew42ee3o`, record
+  `20260908-1712-p1-signed-verity-boot`. P1-B (writable-path writer audit,
+  random-seed resolution, container-network destination) is BKD `iku9ubdw`,
+  record `20260908-1712-p1-writable-path-audit`. Both branch from
+  `a1bcd5bd` (cx3576 contract 454). P2+ wait on P1's evidence.

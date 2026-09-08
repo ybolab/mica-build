@@ -879,3 +879,9 @@ signed components, three-partition layout, unified DATA) approved by the user
 for implementation. Task `20260908-1423-file-ab-signed-components` claimed by
 L1. P1 — the feasibility gate — is being dispatched as two parallel L3 tasks;
 later phases wait on its evidence per the plan's own sequence.
+
+## 2026-09-08 17:14 [progress]
+
+P1 of `20260908-1428-file-ab-signed-components` dispatched: `ew42ee3o`
+(P1-A, boot/trust primitives) and `iku9ubdw` (P1-B, writer audit), records
+`20260908-1712-p1-signed-verity-boot` and `20260908-1712-p1-writable-path-audit`.
