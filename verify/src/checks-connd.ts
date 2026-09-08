@@ -35,7 +35,7 @@ import type { Board } from './board.ts'
 import { boardsWhere, hasRadio } from './board-scope.ts'
 import { regularFileFollowingLinks } from './checks-dbus.ts'
 import { unitValue } from './checks-engine.ts'
-import { entry, ETC_UNITS, packedRoot, wantsLink } from './checks-root.ts'
+import { entry, ETC_UNITS, packedRoot, regularFileInRoot, wantsLink } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { REPO_ROOT } from './paths.ts'
@@ -486,6 +486,149 @@ const DNSMASQ_CHECK: CheckCase = {
   },
 }
 
+// the regulatory database, and the one path by which this kernel can read it
+
+/**
+ * Where the reload lives, spelled once.
+ *
+ * The unit is `mos-wifi` payload, installed into /etc/systemd/system with a
+ * multi-user.target.wants link beside it, because the image root is an
+ * immutable dm-verity squashfs and nothing runs `systemctl enable` on it.
+ */
+const REGDB_UNIT = 'mos-regdb-reload.service'
+
+/**
+ * `/lib/firmware`, which is what the KERNEL searches, not `/usr/lib/firmware`.
+ *
+ * They are the same directory on a merged-usr root and the distinction still
+ * matters: the assertion is that the firmware loader finds the file, so it is
+ * spelled the way `fw_path[]` in drivers/base/firmware_loader/main.c spells it
+ * and it passes through the merged-usr symlink on the way. A root that lost
+ * that symlink would fail here, which is the correct answer.
+ */
+const REGDB_FILES = ['/lib/firmware/regulatory.db', '/lib/firmware/regulatory.db.p7s'] as const
+
+const REGDB_PRESENT: CheckCase = {
+  id: 'wifi-regdb-present',
+  boards: WIFI_BOARDS,
+  shell: {
+    pass: 'the wireless regulatory database is in the image at',
+    fail: 'the wireless regulatory database is missing from the image:',
+  },
+  run: async (ctx): Promise<readonly CheckResult[]> => {
+    const root = await packedRoot(ctx)
+    const missing = REGDB_FILES.filter(p => !regularFileInRoot(root, p))
+    return [verdict(
+      'wifi-regdb-present',
+      missing.length === 0,
+      missing.length === 0
+        ? `the wireless regulatory database is in the image at ${REGDB_FILES.join(' and ')}`
+        : `the wireless regulatory database is missing from the image: ${missing.join(', ')}. `
+          + `Without it cfg80211 falls back to its built-in world domain -- the most conservative `
+          + `channel and transmit-power set and no country code -- whatever country_code mosd `
+          + `renders into a wpa_supplicant or hostapd instance. The signature file is required `
+          + `too: the board kernels set CONFIG_CFG80211_REQUIRE_SIGNED_REGDB, so an unsigned `
+          + `database is refused exactly like an absent one`,
+    )]
+  },
+}
+
+/**
+ * The half that packaging alone does not buy, and the reason it is a separate
+ * conclusion from the file being present.
+ *
+ * cfg80211 is built into every board kernel here and these boards carry no
+ * initramfs, so `regulatory_init_db()` -- a late_initcall when cfg80211 is not
+ * a module -- asks the firmware loader for `regulatory.db` before the root is
+ * mounted. Measured on cx3576 hardware 2026-09-08: the request at 7.668 s, the
+ * root at 7.681 s. `regdb_fw_cb()` then writes `ERR_PTR(-ENODATA)` into the
+ * file-scope `regdb` pointer and `query_regdb_file()` returns it forever
+ * without asking again; registering a wiphy re-applies the domain cfg80211
+ * already has and does not re-read anything (net/wireless/reg.c). So a root
+ * that ships the database and nothing else ships a file the kernel will not
+ * look at again -- which is indistinguishable, from the file's side, from a
+ * root where it works.
+ */
+const REGDB_RELOAD_ENABLED: CheckCase = {
+  id: 'wifi-regdb-reload-enabled',
+  boards: WIFI_BOARDS,
+  shell: {
+    pass: `${REGDB_UNIT} is in the image and enabled at multi-user.target`,
+    fail: [
+      `${REGDB_UNIT} is not in the image`,
+      `${REGDB_UNIT} is in the image but nothing wants it`,
+    ],
+  },
+  run: async (ctx): Promise<readonly CheckResult[]> => {
+    const root = await packedRoot(ctx)
+    const unit = `/etc/systemd/system/${REGDB_UNIT}`
+    if (!regularFileInRoot(root, unit)) {
+      return [verdict('wifi-regdb-reload-enabled', false,
+        `${REGDB_UNIT} is not in the image at ${unit}, so nothing sends the NL80211_CMD_RELOAD_REGDB `
+        + `that is the only path in this kernel that clears the boot-time -ENODATA and reads the `
+        + `database`)]
+    }
+    const link = wantsLink(root, ['/etc/systemd/system', '/usr/lib/systemd/system'], REGDB_UNIT)
+    return [verdict(
+      'wifi-regdb-reload-enabled',
+      link !== undefined,
+      link !== undefined
+        ? `${REGDB_UNIT} is in the image and enabled at multi-user.target (${link})`
+        : `${REGDB_UNIT} is in the image but nothing wants it, so it never runs. The root is an `
+          + `immutable dm-verity squashfs and no maintainer script can enable a unit on it: the `
+          + `wants link is package payload or it does not exist`,
+    )]
+  },
+}
+
+/**
+ * ...and the program that unit runs is in the image.
+ *
+ * Its own conclusion rather than a clause of the one above, because the two
+ * fail for unrelated reasons with unrelated repairs -- a unit nothing wants is
+ * a packaging link, an ExecStart naming a binary the root does not carry is a
+ * missing Depends -- and because an enabled unit whose ExecStart is absent
+ * fails at boot with the database sitting in the image the whole time.
+ */
+const REGDB_RELOAD_TOOL: CheckCase = {
+  id: 'wifi-regdb-reload-tool',
+  boards: WIFI_BOARDS,
+  shell: {
+    pass: `${REGDB_UNIT} runs `,
+    fail: [
+      `${REGDB_UNIT} declares no ExecStart`,
+      `, which the image does not carry`,
+    ],
+  },
+  run: async (ctx): Promise<readonly CheckResult[]> => {
+    const root = await packedRoot(ctx)
+    const unit = `/etc/systemd/system/${REGDB_UNIT}`
+    const text = regularFileInRoot(root, unit) ? readFileSync(join(root, unit), 'utf8') : ''
+    // The first token after `ExecStart=`, with systemd's `-`/`@`/`:`/`+`/`!`
+    // prefixes stripped: the executable the unit would run.
+    const exec = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.startsWith('ExecStart='))
+      .map(l => l.slice('ExecStart='.length).trim().replace(/^[-@:+!]+/, '').split(/\s+/)[0])
+      .filter((p): p is string => p !== undefined && p.startsWith('/'))
+    if (exec.length === 0) {
+      return [verdict('wifi-regdb-reload-tool', false,
+        `${REGDB_UNIT} declares no ExecStart with an absolute program, so what it would run when it `
+        + `is started cannot be read off the image`)]
+    }
+    const missing = exec.filter(p => !regularFileInRoot(root, p))
+    return [verdict(
+      'wifi-regdb-reload-tool',
+      missing.length === 0,
+      missing.length === 0
+        ? `${REGDB_UNIT} runs ${exec.join(', ')}, and the image carries it`
+        : `${REGDB_UNIT} runs ${missing.join(', ')}, which the image does not carry. The unit is `
+          + `enabled and the database is packaged, so nothing else here goes red and the load `
+          + `simply never happens`,
+    )]
+  },
+}
+
 /**
  * The group SKIP, on a board that declares no Wi-Fi.
  *
@@ -501,7 +644,8 @@ const WIFI_SKIPPED: CheckCase = {
     'wifi-userland-skipped',
     `the Wi-Fi userland (hostapd, wpa_supplicant, their unit templates, the ExecStart/render-path `
     + `contract, the masking of the packages' own units, the STATE-backed binds for the two config `
-    + `directories, and the absence of dnsmasq): ${ctx.board.name} declares no wifi in BOARD_RADIOS, `
+    + `directories, the absence of dnsmasq, and the regulatory database with the unit that loads `
+    + `it): ${ctx.board.name} declares no wifi in BOARD_RADIOS, `
     + `so there is no radio for a station or an access point to run on and the image ships neither daemon`,
   )],
 }
@@ -669,6 +813,9 @@ export const CONND_CHECKS: readonly CheckCase[] = [
   renderTargetBind('wifi-ap-config-bind', CONTRACT.apDir),
   seedStateCreates('wifi-ap-config-seeded', CONTRACT.apDir),
   DNSMASQ_CHECK,
+  REGDB_PRESENT,
+  REGDB_RELOAD_ENABLED,
+  REGDB_RELOAD_TOOL,
   WIFI_SKIPPED,
   NAMESPACE_CHECK,
   SORT_ORDER_CHECK,

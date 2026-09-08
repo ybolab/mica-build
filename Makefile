@@ -15,7 +15,7 @@ BOARDS := cx3576 virt-arm64 x64
 	os-release-cx3576 os-release-gate \
 	podman-pins podman-pins-test os-netavark-kernel-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
-	os-shadow-test os-dbus-policy-test os-repart-test \
+	os-shadow-test os-dbus-policy-test os-repart-test os-gadget-test \
 	os-uboot-handshake-test os-cx3576-flash-test \
 	os-layout-lint os-verify-test os-build-test \
 	os-host-toolchain-lint os-host-toolchain-lint-test os-bare-host-gate \
@@ -191,6 +191,18 @@ os-devkeys:
 
 os-health-test:
 	bash tests/health-test.sh
+
+# Drives the real boards/cx3576/hwinit/hwinit-gadget against a fake configfs in
+# a temp dir, from cwd `/` -- the cwd its Type=oneshot service actually has.
+# What it asserts is the property configfs applies and an ordinary filesystem
+# does not: configfs_symlink() resolves the target STRING with kern_path() at
+# creation time, so a RELATIVE target names a different directory depending on
+# where the caller stands. That is why the broken form linked correctly in every
+# temp-directory reproduction and produced `Config c/1 ... needs at least one
+# function` on hardware. Drives the red direction too, by making configs/c.1 a
+# regular file. Needs no root, no docker and no board.
+os-gadget-test:
+	bash tests/gadget-configfs-test.sh
 
 # Drives the real mos-shadow-reconcile against fixtures in a temp dir: the
 # transient-root-password clearing, the mismatch branch that lets a dev image's

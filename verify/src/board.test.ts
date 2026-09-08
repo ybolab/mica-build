@@ -130,13 +130,13 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.cmdlineArgs).toBe('console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 146 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 147 assignments', () => {
     expect(cx3576.faults).toEqual([])
     expect(cx3576.env.duplicates).toEqual([])
     // If this number moves, the board definition gained or lost a key. That is
     // a deliberate act; update it deliberately.
-    expect(cx3576.env.assignments.length).toBe(146)
-    expect(cx3576.env.values.size).toBe(146)
+    expect(cx3576.env.assignments.length).toBe(147)
+    expect(cx3576.env.values.size).toBe(147)
   })
 })
 
@@ -222,11 +222,11 @@ describe('x64 — the GRUB board', () => {
     expect(x64.cmdlineArgs).toBe('console=tty0 console=ttyS0,115200 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 116 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 117 assignments', () => {
     expect(x64.faults).toEqual([])
     expect(x64.env.duplicates).toEqual([])
-    expect(x64.env.assignments.length).toBe(116)
-    expect(x64.env.values.size).toBe(116)
+    expect(x64.env.assignments.length).toBe(117)
+    expect(x64.env.values.size).toBe(117)
   })
 })
 

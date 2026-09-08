@@ -166,6 +166,17 @@ function healthyFdt(): FdtTable {
     '/leds/status-blue label': 'status-blue',
     '/leds/status-blue default-state': 'off',
     '/leds/status-blue -t x gpios': '117 8 0',
+    // The reserved-memory tree as boards/cx3576/bsp/kernel/dts compiles it: the
+    // two vendor placeholders with a zero extent, and the ramoops region moved
+    // into the DRAM the firmware hands over. `-l` is the subnode listing, which
+    // is how the check finds its subjects instead of naming an address.
+    '-l /reserved-memory': 'drm-logo@0\ndrm-cubic-lut@0\nramoops@40400000',
+    '/reserved-memory -t x #address-cells': '2',
+    '/reserved-memory -t x #size-cells': '2',
+    '/reserved-memory/drm-logo@0 -t x reg': '0 0 0 0',
+    '/reserved-memory/drm-cubic-lut@0 -t x reg': '0 0 0 0',
+    '/reserved-memory/ramoops@40400000 -t x reg': '0 40400000 0 e0000',
+    '/reserved-memory/ramoops@40400000 no-map': '',
   }
 }
 
@@ -193,6 +204,16 @@ function tools(world: World, offsets: { a: number, b: number }): ToolRuntime {
       }
       writeFileSync(mcopy[3] as string, bytes)
       return { argv, code: 0, stdout: '', stderr: '' }
+    }
+    // `fdtget -l <dtb> <node>` -- two positional arguments, so it cannot share
+    // the property matcher below and is answered from its own `-l <node>` key.
+    const fdtList = /fdtget -l \S+ (\S+)$/.exec(line)
+    if (fdtList !== null) {
+      const value = world.fdt[`-l ${fdtList[1]}`]
+      if (value === undefined) {
+        return { argv, code: 1, stdout: '', stderr: `Error at '${fdtList[1]}': FDT_ERR_NOTFOUND\n` }
+      }
+      return { argv, code: 0, stdout: value === '' ? '' : `${value}\n`, stderr: '' }
     }
     const fdt = /fdtget (?:-t (\w) )?\S+ (\S+) (\S+)$/.exec(line)
     if (fdt !== null) {
@@ -685,6 +706,87 @@ describe('the status-LED device tree', () => {
 })
 
 // the compiled boot script
+
+// the reserved-memory regions, against the firmware's DRAM window
+
+describe('the reserved-memory device tree', () => {
+  test('four entries on cx3576, and none on a board with no declared window', () => {
+    const rm = CHECKS.filter(c => c.id.startsWith('reserved-memory-window-')
+      || c.id.startsWith('ramoops-no-map-'))
+    expect(rm.length).toBe(4)
+    expect(rm.every(c => c.boards?.includes('cx3576') === true)).toBe(true)
+    expect(rm.some(c => c.boards?.includes('x64') === true)).toBe(false)
+  })
+
+  test('green on the shipped device tree, naming what it compared', async () => {
+    const r = one(await drive('reserved-memory-window-cx3576-BOOT-A', world()))
+    expect(r.verdict).toBe('pass')
+    expect(r.message).toContain('every reserved region with an extent lies at or above 0x40200000')
+    expect(r.message).toContain('ramoops@40400000 [0x40400000, 0x404e0000)')
+    // The zero-extent vendor placeholders are named as not compared rather
+    // than silently dropped: a reader has to be able to see the subject set.
+    expect(r.message).toContain('zero-size and not compared: drm-logo@0, drm-cubic-lut@0')
+  })
+
+  test('RED on the vendor address the first hardware boot shipped', async () => {
+    // rk3576-linux.dtsi's own ramoops@40110000, 0xf0000 inside the 2 MiB TF-A
+    // keeps. This is the state the board actually booted in on 2026-09-08,
+    // with pstore registered and the console writing into firmware memory.
+    const fdt = { ...healthyFdt() }
+    delete fdt['/reserved-memory/ramoops@40400000 -t x reg']
+    delete fdt['/reserved-memory/ramoops@40400000 no-map']
+    fdt['-l /reserved-memory'] = 'drm-logo@0\ndrm-cubic-lut@0\nramoops@40110000'
+    fdt['/reserved-memory/ramoops@40110000 -t x reg'] = '0 40110000 0 e0000'
+    fdt['/reserved-memory/ramoops@40110000 no-map'] = ''
+    const r = one(await drive('reserved-memory-window-cx3576-BOOT-A', world({ fdt })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('ramoops@40110000 at 0x40110000 lies BELOW 0x40200000')
+    expect(r.message).toContain('shares it with the boot chain')
+  })
+
+  test('RED when the region is dropped entirely, rather than passing vacuously', async () => {
+    // Every remaining region has a zero extent, so a check written as "no
+    // region is below the window" would be green on a device tree that had
+    // lost pstore altogether.
+    const fdt = { ...healthyFdt() }
+    fdt['-l /reserved-memory'] = 'drm-logo@0\ndrm-cubic-lut@0'
+    const window = one(await drive('reserved-memory-window-cx3576-BOOT-A', world({ fdt })))
+    expect(window.verdict).toBe('fail')
+    expect(window.message).toContain('no region with a non-zero extent')
+    const noMap = one(await drive('ramoops-no-map-cx3576-BOOT-A', world({ fdt })))
+    expect(noMap.verdict).toBe('fail')
+    expect(noMap.message).toContain('declares 0 ramoops region(s)')
+  })
+
+  test('RED when a reg cannot be folded against the parent cell counts', async () => {
+    const fdt = { ...healthyFdt() }
+    fdt['/reserved-memory/ramoops@40400000 -t x reg'] = '40400000 e0000'
+    const r = one(await drive('reserved-memory-window-cx3576-BOOT-A', world({ fdt })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('ramoops@40400000 have a reg this reader cannot fold')
+  })
+
+  test('no-map is its own conclusion: the window passes without it', async () => {
+    const fdt = { ...healthyFdt() }
+    delete fdt['/reserved-memory/ramoops@40400000 no-map']
+    expect(one(await drive('reserved-memory-window-cx3576-BOOT-B', world({ fdt }))).verdict).toBe('pass')
+    const r = one(await drive('ramoops-no-map-cx3576-BOOT-B', world({ fdt })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('does not carry no-map')
+    expect(r.message).toContain('mismatched memory types')
+  })
+
+  test('RED, and NOT a throw, when the dtb was never extracted from the slot', async () => {
+    const slots = healthySlots()
+    const a = { ...slots.a }
+    delete (a as Record<string, Buffer | undefined>)['rk3576-src.dtb']
+    for (const id of ['reserved-memory-window-cx3576-BOOT-A', 'ramoops-no-map-cx3576-BOOT-A']) {
+      const r = one(await drive(id, world({ slots: { a, b: slots.b } })))
+      expect(r.verdict).toBe('fail')
+      expect(r.message).toContain('missing or unreadable')
+    }
+  })
+})
 
 describe('boot-scr-identical', () => {
   test('green when both slots carry the same compiled script', async () => {

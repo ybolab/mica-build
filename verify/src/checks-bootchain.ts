@@ -32,7 +32,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import type { Board } from './board.ts'
-import { boardsWhere, hasLed, isUBoot, SHIPPED } from './board-scope.ts'
+import { boardsWhere, hasDramWindow, hasLed, isUBoot, SHIPPED } from './board-scope.ts'
 import { PER_SLOT, SLOTS, slotOffsetBytes, type BootSlot } from './boot-slots.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import { imageLayout } from './image-layout.ts'
@@ -40,6 +40,8 @@ import {
   fatCopyOut,
   fdtGet,
   fdtGetCells,
+  fdtGetResult,
+  fdtSubnodes,
   readBytes,
   uImageMagic,
   uImageText,
@@ -552,6 +554,214 @@ const LED_SKIP: readonly CheckCase[] = [
   },
 ]
 
+// 3b. the reserved-memory regions, against the DRAM the firmware hands over
+
+/**
+ * The defect this family exists for, because it is not the obvious one.
+ *
+ * `rk3576-linux.dtsi` declares `ramoops@40110000`, 0xe0000 at 0x40110000. RK3576
+ * DRAM starts at 0x40000000 and TF-A/BL31 keeps the first 2 MiB, so the memory
+ * node U-Boot writes begins at 0x40200000 and the ENTIRE ramoops region lies
+ * below it -- in memory the kernel is never told about, cannot reserve, and
+ * shares with the firmware. It was not latent: pstore registered the backend
+ * and took the console, so every printk on every boot was written into BL31's
+ * memory. The board ran anyway. RFCT-355 moved the region to 0x40400000 with
+ * `no-map`; this is what stops the next vendor `.dtsi` bump from moving it back
+ * without anyone noticing, and it reads the SHIPPED device tree out of the boot
+ * slot rather than the source.
+ *
+ * NOTHING HERE NAMES AN ADDRESS. The window comes from the board's own
+ * BOARD_DRAM_USABLE_BASE and the regions are enumerated out of the blob with
+ * `fdtget -l`, so the check is a property over whatever the device tree
+ * contains and not a second copy of the .dts. A check that asked for
+ * `/reserved-memory/ramoops@40400000` by name would agree with the constant it
+ * was written from for as long as both were edited together, which is the
+ * failure mode this whole family is a response to.
+ */
+const RESERVED_MEMORY = '/reserved-memory'
+
+const NOT_DRAM_WINDOW = boardsWhere(b => !hasDramWindow(b))
+
+/** One reserved region, as the device tree spells it. */
+interface Region {
+  readonly node: string
+  readonly base: bigint
+  readonly size: bigint
+}
+
+/**
+ * `<address... size...>` folded into two numbers, honouring the parent's cell
+ * counts rather than assuming the two-and-two this board happens to use.
+ *
+ * `undefined` when the cell count does not match what the parent declared,
+ * which is a `reg` this reader cannot interpret -- reported by the caller as a
+ * failure, never skipped: a region whose extent nobody can compute is exactly
+ * the one that must not pass.
+ */
+function foldReg(cells: readonly string[], addressCells: number, sizeCells: number): Region | undefined {
+  if (cells.length !== addressCells + sizeCells) return undefined
+  const fold = (part: readonly string[]): bigint =>
+    part.reduce((acc, cell) => (acc << 32n) | BigInt(`0x${cell}`), 0n)
+  return {
+    node: '',
+    base: fold(cells.slice(0, addressCells)),
+    size: fold(cells.slice(addressCells)),
+  }
+}
+
+/** `#address-cells` / `#size-cells` of /reserved-memory, or undefined if unreadable. */
+async function reservedMemoryCells(
+  ctx: ImageContext,
+  dtb: string,
+): Promise<{ address: number, size: number } | undefined> {
+  const read = async (property: string): Promise<number | undefined> => {
+    const cells = await fdtGetCells(ctx.tools, dtb, RESERVED_MEMORY, property)
+    if (cells.length !== 1) return undefined
+    const n = Number(BigInt(`0x${cells[0]}`))
+    return n === 1 || n === 2 ? n : undefined
+  }
+  const address = await read('#address-cells')
+  const size = await read('#size-cells')
+  if (address === undefined || size === undefined) return undefined
+  return { address, size }
+}
+
+/** Every /reserved-memory child, with its extent. `undefined` when the tree is unreadable. */
+async function reservedRegions(
+  ctx: ImageContext,
+  dtb: string,
+): Promise<{ regions: Region[], unreadable: string[] } | undefined> {
+  const cells = await reservedMemoryCells(ctx, dtb)
+  if (cells === undefined) return undefined
+  const names = await fdtSubnodes(ctx.tools, dtb, RESERVED_MEMORY)
+  const regions: Region[] = []
+  const unreadable: string[] = []
+  for (const name of names) {
+    const reg = await fdtGetCells(ctx.tools, dtb, `${RESERVED_MEMORY}/${name}`, 'reg')
+    // A node with no `reg` at all is a `size`/`alignment` dynamic placement,
+    // which has no address to compare; it is reported rather than dropped.
+    const folded = reg.length === 0 ? undefined : foldReg(reg, cells.address, cells.size)
+    if (folded === undefined) { unreadable.push(name); continue }
+    regions.push({ ...folded, node: name })
+  }
+  return { regions, unreadable }
+}
+
+const hex = (n: bigint): string => `0x${n.toString(16)}`
+
+function reservedMemoryChecks(board: Board): CheckCase[] {
+  if (!hasDramWindow(board)) return []
+  const dtb = bootSlotDtb(board)
+  if (dtb === undefined) {
+    throw new ToolOutputError(
+      `${board.path} declares BOARD_DRAM_USABLE_BASE and lists no .dtb in `
+      + `BOOT_SLOT_REQUIRED_FILES, so there is no device tree in the boot slot whose reserved `
+      + `regions could be compared against that window. A board with a firmware-declared DRAM `
+      + `base and no device tree is a combination this check cannot mean anything about.`,
+    )
+  }
+  const base = BigInt(board.dramUsableBase ?? '0')
+  return SLOTS.flatMap((slot) => {
+    const head = `${slot.display} ${dtb}: ${RESERVED_MEMORY}`
+    const dtbFor = async (ctx: ImageContext): Promise<string | undefined> => slotCopy(ctx, slot, dtb)
+    return [
+      {
+        id: `reserved-memory-window-${board.name}-${slot.display}`,
+        boards: [board.name],
+        shell: { pass: `${head}: every reserved region with an extent lies at or above ` },
+        run: async (ctx: ImageContext): Promise<readonly CheckResult[]> => {
+          const id = `reserved-memory-window-${board.name}-${slot.display}`
+          const file = await dtbFor(ctx)
+          if (file === undefined) {
+            return [verdict(id, false, `${head}: ${dtb} missing or unreadable in ${slot.display}`)]
+          }
+          const read = await reservedRegions(ctx, file)
+          if (read === undefined) {
+            return [verdict(id, false,
+              `${head} declares no readable #address-cells/#size-cells pair, so no region in it `
+              + `has an extent this check can compute`)]
+          }
+          if (read.unreadable.length > 0) {
+            return [verdict(id, false,
+              `${head}: ${read.unreadable.join(', ')} have a reg this reader cannot fold against `
+              + `the parent cell counts, or none at all; a region whose extent cannot be computed `
+              + `is the one that must not pass unexamined`)]
+          }
+          // Zero-size regions are the vendor's dynamic placeholders (drm-logo,
+          // drm-cubic-lut): the kernel itself refuses them at boot with "failed
+          // to reserve memory for node ...: size 0 MiB", and they carry no
+          // address to compare. Named in the message so the subject set the
+          // check actually examined is visible rather than implied.
+          const sized = read.regions.filter(r => r.size > 0n)
+          const empty = read.regions.filter(r => r.size === 0n).map(r => r.node)
+          if (sized.length === 0) {
+            return [verdict(id, false,
+              `${head} has no region with a non-zero extent (${read.regions.length} node(s): `
+              + `${read.regions.map(r => r.node).join(', ') || 'none'}). This board reserves memory `
+              + `for pstore, so an empty subject set is a device tree that lost it rather than a `
+              + `board with nothing to check`)]
+          }
+          const below = sized.filter(r => r.base < base)
+          const shown = sized
+            .map(r => `${r.node} [${hex(r.base)}, ${hex(r.base + r.size)})`)
+            .join(', ')
+          return [verdict(id, below.length === 0,
+            below.length === 0
+              ? `${head}: every reserved region with an extent lies at or above ${hex(base)} -- `
+                + `${shown}${empty.length > 0 ? `; zero-size and not compared: ${empty.join(', ')}` : ''}`
+              : `${head}: ${below.map(r => `${r.node} at ${hex(r.base)}`).join(', ')} `
+                + `lies BELOW ${hex(base)}, the lowest DRAM address this board's firmware hands the `
+                + `kernel. That is firmware memory: the kernel is never told about it and cannot `
+                + `reserve it, so whatever the region is for shares it with the boot chain`)]
+        },
+      },
+      {
+        id: `ramoops-no-map-${board.name}-${slot.display}`,
+        boards: [board.name],
+        shell: { pass: `${head}: ramoops is one region and carries no-map` },
+        run: async (ctx: ImageContext): Promise<readonly CheckResult[]> => {
+          const id = `ramoops-no-map-${board.name}-${slot.display}`
+          const file = await dtbFor(ctx)
+          if (file === undefined) {
+            return [verdict(id, false, `${head}: ${dtb} missing or unreadable in ${slot.display}`)]
+          }
+          const names = (await fdtSubnodes(ctx.tools, file, RESERVED_MEMORY))
+            .filter(n => n === 'ramoops' || n.startsWith('ramoops@'))
+          if (names.length !== 1) {
+            return [verdict(id, false,
+              `${head} declares ${names.length} ramoops region(s) (${names.join(', ') || 'none'}), `
+              + `expected exactly one. pstore takes the console on this board, so a device tree `
+              + `with none has lost the persistent log and one with two has an ambiguity the `
+              + `window assertion above cannot resolve`)]
+          }
+          const node = `${RESERVED_MEMORY}/${names[0]}`
+          const noMap = await fdtGetResult(ctx.tools, file, node, 'no-map')
+          return [verdict(id, noMap.value !== undefined,
+            noMap.value !== undefined
+              ? `${head}: ramoops is one region and carries no-map (${names[0]})`
+              : `${head}/${names[0]} does not carry no-map. Without it the region stays in the `
+                + `arm64 linear map as Normal cacheable while fs/pstore/ram_core.c maps it `
+                + `write-combine, which is two live mappings of one physical range with `
+                + `mismatched memory types`)]
+        },
+      },
+    ] satisfies CheckCase[]
+  })
+}
+
+const RESERVED_MEMORY_SKIP: readonly CheckCase[] = [
+  {
+    id: 'reserved-memory-skipped',
+    boards: NOT_DRAM_WINDOW,
+    shell: { skip: 'the reserved-memory device-tree assertions (' },
+    run: async (ctx): Promise<readonly CheckResult[]> => [skipped('reserved-memory-skipped',
+      `the reserved-memory device-tree assertions (${ctx.board.name} declares `
+      + `BOARD_DRAM_USABLE_BASE empty): this board's memory map comes from its firmware at run `
+      + `time and no device tree in its boot slot places anything at a fixed physical address, so `
+      + `there is no region whose base could fall outside a window`)],
+  },
+]
+
 // 4. boot.scr -- the compiled boot script
 
 /** The compiled script out of a slot, or undefined when it is not there. */
@@ -915,6 +1125,7 @@ function generatedFor(boards: readonly Board[]): CheckCase[] {
     ...bspCompareChecks(b),
     ...bootDigestChecks(b),
     ...ledChecks(b),
+    ...reservedMemoryChecks(b),
     ...bootScriptNumberChecks(b),
   ])
 }
@@ -924,6 +1135,7 @@ export function bootChainChecks(boards: readonly Board[]): readonly CheckCase[] 
     ...generatedFor(boards),
     ...RAW_BLOB_SKIP,
     ...LED_SKIP,
+    ...RESERVED_MEMORY_SKIP,
     ...BOOT_SCRIPT_CHECKS,
     ...BOOT_SCRIPT_SKIPS,
     ...VERITY_ENV_CHECKS,
