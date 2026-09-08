@@ -304,3 +304,11 @@ board.**
 Both images were composed from the arm64 pool built at `0857e0ee`, the commit
 that carries the code; the corrections in sections 4 and 6 landed after them and
 change comments and documents only, no package bytes.
+
+**Re-measured after merging main** (`0368beaf`, which brought RFCT-356). That
+merge touches `rootfs/build.sh`'s build-commit record, the factory-root gate and
+`verify/src/smoke*.ts` -- the smoke side, not the packed root and not the image
+contract's register -- so the images stand. Both contract runs were repeated on
+the merged tree against the same images anyway: cx3576 `PASS (442/442, 3
+skipped)`, virt-arm64 `PASS (323/323, 24 skipped)`, and `verify/run.sh`
+`PASS (1396/1396)`.
