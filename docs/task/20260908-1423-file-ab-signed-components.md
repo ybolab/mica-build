@@ -60,3 +60,15 @@ Awaiting implementation approval for the completed file-based A/B proposal.
   stalled with its turn ended during a three-boot QEMU run whose second boot
   failed on SSH; resumed by follow-up with the measured outcome.
 
+- 2026-09-08 20:22: P1-B (`iku9ubdw`) merged. Deliverables: the 14-row writer contract
+  and 25-row negative list for x64 (each row observed/declared/inferred), the
+  random-seed resolution as a file bind (start, shutdown save and reboot
+  survival measured; systemd-random-seed writes through the inode), the
+  container-network destination `/mos/containers/networks` with the reset
+  tiers read off `reset.rs`, `/var/tmp`/`PrivateTmp=` guidance, the P5 change
+  list and board differences. L1 re-ran the static half and one candidate
+  boot: the bind, save/load and the seed's change on DATA after power-down
+  all reproduce. Four findings outside the contract became three pending
+  tasks (`state-units-never-load`, `ssh-generator-vs-image-policy`,
+  `wtmp-unbounded-append`). Harness: `tests/p1-writable-path-audit/`.
+

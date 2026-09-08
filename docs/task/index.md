@@ -145,3 +145,4 @@ thing about the tree. Both indexes now say the same thing.
 - [ ] [**20260908-2011-state-units-never-load STATE-seeded systemd units never load on first boot**](20260908-2011-state-units-never-load.md) `P2`
 - [ ] [**20260908-2011-ssh-generator-vs-image-policy systemd-ssh-generator overrides the image's SSH policy and port**](20260908-2011-ssh-generator-vs-image-policy.md) `P2`
 - [ ] [**20260908-2011-wtmp-unbounded-append Login accounting appends to /var/log/wtmp without a bound**](20260908-2011-wtmp-unbounded-append.md) `P2`
+- [x] [**20260908-1712-p1-writable-path-audit P1-B: audit the enabled writers and produce the writable-path contract**](20260908-1712-p1-writable-path-audit.md) `P1`
