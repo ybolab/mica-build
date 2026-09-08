@@ -885,3 +885,12 @@ later phases wait on its evidence per the plan's own sequence.
 P1 of `20260908-1428-file-ab-signed-components` dispatched: `ew42ee3o`
 (P1-A, boot/trust primitives) and `iku9ubdw` (P1-B, writer audit), records
 `20260908-1712-p1-signed-verity-boot` and `20260908-1712-p1-writable-path-audit`.
+
+## 2026-09-08 17:19 [progress]
+
+User direction on `20260908-1428-file-ab-signed-components`: parallel
+execution confirmed; x64 completes each phase first and is verified under
+QEMU, then the same layout is applied to cx3576 and the other boards. The
+plan's sequencing rule and annotations record it; both P1 tasks were
+re-prioritised by follow-up, and P1-A reports its x64 stage separately so P2
+for x64 can open on it.

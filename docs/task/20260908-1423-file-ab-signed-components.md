@@ -45,3 +45,8 @@ Awaiting implementation approval for the completed file-based A/B proposal.
   random-seed resolution, container-network destination) is BKD `iku9ubdw`,
   record `20260908-1712-p1-writable-path-audit`. Both branch from
   `a1bcd5bd` (cx3576 contract 454). P2+ wait on P1's evidence.
+
+- 2026-09-08 17:19: user direction — parallel confirmed, x64 first under
+  QEMU, then the same layout on cx3576 and the other boards. Both P1 tasks
+  re-prioritised by follow-up; P1-A reports its x64 stage on its own so P2
+  for x64 can open before the cx3576/virt-arm64 stage finishes.
