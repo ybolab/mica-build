@@ -142,14 +142,14 @@ function healthySlots(): { a: SlotContent, b: SlotContent } {
       'Image': Buffer.from('KERNEL-IMAGE-BYTES'),
       'rk3576-src.dtb': Buffer.from([0xd0, 0x0d, 0xfe, 0xed, 1, 2, 3, 4]),
       'boot.scr': scr,
-      'mos-boot-digest.env': Buffer.from(DIGEST_ENV, 'latin1'),
+      'mos-boot-digest-a.env': Buffer.from(DIGEST_ENV, 'latin1'),
       'mos-verity-a.env': Buffer.from(VERITY_A, 'latin1'),
     },
     b: {
       'Image': Buffer.from('KERNEL-IMAGE-BYTES'),
       'rk3576-src.dtb': Buffer.from([0xd0, 0x0d, 0xfe, 0xed, 1, 2, 3, 4]),
       'boot.scr': scr,
-      'mos-boot-digest.env': Buffer.from(DIGEST_ENV, 'latin1'),
+      'mos-boot-digest-b.env': Buffer.from(DIGEST_ENV, 'latin1'),
       'mos-verity-b.env': Buffer.from(VERITY_B, 'latin1'),
     },
   }
@@ -491,12 +491,12 @@ describe('the per-slot boot digest', () => {
   test('RED when the slot carries no digest file at all', async () => {
     const slots = healthySlots()
     const a = { ...slots.a }
-    delete (a as Record<string, Buffer | undefined>)['mos-boot-digest.env']
+    delete (a as Record<string, Buffer | undefined>)['mos-boot-digest-a.env']
     const r = one(await drive('boot-digest-cx3576-BOOT-A-rk3576-src.dtb', world({
       slots: { a, b: slots.b },
     })))
     expect(r.verdict).toBe('fail')
-    expect(r.message).toBe('BOOT-A mos-boot-digest.env missing or unreadable')
+    expect(r.message).toBe('BOOT-A mos-boot-digest-a.env missing or unreadable')
   })
 
   test('a pair that is HALF there matches nothing', async () => {
@@ -505,7 +505,7 @@ describe('the per-slot boot digest', () => {
     const slots = healthySlots()
     const r = one(await drive('boot-digest-cx3576-BOOT-A-Image', world({
       slots: {
-        a: { ...slots.a, 'mos-boot-digest.env': Buffer.from('kernel_bytes=12\n', 'latin1') },
+        a: { ...slots.a, 'mos-boot-digest-a.env': Buffer.from('kernel_bytes=12\n', 'latin1') },
         b: slots.b,
       },
     })))
@@ -519,6 +519,23 @@ describe('the per-slot boot digest', () => {
     })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('BOOT-B')
+  })
+
+  test('and each slot reads the digest file that NAMES it, not the other one', async () => {
+    // The whole point of the suffix. A RAUC-installed slot carries both files;
+    // reading the wrong one would verify this slot's kernel against the other
+    // slot's record. Slot A gets a mos-boot-digest-b.env describing something
+    // else, and must not touch it.
+    const slots = healthySlots()
+    const wrong = 'kernel_bytes=99\nkernel_crc=deadbeef\nfdt_bytes=99\nfdt_crc=deadbeef\n'
+    const r = one(await drive('boot-digest-cx3576-BOOT-A-Image', world({
+      slots: {
+        a: { ...slots.a, 'mos-boot-digest-b.env': Buffer.from(wrong, 'latin1') },
+        b: slots.b,
+      },
+    })))
+    expect(r.verdict).toBe('pass')
+    expect(r.message).toContain('BOOT-A mos-boot-digest-a.env')
   })
 })
 

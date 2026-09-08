@@ -143,14 +143,18 @@ with open(out, 'w') as fh:
         fh.write('%s_crc=%08x\n' % (key, zlib.crc32(data)))
 PY
 }
-digest_env "${BOOT_DIGEST_ENV_NAME}" Image rk3576-src.dtb
+for slot in a b; do
+    digest_env "mos-boot-digest-${slot}.env" Image rk3576-src.dtb
+done
 
 # The two ways a slot can carry an Image that is not the one its digest
 # describes, one per assertion in the script.
 #   mixed  -- SAME LENGTH, different bytes in the middle. This is the shape of
-#             the failure that was measured on hardware: the console reported
-#             the full 44493312 bytes read while DRAM held a mixture of two
-#             kernel builds. Only the checksum can see it.
+#             the failure measured on the board, where a poisoned word was
+#             overwritten by the PREVIOUS build's bytes and the console still
+#             reported the full 44493312 bytes read. Only the checksum can see
+#             it; the size compare is green on it, which is why scenario 4
+#             asserts that the size half did NOT fire.
 #   short  -- fewer bytes than the digest records, which ${filesize} alone sees.
 mkdir -p mixed short
 cp Image mixed/Image
@@ -201,24 +205,24 @@ mkdisk() { # out-img boot-a-slot-img boot-b-slot-img
     dd if="${slotb}" of="${out}" bs=1M seek=$((BOOT_B_OFFSET_BYTES / MIB_BYTES)) conv=notrunc status=none
 }
 
-mkfatslot slot-a-complete.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
-mkfatslot slot-b-complete.img "${BOOT_B_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_B_NAME}" "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-a-complete.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_A_NAME}"
+mkfatslot slot-b-complete.img "${BOOT_B_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_B_NAME}" "${BOOT_DIGEST_ENV_B_NAME}"
 # The burn case: slot A ships NEITHER the suffixed nor the unsuffixed verity
 # env, so both load attempts must fail and the script must zero A's credits.
 # Everything else about the slot is complete, including the digest file, so the
 # scenario has exactly one fault in it.
-mkfatslot slot-a-noverity.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-a-noverity.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_DIGEST_ENV_A_NAME}"
 # The three ways the load guard must refuse. Each carries ONE fault: an Image
 # that is the recorded length and not the recorded bytes, an Image that is
 # short, and a slot with no digest file to check anything against.
-mkfatslot slot-a-mixed.img "${BOOT_A_FAT_LABEL}" mixed/Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
-mkfatslot slot-a-short.img "${BOOT_A_FAT_LABEL}" short/Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-a-mixed.img "${BOOT_A_FAT_LABEL}" mixed/Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_A_NAME}"
+mkfatslot slot-a-short.img "${BOOT_A_FAT_LABEL}" short/Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_A_NAME}"
 mkfatslot slot-a-nodigest.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}"
 # And the branch that fires when there is nothing to load: a complete slot
 # minus the kernel. It is here rather than in scenario 1 because scenario 1's
 # out-of-RAM address does not reach it -- the sandbox aborts on the unmappable
 # write instead (see the LMB note in the header).
-mkfatslot slot-a-noimage.img "${BOOT_A_FAT_LABEL}" rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-a-noimage.img "${BOOT_A_FAT_LABEL}" rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_A_NAME}"
 
 mkdisk disk-complete.img slot-a-complete.img slot-b-complete.img
 mkdisk disk-noverity-a.img slot-a-noverity.img slot-b-complete.img
@@ -236,14 +240,21 @@ check "noverity slot A lacks the unsuffixed ${BOOT_VERITY_ENV_NAME} fallback too
     "$(mdir -i slot-a-noverity.img -b ::/ | grep -cF "::/${BOOT_VERITY_ENV_NAME}")" 0
 check "boot.scr fixture is a legacy U-Boot image" \
     "$(od -An -tx1 -N4 boot.scr | tr -d ' \n')" 27051956
-check "complete slot A carries ${BOOT_DIGEST_ENV_NAME}" \
-    "$(mdir -i slot-a-complete.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_NAME}")" 1
-check "nodigest slot A lacks ${BOOT_DIGEST_ENV_NAME}" \
-    "$(mdir -i slot-a-nodigest.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_NAME}")" 0
+check "complete slot A carries ${BOOT_DIGEST_ENV_A_NAME}" \
+    "$(mdir -i slot-a-complete.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_A_NAME}")" 1
+# The factory layout the assembler writes: each slot carries the digest file
+# that NAMES it and not the other one. A slot carrying both would make this
+# harness unable to tell "read the right file" from "read either file".
+check "complete slot A does NOT carry ${BOOT_DIGEST_ENV_B_NAME}" \
+    "$(mdir -i slot-a-complete.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_B_NAME}")" 0
+check "complete slot B carries ${BOOT_DIGEST_ENV_B_NAME}" \
+    "$(mdir -i slot-b-complete.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_B_NAME}")" 1
+check "nodigest slot A lacks ${BOOT_DIGEST_ENV_A_NAME}" \
+    "$(mdir -i slot-a-nodigest.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_A_NAME}")" 0
 check "noimage slot A lacks Image and keeps everything else" \
     "$(mdir -i slot-a-noimage.img -b ::/ | grep -cF "::/Image")" 0
 check "noimage slot A still carries its digest file" \
-    "$(mdir -i slot-a-noimage.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_NAME}")" 1
+    "$(mdir -i slot-a-noimage.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_A_NAME}")" 1
 # The mixed fixture is the whole point of the crc32 assertion, so the two facts
 # that make it one are asserted rather than assumed: SAME length, DIFFERENT
 # bytes. A `cp` that silently produced an identical file would make scenario 4
@@ -257,19 +268,19 @@ check "short Image is shorter than the digested one" \
 # And the digest file must actually describe the pristine pair, or every
 # scenario below burns for the wrong reason.
 check "the digest records the Image's real length" \
-    "$(sed -n 's/^kernel_bytes=//p' "${BOOT_DIGEST_ENV_NAME}")" \
+    "$(sed -n 's/^kernel_bytes=//p' "${BOOT_DIGEST_ENV_A_NAME}")" \
     "$(printf '%x' "$(stat -c %s Image)")"
 check "the digest records the dtb's real length" \
-    "$(sed -n 's/^fdt_bytes=//p' "${BOOT_DIGEST_ENV_NAME}")" \
+    "$(sed -n 's/^fdt_bytes=//p' "${BOOT_DIGEST_ENV_A_NAME}")" \
     "$(printf '%x' "$(stat -c %s rk3576-src.dtb)")"
 check "the digest's checksums are eight hex digits" \
-    "$(grep -c '^[a-z]*_crc=[0-9a-f]\{8\}$' "${BOOT_DIGEST_ENV_NAME}")" 2
+    "$(grep -c '^[a-z]*_crc=[0-9a-f]\{8\}$' "${BOOT_DIGEST_ENV_A_NAME}")" 2
 
 # The two checksums the passing cycles print, read back out of the fixture
 # rather than written down: the fixture files are generated, so a literal here
 # would be a second statement of a value this script already computed.
-KERNEL_CRC="$(sed -n 's/^kernel_crc=//p' "${BOOT_DIGEST_ENV_NAME}")"
-FDT_CRC="$(sed -n 's/^fdt_crc=//p' "${BOOT_DIGEST_ENV_NAME}")"
+KERNEL_CRC="$(sed -n 's/^kernel_crc=//p' "${BOOT_DIGEST_ENV_A_NAME}")"
+FDT_CRC="$(sed -n 's/^fdt_crc=//p' "${BOOT_DIGEST_ENV_A_NAME}")"
 check "the fixture digest yielded a kernel checksum" "${#KERNEL_CRC}" 8
 check "the fixture digest yielded a dtb checksum" "${#FDT_CRC}" 8
 
@@ -416,7 +427,7 @@ log_has "s4 cycle 1: crc32 -v reports the mismatch" s4-c1.log "** ERROR **"
 log_has "s4 cycle 1: the script names the slot and the fault" s4-c1.log \
     "mos: slot A p${BOOT_A_PARTNUM}: Image:"
 log_has "s4 cycle 1: and names the checksum as the failing half" s4-c1.log "crc32 is not"
-log_lacks "s4 cycle 1: the SIZE was fine, so that half must not fire" s4-c1.log "bytes landed, mos-boot-digest.env says"
+log_lacks "s4 cycle 1: the SIZE was fine, so that half must not fire" s4-c1.log "bytes landed, the digest says"
 log_lacks "s4 cycle 1: the kernel was never handed control" s4-c1.log "mos: booti returned"
 assert_env "s4 cycle 1: burned" 0 3
 rc="$(run_cycle s4-c2.log)"
@@ -437,18 +448,18 @@ seed_env mmc0.img 0x02000000
 rc="$(run_cycle s5-c1.log)"
 check "s5 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
 log_has "s5 cycle 1: the size compare is what fires" s5-c1.log \
-    "mos: slot A p${BOOT_A_PARTNUM}: Image: 3ff000 bytes landed, mos-boot-digest.env says 400000"
+    "mos: slot A p${BOOT_A_PARTNUM}: Image: 3ff000 bytes landed, the digest says 400000"
 log_lacks "s5 cycle 1: and it fires BEFORE the checksum, which never runs" s5-c1.log "** ERROR **"
 log_lacks "s5 cycle 1: the kernel was never handed control" s5-c1.log "mos: booti returned"
 assert_env "s5 cycle 1: burned" 0 3
 
-echo "=== scenario 6: a slot with no mos-boot-digest.env burns its credits ==="
+echo "=== scenario 6: a slot with no mos-boot-digest-<slot>.env burns its credits ==="
 cp disk-nodigest-a.img mmc0.img
 seed_env mmc0.img 0x02000000
 rc="$(run_cycle s6-c1.log)"
 check "s6 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
 log_has "s6 cycle 1: its own verity env loaded fine, so this is the digest file" s6-c1.log \
-    "mos: slot A p${BOOT_A_PARTNUM}: no mos-boot-digest.env beside Image"
+    "mos: slot A p${BOOT_A_PARTNUM}: no mos-boot-digest-a.env beside Image"
 log_lacks "s6 cycle 1" s6-c1.log "has no mos-verity"
 log_lacks "s6 cycle 1: nothing was loaded, let alone booted" s6-c1.log "mos: booti returned"
 assert_env "s6 cycle 1: burned" 0 3

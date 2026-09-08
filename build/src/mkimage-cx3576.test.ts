@@ -560,27 +560,33 @@ describe('a whole assembly, and what is actually in it', () => {
       await tb.must(['dd', `if=${out.image}`, `of=${slice}`, 'bs=1M',
         `skip=${p.start?.mib}`, `count=${g.requireInt('BOOT_SIZE_MIB')}`, 'status=none'])
       expect(await listFat(tb, slice)).toEqual([
-        '::/Image', `::/${g.require('BOOT_SCRIPT_NAME')}`, `::/${g.require('BOOT_DIGEST_ENV_NAME')}`,
+        '::/Image', `::/${g.require('BOOT_SCRIPT_NAME')}`, `::/mos-boot-digest-${suffix}.env`,
         `::/mos-verity-${suffix}.env`, '::/rk3576-src.dtb',
       ].sort())
       rmSync(slice, { force: true })
     }
   }, ASSEMBLE_TIMEOUT_MS)
 
-  test('and that digest file is the SAME bytes in both slots, describing the slot it is in', async () => {
-    // The claim the missing suffix rests on: one Image per partition, one
-    // digest, and both partitions carry the same pair. If the two ever differed
-    // the name would have to say which was which.
+  test('each slot digests the artefacts THAT SLOT carries, and only its own file is written', async () => {
+    // Each partition holds mos-boot-digest-<its own slot>.env and NOT the
+    // other's -- the factory layout, matching what makeBootSlot does with the
+    // verity env. A RAUC-installed slot carries both, because one payload does
+    // not know which partition it lands in; writing both here would make the
+    // two layouts differ and leave the suffixed path untested until an update.
     const texts: string[] = []
-    for (const [part, suffix] of [['BOOT_A', 'a'], ['BOOT_B', 'b']] as [string, string][]) {
+    for (const [part, suffix, other] of
+      [['BOOT_A', 'a', 'b'], ['BOOT_B', 'b', 'a']] as [string, string, string][]) {
       const p = g.requirePartition(part)
       const slice = join(dir, `dslice-${suffix}.img`)
       await tb.must(['dd', `if=${out.image}`, `of=${slice}`, 'bs=1M',
         `skip=${p.start?.mib}`, `count=${g.requireInt('BOOT_SIZE_MIB')}`, 'status=none'])
-      const got = await tb.must(['mtype', '-i', slice, `::/${g.require('BOOT_DIGEST_ENV_NAME')}`])
+      const got = await tb.must(['mtype', '-i', slice, `::/mos-boot-digest-${suffix}.env`])
       texts.push(got.stdout)
+      const listed = await listFat(tb, slice)
+      expect(listed).not.toContain(`::/mos-boot-digest-${other}.env`)
       rmSync(slice, { force: true })
     }
+    // Same content in both, because this image places one kernel in both slots.
     expect(texts[0]).toBe(texts[1])
     // And it is the digest of what is actually there, not of whatever was
     // handed in: the fixture kernel and dtb, read back through the same two
