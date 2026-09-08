@@ -350,6 +350,30 @@ comparison against `""`.
   deployed depends on the regulatory database in the image, the driver, and the
   operator setting the right code.
 
+  Two of those three moved with RFCT-355 and are worth stating exactly, because
+  the first is easy to mistake for the whole answer. **The database is now in
+  the image**: `mos-wifi` and `mos-wifi-ap` depend on `wireless-regdb`, and the
+  image contract asserts `/lib/firmware/regulatory.db` and its `.p7s` at the
+  path the firmware loader searches. **That alone would have bought nothing.**
+  cfg80211 is built into every board kernel here and these boards carry no
+  initramfs, so its own boot-time request runs before the root is mounted —
+  measured on cx3576 as 7.668 s against a root at 7.681 s — and
+  `net/wireless/reg.c` records that failure in a file-scope pointer no later
+  request consults; registering a wiphy does not re-read it. The only path that
+  clears it is nl80211's `RELOAD_REGDB`, so `mos-wifi` also ships
+  `mos-regdb-reload.service`, a oneshot running `iw reg reload` before
+  `network-pre.target`, and the contract asserts the unit, its enablement and
+  the presence of the program it runs.
+
+  **The driver is the third element and it is still open.** On the AIC8800D80
+  SKU the vendor driver defaults `custregd` to true, sets
+  `REGULATORY_WIPHY_SELF_MANAGED` on `phy0` and installs its own table — the
+  `CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES` banner in the boot log is
+  that call's success branch. A self-managed wiphy does not take the core
+  regulatory domain, so on that SKU `iw reg get` and `iw phy phy0 reg get` can
+  disagree and which of them a rendered `country_code` reaches is a hardware
+  question. `docs/bsp/cx3576-bench.md`'s `regdb-loaded` probe records both.
+
 ## 10. What is NOT claimed
 
 Nothing in M5 has been near a radio. Every test in both reconcilers runs against

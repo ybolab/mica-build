@@ -42,3 +42,11 @@ export const hasFirmware = (board: Board): boolean => (board.firmwareFiles ?? []
 
 /** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]`. A string compare, as the oracle spells it. */
 export const hasLed = (board: Board): boolean => board.hasStatusLed === '1'
+
+/**
+ * `[ -n "${BOARD_DRAM_USABLE_BASE}" ]` -- the board declares where the DRAM its
+ * firmware hands the kernel begins, so a reserved-memory region can be checked
+ * against it. Declared-empty is a UEFI board saying it has no such number.
+ */
+export const hasDramWindow = (board: Board): boolean =>
+  (board.dramUsableBase ?? '') !== ''

@@ -78,6 +78,31 @@ export function verityEnvBase(geometry: Geometry): string {
 }
 
 /**
+ * The three digest names that must be the same derivation of one base.
+ *
+ * Exactly `verityEnvBase`'s job for exactly `verityEnvBase`'s reason, and the
+ * two files carry a slot suffix for the same reason as well: one RAUC boot
+ * payload is installed into whichever boot slot is inactive, so it ships BOTH
+ * slots' files and a slot-neutral name could not be one of them. The per-slot
+ * names, the pattern boot.scr builds at runtime and the pattern the bundle
+ * writes are three copies of one string; any of them drifting means an updated
+ * slot boots nothing, because a digest the script cannot find is a burned slot.
+ */
+export function bootDigestBase(geometry: Geometry): string {
+  const name = geometry.require('BOOT_DIGEST_ENV_NAME')
+  const base = name.endsWith('.env') ? name.slice(0, -'.env'.length) : name
+  const a = geometry.require('BOOT_DIGEST_ENV_A_NAME')
+  const b = geometry.require('BOOT_DIGEST_ENV_B_NAME')
+  if (a !== `${base}-a.env` || b !== `${base}-b.env`) {
+    throw new Error(
+      `BOOT_DIGEST_ENV_A_NAME/BOOT_DIGEST_ENV_B_NAME must be '${base}-a.env'/'${base}-b.env' to match `
+      + `what boot.scr loads as ${base}-\${slotsuffix}.env and what a RAUC boot payload writes`,
+    )
+  }
+  return base
+}
+
+/**
  * boot.cmd must put rauc.slot= on the kernel cmdline, and must load the
  * slot-suffixed verity env.
  *
@@ -329,7 +354,7 @@ export function crc32Hex(bytes: Uint8Array): string {
 }
 
 /**
- * The `mos-boot-digest.env` written beside the kernel and the dtb.
+ * The `mos-boot-digest-<slot>.env` written beside the kernel and the dtb.
  *
  * `load` returning success means the FAT directory had an entry and the read
  * call did not error. It does not mean the bytes in DRAM are the bytes on the
@@ -338,6 +363,10 @@ export function crc32Hex(bytes: Uint8Array): string {
  * `paging_init`, with the console reporting the full 44493312 bytes read while
  * it happened (RFCT-351, RFCT-352). This file is what lets the boot script tell
  * those two apart.
+ *
+ * The CHECKSUM is the guard and the size is a first line. Measured at the
+ * U-Boot prompt: that load reported the exact right byte count and had written
+ * the previous build's bytes, so the size half is green on it.
  *
  * A ZERO-LENGTH artefact is refused rather than digested. `load` of an empty
  * file sets `${filesize}` to `0` and `crc32` over zero bytes is `00000000`, so
@@ -378,28 +407,36 @@ export function bootDigestEnv(artefacts: readonly BootDigestArtefact[], path: st
  * against `<key>_bytes` and the `crc32 -v` against `<key>_crc`.
  */
 export function checkBootDigestGuards(geometry: Geometry, bootCmd: string, path: string): void {
-  const digestName = geometry.require('BOOT_DIGEST_ENV_NAME')
-  if (!bootCmd.includes(digestName)) {
+  const base = bootDigestBase(geometry)
+  const loaded = `${base}-\${slotsuffix}.env`
+  if (!bootCmd.includes(loaded)) {
     throw new Error(
-      `${path} never loads '${digestName}', so nothing tells it what the Image and the dtb in the `
-      + `boot partition are supposed to be. 'load' succeeds on a partial or stale read -- a board `
-      + `booted a mixture of two kernel builds while the console reported the full byte count -- so `
-      + `an unchecked load is the whole defect RFCT-352 exists to close.`,
+      `${path} never loads '${loaded}', so nothing tells it what the Image and the dtb in the boot `
+      + `partition are supposed to be. 'load' succeeds on a partial or stale read -- a board booted a `
+      + `mixture of two kernel builds while the console reported the full byte count -- so an `
+      + `unchecked load is the whole defect RFCT-352 exists to close. The name must carry the slot: a `
+      + `RAUC boot payload ships both slots' files because it cannot know which slot it lands in.`,
     )
   }
   for (const a of BOOT_DIGEST_ARTEFACTS) {
-    if (!bootCmd.includes(`"\${filesize}" != "\${${a.key}_bytes}"`)) {
-      throw new Error(
-        `${path} does not compare \${filesize} against \${${a.key}_bytes} after loading ${a.file}; `
-        + `'load' reports success on a short read and ${digestName} is what says how long the file `
-        + `should have been`,
-      )
-    }
+    // The checksum first, because it is the guard. Measured at the U-Boot
+    // prompt: the load that delivered another build's bytes reported the exact
+    // right size, so the compare below is GREEN on the failure this exists for
+    // and only this one is not.
     if (!bootCmd.includes(`crc32 -v \${${a.addr}} \${filesize} \${${a.key}_crc}`)) {
       throw new Error(
-        `${path} does not run 'crc32 -v' over the loaded ${a.file} against \${${a.key}_crc}; the byte `
-        + `count alone catches a short read and NOT a full-length read that left stale bytes in the `
-        + `middle, which is the failure that was actually measured on hardware`,
+        `${path} does not run 'crc32 -v' over the loaded ${a.file} against \${${a.key}_crc}. This is `
+        + `THE guard, not a belt-and-braces addition to the size compare: on the failure measured on `
+        + `the board the load reported the exact right byte count and had written the previous `
+        + `build's bytes, so a size assertion passes and only the checksum does not.`,
+      )
+    }
+    if (!bootCmd.includes(`"\${filesize}" != "\${${a.key}_bytes}"`)) {
+      throw new Error(
+        `${path} does not compare \${filesize} against \${${a.key}_bytes} after loading ${a.file}. `
+        + `That compare is a FIRST LINE rather than the guard -- it names a short read, which the `
+        + `checksum would only call "wrong" -- and ${loaded} is what says how long the file should `
+        + `have been.`,
       )
     }
   }

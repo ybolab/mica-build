@@ -8,8 +8,9 @@
 // package's geometry; nothing is duplicated here and nothing re-reads that file.
 //
 // Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
-// boards/cx3576/boot.cmd, the mos-boot-digest.env that boot.scr checks those two
-// against before booti, and a per-slot mos-verity.env. It holds NO
+// boards/cx3576/boot.cmd, and a per-slot mos-verity.env and
+// mos-boot-digest.env -- the second of which is what boot.scr checks the first
+// two against before booti. It holds NO
 // extlinux/extlinux.conf: U-Boot tries extlinux before boot.scr in both boot
 // frameworks, so an extlinux config here would silently bypass the RAUC A/B
 // handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
@@ -364,12 +365,14 @@ export async function assembleCx3576(
       workDir, bootScr, bootScriptName, image: bootA, sizeMib: bootSizeMib,
       partition: 'BOOT_A', slot: 'A', cmdline: inputs.bootCmdlineA,
       rootfs: 'ROOTFS_A', verityEnvKey: 'BOOT_VERITY_ENV_A_NAME',
+      digestEnvKey: 'BOOT_DIGEST_ENV_A_NAME',
       kernelImage: inputs.kernelImage, dtb: inputs.dtb, rootHash,
     })
     await makeBootSlot(tb, geometry, {
       workDir, bootScr, bootScriptName, image: bootB, sizeMib: bootSizeMib,
       partition: 'BOOT_B', slot: 'B', cmdline: inputs.bootCmdlineB,
       rootfs: 'ROOTFS_B', verityEnvKey: 'BOOT_VERITY_ENV_B_NAME',
+      digestEnvKey: 'BOOT_DIGEST_ENV_B_NAME',
       kernelImage: inputs.kernelImage, dtb: inputs.dtb, rootHash,
     })
 
@@ -555,6 +558,7 @@ interface BootSlotSpec {
   cmdline: string
   rootfs: string
   verityEnvKey: string
+  digestEnvKey: string
   kernelImage: string
   dtb: string
   rootHash: string
@@ -563,12 +567,14 @@ interface BootSlotSpec {
 /**
  * Stage and format one boot slot's FAT32 filesystem.
  *
- * The slots hold the same kernel, dtb, boot.scr and mos-boot-digest.env; only
- * the slot-suffixed mos-verity-<slot>.env differs, and it is what points the
- * shared script at this slot's rootfs. The digest file is slot-NEUTRAL for the
- * mirror-image reason: it describes this partition's own Image and dtb, of
- * which there is one set, while the verity env describes a different partition
- * that one boot payload cannot identify. The unsuffixed name is deliberately not written: a
+ * The slots hold the same kernel, dtb and boot.scr; the two slot-suffixed files
+ * are what differ. mos-verity-<slot>.env points the shared script at this
+ * slot's rootfs; mos-boot-digest-<slot>.env is what the script checks the
+ * kernel and the dtb against before booti. Both carry the slot for the same
+ * reason -- one RAUC boot payload is installed into whichever slot is inactive,
+ * so it ships both slots' files under distinct names -- and, as with the verity
+ * env, only the slot's OWN file is written here: writing both would leave the
+ * factory layout different from an updated one. The unsuffixed name is deliberately not written: a
  * RAUC-installed slot only ever carries the suffixed files, so writing it here
  * would make a factory slot and an updated slot differ in layout and leave the
  * suffixed path untested until the first update. Deliberately no
@@ -599,7 +605,11 @@ async function makeBootSlot(tb: Toolbox, geometry: Geometry, spec: BootSlotSpec)
   // the machine over, read back out of the STAGED copies rather than out of the
   // inputs: these are the exact bytes mcopy is about to put in the filesystem,
   // and a digest of anything else describes a file that is not there.
-  const digestName = geometry.require('BOOT_DIGEST_ENV_NAME')
+  //
+  // Only THIS slot's file, exactly as with the verity env above: a factory slot
+  // carries the one that names it, and a RAUC-installed slot carries both
+  // because the payload could not know which partition it would land in.
+  const digestName = geometry.require(spec.digestEnvKey)
   writeFileSync(join(stage, digestName), bootDigestEnv(
     BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(stage, a.file)) })),
     join(stage, digestName),

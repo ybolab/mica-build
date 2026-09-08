@@ -35,12 +35,25 @@ COPY control/ /in/control/
 # re-entered here. They are copied and never edited: a second rendering of a
 # unit is a file that drifts, and the drift would show up as a device that
 # mounts nothing while every gate stayed green.
-COPY --from=radio-units etc-wpa_supplicant.mount etc-hostapd.mount /in/units/
+COPY --from=radio-units etc-wpa_supplicant.mount etc-hostapd.mount \
+     mos-regdb-reload.service /in/units/
 
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
 
+# mos-wifi ALSO carries the regulatory-database reload, and the unit body says
+# at length why it has to exist. In short: cfg80211 is built into every board
+# kernel here and these boards have no initramfs, so the boot-time
+# `regulatory.db` request runs before the root is mounted and its failure is
+# recorded in a file-scope pointer nothing re-reads. Installing the database
+# without this unit ships a file the kernel will not look at again.
+#
+# It is in mos-wifi and not in both, because a path may have exactly one owner.
+# `rootfs/packages/radio-wifi.pkgs` names mos-wifi and mos-wifi-ap together for
+# every board that declares the `wifi` radio, so no resolution this tree
+# produces has the access-point half without this one.
+#
 # mos-wifi: the station half. Two stanzas and not a loop, unlike
 # rootfs/packages-src/profile/Dockerfile: there the two payloads are one
 # payload rendered twice, here they are two different sets of files, and
@@ -64,6 +77,10 @@ RUN set -eu; \
     install -m 0644 /in/units/etc-wpa_supplicant.mount /stage/wifi/etc/systemd/system/; \
     ln -s /etc/systemd/system/etc-wpa_supplicant.mount \
         /stage/wifi/etc/systemd/system/local-fs.target.wants/etc-wpa_supplicant.mount; \
+    install -d -m 0755 /stage/wifi/etc/systemd/system/multi-user.target.wants; \
+    install -m 0644 /in/units/mos-regdb-reload.service /stage/wifi/etc/systemd/system/; \
+    ln -s /etc/systemd/system/mos-regdb-reload.service \
+        /stage/wifi/etc/systemd/system/multi-user.target.wants/mos-regdb-reload.service; \
     install -D -m 0644 /in/copyright /stage/wifi/usr/share/doc/mos-wifi/copyright; \
     pack.sh --root /stage/wifi --control /in/control/mos-wifi.control \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out

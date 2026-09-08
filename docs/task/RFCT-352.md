@@ -54,308 +54,334 @@ routing a failure down the existing burn-the-slot path
 
 ### What the guard is
 
-`mos-boot-digest.env`, one per boot partition, beside `Image` and
+`mos-boot-digest-<slot>.env`, one per slot, beside `Image` and
 `rk3576-src.dtb`:
 
 ```
-kernel_bytes=<hex>   kernel_crc=<8 hex digits>
-fdt_bytes=<hex>      fdt_crc=<8 hex digits>
+kernel_bytes=2a6ea00   kernel_crc=5f867ac9
+fdt_bytes=46ce7        fdt_crc=703d24cf
 ```
 
 `boot.cmd` loads it, clears the four keys first, then per artefact: `load`,
 compare `${filesize}` against `<key>_bytes`, `crc32 -v` against `<key>_crc`.
 Any of the three failing sets `bootfault`, and one block at the end echoes
 `mos: slot <A|B> p<N>: <fault>`, sets `BOOT_<slot>_LEFT 0`, `saveenv`, `reset` --
-the route the missing-`mos-verity-<slot>.env` case already takes, twice over in
-this file.
+the route the missing-`mos-verity-<slot>.env` case already takes.
 
-**Which failure each half catches, plainly.** The byte count catches a **short
-read** and names it precisely; the checksum alone would say only "wrong". The
-CRC-32 catches **any divergence present in DRAM when it runs** -- a short read
-*or* stale bytes in the middle -- and it is the one of the two that would have
-caught RFCT-351's failure, where the console reported the full `44493312 bytes
-read` over a mixture of two builds. **Neither catches a corruption that happens
-after the check**: the window is the milliseconds between `crc32` and `booti`
-instead of the whole load, and it is not zero. The script cannot make it zero,
-and this record does not claim it does.
+### The checksum is the guard. The size compare is a first line. This is measured.
+
+The brief asked me to prefer the form that would have caught the failure. **The
+board settled it**, and the answer is not "both halves, equally". At the U-Boot
+prompt the word under `swapper_pg_dir[256]` was poisoned before the load and
+read back after it:
+
+```
+=> mw.q 0x43e87800 deadbeefdeadbeef 1
+=> md.q 0x43e87800 1
+43e87800: deadbeefdeadbeef
+=> load mmc 0:4 $kernel_addr_r Image
+44493312 bytes read in 621 ms (68.3 MiB/s)
+=> md.q 0x43e87800 1
+43e87800: 910fa02190ffef61
+```
+
+1. The load reported the **exact right size** — 44,493,312, the byte count of
+   the file this repository builds. **A `${filesize}` assertion passes here.**
+2. It **did** write the address: the poison is gone, so nothing was skipped.
+3. What it wrote is the **previous kernel's** bytes (`early_kvm_mode_cfg+0x10`
+   out of the 2026-09-07 08:12 build). The file on eMMC is itself a mixture and
+   `load` read it faithfully.
+
+So the size compare is **green on the failure this whole mechanism exists for**.
+It is kept because a short read is a different fault and naming it precisely
+costs nothing — the checksum alone would say only "wrong" — but it is not the
+guard and is never presented as one:
+
+- **At the point of use.** A comment sits directly above the `test "${filesize}"
+  != "${kernel_bytes}"` in `boot.cmd`, carrying the transcript and the sentence
+  *"Never read a passing size compare as 'the kernel is the right one'; only the
+  crc32 -v below says that."*
+- **In the build-side guard.** `checkBootDigestGuards` now checks the `crc32 -v`
+  **first**, and its refusal says why: *"This is THE guard, not a
+  belt-and-braces addition to the size compare."* Dropping the checksum and
+  keeping the size compare is a build failure with that sentence attached.
+- **In §5.6 and its zh counterpart**, both of which carry the transcript.
+
+**Neither catches** a corruption after the check and before the kernel reads the
+page. The window is the `crc32`-to-`booti` gap rather than the whole load. It is
+not zero and nothing here pretends it is.
+
+### The recorded values, verified rather than trusted
+
+The brief supplied `crc32 0x5f867ac9` / `0x703d24cf` and said to verify them
+rather than trust the line. Done, through **U-Boot's own `crc32`** — the real
+kernel loaded from a real FAT slot in the sandbox binary, the same
+`load mmc 0:4 … Image` the script makes:
+
+```
+44493312 bytes read          IMAGE_FILESIZE=2a6ea00
+crc32 for 10000000 ... 12a6e9ff ==> 5f867ac9
+290023 bytes read            FDT_FILESIZE=46ce7
+crc32 for 20000000 ... 20046ce6 ==> 703d24cf
+crc32 -v 0x10000000 ${filesize} 5f867ac9  ->  IMAGE_VERIFY_OK
+crc32 -v 0x10000000 ${filesize} 5f867aca  ->  ** ERROR **  (negative control refused)
+```
+
+Both match. `${filesize}` also confirms the `%lx` spelling the byte counts are
+written in. The negative control matters as much as the match: without it,
+"verified" could mean a `crc32 -v` that accepts anything.
+
+### The name carries the slot
+
+I argued the other way and you reaffirmed it, so it is suffixed;
+`mos-boot-digest-a.env` / `mos-boot-digest-b.env`, derived from a
+`BOOT_DIGEST_ENV_NAME` base by `bootDigestBase`, exactly as `verityEnvBase`
+derives the verity trio. The reason is yours and it holds: **a RAUC boot payload
+is installed into whichever boot slot is inactive**, so it ships both slots'
+files, and a slot-neutral name could not be one of them.
+
+Two things fell out of following the verity precedent exactly, and both are
+improvements over what I had:
+
+- **The assembler writes only the slot's own file** (`makeBootSlot`), as it does
+  for the verity env, so a factory slot and a RAUC-installed slot do not differ
+  in layout. `bundle.ts` writes both, because the payload cannot know its
+  destination. The duplication I objected to therefore exists only inside a
+  payload, where it is *required* — which is exactly the verity env's situation.
+- **The `@SLOT@` spelling put the file back under the existing per-slot filter.**
+  My changes to `boards/cx3576/deb/board-cx3576/render.sh` and verify's
+  `bspArtefacts()` are reverted: a slot-neutral name was the only reason those
+  two shared consumers needed to learn a third category.
+
+`checks-bootchain.test.ts` gains the case the suffix is *for*: slot A carrying a
+`mos-boot-digest-b.env` that describes something else must still verify against
+its own file, and does. `boot-cx3576.test.ts` refuses an unsuffixed load and a
+misderived `BOOT_DIGEST_ENV_B_NAME`.
+
+### The cost, measured where I could and owed where I could not
+
+`crc32` over the real 44,493,312-byte kernel, U-Boot sandbox, this host (Xeon
+8581C @ 2.10 GHz), loaded from a FAT slot the way boot.scr loads it:
+
+| | wall |
+| --- | --- |
+| load + `crc32` of 4 bytes (floor) | 1095, 1283, 1425 ms |
+| load + one pass | 1473, 1464, 1462 ms |
+| load + ten passes | 2375, 2359, 2370 ms |
+
+The floor is noisy; the ten-pass slope is not. `(2365 − 1466) / 9` ≈ **100 ms
+per pass**, ~445 MB/s — `lib/crc32.c` is a portable byte-at-a-time table loop.
+
+**The RK3576 number is NOT measured and is owed.** No board is attached to this
+session. It is one line at the U-Boot prompt, and the yardstick is already in
+the brief's own transcript — the board reads the same 42 MB off eMMC in
+**621 ms**:
+
+```
+=> load mmc 0:4 $kernel_addr_r Image     # prints its own ms
+=> crc32 $kernel_addr_r $filesize        # time this against the line above
+```
+
+**What I did given that I could not measure it**: shipped the checksum
+unconditionally, with no runtime switch. A guard that can be turned off will be
+off on the machine that needed it. If the board number comes back in seconds
+rather than a fraction of one, the answer is not a flag but a narrower check
+chosen with the number in hand — and §5.6 says so rather than leaving the next
+person to invent a switch.
 
 ### Two spellings that are contract, not presentation
 
 - **The byte count is `%lx`.** `do_load` publishes `${filesize}` through
-  `env_set_hex`, which is `sprintf(str, "%lx", ...)`: lowercase, no `0x`, no
-  leading zeros. The comparison is a hush string compare, because hush has no
-  arithmetic without `setexpr` and `setexpr` is hexadecimal.
+  `env_set_hex`, i.e. `sprintf(str, "%lx", ...)`: lowercase, no `0x`, no leading
+  zeros. The comparison is a hush string compare, because hush has no arithmetic
+  without `setexpr` and `setexpr` is hexadecimal.
 - **The checksum is eight digits, zero-padded, and that is load-bearing.**
   `parse_verify_sum` (`u-boot/common/hash.c`) reads an argument of exactly
   `2 * digest_size` characters as a hex literal and **anything else as the name
-  of an environment variable to look up**. A CRC with a zero top byte written
-  as six digits would not be compared against the image at all; it would be
-  looked up, not found, and refuse a slot that was fine. Roughly 1 build in 256.
-  `crc32Hex` pads and `build/src/boot-cx3576.test.ts` drives the zero-top case.
-
-### Why no slot suffix -- the one design call worth arguing
-
-The task's constraints anticipated a slot-suffixed file, on the analogy of
-`mos-verity-<slot>.env`. It is the wrong analogy and the file is deliberately
-slot-**neutral**.
-
-`mos-verity-<slot>.env` describes a **different partition** -- the rootfs slot
-this boot partition will be paired with -- which one RAUC boot payload cannot
-know, because it is installed into whichever boot slot is inactive. That is why
-it must ship both slots' copies under distinct names.
-
-These digests describe **this partition's own two files**, of which there is
-exactly one set whichever slot the partition turns out to be -- exactly as there
-is one `Image` and one `boot.scr`, neither of which carries a suffix. A suffixed
-pair would be two names for one fact: the assembler would write
-`mos-boot-digest-a.env` and `mos-boot-digest-b.env` with **identical content**
-into the same partition, only one would ever be read, and the other would be
-free to drift. `build/src/mkimage-cx3576.test.ts` asserts the positive form of
-this: both slots' digest files are byte-identical and both describe the Image
-actually staged.
-
-The assembler writes it into both slots (`makeBootSlot`), and `bundle.ts` writes
-one into the single `boot.vfat` a RAUC payload carries -- one payload, one
-kernel, one digest.
+  of an environment variable to look up**. A CRC with a zero top byte written as
+  six digits would not be compared against the image at all; it would be looked
+  up, not found, and refuse a slot that was fine. Roughly 1 build in 256.
+  `crc32Hex` pads and `boot-cx3576.test.ts` drives the zero-top case (`62` →
+  `0012d20a`).
 
 ### `crc32 -v`, and the cost of choosing it
 
 `CONFIG_CMD_CRC32` is `default y` and gives only `crc32 address count [addr]`,
 which writes its answer to **memory**. Reading it back needs a byte swap
-(`crc32_wd_buf` stores the digest big-endian; `setexpr`'s `*addr` does a native
-load) and an unpadded `%llx` comparison -- two spellings nothing would check,
-either of which silently bricks a fleet if a later refactor "normalises" them.
-`crc32 -v` compares in one command, returns the verdict as an exit status hush
-can branch on, and prints both values on mismatch.
+(`crc32_wd_buf` does `htonl` before the `memcpy`, confirmed in the pinned
+source; `setexpr`'s `*addr` does a native load) and an unpadded `%llx`
+comparison — two spellings nothing would check. `crc32 -v` compares in one
+command, returns the verdict as an exit status hush can branch on, and prints
+both values on mismatch.
 
 It needs `CONFIG_CRC32_VERIFY=y`, which is `default n`. **Measured against the
-shipped blob**: `/srv/mos/_out/boards/cx3576/uboot-mos/u-boot-rockchip.bin`
-carries `crc32 address count [addr]` and no `-v`. So:
+shipped blob**: the previous `uboot-mos` carries `crc32 address count [addr]`
+and no `-v`. So:
 
 > **This change is not deployable by a RAUC update alone.** The loader lives in
-> raw sectors outside every slot group. A device carrying today's `uboot-mos`
-> that received the new `boot.scr` would read `crc32 -v` as a usage error, treat
-> that as a failed verification, and burn **both** slots. The blob and the boot
-> payload must be flashed together.
+> raw sectors outside every slot group. A device carrying the previous
+> `uboot-mos` that received the new `boot.scr` would read `crc32 -v` as a usage
+> error, treat that as a failed verification, and burn **both** slots. The blob
+> and the boot payload must be flashed together.
 
-That is stated in `boot.cmd`'s header, in §5.3 divergence 3, in §3.2's note on
-the symbol, and in the zh overview. Under the tree's no-compatibility rule the
-break is allowed; it is not silent.
-
-`build-mos.sh` enables the symbol and asserts it by name, in the same list as
-the `ENV_MMC_*` pins and for a sharper reason: it is `default n`, so it is
-exactly what an `olddefconfig` drops, and a blob without it refuses both slots
-on the first boot.
-
-### The cost of the checksum, measured -- and what is still owed
-
-`crc32` over **44,493,312 bytes** (the real kernel's size) in the U-Boot
-sandbox, on this host (Intel Xeon 8581C @ 2.10 GHz):
-
-| run | wall |
-| --- | --- |
-| process floor (`crc32 addr 4`) | 980, 980, 987 ms |
-| one pass | 1089, 1071, 1072 ms |
-| ten passes | 1922, 1971, 1969 ms |
-
-One pass ≈ **95 ms** by subtracting the floor, ≈ **99 ms** from the ten-pass
-slope: ~470 MB/s, ~4.5 cycles/byte, which is the shape of `lib/crc32.c`'s
-table-driven byte loop.
-
-**This is not the SoC number and must not be read as one.** No cx3576 is
-attached to this session, so the RK3576 figure -- U-Boot runs single-core on the
-boot core, and the code is portable C whose throughput follows clock and IPC --
-**has not been measured, and is owed.** What can be said without the board: the
-same 42 MB is already read off eMMC by the `load` that precedes it, and the
-refusal buys the difference between a console line naming the slot and a kernel
-`BUG()` in `paging_init` with nothing attributing it.
+Stated in `boot.cmd`'s header, §5.3 divergence 3, §3.2's note on the symbol, and
+the zh overview. `build-mos.sh` enables it and asserts it by name, in the same
+list as the `ENV_MMC_*` pins and for a sharper reason: it is `default n`, so it
+is exactly what an `olddefconfig` drops.
 
 ### Burning the slot is right, including on a first boot
 
-The task asked what the refusal costs on a device whose `rootfs-b` (p7) is
-zero-filled. **The burn is not a permanent loss**: `BOOT_<slot>_LEFT 0` is
-undone by the script's own refill block -- when both slots reach zero it puts
-three credits back on each and resets (§4.2). So on a factory-flashed board a
-refusal on slot A sends the device to slot B, whose rootfs is zeros, whose
-credits are spent over its own boots, and the refill then returns to slot A with
-three credits. **The guard cannot strand a device that a retry would have
-saved**; it costs boot cycles.
+**The burn is not a permanent loss**: `BOOT_<slot>_LEFT 0` is undone by the
+script's own refill when both slots reach zero (§4.2). On a factory-flashed
+board with `rootfs-b` zero-filled, a refusal on A goes to B, B spends its
+credits, the refill returns to A with three. **The guard cannot strand a device
+a retry would have saved** — it costs boot cycles. Against that, today's
+behaviour for the measured failure is not "retry": it is a `BUG()` in
+`paging_init`, hung, no reset, nothing attributing it.
 
-Against that, today's behaviour for the failure that was actually measured is
-not "retry" -- it is a `BUG()` in `paging_init` with the board hung, no reset,
-no failover, and nothing on the console attributing it to the boot chain. A
-board that says `mos: slot A p4: Image: 2a6ea00 bytes landed and their crc32 is
-not <x>` is strictly better than that.
+### What the harness measured about itself
 
-### What the harness measured about itself, and what it cost
-
-Extending `tests/handshake-test/` turned up a **fact about the harness that was
-wrong before this change**, and it is the same defect in miniature.
+Extending `tests/handshake-test/` turned up a fact about the harness that was
+wrong before this change, and it is the same defect in miniature.
 
 Its execution model claimed that seeding `kernel_addr_r` above the sandbox's
 2048 MiB RAM ended a cycle at the `load ... Image` line with a hard
-`os_abort()`, standing in for "the kernel accepted control". Measured, five
-ways, against the built sandbox binary:
+`os_abort()`. Measured, five ways:
 
-- `load mmc 0:4 0xf0000000 Image` **fails cleanly** --
+- `load mmc 0:4 0xf0000000 Image` **fails cleanly** —
   `fs_read_lmb_check() ** Reading file would overwrite reserved memory **`,
-  `do_load() Failed to load 'Image'` -- with and without preceding loads.
-- The abort came from the **next line**: `booti 0xf0000000 - ...` →
+  `do_load() Failed to load 'Image'` — with and without preceding loads.
+- The abort came from the **next line**: `booti 0xf0000000 - …` →
   `phys_to_virt: Cannot map sandbox address f0000000 (SDRAM from 0 to
   80000000)` → core.
 
-So the old model worked **only because the script ignored a failed load** and
-handed `booti` an address nothing had been written to -- which is exactly the
-defect RFCT-352 closes. With the guard in place the script refuses that slot and
-never reaches `booti`, and the model is no longer expressible.
-
-`CONFIG_LMB=n` was tried as a way to keep it: it makes the out-of-RAM load abort
-where the note always said it did. **It does not build** -- `CMD_BOOTI` is
-unavailable without LMB (`ERROR: CONFIG_CMD_BOOTI=y missing from sandbox
-.config`) -- so LMB stays on and is now pinned `=y` positively in the Dockerfile.
+The old model worked **only because the script ignored a failed load** and
+handed `booti` an address nothing had been written to — the defect RFCT-352
+closes. With the guard in place the script refuses that slot and never reaches
+`booti`, so the model is no longer expressible. `CONFIG_LMB=n` was tried and
+**does not build**: `CMD_BOOTI` is unavailable without LMB (`ERROR:
+CONFIG_CMD_BOOTI=y missing from sandbox .config`). LMB stays and is pinned `=y`.
 
 **What that costs, stated rather than papered over.** On sandbox every path in
 the guarded script ends in a burn or the refill; nothing can end a cycle by
-leaving U-Boot. The **3→2→1→0 decrement trajectory across three resets is
-therefore no longer covered anywhere.** Scenario 1 was rewritten to assert what
-is still reachable, and one property it gained is arguably the one that mattered
-in that trajectory: **decrement-then-save-then-boot** (§4.2), read off the
-console as two environment writes per cycle with the first one preceding the
-`mos: booting slot` banner. Failover at zero, the refill at exhaustion, and the
-restart at the head of `BOOT_ORDER` are all still asserted.
+leaving U-Boot. The **3→2→1→0 decrement trajectory across three resets is no
+longer covered anywhere.** Scenario 1 was rewritten around what is reachable and
+gained the property that trajectory was really there for:
+**decrement-then-save-then-boot** (§4.2), read off the console as two
+environment writes per cycle with the first preceding the banner. Failover at
+zero, the refill at exhaustion, and the restart at the head of `BOOT_ORDER` all
+still hold.
 
 ### The harness, before and after
 
 | | before | after |
 | --- | --- | --- |
 | scenarios | 3 | 7 |
-| PASS assertions | 72 | 101 |
+| PASS assertions | 72 | 103 |
 
-The four new ones, each carrying exactly one fault:
+The four new scenarios, each carrying exactly one fault:
 
-- **4** -- an `Image` of the **right length and the wrong bytes** (30 bytes
-  overwritten 2 MiB in). The shape of the hardware failure; only the checksum
-  can see it. Asserts `** ERROR **` from `crc32 -v`, the named burn, that the
-  **size** half did *not* fire, and that `booti` was never reached.
-- **5** -- a **short** `Image`. Asserts the size message with both numbers
-  (`3ff000` landed, `400000` recorded) and that the checksum never ran.
-- **6** -- a slot with **no `mos-boot-digest.env`**, its verity env intact.
-- **7** -- a slot with **no `Image` at all**, covering the `would not load`
+- **4** — an `Image` of the **right length and the wrong bytes** (30 bytes
+  overwritten 2 MiB in): the board failure's shape. Asserts `** ERROR **` from
+  `crc32 -v`, the named burn, **that the size half did NOT fire**, and that
+  `booti` was never reached. That third assertion is the one that encodes the
+  board measurement: it is red if anyone ever makes the size compare look like
+  the thing that caught this.
+- **5** — a **short** `Image`: the size message with both numbers (`3ff000`
+  landed, `400000` recorded) and that the checksum never ran.
+- **6** — a slot with **no `mos-boot-digest-a.env`**, its verity env intact.
+- **7** — a slot with **no `Image` at all**, covering the `would not load`
   branch that scenario 1's out-of-RAM address used to reach by accident.
 
-Plus the positive control, in scenario 3 and in every scenario-1 cycle: a good
-slot prints `mos: Image 400000 bytes, crc32 <x> verified in DRAM` and
-`mos: rk3576-src.dtb 10000 bytes, crc32 <y> verified in DRAM` and goes on to
-`booti`. Without it a guard that refused everything would satisfy all four
-negatives.
+Plus the positive control in scenario 3 and every scenario-1 cycle, and two new
+anti-vacuity checks for the suffix: slot A carries `mos-boot-digest-a.env` and
+**does not** carry `mos-boot-digest-b.env`, so the harness can tell "read the
+right file" from "read either file".
 
-The fixture digest is computed with python3's `zlib.crc32` rather than by
-calling `build/src/boot-cx3576.ts` -- the assembler is the producer this script
+The fixture digests are computed with python3's `zlib.crc32` rather than by
+calling `build/src/boot-cx3576.ts` — the assembler is the producer this script
 has to agree with, and a fixture built by calling it would agree by
-construction. Seven anti-vacuity checks assert the fixtures are what the
-scenarios claim: the mixed Image is the same length and different bytes, the
-short one is shorter, the digest records the real lengths, and the checksums are
-eight hex digits.
+construction.
 
 ### Guards added on the build side
 
-- `checkBootDigestGuards` joins `checkBootCmd`, so the assembler refuses a
-  `boot.cmd` that carries the digest file's name but stopped comparing it. Per
-  artefact it requires both the `${filesize}` compare and the `crc32 -v`, driven
-  from the failing side by deleting each half in turn -- because the assembler
-  writes the digest file whatever the script does with it, so the file's
-  presence is not evidence that anything reads it.
-- `bootDigestEnv` refuses a **zero-length** artefact. `load` of an empty file
-  sets `${filesize}` to `0` and `crc32` over zero bytes is `00000000`: an empty
-  `Image` satisfies both assertions exactly, so the one input that makes the
-  guard meaningless would otherwise sail through it.
-- The verify register gained `boot-digest-<board>-<slot>-<file>`: the recorded
-  digest is matched against the artefact **read back out of the assembled
-  image**, per slot per artefact. The assembler computes the file from the
-  staged copies, which is exactly why it cannot be the thing that proves it.
-  Matching is by **value**, not by key name, so the `kernel_`/`fdt_` mapping is
-  not restated in verify where it could drift.
+- `checkBootDigestGuards` joins `checkBootCmd`: per artefact, the `crc32 -v`
+  first and the `${filesize}` compare second, each with its own refusal, driven
+  from the failing side by deleting each half in turn. Plus the suffixed-name
+  requirement, driven by an unsuffixed load.
+- `bootDigestBase` ties `BOOT_DIGEST_ENV_NAME` / `_A_NAME` / `_B_NAME` to one
+  derivation, the way `verityEnvBase` does for the verity trio.
+- `bootDigestEnv` refuses a **zero-length** artefact: `load` of an empty file
+  gives `filesize=0` and `crc32` gives `00000000`, so an empty `Image` satisfies
+  both assertions exactly.
+- The verify register's `boot-digest-<board>-<slot>-<file>` matches the recorded
+  digest against the artefact **read back out of the assembled image**, per slot
+  per artefact, by **value** rather than by key name so the `kernel_`/`fdt_`
+  mapping is not restated where it could drift.
 
-### Two shared consumers that had to learn a third category
+### One thing the guard caught on its own build
 
-`BOOT_SLOT_REQUIRED_FILES` entries were classified by producer into a
-trichotomy: BSP artefact, the boot script, or a per-slot (`@SLOT@`) assembler
-file. `mos-boot-digest.env` is the first **slot-neutral assembler-written**
-entry, and left alone both `boards/cx3576/deb/board-cx3576/render.sh` and
-verify's `bspArtefacts()` would have looked for it under `${BSP_OUT}/kernel/`,
-where nothing produces it. Both now exclude it by the board's own
-`BOOT_DIGEST_ENV_NAME`, with `:-` / `undefined` guards for boards that declare
-none.
+Reassembling the image after the rename failed with:
+
+```
+error: _out/cx3576/boot/boot.cmd never loads 'mos-boot-digest-${slotsuffix}.env'
+```
+
+The assembler compiles `boot.scr` from the **boot export** the board package
+shipped, not from the working tree, so a renamed script in the tree and a stale
+export in `_out/` is exactly the mismatch it is there to refuse. The pool,
+rootfs and image were rebuilt rather than the export patched by hand.
 
 ### verify, at 432/432 against an image built from this branch
 
 `bash verify/run.sh --verify --board cx3576` reports **432/432, 3 skipped**,
-against `_out/cx3576/cx3576-mos-1788841846.img`, assembled from this branch.
-The denominator moved **426 -> 432**, +6, all of them this change:
-
-| family | new checks |
-| --- | --- |
-| `boot-slot-file-cx3576-BOOT-{A,B}-mos-boot-digest.env` | 2 |
-| `boot-digest-cx3576-BOOT-{A,B}-{Image,rk3576-src.dtb}` | 4 |
-
-and their output on the shipped image:
+against an image assembled from this branch, and the six checks this change
+adds read the recorded values back out of it:
 
 ```
-PASS: BOOT-A contains mos-boot-digest.env
-PASS: BOOT-B contains mos-boot-digest.env
-PASS: BOOT-A mos-boot-digest.env records Image as kernel_bytes=2a6ea00 kernel_crc=5f867ac9, and that is what is in the slot
-PASS: BOOT-A mos-boot-digest.env records rk3576-src.dtb as fdt_bytes=46ce7 fdt_crc=703d24cf, and that is what is in the slot
-PASS: BOOT-B ... (the same two)
+PASS: BOOT-A contains mos-boot-digest-a.env
+PASS: BOOT-B contains mos-boot-digest-b.env
+PASS: BOOT-A mos-boot-digest-a.env records Image as kernel_bytes=2a6ea00 kernel_crc=5f867ac9, and that is what is in the slot
+PASS: BOOT-A mos-boot-digest-a.env records rk3576-src.dtb as fdt_bytes=46ce7 fdt_crc=703d24cf, and that is what is in the slot
+PASS: BOOT-B mos-boot-digest-b.env records Image as kernel_bytes=2a6ea00 kernel_crc=5f867ac9, and that is what is in the slot
+PASS: BOOT-B mos-boot-digest-b.env records rk3576-src.dtb as fdt_bytes=46ce7 fdt_crc=703d24cf, and that is what is in the slot
 ```
 
-`kernel_bytes=2a6ea00` is 44,493,312 -- the number the dying board printed as
-`44493312 bytes read`, and now the number the next boot holds it to.
+`kernel_crc=5f867ac9` is the value in the brief, arrived at independently by the
+assembler and read back out of the image by the verifier. Each slot carries the
+file that names it and not the other one, which is the factory layout the
+assembler writes.
 
-RFCT-351 read **423/426** because no image on the host carried PLAN-086 S2's
-exports. This build produces them (`_out/cx3576/boot/` holds `Image`,
-`rk3576-src.dtb`, `boot.cmd` and `u-boot-rockchip.bin`; `_out/cx3576/debug/`
-holds `manifest.tsv` and the `.build-id` tree), so those three are green here
-and were never this change's.
-
-### What was rebuilt to get there, and one failure that was not this change
-
-The whole arm64 pool had to be rebuilt rather than just `mos-board-cx3576`:
-first-party packages depend on each other by exact version
-(`mos-mqttd ... Depends: mosd (= 0.1.0+git8c49e8e43e50.dirty-1)`) and
-`rootfs/build.sh` refuses a pool carrying more than one git stamp, so a
-single-producer rebuild would have produced an unsatisfiable index. 14 producers
-for `arm64`/`all`, one stamp, then `repo.sh`, then the rootfs and the image.
-`pkgs/{podman,rauc}/out-arm64`, `_out/cargo` and the cx3576 + virt-arm64 kernel
-artefacts were copied from `/srv/mos` rather than rebuilt; the `Image` is the
-byte-identical one RFCT-351 measured.
-
-The first rootfs attempt died on `debian-base: error: download exceeded the
-600s ceiling and was killed:
-https://snapshot.debian.org/.../libc6_2.41-12+deb13u3_arm64.deb` -- an upstream
-fetch, nothing to do with this change. Merging
-`/srv/mos/_out/debian-base/debs` (173 content-addressed archives) into this
-worktree's cache and re-running carried it through.
+The denominator moved **426 -> 432**, +6, all of them this change: 2 x
+`boot-slot-file-cx3576-BOOT-{A,B}-mos-boot-digest-<slot>.env` and 4 x
+`boot-digest-cx3576-BOOT-{A,B}-{Image,rk3576-src.dtb}`. RFCT-351 read 423/426
+because no image on the host carried PLAN-086 S2's exports; this build produces
+them, so those three are green here and were never this change's.
 
 ### Everything else that was run
 
-- `bash tests/handshake-test/run.sh` -- RESULT: PASS, 101 assertions, 0 fail.
-- `bash build/run.sh` -- 947/947. `bash verify/run.sh` -- 1356/1356.
-- `make docs-verify` from a `git archive` of this tree into an empty directory
-  -- 192 + 488 + 749 + 243 + 97 PASS, 0 fail.
-- `docs/design/uboot-ab-handshake.md` 5.3's code block is now asserted
-  byte-identical to `boards/cx3576/boot.cmd`'s body. It was NOT before this
-  change: the published block still carried `bootpart 3` / `rootpart 5` and
-  `storagemedia=emmc` from before the loader partition landed, so "synced to
-  the shipped file" was false when this task started. It is true now.
-- `make -C boards/cx3576/bsp uboot-mos` -- the blob the image carries, measured
-  to hold `-v address count crc` / `verify crc of memory area`, which the
-  previously shipped one does not.
+- `bash tests/handshake-test/run.sh` -- RESULT: PASS, 103 assertions, 0 fail.
+- `bash build/run.sh` -- 950/950. `bash verify/run.sh` -- 1357/1357.
+- `make docs-verify` from a `git archive` into an empty directory -- 192 + 488 +
+  750 + 243 + 97 PASS.
+- `docs/design/uboot-ab-handshake.md` 5.3's code block asserted byte-identical
+  to `boards/cx3576/boot.cmd`'s body. It was NOT synced before this task: the
+  published block still carried `bootpart 3` / `rootpart 5` and
+  `storagemedia=emmc` from before the loader partition landed.
+- U-Boot's `crc32` checked against the recorded values on the real kernel, with
+  a one-bit-different negative control refused.
 
-### Not done, and owed
+### Two self-inflicted rebuilds, recorded because they cost real time
 
-- **The `crc32` cost on RK3576.** Measured on the sandbox host only; see above.
-- **Nothing is asserted about the window between `crc32` and `booti`.** Stated
-  in the script and in 5.6 rather than papered over.
-- **Why the load delivered stale bytes** is out of scope by the task and is
-  untouched here. This change makes that failure visible and attributable; it
-  does not explain it.
+- The image assembler compiles `boot.scr` from the **boot export** the board
+  package shipped, not from the working tree, so renaming the digest file made
+  `_out/cx3576/boot/boot.cmd` stale and the assembly refused with
+  `never loads 'mos-boot-digest-${slotsuffix}.env'`. That refusal is the guard
+  working. The pool, rootfs and image were rebuilt rather than the export
+  patched by hand.
+- The first of those rebuilds died at `rootfs/build.sh` with *"manifest.txt
+  carries more than one git stamp"*, because this record was edited while the
+  pool build was running: the three producers built before the edit carried the
+  clean stamp and the eleven after it carried `.dirty`. The tree must not be
+  touched while a pool is being built. Recovered by rebuilding those three
+  against the unchanged tree rather than all fourteen.

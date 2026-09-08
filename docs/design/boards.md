@@ -427,6 +427,54 @@ so this task does not enable it; closing the gap is now one config line, and
 the alternative — dropping `bpf` from the boot list — is a security-posture
 change that belongs with `docs/design/security-model.md`.
 
+### 4.5 The other direction: symbols a board must NOT build
+
+Everything above is a floor. There is also a ceiling, and it needs its own
+mechanism because the two failures are not each other's mirror: a missing
+required symbol is a capability the image promised and does not have, while an
+**excluded** symbol that appears is a capability nobody asked for that changes
+what the device does the moment it exists — there is no code to add and no unit
+to enable, so nothing else in the image contract would notice.
+
+`verify/src/checks-kernel.ts` carries the list, per board, as
+`EXCLUDED_BY_BOARD`, and reads it off the shipped `/boot/config-*` in the
+opposite direction from the floor. It is per board and not shared, which is the
+inverse of how `boards/common/mos-required.fragment` works; that asymmetry is
+the point, and the one entry on it says why.
+
+**cx3576: `CONFIG_AUTOFS_FS` and `CONFIG_AUTOFS4_FS`.** x64 and virt-arm64
+build autofs (their configs derive from a mainline defconfig that sets it) and
+cx3576 does not (a Rockchip vendor tree that does not). The difference was
+invisible until the board booted and systemd printed
+`Failed to find module 'autofs4'` — which is not evidence that anything wanted
+it, because `kmod_setup()` asks on every boot whatever the unit set is.
+
+Making the three agree is the obvious repair and it is not free, because the
+boards differ in something else first. cx3576's boot slots are typed ESP and
+appear in no `fstab`, so `systemd-gpt-auto-generator` generates an
+`efi.automount` for BOOT-A on it and on neither of the others — x64 and
+virt-arm64 mount their ESP from `fstab`, which is what makes the generator skip
+it there. On the hardware that generated unit is inert and systemd says exactly
+why: `Starting of efi.automount - EFI System Partition Automount unsupported.`
+(`automount_supported()` is `access("/dev/autofs")`). Building autofs into this
+board's kernel would therefore not add a capability nothing uses; it would arm
+a read-write automount of a RAUC-owned boot partition, chosen by disk order
+rather than by which slot is running, on a device where `/boot` is deliberately
+not a mountpoint.
+
+So automount units are **unsupported on cx3576**, deliberately, and the
+`autofs4` line is expected. The two `.automount` subjects in the packed root
+are that generated `efi.automount` and `proc-sys-fs-binfmt_misc.automount`,
+which is skipped on its own `ConditionPathExists=/proc/sys/fs/binfmt_misc`
+because `CONFIG_BINFMT_MISC` is not set either.
+
+**Open, and named rather than rounded up.** That the generator writes
+`efi.automount` for a boot slot at all is the deeper item, and it is inert
+today only because a kernel symbol is off — a thin thing for it to rest on.
+Closing it means either masking `systemd-gpt-auto-generator` or naming the boot
+slots in `fstab`, on three boards, and it is a change to what the image
+declares rather than to what its kernel builds.
+
 ## 5. U-Boot requirements (uboot-chain boards)
 
 The A/B design requires: `CONFIG_BOOTCOUNT_LIMIT`, redundant env

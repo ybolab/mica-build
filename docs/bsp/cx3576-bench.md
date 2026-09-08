@@ -483,6 +483,95 @@ at a time, re-reading the system state after each:
   refuse. A path that cannot be exercised at all records `not tested` naming
   what was missing.
 
+### Additions from the first hardware boot (RFCT-355)
+
+The first successful boot on hardware, 2026-09-08, produced four findings whose
+repairs are in the image and whose *effect* only a board can show. They are
+added as probes inside the stages above rather than as a stage of their own —
+each one needs a state an existing stage already sets up — and they are listed
+together here because they were found together and a reader chasing that boot
+log needs one place to look.
+
+Each is stated as a claim with a `pass` and the shape of its `fail`, in the
+same grammar §4's stages use. None of them changes a dossier row: they are
+evidence *within* the rows named in the Stage column.
+
+| Probe | Stage | Claim |
+|---|---|---|
+| `pstore-region` | 2 `inventory` | ramoops occupies memory the kernel was given |
+| `pstore-survives` | 3 `warmboot` | the previous boot's console is readable after a warm reset |
+| `regdb-loaded` | 4 `network` | cfg80211 is running on the packaged regulatory database |
+| `gadget-bound` | 5 `fieldbus` | the CDC ACM gadget binds its UDC and enumerates |
+| `no-efi-automount` | 2 `inventory` | nothing auto-mounts a boot slot |
+
+**`pstore-region` (stage 2).** Read `dmesg | grep -i ramoops`, the
+`/proc/iomem` line for it, and the `node 0: [mem ...]` range from the same
+boot. **Pass:** the `ramoops: using 0x…@0x…` base lies inside that range —
+`0xe0000@0x40400000` against a bank starting at `0x40200000` on the image this
+task built. **Fail:** a base below the bank, which is what the 2026-09-08 boot
+had (`0xe0000@0x40110000`, entirely inside the 2 MiB TF-A/BL31 keeps) and which
+means every console line is being written into firmware memory. This is the
+half the image contract already asserts off the device tree; what the bench
+adds is that the RUNNING kernel agrees with the tree it was handed.
+
+**`pstore-survives` (stage 3).** Before the warm reboot, write a marker into
+the kernel log (`echo mos-pstore-<date> > /dev/kmsg`). After it, list
+`/sys/fs/pstore/` and grep the marker out of `console-ramoops-0`. **Pass:** the
+marker from the previous boot is there. **Fail, and it is the one that matters:**
+an empty `/sys/fs/pstore/` after a warm reset means the region does not survive
+the boot chain — the loader writes over it — and the address needs to move
+again. The `.dts` states plainly that 0x40400000 is *chosen* to sit below every
+address U-Boot loads to and is not a measured-free address; **this probe is the
+measurement**, and it is the only one that can be made. Note also that the
+first boot after this change starts with an empty pstore whatever the outcome,
+because the region moved: run this probe over **two** warm reboots and read the
+second.
+
+**`regdb-loaded` (stage 4), and read this before flashing.** The unit's
+`ExecStart` carries no `-`, so a failure is a failed unit, and `health.conf`
+tolerates none: on a device this is a health-gate failure and therefore an A/B
+rollback. That is deliberate — every way it can fail is excluded by
+construction and a dash would hide a real defect — and it is why the first unit
+to run it is a bench unit. If it fails here, the finding is the image's, not
+the board's. The probes: `systemctl status mos-regdb-reload.service`,
+`iw reg get`, and `dmesg | grep -iE 'regulatory|regdb'`. **Pass:** the unit
+succeeded, and `iw reg get` reports a domain the database supplied rather than
+`country 00: DFS-UNSET`. **Expected and NOT a fail:** one
+`Direct firmware load for regulatory.db failed with error -2` early in the log.
+That request is issued by a late_initcall before the root is mounted and cannot
+succeed on a board with a built-in cfg80211 and no initramfs; the unit is what
+loads the database afterwards, and a *second* failure after the unit ran is the
+`fail`. **Second observation, and it is a separate line in the notes:** this
+board's AIC8800D80 registers `phy0` as `REGULATORY_WIPHY_SELF_MANAGED` with the
+driver's own table (`custregd` defaults true in `rwnx_mod_params.c`), which is
+what the `CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES` banner reports on
+success. A self-managed wiphy does not take the core regulatory domain, so
+`iw phy phy0 reg get` may differ from `iw reg get` — record **both**, because
+which of them a `country_code` in a rendered hostapd configuration actually
+reaches is the open question this database was packaged for.
+
+**`gadget-bound` (stage 5).** Beyond row 7's existing probe set, read
+`ls -l /sys/kernel/config/usb_gadget/cx3576_serial/configs/c.1/`, `cat
+.../UDC`, and `journalctl -u mos-gadget.service`. **Pass:** `acm.usb0` is a
+symlink in `configs/c.1`, `UDC` names `23000000.usb`, and the host PC
+enumerates a CDC ACM device. **Fail:** an empty `UDC` with
+`Config c/1 of cx3576_serial needs at least one function` in `dmesg`, which is
+exactly the 2026-09-08 state and whose cause — a relative configfs symlink
+target resolved against the service's `/` working directory — is closed in the
+image with a test that drives it (`make os-gadget-test`). If it still fails
+*with the function symlink present*, the cause is elsewhere and the
+`rockchip-usb2phy … IRQ index 0 not found` line becomes worth pursuing.
+
+**`no-efi-automount` (stage 2).** `systemctl list-units --all '*.automount'`,
+`findmnt /efi`, and `systemctl status efi.automount`. **Pass:** `efi.automount`
+is present (systemd-gpt-auto-generator writes it for the ESP-typed BOOT-A) and
+**not running**, with `Starting of efi.automount … unsupported` in the journal,
+and nothing is mounted at `/efi`. **Fail:** BOOT-A mounted anywhere. This is
+the observable side of the decision that cx3576's kernel builds no autofs
+(`verify/src/checks-kernel.ts`, `EXCLUDED_BY_BOARD`), and it is worth a probe
+because the failing direction is a writable mount of a RAUC-owned partition
+chosen by disk order rather than by which slot is running.
+
 ## 5. The power-cut window
 
 Pulling power at an arbitrary moment tests nothing. Row 4's claim is specific:

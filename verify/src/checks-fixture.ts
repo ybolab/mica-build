@@ -807,6 +807,33 @@ function seedConnd(root: string, board: Board, file: WriteFile): void {
     enableEtcUnit(root, unit, 'local-fs.target.wants')
   }
 
+  // The regulatory database, at the path the KERNEL searches -- `/lib/firmware`,
+  // as `fw_path[]` spells it -- and reached the way the real root reaches it.
+  //
+  // NOT A PLAIN FILE, and that is the point. Debian's wireless-regdb registers
+  // the database through update-alternatives, so the shipped root carries an
+  // ABSOLUTE symlink into /etc/alternatives and a second one back out. A
+  // fixture that wrote a plain file would be green against a check that
+  // resolves the path against the HOST -- which is what the first version of
+  // this check did, and it reported the database missing from an image that
+  // carries it. The chain is here so the fixture can tell those two apart.
+  for (const name of ['regulatory.db', 'regulatory.db.p7s']) {
+    file(`/lib/firmware/${name}-debian`)
+    mkdirSync(join(root, '/etc/alternatives'), { recursive: true })
+    symlinkSync(`/lib/firmware/${name}-debian`, join(root, '/etc/alternatives', name))
+    mkdirSync(join(root, '/lib/firmware'), { recursive: true })
+    symlinkSync(`/etc/alternatives/${name}`, join(root, '/lib/firmware', name))
+  }
+
+  // ...and the unit that loads it, enabled. A built-in cfg80211 on a board with
+  // no initramfs asks for the database before the root is mounted and records
+  // the failure in a pointer nothing re-reads, so the file alone is a file
+  // nothing looks at. `iw` is what sends NL80211_CMD_RELOAD_REGDB.
+  file('/usr/sbin/iw')
+  file('/etc/systemd/system/mos-regdb-reload.service',
+    '[Service]\nType=oneshot\nExecStart=/usr/sbin/iw reg reload\n')
+  enableEtcUnit(root, 'mos-regdb-reload.service', 'multi-user.target.wants')
+
   // Nothing at /usr/sbin/dnsmasq: the AP's DHCP server is systemd-networkd's own
   // DHCPServer=yes, and a second one on the same link is a conflict.
 }

@@ -171,6 +171,12 @@ jobs:
       - name: The STATE /etc/shadow reconciler
         run: make os-shadow-test
 
+      # Here for this job's own reason: it is sh and a temp directory, and it
+      # needs neither bun nor docker nor a board. It is the only gate that
+      # executes a boards/*/hwinit script.
+      - name: The cx3576 USB gadget is built with a function in its configuration
+        run: make os-gadget-test
+
       # Belongs in THIS job and not in os-verify: it reads three committed files
       # with bash and git, and needs neither bun nor docker. It is also the only
       # gate here that says anything about a board kernel -- `make cx3576-kernel`
