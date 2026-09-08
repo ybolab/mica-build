@@ -102,11 +102,28 @@ cx3576 从 eMMC 启动，镜像通过 USB 走 Rockchip loader（"rockusb"）路�
 
 1. **进入 loader 模式。**上电时按住 recovery 键。在已经运行 mos U-Boot 的
    板卡上，找不到可用槽的启动会自己落入 rockusb。
-2. **写入镜像。**板卡通过 USB 连接后，用 `rkdeveloptool` 把
-   `cx3576-mos-<epoch>.img` 写入 eMMC；BSP Makefile 里的 flash 目标是这一步
-   的驱动形式。
+2. **写入镜像。**板卡通过 USB 连接后：
+
+   ```sh
+   make -C boards/cx3576/bsp flash-mos
+   ```
+
+   它用 `rkdeveloptool wl 0` 把 `_out/cx3576/cx3576-mos-latest.img` 写进
+   eMMC——要写别的构建就传 `MOS_IMAGE=<文件>`——然后**把整个镜像从板卡读
+   回来，和刚写下去的那个文件逐字节比对**，比对通过之后才复位板卡。
+   `make flash` 和 `make flash-maskrom` 对 BSP 的 Alpine 演示镜像做同样
+   的事。
 3. **重新上电。**U-Boot 从扇区 64 启动，带着每槽尝试计数器走 `BOOT_ORDER`，
    引导槽 A。
+
+**回读覆盖什么，又证明了什么。**覆盖写下去的那个文件的每一个字节，比对的对象
+就是那个文件本身，而不是由它重新算出来的校验和；比对发生在 `rkdeveloptool rd`
+之前——所以出现差异时，整个流程停在板卡仍处于 loader 模式的时刻，重写一遍只
+需要一条命令。它之所以存在，是因为有一次烧写报告成功，却把启动分区里的内核
+留成了两次构建的混合体，板卡死在 `paging_init`：当时的回读只覆盖前 16 MiB，
+而损坏在它之后 22 MiB 处。**没有任何一次针对板卡的运行被记录下来**——主机
+这一侧是拿一个桩工具测的，`rkdeveloptool` 那几条调用本身从未在这棵树里被
+执行过。
 
 如果 loader 区本身不可启动——刷过 pre-A/B 镜像的板卡，或一次被打断的 loader
 写入——BootROM 会通过 USB 呈现 **maskrom**，`rkdeveloptool` 从那里重刷。
@@ -116,7 +133,7 @@ cx3576 从 eMMC 启动，镜像通过 USB 走 Rockchip loader（"rockusb"）路�
 执行过：板卡档案的 Recovery method 一节描述了它们，而它的验收矩阵里
 `Recovery` 一行是 `not tested`。
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/boot.cmd`, `docs/bsp/cx3576-example.md`
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.sh`, `boards/cx3576/boot.cmd`, `docs/bsp/cx3576-example.md`
 
 ## 6. 首次启动，以及"它成功了"长什么样
 
