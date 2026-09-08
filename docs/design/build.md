@@ -588,15 +588,30 @@ make os-verify-cx3576
 make os-bundle-cx3576
 ```
 
-`BSP_OUT=/path/to/_out/boards/<board>` points the assembler and the board
-package producer at prebuilt BSP artefacts; `BOARD_DIR=/path/to/bsp` still names
-the bsp SOURCE tree (committed vendor firmware, `containers.env`). RFCT-343 split
-the two: outputs live under `_out/boards/<board>/` with everything else this
-repository builds, so pointing at prebuilt artefacts no longer also repoints the
-firmware. `BSP_OUT` is what lets a kernel built once serve many rootfs
-builds. The pre-split spelling, a `BOARD_DIR` holding `out/kernel/` and
-`out/uboot-mos/`, is retired rather than aliased: a tree still using it gets
-a refusal naming the artefact it could not find, not a silent miss.
+`BSP_OUT=/path/to/_out/boards/<board>` points the board package producer and
+the image verifier at prebuilt BSP artefacts; `BOARD_DIR=/path/to/bsp` still
+names the bsp SOURCE tree (committed vendor firmware, `containers.env`).
+RFCT-343 split the two: outputs live under `_out/boards/<board>/` with
+everything else this repository builds, so pointing at prebuilt artefacts no
+longer also repoints the firmware. `BSP_OUT` is what lets a kernel built once
+serve many rootfs builds. The pre-split spelling, a `BOARD_DIR` holding
+`out/kernel/` and `out/uboot-mos/`, is retired rather than aliased: a tree
+still using it gets a refusal naming the artefact it could not find, not a
+silent miss.
+
+**The ASSEMBLER no longer reads it** (PLAN-086 S2). The kernel, the device
+tree, the U-Boot blob and `boot.cmd` reach `build/run.sh --mkimage-cx3576` and
+`--bundle` through `_out/<board>/boot/`, which `rootfs/build.sh` exports out of
+the packed root — the blobs ride into that root inside `mos-board-cx3576` and
+`mos-kernel-<board>`, so which ones an image was assembled from follows from
+its package set rather than from the directory the build was run beside, and
+the bundle and the flashed image cannot ship different kernels for one build.
+`--bundle` has no `--bsp-out` flag at all now. `--mkimage-cx3576` keeps one,
+for one input: the DEBUG U-Boot variant, which no package carries because no
+image may be assembled from it, and which is read only to refuse an image
+built from it. The image contract still compares each assembled boot slot's
+`Image` and device tree against `${BSP_OUT}/kernel/`, so the export drifting
+from the BSP build is a check going red.
 
 ### 4.1 How the rootfs composition reaches arm64 without the host
 

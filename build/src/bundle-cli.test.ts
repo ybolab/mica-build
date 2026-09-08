@@ -239,46 +239,56 @@ describe('a missing meta/rauc/ makes the build generate one, unless the caller n
 // G27, G28: the inputs.
 
 describe('the two families of missing input get different sentences', () => {
+  // PLAN-086 S2 moved the second family without collapsing it. Every boot input
+  // now comes out of _out/<board>/boot/, which the rootfs build exports from the
+  // packed root, so both families are produced by ONE command -- and the
+  // sentences still differ, because what they tell a reader differs: a missing
+  // verity image means the composition did not finish, and a missing
+  // boot/Image means the package that is supposed to carry it did not.
   const rootfsSide = ['/out/rootfs-verity.img', '/out/rootfs-verity.env']
-  const boardSide = ['/bsp-out/kernel/Image', '/bsp-out/kernel/rk3576-src.dtb']
+  const bootExport = ['/out/boot/Image', '/out/boot/rk3576-src.dtb']
 
   test('POSITIVE CONTROL: with every input present, nothing is refused', () => {
-    expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only(...rootfsSide, ...boardSide)))
+    expect(() => checkRequiredInputs({ rootfsSide, bootExport }, 'cx3576', only(...rootfsSide, ...bootExport)))
       .not.toThrow()
   })
 
   test('EACH rootfs-side input names the producer you can run', () => {
     for (const absent of rootfsSide) {
-      const present = [...rootfsSide, ...boardSide].filter(p => p !== absent)
-      expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only(...present)))
+      const present = [...rootfsSide, ...bootExport].filter(p => p !== absent)
+      expect(() => checkRequiredInputs({ rootfsSide, bootExport }, 'cx3576', only(...present)))
         .toThrow(new RegExp(`${absent} not found; run 'MOS_BOARD=cx3576 bash ${ROOTFS_PRODUCER}' first`))
     }
   })
 
-  test('EACH board-side input names BSP_OUT and its current value instead', () => {
-    // A different action: build the BSP, or point BSP_OUT somewhere else.
-    // Rolling the two into one sentence sends half the readers to the wrong
-    // script.
-    for (const absent of boardSide) {
-      const present = [...rootfsSide, ...boardSide].filter(p => p !== absent)
-      expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only(...present)))
-        .toThrow(new RegExp(`${absent} not found; build the BSP or set BSP_OUT \\(currently: /bsp-out\\)`))
+  test('EACH boot-export input names the export and the package behind it instead', () => {
+    // A different diagnosis: the command to run is the same one, and what it
+    // says is that a package did not carry the file. Rolling the two into one
+    // sentence sends half the readers looking at the wrong half of the build.
+    for (const absent of bootExport) {
+      const present = [...rootfsSide, ...bootExport].filter(p => p !== absent)
+      expect(() => checkRequiredInputs({ rootfsSide, bootExport }, 'cx3576', only(...present)))
+        .toThrow(new RegExp(`${absent} not found; it is exported out of the packed root`))
     }
   })
 
   test('the rootfs side is checked FIRST, as the shell checks it first', () => {
     // Same order, so a tree missing both gets the same first sentence out of
     // either implementation.
-    expect(() => checkRequiredInputs({ rootfsSide, boardSide }, 'cx3576', '/bsp-out', only()))
+    expect(() => checkRequiredInputs({ rootfsSide, bootExport }, 'cx3576', only()))
       .toThrow(new RegExp(`${ROOTFS_PRODUCER}' first`))
   })
 
-  test('an EMPTY board-side list is a grub board, not an unchecked one', () => {
-    // x64 has no BSP: its kernel comes from _out, so it is a ROOTFS-side input
-    // and the board-side list is genuinely empty. The distinction matters
-    // because an empty loop is exactly what a vacuous guard looks like.
-    expect(() => checkRequiredInputs({ rootfsSide, boardSide: [] }, 'x64', '/bsp', only(...rootfsSide)))
-      .not.toThrow()
+  test('a grub board has a SHORTER boot export, not an unchecked one', () => {
+    // A UEFI board's boot export is one file, the vmlinuz -- no device tree and
+    // no boot.cmd -- so the list is short rather than empty. An empty one is
+    // exactly what a vacuous guard looks like, which is why the CLI never
+    // passes one and this asserts the short list still refuses.
+    expect(() => checkRequiredInputs({ rootfsSide, bootExport: ['/out/boot/vmlinuz'] }, 'x64', only(...rootfsSide)))
+      .toThrow(/\/out\/boot\/vmlinuz not found; it is exported out of the packed root/)
+    expect(() => checkRequiredInputs(
+      { rootfsSide, bootExport: ['/out/boot/vmlinuz'] }, 'x64', only(...rootfsSide, '/out/boot/vmlinuz'),
+    )).not.toThrow()
   })
 })
 
@@ -338,7 +348,6 @@ describe('the arguments, and the defaults they fall back to', () => {
       board: DEFAULT_BOARD,
       version: '0.0.0-dev',
       outDir: join(REPO_ROOT, '_out', DEFAULT_BOARD),
-      bspOut: join(REPO_ROOT, '_out', 'boards', DEFAULT_BOARD),
     })
   })
 
@@ -360,7 +369,6 @@ describe('the arguments, and the defaults they fall back to', () => {
     const o = parseArgs([], { MOS_BOARD: 'x64' })
     expect(o.board).toBe('x64')
     expect(o.outDir).toBe(join(REPO_ROOT, '_out', 'x64'))
-    expect(o.bspOut).toBe(join(REPO_ROOT, '_out', 'boards', 'x64'))
   })
 
   test('--board beats MOS_BOARD, and is not read as a version', () => {
@@ -369,9 +377,12 @@ describe('the arguments, and the defaults they fall back to', () => {
     expect(o.version).toBe('0.0.0-dev')
   })
 
-  test('BSP_OUT is honoured, because a BSP built elsewhere is a normal thing to have', () => {
-    expect(parseArgs([], { BSP_OUT: '/elsewhere/bsp-out' }).bspOut).toBe('/elsewhere/bsp-out')
-    expect(parseArgs(['--bsp-out', '/other'], { BSP_OUT: '/elsewhere/bsp-out' }).bspOut).toBe('/other')
+  test('--bsp-out is GONE, and refused rather than accepted and ignored', () => {
+    // PLAN-086 S2: the bundle reads no BSP artefact at all now, so a flag that
+    // still parsed would be a knob that moves nothing -- and a caller who
+    // passed it would believe they had redirected an input.
+    expect(() => parseArgs(['--bsp-out', '/other'], {})).toThrow(/unknown argument "--bsp-out"/)
+    expect(parseArgs([], { BSP_OUT: '/elsewhere/bsp-out' })).not.toHaveProperty('bspOut')
   })
 
   test('--out-dir moves both the inputs and the output, together', () => {
@@ -379,7 +390,7 @@ describe('the arguments, and the defaults they fall back to', () => {
   })
 
   test('a flag with no value is refused rather than swallowing the next argument', () => {
-    for (const flag of ['--board', '--out-dir', '--bsp-out']) {
+    for (const flag of ['--board', '--out-dir']) {
       expect(() => parseArgs([flag], {})).toThrow(new RegExp(`${flag} needs a value`))
     }
   })

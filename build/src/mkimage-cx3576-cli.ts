@@ -21,10 +21,14 @@ import { REPO_ROOT } from './paths.ts'
 
 const USAGE = `usage: bash build/run.sh --mkimage-cx3576 [--out-dir DIR] [--bsp-out DIR]
 
-Assembles the flashable cx3576 A/B GPT disk image. Inputs come from
-_out/${BOARD}/ and _out/boards/${BOARD}/.
+Assembles the flashable cx3576 A/B GPT disk image. Every input the image
+carries comes from _out/${BOARD}/ -- the verity image, the per-slot cmdlines,
+and _out/${BOARD}/boot/, where the rootfs build exported this board's kernel,
+device tree, U-Boot blob and boot.cmd out of the packed root. _out/boards/${BOARD}/
+is read for one thing only: the debug U-Boot variant, to refuse an image
+assembled from it.
 
-  --out-dir DIR    where the rootfs-side inputs are and the image is written
+  --out-dir DIR    where the rootfs build's outputs are and the image is written
                    (default: _out/${BOARD})
   --bsp-out DIR    the BSP build products (default: _out/boards/${BOARD}, or BSP_OUT)
 
@@ -71,27 +75,50 @@ export async function main(argv: readonly string[]): Promise<number> {
   const rootfsVerityEnv = join(outDir, 'rootfs-verity.env')
   const bootCmdlineA = join(outDir, 'boot-cmdline-a.txt')
   const bootCmdlineB = join(outDir, 'boot-cmdline-b.txt')
-  const kernelImage = join(bspOut, 'kernel', 'Image')
-  const dtb = join(bspOut, 'kernel', 'rk3576-src.dtb')
+  // THE BOOT INPUTS COME OUT OF THE ROOTFS BUILD'S EXPORT, not out of BSP_OUT
+  // (PLAN-086 S2). They ride into the root inside mos-board-cx3576 -- which is
+  // what makes "which blobs was this image assembled from" a property of the
+  // package set rather than of the directory the build happened to be run
+  // beside -- and rootfs/scripts/pack-export-boot.sh takes them back out of the
+  // packed root into _out/<board>/boot/ before it ships. Reading them from
+  // BSP_OUT here would assemble an image from blobs the composed root never saw,
+  // which is the one difference this export exists to make impossible.
+  //
+  // Nothing is lost from the BSP compare: verify's bsp-compare family still
+  // reads each assembled slot's Image and device tree back and diffs them
+  // against ${BSP_OUT}/kernel/, so the export drifting from the BSP build is a
+  // check going red rather than a fact nobody looks at.
+  const bootExport = join(outDir, 'boot')
+  const kernelImage = join(bootExport, 'Image')
+  const dtb = join(bootExport, 'rk3576-src.dtb')
+  const bootCmd = join(bootExport, 'boot.cmd')
   const ubootBin = geometry.require('UBOOT_BIN_NAME')
-  const uboot = join(bspOut, geometry.require('UBOOT_VARIANT_DIR'), ubootBin)
+  const uboot = join(bootExport, ubootBin)
+  // The debug variant is the one input still read from BSP_OUT, and it is read
+  // only to be compared: no package carries it, because no image may be
+  // assembled from it. Absent, the pairing guard below simply does not fire.
   const ubootDebug = join(bspOut, geometry.require('UBOOT_DEBUG_VARIANT_DIR'), ubootBin)
 
-  // The two families of missing input get DIFFERENT sentences, as they do in the
-  // shell: one is produced by a script you can run, the other by a BSP build or
-  // a BSP_OUT that is pointed somewhere else.
+  // The two families of missing input keep DIFFERENT sentences, and the split
+  // has moved with the inputs: one family is what the rootfs build writes
+  // itself, the other is what it exports out of the board package. Both are
+  // produced by the same command, and saying which kind is missing is what
+  // tells a reader whether the composition is wrong or the board package is.
   for (const input of [rootfsVerityImg, rootfsVerityEnv, bootCmdlineA, bootCmdlineB]) {
     if (!existsSync(input)) {
       throw new Error(`${input} not found; run 'bash ${ROOTFS_PRODUCER}' first`)
     }
   }
-  for (const input of [kernelImage, dtb]) {
+  for (const input of [kernelImage, dtb, bootCmd]) {
     if (!existsSync(input)) {
-      throw new Error(`${input} not found; build the BSP or set BSP_OUT (currently: ${bspOut})`)
+      throw new Error(
+        `${input} not found; it is exported out of the packed root by `
+        + `'MOS_BOARD=${BOARD} bash ${ROOTFS_PRODUCER}', which takes it from the installed `
+        + `mos-board-${BOARD} package. An export missing a file means that package did not carry it`,
+      )
     }
   }
   if (!existsSync(uboot)) {
-    console.error(`note: BSP_OUT is currently ${bspOut}`)
     throw ubootMissingError(uboot, geometry.require('UBOOT_DEBUG_VARIANT_DIR'))
   }
 
@@ -102,6 +129,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   await assembleCx3576({
     kernelImage,
     dtb,
+    bootCmd,
     uboot,
     ubootDebug,
     rootfsVerityImg,
