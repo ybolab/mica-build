@@ -137,13 +137,19 @@ describe('cx3576 — the U-Boot board', () => {
       + 'loglevel=5 fbcon=logo-pos:center,logo-count:1 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 144 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 145 assignments', () => {
     expect(cx3576.faults).toEqual([])
     expect(cx3576.env.duplicates).toEqual([])
     // If this number moves, the board definition gained or lost a key. That is
     // a deliberate act; update it deliberately.
-    expect(cx3576.env.assignments.length).toBe(144)
-    expect(cx3576.env.values.size).toBe(144)
+    //
+    // 143 -> 145 across two branches that landed together, which is why the
+    // merge itself produced a red here: RFCT-352 added BOOT_DIGEST_ENV_NAME and
+    // PLAN-088 added BOARD_HAS_DISPLAY, each side updated this number for its
+    // own key, and textual merge kept one of the two answers. The count is
+    // doing exactly what it is for.
+    expect(cx3576.env.assignments.length).toBe(145)
+    expect(cx3576.env.values.size).toBe(145)
   })
 })
 
