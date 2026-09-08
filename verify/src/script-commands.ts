@@ -23,7 +23,7 @@
 // than the oracle's eight hops, and with the intermediate DIRECTORY components
 // resolved too, which the chase never did.
 
-import { entry, regularFileInRoot, statInRoot } from './checks-root.ts'
+import { entry, regularFileInRoot } from './checks-root.ts'
 
 // The oracle's own two lists, space-padded exactly as it pads them.
 const SH_BUILTINS = ' : . [ alias bg break cd continue echo eval exec exit export false fg getopts '
@@ -144,9 +144,9 @@ export function resolvesInRoot(root: string, command: string): boolean {
   if (command.startsWith('/')) return regularFileInRoot(root, command)
   for (const dir of COMMAND_DIRS) {
     const candidate = `${dir}/${command}`
-    if (statInRoot(root, candidate) !== undefined || entry(root, candidate) !== undefined) {
-      return regularFileInRoot(root, candidate)
-    }
+    // `[ -e ] || [ -L ]` is one lstat: the pair is true exactly when something
+    // is AT the name, dangling link included, which is what `entry` answers.
+    if (entry(root, candidate) !== undefined) return regularFileInRoot(root, candidate)
   }
   return false
 }

@@ -581,6 +581,13 @@ this board — not whether the file is in the image. The failing direction is a
 writable mount of a RAUC-owned partition chosen by disk order rather than by
 which slot is running.
 
+The MECHANISM is not what is open here: a virt-arm64 QEMU boot on 2026-09-08
+showed `systemd-gpt-auto-generator` in the manager's executed-generator list
+without the mask and dropped from it with the mask, on the same systemd 257.13 arm64
+binary this board runs. What only this board can answer is whether the unit
+that is actually generated here — virt-arm64 boots through GRUB, which sets no
+`LoaderDevicePartUUID`, so its generator writes nothing — is gone.
+
 ## 5. The power-cut window
 
 Pulling power at an arbitrary moment tests nothing. Row 4's claim is specific:

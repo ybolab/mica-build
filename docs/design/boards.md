@@ -464,20 +464,36 @@ its own `ConditionPathExists=/proc/sys/fs/binfmt_misc` because
 `CONFIG_BINFMT_MISC` is not set either; `efi.automount` was never in it,
 because a generator writes it at boot.
 
-**Which generator, and on which boards** (RFCT-358, measured against systemd
-257.13's own sources and the shipped generator's strings). RFCT-355 recorded
-this as cx3576's alone, on the reading that x64 and virt-arm64 mount their ESP
-from `fstab`. They do not: they mount it from `boot.mount`, a unit — and the
-only things that suppress `systemd-gpt-auto-generator` are an `fstab` entry for
-the device (`fstab_has_node()`) or an `fstab` mount point under `/boot` or
-`/efi`. A `.mount` unit in `/etc/systemd/system` does not, because what the
-generator writes is an `.automount`, which no mount unit shadows. All three
-boards were therefore generating one, at `/efi` on each of them: `/boot` is
-non-empty in every packed root (it carries `config-<release>`), so
-`path_is_busy("/boot")` is true and the generator falls through to `/efi`. Each
-board was safe for a different accident — cx3576 because it builds no autofs,
-x64 and virt-arm64 because the read-only root has no `/efi` for the automount
-to be established on.
+**Which generator, and why the other two boards are not exposed** (RFCT-358,
+measured against systemd 257.13's own sources and a virt-arm64 QEMU boot).
+RFCT-355 was right about which board and wrong about why, and the why is what
+says how thin the other two boards' safety is.
+
+It is not that "x64 and virt-arm64 mount their ESP from `fstab`". No board's
+`fstab` has an ESP row; the two UEFI boards mount theirs from `boot.mount`, a
+UNIT, and a unit cannot suppress this generator — what it writes is an
+`.automount`, which no `.mount` unit shadows, and `process_loader_partitions()`
+consults `fstab` (`fstab_has_mount_point_prefix_strv`, then `fstab_has_node`)
+and nothing else.
+
+What decides it is `is_efi_boot()`. On a NON-EFI boot — cx3576, booted by
+U-Boot — the generator logs `Not an EFI boot, skipping loader partition UUID
+check` and goes straight to mounting, so the ESP-typed BOOT-A becomes
+`efi.automount`: at `/efi` rather than `/boot` because `path_is_busy("/boot")`
+is true (the packed root carries `/boot/config-<release>`), and BOOT-A rather
+than BOOT-B because `dissect_image()` keeps the first partition of each
+designator. On an EFI boot it first requires `LoaderDevicePartUUID`, which the
+boot loader must set — systemd-boot does, GRUB does not — and returns early
+without it. Measured on a virt-arm64 QEMU boot 2026-09-08: startup finished,
+`boot.mount` mounted the ESP at `/boot`, and the only `.automount` subject in
+the whole boot was `proc-sys-fs-binfmt_misc.automount`, skipped on its own
+condition.
+
+So each board is safe for a different accident and none of them chose one:
+cx3576 builds no autofs, so the unit it does generate is refused; x64 and
+virt-arm64 boot through GRUB, which sets no `LoaderDevicePartUUID`. A board
+that gains an EFI boot path (RFCT-357's question for cx3576) or a loader that
+sets that variable moves the exposure with nobody editing a mount.
 
 **Closed by masking the generator**, in `mos-system`:
 `/etc/systemd/system-generators/systemd-gpt-auto-generator -> /dev/null`, which

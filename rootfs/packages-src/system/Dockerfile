@@ -201,14 +201,19 @@ RUN set -eu; \
     chmod 0644 "${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
     # GPT AUTO-DISCOVERY IS OFF, and it is masked rather than left to be
     # harmless. `systemd-gpt-auto-generator` mounts partitions it recognises by
-    # GPT TYPE, and every mos boot slot is typed ESP -- so on all three boards
-    # it writes an `efi.automount` for a RAUC-owned boot partition, picked by
-    # disk order rather than by which slot is running, read-WRITE, on a device
-    # where /boot is deliberately not a mountpoint. Nothing in this tree asked
-    # for that unit and nothing has ever failed because of it, for two
-    # different accidents: cx3576 builds no CONFIG_AUTOFS_FS, so the unit is
-    # refused as unsupported, and the UEFI boards' read-only root has no /efi
-    # for the automount to be established on.
+    # GPT TYPE, and every mos boot slot is typed ESP -- so on cx3576 it writes
+    # an `efi.automount` for a RAUC-owned boot partition, picked by disk order
+    # rather than by which slot is running, read-WRITE, on a device where /boot
+    # is deliberately not a mountpoint. Nothing in this tree asked for that
+    # unit, and nothing has ever failed because of it for an accident: the
+    # kernel builds no CONFIG_AUTOFS_FS, so the unit is refused as unsupported.
+    #
+    # The UEFI boards are not exposed today for a second accident, which is why
+    # this mask is not board-scoped: `process_loader_partitions()` mounts
+    # unconditionally on a non-EFI boot and, on an EFI boot, only when the boot
+    # loader set LoaderDevicePartUUID. systemd-boot sets it; GRUB, which x64
+    # and virt-arm64 boot through, does not. The exposure follows the BOOT PATH,
+    # so it moves without anyone editing a mount.
     #
     # A symlink to /dev/null in /etc/systemd/system-generators is systemd's own
     # masking mechanism: generators are enumerated with

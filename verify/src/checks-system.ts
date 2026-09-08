@@ -1273,23 +1273,26 @@ const GPT_AUTO_MASK = `/etc/systemd/system-generators/${GPT_AUTO_GENERATOR}`
  * symbol.
  *
  * `systemd-gpt-auto-generator` mounts partitions it recognises by GPT TYPE.
- * Every mos boot slot is typed ESP, and no fstab on any board names one -- the
- * only thing that suppresses this generator is an fstab entry
- * (`fstab_has_node()`, or a mount point under /boot or /efi; a `.mount` unit in
- * /etc/systemd/system does not, because the generated unit is an `.automount`
- * that no mount unit shadows). So on all three boards it generates an
- * `efi.automount` over a RAUC-owned boot partition, chosen by disk order --
- * `dissect_image()` keeps the FIRST partition of each designator -- rather than
- * by which slot is running, and mounted read-write.
+ * Every mos boot slot is typed ESP and no fstab on any board names one, and a
+ * `.mount` unit does not suppress the generator either -- what it writes is an
+ * `.automount`, which no mount unit shadows. On cx3576 it therefore writes an
+ * `efi.automount` over a RAUC-owned boot slot, chosen by disk order
+ * (`dissect_image()` keeps the FIRST partition of each designator) rather than
+ * by which slot is running, and mounted read-write. Measured on the hardware,
+ * 2026-09-08.
  *
- * It has never done any harm, for two different accidents, which is exactly why
- * this is asserted rather than left alone. On cx3576 the unit is refused
- * because the kernel builds no `CONFIG_AUTOFS_FS` (`automount_supported()` is
- * `access("/dev/autofs")`) and the 2026-09-08 boot said so; on x64 and
- * virt-arm64, which do build autofs, the automount cannot be established
- * because the read-only root has no `/efi` to establish it on. Neither is a
- * decision, and either could be undone by a change with nothing to do with
- * boot slots.
+ * The other two boards are not exposed TODAY, and the reason is not a decision
+ * anyone made: `process_loader_partitions()` mounts unconditionally when
+ * `is_efi_boot()` is false -- cx3576, booted by U-Boot -- and on an EFI boot
+ * requires `LoaderDevicePartUUID`, which systemd-boot sets and GRUB does not.
+ * x64 and virt-arm64 boot through GRUB. So the exposure follows the BOOT PATH,
+ * and moves the moment a board gains an EFI one or a loader that sets that
+ * variable.
+ *
+ * And where it is generated, it has never done harm for a third accident:
+ * cx3576's kernel builds no `CONFIG_AUTOFS_FS`, so `automount_supported()`
+ * (which is `access("/dev/autofs")`) refuses the unit. That is the thin thing
+ * this check exists so that nothing rests on.
  *
  * The mask is systemd's own mechanism and the check reads the RAW link target:
  * generators are enumerated with `CONF_FILES_FILTER_MASKED`, which stats
