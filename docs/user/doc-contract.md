@@ -91,7 +91,9 @@ backticks, multiple references separated by `, `:
 - `shipped` and `board-dependent` must cite an existing repository path (a
   file or a directory) or a `make <target>` that exists in the top-level
   `Makefile`.
-- `proposed` must cite an existing `docs/plan/PLAN-0xx.md`.
+- `proposed` must cite an existing plan record under `docs/plan/` — any
+  record file there, whether `<timestamp>-<feature-slug>.md` or an older
+  numbered `PLAN-NNN.md`; the index is not a record.
 - `unsupported` carries no evidence; the absence is the claim.
 - Evidence is verified to exist before it is cited. A dead evidence reference
   is a broken claim, not a cosmetic defect.
@@ -104,8 +106,8 @@ backticks, multiple references separated by `, `:
 
 Where a page describes a capability a plan is still building, it states the
 planned contract, labels it `proposed` with the plan as evidence, and marks the
-section with a single line of the form `TODO(PLAN-0xx): revisit after this plan
-merges`, so the section is swept and relabelled when the plan lands. At most
+section with a single line of the form `TODO(<plan record>): revisit after
+this plan merges`, so the section is swept and relabelled when the plan lands. At most
 one such marker per section.
 
 ## 4. Versioning

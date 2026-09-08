@@ -19,7 +19,9 @@
 #     `make <target>` where <target> is defined in the top-level Makefile --
 #     a dead evidence reference is a broken claim, not a cosmetic defect;
 #   - shipped and board-dependent REQUIRE evidence;
-#   - proposed REQUIRES at least one existing docs/plan/PLAN-NNN.md ref;
+#   - proposed REQUIRES at least one existing record under docs/plan/ --
+#     any `<name>.md` there except index.md, so both the `<timestamp>-<slug>`
+#     naming and the older numbered PLAN-NNN files satisfy it;
 #   - unsupported carries NO evidence -- the absence is the claim.
 #
 # And one meta-assertion: a scanned tree with ZERO status lines fails. The
@@ -121,11 +123,11 @@ check_status_line() {
             refs_ok=0
             fail "$file: evidence '$ref' does not exist -- '$line'"
         fi
-        [[ $ref =~ ^docs/plan/PLAN-[0-9]+\.md$ ]] && [ -e "$ref" ] && plan_ok=1
+        [[ $ref =~ ^docs/plan/[^/]+\.md$ ]] && [ "$ref" != docs/plan/index.md ] && [ -e "$ref" ] && plan_ok=1
     done < <(grep -oE '`[^`]+`' <<<"$evidence" || true)
 
     if [ "$status" = proposed ] && [ "$plan_ok" -eq 0 ]; then
-        fail "$file: proposed requires an existing docs/plan/PLAN-NNN.md ref -- '$line'"
+        fail "$file: proposed requires an existing docs/plan/ record ref (not index.md) -- '$line'"
     elif [ "$refs_ok" -eq 1 ]; then
         ok
     fi

@@ -894,3 +894,10 @@ QEMU, then the same layout is applied to cx3576 and the other boards. The
 plan's sequencing rule and annotations record it; both P1 tasks were
 re-prioritised by follow-up, and P1-A reports its x64 stage separately so P2
 for x64 can open on it.
+
+## 2026-09-08 17:27 [progress]
+
+`docs/verify-status.sh` now accepts any plan record under `docs/plan/` (index
+excluded) for a `proposed` status line, instead of only `PLAN-NNN.md`; the
+negative test carries both record shapes and an index-only case, and the
+user-doc contract (en and zh) states the rule. Task `20260908-1727-status-gate-plan-naming`.

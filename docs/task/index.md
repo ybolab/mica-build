@@ -141,3 +141,4 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**RFCT-946 Permit the built-in Wi-Fi client switch through the settings API**](RFCT-946.md) `P1`
 - [x] [**RFCT-359 cx3576 stable MAC derives from the port topology, and reaches every port**](RFCT-359.md) `P1`
 - [x] [**20260908-1702-pma-project-injection Wire the repository into the PMA workflow**](20260908-1702-pma-project-injection.md) `P1`
+- [x] [**20260908-1727-status-gate-plan-naming Accept both plan-record namings in the truth-status gate**](20260908-1727-status-gate-plan-naming.md) `P1`
