@@ -142,14 +142,15 @@ its bytes, never what was compiled into the binary inside it.
 
 ## Evidence
 
-Everything below is against artifacts built in this worktree at `2839410e2f3d`
-(main merged first). Pool: 18 archives at stamp `git2839410e2f3d-1`.
+Everything below is against artifacts built in this worktree at `d01b4be1de03`
+— main merged first, through RFCT-352's revision and RFCT-355. Pool: 18
+archives at stamp `gitd01b4be1de03-1`.
 
 **`make os-factory-root-gate`, both arm64 boards, green:**
 
 | board | entries | with content | device nodes | caps | hardlinks | mutations |
 | --- | --- | --- | --- | --- | --- | --- |
-| cx3576 | 4,531 | 3,889 | 8 | 0 | 0 | 9/9 red |
+| cx3576 | 4,546 | 3,902 | 8 | 0 | 0 | 9/9 red |
 | virt-arm64 | 5,742 | 4,768 | 8 | 0 | 0 | 9/9 red |
 
 ```
@@ -163,9 +164,9 @@ Before: `FIDELITY: 1 of 4 comparisons differ` on both, from eight
 **`verify/run.sh --smoke`, both boards — `NOT ASSERTED` is gone:**
 
 ```
-verify smoke: build commit 2839410e2f3d, from _out/cx3576/mosd-build.txt
-PASS  mosd  ... [said: "mosd 0.1.0 (2839410e2f3d)"], and reports the commit
-      2839410e2f3d that _out/cx3576/mosd-build.txt records this build embedding
+verify smoke: build commit d01b4be1de03, from _out/cx3576/mosd-build.txt
+PASS  mosd  ... [said: "mosd 0.1.0 (d01b4be1de03)"], and reports the commit
+      d01b4be1de03 that _out/cx3576/mosd-build.txt records this build embedding
 RESULT: PASS (11 pass, 1 executor-limited, 0 fail, 0 unclaimed, of 12)
 ```
 
@@ -180,12 +181,30 @@ has watched fail proves nothing, so the record's `commit` was set to
 RESULT: FAIL (9 pass, 1 executor-limited, 2 fail, 0 unclaimed, of 12). FAILED: mosd, apid.
 ```
 
-The record was restored and the board re-reads `2839410e2f3d`.
+The record was restored and the board re-read its own commit. That run was
+taken one merge earlier, at `2839410e2f3d`; neither the record's shape nor the
+assertion has moved since.
 
-**`verify/run.sh --verify --board cx3576`: `PASS (432/432 checks, 3 skipped
+**`verify/run.sh --verify --board cx3576`: `PASS (440/440 checks, 3 skipped
 (cx3576/uboot; each named above))`** — against an image assembled in this
-worktree from this pool. 432 is the count after RFCT-352 and RFCT-353 merged;
-`/srv/mos` reads a lower denominator because its image predates them.
+worktree from this pool.
+
+Getting there took one detour worth recording. The first run at this HEAD read
+**436/440**, and all four failures were one fact, two per boot slot:
+
+```
+FAIL: BOOT-A rk3576-src.dtb: /reserved-memory: ramoops@40110000 at 0x40110000 lies BELOW 0x40200000 ...
+FAIL: BOOT-A rk3576-src.dtb: /reserved-memory/ramoops@40110000 does not carry no-map ...
+```
+
+RFCT-355 moved ramoops in the DTS, and no BSP kernel on this host had been
+rebuilt since: `_out/boards/cx3576/kernel/rk3576-src.dtb` was dated 2026-09-07
+16:21 and still carried `ramoops@40110000`. Not this change's, and kernel/DTS
+work is out of this task's scope. L1 rebuilt the BSP kernel in `/srv/mos`; its
+artefacts were checksummed twice, twenty seconds apart, to confirm the export had
+settled, then copied in — after which only the producer that stages them
+(`board-cx3576`) was rebuilt, the pool re-indexed, and the cx3576 half of the
+pipeline re-run.
 
 **Also green:** `verify/run.sh` (typecheck + 1356/1356 tests),
 `make docs-verify` from a `git archive` into an empty directory,

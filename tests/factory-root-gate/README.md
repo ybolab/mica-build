@@ -86,7 +86,7 @@ difference between the two trees rather than between two versions of
 | board | entries | with content | device nodes | caps | hardlinks |
 | --- | --- | --- | --- | --- | --- |
 | x64 | 9,240 | not re-measured | not re-measured | 0 | 6 |
-| cx3576 | 4,531 | 3,889 | 8 | 0 | 0 |
+| cx3576 | 4,546 | 3,902 | 8 | 0 | 0 |
 | virt-arm64 | 5,742 | 4,768 | 8 | 0 | 0 |
 
 Identical on both sides, on all five comparisons, on each of the two arm64
