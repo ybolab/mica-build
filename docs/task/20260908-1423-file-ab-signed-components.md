@@ -50,3 +50,13 @@ Awaiting implementation approval for the completed file-based A/B proposal.
   QEMU, then the same layout on cx3576 and the other boards. Both P1 tasks
   re-prioritised by follow-up; P1-A reports its x64 stage on its own so P2
   for x64 can open before the cx3576/virt-arm64 stage finishes.
+
+- 2026-09-08 19:31: P1-A (`ew42ee3o`) reported all five proofs feasible as drafted on
+  x64, virt-arm64 and the cx3576 kernel under QEMU; nothing weakened. L1
+  acceptance by content passed (raw logs match the report; contracts 455/325,
+  unit suite, docs gates re-run by L1; a byte flipped in the valid signature
+  is refused with -EKEYREJECTED). Merge waits on the proof harness being
+  committed to the branch and on the x64 image contract. P1-B (`iku9ubdw`)
+  stalled with its turn ended during a three-boot QEMU run whose second boot
+  failed on SSH; resumed by follow-up with the measured outcome.
+
