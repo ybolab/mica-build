@@ -124,6 +124,17 @@ function mutate(text: string, from: string | RegExp, to: string): string {
 interface SlotContent { readonly [file: string]: Buffer | undefined }
 
 /** cx3576's BOOT-A and BOOT-B as the shipped image carries them. */
+/**
+ * The digest file the two fixture artefacts above deserve, TRANSCRIBED.
+ *
+ * `KERNEL-IMAGE-BYTES` is 18 = 0x12 bytes and the four-byte dtb magic plus
+ * 1 2 3 4 is 8; the two checksums are CRC-32 of exactly those bytes, written
+ * out here rather than computed with the same call the implementation makes.
+ * A fixture built by the code under test agrees with it by construction and
+ * would keep agreeing through a change of algorithm.
+ */
+const DIGEST_ENV = 'kernel_bytes=12\nkernel_crc=8475ed71\nfdt_bytes=8\nfdt_crc=6a4c9763\n'
+
 function healthySlots(): { a: SlotContent, b: SlotContent } {
   const scr = uImage(SCRIPT_BODY)
   return {
@@ -131,12 +142,14 @@ function healthySlots(): { a: SlotContent, b: SlotContent } {
       'Image': Buffer.from('KERNEL-IMAGE-BYTES'),
       'rk3576-src.dtb': Buffer.from([0xd0, 0x0d, 0xfe, 0xed, 1, 2, 3, 4]),
       'boot.scr': scr,
+      'mos-boot-digest.env': Buffer.from(DIGEST_ENV, 'latin1'),
       'mos-verity-a.env': Buffer.from(VERITY_A, 'latin1'),
     },
     b: {
       'Image': Buffer.from('KERNEL-IMAGE-BYTES'),
       'rk3576-src.dtb': Buffer.from([0xd0, 0x0d, 0xfe, 0xed, 1, 2, 3, 4]),
       'boot.scr': scr,
+      'mos-boot-digest.env': Buffer.from(DIGEST_ENV, 'latin1'),
       'mos-verity-b.env': Buffer.from(VERITY_B, 'latin1'),
     },
   }
@@ -453,6 +466,80 @@ describe('the containment pair reads the SAME uboot_size the compare did', () =>
     const w = world({ poke: [[UBOOT_AT, UBOOT_BLOB]] })
     expect(one(await drive('uboot-blob-below-uenv-cx3576', w)).verdict).toBe('fail')
     expect(one(await drive('uboot-blob-fits-loader-cx3576', w)).verdict).toBe('fail')
+  })
+})
+
+// the digests boot.scr checks what it loaded against
+
+describe('the per-slot boot digest', () => {
+  test('one entry per slot per artefact, over the same set the BSP compare uses', () => {
+    const ids = CHECKS.filter(c => c.id.startsWith('boot-digest-')).map(c => c.id)
+    expect(ids.sort()).toEqual([
+      'boot-digest-cx3576-BOOT-A-Image',
+      'boot-digest-cx3576-BOOT-A-rk3576-src.dtb',
+      'boot-digest-cx3576-BOOT-B-Image',
+      'boot-digest-cx3576-BOOT-B-rk3576-src.dtb',
+    ])
+  })
+
+  test('green when the recorded size and checksum are the slot\'s own', async () => {
+    const r = one(await drive('boot-digest-cx3576-BOOT-A-Image', world()))
+    expect(r.verdict).toBe('pass')
+    expect(r.message).toContain('records Image as kernel_bytes=12 kernel_crc=8475ed71')
+  })
+
+  test('RED when the Image changed and the digest did not -- the mixed-build case', async () => {
+    // The failure RFCT-352 exists for, expressed at the size the fixture can
+    // hold: same length, different bytes, so ONLY the checksum can see it.
+    const slots = healthySlots()
+    const r = one(await drive('boot-digest-cx3576-BOOT-A-Image', world({
+      slots: { a: { ...slots.a, 'Image': Buffer.from('KERNEL-IMAGE-BYTEZ') }, b: slots.b },
+    })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('records no size and checksum pair matching Image')
+    expect(r.message).toContain('boot.scr would refuse this slot')
+  })
+
+  test('RED when the Image is SHORT and the digest did not move', async () => {
+    const slots = healthySlots()
+    const r = one(await drive('boot-digest-cx3576-BOOT-A-Image', world({
+      slots: { a: { ...slots.a, 'Image': Buffer.from('KERNEL') }, b: slots.b },
+    })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('6 bytes = 0x6')
+  })
+
+  test('RED when the slot carries no digest file at all', async () => {
+    const slots = healthySlots()
+    const a = { ...slots.a }
+    delete (a as Record<string, Buffer | undefined>)['mos-boot-digest.env']
+    const r = one(await drive('boot-digest-cx3576-BOOT-A-rk3576-src.dtb', world({
+      slots: { a, b: slots.b },
+    })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toBe('BOOT-A mos-boot-digest.env missing or unreadable')
+  })
+
+  test('a pair that is HALF there matches nothing', async () => {
+    // A file carrying kernel_bytes and no kernel_crc would satisfy a check that
+    // compared only the field it found.
+    const slots = healthySlots()
+    const r = one(await drive('boot-digest-cx3576-BOOT-A-Image', world({
+      slots: {
+        a: { ...slots.a, 'mos-boot-digest.env': Buffer.from('kernel_bytes=12\n', 'latin1') },
+        b: slots.b,
+      },
+    })))
+    expect(r.verdict).toBe('fail')
+  })
+
+  test('the SLOT is part of the identity: B\'s entry reads B\'s copy', async () => {
+    const slots = healthySlots()
+    const r = one(await drive('boot-digest-cx3576-BOOT-B-Image', world({
+      slots: { a: slots.a, b: { ...slots.b, 'Image': Buffer.from('B-HAS-A-DIFFERENT-KERNEL') } },
+    })))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('BOOT-B')
   })
 })
 

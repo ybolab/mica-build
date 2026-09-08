@@ -16,7 +16,7 @@ BOARDS := cx3576 virt-arm64 x64
 	podman-pins podman-pins-test os-netavark-kernel-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test os-gadget-test \
-	os-uboot-handshake-test \
+	os-uboot-handshake-test os-cx3576-flash-test \
 	os-layout-lint os-verify-test os-build-test \
 	os-host-toolchain-lint os-host-toolchain-lint-test os-bare-host-gate \
 	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
@@ -46,6 +46,7 @@ help:
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
+	@echo "  os-cx3576-flash-test    drive the cx3576 flash read-back against a stub rkdeveloptool: argv, sector arithmetic, and a hole that must go red before rd"
 	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
 	@echo "  os-host-toolchain-lint-test  plant a host invocation, a stale exemption and a broken declaration; require each red"
 	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
@@ -243,6 +244,20 @@ os-repart-test:
 # and why.
 os-uboot-handshake-test:
 	bash tests/handshake-test/run.sh
+
+# The cx3576 flash read-back, driven against a stub rkdeveloptool: the argv the
+# BSP's flash targets build, the sector arithmetic they derive from
+# boards/cx3576/board.env, and the failure this suite exists for -- a write that
+# reports success and leaves the previous build's bytes in boot-a, which must
+# turn the flash red BEFORE `rd` reboots the board into it. The old 16 MiB
+# read-back is run over the same medium and required to pass, so the new
+# result is attributable to the widened window rather than to the fixture.
+#
+# No board, so the real rkdeveloptool is never executed and nothing here says
+# it accepts these arguments; docs/task/RFCT-353.md names those lines. Needs no
+# docker, no network and no root.
+os-cx3576-flash-test:
+	bash tests/cx3576-flash-verify-test.sh
 
 # A board is defined by its layout file and the shared scripts read that
 # definition rather than knowing any board's shape. This checks the definition
