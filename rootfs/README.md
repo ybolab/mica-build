@@ -249,18 +249,52 @@ symlinks like mosd.
 | `mos-otg` | `otg.conf` | write the USB OTG role to its syscon node (`/etc/mos/otg-mode` overrides) |
 | `mos-can` | `can.conf` | set bitrate / restart-ms / CAN FD and bring the interface up |
 | `mos-bt` | `bt.conf` | rfkill unblock + `btattach` on the configured UART (ordered after `mos-modules`) |
-| `mos-mac` | `mac.conf` | give every `eth*` with a kernel-random MAC a stable address derived from a hardware identity |
+| `mos-mac` | `mac.conf` | give every `eth*` with a kernel-random MAC a stable address derived from the eMMC CID and the port's place in the bus topology |
 | `mos-gadget` | `gadget.conf` | build the CDC ACM debug console gadget and bind it to the UDC |
 
 `mos-mac` exists because neither cx3576 NIC has a MAC in hardware, so the
 kernel invents a random one on every boot: gmac0/eth0's dts node carries
-neither `mac-address` nor `nvmem-cells`, and the PCIe RTL8168 has no EEPROM.
-The address is derived as `02:` + `md5(seed + ifname)`, with the seed being the
-eMMC CID — a read-only chip register that is unaffected by reflashing the
-media, so a board keeps its MACs (and DHCP reservations) across image updates.
-Interfaces whose `addr_assign_type` is not `NET_ADDR_RANDOM` are left alone,
-and the unit is ordered before `network-pre.target` so networkd configures the
-final addresses. The SoC OTP CPUID would be a deeper root of identity but has
+neither `mac-address` nor `nvmem-cells`, and the PCIe RTL8168 has no EEPROM and
+takes `eth_hw_addr_random()`.
+
+The address is `02:` + `md5(seed + topology)`. The seed is the eMMC CID — a
+read-only chip register unaffected by reflashing the media. **The topology is
+the port's own path under `/sys/devices`**, which
+`/sys/class/net/<iface>/device` resolves to: `platform/2a220000.ethernet` for
+the on-board GMAC, `platform/…/0000:01:00.0` for the part behind PCIe. It is the
+identity udev's `ID_PATH` names, and it is where the silicon is attached rather
+than when it was found. Both halves are hardware, so a board keeps its MACs —
+and its DHCP reservations — across image updates and across a change in probe
+order. Interfaces whose `addr_assign_type` is not `NET_ADDR_RANDOM` are left
+alone. `make os-mac-test` drives the derivation, including the red direction.
+
+**This was `md5(seed + ifname)` until RFCT-359, and the change moves every
+already-deployed unit's MAC addresses.** With `net.ifnames=0` the names are
+probe order and nothing else — on the first hardware boot the two NICs
+registered 4.5 ms apart — so the two ports could exchange addresses on a
+reboot. Nothing in this tree promises compatibility before 1.0 and the change
+stands, but DHCP reservations, switch port allowlists and anything else keyed on
+the old addresses stop matching when a device takes this image.
+
+The assignment ships as **three** files, and any one of them missing makes the
+other two a no-op:
+
+- `mos-mac.service` — the cold-plug sweep, ordered before `network-pre.target`.
+  A one-shot pass cannot reach a port that registers later, and on cx3576 both
+  NICs appear at 11.67 s, which may be after this unit has already run.
+- `60-mos-mac-stable.rules` — the mechanism: `hwinit-mac %k` on each net `add`
+  event. udev writes the device database and broadcasts the event to libudev
+  listeners only after a `RUN+=` program returns, so networkd cannot configure a
+  link before the address is on it.
+- `60-mos-mac-stable.link` — `MACAddressPolicy=none` for `eth*`. Without it
+  systemd's own `99-default.link` (`MACAddressPolicy=persistent`) assigns these
+  ports an address first — keyed on the machine id and, when the port has no
+  `ID_NET_NAME_*` property, on the interface name — and the kernel then records
+  `NET_ADDR_SET`, which `hwinit-mac` reads as “somebody else owns this”. No rule
+  number fixes that: `net_setup_link` is a builtin evaluated inline while the
+  rules are matched, and `RUN+=` is deferred until they all have been.
+
+The SoC OTP CPUID would be a deeper root of identity than the eMMC CID but has
 no dts node in this tree and no hardware validation.
 
 `mos-gadget` gives the board an out-of-band console: with the OTG port in `otg`

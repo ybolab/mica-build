@@ -244,6 +244,19 @@ function guidOfPartition(board: Board, layout: string): string {
 
 const TAB = '\t'
 
+/**
+ * systemd's shipped `/usr/lib/systemd/network/99-default.link`, verbatim from
+ * the 257.13 root this tree packs.
+ *
+ * `MACAddressPolicy=persistent` is the line that matters: on a board whose NICs
+ * have no address in hardware it is not inert, and cx3576 ships a `.link` file
+ * ahead of it to say so.
+ */
+const DEFAULT_LINK = '[Match]\nOriginalName=*\n\n[Link]\n'
+  + 'NamePolicy=keep kernel database onboard slot path\n'
+  + 'AlternativeNamesPolicy=database onboard slot path mac\n'
+  + 'MACAddressPolicy=persistent\n'
+
 /** Every path the batch-2 checks read, in a state that makes all of them PASS. */
 function seedHealthyRoot(root: string, board: Board): void {
   const file = (path: string, content = 'x\n'): void => {
@@ -299,6 +312,11 @@ function seedHealthyRoot(root: string, board: Board): void {
   // read out of it, and an empty file is the vacuity the check exists to catch.
   file('/etc/mos/health.conf', 'require=boot-settled\nrequire=mosd\nrequire=apid\nsettle-sec=60\n')
   file('/etc/systemd/network/80-dhcp.network', '[Network]\nDHCP=yes\n')
+  // systemd's own default, on every board because the systemd package ships it
+  // on every board. It is here as the thing cx3576's 60-mos-mac-stable.link
+  // displaces and copies from, so a fixture without it would make that pair of
+  // checks assert nothing.
+  file('/usr/lib/systemd/network/99-default.link', DEFAULT_LINK)
   file('/etc/systemd/journald.conf.d/00-volatile.conf', '[Journal]\nStorage=volatile\n')
   file('/usr/lib/systemd/system/mosd.service', '[Service]\nBusName=com.mos.mosd\n')
   file('/usr/lib/systemd/system/apid.service',
@@ -1252,6 +1270,20 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     file('/usr/lib/udev/rules.d/60-mos-gadget-getty.rules',
       'ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", '
       + 'ENV{SYSTEMD_WANTS}="serial-getty@ttyGS0.service"\n')
+  }
+
+  if (hwinit.includes('mac')) {
+    file('/usr/lib/udev/rules.d/60-mos-mac-stable.rules',
+      'ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth*", '
+      + 'RUN+="/usr/lib/mos/hwinit-mac %k"\n')
+    // The naming policies are the DEFAULT's own lines rather than a second copy
+    // of them here: what the check asserts is that the two files agree, and a
+    // fixture that wrote its own pair would pass a board whose shipped file had
+    // stopped agreeing with the shipped default.
+    file('/usr/lib/systemd/network/60-mos-mac-stable.link',
+      '[Match]\nOriginalName=eth*\n\n[Link]\n'
+      + DEFAULT_LINK.split('\n').filter(l => /^(Name|AlternativeNames)Policy=/.test(l)).join('\n')
+      + '\nMACAddressPolicy=none\n')
   }
 
   if (radios.includes('bluetooth')) {

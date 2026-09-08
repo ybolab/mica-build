@@ -134,7 +134,12 @@ configured nowhere in the tree); the kernel verifies the root via dm-verity
   provisioning, USB gadget, and module loading — one unit plus one script
   per concern under
   [boards/cx3576/hwinit/](../../boards/cx3576/hwinit/hwinit-can), reading
-  facts staged from `bsp/init/`.
+  facts staged from `bsp/init/`. Two concerns carry udev payload as well: the
+  gadget getty rule, and the MAC assignment's `add`-event rule together with
+  the `.link` file that takes `MACAddressPolicy` off systemd's default, so that
+  this board's Ethernet addresses are derived from its eMMC CID and the port's
+  place in the bus topology rather than from the machine id and the interface
+  name (RFCT-359).
 - **RTC:** the board device tree declares an `AT8563`/`hym8563` at `0x51` on
   `i2c7` (and disables the SoC reference design's node on another bus), and
   `board.env` records no RTC fact of its own. Neither the driver nor the

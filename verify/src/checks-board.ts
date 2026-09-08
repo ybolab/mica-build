@@ -739,7 +739,136 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
       + `BOARD_HWINIT_CONFS): there is no gadget controller to enumerate a ttyGS0 for, and the rule `
       + `ships only with the hwinit script that configures it`,
   ),
+
+  // The stable-MAC assignment ships as THREE files, and the reason all three are
+  // asserted is that any one of them missing turns the other two into a no-op
+  // nothing reports. mos-mac.service is a one-shot pass over /sys/class/net/eth*
+  // and cannot reach a port that registers later; the udev rule is what reaches
+  // it; and the .link file is what stops systemd assigning an address of its own
+  // first, after which hwinit-mac reads NET_ADDR_SET and stands down.
+
+  boardRegularFileForFeature(
+    'mac-udev-rule',
+    boardsWhere(b => hasHwinit(b, 'mac')),
+    '/usr/lib/udev/rules.d/60-mos-mac-stable.rules',
+  ),
+
+  packedGrep({
+    id: 'mac-udev-rule-runs-hwinit',
+    boards: boardsWhere(b => hasHwinit(b, 'mac')),
+    path: '/usr/lib/udev/rules.d/60-mos-mac-stable.rules',
+    pattern: /RUN\+="\/usr\/lib\/mos\/hwinit-mac %k"/,
+    what: 'the udev rule assigns a stable MAC to an Ethernet port when it appears',
+  }),
+
+  {
+    // THE ORDERING IS THE ASSERTION, not the file's presence. systemd matches
+    // .link files in lexical order and the FIRST match wins, and the shipped
+    // 99-default.link carries MACAddressPolicy=persistent -- which is not inert
+    // on a board whose NICs have no address in hardware: link-config.c generates
+    // one for a NET_ADDR_RANDOM port out of the machine ID and either an
+    // ID_NET_NAME_* property or the interface's own name. The kernel then
+    // records NET_ADDR_SET, hwinit-mac reads that as "somebody else owns this",
+    // and the eMMC-CID-rooted address it exists to apply is never applied. So
+    // this compares NAMES against every other .link that assigns an address; a
+    // file renamed above one of them is the failure, and it is silent on the
+    // device.
+    id: 'mac-link-precedes-default-policy',
+    boards: boardsWhere(b => hasHwinit(b, 'mac')),
+    shell: {
+      pass: 'sorts before every .link file that would assign one',
+      fail: 'would be consulted before it and assigns a MAC address',
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const id = 'mac-link-precedes-default-policy'
+      const ours = '60-mos-mac-stable.link'
+      const body = linkFile(root, ours)
+      if (body === undefined || !/^MACAddressPolicy=none$/m.test(body)) {
+        return [verdict(id, false, `${NETWORK_DIR}/${ours} is missing or does not set `
+          + `MACAddressPolicy=none, so systemd's own persistent policy decides this board's MAC `
+          + `addresses and hwinit-mac never gets to`)]
+      }
+      const earlier = listDir(root, NETWORK_DIR)
+        .filter(n => n.endsWith('.link') && n < ours)
+        .filter(n => /^MACAddressPolicy=(?!none$)/m.test(linkFile(root, n) ?? ''))
+        .sort()
+      return [verdict(
+        id,
+        earlier.length === 0,
+        earlier.length === 0
+          ? `${ours} sets MACAddressPolicy=none and sorts before every .link file that would assign `
+            + `one, so hwinit-mac is the only writer of this board's MAC addresses`
+          : `${earlier.join(' ')} sorts before ${ours} and would be consulted before it and assigns a `
+            + `MAC address; systemd would paint a machine-id-derived address over the port and `
+            + `hwinit-mac would then read NET_ADDR_SET and leave it`,
+      )]
+    },
+  },
+
+  {
+    // A matched .link file REPLACES the default wholesale rather than layering
+    // over it, so the two naming policies had to be copied into ours for the
+    // board not to lose its alternative interface names as a side effect of a
+    // change about MAC addresses. A copy is only correct while it matches, and a
+    // systemd upgrade is exactly what moves the original.
+    id: 'mac-link-keeps-default-name-policies',
+    boards: boardsWhere(b => hasHwinit(b, 'mac')),
+    shell: {
+      pass: 'carries 99-default.link\'s naming policies verbatim',
+      fail: 'differs from 99-default.link on ',
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const id = 'mac-link-keeps-default-name-policies'
+      const ours = '60-mos-mac-stable.link'
+      const dflt = linkFile(root, '99-default.link')
+      if (dflt === undefined) {
+        throw new ToolOutputError(
+          `${NETWORK_DIR}/99-default.link is not in this image, so there is no default for `
+          + `${ours} to be compared against. That is a change in what systemd ships, not a verdict `
+          + `about the board.`,
+        )
+      }
+      const body = linkFile(root, ours) ?? ''
+      const differ = NAME_POLICY_KEYS.filter(k => policyLine(body, k) !== policyLine(dflt, k))
+      return [verdict(
+        id,
+        differ.length === 0,
+        differ.length === 0
+          ? `${ours} carries 99-default.link's naming policies verbatim, so replacing the default for `
+            + `eth* changes nothing but the MAC policy it was written for`
+          : `${ours} differs from 99-default.link on ${differ.join(' and ')}; a matched .link file `
+            + `replaces the default rather than layering over it, so the board silently loses `
+            + `whatever the default would have given it`,
+      )]
+    },
+  },
+
+  skipOwner(
+    'mac-stable-assignment-skipped',
+    boardsWhere(b => !hasHwinit(b, 'mac')),
+    'the stable-MAC udev rule and link policy (',
+    board => `the stable-MAC udev rule and link policy (${board.name} declares no mac in `
+      + `BOARD_HWINIT_CONFS): its NICs carry an address in hardware, so the kernel never invents one `
+      + `and there is nothing here to make stable`,
+  ),
 ]
+
+const NETWORK_DIR = '/usr/lib/systemd/network'
+
+/** The two keys ours copies out of 99-default.link, and must keep matching. */
+const NAME_POLICY_KEYS: readonly string[] = ['NamePolicy', 'AlternativeNamesPolicy']
+
+function linkFile(root: string, name: string): string | undefined {
+  const path = `${NETWORK_DIR}/${name}`
+  return entry(root, path)?.isFile() === true ? readFileSync(join(root, path), 'utf8') : undefined
+}
+
+/** One `Key=value` line's value, or undefined -- so absent on both sides agrees. */
+function policyLine(body: string, key: string): string | undefined {
+  return body.split('\n').find(l => l.startsWith(`${key}=`))
+}
 
 const RECONCILER_OWNED: readonly string[] = ['mos-mqttd.service', 'mos-mqtt-broker.service']
 

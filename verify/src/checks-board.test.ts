@@ -122,6 +122,7 @@ describe('the register batch 3 adds', () => {
       ['radio-modules-aic-btlpm', 'radio-module-list-skipped'],
       ['bt-btattach', 'bt-userland-skipped'],
       ['gadget-udev-rule', 'gadget-udev-rule-skipped'],
+      ['mac-udev-rule', 'mac-stable-assignment-skipped'],
       ['led-script', 'led-overlay-skipped'],
       ['status-led-ordering', 'status-led-absent'],
     ] as const) {
@@ -808,6 +809,86 @@ describe('the per-board hwinit facts', () => {
     }
     finally {
       none.dispose()
+    }
+  })
+
+  test('the stable-MAC udev rule passes on cx3576, skips on x64, and fails without the RUN', async () => {
+    const fx = await mutated(cx3576, 'mac-udev-rule-runs-hwinit', root =>
+      writeFileSync(join(root, '/usr/lib/udev/rules.d/60-mos-mac-stable.rules'),
+        'ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth*"\n'))
+    try {
+      expect(await verdictOf(fx.ctx, 'mac-udev-rule-runs-hwinit')).toBe('fail')
+      expect(await verdictOf(fx.ctx, 'mac-udev-rule')).toBe('pass')
+    }
+    finally {
+      fx.dispose()
+    }
+    const none = packedRootFixture(x64)
+    try {
+      expect(await verdictOf(none.ctx, 'mac-stable-assignment-skipped')).toBe('skip')
+    }
+    finally {
+      none.dispose()
+    }
+  })
+
+  test('a .link that assigns a MAC ahead of ours FAILS, and it is the ordering that decides it', async () => {
+    // The failure this catches is silent on the device: systemd's own
+    // MACAddressPolicy=persistent paints a machine-id-derived address over a
+    // NET_ADDR_RANDOM port, the kernel records NET_ADDR_SET, and hwinit-mac then
+    // reads that as "somebody else owns this" and leaves the board's real
+    // identity unapplied. Nothing logs an error on that path.
+    //
+    // The mutation moves NOTHING but the NAME: the same bytes are written to a
+    // file that sorts one place earlier, which is exactly what a well-meaning
+    // renumbering does.
+    const fx = await mutated(cx3576, 'mac-link-precedes-default-policy', (root) => {
+      writeFileSync(join(root, '/usr/lib/systemd/network/50-vendor.link'),
+        '[Match]\nOriginalName=eth*\n\n[Link]\nMACAddressPolicy=persistent\n')
+    })
+    try {
+      expect(await verdictOf(fx.ctx, 'mac-link-precedes-default-policy')).toBe('fail')
+      expect(await messageOf(fx.ctx, 'mac-link-precedes-default-policy')).toContain('50-vendor.link')
+      // An earlier file that assigns NOTHING is not a finding: `none` is what
+      // this check requires of its own file, so it cannot be the thing it
+      // refuses in someone else's.
+      writeFileSync(join(fx.root, '/usr/lib/systemd/network/50-vendor.link'),
+        '[Match]\nOriginalName=eth*\n\n[Link]\nMACAddressPolicy=none\n')
+      expect(await verdictOf(fx.ctx, 'mac-link-precedes-default-policy')).toBe('pass')
+      // ...and our own file losing the policy is the other direction.
+      rmSync(join(fx.root, '/usr/lib/systemd/network/60-mos-mac-stable.link'))
+      expect(await verdictOf(fx.ctx, 'mac-link-precedes-default-policy')).toBe('fail')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the copied naming policies must keep matching 99-default.link', async () => {
+    // A matched .link file replaces the default wholesale. The two policy lines
+    // are a copy, and this is what makes a systemd upgrade that moves the
+    // original a red check rather than a board that quietly stops getting
+    // alternative interface names.
+    const fx = await mutated(cx3576, 'mac-link-keeps-default-name-policies', root =>
+      writeFileSync(join(root, '/usr/lib/systemd/network/99-default.link'),
+        '[Match]\nOriginalName=*\n\n[Link]\n'
+        + 'NamePolicy=keep kernel database onboard slot path\n'
+        + 'AlternativeNamesPolicy=database onboard slot path\n'
+        + 'MACAddressPolicy=persistent\n'))
+    try {
+      expect(await verdictOf(fx.ctx, 'mac-link-keeps-default-name-policies')).toBe('fail')
+      expect(await messageOf(fx.ctx, 'mac-link-keeps-default-name-policies'))
+        .toContain('AlternativeNamesPolicy')
+      // No default to compare against is a THROW, not a fail: systemd not
+      // shipping 99-default.link is a change in the package, and answering it
+      // as a verdict would put a statement about systemd into a report about
+      // the board.
+      rmSync(join(fx.root, '/usr/lib/systemd/network/99-default.link'))
+      await expect(resultsOf(fx.ctx, 'mac-link-keeps-default-name-policies')).rejects.toThrow(
+        /99-default\.link is not in this image/)
+    }
+    finally {
+      fx.dispose()
     }
   })
 })
