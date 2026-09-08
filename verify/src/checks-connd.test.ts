@@ -21,7 +21,7 @@
 //     on reboot and reports nothing.
 
 import { describe, expect, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadBoard, type Board } from './board.ts'
@@ -795,6 +795,38 @@ describe('the group SKIP', () => {
     }
     finally {
       fx.dispose()
+    }
+  })
+})
+
+describe('the seed script is READ inside the root, not off the host', () => {
+  // RFCT-358. The regdb case above drives the PRESENCE half of host
+  // resolution; this drives the READ half, which is the half that survived
+  // RFCT-355: a check whose presence test resolved in the root while its
+  // `readFileSync(join(root, path))` still resolved on the host would report
+  // the host's bytes as the image's.
+  //
+  // The planted host file is a byte-for-byte COPY of the image's own seed
+  // script, so it satisfies every clause of the check. The only difference
+  // between passing and failing here is which filesystem the path resolved
+  // against.
+
+  test('a seed script that is an absolute symlink to an identical host file fails', async () => {
+    const seed = '/usr/lib/mos/mos-seed-state'
+    const host = mkdtempSync(join(tmpdir(), 'mos-host-probe-'))
+    const planted = join(host, 'mos-seed-state')
+    const fx = await mutated('wifi-ap-config-seeded', (root) => {
+      copyFileSync(join(root, seed), planted)
+      rmSync(join(root, seed))
+      symlinkSync(planted, join(root, seed))
+    })
+    try {
+      expect(await verdictOf(fx, 'wifi-ap-config-seeded')).toBe('fail')
+      expect(await verdictOf(fx, 'wifi-station-config-seeded')).toBe('fail')
+    }
+    finally {
+      fx.dispose()
+      rmSync(host, { recursive: true, force: true })
     }
   })
 })

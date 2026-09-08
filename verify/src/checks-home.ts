@@ -24,13 +24,12 @@
 // patterns, because a port that understood the script better than the oracle
 // does would diverge on the first script the oracle misreads.
 
-import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Board } from './board.ts'
 import { boardsWhere, hasRadio } from './board-scope.ts'
-import { regularFileFollowingLinks } from './checks-dbus.ts'
 import { unitValue } from './checks-engine.ts'
-import { entry, ETC_UNITS, packedRoot, wantsLink } from './checks-root.ts'
+import { entry, ETC_UNITS, packedRoot, pathInRoot, regularFileInRoot, statInRoot, wantsLink } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
@@ -46,7 +45,7 @@ const SEED_WRITE_CMDS = 'mkdir|touch|cp|mv|ln|rm|chmod|chown|install|tee|dd'
 
 function text(root: string, path: string): string {
   try {
-    return readFileSync(join(root, path), 'utf8')
+    return readFileSync(pathInRoot(root, path), 'utf8')
   }
   catch {
     return ''
@@ -89,7 +88,7 @@ function mosBacking(root: string, value: string): string | undefined {
   const where = unitValue(root, unit, 'Where=')
   const what = unitValue(root, unit, 'What=')
   const options = unitValue(root, unit, 'Options=')
-  if (where !== '/mos' || !regularFileFollowingLinks(root, unit)) return undefined
+  if (where !== '/mos' || !regularFileInRoot(root, unit)) return undefined
   if (options !== 'bind') return undefined
   if (wantsLink(root, ETC_UNITS, 'mos.mount') === undefined) return undefined
   if (value === '/mos') return what
@@ -105,35 +104,25 @@ function ordersBefore(root: string, unitPath: string, unit: string): boolean {
     .includes(unit)
 }
 
-/** `stat -c %a`, or the oracle's literal `none`. Follows links, as stat does. */
+/**
+ * `stat -c %a`, or the oracle's literal `none`. Follows links, as stat does --
+ * inside the root, so what is reported is the mode of the image's file.
+ */
 function modeOf(root: string, path: string): string {
-  try {
-    return (statSync(join(root, path)).mode & 0o7777).toString(8)
-  }
-  catch {
-    return 'none'
-  }
+  const st = statInRoot(root, path)
+  return st === undefined ? 'none' : (st.mode & 0o7777).toString(8)
 }
 
 /** `stat -c '%u:%g'`, or `none`. */
 function ownerOf(root: string, path: string): string {
-  try {
-    const st = statSync(join(root, path))
-    return `${st.uid}:${st.gid}`
-  }
-  catch {
-    return 'none'
-  }
+  const st = statInRoot(root, path)
+  return st === undefined ? 'none' : `${st.uid}:${st.gid}`
 }
 
 /** `[ -x ]` for the OWNER bit, which is what ExecStart= needs from a root unit. */
 function isExecutable(root: string, path: string): boolean {
-  try {
-    return (statSync(join(root, path)).mode & 0o111) !== 0
-  }
-  catch {
-    return false
-  }
+  const st = statInRoot(root, path)
+  return st !== undefined && (st.mode & 0o111) !== 0
 }
 
 /** `grep -Eq PATTERN` over the file, line-wise. */
@@ -222,7 +211,7 @@ function bindCheck(c: BindCase): CheckCase {
       const what = unitValue(root, unitPath, 'What=')
       const where = unitValue(root, unitPath, 'Where=')
       const guid = (ctx.board.partition('DATA')?.guid ?? '').toLowerCase()
-      if (!regularFileFollowingLinks(root, unitPath)) {
+      if (!regularFileInRoot(root, unitPath)) {
         return [verdict(c.id, false,
           `${c.unit} is not in the image, so ${c.where} stays inside the read-only verity squashfs `
           + `and ${c.what}`)]
@@ -277,7 +266,7 @@ const SRV_DATA_BIND_CHECK: CheckCase = {
     const where = unitValue(root, unitPath, 'Where=')
     const options = unitValue(root, unitPath, 'Options=')
     const guid = (ctx.board.partition('DATA')?.guid ?? '').toLowerCase()
-    if (!regularFileFollowingLinks(root, unitPath)) {
+    if (!regularFileInRoot(root, unitPath)) {
       return [verdict('srv-mount-on-data', false,
         'srv.mount is not in the image, so /srv remains inside the read-only verity squashfs')]
     }
@@ -339,7 +328,7 @@ const SEED_HOME_CHECK: CheckCase = {
     const root = await packedRoot(ctx)
     const unitPath = '/etc/systemd/system/mos-seed-home.service'
     const what = unitValue(root, '/etc/systemd/system/home.mount', 'What=')
-    if (!regularFileFollowingLinks(root, unitPath)) {
+    if (!regularFileInRoot(root, unitPath)) {
       return [verdict('mos-seed-home-service', false,
         `mos-seed-home.service is not in the image; nothing creates `
         + `${what === '' ? 'the home.mount source' : what} on DATA and the bind fails, because `
@@ -387,7 +376,7 @@ const SEED_ROOT_CHECK: CheckCase = {
     const script = '/usr/lib/mos/mos-seed-root'
     const what = unitValue(root, '/etc/systemd/system/root.mount', 'What=')
     const mode = modeOf(root, script)
-    if (!regularFileFollowingLinks(root, unitPath)) {
+    if (!regularFileInRoot(root, unitPath)) {
       return [verdict('mos-seed-root-service', false,
         `mos-seed-root.service is not in the image; nothing creates `
         + `${what === '' ? 'the root.mount source' : what} on DATA and the bind fails, because `
@@ -443,7 +432,7 @@ const SEED_HOME_SCRIPT_CHECK: CheckCase = {
     const id = 'mos-seed-home-writes-data'
     const uid = unitValue(root, script, 'MOS_UID=')
     const gid = unitValue(root, script, 'MOS_GID=')
-    if (!regularFileFollowingLinks(root, script)) {
+    if (!regularFileInRoot(root, script)) {
       return [verdict(id, false,
         `/usr/lib/mos/mos-seed-home is not in the image, so what it creates cannot be checked`)]
     }
@@ -491,7 +480,7 @@ const SEED_ROOT_SCRIPT_CHECK: CheckCase = {
     const root = await packedRoot(ctx)
     const script = '/usr/lib/mos/mos-seed-root'
     const id = 'mos-seed-root-writes-data'
-    if (!regularFileFollowingLinks(root, script)) {
+    if (!regularFileInRoot(root, script)) {
       return [verdict(id, false,
         `/usr/lib/mos/mos-seed-root is not in the image, so what it creates cannot be checked`)]
     }
@@ -572,7 +561,7 @@ const ACCOUNT_CHECKS: readonly CheckCase[] = [
           `no '${MOS_USER}' account in the packed /etc/passwd; the persistent home would have no owner`)]
       }
       const groupGid = groupGidOf(root, MOS_USER)
-      const bashPresent = regularFileFollowingLinks(root, '/bin/bash')
+      const bashPresent = regularFileInRoot(root, '/bin/bash')
       if (account.uid !== String(MOS_ID) || account.gid !== String(MOS_ID)) {
         return [verdict(id, false,
           `'${MOS_USER}' is uid ${account.uid}, gid ${account.gid} in the packed /etc/passwd, expected `
@@ -627,7 +616,7 @@ const ACCOUNT_CHECKS: readonly CheckCase[] = [
           + `deferral, so a grant appearing here is an undocumented privilege `
           + `decision`)]
       }
-      if (regularFileFollowingLinks(root, '/usr/bin/sudo') || regularFileFollowingLinks(root, '/bin/sudo')) {
+      if (regularFileInRoot(root, '/usr/bin/sudo') || regularFileInRoot(root, '/bin/sudo')) {
         return [verdict(id, false,
           `sudo ships in the image; phase 1 deliberately gives '${MOS_USER}' no privilege-escalation `
           + `path and the package is not in the allowlist`)]
@@ -760,7 +749,7 @@ function preciousBind(input: { id: string, unit: string, where: string, boards?:
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      if (!regularFileFollowingLinks(root, unitPath)) {
+      if (!regularFileInRoot(root, unitPath)) {
         return [verdict(id, false,
           `${where} holds precious state but ${unit} does not exist; it would stay on the discardable /var`)]
       }
@@ -803,7 +792,7 @@ const EXT_UNIT_DIR_CHECKS: readonly CheckCase[] = [
       const unitPath = `/etc/systemd/system/${EXT_MOUNT_UNIT}`
       const where = unitValue(root, unitPath, 'Where=')
       const what = unitValue(root, unitPath, 'What=')
-      if (!regularFileFollowingLinks(root, unitPath)) {
+      if (!regularFileInRoot(root, unitPath)) {
         return [verdict(id, false,
           `${EXT_MOUNT_UNIT} is not in the image, so ${EXT_UNIT_DIR} stays on the read-only squashfs; `
           + `a third-party unit written there is silently discarded at the next reboot and the `
@@ -915,7 +904,18 @@ function grepRecursive(root: string, trees: readonly string[], pattern: RegExp):
       if (content.split('\n').some(l => pattern.test(l))) found.push(full.slice(root.length))
     }
   }
-  for (const tree of trees) walk(join(root, tree))
+  // Entry points only: the walk lstats and never descends through a link, so
+  // a tree named through an absolute symlink is the one way out of the root.
+  for (const tree of trees) {
+    let at: string
+    try {
+      at = pathInRoot(root, tree)
+    }
+    catch {
+      continue
+    }
+    walk(at)
+  }
   return found.sort()
 }
 

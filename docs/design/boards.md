@@ -449,31 +449,51 @@ invisible until the board booted and systemd printed
 `Failed to find module 'autofs4'` — which is not evidence that anything wanted
 it, because `kmod_setup()` asks on every boot whatever the unit set is.
 
-Making the three agree is the obvious repair and it is not free, because the
-boards differ in something else first. cx3576's boot slots are typed ESP and
-appear in no `fstab`, so `systemd-gpt-auto-generator` generates an
-`efi.automount` for BOOT-A on it and on neither of the others — x64 and
-virt-arm64 mount their ESP from `fstab`, which is what makes the generator skip
-it there. On the hardware that generated unit is inert and systemd says exactly
-why: `Starting of efi.automount - EFI System Partition Automount unsupported.`
-(`automount_supported()` is `access("/dev/autofs")`). Building autofs into this
-board's kernel would therefore not add a capability nothing uses; it would arm
-a read-write automount of a RAUC-owned boot partition, chosen by disk order
-rather than by which slot is running, on a device where `/boot` is deliberately
-not a mountpoint.
+Making the three agree is the obvious repair and it is not free, because
+building autofs into this board's kernel would not add a capability nothing
+uses — it would arm `efi.automount`, a read-write automount of a RAUC-owned
+boot partition on a device where `/boot` is deliberately not a mountpoint.
+On the hardware that unit is inert and systemd says exactly why: `Starting of
+efi.automount - EFI System Partition Automount unsupported.`
+(`automount_supported()` is `access("/dev/autofs")`).
 
 So automount units are **unsupported on cx3576**, deliberately, and the
-`autofs4` line is expected. The two `.automount` subjects in the packed root
-are that generated `efi.automount` and `proc-sys-fs-binfmt_misc.automount`,
-which is skipped on its own `ConditionPathExists=/proc/sys/fs/binfmt_misc`
-because `CONFIG_BINFMT_MISC` is not set either.
+`autofs4` line is expected. The packed root carries exactly one `.automount`
+subject of its own, `proc-sys-fs-binfmt_misc.automount`, which is skipped on
+its own `ConditionPathExists=/proc/sys/fs/binfmt_misc` because
+`CONFIG_BINFMT_MISC` is not set either; `efi.automount` was never in it,
+because a generator writes it at boot.
 
-**Open, and named rather than rounded up.** That the generator writes
-`efi.automount` for a boot slot at all is the deeper item, and it is inert
-today only because a kernel symbol is off — a thin thing for it to rest on.
-Closing it means either masking `systemd-gpt-auto-generator` or naming the boot
-slots in `fstab`, on three boards, and it is a change to what the image
-declares rather than to what its kernel builds.
+**Which generator, and on which boards** (RFCT-358, measured against systemd
+257.13's own sources and the shipped generator's strings). RFCT-355 recorded
+this as cx3576's alone, on the reading that x64 and virt-arm64 mount their ESP
+from `fstab`. They do not: they mount it from `boot.mount`, a unit — and the
+only things that suppress `systemd-gpt-auto-generator` are an `fstab` entry for
+the device (`fstab_has_node()`) or an `fstab` mount point under `/boot` or
+`/efi`. A `.mount` unit in `/etc/systemd/system` does not, because what the
+generator writes is an `.automount`, which no mount unit shadows. All three
+boards were therefore generating one, at `/efi` on each of them: `/boot` is
+non-empty in every packed root (it carries `config-<release>`), so
+`path_is_busy("/boot")` is true and the generator falls through to `/efi`. Each
+board was safe for a different accident — cx3576 because it builds no autofs,
+x64 and virt-arm64 because the read-only root has no `/efi` for the automount
+to be established on.
+
+**Closed by masking the generator**, in `mos-system`:
+`/etc/systemd/system-generators/systemd-gpt-auto-generator -> /dev/null`, which
+is systemd's own mechanism (generators are enumerated with
+`CONF_FILES_FILTER_MASKED`, and `/etc` outranks `/usr/lib` in
+`system_generator_paths`). Nothing is lost by it: the verity root comes from
+the kernel command line, `/mnt/*`, `/var` and `/tmp` from `/etc/fstab`, and the
+ESP on a UEFI board from `boot.mount`; every other subject the generator has —
+`/home`, `/srv`, `/var`, swap, root-rw — is keyed on a discoverable-partition
+type GUID no mos layout uses. Masking the generated unit by name was rejected
+because the name is a systemd internal (`/efi` today, `boot.automount` the
+moment `/boot` is empty), and naming the boot slots in `fstab` was rejected
+because it declares a mount of a RAUC-owned partition in order to suppress
+one. `verify/src/checks-system.ts` asserts the mask and, separately, that the
+generator it names is still in the image — a mask over a renamed generator
+protects nothing and would otherwise go on passing.
 
 ## 5. U-Boot requirements (uboot-chain boards)
 

@@ -1,6 +1,6 @@
 // Batch 4a, the remainder: the small families that read only the unpacked root.
 //
-// Twenty-six conclusions on cx3576 and twenty-five on x64, grouped because
+// Twenty-eight conclusions on cx3576 and twenty-seven on x64, grouped because
 // they share the same unpacked-root input:
 //
 //   systemd-networkd enabled                1 / 1
@@ -10,6 +10,7 @@
 //   systemd-repart definitions              3 / 3
 //   the AuthorizedKeysFile drop-in          3 / 3
 //   the boot scripts' external commands     1 / 1
+//   systemd-gpt-auto-generator, masked      2 / 2
 //   the image profile and its SSH default   4 / 4
 //   ssh.service's KillMode / ExecReload      2 / 2
 //   libcrypt and the crypt(3) format        3 / 3
@@ -32,12 +33,11 @@
 // The behavior is preserved for parity and documented here so a future cleanup
 // changes the check and its expectations together.
 
-import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, type Stats } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
 import type { Board } from './board.ts'
 import { boardsWhere, isUBoot, SHIPPED } from './board-scope.ts'
-import { regularFileFollowingLinks } from './checks-dbus.ts'
-import { entry, packedRoot, wantsLink } from './checks-root.ts'
+import { entry, linkTargetInRoot, packedRoot, pathInRoot, regularFileInRoot, statInRoot, wantsLink } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { REPO_ROOT } from './paths.ts'
@@ -61,7 +61,7 @@ const MOS_HEALTH = '/usr/lib/mos/mos-health'
 
 function text(root: string, path: string): string {
   try {
-    return readFileSync(join(root, path), 'utf8')
+    return readFileSync(pathInRoot(root, path), 'utf8')
   }
   catch {
     return ''
@@ -89,14 +89,10 @@ function mosdSourceConst(file: string, pattern: RegExp): string {
   return ''
 }
 
-/** `stat -c %a`, or the oracle's literal `none`. */
+/** `stat -c %a`, or the oracle's literal `none`. Follows links inside the root. */
 function modeOf(root: string, path: string): string {
-  try {
-    return (statSync(join(root, path)).mode & 0o7777).toString(8)
-  }
-  catch {
-    return 'none'
-  }
+  const st = statInRoot(root, path)
+  return st === undefined ? 'none' : (st.mode & 0o7777).toString(8)
 }
 
 // systemd-networkd, and the ELF architecture of the two daemons
@@ -114,7 +110,7 @@ const NETWORKD_CHECK: CheckCase = {
     const root = await packedRoot(ctx)
     const ok = wantsLink(root, ['/etc/systemd/system'], 'systemd-networkd.service') !== undefined
       // `[ -e ]` follows the link, so a DANGLING alias reads as absent.
-      || existsSync(join(root, '/etc/systemd/system/dbus-org.freedesktop.network1.service'))
+      || statInRoot(root, '/etc/systemd/system/dbus-org.freedesktop.network1.service') !== undefined
     return [verdict(
       'networkd-enabled',
       ok,
@@ -163,7 +159,7 @@ function elfArchCheck(board: Board, path: string): CheckCase {
       // e_machine's two bytes reversed on this host.
       let head = ''
       try {
-        head = readFileSync(join(root, path)).subarray(0, 20).toString('hex')
+        head = readFileSync(pathInRoot(root, path)).subarray(0, 20).toString('hex')
       }
       catch { /* absent: the oracle's od prints nothing and the compare fails */ }
       const ok = head.slice(0, 8) === '7f454c46' && head.slice(36, 40) === want
@@ -214,7 +210,7 @@ const BOOTENV_CHECKS: readonly CheckCase[] = [
       const root = await packedRoot(ctx)
       const id = 'bootenv-fw-setenv'
       const path = '/usr/bin/fw_setenv'
-      if (!regularFileFollowingLinks(root, path)) {
+      if (!regularFileInRoot(root, path)) {
         return [verdict(id, false,
           `/usr/bin/fw_setenv is missing or does not resolve to a regular file; RAUC writes the boot `
           + `slot through it and the A/B handover fails on the device`)]
@@ -223,7 +219,7 @@ const BOOTENV_CHECKS: readonly CheckCase[] = [
       if (st?.isSymbolicLink() === true) {
         // `readlink`, not `readlink -f`: the RAW target, which is what the
         // oracle prints. On trixie that is `fw_printenv`, the multi-call binary.
-        const target = readlinkSync(join(root, path))
+        const target = linkTargetInRoot(root, path) ?? ''
         return [verdict(id, true, `/usr/bin/fw_setenv resolves to a regular file (symlink -> ${target})`)]
       }
       return [verdict(id, true, '/usr/bin/fw_setenv is a regular file')]
@@ -368,7 +364,7 @@ const BOOTENV_CHECKS: readonly CheckCase[] = [
       const root = await packedRoot(ctx)
       const note = `RAUC's grub backend execs it to read and write `
         + `${ctx.board.get('RAUC_GRUBENV') ?? 'the grubenv'}`
-      const ok = regularFileFollowingLinks(root, '/usr/bin/grub-editenv')
+      const ok = regularFileInRoot(root, '/usr/bin/grub-editenv')
       return [verdict(
         'bootenv-grub-editenv-present',
         ok,
@@ -420,7 +416,7 @@ const HEALTH_CHECKS: readonly CheckCase[] = [
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const id = 'health-gate-no-phantom-rauc-var'
-      if (!regularFileFollowingLinks(root, MOS_HEALTH)) {
+      if (!regularFileInRoot(root, MOS_HEALTH)) {
         return [verdict(id, false,
           '/usr/lib/mos/mos-health missing, so its RAUC status parsing cannot be checked')]
       }
@@ -451,7 +447,7 @@ const HEALTH_CHECKS: readonly CheckCase[] = [
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const found = ['/usr/bin/curl', '/usr/bin/wget', '/bin/curl', '/bin/wget']
-        .find(c => regularFileFollowingLinks(root, c))
+        .find(c => regularFileInRoot(root, c))
       return [verdict(
         'health-gate-http-client',
         found !== undefined,
@@ -557,7 +553,7 @@ const REPART_CHECKS: readonly CheckCase[] = [
 /** `find "${ROOT}/etc/repart.d" -name '*.conf' | wc -l`. */
 function confFiles(root: string, dir: string): string[] {
   try {
-    return readdirSync(join(root, dir)).filter(f => f.endsWith('.conf'))
+    return readdirSync(pathInRoot(root, dir)).filter(f => f.endsWith('.conf'))
   }
   catch {
     return []
@@ -583,6 +579,24 @@ async function linuxGenericCount(ctx: { gpt: () => Promise<{ partitions: readonl
   return table.partitions.filter(p => p.typeGuid.toLowerCase() === LINUX_GENERIC_TYPE).length
 }
 
+/**
+ * Start a walk at a tree INSIDE the root, or not at all.
+ *
+ * The walks below descend by name from wherever they are started and never
+ * follow a link, so the entry point is the only place the host's resolver could
+ * get a word in -- and it would, for a tree named through an absolute symlink.
+ */
+function walkFrom(root: string, tree: string, walk: (dir: string) => void): void {
+  let at: string
+  try {
+    at = pathInRoot(root, tree)
+  }
+  catch {
+    return
+  }
+  walk(at)
+}
+
 /** Every shipped file under the systemd trees carrying `--discard=no`. */
 function discardOverrides(root: string): string[] {
   const found: string[] = []
@@ -596,13 +610,10 @@ function discardOverrides(root: string): string[] {
     }
     for (const name of names) {
       const full = join(dir, name)
-      let st: Stats | undefined
-      try {
-        st = statSync(full)
-      }
-      catch {
-        continue
-      }
+      // Followed, as the oracle's grep -r follows -- inside the root, so a link
+      // out of the tree is skipped rather than read off the host.
+      const st = statInRoot(root, full.slice(root.length))
+      if (st === undefined) continue
       if (st.isDirectory()) {
         walk(full)
         continue
@@ -627,7 +638,7 @@ function discardOverrides(root: string): string[] {
   // widened -- the STATE-backed unit directory is empty in the image, and a
   // check that read it would be answering about a runtime state no image has.
   for (const tree of ['/etc/systemd', '/usr/lib/systemd']) {
-    walk(join(root, tree))
+    walkFrom(root, tree, walk)
   }
   return found.sort()
 }
@@ -685,7 +696,7 @@ const SSHD_CHECKS: readonly CheckCase[] = [
       const value = authorizedKeysValue(root, SSHD_DROPIN)
       const where = lastValue(root, unit, 'Where=')
       const what = lastValue(root, unit, 'What=')
-      if (!regularFileFollowingLinks(root, unit)) {
+      if (!regularFileInRoot(root, unit)) {
         return [verdict(id, false,
           'etc-ssh.mount is not in the image, so authorised keys have no STATE-backed home and would '
           + 'be lost by every update')]
@@ -917,7 +928,7 @@ function sshWants(root: string): string[] {
       if (st.isDirectory()) walk(full)
     }
   }
-  for (const tree of ['/etc/systemd/system', '/usr/lib/systemd/system']) walk(join(root, tree))
+  for (const tree of ['/etc/systemd/system', '/usr/lib/systemd/system']) walkFrom(root, tree, walk)
   return found.sort()
 }
 
@@ -956,7 +967,7 @@ function sshUnitCheck(c: SshUnitCase): CheckCase {
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      if (!regularFileFollowingLinks(root, SSH_UNIT)) {
+      if (!regularFileInRoot(root, SSH_UNIT)) {
         return [verdict(c.id, false,
           `/usr/lib/systemd/system/ssh.service is not in the image, so no claim can be made about ${c.what}`)]
       }
@@ -1034,11 +1045,17 @@ function libcryptLink(board: Board): string {
   return `/usr/lib/${triplet}/libcrypt.so.1`
 }
 
-/** `readlink -f`, resolved WITHIN the unpacked tree, or the empty string. */
+/**
+ * `readlink -f`, resolved WITHIN the unpacked tree, or the empty string.
+ *
+ * It said that and did not do it: `realpathSync(join(root, link))` is the
+ * host's resolver, so an absolute hop -- which is what a multiarch libcrypt
+ * symlink is -- landed on the host's own library. `pathInRoot` is the walk that
+ * makes the comment true.
+ */
 function libcryptReal(root: string, link: string): string {
-  if (!existsSync(join(root, link))) return ''
   try {
-    return realpathSync(join(root, link))
+    return pathInRoot(root, link)
   }
   catch {
     return ''
@@ -1216,9 +1233,10 @@ const BOOT_SCRIPT_COMMANDS: CheckCase = {
 
 /** Every `#!`-headed regular file under /usr/lib/mos, in the oracle's own order. */
 function bootScriptCommands(root: string): string[] {
-  const dir = join(root, '/usr/lib/mos')
+  let dir: string
   let names: string[]
   try {
+    dir = pathInRoot(root, '/usr/lib/mos')
     names = readdirSync(dir).sort()
   }
   catch {
@@ -1227,14 +1245,8 @@ function bootScriptCommands(root: string): string[] {
   const all = new Set<string>()
   for (const name of names) {
     const full = join(dir, name)
-    let st: Stats
-    try {
-      st = statSync(full)
-    }
-    catch {
-      continue
-    }
-    if (!st.isFile()) continue
+    const st = statInRoot(root, full.slice(root.length))
+    if (st === undefined || !st.isFile()) continue
     let body: string
     try {
       body = readFileSync(full, 'latin1')
@@ -1250,6 +1262,101 @@ function bootScriptCommands(root: string): string[] {
 }
 
 
+// systemd-gpt-auto-generator, masked
+
+const GPT_AUTO_GENERATOR = 'systemd-gpt-auto-generator'
+const GPT_AUTO_SHIPPED = `/usr/lib/systemd/system-generators/${GPT_AUTO_GENERATOR}`
+const GPT_AUTO_MASK = `/etc/systemd/system-generators/${GPT_AUTO_GENERATOR}`
+
+/**
+ * GPT auto-discovery is off, asserted from the IMAGE and not from a kernel
+ * symbol.
+ *
+ * `systemd-gpt-auto-generator` mounts partitions it recognises by GPT TYPE.
+ * Every mos boot slot is typed ESP, and no fstab on any board names one -- the
+ * only thing that suppresses this generator is an fstab entry
+ * (`fstab_has_node()`, or a mount point under /boot or /efi; a `.mount` unit in
+ * /etc/systemd/system does not, because the generated unit is an `.automount`
+ * that no mount unit shadows). So on all three boards it generates an
+ * `efi.automount` over a RAUC-owned boot partition, chosen by disk order --
+ * `dissect_image()` keeps the FIRST partition of each designator -- rather than
+ * by which slot is running, and mounted read-write.
+ *
+ * It has never done any harm, for two different accidents, which is exactly why
+ * this is asserted rather than left alone. On cx3576 the unit is refused
+ * because the kernel builds no `CONFIG_AUTOFS_FS` (`automount_supported()` is
+ * `access("/dev/autofs")`) and the 2026-09-08 boot said so; on x64 and
+ * virt-arm64, which do build autofs, the automount cannot be established
+ * because the read-only root has no `/efi` to establish it on. Neither is a
+ * decision, and either could be undone by a change with nothing to do with
+ * boot slots.
+ *
+ * The mask is systemd's own mechanism and the check reads the RAW link target:
+ * generators are enumerated with `CONF_FILES_FILTER_MASKED`, which stats
+ * through the link, finds the null device and drops that name for every
+ * lower-priority directory. Resolving the link instead would be asking about
+ * /dev/null on the verifying host -- a mask is the literal string, exactly as
+ * `checks-connd.ts` reads a masked unit.
+ */
+const GPT_AUTO_MASKED: CheckCase = {
+  id: 'gpt-auto-generator-masked',
+  shell: {
+    pass: 'systemd-gpt-auto-generator is masked',
+    fail: 'systemd-gpt-auto-generator is NOT masked',
+  },
+  run: async (ctx): Promise<readonly CheckResult[]> => {
+    const root = await packedRoot(ctx)
+    const target = linkTargetInRoot(root, GPT_AUTO_MASK)
+    const ok = target === '/dev/null'
+    return [verdict(
+      'gpt-auto-generator-masked',
+      ok,
+      ok
+        ? `systemd-gpt-auto-generator is masked (${GPT_AUTO_MASK} -> /dev/null), so no partition `
+          + `is mounted because of its GPT TYPE. Every mount this image performs is declared: the `
+          + `verity root on the kernel command line, /mnt/* and /var and /tmp in /etc/fstab, and `
+          + `the ESP on a UEFI board in its own boot.mount`
+        : `systemd-gpt-auto-generator is NOT masked: ${GPT_AUTO_MASK} is `
+          + `${target === undefined ? 'absent' : `a link to '${target}'`}, not a link to /dev/null. `
+          + `The generator mounts by GPT type, every boot slot here is typed ESP and no fstab names `
+          + `one, so it writes a read-write efi.automount over the boot slot that comes first on the `
+          + `disk -- whichever slot is actually running`,
+    )]
+  },
+}
+
+/**
+ * ...and the generator that mask names is IN the image.
+ *
+ * A mask is a filename agreeing with a filename. If systemd renamed or dropped
+ * this generator, the mask above would go on passing while masking nothing, and
+ * the hazard would come back with no check moving -- the shape in which an
+ * absence assertion quietly stops asserting. Its own conclusion because its
+ * repair is different: the mask is a mos file, and this is systemd's.
+ */
+const GPT_AUTO_MASK_IS_LIVE: CheckCase = {
+  id: 'gpt-auto-generator-mask-is-live',
+  shell: {
+    pass: 'the masked generator is in the image',
+    fail: 'the mask names a generator that is not in the image',
+  },
+  run: async (ctx): Promise<readonly CheckResult[]> => {
+    const root = await packedRoot(ctx)
+    const ok = regularFileInRoot(root, GPT_AUTO_SHIPPED)
+    return [verdict(
+      'gpt-auto-generator-mask-is-live',
+      ok,
+      ok
+        ? `the masked generator is in the image at ${GPT_AUTO_SHIPPED}, so ${GPT_AUTO_MASK} masks `
+          + `something`
+        : `the mask names a generator that is not in the image: ${GPT_AUTO_MASK} exists and `
+          + `${GPT_AUTO_SHIPPED} does not. systemd renaming or dropping it turns the mask into a `
+          + `file that agrees with nothing, and gpt auto-discovery would be back with no other `
+          + `check moving`,
+    )]
+  },
+}
+
 export const SYSTEM_CHECKS: readonly CheckCase[] = [
   NETWORKD_CHECK,
   ...SHIPPED.flatMap(board => ['/usr/bin/mosd', '/usr/bin/apid'].map(p => elfArchCheck(board, p))),
@@ -1260,5 +1367,7 @@ export const SYSTEM_CHECKS: readonly CheckCase[] = [
   ...PROFILE_CHECKS,
   ...SSH_UNIT_CHECKS,
   ...CRYPT_CHECKS,
+  GPT_AUTO_MASKED,
+  GPT_AUTO_MASK_IS_LIVE,
   BOOT_SCRIPT_COMMANDS,
 ]

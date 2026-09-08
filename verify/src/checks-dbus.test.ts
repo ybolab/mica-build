@@ -1,7 +1,7 @@
 // D-Bus image-contract tests driven from the failing side.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard, type Board } from './board.ts'
 import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
@@ -184,5 +184,29 @@ describe('bluez remains board-conditional', () => {
     const fx = packedRootFixture(x64)
     try { expect(await verdictOf(fx, 'bluez-dbus-policy')).toBe('skip') }
     finally { fx.dispose() }
+  })
+})
+
+describe('the packed root is read INSIDE the root, never against the host', () => {
+  // RFCT-358's discriminating case for this file's readers: an ABSOLUTE symlink
+  // whose target exists on the machine running the suite and not in the image.
+  // Host resolution -- what `statSync(join(root, path))` did -- answers PASS on
+  // it; resolving inside the root answers FAIL, which is the only true answer
+  // about the image. A test that exercised only the new helper could not tell
+  // the two implementations apart.
+
+  test('dbus.service pointing at a host regular file is dbus.service MISSING', async () => {
+    const unit = '/usr/lib/systemd/system/dbus.service'
+    const fx = await mutated('dbus-system-bus-present', (root) => {
+      rmSync(join(root, unit))
+      symlinkSync('/proc/version', join(root, unit))
+    })
+    try {
+      expect(await verdictOf(fx, 'dbus-system-bus-present')).toBe('fail')
+      expect(await messageOf(fx, 'dbus-system-bus-present')).toContain('dbus.service')
+    }
+    finally {
+      fx.dispose()
+    }
   })
 })

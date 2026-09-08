@@ -25,6 +25,7 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, w
 import { join } from 'node:path'
 import { loadBoard, type Board } from './board.ts'
 import { boardsWhere, isUBoot, SHIPPED } from './board-scope.ts'
+import { entry } from './checks-root.ts'
 import { healthyGpt, packedRootFixture, type RootFixture } from './checks-fixture.ts'
 import {
   cryptPrefixes,
@@ -981,6 +982,119 @@ describe('sq_resolves_cmd, in its own right', () => {
       expect(resolvesInRoot(fx.root, '/bin/sh')).toBe(false)
       write(fx.root, '/bin/sh', 'x\n')
       expect(resolvesInRoot(fx.root, '/bin/sh')).toBe(true)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
+describe('the packed root is read INSIDE the root, never against the host', () => {
+  // RFCT-358, for this file's readers and for `sq_resolves_cmd`. Host
+  // resolution answers one way on each of these and in-root resolution the
+  // other, which is what makes them tests of the implementation rather than of
+  // the helper.
+
+  test('mos-health pointing at a host regular file is mos-health MISSING', async () => {
+    const fx = await mutated('health-gate-no-phantom-rauc-var', (root) => {
+      rmSync(join(root, '/usr/lib/mos/mos-health'))
+      symlinkSync('/proc/version', join(root, '/usr/lib/mos/mos-health'))
+    })
+    try {
+      expect(await verdictOf(fx, 'health-gate-no-phantom-rauc-var')).toBe('fail')
+      expect(await messageOf(fx, 'health-gate-no-phantom-rauc-var')).toContain('mos-health missing')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a command whose chain passes through an absolute DIRECTORY symlink stays in the root', () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      // The hop the old hand-rolled chase could not see: it re-rooted an
+      // absolute link TARGET but then handed the result to the host, so an
+      // intermediate component that is an absolute symlink resolved on the
+      // host. `/proc/version` is a regular file there and nothing in the
+      // fixture, so the two implementations disagree here and nowhere else.
+      symlinkSync('/proc', join(fx.root, 'hostproc'))
+      symlinkSync('/hostproc/version', join(fx.root, '/usr/bin/host-probe'))
+      expect(resolvesInRoot(fx.root, 'host-probe')).toBe(false)
+      // ...and the same shape resolves when the target IS in the image, so the
+      // false answer above is about the escape and not about absolute links.
+      mkdirSync(join(fx.root, 'proc'), { recursive: true })
+      writeFileSync(join(fx.root, 'proc', 'version'), 'in the image\n')
+      expect(resolvesInRoot(fx.root, 'host-probe')).toBe(true)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
+describe('systemd-gpt-auto-generator, masked', () => {
+  // Driven from the failing side, and each case is a green run for the other:
+  // the mask is a mos file and the generator is systemd's, so "the mask is
+  // gone" and "the thing it masks is gone" are different repairs.
+  const MASK = '/etc/systemd/system-generators/systemd-gpt-auto-generator'
+  const SHIPPED = '/usr/lib/systemd/system-generators/systemd-gpt-auto-generator'
+
+  test('no mask at all: the generator would write an automount over a boot slot', async () => {
+    const fx = await mutated('gpt-auto-generator-masked', root => rmSync(join(root, MASK)))
+    try {
+      expect(await verdictOf(fx, 'gpt-auto-generator-masked')).toBe('fail')
+      const message = await messageOf(fx, 'gpt-auto-generator-masked')
+      expect(message).toContain('is absent')
+      expect(message).toContain('efi.automount')
+      // The other conclusion says nothing about it: the generator is still
+      // there, which is the whole of what it asserts.
+      expect(await verdictOf(fx, 'gpt-auto-generator-mask-is-live')).toBe('pass')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a link that is not to /dev/null is not a mask, however much it looks like one', async () => {
+    const fx = await mutated('gpt-auto-generator-masked', (root) => {
+      rmSync(join(root, MASK))
+      // The plausible wrong repair: an /etc entry that names the generator
+      // rather than masking it, which systemd runs -- it is a higher-priority
+      // copy, not a mask.
+      symlinkSync(SHIPPED, join(root, MASK))
+    })
+    try {
+      expect(await verdictOf(fx, 'gpt-auto-generator-masked')).toBe('fail')
+      expect(await messageOf(fx, 'gpt-auto-generator-masked')).toContain(`a link to '${SHIPPED}'`)
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a mask over a generator that is no longer in the image masks nothing', async () => {
+    const fx = await mutated('gpt-auto-generator-mask-is-live', root => rmSync(join(root, SHIPPED)))
+    try {
+      expect(await verdictOf(fx, 'gpt-auto-generator-mask-is-live')).toBe('fail')
+      expect(await messageOf(fx, 'gpt-auto-generator-mask-is-live')).toContain('agrees with nothing')
+      // ...and the mask itself is untouched, which is exactly why this is a
+      // second conclusion: the file that would go red on a mos regression is
+      // green here, on an image where the hazard is back.
+      expect(await verdictOf(fx, 'gpt-auto-generator-masked')).toBe('pass')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the mask is read as a RAW target, so it does not depend on a /dev/null the root has no device node for', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      // The packed root ships no device nodes -- /dev is populated by the
+      // kernel at boot -- so a check that RESOLVED the link would find nothing
+      // at the other end and call a correctly masked image unmasked.
+      expect(entry(fx.root, '/dev/null')).toBeUndefined()
+      expect(await only(fx, 'gpt-auto-generator-masked')).toMatchObject({ verdict: 'pass' })
     }
     finally {
       fx.dispose()

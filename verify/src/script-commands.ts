@@ -14,17 +14,16 @@
 // systemctl, curl, wget) are not in this set and must not be, because
 // `mos-health` uses `have X ||` to mark curl and wget optional.
 //
-// `sq_resolves_cmd` differs from every other path test here in one way: it
-// chases symlinks within the image, so an absolute link target resolves against
-// ROOT and not against the host's `/`. Everywhere else `[ -f ]` and `stat`
-// follow a link the way the shell does, which inside a container means the
-// container's root. Here the oracle re-roots it by hand, so a dangling
-// /etc/alternatives entry fails rather than accidentally resolving to a host
-// binary -- which is why this is transcribed rather than replaced by
-// `regularFileFollowingLinks`.
+// `sq_resolves_cmd` was, for a while, the only path test here that resolved a
+// symlink INSIDE the image; everywhere else `[ -f ]` and `stat` followed a link
+// the way the shell does, which inside a container means the container's root.
+// RFCT-358 made in-root resolution the rule rather than this function's private
+// exception, so the hand-rolled chase is gone and `regularFileInRoot` is what
+// judges a candidate -- the same walk, at the kernel's own ELOOP ceiling rather
+// than the oracle's eight hops, and with the intermediate DIRECTORY components
+// resolved too, which the chase never did.
 
-import { lstatSync, readlinkSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { entry, regularFileInRoot, statInRoot } from './checks-root.ts'
 
 // The oracle's own two lists, space-padded exactly as it pads them.
 const SH_BUILTINS = ' : . [ alias bg break cd continue echo eval exec exit export false fg getopts '
@@ -134,56 +133,20 @@ const COMMAND_DIRS = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'] as const
 /**
  * `sq_resolves_cmd`: does this command name reach a regular file INSIDE the root?
  *
- * Symlinks are chased by hand, up to eight hops, with an absolute target
- * re-rooted at `root` -- which is what makes a dangling /etc/alternatives entry
- * fail rather than silently resolving against the host. Eight is the oracle's
- * own bound and it is what stops a symlink loop; the ninth hop is not followed
- * and the result is judged where the chase stopped.
+ * The CANDIDATE rule is the oracle's and is kept: the first of the four command
+ * directories where anything is at the name -- `[ -e ] || [ -L ]`, so a
+ * DANGLING link is still a candidate -- and that candidate is then judged.
+ * Judging rather than skipping is the point: a dangling /etc/alternatives entry
+ * has to FAIL here, not send the search on to a directory where the name
+ * happens to resolve.
  */
 export function resolvesInRoot(root: string, command: string): boolean {
-  let path = ''
-  if (command.startsWith('/')) {
-    path = join(root, command)
-  }
-  else {
-    for (const dir of COMMAND_DIRS) {
-      const candidate = join(root, dir, command)
-      // `[ -e ] || [ -L ]`: a DANGLING link is still a candidate, and chasing it
-      // is what turns it into a failure rather than a miss.
-      if (exists(candidate) || isLink(candidate)) {
-        path = candidate
-        break
-      }
+  if (command.startsWith('/')) return regularFileInRoot(root, command)
+  for (const dir of COMMAND_DIRS) {
+    const candidate = `${dir}/${command}`
+    if (statInRoot(root, candidate) !== undefined || entry(root, candidate) !== undefined) {
+      return regularFileInRoot(root, candidate)
     }
   }
-  if (path === '') return false
-  for (let hops = 0; isLink(path) && hops < 8; hops += 1) {
-    const target = readlinkSync(path)
-    path = target.startsWith('/') ? join(root, target) : join(dirname(path), target)
-  }
-  try {
-    return statSync(path).isFile()
-  }
-  catch {
-    return false
-  }
-}
-
-function exists(path: string): boolean {
-  try {
-    statSync(path)
-    return true
-  }
-  catch {
-    return false
-  }
-}
-
-function isLink(path: string): boolean {
-  try {
-    return lstatSync(path).isSymbolicLink()
-  }
-  catch {
-    return false
-  }
+  return false
 }

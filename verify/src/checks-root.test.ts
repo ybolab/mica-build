@@ -18,11 +18,13 @@
 // hand-written wreck would go red for reasons the real failure does not have.
 
 import { describe, expect, test } from 'bun:test'
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadBoard } from './board.ts'
 import { BAKED_MANIFEST_PATH, FIXTURE_BUILTIN_MARKUP, FIXTURE_CA_CERT, FIXTURE_META_MARKER, packedRootFixture, type RootFixture } from './checks-fixture.ts'
-import { BUILTIN_MARKUP, ROOT_CHECKS } from './checks-root.ts'
+import { BUILTIN_MARKUP, entry, pathInRoot, regularFileInRoot, ROOT_CHECKS, statInRoot } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import { boardEnvPath } from './paths.ts'
 import type { CheckResult, Verdict } from './parity.ts'
@@ -1164,4 +1166,117 @@ describe('the vacuity traps', () => {
       fx.dispose()
     }
   })
+})
+
+describe('every path is resolved INSIDE the root, never against the host', () => {
+  // RFCT-358. The verifier's readers used to hand a whole path to the host
+  // kernel -- `statSync(join(root, path))`, `realpathSync(join(root, link))` --
+  // so an ABSOLUTE symlink inside the unpacked root was resolved against the
+  // VERIFYING MACHINE's `/`. RFCT-355 met the failing direction of that (a
+  // database the image really ships, reported missing). These drive the other
+  // direction, which no red run would ever have announced: a host file read as
+  // the image's, with the bytes chosen so that the check PASSES on it.
+  //
+  // Each case is discriminating by construction -- host resolution answers one
+  // way and in-root resolution the other -- which a test that only exercised
+  // the new helper could not be.
+
+  test('a grep check reads the IMAGE through an absolute symlink, not the host file it points at', async () => {
+    const path = '/etc/systemd/journald.conf.d/00-volatile.conf'
+    const host = mkdtempSync(join(tmpdir(), 'mos-host-probe-'))
+    const planted = join(host, 'planted.conf')
+    const fx = await mutated('packed-grep-journald-volatile', (root) => {
+      // The host copy is the image's own bytes, so the ONLY difference between
+      // the two answers is which filesystem the path was resolved against.
+      copyFileSync(join(root, path), planted)
+      rmSync(join(root, path))
+      symlinkSync(planted, join(root, path))
+    })
+    try {
+      expect(await verdictOf(fx, 'packed-grep-journald-volatile')).toBe('fail')
+    }
+    finally {
+      fx.dispose()
+      rmSync(host, { recursive: true, force: true })
+    }
+  })
+
+  test('a regular file on the HOST at an absolute link target is not a regular file in the image', () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      // /proc/version is the probe: a regular file on any Linux host running
+      // this suite, and a path no packed-root fixture contains.
+      symlinkSync('/proc/version', join(fx.root, '/usr/lib/mos/probe'))
+      expect(regularFileInRoot(fx.root, '/usr/lib/mos/probe')).toBe(false)
+      expect(statInRoot(fx.root, '/usr/lib/mos/probe')).toBeUndefined()
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a PARENT component that is an absolute symlink cannot make a read leave the root', () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      symlinkSync('/proc', join(fx.root, 'hostproc'))
+      // The last component is never followed by `entry` and the chain above it
+      // always is, so this asks about <root>/proc/version -- which does not
+      // exist -- rather than about the host's.
+      expect(entry(fx.root, '/hostproc/version')).toBeUndefined()
+      expect(statInRoot(fx.root, '/hostproc/version')).toBeUndefined()
+      // And the reading spelling REFUSES rather than falling back to the host,
+      // which is the property that keeps a failed resolution from becoming a
+      // successful host read.
+      expect(() => pathInRoot(fx.root, '/hostproc/version')).toThrow()
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})
+
+describe('the migrated modules keep resolving in the root', () => {
+  // The fate of `regularFileFollowingLinks`: DELETED, not deprecated. It was
+  // `statSync(join(root, path))` -- host resolution wearing a name that reads
+  // like the safe one -- and a helper left in the tree with no callers is how
+  // the next reader picks it up again. `checks-root.ts` now owns the only path
+  // resolver in the verifier, and the only spelling of `join(root, ...)` left
+  // in these modules would be a new one.
+  //
+  // A GREP, deliberately, and scoped to what RFCT-358 migrated. It is not a
+  // style rule: every `join(root, path)` handed to a filesystem call resolves
+  // an ABSOLUTE symlink inside the image against the machine running the
+  // verifier, and the answer for such a path is a fact about that machine.
+  //
+  // WHAT IT DOES NOT COVER, stated so the boundary is not mistaken for a claim:
+  // the same shape survives at 79 sites in 15 other modules of this package
+  // (checks-hwdb, checks-mqtt, checks-debug, checks-firewall, checks-board,
+  // checks-kernel, checks-busybox, checks-shadow, checks-time, checks-update,
+  // checks-fstab, checks-rauc, checks-rauc-units, checks-ext4, checks-cmdline),
+  // measured 2026-09-08. They are the same defect and are not this task's
+  // scope; nothing here says they are safe.
+  const MIGRATED = [
+    'checks-connd.ts',
+    'checks-dbus.ts',
+    'checks-engine.ts',
+    'checks-home.ts',
+    'checks-system.ts',
+    'script-commands.ts',
+  ]
+  const SRC = dirname(fileURLToPath(import.meta.url))
+
+  for (const name of MIGRATED) {
+    test(`${name} constructs no path with join(root, ...)`, () => {
+      const offending = readFileSync(join(SRC, name), 'utf8')
+        .split('\n')
+        .map((line, i) => ({ line, at: i + 1 }))
+        // Comment lines are the exception, and only those: two of them quote
+        // the old spelling on purpose, in the sentence explaining why it is
+        // wrong.
+        .filter(({ line }) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+        .filter(({ line }) => line.includes('join(root'))
+        .map(({ line, at }) => `${name}:${at}: ${line.trim()}`)
+      expect(offending).toEqual([])
+    })
+  }
 })

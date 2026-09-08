@@ -21,11 +21,10 @@
 // `BusName=` so that a policy for a name nothing owns fails rather than
 // sails through. Restating it would put the constant back in two places.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
 import type { Board } from './board.ts'
 import { hasRadio } from './board-scope.ts'
-import { packedRoot } from './checks-root.ts'
+import { packedRoot, pathInRoot, regularFileInRoot } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { skipped, verdict } from './verdict.ts'
@@ -37,23 +36,20 @@ const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as co
 
 // reading a file the way the oracle's shell reads one
 
-/** `cat "${ROOT}${path}" 2>/dev/null || true` -- the empty string when absent. */
+/**
+ * `cat "${ROOT}${path}" 2>/dev/null || true` -- the empty string when absent.
+ *
+ * `pathInRoot` and not `join`: the path is resolved INSIDE the root, so a
+ * policy file reached through an absolute symlink is the image's policy and
+ * never the host's. The throw it makes on an unresolvable path lands in the
+ * catch this reader already has, which is where absence is already answered.
+ */
 function readOrEmpty(root: string, path: string): string {
   try {
-    return readFileSync(join(root, path), 'utf8')
+    return readFileSync(pathInRoot(root, path), 'utf8')
   }
   catch {
     return ''
-  }
-}
-
-/** `[ -f "${ROOT}${path}" ]`: a regular file AFTER following links, as `-f` does. */
-export function regularFileFollowingLinks(root: string, path: string): boolean {
-  try {
-    return statSync(join(root, path)).isFile()
-  }
-  catch {
-    return false
   }
 }
 
@@ -234,7 +230,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
   for (const dir of POLICY_DIRS) {
     let entries: string[]
     try {
-      entries = readdirSync(join(root, dir)).sort()
+      entries = readdirSync(pathInRoot(root, dir)).sort()
     }
     catch {
       continue
@@ -243,7 +239,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
       const path = `${dir}/${name}`
       if (path === MOSD_POLICY_PATH) continue
       // `[ -f "${f}" ]` -- the glob's own entries, so a directory is skipped.
-      if (!regularFileFollowingLinks(root, path)) continue
+      if (!regularFileInRoot(root, path)) continue
       const tags = policyTags(readOrEmpty(root, path))
       if (!tags.some(t => t.includes(bus))) continue
       const unscoped = tags.filter(tag => tag.includes(bus))
@@ -266,8 +262,8 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const ok = regularFileFollowingLinks(root, '/usr/lib/systemd/system/dbus.service')
-        && regularFileFollowingLinks(root, '/usr/lib/systemd/system/dbus.socket')
+      const ok = regularFileInRoot(root, '/usr/lib/systemd/system/dbus.service')
+        && regularFileInRoot(root, '/usr/lib/systemd/system/dbus.socket')
       return [verdict(
         'dbus-system-bus-present',
         ok,
@@ -424,14 +420,14 @@ function mosPrefixGrants(root: string): string[] {
   for (const dir of POLICY_DIRS) {
     let entries: string[]
     try {
-      entries = readdirSync(join(root, dir)).sort()
+      entries = readdirSync(pathInRoot(root, dir)).sort()
     }
     catch {
       continue
     }
     for (const name of entries) {
       const path = `${dir}/${name}`
-      if (!regularFileFollowingLinks(root, path)) continue
+      if (!regularFileInRoot(root, path)) continue
       for (const tag of policyTags(readOrEmpty(root, path))) {
         const prefix = tag.match(/\bown_prefix="([^"]*)"/)?.[1]
         if (prefix === 'com.mos' || prefix?.startsWith('com.mos.') === true) {
@@ -451,7 +447,7 @@ const NAMESPACE_CHECKS: readonly CheckCase[] = [
       fail: 'the legacy com.mos.ext prefix policy still exists',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
-      const present = regularFileFollowingLinks(await packedRoot(ctx), LEGACY_EXT_POLICY_PATH)
+      const present = regularFileInRoot(await packedRoot(ctx), LEGACY_EXT_POLICY_PATH)
       return [verdict(
         'legacy-ext-policy-absent',
         !present,
@@ -516,7 +512,7 @@ const BLUEZ_CHECKS: readonly CheckCase[] = [
           + `bluetoothd in the image to own org.bluez, so a policy granting the name would guard nothing`)]
       }
       const root = await packedRoot(ctx)
-      const ok = BLUEZ_POLICY_PATHS.some(p => regularFileFollowingLinks(root, p))
+      const ok = BLUEZ_POLICY_PATHS.some(p => regularFileInRoot(root, p))
       return [verdict(
         'bluez-dbus-policy',
         ok,
