@@ -48,7 +48,7 @@ routing a failure down the existing burn-the-slot path
 - `docs/design/uboot-ab-handshake.md` 5.3 and its zh counterpart synced.
 - `verify/run.sh --verify --board cx3576` at its count or the change explained.
 - `make docs-verify` green from a `git archive` into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Notes
 

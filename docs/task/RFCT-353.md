@@ -46,7 +46,7 @@ image, and giving the mos product image a flash target that carries it
 - The read-back timed on this host, in MB/s and seconds.
 - Tests for the offset/length arithmetic, and the count they moved the suite to.
 - `make docs-verify` green from a `git archive` into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Notes
 

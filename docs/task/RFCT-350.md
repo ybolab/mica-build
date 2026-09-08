@@ -50,7 +50,7 @@ boot blobs out of the root into the export both assemblers read
 - The size delta measured with `tools/measure-rootfs.sh` against S1's baseline,
   per board, and recorded in PLAN-086's S2 row.
 - `make docs-verify` green from a `git archive` into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Notes
 

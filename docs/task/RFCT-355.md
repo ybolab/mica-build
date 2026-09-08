@@ -53,7 +53,7 @@ autofs, fixing the gadget configfs bind, and recording the TEE assumption
   confirm.
 - `verify/run.sh --verify --board cx3576` green on an image built here.
 - `make docs-verify` green from a `git archive` into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched;
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched;
   `boards/cx3576/boot.cmd`, `build/src/mkimage-cx3576.ts`,
   `boards/cx3576/bsp/Makefile` and everything display-related untouched.
 

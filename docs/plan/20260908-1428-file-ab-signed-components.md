@@ -1,9 +1,9 @@
-# file-ab-signed-components-20260908T1428Z File-based A/B and independently signed system components
+# 20260908-1428-file-ab-signed-components File-based A/B and independently signed system components
 
 - **status**: draft
 - **createdAt**: 2026-09-08 14:28
 - **approvedAt**: (pending)
-- **relatedTask**: [file-ab-signed-components-20260908T1423Z](../task/file-ab-signed-components-20260908T1423Z.md)
+- **relatedTask**: [20260908-1423-file-ab-signed-components](../task/20260908-1423-file-ab-signed-components.md)
 
 ## Context
 

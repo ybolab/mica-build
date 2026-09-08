@@ -89,7 +89,7 @@ statement, and the publication refusal.
 - `(cd verify && bun test)`, `(cd build && bun test)`, `make docs-verify` green.
 - `cargo test --locked -p mosd -p apid` green in
   `localhost/mos-build-rust:amd64` with `dbus-daemon` installed.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Gate results — 2026-09-04, against the merged head
 

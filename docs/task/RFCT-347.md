@@ -57,7 +57,7 @@ Closing PLAN-080's B4, B5 and B7, and running the four suites RFCT-318 left owed
 - The owed suites run, with their output quoted.
 - `bash tests/host-toolchain-lint.sh` green, with the exempted count stated.
 - `make docs-verify` green from a `git archive` into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Notes
 

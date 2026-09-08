@@ -7,7 +7,7 @@
 
 > The index line in `docs/task/index.md` is written by L1, not by this task, and
 > this branch does not touch that file, `docs/plan/index.md` or
-> `docs/CHANGELOG.md`. RFCT-342's header credits this decision to not running
+> `docs/changelog.md`. RFCT-342's header credits this decision to not running
 > `scripts/task-state.sh claim`; that script does not exist in this tree, so the
 > reason is simply the ownership rule and not a tool that was declined.
 

@@ -5,7 +5,7 @@
 - **owner**: bkd/a81x79du
 - **createdAt**: 2026-09-07 21:00
 
-> `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` are L1's and
+> `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` are L1's and
 > this branch does not touch them. `docs/plan/PLAN-086.md` IS edited here:
 > recording what a slice shipped is part of the slice.
 

@@ -643,7 +643,7 @@ metadata is stale rather than that the device is up to date.
 check is only as good as the device's notion of now, and this project already
 binds one: timesyncd's saved clock on STATE, so that `max(RTC, last known good)`
 holds **before TLS and TUF** (`docs/design/time.md`, and the record in
-`docs/CHANGELOG.md`). The freshness check uses that bound, not the raw RTC — a
+`docs/changelog.md`). The freshness check uses that bound, not the raw RTC — a
 board with a dead RTC must neither read a valid manifest as expired nor an
 expired one as valid. Substituting lode for TUF does not strand that mechanism;
 it transfers to it.

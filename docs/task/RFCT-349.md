@@ -52,7 +52,7 @@ quoted string is
 - `bash tests/debian-base-test.sh`, `bash tests/debian-lock-test.sh`,
   `bash tests/host-toolchain-lint.sh`, `make docs-verify` from a `git archive`
   into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Notes
 
