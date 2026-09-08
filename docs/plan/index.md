@@ -4,11 +4,11 @@
 
 ## Usage
 
-Each plan is a single line linking to its detail file. All detailed information lives in `docs/plan/PLAN-NNN.md`.
+Each plan is a single line linking to its detail file. All detailed information lives in `docs/plan/<feature-slug>-<timestamp>.md`.
 
 ### Format
 
-- [ ] [**PLAN-001 Short plan title**](PLAN-001.md) `YYYY-MM-DD`
+- [ ] [**add-endpoint-20260906T1440Z Add endpoint**](add-endpoint-20260906T1440Z.md) `YYYY-MM-DD`
 
 ### Status Markers
 
@@ -22,7 +22,11 @@ Each plan is a single line linking to its detail file. All detailed information 
 ### Rules
 
 - New plans append to the end.
-- See each `PLAN-NNN.md` for full details.
+- **New records are named `<feature-slug>-<timestamp>.md`** — a lowercase
+  kebab-case slug plus the creation time in UTC at minute precision
+  (`YYYYMMDDTHHmmZ`). No sequence number is allocated. Existing numbered
+  `PLAN-NNN` files remain valid and are not renamed.
+- See each detail file for full details.
 - **A completed plan's record is deleted, and its line goes with it.** This
   index is a list of what is left, not a history of what was done. A finished
   plan lives in git history: `git log --diff-filter=D -- docs/plan/` lists
@@ -69,7 +73,7 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [-] [**PLAN-086 Compose a minimal MOS runtime from explicit payloads**](PLAN-086.md) `2026-09-06`
 
 - [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`
-- [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md)
+- [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md) `2026-09-08`
 
 - [ ] [**file-ab-signed-components-20260908T1428Z File-based A/B and independently signed system components**](file-ab-signed-components-20260908T1428Z.md) `2026-09-08`
 - [-] [**PLAN-910 s905x5m board intake (Amlogic S7D)**](PLAN-910.md) `2026-08-30`
@@ -89,4 +93,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**PLAN-924 Repair S905X5M front-panel package permissions**](PLAN-924.md) `2026-09-08`
 - [x] [**PLAN-925 Align the Wi-Fi client switch with the settings API**](PLAN-925.md) `2026-09-08`
-- [x] [**PLAN-089 The boot health gate requires core function, not the absence of every failure**](PLAN-089.md)
+- [x] [**PLAN-089 The boot health gate requires core function, not the absence of every failure**](PLAN-089.md) `2026-09-08`

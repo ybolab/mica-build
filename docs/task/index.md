@@ -4,11 +4,11 @@
 
 ## Usage
 
-Each task is a single line linking to its detail file. All detailed information lives in `docs/task/PREFIX-NNN.md`.
+Each task is a single line linking to its detail file. All detailed information lives in `docs/task/<feature-slug>-<timestamp>.md`.
 
 ### Format
 
-- [ ] [**PREFIX-001 Short imperative title**](PREFIX-001.md) `P1`
+- [ ] [**add-endpoint-20260906T1430Z Add endpoint**](add-endpoint-20260906T1430Z.md) `P1`
 
 ### Status Markers
 
@@ -22,9 +22,10 @@ Each task is a single line linking to its detail file. All detailed information 
 Each record's front matter carries a status line of the shape
 `- **status**: <head>` or `- **status**: <head> — <free detail>`, where
 `<head>` is exactly one of the four heads above and the detail after ` — ` is
-free text. Nothing in this tree enforces that the record and its marker agree:
-there is no `scripts/` directory, and the `task-state.sh` serializer this
-paragraph used to describe does not exist. They had drifted apart five times
+free text. Nothing in this tree enforces that the record and its marker agree: the
+repository has no `scripts/` directory, and the `task-state.sh` serializer
+that keeps them in step ships with the PMA skill, not here, so a hand edit
+can still move one without the other. They had drifted apart five times
 by 2026-09-07 (RFCT-305, 310, 315, 335 and UI-011 were all marked `[x]` while
 their own records said in progress or pending). Read the record, not the row.
 
@@ -33,7 +34,11 @@ their own records said in progress or pending). Read the record, not the row.
 ### Rules
 
 - New tasks append to the end.
-- See each `PREFIX-NNN.md` for full details.
+- **New records are named `<feature-slug>-<timestamp>.md`** — a lowercase
+  kebab-case slug plus the creation time in UTC at minute precision
+  (`YYYYMMDDTHHmmZ`). No sequence number is allocated. Existing numbered
+  `RFCT-NNN` files remain valid and are not renamed.
+- See each detail file for full details.
 - **A completed task's record is deleted, and its line goes with it.** This
   index is a list of what is left, not a history of what was done. A finished
   task lives in git history: `git log --diff-filter=D -- docs/task/` lists
