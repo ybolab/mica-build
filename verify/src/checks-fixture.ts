@@ -1370,6 +1370,14 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     + 'CONFIG_BLK_DEV_DM=y\n'
     + 'CONFIG_DM_INIT=y\n'
     + 'CONFIG_DM_VERITY=y\n'
+    // The signed half of the verity floor, and the anchor the second kernel
+    // check reads. The path is a literal here for the same reason every symbol
+    // name is: seeding it from the fragment the build merges would make both
+    // directions true by construction.
+    + 'CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG=y\n'
+    + 'CONFIG_SYSTEM_TRUSTED_KEYRING=y\n'
+    + 'CONFIG_SYSTEM_TRUSTED_KEYS="certs/mos-verity-anchor.pem"\n'
+    + 'CONFIG_BLK_DEV_LOOP=y\n'
     + 'CONFIG_SQUASHFS=y\n'
     + 'CONFIG_OVERLAY_FS=y\n'
     + 'CONFIG_DM_CRYPT=y\n'
@@ -1418,6 +1426,7 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
   file(`${mod}/modules.builtin`,
     'kernel/drivers/md/dm-mod.ko\n'
     + 'kernel/drivers/md/dm-verity.ko\n'
+    + 'kernel/drivers/block/loop.ko\n'
     + 'kernel/fs/squashfs/squashfs.ko\n'
     + 'kernel/fs/overlayfs/overlay.ko\n'
     + 'kernel/drivers/md/dm-crypt.ko\n'

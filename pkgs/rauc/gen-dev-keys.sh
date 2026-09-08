@@ -8,6 +8,7 @@
 #   bash pkgs/rauc/gen-dev-keys.sh --if-absent        silent when meta/ is complete for the
 #                                                     domain; the form the build entries call
 #   bash pkgs/rauc/gen-dev-keys.sh --domain updates   the package signing key, opt-in
+#   bash pkgs/rauc/gen-dev-keys.sh --domain verity    the kernel's content anchor, opt-in
 #
 # TWO DOMAINS, split by object rather than by hierarchy, because they gate
 # different things and fall to different attackers:
@@ -16,6 +17,16 @@
 #            the A/B SYSTEM IMAGE. The default, and build-blocking: no image can
 #            be built without the keyring it must trust, so --if-absent
 #            generates it and the build carries on with a loud notice.
+#   verity   meta/verity/signer.{cert,key}.pem -- the X.509 anchor a BOARD
+#            KERNEL embeds as CONFIG_SYSTEM_TRUSTED_KEYS and checks a
+#            dm-verity root-hash PKCS#7 signature against. OPT-IN and separate
+#            from `rauc` because the two are verified by different code in
+#            different places: rauc's chain is checked by OpenSSL in userspace
+#            on a running system, this one by the kernel's own PKCS#7 parser
+#            before any userspace exists, and only the PUBLIC half of this pair
+#            ever enters a build. Rotating it costs a kernel rebuild on every
+#            board, which is why it is not minted by default alongside a
+#            keyring that can be replaced in an image.
 #   updates  meta/updates/root.key -- lode's ed25519 key over the update
 #            PACKAGE, with its public half written into
 #            meta/updates/manifest.json's trust.signingKeys. OPT-IN, and
@@ -85,12 +96,15 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 METADIR="${REPO_ROOT}/meta"
 RAUC_DIR="${METADIR}/rauc"
 UPDATES_DIR="${METADIR}/updates"
+VERITY_DIR="${METADIR}/verity"
 
 CA_KEY="${RAUC_DIR}/ca.key.pem"
 CA_CERT="${RAUC_DIR}/ca.cert.pem"
 SIGNER_KEY="${RAUC_DIR}/signer.key.pem"
 SIGNER_CERT="${RAUC_DIR}/signer.cert.pem"
 ROOT_KEY="${UPDATES_DIR}/root.key"
+VERITY_KEY="${VERITY_DIR}/signer.key.pem"
+VERITY_CERT="${VERITY_DIR}/signer.cert.pem"
 MANIFEST="${UPDATES_DIR}/manifest.json"
 MANIFEST_EXAMPLE="${REPO_ROOT}/meta.example/updates/manifest.json"
 MARKER="${METADIR}/GENERATED"
@@ -108,11 +122,11 @@ while [ "$#" -gt 0 ]; do
             shift
             DOMAIN="${1:-}"
             case "${DOMAIN}" in
-                rauc | updates) ;;
-                *) echo "usage: $0 [--force|--if-absent] [--domain rauc|updates]" >&2; exit 2 ;;
+                rauc | updates | verity) ;;
+                *) echo "usage: $0 [--force|--if-absent] [--domain rauc|updates|verity]" >&2; exit 2 ;;
             esac
             ;;
-        *) echo "usage: $0 [--force|--if-absent] [--domain rauc|updates]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--force|--if-absent] [--domain rauc|updates|verity]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -127,7 +141,7 @@ done
 }
 # shellcheck source=/dev/null
 . "${ALG_ENV}"
-for role in MOS_KEY_ALG_RAUC_CA MOS_KEY_ALG_RAUC_SIGNER MOS_KEY_ALG_PACKAGE; do
+for role in MOS_KEY_ALG_RAUC_CA MOS_KEY_ALG_RAUC_SIGNER MOS_KEY_ALG_PACKAGE MOS_KEY_ALG_VERITY; do
     eval "value=\${${role}:-}"
     [ -n "${value}" ] || {
         echo "error: ${ALG_ENV} declares no ${role}. Every key role this script mints needs one, and an empty value is not a default -- it is a row somebody deleted" >&2
@@ -293,7 +307,19 @@ complete() {
         updates)
             [ -s "${ROOT_KEY}" ] || return 1
             ;;
+        verity)
+            for f in "${VERITY_CERT}" "${VERITY_KEY}"; do
+                [ -s "${f}" ] || return 1
+            done
+            # And NOT the manifest, which the two rows above do demand below.
+            # meta/updates/manifest.json is the baked update configuration; the
+            # kernel's content anchor has nothing to do with it, and demanding
+            # it here would make a complete verity domain regenerate itself on
+            # every build of a tree that has not opted into the update server.
+            return 0
+            ;;
     esac
+    [ -s "${MANIFEST}" ] || return 1
     return 0
 }
 
@@ -479,10 +505,68 @@ gen_updates() {
     mark_generated updates
 }
 
+gen_verity() {
+    local key_args
+    crypto_open
+    mapfile -t key_args < <(openssl_newkey_args "${MOS_KEY_ALG_VERITY}")
+    [ "${#key_args[@]}" -gt 0 ] || exit 1
+
+    mkdir -p "${VERITY_DIR}"
+    chmod 0700 "${METADIR}" "${VERITY_DIR}"
+    umask 0077
+
+    # THE EXTENSIONS ARE THE KERNEL'S OWN, not this repository's taste:
+    # certs/default_x509.genkey in the Linux tree mints the module-signing key
+    # as CA:FALSE with keyUsage=digitalSignature, and a dm-verity root-hash
+    # signature is verified by exactly the code that verifies a module
+    # signature -- verify_pkcs7_signature() against .builtin_trusted_keys. A
+    # certificate that reached that path without digitalSignature would be
+    # refused as "not allowed to sign data" long after it had been compiled
+    # into every board's kernel.
+    #
+    # SELF-SIGNED AND WITH NO CA ABOVE IT, unlike the RAUC pair. The kernel's
+    # trust anchor set is the literal list of certificates compiled in; there
+    # is no chain to build and no issuer to look up, so a CA here would be a
+    # second certificate that authenticates nothing.
+    #
+    # 3650 DAYS, where the RAUC signer's window is 45. The two windows answer
+    # different questions: a stolen RAUC signer is out-waited because a bundle
+    # is verified against a keyring an image can replace, while this anchor is
+    # compiled into every board kernel and replacing it is a kernel update on
+    # every board (plan 20260908-1428 section 3, key lifecycle). A short window
+    # here would express nothing anyway -- the kernel's PKCS#7 verifier does
+    # not read notAfter, which is measured rather than assumed.
+    # -addext and not an extension FILE, which is the same choice the RAUC CA
+    # above makes: `openssl req` has no -extfile, and passing one is accepted as
+    # far as the usage line and then ignored.
+    # mos-build-side: container-block -- openssl() above runs the pinned
+    #   localhost/mos-build-openssl over meta/
+    openssl req -x509 "${key_args[@]}" -keyout "${VERITY_KEY}" -out "${VERITY_CERT}" \
+        -days 3650 -nodes -sha256 \
+        -subj "/O=mos development/CN=mos development verity content anchor" \
+        -addext "basicConstraints=critical,CA:FALSE" \
+        -addext "keyUsage=critical,digitalSignature" \
+        -addext "subjectKeyIdentifier=hash"
+    # mos-build-side: host
+
+    chmod 0600 "${VERITY_KEY}"
+    chmod 0644 "${VERITY_CERT}"
+
+    # The public half is what a kernel build consumes, so the file it consumes
+    # is the one checked here -- a certificate openssl cannot parse would
+    # otherwise be discovered by a kernel build forty minutes later.
+    # mos-build-side: container-block -- the same wrapper
+    openssl x509 -in "${VERITY_CERT}" -noout -subject >/dev/null
+    # mos-build-side: host
+    mark_generated verity
+}
+
 # Nothing to do is silence under --if-absent and a sentence otherwise. The
-# manifest counts towards "complete": a tree with every key and no manifest
-# still has work to do, because the build bakes that file into every image.
-if complete "${DOMAIN}" && [ -s "${MANIFEST}" ] && [ "${FORCE}" = 0 ]; then
+# manifest counts towards "complete" for the two domains the update
+# configuration belongs to: a tree with every key and no manifest still has
+# work to do, because the build bakes that file into every image. complete()
+# is where that is decided, per domain -- the verity anchor is not part of it.
+if complete "${DOMAIN}" && [ "${FORCE}" = 0 ]; then
     # The build entries call --if-absent on every run; saying "nothing to do"
     # each time would train readers to skim past the one message that matters.
     [ "${MODE}" = if-absent ] && exit 0
@@ -505,6 +589,7 @@ case "${DOMAIN}" in
         instantiate_manifest
         ;;
     updates) gen_updates ;;
+    verity) gen_verity ;;
 esac
 
 if [ "${MODE}" = if-absent ]; then notice; else banner; fi
@@ -523,8 +608,17 @@ case "${DOMAIN}" in
         echo "                        its public half is now in updates/manifest.json's"
         echo "                        trust.signingKeys; the build derives signingKeyIds"
         ;;
+    verity)
+        echo "  verity/signer.cert.pem  the content anchor every board kernel embeds as"
+        echo "                          CONFIG_SYSTEM_TRUSTED_KEYS -- public material, and the"
+        echo "                          only file of this pair a build ever reads"
+        echo "  verity/signer.key.pem   the key that signs a dm-verity root hash"
+        echo "                          (${MOS_KEY_ALG_VERITY}, valid 3650 days)"
+        ;;
 esac
-echo "  updates/manifest.json the baked update configuration"
+case "${DOMAIN}" in
+    rauc | updates) echo "  updates/manifest.json the baked update configuration" ;;
+esac
 echo "  GENERATED             marks these domains development-grade for every later build"
 echo
 echo "Because GENERATED is present, rootfs/build.sh warns loudly that the"

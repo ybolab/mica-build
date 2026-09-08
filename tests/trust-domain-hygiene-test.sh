@@ -55,7 +55,13 @@ fi
 # meta/ is the RAUC side's directory since PLAN-070 absorbed ca/ into
 # meta/rauc/; ca/ is probed too, because its .gitignore entry is a TOMBSTONE
 # and a stale ca/ on a developer's machine still holds a private CA key.
-for probe in meta/rauc/ca.key.pem meta/updates/root.key ca/ca.key.pem \
+# meta/verity/ is the third domain: the private half of the X.509 anchor whose
+# certificate every board kernel compiles in. It is the one key here whose
+# public half is DESIGNED to leave the directory -- the kernel build reads it
+# through the `mos-trust` build context -- which is exactly why the private half
+# has to be probed like the other two.
+for probe in meta/rauc/ca.key.pem meta/updates/root.key meta/verity/signer.key.pem \
+    ca/ca.key.pem \
     pkgs/rauc-sign/.devkeys/root.pk8 pkgs/rauc/.devkeys/ca.key.pem; do
     if git check-ignore -q "${probe}"; then
         pass "${probe%/*}/ is gitignored"

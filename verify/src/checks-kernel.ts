@@ -127,6 +127,23 @@ export const REQUIRED: readonly Requirement[] = [
   { symbol: 'CONFIG_BLK_DEV_DM', module: 'dm-mod', what: 'the device mapper the verity root is built on' },
   { symbol: 'CONFIG_DM_INIT', what: 'the dm-mod.create= command-line parser this board boots through' },
   { symbol: 'CONFIG_DM_VERITY', module: 'dm-verity', what: 'the dm-verity target itself' },
+  // The signed half of that floor, and the two symbols that make a root hash
+  // an AUTHENTICATED value rather than a number on the kernel command line.
+  // VERIFY_ROOTHASH_SIG is the code that checks a detached PKCS#7 signature
+  // over the root hash; SYSTEM_TRUSTED_KEYRING is the keyring it checks it
+  // against. Both are bools with no object of their own -- the first compiles
+  // into dm-verity, the second into the kernel image -- so the config check is
+  // their whole assertion here. What is NOT on this list is the anchor's
+  // value: CONFIG_SYSTEM_TRUSTED_KEYS is a string, and a string cannot be `=y`,
+  // which is why it has a check of its own below.
+  { symbol: 'CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG', what: 'the root-hash signature check, i.e. the kernel deciding whether it trusts the hash it was handed' },
+  { symbol: 'CONFIG_SYSTEM_TRUSTED_KEYRING', what: 'the built-in keyring that check resolves a signer against' },
+  // The block device a file-backed root is mapped from. Already =y on all
+  // three boards by inheritance rather than by decision until the floor named
+  // it: the file-based A/B design maps the root out of a FILE on a filesystem,
+  // which makes the loop driver part of the boot path rather than a debugging
+  // convenience.
+  { symbol: 'CONFIG_BLK_DEV_LOOP', module: 'loop', what: 'the loop device a file-backed root image is mapped through' },
   { symbol: 'CONFIG_SQUASHFS', module: 'squashfs', what: 'the root filesystem type' },
   { symbol: 'CONFIG_OVERLAY_FS', module: 'overlay', what: 'the writable overlays above an immutable root' },
   // The disk-encryption capability, and the ONE entry on this list whose
@@ -348,6 +365,22 @@ export function configLines(
   })
 }
 
+/**
+ * The whole of one `/boot/config-<release>`, or the empty string.
+ *
+ * Separate from configLines because the anchor check asks a different question
+ * of the same file: configLines answers `=y`/`=m`/absent per symbol, and a
+ * string option has none of those values.
+ */
+export function readConfig(root: string, release: string): string {
+  try {
+    return readFileSync(join(root, 'boot', `config-${release}`), 'utf8')
+  }
+  catch {
+    return ''
+  }
+}
+
 /** How a module name resolves under `/lib/modules/<release>`, and to what. */
 export interface Resolution {
   readonly module: string
@@ -497,6 +530,7 @@ export function brokenModules(root: string, release: string): BrokenModule[] {
 }
 
 const CONFIG_ID = 'kernel-config-floor-built-in'
+const ANCHOR_ID = 'kernel-verity-trust-anchor'
 const EXCLUDED_ID = 'kernel-config-excluded'
 const MODPROBE_ID = 'kernel-floor-resolves-builtin'
 
@@ -609,6 +643,55 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
               + `depmod wrote those entries at build time and packing dropped the files, so `
               + `modprobe fails at load time with the config line still reading =m and the `
               + `config check above still green`,
+      )]
+    },
+  },
+
+  {
+    // The anchor the signature check resolves against, which the list above
+    // cannot state: CONFIG_SYSTEM_TRUSTED_KEYS is a STRING, so `=y` is not a
+    // value it can have and the floor check would read it as absent.
+    //
+    // AN EMPTY VALUE IS THE FAILURE THIS EXISTS FOR, and it is the shape a
+    // kernel arrives in by default: every one of these boards built
+    // CONFIG_SYSTEM_TRUSTED_KEYS="" until the floor named a file. Such a kernel
+    // has VERIFY_ROOTHASH_SIG compiled in and a keyring with nothing in it, so
+    // it answers every signed root hash with ENOKEY -- the two symbols above
+    // are green and no root can be mapped. The check reads the value rather
+    // than the key: what is compiled into vmlinuz is the certificate's bytes,
+    // and the config records only the path they came from.
+    id: ANCHOR_ID,
+    shell: {
+      pass: 'the shipped kernel embeds a verity trust anchor',
+      fail: 'the shipped kernel embeds no verity trust anchor',
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const release = kernelRelease(root)
+      if (release === '') {
+        return [verdict(ANCHOR_ID, false,
+          'no single /boot/config-* in the packed root, so which certificates this kernel would '
+          + 'accept a dm-verity root-hash signature from cannot be decided')]
+      }
+      const text = readConfig(root, release)
+      const line = text.split('\n').find(l => l.startsWith('CONFIG_SYSTEM_TRUSTED_KEYS='))
+      const value = line === undefined ? undefined : line.slice('CONFIG_SYSTEM_TRUSTED_KEYS='.length).trim()
+      const path = value === undefined ? '' : value.replace(/^"|"$/g, '')
+      const ok = path !== ''
+      return [verdict(
+        ANCHOR_ID,
+        ok,
+        ok
+          ? `the shipped kernel embeds a verity trust anchor: ${line} in /boot/config-${release}. `
+            + `The certificate at that path was compiled into the kernel image at build time; `
+            + `dm-verity resolves a root-hash PKCS#7 signature against it and refuses the mapping `
+            + `when it cannot`
+          : `the shipped kernel embeds no verity trust anchor: `
+            + `${line ?? 'CONFIG_SYSTEM_TRUSTED_KEYS (no such line)'} in /boot/config-${release}. `
+            + `CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG can still be =y beside this and the floor check `
+            + `above still green: the keyring is simply empty, every signed root hash fails to find `
+            + `an issuer, and the failure is a device that mounts no root rather than a build that `
+            + `refused`,
       )]
     },
   },
