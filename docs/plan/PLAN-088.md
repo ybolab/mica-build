@@ -233,8 +233,12 @@ the two drift the moment one is edited. Deriving it means the question cannot be
 asked. The generator is pure integer arithmetic — exact rational area-average
 resampling, a median cut whose splits are decided by channel extent and
 population, and a sorted palette — because it runs inside the reproducibility
-boundary `kernel/Dockerfile`'s four pins establish. Measured: two runs on the
-master produce byte-identical output.
+boundary `kernel/Dockerfile`'s four pins establish. Measured twice, because
+"deterministic" is a claim that is easy to make about one interpreter: two runs
+on the same host agree byte for byte, and the host's Python 3.10.12 and the
+builder image's Python 3.12.3 also produce the same 2,200,294 bytes
+(`sha256:c3223bd3…`). The logo the kernel links is therefore a function of the
+master and nothing else.
 
 **Geometry: 720x405.** The constraint is not aesthetic. `fb_prepare_logo` drops
 the logo entirely when its height exceeds the mode's `yres`
@@ -245,7 +249,10 @@ and the common no-EDID fallbacks; a full-size 1920x1080 logo would vanish on any
 monitor that negotiated less. The cost is ~285 KiB of kernel data.
 
 The master quantises to exactly 224 colours — the `pnmtologo.c:43` ceiling —
-with the gradient intact and the wordmark crisp.
+with the gradient intact and the wordmark crisp. The rebuilt kernel confirms it
+linked: `System.map` carries `logo_linux_clut224_clut` and
+`logo_linux_clut224_data` exactly 0x2a0 = 672 bytes apart, which is 224 colours
+at three bytes each, and the `Image` grew 327,680 bytes.
 
 **`fbcon=logo-pos:center,logo-count:1`** on the command line. Without it the
 logo is drawn top-left, and `fb_logo_count` defaults to `-1`, which means *one
@@ -257,19 +264,27 @@ copy per online CPU* (`fbmem.c:695`) — eight side-by-side logos on this SoC.
 
 | File | Change |
 |---|---|
-| `boards/cx3576/bsp/kernel/configure.sh` | enable `LOGO` + `LOGO_LINUX_CLUT224`, disable `LOGO_LINUX_MONO`/`LOGO_LINUX_VGA16`, and re-assert all four after `olddefconfig`, including that deferred takeover stayed off |
+| `boards/cx3576/bsp/kernel/configure.sh` | enable `LOGO` + `LOGO_LINUX_CLUT224`, disable `LOGO_LINUX_MONO`/`LOGO_LINUX_VGA16`, and re-assert all of it after `olddefconfig` — including refusing deferred takeover |
 | `boards/cx3576/bsp/kernel/logo/mklogo.py` | new: the master-to-PPM converter |
 | `boards/cx3576/bsp/kernel/Dockerfile` | stage the master and the converter, run it over the vendor logo |
 | `boards/cx3576/bsp/kernel/Dockerfile.dockerignore` | allow `kernel/logo/` and the master into the context |
 | `boards/cx3576/boot.cmd` | `consoleargs` gains `console=tty1` **before** the serial console, plus `loglevel=5` and the `fbcon=` options |
-| `boards/cx3576/board.env` | `BOARD_CMDLINE_ARGS` tracks it, and declares `BOARD_HAS_DISPLAY=1` |
-| `boards/x64/board.env` | declares `BOARD_HAS_DISPLAY=0` |
-| `boards/cx3576/overlay/usr/lib/systemd/system-preset/50-mos-getty.preset` | new: `disable getty@.service` |
-| `boards/cx3576/deb/board-cx3576/Dockerfile` | ship the board's presets |
-| `verify/src/unit-state.ts` | new: the preset-resolution reader, lifted out of `checks-firewall.ts` so there is one implementation |
+| `boards/cx3576/board.env` | `BOARD_CMDLINE_ARGS` tracks it, and the board declares `BOARD_HAS_DISPLAY=1` |
+| `boards/x64/board.env`, `boards/virt-arm64/board.env` | declare `BOARD_HAS_DISPLAY=0` |
+| `boards/cx3576/overlay/.../50-mos-getty.preset` | new: `disable getty@.service` |
+| `boards/cx3576/deb/board-cx3576/Dockerfile` | ship the board's presets, and refuse a build that staged none |
+| `verify/src/lint.ts` | `BOARD_HAS_DISPLAY` joins `REQUIRED_BOARD_KEYS`, with the same 0-or-1 rule as `BOARD_HAS_STATUS_LED` |
+| `verify/src/board.ts`, `board-scope.ts` | model the key, and the `hasDisplay` predicate the checks are scoped by |
+| `verify/src/unit-state.ts` | new: the preset-resolution reader, lifted whole out of `checks-firewall.ts` so there is one implementation |
+| `verify/src/checks-firewall.ts` | imports it instead of keeping its own copy |
+| `verify/src/checks-bootchain.ts` | exports `bootScript`, so the command line is read by one reader |
 | `verify/src/checks-display.ts` | new: the display and console contract |
-| `docs/design/display.md` | §4's boot-experience claims replaced with what was measured |
-| `docs/bsp/cx3576-bench.md` | the rows only hardware can settle |
+| `verify/src/checks-fixture.ts` | the healthy root gains `getty@.service`, the board preset and the logo config symbols |
+| `verify/src/checks-display.test.ts` | new: every check driven red, through the real seam |
+| `verify/src/board.test.ts`, `lint.test.ts` | the deliberate counts, and the new key's reject case |
+| `docs/design/display.md` + the zh mirror | §4's boot-experience claims replaced with what was measured; §5 gains the key it asked for |
+| `docs/bsp/board-env.md`, `board-template.md` | document `BOARD_HAS_DISPLAY`, and that `BOARD_CMDLINE_ARGS`' consoles are ordered |
+| `docs/bsp/cx3576-bench.md` | §10: the rows only hardware can settle |
 
 ## 4. What the contract asserts
 
@@ -299,6 +314,25 @@ would most plausibly ship with.
 
 Boards that declare no display take the `skipOwner` path, so the register still
 prints a conclusion for them.
+
+### 4.1 One thing asserted by execution rather than by reading
+
+`consoleargs` grew from 59 to 118 characters, which puts the composed `bootargs`
+at 549 (357 of which is `verity_args`) before `systemd.machine_id=` is appended
+— long enough that "does U-Boot truncate it" is a fair
+question rather than a pedantic one. Reading the source says no: with
+`CONFIG_HUSH_PARSER=y` the expansion is built in a `o_string` that reallocates,
+and `fdt_chosen()` hands `env_get("bootargs")` straight to `fdt_setprop`, so no
+fixed buffer is in the path.
+
+That reasoning was then checked by running it. `make os-uboot-handshake-test`
+executes the **shipped** `boards/cx3576/boot.cmd` inside a real U-Boot sandbox
+binary through the real hush parser, and it passes on the edited file — every
+cycle reaches `booti`, which means the longer `setenv consoleargs` and the
+`setenv bootargs` that expands it both executed. The harness asserts the A/B
+arithmetic rather than the command line, so this is not a check that the console
+list is *right*; it is a check that the file still parses and runs, which is the
+failure mode a longer line introduces.
 
 ## 5. What only hardware can settle
 
