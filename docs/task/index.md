@@ -139,3 +139,4 @@ thing about the tree. Both indexes now say the same thing.
 
 - [-] [**RFCT-945 Verify managed Wi-Fi connectivity on the S905X5M SD system**](RFCT-945.md) `P1`
 - [x] [**RFCT-946 Permit the built-in Wi-Fi client switch through the settings API**](RFCT-946.md) `P1`
+- [x] [**RFCT-359 cx3576 stable MAC derives from the port topology, and reaches every port**](RFCT-359.md) `P1`
