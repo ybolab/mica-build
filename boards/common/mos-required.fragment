@@ -7,6 +7,47 @@
 CONFIG_BLK_DEV_DM=y
 CONFIG_DM_INIT=y
 CONFIG_DM_VERITY=y
+
+# --- the kernel authenticates the root hash itself --------------------------
+#
+# WHAT THE FOUR LINES BELOW BUY. Today the verity root hash is a literal on the
+# kernel command line: whoever writes the command line decides what the root
+# is, and the kernel checks only that the blocks hash to the value it was
+# handed. With ROOTHASH_SIG the kernel additionally verifies a detached PKCS#7
+# signature over that hash against certificates compiled INTO it, so a root
+# hash is authenticated before a single block is mapped. That is the property
+# plan 20260908-1428 section 2 needs in order to publish a rootfs without
+# rebuilding a kernel or a bootloader for every release.
+#
+# ENABLING THE SYMBOL DOES NOT REQUIRE A SIGNATURE, which is the half that is
+# easy to miss: upstream still permits an unsigned mapping unless
+# dm_verity.require_signatures=1 is in force. The symbol is the capability; the
+# policy is a boot parameter, and the boot path is what has to carry it.
+#
+# TRUSTED_KEYS IS A PATH, NOT A KEY, and it is relative to the kernel source
+# tree, which is where each board's build stages the file from the `mos-trust`
+# named build context (meta/verity/signer.cert.pem, minted by
+# `bash pkgs/rauc/gen-dev-keys.sh --domain verity`). PUBLIC MATERIAL ONLY: an
+# X.509 certificate goes in, the private half never leaves meta/. Keeping the
+# path constant and the contents an input is what lets a production build embed
+# a production anchor without editing this floor. The string is invisible to
+# the =y loops every board runs over this file, so each board asserts it by
+# name the way it already asserts the LSM list.
+#
+# THE COST, stated because it is not free: the kernel image now depends on the
+# certificate's bytes. Two trees with different meta/verity/ produce different
+# kernels from identical source, so the byte-for-byte rebuild property
+# RFCT-343 established holds within a tree and across a shared anchor, not
+# across developers who each minted their own.
+#
+# LOOP IS HERE FOR THE SAME PLAN. It is already =y on all three boards today,
+# by inheritance rather than by decision; the file-based A/B design maps the
+# root from a FILE on a filesystem, so a loop device stops being a debugging
+# convenience and becomes the block device the root is built on.
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG=y
+CONFIG_SYSTEM_TRUSTED_KEYRING=y
+CONFIG_SYSTEM_TRUSTED_KEYS="certs/mos-verity-anchor.pem"
 CONFIG_SQUASHFS=y
 CONFIG_SQUASHFS_ZSTD=y
 # Without XATTR support a squashfs root silently drops file capabilities and

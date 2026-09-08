@@ -52,6 +52,7 @@ const RELEASE = '6.12.107'
 const CONFIG_ID = 'kernel-config-floor-built-in'
 const MODPROBE_ID = 'kernel-floor-resolves-builtin'
 const EXCLUDED_ID = 'kernel-config-excluded'
+const ANCHOR_ID = 'kernel-verity-trust-anchor'
 
 function checkNamed(id: string): CheckCase {
   const found = KERNEL_CHECKS.find(c => c.id === id)
@@ -117,8 +118,12 @@ describe('the register entries', () => {
     // asserts the absence rather than a list that would have to be edited for a
     // fourth board.
     expect(KERNEL_CHECKS.map(c => c.id).sort())
-      .toEqual([CONFIG_ID, MODPROBE_ID, EXCLUDED_ID, `${EXCLUDED_ID}-skipped`].sort())
+      .toEqual([CONFIG_ID, ANCHOR_ID, MODPROBE_ID, EXCLUDED_ID, `${EXCLUDED_ID}-skipped`].sort())
     expect(KERNEL_CHECKS.find(c => c.id === CONFIG_ID)?.boards).toBeUndefined()
+    // The anchor check is every board's too, and for a stronger reason than the
+    // floor check: the value it reads decides whether that board can mount a
+    // signed root at all, and each board's kernel embeds its own copy.
+    expect(KERNEL_CHECKS.find(c => c.id === ANCHOR_ID)?.boards).toBeUndefined()
     // The modprobe check keeps its scope, for the reason checks-kernel.ts gives:
     // its dependency walk covers the whole of modules.dep, which is four entries
     // on this board and a vendor tree's worth on cx3576.
@@ -203,6 +208,70 @@ describe('the excluded kernel symbols', () => {
       const got = await only(fx, EXCLUDED_ID)
       expect(got.verdict).toBe('fail')
       expect(got.message).toContain('no single /boot/config-*')
+    })
+  })
+})
+
+describe('the verity trust anchor', () => {
+  // The anchor is what the floor check cannot see. CONFIG_SYSTEM_TRUSTED_KEYS
+  // is a string, so `=y` is not a value it can hold, and every one of these
+  // boards carried the empty default until the shared fragment named a file --
+  // a kernel that builds the signature check and trusts nobody.
+  async function withAnchor(body: (fx: RootFixture) => Promise<void>): Promise<void> {
+    const fx = packedRootFixture(x64)
+    try {
+      const green = await only(fx, ANCHOR_ID)
+      expect(green.verdict).toBe('pass')
+      expect(green.message).toContain('certs/mos-verity-anchor.pem')
+      await body(fx)
+    }
+    finally {
+      fx.dispose()
+    }
+  }
+
+  test('green when the shipped config names an anchor file', async () => {
+    await withAnchor(async () => {})
+  })
+
+  test('RED on the empty default, which is what a kernel that trusts nobody looks like', async () => {
+    await withAnchor(async (fx) => {
+      editConfig(fx, 'CONFIG_SYSTEM_TRUSTED_KEYS="certs/mos-verity-anchor.pem"',
+        'CONFIG_SYSTEM_TRUSTED_KEYS=""')
+      const got = await only(fx, ANCHOR_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('CONFIG_SYSTEM_TRUSTED_KEYS=""')
+      expect(got.message).toContain('the keyring is simply empty')
+    })
+  })
+
+  test('RED when the line is gone entirely, not green over its absence', async () => {
+    await withAnchor(async (fx) => {
+      editConfig(fx, 'CONFIG_SYSTEM_TRUSTED_KEYS="certs/mos-verity-anchor.pem"\n', '')
+      const got = await only(fx, ANCHOR_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('no such line')
+    })
+  })
+
+  test('RED, not green, when there is no config to read', async () => {
+    await withAnchor(async (fx) => {
+      rmSync(join(fx.root, 'boot', `config-${RELEASE}`))
+      const got = await only(fx, ANCHOR_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('no single /boot/config-*')
+    })
+  })
+
+  test('the floor check stays green on all four, so the two are not one check', async () => {
+    // The anchor's absence must not be reported by the floor check as well: a
+    // second check that fails whenever the first does adds a line and no
+    // information.
+    await withAnchor(async (fx) => {
+      editConfig(fx, 'CONFIG_SYSTEM_TRUSTED_KEYS="certs/mos-verity-anchor.pem"',
+        'CONFIG_SYSTEM_TRUSTED_KEYS=""')
+      expect((await only(fx, CONFIG_ID)).verdict).toBe('pass')
+      expect((await only(fx, ANCHOR_ID)).verdict).toBe('fail')
     })
   })
 })
