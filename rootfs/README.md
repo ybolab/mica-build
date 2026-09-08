@@ -385,24 +385,48 @@ image.
 
 ### `mosd-build.txt`, and why it is a copy
 
-`pkgs/mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
-`target`, `elf-arch` and `commit`, TAB-separated, the same shape
-`factory-root.txt` uses so one reader reads both -- and `build.sh` copies it
-into `_out/<board>/` beside the factory root. **It is not copied into the
-image.**
+`pkgs/mosd/hack/build-deb.sh` writes `_out/mosd-build-<arch>.txt` whenever it
+compiles `mosd` and `apid` -- `producer`, `target`, `elf-arch` and `commit`,
+TAB-separated, the same shape `factory-root.txt` uses so one reader reads both
+-- and `build.sh` copies the one matching the board's architecture into
+`_out/<board>/` beside the factory root. **It is not copied into the image.**
+
+**The producer writes it, because the producer is what builds the binaries this
+root ships.** They arrive as the `mosd` and `mos-apid` packages out of
+`_out/debs/<arch>`; nothing here compiles them. `pkgs/mosd/hack/build-target.sh`
+used to write the record and no longer does: it compiles a set nothing installs,
+so its record named a build whose output never reached an image, and it was
+indistinguishable from one that had. Until RFCT-356 nothing wrote the record on
+the composing path at all, and every smoke run printed `build commit NOT
+ASSERTED`.
 
 Copied rather than read from the top-level path, because the top-level one
-describes *whatever was compiled most recently*: build cx3576 and then x64 and
-`_out/mosd-build.txt` says `aarch64-unknown-linux-gnu` while `_out/x64/` still
-holds x86-64 binaries. The per-board copy is what keeps the smoke runner
-comparing an image against the build that produced it.
+describes *whatever was compiled most recently for that architecture*. It is
+scoped per architecture for the same reason the copy exists: build the arm64
+producer and then an x64 root, and one unscoped record would say
+`aarch64-unknown-linux-gnu` while `_out/x64/` held x86-64 binaries.
 
-`build.sh` **removes** it when `mosd` is declined, for the same reason it
-empties the staged `mosd/` directory: a record left by a previous build would
-describe binaries this image does not carry, and the smoke runner would then
-assert a commit against an artifact that is not there. Absent is a state it
-already handles -- it prints that nothing was asserted, and says so on its own
-first lines -- and stale is one nothing could catch.
+`build.sh` **removes** it at the start of every build and writes it only after
+the image is packed and inside its budget, and writes none at all when `mosd` is
+declined -- for the same reason it empties the staged `mosd/` directory. A
+record left by a previous build, or by a run that died halfway, would describe
+binaries this image does not carry. Absent is a state the smoke runner already
+handles -- it prints that nothing was asserted, on its own first lines -- and
+stale is one nothing could catch.
+
+**What the smoke run's commit assertion is worth.** The two sides are the string
+compiled *into* the binary in the packed root, read back by executing it, and the
+string that producer run wrote to disk — and both descend from one
+`MOS_BUILD_COMMIT` in one invocation. It is therefore **not** a check that the
+commit is *correct*; no reader of an image could be.
+
+What it closes is the distance between *the producer was told to embed X* and
+*the binary in the image reports X*: a compile cargo did not re-run for a changed
+environment variable, an `option_env!` that resolved to nothing so the binary
+answers `unknown`, a stage that installed a binary from somewhere other than the
+package. The pool checks in `build.sh` already refuse an archive built from
+another tree, by stamp and by `SHA256SUMS` — but they read the archive's name and
+its bytes, never what was compiled into the binary inside it.
 
 Every layout constant is read from `boards/cx3576/board.env`; none is duplicated
 in `build.sh`, `compose/` or the overlay. The board console/storage

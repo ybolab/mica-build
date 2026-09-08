@@ -891,3 +891,26 @@ describe('the writable, persistent system unit directory', () => {
     }
   })
 })
+
+describe('the packed root is read INSIDE the root, never against the host', () => {
+  // RFCT-358's discriminating case for this file's readers: an ABSOLUTE symlink
+  // whose target exists on the machine running the suite and not in the image.
+  // Host resolution -- what `statSync(join(root, path))` did -- answers PASS on
+  // it; resolving inside the root answers FAIL, which is the only true answer
+  // about the image. A test that exercised only the new helper could not tell
+  // the two implementations apart.
+
+  test("/bin/bash pointing at a host regular file is a login shell that does not ship", async () => {
+    const fx = await mutated('mos-account-by-number', (root) => {
+      rmSync(join(root, '/bin/bash'))
+      symlinkSync('/proc/version', join(root, '/bin/bash'))
+    })
+    try {
+      expect(await verdictOf(fx, 'mos-account-by-number')).toBe('fail')
+      expect(await messageOf(fx, 'mos-account-by-number')).toContain('/bin/bash is ABSENT')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})

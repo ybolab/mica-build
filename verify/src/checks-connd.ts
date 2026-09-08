@@ -29,13 +29,21 @@
 // the read fails the generated matcher is the degenerate string the oracle
 // prints and the two sides stay comparable.
 
-import { existsSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Board } from './board.ts'
 import { boardsWhere, hasRadio } from './board-scope.ts'
-import { regularFileFollowingLinks } from './checks-dbus.ts'
 import { unitValue } from './checks-engine.ts'
-import { entry, ETC_UNITS, packedRoot, regularFileInRoot, wantsLink } from './checks-root.ts'
+import {
+  entry,
+  ETC_UNITS,
+  linkTargetInRoot,
+  packedRoot,
+  pathInRoot,
+  regularFileInRoot,
+  statInRoot,
+  wantsLink,
+} from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { REPO_ROOT } from './paths.ts'
@@ -243,11 +251,11 @@ function execStartCheck(input: { id: string, what: string, unit: string, dir: st
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      if (!regularFileFollowingLinks(root, unit)) {
+      if (!regularFileInRoot(root, unit)) {
         return [verdict(id, false,
           `${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist`)]
       }
-      const execLines = readFileSync(join(root, unit), 'utf8').split('\n').filter(l => l.includes('ExecStart='))
+      const execLines = readFileSync(pathInRoot(root, unit), 'utf8').split('\n').filter(l => l.includes('ExecStart='))
       for (const spec of ['%i', '%I']) {
         const want = `${dir}/${name.replaceAll('{interface}', spec)}`
         if (execLines.some(l => l.includes(want))) {
@@ -309,11 +317,7 @@ function maskedCheck(unit: string): CheckCase {
       // `readlink`, not `readlink -f`: the RAW target. A mask is the literal
       // string /dev/null, and resolving the link would answer about the device
       // node rather than about the unit.
-      let dest = ''
-      try {
-        dest = readlinkSync(join(root, '/etc/systemd/system', unit))
-      }
-      catch { /* not a symlink, or not there at all */ }
+      const dest = linkTargetInRoot(root, `/etc/systemd/system/${unit}`) ?? ''
       const ok = dest === '/dev/null'
       return [verdict(
         id,
@@ -382,12 +386,12 @@ function renderTargetBind(id: string, where: string): CheckCase {
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      if (!regularFileFollowingLinks(root, unitPath)) {
+      if (!regularFileInRoot(root, unitPath)) {
         return [verdict(id, false,
           `${where} is a reconciler render target but ${unit} does not exist; on the read-only verity `
           + `root the render would fail on device and nowhere else`)]
       }
-      const lines = readFileSync(join(root, unitPath), 'utf8').split('\n')
+      const lines = readFileSync(pathInRoot(root, unitPath), 'utf8').split('\n')
       // `grep -qx "Where=${where}"` -- the WHOLE line.
       if (!lines.includes(`Where=${where}`)) {
         return [verdict(id, false,
@@ -437,7 +441,7 @@ function seedStateCreates(id: string, where: string): CheckCase {
       const root = await packedRoot(ctx)
       const src = unitValue(root, unitPath, 'What=')
       const base = src === '' ? 'none' : (src.split('/').at(-1) ?? '')
-      const text = regularFileFollowingLinks(root, seed) ? readFileSync(join(root, seed), 'utf8') : undefined
+      const text = regularFileInRoot(root, seed) ? readFileSync(pathInRoot(root, seed), 'utf8') : undefined
       const loopItems = text === undefined
         ? []
         : text.split('\n')
@@ -473,7 +477,7 @@ const DNSMASQ_CHECK: CheckCase = {
     // `[ -e ]`, which FOLLOWS a link -- so a dangling /usr/sbin/dnsmasq reads as
     // absent here. Reproduced rather than tightened: the oracle's answer is the
     // one the two sides must agree on.
-    const present = existsSync(join(root, '/usr/sbin/dnsmasq'))
+    const present = statInRoot(root, '/usr/sbin/dnsmasq') !== undefined
     return [verdict(
       'wifi-no-dnsmasq',
       !present,
@@ -603,7 +607,7 @@ const REGDB_RELOAD_TOOL: CheckCase = {
   run: async (ctx): Promise<readonly CheckResult[]> => {
     const root = await packedRoot(ctx)
     const unit = `/etc/systemd/system/${REGDB_UNIT}`
-    const text = regularFileInRoot(root, unit) ? readFileSync(join(root, unit), 'utf8') : ''
+    const text = regularFileInRoot(root, unit) ? readFileSync(pathInRoot(root, unit), 'utf8') : ''
     // The first token after `ExecStart=`, with systemd's `-`/`@`/`:`/`+`/`!`
     // prefixes stripped: the executable the unit would run.
     const exec = text.split('\n')
@@ -669,11 +673,10 @@ function imageNetworkFiles(root: string): string[] {
     }
     for (const name of entries) {
       const full = join(dir, name)
-      let isDir = false
-      try {
-        isDir = statSync(full).isDirectory()
-      }
-      catch { /* dangling; find still reports the entry */ }
+      // Followed, as the oracle's stat follows -- but inside the root, so a
+      // link out of the tree is a dangling entry rather than a host directory
+      // this walk would collect .network names from.
+      const isDir = statInRoot(root, full.slice(root.length))?.isDirectory() === true
       if (isDir) {
         walk(full)
         continue
@@ -681,7 +684,16 @@ function imageNetworkFiles(root: string): string[] {
       if (name.endsWith('.network')) names.add(name)
     }
   }
-  for (const d of NETWORK_DIRS) walk(join(root, d))
+  for (const d of NETWORK_DIRS) {
+    let at: string
+    try {
+      at = pathInRoot(root, d)
+    }
+    catch {
+      continue
+    }
+    walk(at)
+  }
   return [...names].sort()
 }
 

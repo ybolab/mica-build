@@ -896,6 +896,14 @@ function seedSystem(root: string, board: Board, file: WriteFile): void {
   file('/usr/bin/curl')
   seedBootScripts(root, file)
 
+  // systemd's own gpt-auto generator, and mos-system's mask over it. Both
+  // halves, because the two conclusions fail for different reasons: the mask
+  // being gone is a mos regression, and the generator being gone is systemd
+  // renaming a file the mask names.
+  file('/usr/lib/systemd/system-generators/systemd-gpt-auto-generator')
+  mkdirSync(join(root, '/etc/systemd/system-generators'), { recursive: true })
+  symlinkSync('/dev/null', join(root, '/etc/systemd/system-generators/systemd-gpt-auto-generator'))
+
   // One repart definition per linux-generic partition in the board's own walk,
   // and exactly ONE of them growing. The count the check compares against comes
   // from the GPT, so a fixture that wrote its own number would hand the check

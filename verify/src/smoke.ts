@@ -147,13 +147,14 @@ export function versionTokens(line: string): string[] {
 /**
  * The commit half of the version contract.
  *
- * `pkgs/mosd/hack/build-target.sh` writes the commit it handed the compiler into
- * `_out/mosd-build.txt`, build.sh copies it to `_out/<board>/mosd-build.txt`,
- * `readMosdBuildFact` reads it back and `judge` compares the two; see
- * `BuildCommitFact`. The printed-only state is a branch, not a deletion: with no
- * record -- a hand-assembled `_out/` -- the runner says so on its own first lines
- * and the row says the commit was not asserted, and the reported line is carried
- * verbatim into every version verdict (`[said: ...]`) either way. One limit:
+ * `pkgs/mosd/hack/build-deb.sh` writes the commit it handed the compiler into
+ * `_out/mosd-build-<arch>.txt`, `rootfs/build.sh` copies the one for the board's
+ * architecture to `_out/<board>/mosd-build.txt`, `readMosdBuildFact` reads it
+ * back and `judge` compares the two; see `BuildCommitFact`. The printed-only
+ * state is a branch, not a deletion: with no record -- a hand-assembled `_out/`
+ * -- the runner says so on its own first lines and the row says the commit was
+ * not asserted, and the reported line is carried verbatim into every version
+ * verdict (`[said: ...]`) either way. One limit:
  * `mosd 0.1.0-rc.1 (abc1234)` yields the numeric head only, so a pre-release pin
  * and output go red naming both sides. Neither crate takes a pre-release version
  * today; if one does, `versionTokens` is where to look.
@@ -192,13 +193,29 @@ export function firstLine(stdout: string): string {
  * The expectation is a build fact, never `git rev-parse HEAD`: comparing the
  * reported sha against HEAD at run time passes on any freshly built tree and
  * asserts only that somebody had just rebuilt, never that the embedding works.
- * `pkgs/mosd/hack/build-target.sh` writes the commit it handed the compiler into
- * `_out/mosd-build.txt`, `rootfs/build.sh` carries it into `_out/<board>/`
- * beside the factory root, and this is what the runner reads back. `commit` is
- * optional because the fact may genuinely not be there -- a hand-assembled
- * `_out/` -- and the rule there is to print it and assert nothing rather than to
- * refuse. `source` is printed either way, so a run that asserted nothing about
- * the commit says so out loud.
+ * `pkgs/mosd/hack/build-deb.sh` -- the producer hook that compiles the mosd and
+ * mos-apid binaries a composed root installs -- writes the commit it handed the
+ * compiler into `_out/mosd-build-<arch>.txt`, `rootfs/build.sh` copies the one
+ * for the board's architecture into `_out/<board>/` beside the factory root, and
+ * this is what the runner reads back.
+ *
+ * WHAT THAT COMPARISON IS AND IS NOT. The two sides are the string compiled
+ * INTO the binary in the packed root, read back by executing it, and the string
+ * that producer run wrote to disk -- and both descend from one
+ * `MOS_BUILD_COMMIT` in one invocation. It therefore does not check that the
+ * commit is right; no reader of an image could, which is why HEAD is refused
+ * above. It closes the distance between "the producer was told to embed X" and
+ * "the binary in the image reports X" -- a compile cargo did not re-run for a
+ * changed environment variable, an `option_env!` that resolved to nothing so the
+ * binary answers `unknown`, a stage that installed a binary from somewhere other
+ * than the package. The pool's own stamp and SHA256SUMS checks refuse an archive
+ * from another tree, but they read its name and its bytes, never what was
+ * compiled into the binary inside it.
+ *
+ * `commit` is optional because the fact may genuinely not be there -- a
+ * hand-assembled `_out/` -- and the rule there is to print it and assert nothing
+ * rather than to refuse. `source` is printed either way, so a run that asserted
+ * nothing about the commit says so out loud.
  */
 export interface BuildCommitFact {
   /** The commit the build recorded embedding. Absent when none was recorded. */
@@ -573,7 +590,7 @@ export function outDir(board: string): string {
  * Read a `key<TAB>value` record as data.
  *
  * Tab-separated, exactly as `ociRecord` in build/src/stages.ts writes it and
- * as `pkgs/mosd/hack/build-target.sh` writes `_out/mosd-build.txt`, parsed rather
+ * as `pkgs/mosd/hack/build-deb.sh` writes `_out/mosd-build-<arch>.txt`, parsed rather
  * than sourced. Comment lines are skipped by having no tab, which is why
  * `# Load it with: docker load -i ...` cannot become a key -- a reader that
  * split on whitespace would have made one. One reader for both records, because
@@ -664,16 +681,18 @@ export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
 /**
  * The commit the mosd and apid in this board's factory root were built from.
  *
- * Read out of the record `pkgs/mosd/hack/build-target.sh` wrote and
+ * Read out of the record `pkgs/mosd/hack/build-deb.sh` wrote and
  * `rootfs/build.sh` copied in beside the image -- NOT out of the working
  * tree. See [`BuildCommitFact`]. Absent is not a refusal here, unlike the
- * factory root itself: the record is younger than images that may still be
- * sitting in `_out/`, so a fact the runner cannot see is printed and asserted
- * about nothing. A root built by rootfs/build.sh always has it, and when
- * mosd is declined that script removes it -- but then `declinedFeatures` refuses
- * the run first. A record that exists and cannot be read IS a refusal: a file
- * with no `commit` key was written by something other than build-target.sh, and
- * reading that as "nothing recorded" would switch the assertion off silently.
+ * factory root itself: an image built before RFCT-356 moved the record onto the
+ * path that compiles the shipped binaries may still be sitting in `_out/`, so a
+ * fact the runner cannot see is printed and asserted about nothing. A root built
+ * by rootfs/build.sh at or after that change always has it: that script refuses
+ * to finish without one, except when mosd is declined and it writes none -- and
+ * then `declinedFeatures` refuses the run first. A record that exists and cannot
+ * be read IS a refusal: a file with no `commit` key was written by something
+ * other than build-deb.sh, and reading that as "nothing recorded" would switch
+ * the assertion off silently.
  */
 export function readMosdBuildFact(board: string, dir: string = outDir(board)): BuildCommitFact {
   const path = join(dir, MOSD_BUILD_RECORD_NAME)
@@ -682,16 +701,16 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
     return {
       source:
         `${shown} does not exist, so no commit was recorded for this image. It is written by `
-        + `pkgs/mosd/hack/build-target.sh on every build and copied here by rootfs/build.sh; `
-        + `rebuild the board to have the commit asserted rather than printed`,
+        + `pkgs/mosd/hack/build-deb.sh whenever it compiles mosd and apid, and copied here by `
+        + `rootfs/build.sh; rebuild the board to have the commit asserted rather than printed`,
     }
   }
   const kv = parseTabRecord(readFileSync(path, 'utf8'))
   const commit = kv.get('commit')
   if (commit === undefined) {
     throw new Error(
-      `${path} carries no \`commit\` field. pkgs/mosd/hack/build-target.sh writes one on every build -- `
-      + `empty when it could not resolve a commit -- so a record without the key was written by `
+      `${path} carries no \`commit\` field. pkgs/mosd/hack/build-deb.sh writes one every time it `
+      + `compiles them -- so a record without the key was written by `
       + `something else. Reading that as "nothing was recorded" would switch off the commit half of `
       + `mosd's and apid's version check without saying so.`,
     )

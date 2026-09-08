@@ -21,10 +21,9 @@
 // enablement symlink is the next check's subject and a dangling one can exist
 // with no unit file behind it.
 
-import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, statSync, type Stats } from 'node:fs'
+import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
-import { entry, packedRoot } from './checks-root.ts'
-import { regularFileFollowingLinks } from './checks-dbus.ts'
+import { entry, packedRoot, pathInRoot, regularFileInRoot, statInRoot } from './checks-root.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { skipped, verdict } from './verdict.ts'
@@ -50,15 +49,12 @@ const ENABLEMENT_TREES = ['/etc/systemd/system', '/usr/lib/systemd/system'] as c
 
 // the walks `find` performs, spelled once
 
-/** `[ -e "${ROOT}${path}" ]`: exists, FOLLOWING a link -- a dangling one is absent. */
-function existsFollowingLinks(root: string, path: string): boolean {
-  try {
-    statSync(join(root, path))
-    return true
-  }
-  catch {
-    return false
-  }
+/**
+ * `[ -e "${ROOT}${path}" ]`: exists, FOLLOWING a link -- a dangling one is
+ * absent. Followed inside the root, so "dangling" is a fact about the image.
+ */
+function existsInRoot(root: string, path: string): boolean {
+  return statInRoot(root, path) !== undefined
 }
 
 /**
@@ -98,7 +94,19 @@ function findUnder(
       if (st.isDirectory()) walk(full)
     }
   }
-  for (const tree of trees) walk(join(root, tree))
+  // Only the entry point is resolved: the walk itself lstats and never
+  // descends through a link, so nothing inside it can leave the root -- but a
+  // tree named through an absolute symlink would be enumerated on the host.
+  for (const tree of trees) {
+    let at: string
+    try {
+      at = pathInRoot(root, tree)
+    }
+    catch {
+      continue
+    }
+    walk(at)
+  }
   return found.sort()
 }
 
@@ -106,8 +114,8 @@ function findUnder(
 
 /** The oracle's early-return guard: NEITHER podman nor storage.conf. */
 function noEngineAtAll(root: string): boolean {
-  return !existsFollowingLinks(root, '/usr/bin/podman')
-    && !existsFollowingLinks(root, CONTAINER_STORAGE_CONF)
+  return !existsInRoot(root, '/usr/bin/podman')
+    && !existsInRoot(root, CONTAINER_STORAGE_CONF)
 }
 
 const NO_ENGINE_MESSAGE = 'this image carries no container engine at all (no podman, no storage.conf): '
@@ -159,7 +167,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
         return [verdict('container-engine-installed', true, NO_ENGINE_MESSAGE)]
       }
       const missing = [...CONTAINER_BINARIES, QUADLET_GENERATOR]
-        .filter(b => !regularFileFollowingLinks(root, b))
+        .filter(b => !regularFileInRoot(root, b))
       return [verdict(
         'container-engine-installed',
         missing.length === 0,
@@ -212,8 +220,8 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
       fail: 'nft is not in the image.',
     },
     decide: (root) => {
-      const ok = regularFileFollowingLinks(root, CONTAINER_NFT)
-        || regularFileFollowingLinks(root, '/usr/bin/nft')
+      const ok = regularFileInRoot(root, CONTAINER_NFT)
+        || regularFileInRoot(root, '/usr/bin/nft')
       return verdict(
         'container-engine-nft',
         ok,
@@ -269,7 +277,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
     },
     decide: (root) => {
       const missing = [CONTAINER_POLICY, CONTAINER_CONF, CONTAINER_REGISTRIES]
-        .filter(f => !regularFileFollowingLinks(root, f))
+        .filter(f => !regularFileInRoot(root, f))
       return verdict(
         'container-engine-config-files',
         missing.length === 0,
@@ -293,7 +301,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
       fail: '/usr/share/containers/containers.conf exists.',
     },
     decide: (root) => {
-      const present = existsFollowingLinks(root, '/usr/share/containers/containers.conf')
+      const present = existsInRoot(root, '/usr/share/containers/containers.conf')
       return verdict(
         'container-engine-single-config-layer',
         !present,
@@ -375,7 +383,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
     },
     decide: (root) => {
       const id = 'container-engine-graphroot-on-data'
-      const present = regularFileFollowingLinks(root, CONTAINER_STORAGE_CONF)
+      const present = regularFileInRoot(root, CONTAINER_STORAGE_CONF)
       // `sed -n 's/^ *graphroot *= *"\(.*\)"/\1/p' | tail -n1`: the LAST such
       // line, because that is the one a later assignment in the same file wins
       // with -- and the greedy `\(.*\)` takes everything up to the final quote.
@@ -437,7 +445,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
     decide: (root) => {
       const id = 'container-engine-quadlet-bind'
       const unit = `/etc/systemd/system/${QUADLET_MOUNT_UNIT}`
-      const present = regularFileFollowingLinks(root, unit)
+      const present = regularFileInRoot(root, unit)
       const where = unitValue(root, unit, 'Where=')
       const what = unitValue(root, unit, 'What=')
       if (!present) {
@@ -552,10 +560,10 @@ const PURGE_CHECKS: readonly CheckCase[] = [
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const found = [
-        ...PKGMGR_BINARIES.filter(b => existsFollowingLinks(root, b)).map(b => ` ${b}`),
-        ...PKGMGR_TREES.filter(d => isDirectoryFollowingLinks(root, d)).map(d => ` ${d}/`),
-        ...PKGMGR_LOGS.filter(l => existsFollowingLinks(root, l))
-          .map(l => isDirectoryFollowingLinks(root, l) ? ` ${l}/` : ` ${l}`),
+        ...PKGMGR_BINARIES.filter(b => existsInRoot(root, b)).map(b => ` ${b}`),
+        ...PKGMGR_TREES.filter(d => isDirectoryInRoot(root, d)).map(d => ` ${d}/`),
+        ...PKGMGR_LOGS.filter(l => existsInRoot(root, l))
+          .map(l => isDirectoryInRoot(root, l) ? ` ${l}/` : ` ${l}`),
       ]
       return [verdict(
         'purge-no-package-manager',
@@ -616,7 +624,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
         root,
         ['/usr/bin', '/usr/sbin', '/usr/lib/systemd', '/etc'],
         (_r, _name, st) => st.isFile() && !st.isSymbolicLink(),
-      ).filter(p => namesPerlInterpreter(join(root, p)))
+      ).filter(p => namesPerlInterpreter(root, p))
       return [verdict(
         'purge-no-dangling-perl-shebang',
         dangling.length === 0,
@@ -654,7 +662,7 @@ const CA_CHECKS: readonly CheckCase[] = [
       // `[ ! -s ]`: exists AND is non-empty, following links.
       const size = ((): number => {
         try {
-          return statSync(join(root, CA_BUNDLE)).size
+          return statInRoot(root, CA_BUNDLE)?.size ?? 0
         }
         catch {
           return 0
@@ -686,21 +694,16 @@ const CA_CHECKS: readonly CheckCase[] = [
 /** The file's lines, or none. `grep` over a missing file matches nothing. */
 function grepLines(root: string, path: string): string[] {
   try {
-    return readFileSync(join(root, path), 'utf8').split('\n')
+    return readFileSync(pathInRoot(root, path), 'utf8').split('\n')
   }
   catch {
     return []
   }
 }
 
-/** `[ -d "${ROOT}${path}" ]`, following links. */
-function isDirectoryFollowingLinks(root: string, path: string): boolean {
-  try {
-    return statSync(join(root, path)).isDirectory()
-  }
-  catch {
-    return false
-  }
+/** `[ -d "${ROOT}${path}" ]`, following links inside the root. */
+function isDirectoryInRoot(root: string, path: string): boolean {
+  return statInRoot(root, path)?.isDirectory() === true
 }
 
 /**
@@ -729,11 +732,13 @@ export function unitValue(root: string, path: string, key: string): string {
  * `^#!.*perl` means. A shebang is on line 1 in practice; asserting that here
  * would be a different check from the oracle's.
  */
-function namesPerlInterpreter(full: string): boolean {
+function namesPerlInterpreter(root: string, path: string): boolean {
   const head = new Uint8Array(32768)
   let got = 0
   let fd: number
+  let full: string
   try {
+    full = pathInRoot(root, path)
     fd = openSync(full, 'r')
   }
   catch {
