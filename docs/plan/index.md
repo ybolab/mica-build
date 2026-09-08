@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-07
+> Updated: 2026-09-08
 
 ## Usage
 
@@ -51,6 +51,8 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 ---
 
 ## Plans
+
+- [-] [**PLAN-926 Merge the S905X5M adaptation into updated local main**](PLAN-926.md) `2026-09-08`
 
 - [ ] [**PLAN-037 Coordinate the embedded delivery roadmap**](PLAN-037.md) `2026-08-31`
 - [ ] [**PLAN-054 Design conditional fleet management**](PLAN-054.md) `2026-09-01`

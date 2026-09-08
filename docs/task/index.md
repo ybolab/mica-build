@@ -61,6 +61,8 @@ thing about the tree. Both indexes now say the same thing.
 
 ## Tasks
 
+- [-] [**RFCT-947 Integrate the S905X5M branch into updated local main**](RFCT-947.md) `P1`
+
 - [-] [**RFCT-273 Coordinate the embedded delivery roadmap**](RFCT-273.md) `P1`
 - [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
 - [-] [**RFCT-305 Gate A mechanisms: the trust grade, the device surface and the publication refusal**](RFCT-305.md) `P1`
