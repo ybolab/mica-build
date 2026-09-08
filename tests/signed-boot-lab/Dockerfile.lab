@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# check=skip=InvalidDefaultArgInFrom
 # The harness side of the lab: system emulation, UEFI firmware, the UKI tools
 # and the disk tools. Nothing here runs on the device and nothing here is
 # packaged; it is the machine the proofs are driven from, and it is pinned so

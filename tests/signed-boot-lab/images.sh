@@ -21,6 +21,14 @@ SNAPSHOT="$(. "${REPO_ROOT}/rootfs/debian/sources.env"; printf '%s' "${MIRROR}")
     echo "error: rootfs/debian/sources.env yielded no MIRROR, so the lab would install from wherever apt happens to point" >&2
     exit 1
 }
+# http and not https, and the substitution is here rather than in
+# rootfs/debian/sources.env because that file's value is right for the build it
+# serves. This base image carries no CA bundle, so the https form leaves apt
+# with no package lists at all and every install reads as "Unable to locate
+# package <everything>" -- measured. What protects the archive either way is
+# its OpenPGP signature, checked against the debian-archive-keyring the base
+# does carry; the transport is not the integrity mechanism here.
+SNAPSHOT="${SNAPSHOT/https:\/\//http:\/\/}"
 lab_note "apt snapshot: ${SNAPSHOT}"
 
 mapfile -t TRIXIE_ARG < <(bash "${REPO_ROOT}/build-env/from.sh" MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)

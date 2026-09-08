@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# check=skip=InvalidDefaultArgInFrom
 # The guest userspace of the verity proofs: one Debian root with veritysetup in
 # it and nothing else added. It becomes the initramfs the kernel under test
 # boots, so what runs the cases is the same userspace on every board.

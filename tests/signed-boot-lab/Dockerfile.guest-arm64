@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# check=skip=InvalidDefaultArgInFrom
 # The same guest userspace, for an arm64 kernel, plus the payload and the init
 # scripts -- and the cpio is assembled HERE rather than by build-initramfs.sh
 # because this host cannot execute an arm64 container: the emulator lives in
