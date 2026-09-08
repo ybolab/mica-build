@@ -206,7 +206,7 @@ settled, then copied in — after which only the producer that stages them
 (`board-cx3576`) was rebuilt, the pool re-indexed, and the cx3576 half of the
 pipeline re-run.
 
-**Also green:** `verify/run.sh` (typecheck + 1356/1356 tests),
+**Also green:** `verify/run.sh` (typecheck + 1377/1377 tests),
 `make docs-verify` from a `git archive` into an empty directory,
 `tests/shell-pipefail-lint.sh` (92/92), `tests/host-toolchain-lint.sh`
 (352/352 files, 0 findings).
