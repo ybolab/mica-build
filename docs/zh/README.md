@@ -72,7 +72,7 @@
 | `../user/doc-contract.md` | 00a5147d | current |
 | `../user/download.md` | 00a5147d | current |
 | `../user/first-run.md` | 00a5147d | current |
-| `../user/install.md` | 00a5147d | current |
+| `../user/install.md` | e62e569b | current |
 | `../user/manufacturing.md` | 00a5147d | current |
 | `../user/quickstart.md` | db66fc02 | current |
 | `../user/recovery.md` | 88db4ae9 | current |
