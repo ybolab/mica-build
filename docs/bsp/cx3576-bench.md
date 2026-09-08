@@ -588,6 +588,72 @@ binary this board runs. What only this board can answer is whether the unit
 that is actually generated here — virt-arm64 boots through GRUB, which sets no
 `LoaderDevicePartUUID`, so its generator writes nothing — is gone.
 
+### Additions from RFCT-359 (the stable-MAC assignment)
+
+RFCT-359 changed what this board's Ethernet MAC addresses are derived from —
+the port's path through the bus topology instead of its interface name — and
+added the two files that make the assignment reach both ports at all. Every
+mechanism was read out of the pinned systemd 257.13 and kernel sources and the
+derivation is driven offline by `make os-mac-test`, but **no board has ever been
+seen carrying an address it produced**. Three probes, inside stages that already
+set up the state they need.
+
+| Probe | Stage | Claim |
+|---|---|---|
+| `mac-derived` | 2 `inventory` | both ports carry the address the topology derivation produces, and systemd assigned neither |
+| `mac-survives-reboot` | 3 `warmboot` | the same two addresses come back, on the same two ports |
+| `mac-before-lease` | 4 `network` | the late port's DHCP request goes out from its derived address |
+
+**What is plugged in, for all three:** the CX3576-Z unit on the serial console
+as always, **with a cable in BOTH Ethernet ports** — the on-board GMAC
+(`2a220000.ethernet`) and the PCIe RTL8168 (`0000:01:00.0`) — into a switch
+carrying the DHCPv4 server §2 already requires. `mac-derived` and
+`mac-survives-reboot` do not need the DHCP server, but they do need both ports
+populated: the whole point is that there are two of them and that they must not
+exchange addresses. No host PC, no USB and no second CAN node.
+
+**`mac-derived` (stage 2).** For each of `eth0` and `eth1`: `ip -d link show`
+(address and `addr_assign_type`), `readlink -f /sys/class/net/<i>/device`, and
+`udevadm info /sys/class/net/<i>` for `ID_NET_LINK_FILE` and `ID_PATH`. Then
+`journalctl -b -u systemd-udevd | grep -i "MAC address"`. Recompute both
+addresses on the device from the two facts the derivation reads —
+`printf '%s-%s' "$(cat /sys/block/mmcblk0/device/cid)" "<topology>" | md5sum` —
+and compare.
+
+**Pass:** each port's address is `02:` followed by the first five bytes of that
+md5, `ID_NET_LINK_FILE` names `60-mos-mac-stable.link`, and udevd logged no
+`Applying persistent MAC address` for either port. **Fail, and the two failures
+are different things:** an address that is not `02:`-prefixed at all means
+`hwinit-mac` never ran on that port; an `Applying persistent MAC address` line
+means the `.link` file did not displace `99-default.link` and systemd got there
+first, in which case `addr_assign_type` reads 3 and `hwinit-mac` stood down
+exactly as designed — on an address mos did not choose.
+
+**`mac-survives-reboot` (stage 3).** Bank both addresses and both topology
+paths before the warm reboot; read both again after it. **Pass:** each topology
+path carries the same address it carried before, whichever interface name it now
+has. **Fail:** an address that moved. Record the interface names on both sides
+even when they did not swap — the defect this replaces was invisible until they
+did, and a run where the order happened to repeat is evidence about that boot
+rather than about the derivation. The two NICs registered 4.5 ms apart on the
+2026-09-08 boot log, so a few reboots is a cheap way to try to observe a swap;
+several reboots without one is a `pass` with that stated, not a stronger claim.
+
+**`mac-before-lease` (stage 4), and this is the ordering one.** With both cables
+in: `journalctl -b -u systemd-networkd`, the lease each port got
+(`networkctl status eth0 eth1`), and the client MAC the DHCP server recorded for
+each. **Pass:** both ports hold a lease and the server saw each one's derived
+address, not a `be:`/`06:`-style invented one. **Fail:** a lease requested from
+an address that is not the derived one, which means networkd configured the link
+before `hwinit-mac` reached it. The source says it cannot — udev writes the
+device database and broadcasts the event to libudev listeners only after a
+`RUN+=` program has returned (`udev-worker.c`: `udev_event_execute_rules()`,
+then `udev_event_execute_run()`, then `device_update_db()`, then
+`device_monitor_send()`) — and this probe is the only thing that observes it.
+Row 6's `eth1` lease defect is measured in this same stage; if `eth1` still gets
+no lease, note its MAC anyway, because "no lease" and "a lease from the wrong
+address" are different findings with the same symptom at the switch.
+
 ## 5. The power-cut window
 
 Pulling power at an arbitrary moment tests nothing. Row 4's claim is specific:

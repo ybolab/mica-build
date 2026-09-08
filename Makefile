@@ -15,7 +15,7 @@ BOARDS := cx3576 virt-arm64 x64
 	os-release-cx3576 os-release-gate \
 	podman-pins podman-pins-test os-netavark-kernel-test \
 	os-smoke-test os-smoke-negative-test os-factory-root-gate \
-	os-shadow-test os-dbus-policy-test os-repart-test os-gadget-test \
+	os-shadow-test os-dbus-policy-test os-repart-test os-gadget-test os-mac-test \
 	os-uboot-handshake-test os-cx3576-flash-test \
 	os-layout-lint os-verify-test os-build-test \
 	os-host-toolchain-lint os-host-toolchain-lint-test os-bare-host-gate \
@@ -44,6 +44,7 @@ help:
 	@echo "  os-devkeys          populate the gitignored repo-root meta/ with development-grade signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
+	@echo "  os-mac-test         prove the stable-MAC derivation follows the port, not the interface name; drives the by-name defect red"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-cx3576-flash-test    drive the cx3576 flash read-back against a stub rkdeveloptool: argv, sector arithmetic, and a hole that must go red before rd"
@@ -203,6 +204,18 @@ os-health-test:
 # regular file. Needs no root, no docker and no board.
 os-gadget-test:
 	bash tests/gadget-configfs-test.sh
+
+# Drives the real boards/cx3576/hwinit/hwinit-mac against a fake sysfs and a
+# stub ip(8). The property is stability under RENAMING: this board boots
+# net.ifnames=0, so eth0/eth1 is the order the two NICs registered in -- 4.5 ms
+# apart on the first hardware boot -- and the same port at the same place on the
+# board must get the same address under either name. The red direction is
+# produced from the shipped script rather than written beside it: the md5 input
+# is rewritten back to the interface name, which is what this file used to hash,
+# and the swapped fixture must then exchange the two addresses. Needs no root,
+# no docker and no board.
+os-mac-test:
+	bash tests/mac-stable-test.sh
 
 # Drives the real mos-shadow-reconcile against fixtures in a temp dir: the
 # transient-root-password clearing, the mismatch branch that lets a dev image's
