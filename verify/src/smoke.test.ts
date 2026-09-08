@@ -335,7 +335,7 @@ describe('readMosdBuildFact -- what the build recorded, never what HEAD says', (
     const f = readMosdBuildFact('x64', dir)
     expect(f.commit).toBeUndefined()
     expect(f.source).toMatch(/does not exist/)
-    expect(f.source).toMatch(/build-target\.sh/)
+    expect(f.source).toMatch(/build-deb\.sh/)
   })
 
   test('a record with a commit is read, and the commit is the value the build embedded', () => {
@@ -378,7 +378,7 @@ describe('readMosdBuildFact -- what the build recorded, never what HEAD says', (
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, MOSD_BUILD_RECORD_NAME), 'target\tx86_64-unknown-linux-gnu\n')
     expect(() => readMosdBuildFact('x64', dir)).toThrow(/carries no `commit` field/)
-    expect(() => readMosdBuildFact('x64', dir)).toThrow(/build-target\.sh writes one on every build/)
+    expect(() => readMosdBuildFact('x64', dir)).toThrow(/build-deb\.sh writes one every time it compiles them/)
   })
 })
 

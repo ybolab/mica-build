@@ -438,7 +438,7 @@ _out/debs/<arch>/
 ```
 
 `manifest.txt` is tab-separated with a leading `#` comment header, the shape
-`pkgs/mosd/hack/build-target.sh` writes for `_out/mosd-build.txt`. Every
+`pkgs/mosd/hack/build-deb.sh` writes for `_out/mosd-build-<arch>.txt`. Every
 column of it is read out of an archive with `dpkg-deb --field` or `sha256sum`;
 nothing here is maintained by hand.
 

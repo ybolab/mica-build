@@ -77,7 +77,9 @@ export interface Artifact {
    *
    * Two of the twelve do -- mosd and apid, which print
    * `<name> <version> (<commit>)` -- and the runner asserts that commit against
-   * the one the BUILD recorded embedding, out of `_out/<board>/mosd-build.txt`.
+   * the one the BUILD recorded embedding, out of `_out/<board>/mosd-build.txt`,
+   * which `rootfs/build.sh` copies from the record the producer that compiled
+   * them wrote.
    * A property of the artifact and not a second contract kind: it is orthogonal
    * to how the artifact is asked, since the argv is the same `--version` and the
    * exit status and version identity are asserted the same way. Absent means the
