@@ -659,6 +659,50 @@ function lintNumericFaults(r: Recorder, b: Board): void {
   }
 }
 
+/**
+ * The DRAM window the board's firmware hands the kernel.
+ *
+ * EMPTY IS THE STATEMENT, ABSENT IS NOT -- the same shape as
+ * BOARD_RECOVERY_ACTIONS above, and for the same reason. A UEFI board has no
+ * such number: its memory map comes from the firmware at run time and nothing
+ * in this repository places anything at a fixed physical address on it, so it
+ * declares the key empty and the device-tree assertion that reads it skips
+ * saying that. A board that never mentioned the key has said nothing, and the
+ * assertion would then be absent on exactly the board that needed it.
+ *
+ * The value is a hexadecimal address and is checked for being one, because the
+ * consumer compares it numerically against `reg` cells out of a device tree: a
+ * value it cannot parse would make every region look like it lies above the
+ * window, which is the answer that passes.
+ */
+function lintDramWindow(r: Recorder, b: Board): void {
+  const key = 'BOARD_DRAM_USABLE_BASE'
+  const presence = boardKeyPresence(b, key)
+  if (presence === 'absent') {
+    r.fail(
+      `declares no ${key}. A board says where the DRAM its firmware hands the kernel begins, and `
+      + 'a board whose memory map does not come from firmware that way says so by declaring the '
+      + 'key empty; silence is not the same claim, and it would silently retire the assertion '
+      + 'that a reserved-memory region lies inside that window',
+    )
+    return
+  }
+  const value = b.get(key)
+  if (presence === 'empty') {
+    r.pass(`declares ${key} empty: this board's memory map is not a fixed address this tree knows`)
+    return
+  }
+  if (value === undefined || !/^0x[0-9a-fA-F]+$/.test(value)) {
+    r.fail(
+      `${key} is '${value}'; it must be a hexadecimal address such as 0x40200000. It is compared `
+      + 'numerically against reg cells read out of the boot slot device tree, and a value that '
+      + 'does not parse makes every region compare as being inside the window',
+    )
+    return
+  }
+  r.pass(`declares ${key}=${value}: the lowest DRAM address the firmware hands the kernel`)
+}
+
 /** Lint one already-modelled board. Pure: it reads nothing and prints nothing. */
 export function lintBoard(b: Board): BoardLint {
   const r = new Recorder(b.name)
@@ -667,6 +711,7 @@ export function lintBoard(b: Board): BoardLint {
   lintBootloader(r, b)
   lintBoardKeys(r, b)
   lintRecoveryActions(r, b)
+  lintDramWindow(r, b)
   return { path: b.path, board: b.name, checks: r.checks, unreadable: false }
 }
 

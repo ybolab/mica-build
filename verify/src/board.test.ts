@@ -119,7 +119,7 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.firmwareFiles![0]).toBe('/usr/lib/firmware/aic_userconfig_8800d80.txt')
     // Interpolated mid-list, with @SLOT@ left alone for the installer.
     expect(cx3576.bootSlotRequiredFiles)
-      .toEqual(['Image', 'rk3576-src.dtb', 'boot.scr', 'mos-verity-@SLOT@.env', 'mos-boot-digest.env'])
+      .toEqual(['Image', 'rk3576-src.dtb', 'boot.scr', 'mos-verity-@SLOT@.env', 'mos-boot-digest-@SLOT@.env'])
     // A U-Boot board has no ESP contents list; absent, not empty.
     expect(cx3576.espRequiredFiles).toBeUndefined()
   })
@@ -137,19 +137,20 @@ describe('cx3576 — the U-Boot board', () => {
       + 'loglevel=5 fbcon=logo-pos:center,logo-count:1 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 145 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 148 assignments', () => {
     expect(cx3576.faults).toEqual([])
     expect(cx3576.env.duplicates).toEqual([])
     // If this number moves, the board definition gained or lost a key. That is
     // a deliberate act; update it deliberately.
     //
-    // 143 -> 145 across two branches that landed together, which is why the
-    // merge itself produced a red here: RFCT-352 added BOOT_DIGEST_ENV_NAME and
-    // PLAN-088 added BOARD_HAS_DISPLAY, each side updated this number for its
-    // own key, and textual merge kept one of the two answers. The count is
-    // doing exactly what it is for.
-    expect(cx3576.env.assignments.length).toBe(145)
-    expect(cx3576.env.values.size).toBe(145)
+    // 143 -> 148 across three branches that landed together, and this number
+    // has now gone red on TWO successive merges, which is the point of it.
+    // RFCT-352 added the digest env names, RFCT-355 added
+    // BOARD_DRAM_USABLE_BASE, PLAN-088 added BOARD_HAS_DISPLAY; each branch
+    // updated this for its own key and textual merge can only keep one of the
+    // answers, so the true count is never any single branch's.
+    expect(cx3576.env.assignments.length).toBe(148)
+    expect(cx3576.env.values.size).toBe(148)
   })
 })
 
@@ -235,11 +236,14 @@ describe('x64 — the GRUB board', () => {
     expect(x64.cmdlineArgs).toBe('console=tty0 console=ttyS0,115200 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 117 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 118 assignments', () => {
     expect(x64.faults).toEqual([])
     expect(x64.env.duplicates).toEqual([])
-    expect(x64.env.assignments.length).toBe(117)
-    expect(x64.env.values.size).toBe(117)
+    // 118 for the same reason cx3576 is 148: BOARD_HAS_DISPLAY is REQUIRED of
+    // every board, so declaring 0 is a key here too. An absent key would make
+    // "this board has no screen" an absence rather than a decision.
+    expect(x64.env.assignments.length).toBe(118)
+    expect(x64.env.values.size).toBe(118)
   })
 })
 

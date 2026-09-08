@@ -116,6 +116,17 @@ export interface Board {
    * values a reader may act on.
    */
   readonly releaseTarget: string | undefined
+  /**
+   * The lowest DRAM address the firmware hands the kernel
+   * (`BOARD_DRAM_USABLE_BASE`).
+   *
+   * Kept as the raw string for `hasStatusLed`'s reason, and EMPTY carries the
+   * meaning here that it does for `recoveryActions`: a UEFI board declares the
+   * key empty because its memory map is not a fixed address this tree knows,
+   * and the device-tree assertion that reads it then skips saying so. Absent
+   * is not the same claim and the lint refuses it.
+   */
+  readonly dramUsableBase: string | undefined
   readonly sizeBudgetMb: number | undefined
   readonly cmdlineArgs: string | undefined
   readonly firmwareFiles: readonly string[] | undefined
@@ -257,6 +268,7 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
     hasStatusLed: get('BOARD_HAS_STATUS_LED'),
     hasDisplay: get('BOARD_HAS_DISPLAY'),
     releaseTarget: get('BOARD_RELEASE_TARGET'),
+    dramUsableBase: get('BOARD_DRAM_USABLE_BASE'),
     sizeBudgetMb: int('BOARD_SIZE_BUDGET_MB'),
     cmdlineArgs: get('BOARD_CMDLINE_ARGS'),
     firmwareFiles: list('BOARD_FIRMWARE_FILES'),

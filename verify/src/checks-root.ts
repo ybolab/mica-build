@@ -22,7 +22,7 @@
 // claimed by `/usr/lib/modules contains exactly one kernel's modules`.
 
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, type Stats } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, normalize } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { derivedManifest } from './manifest-keys.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
@@ -68,6 +68,69 @@ export function entry(root: string, path: string): Stats | undefined {
   catch {
     return undefined
   }
+}
+
+/** Linux's own ELOOP ceiling, so a cycle ends the walk where the kernel ends it. */
+const SYMLINK_HOPS = 40
+
+/**
+ * A regular file at `path`, resolved THE WAY THE DEVICE WOULD -- every symlink
+ * followed INSIDE the unpacked root, absolute ones included.
+ *
+ * `regularFileFollowingLinks` cannot answer this, and the difference is not
+ * academic. It is `statSync(join(root, path))`, which hands the whole path to
+ * the host kernel: a RELATIVE symlink inside the root resolves correctly by
+ * accident, because the host resolves it relative to where it sits, but an
+ * ABSOLUTE one is resolved against the HOST's `/`. So the answer for such a
+ * path is a fact about the machine running the verifier.
+ *
+ * Measured, and it is the reason this exists: Debian's `wireless-regdb`
+ * registers its database through update-alternatives, so a shipped root
+ * carries `/usr/lib/firmware/regulatory.db -> /etc/alternatives/regulatory.db
+ * -> /lib/firmware/regulatory.db-debian` -- two absolute hops and a merged-usr
+ * one. The file is present and correct; `statSync` reported it missing,
+ * because the host has no `/etc/alternatives/regulatory.db`. On a host that
+ * happened to have one, it would have reported the HOST's database as the
+ * image's.
+ *
+ * The wider defect is NOT closed here. `regularFileFollowingLinks` has around
+ * forty call sites and every one of them inherits the same host resolution;
+ * changing it is a verdict-affecting edit across the whole register and wants
+ * its own review. Prefer this function for any path whose resolution can cross
+ * an absolute symlink.
+ */
+export function regularFileInRoot(root: string, path: string): boolean {
+  let current = path.startsWith('/') ? path : `/${path}`
+  for (let hop = 0; hop <= SYMLINK_HOPS; hop += 1) {
+    // Normalised first, so a `..` in a link target is collapsed the way the
+    // kernel collapses it -- and, because the walk always starts at `/`, a
+    // target that climbs past the root is clamped there rather than escaping
+    // into the host, which is what a chroot does with the same path.
+    const parts = normalize(current).split('/').filter(p => p !== '')
+    let walked = ''
+    let followed = false
+    for (let i = 0; i < parts.length; i += 1) {
+      const next = `${walked}/${parts[i]}`
+      const st = entry(root, next)
+      if (st === undefined) return false
+      if (st.isSymbolicLink()) {
+        let target: string
+        try {
+          target = readlinkSync(join(root, next))
+        }
+        catch {
+          return false
+        }
+        const head = target.startsWith('/') ? target : `${walked}/${target}`
+        current = [head, ...parts.slice(i + 1)].join('/')
+        followed = true
+        break
+      }
+      walked = next
+    }
+    if (!followed) return entry(root, walked)?.isFile() === true
+  }
+  return false
 }
 
 // sq_regular

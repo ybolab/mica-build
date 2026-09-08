@@ -45,3 +45,11 @@ export const hasLed = (board: Board): boolean => board.hasStatusLed === '1'
 
 /** `[ "${BOARD_HAS_DISPLAY}" = "1" ]`. Same shape and same reason as `hasLed`. */
 export const hasDisplay = (board: Board): boolean => board.hasDisplay === '1'
+
+/**
+ * `[ -n "${BOARD_DRAM_USABLE_BASE}" ]` -- the board declares where the DRAM its
+ * firmware hands the kernel begins, so a reserved-memory region can be checked
+ * against it. Declared-empty is a UEFI board saying it has no such number.
+ */
+export const hasDramWindow = (board: Board): boolean =>
+  (board.dramUsableBase ?? '') !== ''

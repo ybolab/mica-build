@@ -866,6 +866,47 @@ export async function fdtGetCells(
   return value.trim().split(/\s+/).filter(c => c !== '')
 }
 
+/**
+ * `fdtget -l` -- the names of a node's children, or `[]` when libfdt refused.
+ *
+ * ENUMERATION AND NOT A PATH, which is the whole reason this exists beside
+ * `fdtGet`. The reserved-memory assertion has to hold over regions this
+ * repository did not write: the vendor `.dtsi` chain contributes most of
+ * them, their unit addresses are part of what is under test, and a check that
+ * asked for `/reserved-memory/ramoops@40400000` by name would be comparing the
+ * device tree against a second copy of the address rather than reading what is
+ * in it. So the subject set is read out of the blob and the assertion is a
+ * property over it.
+ *
+ * `[]` for a refusal, as `fdtGetCells` does: a device tree with no
+ * `/reserved-memory` at all is a real answer and the caller decides what it
+ * means. It is not confusable with a node that HAS no children, because
+ * `/reserved-memory` with no children is a node no producer emits -- and the
+ * caller fails an empty subject set rather than passing it, so the two lead to
+ * the same verdict either way.
+ */
+export async function fdtSubnodes(
+  rt: ToolRuntime,
+  dtb: string,
+  node: string,
+): Promise<string[]> {
+  const r = await rt.run(['fdtget', '-l', dtb, node], {
+    context: `listing the subnodes of ${node} in ${dtb}`,
+    allow: [1],
+  })
+  if (r.code === 0) {
+    return r.stdout.split('\n').map(l => l.trim()).filter(l => l !== '')
+  }
+  const said = `${r.stderr}${r.stdout}`.trim()
+  if (FDT_REFUSAL.test(said)) return []
+  throw new ToolOutputError(
+    `fdtget -l exited ${r.code} on ${dtb} for a reason libfdt did not name:\n`
+    + `    ${said.split('\n').join('\n    ') || '(no output)'}\n`
+    + `  Reporting this as "the node has no children" would make a missing fdtget read as a `
+    + `device tree with no reserved regions in it, which is the answer that passes.`,
+  )
+}
+
 // 7. e2fsck -fn, whose exit status is the whole answer and is not the truth.
 //
 // Driven from the failing side, 2026-08-26, e2fsck 1.47.1 in the pinned alpine:

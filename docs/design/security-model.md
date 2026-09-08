@@ -145,6 +145,35 @@ must fail release publication — that gate is **[implemented]**
 `docs/design/release-artifacts.md` §4), with the policy stated in
 `docs/design/security-lifecycle.md` §2.
 
+**No TEE is part of any mos trust chain, on any board.** The trust chain is
+`meta/` key material and RAUC CMS signature verification (§3) — an ordinary
+userspace verification against a keyring baked into the signed root — plus
+dm-verity underneath it (§2). A Trusted Execution Environment holds no mos
+key, verifies no mos artifact, and is not a fallback for any of the gaps §4
+lists above. This was an unwritten assumption until RFCT-355, and writing it
+down is the whole of the change: nothing in the codebase moved.
+
+It is written down because a working device looks like evidence for the
+opposite. The cx3576 vendor device tree declares `firmware/optee` and the
+kernel probes it on every boot:
+
+```
+optee: probing for conduit method.
+optee: api uid mismatch
+optee: probe of firmware:optee failed with error -22
+```
+
+The probe fails — the Rockchip BL31 in `boards/cx3576/bsp/uboot` answers the
+SMC with a UID that is not OP-TEE's, because no OP-TEE OS is loaded on this
+board — so there is no `/dev/tee0`, no `tee-supplicant`, and no
+`OP-TEE`-backed anything. **That failure costs the device nothing**, and that
+is the point of recording it: a reader who finds the node in the device tree,
+or the line in a boot log, must not conclude that a TEE is holding up a corner
+of the design, and a reader who sees the probe *succeed* on some future board
+must not conclude that anything started using it. Introducing a TEE into the
+trust chain would be an I3/I4 claim (§5) with its own evidence rows, not a
+side effect of a vendor blob beginning to answer.
+
 **A guard built on a board-specific mechanism is a per-board claim, not a
 system property.** This generalises beyond the boot chain and has decided two
 designs already: a rollback guard keyed on the bootloader environment would

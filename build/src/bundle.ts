@@ -16,7 +16,10 @@
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { BOOT_DIGEST_ARTEFACTS, bootDigestEnv, checkBootAttempts, verityCmdlineFields, verityEnvBase } from './boot-cx3576.ts'
+import {
+  BOOT_DIGEST_ARTEFACTS, bootDigestBase, bootDigestEnv, checkBootAttempts, verityCmdlineFields,
+  verityEnvBase,
+} from './boot-cx3576.ts'
 import { loadGeometry, type Geometry } from './geometry.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { Toolbox } from './toolbox.ts'
@@ -28,11 +31,11 @@ import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
 
 // Reproducibility and payload invariants:
 //
-//   * The mcopy order. `Image rk3576-src.dtb boot.scr mos-boot-digest.env
-//     mos-verity-a.env mos-verity-b.env` is the order the shell hands them over
-//     and therefore the order they land in the FAT directory. It is a
-//     written-out list in both places, not a glob, so it is transcribed as a
-//     list.
+//   * The mcopy order. `Image rk3576-src.dtb boot.scr mos-boot-digest-a.env
+//     mos-boot-digest-b.env mos-verity-a.env mos-verity-b.env` is the order the
+//     shell hands them over and therefore the order they land in the FAT
+//     directory. It is a written-out list in both places, not a glob, so it is
+//     transcribed as a list.
 //   * No `-i` on mkfs.vfat and no slot label: "one image, two possible
 //     destinations", so a bundle's boot payload, installed into whichever slot
 //     is inactive, must not carry that slot's FAT identity.
@@ -818,14 +821,22 @@ export async function buildBundle(
 
       // The digests boot.scr checks the payload's own kernel and dtb against,
       // taken from the staged copies for the same reason the image assembler
-      // does: these are the bytes mcopy is about to write. Slot-NEUTRAL, unlike
-      // the two verity envs above -- a boot payload carries one Image whichever
-      // slot it lands in, so a suffixed digest would be two names for one fact.
-      const digestName = geometry.require('BOOT_DIGEST_ENV_NAME')
-      writeFileSync(join(workDir, digestName), bootDigestEnv(
+      // does: these are the bytes mcopy is about to write.
+      //
+      // BOTH slots' files, exactly as with the two verity envs above and for
+      // the same reason: this one payload is installed into whichever boot slot
+      // is inactive, and the script loads the name that matches the slot it is
+      // booting. The two are identical here because there is one Image in this
+      // payload; they stop being identical the moment the other slot is updated
+      // separately, which is the case the suffix exists for.
+      const digestBase = bootDigestBase(geometry)
+      const digestText = bootDigestEnv(
         BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(workDir, a.file)) })),
-        join(workDir, digestName),
-      ))
+        join(workDir, `${digestBase}-<slot>.env`),
+      )
+      for (const suffix of ['a', 'b']) {
+        writeFileSync(join(workDir, `${digestBase}-${suffix}.env`), digestText)
+      }
 
       await tb.must(
         ['find', workDir, '-maxdepth', '1', '-type', 'f', '-exec', 'touch', '-h', '-d', geometry.ext4.fileMtime, '{}', '+'],
@@ -844,7 +855,8 @@ export async function buildBundle(
           join(workDir, 'Image'),
           join(workDir, 'rk3576-src.dtb'),
           join(workDir, bootScriptName),
-          join(workDir, digestName),
+          join(workDir, `${digestBase}-a.env`),
+          join(workDir, `${digestBase}-b.env`),
           join(workDir, `${base}-a.env`),
           join(workDir, `${base}-b.env`),
         ],
