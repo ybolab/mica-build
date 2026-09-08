@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-07
+> Updated: 2026-09-08
 
 ## Usage
 
@@ -68,3 +68,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`
 - [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md)
+
+- [ ] [**file-ab-signed-components-20260908T1428Z File-based A/B and independently signed system components**](file-ab-signed-components-20260908T1428Z.md) `2026-09-08`

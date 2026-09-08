@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-09-07
+> Updated: 2026-09-08
 
 ## Usage
 
@@ -87,3 +87,5 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**RFCT-336 Compose a minimal MOS runtime from explicit payloads**](RFCT-336.md) `P1`
 
 - [-] [**cx3576-reproducible-bsp-20260907T1356Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1356Z.md) `P1`
+
+- [ ] [**file-ab-signed-components-20260908T1423Z Design and implement file-based A/B with independently signed components**](file-ab-signed-components-20260908T1423Z.md) `P1`
