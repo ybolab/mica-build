@@ -4,6 +4,19 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-923 — Local initialization helper and S905X5M SD inspection (2026-09-08)
+
+Adapted the workspace-local initialization helper to the current JSON API,
+session/CSRF contract, asynchronous apply tasks and additive SSH-key workflow.
+Credentials are stored privately and retries preserve existing device state.
+Fifteen isolated protocol cases and live fresh/repeat initialization passed.
+SD runtime checks verified storage identity, management, Ethernet/NTP, MQTT,
+container networking, radio discovery and basic HDMI/USB access. The image
+remains degraded: non-executable front-panel scripts also prevent the boot
+health gate from confirming the slot. RFCT-943 records the evidence and
+RFCT-944 tracks the remaining runtime defects. The helper remains outside
+the MOS Git checkout; this entry records its local delivery.
+
 ## PLAN-922 — S905X5M package integration on current mainline (2026-09-08)
 
 Added the S905X5M/BM201 BSP to the top-level layout and package-based rootfs

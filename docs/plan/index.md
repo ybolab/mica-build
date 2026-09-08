@@ -81,3 +81,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**PLAN-920 Build a booted-board runtime acceptance suite**](PLAN-920.md) `2026-09-01`
 - [x] [**PLAN-921 Integrate the BM201 front-panel userland**](PLAN-921.md) `2026-09-01`
 - [x] [**PLAN-922 Adapt s905x5m to the current mainline contracts**](PLAN-922.md) `2026-09-08`
+- [x] [**PLAN-923 Adapt the local MOS initialization helper to the JSON API**](PLAN-923.md) `2026-09-08`

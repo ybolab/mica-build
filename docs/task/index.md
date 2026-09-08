@@ -117,3 +117,5 @@ thing about the tree. Both indexes now say the same thing.
 - [ ] [**RFCT-940 The installer card blocks Linux boot on a board it already installed**](RFCT-940.md) `P1`
 - [-] [**RFCT-941 The installer reinstalls on every boot because its receipt never persists**](RFCT-941.md) `P1`
 - [x] [**RFCT-942 Adapt s905x5m to the current mainline build and runtime contracts**](RFCT-942.md) `P1`
+- [x] [**RFCT-943 Adapt the device initialization helper to current mainline**](RFCT-943.md) `P1`
+- [ ] [**RFCT-944 Resolve runtime defects observed on the mainline S905X5M SD image**](RFCT-944.md) `P1`
