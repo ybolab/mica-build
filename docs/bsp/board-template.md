@@ -90,8 +90,12 @@ being a statement rather than an omission.
 ### Console
 
 - Serial console device, baud rate and connector/pinout location.
-- `BOARD_CMDLINE_ARGS` console facts and any earlycon.
-- Display console if any.
+- `BOARD_CMDLINE_ARGS` console facts and any earlycon. Say which console is
+  LAST: that is the one `/dev/console` binds to, and therefore where init and
+  systemd write.
+- Display console if any, and `BOARD_HAS_DISPLAY`. A board that declares `1`
+  takes the boot-logo and console-recoverability contract in
+  `docs/design/display.md` §4.
 
 ### Peripherals
 

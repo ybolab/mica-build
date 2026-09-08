@@ -123,10 +123,17 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.espRequiredFiles).toBeUndefined()
   })
 
-  test('has a status indicator, and a smaller size budget', () => {
+  test('has a status indicator and a display, and a smaller size budget', () => {
     expect(cx3576.hasStatusLed).toBe('1')
+    expect(cx3576.hasDisplay).toBe('1')
     expect(cx3576.sizeBudgetMb).toBe(400)
-    expect(cx3576.cmdlineArgs).toBe('console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0')
+    // The ORDER of the two console= values is the fact, not the set: /dev/console
+    // is the LAST one, so tty1 first keeps userspace output on serial while the
+    // display still receives kernel messages. loglevel=5 is the floor at which
+    // fbcon draws the boot logo. PLAN-088.
+    expect(cx3576.cmdlineArgs).toBe(
+      'console=tty1 console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 '
+      + 'loglevel=5 fbcon=logo-pos:center,logo-count:1 net.ifnames=0')
   })
 
   test('reads clean: no faults, no duplicated keys, 144 assignments', () => {

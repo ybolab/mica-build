@@ -701,3 +701,41 @@ captures `journalctl -b` eagerly for that reason, and a stage re-run after a
 reboot cannot recover the evidence of the boot before it. That is also why the
 reboot-spanning stages accumulate one cycle per run rather than trying to
 observe several reboots from inside one invocation.
+
+## 10. The display rows (PLAN-088), which nothing off-hardware can settle
+
+PLAN-088 makes HDMI show a boot logo instead of a login prompt, and keeps the
+display reachable as a console. Every mechanism it uses was read out of the
+pinned kernel source and every resulting byte is asserted against the assembled
+image by `verify/src/checks-display.ts` — but **no board has ever displayed
+it**. The image contract can say that the kernel config carries `CONFIG_LOGO`,
+that the console list puts `tty1` before the serial console, and that
+`getty@tty1` resolves to disabled. It cannot say that a monitor lit up.
+
+These five rows are that gap, and they are `not tested` until a bench session
+with a real HDMI monitor attached fills them. They need no new collector stage:
+four of them are things a person looks at, which is exactly the half
+[qualification.md](qualification.md) reserves for an operator answer.
+
+| Row | What a `pass` is | Why no gate can decide it |
+|---|---|---|
+| D1 — logo appears | The board splash is on the monitor before the login-less prompt-free console settles, at the negotiated mode | Nothing here renders. The 720x405 geometry was chosen from `fb_prepare_logo`'s height test and `fb_show_logo_line`'s width test, but which mode the monitor negotiates is an EDID fact of the attached panel |
+| D2 — exactly one, centred | One logo, centred, not a row of them | `fbcon=logo-count:1` is asserted in the image; that the option took effect is a pixel fact. `fb_logo_count` otherwise defaults to one copy per online CPU |
+| D3 — no login prompt | No `login:` on HDMI at any point in a normal boot, and none after several minutes | The preset resolution is asserted; that no other mechanism spawns a getty on tty1 is a claim about the running system. systemd 257's getty-generator skips virtual consoles by design, which is the reading this rests on |
+| D4 — a panic reaches the screen | With `loglevel=5`, force a crash (`echo c > /proc/sysrq-trigger`) and read the trace **on the monitor** | This is the property that justifies letting a logo own the display, and it is the one most worth distrusting. It depends on `console_verbose()` raising the level on the oops path, which is source-verified and never observed on this board |
+| D5 — the console comes back | `systemctl start getty@tty1` yields a usable login prompt on HDMI, and `systemctl stop` gives the screen back | A disabled unit being startable is systemd behaviour, not an image fact |
+
+**D4 is the row to run first if time is short.** D1 through D3 failing leaves a
+blank or ugly screen; D4 failing means a technician with no serial cable has no
+way to see why a unit is dead, which is the regression this design was chosen
+to avoid. It is also the only row whose failure would argue for reverting the
+console policy rather than adjusting the artwork.
+
+**A `fail` on D1 with a `pass` on D4 is a coherent outcome, not a contradiction**
+— it is what a monitor negotiating a mode narrower than 720 pixels looks like,
+and the fix is the logo geometry rather than the console design. Record the
+negotiated mode (`/sys/class/drm/card*/modes` and the chosen one from
+`dmesg | grep -i mode`) with either result, because without it neither row can
+be acted on.
+
+> status: proposed — evidence: `docs/plan/PLAN-088.md`

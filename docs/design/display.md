@@ -57,13 +57,43 @@ the screen at an application UI (served by an app container) instead of apid.
 
 ## 4. Boot experience & tty policy
 
-- Boot splash: U-Boot shows the board splash (cx3576's master is
-  `boards/cx3576/bsp/rootfs/assets/splash.png`), kernel keeps `quiet` fbcon off the
-  HDMI in prod; kiosk takes DRM master when the service starts. Target: no text
-  ever flashes on a customer screen.
-  - The master is a **source asset with no consumer yet**: no build step reads
-    it, and U-Boot's splash path wants BMP, so the conversion belongs to phase 1
-    below. It is a 76 KB PNG, 1920x1080 at 16 bits per channel.
+Implemented on cx3576 by PLAN-088. This section was rewritten against what the
+pinned sources actually do; three of its earlier claims were measured wrong and
+are corrected below rather than deleted, because each is the reading a person
+arrives at from the outside.
+
+- **The logo is the KERNEL's, not U-Boot's.** `CONFIG_LOGO` +
+  `CONFIG_LOGO_LINUX_CLUT224`, with the board's own 224-colour PPM derived at
+  build time from `boards/cx3576/bsp/rootfs/assets/splash.png` — which is no
+  longer a source asset with no consumer. **U-Boot shows nothing**, and this is
+  not a scheduling decision: the pinned tree is upstream u-boot at `ece349ade`,
+  whose Rockchip video drivers are the VOP1-era RK3288/RK3328/RK3399 set. There
+  is no VOP2 driver and no RK3576 display support anywhere in it, so
+  `SPLASH_SCREEN` there would build a video core nothing can bind. HDMI is
+  therefore **dark from reset until DRM probes**, and a seamless power-on splash
+  is blocked on the U-Boot fork question. PLAN-088 §1 carries the evidence and
+  prices the alternative.
+- **`quiet` is NOT used, and must not be.** fbcon draws the logo only when
+  `console_loglevel` exceeds `CONFIG_CONSOLE_LOGLEVEL_QUIET`, which this kernel
+  sets to 4 (`fbcon.c:1009-1010`) — so `quiet`, which sets exactly 4, keeps text
+  off the screen by keeping the **logo** off it too. The board boots
+  `loglevel=5`: the floor that shows a logo, quiet enough that a healthy boot
+  prints only warnings and worse, and non-zero so `console_verbose()` still
+  raises the level on an oops. `loglevel=0` would make a panic invisible on
+  every console including serial, and is refused by the image contract.
+- **HDMI stays on the console list, deliberately.** The command line is
+  `console=tty1 console=ttyFIQ0,1500000`, and **the order is the design**:
+  every `console=` receives printk but `/dev/console` is the last one, so
+  userspace output stays on the cable while a kernel panic still takes the
+  screen. On a unit with no serial cable attached that is the only diagnostic
+  path there is.
+- **`getty@tty1` is disabled by a preset**, `50-mos-getty.preset` in
+  `mos-board-cx3576`, not by an absent symlink — an unmatched unit presets to
+  ENABLE, and `90-systemd.preset` says `enable getty@.service`. It remains
+  startable: `systemctl start getty@tty1` turns the display into a login
+  terminal at runtime, with no second boot path and no rebuild.
+- **No plymouth and no userspace splash.** The kiosk takes DRM master when
+  `mos-gui` starts; nothing else paints.
 - Console channels (access.md): wizard tty2 / debug shell tty3 live on
   **serial**; VT switching from the kiosk is disabled in prod images.
 - Kiosk crash policy: restart with backoff; after N failures fall back to a
@@ -71,8 +101,9 @@ the screen at an application UI (served by an app container) instead of apid.
 
 ## 5. Board requirements (extends boards.md §4)
 
-`boards/<board>/board.env` carries no display capability key, so no board
-advertises the feature today. A board whose product has an HDMI output must
+`boards/<board>/board.env` carries `BOARD_HAS_DISPLAY` (`0` or `1`), added by
+PLAN-088; cx3576 declares `1` and the QEMU boards declare `0`. It gates the boot
+experience above, not the kiosk. A board whose product has an HDMI output must
 provide:
 
 - kernel: DRM/KMS `=y` for the SoC display pipe + HDMI encoder; GPU driver
@@ -81,11 +112,12 @@ provide:
   already asserted.
 - GPU userland (mesa) into the mos-gui container image; kernel DRM and GPU
   firmware stay with the board (kernel + board package).
-- Output and default rotation, which are a comment in the board definition and
-  not yet a key: "Display defaults, recorded rather than declared: the output is
-  hdmi and the default rotation is 0"
-  (`boards/cx3576/board.env`). DisplayConfig therefore has no
-  board-supplied default, and gains one when a key does.
+- Output and default rotation, which are still a comment in the board
+  definition and not yet keys: "Display defaults, recorded rather than declared:
+  the output is hdmi and the default rotation is 0"
+  (`boards/cx3576/board.env`). `BOARD_HAS_DISPLAY` says whether there is a
+  screen, not what it is, so DisplayConfig still has no board-supplied default
+  and gains one when those become keys.
 
 ## 6. Security notes
 

@@ -155,8 +155,8 @@ describe('the console list, where the ORDER is the assertion', () => {
     try {
       const got = await only(fx, 'display-console-order')
       expect(got.verdict).toBe('pass')
-      expect(got.message).toContain('console=tty1')
-      expect(got.message).toContain('/dev/console is the last one')
+      expect(got.message).toContain('tty1 ttyFIQ0,1500000')
+      expect(got.message).toContain("/dev/console is the last one, 'ttyFIQ0,1500000'")
     }
     finally {
       fx.dispose()
