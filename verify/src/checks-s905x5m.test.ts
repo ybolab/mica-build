@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadBoard } from './board.ts'
@@ -72,6 +72,38 @@ describe('s905x5m package inventory', () => {
   test('an optional application selected but absent fails', async () => {
     const fx = fixture(false)
     fx.file('/usr/share/mos/manifest.tsv', 'mos-board-s905x5m\t1\tarm64\nmos-mqtt-reference\t1\tarm64\n')
+    expect((await result(fx.ctx)).verdict).toBe('fail')
+  })
+  for (const [pkg, unit, binaries] of [
+    ['mos-bm201-front-panel', 'bm201-front-panel.service', ['/usr/sbin/bm201-front-panel', '/usr/lib/mos/bm201-front-panel-stop']],
+    ['mos-mqtt-reference', 'mos-mqtt-reference.service', ['/usr/bin/mos-mqtt-reference']],
+  ] as const) {
+    test(`${pkg}: selected executables pass; each missing or non-executable entry point fails`, async () => {
+      const fx = fixture(false)
+      fx.file('/usr/share/mos/manifest.tsv', `mos-board-s905x5m\t1\tarm64\n${pkg}\t1\tarm64\n`)
+      fx.file(`/usr/lib/systemd/system/${unit}`)
+      for (const path of binaries) {
+        fx.file(path)
+        chmodSync(join(fx.root, path), 0o755)
+      }
+      expect((await result(fx.ctx)).verdict).toBe('pass')
+      for (const path of binaries) {
+        chmodSync(join(fx.root, path), 0o644)
+        const broken = await result(fx.ctx)
+        expect(broken.verdict).toBe('fail')
+        expect(broken.message).toContain(path)
+        rmSync(join(fx.root, path))
+        expect((await result(fx.ctx)).verdict).toBe('fail')
+        fx.file(path)
+        chmodSync(join(fx.root, path), 0o755)
+        expect((await result(fx.ctx)).verdict).toBe('pass')
+      }
+    })
+  }
+  test('declining the front panel cannot leave its stop helper behind', async () => {
+    const fx = fixture(false)
+    fx.file('/usr/lib/mos/bm201-front-panel-stop')
+    chmodSync(join(fx.root, '/usr/lib/mos/bm201-front-panel-stop'), 0o755)
     expect((await result(fx.ctx)).verdict).toBe('fail')
   })
   test('duplicate, malformed and empty package inventories are refused', () => {

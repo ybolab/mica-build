@@ -118,4 +118,7 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**RFCT-941 The installer reinstalls on every boot because its receipt never persists**](RFCT-941.md) `P1`
 - [x] [**RFCT-942 Adapt s905x5m to the current mainline build and runtime contracts**](RFCT-942.md) `P1`
 - [x] [**RFCT-943 Adapt the device initialization helper to current mainline**](RFCT-943.md) `P1`
-- [ ] [**RFCT-944 Resolve runtime defects observed on the mainline S905X5M SD image**](RFCT-944.md) `P1`
+- [-] [**RFCT-944 Resolve runtime defects observed on the mainline S905X5M SD image**](RFCT-944.md) `P1`
+
+- [-] [**RFCT-945 Verify managed Wi-Fi connectivity on the S905X5M SD system**](RFCT-945.md) `P1`
+- [x] [**RFCT-946 Permit the built-in Wi-Fi client switch through the settings API**](RFCT-946.md) `P1`

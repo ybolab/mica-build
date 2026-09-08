@@ -4,6 +4,29 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-925 — Wi-Fi client switch API alignment (2026-09-08)
+
+The built-in network page's Wi-Fi switch returned 409 because mos-apid omitted
+`wifi.client.enabled` from its settings write allowlist. The boolean leaf now
+returns 202 with an apply task, while adjacent Wi-Fi settings remain refused.
+OpenAPI and the resource inventory are synchronized. Formatting, clippy and
+325 apid binary tests passed, including switch, validation and session/CSRF
+regressions. The device and existing images still contain the earlier service;
+no packaging or deployment followed the user's disk-space stop instruction.
+RFCT-945 records successful managed Wi-Fi DNS/HTTPS and unresolved gateway
+ICMP loss separately from this API repair.
+
+## PLAN-924 — S905X5M front-panel executable permissions (2026-09-08)
+
+The package producer now installs both front-panel entry points as mode 0755.
+The composed-root verifier checks optional executable modes and the panel
+stop helper. All 1,394 verifier tests, actual package/root mode checks, 392 SD
+image checks and 14 executable smoke checks passed. A temporary device bind
+repair also passed service start/stop/restart. Replacement SD and RAUC artifacts
+were produced before packaging was stopped; the later installer rebuild was
+terminated. RFCT-944 retains the SD/eMMC boot-state ambiguity and remaining
+runtime qualification gaps. The running root filesystem was not replaced.
+
 ## PLAN-923 — Local initialization helper and S905X5M SD inspection (2026-09-08)
 
 Adapted the workspace-local initialization helper to the current JSON API,

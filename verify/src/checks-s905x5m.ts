@@ -15,6 +15,10 @@ export const S905X5M_CHECKS: readonly CheckCase[] = [{
     const faults: string[] = []
     const need = (ok: boolean, why: string) => { if (!ok) faults.push(why) }
     const regular = (path: string) => entry(root, path)?.isFile() === true
+    const executable = (path: string) => {
+      const st = entry(root, path)
+      return st?.isFile() === true && (st.mode & 0o111) !== 0
+    }
     const read = (path: string) => regular(path) ? readFileSync(join(root, path), 'utf8') : ''
     const radio = packages.has('mos-s905x5m-radio')
     const bt = packages.has('mos-s905x5m-bluetooth')
@@ -51,10 +55,15 @@ export const S905X5M_CHECKS: readonly CheckCase[] = [{
       ['mos-bm201-front-panel', '/usr/sbin/bm201-front-panel', 'bm201-front-panel.service'],
     ]) {
       const selected = packages.has(pkg!)
-      need(selected ? regular(binary!) : entry(root, binary!) === undefined, `${binary}: selected=${selected}`)
+      need(selected ? executable(binary!) : entry(root, binary!) === undefined,
+        `${binary}: selected=${selected}, executable required when selected`)
       need(selected ? regular(`/usr/lib/systemd/system/${unit}`) : entry(root, `/usr/lib/systemd/system/${unit}`) === undefined,
         `${unit}: selected=${selected}`)
     }
+    const panel = packages.has('mos-bm201-front-panel')
+    const stop = '/usr/lib/mos/bm201-front-panel-stop'
+    need(panel ? executable(stop) : entry(root, stop) === undefined,
+      `${stop}: selected=${panel}, executable required when selected`)
     return [verdict('s905x5m-packaged-hardware', faults.length === 0,
       faults.length === 0 ? 's905x5m packaged hardware agrees: inventory, radio selection and board configuration'
         : `s905x5m packaged hardware disagrees: ${faults.join('; ')}`)]
